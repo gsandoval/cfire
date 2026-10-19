@@ -14,8 +14,10 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <vector>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 namespace {
 
@@ -24,10 +26,37 @@ auto locate_runtime_dir() -> std::filesystem::path {
         return std::filesystem::path(env);
     }
     auto cwd = std::filesystem::current_path();
-    if (std::filesystem::exists(cwd / "runtime" / "cfire_prelude.hpp")) {
-        return cwd / "runtime";
+    for (auto d = cwd; !d.empty() && d != d.parent_path(); d = d.parent_path()) {
+        if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
+            return d / "runtime";
+        }
     }
-    return "/Users/memo/Programming/cfire/runtime";
+#if defined(__APPLE__)
+    char ep[1024];
+    uint32_t sz = sizeof(ep);
+    if (_NSGetExecutablePath(ep, &sz) == 0) {
+        std::error_code ec;
+        auto p = std::filesystem::canonical(ep, ec);
+        if (!ec) {
+            for (auto d = p.parent_path(); !d.empty() && d != d.parent_path(); d = d.parent_path()) {
+                if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
+                    return d / "runtime";
+                }
+            }
+        }
+    }
+#elif defined(__linux__)
+    std::error_code ec;
+    auto p = std::filesystem::canonical("/proc/self/exe", ec);
+    if (!ec) {
+        for (auto d = p.parent_path(); !d.empty() && d != d.parent_path(); d = d.parent_path()) {
+            if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
+                return d / "runtime";
+            }
+        }
+    }
+#endif
+    return cwd / "runtime";
 }
 
 void print_usage() {

@@ -105,7 +105,7 @@ inline auto compile_and_run_cpp(std::string_view cpp_source, const std::filesyst
     ScopedTempDir dir(test_name);
     auto cpp_file = dir.file("test.cpp", cpp_source);
     auto bin_file = dir.path / "test_bin";
-    std::string cmd = std::format("clang++ -std=c++23 -O2 -I\"{}\" \"{}\" -o \"{}\"",
+    std::string cmd = std::format("clang++ -std=c++2b -O2 -I\"{}\" \"{}\" -o \"{}\"",
         rt_dir.string(), cpp_file.string(), bin_file.string());
     int rc = 0;
     std::string comp_out = cfire::bridge::run_command_capture(cmd, rc);
