@@ -1,0 +1,30 @@
+package main
+
+import "core:cli"
+import "core:fs"
+import "core:compress/zstd"
+
+type Options struct {
+    Input: path  `cli:"--input, -i" help:"Input file to compress"`
+    Level: i32 = 3 `cli:"--level, -l" help:"Zstd level (1-22)"`
+}
+
+fn compress_roundtrip(opts: Options) -> usize! {
+    raw := try fs.read_bytes(opts.Input)
+    compressed := try zstd.compress(raw, level: opts.Level)
+    decompressed := try zstd.decompress(compressed)
+
+    if decompressed.len != raw.len {
+        return error("zstd roundtrip size mismatch")
+    }
+    return compressed.len
+}
+
+fn main() {
+    opts := cli.parse[Options]()
+    written := compress_roundtrip(opts) or err {
+        println("Compression failed: {}", err.message())
+        return
+    }
+    println("Compressed {} -> {} zstd bytes (verified roundtrip)", opts.Input.string(), written)
+}

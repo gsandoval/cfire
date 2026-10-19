@@ -1,0 +1,17 @@
+package main
+
+import "vendor:raylib" as rl
+
+fn main() {
+    rl.InitWindow(640, 360, "cfire + vendor:raylib")
+    defer rl.CloseWindow()
+
+    rl.SetTargetFPS(60)
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.RAYWHITE)
+        rl.DrawText("cfire: 100% Native C++23 + Auto-Linked Raylib", 90, 170, 20, rl.DARKGRAY)
+    }
+}

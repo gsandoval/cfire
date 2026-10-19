@@ -1,0 +1,32 @@
+package main
+
+import "core:net"
+
+fn fetch_status(endpoint: str) -> i32! {
+    conn := try net.connect_tcp(endpoint, 80)
+    _ = try conn.write("HEAD / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+    return 200
+}
+
+fn check_cluster(hosts: &[]str) -> []i32 {
+    mut codes := make([]i32, hosts.len)
+    async.scope(workers: 4) |scope| {
+        for i, h in hosts {
+            slot := &mut codes[i]
+            scope.spawn || {
+                *slot = fetch_status(h) or 503
+            }
+        }
+    }
+    return codes
+}
+
+fn main() {
+    mut hosts: []str
+    hosts.push("api.internal")
+    hosts.push("unreachable.node")
+    hosts.push("db.internal")
+
+    codes := check_cluster(hosts)
+    println("Cluster health codes: [{}, {}, {}]", codes[0], codes[1], codes[2])
+}

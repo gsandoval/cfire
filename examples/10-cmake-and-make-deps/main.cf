@@ -1,0 +1,11 @@
+package main
+
+import cpp "kvstore.h"
+import cpp "vecmath.h"
+
+fn main() {
+    slot := cpp::kv_compute_slot("user:sessions:42", 16)
+    dot := cpp::vec3_scaled_dot(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 2.0)
+    println("CMake kvstore slot for 'user:sessions:42' -> {}", slot)
+    println("Make vecmath scaled dot product -> {}", dot)
+}

@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stdlib &amp; Diagnostics Reference — cfire</title>
+  <style>
+:root {
+    --bg: #070b14;
+    --bg-card: #0d1527;
+    --bg-card-hover: #131f38;
+    --bg-code: #050811;
+    --border: #1e293b;
+    --border-glow: rgba(56, 189, 248, 0.35);
+    --text: #e2e8f0;
+    --text-bright: #ffffff;
+    --muted: #94a3b8;
+    --sapphire: #38bdf8;
+    --sapphire-deep: #0284c7;
+    --sapphire-navy: #1e3a8a;
+    --fire: #f97316;
+    --fire-gold: #facc15;
+    --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #0c234b 0%, #070b14 60%);
+    color: var(--text);
+    line-height: 1.65;
+    min-height: 100vh;
+}
+a { color: var(--sapphire); text-decoration: none; transition: color 0.15s; }
+a:hover { color: #7dd3fc; text-decoration: underline; }
+.navbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(7, 11, 20, 0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0.85rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-weight: 800; font-size: 1.25rem; color: #fff;
+    text-decoration: none;
+}
+.brand:hover { text-decoration: none; }
+.brand img.brand-icon {
+    width: 38px; height: 38px; object-fit: contain;
+    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.4));
+}
+.brand span.brand-text {
+    font-size: 1.35rem; font-weight: 900; letter-spacing: -0.03em;
+}
+.brand span.fire {
+    background: linear-gradient(90deg, var(--sapphire), var(--fire));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.nav-links { display: flex; align-items: center; gap: 1.5rem; font-size: 0.95rem; font-weight: 600; }
+.nav-links a { color: var(--muted); transition: all 0.15s; }
+.nav-links a:hover, .nav-links a.active { color: #fff; text-decoration: none; }
+.btn-nav-primary {
+    background: linear-gradient(135deg, var(--sapphire-deep), #2563eb);
+    color: #fff !important; padding: 0.45rem 1.05rem; border-radius: 8px;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+    font-size: 0.88rem; font-weight: 700;
+}
+.btn-nav-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
+
+/* Hero section */
+.hero { text-align: center; padding: 2.5rem 1rem 3.5rem; }
+.badge {
+    display: inline-block; padding: 0.4rem 1.1rem; border-radius: 999px;
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.05em;
+    background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.45);
+    color: var(--sapphire); margin-bottom: 1.5rem;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+}
+
+/* Logo Showcase & Switcher */
+.logo-showcase {
+    display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem;
+}
+.logo-stage {
+    position: relative; width: 180px; height: 180px;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at center, rgba(30, 58, 138, 0.35) 0%, rgba(13, 21, 39, 0) 70%);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 28px;
+    padding: 1.25rem;
+    box-shadow: 0 0 50px rgba(56, 189, 248, 0.22), 0 0 80px rgba(249, 115, 22, 0.15);
+    transition: all 0.25s ease;
+}
+.logo-stage:hover {
+    border-color: rgba(56, 189, 248, 0.5);
+    box-shadow: 0 0 65px rgba(56, 189, 248, 0.35), 0 0 100px rgba(249, 115, 22, 0.25);
+}
+.hero-logo-img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
+    transition: transform 0.25s ease;
+}
+.hero-logo-img:hover { transform: scale(1.04); }
+.logo-switcher {
+    display: flex; gap: 0.5rem; margin-top: 1.25rem; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 0.35rem;
+}
+.logo-switch-btn {
+    background: transparent; color: var(--muted); border: none;
+    padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.82rem; font-weight: 700;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 0.4rem;
+}
+.logo-switch-btn:hover { color: #fff; }
+.logo-switch-btn.active {
+    background: rgba(56, 189, 248, 0.18); color: #fff; border: 1px solid rgba(56, 189, 248, 0.4);
+}
+.switch-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--sapphire);
+}
+
+h1.hero-title {
+    font-size: 3.4rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 1.2rem; line-height: 1.15;
+}
+.gradient-text {
+    background: linear-gradient(135deg, #ffffff 15%, #38bdf8 60%, #f97316 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle {
+    max-width: 820px; margin: 0 auto 2.2rem; font-size: 1.22rem; color: var(--muted); line-height: 1.6;
+}
+.cta-row { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+.btn {
+    padding: 0.85rem 1.75rem; border-radius: 12px; font-weight: 700; font-size: 1rem;
+    border: 1px solid var(--border); transition: all 0.2s ease; display: inline-flex;
+    align-items: center; gap: 0.5rem; text-decoration: none;
+}
+.btn:hover { text-decoration: none; transform: translateY(-2px); }
+.btn-primary {
+    background: linear-gradient(135deg, #0284c7, #2563eb 50%, #f97316 100%);
+    color: #fff; border: none;
+    box-shadow: 0 4px 25px rgba(2, 132, 199, 0.45);
+}
+.btn-primary:hover { box-shadow: 0 6px 30px rgba(2, 132, 199, 0.6); opacity: 0.96; }
+.btn-secondary { background: var(--bg-card); color: var(--text); border-color: #334155; }
+.btn-secondary:hover { border-color: var(--sapphire); color: #fff; }
+
+/* Install Box */
+.install-bar {
+    display: inline-flex; align-items: center; gap: 0.75rem;
+    background: var(--bg-code); border: 1px solid #334155; border-radius: 12px;
+    padding: 0.65rem 1.25rem; font-family: "JetBrains Mono", monospace; font-size: 0.92rem;
+    color: #93c5fd; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.install-bar .prompt { color: #f97316; font-weight: 700; }
+.copy-btn {
+    background: #1e293b; color: #e2e8f0; border: 1px solid #475569;
+    padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.76rem; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+}
+.copy-btn:hover { background: var(--sapphire-deep); color: #fff; border-color: var(--sapphire); }
+
+/* Stats ribbon */
+.stats-ribbon {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;
+    margin: 3.5rem 0 2rem;
+}
+.stat-pill {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.25rem 1rem; text-align: center;
+}
+.stat-val {
+    font-size: 2rem; font-weight: 900; color: #fff;
+    background: linear-gradient(135deg, #fff, var(--sapphire));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.stat-lbl { font-size: 0.85rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.3rem; }
+
+/* Grids and Cards */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 1.5rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin: 2.5rem 0; }
+.card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.75rem; transition: all 0.2s ease;
+}
+.card:hover {
+    background: var(--bg-card-hover); border-color: rgba(56, 189, 248, 0.35);
+    transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+.card-icon {
+    font-size: 1.75rem; margin-bottom: 0.75rem; display: inline-block;
+}
+.card h3 { font-size: 1.25rem; margin-bottom: 0.65rem; color: #fff; }
+.card p { color: var(--muted); font-size: 0.95rem; line-height: 1.6; }
+
+/* Code Blocks & Tabs */
+pre {
+    background: var(--bg-code); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.2rem 1.4rem; overflow-x: auto;
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.87rem; line-height: 1.6; color: #e2e8f0;
+}
+code {
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.88em; background: rgba(30, 41, 59, 0.7);
+    padding: 0.15rem 0.45rem; border-radius: 6px; color: #7dd3fc;
+}
+pre code { background: none; padding: 0; color: inherit; }
+.code-header {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin-bottom: 0.5rem; display: flex; justify-content: space-between;
+}
+.code-header span.tag-cf { color: var(--sapphire); }
+.code-header span.tag-cpp { color: var(--fire); }
+
+.section-title {
+    font-size: 2.1rem; font-weight: 850; margin: 4rem 0 1rem; text-align: center;
+    letter-spacing: -0.02em; color: #fff;
+}
+.section-subtitle {
+    text-align: center; color: var(--muted); font-size: 1.08rem; max-width: 680px; margin: 0 auto 2.5rem;
+}
+
+.tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center; flex-wrap: wrap; }
+.tab-btn {
+    background: var(--bg-card); color: var(--muted); border: 1px solid var(--border);
+    padding: 0.65rem 1.25rem; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.92rem;
+    transition: all 0.15s;
+}
+.tab-btn:hover { color: #fff; border-color: #475569; }
+.tab-btn.active {
+    background: rgba(56, 189, 248, 0.18); color: #fff; border-color: var(--sapphire);
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Console execution preview */
+.console-preview {
+    background: #020408; border: 1px solid #1e293b; border-radius: 10px;
+    padding: 0.85rem 1.1rem; margin-top: 1rem; font-family: "JetBrains Mono", monospace;
+    font-size: 0.84rem; color: #4ade80;
+}
+.console-header {
+    font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;
+}
+.console-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+
+/* Comparison Table */
+table.comp-table {
+    width: 100%; border-collapse: collapse; margin: 1.5rem 0 3rem;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+table.comp-table th, table.comp-table td {
+    text-align: left; padding: 1rem 1.2rem; border-bottom: 1px solid var(--border); font-size: 0.92rem;
+}
+table.comp-table th { background: rgba(15, 23, 42, 0.8); color: #fff; font-weight: 700; font-size: 0.95rem; }
+table.comp-table tr:last-child td { border-bottom: none; }
+table.comp-table tr:hover td { background: rgba(56, 189, 248, 0.04); }
+
+/* Quickstart 3-step row */
+.step-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin: 2rem 0;
+}
+.step-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 1.75rem; position: relative;
+}
+.step-badge {
+    position: absolute; top: -14px; left: 1.5rem;
+    background: linear-gradient(135deg, var(--sapphire-deep), var(--fire));
+    color: #fff; font-weight: 900; font-size: 0.82rem; padding: 0.2rem 0.75rem;
+    border-radius: 999px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.step-card h4 { font-size: 1.2rem; margin: 0.5rem 0 0.75rem; color: #fff; }
+
+/* Guide Roadmap */
+.roadmap-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin: 2rem 0;
+}
+.roadmap-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.35rem; transition: all 0.2s ease; text-decoration: none; color: inherit; display: block;
+}
+.roadmap-card:hover {
+    background: var(--bg-card-hover); border-color: var(--sapphire);
+    transform: translateY(-2px); text-decoration: none; color: inherit;
+}
+.roadmap-num {
+    font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--sapphire); margin-bottom: 0.4rem;
+}
+.roadmap-card h4 { font-size: 1.1rem; color: #fff; margin-bottom: 0.4rem; }
+.roadmap-card p { font-size: 0.88rem; color: var(--muted); line-height: 1.5; margin: 0; }
+
+.footer {
+    text-align: center; padding: 3.5rem 1rem 2rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.92rem; margin-top: 5rem;
+}
+.footer-logo {
+    max-width: 140px; margin-bottom: 1rem; filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
+}
+.footer-links { display: flex; justify-content: center; gap: 2rem; margin: 1.25rem 0; flex-wrap: wrap; }
+.footer-links a { color: var(--muted); font-weight: 600; font-size: 0.92rem; }
+.footer-links a:hover { color: #fff; text-decoration: none; }
+
+@media (max-width: 900px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    h1.hero-title { font-size: 2.5rem; }
+    .navbar { padding: 0.85rem 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    .nav-links { gap: 1rem; font-size: 0.88rem; }
+}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <a class="brand" href="index.html">
+    <img src="assets/cfire_logo_emblem.png" alt="cfire logo" class="brand-icon" />
+    <span class="brand-text">c<span class="fire">fire</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="index.html" class="">Overview</a>
+    <a href="guide.html" class="">Language Guide</a>
+    <a href="reference.html" class="active">Stdlib Reference</a>
+    <a href="guide.html#chapter-1" class="btn-nav-primary">Quickstart &rarr;</a>
+  </div>
+</nav>
+<div class="container">
+  <div class="doc-layout">
+    <aside class="sidebar">
+      <h4>`core:*` Modules</h4>
+      <ul>
+        <li><a href="#mod-fs"><code>core:fs</code></a></li>
+        <li><a href="#mod-cli"><code>core:cli</code></a></li>
+        <li><a href="#mod-zstd"><code>core:compress/zstd</code></a></li>
+        <li><a href="#mod-json"><code>core:json</code></a></li>
+        <li><a href="#mod-sqlite"><code>core:db/sqlite</code></a></li>
+        <li><a href="#mod-sha256"><code>core:crypto/sha256</code></a></li>
+        <li><a href="#mod-hmac"><code>core:crypto/hmac</code></a></li>
+        <li><a href="#mod-aes"><code>core:crypto/aes</code></a></li>
+        <li><a href="#mod-blake3"><code>core:crypto/blake3</code></a></li>
+        <li><a href="#mod-net"><code>core:net</code></a></li>
+        <li><a href="#mod-url"><code>core:net/url</code></a></li>
+        <li><a href="#mod-http"><code>core:net/http</code></a></li>
+        <li><a href="#mod-websocket"><code>core:net/websocket</code></a></li>
+        <li><a href="#mod-time"><code>core:time</code></a></li>
+        <li><a href="#mod-os"><code>core:os</code></a></li>
+        <li><a href="#mod-sync"><code>core:sync</code></a></li>
+        <li><a href="#mod-context"><code>core:sync/context</code></a></li>
+        <li><a href="#mod-str"><code>core:str</code></a></li>
+        <li><a href="#mod-math"><code>core:math</code></a></li>
+        <li><a href="#mod-rand"><code>core:rand</code></a></li>
+        <li><a href="#mod-base64"><code>core:encoding/base64</code></a></li>
+        <li><a href="#mod-hex"><code>core:encoding/hex</code></a></li>
+        <li><a href="#mod-csv"><code>core:encoding/csv</code></a></li>
+        <li><a href="#mod-regex"><code>core:regex</code></a></li>
+        <li><a href="#mod-collections"><code>core:collections</code></a></li>
+        <li><a href="#mod-sort"><code>core:sort</code></a></li>
+        <li><a href="#mod-log"><code>core:log</code></a></li>
+        <li><a href="#mod-unicode"><code>core:unicode</code></a></li>
+      </ul>
+      <h4 style="margin-top:1.25rem;">Diagnostics</h4>
+      <ul>
+        <li><a href="#diag-cfire/MUT-CALLSITE"><code>cfire/MUT-CALLSITE</code></a></li>
+        <li><a href="#diag-cfire/OUT-CALLSITE"><code>cfire/OUT-CALLSITE</code></a></li>
+        <li><a href="#diag-cfire/IMMUTABLE-MUT-ARG"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
+        <li><a href="#diag-cfire/MUT-RECEIVER"><code>cfire/MUT-RECEIVER</code></a></li>
+        <li><a href="#diag-cfire/MUT-ALIAS"><code>cfire/MUT-ALIAS</code></a></li>
+        <li><a href="#diag-cfire/USE-AFTER-MOVE"><code>cfire/USE-AFTER-MOVE</code></a></li>
+        <li><a href="#diag-cfire/NON-EXHAUSTIVE-MATCH"><code>cfire/NON-EXHAUSTIVE-MATCH</code></a></li>
+        <li><a href="#diag-cfire/NON-DIVERGING-OR-BLOCK"><code>cfire/NON-DIVERGING-OR-BLOCK</code></a></li>
+        <li><a href="#diag-cfire/DEPRECATED-OUT-PARAM"><code>cfire/DEPRECATED-OUT-PARAM</code></a></li>
+        <li><a href="#diag-cfire/DEPRECATED-VAR"><code>cfire/DEPRECATED-VAR</code></a></li>
+      </ul>
+    </aside>
+    <main>
+      <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
+      <p class="subtitle" style="margin:0 0 2rem;">Automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>.</p>
+      <h2 id="mod-fs"><code>import "core:fs"</code> &mdash; Filesystem &amp; Zero-Copy Byte I/O</h2>
+      <p>Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn read_all(path: str) -&gt; []byte!</code></td><td><code>cfire::fs::read_all(path)</code></td><td>Reads an entire binary file into a byte buffer.<br/><code>raw := try fs.read_all(&quot;input.bin&quot;)</code></td></tr>
+          <tr><td><code>fn write_all(path: str, data: []byte) -&gt; void!</code></td><td><code>cfire::fs::write_all(path, data)</code></td><td>Writes a byte slice atomically to disk, creating parent directories if needed.<br/><code>try fs.write_all(&quot;out.bin&quot;, raw)</code></td></tr>
+          <tr><td><code>fn read_text(path: str) -&gt; str!</code></td><td><code>cfire::fs::read_text(path)</code></td><td>Reads an entire UTF-8 text file into a `str`.<br/><code>txt := try fs.read_text(&quot;config.json&quot;)</code></td></tr>
+          <tr><td><code>fn write_text(path: str, text: str) -&gt; void!</code></td><td><code>cfire::fs::write_text(path, text)</code></td><td>Writes a UTF-8 string to disk.<br/><code>try fs.write_text(&quot;hello.txt&quot;, &quot;sapphire&quot;)</code></td></tr>
+          <tr><td><code>fn open(path: str, mode: OpenMode = OpenMode::Read) -&gt; File!</code></td><td><code>cfire::fs::open(path, mode)</code></td><td>Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.<br/><code>mut f := try fs.open(&quot;log.txt&quot;, OpenMode::Append)</code></td></tr>
+          <tr><td><code>fn (mut f: File) read(mut buf: []byte) -&gt; usize!</code></td><td><code>f.read(buf)</code></td><td>Reads up to `buf.len` bytes from the streaming file handle.<br/><code>n := try f.read(mut buf)</code></td></tr>
+          <tr><td><code>fn (mut f: File) read_all() -&gt; []byte!</code></td><td><code>f.read_all()</code></td><td>Reads all remaining bytes from current file position to EOF.<br/><code>bytes := try f.read_all()</code></td></tr>
+          <tr><td><code>fn (mut f: File) write(data: []byte) -&gt; usize!</code></td><td><code>f.write(data)</code></td><td>Writes byte slice to file stream.<br/><code>n := try f.write(buf)</code></td></tr>
+          <tr><td><code>fn (mut f: File) write_str(s: str) -&gt; usize!</code></td><td><code>f.write_str(s)</code></td><td>Writes UTF-8 string to file stream.<br/><code>try f.write_str(&quot;header\n&quot;)</code></td></tr>
+          <tr><td><code>fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -&gt; i64!</code></td><td><code>f.seek(offset, whence)</code></td><td>Seeks within file to offset from Start, Current, or End.<br/><code>pos := try f.seek(0, SeekWhence::Start)</code></td></tr>
+          <tr><td><code>fn (mut f: File) tell() -&gt; i64!</code></td><td><code>f.tell()</code></td><td>Returns current byte offset within file stream.<br/><code>pos := try f.tell()</code></td></tr>
+          <tr><td><code>fn (mut f: File) flush() -&gt; void!</code></td><td><code>f.flush()</code></td><td>Flushes buffered stream data to disk.<br/><code>try f.flush()</code></td></tr>
+          <tr><td><code>fn (mut f: File) close() -&gt; void</code></td><td><code>f.close()</code></td><td>Closes open file handle.<br/><code>f.close()</code></td></tr>
+          <tr><td><code>fn dirname(path: str) -&gt; str</code></td><td><code>cfire::fs::dirname(path)</code></td><td>Returns directory portion of a filesystem path.<br/><code>dir := fs.dirname(&quot;/a/b/c.txt&quot;)</code></td></tr>
+          <tr><td><code>fn basename(path: str) -&gt; str</code></td><td><code>cfire::fs::basename(path)</code></td><td>Returns file name portion of a filesystem path.<br/><code>name := fs.basename(&quot;/a/b/c.txt&quot;)</code></td></tr>
+          <tr><td><code>fn extension(path: str) -&gt; str</code></td><td><code>cfire::fs::extension(path)</code></td><td>Returns file extension including leading dot.<br/><code>ext := fs.extension(&quot;main.cf&quot;)</code></td></tr>
+          <tr><td><code>fn exists(path: str) -&gt; bool</code></td><td><code>cfire::fs::exists(path)</code></td><td>Returns `true` if the path exists on disk.<br/><code>if fs.exists(&quot;build.cf&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn mkdir_all(path: str) -&gt; void!</code></td><td><code>cfire::fs::mkdir_all(path)</code></td><td>Recursively creates a directory and all parent directories.<br/><code>try fs.mkdir_all(&quot;.cfire/cache&quot;)</code></td></tr>
+          <tr><td><code>fn remove(path: str) -&gt; void!</code></td><td><code>cfire::fs::remove(path)</code></td><td>Removes a file or directory tree recursively.<br/><code>try fs.remove(&quot;tmp_dir&quot;)</code></td></tr>
+          <tr><td><code>fn list_dir(path: str) -&gt; []str!</code></td><td><code>cfire::fs::list_dir(path)</code></td><td>Lists sorted filenames inside a directory.<br/><code>entries := try fs.list_dir(&quot;examples&quot;)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-cli"><code>import "core:cli"</code> &mdash; Struct-Tag Command-Line Parser</h2>
+      <p>Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:"--flag,help"`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn parse[T](args: []str?) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.<br/><code>args := try cli.parse[Args]()</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-zstd"><code>import "core:compress/zstd"</code> &mdash; Native Zstandard Frame Compression</h2>
+      <p>Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lzstd</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn compress(input: []byte, level: i32 = 3) -&gt; []byte!</code></td><td><code>cfire::zstd::compress(input, level)</code></td><td>Compresses a byte slice into a Zstandard frame.<br/><code>blob := try zstd.compress(raw, level: 3)</code></td></tr>
+          <tr><td><code>fn decompress(frame: []byte) -&gt; []byte!</code></td><td><code>cfire::zstd::decompress(frame)</code></td><td>Decompresses a Zstandard frame using the embedded frame content size.<br/><code>orig := try zstd.decompress(blob)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-json"><code>import "core:json"</code> &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</h2>
+      <p>Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsimdjson (or header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn parse[T](payload: []byte | str) -&gt; T!</code></td><td><code>cfire::json::parse&lt;T&gt;(payload)</code></td><td>Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.<br/><code>cfg := try json.parse[Config](raw)</code></td></tr>
+          <tr><td><code>fn stringify[T](val: T) -&gt; str</code></td><td><code>cfire::json::stringify&lt;T&gt;(val)</code></td><td>Serializes a tagged struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`) into a JSON string.<br/><code>payload := json.stringify(metric)</code></td></tr>
+          <tr><td><code>fn escape_string(s: str) -&gt; str</code></td><td><code>cfire::json::escape_string(s)</code></td><td>Escapes quotes, backslashes, and control characters for JSON strings.<br/><code>esc := json.escape_string(raw_txt)</code></td></tr>
+          <tr><td><code>fn parse_dynamic(payload: str) -&gt; Value!</code></td><td><code>cfire::json::parse_dynamic(payload)</code></td><td>Parses arbitrary JSON into a recursive dynamic DOM `Value`.<br/><code>v := try json.parse_dynamic(raw)</code></td></tr>
+          <tr><td><code>fn stringify_dynamic(val: Value, indent: i32 = 0) -&gt; str</code></td><td><code>cfire::json::stringify_dynamic(val, indent)</code></td><td>Serializes a dynamic DOM `Value` into compact or indented JSON.<br/><code>s := json.stringify_dynamic(v, 2)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-sqlite"><code>import "core:db/sqlite"</code> &mdash; Embedded SQLite3 with WAL &amp; Row Mapping</h2>
+      <p>RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, atomic transactions, and compile-time `sql:"..."` struct row mapping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsqlite3</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn open(path: str) -&gt; Conn!</code></td><td><code>cfire::sqlite::open(path)</code></td><td>Opens an SQLite3 database connection and enables WAL mode.<br/><code>mut db := try sqlite.open(&quot;app.db&quot;)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) exec(sql: str, ...args) -&gt; void!</code></td><td><code>db.exec(sql, args...)</code></td><td>Executes a parameterized SQL statement (`?1`, `?2`, ...).<br/><code>try db.exec(&quot;INSERT INTO pkg VALUES (?1, ?2)&quot;, name, ver)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) query[T](sql: str, ...args) -&gt; []T!</code></td><td><code>db.query&lt;T&gt;(sql, args...)</code></td><td>Executes a `SELECT` query and maps rows directly into struct `T` via `sql:&quot;...&quot;` tags.<br/><code>rows := try db.query[Row](&quot;SELECT name, ver FROM pkg&quot;)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) tx(block: fn(mut tx: Conn) -&gt; void!) -&gt; void!</code></td><td><code>db.tx([&amp;](Conn&amp; tx) { ... })</code></td><td>Runs a closure inside an atomic `BEGIN IMMEDIATE ... COMMIT` transaction with automatic rollback on error.<br/><code>try db.tx |mut tx| { ... }</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-sha256"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest</h2>
+      <p>Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::sha256::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := sha256.hash_hex(raw)</code></td></tr>
+          <tr><td><code>fn hash_bytes(data: []byte) -&gt; []byte</code></td><td><code>cfire::sha256::hash_bytes(data)</code></td><td>Returns 32-byte binary SHA-256 digest of `data`.<br/><code>b := sha256.hash_bytes(raw)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-hmac"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256 Message Authentication</h2>
+      <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn sha256_hex(key: str, data: str) -&gt; str</code></td><td><code>cfire::hmac::sha256_hex(key, data)</code></td><td>Returns a 64-character lowercase hex HMAC-SHA256 digest.<br/><code>sig := hmac.sha256_hex(secret, payload)</code></td></tr>
+          <tr><td><code>fn equal(a: str, b: str) -&gt; bool</code></td><td><code>cfire::hmac::equal(a, b)</code></td><td>Performs a constant-time equality check on two MAC digests to prevent timing attacks.<br/><code>ok := hmac.equal(sig1, sig2)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-aes"><code>import "core:crypto/aes"</code> &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</h2>
+      <p>Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(Header-only pure C++23)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -&gt; GcmResult!</code></td><td><code>cfire::aes::encrypt_gcm(key, nonce, pt, aad)</code></td><td>Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.<br/><code>res := try aes.encrypt_gcm(key, nonce, secret, aad)</code></td></tr>
+          <tr><td><code>fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -&gt; []byte!</code></td><td><code>cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)</code></td><td>Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.<br/><code>pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)</code></td></tr>
+          <tr><td><code>fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -&gt; []byte!</code></td><td><code>cfire::aes::encrypt_ctr(key, iv, pt)</code></td><td>Encrypts plaintext using AES-256-CTR mode.<br/><code>ct := try aes.encrypt_ctr(key, iv, pt)</code></td></tr>
+          <tr><td><code>fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -&gt; []byte!</code></td><td><code>cfire::aes::decrypt_ctr(key, iv, ct)</code></td><td>Decrypts ciphertext using AES-256-CTR mode.<br/><code>pt := try aes.decrypt_ctr(key, iv, ct)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-blake3"><code>import "core:crypto/blake3"</code> &mdash; Cryptographic 256-Bit Digest (Alias)</h2>
+      <p>Computes fast 256-bit cryptographic hex digests over byte slices (backward-compatible alias for `core:crypto/sha256`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::blake3::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := blake3.hash_hex(raw)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-net"><code>import "core:net"</code> &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</h2>
+      <p>RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn listen_tcp(port: u16 = 0) -&gt; TcpListener!</code></td><td><code>cfire::net::listen_tcp(port)</code></td><td>Binds a loopback TCP listener on `127.0.0.1:port` (`0` selects an ephemeral port).<br/><code>mut ln := try net.listen_tcp(0)</code></td></tr>
+          <tr><td><code>fn (ln: TcpListener) port() -&gt; u16</code></td><td><code>ln.port()</code></td><td>Returns the bound TCP port.<br/><code>p := ln.port()</code></td></tr>
+          <tr><td><code>fn (mut ln: TcpListener) accept() -&gt; TcpConn!</code></td><td><code>ln.accept()</code></td><td>Accepts an incoming TCP connection with a safe poll timeout.<br/><code>mut conn := try ln.accept()</code></td></tr>
+          <tr><td><code>fn connect_tcp(host: str, port: u16) -&gt; TcpConn!</code></td><td><code>cfire::net::connect_tcp(host, port)</code></td><td>Connects a `TcpConn` to `host:port`.<br/><code>mut c := try net.connect_tcp(&quot;127.0.0.1&quot;, p)</code></td></tr>
+          <tr><td><code>fn (mut c: TcpConn) write(payload: str) -&gt; usize!</code></td><td><code>c.write(payload)</code></td><td>Writes bytes to an open TCP connection.<br/><code>_ := try c.write(&quot;PING&quot;)</code></td></tr>
+          <tr><td><code>fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -&gt; str!</code></td><td><code>c.read_str(max_bytes)</code></td><td>Reads up to `max_bytes` from the socket as a string.<br/><code>msg := try conn.read_str(64)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-url"><code>import "core:net/url"</code> &mdash; RFC 3986 URL Parsing &amp; URL Encoding</h2>
+      <p>RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn parse(raw: str) -&gt; Url!</code></td><td><code>cfire::url::parse(raw)</code></td><td>Parses an RFC 3986 URL string into component fields and query parameters.<br/><code>u := try url.parse(&quot;http://127.0.0.1:8080/api/items?q=shoes#top&quot;)</code></td></tr>
+          <tr><td><code>fn encode(s: str) -&gt; str</code></td><td><code>cfire::url::encode(s)</code></td><td>Percent-encodes a string for safe use in URL path or query strings.<br/><code>enc := url.encode(&quot;hello world!&quot;)</code></td></tr>
+          <tr><td><code>fn decode(s: str) -&gt; str</code></td><td><code>cfire::url::decode(s)</code></td><td>Decodes a percent-encoded URL string.<br/><code>dec := url.decode(enc)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 Client &amp; Lightweight Dispatch Server</h2>
+      <p>High-level HTTP/1.1 client (`get`, `post`, `request`) and lightweight synchronous/threaded HTTP server dispatcher (`make_server`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn get(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers)</code></td><td>Executes an HTTP GET request against a target URL.<br/><code>resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;)</code></td></tr>
+          <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers)</code></td><td>Executes an HTTP POST request with payload body.<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
+          <tr><td><code>fn make_server(port: u16 = 0) -&gt; HttpServer!</code></td><td><code>cfire::http::make_server(port)</code></td><td>Creates a lightweight HTTP server listening on `port` (0 for ephemeral).<br/><code>mut srv := try http.make_server(8080)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-websocket"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets Client &amp; Server</h2>
+      <p>RFC 6455 full-duplex WebSocket client (`connect`) and server upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn connect(url: str) -&gt; Conn!</code></td><td><code>cfire::websocket::connect(url)</code></td><td>Establishes a WebSocket connection to `ws://&lt;host&gt;[:port]/&lt;path&gt;` and completes the RFC 6455 handshake.<br/><code>mut ws := try websocket.connect(&quot;ws://127.0.0.1:8080/ws&quot;)</code></td></tr>
+          <tr><td><code>fn upgrade(req: Request, mut conn: TcpConn) -&gt; Conn!</code></td><td><code>cfire::websocket::upgrade(req, conn)</code></td><td>Upgrades an incoming HTTP connection to a WebSocket connection.<br/><code>mut ws := try websocket.upgrade(req, mut conn)</code></td></tr>
+          <tr><td><code>fn pair() -&gt; (Conn, Conn)!</code></td><td><code>cfire::websocket::pair()</code></td><td>Creates an in-process full-duplex WebSocket client/server loopback pair.<br/><code>mut (client, server) := try websocket.pair()</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) send_text(msg: str) -&gt; void!</code></td><td><code>ws.send_text(msg)</code></td><td>Sends a UTF-8 text frame to the peer (masked if client).<br/><code>try ws.send_text(&quot;hello world&quot;)</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) send_binary(data: []byte) -&gt; void!</code></td><td><code>ws.send_binary(data)</code></td><td>Sends a binary data frame to the peer (masked if client).<br/><code>try ws.send_binary(payload)</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) recv_text() -&gt; str!</code></td><td><code>ws.recv_text()</code></td><td>Receives the next text frame from the peer, automatically responding to Ping frames with Pong.<br/><code>msg := try ws.recv_text()</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) recv_binary() -&gt; []byte!</code></td><td><code>ws.recv_binary()</code></td><td>Receives the next binary frame from the peer.<br/><code>bytes := try ws.recv_binary()</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) ping(payload: str = &quot;&quot;) -&gt; void!</code></td><td><code>ws.ping(payload)</code></td><td>Sends a Ping control frame to check peer liveness.<br/><code>try ws.ping(&quot;heartbeat&quot;)</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) close(code: u16 = 1000, reason: str = &quot;&quot;)</code></td><td><code>ws.close(code, reason)</code></td><td>Initiates a clean RFC 6455 closure handshake and closes the socket.<br/><code>ws.close()</code></td></tr>
+          <tr><td><code>fn (ws: Conn) is_open() -&gt; bool</code></td><td><code>ws.is_open()</code></td><td>Returns true if the WebSocket connection is open.<br/><code>if ws.is_open() { ... }</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-time"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>
+      <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn now_ms() -&gt; i64</code></td><td><code>cfire::time::now_ms()</code></td><td>Returns monotonic milliseconds from `std::chrono::steady_clock`.<br/><code>t0 := time.now_ms()</code></td></tr>
+          <tr><td><code>fn unix_seconds() -&gt; i64</code></td><td><code>cfire::time::unix_seconds()</code></td><td>Returns current UTC Unix timestamp in seconds.<br/><code>ts := time.unix_seconds()</code></td></tr>
+          <tr><td><code>fn sleep_ms(ms: i64)</code></td><td><code>cfire::time::sleep_ms(ms)</code></td><td>Sleeps the current thread for `ms` milliseconds.<br/><code>time.sleep_ms(10)</code></td></tr>
+          <tr><td><code>fn sleep_ctx(ctx: Context, ms: i64) -&gt; bool</code></td><td><code>cfire::time::sleep_ctx(ctx, ms)</code></td><td>Sleeps the current thread for `ms` or until `ctx` is cancelled; returns true if completed without cancellation.<br/><code>ok := time.sleep_ctx(ctx, 50)</code></td></tr>
+          <tr><td><code>fn now() -&gt; Time</code></td><td><code>cfire::time::now()</code></td><td>Returns current wall clock `Time` instant.<br/><code>t := time.now()</code></td></tr>
+          <tr><td><code>fn unix(sec: i64, nsec: i64 = 0) -&gt; Time</code></td><td><code>cfire::time::unix(sec, nsec)</code></td><td>Constructs a `Time` instant from Unix seconds and nanoseconds.<br/><code>t := time.unix(1700000000)</code></td></tr>
+          <tr><td><code>fn parse_rfc3339(s: str) -&gt; Time!</code></td><td><code>cfire::time::parse_rfc3339(s)</code></td><td>Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.<br/><code>t := try time.parse_rfc3339(&quot;2026-10-18T12:00:00Z&quot;)</code></td></tr>
+          <tr><td><code>fn duration_seconds(s: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_seconds(s)</code></td><td>Constructs a typed `Duration` representing `s` seconds.<br/><code>d := time.duration_seconds(5)</code></td></tr>
+          <tr><td><code>fn duration_millis(ms: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_millis(ms)</code></td><td>Constructs a typed `Duration` representing `ms` milliseconds.<br/><code>d := time.duration_millis(250)</code></td></tr>
+          <tr><td><code>fn sleep(d: Duration)</code></td><td><code>cfire::time::sleep(d)</code></td><td>Sleeps the current thread for duration `d`.<br/><code>time.sleep(time.duration_millis(50))</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-os"><code>import "core:os"</code> &mdash; Environment, Working Directory &amp; Subprocesses</h2>
+      <p>Process environment inspection, working directory queries, and subprocess output capture. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn getenv(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>cfire::os::getenv(key, fallback)</code></td><td>Reads environment variable `key`, returning `fallback` if unset.<br/><code>mode := os.getenv(&quot;ENV&quot;, &quot;dev&quot;)</code></td></tr>
+          <tr><td><code>fn setenv(key: str, value: str)</code></td><td><code>cfire::os::setenv(key, value)</code></td><td>Sets environment variable `key` to `value` in the current process.<br/><code>os.setenv(&quot;MODE&quot;, &quot;prod&quot;)</code></td></tr>
+          <tr><td><code>fn cwd() -&gt; str</code></td><td><code>cfire::os::cwd()</code></td><td>Returns the current working directory path.<br/><code>dir := os.cwd()</code></td></tr>
+          <tr><td><code>fn exec_output(cmd: str) -&gt; str!</code></td><td><code>cfire::os::exec_output(cmd)</code></td><td>Executes a shell command via `popen` and returns its captured stdout.<br/><code>out := try os.exec_output(&quot;uname -s&quot;)</code></td></tr>
+          <tr><td><code>fn command(binary: str, args: []str) -&gt; ExecResult!</code></td><td><code>cfire::os::command(binary, args)</code></td><td>Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.<br/><code>res := try os.command(&quot;git&quot;, [&quot;status&quot;])</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-sync"><code>import "core:sync"</code> &mdash; Thread-Safe Typed Channels</h2>
+      <p>Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn make_channel[T]() -&gt; Channel[T]</code></td><td><code>cfire::sync::make_channel&lt;T&gt;()</code></td><td>Creates a new shared, thread-safe channel of element type `T`.<br/><code>ch := sync.make_channel[i64]()</code></td></tr>
+          <tr><td><code>fn (ch: Channel[T]) send(val: T)</code></td><td><code>ch.send(val)</code></td><td>Sends a value into the channel and wakes one waiting receiver.<br/><code>ch.send(42)</code></td></tr>
+          <tr><td><code>fn (ch: Channel[T]) recv() -&gt; T!</code></td><td><code>ch.recv()</code></td><td>Blocks until a value is available or returns an error if the channel is closed and empty.<br/><code>v := ch.recv() or 0</code></td></tr>
+          <tr><td><code>fn (ch: Channel[T]) recv_ctx(ctx: Context) -&gt; T!</code></td><td><code>ch.recv_ctx(ctx)</code></td><td>Receives from the channel or aborts immediately with an error if `ctx` is cancelled.<br/><code>v := try ch.recv_ctx(ctx)</code></td></tr>
+          <tr><td><code>fn (ch: Channel[T]) close()</code></td><td><code>ch.close()</code></td><td>Closes the channel and wakes all waiting receivers.<br/><code>ch.close()</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-context"><code>import "core:sync/context"</code> &mdash; Cancellation Tokens &amp; Deadline Contexts</h2>
+      <p>Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn background() -&gt; Context</code></td><td><code>cfire::context::background()</code></td><td>Returns an empty, root non-cancellable Context.<br/><code>ctx := context.background()</code></td></tr>
+          <tr><td><code>fn with_cancel(parent: Context) -&gt; (Context, fn(reason: str = &quot;&quot;))</code></td><td><code>cfire::context::with_cancel(parent)</code></td><td>Derives a child Context and a cancellation handle function from a parent Context.<br/><code>(ctx, cancel) := context.with_cancel(parent)</code></td></tr>
+          <tr><td><code>fn with_timeout(parent: Context, ms: i64) -&gt; (Context, fn(reason: str = &quot;&quot;))</code></td><td><code>cfire::context::with_timeout(parent, ms)</code></td><td>Derives a child Context with an automatic millisecond deadline.<br/><code>(ctx, cancel) := context.with_timeout(parent, 250)</code></td></tr>
+          <tr><td><code>fn (ctx: Context) is_cancelled() -&gt; bool</code></td><td><code>ctx.is_cancelled()</code></td><td>Returns true if the Context has been cancelled or timed out.<br/><code>if ctx.is_cancelled() { return }</code></td></tr>
+          <tr><td><code>fn (ctx: Context) done() -&gt; bool</code></td><td><code>ctx.done()</code></td><td>Synonym for `is_cancelled()`.<br/><code>if ctx.done() { return }</code></td></tr>
+          <tr><td><code>fn (ctx: Context) reason() -&gt; str</code></td><td><code>ctx.reason()</code></td><td>Returns the cancellation reason string.<br/><code>msg := ctx.reason()</code></td></tr>
+          <tr><td><code>fn (ctx: Context) wait()</code></td><td><code>ctx.wait()</code></td><td>Blocks until the Context is cancelled or its deadline expires.<br/><code>ctx.wait()</code></td></tr>
+          <tr><td><code>fn (ctx: Context) wait_for(ms: i64) -&gt; bool</code></td><td><code>ctx.wait_for(ms)</code></td><td>Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled.<br/><code>cancelled := ctx.wait_for(100)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-str"><code>import "core:str"</code> &mdash; UTF-8 String Manipulation</h2>
+      <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn split(s: str, sep: str) -&gt; []str</code></td><td><code>cfire::str::split(s, sep)</code></td><td>Splits `s` around every occurrence of `sep`.<br/><code>parts := str.split(&quot;a,b,c&quot;, &quot;,&quot;)</code></td></tr>
+          <tr><td><code>fn join(items: []str, sep: str) -&gt; str</code></td><td><code>cfire::str::join(items, sep)</code></td><td>Joins a slice of strings with `sep`.<br/><code>s := str.join(parts, &quot;-&quot;)</code></td></tr>
+          <tr><td><code>fn trim(s: str) -&gt; str</code></td><td><code>cfire::str::trim(s)</code></td><td>Strips leading and trailing whitespace.<br/><code>clean := str.trim(&quot;  hi  &quot;)</code></td></tr>
+          <tr><td><code>fn starts_with(s: str, prefix: str) -&gt; bool</code></td><td><code>cfire::str::starts_with(s, prefix)</code></td><td>Returns `true` if `s` starts with `prefix`.<br/><code>if str.starts_with(s, &quot;cf&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn ends_with(s: str, suffix: str) -&gt; bool</code></td><td><code>cfire::str::ends_with(s, suffix)</code></td><td>Returns `true` if `s` ends with `suffix`.<br/><code>if str.ends_with(f, &quot;.cf&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn contains(s: str, needle: str) -&gt; bool</code></td><td><code>cfire::str::contains(s, needle)</code></td><td>Returns `true` if `s` contains `needle`.<br/><code>if str.contains(s, &quot;fire&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn replace(s: str, from: str, to: str) -&gt; str</code></td><td><code>cfire::str::replace(s, from, to)</code></td><td>Replaces all occurrences of `from` in `s` with `to`.<br/><code>r := str.replace(s, &quot;old&quot;, &quot;new&quot;)</code></td></tr>
+          <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::str::to_upper(s)</code></td><td>Converts ASCII characters to uppercase.<br/><code>u := str.to_upper(&quot;cfire&quot;)</code></td></tr>
+          <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::str::to_lower(s)</code></td><td>Converts ASCII characters to lowercase.<br/><code>l := str.to_lower(&quot;CFIRE&quot;)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-math"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
+      <p>Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn clamp_i64(val: i64, lo: i64, hi: i64) -&gt; i64</code></td><td><code>cfire::math::clamp_i64(val, lo, hi)</code></td><td>Clamps a 64-bit integer to `[lo, hi]`.<br/><code>c := math.clamp_i64(x, 0, 100)</code></td></tr>
+          <tr><td><code>fn clamp_f64(val: f64, lo: f64, hi: f64) -&gt; f64</code></td><td><code>cfire::math::clamp_f64(val, lo, hi)</code></td><td>Clamps a 64-bit float to `[lo, hi]`.<br/><code>c := math.clamp_f64(v, 0.0, 1.0)</code></td></tr>
+          <tr><td><code>fn sqrt(x: f64) -&gt; f64</code></td><td><code>cfire::math::sqrt(x)</code></td><td>Computes square root.<br/><code>r := math.sqrt(16.0)</code></td></tr>
+          <tr><td><code>fn abs_f64(x: f64) -&gt; f64</code></td><td><code>cfire::math::abs_f64(x)</code></td><td>Computes absolute value of a `f64`.<br/><code>a := math.abs_f64(-3.5)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-rand"><code>import "core:rand"</code> &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</h2>
+      <p>Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn u64() -&gt; u64</code></td><td><code>cfire::rand::u64()</code></td><td>Generates a random 64-bit unsigned integer.<br/><code>id := rand.u64()</code></td></tr>
+          <tr><td><code>fn range_i64(min_incl: i64, max_incl: i64) -&gt; i64</code></td><td><code>cfire::rand::range_i64(min_incl, max_incl)</code></td><td>Generates a uniform integer in `[min_incl, max_incl]`.<br/><code>n := rand.range_i64(1, 10)</code></td></tr>
+          <tr><td><code>fn f64_unit() -&gt; f64</code></td><td><code>cfire::rand::f64_unit()</code></td><td>Generates a uniform `f64` in `[0.0, 1.0)`.<br/><code>p := rand.f64_unit()</code></td></tr>
+          <tr><td><code>fn bytes(n: usize) -&gt; []byte</code></td><td><code>cfire::rand::bytes(n)</code></td><td>Generates `n` cryptographically secure random bytes from OS entropy.<br/><code>buf := rand.bytes(32)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-base64"><code>import "core:encoding/base64"</code> &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</h2>
+      <p>High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn encode(data: []byte, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode(data, url_safe)</code></td><td>Encodes binary byte slice into standard or URL-safe Base64 string.<br/><code>s := base64.encode(raw)</code></td></tr>
+          <tr><td><code>fn encode_str(s: str, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode_str(s, url_safe)</code></td><td>Encodes a UTF-8 text string into standard or URL-safe Base64.<br/><code>token := base64.encode_str(&quot;user:pass&quot;)</code></td></tr>
+          <tr><td><code>fn decode(s: str) -&gt; []byte!</code></td><td><code>cfire::base64::decode(s)</code></td><td>Decodes a Base64 string into binary bytes.<br/><code>bytes := try base64.decode(token)</code></td></tr>
+          <tr><td><code>fn decode_str(s: str) -&gt; str!</code></td><td><code>cfire::base64::decode_str(s)</code></td><td>Decodes a Base64 string into a UTF-8 text string.<br/><code>plain := try base64.decode_str(token)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-hex"><code>import "core:encoding/hex"</code> &mdash; Hexadecimal Encoding &amp; Decoding</h2>
+      <p>Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn encode(data: []byte) -&gt; str</code></td><td><code>cfire::hex::encode(data)</code></td><td>Encodes binary bytes to lowercase hexadecimal string.<br/><code>h := hex.encode(digest)</code></td></tr>
+          <tr><td><code>fn encode_str(s: str) -&gt; str</code></td><td><code>cfire::hex::encode_str(s)</code></td><td>Encodes text characters to hexadecimal string.<br/><code>h := hex.encode_str(&quot;abc&quot;)</code></td></tr>
+          <tr><td><code>fn decode(s: str) -&gt; []byte!</code></td><td><code>cfire::hex::decode(s)</code></td><td>Decodes a hexadecimal string to binary bytes.<br/><code>buf := try hex.decode(h)</code></td></tr>
+          <tr><td><code>fn decode_str(s: str) -&gt; str!</code></td><td><code>cfire::hex::decode_str(s)</code></td><td>Decodes a hexadecimal string to a UTF-8 string.<br/><code>txt := try hex.decode_str(h)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-csv"><code>import "core:encoding/csv"</code> &mdash; RFC 4180 CSV Parsing &amp; Stringification</h2>
+      <p>RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn parse(s: str) -&gt; [][]str</code></td><td><code>cfire::csv::parse(s)</code></td><td>Parses a CSV string into a 2D table of rows and columns.<br/><code>rows := csv.parse(content)</code></td></tr>
+          <tr><td><code>fn stringify(rows: [][]str) -&gt; str</code></td><td><code>cfire::csv::stringify(rows)</code></td><td>Serializes a 2D table of strings into an RFC 4180 formatted CSV string.<br/><code>out := csv.stringify(rows)</code></td></tr>
+          <tr><td><code>fn read_all(path: str) -&gt; [][]str!</code></td><td><code>cfire::csv::read_all(path)</code></td><td>Reads an entire CSV file from disk and parses it into rows.<br/><code>table := try csv.read_all(&quot;data.csv&quot;)</code></td></tr>
+          <tr><td><code>fn write_all(path: str, rows: [][]str) -&gt; void!</code></td><td><code>cfire::csv::write_all(path, rows)</code></td><td>Serializes rows to CSV and writes to disk.<br/><code>try csv.write_all(&quot;report.csv&quot;, table)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-regex"><code>import "core:regex"</code> &mdash; ECMAScript Regular Expressions</h2>
+      <p>Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn compile(pattern: str) -&gt; Regex!</code></td><td><code>cfire::regex::compile(pattern)</code></td><td>Compiles an ECMAScript regex pattern into a reusable Regex object.<br/><code>re := try regex.compile(&quot;\\d+&quot;)</code></td></tr>
+          <tr><td><code>fn is_match(pattern: str, text: str) -&gt; bool!</code></td><td><code>cfire::regex::is_match(pattern, text)</code></td><td>Tests whether a regex pattern matches text.<br/><code>ok := try regex.is_match(&quot;^[a-z]+$&quot;, s)</code></td></tr>
+          <tr><td><code>fn replace_all(pattern: str, text: str, repl: str) -&gt; str!</code></td><td><code>cfire::regex::replace_all(pattern, text, repl)</code></td><td>Replaces all occurrences matching pattern with repl.<br/><code>res := try regex.replace_all(&quot;\s+&quot;, s, &quot; &quot;)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-collections"><code>import "core:collections"</code> &mdash; Generic Containers (Set, PriorityQueue, Deque)</h2>
+      <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>type Set[T] struct</code></td><td><code>cfire::collections::Set&lt;T&gt;</code></td><td>Generic hash set container.<br/><code>mut s := collections.Set[str]{}</code></td></tr>
+          <tr><td><code>type PriorityQueue[T] struct</code></td><td><code>cfire::collections::PriorityQueue&lt;T&gt;</code></td><td>Generic max-heap priority queue.<br/><code>mut pq := collections.PriorityQueue[i32]{}</code></td></tr>
+          <tr><td><code>type Deque[T] struct</code></td><td><code>cfire::collections::Deque&lt;T&gt;</code></td><td>Generic double-ended queue.<br/><code>mut dq := collections.Deque[i32]{}</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-sort"><code>import "core:sort"</code> &mdash; Slice Sorting &amp; Binary Search</h2>
+      <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn slice(mut s: []T)</code></td><td><code>cfire::sort::slice(s)</code></td><td>Sorts a slice in ascending order in-place.<br/><code>sort.slice(mut numbers)</code></td></tr>
+          <tr><td><code>fn binary_search(s: []T, val: T) -&gt; i64?</code></td><td><code>cfire::sort::binary_search(s, val)</code></td><td>Performs binary search on a sorted slice.<br/><code>idx := sort.binary_search(numbers, 42)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-log"><code>import "core:log"</code> &mdash; Structured Leveled Logging</h2>
+      <p>Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn set_level(l: Level)</code></td><td><code>cfire::log::set_level(l)</code></td><td>Sets the minimum logging severity threshold.<br/><code>log.set_level(log.Level::Debug)</code></td></tr>
+          <tr><td><code>fn set_format(f: Format)</code></td><td><code>cfire::log::set_format(f)</code></td><td>Sets the log output format (Text or Json).<br/><code>log.set_format(log.Format::Json)</code></td></tr>
+          <tr><td><code>fn debug(msg: str, ...attrs: str)</code></td><td><code>cfire::log::debug(msg, ...)</code></td><td>Logs a debug message with optional key-value attribute pairs.<br/><code>log.debug(&quot;cache miss&quot;, &quot;key&quot;, &quot;user:1&quot;)</code></td></tr>
+          <tr><td><code>fn info(msg: str, ...attrs: str)</code></td><td><code>cfire::log::info(msg, ...)</code></td><td>Logs an informational message with optional key-value attribute pairs.<br/><code>log.info(&quot;server listening&quot;, &quot;port&quot;, &quot;8080&quot;)</code></td></tr>
+          <tr><td><code>fn warn(msg: str, ...attrs: str)</code></td><td><code>cfire::log::warn(msg, ...)</code></td><td>Logs a warning message with optional key-value attribute pairs.<br/><code>log.warn(&quot;rate limit reached&quot;, &quot;client&quot;, ip)</code></td></tr>
+          <tr><td><code>fn error(msg: str, ...attrs: str)</code></td><td><code>cfire::log::error(msg, ...)</code></td><td>Logs an error message with optional key-value attribute pairs.<br/><code>log.error(&quot;database connection failed&quot;, &quot;db&quot;, name)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 id="mod-unicode"><code>import "core:unicode"</code> &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</h2>
+      <p>RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn rune_count(s: str) -&gt; usize</code></td><td><code>cfire::unicode::rune_count(s)</code></td><td>Counts the number of Unicode scalar values (codepoints) in a UTF-8 string.<br/><code>count := unicode.rune_count(&quot;Hello, 世界! 🚀&quot;)</code></td></tr>
+          <tr><td><code>fn runes(s: str) -&gt; []u32</code></td><td><code>cfire::unicode::runes(s)</code></td><td>Decodes all Unicode codepoints in `s` into a slice of 32-bit scalar values.<br/><code>cps := unicode.runes(&quot;cfire 🔥&quot;)</code></td></tr>
+          <tr><td><code>fn is_valid_utf8(s: str) -&gt; bool</code></td><td><code>cfire::unicode::is_valid_utf8(s)</code></td><td>Validates whether a string consists of strictly valid RFC 3629 UTF-8 byte sequences.<br/><code>ok := unicode.is_valid_utf8(payload)</code></td></tr>
+          <tr><td><code>fn encode_rune(r: u32) -&gt; str</code></td><td><code>cfire::unicode::encode_rune(r)</code></td><td>Encodes a 32-bit Unicode codepoint into its UTF-8 string representation.<br/><code>char := unicode.encode_rune(0x1F525)</code></td></tr>
+          <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::unicode::to_lower(s)</code></td><td>Converts Latin, Greek, and Cyrillic Unicode characters to lowercase.<br/><code>lower := unicode.to_lower(&quot;HELLO, СВЕТ!&quot;)</code></td></tr>
+          <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::unicode::to_upper(s)</code></td><td>Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.<br/><code>upper := unicode.to_upper(&quot;hello, свет!&quot;)</code></td></tr>
+        </tbody>
+      </table>
+      <h2 class="section-title">Compiler Semantic Diagnostics</h2>
+      <div class="card" id="diag-cfire/MUT-CALLSITE" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/MUT-CALLSITE]</code> &mdash; Missing Call-Site `mut` Marker</h3>
+        <p style="margin-bottom:0.85rem;">Functions declaring `mut param: T` mutate the caller's variable in-place (`T&amp;`). Callers must write `mut arg` at the call site so mutation is visible when reading code.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>fn bump(mut x: i32) { x += 1 }
+fn main() {
+    mut a := 10
+    bump(a) // ERROR [cfire/MUT-CALLSITE]
+}</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>fn bump(mut x: i32) { x += 1 }
+fn main() {
+    mut a := 10
+    bump(mut a) // OK
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/OUT-CALLSITE" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/OUT-CALLSITE]</code> &mdash; Missing Call-Site `out` Marker</h3>
+        <p style="margin-bottom:0.85rem;">Functions declaring `out param: T` initialize or overwrite an output parameter (`T&amp;`). Callers must write `out arg` at the call site.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>fn write_sum(out total: i32) { total = 42 }
+fn main() {
+    mut s: i32 = 0
+    write_sum(s) // ERROR [cfire/OUT-CALLSITE]
+}</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>fn write_sum(out total: i32) { total = 42 }
+fn main() {
+    mut s: i32 = 0
+    write_sum(out s) // OK
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/IMMUTABLE-MUT-ARG" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/IMMUTABLE-MUT-ARG]</code> &mdash; Passing Immutable Binding as `mut` or `out` Argument</h3>
+        <p style="margin-bottom:0.85rem;">Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` or `out` parameters.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>fn reset(mut v: i32) { v = 0 }
+fn main() {
+    val := 5
+    reset(mut val) // ERROR [cfire/IMMUTABLE-MUT-ARG]
+}</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>fn reset(mut v: i32) { v = 0 }
+fn main() {
+    mut val := 5
+    reset(mut val) // OK
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/MUT-RECEIVER" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/MUT-RECEIVER]</code> &mdash; Calling `mut` Method on Immutable Receiver</h3>
+        <p style="margin-bottom:0.85rem;">Methods with a mutable receiver `fn (mut self: Counter) inc()` cannot be invoked on an immutable binding.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>c := Counter{Value: 0}
+c.inc() // ERROR [cfire/MUT-RECEIVER]</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>mut c := Counter{Value: 0}
+c.inc() // OK</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/MUT-ALIAS" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/MUT-ALIAS]</code> &mdash; Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity)</h3>
+        <p style="margin-bottom:0.85rem;">A variable passed as a `mut` or `out` argument (or used as a `mut` method receiver) cannot also be passed as another argument in the same call.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>fn transfer(mut from: i32, mut to: i32) { ... }
+fn main() {
+    mut acc := 100
+    transfer(mut acc, mut acc) // ERROR [cfire/MUT-ALIAS]
+}</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>fn transfer(mut from: i32, mut to: i32) { ... }
+fn main() {
+    mut a := 100
+    mut b := 50
+    transfer(mut a, mut b) // OK: distinct bindings
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/USE-AFTER-MOVE" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/USE-AFTER-MOVE]</code> &mdash; Use of Value After Explicit `move`</h3>
+        <p style="margin-bottom:0.85rem;">Once a variable is passed with `move x` (which lowers to `std::move(x)`), reading or passing `x` again in the same scope is rejected at compile time.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>consume(move buf)
+println(&quot;{}&quot;, buf.len()) // ERROR [cfire/USE-AFTER-MOVE]</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>println(&quot;{}&quot;, buf.len())
+consume(move buf) // OK: moved on last use</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/NON-EXHAUSTIVE-MATCH" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/NON-EXHAUSTIVE-MATCH]</code> &mdash; Non-Exhaustive `match` Statement Over Algebraic `enum`</h3>
+        <p style="margin-bottom:0.85rem;">Every `match` over a `type ... enum` must either cover all declared variants or include a wildcard `_ =&gt; { ... }` arm.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>match shape {
+    Circle(r) =&gt; { ... }
+    // ERROR [cfire/NON-EXHAUSTIVE-MATCH]: missing Rect
+}</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>match shape {
+    Circle(r) =&gt; { ... }
+    Rect(w, h) =&gt; { ... }
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/NON-DIVERGING-OR-BLOCK" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/NON-DIVERGING-OR-BLOCK]</code> &mdash; Non-Diverging Error Recovery Block on Value Binding</h3>
+        <p style="margin-bottom:0.85rem;">When initializing or assigning a variable with `val := fallible() or err { ... }`, the error recovery block must definitely diverge with `return`, `panic(...)`, or `exit(...)` to avoid unwrapping an uninitialized value.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>fn compute() -&gt; i32 {
+    // ERROR [cfire/NON-DIVERGING-OR-BLOCK]: handler does not diverge
+    x := parse_num() or err {
+        println(&quot;error: {}&quot;, err.message())
+    }
+    return x
+}</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>fn compute() -&gt; i32 {
+    x := parse_num() or err {
+        println(&quot;error: {}&quot;, err.message())
+        return 0
+    }
+    return x
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/DEPRECATED-OUT-PARAM" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/DEPRECATED-OUT-PARAM]</code> &mdash; Deprecated `out` Parameter Intent (Favor Multi-Return Tuples)</h3>
+        <p style="margin-bottom:0.85rem;">The `out` parameter intent is deprecated in favor of multi-return tuples `fn parse() -&gt; (f64, f64)!` and deconstructing assignments `(x, y) := parse()`. `out` parameters bypass definite assignment checks and hinder expression composition.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>fn parse_coords(s: str, out x: f64, out y: f64) { ... } // WARNING [cfire/DEPRECATED-OUT-PARAM]</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>fn parse_coords(s: str) -&gt; (f64, f64)! { return (1.0, 2.0) }
+(x, y) := try parse_coords(&quot;1,2&quot;) // OK</code></pre></div>
+        </div>
+      </div>
+      <div class="card" id="diag-cfire/DEPRECATED-VAR" style="margin-bottom:1.25rem;">
+        <h3><code>[cfire/DEPRECATED-VAR]</code> &mdash; Deprecated `var` Keyword (Favor Canonical `:=` or `: Type =`)</h3>
+        <p style="margin-bottom:0.85rem;">The `var` keyword is deprecated in favor of canonical inferred declarations `x := val` / `mut x := val` and explicitly typed declarations `x: T = val` / `mut x: T = val`.</p>
+        <div class="grid-2">
+          <div><div class="code-header"><span style="color:#f87171">Rejected (.cf)</span></div><pre><code>var x = 42 // WARNING [cfire/DEPRECATED-VAR]
+var mut name: str = &quot;hello&quot; // WARNING [cfire/DEPRECATED-VAR]</code></pre></div>
+          <div><div class="code-header"><span style="color:#34d399">Accepted (.cf)</span></div><pre><code>x := 42 // OK
+mut name: str = &quot;hello&quot; // OK</code></pre></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<footer class="footer">Generated by <code>cfire doc</code> &bull; Always kept in sync with <code>src/docgen.hpp</code>.</footer>
+</body>
+</html>

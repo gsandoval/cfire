@@ -1,0 +1,58 @@
+package main
+
+type Renderable interface {
+    fn tag() -> str
+}
+
+type Shape enum {
+    Circle(f64),
+    Rect(f64, f64),
+    Empty,
+}
+
+type Scene struct {
+    Title: str
+    Areas: map[str]f64
+}
+
+fn (mut s: Scene) register_shape(raw_label: str, shape: Shape) {
+    short_key := raw_label[0..4]
+    mut computed: f64 = 0.0
+
+    match shape {
+        Circle(r) => {
+            computed = 3.14 * r * r
+        }
+        Rect(w, h) => {
+            computed = w * h
+        }
+        Empty => {
+            computed = 0.0
+        }
+    }
+
+    s.Areas[short_key] = computed
+}
+
+fn (s: Scene) query_area(key: str) -> f64? {
+    return s.Areas.get(key)
+}
+
+fn describe_scene[T: Renderable](item: T) {
+    println("Scene ready")
+}
+
+fn main() {
+    mut scene := Scene{Title: "CAD Viewport"}
+    scene.register_shape("circle_main", Shape.Circle(10.0))
+    scene.register_shape("rect_panel", Shape.Rect(5.0, 8.0))
+    scene.register_shape("empty_slot", Shape.Empty)
+
+    c_area := scene.query_area("circ") or -1.0
+    r_area := scene.query_area("rect") or -1.0
+    missing := scene.query_area("none") or -1.0
+
+    println("Title slice: {}", scene.Title[0..3])
+    println("Areas -> circ={}, rect={}, missing={}", c_area, r_area, missing)
+    describe_scene(scene)
+}

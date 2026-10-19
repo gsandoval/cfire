@@ -1,0 +1,30 @@
+package build
+
+// `build.cf` defines declarative build specifications for dependencies and executables.
+//
+// In this example:
+// 1. `ZstdCMake` and `TreeSitterCC` illustrate declaring remote Git repository dependencies.
+//    In offline or sandboxed builds without network checkouts, cfire treats remote URLs as declarative
+//    metadata.
+// 2. `main.cf` binds directly against system-installed libraries via:
+//       import cpp "zstd.h" @pkg("libzstd")
+//    which resolves compiler flags and link flags via `pkg-config`.
+// 3. For complete, hermetic multi-driver builds that actively invoke CMake (`CMakeLists.txt`)
+//    and Make (`Makefile`) from local vendor source trees on-the-fly, see:
+//       - examples/08-multi-pkg-cc-build (local build.CC)
+//       - examples/10-cmake-and-make-deps (side-by-side build.CMake and build.Make)
+
+import "core:build"
+
+var ZstdCMake = build.CMake("github.com/facebook/zstd@v1.5.7", {
+    Target: "libzstd_static",
+    Static: true,
+})
+
+var TreeSitterCC = build.CC("github.com/tree-sitter/tree-sitter@v0.24.3", {
+    Target: "tree-sitter",
+})
+
+var App = build.Executable("cmake-interop-demo", {
+    Entry: "main.cf",
+})
