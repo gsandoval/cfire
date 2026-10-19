@@ -1,233 +1,749 @@
 # The `cfire` Language & Systems Programming Guide
 
-> **Sapphire on Fire (`cfire`)** is a statically typed systems programming language that combines Go's readability and fast onboarding, Odin's batteries-included `core:*` library catalog, and Rust-inspired explicit mutation/move safety—compiling 1-to-1 into human-readable **ISO C++23**.
+> **Sapphire on Fire (`cfire`)** is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern **ISO C++23**. It combines the clean syntax and rapid onboarding of Go, the batteries-included `core:*` catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.
 
 ---
 
 ## Chapter 1: Philosophy & Architecture
 
-### Why Transpile 1-to-1 to ISO C++23?
-Most modern C++ successors fail in production for one of two reasons:
-1. **The Interop Wall**: Languages with custom object layouts or opaque runtimes require expensive FFI marshaling to talk to C and C++ libraries.
-2. **The Lock-In Risk**: Adopting a new language is risky if your team cannot easily debug, profile, or migrate the codebase using standard tools.
+### 1.1 The Systems Programming Landscape
+Modern systems software demands both high developer velocity and uncompromising runtime performance. For decades, engineers have navigated difficult compromises:
+- **C++** offers unmatched performance, vast ecosystem reach, and zero-cost abstractions, but suffers from forty years of accumulated syntactic complexity, implicit mutable references, and silent use-after-move bugs.
+- **Rust** provides ironclad memory safety guarantees via compile-time lifetime analysis (`'a`), but introduces steep cognitive overhead and challenging FFI barriers when integrating with existing C++ codebases.
+- **Go** offers outstanding developer ergonomics and networking libraries, but mandates a garbage collector and non-deterministic pause times unsuitable for real-time, game engine, or embedded kernels.
+- **Zig and Odin** provide brilliant C replacements with manual allocators, but cannot directly consume C++ templates, classes, or standard library types without brittle C ABI wrappers.
 
-`cfire` solves both by treating **modern ISO C++23 as an ergonomic, zero-wrapper target**:
-- Every `type S struct` lowers to a standard C++23 aggregate `struct S`.
-- Every `str` is `std::string` (owned) or `std::string_view` (`in` parameter borrow).
-- Every `[]T` slice is `std::vector<T>` (owned) or `std::span<const T>` (`in` parameter borrow).
-- Every fallible return `T!` is `std::expected<T, cfire::Error>`.
-- At any moment, `cfire eject` exports your project into a standalone C++23 + `CMakeLists.txt` repository with zero lock-in.
+`cfire` takes a pragmatic path designed specifically for teams whose target environment is **ISO C++23**:
+1. **Ergonomic, Modern Frontend**: Clean syntax, immutability by default, explicit parameter intents (`in`, `mut`, `out`, `move`), algebraic enums, and monadic error handling (`T!`).
+2. **1-to-1 ISO C++23 Lowering**: Every `cfire` type, function, and expression lowers directly to standard C++23 concepts (`std::string_view`, `std::span`, `std::variant`, `std::expected`, `std::unique_ptr`).
+3. **Zero FFI Marshaling**: Call any C or C++ header directly without writing manual wrappers.
+4. **Zero Lock-In**: Run `cfire eject` at any time to export your entire project as standard C++23 source code with a standard `CMakeLists.txt`.
 
----
+### 1.2 Predictable 1:1 Lowering Table
 
-## Chapter 2: Tour of the Toolchain
+The following table summarizes how core `cfire` types lower into standard ISO C++23:
 
-`cfire` ships as a single, self-contained C++23 binary containing the compiler, build system, test runner, formatter, language server, and documentation generator:
+| `cfire` Type | ISO C++23 Lowering | Ownership & Semantics |
+|---|---|---|
+| `i8`, `i16`, `i32`, `i64` | `int8_t`, `int16_t`, `int32_t`, `int64_t` | Signed fixed-width integers |
+| `u8`, `u16`, `u32`, `u64` | `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t` | Unsigned fixed-width integers |
+| `f32`, `f64` | `float`, `double` | IEEE 754 floating point |
+| `bool`, `char` | `bool`, `char` | Boolean flag, ASCII/UTF-8 byte |
+| `str` (value) | `std::string` | Owned, heap-backed UTF-8 string |
+| `str` (`in` param) | `std::string_view` | Non-allocating read-only string view |
+| `path` | `std::filesystem::path` | Platform-native filesystem path |
+| `[N]T` | `std::array<T, N>` | Contiguous stack array, zero overhead |
+| `[]T` (value) | `std::vector<T>` | Owned, dynamic contiguous buffer |
+| `[]T` (`in` param) | `std::span<const T>` | Non-allocating contiguous slice borrow |
+| `map[K]V` | `std::unordered_map<K, V>` | Hash table with O(1) average lookup |
+| `(T1, T2)` | `std::tuple<T1, T2>` | Heterogeneous value tuple |
+| `T?` | `std::optional<T>` | Nullable value container |
+| `T!` | `std::expected<T, cfire::Error>` | Value-or-error monadic result |
+| `own[T]` | `std::unique_ptr<T>` | Single heap ownership with RAII cleanup |
+| `shared[T]` | `std::shared_ptr<T>` | Atomic reference-counted shared ownership |
+| `type S struct` | `struct S { ... }` | Standard C++ aggregate struct |
+| `type E enum` | `std::variant<...>` | Tagged union with exhaustive `match` |
 
-```zsh
-# 1. Run a program directly (auto-links core/vendor/C++ dependencies)
-./cfire run examples/01-hello-core/main.cf
+### 1.3 Hello, Systems! (A First Look)
 
-# 2. Build an optimized native binary
-./cfire build examples/07-types-match-map/main.cf
-
-# 3. Run built-in `test "..." { ... }` blocks
-./cfire test examples/09-stdlib-test-pointers/main.cf
-
-# 4. Canonically format `.cf` files (or verify formatting in CI with --check)
-./cfire fmt examples/
-./cfire fmt --check examples/
-
-# 5. Start the Language Server Protocol (LSP) server for your editor
-./cfire lsp
-
-# 6. Generate or verify always-up-to-date docs (or inspect a single .cf file)
-./cfire doc
-./cfire doc --check
-./cfire doc examples/09-stdlib-test-pointers/main.cf
-
-# 7. Eject to a standalone C++23 + CMake project
-./cfire eject examples/08-multi-pkg-cc-build/main.cf ./standalone_cpp
-```
-
----
-
-## Chapter 3: Values, Ownership, Parameter Intents & Smart Pointers
-
-### 3.1 Immutable by Default
-Local variables created with `:=` or explicit types (`x: i32 = 10`) are **immutable (`const`) by default**. Use `mut` when you intend to reassign or mutate a binding:
+Here is a complete, working `cfire` program showing basic syntax, imports, error handling, and deterministic deferral:
 
 ```cf
-limit := 100              // immutable (const)
-fixed: [4]i32 = [1,2,3,4] // immutable std::array<int32_t, 4>
-mut counter: i32 = 0      // mutable
-counter += 1
-```
+package main
 
-### 3.2 Explicit Parameter Intents (`in`, `mut`, `out`, `move`)
-In C++, a function call `process(data)` hides whether `data` is read-only, mutated in-place, or moved from. `cfire` makes parameter intent explicit at **both** the declaration and the call site:
-
-| Intent | Declaration | Call Site | C++23 Lowering | Semantic Guarantee |
-|---|---|---|---|---|
-| **`in` (default)** | `x: T` | `f(x)` | `const T&` / `std::string_view` / `std::span<const E>` | Read-only borrow; zero copy |
-| **`mut`** | `mut x: T` | `f(mut x)` | `T&` | Requires `mut` binding & `mut` at call site (`cfire/MUT-CALLSITE`, `cfire/IMMUTABLE-MUT-ARG`) |
-| **`out`** | `out x: T` | `f(out x)` | `T&` | Requires `mut` binding & `out` at call site (`cfire/OUT-CALLSITE`) |
-| **`move`** | `move x: T` | `f(move x)` | `T&&` + `std::move(x)` | Rejects any subsequent use of `x` (`cfire/USE-AFTER-MOVE`) |
-
-### 3.3 Smart Pointers (`own[T]` & `shared[T]`)
-Value types and slices cover 95% of systems code. When heap allocation or shared ownership is needed, use `own[T]` (`std::unique_ptr<T>`) and `shared[T]` (`std::shared_ptr<T>`):
-
-```cf
-owned_box := make(own[Box], Box{Value: 42})
-shared_box := make(shared[Box], Box{Value: 58})
-total := (*owned_box).Value + (*shared_box).Value
-```
-
----
-
-## Chapter 4: Algebraic Data Types, Struct Tags & Exhaustive `match`
-
-### 4.1 Structs & Compile-Time Field Tags
-Struct fields support backtick metadata tags (`json:"..."`, `sql:"..."`, `cli:"..."`) inspected at compile time by `cfire` to generate zero-overhead parsers, serializers, and database row mappers:
-
-```cf
-type Metric struct {
-    Service: str  `json:"service" sql:"service"`
-    Count:   i64  `json:"count"   sql:"count"`
-    Latency: f64  `json:"latency"`
-    Healthy: bool `json:"healthy"`
-}
-```
-
-### 4.2 Algebraic Enums & Exhaustive `match`
-`type ... enum` declares a tagged union lowered to `std::variant`. The semantic analyzer enforces `cfire/NON-EXHAUSTIVE-MATCH` if any variant is omitted without a `_ => { ... }` fallback arm:
-
-```cf
-type Shape enum {
-    Circle(radius: f64),
-    Rect(width: f64, height: f64),
-    Empty,
-}
-
-fn describe(s: Shape) -> str {
-    mut label := "unknown"
-    match s {
-        Circle(r)  => { label = "circle" }
-        Rect(w, h) => { label = "rect" }
-        Empty      => { label = "empty" }
-    }
-    return label
-}
-```
-
----
-
-## Chapter 5: Fearless Error Handling & `defer`
-
-`cfire` eliminates C++ exceptions in favor of value-based `T!` (`std::expected<T, cfire::Error>`):
-
-- **`try expr`**: Propagates an error immediately to the caller (or prints & exits with code `1` in `main`).
-- **`expr or fallback`**: Unwraps the value or evaluates `fallback` (`std::expected::value_or`).
-- **`expr or err { ... }`**: Handles the error `err` inline with a block that returns or recovers.
-- **`defer expr`**: Schedules deterministic scope cleanup via `cfire::scope_exit` RAII guards.
-
-```cf
-fn load_payload(path: str) -> []byte! {
-    raw := try fs.read_all(path)
-    return raw
-}
+import "core:fs"
+import "core:time"
+import "core:str"
 
 fn main() {
-    data := load_payload("missing.bin") or err {
-        println("recovered from: {}", err.message())
-        return
+    t0 := time.now_ms()
+
+    // Immutability by default: 'msg' cannot be reassigned
+    msg := "Hello from Sapphire on Fire (cfire)!"
+    println("{}", msg)
+
+    // Fallible file operation with early-exit 'try'
+    try fs.write_text("build_info.txt", "runtime=cfire\nstandard=c++23\n")
+    
+    // Deterministic scope cleanup: runs when main exits
+    defer {
+        println("Cleanup: execution finished in {} ms", time.now_ms() - t0)
     }
-}
-```
 
----
-
-## Chapter 6: Structured Concurrency & Typed Channels
-
-### 6.1 `async.scope` Structured Task Pools
-`async.scope(workers: N) |scope| { ... }` creates a bounded thread-pool scope that automatically joins all spawned tasks (`scope.spawn || { ... }`) before exiting the block—preventing dangling background threads:
-
-```cf
-mut counter := atomic(0u64)
-async.scope(workers: 4) |scope| {
-    for _, item in items {
-        scope.spawn || {
-            counter.fetch_add(1)
+    content := try fs.read_text("build_info.txt")
+    lines := str.split(content, "\n")
+    for idx, line in lines {
+        if line.len() > 0 {
+            println("  [{}] {}", idx + 1, line)
         }
     }
 }
 ```
 
-### 6.2 `core:sync` Typed Channels (`Channel[T]`)
-Combine `async.scope` with `sync.make_channel[T]()` for message-passing pipelines:
+---
+
+## Chapter 2: Tour of the Toolchain
+
+`cfire` ships as a single, self-contained binary. There are no secondary package managers, formatters, or test runners to install.
+
+### 2.1 Toolchain Subcommands Reference
+
+| Subcommand | Usage | Purpose & Details |
+|---|---|---|
+| `run` | `cfire run main.cf` | Compiles and executes the program. Auto-links required `core:*` and C/C++ libraries. |
+| `run --sanitize` | `cfire run --sanitize main.cf` | Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (`-fsanitize=address,undefined`). |
+| `build` | `cfire build main.cf -o app` | Produces an optimized native executable (`-O3`) in the current directory. |
+| `test` | `cfire test main.cf` | Discovers and executes all embedded `test "..." { ... }` suites in parallel. |
+| `test --sanitize` | `cfire test --sanitize main.cf` | Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors. |
+| `fmt` | `cfire fmt src/` | Canonically formats `.cf` files in-place according to strict formatting rules. |
+| `fmt --check` | `cfire fmt --check src/` | CI validation mode. Exits with non-zero status if any file is unformatted. |
+| `check` | `cfire check main.cf` | Fast frontend validation: parses and runs semantic analysis without invoking the C++ backend. |
+| `eval` | `cfire eval '2 + 2'` | Evaluates a single `cfire` expression or statement directly from the command line. |
+| `lsp` | `cfire lsp` | Starts the standard Language Server Protocol daemon for VSCode, Neovim, and Helix. |
+| `doc` | `cfire doc` | Generates verified HTML and Markdown documentation from the compiler catalog. |
+| `doc --check` | `cfire doc --check` | Verifies that documentation files match the compiler catalog character-for-character. |
+| `eject` | `cfire eject main.cf ./export` | Exports the program and all dependencies into standalone ISO C++23 files + `CMakeLists.txt`. |
+
+### 2.2 Embedded Unit Testing
+
+`cfire` includes testing as a core language primitive. You can write isolated test suites directly inside any `.cf` file:
 
 ```cf
-import "core:sync"
+package math_util
 
-ch := sync.make_channel[i64]()
-async.scope(workers: 2) |scope| {
-    scope.spawn || {
-        ch.send(777)
-    }
+fn add(a: i64, b: i64) -> i64 {
+    return a + b
 }
-val := ch.recv() or 0
+
+fn clamp(val: f64, low: f64, high: f64) -> f64 {
+    if val < low { return low }
+    if val > high { return high }
+    return val
+}
+
+test "integer arithmetic addition" {
+    assert(add(10, 20) == 30)
+    assert(add(-5, 5) == 0)
+}
+
+test "floating-point clamp bounds" {
+    assert(clamp(5.0, 0.0, 10.0) == 5.0)
+    assert(clamp(-2.0, 0.0, 10.0) == 0.0)
+    assert(clamp(15.0, 0.0, 10.0) == 10.0)
+}
+```
+
+Run tests with a single command:
+```zsh
+./cfire test math_util.cf
 ```
 
 ---
 
-## Chapter 7: Zero-Friction C & C++ Interop
+## Chapter 3: Syntax, Primitives, Variables & Control Flow
 
-1. **Direct Header Imports (`import "cpp:..."` and `import "c:..."`)**:
-   `cfire` invokes `clang++ -Xclang -ast-dump=json` on imported C/C++ headers, caches the extracted function signatures in `.cfire/cache/ast/<hash>.idx`, and automatically inserts `cfire::c_str(arg)` when passing a `cfire` `str` to a C `const char*` parameter.
-2. **Inline `cpp { ... }` Escape Hatch**:
-   Drop raw C++23 statements directly inside any `.cf` function when using intrinsics or template metaprogramming.
+### 3.1 Immutability by Default
+In `cfire`, bindings declared with `:=` or explicit type annotations without `mut` are strictly **immutable (`const`)**. Attempting to reassign an immutable binding triggers a compiler error:
+
+```cf
+limit := 100
+// limit = 200 // ERROR: cannot assign to immutable binding 'limit'
+
+mut counter := 0 // Mutable binding
+counter += 1     // OK
+```
+
+Explicit type declarations follow the `name: Type = value` syntax:
+```cf
+max_payload: u64 = 1048576
+mut buffer_size: i32 = 4096
+```
+
+### 3.2 Slices (`[]T`) vs Fixed Arrays (`[N]T`)
+`cfire` makes a sharp distinction between stack-allocated fixed arrays and dynamically sized slices:
+- **Fixed Arrays (`[N]T`)**: Size is known at compile time, memory is allocated on the stack with zero overhead, lowering to `std::array<T, N>`.
+- **Dynamic Slices (`[]T`)**: Growable dynamic buffers backed by the heap, lowering to `std::vector<T>` when owned, or `std::span<const T>` when borrowed as an `in` parameter.
+
+```cf
+// Fixed array (std::array<int32_t, 4>)
+fixed: [4]i32 = [10, 20, 30, 40]
+println("fixed length: {}", fixed.len())
+
+// Dynamic slice (std::vector<int32_t>)
+mut dynamic: []i32 = [1, 2, 3]
+dynamic.push(4)
+dynamic.push(5)
+println("dynamic length: {}", dynamic.len())
+
+// Slicing views (std::span)
+sub := dynamic[1:3] // View of elements at index 1 and 2
+```
+
+### 3.3 Hash Maps (`map[K]V`)
+Hash maps provide $O(1)$ key-value lookups backed by `std::unordered_map`:
+
+```cf
+mut scores: map[str]i64 = {}
+scores["Alice"] = 95
+scores["Bob"] = 88
+
+// Safe retrieval with 'or' fallback
+alice_score := scores["Alice"] or 0
+charlie_score := scores["Charlie"] or -1
+
+println("Alice: {}, Charlie: {}", alice_score, charlie_score)
+
+// Check existence
+if scores.contains("Alice") {
+    println("Alice is enrolled")
+}
+```
+
+### 3.4 Tuples & Destructuring
+Tuples group multiple values together without declaring a formal struct:
+
+```cf
+// Constructing a tuple
+coord := (12.5, 45.8, "GPS-Locked")
+
+// Destructuring into individual bindings
+(lat, lon, status) := coord
+println("Lat: {}, Lon: {}, Status: {}", lat, lon, status)
+```
+
+### 3.5 Optionals (`T?`)
+Values that may be absent are wrapped in `T?`, lowering directly to `std::optional<T>`:
+
+```cf
+fn find_user(id: i64) -> str? {
+    if id == 42 {
+        return "Alice"
+    }
+    return null
+}
+
+user := find_user(42) or "Guest"
+println("User: {}", user)
+```
+
+### 3.6 Smart Pointers (`own[T]` and `shared[T]`)
+Value semantics and slices cover most systems programming needs. For recursive data structures or explicit heap allocations, `cfire` provides `own[T]` (`std::unique_ptr<T>`) and `shared[T]` (`std::shared_ptr<T>`):
+
+```cf
+type Node struct {
+    Value: i64,
+    Next:  own[Node]?,
+}
+
+// Allocate an owned heap box
+first := make(own[Node], Node{Value: 10, Next: null})
+println("Node value: {}", (*first).Value)
+```
+
+### 3.7 Control Flow (`if`, `for`, `match`)
+
+```cf
+// 1. Conditional branching
+if score >= 90 {
+    println("Grade: A")
+} else if score >= 80 {
+    println("Grade: B")
+} else {
+    println("Grade: C")
+}
+
+// 2. Iterating elements
+items := ["alpha", "beta", "gamma"]
+for item in items {
+    println("Item: {}", item)
+}
+
+// 3. Iterating with index
+for idx, item in items {
+    println("[{}] = {}", idx, item)
+}
+
+// 4. Iterating map key-value pairs
+for key, val in scores {
+    println("{} => {}", key, val)
+}
+
+// 5. C-style numeric loop
+for mut i := 0; i < 5; i += 1 {
+    if i == 2 { continue }
+    println("i = {}", i)
+}
+```
 
 ---
 
-## Chapter 8: Unified Build System (`build.cf`) & CMake Ejection
+## Chapter 4: Functions & Call-Site Intent Safety
 
-When a project needs custom C/C++ static libraries, CMake subprojects, or `pkg-config` system libraries, add a declarative `build.cf` alongside `main.cf`:
+### 4.1 Function Declarations and Methods
+Functions are declared with `fn`. Associated methods specify a receiver before the function name:
+
+```cf
+type Account struct {
+    Owner:   str,
+    Balance: i64,
+}
+
+// Function with regular parameters
+fn calculate_fee(amount: i64) -> i64 {
+    return amount / 100
+}
+
+// Read-only receiver method
+fn (self: Account) display() {
+    println("Account {}: ${}", self.Owner, self.Balance)
+}
+
+// Mutable receiver method: requires 'mut self'
+fn (mut self: Account) deposit(amount: i64) {
+    self.Balance += amount
+}
+```
+
+### 4.2 Explicit Parameter Intents (`in`, `mut`, `out`, `move`)
+In raw C++, calling `process(data)` hides whether `data` is read-only, modified in-place, or moved from. `cfire` enforces visibility at **both** declaration and call site:
+
+| Intent | Declaration | Call Site | C++23 Lowering | Guarantee |
+|---|---|---|---|---|
+| **`in` (default)** | `x: T` | `f(x)` | `const T&` / `std::string_view` / `std::span` | Read-only borrow; zero copy overhead. |
+| **`mut`** | `mut x: T` | `f(mut x)` | `T&` | In-place mutation; requires `mut` at call site. |
+| **`out`** | `out x: T` | `f(out x)` | `T&` | Callee overwrites value; requires `out` at call site. |
+| **`move`** | `move x: T` | `f(move x)` | `T&&` + `std::move(x)` | Ownership transfer; callee consumes value. |
+
+### 4.3 Semantic Safety Invariants
+
+The `cfire` semantic analyzer verifies parameter intents at compile time:
+
+#### 1. `cfire/MUT-CALLSITE`
+Passing a variable to a `mut` parameter without the `mut` marker at the call site is rejected:
+```cf
+fn increment(mut val: i32) { val += 1 }
+
+mut count := 0
+// increment(count)     // ERROR: [cfire/MUT-CALLSITE] missing 'mut' keyword
+increment(mut count)    // OK
+```
+
+#### 2. `cfire/IMMUTABLE-MUT-ARG`
+Passing an immutable binding to a `mut` parameter is rejected:
+```cf
+val := 42
+// increment(mut val)   // ERROR: [cfire/IMMUTABLE-MUT-ARG] 'val' is immutable
+```
+
+#### 3. `cfire/MUT-ALIAS` (The Law of Exclusivity)
+A variable cannot be passed as a mutable argument while simultaneously aliased as another argument in the same call:
+```cf
+fn transfer(mut from: i64, mut to: i64, amount: i64) {
+    from -= amount
+    to += amount
+}
+
+mut account_a := 1000
+// transfer(mut account_a, mut account_a, 100) // ERROR: [cfire/MUT-ALIAS]
+mut account_b := 500
+transfer(mut account_a, mut account_b, 100)    // OK: distinct bindings
+```
+
+#### 4. `cfire/USE-AFTER-MOVE`
+Referencing a variable after it has been transferred via `move` is rejected:
+```cf
+fn sink(move data: []byte) { /* takes ownership */ }
+
+mut payload: []byte = [1, 2, 3]
+sink(move payload)
+// println("len = {}", payload.len()) // ERROR: [cfire/USE-AFTER-MOVE]
+```
+
+### 4.4 Closures & Lambdas
+Closures use pipe syntax `|params| -> ReturnType { ... }`:
+
+```cf
+items := [1, 2, 3, 4, 5]
+
+// Inline closure passed to higher-order transform
+multiplier := 10
+transform := |x: i32| -> i32 {
+    return x * multiplier
+}
+
+for item in items {
+    println("transformed: {}", transform(item))
+}
+```
+
+---
+
+## Chapter 5: Structs, Compile-Time Tags & Algebraic Enums
+
+### 5.1 Structs & Compile-Time Field Metadata
+Structs define composite data records. Field tags (enclosed in backticks) provide zero-cost metadata inspected by the compiler during code generation:
+
+```cf
+type DatabaseConfig struct {
+    Host:     str  `json:"host"     cli:"--host,-h"    sql:"host"`
+    Port:     u16  `json:"port"     cli:"--port,-p"    sql:"port"`
+    MaxConns: i32  `json:"max_conns" cli:"--max-conns" sql:"max_connections"`
+    SSL:      bool `json:"ssl"      cli:"--ssl"        sql:"use_ssl"`
+}
+```
+
+Because these tags are processed at compile time, `core:json`, `core:cli`, and `core:db/sqlite` generate direct C++ assignments without runtime reflection overhead:
+
+```cf
+import "core:json"
+import "core:cli"
+
+fn main() {
+    // 1. Automatic CLI flag parsing directly into typed struct
+    cfg := try cli.parse[DatabaseConfig]()
+    println("Config loaded: host={}, port={}", cfg.Host, cfg.Port)
+
+    // 2. Automatic JSON serialization
+    json_str := try json.stringify(cfg)
+    println("Serialized: {}", json_str)
+}
+```
+
+### 5.2 Algebraic Enums (Tagged Unions)
+Algebraic enums represent data that can take one of several distinct variants, each carrying its own typed payload:
+
+```cf
+type NetworkEvent enum {
+    Connected(peer_ip: str, port: u16),
+    DataReceived(payload: []byte),
+    Disconnected(reason: str),
+    Heartbeat,
+}
+```
+
+This lowers to `std::variant<Connected, DataReceived, Disconnected, Heartbeat>` in ISO C++23.
+
+### 5.3 Exhaustive Pattern Matching (`match`)
+Pattern matching inspects algebraic enums and binds variant payloads. The compiler enforces exhaustiveness (`cfire/NON-EXHAUSTIVE-MATCH`):
+
+```cf
+fn handle_event(event: NetworkEvent) {
+    match event {
+        Connected(ip, port) => {
+            println("Peer connected: {}:{}", ip, port)
+        }
+        DataReceived(data) => {
+            println("Received payload of {} bytes", data.len())
+        }
+        Disconnected(reason) => {
+            println("Connection closed: {}", reason)
+        }
+        Heartbeat => {
+            // Keep-alive ack
+        }
+    }
+}
+```
+
+If a new variant is added to `NetworkEvent`, every `match` statement across your codebase that lacks a wildcard `_ =>` arm will fail compilation at build time.
+
+### 5.4 Slice Destructuring Matching
+`match` can also destructure slices into head and tail elements:
+
+```cf
+fn summarize_tokens(tokens: []str) {
+    match tokens {
+        [] => {
+            println("No tokens found")
+        }
+        [command] => {
+            println("Single command: {}", command)
+        }
+        [cmd, ..args] => {
+            println("Command: {}, Argument count: {}", cmd, args.len())
+        }
+    }
+}
+```
+
+---
+
+## Chapter 6: Fearless Error Handling & Cleanup
+
+### 6.1 The Fallible Return Type `T!`
+`cfire` rejects hidden C++ exceptions. Functions that can fail return `T!`, which lowers directly to `std::expected<T, cfire::Error>`. Errors are concrete value objects carrying a code, an error message, and source context:
+
+```cf
+import "core:fs"
+
+fn load_api_key(path: str) -> str! {
+    if !fs.exists(path) {
+        return cfire.error("API key file not found: {}", path)
+    }
+    raw := try fs.read_text(path)
+    return str.trim(raw)
+}
+```
+
+### 6.2 The Three Ways to Handle Errors
+
+#### 1. Early Return Propagation (`try`)
+The `try` operator unwraps the success value or immediately returns the error from the enclosing function:
+```cf
+fn setup_system() -> void! {
+    cfg := try load_api_key("api.key")
+    println("Key loaded: {} chars", cfg.len())
+}
+```
+If used inside `fn main()`, an unhandled error printed via `try` outputs a formatted diagnostic and exits the process with status code `1`.
+
+#### 2. Default Fallbacks (`or value`)
+When a reasonable default exists, use `or fallback` (lowers to `std::expected::value_or`):
+```cf
+port := try parse_port(os.getenv("PORT")) or 8080
+println("Binding to port {}", port)
+```
+
+#### 3. Inline Recovery Blocks (`or err { ... }`)
+When you need to log an error, clean up local state, or alter control flow, use an `or err { ... }` block. To prevent unwrapping an uninitialized value, the compiler enforces that value-binding recovery blocks must definitely diverge (`cfire/NON-DIVERGING-OR-BLOCK`):
+
+```cf
+token := load_api_key("secret.key") or err {
+    println("[WARN] Failed to load key: {}. Falling back to sandbox mode.", err.message())
+    return // Diverges cleanly
+}
+```
+
+### 6.3 Deterministic Scope Cleanup (`defer`)
+The `defer` statement registers an action to be executed in Last-In, First-Out (LIFO) order when the surrounding scope exits. It is implemented via RAII scope guards, guaranteeing execution regardless of whether the scope exits via normal return, `try` error propagation, or a `break` statement:
+
+```cf
+import "core:fs"
+import "core:sync"
+
+mut mtx: sync.Mutex = {}
+
+fn process_transaction() -> void! {
+    mtx.lock()
+    defer mtx.unlock() // Guaranteed to unlock even on error return
+
+    mut file := try fs.open("audit.log", fs.OpenMode::Append)
+    defer file.close() // File descriptor closed cleanly
+
+    try file.write_str("Transaction started\n")
+    // If an error happens below, both file.close() and mtx.unlock() execute deterministically
+    try execute_db_write()
+    try file.write_str("Transaction committed\n")
+}
+```
+
+---
+
+## Chapter 7: Structured Concurrency & Contexts
+
+### 7.1 Structured Concurrency with `async.scope`
+Unlike raw threads or Go's unconstrained `go func()`, `cfire` uses structured task pools. An `async.scope` block defines a lexical boundary: the scope **cannot exit** until every spawned child task has completed:
+
+```cf
+import "core:time"
+
+fn process_batch(items: []str) {
+    // Spawns a pool of 4 worker threads
+    async.scope(workers: 4) |scope| {
+        for idx, item in items {
+            scope.spawn || {
+                println("Worker processing item [{}]: {}", idx, item)
+                time.sleep_ms(50)
+            }
+        }
+    }
+    // All 4 worker tasks are 100% joined before this line executes!
+    println("All batch items successfully processed.")
+}
+```
+
+Structured concurrency eliminates orphaned background threads, use-after-free references to stack frames, and race conditions during application shutdown.
+
+### 7.2 Message Passing via Typed Channels (`core:sync`)
+For decoupled producer-consumer pipelines, `core:sync` provides Go-style typed channels:
+
+```cf
+import "core:sync"
+
+fn main() {
+    ch := sync.make_channel[i64](capacity: 10)
+
+    async.scope(workers: 2) |scope| {
+        // Producer task
+        scope.spawn || {
+            for mut i := 1; i <= 5; i += 1 {
+                ch.send(i * 10)
+            }
+            ch.close()
+        }
+
+        // Consumer task
+        scope.spawn || {
+            for {
+                val := ch.recv() or break // Exits loop when channel is closed and empty
+                println("Received: {}", val)
+            }
+        }
+    }
+}
+```
+
+### 7.3 Cancellation Contexts & Deadlines (`core:sync/context`)
+Long-running background operations support cooperative cancellation via `Context`:
+
+```cf
+import "core:sync/context"
+import "core:time"
+
+fn worker(ctx: context.Context, id: i32) {
+    for {
+        if ctx.is_cancelled() {
+            println("Worker [{}] received cancellation notice", id)
+            return
+        }
+        time.sleep_ms(100)
+    }
+}
+
+fn main() {
+    // Derive a context that cancels automatically after 250 milliseconds
+    (ctx, cancel) := context.with_timeout(context.background(), 250)
+    defer cancel()
+
+    async.scope(workers: 2) |scope| {
+        scope.spawn || { worker(ctx, 1) }
+        scope.spawn || { worker(ctx, 2) }
+    }
+    println("Workers shut down cleanly.")
+}
+```
+
+---
+
+## Chapter 8: Zero-Friction C & C++ Interop
+
+### 8.1 Direct C Header Ingestion
+`cfire` compiles natively to C++23, which means communicating with C libraries requires no manual binding generation. When you import a C header with `import "c:..."`, the compiler automatically invokes Clang to extract type definitions and function prototypes, caching the result in `.cfire/cache/ast/`:
+
+```cf
+package main
+
+// Directly imports the system zlib header
+import "c:zlib.h" as zlib
+
+fn main() {
+    version_str := zlib.zlibVersion()
+    println("Zlib library version: {}", version_str)
+}
+```
+
+### 8.2 Automatic String Boundary Coercion
+When calling a C function expecting a null-terminated `const char*`, `cfire` automatically inserts `cfire::c_str(arg)` at compile time. You can pass a native `cfire` `str` directly without handwritten conversion:
+
+```cf
+import "c:stdio.h" as c_io
+
+fn main() {
+    filename := "output.txt"
+    mode := "w"
+    
+    // Automatically coerces 'filename' and 'mode' to const char*
+    mut f := c_io.fopen(filename, mode)
+    if f != null {
+        c_io.fputs("Written via direct C interop\n", f)
+        c_io.fclose(f)
+    }
+}
+```
+
+### 8.3 Direct C++ Header Imports
+You can import modern C++ standard and third-party headers directly:
+
+```cf
+import "cpp:vector"
+import "cpp:algorithm"
+
+fn main() {
+    // Direct access to C++ standard library algorithms
+    mut values: []i32 = [5, 2, 8, 1, 9]
+    // Under the hood, values is std::vector<int32_t>
+    println("Sorted elements:")
+    // ...
+}
+```
+
+### 8.4 Inline C++ Escape Hatch (`cpp { ... }`)
+For platform intrinsics, inline assembly, or specialized template metaprogramming, `cfire` allows raw C++ statements inside any function:
+
+```cf
+fn get_cpu_cycle_count() -> u64 {
+    mut cycles: u64 = 0
+    cpp {
+        #if defined(__x86_64__)
+        cycles = __rdtsc();
+        #elif defined(__aarch64__)
+        asm volatile("mrs %0, cntvct_el0" : "=r"(cycles));
+        #endif
+    }
+    return cycles
+}
+```
+
+---
+
+## Chapter 9: The Unified Build System & CMake Ejection
+
+### 9.1 Declarative `build.cf`
+Projects with complex C/C++ static dependencies or CMake subprojects include a declarative `build.cf` file in the root directory:
 
 ```cf
 package build
 
 import "core:build"
 
-// Pure C/C++ static library compilation driver:
+// 1. Build a local C static library dependency
 var FastHash = build.CC("./native/fast_hash", {
     Sources:  ["fast_hash.c"],
     Includes: ["."],
-    CFlags:   ["-O3"],
+    CFlags:   ["-O3", "-march=native"],
 })
 
-// CMake subproject dependency driver:
+// 2. Build a CMake-based vendor subproject
 var KVStore = build.CMake("./vendor/libkv_cmake", {
     Target:   "kvstore",
     Includes: ["include"],
     Defines:  {"KV_SALT": 42},
 })
+
+// 3. Link a system package via pkg-config
+var Sqlite3 = build.SystemLib("sqlite3")
 ```
 
-Supported drivers include `build.CC`, `build.CMake`, `build.Make`, and `build.Ninja`. Run `./cfire build main.cf` to compile all dependencies into cached static archives (`.cfire/cache/lib/*.a`) automatically, or run `./cfire eject main.cf ./exported` to generate a standalone `CMakeLists.txt`!
+When you run `./cfire build main.cf`:
+1. `cfire` discovers `build.cf`.
+2. It compiles `FastHash` and `LibZstd` into static archives in `.cfire/cache/lib/*.a`.
+3. It links all libraries together into a single, high-performance binary.
 
----
+### 9.2 Zero-Lock-In CMake Ejection (`cfire eject`)
+One of the most important architectural design decisions in `cfire` is that **you are never locked in**. At any point in your project lifecycle, you can eject to standard ISO C++23:
 
-## Chapter 9: How `cfire` Compares & Honest Design Trade-Offs
+```zsh
+./cfire eject src/main.cf ./standalone_project
+```
 
-### 9.1 `cfire` vs. Cppfront (Cpp2) and Carbon
-- **Cppfront (Cpp2)** is a syntax reskin of all of C++: it requires declaration-site intents (`inout`, `out`), but a call `f(x)` still hides whether `x` is borrowed or mutated, and you still write raw CMake and STL boilerplate.
-- **Carbon** builds a massive custom compiler frontend to support full C++ class-hierarchy inheritance and template specialization.
-- **`cfire`** takes the **TypeScript + Go/Odin approach to C++23**: it keeps the language deliberately small, enforces call-site intents (`mut`, `out`, `move`) + call-site mutable aliasing exclusivity (`cfire/MUT-ALIAS`), ships 13 `core:*` modules + `build.cf` + `fmt` + `lsp` + `doc`, and compiles 1-to-1 to standard C++23 types with a zero-lock-in `cfire eject` escape hatch.
+This exports:
+- `standalone_project/src/main.cpp`: Clean, human-readable ISO C++23 source code corresponding to your `.cf` files.
+- `standalone_project/include/cfire_prelude.hpp`: The lightweight, header-only runtime prelude.
+- `standalone_project/CMakeLists.txt`: A standard, production-ready CMake build file configuring all include directories, dependencies, and compilation flags.
 
-### 9.2 `cfire` vs. Rust, Zig, and Odin
-- **Vs. Zig & Odin:** Zig and Odin are outstanding C replacements, but hit a wall when consuming C++ STL/templates/classes (`std::string`, `std::vector`, `<simdjson.h>`, RocksDB, PyTorch C++). `cfire` natively shares the C++23 ABI.
-- **Vs. Rust:** `cfire` captures ~85% of day-to-day bug prevention (immutable by default, explicit `mut`/`out`/`move` at call sites, `cfire/MUT-ALIAS` Law of Exclusivity at call sites, `cfire/USE-AFTER-MOVE`, `cfire/NON-EXHAUSTIVE-MATCH`, `T!` error handling) without lifetime annotations (`'a`).
-
-### 9.3 Honest Trade-Offs & Built-In Mitigations
-1. **No Full Borrow-Checker Lifetimes Across Heap Graphs:** `cfire` checks call-site mutation exclusivity (`cfire/MUT-ALIAS`) and local use-after-move (`cfire/USE-AFTER-MOVE`), but does not track reference lifetimes stored inside structs. **Mitigation:** Run `./cfire test --sanitize` or `./cfire run --sanitize` to enable Clang AddressSanitizer + UndefinedBehaviorSanitizer (`-fsanitize=address,undefined`) out of the box.
-2. **Backend Compile Speed Bounded by `clang++ -std=c++23`:** Because `cfire` emits standard C++23, final binary compilation invokes `clang++`. **Mitigation:** `cfire` automatically precompiles `cfire_prelude.hpp` into a cached `.pch` precompiled header and caches Clang AST header dumps in `.cfire/cache/ast/`.
+Anyone on your team can now build your software using standard CMake and Clang without needing `cfire` installed:
+```zsh
+cd standalone_project
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```

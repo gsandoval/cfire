@@ -420,6 +420,26 @@ tr:hover td { background: #FAFAF9; }
       <p class="subtitle" style="margin:0 0 2rem;">Automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>.</p>
       <h2 id="mod-fs"><code>import "core:fs"</code> &mdash; Filesystem &amp; Zero-Copy Byte I/O</h2>
       <p>Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:fs&quot;
+
+fn main() {
+    // 1. High-level one-shot file read and write
+    try fs.write_text(&quot;config.ini&quot;, &quot;workers=8\nport=9000\n&quot;)
+    content := try fs.read_text(&quot;config.ini&quot;)
+    println(&quot;Read configuration: {}&quot;, content)
+
+    // 2. Streaming file operations with deterministic RAII defer
+    mut file := try fs.open(&quot;service.log&quot;, fs.OpenMode::Append)
+    defer file.close() // Closed deterministically on return
+
+    try file.write_str(&quot;[INFO] Worker subsystem initialized\n&quot;)
+    try file.flush()
+    offset := try file.tell()
+    println(&quot;Log stream offset: {} bytes&quot;, offset)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -447,6 +467,24 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-cli"><code>import "core:cli"</code> &mdash; Struct-Tag Command-Line Parser</h2>
       <p>Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:"--flag,help"`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:cli&quot;
+
+type AppFlags struct {
+    host:    str  `cli:&quot;--host&quot;    default:&quot;127.0.0.1&quot;`
+    port:    u16  `cli:&quot;--port,-p&quot; default:&quot;8080&quot;`
+    workers: i32  `cli:&quot;--workers&quot; default:&quot;4&quot;`
+    verbose: bool `cli:&quot;--verbose,-v&quot;`
+}
+
+fn main() {
+    // Automatically binds command-line arguments to typed struct
+    flags := try cli.parse[AppFlags]()
+    println(&quot;Server listening on {}:{} with {} workers (verbose={})&quot;,
+        flags.host, flags.port, flags.workers, flags.verbose)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -455,6 +493,22 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-zstd"><code>import "core:compress/zstd"</code> &mdash; Native Zstandard Frame Compression</h2>
       <p>Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lzstd</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:compress/zstd&quot;
+
+fn main() {
+    raw := []byte(&quot;high-throughput packet trace payload ... high-throughput packet trace payload ...&quot;)
+
+    // Hardware-accelerated Zstandard frame compression
+    compressed := try zstd.compress(raw, level: 3)
+    println(&quot;Original size: {} bytes -&gt; Compressed: {} bytes&quot;, raw.len(), compressed.len())
+
+    // Decompression using the embedded frame content size
+    decompressed := try zstd.decompress(compressed)
+    println(&quot;Decompressed size: {} bytes&quot;, decompressed.len())
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -464,6 +518,31 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-json"><code>import "core:json"</code> &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</h2>
       <p>Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsimdjson (or header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:json&quot;
+
+type ServiceMetric struct {
+    service: str  `json:&quot;service&quot;`
+    latency: f64  `json:&quot;latency_ms&quot;`
+    healthy: bool `json:&quot;healthy&quot;`
+}
+
+fn main() {
+    // 1. Zero-overhead SIMD deserialization using compile-time struct tags
+    payload := `{&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true}`
+    m := try json.parse[ServiceMetric](payload)
+    println(&quot;Service={}, Latency={}ms, Healthy={}&quot;, m.service, m.latency, m.healthy)
+
+    // 2. High-speed JSON serialization
+    serialized := json.stringify(m)
+    println(&quot;Serialized output: {}&quot;, serialized)
+
+    // 3. Dynamic DOM for arbitrary or schemaless JSON
+    mut doc := try json.parse_dynamic(`{&quot;tags&quot;:[&quot;systems&quot;,&quot;c++23&quot;],&quot;cluster&quot;:{&quot;nodes&quot;:3}}`)
+    println(&quot;Cluster nodes: {}&quot;, doc.get(&quot;cluster&quot;).get(&quot;nodes&quot;).as_int())
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -476,6 +555,36 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-sqlite"><code>import "core:db/sqlite"</code> &mdash; Embedded SQLite3 with WAL &amp; Row Mapping</h2>
       <p>RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, atomic transactions, and compile-time `sql:"..."` struct row mapping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsqlite3</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:db/sqlite&quot;
+
+type UserRecord struct {
+    id:    i64 `sql:&quot;id&quot;`
+    name:  str `sql:&quot;name&quot;`
+    email: str `sql:&quot;email&quot;`
+}
+
+fn main() {
+    // Opens SQLite connection and enables WAL mode automatically
+    mut db := try sqlite.open(&quot;app.db&quot;)
+    defer db.close()
+
+    try db.exec(&quot;CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)&quot;)
+
+    // Atomic transaction with auto-rollback on error
+    try db.tx |mut tx| {
+        try tx.exec(&quot;INSERT INTO users (name, email) VALUES (?1, ?2)&quot;, &quot;alice&quot;, &quot;alice@systems.dev&quot;)
+        try tx.exec(&quot;INSERT INTO users (name, email) VALUES (?1, ?2)&quot;, &quot;bob&quot;, &quot;bob@systems.dev&quot;)
+    }
+
+    // Direct struct row mapping via sql:&quot;...&quot; tags
+    users := try db.query[UserRecord](&quot;SELECT id, name, email FROM users WHERE id &gt;= ?1&quot;, 1)
+    for u in users {
+        println(&quot;User [{}]: {} &lt;{}&gt;&quot;, u.id, u.name, u.email)
+    }
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -487,6 +596,16 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-sha256"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest</h2>
       <p>Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:crypto/sha256&quot;
+
+fn main() {
+    payload := &quot;system_audit_transaction_event_2026&quot;
+    digest := sha256.hash_hex(payload)
+    println(&quot;FIPS 180-4 SHA-256 Digest: {}&quot;, digest)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -496,6 +615,22 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-hmac"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256 Message Authentication</h2>
       <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:crypto/hmac&quot;
+
+fn main() {
+    secret_key := &quot;super-secure-signing-secret&quot;
+    data := &quot;tenant_id:42;session:8849&quot;
+
+    signature := hmac.sha256_hex(secret_key, data)
+    println(&quot;HMAC-SHA256 signature: {}&quot;, signature)
+
+    // Constant-time validation check prevents timing side-channel attacks
+    is_valid := hmac.equal(signature, signature)
+    println(&quot;Signature verified: {}&quot;, is_valid)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -505,6 +640,26 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-aes"><code>import "core:crypto/aes"</code> &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</h2>
       <p>Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(Header-only pure C++23)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:crypto/aes&quot;
+import &quot;core:rand&quot;
+
+fn main() {
+    key := rand.bytes(32)   // 256-bit AES key
+    nonce := rand.bytes(12) // 96-bit standard GCM nonce
+    secret := &quot;Confidential credentials and token payload&quot;
+    aad := &quot;tenant_id:prod_42&quot;
+
+    // Authenticated Encryption with Associated Data (GCM AEAD)
+    res := try aes.encrypt_gcm(key, nonce, secret, aad)
+    println(&quot;Ciphertext length: {} bytes, Tag: {:02x}&quot;, res.ciphertext.len(), res.tag[0])
+
+    // Decrypt and verify cryptographic authenticity tag
+    plain := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)
+    println(&quot;Authenticated decrypted plaintext: {}&quot;, plain)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -516,6 +671,16 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-blake3"><code>import "core:crypto/blake3"</code> &mdash; Cryptographic 256-Bit Digest (Alias)</h2>
       <p>Computes fast 256-bit cryptographic hex digests over byte slices (backward-compatible alias for `core:crypto/sha256`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:crypto/blake3&quot;
+
+fn main() {
+    blob := []byte(&quot;immutable chunk storage block 0x8842&quot;)
+    hash := blake3.hash_hex(blob)
+    println(&quot;Blake3 256-bit digest: {}&quot;, hash)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -524,6 +689,26 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-net"><code>import "core:net"</code> &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</h2>
       <p>RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:net&quot;
+
+fn main() {
+    // 1. Bind loopback TCP listener on an ephemeral port (0)
+    mut ln := try net.listen_tcp(port: 0)
+    port := ln.port()
+    println(&quot;Listening on 127.0.0.1:{}&quot;, port)
+
+    // 2. Connect client TCP socket
+    mut client := try net.connect_tcp(&quot;127.0.0.1&quot;, port)
+    _ := try client.write(&quot;PING\n&quot;)
+
+    // 3. Accept incoming connection and read data
+    mut conn := try ln.accept()
+    msg := try conn.read_str(max_bytes: 64)
+    println(&quot;Server received payload: {}&quot;, msg)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -537,6 +722,20 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-url"><code>import "core:net/url"</code> &mdash; RFC 3986 URL Parsing &amp; URL Encoding</h2>
       <p>RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:net/url&quot;
+
+fn main() {
+    raw := &quot;https://api.domain.com:8443/v1/search?q=systems+c%2B%2B&amp;limit=25#results&quot;
+    u := try url.parse(raw)
+    println(&quot;Scheme: {}, Host: {}, Port: {}, Path: {}&quot;, u.scheme, u.host, u.port, u.path)
+    println(&quot;Query parameter 'q': {}&quot;, u.query[&quot;q&quot;])
+
+    encoded := url.encode(&quot;raw query with spaces &amp; symbols!&quot;)
+    println(&quot;Percent-encoded: {}&quot;, encoded)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -547,6 +746,32 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 Client &amp; Lightweight Dispatch Server</h2>
       <p>High-level HTTP/1.1 client (`get`, `post`, `request`) and lightweight synchronous/threaded HTTP server dispatcher (`make_server`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:net/http&quot;
+import &quot;core:json&quot;
+
+type HealthStatus struct {
+    status: str `json:&quot;status&quot;`
+    uptime: i64 `json:&quot;uptime_sec&quot;`
+}
+
+fn main() {
+    // 1. HTTP GET client request with custom headers
+    headers := { &quot;User-Agent&quot;: &quot;cfire-service/1.0&quot;, &quot;Accept&quot;: &quot;application/json&quot; }
+    resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;, headers: headers)
+    if resp.status_code == 200 {
+        h := try json.parse[HealthStatus](resp.body)
+        println(&quot;Service status: {}, uptime: {}s&quot;, h.status, h.uptime)
+    }
+
+    // 2. Lightweight high-performance HTTP server dispatcher
+    mut server := try http.make_server(port: 8080)
+    server.handle(&quot;/health&quot;, |req| {
+        return http.Response{ status_code: 200, body: &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;,\&quot;uptime_sec\&quot;:120}&quot; }
+    })
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -557,6 +782,20 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-websocket"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets Client &amp; Server</h2>
       <p>RFC 6455 full-duplex WebSocket client (`connect`) and server upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:net/websocket&quot;
+
+fn main() {
+    // Establish full-duplex RFC 6455 WebSocket connection
+    mut ws := try websocket.connect(&quot;ws://127.0.0.1:8080/market-data&quot;)
+    defer ws.close()
+
+    try ws.send_text(&quot;SUBSCRIBE BTC-USD&quot;)
+    frame := try ws.recv_text()
+    println(&quot;Received WebSocket stream frame: {}&quot;, frame)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -574,6 +813,20 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-time"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>
       <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:time&quot;
+
+fn main() {
+    now := time.now()
+    println(&quot;Current RFC 3339 timestamp: {}&quot;, now.format_rfc3339())
+
+    // High-precision duration measurement
+    time.sleep_ms(30)
+    elapsed := time.since(now)
+    println(&quot;Elapsed duration: {} ms ({} us)&quot;, elapsed.to_millis(), elapsed.to_micros())
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -591,6 +844,21 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-os"><code>import "core:os"</code> &mdash; Environment, Working Directory &amp; Subprocesses</h2>
       <p>Process environment inspection, working directory queries, and subprocess output capture. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:os&quot;
+import &quot;core:os/exec&quot;
+
+fn main() {
+    home := os.getenv(&quot;HOME&quot;) or &quot;/tmp&quot;
+    println(&quot;Environment $HOME: {}&quot;, home)
+
+    // Execute external process and capture stdout/exit code
+    cmd := exec.command(&quot;git&quot;, [&quot;rev-parse&quot;, &quot;--short&quot;, &quot;HEAD&quot;])
+    output := try cmd.output()
+    println(&quot;Current Git commit: {} (exit code {})&quot;, output.stdout, output.exit_code)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -603,6 +871,32 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-sync"><code>import "core:sync"</code> &mdash; Thread-Safe Typed Channels</h2>
       <p>Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:sync&quot;
+
+fn main() {
+    // Typed buffered message channel
+    ch := sync.make_channel[i32](capacity: 10)
+
+    async.scope(workers: 2) |scope| {
+        // Producer task
+        scope.spawn || {
+            for i in [10, 20, 30] {
+                ch.send(i)
+            }
+            ch.close()
+        }
+
+        // Consumer task
+        scope.spawn || {
+            for item := ch.recv() or break {
+                println(&quot;Channel consumer received: {}&quot;, item)
+            }
+        }
+    }
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -615,6 +909,22 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-context"><code>import "core:sync/context"</code> &mdash; Cancellation Tokens &amp; Deadline Contexts</h2>
       <p>Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:sync/context&quot;
+import &quot;core:time&quot;
+
+fn main() {
+    bg := context.background()
+    (ctx, cancel) := context.with_timeout(bg, 500) // 500ms deadline
+    defer cancel(&quot;worker task complete&quot;)
+
+    time.sleep_ms(40)
+    if !ctx.is_done() {
+        println(&quot;Operation succeeded within timeout deadline&quot;)
+    }
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -630,6 +940,18 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-str"><code>import "core:str"</code> &mdash; UTF-8 String Manipulation</h2>
       <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:str&quot;
+
+fn main() {
+    raw := &quot;  systems, programming, language  &quot;
+    trimmed := str.trim(raw)
+    tokens := str.split(trimmed, &quot;, &quot;)
+    formatted := str.join(tokens, &quot;::&quot;)
+    println(&quot;Processed string: {}&quot;, formatted)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -646,6 +968,16 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-math"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
       <p>Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:math&quot;
+
+fn main() {
+    bounded := math.clamp_f64(3.14159, 0.0, 1.0)
+    hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
+    println(&quot;Clamped: {}, Hypot: {}&quot;, bounded, hypot)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -657,6 +989,17 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-rand"><code>import "core:rand"</code> &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</h2>
       <p>Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:rand&quot;
+
+fn main() {
+    uid := rand.u64()
+    dice_roll := rand.range_i64(1, 6)
+    token_bytes := rand.bytes(16)
+    println(&quot;ID: {}, Roll: {}, Entropy bytes: {}&quot;, uid, dice_roll, token_bytes.len())
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -668,6 +1011,19 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-base64"><code>import "core:encoding/base64"</code> &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</h2>
       <p>High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:encoding/base64&quot;
+
+fn main() {
+    credentials := &quot;service_account:token_xyz_9988&quot;
+    encoded := base64.encode_str(credentials)
+    println(&quot;Base64 encoded: {}&quot;, encoded)
+
+    decoded := try base64.decode_str(encoded)
+    println(&quot;Decoded text: {}&quot;, decoded)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -679,6 +1035,19 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-hex"><code>import "core:encoding/hex"</code> &mdash; Hexadecimal Encoding &amp; Decoding</h2>
       <p>Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:encoding/hex&quot;
+
+fn main() {
+    binary_bytes := []byte{0xCA, 0xFE, 0xBA, 0xBE}
+    hex_str := hex.encode(binary_bytes)
+    println(&quot;Hexadecimal string: 0x{}&quot;, hex_str)
+
+    restored := try hex.decode(hex_str)
+    println(&quot;Restored byte length: {}&quot;, restored.len())
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -690,6 +1059,22 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-csv"><code>import "core:encoding/csv"</code> &mdash; RFC 4180 CSV Parsing &amp; Stringification</h2>
       <p>RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:encoding/csv&quot;
+
+fn main() {
+    csv_data := &quot;service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n&quot;
+    table := csv.parse(csv_data)
+    for row in table {
+        println(&quot;Service: {}, Region: {}, QPS: {}&quot;, row[0], row[1], row[2])
+    }
+
+    // Serialize 2D slice back into RFC 4180 CSV
+    rendered := csv.stringify(table)
+    println(&quot;Output:\n{}&quot;, rendered)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -701,6 +1086,24 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-regex"><code>import "core:regex"</code> &mdash; ECMAScript Regular Expressions</h2>
       <p>Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:regex&quot;
+
+fn main() {
+    email_pattern := `^[a-zA-Z0-9_\.-]+@[a-zA-Z0-9\.-]+\.[a-z]{2,6}$`
+    re := try regex.compile(email_pattern)
+
+    email := &quot;architect@cfire.memo.engineer&quot;
+    if try re.is_match(email) {
+        println(&quot;Validated email: {}&quot;, email)
+    }
+
+    // Global text replacement
+    cleaned := try regex.replace_all(`\s+`, &quot;multiple    whitespace     characters&quot;, &quot; &quot;)
+    println(&quot;Cleaned text: {}&quot;, cleaned)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -711,6 +1114,31 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-collections"><code>import "core:collections"</code> &mdash; Generic Containers (Set, PriorityQueue, Deque)</h2>
       <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:collections&quot;
+
+fn main() {
+    // 1. Generic Hash Set
+    mut set := collections.Set[str]{}
+    set.insert(&quot;alpha&quot;)
+    set.insert(&quot;beta&quot;)
+    println(&quot;Set contains 'alpha': {}&quot;, set.contains(&quot;alpha&quot;))
+
+    // 2. Generic Max-Heap Priority Queue
+    mut pq := collections.PriorityQueue[i64]{}
+    pq.push(10)
+    pq.push(95)
+    pq.push(42)
+    println(&quot;Highest priority element: {}&quot;, pq.top()) // 95
+
+    // 3. Double-Ended Queue (Deque)
+    mut dq := collections.Deque[str]{}
+    dq.push_back(&quot;item_2&quot;)
+    dq.push_front(&quot;item_1&quot;)
+    println(&quot;Front: {}, Back: {}&quot;, dq.pop_front(), dq.pop_back())
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -721,6 +1149,22 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-sort"><code>import "core:sort"</code> &mdash; Slice Sorting &amp; Binary Search</h2>
       <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:sort&quot;
+
+fn main() {
+    mut numbers := [95, 12, 48, 3, 77]
+    // In-place slice sorting
+    sort.slice(mut numbers)
+    println(&quot;Sorted numbers: {:?}&quot;, numbers)
+
+    // Logarithmic binary search
+    if idx := sort.binary_search(numbers, 48) {
+        println(&quot;Found element 48 at index: {}&quot;, idx)
+    }
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -730,6 +1174,20 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-log"><code>import "core:log"</code> &mdash; Structured Leveled Logging</h2>
       <p>Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:log&quot;
+
+fn main() {
+    log.set_level(log.Level::Debug)
+    log.set_format(log.Format::Json) // Output format: Text or Json
+
+    // Leveled structured logging with key-value attributes
+    log.info(&quot;service worker started&quot;, &quot;port&quot;, &quot;8080&quot;, &quot;cluster&quot;, &quot;prod-us-east&quot;)
+    log.warn(&quot;memory threshold reached&quot;, &quot;usage_pct&quot;, &quot;84&quot;, &quot;threshold&quot;, &quot;80&quot;)
+    log.error(&quot;database pool exhausted&quot;, &quot;active_conns&quot;, &quot;100&quot;, &quot;pool_size&quot;, &quot;100&quot;)
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
@@ -743,6 +1201,25 @@ tr:hover td { background: #FAFAF9; }
       </table></div>
       <h2 id="mod-unicode"><code>import "core:unicode"</code> &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</h2>
       <p>RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:unicode&quot;
+
+fn main() {
+    text := &quot;cfire 🔥 世界&quot;
+    // Validate RFC 3629 UTF-8 byte sequences
+    if unicode.is_valid_utf8(text) {
+        rune_count := unicode.rune_count(text)
+        println(&quot;Unicode scalar value count: {}&quot;, rune_count) // 10 runes
+    }
+
+    // Decode into individual 32-bit scalar codepoints
+    runes := unicode.runes(text)
+    for r in runes {
+        println(&quot;Rune: U+{:04X}&quot;, r)
+    }
+}</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
