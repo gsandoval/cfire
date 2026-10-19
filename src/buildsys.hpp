@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <unistd.h>
@@ -344,7 +345,13 @@ inline auto get_package_cache_root() -> std::filesystem::path {
         std::error_code ec;
         std::filesystem::create_directories(home_pkg, ec);
         if (!ec) {
-            return home_pkg;
+            auto probe = home_pkg / ".write_probe";
+            std::ofstream probe_file(probe);
+            if (probe_file.good()) {
+                probe_file.close();
+                std::filesystem::remove(probe, ec);
+                return home_pkg;
+            }
         }
     }
     auto tmp_pkg = std::filesystem::temp_directory_path() / "cfire_cache" / "pkg";
@@ -1145,8 +1152,118 @@ inline auto resolve_external_dep_source(
                 add_pc(it->second);
             }
             if (imp.path == "vendor:raylib") {
-                add_pc("raylib");
+                bool found_raylib = false;
+
+                // 1. Try system pkg-config
+                int chk_rc = 0;
+                (void)bridge::run_command_capture("pkg-config --exists raylib 2>/dev/null", chk_rc);
+                if (chk_rc == 0) {
+                    add_pc("raylib");
+                    found_raylib = true;
+                }
+
+                // 2. Try standard system directories
+                if (!found_raylib) {
+                    for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+                        if (std::filesystem::exists(std::filesystem::path(inc_dir) / "raylib.h")) {
+                            plan.cflags.push_back("-I" + std::string(inc_dir));
+                            std::string lib_dir = (inc_dir == std::string("/opt/homebrew/include")) ? "/opt/homebrew/lib" :
+                                                  (inc_dir == std::string("/usr/local/include")) ? "/usr/local/lib" : "/usr/lib";
+                            if (std::filesystem::exists(std::filesystem::path(lib_dir) / "libraylib.a")) {
+                                plan.ldflags.push_back((std::filesystem::path(lib_dir) / "libraylib.a").string());
+                            } else {
+                                plan.ldflags.push_back("-L" + lib_dir);
+                                plan.ldflags.push_back("-lraylib");
+                            }
+                            found_raylib = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 3. Try project-local vendor/raylib or ancestor vendor_raylib cache
+                if (!found_raylib) {
+                    for (auto cur = std::filesystem::absolute(dir); !cur.empty() && cur != cur.parent_path(); cur = cur.parent_path()) {
+                        auto v_dir = cur / "vendor" / "raylib";
+                        auto c_dir = cur / ".cfire" / "cache" / "vendor_raylib";
+                        if (std::filesystem::exists(v_dir / "include" / "raylib.h")) {
+                            plan.cflags.push_back("-I" + (v_dir / "include").string());
+                            if (std::filesystem::exists(v_dir / "lib" / "libraylib.a")) {
+                                plan.ldflags.push_back((v_dir / "lib" / "libraylib.a").string());
+                            } else {
+                                plan.ldflags.push_back("-L" + (v_dir / "lib").string());
+                                plan.ldflags.push_back("-lraylib");
+                            }
+                            found_raylib = true;
+                            break;
+                        } else if (std::filesystem::exists(c_dir / "include" / "raylib.h")) {
+                            plan.cflags.push_back("-I" + (c_dir / "include").string());
+                            if (std::filesystem::exists(c_dir / "lib" / "libraylib.a")) {
+                                plan.ldflags.push_back((c_dir / "lib" / "libraylib.a").string());
+                            }
+                            found_raylib = true;
+                            break;
+                        } else if (std::filesystem::exists(v_dir / "raylib.h")) {
+                            plan.cflags.push_back("-I" + v_dir.string());
+                            if (std::filesystem::exists(v_dir / "libraylib.a")) {
+                                plan.ldflags.push_back((v_dir / "libraylib.a").string());
+                            }
+                            found_raylib = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 4. Try current working directory cache and global/local package cache
+                if (!found_raylib) {
+                    auto cwd_cache = std::filesystem::current_path() / ".cfire" / "cache" / "vendor_raylib";
+                    if (std::filesystem::exists(cwd_cache / "include" / "raylib.h")) {
+                        plan.cflags.push_back("-I" + (cwd_cache / "include").string());
+                        if (std::filesystem::exists(cwd_cache / "lib" / "libraylib.a")) {
+                            plan.ldflags.push_back((cwd_cache / "lib" / "libraylib.a").string());
+                        }
+                        found_raylib = true;
+                    }
+                }
+                if (!found_raylib) {
+                    auto cache_raylib = get_package_cache_root() / "vendor_raylib";
+                    if (std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
+                        plan.cflags.push_back("-I" + (cache_raylib / "include").string());
+                        if (std::filesystem::exists(cache_raylib / "lib" / "libraylib.a")) {
+                            plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
+                        }
+                        found_raylib = true;
+                    }
+                }
+
+                // 5. If still not found, attempt automatic fetch from official release
+                if (!found_raylib) {
+                    auto cache_raylib = get_package_cache_root() / "vendor_raylib";
+                    std::string raylib_url;
+#if defined(__APPLE__)
+                    raylib_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_macos.tar.gz";
+#elif defined(__linux__)
+                    raylib_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_linux_amd64.tar.gz";
+#endif
+                    if (!raylib_url.empty()) {
+                        std::cout << "==> Auto-resolving missing vendor:raylib from " << raylib_url << "..." << std::endl;
+                        std::string actual_sha;
+                        auto fetch_res = fetch_archive(raylib_url, "", cache_raylib, actual_sha);
+                        if (fetch_res && std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
+                            plan.cflags.push_back("-I" + (cache_raylib / "include").string());
+                            if (std::filesystem::exists(cache_raylib / "lib" / "libraylib.a")) {
+                                plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
+                            }
+                            found_raylib = true;
+                        }
+                    }
+                }
+
+#if defined(__APPLE__)
                 plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL"});
+#elif defined(__linux__)
+                plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
+#endif
             }
             continue;
         }

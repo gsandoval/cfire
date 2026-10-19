@@ -56,6 +56,18 @@ auto locate_runtime_dir() -> std::filesystem::path {
         }
     }
 #endif
+    if (const char* home = std::getenv("HOME")) {
+        auto user_rt = std::filesystem::path(home) / ".cfire" / "runtime";
+        if (std::filesystem::exists(user_rt / "cfire_prelude.hpp")) {
+            return user_rt;
+        }
+    }
+    for (const auto* share : {"/usr/local/share/cfire/runtime", "/usr/share/cfire/runtime"}) {
+        auto share_rt = std::filesystem::path(share);
+        if (std::filesystem::exists(share_rt / "cfire_prelude.hpp")) {
+            return share_rt;
+        }
+    }
     return cwd / "runtime";
 }
 
