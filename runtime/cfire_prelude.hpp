@@ -24,12 +24,25 @@
 #include <variant>
 #include <vector>
 
+inline auto operator+(const std::string& lhs, std::string_view rhs) -> std::string {
+    std::string res = lhs;
+    res.append(rhs);
+    return res;
+}
+
+inline auto operator+(std::string_view lhs, const std::string& rhs) -> std::string {
+    std::string res(lhs);
+    res.append(rhs);
+    return res;
+}
+
 namespace cfire {
 
 // --- Error Type for T! (std::expected<T, cfire::Error>) ---
 class Error {
 public:
-    explicit Error(std::string msg) : msg_(std::move(msg)) {}
+    Error(std::string msg) : msg_(std::move(msg)) {}
+    Error(const char* msg) : msg_(msg) {}
     [[nodiscard]] auto message() const noexcept -> std::string_view { return msg_; }
 private:
     std::string msg_;

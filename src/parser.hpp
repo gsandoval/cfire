@@ -982,9 +982,15 @@ private:
         std::vector<StmtPtr> else_body;
         if (cur().kind == TokenKind::KwElse) {
             advance();
-            auto eb = parse_block();
-            if (!eb) return std::unexpected(eb.error());
-            else_body = std::move(*eb);
+            if (cur().kind == TokenKind::KwIf) {
+                auto elif = parse_if_stmt();
+                if (!elif) return std::unexpected(elif.error());
+                else_body.push_back(std::move(*elif));
+            } else {
+                auto eb = parse_block();
+                if (!eb) return std::unexpected(eb.error());
+                else_body = std::move(*eb);
+            }
         }
         return make_stmt(IfStmt{std::move(*cond), std::move(*then_body), std::move(else_body), start.line}, start.line);
     }
@@ -1133,22 +1139,38 @@ private:
         return left;
     }
 
-    [[nodiscard]] auto parse_binary_expr() -> std::expected<ExprPtr, std::string> {
+    static int get_binary_precedence(TokenKind k) {
+        switch (k) {
+            case TokenKind::DoublePipe: return 1;
+            case TokenKind::DoubleAmp: return 2;
+            case TokenKind::Pipe: return 3;
+            case TokenKind::Amp: return 4;
+            case TokenKind::Eq:
+            case TokenKind::Neq: return 5;
+            case TokenKind::Lt:
+            case TokenKind::Gt:
+            case TokenKind::Le:
+            case TokenKind::Ge: return 6;
+            case TokenKind::Plus:
+            case TokenKind::Minus: return 7;
+            case TokenKind::Star:
+            case TokenKind::Slash:
+            case TokenKind::Percent: return 8;
+            default: return 0;
+        }
+    }
+
+    [[nodiscard]] auto parse_binary_expr(int min_prec = 1) -> std::expected<ExprPtr, std::string> {
         auto left = parse_unary_expr();
         if (!left) return std::unexpected(left.error());
         for (;;) {
             TokenKind k = cur().kind;
-            if (k == TokenKind::Plus || k == TokenKind::Minus || k == TokenKind::Star || k == TokenKind::Slash ||
-                k == TokenKind::Percent ||
-                k == TokenKind::Eq || k == TokenKind::Neq || k == TokenKind::Lt || k == TokenKind::Gt ||
-                k == TokenKind::Le || k == TokenKind::Ge) {
-                Token op = advance();
-                auto right = parse_unary_expr();
-                if (!right) return std::unexpected(right.error());
-                left = make_expr(BinaryExpr{std::move(*left), op.lexeme, std::move(*right)}, op.line, op.col);
-            } else {
-                break;
-            }
+            int prec = get_binary_precedence(k);
+            if (prec < min_prec) break;
+            Token op = advance();
+            auto right = parse_binary_expr(prec + 1);
+            if (!right) return std::unexpected(right.error());
+            left = make_expr(BinaryExpr{std::move(*left), op.lexeme, std::move(*right)}, op.line, op.col);
         }
         return left;
     }
@@ -1277,14 +1299,24 @@ private:
                     expr = std::move(*call);
                     break;
                 }
-                case TokenKind::Pipe:
-                case TokenKind::DoublePipe: {
+                case TokenKind::Pipe: {
                     auto cl = parse_closure_expr();
                     if (!cl) return std::unexpected(cl.error());
                     int ln = (*expr)->line;
                     int cln = (*expr)->col;
                     expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
                     break;
+                }
+                case TokenKind::DoublePipe: {
+                    if (peek(1).kind == TokenKind::LBrace) {
+                        auto cl = parse_closure_expr();
+                        if (!cl) return std::unexpected(cl.error());
+                        int ln = (*expr)->line;
+                        int cln = (*expr)->col;
+                        expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        break;
+                    }
+                    return expr;
                 }
                 default:
                     return expr;

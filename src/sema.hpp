@@ -336,8 +336,10 @@ public:
                     path_, vd->line, vd->col));
             }
             if (vd->is_mut) {
+                imm_vars_.erase(vd->name);
                 mut_vars_.insert(vd->name);
             } else {
+                mut_vars_.erase(vd->name);
                 imm_vars_.insert(vd->name);
             }
             if (vd->init) {
