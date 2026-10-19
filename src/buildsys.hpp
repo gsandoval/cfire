@@ -1268,7 +1268,7 @@ inline auto resolve_external_dep_source(
     const std::filesystem::path& runtime_dir,
     const std::filesystem::path& out_dir
 ) -> std::expected<void, std::string> {
-    auto res = analyze_and_emit(cf_file, runtime_dir, false);
+    auto res = analyze_and_emit(cf_file, runtime_dir, true);
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
 
@@ -1301,7 +1301,10 @@ inline auto resolve_external_dep_source(
     cmake << "cmake_minimum_required(VERSION 3.25)\n";
     cmake << "project(cfire_ejected_app LANGUAGES C CXX)\n";
     cmake << "set(CMAKE_CXX_STANDARD 23)\n";
-    cmake << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n\n";
+    cmake << "set(CMAKE_CXX_STANDARD_REQUIRED OFF)\n";
+    cmake << "if (CMAKE_CXX_COMPILER_ID MATCHES \"Clang|AppleClang\")\n";
+    cmake << "    add_compile_options(-std=c++2b)\n";
+    cmake << "endif()\n\n";
     cmake << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
     if (!plan.pkg_config_deps.empty()) {
         cmake << "find_package(PkgConfig REQUIRED)\n";
