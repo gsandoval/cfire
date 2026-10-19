@@ -5,7 +5,7 @@ import "core:fs"
 import "core:compress/zstd"
 
 type Options struct {
-    Input: path  `cli:"--input, -i" help:"Input file to compress"`
+    Input: path    `cli:"--input, -i" help:"Input file to compress"`
     Level: i32 = 3 `cli:"--level, -l" help:"Zstd level (1-22)"`
 }
 
