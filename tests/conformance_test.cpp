@@ -1122,7 +1122,7 @@ fn main() {
         require(srv_res.has_value(), "cfire::http::make_server creation");
         if (srv_res.has_value()) {
             auto port = srv_res->port();
-            std::jthread srv_th([&]() {
+            std::thread srv_th([&]() {
                 srv_res->serve_once([](const cfire::http::Request& req) -> cfire::http::Response {
                     cfire::http::Response resp;
                     resp.status_code = 200;
@@ -1141,6 +1141,9 @@ fn main() {
                 require(resp_res->is_ok(), "http response is_ok() true");
                 require(resp_res->body.contains("\"method\":\"GET\""), "response body reflects GET method");
                 require(resp_res->body.contains("\"path\":\"/api/test\""), "response body reflects path");
+            }
+            if (srv_th.joinable()) {
+                srv_th.join();
             }
         }
     }
