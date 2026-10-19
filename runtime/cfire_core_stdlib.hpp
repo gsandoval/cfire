@@ -742,12 +742,9 @@ private:
         }
         std::string_view num_str = src_.substr(start, pos_ - start);
         if (is_float) {
-            double d = 0.0;
-            auto [p, ec] = std::from_chars(num_str.data(), num_str.data() + num_str.size(), d);
-            if (ec != std::errc()) {
-                char* endptr = nullptr;
-                d = std::strtod(std::string(num_str).c_str(), &endptr);
-            }
+            char* endptr = nullptr;
+            std::string s(num_str);
+            double d = std::strtod(s.c_str(), &endptr);
             return Value(d);
         } else {
             int64_t i = 0;
