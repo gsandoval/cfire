@@ -1301,10 +1301,7 @@ inline auto resolve_external_dep_source(
     cmake << "cmake_minimum_required(VERSION 3.25)\n";
     cmake << "project(cfire_ejected_app LANGUAGES C CXX)\n";
     cmake << "set(CMAKE_CXX_STANDARD 23)\n";
-    cmake << "set(CMAKE_CXX_STANDARD_REQUIRED OFF)\n";
-    cmake << "if (CMAKE_CXX_COMPILER_ID MATCHES \"Clang|AppleClang\")\n";
-    cmake << "    add_compile_options(-std=c++2b)\n";
-    cmake << "endif()\n\n";
+    cmake << "set(CMAKE_CXX_STANDARD_REQUIRED OFF)\n\n";
     cmake << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
     if (!plan.pkg_config_deps.empty()) {
         cmake << "find_package(PkgConfig REQUIRED)\n";
@@ -1334,6 +1331,9 @@ inline auto resolve_external_dep_source(
         }
     }
     cmake << "add_executable(app main.cpp)\n";
+    cmake << "if (CMAKE_CXX_COMPILER_ID MATCHES \"Clang|AppleClang\")\n";
+    cmake << "    target_compile_options(app PRIVATE -std=c++2b)\n";
+    cmake << "endif()\n";
     cmake << "target_include_directories(app PRIVATE \"${CMAKE_CURRENT_SOURCE_DIR}\")\n";
     for (std::size_t i = 0; i < plan.pkg_config_deps.size(); ++i) {
         cmake << std::format("target_link_libraries(app PRIVATE PkgConfig::DEP_{})\n", i);
