@@ -1,0 +1,35 @@
+package main
+
+import "core:json"
+import "core:db/sqlite"
+import "core:crypto/blake3"
+
+type PackageMeta struct {
+    Name:    str `json:"name"    db:"name"`
+    Version: str `json:"version" db:"version"`
+    Size:    u64 `json:"size"    db:"size"`
+}
+
+fn ingest_manifest(mut db: sqlite.Conn, payload: str) -> PackageMeta! {
+    meta := try json.parse[PackageMeta](payload)
+    hash := blake3.hash_hex(payload.bytes())
+
+    try db.tx |tx| {
+        try tx.exec(
+            "INSERT INTO pkgs (name, version, size, hash) VALUES (?1, ?2, ?3, ?4)",
+            meta.Name, meta.Version, meta.Size, hash,
+        )
+    }
+    return meta
+}
+
+fn main() -> void! {
+    mut db := try sqlite.open(":memory:")
+    try db.exec("CREATE TABLE pkgs (name TEXT, version TEXT, size INTEGER, hash TEXT)")
+
+    sample := `{"name":"ripgrep","version":"14.1.0","size":4096}`
+    pkg := try ingest_manifest(mut db, sample)
+
+    rows := try db.query[PackageMeta]("SELECT name, version, size FROM pkgs")
+    println("Indexed {}@{} (rows={}, size={})", pkg.Name, pkg.Version, rows.len, rows[0].Size)
+}

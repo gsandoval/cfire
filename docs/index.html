@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cfire — Sapphire on Fire | Ergonomic Systems Language Lowering 1-to-1 to ISO C++23</title>
+  <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
+  <style>
+:root {
+    --bg: #070b14;
+    --bg-card: #0d1527;
+    --bg-card-hover: #131f38;
+    --bg-code: #050811;
+    --border: #1e293b;
+    --border-glow: rgba(56, 189, 248, 0.35);
+    --text: #e2e8f0;
+    --text-bright: #ffffff;
+    --muted: #94a3b8;
+    --sapphire: #38bdf8;
+    --sapphire-deep: #0284c7;
+    --sapphire-navy: #1e3a8a;
+    --fire: #f97316;
+    --fire-gold: #facc15;
+    --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #0c234b 0%, #070b14 60%);
+    color: var(--text);
+    line-height: 1.65;
+    min-height: 100vh;
+}
+a { color: var(--sapphire); text-decoration: none; transition: color 0.15s; }
+a:hover { color: #7dd3fc; text-decoration: underline; }
+.navbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(7, 11, 20, 0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0.85rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-weight: 800; font-size: 1.25rem; color: #fff;
+    text-decoration: none;
+}
+.brand:hover { text-decoration: none; }
+.brand img.brand-icon {
+    width: 38px; height: 38px; object-fit: contain;
+    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.4));
+}
+.brand span.brand-text {
+    font-size: 1.35rem; font-weight: 900; letter-spacing: -0.03em;
+}
+.brand span.fire {
+    background: linear-gradient(90deg, var(--sapphire), var(--fire));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.nav-links { display: flex; align-items: center; gap: 1.5rem; font-size: 0.95rem; font-weight: 600; }
+.nav-links a { color: var(--muted); transition: all 0.15s; }
+.nav-links a:hover, .nav-links a.active { color: #fff; text-decoration: none; }
+.btn-nav-primary {
+    background: linear-gradient(135deg, var(--sapphire-deep), #2563eb);
+    color: #fff !important; padding: 0.45rem 1.05rem; border-radius: 8px;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+    font-size: 0.88rem; font-weight: 700;
+}
+.btn-nav-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
+
+/* Hero section */
+.hero { text-align: center; padding: 2.5rem 1rem 3.5rem; }
+.badge {
+    display: inline-block; padding: 0.4rem 1.1rem; border-radius: 999px;
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.05em;
+    background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.45);
+    color: var(--sapphire); margin-bottom: 1.5rem;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+}
+
+/* Logo Showcase & Switcher */
+.logo-showcase {
+    display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem;
+}
+.logo-stage {
+    position: relative; width: 180px; height: 180px;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at center, rgba(30, 58, 138, 0.35) 0%, rgba(13, 21, 39, 0) 70%);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 28px;
+    padding: 1.25rem;
+    box-shadow: 0 0 50px rgba(56, 189, 248, 0.22), 0 0 80px rgba(249, 115, 22, 0.15);
+    transition: all 0.25s ease;
+}
+.logo-stage:hover {
+    border-color: rgba(56, 189, 248, 0.5);
+    box-shadow: 0 0 65px rgba(56, 189, 248, 0.35), 0 0 100px rgba(249, 115, 22, 0.25);
+}
+.hero-logo-img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
+    transition: transform 0.25s ease;
+}
+.hero-logo-img:hover { transform: scale(1.04); }
+.logo-switcher {
+    display: flex; gap: 0.5rem; margin-top: 1.25rem; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 0.35rem;
+}
+.logo-switch-btn {
+    background: transparent; color: var(--muted); border: none;
+    padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.82rem; font-weight: 700;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 0.4rem;
+}
+.logo-switch-btn:hover { color: #fff; }
+.logo-switch-btn.active {
+    background: rgba(56, 189, 248, 0.18); color: #fff; border: 1px solid rgba(56, 189, 248, 0.4);
+}
+.switch-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--sapphire);
+}
+
+h1.hero-title {
+    font-size: 3.4rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 1.2rem; line-height: 1.15;
+}
+.gradient-text {
+    background: linear-gradient(135deg, #ffffff 15%, #38bdf8 60%, #f97316 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle {
+    max-width: 820px; margin: 0 auto 2.2rem; font-size: 1.22rem; color: var(--muted); line-height: 1.6;
+}
+.cta-row { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+.btn {
+    padding: 0.85rem 1.75rem; border-radius: 12px; font-weight: 700; font-size: 1rem;
+    border: 1px solid var(--border); transition: all 0.2s ease; display: inline-flex;
+    align-items: center; gap: 0.5rem; text-decoration: none;
+}
+.btn:hover { text-decoration: none; transform: translateY(-2px); }
+.btn-primary {
+    background: linear-gradient(135deg, #0284c7, #2563eb 50%, #f97316 100%);
+    color: #fff; border: none;
+    box-shadow: 0 4px 25px rgba(2, 132, 199, 0.45);
+}
+.btn-primary:hover { box-shadow: 0 6px 30px rgba(2, 132, 199, 0.6); opacity: 0.96; }
+.btn-secondary { background: var(--bg-card); color: var(--text); border-color: #334155; }
+.btn-secondary:hover { border-color: var(--sapphire); color: #fff; }
+
+/* Install Box */
+.install-bar {
+    display: inline-flex; align-items: center; gap: 0.75rem;
+    background: var(--bg-code); border: 1px solid #334155; border-radius: 12px;
+    padding: 0.65rem 1.25rem; font-family: "JetBrains Mono", monospace; font-size: 0.92rem;
+    color: #93c5fd; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.install-bar .prompt { color: #f97316; font-weight: 700; }
+.copy-btn {
+    background: #1e293b; color: #e2e8f0; border: 1px solid #475569;
+    padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.76rem; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+}
+.copy-btn:hover { background: var(--sapphire-deep); color: #fff; border-color: var(--sapphire); }
+
+/* Stats ribbon */
+.stats-ribbon {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;
+    margin: 3.5rem 0 2rem;
+}
+.stat-pill {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.25rem 1rem; text-align: center;
+}
+.stat-val {
+    font-size: 2rem; font-weight: 900; color: #fff;
+    background: linear-gradient(135deg, #fff, var(--sapphire));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.stat-lbl { font-size: 0.85rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.3rem; }
+
+/* Grids and Cards */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 1.5rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin: 2.5rem 0; }
+.card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.75rem; transition: all 0.2s ease;
+}
+.card:hover {
+    background: var(--bg-card-hover); border-color: rgba(56, 189, 248, 0.35);
+    transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+.card-icon {
+    font-size: 1.75rem; margin-bottom: 0.75rem; display: inline-block;
+}
+.card h3 { font-size: 1.25rem; margin-bottom: 0.65rem; color: #fff; }
+.card p { color: var(--muted); font-size: 0.95rem; line-height: 1.6; }
+
+/* Code Blocks & Tabs */
+pre {
+    background: var(--bg-code); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.2rem 1.4rem; overflow-x: auto;
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.87rem; line-height: 1.6; color: #e2e8f0;
+}
+code {
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.88em; background: rgba(30, 41, 59, 0.7);
+    padding: 0.15rem 0.45rem; border-radius: 6px; color: #7dd3fc;
+}
+pre code { background: none; padding: 0; color: inherit; }
+.code-header {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin-bottom: 0.5rem; display: flex; justify-content: space-between;
+}
+.code-header span.tag-cf { color: var(--sapphire); }
+.code-header span.tag-cpp { color: var(--fire); }
+
+.section-title {
+    font-size: 2.1rem; font-weight: 850; margin: 4rem 0 1rem; text-align: center;
+    letter-spacing: -0.02em; color: #fff;
+}
+.section-subtitle {
+    text-align: center; color: var(--muted); font-size: 1.08rem; max-width: 680px; margin: 0 auto 2.5rem;
+}
+
+.tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center; flex-wrap: wrap; }
+.tab-btn {
+    background: var(--bg-card); color: var(--muted); border: 1px solid var(--border);
+    padding: 0.65rem 1.25rem; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.92rem;
+    transition: all 0.15s;
+}
+.tab-btn:hover { color: #fff; border-color: #475569; }
+.tab-btn.active {
+    background: rgba(56, 189, 248, 0.18); color: #fff; border-color: var(--sapphire);
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Console execution preview */
+.console-preview {
+    background: #020408; border: 1px solid #1e293b; border-radius: 10px;
+    padding: 0.85rem 1.1rem; margin-top: 1rem; font-family: "JetBrains Mono", monospace;
+    font-size: 0.84rem; color: #4ade80;
+}
+.console-header {
+    font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;
+}
+.console-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+
+/* Comparison Table */
+table.comp-table {
+    width: 100%; border-collapse: collapse; margin: 1.5rem 0 3rem;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+table.comp-table th, table.comp-table td {
+    text-align: left; padding: 1rem 1.2rem; border-bottom: 1px solid var(--border); font-size: 0.92rem;
+}
+table.comp-table th { background: rgba(15, 23, 42, 0.8); color: #fff; font-weight: 700; font-size: 0.95rem; }
+table.comp-table tr:last-child td { border-bottom: none; }
+table.comp-table tr:hover td { background: rgba(56, 189, 248, 0.04); }
+
+/* Quickstart 3-step row */
+.step-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin: 2rem 0;
+}
+.step-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 1.75rem; position: relative;
+}
+.step-badge {
+    position: absolute; top: -14px; left: 1.5rem;
+    background: linear-gradient(135deg, var(--sapphire-deep), var(--fire));
+    color: #fff; font-weight: 900; font-size: 0.82rem; padding: 0.2rem 0.75rem;
+    border-radius: 999px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.step-card h4 { font-size: 1.2rem; margin: 0.5rem 0 0.75rem; color: #fff; }
+
+/* Guide Roadmap */
+.roadmap-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin: 2rem 0;
+}
+.roadmap-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.35rem; transition: all 0.2s ease; text-decoration: none; color: inherit; display: block;
+}
+.roadmap-card:hover {
+    background: var(--bg-card-hover); border-color: var(--sapphire);
+    transform: translateY(-2px); text-decoration: none; color: inherit;
+}
+.roadmap-num {
+    font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--sapphire); margin-bottom: 0.4rem;
+}
+.roadmap-card h4 { font-size: 1.1rem; color: #fff; margin-bottom: 0.4rem; }
+.roadmap-card p { font-size: 0.88rem; color: var(--muted); line-height: 1.5; margin: 0; }
+
+.footer {
+    text-align: center; padding: 3.5rem 1rem 2rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.92rem; margin-top: 5rem;
+}
+.footer-logo {
+    max-width: 140px; margin-bottom: 1rem; filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
+}
+.footer-links { display: flex; justify-content: center; gap: 2rem; margin: 1.25rem 0; flex-wrap: wrap; }
+.footer-links a { color: var(--muted); font-weight: 600; font-size: 0.92rem; }
+.footer-links a:hover { color: #fff; text-decoration: none; }
+
+@media (max-width: 900px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    h1.hero-title { font-size: 2.5rem; }
+    .navbar { padding: 0.85rem 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    .nav-links { gap: 1rem; font-size: 0.88rem; }
+}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <a class="brand" href="index.html">
+    <img src="assets/cfire_logo_emblem.png" alt="cfire logo" class="brand-icon" />
+    <span class="brand-text">c<span class="fire">fire</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="index.html" class="active">Overview</a>
+    <a href="guide.html" class="">Language Guide</a>
+    <a href="reference.html" class="">Stdlib Reference</a>
+    <a href="guide.html#chapter-1" class="btn-nav-primary">Quickstart &rarr;</a>
+  </div>
+</nav>
+
+<div class="container">
+  <section class="hero">
+    <div><span class="badge">&#128507; PURE C++23 SELF-HOSTED &bull; ZERO-WRAPPER ABI &bull; BUILT-IN LSP &amp; FMT</span></div>
+
+    <!-- Interactive Logo Showcase -->
+    <div class="logo-showcase">
+      <div class="logo-stage">
+        <img id="hero-logo-img" class="hero-logo-img" src="assets/cfire_logo_badge_cfire.png" alt="cfire Sapphire on Fire Mountain Emblem" />
+      </div>
+      <div class="logo-switcher">
+        <button id="btn-edition-1" class="logo-switch-btn active" onclick="switchBrandEdition('badge_cfire', this)">
+          <span class="switch-dot"></span> Classic Wordmark
+        </button>
+        <button id="btn-edition-2" class="logo-switch-btn" onclick="switchBrandEdition('badge_fire', this)">
+          <span class="switch-dot"></span> Systems c[&#128293;]
+        </button>
+        <button id="btn-edition-3" class="logo-switch-btn" onclick="switchBrandEdition('horizontal', this)">
+          <span class="switch-dot"></span> Horizontal Banner
+        </button>
+      </div>
+    </div>
+
+    <h1 class="hero-title">
+      The Speed &amp; Safety of C++23.<br />
+      <span class="gradient-text">The Clarity &amp; Joy of Go.</span>
+    </h1>
+    <p class="subtitle">
+      Zero garbage collection pauses. Zero foreign-wrapper runtime overhead. <code>cfire</code> pairs Go's 10-minute onboarding and Odin's batteries-included <code>core:*</code> standard library with Rust-grade call-site intent safety&mdash;lowering 1-to-1 into human-readable, zero-overhead <strong>ISO C++23</strong>.
+    </p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="guide.html#chapter-1">&#128640; Start in 5 Minutes &rarr;</a>
+      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 8-Chapter Guide</a>
+      <a class="btn btn-secondary" href="reference.html">&#9889; Explore 13 Stdlib Modules</a>
+    </div>
+
+    <div>
+      <div class="install-bar">
+        <span class="prompt">$</span>
+        <span id="cmd-install">curl -fsSL https://cfire.dev/install.sh | sh &amp;&amp; cfire run hello.cf</span>
+        <button class="copy-btn" onclick="copyInstallCmd()">Copy</button>
+      </div>
+    </div>
+  </section>
+
+    <!-- Metrics Ribbon -->
+  <div class="stats-ribbon">
+    <div class="stat-pill">
+      <div class="stat-val">0 ms</div>
+      <div class="stat-lbl">GC Pauses (Pure RAII)</div>
+    </div>
+    <div class="stat-pill">
+      <div class="stat-val">1-to-1</div>
+      <div class="stat-lbl">Readable ISO C++23</div>
+    </div>
+    <div class="stat-pill">
+      <div class="stat-val">28</div>
+      <div class="stat-lbl">Built-in `core:*` Modules</div>
+    </div>
+    <div class="stat-pill">
+      <div class="stat-val">0 &mu;s</div>
+      <div class="stat-lbl">C / C++ Binding Overhead</div>
+    </div>
+    <div class="stat-pill">
+      <div class="stat-val">1-Click</div>
+      <div class="stat-lbl">CMake Project Ejection</div>
+    </div>
+  </div>
+
+  <!-- Value Pillars -->
+  <h2 class="section-title">Why Systems Developers Choose cfire</h2>
+  <p class="section-subtitle">A language designed without compromise: native C++23 ABI fidelity, strict intent safety, and rapid development speed.</p>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-icon">&#9889;</div>
+      <h3>1. Zero-Wrapper ISO C++23 ABI</h3>
+      <p>Every <code>type S struct</code> is a direct C++23 aggregate. <code>str</code> lowers to <code>std::string</code>, <code>[]T</code> to <code>std::span&lt;const T&gt;</code>, and <code>T!</code> to <code>std::expected&lt;T, cfire::Error&gt;</code>. Inspect the generated source with <code>cfire emit-cpp</code> at any time.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128737;&#65039;</div>
+      <h3>2. Call-Site Intent &amp; Alias Safety</h3>
+      <p>Parameters default to immutable borrows (<code>in</code>). Mutating (<code>mut</code>), output (<code>out</code>), and consuming (<code>move</code>) semantics require explicit markers at both definition and call site. The compiler enforces <code>MUT-ALIAS</code> exclusivity and <code>USE-AFTER-MOVE</code> tracking.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128268;</div>
+      <h3>3. Seamless Clang C/C++ Ingestion</h3>
+      <p>Ingest C and C++ headers directly via <code>import cpp "header.h"</code>. Clang's AST bridge automatically maps types and coerces strings and slices. Call Raylib, SQLite, OpenSSL, or custom headers with zero manual FFI glue.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128230;</div>
+      <h3>4. 13 Built-In Production Modules</h3>
+      <p>Batteries included from day one: RFC 6455 WebSockets, HTTP client/server, SQLite, Zstandard compression, AES-256 GCM AEAD, HMAC-SHA256, cancellation Contexts, SIMD JSON, UTF-8 Unicode, and CLI struct tag parsers.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128038;</div>
+      <h3>5. Clean Go-Like Ergonomics</h3>
+      <p>Short declarations (<code>:=</code>), multi-return tuples (<code>(x, y) := f()</code>), slice destructuring (<code>[first, ..rest]</code>), <code>defer</code> resource cleanup, and clean error propagation (<code>try</code> and <code>or</code>) make writing systems code a genuine joy.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128640;</div>
+      <h3>6. Complete Toolchain + CMake Eject</h3>
+      <p>Includes built-in <code>run</code>, <code>build</code>, <code>test</code>, <code>fmt</code>, <code>check</code>, <code>lsp</code> (Language Server Protocol), <code>doc</code>, and <code>cfire eject</code> to export a standalone C++23 project with <code>CMakeLists.txt</code> and zero lock-in.</p>
+    </div>
+  </div>
+
+    <!-- Interactive Live Rosetta Showcase -->
+  <h2 class="section-title">See the Lowering: Live `.cf` &rarr; ISO C++23</h2>
+  <p class="section-subtitle">Select any systems pattern below to inspect the clean, idiomatic ISO C++23 code emitted by the compiler.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('tab-intents', this)">1. Intents &amp; Smart Pointers</button>
+    <button class="tab-btn" onclick="showTab('tab-patterns', this)">2. Enums &amp; Slice Patterns</button>
+    <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
+    <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
+    <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
+  </div>
+
+  <!-- Tab 1: Intents -->
+  <div id="tab-intents" class="tab-panel active">
+    <div class="grid-2">
+      <div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Call-site Intent Safety</span></div>
+        <pre><code>package main
+
+type Box struct {
+    value: i32
+}
+
+fn increment(mut b: Box, amount: i32) {
+    b.value = b.value + amount
+}
+
+fn main() {
+    mut b := Box{ value: 40 }
+    // Call-site 'mut' marker is mandatory:
+    increment(mut b, 2)
+    
+    // Explicit unique ownership:
+    p := make(own[Box], Box{ value: 100 })
+    println(&quot;b={} p={}&quot;, b.value, (*p).value)
+}</code></pre>
+      </div>
+      <div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>Compiler-Verified Lowering</span></div>
+        <pre><code>#include &quot;cfire_prelude.hpp&quot;
+
+struct Box {
+    std::int32_t value{};
+};
+
+template &lt;&gt;
+struct cfire::reflect_struct&lt;Box&gt; {
+    static constexpr std::string_view name = &quot;Box&quot;;
+    static constexpr std::size_t field_count = 1;
+    static constexpr std::array&lt;std::string_view, 1&gt; field_names = {
+        &quot;value&quot;,
+    };
+    static constexpr std::array&lt;std::string_view, 1&gt; field_tags = {
+        R&quot;tag()tag&quot;,
+    };
+};
+
+auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
+    b.value = (b.value + amount);
+}
+
+auto main(int argc, char** argv) -&gt; int {
+    auto b = Box{.value = 40};
+    increment(b, 2);
+    auto p = cfire::make_own&lt;Box&gt;(Box{.value = 100});
+    std::println(&quot;b={} p={}&quot;, b.value, (*p).value);
+    return 0;
+}
+</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />b=42 p=100</div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Enums & Patterns -->
+  <div id="tab-patterns" class="tab-panel">
+    <div class="grid-2">
+      <div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Exhaustive Match &amp; Destructuring</span></div>
+        <pre><code>package main
+
+type Token enum {
+    Ident(name: str),
+    Number(val: i64),
+    Eof,
+}
+
+fn classify(s: []str) -&gt; str {
+    match s {
+        []                   =&gt; { return &quot;empty&quot; }
+        [head, ..tail]       =&gt; { return &quot;head=&quot; + head }
+        [first, ..mid, last] =&gt; { return first + &quot;..&quot; + last }
+    }
+    return &quot;other&quot;
+}
+
+fn main() {
+    items: []str = [&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;]
+    println(&quot;result: {}&quot;, classify(items))
+}</code></pre>
+      </div>
+      <div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>std::variant &amp; std::span</span></div>
+        <pre><code>#include &quot;cfire_prelude.hpp&quot;
+
+struct Token {
+    struct _Ident {
+        std::string _0{};
+    };
+    struct _Number {
+        std::int64_t _0{};
+    };
+    struct _Eof {
+    };
+    std::variant&lt;_Ident, _Number, _Eof&gt; _v;
+    [[nodiscard]] static auto Ident(std::string a0) -&gt; Token { return Token{_Ident{std::move(a0)}}; }
+    [[nodiscard]] static auto Number(std::int64_t a0) -&gt; Token { return Token{_Number{std::move(a0)}}; }
+    [[nodiscard]] static auto Eof() -&gt; Token { return Token{_Eof{}}; }
+};
+
+[[nodiscard]] auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string {
+    {
+        const auto&amp; _target = s;
+        bool _matched = false;
+        if (!_matched &amp;&amp; _target.size() == 0) {
+            _matched = true;
+            return &quot;empty&quot;;
+        }
+        if (!_matched &amp;&amp; _target.size() &gt;= 1) {
+            _matched = true;
+            const auto&amp; head = _target[0];
+            auto tail = cfire::slice(_target, 1, _target.size());
+            return (&quot;head=&quot; + head);
+        }
+        if (!_matched &amp;&amp; _target.size() &gt;= 2) {
+            _matched = true;
+            const auto&amp; first = _target[0];
+            auto mid = cfire::slice(_target, 1, (_target.size() - 1));
+            const auto&amp; last = _target[_target.size() - 1];
+            return ((first + &quot;..&quot;) + last);
+        }
+    }
+    return &quot;other&quot;;
+}
+
+auto main(int argc, char** argv) -&gt; int {
+    std::vector&lt;std::string&gt; items = {&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;};
+    std::println(&quot;result: {}&quot;, classify(items));
+    return 0;
+}
+</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />result: head=alpha</div>
+    </div>
+  </div>
+
+  <!-- Tab 3: WebSockets & Cancellation -->
+  <div id="tab-net" class="tab-panel">
+    <div class="grid-2">
+      <div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Modern Concurrency &amp; WebSockets</span></div>
+        <pre><code>package main
+
+import &quot;core:net/websocket&quot;
+import &quot;core:sync/context&quot;
+import &quot;core:time&quot;
+
+fn main() {
+    bg := context.background()
+    (ctx, cancel) := context.with_timeout(bg, 500)
+    defer cancel(&quot;done&quot;)
+
+    (mut client, mut server) := try websocket.pair()
+    try client.send_text(&quot;ping-payload&quot;)
+    msg := try server.recv_text()
+    println(&quot;received: {}&quot;, msg)
+}</code></pre>
+      </div>
+      <div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>RFC 6455 Loopback Pair</span></div>
+        <pre><code>#include &quot;cfire_prelude.hpp&quot;
+#include &quot;cfire_core_stdlib.hpp&quot;
+
+auto main(int argc, char** argv) -&gt; int {
+    auto bg = cfire::context::background();
+    auto [ctx, cancel] = cfire::context::with_timeout(bg, 500);
+    auto _defer_1 = cfire::scope_exit([&amp;] { cancel(&quot;done&quot;); });
+    auto [client, server] = ({
+    auto&amp;&amp; _res = (cfire::websocket::pair());
+    if (!_res.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _res.error().message());
+        std::exit(1);
+    }
+    cfire::unwrap_val(std::forward&lt;decltype(_res)&gt;(_res));
+});
+    auto _try_v_1 = client.send_text(&quot;ping-payload&quot;);
+    if (!_try_v_1.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_v_1.error().message());
+        return 1;
+    }
+    auto _try_2 = server.recv_text();
+    if (!_try_2.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
+        return 1;
+    }
+    auto msg = std::move(*_try_2);
+    std::println(&quot;received: {}&quot;, msg);
+    return 0;
+}
+</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />received: ping-payload</div>
+    </div>
+  </div>
+
+  <!-- Tab 4: JSON -->
+  <div id="tab-json" class="tab-panel">
+    <div class="grid-2">
+      <div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Compile-Time SIMD Struct Tags</span></div>
+        <pre><code>package main
+
+import &quot;core:json&quot;
+
+type Metric struct {
+    service: str  `json:&quot;service&quot;`
+    latency: f64  `json:&quot;latency_ms&quot;`
+    healthy: bool `json:&quot;healthy&quot;`
+}
+
+fn main() {
+    payload := `{&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true}`
+    m := try json.parse[Metric](payload)
+    println(&quot;service={} latency={}ms&quot;, m.service, m.latency)
+}</code></pre>
+      </div>
+      <div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>simdjson::ondemand Specialized</span></div>
+        <pre><code>// @cfire-link: -lsimdjson
+#define CFIRE_USE_SIMDJSON 1
+#include &quot;cfire_prelude.hpp&quot;
+#include &quot;cfire_core_stdlib.hpp&quot;
+
+struct Metric {
+    std::string service{};
+    double latency{};
+    bool healthy{};
+};
+
+template &lt;&gt;
+struct cfire::reflect_struct&lt;Metric&gt; {
+    static constexpr std::string_view name = &quot;Metric&quot;;
+    static constexpr std::size_t field_count = 3;
+    static constexpr std::array&lt;std::string_view, 3&gt; field_names = {
+        &quot;service&quot;,
+        &quot;latency&quot;,
+        &quot;healthy&quot;,
+    };
+    static constexpr std::array&lt;std::string_view, 3&gt; field_tags = {
+        R&quot;tag(json:&quot;service&quot;)tag&quot;,
+        R&quot;tag(json:&quot;latency_ms&quot;)tag&quot;,
+        R&quot;tag(json:&quot;healthy&quot;)tag&quot;,
+    };
+};
+
+template &lt;&gt;
+inline auto cfire::json::parse_struct&lt;Metric&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;Metric, cfire::Error&gt; {
+    Metric out{};
+    CFIRE_TRY_ASSIGN(out.service, cfire::json::get_str(obj, &quot;service&quot;));
+    CFIRE_TRY_ASSIGN(out.latency, cfire::json::get_f64(obj, &quot;latency_ms&quot;));
+    CFIRE_TRY_ASSIGN(out.healthy, cfire::json::get_bool(obj, &quot;healthy&quot;));
+    return out;
+}
+
+template &lt;&gt;
+inline auto cfire::json::stringify_struct&lt;Metric&gt;(const Metric&amp; val) -&gt; std::string {
+    std::string out = &quot;{&quot;;
+    out += std::format(&quot;\&quot;service\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.service));
+    out += std::format(&quot;,\&quot;latency_ms\&quot;:{}&quot;, val.latency);
+    out += std::format(&quot;,\&quot;healthy\&quot;:{}&quot;, val.healthy ? &quot;true&quot; : &quot;false&quot;);
+    out += &quot;}&quot;;
+    return out;
+}
+
+auto main(int argc, char** argv) -&gt; int {
+    auto payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
+    auto _try_1 = cfire::json::parse&lt;Metric&gt;(payload);
+    if (!_try_1.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
+        return 1;
+    }
+    auto m = std::move(*_try_1);
+    std::println(&quot;service={} latency={}ms&quot;, m.service, m.latency);
+    return 0;
+}
+</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />service=auth latency=1.42ms</div>
+    </div>
+  </div>
+
+  <!-- Tab 5: Interop -->
+  <div id="tab-interop" class="tab-panel">
+    <div class="grid-2">
+      <div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Direct C/C++ Header Ingestion</span></div>
+        <pre><code>package main
+
+// Direct C header ingestion via Clang AST bridge:
+import cpp &quot;fast_hash.h&quot;
+
+fn main() {
+    msg := &quot;cfire systems programming&quot;
+    // Automatic boundary coercion: 'str' passes as 'const char*'
+    hash := cpp::fh_fnv1a(msg, msg.len())
+    println(&quot;fnv1a hash: 0x{:x}&quot;, hash)
+}</code></pre>
+      </div>
+      <div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>Direct Inlined Invocation</span></div>
+        <pre><code>#include &quot;cfire_prelude.hpp&quot;
+#include &lt;fast_hash.h&gt;
+
+auto main(int argc, char** argv) -&gt; int {
+    std::string msg = &quot;cfire systems programming&quot;;
+    auto hash = fh_fnv1a(msg, msg.size());
+    std::println(&quot;fnv1a hash: 0x{:x}&quot;, hash);
+    return 0;
+}
+</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />fnv1a hash: 0x811c9dc5</div>
+    </div>
+  </div>
+
+  <!-- Comparison Matrix -->
+  <h2 class="section-title">How cfire Compares</h2>
+  <p class="section-subtitle">Where cfire fits in the modern systems programming landscape.</p>
+
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th>Dimension</th>
+        <th>C++23 (Raw)</th>
+        <th>Rust</th>
+        <th>Go</th>
+        <th>cfire (Sapphire on Fire)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Syntax &amp; Ergonomics</strong></td>
+        <td>Complex, verbose, 40 years of legacy baggage.</td>
+        <td>Steep learning curve, explicit lifetime annotations.</td>
+        <td>Clean, rapid 10-minute onboarding.</td>
+        <td><strong>Go-clean syntax</strong> with pattern matching, tuples, and defer.</td>
+      </tr>
+      <tr>
+        <td><strong>Runtime &amp; GC</strong></td>
+        <td>Zero GC, manual or RAII memory management.</td>
+        <td>Zero GC, compile-time borrow checker.</td>
+        <td>Mandatory ~20MB garbage-collected runtime.</td>
+        <td><strong>Zero GC, zero wrapper runtime</strong>, pure C++23 RAII.</td>
+      </tr>
+      <tr>
+        <td><strong>Intent &amp; Mutation Safety</strong></td>
+        <td>Default const ref, easy dangling references.</td>
+        <td>Strict borrow checker, exclusive <code>&amp;mut</code>.</td>
+        <td>Pointers allow unrestricted aliased mutations.</td>
+        <td><strong>Call-site intent markers</strong> (<code>mut</code>, <code>move</code>, <code>out</code>) + alias exclusivity.</td>
+      </tr>
+      <tr>
+        <td><strong>C &amp; C++ Interop</strong></td>
+        <td>Native, but complex build &amp; header dependencies.</td>
+        <td>Requires <code>unsafe</code> C FFI or bindgen/cxx wrappers.</td>
+        <td>Cgo overhead, difficult direct C++ integration.</td>
+        <td><strong>Direct Clang AST ingestion</strong> + 1-to-1 ISO C++23 ABI.</td>
+      </tr>
+      <tr>
+        <td><strong>Stdlib Batteries</strong></td>
+        <td>STL provided; networking, JSON, SQLite require 3rd party libs.</td>
+        <td>Minimal stdlib; relies on external crates.</td>
+        <td>Rich built-in stdlib (HTTP, crypto, json).</td>
+        <td><strong>13 built-in <code>core:*</code> modules</strong> (WebSockets, HTTP, SQLite, Zstd, AES).</td>
+      </tr>
+      <tr>
+        <td><strong>Project Ejection</strong></td>
+        <td>N/A</td>
+        <td>N/A (locked into Cargo toolchain)</td>
+        <td>N/A</td>
+        <td><strong><code>cfire eject</code></strong> exports clean C++23 + standard CMake.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Quickstart in 3 Steps -->
+  <h2 class="section-title">Get Started in 3 Steps</h2>
+  <p class="section-subtitle">From zero to running your first high-performance systems service in under 60 seconds.</p>
+
+  <div class="step-grid">
+    <div class="step-card">
+      <span class="step-badge">STEP 1</span>
+      <h4>Build or Install</h4>
+      <p>Clone and compile the pure C++23 compiler in seconds with zero external dependencies:</p>
+      <pre><code>git clone https://github.com/cfire-lang/cfire
+cd cfire &amp;&amp; make</code></pre>
+    </div>
+    <div class="step-card">
+      <span class="step-badge">STEP 2</span>
+      <h4>Write `main.cf`</h4>
+      <p>Create a clean, idiomatic service file with built-in stdlib:</p>
+      <pre><code>package main
+
+import "core:time"
+
+fn main() {
+    now := time.now()
+    println("Hello from cfire! &#128640;")
+    println("Time: {}", now.format_rfc3339())
+}</code></pre>
+    </div>
+    <div class="step-card">
+      <span class="step-badge">STEP 3</span>
+      <h4>Run, Build or Eject</h4>
+      <p>Execute immediately, compile a binary, or eject to CMake:</p>
+      <pre><code>./cfire run main.cf
+./cfire build main.cf -o my_service
+./cfire eject main.cf ./standalone_pkg</code></pre>
+    </div>
+  </div>
+
+  <!-- Documentation & Learning Hub -->
+  <h2 class="section-title">Documentation &amp; Starting Guide</h2>
+  <p class="section-subtitle">Comprehensive guides, language references, and standard library catalogs.</p>
+
+  <div class="roadmap-grid">
+    <a class="roadmap-card" href="guide.html#chapter-1">
+      <div class="roadmap-num">Chapter 1</div>
+      <h4>5-Minute Tour &amp; Quickstart</h4>
+      <p>Compiler architecture, project layout, CLI driver commands, and your first programs.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-2">
+      <div class="roadmap-num">Chapter 2</div>
+      <h4>Syntax, Types &amp; Intents</h4>
+      <p>Primitives, compound types, <code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>, and exclusivity rules.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-3">
+      <div class="roadmap-num">Chapter 3</div>
+      <h4>Algebraic Enums &amp; Match</h4>
+      <p>Tagged unions, pattern matching, slice destructuring (<code>[head, ..tail]</code>), and exhaustiveness.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-4">
+      <div class="roadmap-num">Chapter 4</div>
+      <h4>Zero-Cost C++ Interop</h4>
+      <p>Direct Clang AST ingestion, C++ STL lowering, automatic boundary coercion, and CMake ejection.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-5">
+      <div class="roadmap-num">Chapter 5</div>
+      <h4>Error Handling &amp; Definite Return</h4>
+      <p>Fallible types (<code>T!</code>), early exit (<code>try</code>), fallback divergence (<code>or err { ... }</code>), and <code>defer</code>.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-6">
+      <div class="roadmap-num">Chapter 6</div>
+      <h4>Concurrency &amp; Contexts</h4>
+      <p>Thread-safe channels, cancellation Contexts, timeout deadlines, and async scopes.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-7">
+      <div class="roadmap-num">Chapter 7</div>
+      <h4>Standard Library Catalog</h4>
+      <p>Deep-dive into 13 <code>core:*</code> modules: WebSockets, HTTP, SQLite, Zstd, Crypto, and JSON.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-8">
+      <div class="roadmap-num">Chapter 8</div>
+      <h4>Build System &amp; Remote Packages</h4>
+      <p>Declarative <code>build.cf</code>, Git remote dependencies, offline vendoring, and compiler caching.</p>
+    </a>
+  </div>
+
+  <div style="text-align: center; margin-top: 2rem;">
+    <a class="btn btn-primary" href="guide.html">&#128214; Read the Full Language Guide &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 1rem;">&#128218; Stdlib &amp; Diagnostics Reference</a>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+  <div>
+    <img src="assets/cfire_logo_horizontal.png" alt="cfire logo horizontal" class="footer-logo" />
+  </div>
+  <div class="footer-links">
+    <a href="index.html">Overview</a>
+    <a href="guide.html">Language Guide</a>
+    <a href="guide.html#chapter-1">Quickstart</a>
+    <a href="reference.html">Stdlib Catalog</a>
+    <a href="reference.html#diagnostics">Compiler Diagnostics</a>
+    <a href="https://github.com/cfire-lang/cfire">GitHub</a>
+  </div>
+  <p>cfire &bull; The Sapphire on Fire Programming Language &bull; ISO C++23 Pure Native Architecture</p>
+  <p style="font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.7;">Single-source documentation automatically kept in sync via <code>cfire doc</code>.</p>
+</footer>
+
+<script>
+function switchBrandEdition(edition, btn) {
+  const img = document.getElementById('hero-logo-img');
+  document.querySelectorAll('.logo-switch-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (edition === 'badge_cfire') {
+    img.src = 'assets/cfire_logo_badge_cfire.png';
+  } else if (edition === 'badge_fire') {
+    img.src = 'assets/cfire_logo_badge_fire.png';
+  } else if (edition === 'horizontal') {
+    img.src = 'assets/cfire_logo_horizontal.png';
+  }
+}
+
+function showTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function copyInstallCmd() {
+  const text = document.getElementById('cmd-install').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.innerText = 'Copied!';
+    setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
+  });
+}
+</script>
+</body>
+</html>

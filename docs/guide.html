@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Language Guide — cfire (Sapphire on Fire)</title>
+  <style>
+:root {
+    --bg: #070b14;
+    --bg-card: #0d1527;
+    --bg-card-hover: #131f38;
+    --bg-code: #050811;
+    --border: #1e293b;
+    --border-glow: rgba(56, 189, 248, 0.35);
+    --text: #e2e8f0;
+    --text-bright: #ffffff;
+    --muted: #94a3b8;
+    --sapphire: #38bdf8;
+    --sapphire-deep: #0284c7;
+    --sapphire-navy: #1e3a8a;
+    --fire: #f97316;
+    --fire-gold: #facc15;
+    --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #0c234b 0%, #070b14 60%);
+    color: var(--text);
+    line-height: 1.65;
+    min-height: 100vh;
+}
+a { color: var(--sapphire); text-decoration: none; transition: color 0.15s; }
+a:hover { color: #7dd3fc; text-decoration: underline; }
+.navbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(7, 11, 20, 0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0.85rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-weight: 800; font-size: 1.25rem; color: #fff;
+    text-decoration: none;
+}
+.brand:hover { text-decoration: none; }
+.brand img.brand-icon {
+    width: 38px; height: 38px; object-fit: contain;
+    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.4));
+}
+.brand span.brand-text {
+    font-size: 1.35rem; font-weight: 900; letter-spacing: -0.03em;
+}
+.brand span.fire {
+    background: linear-gradient(90deg, var(--sapphire), var(--fire));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.nav-links { display: flex; align-items: center; gap: 1.5rem; font-size: 0.95rem; font-weight: 600; }
+.nav-links a { color: var(--muted); transition: all 0.15s; }
+.nav-links a:hover, .nav-links a.active { color: #fff; text-decoration: none; }
+.btn-nav-primary {
+    background: linear-gradient(135deg, var(--sapphire-deep), #2563eb);
+    color: #fff !important; padding: 0.45rem 1.05rem; border-radius: 8px;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+    font-size: 0.88rem; font-weight: 700;
+}
+.btn-nav-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
+
+/* Hero section */
+.hero { text-align: center; padding: 2.5rem 1rem 3.5rem; }
+.badge {
+    display: inline-block; padding: 0.4rem 1.1rem; border-radius: 999px;
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.05em;
+    background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.45);
+    color: var(--sapphire); margin-bottom: 1.5rem;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+}
+
+/* Logo Showcase & Switcher */
+.logo-showcase {
+    display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem;
+}
+.logo-stage {
+    position: relative; width: 180px; height: 180px;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at center, rgba(30, 58, 138, 0.35) 0%, rgba(13, 21, 39, 0) 70%);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 28px;
+    padding: 1.25rem;
+    box-shadow: 0 0 50px rgba(56, 189, 248, 0.22), 0 0 80px rgba(249, 115, 22, 0.15);
+    transition: all 0.25s ease;
+}
+.logo-stage:hover {
+    border-color: rgba(56, 189, 248, 0.5);
+    box-shadow: 0 0 65px rgba(56, 189, 248, 0.35), 0 0 100px rgba(249, 115, 22, 0.25);
+}
+.hero-logo-img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
+    transition: transform 0.25s ease;
+}
+.hero-logo-img:hover { transform: scale(1.04); }
+.logo-switcher {
+    display: flex; gap: 0.5rem; margin-top: 1.25rem; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 0.35rem;
+}
+.logo-switch-btn {
+    background: transparent; color: var(--muted); border: none;
+    padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.82rem; font-weight: 700;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 0.4rem;
+}
+.logo-switch-btn:hover { color: #fff; }
+.logo-switch-btn.active {
+    background: rgba(56, 189, 248, 0.18); color: #fff; border: 1px solid rgba(56, 189, 248, 0.4);
+}
+.switch-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--sapphire);
+}
+
+h1.hero-title {
+    font-size: 3.4rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 1.2rem; line-height: 1.15;
+}
+.gradient-text {
+    background: linear-gradient(135deg, #ffffff 15%, #38bdf8 60%, #f97316 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle {
+    max-width: 820px; margin: 0 auto 2.2rem; font-size: 1.22rem; color: var(--muted); line-height: 1.6;
+}
+.cta-row { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+.btn {
+    padding: 0.85rem 1.75rem; border-radius: 12px; font-weight: 700; font-size: 1rem;
+    border: 1px solid var(--border); transition: all 0.2s ease; display: inline-flex;
+    align-items: center; gap: 0.5rem; text-decoration: none;
+}
+.btn:hover { text-decoration: none; transform: translateY(-2px); }
+.btn-primary {
+    background: linear-gradient(135deg, #0284c7, #2563eb 50%, #f97316 100%);
+    color: #fff; border: none;
+    box-shadow: 0 4px 25px rgba(2, 132, 199, 0.45);
+}
+.btn-primary:hover { box-shadow: 0 6px 30px rgba(2, 132, 199, 0.6); opacity: 0.96; }
+.btn-secondary { background: var(--bg-card); color: var(--text); border-color: #334155; }
+.btn-secondary:hover { border-color: var(--sapphire); color: #fff; }
+
+/* Install Box */
+.install-bar {
+    display: inline-flex; align-items: center; gap: 0.75rem;
+    background: var(--bg-code); border: 1px solid #334155; border-radius: 12px;
+    padding: 0.65rem 1.25rem; font-family: "JetBrains Mono", monospace; font-size: 0.92rem;
+    color: #93c5fd; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.install-bar .prompt { color: #f97316; font-weight: 700; }
+.copy-btn {
+    background: #1e293b; color: #e2e8f0; border: 1px solid #475569;
+    padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.76rem; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+}
+.copy-btn:hover { background: var(--sapphire-deep); color: #fff; border-color: var(--sapphire); }
+
+/* Stats ribbon */
+.stats-ribbon {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;
+    margin: 3.5rem 0 2rem;
+}
+.stat-pill {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.25rem 1rem; text-align: center;
+}
+.stat-val {
+    font-size: 2rem; font-weight: 900; color: #fff;
+    background: linear-gradient(135deg, #fff, var(--sapphire));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.stat-lbl { font-size: 0.85rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.3rem; }
+
+/* Grids and Cards */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 1.5rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin: 2.5rem 0; }
+.card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.75rem; transition: all 0.2s ease;
+}
+.card:hover {
+    background: var(--bg-card-hover); border-color: rgba(56, 189, 248, 0.35);
+    transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+.card-icon {
+    font-size: 1.75rem; margin-bottom: 0.75rem; display: inline-block;
+}
+.card h3 { font-size: 1.25rem; margin-bottom: 0.65rem; color: #fff; }
+.card p { color: var(--muted); font-size: 0.95rem; line-height: 1.6; }
+
+/* Code Blocks & Tabs */
+pre {
+    background: var(--bg-code); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.2rem 1.4rem; overflow-x: auto;
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.87rem; line-height: 1.6; color: #e2e8f0;
+}
+code {
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.88em; background: rgba(30, 41, 59, 0.7);
+    padding: 0.15rem 0.45rem; border-radius: 6px; color: #7dd3fc;
+}
+pre code { background: none; padding: 0; color: inherit; }
+.code-header {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin-bottom: 0.5rem; display: flex; justify-content: space-between;
+}
+.code-header span.tag-cf { color: var(--sapphire); }
+.code-header span.tag-cpp { color: var(--fire); }
+
+.section-title {
+    font-size: 2.1rem; font-weight: 850; margin: 4rem 0 1rem; text-align: center;
+    letter-spacing: -0.02em; color: #fff;
+}
+.section-subtitle {
+    text-align: center; color: var(--muted); font-size: 1.08rem; max-width: 680px; margin: 0 auto 2.5rem;
+}
+
+.tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center; flex-wrap: wrap; }
+.tab-btn {
+    background: var(--bg-card); color: var(--muted); border: 1px solid var(--border);
+    padding: 0.65rem 1.25rem; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.92rem;
+    transition: all 0.15s;
+}
+.tab-btn:hover { color: #fff; border-color: #475569; }
+.tab-btn.active {
+    background: rgba(56, 189, 248, 0.18); color: #fff; border-color: var(--sapphire);
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Console execution preview */
+.console-preview {
+    background: #020408; border: 1px solid #1e293b; border-radius: 10px;
+    padding: 0.85rem 1.1rem; margin-top: 1rem; font-family: "JetBrains Mono", monospace;
+    font-size: 0.84rem; color: #4ade80;
+}
+.console-header {
+    font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;
+}
+.console-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+
+/* Comparison Table */
+table.comp-table {
+    width: 100%; border-collapse: collapse; margin: 1.5rem 0 3rem;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+table.comp-table th, table.comp-table td {
+    text-align: left; padding: 1rem 1.2rem; border-bottom: 1px solid var(--border); font-size: 0.92rem;
+}
+table.comp-table th { background: rgba(15, 23, 42, 0.8); color: #fff; font-weight: 700; font-size: 0.95rem; }
+table.comp-table tr:last-child td { border-bottom: none; }
+table.comp-table tr:hover td { background: rgba(56, 189, 248, 0.04); }
+
+/* Quickstart 3-step row */
+.step-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin: 2rem 0;
+}
+.step-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 1.75rem; position: relative;
+}
+.step-badge {
+    position: absolute; top: -14px; left: 1.5rem;
+    background: linear-gradient(135deg, var(--sapphire-deep), var(--fire));
+    color: #fff; font-weight: 900; font-size: 0.82rem; padding: 0.2rem 0.75rem;
+    border-radius: 999px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.step-card h4 { font-size: 1.2rem; margin: 0.5rem 0 0.75rem; color: #fff; }
+
+/* Guide Roadmap */
+.roadmap-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin: 2rem 0;
+}
+.roadmap-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.35rem; transition: all 0.2s ease; text-decoration: none; color: inherit; display: block;
+}
+.roadmap-card:hover {
+    background: var(--bg-card-hover); border-color: var(--sapphire);
+    transform: translateY(-2px); text-decoration: none; color: inherit;
+}
+.roadmap-num {
+    font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--sapphire); margin-bottom: 0.4rem;
+}
+.roadmap-card h4 { font-size: 1.1rem; color: #fff; margin-bottom: 0.4rem; }
+.roadmap-card p { font-size: 0.88rem; color: var(--muted); line-height: 1.5; margin: 0; }
+
+.footer {
+    text-align: center; padding: 3.5rem 1rem 2rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.92rem; margin-top: 5rem;
+}
+.footer-logo {
+    max-width: 140px; margin-bottom: 1rem; filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
+}
+.footer-links { display: flex; justify-content: center; gap: 2rem; margin: 1.25rem 0; flex-wrap: wrap; }
+.footer-links a { color: var(--muted); font-weight: 600; font-size: 0.92rem; }
+.footer-links a:hover { color: #fff; text-decoration: none; }
+
+@media (max-width: 900px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    h1.hero-title { font-size: 2.5rem; }
+    .navbar { padding: 0.85rem 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    .nav-links { gap: 1rem; font-size: 0.88rem; }
+}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <a class="brand" href="index.html">
+    <img src="assets/cfire_logo_emblem.png" alt="cfire logo" class="brand-icon" />
+    <span class="brand-text">c<span class="fire">fire</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="index.html" class="">Overview</a>
+    <a href="guide.html" class="active">Language Guide</a>
+    <a href="reference.html" class="">Stdlib Reference</a>
+    <a href="guide.html#chapter-1" class="btn-nav-primary">Quickstart &rarr;</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="doc-layout">
+    <aside class="sidebar">
+      <h4>Guide Chapters</h4>
+      <ul>
+        <li><a href="#ch1">1. Philosophy &amp; Architecture</a></li>
+        <li><a href="#ch2">2. Tour of the Toolchain</a></li>
+        <li><a href="#ch3">3. Intents &amp; Smart Pointers</a></li>
+        <li><a href="#ch4">4. Struct Tags, Enums &amp; Match</a></li>
+        <li><a href="#ch5">5. Error Handling &amp; Defer</a></li>
+        <li><a href="#ch6">6. Concurrency &amp; Channels</a></li>
+        <li><a href="#ch7">7. C &amp; C++ Interop</a></li>
+        <li><a href="#ch8">8. Build System &amp; Eject</a></li>
+        <li><a href="#ch9">9. Comparisons &amp; Trade-Offs</a></li>
+      </ul>
+    </aside>
+    <main>
+      <h1>The `cfire` Language &amp; Systems Programming Guide</h1>
+      <p class="subtitle" style="margin: 0 0 2rem;">
+        A deep dive into writing safe, high-velocity systems software in <code>cfire</code> with 1-to-1 ISO C++23 lowering.
+      </p>
+
+      <h2 id="ch1">1. Philosophy &amp; Architecture</h2>
+      <p>
+        <code>cfire</code> ("Sapphire on Fire") is designed for engineers who want the fast, readable iteration loop of Go and Odin without sacrificing the raw performance or ecosystem of C++23. Every construct in <code>cfire</code> maps predictably to modern C++23 types—meaning zero FFI marshaling, zero hidden garbage collection, and full compatibility with <code>lldb</code>, <code>gdb</code>, Instruments, and Clang sanitizers.
+      </p>
+
+      <h2 id="ch2">2. Tour of the Toolchain</h2>
+      <pre><code>./cfire run examples/01-hello-core/main.cf
+./cfire run --sanitize examples/09-stdlib-test-pointers/main.cf
+./cfire build examples/07-types-match-map/main.cf
+./cfire test --sanitize examples/09-stdlib-test-pointers/main.cf
+./cfire fmt --check examples/
+./cfire lsp
+./cfire doc --check
+./cfire eject examples/08-multi-pkg-cc-build/main.cf ./standalone_cpp</code></pre>
+
+      <h2 id="ch3">3. Values, Ownership, Parameter Intents &amp; Smart Pointers</h2>
+      <p>
+        Bindings declared with <code>:=</code> are <code>const</code> by default. Function parameters default to zero-copy read-only borrows (<code>in</code>), while <code>mut</code>, <code>out</code>, and <code>move</code> parameters require matching call-site annotations and enforce the Law of Exclusivity at call sites (<code>cfire/MUT-ALIAS</code>):
+      </p>
+      <pre><code>fn compute_fixed_sum(arr: [4]i32, out total: i32) {
+    total = arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+fn main() {
+    owned_box := make(own[Box], Box{Value: 42})
+    shared_box := make(shared[Box], Box{Value: 58})
+    fixed_arr: [4]i32 = [10, 20, 30, 40]
+    mut sum_out: i32 = 0
+    compute_fixed_sum(fixed_arr, out sum_out)
+}</code></pre>
+
+      <h2 id="ch4">4. Algebraic Data Types, Struct Tags &amp; Exhaustive `match`</h2>
+      <p>
+        Struct tags (<code>`json:"..."`</code>, <code>`sql:"..."`</code>, <code>`cli:"..."`</code>) drive compile-time code generation for <code>core:json</code>, <code>core:db/sqlite</code>, and <code>core:cli</code>. Algebraic <code>enum</code> types lower to <code>std::variant</code> and enforce exhaustive <code>match</code> checking (<code>cfire/NON-EXHAUSTIVE-MATCH</code>).
+      </p>
+
+      <h2 id="ch5">5. Fearless Error Handling &amp; `defer`</h2>
+      <p>
+        Fallible functions return <code>T!</code> (<code>std::expected&lt;T, cfire::Error&gt;</code>). Callers propagate errors with <code>try</code>, provide defaults with <code>or val</code>, or recover inline with <code>or err { ... }</code>. Deterministic cleanup is handled via <code>defer</code>.
+      </p>
+
+      <h2 id="ch6">6. Structured Concurrency &amp; Typed Channels</h2>
+      <p>
+        Use <code>async.scope(workers: N) |scope| { ... }</code> for structured parallel task execution and <code>sync.make_channel[T]()</code> from <code>core:sync</code> for thread-safe typed message passing.
+      </p>
+
+      <h2 id="ch7">7. Zero-Friction C &amp; C++ Interop</h2>
+      <p>
+        When you write <code>import "c:fast_hash.h" as fh</code> or <code>import "cpp:..."</code>, <code>cfire</code> invokes Clang's JSON AST dump, caches the header index in <code>.cfire/cache/ast/</code>, and automatically inserts <code>cfire::c_str(...)</code> at <code>const char*</code> boundaries.
+      </p>
+
+      <h2 id="ch8">8. Unified Build System (`build.cf`) &amp; CMake Ejection</h2>
+      <p>
+        Add a <code>build.cf</code> file to compile companion C/C++ sources (<code>build.CC</code>), CMake subprojects (<code>build.CMake</code>), or system packages (<code>build.SystemLib</code>). Run <code>./cfire eject</code> at any time to generate a standalone C++23 + <code>CMakeLists.txt</code> project.
+      </p>
+
+      <h2 id="ch9">9. Comparisons &amp; Honest Design Trade-Offs</h2>
+      <p>
+        <strong>Vs. Cppfront &amp; Carbon:</strong> Rather than reskinning all of C++'s accidental complexity, <code>cfire</code> provides a smaller Go/Odin-inspired language with call-site mutation/move visibility, 13 built-in <code>core:*</code> modules, a unified build system, and <code>cfire eject</code>.
+      </p>
+      <p>
+        <strong>Vs. Rust, Zig &amp; Odin:</strong> Unlike Zig and Odin (which target the C ABI), <code>cfire</code> natively speaks the ISO C++23 ABI (<code>std::string</code>, <code>std::span</code>, <code>std::expected</code>). Unlike Rust, <code>cfire</code> enforces call-site mutation exclusivity (<code>cfire/MUT-ALIAS</code>) and move tracking (<code>cfire/USE-AFTER-MOVE</code>) without lifetime annotations (<code>'a</code>), paired with first-class Clang sanitizer support (<code>--sanitize</code>) and automatic precompiled header (<code>.pch</code>) acceleration.
+      </p>
+    </main>
+  </div>
+</div>
+<footer class="footer">
+  Generated by <code>cfire doc</code> &bull; <a href="reference.html">Continue to the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
+</footer>
+</body>
+</html>

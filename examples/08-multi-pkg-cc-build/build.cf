@@ -1,0 +1,13 @@
+package build
+
+import "core:build"
+
+var FastCRC = build.CC("./c_deps/fastcrc", {
+    Sources:  ["fastcrc.c"],
+    Includes: ["."],
+    Defines:  {"FASTCRC_SEED": 42},
+})
+
+var App = build.Executable("multi-pkg-demo", {
+    Entry: "main.cf",
+})

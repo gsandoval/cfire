@@ -1,0 +1,98 @@
+package main
+
+import "core:str"
+import "core:time"
+import "core:os"
+import "core:sync"
+import "core:math"
+import "core:rand"
+import "core:json"
+import "core:net"
+
+type Metric struct {
+    Service: str  `json:"service"`
+    Count:   i64  `json:"count"`
+    Latency: f64  `json:"latency"`
+    Healthy: bool `json:"healthy"`
+}
+
+type Box struct {
+    Value: i32
+}
+
+fn compute_fixed_sum(arr: [4]i32, out total: i32) {
+    total = arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+fn run_app() -> void! {
+    // 1. core:str, core:os, core:math, core:rand, core:time
+    t0 := time.now_ms()
+    os.setenv("CFIRE_ENV_MODE", "production")
+    env_mode := str.to_upper(os.getenv("CFIRE_ENV_MODE", "dev"))
+    parts := str.split("alpha,beta,gamma", ",")
+    joined := str.join(parts, "-")
+    clamped := math.clamp_i64(rand.range_i64(10, 20), 0, 100)
+
+    // 2. Smart pointers (`own[T]`, `shared[T]`), fixed-size `[4]i32`, and `out` intent
+    owned_box := make(own[Box], Box{Value: 42})
+    shared_box := make(shared[Box], Box{Value: 58})
+    fixed_arr: [4]i32 = [10, 20, 30, 40]
+    mut sum_out: i32 = 0
+    compute_fixed_sum(fixed_arr, out sum_out)
+
+    // 3. core:json roundtrip (`stringify` + `parse` with str, i64, f64, bool)
+    m_in := Metric{
+        Service: joined,
+        Count:   128,
+        Latency: 1.5,
+        Healthy: true,
+    }
+    encoded := json.stringify(m_in)
+    m_out := try json.parse[Metric](encoded)
+
+    // 4. core:sync Channel[i64] + core:net real POSIX loopback TCP socket
+    ch := sync.make_channel[i64]()
+    mut listener := try net.listen_tcp(0)
+    port := listener.port()
+
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            mut client := net.connect_tcp("127.0.0.1", port) or err {
+                return
+            }
+            _ := client.write("PING_CFIRE") or 0
+            ch.send(777)
+        }
+    }
+
+    mut server_conn := try listener.accept()
+    tcp_msg := try server_conn.read_str(64)
+    ch_val := ch.recv() or 0
+    elapsed := time.now_ms() - t0
+
+    println("Stdlib: env={} service={} count={} healthy={} ptr_sum={} arr_sum={} tcp={} ch={} (elapsed={}ms, clamped={})",
+        env_mode, m_out.Service, m_out.Count, m_out.Healthy,
+        (*owned_box).Value + (*shared_box).Value, sum_out, tcp_msg, ch_val, elapsed >= 0, clamped >= 10)
+}
+
+test "smart pointers and fixed array out intent" {
+    b := make(own[Box], Box{Value: 99})
+    assert((*b).Value == 99, "expected owned box value 99")
+
+    arr: [4]i32 = [1, 2, 3, 4]
+    mut total: i32 = 0
+    compute_fixed_sum(arr, out total)
+    assert(total == 10, "expected fixed array sum 10")
+}
+
+test "core:str and core:math utilities" {
+    trimmed := str.trim("  sapphire on fire  ")
+    assert(trimmed == "sapphire on fire", "trim check")
+    assert(math.clamp_i64(500, 0, 100) == 100, "clamp check")
+}
+
+fn main() {
+    run_app() or err {
+        println("error: {}", err.message())
+    }
+}

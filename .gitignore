@@ -1,0 +1,19 @@
+# Build outputs
+/cfire
+/.cfire_test_runner
+/cfire_cross_*
+*.o
+*.a
+*.so
+*.dylib
+
+# cfire compiler runtime cache
+.cfire/
+
+# System & Editor artifacts
+.DS_Store
+.zed/
+.vscode/
+.idea/
+*.swp
+*.tmp
