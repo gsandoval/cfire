@@ -575,7 +575,7 @@ tr:hover td { background: #FAFAF9; }
         <code>cfire</code> takes a pragmatic path designed specifically for teams whose target environment is <strong>ISO C++23</strong>:
       </p>
       <ol>
-        <li><strong>Ergonomic, Modern Frontend:</strong> Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>), algebraic enums, and monadic error handling (<code>T!</code>).</li>
+        <li><strong>Ergonomic, Modern Frontend:</strong> Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>move</code>), multi-return tuples, algebraic enums, and monadic error handling (<code>T!</code>).</li>
         <li><strong>1-to-1 ISO C++23 Lowering:</strong> Every <code>cfire</code> type, function, and expression lowers directly to standard C++23 concepts (<code>std::string_view</code>, <code>std::span</code>, <code>std::variant</code>, <code>std::expected</code>, <code>std::unique_ptr</code>).</li>
         <li><strong>Zero FFI Marshaling:</strong> Call any C or C++ header directly without writing manual wrappers.</li>
         <li><strong>Zero Lock-In:</strong> Run <code>cfire eject</code> at any time to export your entire project as standard C++23 source code with a standard <code>CMakeLists.txt</code>.</li>
@@ -834,11 +834,18 @@ fn (mut self: Account) deposit(amount: i64) {
           <tbody>
             <tr><td><strong><code>in</code> (default)</strong></td><td><code>x: T</code></td><td><code>f(x)</code></td><td><code>const T&amp;</code> / <code>string_view</code> / <code>span</code></td><td>Read-only borrow; zero copy overhead.</td></tr>
             <tr><td><strong><code>mut</code></strong></td><td><code>mut x: T</code></td><td><code>f(mut x)</code></td><td><code>T&amp;</code></td><td>In-place mutation; requires <code>mut</code> at call site.</td></tr>
-            <tr><td><strong><code>out</code></strong></td><td><code>out x: T</code></td><td><code>f(out x)</code></td><td><code>T&amp;</code></td><td>Callee overwrites value; requires <code>out</code> at call site.</td></tr>
             <tr><td><strong><code>move</code></strong></td><td><code>move x: T</code></td><td><code>f(move x)</code></td><td><code>T&amp;&amp;</code> + <code>std::move(x)</code></td><td>Ownership transfer; callee consumes value.</td></tr>
           </tbody>
         </table>
       </div>
+      <p style="margin-top:0.85rem;">
+        To return multiple values, <code>cfire</code> uses first-class tuples and deconstructing assignments instead of mutable output parameters:
+      </p>
+      <pre><code>fn parse_coords(raw: str) -&gt; (f64, f64)! {
+    return (12.5, 45.2)
+}
+
+(lat, lon) := try parse_coords("12.5,45.2")</code></pre>
 
       <h3>4.3 Call-Site Safety Diagnostics</h3>
       <p>The compiler enforces strict aliasing and mutation invariants:</p>
@@ -1037,21 +1044,21 @@ fn main() {
 import "core:build"
 
 // 1. Build a local C static library dependency
-var FastHash = build.CC("./native/fast_hash", {
+FastHash := build.CC("./native/fast_hash", {
     Sources:  ["fast_hash.c"],
     Includes: ["."],
     CFlags:   ["-O3", "-march=native"],
 })
 
 // 2. Build a CMake-based vendor subproject
-var KVStore = build.CMake("./vendor/libkv_cmake", {
+KVStore := build.CMake("./vendor/libkv_cmake", {
     Target:   "kvstore",
     Includes: ["include"],
     Defines:  {"KV_SALT": 42},
 })
 
 // 3. Link a system package via pkg-config
-var Sqlite3 = build.SystemLib("sqlite3")</code></pre>
+Sqlite3 := build.SystemLib("sqlite3")</code></pre>
 
       <h3>9.2 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
       <p>

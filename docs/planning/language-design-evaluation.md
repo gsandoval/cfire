@@ -89,7 +89,7 @@ A rigorous sweep of the compiler frontend ([`src/parser.hpp`](../../src/parser.h
 - **Impact**: Needless cognitive load, style debates, and visual fragmentation.
 - **PL Principle**: **Cognitive Budget & Minimal Redundancy**. One obvious, consistent way to declare bindings.
 - **Modern Parallel**: Rust unified around `let` / `let mut`; Zig unified around `const` / `var`; Odin unified around `:=` and `::`.
-- **Remedy**: Deprecate `var` and unify declarations into `x := val`, `mut x := val`, `x: T = val`, and `mut x: T = val` uniformly across local and file scopes.
+- **Remedy**: Drop `var` completely and unify declarations into `x := val`, `mut x := val`, `x: T = val`, and `mut x: T = val` uniformly across local and file scopes.
 
 #### LD-08: Lexical Disconnect in Foreign Escape Hatch (`cpp` vs `cplusplus`)
 - **The Issue**: `docs/GUIDE.md` instructs developers to use `cpp { ... }`, but the lexer only tokenizes `cplusplus` as `TokenKind::CppBlock`. Typing `cpp { ... }` causes a syntax error.
@@ -138,7 +138,7 @@ A rigorous sweep of the compiler frontend ([`src/parser.hpp`](../../src/parser.h
 - **Impact**: Destroyed functional composition, boilerplate initialization, and risk of reading uninitialized state.
 - **PL Principle**: **Modern Idiomatic Functional Composition**.
 - **Modern Parallel**: C# spent years mitigating `out` with `out var` before moving toward tuple returns. Swift explicitly avoided `out`, using only `inout`.
-- **Remedy**: Deprecate `out` in favor of first-class multi-return tuples `fn parse() -> (f64, f64)!`.
+- **Remedy**: Eliminate `out` parameters completely in favor of first-class multi-return tuples `fn parse() -> (f64, f64)!`.
 
 #### LD-14: Phantom Parameter Intent `forward`
 - **The Issue**: `forward` is accepted in function parameter declarations, but lowers to `const T&` (a plain read-only borrow) and is rejected at call sites.

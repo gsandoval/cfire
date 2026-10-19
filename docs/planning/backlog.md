@@ -285,10 +285,10 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 - **Status**: Completed (commit ready)
 - **Category**: Lexer / Language Consistency
 - **Target Files**: `src/lexer.hpp`
-- **Rationale**: `docs/GUIDE.md` specifies `cpp { ... }`, but the lexer only recognizes `cplusplus { ... }`, causing syntax errors for documented code.
+- **Rationale**: Standardize on concise, ergonomic `cpp { ... }` as the single foreign C++ escape syntax.
 - **Detailed Requirements**:
   1. Update `src/lexer.hpp` to recognize `cpp {` as `TokenKind::CppBlock`.
-  2. Deprecate `cplusplus` while maintaining backward compatibility.
+  2. Standardize solely on `cpp { ... }`.
 - **Acceptance Criteria**:
   - `cpp { ... }` blocks parse and emit verbatim C++23.
 
@@ -307,14 +307,14 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 
 ---
 
-### `LD-13`: Deprecate `out` Parameters in Favor of Multi-Return Tuples `[Completed]`
+### `LD-13`: Multi-Return Tuples & Deconstructing Assignment `[Completed]`
 - **Status**: Completed (commit ready)
 - **Category**: Language Ergonomics / Types
 - **Target Files**: `src/parser.hpp`, `src/sema.hpp`, `src/codegen.hpp`
-- **Rationale**: `out` parameters lack definite assignment analysis, force redundant caller pre-initialization, and destroy expression composability.
+- **Rationale**: Provide first-class value semantics for returning multiple values, avoiding mutable parameter boilerplate.
 - **Detailed Requirements**:
   1. Support first-class multi-return tuples `fn parse() -> (f64, f64)!`.
-  2. Add deprecation warning for `out` parameter intent.
+  2. Support deconstructing assignments `(x, y) := parse()`.
 - **Acceptance Criteria**:
   - Functions can return multiple values as tuples and deconstruct with `(x, y) := parse()`.
 
@@ -322,14 +322,14 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 
 ## Low Priority: Polish & Regularity (P3)
 
-### `LD-07`: Unify Variable Declarations & Deprecate `var` `[Completed]`
+### `LD-07`: Unify Variable Declarations `[Completed]`
 - **Status**: Completed (commit ready)
 - **Category**: Syntax Regularity
 - **Target Files**: `src/parser.hpp`
-- **Rationale**: `cfire` currently permits 7 competing ways to declare variables.
+- **Rationale**: Establish one clean, consistent syntax for binding declarations across all scopes.
 - **Detailed Requirements**:
   1. Standardize on `x := val` / `mut x := val` (inferred) and `x: T = val` / `mut x: T = val` (typed).
-  2. Allow these forms uniformly at both local and package scope; deprecate `var`.
+  2. Allow these four forms uniformly at both local and package scope.
 - **Acceptance Criteria**:
   - Cleaner syntax with zero keyword noise and uniform scope rules.
 

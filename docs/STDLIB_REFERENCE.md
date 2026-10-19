@@ -290,7 +290,7 @@ fn main() {
 ### `core:crypto/blake3` (`blake3`) — Cryptographic 256-Bit Digest (Alias)
 
 - **Auto-Link Flags:** `(CommonCrypto / built-in)`
-- **Overview:** Computes fast 256-bit cryptographic hex digests over byte slices (backward-compatible alias for `core:crypto/sha256`).
+- **Overview:** Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`).
 
 **Practical Example:**
 ```cf
@@ -976,31 +976,9 @@ fn main() {
 }
 ```
 
-### `[cfire/OUT-CALLSITE]` — Missing Call-Site `out` Marker
+### `[cfire/IMMUTABLE-MUT-ARG]` — Passing Immutable Binding as `mut` Argument
 
-Functions declaring `out param: T` initialize or overwrite an output parameter (`T&`). Callers must write `out arg` at the call site.
-
-**Rejected (`.cf`):**
-```cf
-fn write_sum(out total: i32) { total = 42 }
-fn main() {
-    mut s: i32 = 0
-    write_sum(s) // ERROR [cfire/OUT-CALLSITE]
-}
-```
-
-**Accepted (`.cf`):**
-```cf
-fn write_sum(out total: i32) { total = 42 }
-fn main() {
-    mut s: i32 = 0
-    write_sum(out s) // OK
-}
-```
-
-### `[cfire/IMMUTABLE-MUT-ARG]` — Passing Immutable Binding as `mut` or `out` Argument
-
-Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` or `out` parameters.
+Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` parameters.
 
 **Rejected (`.cf`):**
 ```cf
@@ -1119,36 +1097,5 @@ fn compute() -> i32 {
     }
     return x
 }
-```
-
-### `[cfire/DEPRECATED-OUT-PARAM]` — Deprecated `out` Parameter Intent (Favor Multi-Return Tuples)
-
-The `out` parameter intent is deprecated in favor of multi-return tuples `fn parse() -> (f64, f64)!` and deconstructing assignments `(x, y) := parse()`. `out` parameters bypass definite assignment checks and hinder expression composition.
-
-**Rejected (`.cf`):**
-```cf
-fn parse_coords(s: str, out x: f64, out y: f64) { ... } // WARNING [cfire/DEPRECATED-OUT-PARAM]
-```
-
-**Accepted (`.cf`):**
-```cf
-fn parse_coords(s: str) -> (f64, f64)! { return (1.0, 2.0) }
-(x, y) := try parse_coords("1,2") // OK
-```
-
-### `[cfire/DEPRECATED-VAR]` — Deprecated `var` Keyword (Favor Canonical `:=` or `: Type =`)
-
-The `var` keyword is deprecated in favor of canonical inferred declarations `x := val` / `mut x := val` and explicitly typed declarations `x: T = val` / `mut x: T = val`.
-
-**Rejected (`.cf`):**
-```cf
-var x = 42 // WARNING [cfire/DEPRECATED-VAR]
-var mut name: str = "hello" // WARNING [cfire/DEPRECATED-VAR]
-```
-
-**Accepted (`.cf`):**
-```cf
-x := 42 // OK
-mut name: str = "hello" // OK
 ```
 
