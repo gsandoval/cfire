@@ -27,7 +27,7 @@ jobs:
 
       - name: Verify Documentation Synchronization
         run: |
-          clang++ -std=c++23 -O2 -Wall -Wextra src/main.cpp -o cfire
+          make build
           ./cfire doc --check
 
       - name: Setup GitHub Pages

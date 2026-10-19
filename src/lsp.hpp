@@ -1699,7 +1699,7 @@ public:
                         }
                     }
                 } else if (imp.is_cpp) {
-                    std::vector<std::string> cflags = {"-std=c++23"};
+                    std::vector<std::string> cflags = {"-std=c++2b"};
                     // Check sibling or parent `build.cf` for local C/C++ include directories
                     std::filesystem::path search_dir = src_dir;
                     for (int depth = 0; depth < 3 && !search_dir.empty(); ++depth) {
