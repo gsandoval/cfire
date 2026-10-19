@@ -11,6 +11,7 @@ build:
 dogfood: build
 	mkdir -p src/bootstrap
 	./cfire emit-cpp src/lexer.cf > src/bootstrap/lexer.generated.hpp
+	./cfire emit-cpp src/formatter.cf > src/bootstrap/formatter.generated.hpp
 	$(MAKE) test
 
 docs: build

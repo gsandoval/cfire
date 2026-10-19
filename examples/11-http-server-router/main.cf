@@ -4,7 +4,7 @@ import "core:net/http"
 import "core:json"
 
 type Item struct {
-    id: i64 `json:"id"`
+    id:   i64 `json:"id"`
     name: str `json:"name"`
 }
 
@@ -15,16 +15,16 @@ fn main() {
     mut router := http.make_router()
 
     router.get("/health", |req| {
-        return http.Response.json(200, "{\"status\":\"healthy\",\"version\":\"1.0.0\"}")
+            return http.Response.json(200, "{\"status\":\"healthy\",\"version\":\"1.0.0\"}")
     })
 
     router.get("/items/:id", |req| {
-        id := req.param("id")
-        return http.Response.text(200, "Item lookup: id=" + id)
+            id := req.param("id")
+            return http.Response.text(200, "Item lookup: id=" + id)
     })
 
     router.post("/items", |req| {
-        return http.Response.json(201, "{\"created\":true,\"payload\":" + req.body + "}")
+            return http.Response.json(201, "{\"created\":true,\"payload\":" + req.body + "}")
     })
 
     // 2. Standalone Unit Testing: Dispatch requests purely in memory with NO open sockets

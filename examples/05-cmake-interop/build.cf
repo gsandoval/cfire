@@ -17,14 +17,14 @@ package build
 import "core:build"
 
 var ZstdCMake = build.CMake("github.com/facebook/zstd@v1.5.7", {
-    Target: "libzstd_static",
-    Static: true,
+        Target: "libzstd_static",
+        Static: true,
 })
 
 var TreeSitterCC = build.CC("github.com/tree-sitter/tree-sitter@v0.24.3", {
-    Target: "tree-sitter",
+        Target: "tree-sitter",
 })
 
 var App = build.Executable("cmake-interop-demo", {
-    Entry: "main.cf",
+        Entry: "main.cf",
 })
