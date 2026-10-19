@@ -545,7 +545,12 @@ private:
                     writeln(std::format("return {};", emit_expr(st.value)));
                 }
             } else if constexpr (std::is_same_v<T, IfStmt>) {
-                writeln(std::format("if ({}) {{", emit_expr(st.cond)));
+                std::string cond = emit_expr(st.cond);
+                if (cond.starts_with('(') && cond.ends_with(')')) {
+                    writeln(std::format("if {} {{", cond));
+                } else {
+                    writeln(std::format("if ({}) {{", cond));
+                }
                 ++indent_;
                 for (const auto& b : st.then_body) emit_stmt(b, in_main);
                 --indent_;
@@ -574,7 +579,12 @@ private:
                         writeln("}");
                     }
                 } else {
-                    writeln(std::format("while ({}) {{", emit_expr(st.iter_expr)));
+                    std::string cond = emit_expr(st.iter_expr);
+                    if (cond.starts_with('(') && cond.ends_with(')')) {
+                        writeln(std::format("while {} {{", cond));
+                    } else {
+                        writeln(std::format("while ({}) {{", cond));
+                    }
                     ++indent_;
                     for (const auto& b : st.body) emit_stmt(b, in_main);
                     --indent_;

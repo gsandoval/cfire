@@ -1,6 +1,8 @@
 #pragma once
-// src/lexer.hpp — Native C++23 Tokenizer for cfire (.cf)
+// src/lexer.hpp — Tokenizer for cfire (.cf)
 
+#include "lexer_types.hpp"
+#include "bootstrap/lexer.generated.hpp"
 #include <cctype>
 #include <expected>
 #include <format>
@@ -11,167 +13,7 @@
 
 namespace cfire::frontend {
 
-enum class TokenKind {
-    Eof,
-    Ident,
-    Int,
-    Float,
-    String,
-    RawString, // Backtick `...`
-    CppBlock,  // Balanced `{ ... }` after `cplusplus`
-
-    // Keywords
-    KwPackage,
-    KwImport,
-    KwCpp,
-    KwAs,
-    KwType,
-    KwStruct,
-    KwEnum,
-    KwInterface,
-    KwMap,
-    KwFn,
-    KwAsync,
-    KwIn,
-    KwMut,
-    KwOut,
-    KwMove,
-    KwVar,
-    KwIf,
-    KwElse,
-    KwFor,
-    KwMatch,
-    KwDefer,
-    KwReturn,
-    KwTry,
-    KwOr,
-    KwTest,
-    KwTrue,
-    KwFalse,
-    KwNone,
-
-    // Symbols & Operators
-    LParen,
-    RParen,
-    LBrace,
-    RBrace,
-    LBracket,
-    RBracket,
-    Colon,
-    ColonEq,
-    DoubleColon,
-    Comma,
-    Dot,
-    DotDot,
-    Arrow,
-    FatArrow,
-    Assign,
-    PlusEq,
-    MinusEq,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percent,
-    Amp,
-    Pipe,
-    DoublePipe,
-    Bang,
-    Question,
-    At,
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Le,
-    Ge,
-    Semicolon,
-};
-
-struct Token {
-    TokenKind kind = TokenKind::Eof;
-    std::string lexeme{};
-    int line = 1;
-    int col = 1;
-};
-
-[[nodiscard]] inline auto token_kind_name(TokenKind k) -> std::string_view {
-    switch (k) {
-        case TokenKind::Eof: return "EOF";
-        case TokenKind::Ident: return "IDENT";
-        case TokenKind::Int: return "INT";
-        case TokenKind::Float: return "FLOAT";
-        case TokenKind::String: return "STRING";
-        case TokenKind::RawString: return "RAW_STRING";
-        case TokenKind::CppBlock: return "CPP_BLOCK";
-        case TokenKind::KwPackage: return "package";
-        case TokenKind::KwImport: return "import";
-        case TokenKind::KwCpp: return "cpp";
-        case TokenKind::KwAs: return "as";
-        case TokenKind::KwType: return "type";
-        case TokenKind::KwStruct: return "struct";
-        case TokenKind::KwEnum: return "enum";
-        case TokenKind::KwInterface: return "interface";
-        case TokenKind::KwMap: return "map";
-        case TokenKind::KwFn: return "fn";
-        case TokenKind::KwAsync: return "async";
-        case TokenKind::KwIn: return "in";
-        case TokenKind::KwMut: return "mut";
-        case TokenKind::KwOut: return "out";
-        case TokenKind::KwMove: return "move";
-        case TokenKind::KwVar: return "var";
-        case TokenKind::KwIf: return "if";
-        case TokenKind::KwElse: return "else";
-        case TokenKind::KwFor: return "for";
-        case TokenKind::KwMatch: return "match";
-        case TokenKind::KwDefer: return "defer";
-        case TokenKind::KwReturn: return "return";
-        case TokenKind::KwTry: return "try";
-        case TokenKind::KwOr: return "or";
-        case TokenKind::KwTest: return "test";
-        case TokenKind::KwTrue: return "true";
-        case TokenKind::KwFalse: return "false";
-        case TokenKind::KwNone: return "none";
-        case TokenKind::LParen: return "(";
-        case TokenKind::RParen: return ")";
-        case TokenKind::LBrace: return "{";
-        case TokenKind::RBrace: return "}";
-        case TokenKind::LBracket: return "[";
-        case TokenKind::RBracket: return "]";
-        case TokenKind::Colon: return ":";
-        case TokenKind::ColonEq: return ":=";
-        case TokenKind::DoubleColon: return "::";
-        case TokenKind::Comma: return ",";
-        case TokenKind::Dot: return ".";
-        case TokenKind::DotDot: return "..";
-        case TokenKind::Arrow: return "->";
-        case TokenKind::FatArrow: return "=>";
-        case TokenKind::Assign: return "=";
-        case TokenKind::PlusEq: return "+=";
-        case TokenKind::MinusEq: return "-=";
-        case TokenKind::Plus: return "+";
-        case TokenKind::Minus: return "-";
-        case TokenKind::Star: return "*";
-        case TokenKind::Slash: return "/";
-        case TokenKind::Percent: return "%";
-        case TokenKind::Amp: return "&";
-        case TokenKind::Pipe: return "|";
-        case TokenKind::DoublePipe: return "||";
-        case TokenKind::Bang: return "!";
-        case TokenKind::Question: return "?";
-        case TokenKind::At: return "@";
-        case TokenKind::Eq: return "==";
-        case TokenKind::Neq: return "!=";
-        case TokenKind::Lt: return "<";
-        case TokenKind::Gt: return ">";
-        case TokenKind::Le: return "<=";
-        case TokenKind::Ge: return ">=";
-        case TokenKind::Semicolon: return ";";
-    }
-    return "?";
-}
-
-[[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
+[[nodiscard]] inline auto tokenize_cxx(std::string_view file, std::string_view src)
     -> std::expected<std::vector<Token>, std::string>
 {
     static const std::unordered_map<std::string_view, TokenKind> keywords = {
@@ -387,6 +229,11 @@ struct Token {
             tokens.push_back(Token{TokenKind::Ge, ">=", start_line, start_col});
             continue;
         }
+        if (c == '&' && c2 == '&') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::DoubleAmp, "&&", start_line, start_col});
+            continue;
+        }
         if (c == '|' && c2 == '|') {
             advance(); advance();
             tokens.push_back(Token{TokenKind::DoublePipe, "||", start_line, start_col});
@@ -426,6 +273,26 @@ struct Token {
 
     tokens.push_back(Token{TokenKind::Eof, "", line, col});
     return tokens;
+}
+
+[[nodiscard]] inline auto selfhost_tokenize_adapter(std::string_view file, std::string_view src)
+    -> std::expected<std::vector<Token>, std::string>
+{
+    auto res = ::selfhost_tokenize(file, src);
+    if (!res) {
+        return std::unexpected(std::string(res.error().message()));
+    }
+    return std::move(res.value());
+}
+
+[[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
+    -> std::expected<std::vector<Token>, std::string>
+{
+    const char* force_cxx = std::getenv("CFIRE_CXX_LEXER");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return tokenize_cxx(file, src);
+    }
+    return selfhost_tokenize_adapter(file, src);
 }
 
 } // namespace cfire::frontend

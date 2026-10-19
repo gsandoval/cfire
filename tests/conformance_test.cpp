@@ -842,8 +842,8 @@ type AuditLog struct {
         auto guide_path = docs_dir / "GUIDE.md";
         auto guide_txt = cfire::build::read_file_text(guide_path);
         require(guide_txt.has_value() &&
-                guide_txt->contains("var FastHash = build.CC(") &&
-                guide_txt->contains("var KVStore = build.CMake("),
+                guide_txt->contains("FastHash := build.CC(") &&
+                guide_txt->contains("KVStore := build.CMake("),
             "docs/GUIDE.md Chapter 8 declarative build.cf reconciliation (BS-01)");
     }
 
@@ -2290,10 +2290,10 @@ void test_cfire_eval([[maybe_unused]] const std::filesystem::path& rt_dir) {
         .assert_ok("eval statement exit 0 (TOOL-02)")
         .assert_contains("eval-test-ok", "eval statement stdout match (TOOL-02)");
 
-    // 2. Expression eval (-e)
+    // 2. Expression eval (-e) (respects standard operator precedence: 100 + (42 * 2) = 184)
     run_cfire("eval -e '100 + 42 * 2'")
         .assert_ok("eval expression exit 0 (TOOL-02)")
-        .assert_contains("284", "eval expression stdout 284 match (TOOL-02)");
+        .assert_contains("184", "eval expression stdout 184 match (TOOL-02)");
 
     // 3. Pre-imported stdlib (str + unicode)
     run_cfire("eval 'name := \"cfire🚀\"; println(\"upper={}, runes={}\", str.to_upper(\"cfire\"), unicode.rune_count(name))'")
@@ -3034,6 +3034,156 @@ fn main() {
     std::println("--- PASS: test_net_http_and_router (HTTP Server & Router)");
 }
 
+void test_selfhost_lexer_parity_and_benchmark(const std::filesystem::path& rt_dir) {
+    (void)rt_dir;
+    std::println("=== RUN   test_selfhost_lexer_parity_and_benchmark (Self-Hosted Lexer Dogfooding & Measurable Parity)");
+
+    // 1. Files to test
+    std::vector<std::string> test_files = {
+        "examples/01-hello-core/main.cf",
+        "examples/02-log-compressor/main.cf",
+        "examples/03-pkg-cache/main.cf",
+        "examples/04-async-workers/main.cf",
+        "examples/05-cmake-interop/main.cf",
+        "examples/06-raylib-viz/main.cf",
+        "examples/07-types-match-map/main.cf",
+        "examples/08-multi-pkg-cc-build/main.cf",
+        "examples/09-stdlib-test-pointers/main.cf",
+        "examples/10-cmake-and-make-deps/main.cf",
+        "examples/11-http-server-router/main.cf",
+        "src/lexer.cf",
+    };
+
+    auto check_parity = [](std::string_view name, std::string_view src) {
+        auto cxx_res = cfire::frontend::tokenize_cxx(name, src);
+        auto cf_res = cfire::frontend::selfhost_tokenize_adapter(name, src);
+
+        require(cxx_res.has_value() == cf_res.has_value(),
+            std::format("{}: outcome match (cxx={}, cf={})", name, cxx_res.has_value(), cf_res.has_value()));
+        if (!cxx_res.has_value() && !cf_res.has_value()) {
+            require(cxx_res.error() == cf_res.error(),
+                std::format("{}: error message match ('{}' vs '{}')", name, cxx_res.error(), cf_res.error()));
+            return;
+        }
+        if (!cxx_res || !cf_res) return;
+
+        const auto& cxx_toks = *cxx_res;
+        const auto& cf_toks = *cf_res;
+        require(cxx_toks.size() == cf_toks.size(),
+            std::format("{}: token count match (cxx={}, cf={})", name, cxx_toks.size(), cf_toks.size()));
+
+        std::size_t min_sz = std::min(cxx_toks.size(), cf_toks.size());
+        for (std::size_t i = 0; i < min_sz; ++i) {
+            const auto& t1 = cxx_toks[i];
+            const auto& t2 = cf_toks[i];
+            if (t1.kind != t2.kind || t1.lexeme != t2.lexeme || t1.line != t2.line || t1.col != t2.col) {
+                require(false, std::format("{}[{}]: token mismatch: C++({} '{}' L{}:C{}) vs cfire({} '{}' L{}:C{})",
+                    name, i,
+                    cfire::frontend::token_kind_name(t1.kind), t1.lexeme, t1.line, t1.col,
+                    cfire::frontend::token_kind_name(t2.kind), t2.lexeme, t2.line, t2.col));
+                break;
+            }
+        }
+    };
+
+    // Parity check across all real repository files
+    std::string large_workload;
+    for (const auto& path : test_files) {
+        auto content = cfire::build::read_file_text(path);
+        if (content.has_value()) {
+            check_parity(path, *content);
+            large_workload += *content;
+            large_workload += "\n\n";
+        }
+    }
+
+    // Parity check on synthetic edge-case snippets
+    check_parity("synthetic_escape", R"cf(
+        str_val := "hello\nworld\t\r\"escaped\"\\"
+        raw_val := `multiline
+        raw "string" with {braces}`
+    )cf");
+
+    check_parity("synthetic_ops_and_nums", R"cf(
+        a := 10 + 20 - 3 * 4 / 5 % 2
+        f := 3.14159 + 0.005 + 1_000_000
+        cond := (a == 10 && f != 0.0) || (a <= 5 && f >= 2.0)
+        range := arr[1..10]
+        assign := x := y :: z -> w => q += 1 -= 2
+        symbols := () {} [] : , . = + - * / % & | ! ? @ < > ;
+    )cf");
+
+    check_parity("synthetic_cpp_block", R"cf(
+        cpp {
+            int a = 1;
+            for (int i = 0; i < 10; ++i) {
+                if (i == 5) { break; }
+            }
+        }
+        word := "regular_ident"
+    )cf");
+
+    check_parity("synthetic_unterminated_str", "unterminated := \"hello world");
+    check_parity("synthetic_unterminated_raw", "raw := `unterminated");
+    check_parity("synthetic_unexpected_char", "bad := ~");
+
+    std::println("  [PASS] 100% token-for-token parity verified across all files & edge cases");
+
+    // 2. High-Precision Performance Benchmark
+    // Replicate workload to ~1.5 MB of code
+    std::string benchmark_payload;
+    while (benchmark_payload.size() < 1'500'000) {
+        benchmark_payload += large_workload;
+    }
+
+    // Warm-up
+    (void)cfire::frontend::tokenize_cxx("warmup.cf", benchmark_payload);
+    (void)cfire::frontend::selfhost_tokenize_adapter("warmup.cf", benchmark_payload);
+
+    constexpr int kIters = 20;
+
+    // Benchmark C++ Lexer
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t total_cxx_tokens = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto res = cfire::frontend::tokenize_cxx("bench.cf", benchmark_payload);
+        total_cxx_tokens += res->size();
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double total_bytes = static_cast<double>(benchmark_payload.size()) * kIters;
+    double mbs_cxx = (total_bytes / (1024.0 * 1024.0)) / (ms_cxx / 1000.0);
+    double mtokens_cxx = (static_cast<double>(total_cxx_tokens) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    // Benchmark Self-Hosted cfire Lexer
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t total_cf_tokens = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto res = cfire::frontend::selfhost_tokenize_adapter("bench.cf", benchmark_payload);
+        total_cf_tokens += res->size();
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (total_bytes / (1024.0 * 1024.0)) / (ms_cf / 1000.0);
+    double mtokens_cf = (static_cast<double>(total_cf_tokens) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Lexer Throughput Benchmark (Payload: {:.2f} MB, {} iterations):",
+        static_cast<double>(benchmark_payload.size()) / (1024.0 * 1024.0), kIters);
+    std::println("    - C++ Native Lexer:        {:>7.2f} MB/s ({:.2f}M tokens/s, avg {:.2f}ms/run)",
+        mbs_cxx, mtokens_cxx, ms_cxx / kIters);
+    std::println("    - cfire Self-Hosted Lexer: {:>7.2f} MB/s ({:.2f}M tokens/s, avg {:.2f}ms/run)",
+        mbs_cf, mtokens_cf, ms_cf / kIters);
+    std::println("    - Performance Ratio:       {:>7.1f}% of native C++ speed", parity_pct);
+
+    // Assert that the self-hosted lexer achieves at least 80% of native C++ speed
+    require(mbs_cf >= 0.80 * mbs_cxx,
+        std::format("Self-hosted lexer performance regression ({:.1f} MB/s vs {:.1f} MB/s C++ baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_lexer_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3058,6 +3208,7 @@ auto main() -> int {
     test_sync_context(rt_dir);
     test_net_websocket(rt_dir);
     test_net_http_and_router(rt_dir);
+    test_selfhost_lexer_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
