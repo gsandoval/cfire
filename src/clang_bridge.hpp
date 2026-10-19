@@ -412,7 +412,7 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
         out << std::format("#include <{}>\n", clean_hdr);
     }
 
-    std::string cmd = "clang++ -std=c++23 -Xclang -ast-dump=json -fsyntax-only";
+    std::string cmd = "clang++ -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
     for (const auto& f : cflags) {
         cmd += " " + f;
     }

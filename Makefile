@@ -1,5 +1,5 @@
 CXX      := clang++
-CXXFLAGS := -std=c++23 -O2 -Wall -Wextra
+CXXFLAGS := -std=c++2b -O2 -Wall -Wextra
 
 .PHONY: all build test docs fmt clean
 

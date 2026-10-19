@@ -792,7 +792,7 @@ inline auto resolve_external_dep_source(
         if (need_compile) {
             any_obj_recompiled = true;
             bool is_cpp = (sf.extension() != ".c");
-            std::string cc = is_cpp ? "clang++ -std=c++23" : "clang -std=c17";
+            std::string cc = is_cpp ? "clang++ -std=c++2b" : "clang -std=c17";
             if (!plan.target_triple.empty()) cc += " --target=" + plan.target_triple;
             if (!plan.sysroot.empty()) cc += " --sysroot=" + plan.sysroot;
             if (build_shared) cc += " -fPIC";
@@ -1068,7 +1068,7 @@ inline auto resolve_external_dep_source(
     plan.entry_file = cf_file.string();
     plan.target_triple = target_triple;
     plan.sysroot = sysroot;
-    plan.cflags = {"-std=c++23", "-I" + runtime_dir.string()};
+    plan.cflags = {"-std=c++2b", "-I" + runtime_dir.string()};
     if (!target_triple.empty()) {
         plan.cflags.push_back("--target=" + target_triple);
         plan.ldflags.push_back("--target=" + target_triple);
@@ -1200,7 +1200,7 @@ inline auto resolve_external_dep_source(
             ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
             : "-O2";
         std::string cmd = std::format(
-            "clang++ -std=c++23 {} -x c++-header \"{}\" -o \"{}\"",
+            "clang++ -std=c++2b {} -x c++-header \"{}\" -o \"{}\"",
             opt_flags, prelude_hdr.string(), pch_path.string());
         int rc = 0;
         (void)bridge::run_command_capture(cmd, rc);
