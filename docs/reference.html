@@ -23,7 +23,14 @@
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+}
 body {
     font-family: var(--font-sans);
     background: var(--bg);
@@ -36,49 +43,76 @@ body {
 a { color: var(--accent); text-decoration: none; transition: color 0.15s ease; }
 a:hover { color: var(--accent-hover); text-decoration: underline; }
 
+/* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
-    position: sticky; top: 0; z-index: 50;
-    background: #FFFFFF;
+    position: sticky; top: 0; z-index: 100;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
-    padding: 0.85rem 1.5rem;
-    display: flex; align-items: center; justify-content: space-between;
+}
+.navbar-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0.75rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    box-sizing: border-box;
 }
 .brand {
     display: flex; align-items: center; gap: 0.65rem;
     font-weight: 800; font-size: 1.25rem; color: var(--text);
-    text-decoration: none;
+    text-decoration: none; flex-shrink: 0;
 }
 .brand:hover { text-decoration: none; }
 .brand img.brand-icon {
-    width: 32px; height: 32px; object-fit: contain;
+    width: 30px; height: 30px; object-fit: contain;
 }
 .brand span.brand-text {
-    font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text);
+    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text);
 }
-.brand span.fire { color: #EA580C; font-weight: 800; }
+.brand span.fire { color: #EA580C; font-weight: 850; }
 .brand-badge {
-    font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600;
+    font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
     background: #F5F5F4; border: 1px solid var(--border); color: #57534E;
-    padding: 0.15rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
+    padding: 0.12rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
 }
 .nav-links { display: flex; align-items: center; gap: 1.25rem; font-size: 0.92rem; font-weight: 600; }
-.nav-links a { color: var(--muted); transition: color 0.15s; }
-.nav-links a:hover, .nav-links a.active { color: var(--text); text-decoration: none; }
-.btn-nav-primary {
-    background: #1C1917; color: #FFFFFF !important;
-    padding: 0.45rem 0.95rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
-    transition: background 0.15s;
+.nav-links a {
+    color: var(--muted); transition: all 0.15s ease;
+    padding: 0.25rem 0.4rem; border-radius: 5px;
 }
-.btn-nav-primary:hover { background: #292524; text-decoration: none; }
+.nav-links a:hover { color: var(--text); text-decoration: none; background: #F5F5F4; }
+.nav-links a.active { color: var(--text); text-decoration: none; font-weight: 750; background: #F5F5F4; }
+.btn-nav-primary {
+    background: #1C1917 !important; color: #FFFFFF !important;
+    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 600 !important;
+    transition: background 0.15s !important; border: none;
+}
+.btn-nav-primary:hover { background: #292524 !important; text-decoration: none !important; }
 
-.container { max-width: 1080px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+/* Page container with robust bounds */
+.container {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 5rem;
+    box-sizing: border-box;
+    min-width: 0;
+}
 
-/* Doc layout (Guide & Reference) */
+/* Documentation Layout (Guide & Reference) */
 .doc-layout {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 260px minmax(0, 1fr);
     gap: 2.5rem;
     align-items: start;
+    width: 100%;
+    min-width: 0;
 }
 .sidebar {
     position: sticky;
@@ -89,7 +123,9 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
+.sidebar-summary { display: none; }
 .sidebar h4 {
     font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem;
@@ -97,9 +133,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .sidebar ul { list-style: none; margin-bottom: 1.25rem; }
 .sidebar li { margin-bottom: 0.25rem; }
 .sidebar a {
-    display: block; padding: 0.4rem 0.6rem; border-radius: 5px;
+    display: block; padding: 0.35rem 0.6rem; border-radius: 5px;
     color: var(--muted); font-size: 0.88rem; text-decoration: none;
     transition: all 0.15s ease;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar a:hover {
     background: #F5F5F4; color: var(--text); text-decoration: none;
@@ -109,6 +146,13 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
+main {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
 main h1 {
     font-size: clamp(1.85rem, 4vw, 2.5rem); font-weight: 800;
     color: var(--text); letter-spacing: -0.03em; margin-bottom: 0.75rem;
@@ -189,8 +233,8 @@ h1.hero-title {
 }
 
 /* Grids & Cards */
-.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.25rem; }
-.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
 .card {
     background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; transition: border-color 0.15s ease;
@@ -203,10 +247,11 @@ h1.hero-title {
 .card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text); }
 .card p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin: 0; }
 
-/* Code Blocks */
+/* Code Blocks: Strict Horizontal Scroll Containment */
 pre {
     background: var(--bg-code); border: 1px solid #27272A;
     border-radius: 8px; padding: 1.1rem 1.25rem; overflow-x: auto;
+    max-width: 100%; min-width: 0; box-sizing: border-box;
     font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.65;
     color: #F4F4F5; -webkit-overflow-scrolling: touch;
 }
@@ -214,8 +259,9 @@ code {
     font-family: var(--font-mono); font-size: 0.88em;
     background: #F5F5F4; border: 1px solid var(--border);
     padding: 0.12rem 0.35rem; border-radius: 4px; color: #1C1917;
+    word-break: break-word;
 }
-pre code { background: none; border: none; padding: 0; color: inherit; }
+pre code { background: none; border: none; padding: 0; color: inherit; word-break: normal; }
 .code-header {
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
@@ -271,22 +317,52 @@ pre code { background: none; border: none; padding: 0; color: inherit; }
 }
 .console-dot { width: 7px; height: 7px; border-radius: 50%; background: #059669; }
 
-/* Table styling */
-.table-wrap { overflow-x: auto; margin: 1.5rem 0 2.5rem; -webkit-overflow-scrolling: touch; }
-table.comp-table, table {
-    width: 100%; border-collapse: collapse; background: #FFFFFF;
-    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+/* Robust Table System: Isolated Scrolling & Polished Mobile Experience */
+.table-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 1.5rem 0 2.25rem;
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.table-wrap table {
+    width: 100%;
+    min-width: 620px;
+    border-collapse: collapse;
+    background: transparent;
+    border: none;
+    margin: 0;
 }
 th, td {
     text-align: left; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
     font-size: 0.9rem; vertical-align: top;
 }
 th {
-    background: #F5F5F4; color: var(--text); font-weight: 750; font-size: 0.88rem;
+    background: #F5F5F4; color: var(--text); font-weight: 750; font-size: 0.82rem;
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: #FAFAF9; }
+
+/* Subtle mobile scroll hint banner */
+.table-scroll-cue {
+    display: none;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.4rem 0.85rem;
+    background: #F5F5F4;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+}
 
 /* Step Grid */
 .step-grid {
@@ -332,20 +408,97 @@ tr:hover td { background: #FAFAF9; }
 .footer-links a { color: var(--muted); font-weight: 600; font-size: 0.88rem; }
 .footer-links a:hover { color: var(--text); }
 
-/* Responsive adjustments for mobile */
+/* Responsive adjustments for mobile & tablet */
 @media (max-width: 840px) {
-    .doc-layout { grid-template-columns: 1fr; gap: 1.5rem; }
-    .sidebar { position: static; max-height: none; width: 100%; }
+    .container { padding: 1.5rem 1rem 3.5rem; }
+    .doc-layout { display: block; width: 100%; min-width: 0; }
+    .sidebar {
+        position: static; max-height: none; width: 100%;
+        margin-bottom: 2rem; padding: 0.85rem 1rem;
+    }
+    .sidebar-summary {
+        display: flex; align-items: center; justify-content: space-between;
+        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text);
+        user-select: none;
+    }
+    .sidebar-summary::-webkit-details-marker { display: none; }
+    .sidebar-chevron { font-size: 0.8rem; color: var(--muted); transition: transform 0.2s ease; }
+    .sidebar-details:not([open]) .sidebar-content { display: none; }
+    .sidebar-details[open] .sidebar-content {
+        display: block; margin-top: 0.85rem; padding-top: 0.85rem;
+        border-top: 1px solid var(--border); max-height: 50vh; overflow-y: auto;
+    }
+    .sidebar-details[open] .sidebar-chevron { transform: rotate(180deg); }
     .grid-2 { grid-template-columns: 1fr; }
     .rosetta-mobile-toggle { display: flex; }
     .rosetta-pane-cpp { display: none; }
     .rosetta-pane-cpp.is-active { display: block; }
     .rosetta-pane-cf.is-inactive { display: none; }
-    .navbar { padding: 0.75rem 1rem; flex-wrap: wrap; gap: 0.5rem; }
-    .nav-links { gap: 0.75rem; font-size: 0.82rem; }
     .hero { padding: 2rem 0.25rem 2.5rem; }
-    .container { padding: 1.5rem 1rem 3.5rem; }
 }
+
+@media (max-width: 680px) {
+    .navbar-inner { flex-wrap: wrap; padding: 0.6rem 0.85rem; gap: 0.5rem; }
+    .brand { font-size: 1.1rem; }
+    .brand img.brand-icon { width: 26px; height: 26px; }
+    .nav-links {
+        display: flex; align-items: center; gap: 0.4rem;
+        width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scrollbar-width: none; padding: 0.1rem 0;
+    }
+    .nav-links::-webkit-scrollbar { display: none; }
+    .nav-links a {
+        white-space: nowrap; padding: 0.35rem 0.65rem; border-radius: 6px;
+        background: #F5F5F4; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
+    }
+    .nav-links a.active { background: #1C1917; color: #FFFFFF !important; }
+    .btn-nav-primary {
+        margin-left: auto; padding: 0.35rem 0.75rem !important;
+        font-size: 0.8rem !important; flex-shrink: 0;
+    }
+    .table-scroll-cue { display: block; }
+
+    /* API Reference Tables: Mobile Card Transformation */
+    .api-table-wrap {
+        border: none; background: transparent; overflow-x: visible;
+        box-shadow: none; margin: 1rem 0 1.75rem;
+    }
+    .api-table-wrap .table-scroll-cue { display: none; }
+    .api-table-wrap table,
+    .api-table-wrap thead,
+    .api-table-wrap tbody,
+    .api-table-wrap th,
+    .api-table-wrap td,
+    .api-table-wrap tr {
+        display: block; width: 100%; min-width: 0 !important; box-sizing: border-box;
+    }
+    .api-table-wrap thead { display: none; }
+    .api-table-wrap tr {
+        background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+        margin-bottom: 0.85rem; padding: 0.95rem 1rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+    .api-table-wrap td { padding: 0.25rem 0; border: none; font-size: 0.88rem; }
+    .api-table-wrap td:first-child {
+        padding-bottom: 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.45rem;
+    }
+    .api-table-wrap td:first-child code {
+        font-weight: 700; font-size: 0.88rem; color: var(--accent);
+        background: #EFF6FF; border-color: #DBEAFE; word-break: break-all;
+        display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
+    }
+    .api-table-wrap td:nth-child(2)::before {
+        content: "C++23: "; font-weight: 700; font-size: 0.72rem; text-transform: uppercase;
+        letter-spacing: 0.05em; color: var(--muted); display: inline-block; margin-right: 0.35rem;
+    }
+    .api-table-wrap td:nth-child(2) {
+        font-size: 0.82rem; color: #57534E; padding-bottom: 0.35rem; word-break: break-all;
+    }
+    .api-table-wrap td:last-child { color: #1C1917; line-height: 1.55; }
+    .api-table-wrap td:last-child code {
+        display: block; margin-top: 0.35rem; word-break: break-all; background: #F5F5F4;
+    }
+}
+
 @media (min-width: 841px) {
     .rosetta-mobile-toggle { display: none; }
     .rosetta-pane-cf, .rosetta-pane-cpp { display: block !important; }
@@ -355,65 +508,76 @@ tr:hover td { background: #FAFAF9; }
 <body>
 
 <nav class="navbar">
-  <a class="brand" href="index.html">
-    <img src="assets/cfire_logo_emblem.png" alt="cfire logo" class="brand-icon" />
-    <span class="brand-text">c<span class="fire">fire</span></span>
-    <span class="brand-badge">ISO C++23</span>
-  </a>
-  <div class="nav-links">
-    <a href="index.html" class="">Overview</a>
-    <a href="guide.html" class="">Guide</a>
-    <a href="reference.html" class="active">Stdlib</a>
-    <a href="https://github.com/gsandoval/cfire" target="_blank" class="btn-nav-primary">GitHub &rarr;</a>
+  <div class="navbar-inner">
+    <a class="brand" href="index.html">
+      <img src="assets/cfire_logo_emblem.png" alt="cfire logo" class="brand-icon" />
+      <span class="brand-text">c<span class="fire">fire</span></span>
+      <span class="brand-badge">ISO C++23</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="">Overview</a>
+      <a href="guide.html" class="">Guide</a>
+      <a href="reference.html" class="active">Stdlib</a>
+      <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub &rarr;</a>
+      <a href="index.html#install" class="btn-nav-primary">Install</a>
+    </div>
   </div>
 </nav>
 <div class="container">
   <div class="doc-layout">
     <aside class="sidebar">
-      <h4>`core:*` Modules</h4>
-      <ul>
-        <li><a href="#mod-fs"><code>core:fs</code></a></li>
-        <li><a href="#mod-cli"><code>core:cli</code></a></li>
-        <li><a href="#mod-zstd"><code>core:compress/zstd</code></a></li>
-        <li><a href="#mod-json"><code>core:json</code></a></li>
-        <li><a href="#mod-sqlite"><code>core:db/sqlite</code></a></li>
-        <li><a href="#mod-sha256"><code>core:crypto/sha256</code></a></li>
-        <li><a href="#mod-hmac"><code>core:crypto/hmac</code></a></li>
-        <li><a href="#mod-aes"><code>core:crypto/aes</code></a></li>
-        <li><a href="#mod-blake3"><code>core:crypto/blake3</code></a></li>
-        <li><a href="#mod-net"><code>core:net</code></a></li>
-        <li><a href="#mod-url"><code>core:net/url</code></a></li>
-        <li><a href="#mod-http"><code>core:net/http</code></a></li>
-        <li><a href="#mod-websocket"><code>core:net/websocket</code></a></li>
-        <li><a href="#mod-time"><code>core:time</code></a></li>
-        <li><a href="#mod-os"><code>core:os</code></a></li>
-        <li><a href="#mod-sync"><code>core:sync</code></a></li>
-        <li><a href="#mod-context"><code>core:sync/context</code></a></li>
-        <li><a href="#mod-str"><code>core:str</code></a></li>
-        <li><a href="#mod-math"><code>core:math</code></a></li>
-        <li><a href="#mod-rand"><code>core:rand</code></a></li>
-        <li><a href="#mod-base64"><code>core:encoding/base64</code></a></li>
-        <li><a href="#mod-hex"><code>core:encoding/hex</code></a></li>
-        <li><a href="#mod-csv"><code>core:encoding/csv</code></a></li>
-        <li><a href="#mod-regex"><code>core:regex</code></a></li>
-        <li><a href="#mod-collections"><code>core:collections</code></a></li>
-        <li><a href="#mod-sort"><code>core:sort</code></a></li>
-        <li><a href="#mod-log"><code>core:log</code></a></li>
-        <li><a href="#mod-unicode"><code>core:unicode</code></a></li>
-      </ul>
-      <h4 style="margin-top:1.25rem;">Diagnostics</h4>
-      <ul>
-        <li><a href="#diag-cfire/MUT-CALLSITE"><code>cfire/MUT-CALLSITE</code></a></li>
-        <li><a href="#diag-cfire/OUT-CALLSITE"><code>cfire/OUT-CALLSITE</code></a></li>
-        <li><a href="#diag-cfire/IMMUTABLE-MUT-ARG"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
-        <li><a href="#diag-cfire/MUT-RECEIVER"><code>cfire/MUT-RECEIVER</code></a></li>
-        <li><a href="#diag-cfire/MUT-ALIAS"><code>cfire/MUT-ALIAS</code></a></li>
-        <li><a href="#diag-cfire/USE-AFTER-MOVE"><code>cfire/USE-AFTER-MOVE</code></a></li>
-        <li><a href="#diag-cfire/NON-EXHAUSTIVE-MATCH"><code>cfire/NON-EXHAUSTIVE-MATCH</code></a></li>
-        <li><a href="#diag-cfire/NON-DIVERGING-OR-BLOCK"><code>cfire/NON-DIVERGING-OR-BLOCK</code></a></li>
-        <li><a href="#diag-cfire/DEPRECATED-OUT-PARAM"><code>cfire/DEPRECATED-OUT-PARAM</code></a></li>
-        <li><a href="#diag-cfire/DEPRECATED-VAR"><code>cfire/DEPRECATED-VAR</code></a></li>
-      </ul>
+      <details class="sidebar-details" open>
+        <summary class="sidebar-summary">
+          <span>Modules &amp; Diagnostics</span>
+          <span class="sidebar-chevron">&#9662;</span>
+        </summary>
+        <div class="sidebar-content">
+          <h4>`core:*` Modules</h4>
+          <ul>
+            <li><a href="#mod-fs"><code>core:fs</code></a></li>
+            <li><a href="#mod-cli"><code>core:cli</code></a></li>
+            <li><a href="#mod-zstd"><code>core:compress/zstd</code></a></li>
+            <li><a href="#mod-json"><code>core:json</code></a></li>
+            <li><a href="#mod-sqlite"><code>core:db/sqlite</code></a></li>
+            <li><a href="#mod-sha256"><code>core:crypto/sha256</code></a></li>
+            <li><a href="#mod-hmac"><code>core:crypto/hmac</code></a></li>
+            <li><a href="#mod-aes"><code>core:crypto/aes</code></a></li>
+            <li><a href="#mod-blake3"><code>core:crypto/blake3</code></a></li>
+            <li><a href="#mod-net"><code>core:net</code></a></li>
+            <li><a href="#mod-url"><code>core:net/url</code></a></li>
+            <li><a href="#mod-http"><code>core:net/http</code></a></li>
+            <li><a href="#mod-websocket"><code>core:net/websocket</code></a></li>
+            <li><a href="#mod-time"><code>core:time</code></a></li>
+            <li><a href="#mod-os"><code>core:os</code></a></li>
+            <li><a href="#mod-sync"><code>core:sync</code></a></li>
+            <li><a href="#mod-context"><code>core:sync/context</code></a></li>
+            <li><a href="#mod-str"><code>core:str</code></a></li>
+            <li><a href="#mod-math"><code>core:math</code></a></li>
+            <li><a href="#mod-rand"><code>core:rand</code></a></li>
+            <li><a href="#mod-base64"><code>core:encoding/base64</code></a></li>
+            <li><a href="#mod-hex"><code>core:encoding/hex</code></a></li>
+            <li><a href="#mod-csv"><code>core:encoding/csv</code></a></li>
+            <li><a href="#mod-regex"><code>core:regex</code></a></li>
+            <li><a href="#mod-collections"><code>core:collections</code></a></li>
+            <li><a href="#mod-sort"><code>core:sort</code></a></li>
+            <li><a href="#mod-log"><code>core:log</code></a></li>
+            <li><a href="#mod-unicode"><code>core:unicode</code></a></li>
+          </ul>
+          <h4 style="margin-top:1.25rem;">Diagnostics</h4>
+          <ul>
+            <li><a href="#diag-cfire/MUT-CALLSITE"><code>cfire/MUT-CALLSITE</code></a></li>
+            <li><a href="#diag-cfire/OUT-CALLSITE"><code>cfire/OUT-CALLSITE</code></a></li>
+            <li><a href="#diag-cfire/IMMUTABLE-MUT-ARG"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
+            <li><a href="#diag-cfire/MUT-RECEIVER"><code>cfire/MUT-RECEIVER</code></a></li>
+            <li><a href="#diag-cfire/MUT-ALIAS"><code>cfire/MUT-ALIAS</code></a></li>
+            <li><a href="#diag-cfire/USE-AFTER-MOVE"><code>cfire/USE-AFTER-MOVE</code></a></li>
+            <li><a href="#diag-cfire/NON-EXHAUSTIVE-MATCH"><code>cfire/NON-EXHAUSTIVE-MATCH</code></a></li>
+            <li><a href="#diag-cfire/NON-DIVERGING-OR-BLOCK"><code>cfire/NON-DIVERGING-OR-BLOCK</code></a></li>
+            <li><a href="#diag-cfire/DEPRECATED-OUT-PARAM"><code>cfire/DEPRECATED-OUT-PARAM</code></a></li>
+            <li><a href="#diag-cfire/DEPRECATED-VAR"><code>cfire/DEPRECATED-VAR</code></a></li>
+          </ul>
+        </div>
+      </details>
     </aside>
     <main>
       <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
@@ -440,7 +604,7 @@ fn main() {
     offset := try file.tell()
     println(&quot;Log stream offset: {} bytes&quot;, offset)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn read_all(path: str) -&gt; []byte!</code></td><td><code>cfire::fs::read_all(path)</code></td><td>Reads an entire binary file into a byte buffer.<br/><code>raw := try fs.read_all(&quot;input.bin&quot;)</code></td></tr>
@@ -485,7 +649,7 @@ fn main() {
     println(&quot;Server listening on {}:{} with {} workers (verbose={})&quot;,
         flags.host, flags.port, flags.workers, flags.verbose)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn parse[T](args: []str?) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.<br/><code>args := try cli.parse[Args]()</code></td></tr>
@@ -509,7 +673,7 @@ fn main() {
     decompressed := try zstd.decompress(compressed)
     println(&quot;Decompressed size: {} bytes&quot;, decompressed.len())
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn compress(input: []byte, level: i32 = 3) -&gt; []byte!</code></td><td><code>cfire::zstd::compress(input, level)</code></td><td>Compresses a byte slice into a Zstandard frame.<br/><code>blob := try zstd.compress(raw, level: 3)</code></td></tr>
@@ -543,7 +707,7 @@ fn main() {
     mut doc := try json.parse_dynamic(`{&quot;tags&quot;:[&quot;systems&quot;,&quot;c++23&quot;],&quot;cluster&quot;:{&quot;nodes&quot;:3}}`)
     println(&quot;Cluster nodes: {}&quot;, doc.get(&quot;cluster&quot;).get(&quot;nodes&quot;).as_int())
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn parse[T](payload: []byte | str) -&gt; T!</code></td><td><code>cfire::json::parse&lt;T&gt;(payload)</code></td><td>Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.<br/><code>cfg := try json.parse[Config](raw)</code></td></tr>
@@ -585,7 +749,7 @@ fn main() {
         println(&quot;User [{}]: {} &lt;{}&gt;&quot;, u.id, u.name, u.email)
     }
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn open(path: str) -&gt; Conn!</code></td><td><code>cfire::sqlite::open(path)</code></td><td>Opens an SQLite3 database connection and enables WAL mode.<br/><code>mut db := try sqlite.open(&quot;app.db&quot;)</code></td></tr>
@@ -606,7 +770,7 @@ fn main() {
     digest := sha256.hash_hex(payload)
     println(&quot;FIPS 180-4 SHA-256 Digest: {}&quot;, digest)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::sha256::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := sha256.hash_hex(raw)</code></td></tr>
@@ -631,7 +795,7 @@ fn main() {
     is_valid := hmac.equal(signature, signature)
     println(&quot;Signature verified: {}&quot;, is_valid)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn sha256_hex(key: str, data: str) -&gt; str</code></td><td><code>cfire::hmac::sha256_hex(key, data)</code></td><td>Returns a 64-character lowercase hex HMAC-SHA256 digest.<br/><code>sig := hmac.sha256_hex(secret, payload)</code></td></tr>
@@ -660,7 +824,7 @@ fn main() {
     plain := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)
     println(&quot;Authenticated decrypted plaintext: {}&quot;, plain)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -&gt; GcmResult!</code></td><td><code>cfire::aes::encrypt_gcm(key, nonce, pt, aad)</code></td><td>Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.<br/><code>res := try aes.encrypt_gcm(key, nonce, secret, aad)</code></td></tr>
@@ -681,7 +845,7 @@ fn main() {
     hash := blake3.hash_hex(blob)
     println(&quot;Blake3 256-bit digest: {}&quot;, hash)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::blake3::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := blake3.hash_hex(raw)</code></td></tr>
@@ -709,7 +873,7 @@ fn main() {
     msg := try conn.read_str(max_bytes: 64)
     println(&quot;Server received payload: {}&quot;, msg)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn listen_tcp(port: u16 = 0) -&gt; TcpListener!</code></td><td><code>cfire::net::listen_tcp(port)</code></td><td>Binds a loopback TCP listener on `127.0.0.1:port` (`0` selects an ephemeral port).<br/><code>mut ln := try net.listen_tcp(0)</code></td></tr>
@@ -736,7 +900,7 @@ fn main() {
     encoded := url.encode(&quot;raw query with spaces &amp; symbols!&quot;)
     println(&quot;Percent-encoded: {}&quot;, encoded)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn parse(raw: str) -&gt; Url!</code></td><td><code>cfire::url::parse(raw)</code></td><td>Parses an RFC 3986 URL string into component fields and query parameters.<br/><code>u := try url.parse(&quot;http://127.0.0.1:8080/api/items?q=shoes#top&quot;)</code></td></tr>
@@ -772,7 +936,7 @@ fn main() {
         return http.Response{ status_code: 200, body: &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;,\&quot;uptime_sec\&quot;:120}&quot; }
     })
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn get(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers)</code></td><td>Executes an HTTP GET request against a target URL.<br/><code>resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;)</code></td></tr>
@@ -796,7 +960,7 @@ fn main() {
     frame := try ws.recv_text()
     println(&quot;Received WebSocket stream frame: {}&quot;, frame)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn connect(url: str) -&gt; Conn!</code></td><td><code>cfire::websocket::connect(url)</code></td><td>Establishes a WebSocket connection to `ws://&lt;host&gt;[:port]/&lt;path&gt;` and completes the RFC 6455 handshake.<br/><code>mut ws := try websocket.connect(&quot;ws://127.0.0.1:8080/ws&quot;)</code></td></tr>
@@ -827,7 +991,7 @@ fn main() {
     elapsed := time.since(now)
     println(&quot;Elapsed duration: {} ms ({} us)&quot;, elapsed.to_millis(), elapsed.to_micros())
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn now_ms() -&gt; i64</code></td><td><code>cfire::time::now_ms()</code></td><td>Returns monotonic milliseconds from `std::chrono::steady_clock`.<br/><code>t0 := time.now_ms()</code></td></tr>
@@ -859,7 +1023,7 @@ fn main() {
     output := try cmd.output()
     println(&quot;Current Git commit: {} (exit code {})&quot;, output.stdout, output.exit_code)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn getenv(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>cfire::os::getenv(key, fallback)</code></td><td>Reads environment variable `key`, returning `fallback` if unset.<br/><code>mode := os.getenv(&quot;ENV&quot;, &quot;dev&quot;)</code></td></tr>
@@ -897,7 +1061,7 @@ fn main() {
         }
     }
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn make_channel[T]() -&gt; Channel[T]</code></td><td><code>cfire::sync::make_channel&lt;T&gt;()</code></td><td>Creates a new shared, thread-safe channel of element type `T`.<br/><code>ch := sync.make_channel[i64]()</code></td></tr>
@@ -925,7 +1089,7 @@ fn main() {
         println(&quot;Operation succeeded within timeout deadline&quot;)
     }
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn background() -&gt; Context</code></td><td><code>cfire::context::background()</code></td><td>Returns an empty, root non-cancellable Context.<br/><code>ctx := context.background()</code></td></tr>
@@ -952,7 +1116,7 @@ fn main() {
     formatted := str.join(tokens, &quot;::&quot;)
     println(&quot;Processed string: {}&quot;, formatted)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn split(s: str, sep: str) -&gt; []str</code></td><td><code>cfire::str::split(s, sep)</code></td><td>Splits `s` around every occurrence of `sep`.<br/><code>parts := str.split(&quot;a,b,c&quot;, &quot;,&quot;)</code></td></tr>
@@ -978,7 +1142,7 @@ fn main() {
     hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
     println(&quot;Clamped: {}, Hypot: {}&quot;, bounded, hypot)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn clamp_i64(val: i64, lo: i64, hi: i64) -&gt; i64</code></td><td><code>cfire::math::clamp_i64(val, lo, hi)</code></td><td>Clamps a 64-bit integer to `[lo, hi]`.<br/><code>c := math.clamp_i64(x, 0, 100)</code></td></tr>
@@ -1000,7 +1164,7 @@ fn main() {
     token_bytes := rand.bytes(16)
     println(&quot;ID: {}, Roll: {}, Entropy bytes: {}&quot;, uid, dice_roll, token_bytes.len())
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn u64() -&gt; u64</code></td><td><code>cfire::rand::u64()</code></td><td>Generates a random 64-bit unsigned integer.<br/><code>id := rand.u64()</code></td></tr>
@@ -1024,7 +1188,7 @@ fn main() {
     decoded := try base64.decode_str(encoded)
     println(&quot;Decoded text: {}&quot;, decoded)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn encode(data: []byte, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode(data, url_safe)</code></td><td>Encodes binary byte slice into standard or URL-safe Base64 string.<br/><code>s := base64.encode(raw)</code></td></tr>
@@ -1048,7 +1212,7 @@ fn main() {
     restored := try hex.decode(hex_str)
     println(&quot;Restored byte length: {}&quot;, restored.len())
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn encode(data: []byte) -&gt; str</code></td><td><code>cfire::hex::encode(data)</code></td><td>Encodes binary bytes to lowercase hexadecimal string.<br/><code>h := hex.encode(digest)</code></td></tr>
@@ -1075,7 +1239,7 @@ fn main() {
     rendered := csv.stringify(table)
     println(&quot;Output:\n{}&quot;, rendered)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn parse(s: str) -&gt; [][]str</code></td><td><code>cfire::csv::parse(s)</code></td><td>Parses a CSV string into a 2D table of rows and columns.<br/><code>rows := csv.parse(content)</code></td></tr>
@@ -1104,7 +1268,7 @@ fn main() {
     cleaned := try regex.replace_all(`\s+`, &quot;multiple    whitespace     characters&quot;, &quot; &quot;)
     println(&quot;Cleaned text: {}&quot;, cleaned)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn compile(pattern: str) -&gt; Regex!</code></td><td><code>cfire::regex::compile(pattern)</code></td><td>Compiles an ECMAScript regex pattern into a reusable Regex object.<br/><code>re := try regex.compile(&quot;\\d+&quot;)</code></td></tr>
@@ -1139,7 +1303,7 @@ fn main() {
     dq.push_front(&quot;item_1&quot;)
     println(&quot;Front: {}, Back: {}&quot;, dq.pop_front(), dq.pop_back())
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>type Set[T] struct</code></td><td><code>cfire::collections::Set&lt;T&gt;</code></td><td>Generic hash set container.<br/><code>mut s := collections.Set[str]{}</code></td></tr>
@@ -1165,7 +1329,7 @@ fn main() {
         println(&quot;Found element 48 at index: {}&quot;, idx)
     }
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn slice(mut s: []T)</code></td><td><code>cfire::sort::slice(s)</code></td><td>Sorts a slice in ascending order in-place.<br/><code>sort.slice(mut numbers)</code></td></tr>
@@ -1188,7 +1352,7 @@ fn main() {
     log.warn(&quot;memory threshold reached&quot;, &quot;usage_pct&quot;, &quot;84&quot;, &quot;threshold&quot;, &quot;80&quot;)
     log.error(&quot;database pool exhausted&quot;, &quot;active_conns&quot;, &quot;100&quot;, &quot;pool_size&quot;, &quot;100&quot;)
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn set_level(l: Level)</code></td><td><code>cfire::log::set_level(l)</code></td><td>Sets the minimum logging severity threshold.<br/><code>log.set_level(log.Level::Debug)</code></td></tr>
@@ -1220,7 +1384,7 @@ fn main() {
         println(&quot;Rune: U+{:04X}&quot;, r)
     }
 }</code></pre>
-      <div class="table-wrap"><table>
+      <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn rune_count(s: str) -&gt; usize</code></td><td><code>cfire::unicode::rune_count(s)</code></td><td>Counts the number of Unicode scalar values (codepoints) in a UTF-8 string.<br/><code>count := unicode.rune_count(&quot;Hello, 世界! 🚀&quot;)</code></td></tr>
