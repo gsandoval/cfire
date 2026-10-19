@@ -14,7 +14,7 @@ Modern systems software demands both high developer velocity and uncompromising 
 - **Zig and Odin** provide brilliant C replacements with manual allocators, but cannot directly consume C++ templates, classes, or standard library types without brittle C ABI wrappers.
 
 `cfire` takes a pragmatic path designed specifically for teams whose target environment is **ISO C++23**:
-1. **Ergonomic, Modern Frontend**: Clean syntax, immutability by default, explicit parameter intents (`in`, `mut`, `out`, `move`), algebraic enums, and monadic error handling (`T!`).
+1. **Ergonomic, Modern Frontend**: Clean syntax, immutability by default, explicit parameter intents (`in`, `mut`, `move`), multi-return tuples, algebraic enums, and monadic error handling (`T!`).
 2. **1-to-1 ISO C++23 Lowering**: Every `cfire` type, function, and expression lowers directly to standard C++23 concepts (`std::string_view`, `std::span`, `std::variant`, `std::expected`, `std::unique_ptr`).
 3. **Zero FFI Marshaling**: Call any C or C++ header directly without writing manual wrappers.
 4. **Zero Lock-In**: Run `cfire eject` at any time to export your entire project as standard C++23 source code with a standard `CMakeLists.txt`.
@@ -304,15 +304,23 @@ fn (mut self: Account) deposit(amount: i64) {
 }
 ```
 
-### 4.2 Explicit Parameter Intents (`in`, `mut`, `out`, `move`)
+### 4.2 Explicit Parameter Intents (`in`, `mut`, `move`)
 In raw C++, calling `process(data)` hides whether `data` is read-only, modified in-place, or moved from. `cfire` enforces visibility at **both** declaration and call site:
 
 | Intent | Declaration | Call Site | C++23 Lowering | Guarantee |
 |---|---|---|---|---|
 | **`in` (default)** | `x: T` | `f(x)` | `const T&` / `std::string_view` / `std::span` | Read-only borrow; zero copy overhead. |
 | **`mut`** | `mut x: T` | `f(mut x)` | `T&` | In-place mutation; requires `mut` at call site. |
-| **`out`** | `out x: T` | `f(out x)` | `T&` | Callee overwrites value; requires `out` at call site. |
 | **`move`** | `move x: T` | `f(move x)` | `T&&` + `std::move(x)` | Ownership transfer; callee consumes value. |
+
+To return multiple values, `cfire` uses first-class tuples rather than mutable output parameters:
+```cf
+fn parse_coords(raw: str) -> (f64, f64)! {
+    return (12.5, 45.2)
+}
+
+(lat, lon) := try parse_coords("12.5,45.2")
+```
 
 ### 4.3 Semantic Safety Invariants
 
@@ -707,21 +715,21 @@ package build
 import "core:build"
 
 // 1. Build a local C static library dependency
-var FastHash = build.CC("./native/fast_hash", {
+FastHash := build.CC("./native/fast_hash", {
     Sources:  ["fast_hash.c"],
     Includes: ["."],
     CFlags:   ["-O3", "-march=native"],
 })
 
 // 2. Build a CMake-based vendor subproject
-var KVStore = build.CMake("./vendor/libkv_cmake", {
+KVStore := build.CMake("./vendor/libkv_cmake", {
     Target:   "kvstore",
     Includes: ["include"],
     Defines:  {"KV_SALT": 42},
 })
 
 // 3. Link a system package via pkg-config
-var Sqlite3 = build.SystemLib("sqlite3")
+Sqlite3 := build.SystemLib("sqlite3")
 ```
 
 When you run `./cfire build main.cf`:

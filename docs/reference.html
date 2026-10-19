@@ -566,15 +566,12 @@ tr:hover td { background: #FAFAF9; }
           <h4 style="margin-top:1.25rem;">Diagnostics</h4>
           <ul>
             <li><a href="#diag-cfire/MUT-CALLSITE"><code>cfire/MUT-CALLSITE</code></a></li>
-            <li><a href="#diag-cfire/OUT-CALLSITE"><code>cfire/OUT-CALLSITE</code></a></li>
             <li><a href="#diag-cfire/IMMUTABLE-MUT-ARG"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
             <li><a href="#diag-cfire/MUT-RECEIVER"><code>cfire/MUT-RECEIVER</code></a></li>
             <li><a href="#diag-cfire/MUT-ALIAS"><code>cfire/MUT-ALIAS</code></a></li>
             <li><a href="#diag-cfire/USE-AFTER-MOVE"><code>cfire/USE-AFTER-MOVE</code></a></li>
             <li><a href="#diag-cfire/NON-EXHAUSTIVE-MATCH"><code>cfire/NON-EXHAUSTIVE-MATCH</code></a></li>
             <li><a href="#diag-cfire/NON-DIVERGING-OR-BLOCK"><code>cfire/NON-DIVERGING-OR-BLOCK</code></a></li>
-            <li><a href="#diag-cfire/DEPRECATED-OUT-PARAM"><code>cfire/DEPRECATED-OUT-PARAM</code></a></li>
-            <li><a href="#diag-cfire/DEPRECATED-VAR"><code>cfire/DEPRECATED-VAR</code></a></li>
           </ul>
         </div>
       </details>
@@ -834,7 +831,7 @@ fn main() {
         </tbody>
       </table></div>
       <h2 id="mod-blake3"><code>import "core:crypto/blake3"</code> &mdash; Cryptographic 256-Bit Digest (Alias)</h2>
-      <p>Computes fast 256-bit cryptographic hex digests over byte slices (backward-compatible alias for `core:crypto/sha256`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <p>Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
@@ -1435,25 +1432,9 @@ fn main() {
 }</code></pre></div>
         </div>
       </div>
-      <div class="card" id="diag-cfire/OUT-CALLSITE" style="margin-bottom:1.25rem;">
-        <h3><code>[cfire/OUT-CALLSITE]</code> &mdash; Missing Call-Site `out` Marker</h3>
-        <p style="margin-bottom:0.85rem;">Functions declaring `out param: T` initialize or overwrite an output parameter (`T&amp;`). Callers must write `out arg` at the call site.</p>
-        <div class="grid-2">
-          <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn write_sum(out total: i32) { total = 42 }
-fn main() {
-    mut s: i32 = 0
-    write_sum(s) // ERROR [cfire/OUT-CALLSITE]
-}</code></pre></div>
-          <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn write_sum(out total: i32) { total = 42 }
-fn main() {
-    mut s: i32 = 0
-    write_sum(out s) // OK
-}</code></pre></div>
-        </div>
-      </div>
       <div class="card" id="diag-cfire/IMMUTABLE-MUT-ARG" style="margin-bottom:1.25rem;">
-        <h3><code>[cfire/IMMUTABLE-MUT-ARG]</code> &mdash; Passing Immutable Binding as `mut` or `out` Argument</h3>
-        <p style="margin-bottom:0.85rem;">Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` or `out` parameters.</p>
+        <h3><code>[cfire/IMMUTABLE-MUT-ARG]</code> &mdash; Passing Immutable Binding as `mut` Argument</h3>
+        <p style="margin-bottom:0.85rem;">Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` parameters.</p>
         <div class="grid-2">
           <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn reset(mut v: i32) { v = 0 }
 fn main() {
@@ -1536,25 +1517,6 @@ consume(move buf) // OK: moved on last use</code></pre></div>
     }
     return x
 }</code></pre></div>
-        </div>
-      </div>
-      <div class="card" id="diag-cfire/DEPRECATED-OUT-PARAM" style="margin-bottom:1.25rem;">
-        <h3><code>[cfire/DEPRECATED-OUT-PARAM]</code> &mdash; Deprecated `out` Parameter Intent (Favor Multi-Return Tuples)</h3>
-        <p style="margin-bottom:0.85rem;">The `out` parameter intent is deprecated in favor of multi-return tuples `fn parse() -&gt; (f64, f64)!` and deconstructing assignments `(x, y) := parse()`. `out` parameters bypass definite assignment checks and hinder expression composition.</p>
-        <div class="grid-2">
-          <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn parse_coords(s: str, out x: f64, out y: f64) { ... } // WARNING [cfire/DEPRECATED-OUT-PARAM]</code></pre></div>
-          <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn parse_coords(s: str) -&gt; (f64, f64)! { return (1.0, 2.0) }
-(x, y) := try parse_coords(&quot;1,2&quot;) // OK</code></pre></div>
-        </div>
-      </div>
-      <div class="card" id="diag-cfire/DEPRECATED-VAR" style="margin-bottom:1.25rem;">
-        <h3><code>[cfire/DEPRECATED-VAR]</code> &mdash; Deprecated `var` Keyword (Favor Canonical `:=` or `: Type =`)</h3>
-        <p style="margin-bottom:0.85rem;">The `var` keyword is deprecated in favor of canonical inferred declarations `x := val` / `mut x := val` and explicitly typed declarations `x: T = val` / `mut x: T = val`.</p>
-        <div class="grid-2">
-          <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>var x = 42 // WARNING [cfire/DEPRECATED-VAR]
-var mut name: str = &quot;hello&quot; // WARNING [cfire/DEPRECATED-VAR]</code></pre></div>
-          <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>x := 42 // OK
-mut name: str = &quot;hello&quot; // OK</code></pre></div>
         </div>
       </div>
     </main>

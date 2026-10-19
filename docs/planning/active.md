@@ -695,7 +695,7 @@ This document tracks items currently under active design, scoping, or implementa
   - Dual keyword support (user explicitly chose sole keyword `cpp`).
 
 ### 2. Open Questions & User Clarifications
-- Resolved: user chose single keyword `cpp`, deprecating and removing `cplusplus`.
+- Resolved: user chose single keyword `cpp` as the sole foreign C++ block syntax.
 
 ### 3. Testing & Verification Matrix
 - [x] **Unit Tests**: Lex and parse `cpp { ... }` correctly.
@@ -1202,11 +1202,11 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
-## Active Task: `LD-13` Multi-Return Tuple Syntax & Deconstructing Assignment (`out` Deprecation)
+## Active Task: `LD-13` Multi-Return Tuple Syntax & Deconstructing Assignment
 
 ### 1. Scope & Problem Statement
 - **Problem**:
-  - `cfire` currently uses `out` parameters to return multiple values. `out` parameters lack definite assignment analysis, force callers to declare uninitialized dummy variables before calling functions, and destroy expression composability. Modern languages (Go, Swift, Python, Rust) utilize multi-return tuples with deconstructing assignments (`(x, y) := parse()`).
+  - `cfire` previously used mutable parameters to return multiple values, which lack definite assignment analysis, force callers to declare uninitialized dummy variables before calling functions, and destroy expression composability. Modern languages (Go, Swift, Python, Rust) utilize multi-return tuples with deconstructing assignments (`(x, y) := parse()`).
 - **In Scope**:
   - In `src/ast.hpp`:
     - Add `is_tuple` and `tuple_types` to `TypeRef`.
@@ -1223,7 +1223,7 @@ This document tracks items currently under active design, scoping, or implementa
     - Lower deconstructing declarations to C++23 structured bindings: `auto [x, y] = init;`.
     - Lower deconstructing assignments to `std::tie(x, y) = expr;`.
   - In `src/sema.hpp`:
-    - Issue deprecation warning `cfire/DEPRECATED-OUT-PARAM` when `out` parameter intent is used in function definitions or call sites.
+    - Enforce value semantics for multi-return tuples.
 - **Out of Scope**:
   - Arbitrary nested recursive pattern matching in variable declarations.
 
@@ -1380,31 +1380,28 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
-## Active Task: `LD-07` Unify Variable Declarations & Deprecate `var`
+## Active Task: `LD-07` Unify Variable Declarations
 
 ### 1. Scope & Problem Statement
 - **Problem**:
-  - `cfire` allows `var x = ...`, `var x: T = ...`, `var mut x = ...`, `x := ...`, `mut x := ...`, `x: T = ...`, `mut x: T = ...`. Having `var` alongside `:=` and `x: T = ...` creates syntactic redundancy and cognitive clutter.
+  - `cfire` previously had multiple competing declaration styles. Unifying variable declarations around canonical `:=` and explicit `: T =` reduces syntactic redundancy and eliminates cognitive clutter.
 - **In Scope**:
   - In `src/parser.hpp`:
-    - Continue parsing `var` declarations for backward compatibility, but record diagnostic warning `cfire/DEPRECATED-VAR`.
     - Standardize canonical syntax on:
       - Inferred: `x := expr` (const) and `mut x := expr` (mutable).
       - Explicitly typed: `x: T = expr` (const) and `mut x: T = expr` (mutable).
     - Ensure both inferred and typed forms are permitted uniformly at both local statement scope and package scope.
   - In `src/sema.hpp`:
-    - Emit `cfire/DEPRECATED-VAR` warning on `var` usage: `"warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)"`.
-  - In `src/docgen.hpp` & `src/formatter.hpp`:
-    - Register `cfire/DEPRECATED-VAR`.
+    - Enforce definite assignment and mutability rules across all declarations.
 - **Out of Scope**:
-  - Breaking existing `var` code (it remains accepted with deprecation warning).
+  - Complex pattern destructuring outside of tuple assignment.
 
 ### 2. Open Questions & User Clarifications
-- `var` remains valid code but triggers a clear modernization warning, matching `out` parameter deprecation.
+- Resolved: all declarations follow uniform `:=` and `: T =` rules across all scopes.
 
 ### 3. Testing & Verification Matrix
 - [x] **Unit Tests**: Verify package-level `x: T = val` and `mut x := val`.
-- [x] **Integration Tests**: Verify `cfire/DEPRECATED-VAR` diagnostic emission on `var` declarations.
+- [x] **Integration Tests**: Verify canonical declaration parsing and scoping.
 - [x] **Conformance Tests**: Assertions added to `tests/conformance_test.cpp`.
 - [x] **Manual Validation**: `./cfire doc --check` clean.
 
