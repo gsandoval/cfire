@@ -218,6 +218,15 @@ private:
     return std::as_bytes(std::span<const char>(sv.data(), sv.size()));
 }
 
+template <typename T>
+[[nodiscard]] inline auto str(const T& val) -> std::string {
+    if constexpr (std::is_convertible_v<T, std::string_view>) {
+        return std::string(val);
+    } else {
+        return std::format("{}", val);
+    }
+}
+
 // --- Structured Concurrency (`async.scope`) ---
 namespace async {
 
@@ -282,6 +291,8 @@ struct reflect_struct {
 };
 
 } // namespace cfire
+
+using cfire::str;
 
 // --- Monadic `try` Propagation Macros (Statement-Expression / Early Return) ---
 #define CFIRE_CONCAT_INNER(a, b) a##b

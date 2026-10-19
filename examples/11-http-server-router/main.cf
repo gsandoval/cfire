@@ -1,0 +1,64 @@
+package main
+
+import "core:net/http"
+import "core:json"
+
+type Item struct {
+    id: i64 `json:"id"`
+    name: str `json:"name"`
+}
+
+fn main() {
+    println("=== cfire HTTP/1.1 Server & Independent Router Demo ===")
+
+    // 1. Build an Independent HTTP Router (Decoupled from network sockets)
+    mut router := http.make_router()
+
+    router.get("/health", |req| {
+        return http.Response.json(200, "{\"status\":\"healthy\",\"version\":\"1.0.0\"}")
+    })
+
+    router.get("/items/:id", |req| {
+        id := req.param("id")
+        return http.Response.text(200, "Item lookup: id=" + id)
+    })
+
+    router.post("/items", |req| {
+        return http.Response.json(201, "{\"created\":true,\"payload\":" + req.body + "}")
+    })
+
+    // 2. Standalone Unit Testing: Dispatch requests purely in memory with NO open sockets
+    println("[1] Executing in-memory standalone dispatch tests...")
+    test_req := http.Request{ method: "GET", path: "/items/42" }
+    test_res := router.dispatch(test_req)
+    println("    GET /items/42 -> status: {}, body: {}", test_res.status_code, test_res.body)
+
+    post_test := http.Request{ method: "POST", path: "/items", body: "{\"name\":\"turbine\"}" }
+    post_res := router.dispatch(post_test)
+    println("    POST /items -> status: {}, body: {}", post_res.status_code, post_res.body)
+
+    // 3. Live Server Deployment: Pass the router directly to the HTTP server
+    println("[2] Starting live HTTP server with router on ephemeral port...")
+    mut server := try http.make_server(port: 0)
+    port := server.port()
+    println("    Server listening on http://127.0.0.1:{}", port)
+
+    server.serve_in_background(router)
+
+    // 4. Client roundtrip requests over loopback
+    get_url := "http://127.0.0.1:" + str(port) + "/health"
+    live_get := try http.get(get_url)
+    println("    Client GET /health -> status: {}, body: {}", live_get.status_code, live_get.body)
+
+    client_item_url := "http://127.0.0.1:" + str(port) + "/items/999"
+    live_item := try http.get(client_item_url)
+    println("    Client GET /items/999 -> status: {}, body: {}", live_item.status_code, live_item.body)
+
+    post_url := "http://127.0.0.1:" + str(port) + "/items"
+    live_post := try http.post(post_url, "{\"name\":\"sensor-v2\"}")
+    println("    Client POST /items -> status: {}, body: {}", live_post.status_code, live_post.body)
+
+    // 5. Clean server shutdown
+    server.stop()
+    println("=== HTTP Server and Router demo completed successfully ===")
+}
