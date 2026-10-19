@@ -908,8 +908,8 @@ fn main() {
           <tr><td><code>fn decode(s: str) -&gt; str</code></td><td><code>cfire::url::decode(s)</code></td><td>Decodes a percent-encoded URL string.<br/><code>dec := url.decode(enc)</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 Client &amp; Lightweight Dispatch Server</h2>
-      <p>High-level HTTP/1.1 client (`get`, `post`, `request`) and lightweight synchronous/threaded HTTP server dispatcher (`make_server`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 Client, Wire Protocol Engine, Server &amp; Independent Router</h2>
+      <p>RFC 9112 HTTP/1.1 client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode server (`make_server`), and independent request router (`make_router`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
@@ -930,18 +930,41 @@ fn main() {
         println(&quot;Service status: {}, uptime: {}s&quot;, h.status, h.uptime)
     }
 
-    // 2. Lightweight high-performance HTTP server dispatcher
-    mut server := try http.make_server(port: 8080)
-    server.handle(&quot;/health&quot;, |req| {
-        return http.Response{ status_code: 200, body: &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;,\&quot;uptime_sec\&quot;:120}&quot; }
+    // 2. Build independent HTTP router with path parameters
+    mut router := http.make_router()
+    router.get(&quot;/health&quot;, |req| {
+        return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;,\&quot;uptime_sec\&quot;:120}&quot;)
     })
+    router.get(&quot;/users/:id&quot;, |req| {
+        return http.Response.text(200, &quot;User: &quot; + req.param(&quot;id&quot;))
+    })
+
+    // 3. Serve requests using the router
+    mut server := try http.make_server(port: 8080)
+    server.serve_in_background(router)
 }</code></pre>
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
           <tr><td><code>fn get(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers)</code></td><td>Executes an HTTP GET request against a target URL.<br/><code>resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;)</code></td></tr>
           <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers)</code></td><td>Executes an HTTP POST request with payload body.<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
+          <tr><td><code>fn request(method: str, url: str, body: str = &quot;&quot;, content_type: str = &quot;&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::request(method, url, body, content_type, headers)</code></td><td>Executes an arbitrary HTTP request (PUT, DELETE, PATCH, etc.).<br/><code>resp := try http.request(&quot;DELETE&quot;, &quot;http://127.0.0.1:8080/items/1&quot;)</code></td></tr>
           <tr><td><code>fn make_server(port: u16 = 0) -&gt; HttpServer!</code></td><td><code>cfire::http::make_server(port)</code></td><td>Creates a lightweight HTTP server listening on `port` (0 for ephemeral).<br/><code>mut srv := try http.make_server(8080)</code></td></tr>
+          <tr><td><code>fn make_router() -&gt; Router</code></td><td><code>cfire::http::make_router()</code></td><td>Creates an independent HTTP request router supporting path parameters (`:id`), wildcards (`*path`), and standalone dispatch.<br/><code>mut r := http.make_router()</code></td></tr>
+          <tr><td><code>fn parse_request(raw: str) -&gt; Request!</code></td><td><code>cfire::http::parse_request(raw)</code></td><td>Parses raw HTTP/1.1 wire text into a structured Request model.<br/><code>req := try http.parse_request(raw_text)</code></td></tr>
+          <tr><td><code>fn Response.text(code: i32, payload: str) -&gt; Response</code></td><td><code>cfire::http::Response::text(code, payload)</code></td><td>Creates an HTTP Response with text/plain content-type and standard status reason.<br/><code>return http.Response.text(200, &quot;OK&quot;)</code></td></tr>
+          <tr><td><code>fn Response.json(code: i32, json_str: str) -&gt; Response</code></td><td><code>cfire::http::Response::json(code, json_str)</code></td><td>Creates an HTTP Response with application/json content-type.<br/><code>return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)</code></td></tr>
+          <tr><td><code>fn Response.html(code: i32, html: str) -&gt; Response</code></td><td><code>cfire::http::Response::html(code, html)</code></td><td>Creates an HTTP Response with text/html content-type.<br/><code>return http.Response.html(200, &quot;&lt;h1&gt;Hello&lt;/h1&gt;&quot;)</code></td></tr>
+          <tr><td><code>fn Response.redirect(location: str, code: i32 = 302) -&gt; Response</code></td><td><code>cfire::http::Response::redirect(location, code)</code></td><td>Creates an HTTP redirect Response setting Location header.<br/><code>return http.Response.redirect(&quot;/login&quot;, 302)</code></td></tr>
+          <tr><td><code>fn (mut r: Router) get(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.get(pattern, handler)</code></td><td>Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).<br/><code>r.get(&quot;/users/:id&quot;, |req| http.Response.text(200, req.param(&quot;id&quot;)))</code></td></tr>
+          <tr><td><code>fn (mut r: Router) post(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.post(pattern, handler)</code></td><td>Registers an HTTP POST route handler.<br/><code>r.post(&quot;/items&quot;, |req| http.Response.json(201, &quot;{}&quot;))</code></td></tr>
+          <tr><td><code>fn (r: Router) dispatch(req: Request) -&gt; Response</code></td><td><code>r.dispatch(req)</code></td><td>Dispatches an HTTP request through the router in-memory without open network sockets.<br/><code>res := router.dispatch(test_req)</code></td></tr>
+          <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router&amp;</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate requests.<br/><code>r.use(|req| { return None })</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -&gt; Response) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a non-blocking background accept loop serving requests with the specified handler or router.<br/><code>server.serve_in_background(router)</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Gracefully closes the listening socket and stops worker threads.<br/><code>server.stop()</code></td></tr>
+          <tr><td><code>fn (req: Request) param(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.param(key, fallback)</code></td><td>Retrieves a named route path parameter extracted by the router.<br/><code>id := req.param(&quot;id&quot;)</code></td></tr>
+          <tr><td><code>fn (req: Request) query(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.query(key, fallback)</code></td><td>Retrieves a decoded URL query parameter.<br/><code>page := req.query(&quot;page&quot;, &quot;1&quot;)</code></td></tr>
+          <tr><td><code>fn (req: Request) header(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.header(key, fallback)</code></td><td>Performs a case-insensitive header lookup.<br/><code>auth := req.header(&quot;Authorization&quot;)</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-websocket"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets Client &amp; Server</h2>

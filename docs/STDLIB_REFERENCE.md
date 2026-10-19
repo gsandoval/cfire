@@ -374,10 +374,10 @@ fn main() {
 | `fn encode(s: str) -> str` | `cfire::url::encode(s)` | Percent-encodes a string for safe use in URL path or query strings. | `enc := url.encode("hello world!")` |
 | `fn decode(s: str) -> str` | `cfire::url::decode(s)` | Decodes a percent-encoded URL string. | `dec := url.decode(enc)` |
 
-### `core:net/http` (`http`) — HTTP/1.1 Client & Lightweight Dispatch Server
+### `core:net/http` (`http`) — HTTP/1.1 Client, Wire Protocol Engine, Server & Independent Router
 
 - **Auto-Link Flags:** `(POSIX sockets)`
-- **Overview:** High-level HTTP/1.1 client (`get`, `post`, `request`) and lightweight synchronous/threaded HTTP server dispatcher (`make_server`).
+- **Overview:** RFC 9112 HTTP/1.1 client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode server (`make_server`), and independent request router (`make_router`).
 
 **Practical Example:**
 ```cf
@@ -400,11 +400,18 @@ fn main() {
         println("Service status: {}, uptime: {}s", h.status, h.uptime)
     }
 
-    // 2. Lightweight high-performance HTTP server dispatcher
-    mut server := try http.make_server(port: 8080)
-    server.handle("/health", |req| {
-        return http.Response{ status_code: 200, body: "{\"status\":\"healthy\",\"uptime_sec\":120}" }
+    // 2. Build independent HTTP router with path parameters
+    mut router := http.make_router()
+    router.get("/health", |req| {
+        return http.Response.json(200, "{\"status\":\"healthy\",\"uptime_sec\":120}")
     })
+    router.get("/users/:id", |req| {
+        return http.Response.text(200, "User: " + req.param("id"))
+    })
+
+    // 3. Serve requests using the router
+    mut server := try http.make_server(port: 8080)
+    server.serve_in_background(router)
 }
 ```
 
@@ -412,7 +419,23 @@ fn main() {
 |---|---|---|---|
 | `fn get(url: str, headers: map[str]str = {}) -> Response!` | `cfire::http::get(url, headers)` | Executes an HTTP GET request against a target URL. | `resp := try http.get("http://127.0.0.1:8080/health")` |
 | `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}) -> Response!` | `cfire::http::post(url, body, content_type, headers)` | Executes an HTTP POST request with payload body. | `resp := try http.post("http://127.0.0.1:8080/items", "{\"id\": 1}")` |
+| `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}) -> Response!` | `cfire::http::request(method, url, body, content_type, headers)` | Executes an arbitrary HTTP request (PUT, DELETE, PATCH, etc.). | `resp := try http.request("DELETE", "http://127.0.0.1:8080/items/1")` |
 | `fn make_server(port: u16 = 0) -> HttpServer!` | `cfire::http::make_server(port)` | Creates a lightweight HTTP server listening on `port` (0 for ephemeral). | `mut srv := try http.make_server(8080)` |
+| `fn make_router() -> Router` | `cfire::http::make_router()` | Creates an independent HTTP request router supporting path parameters (`:id`), wildcards (`*path`), and standalone dispatch. | `mut r := http.make_router()` |
+| `fn parse_request(raw: str) -> Request!` | `cfire::http::parse_request(raw)` | Parses raw HTTP/1.1 wire text into a structured Request model. | `req := try http.parse_request(raw_text)` |
+| `fn Response.text(code: i32, payload: str) -> Response` | `cfire::http::Response::text(code, payload)` | Creates an HTTP Response with text/plain content-type and standard status reason. | `return http.Response.text(200, "OK")` |
+| `fn Response.json(code: i32, json_str: str) -> Response` | `cfire::http::Response::json(code, json_str)` | Creates an HTTP Response with application/json content-type. | `return http.Response.json(200, "{\"status\":\"ok\"}")` |
+| `fn Response.html(code: i32, html: str) -> Response` | `cfire::http::Response::html(code, html)` | Creates an HTTP Response with text/html content-type. | `return http.Response.html(200, "<h1>Hello</h1>")` |
+| `fn Response.redirect(location: str, code: i32 = 302) -> Response` | `cfire::http::Response::redirect(location, code)` | Creates an HTTP redirect Response setting Location header. | `return http.Response.redirect("/login", 302)` |
+| `fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router&` | `r.get(pattern, handler)` | Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`). | `r.get("/users/:id", |req| http.Response.text(200, req.param("id")))` |
+| `fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router&` | `r.post(pattern, handler)` | Registers an HTTP POST route handler. | `r.post("/items", |req| http.Response.json(201, "{}"))` |
+| `fn (r: Router) dispatch(req: Request) -> Response` | `r.dispatch(req)` | Dispatches an HTTP request through the router in-memory without open network sockets. | `res := router.dispatch(test_req)` |
+| `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&` | `r.use(mw)` | Registers pre-routing middleware that can short-circuit or validate requests. | `r.use(|req| { return None })` |
+| `fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response) -> void` | `s.serve_in_background(handler)` | Starts a non-blocking background accept loop serving requests with the specified handler or router. | `server.serve_in_background(router)` |
+| `fn (mut s: HttpServer) stop() -> void` | `s.stop()` | Gracefully closes the listening socket and stops worker threads. | `server.stop()` |
+| `fn (req: Request) param(key: str, fallback: str = "") -> str` | `req.param(key, fallback)` | Retrieves a named route path parameter extracted by the router. | `id := req.param("id")` |
+| `fn (req: Request) query(key: str, fallback: str = "") -> str` | `req.query(key, fallback)` | Retrieves a decoded URL query parameter. | `page := req.query("page", "1")` |
+| `fn (req: Request) header(key: str, fallback: str = "") -> str` | `req.header(key, fallback)` | Performs a case-insensitive header lookup. | `auth := req.header("Authorization")` |
 
 ### `core:net/websocket` (`websocket`) — RFC 6455 High-Level WebSockets Client & Server
 

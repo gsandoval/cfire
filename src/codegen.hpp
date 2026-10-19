@@ -791,6 +791,15 @@ private:
             if constexpr (std::is_same_v<T, IdentExpr>) {
                 std::string name = ex.name;
                 if (name.starts_with("cpp::")) name.erase(0, 5);
+                if (name.starts_with("http.")) {
+                    name = "cfire::http::" + name.substr(5);
+                } else if (name.starts_with("http::")) {
+                    name = "cfire::http::" + name.substr(6);
+                } else if (name.starts_with("url.")) {
+                    name = "cfire::url::" + name.substr(4);
+                } else if (name.starts_with("url::")) {
+                    name = "cfire::url::" + name.substr(5);
+                }
                 if (auto it = used_vendor_.find("raylib"); it != used_vendor_.end()) {
                     std::string pref = it->second + "::";
                     if (name.starts_with(pref)) name.erase(0, pref.size());
@@ -855,12 +864,16 @@ private:
                         id->name == "collections" || id->name == "sort" || id->name == "unicode" ||
                         id->name == "base64" || id->name == "hex" || id->name == "csv" ||
                         id->name == "aes" || id->name == "hmac" || id->name == "sha256" ||
-                        id->name == "context" || id->name == "websocket") {
+                        id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url") {
                         return std::format("cfire::{}::{}", id->name, ex.field);
                     }
                 }
                 std::string obj = emit_expr(ex.object);
                 if (ex.is_namespace) return obj + "::" + ex.field;
+                if (obj.ends_with("::Response") || obj.ends_with("::Request") || obj.ends_with("::Router") || obj.ends_with("::HttpServer") ||
+                    obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer") {
+                    return obj + "::" + ex.field;
+                }
                 if (ex.field == "len") return obj + ".size()";
                 if (ex.field == "empty") return obj + ".empty";
                 return obj + "." + ex.field;
@@ -874,6 +887,11 @@ private:
             } else if constexpr (std::is_same_v<T, StructLitExpr>) {
                 std::string tname = ex.type_name;
                 if (tname.starts_with("cpp::")) tname.erase(0, 5);
+                if (tname == "http.Request" || tname == "http::Request") tname = "cfire::http::Request";
+                if (tname == "http.Response" || tname == "http::Response") tname = "cfire::http::Response";
+                if (tname == "http.Router" || tname == "http::Router") tname = "cfire::http::Router";
+                if (tname == "http.HttpServer" || tname == "http::HttpServer") tname = "cfire::http::HttpServer";
+                if (tname == "url.Url" || tname == "url::Url") tname = "cfire::url::Url";
                 if (ex.fields.empty()) return tname + "{}";
                 std::string inits;
                 for (std::size_t i = 0; i < ex.fields.size(); ++i) {
@@ -888,6 +906,8 @@ private:
                     elems += emit_expr(ex.elements[i]);
                 }
                 return std::format("{{{}}}", elems);
+            } else if constexpr (std::is_same_v<T, ClosureExpr>) {
+                return emit_closure(ex);
             } else if constexpr (std::is_same_v<T, OrExpr>) {
                 if (ex.fallback_val) {
                     return std::format("{}.value_or({})", emit_expr(ex.inner), emit_expr(ex.fallback_val));
@@ -1085,7 +1105,36 @@ private:
             }
             args += arg_val;
         }
+        if (call.block_arg) {
+            if (!args.empty()) args += ", ";
+            args += emit_closure(*call.block_arg);
+        }
         return std::format("{}({})", callee, args);
+    }
+
+    [[nodiscard]] auto emit_closure(const ClosureExpr& cl) -> std::string {
+        std::ostringstream sb;
+        sb << "[&](";
+        for (std::size_t i = 0; i < cl.params.size(); ++i) {
+            if (i > 0) sb << ", ";
+            sb << "auto&& " << cl.params[i];
+        }
+        sb << ") {\n";
+        ++indent_;
+        for (const auto& st : cl.body) {
+            Emitter sub(cf_);
+            sub.indent_ = indent_;
+            sub.cur_fn_ = cur_fn_;
+            sub.used_core_ = used_core_;
+            sub.used_vendor_ = used_vendor_;
+            sub.in_main_ = in_main_;
+            sub.emit_stmt(st, false);
+            sb << sub.buf_.str();
+        }
+        --indent_;
+        for (int i = 0; i < indent_; ++i) sb << "    ";
+        sb << "}";
+        return sb.str();
     }
 
     [[nodiscard]] auto emit_call_arg(const CallArg& a) -> std::string {
@@ -1159,6 +1208,11 @@ private:
         if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
         if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
         if (tr.name == "websocket::Conn" || tr.name == "Conn") return "cfire::websocket::Conn";
+        if (tr.name == "http::Request" || tr.name == "Request") return "cfire::http::Request";
+        if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
+        if (tr.name == "http::Router" || tr.name == "Router") return "cfire::http::Router";
+        if (tr.name == "http::HttpServer" || tr.name == "HttpServer") return "cfire::http::HttpServer";
+        if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
         if (tr.name == "sync::Channel" && tr.elem_type) {
             return std::format("cfire::sync::Channel<{}>", lower_owning_type(*tr.elem_type));
         }
