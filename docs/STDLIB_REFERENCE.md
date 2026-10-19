@@ -9,6 +9,29 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:fs"
+
+fn main() {
+    // 1. High-level one-shot file read and write
+    try fs.write_text("config.ini", "workers=8\nport=9000\n")
+    content := try fs.read_text("config.ini")
+    println("Read configuration: {}", content)
+
+    // 2. Streaming file operations with deterministic RAII defer
+    mut file := try fs.open("service.log", fs.OpenMode::Append)
+    defer file.close() // Closed deterministically on return
+
+    try file.write_str("[INFO] Worker subsystem initialized\n")
+    try file.flush()
+    offset := try file.tell()
+    println("Log stream offset: {} bytes", offset)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn read_all(path: str) -> []byte!` | `cfire::fs::read_all(path)` | Reads an entire binary file into a byte buffer. | `raw := try fs.read_all("input.bin")` |
@@ -37,6 +60,27 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:"--flag,help"`).
 
+**Practical Example:**
+```cf
+package main
+
+import "core:cli"
+
+type AppFlags struct {
+    host:    str  `cli:"--host"    default:"127.0.0.1"`
+    port:    u16  `cli:"--port,-p" default:"8080"`
+    workers: i32  `cli:"--workers" default:"4"`
+    verbose: bool `cli:"--verbose,-v"`
+}
+
+fn main() {
+    // Automatically binds command-line arguments to typed struct
+    flags := try cli.parse[AppFlags]()
+    println("Server listening on {}:{} with {} workers (verbose={})",
+        flags.host, flags.port, flags.workers, flags.verbose)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn parse[T](args: []str?) -> T!` | `cfire::cli::parse<T>(argc, argv)` | Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`. | `args := try cli.parse[Args]()` |
@@ -45,6 +89,25 @@
 
 - **Auto-Link Flags:** `-lzstd`
 - **Overview:** Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:compress/zstd"
+
+fn main() {
+    raw := []byte("high-throughput packet trace payload ... high-throughput packet trace payload ...")
+
+    // Hardware-accelerated Zstandard frame compression
+    compressed := try zstd.compress(raw, level: 3)
+    println("Original size: {} bytes -> Compressed: {} bytes", raw.len(), compressed.len())
+
+    // Decompression using the embedded frame content size
+    decompressed := try zstd.decompress(compressed)
+    println("Decompressed size: {} bytes", decompressed.len())
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -55,6 +118,34 @@
 
 - **Auto-Link Flags:** `-lsimdjson (or header-only)`
 - **Overview:** Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:json"
+
+type ServiceMetric struct {
+    service: str  `json:"service"`
+    latency: f64  `json:"latency_ms"`
+    healthy: bool `json:"healthy"`
+}
+
+fn main() {
+    // 1. Zero-overhead SIMD deserialization using compile-time struct tags
+    payload := `{"service":"auth","latency_ms":1.42,"healthy":true}`
+    m := try json.parse[ServiceMetric](payload)
+    println("Service={}, Latency={}ms, Healthy={}", m.service, m.latency, m.healthy)
+
+    // 2. High-speed JSON serialization
+    serialized := json.stringify(m)
+    println("Serialized output: {}", serialized)
+
+    // 3. Dynamic DOM for arbitrary or schemaless JSON
+    mut doc := try json.parse_dynamic(`{"tags":["systems","c++23"],"cluster":{"nodes":3}}`)
+    println("Cluster nodes: {}", doc.get("cluster").get("nodes").as_int())
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -69,6 +160,39 @@
 - **Auto-Link Flags:** `-lsqlite3`
 - **Overview:** RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, atomic transactions, and compile-time `sql:"..."` struct row mapping.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:db/sqlite"
+
+type UserRecord struct {
+    id:    i64 `sql:"id"`
+    name:  str `sql:"name"`
+    email: str `sql:"email"`
+}
+
+fn main() {
+    // Opens SQLite connection and enables WAL mode automatically
+    mut db := try sqlite.open("app.db")
+    defer db.close()
+
+    try db.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)")
+
+    // Atomic transaction with auto-rollback on error
+    try db.tx |mut tx| {
+        try tx.exec("INSERT INTO users (name, email) VALUES (?1, ?2)", "alice", "alice@systems.dev")
+        try tx.exec("INSERT INTO users (name, email) VALUES (?1, ?2)", "bob", "bob@systems.dev")
+    }
+
+    // Direct struct row mapping via sql:"..." tags
+    users := try db.query[UserRecord]("SELECT id, name, email FROM users WHERE id >= ?1", 1)
+    for u in users {
+        println("User [{}]: {} <{}>", u.id, u.name, u.email)
+    }
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn open(path: str) -> Conn!` | `cfire::sqlite::open(path)` | Opens an SQLite3 database connection and enables WAL mode. | `mut db := try sqlite.open("app.db")` |
@@ -81,6 +205,19 @@
 - **Auto-Link Flags:** `(CommonCrypto / built-in)`
 - **Overview:** Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:crypto/sha256"
+
+fn main() {
+    payload := "system_audit_transaction_event_2026"
+    digest := sha256.hash_hex(payload)
+    println("FIPS 180-4 SHA-256 Digest: {}", digest)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn hash_hex(data: []byte) -> str` | `cfire::sha256::hash_hex(data)` | Returns a 64-character lowercase hex digest of `data`. | `digest := sha256.hash_hex(raw)` |
@@ -91,6 +228,25 @@
 - **Auto-Link Flags:** `(CommonCrypto / built-in)`
 - **Overview:** Computes RFC 2104 keyed HMAC-SHA256 authentication digests.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:crypto/hmac"
+
+fn main() {
+    secret_key := "super-secure-signing-secret"
+    data := "tenant_id:42;session:8849"
+
+    signature := hmac.sha256_hex(secret_key, data)
+    println("HMAC-SHA256 signature: {}", signature)
+
+    // Constant-time validation check prevents timing side-channel attacks
+    is_valid := hmac.equal(signature, signature)
+    println("Signature verified: {}", is_valid)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn sha256_hex(key: str, data: str) -> str` | `cfire::hmac::sha256_hex(key, data)` | Returns a 64-character lowercase hex HMAC-SHA256 digest. | `sig := hmac.sha256_hex(secret, payload)` |
@@ -100,6 +256,29 @@
 
 - **Auto-Link Flags:** `(Header-only pure C++23)`
 - **Overview:** Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).
+
+**Practical Example:**
+```cf
+package main
+
+import "core:crypto/aes"
+import "core:rand"
+
+fn main() {
+    key := rand.bytes(32)   // 256-bit AES key
+    nonce := rand.bytes(12) // 96-bit standard GCM nonce
+    secret := "Confidential credentials and token payload"
+    aad := "tenant_id:prod_42"
+
+    // Authenticated Encryption with Associated Data (GCM AEAD)
+    res := try aes.encrypt_gcm(key, nonce, secret, aad)
+    println("Ciphertext length: {} bytes, Tag: {:02x}", res.ciphertext.len(), res.tag[0])
+
+    // Decrypt and verify cryptographic authenticity tag
+    plain := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)
+    println("Authenticated decrypted plaintext: {}", plain)
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -113,6 +292,19 @@
 - **Auto-Link Flags:** `(CommonCrypto / built-in)`
 - **Overview:** Computes fast 256-bit cryptographic hex digests over byte slices (backward-compatible alias for `core:crypto/sha256`).
 
+**Practical Example:**
+```cf
+package main
+
+import "core:crypto/blake3"
+
+fn main() {
+    blob := []byte("immutable chunk storage block 0x8842")
+    hash := blake3.hash_hex(blob)
+    println("Blake3 256-bit digest: {}", hash)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn hash_hex(data: []byte) -> str` | `cfire::blake3::hash_hex(data)` | Returns a 64-character lowercase hex digest of `data`. | `digest := blake3.hash_hex(raw)` |
@@ -121,6 +313,29 @@
 
 - **Auto-Link Flags:** `(POSIX sockets)`
 - **Overview:** RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:net"
+
+fn main() {
+    // 1. Bind loopback TCP listener on an ephemeral port (0)
+    mut ln := try net.listen_tcp(port: 0)
+    port := ln.port()
+    println("Listening on 127.0.0.1:{}", port)
+
+    // 2. Connect client TCP socket
+    mut client := try net.connect_tcp("127.0.0.1", port)
+    _ := try client.write("PING\n")
+
+    // 3. Accept incoming connection and read data
+    mut conn := try ln.accept()
+    msg := try conn.read_str(max_bytes: 64)
+    println("Server received payload: {}", msg)
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -136,6 +351,23 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:net/url"
+
+fn main() {
+    raw := "https://api.domain.com:8443/v1/search?q=systems+c%2B%2B&limit=25#results"
+    u := try url.parse(raw)
+    println("Scheme: {}, Host: {}, Port: {}, Path: {}", u.scheme, u.host, u.port, u.path)
+    println("Query parameter 'q': {}", u.query["q"])
+
+    encoded := url.encode("raw query with spaces & symbols!")
+    println("Percent-encoded: {}", encoded)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn parse(raw: str) -> Url!` | `cfire::url::parse(raw)` | Parses an RFC 3986 URL string into component fields and query parameters. | `u := try url.parse("http://127.0.0.1:8080/api/items?q=shoes#top")` |
@@ -147,6 +379,35 @@
 - **Auto-Link Flags:** `(POSIX sockets)`
 - **Overview:** High-level HTTP/1.1 client (`get`, `post`, `request`) and lightweight synchronous/threaded HTTP server dispatcher (`make_server`).
 
+**Practical Example:**
+```cf
+package main
+
+import "core:net/http"
+import "core:json"
+
+type HealthStatus struct {
+    status: str `json:"status"`
+    uptime: i64 `json:"uptime_sec"`
+}
+
+fn main() {
+    // 1. HTTP GET client request with custom headers
+    headers := { "User-Agent": "cfire-service/1.0", "Accept": "application/json" }
+    resp := try http.get("http://127.0.0.1:8080/health", headers: headers)
+    if resp.status_code == 200 {
+        h := try json.parse[HealthStatus](resp.body)
+        println("Service status: {}, uptime: {}s", h.status, h.uptime)
+    }
+
+    // 2. Lightweight high-performance HTTP server dispatcher
+    mut server := try http.make_server(port: 8080)
+    server.handle("/health", |req| {
+        return http.Response{ status_code: 200, body: "{\"status\":\"healthy\",\"uptime_sec\":120}" }
+    })
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn get(url: str, headers: map[str]str = {}) -> Response!` | `cfire::http::get(url, headers)` | Executes an HTTP GET request against a target URL. | `resp := try http.get("http://127.0.0.1:8080/health")` |
@@ -157,6 +418,23 @@
 
 - **Auto-Link Flags:** `(POSIX sockets)`
 - **Overview:** RFC 6455 full-duplex WebSocket client (`connect`) and server upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:net/websocket"
+
+fn main() {
+    // Establish full-duplex RFC 6455 WebSocket connection
+    mut ws := try websocket.connect("ws://127.0.0.1:8080/market-data")
+    defer ws.close()
+
+    try ws.send_text("SUBSCRIBE BTC-USD")
+    frame := try ws.recv_text()
+    println("Received WebSocket stream frame: {}", frame)
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -176,6 +454,23 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:time"
+
+fn main() {
+    now := time.now()
+    println("Current RFC 3339 timestamp: {}", now.format_rfc3339())
+
+    // High-precision duration measurement
+    time.sleep_ms(30)
+    elapsed := time.since(now)
+    println("Elapsed duration: {} ms ({} us)", elapsed.to_millis(), elapsed.to_micros())
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn now_ms() -> i64` | `cfire::time::now_ms()` | Returns monotonic milliseconds from `std::chrono::steady_clock`. | `t0 := time.now_ms()` |
@@ -194,6 +489,24 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Process environment inspection, working directory queries, and subprocess output capture.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:os"
+import "core:os/exec"
+
+fn main() {
+    home := os.getenv("HOME") or "/tmp"
+    println("Environment $HOME: {}", home)
+
+    // Execute external process and capture stdout/exit code
+    cmd := exec.command("git", ["rev-parse", "--short", "HEAD"])
+    output := try cmd.output()
+    println("Current Git commit: {} (exit code {})", output.stdout, output.exit_code)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn getenv(key: str, fallback: str = "") -> str` | `cfire::os::getenv(key, fallback)` | Reads environment variable `key`, returning `fallback` if unset. | `mode := os.getenv("ENV", "dev")` |
@@ -207,6 +520,35 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:sync"
+
+fn main() {
+    // Typed buffered message channel
+    ch := sync.make_channel[i32](capacity: 10)
+
+    async.scope(workers: 2) |scope| {
+        // Producer task
+        scope.spawn || {
+            for i in [10, 20, 30] {
+                ch.send(i)
+            }
+            ch.close()
+        }
+
+        // Consumer task
+        scope.spawn || {
+            for item := ch.recv() or break {
+                println("Channel consumer received: {}", item)
+            }
+        }
+    }
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn make_channel[T]() -> Channel[T]` | `cfire::sync::make_channel<T>()` | Creates a new shared, thread-safe channel of element type `T`. | `ch := sync.make_channel[i64]()` |
@@ -219,6 +561,25 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`).
+
+**Practical Example:**
+```cf
+package main
+
+import "core:sync/context"
+import "core:time"
+
+fn main() {
+    bg := context.background()
+    (ctx, cancel) := context.with_timeout(bg, 500) // 500ms deadline
+    defer cancel("worker task complete")
+
+    time.sleep_ms(40)
+    if !ctx.is_done() {
+        println("Operation succeeded within timeout deadline")
+    }
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -235,6 +596,21 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:str"
+
+fn main() {
+    raw := "  systems, programming, language  "
+    trimmed := str.trim(raw)
+    tokens := str.split(trimmed, ", ")
+    formatted := str.join(tokens, "::")
+    println("Processed string: {}", formatted)
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -253,6 +629,19 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:math"
+
+fn main() {
+    bounded := math.clamp_f64(3.14159, 0.0, 1.0)
+    hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
+    println("Clamped: {}, Hypot: {}", bounded, hypot)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64` | `cfire::math::clamp_i64(val, lo, hi)` | Clamps a 64-bit integer to `[lo, hi]`. | `c := math.clamp_i64(x, 0, 100)` |
@@ -264,6 +653,20 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:rand"
+
+fn main() {
+    uid := rand.u64()
+    dice_roll := rand.range_i64(1, 6)
+    token_bytes := rand.bytes(16)
+    println("ID: {}, Roll: {}, Entropy bytes: {}", uid, dice_roll, token_bytes.len())
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -277,6 +680,22 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:encoding/base64"
+
+fn main() {
+    credentials := "service_account:token_xyz_9988"
+    encoded := base64.encode_str(credentials)
+    println("Base64 encoded: {}", encoded)
+
+    decoded := try base64.decode_str(encoded)
+    println("Decoded text: {}", decoded)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn encode(data: []byte, url_safe: bool = false) -> str` | `cfire::base64::encode(data, url_safe)` | Encodes binary byte slice into standard or URL-safe Base64 string. | `s := base64.encode(raw)` |
@@ -288,6 +707,22 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:encoding/hex"
+
+fn main() {
+    binary_bytes := []byte{0xCA, 0xFE, 0xBA, 0xBE}
+    hex_str := hex.encode(binary_bytes)
+    println("Hexadecimal string: 0x{}", hex_str)
+
+    restored := try hex.decode(hex_str)
+    println("Restored byte length: {}", restored.len())
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -301,6 +736,25 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:encoding/csv"
+
+fn main() {
+    csv_data := "service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n"
+    table := csv.parse(csv_data)
+    for row in table {
+        println("Service: {}, Region: {}, QPS: {}", row[0], row[1], row[2])
+    }
+
+    // Serialize 2D slice back into RFC 4180 CSV
+    rendered := csv.stringify(table)
+    println("Output:\n{}", rendered)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn parse(s: str) -> [][]str` | `cfire::csv::parse(s)` | Parses a CSV string into a 2D table of rows and columns. | `rows := csv.parse(content)` |
@@ -313,6 +767,27 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:regex"
+
+fn main() {
+    email_pattern := `^[a-zA-Z0-9_\.-]+@[a-zA-Z0-9\.-]+\.[a-z]{2,6}$`
+    re := try regex.compile(email_pattern)
+
+    email := "architect@cfire.memo.engineer"
+    if try re.is_match(email) {
+        println("Validated email: {}", email)
+    }
+
+    // Global text replacement
+    cleaned := try regex.replace_all(`\s+`, "multiple    whitespace     characters", " ")
+    println("Cleaned text: {}", cleaned)
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn compile(pattern: str) -> Regex!` | `cfire::regex::compile(pattern)` | Compiles an ECMAScript regex pattern into a reusable Regex object. | `re := try regex.compile("\\d+")` |
@@ -323,6 +798,34 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Standard generic containers backed by STL unordered_set, priority_queue, and deque.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:collections"
+
+fn main() {
+    // 1. Generic Hash Set
+    mut set := collections.Set[str]{}
+    set.insert("alpha")
+    set.insert("beta")
+    println("Set contains 'alpha': {}", set.contains("alpha"))
+
+    // 2. Generic Max-Heap Priority Queue
+    mut pq := collections.PriorityQueue[i64]{}
+    pq.push(10)
+    pq.push(95)
+    pq.push(42)
+    println("Highest priority element: {}", pq.top()) // 95
+
+    // 3. Double-Ended Queue (Deque)
+    mut dq := collections.Deque[str]{}
+    dq.push_back("item_2")
+    dq.push_front("item_1")
+    println("Front: {}, Back: {}", dq.pop_front(), dq.pop_back())
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -335,6 +838,25 @@
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** In-place sorting algorithms and binary search on slices.
 
+**Practical Example:**
+```cf
+package main
+
+import "core:sort"
+
+fn main() {
+    mut numbers := [95, 12, 48, 3, 77]
+    // In-place slice sorting
+    sort.slice(mut numbers)
+    println("Sorted numbers: {:?}", numbers)
+
+    // Logarithmic binary search
+    if idx := sort.binary_search(numbers, 48) {
+        println("Found element 48 at index: {}", idx)
+    }
+}
+```
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn slice(mut s: []T)` | `cfire::sort::slice(s)` | Sorts a slice in ascending order in-place. | `sort.slice(mut numbers)` |
@@ -344,6 +866,23 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:log"
+
+fn main() {
+    log.set_level(log.Level::Debug)
+    log.set_format(log.Format::Json) // Output format: Text or Json
+
+    // Leveled structured logging with key-value attributes
+    log.info("service worker started", "port", "8080", "cluster", "prod-us-east")
+    log.warn("memory threshold reached", "usage_pct", "84", "threshold", "80")
+    log.error("database pool exhausted", "active_conns", "100", "pool_size", "100")
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -358,6 +897,28 @@
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:unicode"
+
+fn main() {
+    text := "cfire 🔥 世界"
+    // Validate RFC 3629 UTF-8 byte sequences
+    if unicode.is_valid_utf8(text) {
+        rune_count := unicode.rune_count(text)
+        println("Unicode scalar value count: {}", rune_count) // 10 runes
+    }
+
+    // Decode into individual 32-bit scalar codepoints
+    runes := unicode.runes(text)
+    for r in runes {
+        println("Rune: U+{:04X}", r)
+    }
+}
+```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
