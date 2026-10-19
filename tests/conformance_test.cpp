@@ -2847,6 +2847,193 @@ fn main() {
     std::println("--- PASS: test_net_websocket (LIB-EXT-02)");
 }
 
+void test_net_http_and_router(const std::filesystem::path& /*rt_dir*/) {
+    std::println("=== RUN   test_net_http_and_router (HTTP Server, Parser, Response Writer & Router)");
+
+    // 1. Request Parser Testing
+    std::string raw_get = "GET /api/users/42?sort=desc&limit=10 HTTP/1.1\r\n"
+                          "Host: 127.0.0.1:8080\r\n"
+                          "User-Agent: test-client/1.0\r\n"
+                          "Accept: application/json\r\n\r\n";
+    auto req_res = cfire::http::parse_request(raw_get);
+    require(req_res.has_value(), "parse_request succeeds for valid GET");
+    if (req_res.has_value()) {
+        const auto& req = *req_res;
+        require(req.method == "GET", "parsed method is GET");
+        require(req.path == "/api/users/42", "parsed path is /api/users/42");
+        require(req.raw_query == "sort=desc&limit=10", "parsed raw query");
+        require(req.query("sort") == "desc", "parsed query param sort");
+        require(req.query("limit") == "10", "parsed query param limit");
+        require(req.query("missing", "default") == "default", "query fallback value");
+        require(req.header("host") == "127.0.0.1:8080", "header lookup lower-case");
+        require(req.header("Host") == "127.0.0.1:8080", "header lookup case-insensitive");
+        require(req.header("Accept") == "application/json", "header lookup Accept");
+    }
+
+    std::string raw_post = "POST /submit HTTP/1.1\r\n"
+                           "Content-Type: application/json\r\n"
+                           "Content-Length: 15\r\n\r\n"
+                           "{\"status\":\"ok\"}";
+    auto post_res = cfire::http::parse_request(raw_post);
+    require(post_res.has_value(), "parse_request succeeds for valid POST with body");
+    if (post_res.has_value()) {
+        require(post_res->method == "POST", "parsed method is POST");
+        require(post_res->path == "/submit", "parsed path is /submit");
+        require(post_res->body == "{\"status\":\"ok\"}", "parsed body matches Content-Length");
+    }
+
+    auto bad_res = cfire::http::parse_request("invalid without crlfcrlf");
+    require(!bad_res.has_value(), "parse_request returns error for malformed request");
+
+    // 2. Response & Wire Formatting Testing
+    auto resp_txt = cfire::http::Response::text(200, "hello world");
+    require(resp_txt.status_code == 200, "Response::text status code 200");
+    require(resp_txt.header("content-type").contains("text/plain"), "Response::text content-type");
+    require(resp_txt.body == "hello world", "Response::text body");
+
+    auto resp_json = cfire::http::Response::json(201, "{\"id\":99}");
+    require(resp_json.status_code == 201, "Response::json status code 201");
+    require(resp_json.header("content-type") == "application/json", "Response::json content-type");
+
+    auto resp_wire = resp_json.to_http_wire();
+    require(resp_wire.starts_with("HTTP/1.1 201 Created\r\n"), "to_http_wire status line");
+    require(resp_wire.contains("Content-Length: 9\r\n"), "to_http_wire Content-Length");
+    require(resp_wire.ends_with("{\"id\":99}"), "to_http_wire payload suffix");
+
+    // 3. Independent Router Testing (pure in-memory dispatch, zero sockets)
+    auto router = cfire::http::make_router();
+
+    router.get("/health", [](const cfire::http::Request&) {
+        return cfire::http::Response::json(200, "{\"healthy\":true}");
+    });
+
+    router.get("/users/:id", [](const cfire::http::Request& req) {
+        return cfire::http::Response::text(200, "user_id=" + req.param("id"));
+    });
+
+    router.get("/orgs/:org/repos/:repo", [](const cfire::http::Request& req) {
+        return cfire::http::Response::text(200, req.param("org") + "/" + req.param("repo"));
+    });
+
+    router.get("/static/*filepath", [](const cfire::http::Request& req) {
+        return cfire::http::Response::text(200, "file=" + req.param("filepath"));
+    });
+
+    router.post("/items", [](const cfire::http::Request& req) {
+        return cfire::http::Response::json(201, "created:" + req.body);
+    });
+
+    // Exact match
+    cfire::http::Request r1{.method = "GET", .path = "/health"};
+    auto out1 = router.dispatch(r1);
+    require(out1.status_code == 200 && out1.body == "{\"healthy\":true}", "router exact match /health");
+
+    // Parameter match :id
+    cfire::http::Request r2{.method = "GET", .path = "/users/456"};
+    auto out2 = router.dispatch(r2);
+    require(out2.status_code == 200 && out2.body == "user_id=456", "router parameter match :id");
+
+    // Multi-parameter match :org and :repo
+    cfire::http::Request r3{.method = "GET", .path = "/orgs/google/repos/cfire"};
+    auto out3 = router.dispatch(r3);
+    require(out3.status_code == 200 && out3.body == "google/cfire", "router multi-param match :org/:repo");
+
+    // Wildcard match *filepath
+    cfire::http::Request r4{.method = "GET", .path = "/static/assets/css/main.css"};
+    auto out4 = router.dispatch(r4);
+    require(out4.status_code == 200 && out4.body == "file=assets/css/main.css", "router wildcard match *filepath");
+
+    // POST dispatch
+    cfire::http::Request r5{.method = "POST", .path = "/items", .body = "gadget"};
+    auto out5 = router.dispatch(r5);
+    require(out5.status_code == 201 && out5.body == "created:gadget", "router POST dispatch with body");
+
+    // 405 Method Not Allowed (path matches POST /items but method is GET)
+    cfire::http::Request r6{.method = "GET", .path = "/items"};
+    auto out6 = router.dispatch(r6);
+    require(out6.status_code == 405, "router returns 405 Method Not Allowed for unmatched verb");
+    require(out6.header("allow") == "POST", "router sets Allow header for 405 response");
+
+    // 404 Not Found
+    cfire::http::Request r7{.method = "GET", .path = "/nonexistent"};
+    auto out7 = router.dispatch(r7);
+    require(out7.status_code == 404, "router returns 404 for unmatched path");
+
+    // Middleware test
+    auto mw_router = cfire::http::make_router();
+    mw_router.use([](cfire::http::Request& req) -> std::optional<cfire::http::Response> {
+        if (req.header("authorization") != "Bearer secret") {
+            return cfire::http::Response::text(401, "Unauthorized");
+        }
+        return std::nullopt;
+    });
+    mw_router.get("/protected", [](const cfire::http::Request&) {
+        return cfire::http::Response::text(200, "SecretData");
+    });
+
+    cfire::http::Request unauth_req{.method = "GET", .path = "/protected"};
+    require(mw_router.dispatch(unauth_req).status_code == 401, "middleware rejects missing auth");
+
+    cfire::http::Request auth_req{.method = "GET", .path = "/protected", .headers = {{"authorization", "Bearer secret"}}};
+    require(mw_router.dispatch(auth_req).status_code == 200, "middleware allows authenticated request");
+
+    // 4. Server + Router Loopback End-to-End
+    auto srv_res = cfire::http::make_server(0);
+    require(srv_res.has_value(), "make_server creates listener on ephemeral port");
+    if (srv_res.has_value()) {
+        auto port = srv_res->port();
+        srv_res->serve_in_background(router);
+
+        std::string target_get = std::format("http://127.0.0.1:{}/users/888", port);
+        auto client_get = cfire::http::get(target_get);
+        require(client_get.has_value(), "client GET against live server with router succeeds");
+        if (client_get.has_value()) {
+            require(client_get->status_code == 200, "live GET status code 200");
+            require(client_get->body == "user_id=888", "live GET received router output");
+        }
+
+        std::string target_post = std::format("http://127.0.0.1:{}/items", port);
+        auto client_post = cfire::http::post(target_post, "gizmo");
+        require(client_post.has_value(), "client POST against live server succeeds");
+        if (client_post.has_value()) {
+            require(client_post->status_code == 201, "live POST status code 201");
+            require(client_post->body == "created:gizmo", "live POST received router output");
+        }
+
+        srv_res->stop();
+    }
+
+    // 5. End-to-end .cf script execution
+    run_cfire_source(R"(package main
+
+import "core:net/http"
+
+fn main() {
+    mut router := http.make_router()
+    router.get("/ping", |req| {
+        return http.Response.text(200, "pong")
+    })
+    router.get("/users/:id", |req| {
+        return http.Response.text(200, "uid:" + req.param("id"))
+    })
+
+    // 1. In-memory standalone dispatch test
+    req1 := http.Request{ method: "GET", path: "/ping" }
+    res1 := router.dispatch(req1)
+    println("cf.router.ping={}", res1.body)
+
+    req2 := http.Request{ method: "GET", path: "/users/99" }
+    res2 := router.dispatch(req2)
+    println("cf.router.user={}", res2.body)
+}
+)", "cfire_http_router")
+        .assert_ok("cfire run http router exit 0")
+        .assert_contains("cf.router.ping=pong", "http router ping dispatch output")
+        .assert_contains("cf.router.user=uid:99", "http router user parameter dispatch output");
+
+    std::println("--- PASS: test_net_http_and_router (HTTP Server & Router)");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -2870,6 +3057,7 @@ auto main() -> int {
     test_slice_pattern_matching(rt_dir);
     test_sync_context(rt_dir);
     test_net_websocket(rt_dir);
+    test_net_http_and_router(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);

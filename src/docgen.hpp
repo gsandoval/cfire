@@ -163,12 +163,28 @@ struct DiagnosticDoc {
             }
         },
         {
-            "core:net/http", "http", "HTTP/1.1 Client & Lightweight Dispatch Server", "(POSIX sockets)",
-            "High-level HTTP/1.1 client (`get`, `post`, `request`) and lightweight synchronous/threaded HTTP server dispatcher (`make_server`).",
+            "core:net/http", "http", "HTTP/1.1 Client, Wire Protocol Engine, Server & Independent Router", "(POSIX sockets)",
+            "RFC 9112 HTTP/1.1 client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode server (`make_server`), and independent request router (`make_router`).",
             {
                 {"get", "fn get(url: str, headers: map[str]str = {}) -> Response!", "cfire::http::get(url, headers)", "Executes an HTTP GET request against a target URL.", "resp := try http.get(\"http://127.0.0.1:8080/health\")"},
                 {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}) -> Response!", "cfire::http::post(url, body, content_type, headers)", "Executes an HTTP POST request with payload body.", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
-                {"make_server", "fn make_server(port: u16 = 0) -> HttpServer!", "cfire::http::make_server(port)", "Creates a lightweight HTTP server listening on `port` (0 for ephemeral).", "mut srv := try http.make_server(8080)"}
+                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}) -> Response!", "cfire::http::request(method, url, body, content_type, headers)", "Executes an arbitrary HTTP request (PUT, DELETE, PATCH, etc.).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
+                {"make_server", "fn make_server(port: u16 = 0) -> HttpServer!", "cfire::http::make_server(port)", "Creates a lightweight HTTP server listening on `port` (0 for ephemeral).", "mut srv := try http.make_server(8080)"},
+                {"make_router", "fn make_router() -> Router", "cfire::http::make_router()", "Creates an independent HTTP request router supporting path parameters (`:id`), wildcards (`*path`), and standalone dispatch.", "mut r := http.make_router()"},
+                {"parse_request", "fn parse_request(raw: str) -> Request!", "cfire::http::parse_request(raw)", "Parses raw HTTP/1.1 wire text into a structured Request model.", "req := try http.parse_request(raw_text)"},
+                {"Response.text", "fn Response.text(code: i32, payload: str) -> Response", "cfire::http::Response::text(code, payload)", "Creates an HTTP Response with text/plain content-type and standard status reason.", "return http.Response.text(200, \"OK\")"},
+                {"Response.json", "fn Response.json(code: i32, json_str: str) -> Response", "cfire::http::Response::json(code, json_str)", "Creates an HTTP Response with application/json content-type.", "return http.Response.json(200, \"{\\\"status\\\":\\\"ok\\\"}\")"},
+                {"Response.html", "fn Response.html(code: i32, html: str) -> Response", "cfire::http::Response::html(code, html)", "Creates an HTTP Response with text/html content-type.", "return http.Response.html(200, \"<h1>Hello</h1>\")"},
+                {"Response.redirect", "fn Response.redirect(location: str, code: i32 = 302) -> Response", "cfire::http::Response::redirect(location, code)", "Creates an HTTP redirect Response setting Location header.", "return http.Response.redirect(\"/login\", 302)"},
+                {"Router.get", "fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.get(pattern, handler)", "Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).", "r.get(\"/users/:id\", |req| http.Response.text(200, req.param(\"id\")))"},
+                {"Router.post", "fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.post(pattern, handler)", "Registers an HTTP POST route handler.", "r.post(\"/items\", |req| http.Response.json(201, \"{}\"))"},
+                {"Router.dispatch", "fn (r: Router) dispatch(req: Request) -> Response", "r.dispatch(req)", "Dispatches an HTTP request through the router in-memory without open network sockets.", "res := router.dispatch(test_req)"},
+                {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate requests.", "r.use(|req| { return None })"},
+                {"HttpServer.serve_in_background", "fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response) -> void", "s.serve_in_background(handler)", "Starts a non-blocking background accept loop serving requests with the specified handler or router.", "server.serve_in_background(router)"},
+                {"HttpServer.stop", "fn (mut s: HttpServer) stop() -> void", "s.stop()", "Gracefully closes the listening socket and stops worker threads.", "server.stop()"},
+                {"Request.param", "fn (req: Request) param(key: str, fallback: str = \"\") -> str", "req.param(key, fallback)", "Retrieves a named route path parameter extracted by the router.", "id := req.param(\"id\")"},
+                {"Request.query", "fn (req: Request) query(key: str, fallback: str = \"\") -> str", "req.query(key, fallback)", "Retrieves a decoded URL query parameter.", "page := req.query(\"page\", \"1\")"},
+                {"Request.header", "fn (req: Request) header(key: str, fallback: str = \"\") -> str", "req.header(key, fallback)", "Performs a case-insensitive header lookup.", "auth := req.header(\"Authorization\")"}
             }
         },
         {
@@ -682,11 +698,18 @@ fn main() {
         println("Service status: {}, uptime: {}s", h.status, h.uptime)
     }
 
-    // 2. Lightweight high-performance HTTP server dispatcher
-    mut server := try http.make_server(port: 8080)
-    server.handle("/health", |req| {
-        return http.Response{ status_code: 200, body: "{\"status\":\"healthy\",\"uptime_sec\":120}" }
+    // 2. Build independent HTTP router with path parameters
+    mut router := http.make_router()
+    router.get("/health", |req| {
+        return http.Response.json(200, "{\"status\":\"healthy\",\"uptime_sec\":120}")
     })
+    router.get("/users/:id", |req| {
+        return http.Response.text(200, "User: " + req.param("id"))
+    })
+
+    // 3. Serve requests using the router
+    mut server := try http.make_server(port: 8080)
+    server.serve_in_background(router)
 })CF";
     }
     if (mod == "core:net/websocket") {
@@ -1837,8 +1860,8 @@ fn main() {
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">&#128640; Start in 5 Minutes &rarr;</a>
-      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 8-Chapter Guide</a>
-      <a class="btn btn-secondary" href="reference.html">&#9889; Explore 13 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 10-Chapter Guide</a>
+      <a class="btn btn-secondary" href="reference.html">&#9889; Explore Stdlib Reference</a>
     </div>
 
     <div>
@@ -1994,43 +2017,53 @@ fn main() {
   <div class="roadmap-grid">
     <a class="roadmap-card" href="guide.html#chapter-1">
       <div class="roadmap-num">Chapter 1</div>
-      <h4>5-Minute Tour &amp; Quickstart</h4>
-      <p>Compiler architecture, project layout, CLI driver commands, and your first programs.</p>
+      <h4>Philosophy &amp; Architecture</h4>
+      <p>1:1 ISO C++23 lowering, mechanical sympathy, language comparison, and 5-minute quickstart.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-2">
       <div class="roadmap-num">Chapter 2</div>
-      <h4>Syntax, Types &amp; Intents</h4>
-      <p>Primitives, compound types, <code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>, and exclusivity rules.</p>
+      <h4>Tour of the Toolchain</h4>
+      <p>CLI driver commands (<code>build</code>, <code>run</code>, <code>test</code>, <code>doc</code>, <code>fmt</code>), and embedded unit testing.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-3">
       <div class="roadmap-num">Chapter 3</div>
-      <h4>Algebraic Enums &amp; Match</h4>
-      <p>Tagged unions, pattern matching, slice destructuring (<code>[head, ..tail]</code>), and exhaustiveness.</p>
+      <h4>Syntax &amp; Control Flow</h4>
+      <p>Immutability by default, slices, arrays, maps, tuples, optionals, and smart pointers.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-4">
       <div class="roadmap-num">Chapter 4</div>
-      <h4>Zero-Cost C++ Interop</h4>
-      <p>Direct Clang AST ingestion, C++ STL lowering, automatic boundary coercion, and CMake ejection.</p>
+      <h4>Functions &amp; Intents</h4>
+      <p>Call-site intent safety (<code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>), alias exclusivity, and closures.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-5">
       <div class="roadmap-num">Chapter 5</div>
-      <h4>Error Handling &amp; Definite Return</h4>
-      <p>Fallible types (<code>T!</code>), early exit (<code>try</code>), fallback divergence (<code>or err { ... }</code>), and <code>defer</code>.</p>
+      <h4>Structs, Tags &amp; Enums</h4>
+      <p>Compile-time struct tags, algebraic enums (tagged unions), and slice destructuring pattern matching.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-6">
       <div class="roadmap-num">Chapter 6</div>
-      <h4>Concurrency &amp; Contexts</h4>
-      <p>Thread-safe channels, cancellation Contexts, timeout deadlines, and async scopes.</p>
+      <h4>Error Handling &amp; Defer</h4>
+      <p>Fallible return types (<code>T!</code>), early propagation (<code>try</code>), inline fallbacks, and <code>defer</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-7">
       <div class="roadmap-num">Chapter 7</div>
-      <h4>Standard Library Catalog</h4>
-      <p>Deep-dive into 13 <code>core:*</code> modules: WebSockets, HTTP, SQLite, Zstd, Crypto, and JSON.</p>
+      <h4>Concurrency &amp; Contexts</h4>
+      <p>Structured concurrency with <code>async.scope</code>, typed channels, and cancellation contexts.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-8">
       <div class="roadmap-num">Chapter 8</div>
-      <h4>Build System &amp; Remote Packages</h4>
-      <p>Declarative <code>build.cf</code>, Git remote dependencies, offline vendoring, and compiler caching.</p>
+      <h4>Zero-Friction C &amp; C++ Interop</h4>
+      <p>Direct Clang header ingestion, automatic string coercion, and inline <code>cpp { ... }</code> escape hatch.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-9">
+      <div class="roadmap-num">Chapter 9</div>
+      <h4>Build System &amp; Eject</h4>
+      <p>Declarative <code>build.cf</code>, vendor subprojects, and zero-lock-in ISO C++23 CMake ejection.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-10">
+      <div class="roadmap-num">Chapter 10</div>
+      <h4>HTTP Servers &amp; Routers</h4>
+      <p>Native HTTP/1.1 wire parser, fluent response builder, path parameters (<code>:id</code>), and independent routing.</p>
     </a>
   </div>
 
@@ -2858,6 +2891,121 @@ cd standalone_project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
+
+---
+
+## Chapter 10: Building Web Services, HTTP Servers & Independent Routers (`core:net/http`)
+
+Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Unlike traditional frameworks that force heavy external dependencies or invasive event-loop architectures, `cfire` provides a zero-dependency, native HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.
+
+### 10.1 Philosophy & Zero External Dependencies
+The `core:net/http` module is designed with two fundamental principles:
+1. **Zero Third-Party Libraries:** The HTTP wire parser, response serializer, server accept loop, and route matcher are implemented in standard ISO C++23 without requiring `libmicrohttpd`, `boost::beast`, or external C libraries.
+2. **Decoupled & Independent Features:** Routing and dispatch are strictly decoupled from network sockets. You can create an independent `Router`, register parameterized routes, and unit-test request dispatching purely in memory without opening sockets or listening on network ports.
+
+### 10.2 Request Parsing & Response Writing
+The `http.Request` struct represents an incoming HTTP/1.1 request:
+- `req.method`: Normalized uppercase HTTP verb (`"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, etc.).
+- `req.path`: Clean decoded URI path (e.g. `"/api/users/42"`).
+- `req.query(key, fallback)`: Decoded query parameters (e.g. `req.query("limit", "10")`).
+- `req.header(name, fallback)`: Case-insensitive header lookup (e.g. `req.header("Authorization")`).
+- `req.param(name, fallback)`: Named path parameters extracted by the router (e.g. `req.param("id")`).
+- `req.body`: Complete payload body.
+
+The `http.Response` struct provides fluent static constructors for standard HTTP responses:
+```cf
+// 200 OK with plain text
+res1 := http.Response.text(200, "operation successful")
+
+// 200 OK with JSON payload
+res2 := http.Response.json(200, "{\"status\":\"ok\"}")
+
+// 201 Created with JSON
+res3 := http.Response.json(201, "{\"id\":42}")
+
+// 302 Found redirect
+res4 := http.Response.redirect("/login")
+
+// Standard error responses
+res5 := http.Response.not_found("user not found")
+res6 := http.Response.bad_request("invalid payload")
+```
+
+### 10.3 The Independent HTTP Request Router
+The router matches incoming requests based on path patterns and HTTP verbs:
+- **Exact Path Matching:** `/health`, `/api/v1/metrics`
+- **Named Path Parameters (`:param`):** `/users/:id` matches `/users/42` with `req.param("id") == "42"`.
+- **Greedy Suffix Wildcards (`*filepath`):** `/static/*filepath` matches `/static/css/theme.css` with `req.param("filepath") == "css/theme.css"`.
+- **Method Filtering:** `router.get`, `router.post`, `router.put`, `router.delete_`, `router.patch`, `router.all`.
+- **RFC-Compliant Status Handlers:** Automatically returns `405 Method Not Allowed` with an `Allow` header if the path matches a route registered for different verbs, or `404 Not Found` if unmatched.
+- **Middleware Pipeline:** `router.use(middleware)` allows adding pre-routing authentication, audit logging, or header validation.
+
+### 10.4 In-Memory Standalone Unit Testing
+Because the `Router` is completely independent of network sockets, request handlers can be tested in-memory in pure unit tests without flakiness or port collisions:
+
+```cf
+package main
+
+import "core:net/http"
+
+fn main() {
+    mut router := http.make_router()
+    router.get("/users/:id", |req| {
+        return http.Response.text(200, "User ID: " + req.param("id"))
+    })
+
+    // Pure in-memory unit test — NO network sockets opened!
+    req := http.Request{ method: "GET", path: "/users/100" }
+    res := router.dispatch(req)
+    assert(res.status_code == 200)
+    assert(res.body == "User ID: 100")
+}
+```
+
+### 10.5 Running the Live HTTP Server
+When you are ready to serve live network traffic, instantiate `http.make_server` and pass the router directly to `server.serve_in_background(router)` or `server.listen_and_serve(router)`:
+
+```cf
+package main
+
+import "core:net/http"
+import "core:json"
+
+type Item struct {
+    id: i64 `json:"id"`
+    name: str `json:"name"`
+}
+
+fn main() {
+    mut router := http.make_router()
+
+    router.get("/health", |req| {
+        return http.Response.json(200, "{\"status\":\"healthy\"}")
+    })
+
+    router.get("/items/:id", |req| {
+        return http.Response.text(200, "Lookup id=" + req.param("id"))
+    })
+
+    router.post("/items", |req| {
+        return http.Response.json(201, "{\"created\":true,\"data\":" + req.body + "}")
+    })
+
+    // Start server on port 8080 (or 0 for an ephemeral port)
+    mut server := try http.make_server(port: 8080)
+    println("Server listening on http://127.0.0.1:{}", server.port())
+
+    // Run non-blocking background event loop
+    server.serve_in_background(router)
+
+    // Execute client requests
+    resp := try http.get("http://127.0.0.1:8080/health")
+    println("GET /health -> status: {}, body: {}", resp.status_code, resp.body)
+
+    // Gracefully stop the server when done
+    server.stop()
+}
+```
 )MD";
 }
 
@@ -2890,6 +3038,7 @@ cmake --build build
             <li><a href="#chapter-7">7. Concurrency &amp; Contexts</a></li>
             <li><a href="#chapter-8">8. C &amp; C++ Interop</a></li>
             <li><a href="#chapter-9">9. Build System &amp; Eject</a></li>
+            <li><a href="#chapter-10">10. HTTP Servers &amp; Routers</a></li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
@@ -3410,6 +3559,109 @@ var Sqlite3 = build.SystemLib("sqlite3")</code></pre>
       <pre><code>cd standalone_project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build</code></pre>
+
+      <!-- CHAPTER 10 -->
+      <h2 id="chapter-10"><a id="ch10"></a>10. Building Web Services, HTTP Servers &amp; Independent Routers</h2>
+      <p>
+        Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Rather than forcing invasive third-party event loops or heavy foreign C libraries, <code>cfire</code> provides a native, zero-dependency HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.
+      </p>
+
+      <h3>10.1 Decoupled Architecture &amp; Zero External Dependencies</h3>
+      <p>
+        The <code>core:net/http</code> module adheres to two key design principles:
+      </p>
+      <ul>
+        <li><strong>Zero Third-Party Libraries:</strong> The wire stream parser, response serializer, multi-mode server, and route matcher are pure standard C++23. No <code>libmicrohttpd</code> or external libraries required.</li>
+        <li><strong>Independent Features:</strong> Routing and dispatching operate strictly on <code>http.Request &rarr; http.Response</code>. Routers can be created, configured, and unit-tested purely in memory without opening sockets or listening on network ports.</li>
+      </ul>
+
+      <h3>10.2 Request Parsing &amp; Fluent Response Builders</h3>
+      <p>
+        Incoming requests are automatically parsed into the structured <code>http.Request</code> model, providing clean decoded paths, query parameters, and case-insensitive headers:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>// Method, path, queries, and headers
+method := req.method            // "GET", "POST", etc.
+path   := req.path              // "/api/users/42"
+limit  := req.query("limit", "10") // auto percent-decoded
+token  := req.header("Authorization") // case-insensitive
+id     := req.param("id")       // extracted by router (:id)</code></pre>
+
+      <p>
+        Construct responses using fluent type-safe factory methods:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>// Type-safe status &amp; MIME constructors
+res1 := http.Response.text(200, "operation successful")
+res2 := http.Response.json(200, "{\"status\":\"healthy\"}")
+res3 := http.Response.redirect("/dashboard", 302)
+res4 := http.Response.not_found("user not found")</code></pre>
+
+      <h3>10.3 Path Parameters, Wildcards &amp; Independent Routing</h3>
+      <p>
+        The <code>http.Router</code> matches routes by HTTP verb and pattern. It supports single-segment path parameters (<code>:param</code>) and greedy suffix wildcards (<code>*filepath</code>):
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>mut router := http.make_router()
+
+// Exact match
+router.get("/health", |req| http.Response.json(200, "{\"status\":\"ok\"}"))
+
+// Path parameters (:id)
+router.get("/users/:id", |req| {
+    return http.Response.text(200, "User ID: " + req.param("id"))
+})
+
+// Greedy wildcard (*filepath)
+router.get("/static/*filepath", |req| {
+    return http.Response.text(200, "Serving: " + req.param("filepath"))
+})
+
+// HTTP verb differentiation
+router.post("/items", |req| {
+    return http.Response.json(201, "{\"created\":true}")
+})</code></pre>
+
+      <h3>10.4 In-Memory Standalone Unit Testing</h3>
+      <p>
+        Because the router is independent of networking sockets, handlers can be verified with instant, deterministic unit tests without opening sockets or risking port conflicts:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>// Dispatch synthetic requests directly in-memory
+test_req := http.Request{ method: "GET", path: "/users/42" }
+test_res := router.dispatch(test_req)
+
+assert(test_res.status_code == 200)
+assert(test_res.body == "User ID: 42")</code></pre>
+
+      <h3>10.5 Serving Live Requests with <code>HttpServer</code></h3>
+      <p>
+        When you are ready to serve live network traffic, instantiate <code>http.make_server</code> and pass the router directly to <code>server.serve_in_background(router)</code> or <code>server.listen_and_serve(router)</code>:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span><span>examples/11-http-server-router/main.cf</span></div>
+      <pre><code>package main
+
+import "core:net/http"
+
+fn main() {
+    mut router := http.make_router()
+    router.get("/health", |req| http.Response.json(200, "{\"status\":\"healthy\"}"))
+    router.get("/users/:id", |req| http.Response.text(200, "User: " + req.param("id")))
+
+    // Bind server to port (0 selects an ephemeral port for testing)
+    mut server := try http.make_server(port: 8080)
+    println("Listening on http://127.0.0.1:{}", server.port())
+
+    // Serve requests asynchronously in a dedicated worker thread
+    server.serve_in_background(router)
+
+    // Execute client requests
+    resp := try http.get("http://127.0.0.1:8080/health")
+    println("Response: {} -> {}", resp.status_code, resp.body)
+
+    // Clean graceful shutdown
+    server.stop()
+}</code></pre>
     </main>
   </div>
 </div>

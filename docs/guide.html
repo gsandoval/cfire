@@ -543,6 +543,7 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#chapter-7">7. Concurrency &amp; Contexts</a></li>
             <li><a href="#chapter-8">8. C &amp; C++ Interop</a></li>
             <li><a href="#chapter-9">9. Build System &amp; Eject</a></li>
+            <li><a href="#chapter-10">10. HTTP Servers &amp; Routers</a></li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
@@ -1063,6 +1064,109 @@ var Sqlite3 = build.SystemLib("sqlite3")</code></pre>
       <pre><code>cd standalone_project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build</code></pre>
+
+      <!-- CHAPTER 10 -->
+      <h2 id="chapter-10"><a id="ch10"></a>10. Building Web Services, HTTP Servers &amp; Independent Routers</h2>
+      <p>
+        Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Rather than forcing invasive third-party event loops or heavy foreign C libraries, <code>cfire</code> provides a native, zero-dependency HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.
+      </p>
+
+      <h3>10.1 Decoupled Architecture &amp; Zero External Dependencies</h3>
+      <p>
+        The <code>core:net/http</code> module adheres to two key design principles:
+      </p>
+      <ul>
+        <li><strong>Zero Third-Party Libraries:</strong> The wire stream parser, response serializer, multi-mode server, and route matcher are pure standard C++23. No <code>libmicrohttpd</code> or external libraries required.</li>
+        <li><strong>Independent Features:</strong> Routing and dispatching operate strictly on <code>http.Request &rarr; http.Response</code>. Routers can be created, configured, and unit-tested purely in memory without opening sockets or listening on network ports.</li>
+      </ul>
+
+      <h3>10.2 Request Parsing &amp; Fluent Response Builders</h3>
+      <p>
+        Incoming requests are automatically parsed into the structured <code>http.Request</code> model, providing clean decoded paths, query parameters, and case-insensitive headers:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>// Method, path, queries, and headers
+method := req.method            // "GET", "POST", etc.
+path   := req.path              // "/api/users/42"
+limit  := req.query("limit", "10") // auto percent-decoded
+token  := req.header("Authorization") // case-insensitive
+id     := req.param("id")       // extracted by router (:id)</code></pre>
+
+      <p>
+        Construct responses using fluent type-safe factory methods:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>// Type-safe status &amp; MIME constructors
+res1 := http.Response.text(200, "operation successful")
+res2 := http.Response.json(200, "{\"status\":\"healthy\"}")
+res3 := http.Response.redirect("/dashboard", 302)
+res4 := http.Response.not_found("user not found")</code></pre>
+
+      <h3>10.3 Path Parameters, Wildcards &amp; Independent Routing</h3>
+      <p>
+        The <code>http.Router</code> matches routes by HTTP verb and pattern. It supports single-segment path parameters (<code>:param</code>) and greedy suffix wildcards (<code>*filepath</code>):
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>mut router := http.make_router()
+
+// Exact match
+router.get("/health", |req| http.Response.json(200, "{\"status\":\"ok\"}"))
+
+// Path parameters (:id)
+router.get("/users/:id", |req| {
+    return http.Response.text(200, "User ID: " + req.param("id"))
+})
+
+// Greedy wildcard (*filepath)
+router.get("/static/*filepath", |req| {
+    return http.Response.text(200, "Serving: " + req.param("filepath"))
+})
+
+// HTTP verb differentiation
+router.post("/items", |req| {
+    return http.Response.json(201, "{\"created\":true}")
+})</code></pre>
+
+      <h3>10.4 In-Memory Standalone Unit Testing</h3>
+      <p>
+        Because the router is independent of networking sockets, handlers can be verified with instant, deterministic unit tests without opening sockets or risking port conflicts:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span></div>
+      <pre><code>// Dispatch synthetic requests directly in-memory
+test_req := http.Request{ method: "GET", path: "/users/42" }
+test_res := router.dispatch(test_req)
+
+assert(test_res.status_code == 200)
+assert(test_res.body == "User ID: 42")</code></pre>
+
+      <h3>10.5 Serving Live Requests with <code>HttpServer</code></h3>
+      <p>
+        When you are ready to serve live network traffic, instantiate <code>http.make_server</code> and pass the router directly to <code>server.serve_in_background(router)</code> or <code>server.listen_and_serve(router)</code>:
+      </p>
+      <div class="code-header"><span class="tag-cf">cfire</span><span>examples/11-http-server-router/main.cf</span></div>
+      <pre><code>package main
+
+import "core:net/http"
+
+fn main() {
+    mut router := http.make_router()
+    router.get("/health", |req| http.Response.json(200, "{\"status\":\"healthy\"}"))
+    router.get("/users/:id", |req| http.Response.text(200, "User: " + req.param("id")))
+
+    // Bind server to port (0 selects an ephemeral port for testing)
+    mut server := try http.make_server(port: 8080)
+    println("Listening on http://127.0.0.1:{}", server.port())
+
+    // Serve requests asynchronously in a dedicated worker thread
+    server.serve_in_background(router)
+
+    // Execute client requests
+    resp := try http.get("http://127.0.0.1:8080/health")
+    println("Response: {} -> {}", resp.status_code, resp.body)
+
+    // Clean graceful shutdown
+    server.stop()
+}</code></pre>
     </main>
   </div>
 </div>

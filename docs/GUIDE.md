@@ -747,3 +747,118 @@ cd standalone_project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
+
+---
+
+## Chapter 10: Building Web Services, HTTP Servers & Independent Routers (`core:net/http`)
+
+Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Unlike traditional frameworks that force heavy external dependencies or invasive event-loop architectures, `cfire` provides a zero-dependency, native HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.
+
+### 10.1 Philosophy & Zero External Dependencies
+The `core:net/http` module is designed with two fundamental principles:
+1. **Zero Third-Party Libraries:** The HTTP wire parser, response serializer, server accept loop, and route matcher are implemented in standard ISO C++23 without requiring `libmicrohttpd`, `boost::beast`, or external C libraries.
+2. **Decoupled & Independent Features:** Routing and dispatch are strictly decoupled from network sockets. You can create an independent `Router`, register parameterized routes, and unit-test request dispatching purely in memory without opening sockets or listening on network ports.
+
+### 10.2 Request Parsing & Response Writing
+The `http.Request` struct represents an incoming HTTP/1.1 request:
+- `req.method`: Normalized uppercase HTTP verb (`"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, etc.).
+- `req.path`: Clean decoded URI path (e.g. `"/api/users/42"`).
+- `req.query(key, fallback)`: Decoded query parameters (e.g. `req.query("limit", "10")`).
+- `req.header(name, fallback)`: Case-insensitive header lookup (e.g. `req.header("Authorization")`).
+- `req.param(name, fallback)`: Named path parameters extracted by the router (e.g. `req.param("id")`).
+- `req.body`: Complete payload body.
+
+The `http.Response` struct provides fluent static constructors for standard HTTP responses:
+```cf
+// 200 OK with plain text
+res1 := http.Response.text(200, "operation successful")
+
+// 200 OK with JSON payload
+res2 := http.Response.json(200, "{\"status\":\"ok\"}")
+
+// 201 Created with JSON
+res3 := http.Response.json(201, "{\"id\":42}")
+
+// 302 Found redirect
+res4 := http.Response.redirect("/login")
+
+// Standard error responses
+res5 := http.Response.not_found("user not found")
+res6 := http.Response.bad_request("invalid payload")
+```
+
+### 10.3 The Independent HTTP Request Router
+The router matches incoming requests based on path patterns and HTTP verbs:
+- **Exact Path Matching:** `/health`, `/api/v1/metrics`
+- **Named Path Parameters (`:param`):** `/users/:id` matches `/users/42` with `req.param("id") == "42"`.
+- **Greedy Suffix Wildcards (`*filepath`):** `/static/*filepath` matches `/static/css/theme.css` with `req.param("filepath") == "css/theme.css"`.
+- **Method Filtering:** `router.get`, `router.post`, `router.put`, `router.delete_`, `router.patch`, `router.all`.
+- **RFC-Compliant Status Handlers:** Automatically returns `405 Method Not Allowed` with an `Allow` header if the path matches a route registered for different verbs, or `404 Not Found` if unmatched.
+- **Middleware Pipeline:** `router.use(middleware)` allows adding pre-routing authentication, audit logging, or header validation.
+
+### 10.4 In-Memory Standalone Unit Testing
+Because the `Router` is completely independent of network sockets, request handlers can be tested in-memory in pure unit tests without flakiness or port collisions:
+
+```cf
+package main
+
+import "core:net/http"
+
+fn main() {
+    mut router := http.make_router()
+    router.get("/users/:id", |req| {
+        return http.Response.text(200, "User ID: " + req.param("id"))
+    })
+
+    // Pure in-memory unit test — NO network sockets opened!
+    req := http.Request{ method: "GET", path: "/users/100" }
+    res := router.dispatch(req)
+    assert(res.status_code == 200)
+    assert(res.body == "User ID: 100")
+}
+```
+
+### 10.5 Running the Live HTTP Server
+When you are ready to serve live network traffic, instantiate `http.make_server` and pass the router directly to `server.serve_in_background(router)` or `server.listen_and_serve(router)`:
+
+```cf
+package main
+
+import "core:net/http"
+import "core:json"
+
+type Item struct {
+    id: i64 `json:"id"`
+    name: str `json:"name"`
+}
+
+fn main() {
+    mut router := http.make_router()
+
+    router.get("/health", |req| {
+        return http.Response.json(200, "{\"status\":\"healthy\"}")
+    })
+
+    router.get("/items/:id", |req| {
+        return http.Response.text(200, "Lookup id=" + req.param("id"))
+    })
+
+    router.post("/items", |req| {
+        return http.Response.json(201, "{\"created\":true,\"data\":" + req.body + "}")
+    })
+
+    // Start server on port 8080 (or 0 for an ephemeral port)
+    mut server := try http.make_server(port: 8080)
+    println("Server listening on http://127.0.0.1:{}", server.port())
+
+    // Run non-blocking background event loop
+    server.serve_in_background(router)
+
+    // Execute client requests
+    resp := try http.get("http://127.0.0.1:8080/health")
+    println("GET /health -> status: {}, body: {}", resp.status_code, resp.body)
+
+    // Gracefully stop the server when done
+    server.stop()
+}
+```
