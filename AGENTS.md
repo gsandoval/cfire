@@ -6,7 +6,7 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
 
 ## 1. Project Overview & Architecture
 
-`cfire` (pronounced *C-fire / Sapphire*) is an ISO C++23-lowering native systems programming language combining modern Go/Rust ergonomics with zero-overhead C++23 interoperability, memory safety intents (`in`, `mut`, `move`, `out`), and a unified build system with a native Clang AST Header Bridge.
+`cfire` (pronounced *C-fire / Sapphire*) is an ISO C++23-lowering native systems programming language combining modern Go/Rust ergonomics with zero-overhead C++23 interoperability, memory safety intents (`in`, `mut`, `move`), and a unified build system with a native Clang AST Header Bridge.
 
 - `src/` — Complete C++23 compiler and toolchain:
   - `lexer.hpp`, `parser.hpp` — Scanner and AST recursive-descent parser.

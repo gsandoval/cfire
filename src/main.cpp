@@ -446,7 +446,7 @@ Grammar:
 - Imports: `import "core:<mod>"`, `import "./path"`, `import cpp "header.h" @define("MACRO")`
 - Declarations:
   - Const: `x := 42`, `name: str = "cfire"`
-  - Mutable: `mut y := 10`, `mut count: i64 = 0` (warning: `var` is deprecated)
+  - Mutable: `mut y := 10`, `mut count: i64 = 0`
 - Signatures: `fn name(in a: i32, mut b: str, move c: []byte) -> Ret! { ... }`
   - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
   - Optional return: `-> T?` lowers to `std::optional<T>`

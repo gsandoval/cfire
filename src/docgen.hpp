@@ -136,7 +136,7 @@ struct DiagnosticDoc {
         },
         {
             "core:crypto/blake3", "blake3", "Cryptographic 256-Bit Digest (Alias)", "(CommonCrypto / built-in)",
-            "Computes fast 256-bit cryptographic hex digests over byte slices (backward-compatible alias for `core:crypto/sha256`).",
+            "Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`).",
             {
                 {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::blake3::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := blake3.hash_hex(raw)"}
             }
@@ -384,16 +384,9 @@ struct DiagnosticDoc {
             "fn bump(mut x: i32) { x += 1 }\nfn main() {\n    mut a := 10\n    bump(mut a) // OK\n}"
         },
         {
-            "cfire/OUT-CALLSITE",
-            "Missing Call-Site `out` Marker",
-            "Functions declaring `out param: T` initialize or overwrite an output parameter (`T&`). Callers must write `out arg` at the call site.",
-            "fn write_sum(out total: i32) { total = 42 }\nfn main() {\n    mut s: i32 = 0\n    write_sum(s) // ERROR [cfire/OUT-CALLSITE]\n}",
-            "fn write_sum(out total: i32) { total = 42 }\nfn main() {\n    mut s: i32 = 0\n    write_sum(out s) // OK\n}"
-        },
-        {
             "cfire/IMMUTABLE-MUT-ARG",
-            "Passing Immutable Binding as `mut` or `out` Argument",
-            "Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` or `out` parameters.",
+            "Passing Immutable Binding as `mut` Argument",
+            "Bindings declared with `:=` or `x: T = ...` without `mut` are `const` by default and cannot be passed to `mut` parameters.",
             "fn reset(mut v: i32) { v = 0 }\nfn main() {\n    val := 5\n    reset(mut val) // ERROR [cfire/IMMUTABLE-MUT-ARG]\n}",
             "fn reset(mut v: i32) { v = 0 }\nfn main() {\n    mut val := 5\n    reset(mut val) // OK\n}"
         },
@@ -431,20 +424,6 @@ struct DiagnosticDoc {
             "When initializing or assigning a variable with `val := fallible() or err { ... }`, the error recovery block must definitely diverge with `return`, `panic(...)`, or `exit(...)` to avoid unwrapping an uninitialized value.",
             "fn compute() -> i32 {\n    // ERROR [cfire/NON-DIVERGING-OR-BLOCK]: handler does not diverge\n    x := parse_num() or err {\n        println(\"error: {}\", err.message())\n    }\n    return x\n}",
             "fn compute() -> i32 {\n    x := parse_num() or err {\n        println(\"error: {}\", err.message())\n        return 0\n    }\n    return x\n}"
-        },
-        {
-            "cfire/DEPRECATED-OUT-PARAM",
-            "Deprecated `out` Parameter Intent (Favor Multi-Return Tuples)",
-            "The `out` parameter intent is deprecated in favor of multi-return tuples `fn parse() -> (f64, f64)!` and deconstructing assignments `(x, y) := parse()`. `out` parameters bypass definite assignment checks and hinder expression composition.",
-            "fn parse_coords(s: str, out x: f64, out y: f64) { ... } // WARNING [cfire/DEPRECATED-OUT-PARAM]",
-            "fn parse_coords(s: str) -> (f64, f64)! { return (1.0, 2.0) }\n(x, y) := try parse_coords(\"1,2\") // OK"
-        },
-        {
-            "cfire/DEPRECATED-VAR",
-            "Deprecated `var` Keyword (Favor Canonical `:=` or `: Type =`)",
-            "The `var` keyword is deprecated in favor of canonical inferred declarations `x := val` / `mut x := val` and explicitly typed declarations `x: T = val` / `mut x: T = val`.",
-            "var x = 42 // WARNING [cfire/DEPRECATED-VAR]\nvar mut name: str = \"hello\" // WARNING [cfire/DEPRECATED-VAR]",
-            "x := 42 // OK\nmut name: str = \"hello\" // OK"
         }
     };
     return diags;
@@ -2158,7 +2137,7 @@ Modern systems software demands both high developer velocity and uncompromising 
 - **Zig and Odin** provide brilliant C replacements with manual allocators, but cannot directly consume C++ templates, classes, or standard library types without brittle C ABI wrappers.
 
 `cfire` takes a pragmatic path designed specifically for teams whose target environment is **ISO C++23**:
-1. **Ergonomic, Modern Frontend**: Clean syntax, immutability by default, explicit parameter intents (`in`, `mut`, `out`, `move`), algebraic enums, and monadic error handling (`T!`).
+1. **Ergonomic, Modern Frontend**: Clean syntax, immutability by default, explicit parameter intents (`in`, `mut`, `move`), multi-return tuples, algebraic enums, and monadic error handling (`T!`).
 2. **1-to-1 ISO C++23 Lowering**: Every `cfire` type, function, and expression lowers directly to standard C++23 concepts (`std::string_view`, `std::span`, `std::variant`, `std::expected`, `std::unique_ptr`).
 3. **Zero FFI Marshaling**: Call any C or C++ header directly without writing manual wrappers.
 4. **Zero Lock-In**: Run `cfire eject` at any time to export your entire project as standard C++23 source code with a standard `CMakeLists.txt`.
@@ -2448,15 +2427,23 @@ fn (mut self: Account) deposit(amount: i64) {
 }
 ```
 
-### 4.2 Explicit Parameter Intents (`in`, `mut`, `out`, `move`)
+### 4.2 Explicit Parameter Intents (`in`, `mut`, `move`)
 In raw C++, calling `process(data)` hides whether `data` is read-only, modified in-place, or moved from. `cfire` enforces visibility at **both** declaration and call site:
 
 | Intent | Declaration | Call Site | C++23 Lowering | Guarantee |
 |---|---|---|---|---|
 | **`in` (default)** | `x: T` | `f(x)` | `const T&` / `std::string_view` / `std::span` | Read-only borrow; zero copy overhead. |
 | **`mut`** | `mut x: T` | `f(mut x)` | `T&` | In-place mutation; requires `mut` at call site. |
-| **`out`** | `out x: T` | `f(out x)` | `T&` | Callee overwrites value; requires `out` at call site. |
 | **`move`** | `move x: T` | `f(move x)` | `T&&` + `std::move(x)` | Ownership transfer; callee consumes value. |
+
+To return multiple values, `cfire` uses first-class tuples rather than mutable output parameters:
+```cf
+fn parse_coords(raw: str) -> (f64, f64)! {
+    return (12.5, 45.2)
+}
+
+(lat, lon) := try parse_coords("12.5,45.2")
+```
 
 ### 4.3 Semantic Safety Invariants
 
@@ -2851,21 +2838,21 @@ package build
 import "core:build"
 
 // 1. Build a local C static library dependency
-var FastHash = build.CC("./native/fast_hash", {
+FastHash := build.CC("./native/fast_hash", {
     Sources:  ["fast_hash.c"],
     Includes: ["."],
     CFlags:   ["-O3", "-march=native"],
 })
 
 // 2. Build a CMake-based vendor subproject
-var KVStore = build.CMake("./vendor/libkv_cmake", {
+KVStore := build.CMake("./vendor/libkv_cmake", {
     Target:   "kvstore",
     Includes: ["include"],
     Defines:  {"KV_SALT": 42},
 })
 
 // 3. Link a system package via pkg-config
-var Sqlite3 = build.SystemLib("sqlite3")
+Sqlite3 := build.SystemLib("sqlite3")
 ```
 
 When you run `./cfire build main.cf`:
@@ -3070,7 +3057,7 @@ fn main() {
         <code>cfire</code> takes a pragmatic path designed specifically for teams whose target environment is <strong>ISO C++23</strong>:
       </p>
       <ol>
-        <li><strong>Ergonomic, Modern Frontend:</strong> Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>), algebraic enums, and monadic error handling (<code>T!</code>).</li>
+        <li><strong>Ergonomic, Modern Frontend:</strong> Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>move</code>), multi-return tuples, algebraic enums, and monadic error handling (<code>T!</code>).</li>
         <li><strong>1-to-1 ISO C++23 Lowering:</strong> Every <code>cfire</code> type, function, and expression lowers directly to standard C++23 concepts (<code>std::string_view</code>, <code>std::span</code>, <code>std::variant</code>, <code>std::expected</code>, <code>std::unique_ptr</code>).</li>
         <li><strong>Zero FFI Marshaling:</strong> Call any C or C++ header directly without writing manual wrappers.</li>
         <li><strong>Zero Lock-In:</strong> Run <code>cfire eject</code> at any time to export your entire project as standard C++23 source code with a standard <code>CMakeLists.txt</code>.</li>
@@ -3329,11 +3316,18 @@ fn (mut self: Account) deposit(amount: i64) {
           <tbody>
             <tr><td><strong><code>in</code> (default)</strong></td><td><code>x: T</code></td><td><code>f(x)</code></td><td><code>const T&amp;</code> / <code>string_view</code> / <code>span</code></td><td>Read-only borrow; zero copy overhead.</td></tr>
             <tr><td><strong><code>mut</code></strong></td><td><code>mut x: T</code></td><td><code>f(mut x)</code></td><td><code>T&amp;</code></td><td>In-place mutation; requires <code>mut</code> at call site.</td></tr>
-            <tr><td><strong><code>out</code></strong></td><td><code>out x: T</code></td><td><code>f(out x)</code></td><td><code>T&amp;</code></td><td>Callee overwrites value; requires <code>out</code> at call site.</td></tr>
             <tr><td><strong><code>move</code></strong></td><td><code>move x: T</code></td><td><code>f(move x)</code></td><td><code>T&amp;&amp;</code> + <code>std::move(x)</code></td><td>Ownership transfer; callee consumes value.</td></tr>
           </tbody>
         </table>
       </div>
+      <p style="margin-top:0.85rem;">
+        To return multiple values, <code>cfire</code> uses first-class tuples and deconstructing assignments instead of mutable output parameters:
+      </p>
+      <pre><code>fn parse_coords(raw: str) -&gt; (f64, f64)! {
+    return (12.5, 45.2)
+}
+
+(lat, lon) := try parse_coords("12.5,45.2")</code></pre>
 
       <h3>4.3 Call-Site Safety Diagnostics</h3>
       <p>The compiler enforces strict aliasing and mutation invariants:</p>
@@ -3532,21 +3526,21 @@ fn main() {
 import "core:build"
 
 // 1. Build a local C static library dependency
-var FastHash = build.CC("./native/fast_hash", {
+FastHash := build.CC("./native/fast_hash", {
     Sources:  ["fast_hash.c"],
     Includes: ["."],
     CFlags:   ["-O3", "-march=native"],
 })
 
 // 2. Build a CMake-based vendor subproject
-var KVStore = build.CMake("./vendor/libkv_cmake", {
+KVStore := build.CMake("./vendor/libkv_cmake", {
     Target:   "kvstore",
     Includes: ["include"],
     Defines:  {"KV_SALT": 42},
 })
 
 // 3. Link a system package via pkg-config
-var Sqlite3 = build.SystemLib("sqlite3")</code></pre>
+Sqlite3 := build.SystemLib("sqlite3")</code></pre>
 
       <h3>9.2 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
       <p>
