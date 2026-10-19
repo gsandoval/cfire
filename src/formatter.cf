@@ -1,0 +1,419 @@
+package fmt
+
+// StructFieldLine: Decomposed struct field declaration for column alignment
+type StructFieldLine struct {
+    is_valid: bool
+    is_comment_only: bool
+    name: str
+    type_and_default: str
+    tag: str
+    comment: str
+}
+
+// trim_ws: Trims leading and trailing whitespace (' ', '\t', '\r')
+fn trim_ws(sv: &str) -> str {
+    mut b: usize = 0
+    n := sv.len
+    for b < n && (sv[b] == 32 || sv[b] == 9 || sv[b] == 13) {
+        b = b + 1
+    }
+    mut e: usize = n
+    for e > b && (sv[e - 1] == 32 || sv[e - 1] == 9 || sv[e - 1] == 13) {
+        e = e - 1
+    }
+    return "" + sv[b..e]
+}
+
+// make_spaces: Produces a string of N space characters
+fn make_spaces(count: i64) -> str {
+    if count <= 0 {
+        return ""
+    }
+    mut s: str = ""
+    mut rem := count
+    for rem >= 8 {
+        s = s + "        "
+        rem = rem - 8
+    }
+    for rem >= 4 {
+        s = s + "    "
+        rem = rem - 4
+    }
+    for rem > 0 {
+        s = s + " "
+        rem = rem - 1
+    }
+    return s
+}
+
+// starts_with_str: Checks if `s` begins with `prefix`
+fn starts_with_str(s: &str, prefix: &str) -> bool {
+    n := s.len
+    pn := prefix.len
+    if pn > n {
+        return false
+    }
+    return s[0..pn] == prefix
+}
+
+// ends_with_str: Checks if `s` ends with `suffix`
+fn ends_with_str(s: &str, suffix: &str) -> bool {
+    n := s.len
+    sn := suffix.len
+    if sn > n {
+        return false
+    }
+    return s[(n - sn)..n] == suffix
+}
+
+// find_char: Finds first occurrence of byte `target` at or after `start` (-1 if not found)
+fn find_char(s: &str, target: u8, start: usize) -> i64 {
+    mut i := start
+    n := s.len
+    for i < n {
+        if s[i] == target {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// find_str: Finds first occurrence of substring `target` at or after `start` (-1 if not found)
+fn find_str(s: &str, target: &str, start: usize) -> i64 {
+    mut i := start
+    n := s.len
+    tn := target.len
+    if tn == 0 {
+        return start
+    }
+    if tn > n {
+        return -1
+    }
+    max_i := n - tn
+    for i <= max_i {
+        if s[i..(i + tn)] == target {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// is_ident_char: Validates identifier character ([a-zA-Z0-9_])
+fn is_ident_char(c: u8) -> bool {
+    if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 {
+        return true
+    }
+    return false
+}
+
+// parse_struct_field_line: Parses a single line within a struct definition
+fn parse_struct_field_line(trimmed: &str) -> StructFieldLine {
+    mut invalid: StructFieldLine = StructFieldLine{
+        is_valid: false,
+        is_comment_only: false,
+        name: "",
+        type_and_default: "",
+        tag: "",
+        comment: "",
+    }
+    if trimmed.len == 0 || trimmed == "}" {
+        return invalid
+    }
+    if starts_with_str(trimmed, "//") {
+        return StructFieldLine{
+            is_valid: true,
+            is_comment_only: true,
+            name: "",
+            type_and_default: "",
+            tag: "",
+            comment: "" + trimmed,
+        }
+    }
+    colon := find_char(trimmed, 58, 0) // ':' is 58
+    if colon <= 0 {
+        return invalid
+    }
+    fname := trim_ws(trimmed[0..colon])
+    if fname.len == 0 {
+        return invalid
+    }
+    mut fi: usize = 0
+    fn_len := fname.len
+    for fi < fn_len {
+        if !is_ident_char(fname[fi]) {
+            return invalid
+        }
+        fi = fi + 1
+    }
+
+    mut rest := trim_ws(trimmed[(colon + 1)..trimmed.len])
+    mut tag: str = ""
+    mut comment: str = ""
+
+    cpos := find_str(rest, "//", 0)
+    b1 := find_char(rest, 96, 0) // '`' is 96
+    if b1 >= 0 && (cpos < 0 || b1 < cpos) {
+        b2 := find_char(rest, 96, (b1 + 1))
+        if b2 >= 0 {
+            tag = rest[b1..(b2 + 1)]
+            after_tag := trim_ws(rest[(b2 + 1)..rest.len])
+            if starts_with_str(after_tag, "//") {
+                comment = after_tag
+            }
+            rest = trim_ws(rest[0..b1])
+        }
+    } else if cpos >= 0 {
+        comment = trim_ws(rest[cpos..rest.len])
+        rest = trim_ws(rest[0..cpos])
+    }
+
+    if rest.len == 0 {
+        return invalid
+    }
+
+    return StructFieldLine{
+        is_valid: true,
+        is_comment_only: false,
+        name: fname,
+        type_and_default: rest,
+        tag: tag,
+        comment: comment,
+    }
+}
+
+// selfhost_format_lines: Core line-oriented formatting engine
+fn selfhost_format_lines(raw_lines: []str) -> []str {
+    mut out_lines: []str = []
+    n := raw_lines.len
+    mut indent: i32 = 0
+    mut in_raw_string: bool = false
+    mut i: usize = 0
+
+    for i < n {
+        raw := raw_lines[i]
+        if in_raw_string {
+            out_lines.push(raw)
+            if find_char(raw, 96, 0) >= 0 { // '`'
+                in_raw_string = false
+            }
+            i = i + 1
+            continue
+        }
+
+        trimmed := trim_ws(raw)
+        if trimmed.len == 0 {
+            out_lines.push("")
+            i = i + 1
+            continue
+        }
+
+        // Check if this starts a `type <Name> struct {` block whose fields we can column-align
+        if starts_with_str(trimmed, "type ") && ends_with_str(trimmed, "struct {") {
+            mut j := i + 1
+            mut fields: []StructFieldLine = []
+            mut pure_fields := true
+            mut real_field_count := 0
+
+            for j < n {
+                ft := trim_ws(raw_lines[j])
+                if ft == "}" {
+                    break
+                }
+                if ft.len == 0 {
+                    j = j + 1
+                    continue
+                }
+                sfl := parse_struct_field_line(ft)
+                if sfl.is_valid {
+                    if !sfl.is_comment_only {
+                        real_field_count = real_field_count + 1
+                    }
+                    fields.push(sfl)
+                } else {
+                    pure_fields = false
+                    break
+                }
+                j = j + 1
+            }
+
+            if pure_fields && j < n && real_field_count > 0 {
+                out_lines.push(make_spaces(indent * 4) + trimmed)
+                mut max_name: i64 = 0
+                mut max_type: i64 = 0
+                mut any_tags_or_comments := false
+
+                mut f_idx: usize = 0
+                num_fields := fields.len
+                for f_idx < num_fields {
+                    f := fields[f_idx]
+                    if !f.is_comment_only {
+                        fn_len: i64 = f.name.len
+                        if fn_len > max_name {
+                            max_name = fn_len
+                        }
+                        ft_len: i64 = f.type_and_default.len
+                        if ft_len > max_type {
+                            max_type = ft_len
+                        }
+                        if f.tag.len > 0 || f.comment.len > 0 {
+                            any_tags_or_comments = true
+                        }
+                    }
+                    f_idx = f_idx + 1
+                }
+
+                mut field_idx: usize = 0
+                mut row := i + 1
+                for row < j {
+                    if trim_ws(raw_lines[row]).len == 0 {
+                        out_lines.push("")
+                        row = row + 1
+                        continue
+                    }
+                    f := fields[field_idx]
+                    field_idx = field_idx + 1
+
+                    mut line_str := make_spaces((indent + 1) * 4)
+                    if f.is_comment_only {
+                        line_str = line_str + f.comment
+                    } else {
+                        line_str = line_str + f.name + ": "
+                        if real_field_count > 1 && any_tags_or_comments {
+                            diff_name := max_name - f.name.len
+                            line_str = line_str + make_spaces(diff_name)
+                        }
+                        line_str = line_str + f.type_and_default
+                        if f.tag.len > 0 {
+                            diff_type := (max_type - f.type_and_default.len) + 1
+                            line_str = line_str + make_spaces(diff_type) + f.tag
+                        }
+                        if f.comment.len > 0 {
+                            line_str = line_str + " " + f.comment
+                        }
+                    }
+                    out_lines.push(line_str)
+                    row = row + 1
+                }
+                out_lines.push(make_spaces(indent * 4) + "}")
+                i = j + 1
+                continue
+            }
+        }
+
+        // Count leading closing braces on this line
+        mut leading_close: i32 = 0
+        mut ci: usize = 0
+        t_len := trimmed.len
+        for ci < t_len {
+            c := trimmed[ci]
+            if c == 125 || c == 41 || c == 93 { // '}', ')', ']'
+                leading_close = leading_close + 1
+            } else {
+                break
+            }
+            ci = ci + 1
+        }
+
+        mut line_indent := indent - leading_close
+        if line_indent < 0 {
+            line_indent = 0
+        }
+        out_lines.push(make_spaces(line_indent * 4) + trimmed)
+
+        // Update net brace depth ignoring strings and comments
+        mut in_str := false
+        mut net_delta: i32 = 0
+        mut k: usize = 0
+        for k < t_len {
+            c := trimmed[k]
+            if !in_str && c == 47 && k + 1 < t_len && trimmed[k + 1] == 47 { // "//"
+                break
+            }
+            if c == 34 && (k == 0 || trimmed[k - 1] != 92) { // '"' and not '\\'
+                in_str = !in_str
+                k = k + 1
+                continue
+            }
+            if !in_str && c == 96 { // '`'
+                close_bt := find_char(trimmed, 96, k + 1)
+                if close_bt >= 0 {
+                    k = close_bt + 1
+                    continue
+                } else {
+                    in_raw_string = true
+                    break
+                }
+            }
+            if !in_str {
+                if c == 123 || c == 40 || c == 91 { // '{', '(', '['
+                    net_delta = net_delta + 1
+                } else if c == 125 || c == 41 || c == 93 { // '}', ')', ']'
+                    net_delta = net_delta - 1
+                }
+            }
+            k = k + 1
+        }
+        indent = indent + net_delta
+        if indent < 0 {
+            indent = 0
+        }
+        i = i + 1
+    }
+    return out_lines
+}
+
+// selfhost_format_code: Canonically formats source string with blank-line coalescing
+fn selfhost_format_code(src: &str) -> str {
+    mut raw_lines: []str = []
+    n := src.len
+    mut start: usize = 0
+    mut i: usize = 0
+    for i < n {
+        if src[i] == 10 { // '\n'
+            mut line_end := i
+            if line_end > start && src[line_end - 1] == 13 { // '\r'
+                line_end = line_end - 1
+            }
+            raw_lines.push("" + src[start..line_end])
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        mut end_idx := n
+        if end_idx > start && src[end_idx - 1] == 13 {
+            end_idx = end_idx - 1
+        }
+        raw_lines.push("" + src[start..end_idx])
+    }
+
+    formatted_lines := selfhost_format_lines(raw_lines)
+    mut result_str: str = ""
+    mut prev_blank := false
+    num_fl := formatted_lines.len
+    mut fl_idx: usize = 0
+    for fl_idx < num_fl {
+        line := formatted_lines[fl_idx]
+        if line.len == 0 {
+            if !prev_blank && result_str.len > 0 {
+                result_str = result_str + "\n"
+                prev_blank = true
+            }
+            fl_idx = fl_idx + 1
+            continue
+        }
+        prev_blank = false
+        result_str = result_str + line + "\n"
+        fl_idx = fl_idx + 1
+    }
+
+    for result_str.len >= 2 && ends_with_str(result_str, "\n\n") {
+        result_str = "" + result_str[0..(result_str.len - 1)]
+    }
+    if result_str.len > 0 && !ends_with_str(result_str, "\n") {
+        result_str = result_str + "\n"
+    }
+    return result_str
+}

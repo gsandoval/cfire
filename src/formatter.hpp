@@ -2,6 +2,7 @@
 // src/formatter.hpp — Canonical Code Formatter (`cfire fmt`) & AST Pretty-Printer
 
 #include "parser.hpp"
+#include "bootstrap/formatter.generated.hpp"
 #include <algorithm>
 #include <expected>
 #include <filesystem>
@@ -176,7 +177,7 @@ struct StructFieldLine {
     return !out.type_and_default.empty();
 }
 
-inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
+inline auto format_lines_internal_cxx(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
     std::vector<std::string> out_lines(raw_lines.size());
     int indent = 0;
     bool in_raw_string = false;
@@ -306,6 +307,14 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
     return out_lines;
 }
 
+inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
+    const char* force_cxx = std::getenv("CFIRE_CXX_FORMATTER");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return format_lines_internal_cxx(raw_lines);
+    }
+    return ::selfhost_format_lines(raw_lines);
+}
+
 } // namespace detail
 
 // Canonically formats a `.cf` source string:
@@ -313,7 +322,7 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
 // 2. Preserves all comments, raw strings, and inline `cpp { ... }` blocks.
 // 3. Normalizes 4-space block indentation, struct field + tag column alignment, and blank lines.
 // 4. Verifies post-format AST roundtrip invariant so formatting can never corrupt source code.
-[[nodiscard]] inline auto format_source(std::string_view src, std::string_view filename = "<input>")
+[[nodiscard]] inline auto format_source_internal(std::string_view src, std::string_view filename, bool force_cxx)
     -> std::expected<std::string, std::string>
 {
     auto ast_res = parse_source(filename, src);
@@ -331,7 +340,8 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         }
     }
 
-    auto formatted_lines = detail::format_lines_internal(raw_lines);
+    auto formatted_lines = force_cxx ? detail::format_lines_internal_cxx(raw_lines)
+                                     : ::selfhost_format_lines(raw_lines);
     std::string out;
     bool prev_blank = false;
     for (const auto& line : formatted_lines) {
@@ -362,6 +372,26 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         return std::unexpected("formatter roundtrip verification failed");
     }
     return out;
+}
+
+[[nodiscard]] inline auto format_source_cxx(std::string_view src, std::string_view filename = "<input>")
+    -> std::expected<std::string, std::string>
+{
+    return format_source_internal(src, filename, true);
+}
+
+[[nodiscard]] inline auto selfhost_format_source(std::string_view src, std::string_view filename = "<input>")
+    -> std::expected<std::string, std::string>
+{
+    return format_source_internal(src, filename, false);
+}
+
+[[nodiscard]] inline auto format_source(std::string_view src, std::string_view filename = "<input>")
+    -> std::expected<std::string, std::string>
+{
+    const char* force_cxx = std::getenv("CFIRE_CXX_FORMATTER");
+    bool use_cxx = force_cxx && std::string_view(force_cxx) == "1";
+    return format_source_internal(src, filename, use_cxx);
 }
 
 // Formats a bounded range of lines [start_line, end_line] in a source string:

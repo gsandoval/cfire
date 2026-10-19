@@ -3184,6 +3184,142 @@ void test_selfhost_lexer_parity_and_benchmark(const std::filesystem::path& rt_di
     std::println("--- PASS: test_selfhost_lexer_parity_and_benchmark");
 }
 
+void test_selfhost_formatter_parity_and_benchmark(const std::filesystem::path& rt_dir) {
+    (void)rt_dir;
+    std::println("=== RUN   test_selfhost_formatter_parity_and_benchmark (Self-Hosted Formatter Dogfooding & Measurable Parity)");
+
+    // 1. Files to test
+    std::vector<std::string> test_files = {
+        "examples/01-hello-core/main.cf",
+        "examples/02-log-compressor/main.cf",
+        "examples/03-pkg-cache/main.cf",
+        "examples/04-async-workers/main.cf",
+        "examples/05-cmake-interop/main.cf",
+        "examples/06-raylib-viz/main.cf",
+        "examples/07-types-match-map/main.cf",
+        "examples/08-multi-pkg-cc-build/main.cf",
+        "examples/09-stdlib-test-pointers/main.cf",
+        "examples/10-cmake-and-make-deps/main.cf",
+        "examples/11-http-server-router/main.cf",
+        "src/lexer.cf",
+        "src/formatter.cf",
+    };
+
+    auto check_parity_and_idempotency = [](std::string_view name, std::string_view src) {
+        auto cxx_res = cfire::fmt::format_source_cxx(src, name);
+        auto cf_res = cfire::fmt::selfhost_format_source(src, name);
+
+        require(cxx_res.has_value() == cf_res.has_value(),
+            std::format("{}: outcome match (cxx={}, cf={})", name, cxx_res.has_value(), cf_res.has_value()));
+        if (!cxx_res.has_value() && !cf_res.has_value()) {
+            require(cxx_res.error() == cf_res.error(),
+                std::format("{}: error match ('{}' vs '{}')", name, cxx_res.error(), cf_res.error()));
+            return;
+        }
+        if (!cxx_res || !cf_res) return;
+
+        // Character-for-character parity check
+        require(*cxx_res == *cf_res,
+            std::format("{}: character parity match between C++ and cfire formatters", name));
+
+        // Idempotency check: fmt(fmt(code)) == fmt(code)
+        auto cf_idem = cfire::fmt::selfhost_format_source(*cf_res, name);
+        require(cf_idem.has_value() && *cf_idem == *cf_res,
+            std::format("{}: self-hosted formatter idempotency check", name));
+    };
+
+    std::string large_workload;
+    for (const auto& path : test_files) {
+        auto content = cfire::build::read_file_text(path);
+        if (content.has_value()) {
+            check_parity_and_idempotency(path, *content);
+            large_workload += *content;
+            large_workload += "\n\n";
+        }
+    }
+
+    // Synthetic edge cases
+    check_parity_and_idempotency("synthetic_struct_align", R"cf(
+package demo
+
+type Config struct {
+id: i32 `json:"id"`
+database_url: str `json:"db_url"` // primary connection string
+timeout_ms: u64 `json:"timeout"`
+// Internal flags
+is_active: bool
+}
+
+fn test_fn(c: Config) -> bool {
+return c.is_active
+}
+)cf");
+
+    check_parity_and_idempotency("synthetic_raw_strings_and_comments", R"cf(
+package demo
+
+fn complex_blocks() {
+raw := `first line
+    second line with {braces}
+third line`
+// comment with unbalanced { and ( and [
+if true {
+a := 10
+}
+}
+)cf");
+
+    std::println("  [PASS] 100% character parity & idempotency verified across all files & edge cases");
+
+    // 2. High-Precision Performance Benchmark
+    std::string benchmark_payload;
+    while (benchmark_payload.size() < 1'200'000) {
+        benchmark_payload += large_workload;
+    }
+
+    // Warm-up
+    (void)cfire::fmt::format_source_cxx(benchmark_payload, "warmup.cf");
+    (void)cfire::fmt::selfhost_format_source(benchmark_payload, "warmup.cf");
+
+    constexpr int kIters = 10;
+
+    // Benchmark C++ Formatter
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kIters; ++i) {
+        auto res = cfire::fmt::format_source_cxx(benchmark_payload, "bench.cf");
+        (void)res;
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double total_bytes = static_cast<double>(benchmark_payload.size()) * kIters;
+    double mbs_cxx = (total_bytes / (1024.0 * 1024.0)) / (ms_cxx / 1000.0);
+
+    // Benchmark Self-Hosted cfire Formatter
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kIters; ++i) {
+        auto res = cfire::fmt::selfhost_format_source(benchmark_payload, "bench.cf");
+        (void)res;
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (total_bytes / (1024.0 * 1024.0)) / (ms_cf / 1000.0);
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Formatter Throughput Benchmark (Payload: {:.2f} MB, {} iterations):",
+        static_cast<double>(benchmark_payload.size()) / (1024.0 * 1024.0), kIters);
+    std::println("    - C++ Native Formatter:        {:>7.2f} MB/s (avg {:.2f}ms/run)",
+        mbs_cxx, ms_cxx / kIters);
+    std::println("    - cfire Self-Hosted Formatter: {:>7.2f} MB/s (avg {:.2f}ms/run)",
+        mbs_cf, ms_cf / kIters);
+    std::println("    - Performance Ratio:           {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted formatter performance regression ({:.1f} MB/s vs {:.1f} MB/s C++ baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_formatter_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3209,6 +3345,7 @@ auto main() -> int {
     test_net_websocket(rt_dir);
     test_net_http_and_router(rt_dir);
     test_selfhost_lexer_parity_and_benchmark(rt_dir);
+    test_selfhost_formatter_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
