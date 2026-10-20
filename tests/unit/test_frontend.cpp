@@ -417,7 +417,7 @@ type AuditLog struct {
 
 
 void test_cfire_refactor_rename([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_cfire_refactor_rename (TOOL-03: cfire refactor rename)");
+    std::println("=== RUN   test_cfire_refactor_rename");
 
     ScopedTempDir tmp("cfire_refactor");
     auto main_cf = tmp.file("main.cf", R"(package main
@@ -492,7 +492,7 @@ fn main() {
         .assert_ok("cross-pkg rename exit 0 (TOOL-03)")
         .assert_contains("\"files_modified\": 2", "cross-pkg modified 2 files (TOOL-03)");
 
-    std::println("--- PASS: test_cfire_refactor_rename (TOOL-03)");
+    std::println("--- PASS: test_cfire_refactor_rename");
 }
 
 

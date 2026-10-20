@@ -1,215 +1,124 @@
 # Architectural Evolution & Technical Debt Backlog
 
-This backlog catalogs the architectural improvements, decoupling initiatives, and performance optimizations identified during the Senior Engineer Codebase Review.
+This backlog catalogs the architectural improvements, decoupling initiatives, and performance optimizations for the `cfire` compiler and runtime.
 
 Tasks follow the standard operational protocol defined in [`docs/planning/README.md`](./README.md). When starting a task, promote it to [`docs/planning/active.md`](./active.md) and fulfill the pre-implementation scoping gate.
 
 ---
 
-## Milestone Summary
+## Active Milestone Roadmap
 
 ```mermaid
 gantt
-    title cfire Architectural Evolution Roadmap
+    title cfire Architecture & Codebase Purity Roadmap
     dateFormat  YYYY-MM-DD
-    section Phase 1 (P0: Decoupling & In-Process Safety)
-    ARCH-01 In-Process SHA-256 in Buildsys       :p1_1, 2026-10-21, 2d
-    ARCH-02 Modularize Runtime Stdlib Headers     :p1_2, after p1_1, 4d
-    section Phase 2 (P1: Performance & Compile Time)
-    ARCH-03 Decompose Monolithic Test Runner      :p2_1, after p1_2, 3d
-    ARCH-04 Arena Memory Allocator for AST Nodes  :p2_2, after p2_1, 5d
-    section Phase 3 (P2: Compiler Consolidation)
-    ARCH-05 Deprecate C++ Fallback Headers       :p3_1, after p2_2, 4d
-    ARCH-06 Invert Guide Documentation Pipeline   :done, p3_2, after p3_1, 3d
+    section Phase 1 (Test Purity & Intent Diagnostics)
+    CLEAN-01 Intent-Driven Diagnostics & Reporting :p1_1, 2026-10-21, 2d
+    section Phase 2 (Stdlib Self-Hosting)
+    CLEAN-02 Standard Library Migration to Pure .cf :p2_1, after p1_1, 4d
+    section Phase 3 (Compiler Architecture & Decoupling)
+    CLEAN-03 Compiler De-duplication & Clean Host Separation :p3_1, after p2_1, 4d
 ```
 
 ---
 
-## Phase 1: High Priority (P0 — Immediate Decoupling & In-Process Safety)
+## Active Phase 1: Test Purity & Intent Diagnostics
 
-### `ARCH-01`: In-Process Cryptographic Hashing for Buildsys `[COMPLETED]`
-- **Status**: Completed (2026-10-20)
+### `CLEAN-01`: Intent-Driven Test Diagnostics & Verification Reporting
 - **Priority**: P0 (Immediate)
-- **Category**: Build System / Portability / Subprocess Elimination
+- **Category**: Testing / Developer Ergonomics / Diagnostic Clarity
 - **Target Files**:
-  - `src/buildsys.hpp`
-  - `runtime/cfire_core_stdlib.hpp`
-  - `tests/conformance_test.cpp`
-- **Problem Statement**:
-  In `src/buildsys.hpp` (lines 518–520), archive hash verification invokes external shell commands:
-  ```cpp
-  int sha_rc = 0;
-  std::string sha_out = bridge::run_command_capture(
-      std::format("shasum -a 256 \"{}\"", tmp_archive.string()), sha_rc);
-  if (sha_rc != 0) {
-      sha_out = bridge::run_command_capture(
-          std::format("sha256sum \"{}\"", tmp_archive.string()), sha_rc);
-  }
-  ```
-  Spawning `/bin/sh` to run external binaries:
-  1. Fails on minimal container images (Alpine, distroless) or Windows environments where neither `shasum` nor `sha256sum` exists in `$PATH`.
-  2. Incurs 15–30 ms of process creation latency per downloaded package archive.
-  3. Ignores the fact that `cfire` already includes an optimized, self-hosted SHA-256 implementation in `cfire::sha256::hash_hex()` (`runtime/cfire_core_stdlib.hpp`).
-- **Detailed Requirements**:
-  1. Refactor `fetch_archive()` in `src/buildsys.hpp` to stream bytes from `tmp_archive` directly into `cfire::sha256::hash_hex()`.
-  2. Remove subprocess spawning of `shasum` and `sha256sum`.
-  3. Ensure identical lowercase hexadecimal digest format matching `.lock` files.
-- **Acceptance Criteria**:
-  - `cfire vendor` and `test_cfire_remote_vendor` pass cleanly without invoking external `shasum`/`sha256sum`.
-  - Conformance test added verifying hash computation against known test vectors.
-  - Zero subprocess spawns recorded for checksum verification.
-
----
-
-### `ARCH-02`: Modularize Standard Library Runtime Headers (`runtime/core/*.hpp`) `[COMPLETED]`
-- **Status**: Completed (2026-10-20)
-- **Priority**: P0 (Immediate)
-- **Category**: Runtime Architecture / Build Speed / Compilation Scalability
-- **Target Files**:
-  - `runtime/cfire_core_stdlib.hpp` (umbrella header)
-  - `runtime/core/*.hpp` (17 granular headers)
-  - `src/codegen.cf` & `src/codegen.hpp`
-  - `src/buildsys.hpp`
-- **Problem Statement**:
-  `runtime/cfire_core_stdlib.hpp` is currently a monolithic **4,606-line header** containing 28 distinct modules (SQLite3, WebSockets, AES-256 GCM, HTTP router, SIMD JSON, RegEx, etc.).
-  Whenever a user program imports *any* module (e.g., `import "core:math"`), `codegen` emits `#include "cfire_core_stdlib.hpp"`. The C++ compiler must parse all 4,606 lines, introducing 400–800 ms of parsing overhead per compilation unit.
-- **Detailed Requirements**:
-  1. Decompose `runtime/cfire_core_stdlib.hpp` into focused, single-responsibility headers:
-     - `runtime/core/fs.hpp`
-     - `runtime/core/cli.hpp`
-     - `runtime/core/json.hpp`
-     - `runtime/core/sqlite.hpp`
-     - `runtime/core/crypto.hpp` (sha256, hmac, aes, blake3)
-     - `runtime/core/net.hpp` (sockets, url, http, websocket)
-     - `runtime/core/time.hpp`
-     - `runtime/core/os.hpp`
-     - `runtime/core/sync.hpp` (channel, context)
-     - `runtime/core/str.hpp`
-     - `runtime/core/math.hpp`
-     - `runtime/core/encoding.hpp` (base64, hex, csv)
-     - `runtime/core/regex.hpp`
-     - `runtime/core/collections.hpp`
-     - `runtime/core/unicode.hpp`
-  2. Maintain `runtime/cfire_core_stdlib.hpp` as a thin umbrella header including all modules for backward compatibility and CMake ejection.
-  3. Update `src/codegen.cf` to emit granular `#include "core/<module>.hpp"` statements corresponding strictly to the imports detected in `CheckedFile`.
-- **Acceptance Criteria**:
-  - Compiling `examples/01-hello-core/main.cf` only includes `core/fs.hpp` and `core/str.hpp`, reducing preprocessed line count by $>60\%$.
-  - Compile time for small scripts (`cfire run examples/01-hello-core/main.cf`) drops by at least $3\times$.
-  - All 30 conformance test suites pass with 100% parity.
-
----
-
-## Phase 2: Medium Priority (P1 — Performance & Compile Time)
-
-### `ARCH-03`: Decompose Monolithic Conformance Test Runner `[COMPLETED]`
-- **Status**: Completed (2026-10-20)
-- **Priority**: P1
-- **Category**: Testing / Developer Iteration Speed
-- **Target Files**:
-  - `tests/conformance_test.cpp` (4,574 LOC)
-  - `tests/test_harness.hpp`
-  - `tests/unit/test_frontend.cpp`
-  - `tests/unit/test_sema.cpp`
   - `tests/unit/test_stdlib.cpp`
-  - `tests/e2e/test_canonical.cpp`
-  - `tests/benchmarks/test_selfhost.cpp`
+  - `tests/test_harness.hpp`
   - `tests/test_main.cpp`
   - `Makefile`
 - **Problem Statement**:
-  `tests/conformance_test.cpp` compiles all 30 test suites (unit tests, language semantics, self-hosting benchmarks, end-to-end examples) in a single translation unit. A clean compile takes 12–15 seconds on modern multi-core machines, bottlenecking the developer feedback loop during TDD.
+  1. Conformance test suites in `tests/unit/test_stdlib.cpp` are grouped into opaque milestone-ticket batch names (`test_p1_features`, `test_p2_features`, `test_p2_batch2_features`, `test_p2_batch3_features`, `test_p2_batch4_features`, `test_p2_batch5_features`). When a test fails or runs, the output lists ticket numbers instead of what software behavior or invariant is under test.
+  2. `Makefile` uses cosmetic artificial agent banners (`@echo "✓ All Senior Engineer Review Quality Gates PASSED"`) rather than reporting specific, concrete verification facts.
 - **Detailed Requirements**:
-  1. Partition `conformance_test.cpp` into independent suites:
-     - `tests/unit/test_frontend.cpp` (Lexer, Parser, AST, Formatter, Refactor)
-     - `tests/unit/test_sema.cpp` (Intent safety, mutability, move tracking)
-     - `tests/unit/test_stdlib.cpp` (HTTP, WebSockets, SQLite, Crypto, Sync)
-     - `tests/e2e/test_canonical.cpp` (Examples 01–11 end-to-end)
-     - `tests/benchmarks/test_selfhost_parity.cpp` (12 self-hosting dogfood benchmarks)
-     - `tests/test_main.cpp` (Shared test harness and runner entrypoint)
-  2. Update `Makefile` to compile test objects in parallel (`-j$(nproc)`).
+  1. Decompose the 6 bloated ticket-named test functions in `tests/unit/test_stdlib.cpp` into granular, intent-revealing functions:
+     - `test_crypto_sha256_hmac_and_csprng`
+     - `test_composable_expression_try`
+     - `test_transitive_header_and_link_flags`
+     - `test_data_encodings_base64_hex_csv`
+     - `test_relocatable_cmake_ejection`
+     - `test_c_preprocessor_macro_injection`
+     - `test_regex_matching_and_captures`
+     - `test_datetime_rfc3339_and_durations`
+     - `test_structured_logging_json_and_text`
+     - `test_custom_build_steps_codegen`
+     - `test_filesystem_streaming_and_paths`
+     - `test_subprocess_piping_and_streaming`
+     - `test_unicode_utf8_runes_and_case`
+     - `test_variadic_generic_tuples`
+  2. Update `tests/test_harness.hpp` and `tests/test_main.cpp` to declare and invoke each test individually with its clear behavioral name.
+  3. Replace the Makefile banner with concrete verification feedback showing exact results for each quality gate.
 - **Acceptance Criteria**:
-  - Full test execution finishes in $<3$ seconds on warm cache.
-  - Test suites can be executed selectively (e.g., `make test-unit`, `make test-stdlib`, `make test-selfhost`).
-  - Zero test regressions across all 30 test suites.
+  - Every line in `./cfire test` explicitly specifies the capability and behavior being verified.
+  - Zero ticket references (`P1`, `LIB-03`, `BS-04`) in test output.
+  - `make review-check` passes all 4 quality gates with informative output.
 
 ---
 
-### `ARCH-04`: Arena Memory Allocator for AST Nodes `[COMPLETED]`
-- **Status**: Completed (2026-10-20)
+## Active Phase 2: Standard Library Self-Hosting
+
+### `CLEAN-02`: Standard Library Migration to Pure `.cf` (`lib/`)
 - **Priority**: P1
-- **Category**: Compiler Performance / Memory Locality
+- **Category**: Language Self-Hosting / Standard Library
 - **Target Files**:
-  - `src/ast.hpp` & `src/ast.cf`
-  - `src/parser.hpp`
-  - `src/buildsys.hpp`
-  - `src/lsp.hpp`
-  - `runtime/cfire_prelude.hpp`
+  - `lib/*.cf` (New pure cfire library sources)
+  - `src/buildsys.hpp` & `src/buildsys.cf`
+  - `src/codegen.hpp` & `src/codegen.cf`
+  - `runtime/core/` (Deprecate pure C++ implementations of high-level modules)
 - **Problem Statement**:
-  AST nodes currently use `using ExprPtr = std::shared_ptr<Expr>` and `using StmtPtr = std::shared_ptr<Stmt>`.
-  Because AST trees have strict hierarchical ownership and are never modified after semantic analysis, `std::shared_ptr` incurs:
-  1. Atomic reference count increments/decrements on every copy and traversal.
-  2. Cache fragmentation across hundreds of individual heap allocations.
+  All 17 standard library modules currently reside in `runtime/core/*.hpp` written entirely in C++. There is not a single line of `.cf` standard library code. High-level functionality like string trimming, CLI flag parsing, JSON logging, and data encodings should be written in idiomatic `cfire`.
 - **Detailed Requirements**:
-  1. Implement a monotonic bump allocator (`ArenaAllocator` or `std::pmr::monotonic_buffer_resource`) tied to the lifetime of parsing a file.
-  2. Transition `ExprPtr` and `StmtPtr` to non-atomic owning pointers or arena-backed references (`Expr*` allocated from the arena).
-  3. Deallocate the entire arena en masse upon compilation completion.
+  1. Create `lib/` directory for standard library source code written in pure `cfire` (`.cf`):
+     - `lib/str.cf` (trimming, splitting, replacement, case conversion)
+     - `lib/cli.cf` (flag parsing, subcommands, help generation)
+     - `lib/log.cf` (structured logging, level formatting)
+     - `lib/encoding.cf` (Base64, Hex, URL encoding)
+  2. Retain only minimal, non-portable OS wrappers and runtime primitives in `runtime/cfire_prelude.hpp` (POSIX sockets, low-level process spawning, arena allocator).
+  3. Update `buildsys` and `codegen` to bundle or link `lib/*.cf` when user packages import standard library modules.
 - **Acceptance Criteria**:
-  - Parser throughput benchmark in `test_selfhost_parser_parity_and_benchmark` increases by $\ge 25\%$.
-  - Peak memory footprint during AST construction decreases by $\ge 30\%$.
-  - Valgrind / ASan reports zero memory leaks.
+  - `core:str`, `core:cli`, `core:log`, and `core:encoding` are implemented in pure `cfire`.
+  - Jump-to-definition and LSP navigate directly into `.cf` standard library sources.
+  - Conformance test suites pass with identical semantics and performance.
 
 ---
 
-## Phase 3: Lower Priority (P2 — Toolchain Consolidation & Documentation)
+## Active Phase 3: Compiler Architecture & Decoupling
 
-### `ARCH-05`: Deprecate Dual-Engine C++ Fallback Headers `[COMPLETED]`
-- **Status**: Completed (2026-10-20)
+### `CLEAN-03`: Compiler Architecture De-duplication & Clean Host Separation
 - **Priority**: P2
-- **Category**: Maintainability / Codebase Consolidation
+- **Category**: Compiler Architecture / Technical Debt Elimination
 - **Target Files**:
-  - `src/*.hpp` & `src/main.cpp`
-  - `bootstrap/stage0/` (permanent archive directory)
-  - `Makefile` (`bootstrap-from-stage0`)
+  - `src/lsp.hpp` & `src/lsp.cf`
+  - `src/codegen.hpp` & `src/codegen.cf`
+  - `src/buildsys.hpp` & `src/buildsys.cf`
+  - `src/bootstrap/`
 - **Problem Statement**:
-  Maintaining dual implementations of the compiler in both C++ (`src/*.hpp`) and `cfire` (`src/*.cf`) doubles maintenance overhead and risks semantic divergence.
+  1. The compiler maintains duplicate implementations between handwritten C++ (`src/*.hpp`) and self-hosted `.cf` (`src/*.cf`). For example, `src/lsp.hpp` contains 4,346 lines of C++ while `src/lsp.cf` is 140 lines, with duplicate JSON escaping and message handling.
+  2. `.cf` compiler code contains leaky C++ escapes (`cpp::cfire::build::BuildPlan`, `cpp::cfire::frontend::codegen_usize_to_str`) rather than clean native `cfire` type definitions.
+  3. C++ headers are mixed between handwritten source code and generated compiler outputs.
 - **Detailed Requirements**:
-  1. Snapshot the stable C++ implementations into `bootstrap/stage0/` as a permanent bootstrapping artifact.
-  2. Replace `src/*.hpp` with clean, thin dispatch wrappers around `src/bootstrap/*.generated.hpp`.
-  3. Remove runtime `std::getenv("CFIRE_CXX_*")` fallback branches from the main compiler pipeline once CI stability is locked.
+  1. Eliminate duplicate logic between `.hpp` and `.cf`.
+  2. Replace raw `cpp::...` internal type leaks with native `.cf` struct definitions and clean FFI boundaries.
+  3. Standardize generated headers in `bootstrap/` as pure compiler outputs that are never edited manually.
 - **Acceptance Criteria**:
-  - `src/*.hpp` total line count reduced by $>50\%$.
-  - Compiler development happens exclusively in pure `.cf` source files.
-  - Stage-0 bootstrap build verified via `make bootstrap-from-stage0`.
+  - Clear, unambiguous source-of-truth for all compiler subsystems.
+  - Zero leaky C++ internal type expressions in `.cf` compiler code.
+  - `make review-check` passes cleanly.
 
 ---
 
-### `ARCH-06`: Invert Guide Documentation Pipeline `[COMPLETED]`\n- **Status**: Completed (2026-10-20)
-- **Priority**: P2
-- **Category**: Documentation Engineering / Content Management
-- **Target Files**:
-  - `src/docgen.hpp` & `src/docgen.cf`
-  - `docs/GUIDE.md`
-  - `docs/guide.html`
-- **Problem Statement**:
-  `docs/GUIDE.md` is currently generated from ~1,000 lines of markdown embedded inside C++ raw string literals in `src/docgen.hpp` (`generate_guide_markdown()`).
-  Authors must edit C++ code and recompile `cfire` to update documentation, which is awkward and error-prone.
-- **Detailed Requirements**:
-  1. Invert the pipeline: Make `docs/GUIDE.md` the authoritative source file on disk.
-  2. Refactor `docgen` to parse `docs/GUIDE.md`, validate code blocks and links, and generate `docs/guide.html`.
-  3. Ensure `./cfire doc --check` validates that `docs/guide.html` is up to date with `docs/GUIDE.md`.
-- **Acceptance Criteria**:
-  - Documentation authors can edit `docs/GUIDE.md` directly with immediate live markdown preview.
-  - `src/docgen.hpp` line count reduced by ~1,000 lines.
-  - `./cfire doc` compiles markdown to HTML cleanly.
+## Completed Architectural Milestones (Archive)
 
----
-
-## Technical Debt Item Matrix
-
-| Task ID | Component | Complexity | Estimated Effort | Impact | Target Milestone |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| `ARCH-01` | Buildsys / SHA-256 | Low | 1–2 days | High | Phase 1 (P0) |
-| `ARCH-02` | Runtime / Modular Headers | Medium | 3–4 days | High | Phase 1 (P0) |
-| `ARCH-03` | Tests / Decomposed Suite | Medium | 2–3 days | Medium | Phase 2 (P1) |
-| `ARCH-04` | Parser / AST Arena Allocator | High | 4–5 days | High | Phase 2 (P1) |
-| `ARCH-05` | Frontend / Deprecate C++ | Medium | 3–4 days | High | Phase 3 (P2) |
-| `ARCH-06` | Docgen / Invert Guide Pipeline | Low | 2–3 days | Medium | Phase 3 (P2) `[COMPLETED]` |
+| Task ID | Component | Summary | Completed |
+| :--- | :--- | :--- | :---: |
+| `ARCH-01` | Buildsys / SHA-256 | In-process SHA-256 streaming hash eliminating external shell spawning | 2026-10-20 |
+| `ARCH-02` | Runtime / Headers | Modularized monolithic runtime into 13 granular headers in `runtime/core/` | 2026-10-20 |
+| `ARCH-03` | Tests / Decompose | Split 2,600 LOC monolithic runner into modular parallel suites (`tests/unit`, `e2e`, `benchmarks`) | 2026-10-20 |
+| `ARCH-04` | Memory / Bump Arena | Implemented monotonic bump `AstArena` eliminating atomic `std::shared_ptr` (+16-48% speedup) | 2026-10-20 |
+| `ARCH-05` | Architecture / Headers | Snapshotted stage0 C++ bootstrap archive and deprecated dual-engine fallback branches | 2026-10-20 |
+| `ARCH-06` | Docgen / Pipeline | Inverted guide pipeline to make `docs/GUIDE.md` authoritative, deleting 1,400 LOC of string literals | 2026-10-20 |

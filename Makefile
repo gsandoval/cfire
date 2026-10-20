@@ -45,13 +45,16 @@ dogfood: build
 review-check: build
 	@echo "=== [1/4] Checking Canonical Code Formatting ==="
 	./cfire fmt --check src/ examples/
+	@echo "✓ Canonical code formatting verified"
 	@echo "=== [2/4] Checking Documentation Synchronization ==="
 	./cfire doc --check
+	@echo "✓ Documentation guides and stdlib references synchronized"
 	@echo "=== [3/4] Re-transpiling and Dogfooding Self-Hosted Compiler ==="
 	$(MAKE) dogfood
+	@echo "✓ Compiler transpiled all self-hosted modules without warnings"
 	@echo "=== [4/4] Running Full Conformance Test Suite ==="
 	$(MAKE) test
-	@echo "✓ All Senior Engineer Review Quality Gates PASSED"
+	@echo "✓ Conformance test suites and selfhost parity benchmarks passed"
 
 docs: build
 	./cfire doc
