@@ -63,10 +63,6 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_LSP");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return json_escape_cxx(sv);
-    }
     return ::lsp_json_escape(std::string(sv));
 }
 
@@ -93,10 +89,6 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_LSP");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return json_unescape_cxx(sv);
-    }
     return ::lsp_json_unescape(std::string(sv));
 }
 
@@ -1301,12 +1293,7 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
 }
 
 inline void write_rpc_message(std::ostream& out, std::string_view body) {
-    const char* force_cxx = std::getenv("CFIRE_CXX_LSP");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        out << "Content-Length: " << body.size() << "\r\n\r\n" << body;
-    } else {
-        out << ::selfhost_make_rpc_frame(std::string(body));
-    }
+    out << ::selfhost_make_rpc_frame(std::string(body));
     out.flush();
 }
 

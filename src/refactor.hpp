@@ -39,10 +39,6 @@ using RenameResult = ::RenameResult;
 }
 
 [[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
-    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return is_valid_identifier_cxx(name);
-    }
     return ::is_valid_identifier(name);
 }
 
@@ -91,10 +87,6 @@ using RenameResult = ::RenameResult;
     const std::vector<Occurrence>& occs,
     std::string_view new_name
 ) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return apply_line_replacements_cxx(original_content, occs, new_name);
-    }
     return ::apply_line_replacements(original_content, occs, new_name);
 }
 
@@ -140,10 +132,6 @@ using RenameResult = ::RenameResult;
 }
 
 [[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return generate_unified_diff_cxx(res);
-    }
     return ::generate_unified_diff(res);
 }
 
@@ -179,10 +167,6 @@ using RenameResult = ::RenameResult;
 }
 
 [[nodiscard]] inline auto to_json(const RenameResult& res) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return to_json_cxx(res);
-    }
     return ::to_json(res);
 }
 

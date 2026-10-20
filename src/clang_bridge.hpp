@@ -12,9 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-#if !defined(CFIRE_CXX_CLANG_BRIDGE)
 #include "bootstrap/clang_bridge.generated.hpp"
-#endif
 
 namespace cfire::bridge {
 

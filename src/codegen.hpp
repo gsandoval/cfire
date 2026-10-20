@@ -1722,10 +1722,6 @@ namespace cfire::frontend {
 }
 
 [[nodiscard]] inline auto emit_cpp(const CheckedFile& cf, bool test_mode = false) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_CODEGEN");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return emit_cpp_cxx(cf, test_mode);
-    }
     return selfhost_emit_cpp(cf, test_mode);
 }
 
