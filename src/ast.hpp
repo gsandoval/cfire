@@ -2,6 +2,7 @@
 // src/ast.hpp — C++23 AST Definitions for cfire (.cf)
 
 #include "lexer.hpp"
+#include "bootstrap/ast.generated.hpp"
 #include <memory>
 #include <optional>
 #include <string>

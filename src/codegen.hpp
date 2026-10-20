@@ -156,15 +156,35 @@ private:
             writeln();
         }
 
-        // 2. Emit Tagged Enums as C++23 `std::variant` sum types
-        for (const auto& en : ast.enums) {
-            emit_enum(en);
-            writeln();
-        }
-
-        // 3. Emit Structs & Compile-Time Tag Specializations
+        // Forward declare all structs so recursive shared_ptr/pointers work
         for (const auto& st : ast.structs) {
-            emit_struct(st);
+            writeln(std::format("struct {};", st.name));
+        }
+        if (!ast.structs.empty()) writeln();
+
+        // Emit Structs & Enums in source declaration order
+        struct TypeItem {
+            int line;
+            bool is_enum;
+            std::size_t idx;
+        };
+        std::vector<TypeItem> items;
+        for (std::size_t i = 0; i < ast.enums.size(); ++i) {
+            items.push_back(TypeItem{ast.enums[i].line, true, i});
+        }
+        for (std::size_t i = 0; i < ast.structs.size(); ++i) {
+            items.push_back(TypeItem{ast.structs[i].line, false, i});
+        }
+        std::stable_sort(items.begin(), items.end(), [](const auto& a, const auto& b) {
+            return a.line < b.line;
+        });
+
+        for (const auto& it : items) {
+            if (it.is_enum) {
+                emit_enum(ast.enums[it.idx]);
+            } else {
+                emit_struct(ast.structs[it.idx]);
+            }
             writeln();
         }
 
@@ -1247,7 +1267,7 @@ private:
             }
             if (tr.name == "str") return "std::string&";
             if (tr.name == "bytes") return "std::span<std::byte>";
-            return lower_owning_type(tr) + "&";
+            return lower_owning_type(tr);
         }
         if (tr.is_borrow) {
             if (tr.is_slice && tr.elem_type) {
@@ -1255,7 +1275,7 @@ private:
             }
             if (tr.name == "str") return "std::string_view";
             if (tr.name == "bytes") return "std::span<const std::byte>";
-            return "const " + lower_owning_type(tr) + "&";
+            return lower_owning_type(tr);
         }
         if (tr.name == "str") return "const std::string&";
         if (tr.is_slice && tr.elem_type) {

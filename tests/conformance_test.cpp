@@ -3320,6 +3320,182 @@ a := 10
     std::println("--- PASS: test_selfhost_formatter_parity_and_benchmark");
 }
 
+void test_selfhost_ast_parity_and_benchmark(const std::filesystem::path& rt_dir) {
+    (void)rt_dir;
+    std::println("=== RUN   test_selfhost_ast_parity_and_benchmark (Self-Hosted AST Definitions & TypeRef Serialization)");
+
+    // 1. Structural Parity: Compare format_typeref_cf with cfire::fmt::format_type_ref
+    auto check_type_parity = [](const cfire::frontend::TypeRef& cxx_t, const ::TypeRef& cf_t, std::string_view label) {
+        std::string cxx_str = cfire::fmt::format_type_ref(cxx_t);
+        std::string cf_str = ::format_typeref_cf(cf_t);
+        require(cxx_str == cf_str,
+            std::format("{}: TypeRef serialization mismatch: C++('{}') vs cfire('{}')", label, cxx_str, cf_str));
+    };
+
+    // Primitive
+    {
+        cfire::frontend::TypeRef cxx{.name = "i32"};
+        ::TypeRef cf = ::make_typeref("i32");
+        check_type_parity(cxx, cf, "primitive_i32");
+    }
+
+    // Optional and Fallible
+    {
+        cfire::frontend::TypeRef cxx{.name = "str", .is_fallible = true, .is_optional = true};
+        ::TypeRef cf = ::make_typeref("str");
+        cf.is_fallible = true;
+        cf.is_optional = true;
+        check_type_parity(cxx, cf, "str_opt_fallible");
+    }
+
+    // Slices & Arrays
+    {
+        auto elem_cxx = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "u8"});
+        cfire::frontend::TypeRef cxx{.is_slice = true, .elem_type = elem_cxx};
+
+        auto elem_cf = std::make_shared<::TypeRef>(::make_typeref("u8"));
+        ::TypeRef cf = ::make_typeref("");
+        cf.is_slice = true;
+        cf.elem_type = elem_cf;
+        check_type_parity(cxx, cf, "slice_u8");
+    }
+    {
+        auto elem_cxx = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "f64"});
+        cfire::frontend::TypeRef cxx{.is_array = true, .array_len = "16", .elem_type = elem_cxx};
+
+        auto elem_cf = std::make_shared<::TypeRef>(::make_typeref("f64"));
+        ::TypeRef cf = ::make_typeref("");
+        cf.is_array = true;
+        cf.array_len = "16";
+        cf.elem_type = elem_cf;
+        check_type_parity(cxx, cf, "array_16_f64");
+    }
+
+    // Maps
+    {
+        auto key_cxx = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "str"});
+        auto val_cxx = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "i64"});
+        cfire::frontend::TypeRef cxx{.is_map = true, .key_type = key_cxx, .elem_type = val_cxx};
+
+        auto key_cf = std::make_shared<::TypeRef>(::make_typeref("str"));
+        auto val_cf = std::make_shared<::TypeRef>(::make_typeref("i64"));
+        ::TypeRef cf = ::make_typeref("");
+        cf.is_map = true;
+        cf.key_type = key_cf;
+        cf.elem_type = val_cf;
+        check_type_parity(cxx, cf, "map_str_i64");
+    }
+
+    // Pointers & Borrows
+    {
+        auto elem_cxx = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "Scene"});
+        cfire::frontend::TypeRef cxx{.elem_type = elem_cxx, .is_mut_ptr = true};
+
+        auto elem_cf = std::make_shared<::TypeRef>(::make_typeref("Scene"));
+        ::TypeRef cf = ::make_typeref("");
+        cf.is_mut_ptr = true;
+        cf.elem_type = elem_cf;
+        check_type_parity(cxx, cf, "mut_ptr_scene");
+    }
+
+    // Smart wrappers
+    {
+        auto elem_cxx = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "Config"});
+        cfire::frontend::TypeRef cxx{.elem_type = elem_cxx, .smart_wrap = "own"};
+
+        auto elem_cf = std::make_shared<::TypeRef>(::make_typeref("Config"));
+        ::TypeRef cf = ::make_typeref("");
+        cf.smart_wrap = "own";
+        cf.elem_type = elem_cf;
+        check_type_parity(cxx, cf, "own_config");
+    }
+
+    // Tuples
+    {
+        cfire::frontend::TypeRef cxx{.is_tuple = true, .tuple_types = {cfire::frontend::TypeRef{.name = "i32"}, cfire::frontend::TypeRef{.name = "str"}}};
+        ::TypeRef cf = ::make_typeref("");
+        cf.is_tuple = true;
+        cf.tuple_types = {::make_typeref("i32"), ::make_typeref("str")};
+        check_type_parity(cxx, cf, "tuple_i32_str");
+    }
+
+    // 2. Declaration Counting Invariant
+    {
+        ::FileAST ast{
+            .path = "main.cf",
+            .package_name = "main",
+            .structs = {::StructDecl{.name = "Foo"}, ::StructDecl{.name = "Bar"}},
+            .enums = {::EnumDecl{.name = "Color"}},
+            .functions = {::FnDecl{.name = "main"}, ::FnDecl{.name = "helper"}},
+        };
+        auto [num_structs, num_enums, num_fns] = ::count_ast_declarations(ast);
+        require(num_structs == 2 && num_enums == 1 && num_fns == 2,
+            std::format("count_ast_declarations mismatch: ({}, {}, {}) expected (2, 1, 2)", num_structs, num_enums, num_fns));
+    }
+
+    std::println("  [PASS] 100% TypeRef serialization & AST declaration parity verified");
+
+    // 3. High-Precision Performance Benchmark
+    auto test_cf_typeref = ::make_typeref("");
+    test_cf_typeref.is_map = true;
+    test_cf_typeref.key_type = std::make_shared<::TypeRef>(::make_typeref("str"));
+    auto val_cf = ::make_typeref("");
+    val_cf.is_slice = true;
+    val_cf.elem_type = std::make_shared<::TypeRef>(::make_typeref("i32"));
+    val_cf.is_fallible = true;
+    test_cf_typeref.elem_type = std::make_shared<::TypeRef>(val_cf);
+
+    auto test_cxx_typeref = cfire::frontend::TypeRef{
+        .is_map = true,
+        .key_type = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "str"}),
+        .elem_type = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{
+            .is_slice = true,
+            .elem_type = std::make_shared<cfire::frontend::TypeRef>(cfire::frontend::TypeRef{.name = "i32"}),
+            .is_fallible = true,
+        }),
+    };
+
+    constexpr int kIters = 100'000;
+
+    // Benchmark C++ format_type_ref
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t total_cxx_len = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto s = cfire::fmt::format_type_ref(test_cxx_typeref);
+        total_cxx_len += s.size();
+    }
+    (void)total_cxx_len;
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mtypes_cxx = (static_cast<double>(kIters) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire format_typeref_cf
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t total_cf_len = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto s = ::format_typeref_cf(test_cf_typeref);
+        total_cf_len += s.size();
+    }
+    (void)total_cf_len;
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mtypes_cf = (static_cast<double>(kIters) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    double parity_pct = (mtypes_cf / mtypes_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] AST TypeRef Formatting Benchmark ({} iterations):", kIters);
+    std::println("    - C++ Native format_type_ref: {:>7.2f}M types/s (avg {:.4f}µs/type)",
+        mtypes_cxx, (ms_cxx * 1000.0) / kIters);
+    std::println("    - cfire format_typeref_cf:    {:>7.2f}M types/s (avg {:.4f}µs/type)",
+        mtypes_cf, (ms_cf * 1000.0) / kIters);
+    std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mtypes_cf >= 0.70 * mtypes_cxx,
+        std::format("Self-hosted AST serializer performance regression ({:.1f}M vs {:.1f}M baseline)", mtypes_cf, mtypes_cxx));
+
+    std::println("--- PASS: test_selfhost_ast_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3346,6 +3522,7 @@ auto main() -> int {
     test_net_http_and_router(rt_dir);
     test_selfhost_lexer_parity_and_benchmark(rt_dir);
     test_selfhost_formatter_parity_and_benchmark(rt_dir);
+    test_selfhost_ast_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
