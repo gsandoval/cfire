@@ -9,7 +9,9 @@ This directory maintains the project backlog, active development tasks, and arch
 3. [`stdlib-evaluation.md`](./stdlib-evaluation.md): Thorough gap analysis of the 13 `core:*` modules benchmarked against Go, Python, Rust, Zig, and Odin for daily developer workflows.
 4. [`lsp-evaluation.md`](./lsp-evaluation.md): Comprehensive capability sweep and gap analysis comparing `cfire-lsp` against production-grade language servers (`rust-analyzer`, `clangd`, `gopls`, `zls`).
 5. [`backlog.md`](./backlog.md): Prioritized catalog of all planned improvements, features, and fixes across LSP, Language Design (LD), Build System (BS), and Standard Library (LIB).
-6. [`active.md`](./active.md): The live in-flight workbench. Tasks currently being designed or coded live here with detailed scoping and verification criteria.
+6. [`architectural-backlog.md`](./architectural-backlog.md): Prioritized technical debt, decoupling initiatives, header modularization, and AST allocator milestones (`ARCH-01` through `ARCH-06`).
+7. [`active.md`](./active.md): The live in-flight workbench. Tasks currently being designed or coded live here with detailed scoping and verification criteria.
+8. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
 
 ---
 
