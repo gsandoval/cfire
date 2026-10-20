@@ -4423,6 +4423,110 @@ void test_selfhost_main_parity_and_benchmark(const std::filesystem::path& rt_dir
     std::println("--- PASS: test_selfhost_main_parity_and_benchmark");
 }
 
+void test_selfhost_clang_bridge_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("--- test_selfhost_clang_bridge_parity_and_benchmark");
+
+    // 1. Hash key parity across test strings
+    std::vector<std::string> hash_corpus = {
+        "v3:zstd.h|-I/usr/local/include",
+        "v3:raylib.h|-Ivendor/raylib/src",
+        "v3:sqlite3.h|-O2|-std=c++2b",
+        "v3:complex_template_header.hpp|-I.|-Wall",
+        ""
+    };
+    for (const auto& s : hash_corpus) {
+        auto h_cxx = cfire::bridge::hash_key(s);
+        auto h_cf = selfhost_clang_hash_key(s);
+        require(h_cxx == h_cf, std::format("clang hash key parity mismatch for '{}': {} vs {}", s, h_cxx, h_cf));
+    }
+
+    // 2. Trim qual parity
+    std::vector<std::string> trim_corpus = {
+        "   const int*  ",
+        "\t\tvoid\t",
+        "std::string",
+        "  std::vector<std::pair<int, double>>  "
+    };
+    for (const auto& s : trim_corpus) {
+        auto t_cxx = cfire::bridge::trim_qual(s);
+        auto t_cf = selfhost_clang_trim_qual(s);
+        require(t_cxx == t_cf, std::format("clang trim qual mismatch for '{}'", s));
+    }
+
+    // 3. Signature parsing parity
+    std::vector<std::string> sig_corpus = {
+        "int(int, double)",
+        "void()",
+        "std::vector<int>(const std::string&, char*)",
+        "const char*(size_t, void*)",
+        "double"
+    };
+    for (const auto& sig : sig_corpus) {
+        cfire::bridge::CppSymbol sym;
+        cfire::bridge::parse_fn_qual_type(sig, sym);
+        auto parsed = selfhost_clang_parse_fn_sig(sig);
+        require(sym.return_type == parsed.return_type,
+            std::format("Return type mismatch for '{}': '{}' vs '{}'", sig, sym.return_type, parsed.return_type));
+        require(sym.param_types == parsed.param_types,
+            std::format("Param types mismatch for '{}'", sig));
+    }
+
+    // 4. Cache format & parse roundtrip
+    CppCacheEntry entry{
+        .key = "sqlite3_open",
+        .name = "sqlite3_open",
+        .kind = "FunctionDecl",
+        .return_type = "int",
+        .param_types = {"const char*", "sqlite3**"}
+    };
+    auto line = selfhost_clang_format_cache_entry(entry);
+    auto roundtrip = selfhost_clang_parse_cache_line(line.substr(0, line.size() - 1));
+    require(roundtrip.key == entry.key, "cache roundtrip key");
+    require(roundtrip.name == entry.name, "cache roundtrip name");
+    require(roundtrip.kind == entry.kind, "cache roundtrip kind");
+    require(roundtrip.return_type == entry.return_type, "cache roundtrip return_type");
+    require(roundtrip.param_types == entry.param_types, "cache roundtrip param_types");
+
+    // 5. Benchmark throughput
+    constexpr std::size_t kIters = 100'000;
+    std::string bench_str = "v3:sqlite3.h|-I/usr/local/Cellar/sqlite/3.45/include|-O2|-std=c++2b";
+    std::size_t total_bytes = bench_str.size() * kIters;
+
+    auto t0 = std::chrono::steady_clock::now();
+    uint64_t sum_cxx = 0;
+    for (std::size_t i = 0; i < kIters; ++i) {
+        sum_cxx += cfire::bridge::hash_key(bench_str);
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    double mbs_cxx = (static_cast<double>(total_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    auto t2 = std::chrono::steady_clock::now();
+    uint64_t sum_cf = 0;
+    for (std::size_t i = 0; i < kIters; ++i) {
+        sum_cf += selfhost_clang_hash_key(bench_str);
+    }
+    auto t3 = std::chrono::steady_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t3 - t2).count();
+    double mbs_cf = (static_cast<double>(total_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    require(sum_cxx == sum_cf, "benchmark checksum match");
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Clang Bridge Hash Throughput (Payload: {:.2f} MB, {} iters):",
+        static_cast<double>(total_bytes) / 1'000'000.0, kIters);
+    std::println("    - C++ Native Hash:            {:>7.2f} MB/s (avg {:.3f}ns/run)",
+        mbs_cxx, (ms_cxx * 1'000'000.0) / kIters);
+    std::println("    - cfire Self-Hosted Hash:     {:>7.2f} MB/s (avg {:.3f}ns/run)",
+        mbs_cf, (ms_cf * 1'000'000.0) / kIters);
+    std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted Clang Bridge performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_clang_bridge_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -4458,6 +4562,7 @@ auto main() -> int {
     test_selfhost_buildsys_parity_and_benchmark(rt_dir);
     test_selfhost_lsp_parity_and_benchmark(rt_dir);
     test_selfhost_main_parity_and_benchmark(rt_dir);
+    test_selfhost_clang_bridge_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);

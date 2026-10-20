@@ -13,7 +13,22 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Make Test & Doc Check
+      - name: Build cfire Toolchain
+        run: make build
+
+      - name: Dogfood Full 12-Component Self-Hosting Pipeline
+        run: make dogfood
+
+      - name: Verify Documentation Sync
+        run: ./cfire doc --check
+
+      - name: Verify Dual-Engine Fallback Mode
         run: |
-          make test
-          ./cfire doc --check
+          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc \
+            -DCFIRE_CXX_LEXER=1 -DCFIRE_CXX_FORMATTER=1 -DCFIRE_CXX_AST=1 \
+            -DCFIRE_CXX_REFACTOR=1 -DCFIRE_CXX_DOCGEN=1 -DCFIRE_CXX_PARSER=1 \
+            -DCFIRE_CXX_SEMA=1 -DCFIRE_CXX_CODEGEN=1 -DCFIRE_CXX_BUILDSYS=1 \
+            -DCFIRE_CXX_LSP=1 -DCFIRE_CXX_MAIN=1 -DCFIRE_CXX_CLANG_BRIDGE=1 \
+            tests/conformance_test.cpp -o .cfire_legacy_runner
+          ./.cfire_legacy_runner
+          rm -f .cfire_legacy_runner

@@ -144,7 +144,7 @@ auto legacy_cxx_main(int argc, char** argv) -> int {
                 target_cf = arg;
             }
         }
-        return run_doc(check_only, llm_mode, target_cf, runtime_dir.string(), selfhost_get_llm_doc());
+        return run_doc(check_only, llm_mode, target_cf, runtime_dir.string(), get_llm_doc_cxx());
     }
 
     if (sub == "fmt") {
