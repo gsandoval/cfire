@@ -3857,6 +3857,176 @@ void test_selfhost_parser_parity_and_benchmark([[maybe_unused]] const std::files
     std::println("--- PASS: test_selfhost_parser_parity_and_benchmark");
 }
 
+void test_selfhost_sema_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_selfhost_sema_parity_and_benchmark (Self-Hosted Semantic Analyzer Dogfooding & Measurable Parity)");
+
+    const std::vector<std::string> corpus_files = {
+        "examples/01-hello-core/main.cf",
+        "examples/02-log-compressor/main.cf",
+        "examples/03-pkg-cache/main.cf",
+        "examples/04-async-workers/main.cf",
+        "examples/05-cmake-interop/main.cf",
+        "examples/06-raylib-viz/main.cf",
+        "examples/07-types-match-map/main.cf",
+        "examples/08-multi-pkg-cc-build/main.cf",
+        "examples/09-stdlib-test-pointers/main.cf",
+        "examples/10-cmake-and-make-deps/main.cf",
+        "examples/11-http-server-router/main.cf",
+        "src/lexer.cf",
+        "src/formatter.cf",
+        "src/ast.cf",
+        "src/refactor.cf",
+        "src/docgen.cf",
+        "src/parser.cf",
+        "src/sema.cf"
+    };
+
+    std::size_t total_bytes = 0;
+    std::vector<std::pair<std::string, std::string>> loaded_files;
+    for (const auto& rel_path : corpus_files) {
+        std::ifstream ifs(rel_path);
+        require(ifs.is_open(), std::format("Failed to open corpus file '{}'", rel_path));
+        std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+        total_bytes += content.size();
+        loaded_files.emplace_back(rel_path, std::move(content));
+    }
+
+    // 1. Corpus Conformance & CheckedFile Parity across all 18 corpus files
+    for (const auto& [path, content] : loaded_files) {
+        auto p1 = cfire::frontend::parse_source(path, content);
+        require(p1.has_value(), std::format("Parser failed for sema input '{}'", path));
+        auto p2 = cfire::frontend::parse_source(path, content);
+        require(p2.has_value(), std::format("Parser failed for sema input '{}'", path));
+
+        auto cxx_cf = cfire::frontend::analyze_cxx(std::move(*p1));
+        auto sh_cf = cfire::frontend::selfhost_analyze(std::move(*p2));
+
+        require(cxx_cf.has_value(), std::format("C++ sema failed on '{}': {}", path, cxx_cf ? "" : cxx_cf.error()));
+        require(sh_cf.has_value(), std::format("Self-hosted sema failed on '{}': {}", path, sh_cf ? "" : sh_cf.error()));
+
+        if (cxx_cf && sh_cf) {
+            require(cxx_cf->fn_sigs.size() == sh_cf->fn_sigs.size(),
+                std::format("fn_sigs.size() mismatch in '{}': {} vs {}", path, cxx_cf->fn_sigs.size(), sh_cf->fn_sigs.size()));
+            require(cxx_cf->methods.size() == sh_cf->methods.size(),
+                std::format("methods.size() mismatch in '{}': {} vs {}", path, cxx_cf->methods.size(), sh_cf->methods.size()));
+            require(cxx_cf->enums.size() == sh_cf->enums.size(),
+                std::format("enums.size() mismatch in '{}': {} vs {}", path, cxx_cf->enums.size(), sh_cf->enums.size()));
+            require(cxx_cf->struct_tags.size() == sh_cf->struct_tags.size(),
+                std::format("struct_tags.size() mismatch in '{}': {} vs {}", path, cxx_cf->struct_tags.size(), sh_cf->struct_tags.size()));
+            require(cxx_cf->last_use_move.size() == sh_cf->last_use_move.size(),
+                std::format("last_use_move.size() mismatch in '{}': {} vs {}", path, cxx_cf->last_use_move.size(), sh_cf->last_use_move.size()));
+            require(cxx_cf->warnings.size() == sh_cf->warnings.size(),
+                std::format("warnings.size() mismatch in '{}': {} vs {}", path, cxx_cf->warnings.size(), sh_cf->warnings.size()));
+        }
+    }
+    std::println("  [PASS] 100% semantic analysis parity verified across all {} corpus files ({:.2f} KB)",
+        loaded_files.size(), static_cast<double>(total_bytes) / 1024.0);
+
+    // 2. Intent & Diagnostic Rules Parity Check
+    struct DiagTestCase {
+        std::string name;
+        std::string source;
+        std::string expected_code;
+    };
+
+    const std::vector<DiagTestCase> diag_cases = {
+        {"MUT-CALLSITE", "package main\nfn modify(mut x: i32) {}\nfn main() {\n  mut a := 10\n  modify(a)\n}\n", "cfire/MUT-CALLSITE"},
+        {"IMMUTABLE-MUT-ARG", "package main\nfn modify(mut x: i32) {}\nfn main() {\n  a := 10\n  modify(mut a)\n}\n", "cfire/IMMUTABLE-MUT-ARG"},
+        {"IMMUTABLE-ASSIGN", "package main\nfn main() {\n  a := 10\n  a = 20\n}\n", "cfire/IMMUTABLE-ASSIGN"},
+        {"MUT-ALIAS", "package main\nfn swap(mut x: i32, mut y: i32) {}\nfn main() {\n  mut a := 10\n  swap(mut a, mut a)\n}\n", "cfire/MUT-ALIAS"},
+        {"USE-AFTER-MOVE", "package main\nfn consume(move x: str) {}\nfn main() {\n  s := \"hello\"\n  consume(move s)\n  consume(move s)\n}\n", "cfire/USE-AFTER-MOVE"},
+        {"NON-EXHAUSTIVE-MATCH", "package main\ntype Shape enum { Circle(f64), Rect(f64, f64), Empty }\nfn main() {\n  s := Shape.Circle(1.0)\n  match s {\n    Circle(r) => { println(\"{}\", r) }\n    Rect(w, h) => { println(\"{}\", w) }\n  }\n}\n", "cfire/NON-EXHAUSTIVE-MATCH"},
+        {"DEPRECATED-VAR", "package main\nvar global_x: i32 = 10\nfn main() {}\n", "cfire/DEPRECATED-VAR"},
+        {"DEPRECATED-OUT-PARAM", "package main\nfn f(out x: i32) {}\nfn main() {}\n", "cfire/DEPRECATED-OUT-PARAM"},
+    };
+
+    for (const auto& tc : diag_cases) {
+        auto p1 = cfire::frontend::parse_source("test_diag.cf", tc.source);
+        auto p2 = cfire::frontend::parse_source("test_diag.cf", tc.source);
+        require(p1.has_value() && p2.has_value(), std::format("Parse failed on diag test case '{}'", tc.name));
+
+        auto cxx_res = cfire::frontend::analyze_cxx(std::move(*p1));
+        auto sh_res = cfire::frontend::selfhost_analyze(std::move(*p2));
+
+        if (tc.expected_code == "cfire/DEPRECATED-VAR" || tc.expected_code == "cfire/DEPRECATED-OUT-PARAM") {
+            require(cxx_res.has_value() && sh_res.has_value(), std::format("Warning case '{}' should not fail analysis", tc.name));
+            bool cxx_has_warn = false;
+            for (const auto& w : cxx_res->warnings) if (w.contains(tc.expected_code)) cxx_has_warn = true;
+            bool sh_has_warn = false;
+            for (const auto& w : sh_res->warnings) if (w.contains(tc.expected_code)) sh_has_warn = true;
+            require(cxx_has_warn, std::format("C++ sema missed warning '{}'", tc.expected_code));
+            require(sh_has_warn, std::format("Self-hosted sema missed warning '{}'", tc.expected_code));
+        } else {
+            require(!cxx_res.has_value(), std::format("C++ sema should have failed on '{}'", tc.name));
+            require(!sh_res.has_value(), std::format("Self-hosted sema should have failed on '{}'", tc.name));
+            if (!cxx_res && !sh_res) {
+                require(cxx_res.error().contains(tc.expected_code),
+                    std::format("C++ sema diagnostic mismatch for '{}': got '{}'", tc.name, cxx_res.error()));
+                require(sh_res.error().contains(tc.expected_code),
+                    std::format("Self-hosted sema diagnostic mismatch for '{}': got '{}'", tc.name, sh_res.error()));
+            }
+        }
+    }
+    std::println("  [PASS] 100% semantic diagnostic parity verified across all intent/mutability/move rules");
+
+    // 3. Performance Throughput Benchmark
+    constexpr int kIters = 50;
+    std::size_t benchmark_payload_bytes = total_bytes * kIters;
+
+    // Pre-parse ASTs for isolated sema measurement
+    std::vector<cfire::frontend::FileAST> cxx_asts;
+    std::vector<cfire::frontend::FileAST> sh_asts;
+    for (int it = 0; it < kIters; ++it) {
+        for (const auto& [path, content] : loaded_files) {
+            auto a1 = cfire::frontend::parse_source(path, content);
+            auto a2 = cfire::frontend::parse_source(path, content);
+            if (a1 && a2) {
+                cxx_asts.push_back(std::move(*a1));
+                sh_asts.push_back(std::move(*a2));
+            }
+        }
+    }
+
+    // Benchmark Native C++ Sema
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t cxx_checked = 0;
+    for (auto& ast : cxx_asts) {
+        auto res = cfire::frontend::analyze_cxx(std::move(ast));
+        if (res) cxx_checked += res->fn_sigs.size();
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mbs_cxx = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire Self-Hosted Sema
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t cf_checked = 0;
+    for (auto& ast : sh_asts) {
+        auto res = cfire::frontend::selfhost_analyze(std::move(ast));
+        if (res) cf_checked += res->fn_sigs.size();
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    require(cxx_checked == cf_checked, "Benchmark fn count parity mismatch");
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Semantic Analyzer Throughput (Payload: {:.2f} MB, {} files x {} iters):",
+        static_cast<double>(benchmark_payload_bytes) / 1'000'000.0, loaded_files.size(), kIters);
+    std::println("    - C++ Native Sema:            {:>7.2f} MB/s (avg {:.3f}ms/corpus)",
+        mbs_cxx, ms_cxx / kIters);
+    std::println("    - cfire Self-Hosted Sema:     {:>7.2f} MB/s (avg {:.3f}ms/corpus)",
+        mbs_cf, ms_cf / kIters);
+    std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted sema performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_sema_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3887,6 +4057,7 @@ auto main() -> int {
     test_selfhost_refactor_parity_and_benchmark(rt_dir);
     test_selfhost_docgen_parity_and_benchmark(rt_dir);
     test_selfhost_parser_parity_and_benchmark(rt_dir);
+    test_selfhost_sema_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);

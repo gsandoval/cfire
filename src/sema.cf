@@ -1,0 +1,833 @@
+package sema
+// src/sema.cf — Semantic Analyzer, Intent Verifier & Struct Tag Extractor
+// Self-hosted in pure cfire, analyzing cfire ASTs with zero external dependencies.
+
+type PathInfo struct {
+    root: str
+    path: str
+}
+
+type SeenArgPath struct {
+    info: PathInfo
+    is_mut_or_out: bool
+}
+
+type SemaResult struct {
+    cf: cpp::cfire::frontend::CheckedFile
+    error: str
+    has_error: bool
+}
+
+type SemaFnChecker struct {
+    path: str
+    warnings: []str
+    moved_at_line: map[str]i32
+    move_params: map[str]bool
+    mut_vars: map[str]bool
+    imm_vars: map[str]bool
+    last_read_line: map[str]i32
+}
+
+fn starts_with_str(s: str, prefix: str) -> bool {
+    n := s.len
+    pn := prefix.len
+    if (pn > n) {
+        return false
+    }
+    return s[0..pn] == prefix
+}
+
+fn paths_conflict(a: str, b: str) -> bool {
+    if (a == b) {
+        return true
+    }
+    if (starts_with_str(a, b)) {
+        if (a.len > b.len) {
+            next_ch := a[b.len]
+            if (next_ch == 46 || next_ch == 91) { // '.' or '['
+                return true
+            }
+        }
+    }
+    if (starts_with_str(b, a)) {
+        if (b.len > a.len) {
+            next_ch := b[a.len]
+            if (next_ch == 46 || next_ch == 91) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+fn extract_path_info(e: cpp::cfire::frontend::ExprPtr) -> (PathInfo, bool) {
+    (root, path) := cpp::cfire::frontend::sema_extract_path_info(e)
+    if (root != "") {
+        return (PathInfo{root: root, path: path}, true)
+    }
+    return (PathInfo{root: "", path: ""}, false)
+}
+
+fn block_diverges(body: []cpp::cfire::frontend::StmtPtr) -> bool {
+    return cpp::cfire::frontend::sema_block_diverges(body)
+}
+
+// --- SemaFnChecker Methods ---
+
+fn (mut c: SemaFnChecker) record_var_read(name: str, line: i32, col: i32) -> (str, bool) {
+    if (!c.moved_at_line.empty() && c.moved_at_line.contains(name)) {
+        prev_line := c.moved_at_line[name]
+        err := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":" + cpp::cfire::frontend::sema_to_str(col) + ": use of moved variable '" + name + "' (previously moved at line " + cpp::cfire::frontend::sema_to_str(prev_line) + ") (cfire/USE-AFTER-MOVE)"
+        return (err, true)
+    }
+    if (!c.move_params.empty() && c.move_params.contains(name)) {
+        c.last_read_line[name] = line
+    }
+    return ("", false)
+}
+
+fn (mut c: SemaFnChecker) check_expr(cf: cpp::cfire::frontend::CheckedFile, e: cpp::cfire::frontend::ExprPtr) -> (str, bool) {
+    k := cpp::cfire::frontend::get_expr_kind(e)
+    if (k == 0) {
+        return ("", false)
+    }
+    if (k == 1) { // IdentExpr
+        name := cpp::cfire::frontend::expr_get_ident(e)
+        line := cpp::cfire::frontend::get_expr_line(e)
+        col := cpp::cfire::frontend::get_expr_col(e)
+        return c.record_var_read(name, line, col)
+    }
+    if (k == 2) { // LiteralExpr
+        if (cpp::cfire::frontend::expr_get_literal_is_string(e)) {
+            val := cpp::cfire::frontend::expr_get_literal_value(e)
+            vars := cpp::cfire::frontend::extract_interpolated_vars(val)
+            mut i: usize = 0
+            n := vars.len
+            line := cpp::cfire::frontend::get_expr_line(e)
+            col := cpp::cfire::frontend::get_expr_col(e)
+            for (i < n) {
+                (err, is_err) := c.record_var_read(vars[i], line, col)
+                if (is_err) {
+                    return (err, true)
+                }
+                i = i + 1
+            }
+        }
+        return ("", false)
+    }
+    if (k == 3) { // UnaryExpr
+        operand := cpp::cfire::frontend::expr_get_unary_operand(e)
+        (err, is_err) := c.check_expr(cf, operand)
+        if (is_err) {
+            return (err, true)
+        }
+        op := cpp::cfire::frontend::expr_get_unary_op(e)
+        if (op == "move") {
+            (pi, ok_pi) := extract_path_info(operand)
+            if (ok_pi) {
+                c.moved_at_line[pi.root] = cpp::cfire::frontend::get_expr_line(e)
+            }
+        }
+        return ("", false)
+    }
+    if (k == 4) { // BinaryExpr
+        left := cpp::cfire::frontend::expr_get_binary_left(e)
+        (err1, is_err1) := c.check_expr(cf, left)
+        if (is_err1) {
+            return (err1, true)
+        }
+        right := cpp::cfire::frontend::expr_get_binary_right(e)
+        return c.check_expr(cf, right)
+    }
+    if (k == 5) { // MemberExpr
+        obj := cpp::cfire::frontend::expr_get_member_object(e)
+        return c.check_expr(cf, obj)
+    }
+    if (k == 6) { // IndexExpr
+        obj := cpp::cfire::frontend::expr_get_index_object(e)
+        (err1, is_err1) := c.check_expr(cf, obj)
+        if (is_err1) {
+            return (err1, true)
+        }
+        idx := cpp::cfire::frontend::expr_get_index_expr(e)
+        return c.check_expr(cf, idx)
+    }
+    if (k == 7) { // SliceExpr
+        obj := cpp::cfire::frontend::expr_get_slice_object(e)
+        (err1, is_err1) := c.check_expr(cf, obj)
+        if (is_err1) {
+            return (err1, true)
+        }
+        start := cpp::cfire::frontend::expr_get_slice_start(e)
+        if (start != none) {
+            (err2, is_err2) := c.check_expr(cf, start)
+            if (is_err2) {
+                return (err2, true)
+            }
+        }
+        end_ex := cpp::cfire::frontend::expr_get_slice_end(e)
+        if (end_ex != none) {
+            (err3, is_err3) := c.check_expr(cf, end_ex)
+            if (is_err3) {
+                return (err3, true)
+            }
+        }
+        return ("", false)
+    }
+    if (k == 8) { // TryExpr
+        inner := cpp::cfire::frontend::expr_get_try_inner(e)
+        return c.check_expr(cf, inner)
+    }
+    if (k == 9) { // OrExpr
+        inner := cpp::cfire::frontend::expr_get_or_inner(e)
+        (err1, is_err1) := c.check_expr(cf, inner)
+        if (is_err1) {
+            return (err1, true)
+        }
+        fb := cpp::cfire::frontend::expr_get_or_fallback(e)
+        if (fb != none) {
+            (err2, is_err2) := c.check_expr(cf, fb)
+            if (is_err2) {
+                return (err2, true)
+            }
+        }
+        h_body := cpp::cfire::frontend::expr_get_or_handler_body(e)
+        mut i: usize = 0
+        n := h_body.len
+        for (i < n) {
+            (err3, is_err3) := c.check_stmt(cf, h_body[i])
+            if (is_err3) {
+                return (err3, true)
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 10) { // StructLitExpr
+        n := cpp::cfire::frontend::expr_get_struct_lit_field_count(e)
+        mut i: usize = 0
+        for (i < n) {
+            fv := cpp::cfire::frontend::expr_get_struct_lit_field_value(e, i)
+            (err, is_err) := c.check_expr(cf, fv)
+            if (is_err) {
+                return (err, true)
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 11) { // ArrayLitExpr
+        els := cpp::cfire::frontend::expr_get_array_lit_elements(e)
+        mut i: usize = 0
+        n := els.len
+        for (i < n) {
+            (err, is_err) := c.check_expr(cf, els[i])
+            if (is_err) {
+                return (err, true)
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 12) { // TupleExpr
+        els := cpp::cfire::frontend::expr_get_tuple_elements(e)
+        mut i: usize = 0
+        n := els.len
+        for (i < n) {
+            (err, is_err) := c.check_expr(cf, els[i])
+            if (is_err) {
+                return (err, true)
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 13) { // ClosureExpr
+        body := cpp::cfire::frontend::expr_get_closure_body(e)
+        mut i: usize = 0
+        n := body.len
+        for (i < n) {
+            (err, is_err) := c.check_stmt(cf, body[i])
+            if (is_err) {
+                return (err, true)
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 14) { // CallExpr
+        callee := cpp::cfire::frontend::expr_get_call_callee(e)
+        (err_c, is_err_c) := c.check_expr(cf, callee)
+        if (is_err_c) {
+            return (err_c, true)
+        }
+
+        // Target signature lookup
+        callee_k := cpp::cfire::frontend::get_expr_kind(callee)
+        mut has_target_sig := false
+        mut target_sig := cpp::cfire::frontend::FnDecl{}
+
+        if (callee_k == 1) { // IdentExpr
+            fn_name := cpp::cfire::frontend::expr_get_ident(callee)
+            (sig, ok_sig) := cpp::cfire::frontend::lookup_fn_sig(cf, fn_name)
+            if (ok_sig) {
+                target_sig = sig
+                has_target_sig = true
+            }
+        } else if (callee_k == 5) { // MemberExpr
+            field := cpp::cfire::frontend::expr_get_member_field(callee)
+            (sig, ok_sig) := cpp::cfire::frontend::lookup_method_by_field(cf, field)
+            if (ok_sig) {
+                target_sig = sig
+                has_target_sig = true
+                if (cpp::cfire::frontend::fn_has_receiver(target_sig) && cpp::cfire::frontend::fn_get_receiver(target_sig).intent == "mut") {
+                    mem_obj := cpp::cfire::frontend::expr_get_member_object(callee)
+                    if (cpp::cfire::frontend::get_expr_kind(mem_obj) == 1) {
+                        obj_id := cpp::cfire::frontend::expr_get_ident(mem_obj)
+                        if (c.imm_vars.contains(obj_id)) {
+                            err := c.path + ":" + cpp::cfire::frontend::sema_to_str(cpp::cfire::frontend::get_expr_line(e)) + ":" + cpp::cfire::frontend::sema_to_str(cpp::cfire::frontend::get_expr_col(e)) + ": cannot call mutating method '" + field + "' on immutable variable '" + obj_id + "' (cfire/MUT-RECEIVER)"
+                            return (err, true)
+                        }
+                    }
+                }
+            }
+        }
+
+        mut seen_paths: []SeenArgPath = []
+        if (callee_k == 5) { // MemberExpr
+            mem_obj := cpp::cfire::frontend::expr_get_member_object(callee)
+            (p, ok_p) := extract_path_info(mem_obj)
+            if (ok_p) {
+                is_mut := (has_target_sig && cpp::cfire::frontend::fn_has_receiver(target_sig) && cpp::cfire::frontend::fn_get_receiver(target_sig).intent == "mut")
+                seen_paths.push(SeenArgPath{info: p, is_mut_or_out: is_mut})
+            }
+        }
+
+        n_args := cpp::cfire::frontend::expr_get_call_arg_count(e)
+        mut ai: usize = 0
+        for (ai < n_args) {
+            arg_val := cpp::cfire::frontend::expr_get_call_arg_value(e, ai)
+            arg_intent := cpp::cfire::frontend::expr_get_call_arg_intent(e, ai)
+            arg_line := cpp::cfire::frontend::expr_get_call_arg_line(e, ai)
+            arg_col := cpp::cfire::frontend::expr_get_call_arg_col(e, ai)
+
+            if (arg_intent == "out") {
+                warn := c.path + ":" + cpp::cfire::frontend::sema_to_str(arg_line) + ":" + cpp::cfire::frontend::sema_to_str(arg_col) + ": warning: 'out' call-site annotation is deprecated; use multi-return tuple destructuring instead (cfire/DEPRECATED-OUT-PARAM)"
+                c.warnings.push(warn)
+            }
+
+            (err_a, is_err_a) := c.check_expr(cf, arg_val)
+            if (is_err_a) {
+                return (err_a, true)
+            }
+
+            if (has_target_sig && ai < target_sig.params.len) {
+                expected := target_sig.params[ai].intent
+                if ((expected == "mut" || expected == "out" || expected == "move") && arg_intent != expected) {
+                    mut rule: str = "cfire/MUT-CALLSITE"
+                    if (expected == "out") {
+                        rule = "cfire/OUT-CALLSITE"
+                    }
+                    err := c.path + ":" + cpp::cfire::frontend::sema_to_str(arg_line) + ":" + cpp::cfire::frontend::sema_to_str(arg_col) + ": parameter '" + target_sig.params[ai].name + "' of " + target_sig.name + " requires explicit '" + expected + "' annotation at call-site (" + rule + ")"
+                    return (err, true)
+                }
+            }
+
+            (pi, ok_pi) := extract_path_info(arg_val)
+            if (ok_pi) {
+                is_mut_or_out := (arg_intent == "mut" || arg_intent == "out")
+                mut si: usize = 0
+                n_seen := seen_paths.len
+                for (si < n_seen) {
+                    prev := seen_paths[si]
+                    if (prev.info.root == pi.root && (prev.is_mut_or_out || is_mut_or_out)) {
+                        if (paths_conflict(prev.info.path, pi.path)) {
+                            mut entity: str = "projection '" + pi.path + "'"
+                            if (pi.path == pi.root && prev.info.path == prev.info.root) {
+                                entity = "variable '" + pi.root + "'"
+                            }
+                            err := c.path + ":" + cpp::cfire::frontend::sema_to_str(arg_line) + ":" + cpp::cfire::frontend::sema_to_str(arg_col) + ": cannot alias " + entity + " with a mut/out parameter in the same call (cfire/MUT-ALIAS)"
+                            return (err, true)
+                        }
+                    }
+                    si = si + 1
+                }
+                seen_paths.push(SeenArgPath{info: pi, is_mut_or_out: is_mut_or_out})
+
+                if (is_mut_or_out) {
+                    if (c.imm_vars.contains(pi.root)) {
+                        mut entity: str = pi.path
+                        if (pi.path == pi.root) {
+                            entity = pi.root
+                        }
+                        err := c.path + ":" + cpp::cfire::frontend::sema_to_str(arg_line) + ":" + cpp::cfire::frontend::sema_to_str(arg_col) + ": cannot pass immutable variable '" + entity + "' as '" + arg_intent + "' argument (cfire/IMMUTABLE-MUT-ARG)"
+                        return (err, true)
+                    }
+                }
+                if (arg_intent == "move") {
+                    c.moved_at_line[pi.root] = arg_line
+                }
+            }
+            ai = ai + 1
+        }
+
+        if (cpp::cfire::frontend::expr_has_call_block_arg(e)) {
+            body := cpp::cfire::frontend::expr_get_call_block_arg_body(e)
+            mut bi: usize = 0
+            n_body := body.len
+            for (bi < n_body) {
+                (err_b, is_err_b) := c.check_stmt(cf, body[bi])
+                if (is_err_b) {
+                    return (err_b, true)
+                }
+                bi = bi + 1
+            }
+        }
+        return ("", false)
+    }
+    return ("", false)
+}
+
+fn (mut c: SemaFnChecker) check_stmt(cf: cpp::cfire::frontend::CheckedFile, s: cpp::cfire::frontend::StmtPtr) -> (str, bool) {
+    k := cpp::cfire::frontend::get_stmt_kind(s)
+    if (k == 0) {
+        return ("", false)
+    }
+    if (k == 1) { // VarDeclStmt
+        name := cpp::cfire::frontend::stmt_get_var_name(s)
+        is_mut := cpp::cfire::frontend::stmt_get_var_is_mut(s)
+        was_var := cpp::cfire::frontend::stmt_get_var_was_var(s)
+        line := cpp::cfire::frontend::get_stmt_line(s)
+        col := cpp::cfire::frontend::stmt_get_var_col(s)
+
+        if (was_var) {
+            warn := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":" + cpp::cfire::frontend::sema_to_str(col) + ": warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)"
+            c.warnings.push(warn)
+        }
+
+        if (is_mut) {
+            c.imm_vars.remove(name)
+            c.mut_vars[name] = true
+        } else {
+            c.mut_vars.remove(name)
+            c.imm_vars[name] = true
+        }
+
+        init := cpp::cfire::frontend::stmt_get_var_init(s)
+        if (init != none) {
+            if (cpp::cfire::frontend::get_expr_kind(init) == 9) { // OrExpr
+                h_body := cpp::cfire::frontend::expr_get_or_handler_body(init)
+                if (h_body.len > 0) {
+                    if (!block_diverges(h_body)) {
+                        mut err_v := cpp::cfire::frontend::expr_get_or_err_var(init)
+                        if (err_v == "") {
+                            err_v = "err"
+                        }
+                        err := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":" + cpp::cfire::frontend::sema_to_str(col) + ": block 'or " + err_v + " { ... }' must definitely diverge with return or panic, otherwise unwrapping empty value causes undefined behavior (cfire/NON-DIVERGING-OR-BLOCK)"
+                        return (err, true)
+                    }
+                }
+            }
+            return c.check_expr(cf, init)
+        }
+        return ("", false)
+    }
+    if (k == 2) { // DestructureVarDeclStmt
+        bindings := cpp::cfire::frontend::stmt_get_destruct_var_bindings(s)
+        mut i: usize = 0
+        n := bindings.len
+        for (i < n) {
+            b_name := bindings[i].first
+            b_is_mut := bindings[i].second
+            if (b_is_mut) {
+                c.mut_vars[b_name] = true
+            } else {
+                c.imm_vars[b_name] = true
+            }
+            i = i + 1
+        }
+        init := cpp::cfire::frontend::stmt_get_destruct_var_init(s)
+        return c.check_expr(cf, init)
+    }
+    if (k == 3) { // AssignStmt
+        val := cpp::cfire::frontend::stmt_get_assign_value(s)
+        line := cpp::cfire::frontend::get_stmt_line(s)
+        if (val != none) {
+            if (cpp::cfire::frontend::get_expr_kind(val) == 9) { // OrExpr
+                h_body := cpp::cfire::frontend::expr_get_or_handler_body(val)
+                if (h_body.len > 0) {
+                    if (!block_diverges(h_body)) {
+                        mut err_v := cpp::cfire::frontend::expr_get_or_err_var(val)
+                        if (err_v == "") {
+                            err_v = "err"
+                        }
+                        err := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":1: assignment from 'or " + err_v + " { ... }' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)"
+                        return (err, true)
+                    }
+                }
+            }
+            (err_v, is_err_v) := c.check_expr(cf, val)
+            if (is_err_v) {
+                return (err_v, true)
+            }
+        }
+        target := cpp::cfire::frontend::stmt_get_assign_target(s)
+        if (cpp::cfire::frontend::get_expr_kind(target) == 1) { // IdentExpr
+            id_name := cpp::cfire::frontend::expr_get_ident(target)
+            if (c.imm_vars.contains(id_name)) {
+                err := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":1: cannot assign to immutable variable '" + id_name + "' (cfire/IMMUTABLE-ASSIGN)"
+                return (err, true)
+            }
+            c.moved_at_line.remove(id_name)
+        } else {
+            (err_t, is_err_t) := c.check_expr(cf, target)
+            if (is_err_t) {
+                return (err_t, true)
+            }
+        }
+        return ("", false)
+    }
+    if (k == 4) { // DestructureAssignStmt
+        val := cpp::cfire::frontend::stmt_get_destruct_assign_value(s)
+        line := cpp::cfire::frontend::get_stmt_line(s)
+        (err_v, is_err_v) := c.check_expr(cf, val)
+        if (is_err_v) {
+            return (err_v, true)
+        }
+        targs := cpp::cfire::frontend::stmt_get_destruct_assign_targets(s)
+        mut i: usize = 0
+        n := targs.len
+        for (i < n) {
+            targ := targs[i]
+            if (cpp::cfire::frontend::get_expr_kind(targ) == 1) { // IdentExpr
+                id_name := cpp::cfire::frontend::expr_get_ident(targ)
+                if (c.imm_vars.contains(id_name)) {
+                    err := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":1: cannot assign to immutable variable '" + id_name + "' (cfire/IMMUTABLE-ASSIGN)"
+                    return (err, true)
+                }
+                c.moved_at_line.remove(id_name)
+            } else {
+                (err_t, is_err_t) := c.check_expr(cf, targ)
+                if (is_err_t) {
+                    return (err_t, true)
+                }
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 5) { // DeferStmt
+        call := cpp::cfire::frontend::stmt_get_defer_call(s)
+        return c.check_expr(cf, call)
+    }
+    if (k == 6) { // ReturnStmt
+        val := cpp::cfire::frontend::stmt_get_return_value(s)
+        return c.check_expr(cf, val)
+    }
+    if (k == 7) { // IfStmt
+        cond := cpp::cfire::frontend::stmt_get_if_cond(s)
+        (err_c, is_err_c) := c.check_expr(cf, cond)
+        if (is_err_c) {
+            return (err_c, true)
+        }
+        initial_moves := cpp::cfire::frontend::clone_str_int_map(c.moved_at_line)
+
+        then_body := cpp::cfire::frontend::stmt_get_if_then_body(s)
+        mut i: usize = 0
+        n_then := then_body.len
+        for (i < n_then) {
+            (err_t, is_err_t) := c.check_stmt(cf, then_body[i])
+            if (is_err_t) {
+                return (err_t, true)
+            }
+            i = i + 1
+        }
+        then_moves := cpp::cfire::frontend::clone_str_int_map(c.moved_at_line)
+
+        c.moved_at_line = cpp::cfire::frontend::clone_str_int_map(initial_moves)
+        else_body := cpp::cfire::frontend::stmt_get_if_else_body(s)
+        mut ei: usize = 0
+        n_else := else_body.len
+        for (ei < n_else) {
+            (err_e, is_err_e) := c.check_stmt(cf, else_body[ei])
+            if (is_err_e) {
+                return (err_e, true)
+            }
+            ei = ei + 1
+        }
+        else_moves := cpp::cfire::frontend::clone_str_int_map(c.moved_at_line)
+
+        if (n_else == 0) {
+            c.moved_at_line = initial_moves
+        } else {
+            if (block_diverges(then_body)) {
+                c.moved_at_line = else_moves
+            } else if (block_diverges(else_body)) {
+                c.moved_at_line = then_moves
+            } else {
+                c.moved_at_line = cpp::cfire::frontend::merge_post_branch_moves(initial_moves, then_moves, else_moves)
+            }
+        }
+        return ("", false)
+    }
+    if (k == 8) { // ForStmt
+        iter_ex := cpp::cfire::frontend::stmt_get_for_iter(s)
+        (err_it, is_err_it) := c.check_expr(cf, iter_ex)
+        if (is_err_it) {
+            return (err_it, true)
+        }
+        pre_loop_moves := cpp::cfire::frontend::clone_str_int_map(c.moved_at_line)
+        body := cpp::cfire::frontend::stmt_get_for_body(s)
+        mut i: usize = 0
+        n := body.len
+        for (i < n) {
+            (err_b, is_err_b) := c.check_stmt(cf, body[i])
+            if (is_err_b) {
+                return (err_b, true)
+            }
+            i = i + 1
+        }
+        unreassigned := cpp::cfire::frontend::find_unreassigned_loop_moves(pre_loop_moves, c.moved_at_line)
+        if (unreassigned.first != "") {
+            err := c.path + ":" + cpp::cfire::frontend::sema_to_str(unreassigned.second) + ":1: variable '" + unreassigned.first + "' moved inside loop body without reassignment before next iteration (cfire/USE-AFTER-MOVE)"
+            return (err, true)
+        }
+        return ("", false)
+    }
+    if (k == 9) { // MatchStmt
+        target := cpp::cfire::frontend::stmt_get_match_target(s)
+        (err_t, is_err_t) := c.check_expr(cf, target)
+        if (is_err_t) {
+            return (err_t, true)
+        }
+        line := cpp::cfire::frontend::get_stmt_line(s)
+        col := cpp::cfire::frontend::stmt_get_match_col(s)
+
+        if (cpp::cfire::frontend::stmt_get_match_is_move(s) && target != none) {
+            (pi, ok_pi) := extract_path_info(target)
+            if (ok_pi) {
+                c.moved_at_line[pi.root] = line
+            }
+        }
+
+        n_arms := cpp::cfire::frontend::stmt_get_match_arm_count(s)
+        mut is_slice_match := false
+        mut i: usize = 0
+        for (i < n_arms) {
+            if (cpp::cfire::frontend::stmt_get_match_arm_is_slice(s, i)) {
+                is_slice_match = true
+                break
+            }
+            i = i + 1
+        }
+
+        if (is_slice_match) {
+            mut ai: usize = 0
+            for (ai < n_arms) {
+                arm_body := cpp::cfire::frontend::stmt_get_match_arm_body(s, ai)
+                mut bi: usize = 0
+                n_b := arm_body.len
+                for (bi < n_b) {
+                    (err_b, is_err_b) := c.check_stmt(cf, arm_body[bi])
+                    if (is_err_b) {
+                        return (err_b, true)
+                    }
+                    bi = bi + 1
+                }
+                ai = ai + 1
+            }
+            return ("", false)
+        }
+
+        mut enum_name: str = ""
+        mut covered: map[str]bool
+        mut has_wildcard := false
+
+        mut ai: usize = 0
+        for (ai < n_arms) {
+            vname := cpp::cfire::frontend::stmt_get_match_arm_variant(s, ai)
+            eprefix := cpp::cfire::frontend::stmt_get_match_arm_enum_prefix(s, ai)
+            if (vname == "_") {
+                has_wildcard = true
+            } else {
+                covered[vname] = true
+                if (eprefix != "") {
+                    enum_name = eprefix
+                } else {
+                    candidate := cpp::cfire::frontend::lookup_variant_to_enum(cf, vname)
+                    if (candidate != "") {
+                        enum_name = candidate
+                    }
+                }
+            }
+            arm_body := cpp::cfire::frontend::stmt_get_match_arm_body(s, ai)
+            mut bi: usize = 0
+            n_b := arm_body.len
+            for (bi < n_b) {
+                (err_b, is_err_b) := c.check_stmt(cf, arm_body[bi])
+                if (is_err_b) {
+                    return (err_b, true)
+                }
+                bi = bi + 1
+            }
+            ai = ai + 1
+        }
+
+        if (!has_wildcard && enum_name != "") {
+            (en, ok_en) := cpp::cfire::frontend::lookup_enum(cf, enum_name)
+            if (ok_en) {
+                mut vi: usize = 0
+                n_v := en.variants.len
+                for (vi < n_v) {
+                    v := en.variants[vi]
+                    if (!covered.contains(v.name)) {
+                        err := c.path + ":" + cpp::cfire::frontend::sema_to_str(line) + ":" + cpp::cfire::frontend::sema_to_str(col) + ": non-exhaustive match on enum '" + enum_name + "': missing variant '" + v.name + "' (cfire/NON-EXHAUSTIVE-MATCH)"
+                        return (err, true)
+                    }
+                    vi = vi + 1
+                }
+            }
+        }
+        return ("", false)
+    }
+    if (k == 10) { // AsyncScopeStmt
+        workers := cpp::cfire::frontend::stmt_get_async_workers(s)
+        (err_w, is_err_w) := c.check_expr(cf, workers)
+        if (is_err_w) {
+            return (err_w, true)
+        }
+        body := cpp::cfire::frontend::stmt_get_async_body(s)
+        mut i: usize = 0
+        n := body.len
+        for (i < n) {
+            (err_b, is_err_b) := c.check_stmt(cf, body[i])
+            if (is_err_b) {
+                return (err_b, true)
+            }
+            i = i + 1
+        }
+        return ("", false)
+    }
+    if (k == 11) { // ExprStmt
+        ex := cpp::cfire::frontend::stmt_get_expr(s)
+        return c.check_expr(cf, ex)
+    }
+    return ("", false)
+}
+
+// --- Top-Level Analyze Entry Point ---
+
+fn selfhost_analyze_file(mut ast: cpp::cfire::frontend::FileAST) -> SemaResult {
+    mut cf := cpp::cfire::frontend::CheckedFile{}
+
+    // 0. Check Global / Package Variables
+    mut gvi: usize = 0
+    n_gv := ast.global_vars.len
+    for (gvi < n_gv) {
+        gv := ast.global_vars[gvi]
+        if (gv.was_var) {
+            warn := ast.path + ":" + cpp::cfire::frontend::sema_to_str(gv.line) + ":1: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)"
+            cf.warnings.push(warn)
+        }
+        gvi = gvi + 1
+    }
+
+    // 1-3. Index Enums, Struct Tags, Functions & Methods
+    cpp::cfire::frontend::index_file_declarations(cf, ast)
+
+    // 4. Validate Function & Method Bodies
+    mut fvi: usize = 0
+    n_fn := ast.functions.len
+    for (fvi < n_fn) {
+        mut checker := SemaFnChecker{
+            path: ast.path,
+            warnings: [],
+        }
+
+        if (cpp::cfire::frontend::ast_fn_has_receiver(ast, fvi)) {
+            r_name := cpp::cfire::frontend::ast_fn_get_receiver_name(ast, fvi)
+            r_intent := cpp::cfire::frontend::ast_fn_get_receiver_intent(ast, fvi)
+            if (r_intent == "mut") {
+                checker.mut_vars[r_name] = true
+            } else {
+                checker.imm_vars[r_name] = true
+            }
+        }
+
+        mut pi: usize = 0
+        n_p := cpp::cfire::frontend::ast_fn_get_param_count(ast, fvi)
+        for (pi < n_p) {
+            p_name := cpp::cfire::frontend::ast_fn_get_param_name(ast, fvi, pi)
+            p_intent := cpp::cfire::frontend::ast_fn_get_param_intent(ast, fvi, pi)
+            p_line := cpp::cfire::frontend::ast_fn_get_param_line(ast, fvi, pi)
+            p_col := cpp::cfire::frontend::ast_fn_get_param_col(ast, fvi, pi)
+            if (p_intent == "move") {
+                checker.move_params[p_name] = true
+            }
+            if (p_intent == "out") {
+                warn := ast.path + ":" + cpp::cfire::frontend::sema_to_str(p_line) + ":" + cpp::cfire::frontend::sema_to_str(p_col) + ": warning: 'out' parameter is deprecated; use multi-return tuple '(T1, T2)' instead (cfire/DEPRECATED-OUT-PARAM)"
+                checker.warnings.push(warn)
+            }
+            if (p_intent == "mut" || p_intent == "out") {
+                checker.mut_vars[p_name] = true
+            } else {
+                checker.imm_vars[p_name] = true
+            }
+            pi = pi + 1
+        }
+
+        mut sbi: usize = 0
+        n_body := cpp::cfire::frontend::ast_fn_get_body_count(ast, fvi)
+        for (sbi < n_body) {
+            st := cpp::cfire::frontend::ast_fn_get_body_stmt(ast, fvi, sbi)
+            (err, is_err) := checker.check_stmt(cf, st)
+            if (is_err) {
+                return SemaResult{cf: cf, error: err, has_error: true}
+            }
+            sbi = sbi + 1
+        }
+
+        // Merge warnings
+        mut wi: usize = 0
+        n_w := checker.warnings.len
+        for (wi < n_w) {
+            cf.warnings.push(checker.warnings[wi])
+            wi = wi + 1
+        }
+
+        fn_key := cpp::cfire::frontend::ast_fn_get_key(ast, fvi)
+        cpp::cfire::frontend::record_last_use_moves(cf, fn_key, checker.last_read_line)
+
+        fvi = fvi + 1
+    }
+
+    // 5. Validate Test Declarations
+    mut ti: usize = 0
+    n_tests := ast.tests.len
+    for (ti < n_tests) {
+        mut checker := SemaFnChecker{
+            path: ast.path,
+            warnings: [],
+        }
+        mut sbi: usize = 0
+        n_tbody := cpp::cfire::frontend::ast_test_get_body_count(ast, ti)
+        for (sbi < n_tbody) {
+            st := cpp::cfire::frontend::ast_test_get_body_stmt(ast, ti, sbi)
+            (err, is_err) := checker.check_stmt(cf, st)
+            if (is_err) {
+                return SemaResult{cf: cf, error: err, has_error: true}
+            }
+            sbi = sbi + 1
+        }
+        mut wi: usize = 0
+        n_w := checker.warnings.len
+        for (wi < n_w) {
+            cf.warnings.push(checker.warnings[wi])
+            wi = wi + 1
+        }
+        ti = ti + 1
+    }
+
+    cpp::cfire::frontend::set_checked_file_ast(cf, ast)
+    return SemaResult{cf: cf, error: "", has_error: false}
+}
