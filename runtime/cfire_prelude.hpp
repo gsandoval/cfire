@@ -177,6 +177,25 @@ public:
         return std::nullopt;
     }
 
+    template <typename KeyArg>
+    auto erase(const KeyArg& k) -> std::size_t {
+        if constexpr (std::is_same_v<K, std::string> && std::is_convertible_v<KeyArg, std::string_view>) {
+            std::string_view sv(k);
+            if (auto it = map_.find(sv); it != map_.end()) {
+                map_.erase(it);
+                return 1;
+            }
+            return 0;
+        } else {
+            return map_.erase(k);
+        }
+    }
+
+    template <typename KeyArg>
+    auto remove(const KeyArg& k) -> std::size_t {
+        return erase(k);
+    }
+
     [[nodiscard]] auto size() const noexcept -> std::size_t { return map_.size(); }
     [[nodiscard]] auto empty() const noexcept -> bool { return map_.empty(); }
     auto begin() noexcept { return map_.begin(); }
