@@ -20,7 +20,7 @@ gantt
     ARCH-04 Arena Memory Allocator for AST Nodes  :p2_2, after p2_1, 5d
     section Phase 3 (P2: Compiler Consolidation)
     ARCH-05 Deprecate C++ Fallback Headers       :p3_1, after p2_2, 4d
-    ARCH-06 Invert Guide Documentation Pipeline   :p3_2, after p3_1, 3d
+    ARCH-06 Invert Guide Documentation Pipeline   :done, p3_2, after p3_1, 3d
 ```
 
 ---
@@ -182,7 +182,7 @@ gantt
 
 ---
 
-### `ARCH-06`: Invert Guide Documentation Pipeline
+### `ARCH-06`: Invert Guide Documentation Pipeline `[COMPLETED]`\n- **Status**: Completed (2026-10-20)
 - **Priority**: P2
 - **Category**: Documentation Engineering / Content Management
 - **Target Files**:
@@ -212,4 +212,4 @@ gantt
 | `ARCH-03` | Tests / Decomposed Suite | Medium | 2–3 days | Medium | Phase 2 (P1) |
 | `ARCH-04` | Parser / AST Arena Allocator | High | 4–5 days | High | Phase 2 (P1) |
 | `ARCH-05` | Frontend / Deprecate C++ | Medium | 3–4 days | High | Phase 3 (P2) |
-| `ARCH-06` | Docgen / Invert Guide Pipeline | Low | 2–3 days | Medium | Phase 3 (P2) |
+| `ARCH-06` | Docgen / Invert Guide Pipeline | Low | 2–3 days | Medium | Phase 3 (P2) `[COMPLETED]` |
