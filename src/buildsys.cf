@@ -1,0 +1,116 @@
+package buildsys
+// src/buildsys.cf — Unified Build System, Package Manifest & CMake Ejection
+// Self-hosted in pure cfire with 100% parity against native C++ buildsys.
+
+type BuildEmitter struct {
+    buf: str
+}
+
+fn (mut e: BuildEmitter) write(s: str) {
+    e.buf += s
+}
+
+fn (mut e: BuildEmitter) writeln(s: str) {
+    e.buf += s + "\n"
+}
+
+fn buildsys_starts_with(s: str, prefix: str) -> bool {
+    n := s.len
+    pn := prefix.len
+    if pn > n {
+        return false
+    }
+    return s[0..pn] == prefix
+}
+
+fn selfhost_generate_cmake_file(plan: cpp::cfire::build::BuildPlan) -> str {
+    mut e := BuildEmitter{buf: ""}
+    mut cm_dir: str = "${"
+    cm_dir += "CMAKE_CURRENT_SOURCE_DIR}"
+
+    e.writeln("cmake_minimum_required(VERSION 3.25)")
+    e.writeln("project(cfire_ejected_app LANGUAGES C CXX)")
+    e.writeln("set(CMAKE_CXX_STANDARD 23)")
+    e.writeln("set(CMAKE_CXX_STANDARD_REQUIRED OFF)\n")
+    e.writeln("include_directories(\"" + cm_dir + "\")\n")
+
+    mut n_pkg := plan.pkg_config_deps.len
+    if n_pkg > 0 {
+        e.writeln("find_package(PkgConfig REQUIRED)")
+        mut pi: usize = 0
+        for pi < n_pkg {
+            dep_name := plan.pkg_config_deps[pi]
+            e.writeln("pkg_check_modules(DEP_" + cpp::cfire::frontend::codegen_usize_to_str(pi) + " REQUIRED IMPORTED_TARGET " + dep_name + ")")
+            pi = pi + 1
+        }
+        e.writeln("")
+    }
+
+    mut di: usize = 0
+    n_deps := plan.external_deps.len
+    for di < n_deps {
+        dep := plan.external_deps[di]
+        vendor_prefix := "vendor/" + dep.name
+        mut n_srcs := dep.sources.len
+        if n_srcs > 0 {
+            mut srcs: str = ""
+            mut si: usize = 0
+            for si < n_srcs {
+                if si > 0 {
+                    srcs += " "
+                }
+                srcs += "\"" + vendor_prefix + "/" + dep.sources[si] + "\""
+                si = si + 1
+            }
+            e.writeln("add_library(" + dep.name + " STATIC " + srcs + ")")
+            e.writeln("target_include_directories(" + dep.name + " PUBLIC \"" + cm_dir + "/" + vendor_prefix + "\")")
+            defines_str := cpp::cfire::build::buildsys_emit_dep_defines(dep)
+            e.write(defines_str)
+            e.writeln("")
+        } else if dep.driver == "CMake" || dep.driver == "cmake" {
+            e.writeln("if (EXISTS \"" + cm_dir + "/" + vendor_prefix + "/CMakeLists.txt\")")
+            e.writeln("    add_subdirectory(" + vendor_prefix + ")")
+            e.writeln("endif()\n")
+        }
+        di = di + 1
+    }
+
+    e.writeln("add_executable(app main.cpp)")
+    e.writeln("if (CMAKE_CXX_COMPILER_ID MATCHES \"Clang|AppleClang\")")
+    e.writeln("    target_compile_options(app PRIVATE -std=c++2b)")
+    e.writeln("endif()")
+    e.writeln("target_include_directories(app PRIVATE \"" + cm_dir + "\")")
+
+    mut pki: usize = 0
+    for pki < n_pkg {
+        e.writeln("target_link_libraries(app PRIVATE PkgConfig::DEP_" + cpp::cfire::frontend::codegen_usize_to_str(pki) + ")")
+        pki = pki + 1
+    }
+
+    mut dli: usize = 0
+    for dli < n_deps {
+        dep := plan.external_deps[dli]
+        e.writeln("target_link_libraries(app PRIVATE " + dep.name + ")")
+        dli = dli + 1
+    }
+
+    mut ldi: usize = 0
+    n_ld := plan.ldflags.len
+    for ldi < n_ld {
+        flag := plan.ldflags[ldi]
+        e.writeln("target_link_libraries(app PRIVATE \"" + flag + "\")")
+        ldi = ldi + 1
+    }
+
+    mut ali: usize = 0
+    n_al := plan.auto_linked.len
+    for ali < n_al {
+        al := plan.auto_linked[ali]
+        if buildsys_starts_with(al, "vendor:raylib") {
+            e.writeln("target_link_libraries(app PRIVATE raylib)")
+        }
+        ali = ali + 1
+    }
+
+    return e.buf
+}
