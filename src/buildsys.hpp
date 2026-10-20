@@ -1380,40 +1380,15 @@ inline auto resolve_external_dep_source(
     return plan;
 }
 
-[[nodiscard]] inline auto eject_cmake(
-    const std::filesystem::path& cf_file,
-    const std::filesystem::path& runtime_dir,
-    const std::filesystem::path& out_dir
-) -> std::expected<void, std::string> {
-    auto res = analyze_and_emit(cf_file, runtime_dir, true);
-    if (!res) return std::unexpected(res.error());
-    auto [cpp_code, plan] = std::move(*res);
-
-    std::filesystem::create_directories(out_dir);
-    {
-        std::ofstream out(out_dir / "main.cpp", std::ios::binary | std::ios::trunc);
-        out << cpp_code;
+[[nodiscard]] inline auto buildsys_emit_dep_defines(const ExternalDepSpec& dep) -> std::string {
+    std::string out;
+    for (const auto& [k, v] : dep.defines) {
+        out += std::format("target_compile_definitions({} PRIVATE {}={})\n", dep.name, k, v);
     }
-    for (const char* hdr : {"cfire_prelude.hpp", "cfire_core_stdlib.hpp"}) {
-        std::error_code ec;
-        std::filesystem::copy_file(runtime_dir / hdr, out_dir / hdr,
-            std::filesystem::copy_options::overwrite_existing, ec);
-    }
+    return out;
+}
 
-    std::filesystem::path cf_dir = std::filesystem::absolute(cf_file).parent_path();
-    for (const auto& dep : plan.external_deps) {
-        if (!dep.source.empty()) {
-            std::filesystem::path src_dir = dep.source.starts_with("/") ? std::filesystem::path(dep.source) : (cf_dir / dep.source);
-            if (std::filesystem::exists(src_dir)) {
-                std::filesystem::path dest_vendor = out_dir / "vendor" / dep.name;
-                std::error_code ec;
-                std::filesystem::create_directories(dest_vendor, ec);
-                std::filesystem::copy(src_dir, dest_vendor,
-                    std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
-            }
-        }
-    }
-
+[[nodiscard]] inline auto generate_cmake_content_cxx(const BuildPlan& plan) -> std::string {
     std::ostringstream cmake;
     cmake << "cmake_minimum_required(VERSION 3.25)\n";
     cmake << "project(cfire_ejected_app LANGUAGES C CXX)\n";
@@ -1466,9 +1441,64 @@ inline auto resolve_external_dep_source(
             cmake << "target_link_libraries(app PRIVATE raylib)\n";
         }
     }
+    return cmake.str();
+}
 
+} // namespace cfire::build
+
+#include "bootstrap/buildsys.generated.hpp"
+
+namespace cfire::build {
+
+[[nodiscard]] inline auto selfhost_generate_cmake(const BuildPlan& plan) -> std::string {
+    return ::selfhost_generate_cmake_file(plan);
+}
+
+[[nodiscard]] inline auto generate_cmake_content(const BuildPlan& plan) -> std::string {
+    const char* force_cxx = std::getenv("CFIRE_CXX_BUILDSYS");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return generate_cmake_content_cxx(plan);
+    }
+    return selfhost_generate_cmake(plan);
+}
+
+[[nodiscard]] inline auto eject_cmake(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    const std::filesystem::path& out_dir
+) -> std::expected<void, std::string> {
+    auto res = analyze_and_emit(cf_file, runtime_dir, true);
+    if (!res) return std::unexpected(res.error());
+    auto [cpp_code, plan] = std::move(*res);
+
+    std::filesystem::create_directories(out_dir);
+    {
+        std::ofstream out(out_dir / "main.cpp", std::ios::binary | std::ios::trunc);
+        out << cpp_code;
+    }
+    for (const char* hdr : {"cfire_prelude.hpp", "cfire_core_stdlib.hpp"}) {
+        std::error_code ec;
+        std::filesystem::copy_file(runtime_dir / hdr, out_dir / hdr,
+            std::filesystem::copy_options::overwrite_existing, ec);
+    }
+
+    std::filesystem::path cf_dir = std::filesystem::absolute(cf_file).parent_path();
+    for (const auto& dep : plan.external_deps) {
+        if (!dep.source.empty()) {
+            std::filesystem::path src_dir = dep.source.starts_with("/") ? std::filesystem::path(dep.source) : (cf_dir / dep.source);
+            if (std::filesystem::exists(src_dir)) {
+                std::filesystem::path dest_vendor = out_dir / "vendor" / dep.name;
+                std::error_code ec;
+                std::filesystem::create_directories(dest_vendor, ec);
+                std::filesystem::copy(src_dir, dest_vendor,
+                    std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+            }
+        }
+    }
+
+    std::string cmake_text = generate_cmake_content(plan);
     std::ofstream cm_out(out_dir / "CMakeLists.txt", std::ios::binary | std::ios::trunc);
-    cm_out << cmake.str();
+    cm_out << cmake_text;
     return {};
 }
 
