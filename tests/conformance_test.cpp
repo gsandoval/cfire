@@ -4,6 +4,7 @@
 #include "../src/docgen.hpp"
 #include "../src/formatter.hpp"
 #include "../src/lsp.hpp"
+#include "../src/main.hpp"
 #include "../src/refactor.hpp"
 #include "../runtime/cfire_core_stdlib.hpp"
 #include <cstdlib>
@@ -4325,6 +4326,103 @@ void test_selfhost_lsp_parity_and_benchmark([[maybe_unused]] const std::filesyst
     std::println("--- PASS: test_selfhost_lsp_parity_and_benchmark");
 }
 
+void test_selfhost_main_parity_and_benchmark(const std::filesystem::path& rt_dir) {
+    std::println("--- test_selfhost_main_parity_and_benchmark");
+
+    // 1. Exact string parity on usage and LLM doc
+    auto usage_cf = selfhost_get_usage();
+    require(usage_cf.starts_with("Usage: cfire <command>"), "selfhost_get_usage format");
+    require(usage_cf.find("run      <file.cf>") != std::string::npos, "selfhost_get_usage commands");
+
+    auto llm_doc_cf = selfhost_get_llm_doc();
+    require(llm_doc_cf.starts_with("# cfire Language Reference Sheet"), "selfhost_get_llm_doc format");
+    require(llm_doc_cf.find("core:crypto/sha256") != std::string::npos, "selfhost_get_llm_doc contents");
+
+    // 2. Exact wrap_eval_code parity across multiple code forms
+    std::vector<std::pair<std::string, bool>> eval_corpus = {
+        {"1 + 2 * 3", true},
+        {"mut x := 10\nx += 5\nprintln(\"x = {}\", x)", false},
+        {"import \"core:math\"\nfn dist(x: f64, y: f64) -> f64 { return math.sqrt(x*x + y*y) }\nprintln(\"dist={}\", dist(3.0, 4.0))", false},
+        {"package my_pkg\nfn main() { println(\"already packaged\") }", false},
+        {"type Point struct { x: i32, y: i32 }\npt := Point{x: 1, y: 2}\nprintln(\"pt.x={}\", pt.x)", false}
+    };
+
+    for (const auto& [code, expr_mode] : eval_corpus) {
+        auto wrapped_cxx = cfire::main_driver::wrap_eval_code_cxx(code, expr_mode);
+        auto wrapped_cf = selfhost_wrap_eval_code(code, expr_mode);
+        require(wrapped_cxx == wrapped_cf,
+            std::format("Eval code wrapping parity mismatch for: '{}'", code));
+    }
+
+    // 3. Exact refactor argument parsing parity
+    std::vector<std::string> args1 = {"cfire", "refactor", "rename", "src/foo.cf:10:5", "bar", "--diff"};
+    auto rf1 = selfhost_parse_refactor_args(args1);
+    require(rf1.valid, "rf1 valid");
+    require(rf1.action == "rename", "rf1 action");
+    require(rf1.target_file == "src/foo.cf", "rf1 target_file");
+    require(rf1.target_line == 10, "rf1 target_line");
+    require(rf1.target_col == 5, "rf1 target_col");
+    require(rf1.new_name == "bar", "rf1 new_name");
+    require(rf1.diff_mode, "rf1 diff_mode");
+
+    std::vector<std::string> args2 = {"cfire", "refactor", "rename", "--file", "src/bar.cf", "--line", "42", "--col", "8", "--to", "baz", "--apply", "--json"};
+    auto rf2 = selfhost_parse_refactor_args(args2);
+    require(rf2.valid, "rf2 valid");
+    require(rf2.target_file == "src/bar.cf", "rf2 target_file");
+    require(rf2.target_line == 42, "rf2 target_line");
+    require(rf2.target_col == 8, "rf2 target_col");
+    require(rf2.new_name == "baz", "rf2 new_name");
+    require(rf2.apply_mode, "rf2 apply_mode");
+    require(rf2.json_mode, "rf2 json_mode");
+
+    // 4. CLI driver dispatch execution parity
+    std::vector<std::string> args_doc = {"cfire", "doc", "--check"};
+    int rc_doc = selfhost_run_driver(args_doc, rt_dir.string());
+    require(rc_doc == 0, "selfhost_run_driver doc --check exit code 0");
+
+    std::vector<std::string> args_fmt = {"cfire", "fmt", "--check", "src/main.cf"};
+    int rc_fmt = selfhost_run_driver(args_fmt, rt_dir.string());
+    require(rc_fmt == 0, "selfhost_run_driver fmt --check src/main.cf exit code 0");
+
+    // 5. Benchmark wrap_eval_code throughput
+    std::string bench_code = "import \"core:math\"\nimport \"core:str\"\ntype Vector3 struct { x: f64, y: f64, z: f64 }\nfn norm(v: Vector3) -> f64 { return math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z) }\nv := Vector3{x: 1.0, y: 2.0, z: 2.0}\nprintln(\"norm: {}\", norm(v))\n";
+    constexpr std::size_t kIters = 25'000;
+    std::size_t total_bytes = bench_code.size() * kIters;
+
+    auto t0 = std::chrono::steady_clock::now();
+    for (std::size_t i = 0; i < kIters; ++i) {
+        auto r = cfire::main_driver::wrap_eval_code_cxx(bench_code, false);
+        (void)r;
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    double mbs_cxx = (static_cast<double>(total_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    auto t2 = std::chrono::steady_clock::now();
+    for (std::size_t i = 0; i < kIters; ++i) {
+        auto r = selfhost_wrap_eval_code(bench_code, false);
+        (void)r;
+    }
+    auto t3 = std::chrono::steady_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t3 - t2).count();
+    double mbs_cf = (static_cast<double>(total_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Main Driver Code Wrapper Throughput (Payload: {:.2f} MB, {} iters):",
+        static_cast<double>(total_bytes) / 1'000'000.0, kIters);
+    std::println("    - C++ Native Wrapper:         {:>7.2f} MB/s (avg {:.3f}µs/run)",
+        mbs_cxx, (ms_cxx * 1000.0) / kIters);
+    std::println("    - cfire Self-Hosted Driver:   {:>7.2f} MB/s (avg {:.3f}µs/run)",
+        mbs_cf, (ms_cf * 1000.0) / kIters);
+    std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted Main Driver performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_main_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -4359,6 +4457,7 @@ auto main() -> int {
     test_selfhost_codegen_parity_and_benchmark(rt_dir);
     test_selfhost_buildsys_parity_and_benchmark(rt_dir);
     test_selfhost_lsp_parity_and_benchmark(rt_dir);
+    test_selfhost_main_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
