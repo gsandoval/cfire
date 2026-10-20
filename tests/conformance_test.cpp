@@ -4231,6 +4231,100 @@ void test_selfhost_buildsys_parity_and_benchmark(const std::filesystem::path& rt
     std::println("--- PASS: test_selfhost_buildsys_parity_and_benchmark");
 }
 
+void test_selfhost_lsp_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_selfhost_lsp_parity_and_benchmark (Self-Hosted LSP Protocol Emitter Parity)");
+
+    // 1. JSON Escaping & Unescaping Parity
+    const std::vector<std::string> test_strings = {
+        "hello world",
+        "hello \"world\" with quotes",
+        "newlines\nand\r\ntabs\t",
+        "path/with/slashes and \\backslashes\\",
+        "{\"json\":\"nested\", \"array\": [1, 2, \"three\"]}",
+        "unicode chars: 🚀 sapphire fire",
+        ""
+    };
+
+    for (const auto& s : test_strings) {
+        std::string cxx_esc = cfire::lsp::detail::json_escape_cxx(s);
+        std::string sh_esc = ::lsp_json_escape(s);
+        require(cxx_esc == sh_esc, std::format("json_escape mismatch for '{}': '{}' vs '{}'", s, cxx_esc, sh_esc));
+
+        std::string cxx_unesc = cfire::lsp::detail::json_unescape_cxx(cxx_esc);
+        std::string sh_unesc = ::lsp_json_unescape(sh_esc);
+        require(cxx_unesc == sh_unesc, std::format("json_unescape mismatch for '{}'", s));
+    }
+
+    // 2. RPC Framing & Protocol Response Formatters Parity
+    std::string sample_body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"status\":\"ok\"}}";
+    std::string sh_frame = ::selfhost_make_rpc_frame(sample_body);
+    std::string expected_frame = std::format("Content-Length: {}\r\n\r\n{}", sample_body.size(), sample_body);
+    require(sh_frame == expected_frame, "make_rpc_frame parity mismatch");
+
+    std::string sh_hover = ::selfhost_format_hover_markdown("1", "# Header\nSome **markdown** documentation");
+    require(sh_hover.contains("markdown") && sh_hover.contains("Header"), "format_hover_markdown content check");
+
+    std::string sh_diag = ::selfhost_format_publish_diagnostics("file:///test.cf", "[]");
+    require(sh_diag.contains("textDocument/publishDiagnostics") && sh_diag.contains("file:///test.cf"), "format_publish_diagnostics check");
+
+    // 3. Dual-Engine Switch Verification (CFIRE_CXX_LSP)
+    {
+        ::setenv("CFIRE_CXX_LSP", "1", 1);
+        std::string esc_cxx = cfire::lsp::detail::json_escape("test \"123\"\n");
+        ::unsetenv("CFIRE_CXX_LSP");
+        std::string esc_sh = cfire::lsp::detail::json_escape("test \"123\"\n");
+        require(esc_cxx == esc_sh, "Dual-engine switch mismatch for json_escape");
+    }
+
+    // 4. Measurable Throughput Benchmark
+    constexpr std::size_t kIters = 50000;
+    std::size_t benchmark_payload_bytes = 0;
+    for (const auto& s : test_strings) benchmark_payload_bytes += s.size() * kIters;
+
+    // Benchmark Native C++ json_escape
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t cxx_chars = 0;
+    for (std::size_t iter = 0; iter < kIters; ++iter) {
+        for (const auto& s : test_strings) {
+            auto esc = cfire::lsp::detail::json_escape_cxx(s);
+            cxx_chars += esc.size();
+        }
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mbs_cxx = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire Self-Hosted json_escape
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t cf_chars = 0;
+    for (std::size_t iter = 0; iter < kIters; ++iter) {
+        for (const auto& s : test_strings) {
+            auto esc = ::lsp_json_escape(s);
+            cf_chars += esc.size();
+        }
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    require(cxx_chars == cf_chars, "Benchmark total escaped characters mismatch");
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] LSP Protocol Emitter Throughput (Payload: {:.2f} MB, {} strings x {} iters):",
+        static_cast<double>(benchmark_payload_bytes) / 1'000'000.0, test_strings.size(), kIters);
+    std::println("    - C++ Native Emitter:         {:>7.2f} MB/s (avg {:.3f}µs/run)",
+        mbs_cxx, (ms_cxx * 1000.0) / (kIters * test_strings.size()));
+    std::println("    - cfire Self-Hosted Engine:   {:>7.2f} MB/s (avg {:.3f}µs/run)",
+        mbs_cf, (ms_cf * 1000.0) / (kIters * test_strings.size()));
+    std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted LSP performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_lsp_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -4264,6 +4358,7 @@ auto main() -> int {
     test_selfhost_sema_parity_and_benchmark(rt_dir);
     test_selfhost_codegen_parity_and_benchmark(rt_dir);
     test_selfhost_buildsys_parity_and_benchmark(rt_dir);
+    test_selfhost_lsp_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);

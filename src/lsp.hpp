@@ -19,6 +19,7 @@
 #include "docgen.hpp"
 #include "formatter.hpp"
 #include "sema.hpp"
+#include "bootstrap/lsp.generated.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -45,7 +46,7 @@ namespace cfire::lsp {
 
 namespace detail {
 
-[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto json_escape_cxx(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size() + 16);
     for (char c : sv) {
@@ -61,7 +62,15 @@ namespace detail {
     return out;
 }
 
-[[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
+    const char* force_cxx = std::getenv("CFIRE_CXX_LSP");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return json_escape_cxx(sv);
+    }
+    return ::lsp_json_escape(std::string(sv));
+}
+
+[[nodiscard]] inline auto json_unescape_cxx(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size());
     for (std::size_t i = 0; i < sv.size(); ++i) {
@@ -81,6 +90,14 @@ namespace detail {
         }
     }
     return out;
+}
+
+[[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
+    const char* force_cxx = std::getenv("CFIRE_CXX_LSP");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return json_unescape_cxx(sv);
+    }
+    return ::lsp_json_unescape(std::string(sv));
 }
 
 [[nodiscard]] inline auto extract_json_string(std::string_view json, std::string_view key, std::size_t start_pos = 0)
@@ -1284,7 +1301,12 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
 }
 
 inline void write_rpc_message(std::ostream& out, std::string_view body) {
-    out << "Content-Length: " << body.size() << "\r\n\r\n" << body;
+    const char* force_cxx = std::getenv("CFIRE_CXX_LSP");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        out << "Content-Length: " << body.size() << "\r\n\r\n" << body;
+    } else {
+        out << ::selfhost_make_rpc_frame(std::string(body));
+    }
     out.flush();
 }
 
