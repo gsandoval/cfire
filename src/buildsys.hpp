@@ -5,6 +5,7 @@
 #include "codegen.hpp"
 #include "parser.hpp"
 #include "sema.hpp"
+#include "cfire_core_stdlib.hpp"
 #include <chrono>
 #include <expected>
 #include <filesystem>
@@ -514,15 +515,11 @@ inline auto fetch_archive(
         return std::unexpected(std::format("failed to download archive from '{}':\n{}", url, out));
     }
 
-    int sha_rc = 0;
-    std::string sha_out = bridge::run_command_capture(std::format("shasum -a 256 \"{}\"", tmp_archive.string()), sha_rc);
-    if (sha_rc != 0) {
-        sha_out = bridge::run_command_capture(std::format("sha256sum \"{}\"", tmp_archive.string()), sha_rc);
+    auto hash_res = cfire::sha256::hash_file_hex(tmp_archive);
+    if (!hash_res) {
+        return std::unexpected(hash_res.error());
     }
-    if (sha_rc == 0) {
-        std::istringstream iss(sha_out);
-        iss >> actual_sha256;
-    }
+    actual_sha256 = *hash_res;
 
     auto to_lower = [](std::string s) {
         for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
