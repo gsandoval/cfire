@@ -4,6 +4,7 @@
 #include "../src/docgen.hpp"
 #include "../src/formatter.hpp"
 #include "../src/lsp.hpp"
+#include "../src/refactor.hpp"
 #include "../runtime/cfire_core_stdlib.hpp"
 #include <cstdlib>
 #include <filesystem>
@@ -3496,6 +3497,131 @@ void test_selfhost_ast_parity_and_benchmark(const std::filesystem::path& rt_dir)
     std::println("--- PASS: test_selfhost_ast_parity_and_benchmark");
 }
 
+void test_selfhost_refactor_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_selfhost_refactor_parity_and_benchmark (Self-Hosted Refactoring Engine Dogfooding & Measurable Parity)");
+
+    // 1. Identifier Validation Parity
+    const std::vector<std::string> test_idents = {
+        "valid_identifier", "_leading_underscore", "CamelCaseName", "snake_case_name",
+        "var123", "alpha_beta_gamma", "x", "y", "z", "_0", "__init__",
+        // Keywords (must be invalid)
+        "package", "import", "cpp", "cplusplus", "as", "type", "struct", "enum", "interface",
+        "map", "fn", "async", "in", "mut", "out", "move", "var",
+        "if", "else", "for", "match", "defer", "return", "try", "or", "test",
+        "true", "false", "none", "nil", "null",
+        // Syntax invalid
+        "", "123num", "9bad", "hyphen-ident", "dot.ident", "space ident", "dollar$ident", "bang!"
+    };
+
+    for (const auto& id : test_idents) {
+        bool cxx_valid = cfire::refactor::is_valid_identifier_cxx(id);
+        bool cf_valid = cfire::refactor::is_valid_identifier(id);
+        require(cxx_valid == cf_valid,
+            std::format("is_valid_identifier parity mismatch for '{}': C++={} vs cfire={}", id, cxx_valid, cf_valid));
+    }
+    std::println("  [PASS] 100% identifier validation parity verified across {} candidates", test_idents.size());
+
+    // 2. Line Replacements Parity
+    std::string sample_source =
+        "package test\n"
+        "\n"
+        "fn calculate(old_val: i32, multiplier: i32) -> i32 {\n"
+        "    old_val_result := old_val * multiplier\n"
+        "    return old_val + old_val_result\n"
+        "}\n";
+
+    // Occurrences intentionally ordered non-descending to test sorting parity
+    std::vector<cfire::refactor::Occurrence> occs = {
+        {"test.cf", 3, 14, 21}, // line 3, col 14: old_val
+        {"test.cf", 5, 12, 19}, // line 5, col 12: old_val
+        {"test.cf", 4, 23, 30}, // line 4, col 23: old_val
+    };
+
+    std::string cxx_mod = cfire::refactor::apply_line_replacements_cxx(sample_source, occs, "new_val");
+    std::string cf_mod = cfire::refactor::apply_line_replacements(sample_source, occs, "new_val");
+
+    require(cxx_mod == cf_mod, "apply_line_replacements output mismatch between C++ and cfire");
+    require(cf_mod.contains("old_val_result := new_val * multiplier"), "Replacement did not substitute line 4 occurrence cleanly");
+    require(cf_mod.contains("return new_val + old_val_result"), "Replacement did not substitute line 5 occurrence cleanly");
+    std::println("  [PASS] 100% text replacement character parity verified without index drift");
+
+    // 3. Unified Diff Parity & JSON Serialization Parity
+    cfire::refactor::RenameResult res;
+    res.success = true;
+    res.old_name = "old_val";
+    res.new_name = "new_val";
+    res.total_occurrences = occs.size();
+
+    cfire::refactor::FileModification mod1;
+    mod1.file_path = "src/calc.cf";
+    mod1.original_content = sample_source;
+    mod1.modified_content = cf_mod;
+    mod1.occurrences = occs;
+    res.modifications.push_back(mod1);
+
+    std::string cxx_diff = cfire::refactor::generate_unified_diff_cxx(res);
+    std::string cf_diff = cfire::refactor::generate_unified_diff(res);
+    require(cxx_diff == cf_diff, "generate_unified_diff output mismatch between C++ and cfire");
+    std::println("  [PASS] 100% unified diff parity verified byte-for-byte");
+
+    std::string cxx_json = cfire::refactor::to_json_cxx(res);
+    std::string cf_json = cfire::refactor::to_json(res);
+    require(cxx_json == cf_json, "to_json output mismatch between C++ and cfire");
+
+    cfire::refactor::RenameResult err_res;
+    err_res.success = false;
+    err_res.error = "cfire/REFACTOR-COLLISION: symbol 'new_val' already exists in scope";
+    std::string cxx_err_json = cfire::refactor::to_json_cxx(err_res);
+    std::string cf_err_json = cfire::refactor::to_json(err_res);
+    require(cxx_err_json == cf_err_json, "to_json error output mismatch between C++ and cfire");
+    std::println("  [PASS] 100% JSON serialization parity verified byte-for-byte");
+
+    // 4. Performance Benchmark (apply_line_replacements)
+    constexpr int kIters = 20'000;
+    std::size_t payload_bytes = sample_source.size() * kIters;
+
+    // Benchmark C++
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t cxx_out_len = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto m = cfire::refactor::apply_line_replacements_cxx(sample_source, occs, "new_val");
+        cxx_out_len += m.size();
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mbs_cxx = (static_cast<double>(payload_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+    double ops_cxx = static_cast<double>(kIters) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire self-hosted
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t cf_out_len = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto m = cfire::refactor::apply_line_replacements(sample_source, occs, "new_val");
+        cf_out_len += m.size();
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (static_cast<double>(payload_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+    double ops_cf = static_cast<double>(kIters) / (ms_cf / 1000.0);
+
+    require(cxx_out_len == cf_out_len, "Benchmark output length mismatch");
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Refactor Replacement Benchmark (Payload: {:.2f} MB, {} iterations):",
+        static_cast<double>(payload_bytes) / 1'000'000.0, kIters);
+    std::println("    - C++ Native Engine:        {:>7.2f} MB/s ({:>7.0f} edits/s, avg {:.4f}µs/run)",
+        mbs_cxx, ops_cxx, (ms_cxx * 1000.0) / kIters);
+    std::println("    - cfire Self-Hosted Engine: {:>7.2f} MB/s ({:>7.0f} edits/s, avg {:.4f}µs/run)",
+        mbs_cf, ops_cf, (ms_cf * 1000.0) / kIters);
+    std::println("    - Performance Ratio:        {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted refactor engine performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_refactor_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3523,6 +3649,7 @@ auto main() -> int {
     test_selfhost_lexer_parity_and_benchmark(rt_dir);
     test_selfhost_formatter_parity_and_benchmark(rt_dir);
     test_selfhost_ast_parity_and_benchmark(rt_dir);
+    test_selfhost_refactor_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
