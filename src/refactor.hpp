@@ -2,6 +2,7 @@
 // src/refactor.hpp — Semantic CLI Renaming & Refactoring Engine for cfire (`cfire refactor rename`)
 
 #include "lsp.hpp"
+#include "bootstrap/refactor.generated.hpp"
 #include <algorithm>
 #include <cctype>
 #include <expected>
@@ -18,30 +19,11 @@
 
 namespace cfire::refactor {
 
-struct Occurrence {
-    std::string file_path;
-    int line{0};     // 1-indexed
-    int col{0};      // 1-indexed
-    int end_col{0};  // 1-indexed
-};
+using Occurrence = ::Occurrence;
+using FileModification = ::FileModification;
+using RenameResult = ::RenameResult;
 
-struct FileModification {
-    std::string file_path;
-    std::string original_content;
-    std::string modified_content;
-    std::vector<Occurrence> occurrences;
-};
-
-struct RenameResult {
-    bool success{false};
-    std::string old_name;
-    std::string new_name;
-    std::string error;
-    std::vector<FileModification> modifications;
-    std::size_t total_occurrences{0};
-};
-
-[[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
+[[nodiscard]] inline auto is_valid_identifier_cxx(std::string_view name) -> bool {
     if (name.empty()) return false;
     if (!std::isalpha(static_cast<unsigned char>(name[0])) && name[0] != '_') return false;
     for (char c : name) {
@@ -56,7 +38,67 @@ struct RenameResult {
     return !keywords.contains(name);
 }
 
-[[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
+[[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
+    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return is_valid_identifier_cxx(name);
+    }
+    return ::is_valid_identifier(name);
+}
+
+[[nodiscard]] inline auto apply_line_replacements_cxx(
+    std::string_view original_content,
+    std::vector<Occurrence> occs,
+    std::string_view new_name
+) -> std::string {
+    if (occs.empty()) return std::string(original_content);
+    auto file_lines = lsp::detail::split_lines(original_content);
+
+    // Sort occurrences descending by line and column so string replacements don't offset subsequent indices
+    std::sort(occs.begin(), occs.end(), [](const Occurrence& a, const Occurrence& b) {
+        if (a.line != b.line) return a.line > b.line;
+        return a.col > b.col;
+    });
+
+    for (const auto& occ : occs) {
+        if (occ.line > 0) {
+            std::size_t ln_idx = occ.line - 1;
+            if (ln_idx < file_lines.size()) {
+                std::string& cur_line = file_lines[ln_idx];
+                if (occ.col > 0 && occ.end_col >= occ.col) {
+                    std::size_t sc = occ.col - 1;
+                    std::size_t ec = occ.end_col - 1;
+                    if (sc <= cur_line.size() && ec <= cur_line.size()) {
+                        cur_line.replace(sc, ec - sc, new_name);
+                    }
+                }
+            }
+        }
+    }
+
+    std::string modded;
+    for (std::size_t li = 0; li < file_lines.size(); ++li) {
+        modded += file_lines[li];
+        if (li + 1 < file_lines.size() || original_content.ends_with("\n")) {
+            modded += "\n";
+        }
+    }
+    return modded;
+}
+
+[[nodiscard]] inline auto apply_line_replacements(
+    std::string_view original_content,
+    const std::vector<Occurrence>& occs,
+    std::string_view new_name
+) -> std::string {
+    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return apply_line_replacements_cxx(original_content, occs, new_name);
+    }
+    return ::apply_line_replacements(original_content, occs, new_name);
+}
+
+[[nodiscard]] inline auto generate_unified_diff_cxx(const RenameResult& res) -> std::string {
     std::string diff;
     for (const auto& mod : res.modifications) {
         auto orig_lines = lsp::detail::split_lines(mod.original_content);
@@ -97,7 +139,15 @@ struct RenameResult {
     return diff;
 }
 
-[[nodiscard]] inline auto to_json(const RenameResult& res) -> std::string {
+[[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
+    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return generate_unified_diff_cxx(res);
+    }
+    return ::generate_unified_diff(res);
+}
+
+[[nodiscard]] inline auto to_json_cxx(const RenameResult& res) -> std::string {
     if (!res.success) {
         return std::format(
             R"({{"success":false,"error":"{}"}})" "\n",
@@ -128,6 +178,14 @@ struct RenameResult {
     return out;
 }
 
+[[nodiscard]] inline auto to_json(const RenameResult& res) -> std::string {
+    const char* force_cxx = std::getenv("CFIRE_CXX_REFACTOR");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return to_json_cxx(res);
+    }
+    return ::to_json(res);
+}
+
 [[nodiscard]] inline auto plan_rename(
     const std::filesystem::path& target_file,
     int line_1,
@@ -137,7 +195,7 @@ struct RenameResult {
     RenameResult res;
     res.new_name = std::string(new_name);
 
-    if (!is_valid_identifier(new_name)) {
+    if (!cfire::refactor::is_valid_identifier(new_name)) {
         res.error = std::format("cfire/REFACTOR-INVALID-NAME: '{}' is not a valid non-keyword cfire identifier", new_name);
         return res;
     }
@@ -227,9 +285,9 @@ struct RenameResult {
         std::string path = lsp::detail::uri_to_path(occ.uri);
         Occurrence o;
         o.file_path = path;
-        o.line = occ.line + 1;
-        o.col = occ.start_col + 1;
-        o.end_col = occ.end_col + 1;
+        o.line = static_cast<std::size_t>(occ.line + 1);
+        o.col = static_cast<std::size_t>(occ.start_col + 1);
+        o.end_col = static_cast<std::size_t>(occ.end_col + 1);
         by_file[path].push_back(o);
         res.total_occurrences++;
     }
@@ -242,34 +300,7 @@ struct RenameResult {
         mod.file_path = path;
         mod.original_content = *file_raw;
         mod.occurrences = occs;
-
-        auto file_lines = lsp::detail::split_lines(*file_raw);
-        // Sort occurrences descending by line and column so string replacements don't offset subsequent indices
-        std::sort(occs.begin(), occs.end(), [](const Occurrence& a, const Occurrence& b) {
-            if (a.line != b.line) return a.line > b.line;
-            return a.col > b.col;
-        });
-
-        for (const auto& occ : occs) {
-            int ln_idx = occ.line - 1;
-            if (ln_idx >= 0 && static_cast<std::size_t>(ln_idx) < file_lines.size()) {
-                std::string& cur_line = file_lines[static_cast<std::size_t>(ln_idx)];
-                std::size_t sc = static_cast<std::size_t>(occ.col - 1);
-                std::size_t ec = static_cast<std::size_t>(occ.end_col - 1);
-                if (sc <= cur_line.size() && ec <= cur_line.size() && ec >= sc) {
-                    cur_line.replace(sc, ec - sc, res.new_name);
-                }
-            }
-        }
-
-        std::string modded;
-        for (std::size_t li = 0; li < file_lines.size(); ++li) {
-            modded += file_lines[li];
-            if (li + 1 < file_lines.size() || file_raw->ends_with("\n")) {
-                modded += "\n";
-            }
-        }
-        mod.modified_content = std::move(modded);
+        mod.modified_content = cfire::refactor::apply_line_replacements(*file_raw, occs, res.new_name);
         res.modifications.push_back(std::move(mod));
     }
 
