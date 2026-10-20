@@ -4027,6 +4027,119 @@ void test_selfhost_sema_parity_and_benchmark([[maybe_unused]] const std::filesys
     std::println("--- PASS: test_selfhost_sema_parity_and_benchmark");
 }
 
+void test_selfhost_codegen_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_selfhost_codegen_parity_and_benchmark (Self-Hosted Code Generator Dogfooding & Measurable Parity)");
+
+    const std::vector<std::string> corpus_files = {
+        "examples/01-hello-core/main.cf",
+        "examples/02-log-compressor/main.cf",
+        "examples/03-pkg-cache/main.cf",
+        "examples/04-async-workers/main.cf",
+        "examples/05-cmake-interop/main.cf",
+        "examples/06-raylib-viz/main.cf",
+        "examples/07-types-match-map/main.cf",
+        "examples/08-multi-pkg-cc-build/main.cf",
+        "examples/09-stdlib-test-pointers/main.cf",
+        "examples/10-cmake-and-make-deps/main.cf",
+        "examples/11-http-server-router/main.cf",
+        "src/lexer.cf",
+        "src/formatter.cf",
+        "src/ast.cf",
+        "src/refactor.cf",
+        "src/docgen.cf",
+        "src/parser.cf",
+        "src/sema.cf",
+        "src/codegen.cf"
+    };
+
+    std::size_t total_bytes = 0;
+    std::vector<std::pair<std::string, cfire::frontend::CheckedFile>> checked_files;
+    for (const auto& rel_path : corpus_files) {
+        std::ifstream ifs(rel_path);
+        require(ifs.is_open(), std::format("Failed to open corpus file '{}'", rel_path));
+        std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+        total_bytes += content.size();
+
+        auto ast = cfire::frontend::parse_source(rel_path, content);
+        require(ast.has_value(), std::format("Parser failed on codegen input '{}'", rel_path));
+        auto cf = cfire::frontend::analyze(std::move(*ast));
+        require(cf.has_value(), std::format("Sema failed on codegen input '{}'", rel_path));
+        checked_files.emplace_back(rel_path, std::move(*cf));
+    }
+
+    // 1. Corpus Conformance & Emitted C++ Parity across all corpus files
+    for (const auto& [path, cf] : checked_files) {
+        // Normal mode
+        std::string cxx_code = cfire::frontend::emit_cpp_cxx(cf, false);
+        std::string sh_code = cfire::frontend::selfhost_emit_cpp(cf, false);
+        require(!cxx_code.empty(), std::format("C++ codegen output empty for '{}'", path));
+        require(!sh_code.empty(), std::format("Self-hosted codegen output empty for '{}'", path));
+        require(cxx_code == sh_code, std::format("Emitted C++ code mismatch on '{}' (size {} vs {})", path, cxx_code.size(), sh_code.size()));
+
+        // Test mode
+        std::string cxx_test = cfire::frontend::emit_cpp_cxx(cf, true);
+        std::string sh_test = cfire::frontend::selfhost_emit_cpp(cf, true);
+        require(cxx_test == sh_test, std::format("Emitted C++ test-mode code mismatch on '{}'", path));
+    }
+
+    // 2. Dual-Engine Switch Verification (CFIRE_CXX_CODEGEN)
+    {
+        const auto& test_cf = checked_files.front().second;
+        ::setenv("CFIRE_CXX_CODEGEN", "1", 1);
+        std::string via_cxx = cfire::frontend::emit_cpp(test_cf, false);
+        ::unsetenv("CFIRE_CXX_CODEGEN");
+        std::string via_sh = cfire::frontend::emit_cpp(test_cf, false);
+        require(via_cxx == via_sh, "Dual-engine output mismatch between CFIRE_CXX_CODEGEN=1 and default");
+    }
+
+    // 3. Measurable Throughput Benchmark
+    constexpr std::size_t kIters = 50;
+    std::size_t benchmark_payload_bytes = total_bytes * kIters;
+
+    // Benchmark Native C++ Codegen
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t cxx_chars = 0;
+    for (std::size_t iter = 0; iter < kIters; ++iter) {
+        for (const auto& [path, cf] : checked_files) {
+            auto code = cfire::frontend::emit_cpp_cxx(cf, false);
+            cxx_chars += code.size();
+        }
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mbs_cxx = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire Self-Hosted Codegen
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t cf_chars = 0;
+    for (std::size_t iter = 0; iter < kIters; ++iter) {
+        for (const auto& [path, cf] : checked_files) {
+            auto code = cfire::frontend::selfhost_emit_cpp(cf, false);
+            cf_chars += code.size();
+        }
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    require(cxx_chars == cf_chars, "Benchmark total emitted characters mismatch");
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Code Generator Throughput (Payload: {:.2f} MB, {} files x {} iters):",
+        static_cast<double>(benchmark_payload_bytes) / 1'000'000.0, checked_files.size(), kIters);
+    std::println("    - C++ Native Codegen:         {:>7.2f} MB/s (avg {:.3f}ms/corpus)",
+        mbs_cxx, ms_cxx / kIters);
+    std::println("    - cfire Self-Hosted Codegen:  {:>7.2f} MB/s (avg {:.3f}ms/corpus)",
+        mbs_cf, ms_cf / kIters);
+    std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted codegen performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_codegen_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -4058,6 +4171,7 @@ auto main() -> int {
     test_selfhost_docgen_parity_and_benchmark(rt_dir);
     test_selfhost_parser_parity_and_benchmark(rt_dir);
     test_selfhost_sema_parity_and_benchmark(rt_dir);
+    test_selfhost_codegen_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
