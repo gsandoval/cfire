@@ -48,17 +48,17 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     };
 };
 
-[[nodiscard]] auto selfhost_get_usage() -> std::string;
-[[nodiscard]] auto selfhost_get_llm_doc() -> std::string;
-[[nodiscard]] auto driver_starts_with(std::string_view s, std::string_view prefix) -> bool;
-[[nodiscard]] auto driver_find_first_not_of_ws(std::string_view s) -> std::size_t;
-[[nodiscard]] auto driver_find_char(std::string_view s, std::uint8_t ch, std::size_t start) -> std::size_t;
-[[nodiscard]] auto driver_parse_i32(std::string_view s) -> std::int32_t;
-[[nodiscard]] auto selfhost_wrap_eval_code(const std::string& raw_code, bool expr_mode) -> std::string;
-[[nodiscard]] auto selfhost_parse_refactor_args(const std::vector<std::string>& args) -> RefactorCliArgs;
-[[nodiscard]] auto selfhost_run_driver(const std::vector<std::string>& args, const std::string& runtime_dir) -> std::int32_t;
+[[nodiscard]] inline auto selfhost_get_usage() -> std::string;
+[[nodiscard]] inline auto selfhost_get_llm_doc() -> std::string;
+[[nodiscard]] inline auto driver_starts_with(std::string_view s, std::string_view prefix) -> bool;
+[[nodiscard]] inline auto driver_find_first_not_of_ws(std::string_view s) -> std::size_t;
+[[nodiscard]] inline auto driver_find_char(std::string_view s, std::uint8_t ch, std::size_t start) -> std::size_t;
+[[nodiscard]] inline auto driver_parse_i32(std::string_view s) -> std::int32_t;
+[[nodiscard]] inline auto selfhost_wrap_eval_code(const std::string& raw_code, bool expr_mode) -> std::string;
+[[nodiscard]] inline auto selfhost_parse_refactor_args(const std::vector<std::string>& args) -> RefactorCliArgs;
+[[nodiscard]] inline auto selfhost_run_driver(const std::vector<std::string>& args, const std::string& runtime_dir) -> std::int32_t;
 
-[[nodiscard]] auto selfhost_get_usage() -> std::string {
+[[nodiscard]] inline auto selfhost_get_usage() -> std::string {
     std::string u = "Usage: cfire <command> [args...]\n";
     u += "Commands:\n";
     u += "  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run\n";
@@ -78,7 +78,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return u;
 }
 
-[[nodiscard]] auto selfhost_get_llm_doc() -> std::string {
+[[nodiscard]] inline auto selfhost_get_llm_doc() -> std::string {
     std::string d = "# cfire Language Reference Sheet for LLMs & AI Agents\n";
     d += "Grammar:\n";
     d += "- Package: `package <name>` (canonical: main)\n";
@@ -119,7 +119,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return d;
 }
 
-[[nodiscard]] auto driver_starts_with(std::string_view s, std::string_view prefix) -> bool {
+[[nodiscard]] inline auto driver_starts_with(std::string_view s, std::string_view prefix) -> bool {
     auto n = s.size();
     auto pn = prefix.size();
     if (pn > n) {
@@ -128,7 +128,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return (cfire::slice(s, 0, pn) == prefix);
 }
 
-[[nodiscard]] auto driver_find_first_not_of_ws(std::string_view s) -> std::size_t {
+[[nodiscard]] inline auto driver_find_first_not_of_ws(std::string_view s) -> std::size_t {
     std::size_t i = 0;
     auto n = s.size();
     while (i < n) {
@@ -141,7 +141,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return n;
 }
 
-[[nodiscard]] auto driver_find_char(std::string_view s, std::uint8_t ch, std::size_t start) -> std::size_t {
+[[nodiscard]] inline auto driver_find_char(std::string_view s, std::uint8_t ch, std::size_t start) -> std::size_t {
     std::size_t i = start;
     auto n = s.size();
     while (i < n) {
@@ -153,7 +153,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return n;
 }
 
-[[nodiscard]] auto driver_parse_i32(std::string_view s) -> std::int32_t {
+[[nodiscard]] inline auto driver_parse_i32(std::string_view s) -> std::int32_t {
     std::int32_t res = 0;
     std::size_t i = 0;
     auto n = s.size();
@@ -167,7 +167,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return res;
 }
 
-[[nodiscard]] auto selfhost_wrap_eval_code(const std::string& raw_code, bool expr_mode) -> std::string {
+[[nodiscard]] inline auto selfhost_wrap_eval_code(const std::string& raw_code, bool expr_mode) -> std::string {
     auto start = driver_find_first_not_of_ws(raw_code);
     auto n = raw_code.size();
     if (start < n) {
@@ -298,7 +298,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return result_code;
 }
 
-[[nodiscard]] auto selfhost_parse_refactor_args(const std::vector<std::string>& args) -> RefactorCliArgs {
+[[nodiscard]] inline auto selfhost_parse_refactor_args(const std::vector<std::string>& args) -> RefactorCliArgs {
     auto res = RefactorCliArgs{.action = "", .target_file = "", .target_line = 0, .target_col = 1, .new_name = "", .apply_mode = false, .diff_mode = false, .dry_run_mode = false, .json_mode = false, .valid = false, .error_message = ""};
     auto n = args.size();
     if (n < 3) {
@@ -378,7 +378,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     return res;
 }
 
-[[nodiscard]] auto selfhost_run_driver(const std::vector<std::string>& args, const std::string& runtime_dir) -> std::int32_t {
+[[nodiscard]] inline auto selfhost_run_driver(const std::vector<std::string>& args, const std::string& runtime_dir) -> std::int32_t {
     if (args.size() < 2) {
         return cfire::main_driver::run_usage();
     }

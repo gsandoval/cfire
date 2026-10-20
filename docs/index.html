@@ -741,9 +741,9 @@ struct cfire::reflect_struct&lt;Box&gt; {
     };
 };
 
-auto increment(Box&amp; b, std::int32_t amount) -&gt; void;
+inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void;
 
-auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
+inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
     b.value = (b.value + amount);
 }
 
@@ -813,9 +813,9 @@ struct Token {
     [[nodiscard]] static auto Eof() -&gt; Token { return Token{_Eof{}}; }
 };
 
-[[nodiscard]] auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string;
+[[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string;
 
-[[nodiscard]] auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string {
+[[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string {
     {
         const auto&amp; _target = s;
         bool _matched = false;

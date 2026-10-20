@@ -530,7 +530,7 @@ public:
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
-        writeln(std::format("{}auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+        writeln(std::format("{}inline auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
     }
 
     void emit_function(const FnDecl& fn) {
@@ -574,7 +574,7 @@ public:
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
-        writeln(std::format("{}auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
+        writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
         ++indent_;
         for (const auto& st : fn.body) emit_stmt(st, false);
         if (fn.return_type.name == "void" && fn.return_type.is_fallible) {
