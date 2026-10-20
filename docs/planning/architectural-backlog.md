@@ -161,13 +161,14 @@ gantt
 
 ## Phase 3: Lower Priority (P2 — Toolchain Consolidation & Documentation)
 
-### `ARCH-05`: Deprecate Dual-Engine C++ Fallback Headers
+### `ARCH-05`: Deprecate Dual-Engine C++ Fallback Headers `[COMPLETED]`
+- **Status**: Completed (2026-10-20)
 - **Priority**: P2
 - **Category**: Maintainability / Codebase Consolidation
 - **Target Files**:
-  - `src/lexer.hpp`, `src/parser.hpp`, `src/sema.hpp`, `src/codegen.hpp`, etc.
-  - `src/bootstrap/`
-  - `bootstrap/stage0/` (new archive directory)
+  - `src/*.hpp` & `src/main.cpp`
+  - `bootstrap/stage0/` (permanent archive directory)
+  - `Makefile` (`bootstrap-from-stage0`)
 - **Problem Statement**:
   Maintaining dual implementations of the compiler in both C++ (`src/*.hpp`) and `cfire` (`src/*.cf`) doubles maintenance overhead and risks semantic divergence.
 - **Detailed Requirements**:

@@ -10,12 +10,15 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: all build test test-unit test-stdlib test-e2e test-selfhost docs fmt dogfood review-check clean
+.PHONY: all build test test-unit test-stdlib test-e2e test-selfhost docs fmt dogfood review-check clean bootstrap-from-stage0
 
 all: build
 
 build:
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
+
+bootstrap-from-stage0:
+	$(CXX) -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Ibootstrap/stage0 bootstrap/stage0/main.cpp -o cfire
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@

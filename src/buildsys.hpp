@@ -1457,10 +1457,6 @@ namespace cfire::build {
 }
 
 [[nodiscard]] inline auto generate_cmake_content(const BuildPlan& plan) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_BUILDSYS");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return generate_cmake_content_cxx(plan);
-    }
     return selfhost_generate_cmake(plan);
 }
 

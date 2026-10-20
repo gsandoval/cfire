@@ -1376,10 +1376,6 @@ namespace cfire::frontend {
 [[nodiscard]] inline auto analyze(FileAST ast)
     -> std::expected<CheckedFile, std::string>
 {
-    const char* force_cxx = std::getenv("CFIRE_CXX_SEMA");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return analyze_cxx(std::move(ast));
-    }
     return selfhost_analyze(std::move(ast));
 }
 

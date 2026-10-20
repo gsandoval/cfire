@@ -431,10 +431,6 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto html_escape(std::string_view sv) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_DOCGEN");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return html_escape_cxx(sv);
-    }
     return ::html_escape(sv);
 }
 
@@ -1482,10 +1478,6 @@ tr:hover td { background: #FAFAF9; }
 }
 
 [[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_DOCGEN");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return navbar_html_cxx(active_page);
-    }
     return ::navbar_html(active_page);
 }
 
@@ -3739,10 +3731,6 @@ fn main() {
 }
 
 [[nodiscard]] inline auto generate_reference_markdown() -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_DOCGEN");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return generate_reference_markdown_cxx();
-    }
     const auto& catalog = stdlib_catalog();
     std::vector<std::string> examples;
     examples.reserve(catalog.size());
@@ -3823,10 +3811,6 @@ fn main() {
 }
 
 [[nodiscard]] inline auto generate_reference_html() -> std::string {
-    const char* force_cxx = std::getenv("CFIRE_CXX_DOCGEN");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return generate_reference_html_cxx();
-    }
     const auto& catalog = stdlib_catalog();
     std::vector<std::string> examples;
     examples.reserve(catalog.size());
@@ -3930,10 +3914,6 @@ fn main() {
 [[nodiscard]] inline auto extract_file_markdown_doc(const std::filesystem::path& cf_file)
     -> std::expected<std::string, std::string>
 {
-    const char* force_cxx = std::getenv("CFIRE_CXX_DOCGEN");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return extract_file_markdown_doc_cxx(cf_file);
-    }
     if (!std::filesystem::exists(cf_file)) {
         return std::unexpected(std::format("file not found: {}", cf_file.string()));
     }
