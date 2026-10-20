@@ -191,49 +191,12 @@ struct cfire::reflect_struct<DocTest> {
     if (val == 0) {
         return "0";
     }
+    std::string digits_table = "0123456789";
     auto v = val;
     std::string digits = "";
     while (v > 0) {
         auto d = (v % 10);
-        if (d == 0) {
-            digits = ("0" + digits);
-        } else {
-            if (d == 1) {
-                digits = ("1" + digits);
-            } else {
-                if (d == 2) {
-                    digits = ("2" + digits);
-                } else {
-                    if (d == 3) {
-                        digits = ("3" + digits);
-                    } else {
-                        if (d == 4) {
-                            digits = ("4" + digits);
-                        } else {
-                            if (d == 5) {
-                                digits = ("5" + digits);
-                            } else {
-                                if (d == 6) {
-                                    digits = ("6" + digits);
-                                } else {
-                                    if (d == 7) {
-                                        digits = ("7" + digits);
-                                    } else {
-                                        if (d == 8) {
-                                            digits = ("8" + digits);
-                                        } else {
-                                            if (d == 9) {
-                                                digits = ("9" + digits);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        digits = (cfire::slice(digits_table, d, (d + 1)) + digits);
         v = (v / 10);
     }
     return digits;

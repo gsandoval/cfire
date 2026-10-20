@@ -51,7 +51,6 @@ struct cfire::reflect_struct<RefactorCliArgs> {
 [[nodiscard]] auto selfhost_get_usage() -> std::string;
 [[nodiscard]] auto selfhost_get_llm_doc() -> std::string;
 [[nodiscard]] auto driver_starts_with(std::string_view s, std::string_view prefix) -> bool;
-[[nodiscard]] auto driver_ends_with(std::string_view s, std::string_view suffix) -> bool;
 [[nodiscard]] auto driver_find_first_not_of_ws(std::string_view s) -> std::size_t;
 [[nodiscard]] auto driver_find_char(std::string_view s, std::uint8_t ch, std::size_t start) -> std::size_t;
 [[nodiscard]] auto driver_parse_i32(std::string_view s) -> std::int32_t;
@@ -63,7 +62,7 @@ struct cfire::reflect_struct<RefactorCliArgs> {
     std::string u = "Usage: cfire <command> [args...]\n";
     u += "Commands:\n";
     u += "  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run\n";
-    u += "  test     <file.cf>            Compile and execute all `test \"...\" {{ ... }}` blocks in file\n";
+    u += "  test     <file.cf>            Compile and execute all `test \"...\" { ... }` blocks in file\n";
     u += "  build    [--target <triple>] <file.cf> Compile optimized binary for host or target triple\n";
     u += "  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin\n";
     u += "  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)\n";
@@ -127,15 +126,6 @@ struct cfire::reflect_struct<RefactorCliArgs> {
         return false;
     }
     return (cfire::slice(s, 0, pn) == prefix);
-}
-
-[[nodiscard]] auto driver_ends_with(std::string_view s, std::string_view suffix) -> bool {
-    auto n = s.size();
-    auto sn = suffix.size();
-    if (sn > n) {
-        return false;
-    }
-    return (cfire::slice(s, (n - sn), n) == suffix);
 }
 
 [[nodiscard]] auto driver_find_first_not_of_ws(std::string_view s) -> std::size_t {
