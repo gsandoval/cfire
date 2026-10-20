@@ -20,6 +20,7 @@ dogfood: build
 	./cfire emit-cpp src/codegen.cf > src/bootstrap/codegen.generated.hpp
 	./cfire emit-cpp src/buildsys.cf > src/bootstrap/buildsys.generated.hpp
 	./cfire emit-cpp src/lsp.cf > src/bootstrap/lsp.generated.hpp
+	./cfire emit-cpp src/main.cf > src/bootstrap/main.generated.hpp
 	$(MAKE) test
 
 docs: build
