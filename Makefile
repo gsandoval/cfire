@@ -14,6 +14,7 @@ dogfood: build
 	./cfire emit-cpp src/formatter.cf > src/bootstrap/formatter.generated.hpp
 	./cfire emit-cpp src/ast.cf > src/bootstrap/ast.generated.hpp
 	./cfire emit-cpp src/refactor.cf > src/bootstrap/refactor.generated.hpp
+	./cfire emit-cpp src/docgen.cf > src/bootstrap/docgen.generated.hpp
 	$(MAKE) test
 
 docs: build
