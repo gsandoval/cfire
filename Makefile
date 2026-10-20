@@ -1,12 +1,27 @@
 CXX      := clang++
 CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc
 
-.PHONY: all build test docs fmt dogfood review-check clean
+TEST_SRCS := tests/unit/test_frontend.cpp \
+             tests/unit/test_sema.cpp \
+             tests/unit/test_stdlib.cpp \
+             tests/e2e/test_canonical.cpp \
+             tests/benchmarks/test_selfhost.cpp \
+             tests/test_main.cpp
+
+TEST_OBJS := $(TEST_SRCS:.cpp=.o)
+
+.PHONY: all build test test-unit test-stdlib test-e2e test-selfhost docs fmt dogfood review-check clean
 
 all: build
 
 build:
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+.cfire_test_runner: $(TEST_OBJS)
+	$(CXX) $(CXXFLAGS) $(TEST_OBJS) -o $@
 
 dogfood: build
 	mkdir -p src/bootstrap
@@ -41,11 +56,22 @@ docs: build
 fmt: build
 	./cfire fmt examples
 
-test: build
-	$(CXX) $(CXXFLAGS) tests/conformance_test.cpp -o .cfire_test_runner
+test: build .cfire_test_runner
 	./.cfire_test_runner
-	rm -f .cfire_test_runner
+	rm -f .cfire_test_runner $(TEST_OBJS)
 	./cfire doc --check
 
+test-unit: build .cfire_test_runner
+	./.cfire_test_runner unit
+
+test-stdlib: build .cfire_test_runner
+	./.cfire_test_runner stdlib
+
+test-e2e: build .cfire_test_runner
+	./.cfire_test_runner e2e
+
+test-selfhost: build .cfire_test_runner
+	./.cfire_test_runner selfhost
+
 clean:
-	rm -rf cfire .cfire_test_runner examples/*/.cfire
+	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire

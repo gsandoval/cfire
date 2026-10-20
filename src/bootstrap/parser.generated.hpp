@@ -32,42 +32,42 @@ struct cfire::reflect_struct<SelfhostParser> {
     };
 };
 
-[[nodiscard]] auto parser_usize_to_str(std::size_t val) -> std::string;
-[[nodiscard]] auto parser_i32_to_str(std::int32_t val) -> std::string;
-[[nodiscard]] auto get_binary_precedence(const cfire::frontend::TokenKind& k) -> std::int32_t;
-[[nodiscard]] auto make_parser(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> SelfhostParser;
-[[nodiscard]] auto SelfhostParser__cur(const SelfhostParser& p) -> cfire::frontend::Token;
-[[nodiscard]] auto SelfhostParser__peek(const SelfhostParser& p, std::size_t offset) -> cfire::frontend::Token;
-[[nodiscard]] auto SelfhostParser__advance(SelfhostParser& p) -> cfire::frontend::Token;
-auto SelfhostParser__record_error(SelfhostParser& p, const std::string& err) -> void;
-[[nodiscard]] auto SelfhostParser__expect(SelfhostParser& p, const cfire::frontend::TokenKind& kind) -> std::tuple<cfire::frontend::Token, bool>;
-auto SelfhostParser__synchronize_decl(SelfhostParser& p) -> void;
-auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
-[[nodiscard]] auto SelfhostParser__is_generic_call_lookahead(const SelfhostParser& p) -> bool;
-[[nodiscard]] auto SelfhostParser__is_destructure_lookahead(const SelfhostParser& p, std::size_t offset) -> std::tuple<bool, bool>;
-[[nodiscard]] auto SelfhostParser__parse_type_ref(SelfhostParser& p) -> std::tuple<cfire::frontend::TypeRef, bool>;
-[[nodiscard]] auto SelfhostParser__parse_import(SelfhostParser& p) -> std::tuple<cfire::frontend::ImportDecl, bool>;
-[[nodiscard]] auto SelfhostParser__parse_type_decl(SelfhostParser& p, cfire::frontend::FileAST& f) -> bool;
-[[nodiscard]] auto SelfhostParser__parse_fn_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::FnDecl, bool>;
-[[nodiscard]] auto SelfhostParser__parse_global_var(SelfhostParser& p) -> std::tuple<cfire::frontend::GlobalVarDecl, bool>;
-[[nodiscard]] auto SelfhostParser__parse_test_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::TestDecl, bool>;
-[[nodiscard]] auto SelfhostParser__parse_block(SelfhostParser& p) -> std::tuple<std::vector<cfire::frontend::StmtPtr>, bool>;
-[[nodiscard]] auto SelfhostParser__parse_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_if_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_for_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_match_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_or_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_binary_expr(SelfhostParser& p, std::int32_t min_prec) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_unary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_postfix_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_call_with_callee(SelfhostParser& p, const cfire::frontend::ExprPtr& callee, const std::vector<cfire::frontend::TypeRef>& type_args) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_closure_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ClosureExpr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_primary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
-[[nodiscard]] auto SelfhostParser__parse_file_result(SelfhostParser& p) -> cfire::frontend::ParseResult;
-[[nodiscard]] auto selfhost_parse_file_result(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> cfire::frontend::ParseResult;
+[[nodiscard]] inline auto parser_usize_to_str(std::size_t val) -> std::string;
+[[nodiscard]] inline auto parser_i32_to_str(std::int32_t val) -> std::string;
+[[nodiscard]] inline auto get_binary_precedence(const cfire::frontend::TokenKind& k) -> std::int32_t;
+[[nodiscard]] inline auto make_parser(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> SelfhostParser;
+[[nodiscard]] inline auto SelfhostParser__cur(const SelfhostParser& p) -> cfire::frontend::Token;
+[[nodiscard]] inline auto SelfhostParser__peek(const SelfhostParser& p, std::size_t offset) -> cfire::frontend::Token;
+[[nodiscard]] inline auto SelfhostParser__advance(SelfhostParser& p) -> cfire::frontend::Token;
+inline auto SelfhostParser__record_error(SelfhostParser& p, const std::string& err) -> void;
+[[nodiscard]] inline auto SelfhostParser__expect(SelfhostParser& p, const cfire::frontend::TokenKind& kind) -> std::tuple<cfire::frontend::Token, bool>;
+inline auto SelfhostParser__synchronize_decl(SelfhostParser& p) -> void;
+inline auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
+[[nodiscard]] inline auto SelfhostParser__is_generic_call_lookahead(const SelfhostParser& p) -> bool;
+[[nodiscard]] inline auto SelfhostParser__is_destructure_lookahead(const SelfhostParser& p, std::size_t offset) -> std::tuple<bool, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_type_ref(SelfhostParser& p) -> std::tuple<cfire::frontend::TypeRef, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_import(SelfhostParser& p) -> std::tuple<cfire::frontend::ImportDecl, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_type_decl(SelfhostParser& p, cfire::frontend::FileAST& f) -> bool;
+[[nodiscard]] inline auto SelfhostParser__parse_fn_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::FnDecl, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_global_var(SelfhostParser& p) -> std::tuple<cfire::frontend::GlobalVarDecl, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_test_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::TestDecl, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_block(SelfhostParser& p) -> std::tuple<std::vector<cfire::frontend::StmtPtr>, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_if_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_for_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_match_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_or_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_binary_expr(SelfhostParser& p, std::int32_t min_prec) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_unary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_postfix_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_call_with_callee(SelfhostParser& p, const cfire::frontend::ExprPtr& callee, const std::vector<cfire::frontend::TypeRef>& type_args) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_closure_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ClosureExpr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_primary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool>;
+[[nodiscard]] inline auto SelfhostParser__parse_file_result(SelfhostParser& p) -> cfire::frontend::ParseResult;
+[[nodiscard]] inline auto selfhost_parse_file_result(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> cfire::frontend::ParseResult;
 
-[[nodiscard]] auto parser_usize_to_str(std::size_t val) -> std::string {
+[[nodiscard]] inline auto parser_usize_to_str(std::size_t val) -> std::string {
     if (val == 0) {
         return "0";
     }
@@ -117,7 +117,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
     return digits;
 }
 
-[[nodiscard]] auto parser_i32_to_str(std::int32_t val) -> std::string {
+[[nodiscard]] inline auto parser_i32_to_str(std::int32_t val) -> std::string {
     if (val <= 0) {
         return "0";
     }
@@ -167,7 +167,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
     return digits;
 }
 
-[[nodiscard]] auto get_binary_precedence(const cfire::frontend::TokenKind& k) -> std::int32_t {
+[[nodiscard]] inline auto get_binary_precedence(const cfire::frontend::TokenKind& k) -> std::int32_t {
     if (k == cfire::frontend::TokenKind::DoublePipe) {
         return 1;
     }
@@ -195,18 +195,18 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
     return 0;
 }
 
-[[nodiscard]] auto make_parser(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> SelfhostParser {
+[[nodiscard]] inline auto make_parser(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> SelfhostParser {
     return SelfhostParser{.file = ("" + file), .tokens = tokens, .pos = 0, .errors = {}, .resilient = resilient};
 }
 
-[[nodiscard]] auto SelfhostParser__cur(const SelfhostParser& p) -> cfire::frontend::Token {
+[[nodiscard]] inline auto SelfhostParser__cur(const SelfhostParser& p) -> cfire::frontend::Token {
     if (p.pos < p.tokens.size()) {
         return p.tokens[p.pos];
     }
     return p.tokens[(p.tokens.size() - 1)];
 }
 
-[[nodiscard]] auto SelfhostParser__peek(const SelfhostParser& p, std::size_t offset) -> cfire::frontend::Token {
+[[nodiscard]] inline auto SelfhostParser__peek(const SelfhostParser& p, std::size_t offset) -> cfire::frontend::Token {
     auto idx = (p.pos + offset);
     if (idx < p.tokens.size()) {
         return p.tokens[idx];
@@ -214,7 +214,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
     return p.tokens[(p.tokens.size() - 1)];
 }
 
-[[nodiscard]] auto SelfhostParser__advance(SelfhostParser& p) -> cfire::frontend::Token {
+[[nodiscard]] inline auto SelfhostParser__advance(SelfhostParser& p) -> cfire::frontend::Token {
     auto t = SelfhostParser__cur(p);
     if ((p.pos + 1) < p.tokens.size()) {
         p.pos = (p.pos + 1);
@@ -222,13 +222,13 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void;
     return t;
 }
 
-auto SelfhostParser__record_error(SelfhostParser& p, const std::string& err) -> void {
+inline auto SelfhostParser__record_error(SelfhostParser& p, const std::string& err) -> void {
     if (p.errors.size() < 20) {
         (void)(p.errors.push_back(err));
     }
 }
 
-[[nodiscard]] auto SelfhostParser__expect(SelfhostParser& p, const cfire::frontend::TokenKind& kind) -> std::tuple<cfire::frontend::Token, bool> {
+[[nodiscard]] inline auto SelfhostParser__expect(SelfhostParser& p, const cfire::frontend::TokenKind& kind) -> std::tuple<cfire::frontend::Token, bool> {
     auto t = SelfhostParser__cur(p);
     if (t.kind != kind) {
         auto err = (((((((((((p.file + ":") + parser_i32_to_str(t.line)) + ":") + parser_i32_to_str(t.col)) + ": expected '") + cfire::frontend::token_kind_name(kind)) + "', got '") + t.lexeme) + "' (") + cfire::frontend::token_kind_name(t.kind)) + ")");
@@ -238,7 +238,7 @@ auto SelfhostParser__record_error(SelfhostParser& p, const std::string& err) -> 
     return std::make_tuple(SelfhostParser__advance(p), true);
 }
 
-auto SelfhostParser__synchronize_decl(SelfhostParser& p) -> void {
+inline auto SelfhostParser__synchronize_decl(SelfhostParser& p) -> void {
     if (SelfhostParser__cur(p).kind != cfire::frontend::TokenKind::Eof) {
         (void)(SelfhostParser__advance(p));
     }
@@ -259,7 +259,7 @@ auto SelfhostParser__synchronize_decl(SelfhostParser& p) -> void {
     }
 }
 
-auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
+inline auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     if (SelfhostParser__cur(p).kind == cfire::frontend::TokenKind::Semicolon) {
         (void)(SelfhostParser__advance(p));
         return;
@@ -289,7 +289,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     }
 }
 
-[[nodiscard]] auto SelfhostParser__is_generic_call_lookahead(const SelfhostParser& p) -> bool {
+[[nodiscard]] inline auto SelfhostParser__is_generic_call_lookahead(const SelfhostParser& p) -> bool {
     if (SelfhostParser__cur(p).kind != cfire::frontend::TokenKind::LBracket) {
         return false;
     }
@@ -317,7 +317,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return false;
 }
 
-[[nodiscard]] auto SelfhostParser__is_destructure_lookahead(const SelfhostParser& p, std::size_t offset) -> std::tuple<bool, bool> {
+[[nodiscard]] inline auto SelfhostParser__is_destructure_lookahead(const SelfhostParser& p, std::size_t offset) -> std::tuple<bool, bool> {
     auto start = (p.pos + offset);
     auto n = p.tokens.size();
     if ((start >= n) || (p.tokens[start].kind != cfire::frontend::TokenKind::LParen)) {
@@ -351,7 +351,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(false, false);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_type_ref(SelfhostParser& p) -> std::tuple<cfire::frontend::TypeRef, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_type_ref(SelfhostParser& p) -> std::tuple<cfire::frontend::TypeRef, bool> {
     auto tr = cfire::frontend::TypeRef{};
     if (SelfhostParser__cur(p).kind == cfire::frontend::TokenKind::Amp) {
         (void)(SelfhostParser__advance(p));
@@ -528,7 +528,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(tr, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_import(SelfhostParser& p) -> std::tuple<cfire::frontend::ImportDecl, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_import(SelfhostParser& p) -> std::tuple<cfire::frontend::ImportDecl, bool> {
     auto start = SelfhostParser__advance(p);
     auto imp = cfire::frontend::ImportDecl{};
     imp.line = start.line;
@@ -580,7 +580,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(imp, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_type_decl(SelfhostParser& p, cfire::frontend::FileAST& f) -> bool {
+[[nodiscard]] inline auto SelfhostParser__parse_type_decl(SelfhostParser& p, cfire::frontend::FileAST& f) -> bool {
     auto start = SelfhostParser__advance(p);
     auto [name_tok, ok_name] = SelfhostParser__expect(p, cfire::frontend::TokenKind::Ident);
     if (!ok_name) {
@@ -753,7 +753,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return false;
 }
 
-[[nodiscard]] auto SelfhostParser__parse_fn_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::FnDecl, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_fn_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::FnDecl, bool> {
     auto start = SelfhostParser__advance(p);
     auto fn_decl = cfire::frontend::FnDecl{};
     fn_decl.return_type = cfire::frontend::TypeRef{.name = "void"};
@@ -883,7 +883,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(fn_decl, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_global_var(SelfhostParser& p) -> std::tuple<cfire::frontend::GlobalVarDecl, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_global_var(SelfhostParser& p) -> std::tuple<cfire::frontend::GlobalVarDecl, bool> {
     auto was_var = false;
     auto is_mut = false;
     auto line = SelfhostParser__cur(p).line;
@@ -934,7 +934,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(gv, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_test_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::TestDecl, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_test_decl(SelfhostParser& p) -> std::tuple<cfire::frontend::TestDecl, bool> {
     auto start = SelfhostParser__advance(p);
     auto td = cfire::frontend::TestDecl{};
     auto [name_tok, ok_name] = SelfhostParser__expect(p, cfire::frontend::TokenKind::String);
@@ -951,7 +951,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(td, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_block(SelfhostParser& p) -> std::tuple<std::vector<cfire::frontend::StmtPtr>, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_block(SelfhostParser& p) -> std::tuple<std::vector<cfire::frontend::StmtPtr>, bool> {
     std::vector<cfire::frontend::StmtPtr> stmts = {};
     auto [tok_discard_24, ok_lb] = SelfhostParser__expect(p, cfire::frontend::TokenKind::LBrace);
     if (!ok_lb) {
@@ -991,7 +991,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(stmts, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
     auto tok = SelfhostParser__cur(p);
     if (tok.kind == cfire::frontend::TokenKind::CppBlock) {
         (void)(SelfhostParser__advance(p));
@@ -1280,7 +1280,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cfire::frontend::make_stmt(cfire::frontend::ExprStmt{.expr = lhs, .line = tok.line}, tok.line), true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_if_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_if_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
     auto start = SelfhostParser__advance(p);
     auto [cond, ok_cond] = SelfhostParser__parse_expr(p);
     if (!ok_cond) {
@@ -1310,7 +1310,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cfire::frontend::make_stmt(cfire::frontend::IfStmt{.cond = cond, .then_body = then_body, .else_body = else_body, .line = start.line}, start.line), true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_for_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_for_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
     auto start = SelfhostParser__advance(p);
     if ((SelfhostParser__cur(p).kind == cfire::frontend::TokenKind::Ident) && ((SelfhostParser__peek(p, 1).kind == cfire::frontend::TokenKind::Comma) || (SelfhostParser__peek(p, 1).kind == cfire::frontend::TokenKind::KwIn))) {
         auto first = SelfhostParser__advance(p).lexeme;
@@ -1352,7 +1352,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cfire::frontend::make_stmt(cfire::frontend::ForStmt{.index_var = "", .item_var = "", .iter_expr = cond, .body = body, .line = start.line}, start.line), true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_match_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_match_stmt(SelfhostParser& p) -> std::tuple<cfire::frontend::StmtPtr, bool> {
     auto start = SelfhostParser__advance(p);
     auto is_move = false;
     if (SelfhostParser__cur(p).kind == cfire::frontend::TokenKind::KwMove) {
@@ -1476,11 +1476,11 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cfire::frontend::make_stmt(ms, start.line), true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     return SelfhostParser__parse_or_expr(p);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_or_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_or_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     auto [left, ok_left] = SelfhostParser__parse_binary_expr(p, 1);
     if (!ok_left) {
         return std::make_tuple(cfire::frontend::ExprPtr{}, false);
@@ -1504,7 +1504,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(left, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_binary_expr(SelfhostParser& p, std::int32_t min_prec) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_binary_expr(SelfhostParser& p, std::int32_t min_prec) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     auto [left, ok_left] = SelfhostParser__parse_unary_expr(p);
     if (!ok_left) {
         return std::make_tuple(left, false);
@@ -1525,7 +1525,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(left, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_unary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_unary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     auto tok = SelfhostParser__cur(p);
     if (tok.kind == cfire::frontend::TokenKind::KwTry) {
         (void)(SelfhostParser__advance(p));
@@ -1567,7 +1567,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return SelfhostParser__parse_postfix_expr(p);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_postfix_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_postfix_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     auto [expr, ok_expr] = SelfhostParser__parse_primary_expr(p);
     if (!ok_expr) {
         return std::make_tuple(expr, false);
@@ -1701,7 +1701,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(expr, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_call_with_callee(SelfhostParser& p, const cfire::frontend::ExprPtr& callee, const std::vector<cfire::frontend::TypeRef>& type_args) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_call_with_callee(SelfhostParser& p, const cfire::frontend::ExprPtr& callee, const std::vector<cfire::frontend::TypeRef>& type_args) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     auto lp = SelfhostParser__advance(p);
     auto call = cfire::frontend::CallExpr{};
     call.callee = callee;
@@ -1757,7 +1757,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cfire::frontend::make_expr(call, lp.line, lp.col), true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_closure_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ClosureExpr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_closure_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ClosureExpr, bool> {
     auto cl = cfire::frontend::ClosureExpr{};
     if (SelfhostParser__cur(p).kind == cfire::frontend::TokenKind::DoublePipe) {
         (void)(SelfhostParser__advance(p));
@@ -1793,7 +1793,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cl, true);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_primary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
+[[nodiscard]] inline auto SelfhostParser__parse_primary_expr(SelfhostParser& p) -> std::tuple<cfire::frontend::ExprPtr, bool> {
     auto tok = SelfhostParser__cur(p);
     auto k = tok.kind;
     if (((((((k == cfire::frontend::TokenKind::Int) || (k == cfire::frontend::TokenKind::Float)) || (k == cfire::frontend::TokenKind::String)) || (k == cfire::frontend::TokenKind::RawString)) || (k == cfire::frontend::TokenKind::KwTrue)) || (k == cfire::frontend::TokenKind::KwFalse)) || (k == cfire::frontend::TokenKind::KwNone)) {
@@ -1959,7 +1959,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return std::make_tuple(cfire::frontend::ExprPtr{}, false);
 }
 
-[[nodiscard]] auto SelfhostParser__parse_file_result(SelfhostParser& p) -> cfire::frontend::ParseResult {
+[[nodiscard]] inline auto SelfhostParser__parse_file_result(SelfhostParser& p) -> cfire::frontend::ParseResult {
     auto f = cfire::frontend::FileAST{};
     f.path = p.file;
     auto [pkg_kw, ok_pkg] = SelfhostParser__expect(p, cfire::frontend::TokenKind::KwPackage);
@@ -2092,7 +2092,7 @@ auto SelfhostParser__synchronize_stmt(SelfhostParser& p) -> void {
     return cfire::frontend::ParseResult{.ast = f, .errors = p.errors};
 }
 
-[[nodiscard]] auto selfhost_parse_file_result(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> cfire::frontend::ParseResult {
+[[nodiscard]] inline auto selfhost_parse_file_result(std::string_view file, const std::vector<cfire::frontend::Token>& tokens, bool resilient) -> cfire::frontend::ParseResult {
     auto parser = make_parser(file, tokens, resilient);
     return SelfhostParser__parse_file_result(parser);
 }

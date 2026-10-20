@@ -180,14 +180,14 @@ struct cfire::reflect_struct<DocTest> {
     };
 };
 
-[[nodiscard]] auto doc_usize_to_str(std::size_t val) -> std::string;
-[[nodiscard]] auto html_escape(std::string_view sv) -> std::string;
-[[nodiscard]] auto navbar_html(std::string_view active_page) -> std::string;
-[[nodiscard]] auto generate_reference_markdown(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, const std::vector<std::string>& examples) -> std::string;
-[[nodiscard]] auto generate_reference_html(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, std::string_view shared_css, const std::vector<std::string>& examples) -> std::string;
-[[nodiscard]] auto format_package_markdown(std::string_view pkg_name, std::string_view file_name, const std::vector<std::string>& imports, const std::vector<DocStruct>& structs, const std::vector<DocEnum>& enums, const std::vector<DocFunction>& functions, const std::vector<DocTest>& tests) -> std::string;
+[[nodiscard]] inline auto doc_usize_to_str(std::size_t val) -> std::string;
+[[nodiscard]] inline auto html_escape(std::string_view sv) -> std::string;
+[[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string;
+[[nodiscard]] inline auto generate_reference_markdown(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, const std::vector<std::string>& examples) -> std::string;
+[[nodiscard]] inline auto generate_reference_html(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, std::string_view shared_css, const std::vector<std::string>& examples) -> std::string;
+[[nodiscard]] inline auto format_package_markdown(std::string_view pkg_name, std::string_view file_name, const std::vector<std::string>& imports, const std::vector<DocStruct>& structs, const std::vector<DocEnum>& enums, const std::vector<DocFunction>& functions, const std::vector<DocTest>& tests) -> std::string;
 
-[[nodiscard]] auto doc_usize_to_str(std::size_t val) -> std::string {
+[[nodiscard]] inline auto doc_usize_to_str(std::size_t val) -> std::string {
     if (val == 0) {
         return "0";
     }
@@ -202,7 +202,7 @@ struct cfire::reflect_struct<DocTest> {
     return digits;
 }
 
-[[nodiscard]] auto html_escape(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto html_escape(std::string_view sv) -> std::string {
     std::string escaped = "";
     std::size_t start = 0;
     std::size_t i = 0;
@@ -238,7 +238,7 @@ struct cfire::reflect_struct<DocTest> {
     return escaped;
 }
 
-[[nodiscard]] auto navbar_html(std::string_view active_page) -> std::string {
+[[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string {
     std::string idx_class = "";
     if (active_page == "index") {
         idx_class = "active";
@@ -276,7 +276,7 @@ struct cfire::reflect_struct<DocTest> {
     return s;
 }
 
-[[nodiscard]] auto generate_reference_markdown(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, const std::vector<std::string>& examples) -> std::string {
+[[nodiscard]] inline auto generate_reference_markdown(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, const std::vector<std::string>& examples) -> std::string {
     std::string s = "# `cfire` Standard Library (`core:*`) & Diagnostics Reference\n\n";
     s += "> Auto-generated from the compiler's single-source-of-truth catalog via `./cfire doc`.\n\n";
     s += "## 1. Built-In `core:*` Standard Library Modules\n\n";
@@ -341,7 +341,7 @@ struct cfire::reflect_struct<DocTest> {
     return s;
 }
 
-[[nodiscard]] auto generate_reference_html(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, std::string_view shared_css, const std::vector<std::string>& examples) -> std::string {
+[[nodiscard]] inline auto generate_reference_html(const std::vector<StdModuleDoc>& modules, const std::vector<DiagnosticDoc>& diags, std::string_view shared_css, const std::vector<std::string>& examples) -> std::string {
     std::string s = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n";
     s += "  <meta charset=\"UTF-8\" />\n";
     s += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n";
@@ -458,7 +458,7 @@ struct cfire::reflect_struct<DocTest> {
     return s;
 }
 
-[[nodiscard]] auto format_package_markdown(std::string_view pkg_name, std::string_view file_name, const std::vector<std::string>& imports, const std::vector<DocStruct>& structs, const std::vector<DocEnum>& enums, const std::vector<DocFunction>& functions, const std::vector<DocTest>& tests) -> std::string {
+[[nodiscard]] inline auto format_package_markdown(std::string_view pkg_name, std::string_view file_name, const std::vector<std::string>& imports, const std::vector<DocStruct>& structs, const std::vector<DocEnum>& enums, const std::vector<DocFunction>& functions, const std::vector<DocTest>& tests) -> std::string {
     std::string md = "# Package `";
     md += pkg_name;
     md += "` (`";

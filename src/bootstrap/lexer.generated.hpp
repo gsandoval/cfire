@@ -1,9 +1,9 @@
 #include "cfire_prelude.hpp"
 #include <lexer_types.hpp>
 
-[[nodiscard]] auto selfhost_tokenize(std::string_view file, std::string_view src) -> std::expected<std::vector<cfire::frontend::Token>, cfire::Error>;
+[[nodiscard]] inline auto selfhost_tokenize(std::string_view file, std::string_view src) -> std::expected<std::vector<cfire::frontend::Token>, cfire::Error>;
 
-[[nodiscard]] auto selfhost_tokenize(std::string_view file, std::string_view src) -> std::expected<std::vector<cfire::frontend::Token>, cfire::Error> {
+[[nodiscard]] inline auto selfhost_tokenize(std::string_view file, std::string_view src) -> std::expected<std::vector<cfire::frontend::Token>, cfire::Error> {
     std::vector<cfire::frontend::Token> tokens = {};
     std::size_t i = 0;
     auto n = src.size();

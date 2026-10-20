@@ -50,27 +50,27 @@ struct cfire::reflect_struct<CppCacheEntry> {
     };
 };
 
-[[nodiscard]] auto bitwise_xor_byte(std::uint64_t a, std::uint8_t b) -> std::uint64_t;
-[[nodiscard]] auto get_fnv1a_initial_offset() -> std::uint64_t;
-[[nodiscard]] auto selfhost_clang_hash_key(std::string_view s) -> std::uint64_t;
-[[nodiscard]] auto selfhost_clang_trim_qual(std::string_view s) -> std::string;
-[[nodiscard]] auto selfhost_clang_parse_fn_sig(std::string_view full_sig) -> CppParsedFnSig;
-[[nodiscard]] auto selfhost_clang_format_cache_entry(const CppCacheEntry& entry) -> std::string;
-[[nodiscard]] auto selfhost_clang_parse_cache_line(std::string_view line) -> CppCacheEntry;
+[[nodiscard]] inline auto bitwise_xor_byte(std::uint64_t a, std::uint8_t b) -> std::uint64_t;
+[[nodiscard]] inline auto get_fnv1a_initial_offset() -> std::uint64_t;
+[[nodiscard]] inline auto selfhost_clang_hash_key(std::string_view s) -> std::uint64_t;
+[[nodiscard]] inline auto selfhost_clang_trim_qual(std::string_view s) -> std::string;
+[[nodiscard]] inline auto selfhost_clang_parse_fn_sig(std::string_view full_sig) -> CppParsedFnSig;
+[[nodiscard]] inline auto selfhost_clang_format_cache_entry(const CppCacheEntry& entry) -> std::string;
+[[nodiscard]] inline auto selfhost_clang_parse_cache_line(std::string_view line) -> CppCacheEntry;
 
-[[nodiscard]] auto bitwise_xor_byte(std::uint64_t a, std::uint8_t b) -> std::uint64_t {
+[[nodiscard]] inline auto bitwise_xor_byte(std::uint64_t a, std::uint8_t b) -> std::uint64_t {
     {
         return a ^ static_cast<uint64_t>(b);
     }
 }
 
-[[nodiscard]] auto get_fnv1a_initial_offset() -> std::uint64_t {
+[[nodiscard]] inline auto get_fnv1a_initial_offset() -> std::uint64_t {
     {
         return 0xcbf29ce484222325ULL;
     }
 }
 
-[[nodiscard]] auto selfhost_clang_hash_key(std::string_view s) -> std::uint64_t {
+[[nodiscard]] inline auto selfhost_clang_hash_key(std::string_view s) -> std::uint64_t {
     std::uint64_t h = get_fnv1a_initial_offset();
     std::uint64_t prime = 1099511628211;
     std::size_t i = 0;
@@ -84,7 +84,7 @@ struct cfire::reflect_struct<CppCacheEntry> {
     return h;
 }
 
-[[nodiscard]] auto selfhost_clang_trim_qual(std::string_view s) -> std::string {
+[[nodiscard]] inline auto selfhost_clang_trim_qual(std::string_view s) -> std::string {
     std::size_t start = 0;
     auto n = s.size();
     while ((start < n) && ((s[start] == 32) || (s[start] == 9))) {
@@ -99,7 +99,7 @@ struct cfire::reflect_struct<CppCacheEntry> {
     return res;
 }
 
-[[nodiscard]] auto selfhost_clang_parse_fn_sig(std::string_view full_sig) -> CppParsedFnSig {
+[[nodiscard]] inline auto selfhost_clang_parse_fn_sig(std::string_view full_sig) -> CppParsedFnSig {
     auto res = CppParsedFnSig{.return_type = "", .param_types = {}};
     auto n = full_sig.size();
     std::size_t lp = n;
@@ -153,7 +153,7 @@ struct cfire::reflect_struct<CppCacheEntry> {
     return res;
 }
 
-[[nodiscard]] auto selfhost_clang_format_cache_entry(const CppCacheEntry& entry) -> std::string {
+[[nodiscard]] inline auto selfhost_clang_format_cache_entry(const CppCacheEntry& entry) -> std::string {
     std::string line = ((((((entry.key + "\t") + entry.name) + "\t") + entry.kind) + "\t") + entry.return_type);
     std::size_t i = 0;
     auto n = entry.param_types.size();
@@ -165,7 +165,7 @@ struct cfire::reflect_struct<CppCacheEntry> {
     return line;
 }
 
-[[nodiscard]] auto selfhost_clang_parse_cache_line(std::string_view line) -> CppCacheEntry {
+[[nodiscard]] inline auto selfhost_clang_parse_cache_line(std::string_view line) -> CppCacheEntry {
     auto res = CppCacheEntry{.key = "", .name = "", .kind = "", .return_type = "", .param_types = {}};
     std::vector<std::string> cols = {};
     std::size_t start = 0;

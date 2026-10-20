@@ -99,16 +99,16 @@ struct cfire::reflect_struct<SemaFnChecker> {
     };
 };
 
-[[nodiscard]] auto starts_with_str(const std::string& s, const std::string& prefix) -> bool;
-[[nodiscard]] auto paths_conflict(const std::string& a, const std::string& b) -> bool;
-[[nodiscard]] auto extract_path_info(const cfire::frontend::ExprPtr& e) -> std::tuple<PathInfo, bool>;
-[[nodiscard]] auto block_diverges(const std::vector<cfire::frontend::StmtPtr>& body) -> bool;
-[[nodiscard]] auto SemaFnChecker__record_var_read(SemaFnChecker& c, const std::string& name, std::int32_t line, std::int32_t col) -> std::tuple<std::string, bool>;
-[[nodiscard]] auto SemaFnChecker__check_expr(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::ExprPtr& e) -> std::tuple<std::string, bool>;
-[[nodiscard]] auto SemaFnChecker__check_stmt(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::StmtPtr& s) -> std::tuple<std::string, bool>;
-[[nodiscard]] auto selfhost_analyze_file(cfire::frontend::FileAST& ast) -> SemaResult;
+[[nodiscard]] inline auto starts_with_str(const std::string& s, const std::string& prefix) -> bool;
+[[nodiscard]] inline auto paths_conflict(const std::string& a, const std::string& b) -> bool;
+[[nodiscard]] inline auto extract_path_info(const cfire::frontend::ExprPtr& e) -> std::tuple<PathInfo, bool>;
+[[nodiscard]] inline auto block_diverges(const std::vector<cfire::frontend::StmtPtr>& body) -> bool;
+[[nodiscard]] inline auto SemaFnChecker__record_var_read(SemaFnChecker& c, const std::string& name, std::int32_t line, std::int32_t col) -> std::tuple<std::string, bool>;
+[[nodiscard]] inline auto SemaFnChecker__check_expr(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::ExprPtr& e) -> std::tuple<std::string, bool>;
+[[nodiscard]] inline auto SemaFnChecker__check_stmt(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::StmtPtr& s) -> std::tuple<std::string, bool>;
+[[nodiscard]] inline auto selfhost_analyze_file(cfire::frontend::FileAST& ast) -> SemaResult;
 
-[[nodiscard]] auto starts_with_str(const std::string& s, const std::string& prefix) -> bool {
+[[nodiscard]] inline auto starts_with_str(const std::string& s, const std::string& prefix) -> bool {
     auto n = s.size();
     auto pn = prefix.size();
     if (pn > n) {
@@ -117,7 +117,7 @@ struct cfire::reflect_struct<SemaFnChecker> {
     return (cfire::slice(s, 0, pn) == prefix);
 }
 
-[[nodiscard]] auto paths_conflict(const std::string& a, const std::string& b) -> bool {
+[[nodiscard]] inline auto paths_conflict(const std::string& a, const std::string& b) -> bool {
     if (a == b) {
         return true;
     }
@@ -140,7 +140,7 @@ struct cfire::reflect_struct<SemaFnChecker> {
     return false;
 }
 
-[[nodiscard]] auto extract_path_info(const cfire::frontend::ExprPtr& e) -> std::tuple<PathInfo, bool> {
+[[nodiscard]] inline auto extract_path_info(const cfire::frontend::ExprPtr& e) -> std::tuple<PathInfo, bool> {
     auto [root, path] = cfire::frontend::sema_extract_path_info(e);
     if (root != "") {
         return std::make_tuple(PathInfo{.root = root, .path = path}, true);
@@ -148,11 +148,11 @@ struct cfire::reflect_struct<SemaFnChecker> {
     return std::make_tuple(PathInfo{.root = "", .path = ""}, false);
 }
 
-[[nodiscard]] auto block_diverges(const std::vector<cfire::frontend::StmtPtr>& body) -> bool {
+[[nodiscard]] inline auto block_diverges(const std::vector<cfire::frontend::StmtPtr>& body) -> bool {
     return cfire::frontend::sema_block_diverges(body);
 }
 
-[[nodiscard]] auto SemaFnChecker__record_var_read(SemaFnChecker& c, const std::string& name, std::int32_t line, std::int32_t col) -> std::tuple<std::string, bool> {
+[[nodiscard]] inline auto SemaFnChecker__record_var_read(SemaFnChecker& c, const std::string& name, std::int32_t line, std::int32_t col) -> std::tuple<std::string, bool> {
     if (!c.moved_at_line.empty() && c.moved_at_line.contains(name)) {
         auto prev_line = c.moved_at_line[name];
         auto err = (((((((((c.path + ":") + cfire::frontend::sema_to_str(line)) + ":") + cfire::frontend::sema_to_str(col)) + ": use of moved variable '") + name) + "' (previously moved at line ") + cfire::frontend::sema_to_str(prev_line)) + ") (cfire/USE-AFTER-MOVE)");
@@ -164,7 +164,7 @@ struct cfire::reflect_struct<SemaFnChecker> {
     return std::make_tuple("", false);
 }
 
-[[nodiscard]] auto SemaFnChecker__check_expr(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::ExprPtr& e) -> std::tuple<std::string, bool> {
+[[nodiscard]] inline auto SemaFnChecker__check_expr(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::ExprPtr& e) -> std::tuple<std::string, bool> {
     auto k = cfire::frontend::get_expr_kind(e);
     if (k == 0) {
         return std::make_tuple("", false);
@@ -457,7 +457,7 @@ struct cfire::reflect_struct<SemaFnChecker> {
     return std::make_tuple("", false);
 }
 
-[[nodiscard]] auto SemaFnChecker__check_stmt(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::StmtPtr& s) -> std::tuple<std::string, bool> {
+[[nodiscard]] inline auto SemaFnChecker__check_stmt(SemaFnChecker& c, const cfire::frontend::CheckedFile& cf, const cfire::frontend::StmtPtr& s) -> std::tuple<std::string, bool> {
     auto k = cfire::frontend::get_stmt_kind(s);
     if (k == 0) {
         return std::make_tuple("", false);
@@ -774,7 +774,7 @@ struct cfire::reflect_struct<SemaFnChecker> {
     return std::make_tuple("", false);
 }
 
-[[nodiscard]] auto selfhost_analyze_file(cfire::frontend::FileAST& ast) -> SemaResult {
+[[nodiscard]] inline auto selfhost_analyze_file(cfire::frontend::FileAST& ast) -> SemaResult {
     auto cf = cfire::frontend::CheckedFile{};
     std::size_t gvi = 0;
     auto n_gv = ast.global_vars.size();

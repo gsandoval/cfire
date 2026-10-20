@@ -1334,15 +1334,15 @@ struct cfire::reflect_struct<FileAST> {
     };
 };
 
-[[nodiscard]] auto make_typeref(std::string_view name) -> TypeRef;
-[[nodiscard]] auto format_typeref_cf(const TypeRef& t) -> std::string;
-[[nodiscard]] auto count_ast_declarations(const FileAST& ast) -> std::tuple<std::size_t, std::size_t, std::size_t>;
+[[nodiscard]] inline auto make_typeref(std::string_view name) -> TypeRef;
+[[nodiscard]] inline auto format_typeref_cf(const TypeRef& t) -> std::string;
+[[nodiscard]] inline auto count_ast_declarations(const FileAST& ast) -> std::tuple<std::size_t, std::size_t, std::size_t>;
 
-[[nodiscard]] auto make_typeref(std::string_view name) -> TypeRef {
+[[nodiscard]] inline auto make_typeref(std::string_view name) -> TypeRef {
     return TypeRef{.name = ("" + name), .is_slice = false, .is_array = false, .array_len = "", .is_map = false, .is_fallible = false, .is_optional = false, .is_mut_ptr = false, .is_ptr = false, .is_borrow = false, .is_mut_borrow = false, .is_tuple = false, .tuple_types = {}, .smart_wrap = ""};
 }
 
-[[nodiscard]] auto format_typeref_cf(const TypeRef& t) -> std::string {
+[[nodiscard]] inline auto format_typeref_cf(const TypeRef& t) -> std::string {
     std::string base = "";
     if (t.is_tuple) {
         base = "(";
@@ -1404,6 +1404,6 @@ struct cfire::reflect_struct<FileAST> {
     return base;
 }
 
-[[nodiscard]] auto count_ast_declarations(const FileAST& ast) -> std::tuple<std::size_t, std::size_t, std::size_t> {
+[[nodiscard]] inline auto count_ast_declarations(const FileAST& ast) -> std::tuple<std::size_t, std::size_t, std::size_t> {
     return std::make_tuple(ast.structs.size(), ast.enums.size(), ast.functions.size());
 }

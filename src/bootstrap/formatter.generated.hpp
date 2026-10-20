@@ -33,18 +33,18 @@ struct cfire::reflect_struct<StructFieldLine> {
     };
 };
 
-[[nodiscard]] auto trim_ws(std::string_view sv) -> std::string;
-[[nodiscard]] auto make_spaces(std::int64_t count) -> std::string;
-[[nodiscard]] auto starts_with_str(std::string_view s, std::string_view prefix) -> bool;
-[[nodiscard]] auto ends_with_str(std::string_view s, std::string_view suffix) -> bool;
-[[nodiscard]] auto find_char(std::string_view s, std::uint8_t target, std::size_t start) -> std::int64_t;
-[[nodiscard]] auto find_str(std::string_view s, std::string_view target, std::size_t start) -> std::int64_t;
-[[nodiscard]] auto is_ident_char(std::uint8_t c) -> bool;
-[[nodiscard]] auto parse_struct_field_line(std::string_view trimmed) -> StructFieldLine;
-[[nodiscard]] auto selfhost_format_lines(const std::vector<std::string>& raw_lines) -> std::vector<std::string>;
-[[nodiscard]] auto selfhost_format_code(std::string_view src) -> std::string;
+[[nodiscard]] inline auto trim_ws(std::string_view sv) -> std::string;
+[[nodiscard]] inline auto make_spaces(std::int64_t count) -> std::string;
+[[nodiscard]] inline auto starts_with_str(std::string_view s, std::string_view prefix) -> bool;
+[[nodiscard]] inline auto ends_with_str(std::string_view s, std::string_view suffix) -> bool;
+[[nodiscard]] inline auto find_char(std::string_view s, std::uint8_t target, std::size_t start) -> std::int64_t;
+[[nodiscard]] inline auto find_str(std::string_view s, std::string_view target, std::size_t start) -> std::int64_t;
+[[nodiscard]] inline auto is_ident_char(std::uint8_t c) -> bool;
+[[nodiscard]] inline auto parse_struct_field_line(std::string_view trimmed) -> StructFieldLine;
+[[nodiscard]] inline auto selfhost_format_lines(const std::vector<std::string>& raw_lines) -> std::vector<std::string>;
+[[nodiscard]] inline auto selfhost_format_code(std::string_view src) -> std::string;
 
-[[nodiscard]] auto trim_ws(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto trim_ws(std::string_view sv) -> std::string {
     std::size_t b = 0;
     auto n = sv.size();
     while ((b < n) && (((sv[b] == 32) || (sv[b] == 9)) || (sv[b] == 13))) {
@@ -57,7 +57,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return ("" + cfire::slice(sv, b, e));
 }
 
-[[nodiscard]] auto make_spaces(std::int64_t count) -> std::string {
+[[nodiscard]] inline auto make_spaces(std::int64_t count) -> std::string {
     if (count <= 0) {
         return "";
     }
@@ -78,7 +78,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return s;
 }
 
-[[nodiscard]] auto starts_with_str(std::string_view s, std::string_view prefix) -> bool {
+[[nodiscard]] inline auto starts_with_str(std::string_view s, std::string_view prefix) -> bool {
     auto n = s.size();
     auto pn = prefix.size();
     if (pn > n) {
@@ -87,7 +87,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return (cfire::slice(s, 0, pn) == prefix);
 }
 
-[[nodiscard]] auto ends_with_str(std::string_view s, std::string_view suffix) -> bool {
+[[nodiscard]] inline auto ends_with_str(std::string_view s, std::string_view suffix) -> bool {
     auto n = s.size();
     auto sn = suffix.size();
     if (sn > n) {
@@ -96,7 +96,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return (cfire::slice(s, (n - sn), n) == suffix);
 }
 
-[[nodiscard]] auto find_char(std::string_view s, std::uint8_t target, std::size_t start) -> std::int64_t {
+[[nodiscard]] inline auto find_char(std::string_view s, std::uint8_t target, std::size_t start) -> std::int64_t {
     auto i = start;
     auto n = s.size();
     while (i < n) {
@@ -108,7 +108,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return -1;
 }
 
-[[nodiscard]] auto find_str(std::string_view s, std::string_view target, std::size_t start) -> std::int64_t {
+[[nodiscard]] inline auto find_str(std::string_view s, std::string_view target, std::size_t start) -> std::int64_t {
     auto i = start;
     auto n = s.size();
     auto tn = target.size();
@@ -128,14 +128,14 @@ struct cfire::reflect_struct<StructFieldLine> {
     return -1;
 }
 
-[[nodiscard]] auto is_ident_char(std::uint8_t c) -> bool {
+[[nodiscard]] inline auto is_ident_char(std::uint8_t c) -> bool {
     if (((((c >= 65) && (c <= 90)) || ((c >= 97) && (c <= 122))) || ((c >= 48) && (c <= 57))) || (c == 95)) {
         return true;
     }
     return false;
 }
 
-[[nodiscard]] auto parse_struct_field_line(std::string_view trimmed) -> StructFieldLine {
+[[nodiscard]] inline auto parse_struct_field_line(std::string_view trimmed) -> StructFieldLine {
     StructFieldLine invalid = StructFieldLine{.is_valid = false, .is_comment_only = false, .name = "", .type_and_default = "", .tag = "", .comment = ""};
     if ((trimmed.size() == 0) || (trimmed == "}")) {
         return invalid;
@@ -186,7 +186,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return StructFieldLine{.is_valid = true, .is_comment_only = false, .name = fname, .type_and_default = rest, .tag = tag, .comment = comment};
 }
 
-[[nodiscard]] auto selfhost_format_lines(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
+[[nodiscard]] inline auto selfhost_format_lines(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
     std::vector<std::string> out_lines = {};
     auto n = raw_lines.size();
     std::int32_t indent = 0;
@@ -354,7 +354,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     return out_lines;
 }
 
-[[nodiscard]] auto selfhost_format_code(std::string_view src) -> std::string {
+[[nodiscard]] inline auto selfhost_format_code(std::string_view src) -> std::string {
     std::vector<std::string> raw_lines = {};
     auto n = src.size();
     std::size_t start = 0;
