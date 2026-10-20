@@ -85,6 +85,15 @@ struct cfire::reflect_struct<RenameResult> {
     };
 };
 
+[[nodiscard]] auto is_keyword(std::string_view name) -> bool;
+[[nodiscard]] auto is_valid_identifier(std::string_view name) -> bool;
+[[nodiscard]] auto split_lines(std::string_view text) -> std::vector<std::string>;
+[[nodiscard]] auto json_escape(std::string_view sv) -> std::string;
+[[nodiscard]] auto usize_to_str(std::size_t val) -> std::string;
+[[nodiscard]] auto apply_line_replacements(std::string_view original_content, const std::vector<Occurrence>& occurrences, std::string_view new_name) -> std::string;
+[[nodiscard]] auto generate_unified_diff(const RenameResult& res) -> std::string;
+[[nodiscard]] auto to_json(const RenameResult& res) -> std::string;
+
 [[nodiscard]] auto is_keyword(std::string_view name) -> bool {
     if (((((name == "package") || (name == "import")) || (name == "cpp")) || (name == "cplusplus")) || (name == "as")) {
         return true;
@@ -141,7 +150,7 @@ struct cfire::reflect_struct<RenameResult> {
             if ((end > start) && (text[(end - 1)] == 13)) {
                 end = (end - 1);
             }
-            lines.push_back(("" + cfire::slice(text, start, end)));
+            (void)(lines.push_back(("" + cfire::slice(text, start, end))));
             start = (i + 1);
         }
         i = (i + 1);
@@ -151,7 +160,7 @@ struct cfire::reflect_struct<RenameResult> {
         if ((end > start) && (text[(end - 1)] == 13)) {
             end = (end - 1);
         }
-        lines.push_back(("" + cfire::slice(text, start, end)));
+        (void)(lines.push_back(("" + cfire::slice(text, start, end))));
     }
     return lines;
 }
@@ -257,7 +266,7 @@ struct cfire::reflect_struct<RenameResult> {
     std::size_t oi = 0;
     auto num_occs = occurrences.size();
     while (oi < num_occs) {
-        occs.push_back(occurrences[oi]);
+        (void)(occs.push_back(occurrences[oi]));
         oi = (oi + 1);
     }
     std::size_t i = 1;

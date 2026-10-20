@@ -33,6 +33,17 @@ struct cfire::reflect_struct<StructFieldLine> {
     };
 };
 
+[[nodiscard]] auto trim_ws(std::string_view sv) -> std::string;
+[[nodiscard]] auto make_spaces(std::int64_t count) -> std::string;
+[[nodiscard]] auto starts_with_str(std::string_view s, std::string_view prefix) -> bool;
+[[nodiscard]] auto ends_with_str(std::string_view s, std::string_view suffix) -> bool;
+[[nodiscard]] auto find_char(std::string_view s, std::uint8_t target, std::size_t start) -> std::int64_t;
+[[nodiscard]] auto find_str(std::string_view s, std::string_view target, std::size_t start) -> std::int64_t;
+[[nodiscard]] auto is_ident_char(std::uint8_t c) -> bool;
+[[nodiscard]] auto parse_struct_field_line(std::string_view trimmed) -> StructFieldLine;
+[[nodiscard]] auto selfhost_format_lines(const std::vector<std::string>& raw_lines) -> std::vector<std::string>;
+[[nodiscard]] auto selfhost_format_code(std::string_view src) -> std::string;
+
 [[nodiscard]] auto trim_ws(std::string_view sv) -> std::string {
     std::size_t b = 0;
     auto n = sv.size();
@@ -184,7 +195,7 @@ struct cfire::reflect_struct<StructFieldLine> {
     while (i < n) {
         auto raw = raw_lines[i];
         if (in_raw_string) {
-            out_lines.push_back(raw);
+            (void)(out_lines.push_back(raw));
             if (find_char(raw, 96, 0) >= 0) {
                 in_raw_string = false;
             }
@@ -193,7 +204,7 @@ struct cfire::reflect_struct<StructFieldLine> {
         }
         auto trimmed = trim_ws(raw);
         if (trimmed.size() == 0) {
-            out_lines.push_back("");
+            (void)(out_lines.push_back(""));
             i = (i + 1);
             continue;
         }
@@ -216,7 +227,7 @@ struct cfire::reflect_struct<StructFieldLine> {
                     if (!sfl.is_comment_only) {
                         real_field_count = (real_field_count + 1);
                     }
-                    fields.push_back(sfl);
+                    (void)(fields.push_back(sfl));
                 } else {
                     pure_fields = false;
                     break;
@@ -224,7 +235,7 @@ struct cfire::reflect_struct<StructFieldLine> {
                 j = (j + 1);
             }
             if ((pure_fields && (j < n)) && (real_field_count > 0)) {
-                out_lines.push_back((make_spaces((indent * 4)) + trimmed));
+                (void)(out_lines.push_back((make_spaces((indent * 4)) + trimmed)));
                 std::int64_t max_name = 0;
                 std::int64_t max_type = 0;
                 auto any_tags_or_comments = false;
@@ -251,7 +262,7 @@ struct cfire::reflect_struct<StructFieldLine> {
                 auto row = (i + 1);
                 while (row < j) {
                     if (trim_ws(raw_lines[row]).size() == 0) {
-                        out_lines.push_back("");
+                        (void)(out_lines.push_back(""));
                         row = (row + 1);
                         continue;
                     }
@@ -275,10 +286,10 @@ struct cfire::reflect_struct<StructFieldLine> {
                             line_str = ((line_str + " ") + f.comment);
                         }
                     }
-                    out_lines.push_back(line_str);
+                    (void)(out_lines.push_back(line_str));
                     row = (row + 1);
                 }
-                out_lines.push_back((make_spaces((indent * 4)) + "}"));
+                (void)(out_lines.push_back((make_spaces((indent * 4)) + "}")));
                 i = (j + 1);
                 continue;
             }
@@ -299,7 +310,7 @@ struct cfire::reflect_struct<StructFieldLine> {
         if (line_indent < 0) {
             line_indent = 0;
         }
-        out_lines.push_back((make_spaces((line_indent * 4)) + trimmed));
+        (void)(out_lines.push_back((make_spaces((line_indent * 4)) + trimmed)));
         auto in_str = false;
         std::int32_t net_delta = 0;
         std::size_t k = 0;
@@ -354,7 +365,7 @@ struct cfire::reflect_struct<StructFieldLine> {
             if ((line_end > start) && (src[(line_end - 1)] == 13)) {
                 line_end = (line_end - 1);
             }
-            raw_lines.push_back(("" + cfire::slice(src, start, line_end)));
+            (void)(raw_lines.push_back(("" + cfire::slice(src, start, line_end))));
             start = (i + 1);
         }
         i = (i + 1);
@@ -364,7 +375,7 @@ struct cfire::reflect_struct<StructFieldLine> {
         if ((end_idx > start) && (src[(end_idx - 1)] == 13)) {
             end_idx = (end_idx - 1);
         }
-        raw_lines.push_back(("" + cfire::slice(src, start, end_idx)));
+        (void)(raw_lines.push_back(("" + cfire::slice(src, start, end_idx))));
     }
     auto formatted_lines = selfhost_format_lines(raw_lines);
     std::string result_str = "";

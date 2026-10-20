@@ -200,7 +200,13 @@ private:
         }
         if (!ast.global_vars.empty()) writeln();
 
-        // 5. Emit Functions & Receiver Methods
+        // 5a. Forward Declarations for Functions & Receiver Methods
+        for (const auto& fn : ast.functions) {
+            emit_function_forward_decl(fn);
+        }
+        if (!ast.functions.empty()) writeln();
+
+        // 5b. Emit Functions & Receiver Methods
         bool has_user_main = false;
         for (std::size_t i = 0; i < ast.functions.size(); ++i) {
             if (ast.functions[i].name == "main" && !ast.functions[i].receiver) {
@@ -426,6 +432,37 @@ private:
         }
     }
 
+    void emit_function_forward_decl(const FnDecl& fn) {
+        if (fn.name == "main" && !fn.receiver) return;
+        std::string cur_fn = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
+
+        if (!fn.type_params.empty()) {
+            std::string tparams;
+            for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
+                if (i > 0) tparams += ", ";
+                const auto& tp = fn.type_params[i];
+                if (!tp.constraint.empty()) {
+                    tparams += std::format("{} {}", tp.constraint, tp.name);
+                } else {
+                    tparams += std::format("typename {}", tp.name);
+                }
+            }
+            writeln(std::format("template <{}>", tparams));
+        }
+
+        std::string param_list;
+        if (fn.receiver) {
+            param_list += std::format("{} {}", lower_param_type(fn.receiver->intent, fn.receiver->type), fn.receiver->name);
+        }
+        for (std::size_t i = 0; i < fn.params.size(); ++i) {
+            if (!param_list.empty()) param_list += ", ";
+            param_list += std::format("{} {}", lower_param_type(fn.params[i].intent, fn.params[i].type), fn.params[i].name);
+        }
+        std::string ret_str = lower_return_type(fn.return_type);
+        std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
+        writeln(std::format("{}auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+    }
+
     void emit_function(const FnDecl& fn) {
         cur_fn_ = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
         defer_count_ = 0;
@@ -633,6 +670,16 @@ private:
                 --indent_;
                 writeln("}");
             } else if constexpr (std::is_same_v<T, ExprStmt>) {
+                if (const auto* id = std::get_if<IdentExpr>(&st.expr->node)) {
+                    if (id->name == "break") {
+                        writeln("break;");
+                        return;
+                    }
+                    if (id->name == "continue") {
+                        writeln("continue;");
+                        return;
+                    }
+                }
                 if (const auto* try_ex = std::get_if<TryExpr>(&st.expr->node)) {
                     if (in_main) {
                         int id = ++try_count_;
@@ -661,7 +708,7 @@ private:
                     writeln("}");
                     return;
                 }
-                writeln(std::format("{};", emit_expr(st.expr)));
+                writeln(std::format("(void)({});", emit_expr(st.expr)));
             } else if constexpr (std::is_same_v<T, DestructureVarDeclStmt>) {
                 std::string names;
                 for (std::size_t i = 0; i < st.bindings.size(); ++i) {
