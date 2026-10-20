@@ -118,6 +118,7 @@ gantt
 | :--- | :--- | :--- | :---: |
 | `CLEAN-01` | Tests & CI / Intent Diagnostics | Intent-driven test diagnostic decomposition, eliminating all ticket numbers and milestone prefixes from output | 2026-10-20 |
 | `CLEAN-02` | Stdlib / Pure `.cf` Migration | Authored pure `.cf` stdlib (`lib/str.cf`, `lib/encoding.cf`), transpiled into runtime headers, zero warnings | 2026-10-20 |
+| `CLEAN-03` | Compiler / Host Separation & De-duplication | Eliminated duplicate LSP JSON formatting, removed leaky `cpp::...` calls from `.cf` compiler code | 2026-10-20 |
 | `ARCH-01` | Buildsys / SHA-256 | In-process SHA-256 streaming hash eliminating external shell spawning | 2026-10-20 |
 | `ARCH-02` | Runtime / Headers | Modularized monolithic runtime into 13 granular headers in `runtime/core/` | 2026-10-20 |
 | `ARCH-03` | Tests / Decompose | Split 2,600 LOC monolithic runner into modular parallel suites (`tests/unit`, `e2e`, `benchmarks`) | 2026-10-20 |
