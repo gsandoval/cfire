@@ -20,7 +20,7 @@ fn selfhost_get_usage() -> str {
     mut u: str = "Usage: cfire <command> [args...]\n"
     u += "Commands:\n"
     u += "  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run\n"
-    u += "  test     <file.cf>            Compile and execute all `test \"...\" {{ ... }}` blocks in file\n"
+    u += "  test     <file.cf>            Compile and execute all `test \"...\" { ... }` blocks in file\n"
     u += "  build    [--target <triple>] <file.cf> Compile optimized binary for host or target triple\n"
     u += "  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin\n"
     u += "  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)\n"
@@ -84,15 +84,6 @@ fn driver_starts_with(s: &str, prefix: &str) -> bool {
         return false
     }
     return s[0..pn] == prefix
-}
-
-fn driver_ends_with(s: &str, suffix: &str) -> bool {
-    n := s.len
-    sn := suffix.len
-    if sn > n {
-        return false
-    }
-    return s[(n - sn)..n] == suffix
 }
 
 fn driver_find_first_not_of_ws(s: &str) -> usize {

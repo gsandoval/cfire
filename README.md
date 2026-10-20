@@ -29,13 +29,28 @@
 | `core:compress/zstd` | Facebook `libzstd` (`<zstd.h>`) frame compressor & decompressor | `-lzstd` |
 | `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` via `json:"..."` struct tags | `-lsimdjson` |
 | `core:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection, `exec`, `query[T]`, `tx` via `db:"..."` struct tags | `-lsqlite3` |
-| `core:crypto/blake3` | Hardware-accelerated 256-bit cryptographic digest (`hash_hex`) | *(CommonCrypto / std)* |
+| `core:crypto/sha256` | Standard FIPS 180-4 SHA-256 digest (`hash_hex`, `hash_bytes`) | *(stdlib)* |
+| `core:crypto/hmac` | RFC 2104 HMAC-SHA256 message authentication (`digest_hex`, `verify`) | *(stdlib)* |
+| `core:crypto/aes` | NIST FIPS 197 AES-256-GCM symmetric authenticated encryption (AEAD) | *(stdlib)* |
+| `core:crypto/blake3` | Cryptographic 256-bit digest (`hash_hex`) | *(CommonCrypto / std)* |
 | `core:net` | Real POSIX BSD TCP sockets (`listen_tcp`, `connect_tcp`, `accept`, `read_str`, `write`) | *(POSIX sockets)* |
+| `core:net/http` | HTTP/1.1 client (`get`, `post`), server (`make_server`), router (`Router`) | *(POSIX / std)* |
+| `core:net/url` | RFC 3986 URL parsing & percent encoding (`parse`, `encode`, `decode`) | *(stdlib)* |
+| `core:net/websocket` | RFC 6455 WebSockets client & server (`handshake`, `Frame`, `send`, `recv`) | *(POSIX / std)* |
 | `core:sync` | Thread-safe Go-style typed `Channel[T]` (`send`, `recv`, `close`) for `async.scope` workers | *(stdlib)* |
-| `core:time` | Monotonic clocks & timers (`now_ms`, `unix_seconds`, `sleep_ms`) | *(stdlib)* |
-| `core:os` | Environment, working directory & subprocess capture (`getenv`, `setenv`, `cwd`, `exec`) | *(POSIX / stdlib)* |
+| `core:sync/context` | Cancellation tokens & deadlines (`Context`, `with_cancel`, `with_timeout`) | *(stdlib)* |
+| `core:time` | Monotonic clocks, durations & RFC 3339 timestamps (`now`, `format_rfc3339`, `parse_rfc3339`) | *(stdlib)* |
+| `core:os` | Environment, working directory, command execution (`getenv`, `exec`, `command`) | *(POSIX / stdlib)* |
 | `core:str` | Zero-fuss string manipulation (`trim`, `split`, `join`, `to_upper`, `to_lower`, `replace_all`) | *(stdlib)* |
-| `core:math` / `core:rand` | Math helpers (`clamp_i64`, `abs_f64`, `sqrt_f64`) & thread-local RNG (`range_i64`) | *(stdlib)* |
+| `core:unicode` | UTF-8 rune decoding, rune counting, uppercase/lowercase conversions | *(stdlib)* |
+| `core:regex` | ECMAScript regular expressions (`compile`, `is_match`, `find_first`, `replace_all`) | *(stdlib)* |
+| `core:collections` | High-performance containers: `Set[T]`, `PriorityQueue[T]`, `Deque[T]` | *(stdlib)* |
+| `core:sort` | Slice sorting & binary search (`slice`, `slice_by`, `binary_search`) | *(stdlib)* |
+| `core:log` | Structured leveled logging (`debug`, `info`, `warn`, `error`, `set_level`) | *(stdlib)* |
+| `core:encoding/base64` | RFC 4648 Base64 & URL-safe encoding/decoding (`encode`, `decode`) | *(stdlib)* |
+| `core:encoding/hex` | Hexadecimal encoding & decoding (`encode`, `decode`) | *(stdlib)* |
+| `core:encoding/csv` | RFC 4180 CSV parsing & stringification (`Reader`, `Writer`) | *(stdlib)* |
+| `core:math` / `core:rand` | Numeric utilities & thread-local CSPRNG (`range_i64`, `random_bytes`) | *(stdlib)* |
 | `vendor:raylib` | `raylib` (`<raylib.h>`) 2D/3D hardware-accelerated visualization | `-lraylib` + macOS frameworks |
 
 ## Quick Start
@@ -56,6 +71,19 @@ make dogfood
 ./cfire run examples/07-types-match-map/main.cf
 ./cfire run examples/08-multi-pkg-cc-build/main.cf
 ./cfire run examples/09-stdlib-test-pointers/main.cf
+
+# Evaluate one-shot expressions or statements:
+./cfire eval -e "1 + 2 * 3"
+./cfire eval "println(\"Hello from cfire eval!\")"
+
+# Semantic rename refactoring across workspace:
+./cfire refactor rename src/main.cf:42:5 my_new_symbol --diff
+
+# Configure IDE integrations (VS Code, Cursor, Zed, Neovim, CLion):
+./cfire ide --all
+
+# Inspect and type-check with diagnostics:
+./cfire check examples/01-hello-core/main.cf
 
 # Execute built-in `test "..." { ... }` blocks in any .cf file:
 ./cfire test examples/09-stdlib-test-pointers/main.cf

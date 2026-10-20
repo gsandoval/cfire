@@ -2,7 +2,7 @@
 // src/docgen.hpp — Single-Source-Of-Truth Metadata Catalog & Documentation Generator (`cfire doc`)
 // Generates:
 //   - docs/index.html            (Interactive "Sapphire on Fire" Landing Page)
-//   - docs/guide.html & GUIDE.md (8-Chapter Language & Systems Programming Guide)
+//   - docs/guide.html & GUIDE.md (11-Chapter Language & Systems Programming Guide)
 //   - docs/reference.html & STDLIB_REFERENCE.md (Complete `core:*` Stdlib & Diagnostics Reference)
 // Also powers `cfire lsp` hover/autocomplete and `./cfire doc <file.cf>` package doc extraction.
 
@@ -1828,7 +1828,7 @@ fn main() {
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">&#128640; Start in 5 Minutes &rarr;</a>
-      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 10-Chapter Guide</a>
+      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 11-Chapter Guide</a>
       <a class="btn btn-secondary" href="reference.html">&#9889; Explore Stdlib Reference</a>
     </div>
 
@@ -1865,8 +1865,8 @@ fn main() {
     </div>
     <div class="card">
       <div class="card-icon">&#128230;</div>
-      <h3>4. 13 Built-In Production Modules</h3>
-      <p>Batteries included from day one: RFC 6455 WebSockets, HTTP client/server, SQLite, Zstandard compression, AES-256 GCM AEAD, HMAC-SHA256, cancellation Contexts, SIMD JSON, UTF-8 Unicode, and CLI struct tag parsers.</p>
+      <h3>4. 28 Built-In Production Modules</h3>
+      <p>Batteries included from day one: RFC 6455 WebSockets, HTTP client/server &amp; router, SQLite, Zstandard compression, AES-256 GCM AEAD, HMAC-SHA256, cancellation Contexts, SIMD JSON, UTF-8 Unicode, and CLI struct tag parsers.</p>
     </div>
     <div class="card">
       <div class="card-icon">&#128038;</div>
@@ -1930,7 +1930,7 @@ fn main() {
         <td>STL provided; networking, JSON, SQLite require 3rd party libs.</td>
         <td>Minimal stdlib; relies on external crates.</td>
         <td>Rich built-in stdlib (HTTP, crypto, json).</td>
-        <td><strong>13 built-in <code>core:*</code> modules</strong> (WebSockets, HTTP, SQLite, Zstd, AES).</td>
+        <td><strong>28 built-in <code>core:*</code> modules</strong> (WebSockets, HTTP/Router, SQLite, Zstd, AES, RegEx).</td>
       </tr>
       <tr>
         <td><strong>Project Ejection</strong></td>
@@ -2032,6 +2032,11 @@ fn main() {
       <div class="roadmap-num">Chapter 10</div>
       <h4>HTTP Servers &amp; Routers</h4>
       <p>Native HTTP/1.1 wire parser, fluent response builder, path parameters (<code>:id</code>), and independent routing.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-11">
+      <div class="roadmap-num">Chapter 11</div>
+      <h4>100% Self-Hosting &amp; Dogfooding</h4>
+      <p>Pure cfire compiler architecture, 12 self-hosted modules, reproducible bootstrap headers, and dual-engine fallback.</p>
     </a>
   </div>
 
