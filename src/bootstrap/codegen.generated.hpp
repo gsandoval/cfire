@@ -71,6 +71,7 @@ struct cfire::reflect_struct<CodegenEmitter> {
 [[nodiscard]] inline auto clean_header_path(const std::string& path) -> std::string;
 inline auto CodegenEmitter__write(CodegenEmitter& e, const std::string& s) -> void;
 inline auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void;
+[[nodiscard]] inline auto cf_usize_to_str(std::size_t val) -> std::string;
 [[nodiscard]] inline auto CodegenEmitter__emit_file(CodegenEmitter& e, const cfire::frontend::CheckedFile& cf) -> std::string;
 [[nodiscard]] inline auto selfhost_emit_cpp_file(const cfire::frontend::CheckedFile& cf, bool test_mode) -> std::string;
 
@@ -109,6 +110,21 @@ inline auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> 
         i = (i + 1);
     }
     e.buf += (s + "\n");
+}
+
+[[nodiscard]] inline auto cf_usize_to_str(std::size_t val) -> std::string {
+    if (val == 0) {
+        return "0";
+    }
+    std::string digits_table = "0123456789";
+    auto v = val;
+    std::string digits = "";
+    while (v > 0) {
+        auto d = (v % 10);
+        digits = (cfire::slice(digits_table, d, (d + 1)) + digits);
+        v = (v / 10);
+    }
+    return digits;
 }
 
 [[nodiscard]] inline auto CodegenEmitter__emit_file(CodegenEmitter& e, const cfire::frontend::CheckedFile& cf) -> std::string {
@@ -434,11 +450,11 @@ inline auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> 
         while (ri < n_tests) {
             auto t_name = cf.ast.tests[ri].name;
             (void)(CodegenEmitter__writeln(e, (("std::println(\"=== RUN   " + t_name) + "\");")));
-            (void)(CodegenEmitter__writeln(e, (("__cfire_test_" + cfire::frontend::codegen_usize_to_str(ri)) + "();")));
+            (void)(CodegenEmitter__writeln(e, (("__cfire_test_" + cf_usize_to_str(ri)) + "();")));
             (void)(CodegenEmitter__writeln(e, (("std::println(\"--- PASS: " + t_name) + "\");")));
             ri = (ri + 1);
         }
-        (void)(CodegenEmitter__writeln(e, (("std::println(\"PASS (" + cfire::frontend::codegen_usize_to_str(n_tests)) + " cfire tests succeeded)\");")));
+        (void)(CodegenEmitter__writeln(e, (("std::println(\"PASS (" + cf_usize_to_str(n_tests)) + " cfire tests succeeded)\");")));
         (void)(CodegenEmitter__writeln(e, "return 0;"));
         e.indent_level = (e.indent_level - 1);
         (void)(CodegenEmitter__writeln(e, "}"));

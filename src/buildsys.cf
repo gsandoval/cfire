@@ -23,6 +23,21 @@ fn buildsys_starts_with(s: str, prefix: str) -> bool {
     return s[0..pn] == prefix
 }
 
+fn buildsys_usize_to_str(val: usize) -> str {
+    if val == 0 {
+        return "0"
+    }
+    digits_table := "0123456789"
+    mut v := val
+    mut digits: str = ""
+    for v > 0 {
+        d := v % 10
+        digits = digits_table[d..(d + 1)] + digits
+        v = v / 10
+    }
+    return digits
+}
+
 fn selfhost_generate_cmake_file(plan: cpp::cfire::build::BuildPlan) -> str {
     mut e := BuildEmitter{buf: ""}
     mut cm_dir: str = "${"
@@ -40,7 +55,7 @@ fn selfhost_generate_cmake_file(plan: cpp::cfire::build::BuildPlan) -> str {
         mut pi: usize = 0
         for pi < n_pkg {
             dep_name := plan.pkg_config_deps[pi]
-            e.writeln("pkg_check_modules(DEP_" + cpp::cfire::frontend::codegen_usize_to_str(pi) + " REQUIRED IMPORTED_TARGET " + dep_name + ")")
+            e.writeln("pkg_check_modules(DEP_" + buildsys_usize_to_str(pi) + " REQUIRED IMPORTED_TARGET " + dep_name + ")")
             pi = pi + 1
         }
         e.writeln("")
@@ -83,7 +98,7 @@ fn selfhost_generate_cmake_file(plan: cpp::cfire::build::BuildPlan) -> str {
 
     mut pki: usize = 0
     for pki < n_pkg {
-        e.writeln("target_link_libraries(app PRIVATE PkgConfig::DEP_" + cpp::cfire::frontend::codegen_usize_to_str(pki) + ")")
+        e.writeln("target_link_libraries(app PRIVATE PkgConfig::DEP_" + buildsys_usize_to_str(pki) + ")")
         pki = pki + 1
     }
 
