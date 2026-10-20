@@ -379,28 +379,28 @@ type AuditLog struct {
     require(pkg_md.has_value() && pkg_md->contains("compute_fixed_sum") && pkg_md->contains("type Metric struct"),
         "cfire::doc::extract_file_markdown_doc check");
 
-    // 4. Test Core Library additions and catalog alignment (LIB-12, BS-01)
+    // 4. Test Core Library additions and catalog alignment
     {
-        require(cfire::str::contains("cfire language", "fire"), "cfire::str::contains check (LIB-12)");
-        require(!cfire::str::contains("cfire language", "rust"), "cfire::str::contains false check (LIB-12)");
-        require(cfire::str::replace("hello world", "world", "cfire") == "hello cfire", "cfire::str::replace check (LIB-12)");
-        require(cfire::math::clamp_f64(1.5, 0.0, 1.0) == 1.0, "cfire::math::clamp_f64 check (LIB-12)");
-        require(cfire::math::sqrt(16.0) == 4.0, "cfire::math::sqrt check (LIB-12)");
+        require(cfire::str::contains("cfire language", "fire"), "cfire::str::contains check");
+        require(!cfire::str::contains("cfire language", "rust"), "cfire::str::contains false check");
+        require(cfire::str::replace("hello world", "world", "cfire") == "hello cfire", "cfire::str::replace check");
+        require(cfire::math::clamp_f64(1.5, 0.0, 1.0) == 1.0, "cfire::math::clamp_f64 check");
+        require(cfire::math::sqrt(16.0) == 4.0, "cfire::math::sqrt check");
         auto r_u64 = cfire::rand::u64();
         auto r_unit = cfire::rand::f64_unit();
-        require(r_unit >= 0.0 && r_unit <= 1.0, "cfire::rand::f64_unit check (LIB-12)");
+        require(r_unit >= 0.0 && r_unit <= 1.0, "cfire::rand::f64_unit check");
         (void)r_u64;
 
         auto test_tmp_file = std::filesystem::temp_directory_path() / "cfire_io_test.bin";
         std::vector<std::byte> payload = {std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}};
         auto w_res = cfire::fs::write_all(test_tmp_file, payload);
-        require(w_res.has_value(), "cfire::fs::write_all check (LIB-12)");
+        require(w_res.has_value(), "cfire::fs::write_all check");
         auto r_res = cfire::fs::read_all(test_tmp_file);
-        require(r_res.has_value() && *r_res == payload, "cfire::fs::read_all check (LIB-12)");
+        require(r_res.has_value() && *r_res == payload, "cfire::fs::read_all check");
         std::filesystem::remove(test_tmp_file);
 
         auto exec_res = cfire::os::exec_output("echo 'cfire_test'");
-        require(exec_res.has_value() && exec_res->contains("cfire_test"), "cfire::os::exec_output check (LIB-12)");
+        require(exec_res.has_value() && exec_res->contains("cfire_test"), "cfire::os::exec_output check");
 
         // Verify Guide Chapter 8 declarative build.cf content
         auto guide_path = docs_dir / "GUIDE.md";
@@ -408,7 +408,7 @@ type AuditLog struct {
         require(guide_txt.has_value() &&
                 guide_txt->contains("FastHash := build.CC(") &&
                 guide_txt->contains("KVStore := build.CMake("),
-            "docs/GUIDE.md Chapter 8 declarative build.cf reconciliation (BS-01)");
+            "docs/GUIDE.md Chapter 8 declarative build.cf reconciliation");
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");

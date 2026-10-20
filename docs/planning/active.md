@@ -8,48 +8,38 @@ This document tracks items currently under active design, scoping, or implementa
 
 | Task ID | Component | Status | Assignee | Review Check Gate |
 | :--- | :--- | :---: | :---: | :---: |
-| `CLEAN-01` | Tests & CI / Intent Diagnostics | `[COMPLETED]` | Principal Compiler Engineer | Passed |
-| `CLEAN-02` | Stdlib / Pure `.cf` Migration | `[PLANNED]` | Principal Compiler Engineer | Queued |
-| `CLEAN-03` | Compiler / Host Separation & De-duplication | `[PLANNED]` | Principal Compiler Engineer | Queued |
+| `CLEAN-01` | Tests & CI / Intent Diagnostics | `[COMPLETED]` | Principal Compiler Engineer | Passed (Commit `74f7c2f`) |
+| `CLEAN-02` | Stdlib / Pure `.cf` Migration | `[COMPLETED]` | Principal Compiler Engineer | Passed (All 4 Quality Gates) |
+| `CLEAN-03` | Compiler / Host Separation & De-duplication | `[IN PROGRESS]` | Principal Compiler Engineer | In Implementation |
 
 ---
 
-## Active Task: `CLEAN-01` Intent-Driven Test Diagnostics & Verification Reporting
+## Active Task: `CLEAN-03` Compiler Architecture De-duplication & Clean Host Separation
 
 ### 1. Scope & Problem Statement
 - **Problem**:
-  1. Conformance test suites in `tests/unit/test_stdlib.cpp` are grouped into opaque ticket batch names (`test_p1_features`, `test_p2_features`, `test_p2_batch2_features`, `test_p2_batch3_features`, `test_p2_batch4_features`, `test_p2_batch5_features`). The test output displays ticket numbers rather than the actual software capabilities or invariants being verified.
-  2. The `Makefile` outputs cosmetic artificial agent banners (`@echo "✓ All Senior Engineer Review Quality Gates PASSED"`), rather than concrete, descriptive status lines for each quality gate.
+  1. The compiler maintains duplicate logic between handwritten C++ (`src/*.hpp`) and self-hosted `.cf` (`src/*.cf`). For instance, JSON escaping and message routing in `src/lsp.hpp` vs `src/lsp.cf`.
+  2. `.cf` compiler code contains leaky `cpp::...` internal type escapes (`cpp::cfire::build::BuildPlan`, `cpp::cfire::frontend::codegen_usize_to_str`) rather than clean native `cfire` type definitions.
+  3. C++ headers in `src/bootstrap/` must be standardized as purely generated compiler outputs that are never edited manually.
 - **In Scope**:
-  - Decompose the 6 batch test functions into granular, intent-revealing functions named after their domain behaviors:
-    - `test_crypto_sha256_hmac_and_csprng`
-    - `test_composable_expression_try`
-    - `test_transitive_header_and_link_flags`
-    - `test_data_encodings_base64_hex_csv`
-    - `test_relocatable_cmake_ejection`
-    - `test_c_preprocessor_macro_injection`
-    - `test_regex_matching_and_captures`
-    - `test_datetime_rfc3339_and_durations`
-    - `test_structured_logging_json_and_text`
-    - `test_custom_build_steps_codegen`
-    - `test_filesystem_streaming_and_paths`
-    - `test_subprocess_piping_and_streaming`
-    - `test_unicode_utf8_runes_and_case`
-    - `test_variadic_generic_tuples`
-  - Update `tests/test_harness.hpp` and `tests/test_main.cpp` to register and run each test individually.
-  - Refactor `Makefile` to output clear, professional verification messages describing each quality gate's exact status.
+  - Audit and de-duplicate common utilities across `src/lsp.hpp` and `src/lsp.cf`.
+  - Replace raw `cpp::...` type leaks in self-hosted `.cf` files where native types are sufficient or wrap them cleanly behind formal FFI boundaries.
+  - Standardize bootstrap generated headers and verify strict one-way generation pipeline.
+  - Verify that `make dogfood` and `make review-check` continue to pass cleanly with 100% parity across all test suites.
 - **Out of Scope**:
-  - Changing test assertions or expected behaviors (100% test parity must be preserved).
+  - Total rewrite of the C++ stage0 bootstrap compiler driver (which remains the authoritative C++23 reference engine).
 
 ### 2. Testing Strategy Defined Across Tiers
 - **Unit & Conformance**:
-  - Run `make test` to verify every test executes and passes.
-  - Verify every test outputs `=== RUN test_<behavior>` and `--- PASS: test_<behavior>`.
-- **Quality Gates**:
-  - `make review-check` passes all 4 gates without warnings or artificial banners.
+  - `./cfire test`: all 40+ unit, semantic, and e2e test suites must pass.
+- **Dogfooding**:
+  - `make dogfood`: re-transpile all 14 self-hosted and standard library modules (`src/*.cf` and `lib/*.cf`) with zero warnings and zero regressions.
+- **Review Check**:
+  - `make review-check`: pass all 4 quality gates (formatting, doc sync, dogfooding, test parity).
 
 ### 3. Implementation Plan
-- [x] **Step 1**: Decompose `tests/unit/test_stdlib.cpp` into granular, intent-named functions.
-- [x] **Step 2**: Update declarations in `tests/test_harness.hpp` and calls in `tests/test_main.cpp`.
-- [x] **Step 3**: Update `Makefile` verification outputs to provide concrete functional feedback.
-- [x] **Step 4**: Run `make test` and `make review-check` to verify all tests pass with clean intent outputs.
+- [ ] **Step 1**: Audit and clean up leaky `cpp::...` escapes in self-hosted `.cf` files (`src/buildsys.cf`, `src/codegen.cf`, `src/lsp.cf`).
+- [ ] **Step 2**: De-duplicate LSP protocol formatting between `src/lsp.cf` and `src/lsp.hpp`.
+- [ ] **Step 3**: Re-run `make dogfood` and verify generated bootstrap headers compile cleanly without warnings.
+- [ ] **Step 4**: Run full `make review-check` quality gates.
+- [ ] **Step 5**: Commit and push changes.
