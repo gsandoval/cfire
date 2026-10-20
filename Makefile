@@ -28,6 +28,7 @@ bootstrap-from-stage0:
 
 dogfood: build
 	mkdir -p src/bootstrap
+	mkdir -p runtime/core
 	./cfire emit-cpp src/lexer.cf > src/bootstrap/lexer.generated.hpp
 	./cfire emit-cpp src/formatter.cf > src/bootstrap/formatter.generated.hpp
 	./cfire emit-cpp src/ast.cf > src/bootstrap/ast.generated.hpp
@@ -40,11 +41,13 @@ dogfood: build
 	./cfire emit-cpp src/lsp.cf > src/bootstrap/lsp.generated.hpp
 	./cfire emit-cpp src/main.cf > src/bootstrap/main.generated.hpp
 	./cfire emit-cpp src/clang_bridge.cf > src/bootstrap/clang_bridge.generated.hpp
+	./cfire emit-cpp lib/str.cf > runtime/core/str.generated.hpp
+	./cfire emit-cpp lib/encoding.cf > runtime/core/encoding.generated.hpp
 	$(MAKE) test
 
 review-check: build
 	@echo "=== [1/4] Checking Canonical Code Formatting ==="
-	./cfire fmt --check src/ examples/
+	./cfire fmt --check src/ examples/ lib/
 	@echo "✓ Canonical code formatting verified"
 	@echo "=== [2/4] Checking Documentation Synchronization ==="
 	./cfire doc --check

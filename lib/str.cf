@@ -1,0 +1,156 @@
+package str
+// lib/str.cf — Pure cfire Standard Library String Module
+
+fn trim(s: str) -> str {
+    mut start: usize = 0
+    mut end: usize = s.len
+    for start < end && (s[start] == 32 || s[start] == 9 || s[start] == 10 || s[start] == 13) {
+        start = start + 1
+    }
+    for end > start && (s[end - 1] == 32 || s[end - 1] == 9 || s[end - 1] == 10 || s[end - 1] == 13) {
+        end = end - 1
+    }
+    if start >= end {
+        return ""
+    }
+    mut result: str = ""
+    result += s[start..end]
+    return result
+}
+
+fn split(s: str, sep: str) -> []str {
+    mut res: []str = []
+    if sep.len == 0 {
+        res.push(s)
+        return res
+    }
+    mut start: usize = 0
+    mut i: usize = 0
+    n := s.len
+    sn := sep.len
+    for i + sn <= n {
+        if s[i..i+sn] == sep {
+            mut item: str = ""
+            item += s[start..i]
+            res.push(item)
+            start = i + sn
+            i = start
+        } else {
+            i = i + 1
+        }
+    }
+    if start <= n {
+        mut last_item: str = ""
+        last_item += s[start..n]
+        res.push(last_item)
+    }
+    return res
+}
+
+fn join(parts: []str, sep: str) -> str {
+    mut res: str = ""
+    mut i: usize = 0
+    n := parts.len
+    for i < n {
+        if i > 0 {
+            res += sep
+        }
+        res += parts[i]
+        i = i + 1
+    }
+    return res
+}
+
+fn contains(s: str, needle: str) -> bool {
+    n := s.len
+    nn := needle.len
+    if nn == 0 {
+        return true
+    }
+    if nn > n {
+        return false
+    }
+    mut i: usize = 0
+    for i + nn <= n {
+        if s[i..i+nn] == needle {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn starts_with(s: str, prefix: str) -> bool {
+    n := s.len
+    pn := prefix.len
+    if pn > n {
+        return false
+    }
+    return s[0..pn] == prefix
+}
+
+fn ends_with(s: str, suffix: str) -> bool {
+    n := s.len
+    sn := suffix.len
+    if sn > n {
+        return false
+    }
+    return s[n-sn..n] == suffix
+}
+
+fn to_upper(s: str) -> str {
+    mut res := s
+    mut i: usize = 0
+    n := res.len
+    for i < n {
+        c := res[i]
+        if c >= 97 && c <= 122 {
+            res[i] = c - 32
+        }
+        i = i + 1
+    }
+    return res
+}
+
+fn to_lower(s: str) -> str {
+    mut res := s
+    mut i: usize = 0
+    n := res.len
+    for i < n {
+        c := res[i]
+        if c >= 65 && c <= 90 {
+            res[i] = c + 32
+        }
+        i = i + 1
+    }
+    return res
+}
+
+fn replace_all(s: str, from: str, to: str) -> str {
+    if from.len == 0 {
+        return s
+    }
+    mut res: str = ""
+    mut start: usize = 0
+    mut i: usize = 0
+    n := s.len
+    fn_len := from.len
+    for i + fn_len <= n {
+        if s[i..i+fn_len] == from {
+            res += s[start..i]
+            res += to
+            start = i + fn_len
+            i = start
+        } else {
+            i = i + 1
+        }
+    }
+    if start < n {
+        res += s[start..n]
+    }
+    return res
+}
+
+fn replace(s: str, from: str, to: str) -> str {
+    return replace_all(s, from, to)
+}

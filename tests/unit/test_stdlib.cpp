@@ -97,7 +97,7 @@ void test_buildsys_incremental_caching([[maybe_unused]] const std::filesystem::p
             break;
         }
     }
-    require(found_disambiguated_obj, "object file disambiguated with relative path hash (BS-02)");
+    require(found_disambiguated_obj, "object file disambiguated with relative path hash");
 
     // Record archive write time
     auto ar_time1 = std::filesystem::last_write_time(dep.built_archive);
@@ -107,7 +107,7 @@ void test_buildsys_incremental_caching([[maybe_unused]] const std::filesystem::p
     auto res2 = cfire::build::build_local_dep(test_dir.path, dep, plan2);
     require(res2.has_value(), "second build_local_dep");
     auto ar_time2 = std::filesystem::last_write_time(dep.built_archive);
-    require(ar_time1 == ar_time2, "unmodified build.CC dependency skips re-compilation and re-archiving (BS-02)");
+    require(ar_time1 == ar_time2, "unmodified build.CC dependency skips re-compilation and re-archiving");
     std::println("--- PASS: test_buildsys_incremental_caching");
 }
 
@@ -186,7 +186,7 @@ void test_cpp_ast_ingestion_and_overloads([[maybe_unused]] const std::filesystem
         require(sym.name == "add", "symbol name is add");
         require(sym.return_type == "int", "primary overload return type is int");
         require(sym.param_types.size() == 2, "primary overload has 2 params");
-        require(sym.overloads.size() == 1, "Math::add captured secondary overload (BS-03)");
+        require(sym.overloads.size() == 1, "Math::add captured secondary overload");
         if (!sym.overloads.empty()) {
             require(sym.overloads[0].return_type == "double", "secondary overload return type is double");
         }
@@ -205,7 +205,7 @@ void test_cpp_ast_ingestion_and_overloads([[maybe_unused]] const std::filesystem
         require(loaded->symbols.contains("Math::add"), "loaded cache contains Math::add");
         if (loaded->symbols.contains("Math::add")) {
             const auto& loaded_sym = loaded->symbols.at("Math::add");
-            require(loaded_sym.overloads.size() == 1, "loaded cache preserves overloads (BS-03)");
+            require(loaded_sym.overloads.size() == 1, "loaded cache preserves overloads");
         }
     }
     std::filesystem::remove(cache_tmp);
@@ -221,7 +221,7 @@ return x + 1
 fn main() {}
 )";
     auto bad_ast = cfire::frontend::parse_source("test_bad_forward.cf", bad_src);
-    require(!bad_ast.has_value(), "expected parser to reject 'forward' parameter intent (LD-14)");
+    require(!bad_ast.has_value(), "expected parser to reject 'forward' parameter intent");
     std::println("--- PASS: test_parameter_intent_validation");
 }
 
@@ -236,13 +236,13 @@ cpp {
 }
 )";
     auto ast = cfire::frontend::parse_source("test_cpp_escape.cf", src);
-    require(ast.has_value(), "parse test_cpp_escape.cf with cpp { ... } (LD-08)");
+    require(ast.has_value(), "parse test_cpp_escape.cf with cpp { ... }");
     if (ast.has_value()) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
         require(checked.has_value(), "analyze test_cpp_escape.cf");
         if (checked.has_value()) {
             std::string cpp_code = cfire::frontend::emit_cpp(*checked);
-            require(cpp_code.contains("int val = 42;"), "codegen preserves cpp block verbatim (LD-08)");
+            require(cpp_code.contains("int val = 42;"), "codegen preserves cpp block verbatim");
         }
     }
     std::println("--- PASS: test_cpp_escape_hatch_execution");
@@ -319,18 +319,18 @@ println("monadic types struct check")
 }
 )";
     auto ast = cfire::frontend::parse_source("test_monadic_types.cf", src);
-    require(ast.has_value(), "parse test_monadic_types.cf (LD-01)");
+    require(ast.has_value(), "parse test_monadic_types.cf");
     if (ast.has_value()) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
         require(checked.has_value(), "analyze test_monadic_types.cf");
         if (checked.has_value()) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("std::optional<std::string> Name"),
-                "struct field 'Name: str?' lowers to std::optional<std::string> (LD-01)");
+                "struct field 'Name: str?' lowers to std::optional<std::string>");
             require(cpp.contains("std::expected<std::int32_t, cfire::Error> Score"),
-                "struct field 'Score: i32!' lowers to std::expected<std::int32_t, cfire::Error> (LD-01)");
+                "struct field 'Score: i32!' lowers to std::expected<std::int32_t, cfire::Error>");
             require(cpp.contains("std::vector<std::optional<std::string>> Tags"),
-                "struct field 'Tags: []str?' lowers to std::vector<std::optional<std::string>> (LD-01)");
+                "struct field 'Tags: []str?' lowers to std::vector<std::optional<std::string>>");
 
             // End-to-end compile with clang++ to verify C++23 validity
             auto res = compile_and_run_cpp(cpp, rt_dir, "cfire_monadic");
@@ -373,15 +373,15 @@ println("final val: {}", v)
         if (checked.has_value()) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("cfire::async::Scope scope(2);"),
-                "async.scope lowers to RAII Scope declaration (LD-03)");
+                "async.scope lowers to RAII Scope declaration");
             require(cpp.contains("scope.defer([&] {"),
-                "defer inside async.scope routes to scope.defer(...) (LD-03)");
+                "defer inside async.scope routes to scope.defer(...)");
             require(cpp.contains("scope.join_all();"),
-                "async.scope block explicitly joins on exit (LD-03)");
+                "async.scope block explicitly joins on exit");
 
             auto res = compile_and_run_cpp(cpp, rt_dir, "cfire_scope");
             res.assert_ok("async.scope binary execution");
-            res.assert_contains("final val: 99", "defer in async.scope executed strictly after worker thread task completed (LD-03)");
+            res.assert_contains("final val: 99", "defer in async.scope executed strictly after worker thread task completed");
         }
     }
     std::println("--- PASS: test_structured_concurrency_lifecycle");
@@ -398,22 +398,22 @@ fn main() {
 }
 )";
     auto ast = cfire::frontend::parse_source("test_borrows.cf", src);
-    require(ast.has_value(), "parse test_borrows.cf (LD-04)");
+    require(ast.has_value(), "parse test_borrows.cf");
     if (ast.has_value()) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
         require(checked.has_value(), "analyze test_borrows.cf");
         if (checked.has_value()) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("std::string_view borrow_str"),
-                "&str parameter lowers to std::string_view (LD-04)");
+                "&str parameter lowers to std::string_view");
             require(cpp.contains("const std::string& owned_str"),
-                "owned str parameter lowers to const std::string& (LD-04)");
+                "owned str parameter lowers to const std::string&");
             require(cpp.contains("std::span<const std::int32_t> borrow_slice"),
-                "&[]i32 parameter lowers to std::span<const std::int32_t> (LD-04)");
+                "&[]i32 parameter lowers to std::span<const std::int32_t>");
             require(cpp.contains("const std::vector<std::int32_t>& owned_slice"),
-                "owned []i32 parameter lowers to const std::vector<std::int32_t>& (LD-04)");
+                "owned []i32 parameter lowers to const std::vector<std::int32_t>&");
             require(cpp.contains("std::span<std::int32_t> mut_slice"),
-                "&mut []i32 parameter lowers to std::span<std::int32_t> (LD-04)");
+                "&mut []i32 parameter lowers to std::span<std::int32_t>");
         }
     }
     std::println("--- PASS: test_explicit_borrow_references");
@@ -437,7 +437,7 @@ consume(move s)
     require(ast1.has_value(), "parse test_reassign.cf");
     if (ast1.has_value()) {
         auto checked = cfire::frontend::analyze(std::move(*ast1));
-        require(checked.has_value(), "reassignment after move is permitted (LD-05)");
+        require(checked.has_value(), "reassignment after move is permitted");
     }
 
     // 2. Move in loop body without reassignment is rejected
@@ -459,7 +459,7 @@ for i in [1, 2, 3] {
         require(!checked.has_value(), "move in loop body without reassignment must fail");
         if (!checked.has_value()) {
             require(checked.error().contains("cfire/USE-AFTER-MOVE"),
-                "loop move error reports cfire/USE-AFTER-MOVE (LD-05)");
+                "loop move error reports cfire/USE-AFTER-MOVE");
         }
     }
 
@@ -480,7 +480,7 @@ for i in [1, 2, 3] {
     require(ast3.has_value(), "parse test_loop_reassign.cf");
     if (ast3.has_value()) {
         auto checked = cfire::frontend::analyze(std::move(*ast3));
-        require(checked.has_value(), "move in loop body with reassignment is permitted (LD-05)");
+        require(checked.has_value(), "move in loop body with reassignment is permitted");
     }
 
     // 4. Branch move: move in only one if branch does NOT mark variable moved after if
@@ -500,7 +500,7 @@ if cond {
     require(ast4.has_value(), "parse test_branch.cf");
     if (ast4.has_value()) {
         auto checked = cfire::frontend::analyze(std::move(*ast4));
-        require(checked.has_value(), "move in only one if branch does not mark variable moved after if (LD-05)");
+        require(checked.has_value(), "move in only one if branch does not mark variable moved after if");
     }
 
     // 5. Branch move: move in BOTH branches marks variable moved after if
@@ -525,7 +525,7 @@ consume(move s) // Error: definitely moved along both branches
         require(!checked.has_value(), "use after move when moved along both branches must fail");
         if (!checked.has_value()) {
             require(checked.error().contains("cfire/USE-AFTER-MOVE"),
-                "move along all divergent branches triggers cfire/USE-AFTER-MOVE (LD-05)");
+                "move along all divergent branches triggers cfire/USE-AFTER-MOVE");
         }
     }
     std::println("--- PASS: test_cfg_move_analysis");
@@ -537,32 +537,32 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
     std::string plain = "hello, cfire!";
     std::string b64 = cfire::base64::encode_str(plain);
     auto dec = cfire::base64::decode_str(b64);
-    require(dec.has_value() && *dec == plain, "base64 encode/decode roundtrip (LIB-04)");
+    require(dec.has_value() && *dec == plain, "base64 encode/decode roundtrip");
 
     // Base64 URL-safe test
     std::string url_plain = "https://example.com/api?q=hello&id=123";
     std::string url_b64 = cfire::base64::encode_str(url_plain, true);
-    require(!url_b64.contains('+') && !url_b64.contains('/'), "url_safe base64 contains no + or / (LIB-04)");
+    require(!url_b64.contains('+') && !url_b64.contains('/'), "url_safe base64 contains no + or /");
     auto url_dec = cfire::base64::decode_str(url_b64);
-    require(url_dec.has_value() && *url_dec == url_plain, "url_safe base64 decode roundtrip (LIB-04)");
+    require(url_dec.has_value() && *url_dec == url_plain, "url_safe base64 decode roundtrip");
 
     // 2. Hex
     std::string hex_str = cfire::hex::encode_str("cfire");
-    require(hex_str == "6366697265", "hex encoding of 'cfire' (LIB-04)");
+    require(hex_str == "6366697265", "hex encoding of 'cfire'");
     auto hex_dec = cfire::hex::decode_str(hex_str);
-    require(hex_dec.has_value() && *hex_dec == "cfire", "hex decoding roundtrip (LIB-04)");
+    require(hex_dec.has_value() && *hex_dec == "cfire", "hex decoding roundtrip");
 
     // 3. CSV RFC 4180 parsing and stringification
     std::string raw_csv = "id,name,notes\n1,\"Alice, Smith\",\"Multi-line\nNote\"\n2,Bob,\"Special \"\"Quotes\"\"\"";
     auto table = cfire::csv::parse(raw_csv);
-    require(table.size() == 3, "csv parsed 3 rows (LIB-04)");
-    require(table[1][1] == "Alice, Smith", "csv parsed comma within quotes (LIB-04)");
-    require(table[1][2] == "Multi-line\nNote", "csv parsed embedded newline (LIB-04)");
-    require(table[2][2] == "Special \"Quotes\"", "csv parsed escaped double quotes (LIB-04)");
+    require(table.size() == 3, "csv parsed 3 rows");
+    require(table[1][1] == "Alice, Smith", "csv parsed comma within quotes");
+    require(table[1][2] == "Multi-line\nNote", "csv parsed embedded newline");
+    require(table[2][2] == "Special \"Quotes\"", "csv parsed escaped double quotes");
 
     std::string serialized = cfire::csv::stringify(table);
     auto table2 = cfire::csv::parse(serialized);
-    require(table2 == table, "csv stringify and re-parse roundtrip (LIB-04)");
+    require(table2 == table, "csv stringify and re-parse roundtrip");
     std::println("--- PASS: test_data_encodings_base64_hex_csv");
 }
 
@@ -571,12 +571,12 @@ void test_relocatable_cmake_ejection([[maybe_unused]] const std::filesystem::pat
     auto tmp_eject = std::filesystem::temp_directory_path() / "cfire_relocatable_eject";
     std::filesystem::remove_all(tmp_eject);
     auto ej = cfire::build::eject_cmake("examples/08-multi-pkg-cc-build/main.cf", rt_dir, tmp_eject);
-    require(ej.has_value(), "eject_cmake for 08-multi-pkg-cc-build (BS-04)");
+    require(ej.has_value(), "eject_cmake for 08-multi-pkg-cc-build");
     require(std::filesystem::exists(tmp_eject / "vendor" / "FastCRC" / "fastcrc.c"),
-        "vendor companion tree FastCRC mirrored into ejected folder (BS-04)");
+        "vendor companion tree FastCRC mirrored into ejected folder");
     auto cmake_content = cfire::build::read_file_text(tmp_eject / "CMakeLists.txt");
     require(cmake_content.has_value() && cmake_content->contains("vendor/FastCRC/fastcrc.c"),
-        "CMakeLists.txt references relocatable vendor relative path (BS-04)");
+        "CMakeLists.txt references relocatable vendor relative path");
 
     // Test CMake configure if cmake binary exists on system
     int cmake_check = 0;
@@ -617,18 +617,18 @@ fn main() {
 }
 )";
     auto ast = cfire::frontend::parse_source("test_match_move.cf", src);
-    require(ast.has_value(), std::format("parse match move item (LD-02): {}", ast ? "" : ast.error()));
+    require(ast.has_value(), std::format("parse match move item: {}", ast ? "" : ast.error()));
     if (ast) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
-        require(checked.has_value(), std::format("analyze match move item (LD-02): {}", checked ? "" : checked.error()));
+        require(checked.has_value(), std::format("analyze match move item: {}", checked ? "" : checked.error()));
         if (checked) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("[&](Item::_Named&& _m)"),
-                "match move emits rvalue reference visitor (LD-02)");
+                "match move emits rvalue reference visitor");
             require(cpp.contains("auto&& val = std::move(_m._0);"),
-                "match move binds payload as rvalue reference with std::move (LD-02)");
+                "match move binds payload as rvalue reference with std::move");
             require(cpp.contains("std::move(it._v)"),
-                "std::visit receives std::move(it._v) (LD-02)");
+                "std::visit receives std::move(it._v)");
         }
     }
     std::println("--- PASS: test_variant_pattern_matching");
@@ -658,7 +658,7 @@ update(mut pt.x, pt.x)
         require(!chk.has_value(), "aliasing mut pt.x with pt.x must fail");
         if (!chk) {
             require(chk.error().contains("cfire/MUT-ALIAS"),
-                "projection aliasing reports cfire/MUT-ALIAS (LD-06)");
+                "projection aliasing reports cfire/MUT-ALIAS");
         }
     }
 
@@ -684,7 +684,7 @@ update_pt(mut pt, pt.x)
         require(!chk.has_value(), "aliasing mut pt with pt.x must fail");
         if (!chk) {
             require(chk.error().contains("cfire/MUT-ALIAS"),
-                "root with child projection reports cfire/MUT-ALIAS (LD-06)");
+                "root with child projection reports cfire/MUT-ALIAS");
         }
     }
 
@@ -707,7 +707,7 @@ swap_coords(mut pt.x, pt.y)
     require(ast3.has_value(), std::format("parse test_siblings.cf: {}", ast3 ? "" : ast3.error()));
     if (ast3) {
         auto chk = cfire::frontend::analyze(std::move(*ast3));
-        require(chk.has_value(), "distinct non-overlapping sibling projections are permitted (LD-06)");
+        require(chk.has_value(), "distinct non-overlapping sibling projections are permitted");
     }
     std::println("--- PASS: test_mutation_exclusivity_path_alias");
 }
@@ -721,14 +721,14 @@ import cpp "stb_image.h" @define("STB_IMAGE_IMPLEMENTATION") @define("BUFFER_SIZ
 fn main() {}
 )";
     auto ast = cfire::frontend::parse_source("test_macro_def.cf", src);
-    require(ast.has_value(), std::format("parse @define attributes (BS-05): {}", ast ? "" : ast.error()));
+    require(ast.has_value(), std::format("parse @define attributes: {}", ast ? "" : ast.error()));
     if (ast) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
-        require(checked.has_value(), "analyze @define attributes (BS-05)");
+        require(checked.has_value(), "analyze @define attributes");
         if (checked) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("#define STB_IMAGE_IMPLEMENTATION\n#define BUFFER_SIZE 4096\n#include <stb_image.h>"),
-                "macro definitions emitted immediately before C++ #include (BS-05)");
+                "macro definitions emitted immediately before C++ #include");
         }
     }
     std::println("--- PASS: test_preprocessor_macro_injection");
@@ -737,26 +737,26 @@ fn main() {}
 void test_regex_matching_and_captures([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_regex_matching_and_captures");
     auto re = cfire::regex::compile(R"(\d+)");
-    require(re.has_value(), "compile valid regex (LIB-05)");
+    require(re.has_value(), "compile valid regex");
     if (re) {
-        require(re->is_match("user 1234 active"), "regex is_match positive (LIB-05)");
-        require(!re->is_match("user inactive"), "regex is_match negative (LIB-05)");
+        require(re->is_match("user 1234 active"), "regex is_match positive");
+        require(!re->is_match("user inactive"), "regex is_match negative");
         auto first = re->find("id: 42, count: 99");
-        require(first.has_value() && *first == "42", "regex find first match (LIB-05)");
+        require(first.has_value() && *first == "42", "regex find first match");
         auto all = re->find_all("10 items, 20 boxes, 30 pallets");
         require(all.size() == 3 && all[0] == "10" && all[1] == "20" && all[2] == "30",
-            "regex find_all matches (LIB-05)");
+            "regex find_all matches");
         auto replaced = re->replace_all("width: 100, height: 200", "0");
-        require(replaced == "width: 0, height: 0", "regex replace_all (LIB-05)");
+        require(replaced == "width: 0, height: 0", "regex replace_all");
     }
     auto bad = cfire::regex::compile("[unclosed-group");
-    require(!bad.has_value(), "compile invalid regex returns error (LIB-05)");
+    require(!bad.has_value(), "compile invalid regex returns error");
 
     auto m_quick = cfire::regex::is_match(R"(^[a-zA-Z]+$)", "CfireLanguage");
-    require(m_quick.has_value() && *m_quick, "regex package-level is_match helper (LIB-05)");
+    require(m_quick.has_value() && *m_quick, "regex package-level is_match helper");
 
     auto r_quick = cfire::regex::replace_all(R"(\s+)", "apple   banana   orange", " ");
-    require(r_quick.has_value() && *r_quick == "apple banana orange", "regex package-level replace_all helper (LIB-05)");
+    require(r_quick.has_value() && *r_quick == "apple banana orange", "regex package-level replace_all helper");
     std::println("--- PASS: test_regex_matching_and_captures");
 }
 
@@ -764,14 +764,14 @@ void test_collections_and_in_place_sort([[maybe_unused]] const std::filesystem::
     std::println("=== RUN   test_collections_and_in_place_sort");
     // 1. Set[T]
     cfire::collections::Set<std::string> set;
-    require(set.empty(), "set starts empty (LIB-07)");
-    require(set.insert("alpha"), "set insert new key (LIB-07)");
-    require(!set.insert("alpha"), "set insert duplicate returns false (LIB-07)");
-    require(set.size() == 1, "set size is 1 (LIB-07)");
-    require(set.contains("alpha"), "set contains existing key (LIB-07)");
-    require(!set.contains("beta"), "set does not contain missing key (LIB-07)");
-    require(set.remove("alpha"), "set remove key returns true (LIB-07)");
-    require(!set.contains("alpha"), "set removed key no longer present (LIB-07)");
+    require(set.empty(), "set starts empty");
+    require(set.insert("alpha"), "set insert new key");
+    require(!set.insert("alpha"), "set insert duplicate returns false");
+    require(set.size() == 1, "set size is 1");
+    require(set.contains("alpha"), "set contains existing key");
+    require(!set.contains("beta"), "set does not contain missing key");
+    require(set.remove("alpha"), "set remove key returns true");
+    require(!set.contains("alpha"), "set removed key no longer present");
 
     // 2. PriorityQueue[T] (Max-Heap)
     cfire::collections::PriorityQueue<int> pq;
@@ -779,35 +779,35 @@ void test_collections_and_in_place_sort([[maybe_unused]] const std::filesystem::
     pq.push(50);
     pq.push(10);
     pq.push(30);
-    require(pq.size() == 4, "priority queue size is 4 (LIB-07)");
-    require(pq.peek() == 50, "priority queue top is max element (LIB-07)");
-    require(pq.pop() == 50, "pop max element 50 (LIB-07)");
-    require(pq.pop() == 30, "pop next element 30 (LIB-07)");
-    require(pq.pop() == 20, "pop next element 20 (LIB-07)");
-    require(pq.pop() == 10, "pop final element 10 (LIB-07)");
-    require(pq.pop() == std::nullopt, "pop from empty queue returns nullopt (LIB-07)");
+    require(pq.size() == 4, "priority queue size is 4");
+    require(pq.peek() == 50, "priority queue top is max element");
+    require(pq.pop() == 50, "pop max element 50");
+    require(pq.pop() == 30, "pop next element 30");
+    require(pq.pop() == 20, "pop next element 20");
+    require(pq.pop() == 10, "pop final element 10");
+    require(pq.pop() == std::nullopt, "pop from empty queue returns nullopt");
 
     // 3. Deque[T] (Double-ended queue)
     cfire::collections::Deque<int> dq;
     dq.push_back(20);
     dq.push_front(10);
     dq.push_back(30);
-    require(dq.size() == 3, "deque size is 3 (LIB-07)");
-    require(dq.at(0) == 10 && dq.at(1) == 20 && dq.at(2) == 30, "deque indexing order (LIB-07)");
-    require(dq.pop_front() == 10, "pop_front yields 10 (LIB-07)");
-    require(dq.pop_back() == 30, "pop_back yields 30 (LIB-07)");
-    require(dq.pop_back() == 20, "pop_back yields 20 (LIB-07)");
-    require(dq.empty(), "deque empty after draining (LIB-07)");
+    require(dq.size() == 3, "deque size is 3");
+    require(dq.at(0) == 10 && dq.at(1) == 20 && dq.at(2) == 30, "deque indexing order");
+    require(dq.pop_front() == 10, "pop_front yields 10");
+    require(dq.pop_back() == 30, "pop_back yields 30");
+    require(dq.pop_back() == 20, "pop_back yields 20");
+    require(dq.empty(), "deque empty after draining");
 
     // 4. In-Place Sorting & Binary Search
     std::vector<int> vals = {42, 12, 88, 3, 55, 19};
     cfire::sort::slice(vals);
-    require(vals == std::vector<int>{3, 12, 19, 42, 55, 88}, "sort.slice sorts in ascending order (LIB-07)");
+    require(vals == std::vector<int>{3, 12, 19, 42, 55, 88}, "sort.slice sorts in ascending order");
 
     auto pos = cfire::sort::binary_search(std::span<const int>(vals), 42);
-    require(pos.has_value() && *pos == 3, "sort.binary_search finds existing key (LIB-07)");
+    require(pos.has_value() && *pos == 3, "sort.binary_search finds existing key");
     auto missing = cfire::sort::binary_search(std::span<const int>(vals), 50);
-    require(!missing.has_value(), "sort.binary_search returns nullopt on missing element (LIB-07)");
+    require(!missing.has_value(), "sort.binary_search returns nullopt on missing element");
     std::println("--- PASS: test_collections_and_in_place_sort");
 }
 
@@ -827,16 +827,16 @@ s := pair[[]i32, bool]([1, 2], true)
 fn main() {}
 )";
     auto ast = cfire::frontend::parse_source("test_multi_generics.cf", src);
-    require(ast.has_value(), std::format("parse multi-argument generic calls f[T, U](args) (LD-09): {}", ast ? "" : ast.error()));
+    require(ast.has_value(), std::format("parse multi-argument generic calls f[T, U](args): {}", ast ? "" : ast.error()));
     if (ast) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
-        require(checked.has_value(), "analyze multi-argument generic calls (LD-09)");
+        require(checked.has_value(), "analyze multi-argument generic calls");
         if (checked) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("pair<std::int32_t, std::string>(42, \"hello\")"),
-                "codegen lowers multi-type generic call f<T1, T2>(args) (LD-09)");
+                "codegen lowers multi-type generic call f<T1, T2>(args)");
             require(cpp.contains("pair<std::vector<std::int32_t>, bool>("),
-                "codegen lowers compound-type generic call with slice type arg (LD-09)");
+                "codegen lowers compound-type generic call with slice type arg");
         }
     }
     std::println("--- PASS: test_generic_call_disambiguation");
@@ -845,49 +845,49 @@ fn main() {}
 void test_time_durations_and_calendar([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_time_durations_and_calendar");
     auto d5 = cfire::time::Duration::from_secs(5);
-    require(d5.millis() == 5000, "Duration millis (LIB-06)");
-    require(d5.micros() == 5000000, "Duration micros (LIB-06)");
-    require(d5.nanos == 5000000000LL, "Duration nanos (LIB-06)");
+    require(d5.millis() == 5000, "Duration millis");
+    require(d5.micros() == 5000000, "Duration micros");
+    require(d5.nanos == 5000000000LL, "Duration nanos");
 
     auto d_sum = cfire::time::Duration::from_millis(250) + cfire::time::Duration::from_millis(750);
-    require(d_sum.millis() == 1000, "Duration operator+ (LIB-06)");
-    require(d_sum == cfire::time::Duration::from_secs(1), "Duration equality (LIB-06)");
+    require(d_sum.millis() == 1000, "Duration operator+");
+    require(d_sum == cfire::time::Duration::from_secs(1), "Duration equality");
 
     auto now = cfire::time::now();
-    require(now.unix_seconds() > 1700000000LL, "time.now() unix_seconds (LIB-06)");
+    require(now.unix_seconds() > 1700000000LL, "time.now() unix_seconds");
 
     auto t1 = cfire::time::from_unix_seconds(1700000000LL);
     auto formatted = t1.format_rfc3339();
-    require(formatted == "2023-11-14T22:13:20Z", "format_rfc3339 matches expected (LIB-06)");
+    require(formatted == "2023-11-14T22:13:20Z", "format_rfc3339 matches expected");
 
     auto parsed = cfire::time::parse_rfc3339("2023-11-14T22:13:20Z");
-    require(parsed.has_value(), "parse_rfc3339 roundtrip succeeds (LIB-06)");
+    require(parsed.has_value(), "parse_rfc3339 roundtrip succeeds");
     if (parsed) {
-        require(parsed->unix_seconds() == 1700000000LL, "parsed timestamp matches original (LIB-06)");
-        require(parsed->year() == 2023, "calendar breakdown year (LIB-06)");
-        require(parsed->month() == 11, "calendar breakdown month (LIB-06)");
-        require(parsed->day() == 14, "calendar breakdown day (LIB-06)");
-        require(parsed->hour() == 22, "calendar breakdown hour (LIB-06)");
-        require(parsed->minute() == 13, "calendar breakdown minute (LIB-06)");
-        require(parsed->second() == 20, "calendar breakdown second (LIB-06)");
+        require(parsed->unix_seconds() == 1700000000LL, "parsed timestamp matches original");
+        require(parsed->year() == 2023, "calendar breakdown year");
+        require(parsed->month() == 11, "calendar breakdown month");
+        require(parsed->day() == 14, "calendar breakdown day");
+        require(parsed->hour() == 22, "calendar breakdown hour");
+        require(parsed->minute() == 13, "calendar breakdown minute");
+        require(parsed->second() == 20, "calendar breakdown second");
     }
 
     auto bad_parse = cfire::time::parse_rfc3339("invalid-timestamp-string");
-    require(!bad_parse.has_value(), "parse_rfc3339 returns error on malformed string (LIB-06)");
+    require(!bad_parse.has_value(), "parse_rfc3339 returns error on malformed string");
     std::println("--- PASS: test_time_durations_and_calendar");
 }
 
 void test_structured_logging_json_and_text([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_structured_logging_json_and_text");
     cfire::log::set_level(cfire::log::Level::Debug);
-    require(cfire::log::get_level() == cfire::log::Level::Debug, "log get/set level (LIB-08)");
+    require(cfire::log::get_level() == cfire::log::Level::Debug, "log get/set level");
 
     cfire::log::set_format(cfire::log::Format::Json);
-    require(cfire::log::get_format() == cfire::log::Format::Json, "log get/set format JSON (LIB-08)");
+    require(cfire::log::get_format() == cfire::log::Format::Json, "log get/set format JSON");
     cfire::log::info("user logged in", "user_id", "42", "tenant", "prod");
 
     cfire::log::set_format(cfire::log::Format::Text);
-    require(cfire::log::get_format() == cfire::log::Format::Text, "log get/set format Text (LIB-08)");
+    require(cfire::log::get_format() == cfire::log::Format::Text, "log get/set format Text");
     cfire::log::debug("debugging details", "status", "ok");
     cfire::log::warn("resource approaching limit", "usage_pct", "85");
     cfire::log::error("service unreachable", "host", "backend.local");
@@ -913,7 +913,7 @@ void test_shared_library_dynamic_linking([[maybe_unused]] const std::filesystem:
     dep.is_shared = true;
 
     auto res = cfire::build::build_local_dep(tmp_bs06, dep, plan);
-    require(res.has_value(), std::format("build_local_dep produces shared library (BS-06): {}", res ? "" : res.error()));
+    require(res.has_value(), std::format("build_local_dep produces shared library: {}", res ? "" : res.error()));
     require(dep.is_shared, "BS-06: dep.is_shared confirmed");
     require(!dep.built_archive.empty(), "BS-06: built_archive path populated");
 #if defined(__APPLE__)
@@ -949,20 +949,20 @@ mut b := 0.0
 }
 )";
     auto ast = cfire::frontend::parse_source("test_tuples.cf", src);
-    require(ast.has_value(), std::format("parse tuple syntax (LD-13): {}", ast ? "" : ast.error()));
+    require(ast.has_value(), std::format("parse tuple syntax: {}", ast ? "" : ast.error()));
     if (ast) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
-        require(checked.has_value(), "analyze tuple syntax (LD-13)");
+        require(checked.has_value(), "analyze tuple syntax");
         if (checked) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
             require(cpp.contains("auto coords() -> std::expected<std::tuple<double, double>, cfire::Error>"),
-                "codegen lowers multi-return tuple to std::expected<std::tuple<...>> (LD-13)");
+                "codegen lowers multi-return tuple to std::expected<std::tuple<...>>");
             require(cpp.contains("return std::make_tuple(10.5, 20.5);"),
-                "codegen lowers tuple literal to std::make_tuple (LD-13)");
+                "codegen lowers tuple literal to std::make_tuple");
             require(cpp.contains("auto [x, y] ="),
-                "codegen lowers deconstructing var decl to C++23 structured binding (LD-13)");
+                "codegen lowers deconstructing var decl to C++23 structured binding");
             require(cpp.contains("std::tie(a, b) = std::make_tuple(x, y);"),
-                "codegen lowers deconstructing assign to std::tie (LD-13)");
+                "codegen lowers deconstructing assign to std::tie");
         }
     }
 
@@ -988,7 +988,7 @@ q := legacy_div(10, 3, out r)
             bool has_dep_warn = std::ranges::any_of(checked->warnings, [](const auto& w) {
                 return w.contains("cfire/DEPRECATED-OUT-PARAM");
             });
-            require(has_dep_warn, "deprecation warning emitted for 'out' parameter (LD-13)");
+            require(has_dep_warn, "deprecation warning emitted for 'out' parameter");
         }
     }
     std::println("--- PASS: test_multi_return_tuples_and_destructuring");
@@ -997,53 +997,53 @@ q := legacy_div(10, 3, out r)
 void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_filesystem_streaming_and_paths");
     // 1. Path decomposition helpers
-    require(cfire::fs::dirname("/usr/local/bin/cfire") == "/usr/local/bin", "fs.dirname (LIB-09)");
-    require(cfire::fs::basename("/usr/local/bin/cfire") == "cfire", "fs.basename (LIB-09)");
-    require(cfire::fs::extension("/usr/local/bin/cfire.tar.gz") == ".gz", "fs.extension (LIB-09)");
-    require(cfire::fs::extension("source.cf") == ".cf", "fs.extension .cf (LIB-09)");
+    require(cfire::fs::dirname("/usr/local/bin/cfire") == "/usr/local/bin", "fs.dirname");
+    require(cfire::fs::basename("/usr/local/bin/cfire") == "cfire", "fs.basename");
+    require(cfire::fs::extension("/usr/local/bin/cfire.tar.gz") == ".gz", "fs.extension");
+    require(cfire::fs::extension("source.cf") == ".cf", "fs.extension .cf");
 
     // 2. Streaming File open, write, seek, tell, read, flush, close
     auto tmp_file = std::filesystem::temp_directory_path() / "cfire_stream_test.txt";
     std::filesystem::remove(tmp_file);
 
     auto file_res = cfire::fs::open(tmp_file, cfire::fs::OpenMode::Write);
-    require(file_res.has_value(), "fs.open for write (LIB-09)");
+    require(file_res.has_value(), "fs.open for write");
     if (file_res) {
         auto& f = *file_res;
-        require(f.is_open(), "file is open (LIB-09)");
+        require(f.is_open(), "file is open");
         auto w1 = f.write_str("Hello Streaming World!\nLine 2.");
-        require(w1.has_value() && *w1 > 0, "file.write_str (LIB-09)");
+        require(w1.has_value() && *w1 > 0, "file.write_str");
         auto fl = f.flush();
-        require(fl.has_value(), "file.flush (LIB-09)");
+        require(fl.has_value(), "file.flush");
         f.close();
-        require(!f.is_open(), "file closed (LIB-09)");
+        require(!f.is_open(), "file closed");
     }
 
     // Reopen for read and seek
     auto r_res = cfire::fs::open(tmp_file, cfire::fs::OpenMode::Read);
-    require(r_res.has_value(), "fs.open for read (LIB-09)");
+    require(r_res.has_value(), "fs.open for read");
     if (r_res) {
         auto& f = *r_res;
         auto t0 = f.tell();
-        require(t0.has_value() && *t0 == 0, "file.tell at start (LIB-09)");
+        require(t0.has_value() && *t0 == 0, "file.tell at start");
 
         // Seek to offset 6 ("Streaming")
         auto s1 = f.seek(6, cfire::fs::SeekWhence::Start);
-        require(s1.has_value() && *s1 == 6, "file.seek Start (LIB-09)");
+        require(s1.has_value() && *s1 == 6, "file.seek Start");
 
         std::vector<uint8_t> chunk(9);
         auto n_read = f.read(chunk);
-        require(n_read.has_value() && *n_read == 9, "file.read 9 bytes (LIB-09)");
+        require(n_read.has_value() && *n_read == 9, "file.read 9 bytes");
         std::string word(reinterpret_cast<const char*>(chunk.data()), chunk.size());
-        require(word == "Streaming", "file chunk content matches (LIB-09)");
+        require(word == "Streaming", "file chunk content matches");
 
         // Seek back to start and read_all
         auto s0 = f.seek(0, cfire::fs::SeekWhence::Start);
-        require(s0.has_value() && *s0 == 0, "file.seek to 0 (LIB-09)");
+        require(s0.has_value() && *s0 == 0, "file.seek to 0");
         auto all_bytes = f.read_all();
-        require(all_bytes.has_value(), "file.read_all (LIB-09)");
+        require(all_bytes.has_value(), "file.read_all");
         std::string all_str(reinterpret_cast<const char*>(all_bytes->data()), all_bytes->size());
-        require(all_str == "Hello Streaming World!\nLine 2.", "file.read_all content matches (LIB-09)");
+        require(all_str == "Hello Streaming World!\nLine 2.", "file.read_all content matches");
         f.close();
     }
     std::filesystem::remove(tmp_file);
@@ -1055,10 +1055,10 @@ void test_json_dynamic_dom_and_serializer([[maybe_unused]] const std::filesystem
     // 1. String escaping
     std::string raw_esc = "quote: \", backslash: \\, newline: \n, tab: \t";
     std::string escaped = cfire::json::escape_string(raw_esc);
-    require(escaped.contains("\\\""), "escaped quote (LIB-10)");
-    require(escaped.contains("\\\\"), "escaped backslash (LIB-10)");
-    require(escaped.contains("\\n"), "escaped newline (LIB-10)");
-    require(escaped.contains("\\t"), "escaped tab (LIB-10)");
+    require(escaped.contains("\\\""), "escaped quote");
+    require(escaped.contains("\\\\"), "escaped backslash");
+    require(escaped.contains("\\n"), "escaped newline");
+    require(escaped.contains("\\t"), "escaped tab");
 
     // 2. Dynamic JSON DOM parsing
     std::string json_input = R"({
@@ -1075,33 +1075,33 @@ void test_json_dynamic_dom_and_serializer([[maybe_unused]] const std::filesystem
     })";
 
     auto dom_res = cfire::json::parse_dynamic(json_input);
-    require(dom_res.has_value(), std::format("parse_dynamic (LIB-10): {}", dom_res ? "" : dom_res.error().message()));
+    require(dom_res.has_value(), std::format("parse_dynamic: {}", dom_res ? "" : dom_res.error().message()));
     if (dom_res) {
         const auto& root = *dom_res;
-        require(root.is_object(), "root is object (LIB-10)");
-        require(root["service"].is_string() && root["service"].as_str() == "cfire-auth", "get string (LIB-10)");
-        require(root["version"].is_int() && root["version"].as_int() == 2, "get int (LIB-10)");
-        require(root["rate_limit"].is_float() && std::abs(root["rate_limit"].as_float() - 1500.5) < 0.001, "get float (LIB-10)");
-        require(root["active"].is_bool() && root["active"].as_bool() == true, "get bool (LIB-10)");
-        require(root["metadata"].is_null(), "get null (LIB-10)");
+        require(root.is_object(), "root is object");
+        require(root["service"].is_string() && root["service"].as_str() == "cfire-auth", "get string");
+        require(root["version"].is_int() && root["version"].as_int() == 2, "get int");
+        require(root["rate_limit"].is_float() && std::abs(root["rate_limit"].as_float() - 1500.5) < 0.001, "get float");
+        require(root["active"].is_bool() && root["active"].as_bool() == true, "get bool");
+        require(root["metadata"].is_null(), "get null");
 
         auto tags = root["tags"];
-        require(tags.is_array() && tags.size() == 3, "tags is array of size 3 (LIB-10)");
-        require(tags[0].as_str() == "core", "tags[0] == core (LIB-10)");
-        require(tags[2].as_str() == "p2", "tags[2] == p2 (LIB-10)");
+        require(tags.is_array() && tags.size() == 3, "tags is array of size 3");
+        require(tags[0].as_str() == "core", "tags[0] == core");
+        require(tags[2].as_str() == "p2", "tags[2] == p2");
 
         auto cfg = root["config"];
-        require(cfg.is_object(), "nested config is object (LIB-10)");
-        require(cfg["timeout_ms"].as_int() == 5000, "nested config timeout_ms (LIB-10)");
-        require(cfg["domain"].as_str() == "auth.internal", "nested config domain (LIB-10)");
+        require(cfg.is_object(), "nested config is object");
+        require(cfg["timeout_ms"].as_int() == 5000, "nested config timeout_ms");
+        require(cfg["domain"].as_str() == "auth.internal", "nested config domain");
 
         // Dynamic stringify roundtrip
         std::string serialized = cfire::json::stringify_dynamic(root);
         auto re_parsed = cfire::json::parse_dynamic(serialized);
-        require(re_parsed.has_value(), "re-parse serialized dynamic json (LIB-10)");
+        require(re_parsed.has_value(), "re-parse serialized dynamic json");
         if (re_parsed) {
-            require((*re_parsed)["service"].as_str() == "cfire-auth", "roundtrip value match (LIB-10)");
-            require((*re_parsed)["tags"].size() == 3, "roundtrip array size match (LIB-10)");
+            require((*re_parsed)["service"].as_str() == "cfire-auth", "roundtrip value match");
+            require((*re_parsed)["tags"].size() == 3, "roundtrip array size match");
         }
     }
     std::println("--- PASS: test_json_dynamic_dom_and_serializer");
@@ -1125,17 +1125,17 @@ mut count: i64 = 99
 }
 )";
     auto ast = cfire::frontend::parse_source("test_canonical_vars.cf", src_canonical);
-    require(ast.has_value(), std::format("parse canonical package and local vars (LD-07): {}", ast ? "" : ast.error()));
+    require(ast.has_value(), std::format("parse canonical package and local vars: {}", ast ? "" : ast.error()));
     if (ast) {
         auto checked = cfire::frontend::analyze(std::move(*ast));
-        require(checked.has_value(), "analyze canonical vars (LD-07)");
+        require(checked.has_value(), "analyze canonical vars");
         if (checked) {
-            require(checked->warnings.empty(), "canonical declarations emit zero warnings (LD-07)");
+            require(checked->warnings.empty(), "canonical declarations emit zero warnings");
             std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("inline const auto app_name = \"SapphireServer\";"), "codegen package const inferred var (LD-07)");
-            require(cpp.contains("inline auto port = 8080;"), "codegen package mut inferred var (LD-07)");
-            require(cpp.contains("inline const std::int32_t max_conn = 1000;"), "codegen package const typed var (LD-07)");
-            require(cpp.contains("inline bool is_ready = true;"), "codegen package mut typed var (LD-07)");
+            require(cpp.contains("inline const auto app_name = \"SapphireServer\";"), "codegen package const inferred var");
+            require(cpp.contains("inline auto port = 8080;"), "codegen package mut inferred var");
+            require(cpp.contains("inline const std::int32_t max_conn = 1000;"), "codegen package const typed var");
+            require(cpp.contains("inline bool is_ready = true;"), "codegen package mut typed var");
         }
     }
 
@@ -1151,16 +1151,16 @@ var mut b: str = "old"
 }
 )";
     auto ast_var = cfire::frontend::parse_source("test_deprecated_var.cf", src_var);
-    require(ast_var.has_value(), "parse legacy var code (LD-07)");
+    require(ast_var.has_value(), "parse legacy var code");
     if (ast_var) {
         auto checked = cfire::frontend::analyze(std::move(*ast_var));
-        require(checked.has_value(), "analyze legacy var code succeeds with warnings (LD-07)");
+        require(checked.has_value(), "analyze legacy var code succeeds with warnings");
         if (checked) {
             int warn_count = 0;
             for (const auto& w : checked->warnings) {
                 if (w.contains("cfire/DEPRECATED-VAR")) ++warn_count;
             }
-            require(warn_count >= 4, "emits cfire/DEPRECATED-VAR warning for each var declaration (LD-07)");
+            require(warn_count >= 4, "emits cfire/DEPRECATED-VAR warning for each var declaration");
         }
     }
     std::println("--- PASS: test_variable_declarations_unification");
@@ -1194,14 +1194,14 @@ fn main() -> i32 { return pkg_a.helper_a() }
 )");
 
     auto res = cfire::build::analyze_and_emit(main_cf, rt_dir, false);
-    require(res.has_value(), std::format("analyze_and_emit recursive packages (BS-07): {}", res ? "" : res.error()));
+    require(res.has_value(), std::format("analyze_and_emit recursive packages: {}", res ? "" : res.error()));
     if (res) {
         const auto& plan = res->second;
         bool found_b_dep = false;
         for (const auto& dep : plan.external_deps) {
             if (dep.name == "helper_lib") found_b_dep = true;
         }
-        require(found_b_dep, "subpackage build.cf external dependency aggregated into root build plan (BS-07)");
+        require(found_b_dep, "subpackage build.cf external dependency aggregated into root build plan");
     }
     std::println("--- PASS: test_recursive_package_resolution");
 }
@@ -1224,43 +1224,43 @@ fn main() -> i32 { return gen_code() }
 )");
 
     auto res = cfire::build::analyze_and_emit(main_cf, rt_dir, false);
-    require(res.has_value(), std::format("analyze_and_emit with pre-build command hook (BS-08): {}", res ? "" : res.error()));
-    require(std::filesystem::exists(tmp_hook_ws.path / "generated.cf"), "pre-build hook generated target file (BS-08)");
+    require(res.has_value(), std::format("analyze_and_emit with pre-build command hook: {}", res ? "" : res.error()));
+    require(std::filesystem::exists(tmp_hook_ws.path / "generated.cf"), "pre-build hook generated target file");
     std::println("--- PASS: test_pre_build_codegen_hooks");
 }
 
 void test_unicode_utf8_runes_and_case([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_unicode_utf8_runes_and_case");
     std::string ascii = "Hello, world!";
-    require(cfire::unicode::rune_count(ascii) == 13, "ascii rune count (LIB-11)");
-    require(cfire::unicode::is_valid_utf8(ascii), "ascii is valid utf8 (LIB-11)");
+    require(cfire::unicode::rune_count(ascii) == 13, "ascii rune count");
+    require(cfire::unicode::is_valid_utf8(ascii), "ascii is valid utf8");
 
     std::string multi = "Hello, 世界! 🚀";
     // "Hello, " (7) + "世界" (2) + "! " (2) + "🚀" (1) = 12 runes, but 19 bytes!
-    require(cfire::unicode::rune_count(multi) == 12, "multibyte utf8 rune count (LIB-11)");
-    require(multi.size() == 19, "byte size is 19 (LIB-11)");
-    require(cfire::unicode::is_valid_utf8(multi), "multibyte is valid utf8 (LIB-11)");
+    require(cfire::unicode::rune_count(multi) == 12, "multibyte utf8 rune count");
+    require(multi.size() == 19, "byte size is 19");
+    require(cfire::unicode::is_valid_utf8(multi), "multibyte is valid utf8");
 
     auto cps = cfire::unicode::runes(multi);
-    require(cps.size() == 12, "runes vector size matches rune count (LIB-11)");
-    require(cps[7] == 0x4E16, "codepoint for 世 (LIB-11)");
-    require(cps[8] == 0x754C, "codepoint for 界 (LIB-11)");
-    require(cps[11] == 0x1F680, "codepoint for rocket emoji 🚀 (LIB-11)");
+    require(cps.size() == 12, "runes vector size matches rune count");
+    require(cps[7] == 0x4E16, "codepoint for 世");
+    require(cps[8] == 0x754C, "codepoint for 界");
+    require(cps[11] == 0x1F680, "codepoint for rocket emoji 🚀");
 
     // Encoding rune
     std::string encoded = cfire::unicode::encode_rune(0x1F680);
-    require(encoded == "🚀", "encode_rune roundtrip (LIB-11)");
+    require(encoded == "🚀", "encode_rune roundtrip");
 
     // Invalid byte sequence rejection
     std::string invalid_bytes = "abc\xFF\xFE" "def";
-    require(!cfire::unicode::is_valid_utf8(invalid_bytes), "invalid utf8 sequence rejected (LIB-11)");
+    require(!cfire::unicode::is_valid_utf8(invalid_bytes), "invalid utf8 sequence rejected");
 
     // Case transformation (ASCII + Cyrillic)
     std::string mixed_cyr = "Hello, МИР!";
     std::string lower_cyr = cfire::unicode::to_lower(mixed_cyr);
-    require(lower_cyr == "hello, мир!", "unicode to_lower (LIB-11)");
+    require(lower_cyr == "hello, мир!", "unicode to_lower");
     std::string upper_cyr = cfire::unicode::to_upper(lower_cyr);
-    require(upper_cyr == "HELLO, МИР!", "unicode to_upper (LIB-11)");
+    require(upper_cyr == "HELLO, МИР!", "unicode to_upper");
     std::println("--- PASS: test_unicode_utf8_runes_and_case");
 }
 
@@ -1277,39 +1277,39 @@ max_conn: i64   `json:"max_conn" db:"max_connections" min:"1" max:"10000"`
 fn main() {}
 )";
     auto ast = cfire::frontend::parse_source("test_tags.cf", src);
-    require(ast.has_value(), std::format("parse generalized struct tags (LD-10): {}", ast ? "" : ast.error()));
+    require(ast.has_value(), std::format("parse generalized struct tags: {}", ast ? "" : ast.error()));
     if (ast) {
-        require(!ast->structs.empty(), "parsed struct (LD-10)");
+        require(!ast->structs.empty(), "parsed struct");
         const auto& st = ast->structs[0];
-        require(st.fields.size() == 3, "struct has 3 fields (LD-10)");
+        require(st.fields.size() == 3, "struct has 3 fields");
         
         // Check field 0 tags
         const auto& f0 = st.fields[0];
-        require(f0.tags.size() == 4, "field 0 has 4 parsed tags (LD-10)");
-        require(f0.get_tag("json") == "port", "get_tag json (LD-10)");
-        require(f0.get_tag("env") == "PORT", "get_tag env (LD-10)");
-        require(f0.get_tag("cli") == "--port,-p", "get_tag cli (LD-10)");
-        require(f0.get_tag("help") == "Listening port", "get_tag help (LD-10)");
+        require(f0.tags.size() == 4, "field 0 has 4 parsed tags");
+        require(f0.get_tag("json") == "port", "get_tag json");
+        require(f0.get_tag("env") == "PORT", "get_tag env");
+        require(f0.get_tag("cli") == "--port,-p", "get_tag cli");
+        require(f0.get_tag("help") == "Listening port", "get_tag help");
 
         // Check field 1 custom yaml tag
         const auto& f1 = st.fields[1];
-        require(f1.get_tag("yaml") == "server_host", "get_tag yaml custom tag (LD-10)");
+        require(f1.get_tag("yaml") == "server_host", "get_tag yaml custom tag");
 
         // Check field 2 custom min/max tags
         const auto& f2 = st.fields[2];
-        require(f2.get_tag("min") == "1" && f2.get_tag("max") == "10000", "get_tag custom min/max (LD-10)");
+        require(f2.get_tag("min") == "1" && f2.get_tag("max") == "10000", "get_tag custom min/max");
 
         // Verify codegen emits reflection metadata
         auto chk = cfire::frontend::analyze(std::move(*ast));
-        require(chk.has_value(), "analyze struct with custom tags (LD-10)");
+        require(chk.has_value(), "analyze struct with custom tags");
         if (chk) {
             std::string cpp = cfire::frontend::emit_cpp(*chk);
-            require(cpp.contains("template <>"), "emits template specialization (LD-10)");
-            require(cpp.contains("struct cfire::reflect_struct<ServerConfig> {"), "emits reflect_struct specialization (LD-10)");
-            require(cpp.contains("static constexpr std::string_view name = \"ServerConfig\";"), "reflect_struct name (LD-10)");
-            require(cpp.contains("static constexpr std::size_t field_count = 3;"), "reflect_struct field_count 3 (LD-10)");
-            require(cpp.contains("\"port\","), "reflect_struct field_names port (LD-10)");
-            require(cpp.contains("\"host\","), "reflect_struct field_names host (LD-10)");
+            require(cpp.contains("template <>"), "emits template specialization");
+            require(cpp.contains("struct cfire::reflect_struct<ServerConfig> {"), "emits reflect_struct specialization");
+            require(cpp.contains("static constexpr std::string_view name = \"ServerConfig\";"), "reflect_struct name");
+            require(cpp.contains("static constexpr std::size_t field_count = 3;"), "reflect_struct field_count 3");
+            require(cpp.contains("\"port\","), "reflect_struct field_names port");
+            require(cpp.contains("\"host\","), "reflect_struct field_names host");
         }
     }
     std::println("--- PASS: test_struct_tags_and_metadata");
