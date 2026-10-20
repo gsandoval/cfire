@@ -85,16 +85,16 @@ struct cfire::reflect_struct<RenameResult> {
     };
 };
 
-[[nodiscard]] auto is_keyword(std::string_view name) -> bool;
-[[nodiscard]] auto is_valid_identifier(std::string_view name) -> bool;
-[[nodiscard]] auto split_lines(std::string_view text) -> std::vector<std::string>;
-[[nodiscard]] auto json_escape(std::string_view sv) -> std::string;
-[[nodiscard]] auto usize_to_str(std::size_t val) -> std::string;
-[[nodiscard]] auto apply_line_replacements(std::string_view original_content, const std::vector<Occurrence>& occurrences, std::string_view new_name) -> std::string;
-[[nodiscard]] auto generate_unified_diff(const RenameResult& res) -> std::string;
-[[nodiscard]] auto to_json(const RenameResult& res) -> std::string;
+[[nodiscard]] inline auto is_keyword(std::string_view name) -> bool;
+[[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool;
+[[nodiscard]] inline auto split_lines(std::string_view text) -> std::vector<std::string>;
+[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string;
+[[nodiscard]] inline auto usize_to_str(std::size_t val) -> std::string;
+[[nodiscard]] inline auto apply_line_replacements(std::string_view original_content, const std::vector<Occurrence>& occurrences, std::string_view new_name) -> std::string;
+[[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string;
+[[nodiscard]] inline auto to_json(const RenameResult& res) -> std::string;
 
-[[nodiscard]] auto is_keyword(std::string_view name) -> bool {
+[[nodiscard]] inline auto is_keyword(std::string_view name) -> bool {
     if (((((name == "package") || (name == "import")) || (name == "cpp")) || (name == "cplusplus")) || (name == "as")) {
         return true;
     }
@@ -113,7 +113,7 @@ struct cfire::reflect_struct<RenameResult> {
     return false;
 }
 
-[[nodiscard]] auto is_valid_identifier(std::string_view name) -> bool {
+[[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
     auto n = name.size();
     if (n == 0) {
         return false;
@@ -136,7 +136,7 @@ struct cfire::reflect_struct<RenameResult> {
     return true;
 }
 
-[[nodiscard]] auto split_lines(std::string_view text) -> std::vector<std::string> {
+[[nodiscard]] inline auto split_lines(std::string_view text) -> std::vector<std::string> {
     std::vector<std::string> lines = {};
     auto n = text.size();
     if (n == 0) {
@@ -165,7 +165,7 @@ struct cfire::reflect_struct<RenameResult> {
     return lines;
 }
 
-[[nodiscard]] auto json_escape(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
     std::string escaped = "";
     std::size_t start = 0;
     std::size_t i = 0;
@@ -205,7 +205,7 @@ struct cfire::reflect_struct<RenameResult> {
     return escaped;
 }
 
-[[nodiscard]] auto usize_to_str(std::size_t val) -> std::string {
+[[nodiscard]] inline auto usize_to_str(std::size_t val) -> std::string {
     if (val == 0) {
         return "0";
     }
@@ -257,7 +257,7 @@ struct cfire::reflect_struct<RenameResult> {
     return digits;
 }
 
-[[nodiscard]] auto apply_line_replacements(std::string_view original_content, const std::vector<Occurrence>& occurrences, std::string_view new_name) -> std::string {
+[[nodiscard]] inline auto apply_line_replacements(std::string_view original_content, const std::vector<Occurrence>& occurrences, std::string_view new_name) -> std::string {
     if (occurrences.size() == 0) {
         return ("" + original_content);
     }
@@ -331,7 +331,7 @@ struct cfire::reflect_struct<RenameResult> {
     return modded;
 }
 
-[[nodiscard]] auto generate_unified_diff(const RenameResult& res) -> std::string {
+[[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
     std::string diff = "";
     std::size_t m_idx = 0;
     auto n_mods = res.modifications.size();
@@ -416,7 +416,7 @@ struct cfire::reflect_struct<RenameResult> {
     return diff;
 }
 
-[[nodiscard]] auto to_json(const RenameResult& res) -> std::string {
+[[nodiscard]] inline auto to_json(const RenameResult& res) -> std::string {
     if (!res.success) {
         std::string err_json = "{\"success\":false,\"error\":\"";
         err_json += json_escape(res.error);

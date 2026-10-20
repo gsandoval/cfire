@@ -18,20 +18,20 @@ struct cfire::reflect_struct<BuildEmitter> {
     };
 };
 
-auto BuildEmitter__write(BuildEmitter& e, const std::string& s) -> void;
-auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void;
-[[nodiscard]] auto buildsys_starts_with(const std::string& s, const std::string& prefix) -> bool;
-[[nodiscard]] auto selfhost_generate_cmake_file(const cfire::build::BuildPlan& plan) -> std::string;
+inline auto BuildEmitter__write(BuildEmitter& e, const std::string& s) -> void;
+inline auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void;
+[[nodiscard]] inline auto buildsys_starts_with(const std::string& s, const std::string& prefix) -> bool;
+[[nodiscard]] inline auto selfhost_generate_cmake_file(const cfire::build::BuildPlan& plan) -> std::string;
 
-auto BuildEmitter__write(BuildEmitter& e, const std::string& s) -> void {
+inline auto BuildEmitter__write(BuildEmitter& e, const std::string& s) -> void {
     e.buf += s;
 }
 
-auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void {
+inline auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void {
     e.buf += (s + "\n");
 }
 
-[[nodiscard]] auto buildsys_starts_with(const std::string& s, const std::string& prefix) -> bool {
+[[nodiscard]] inline auto buildsys_starts_with(const std::string& s, const std::string& prefix) -> bool {
     auto n = s.size();
     auto pn = prefix.size();
     if (pn > n) {
@@ -40,7 +40,7 @@ auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void {
     return (cfire::slice(s, 0, pn) == prefix);
 }
 
-[[nodiscard]] auto selfhost_generate_cmake_file(const cfire::build::BuildPlan& plan) -> std::string {
+[[nodiscard]] inline auto selfhost_generate_cmake_file(const cfire::build::BuildPlan& plan) -> std::string {
     auto e = BuildEmitter{.buf = ""};
     std::string cm_dir = "${";
     cm_dir += "CMAKE_CURRENT_SOURCE_DIR}";

@@ -101,13 +101,19 @@ gantt
 
 ## Phase 2: Medium Priority (P1 — Performance & Compile Time)
 
-### `ARCH-03`: Decompose Monolithic Conformance Test Runner
+### `ARCH-03`: Decompose Monolithic Conformance Test Runner `[COMPLETED]`
+- **Status**: Completed (2026-10-20)
 - **Priority**: P1
 - **Category**: Testing / Developer Iteration Speed
 - **Target Files**:
   - `tests/conformance_test.cpp` (4,574 LOC)
-  - `tests/unit/` (new directory)
-  - `tests/e2e/` (new directory)
+  - `tests/test_harness.hpp`
+  - `tests/unit/test_frontend.cpp`
+  - `tests/unit/test_sema.cpp`
+  - `tests/unit/test_stdlib.cpp`
+  - `tests/e2e/test_canonical.cpp`
+  - `tests/benchmarks/test_selfhost.cpp`
+  - `tests/test_main.cpp`
   - `Makefile`
 - **Problem Statement**:
   `tests/conformance_test.cpp` compiles all 30 test suites (unit tests, language semantics, self-hosting benchmarks, end-to-end examples) in a single translation unit. A clean compile takes 12–15 seconds on modern multi-core machines, bottlenecking the developer feedback loop during TDD.

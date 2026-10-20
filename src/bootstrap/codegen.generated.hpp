@@ -67,14 +67,14 @@ struct cfire::reflect_struct<CodegenEmitter> {
     };
 };
 
-[[nodiscard]] auto codegen_starts_with(const std::string& s, const std::string& prefix) -> bool;
-[[nodiscard]] auto clean_header_path(const std::string& path) -> std::string;
-auto CodegenEmitter__write(CodegenEmitter& e, const std::string& s) -> void;
-auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void;
-[[nodiscard]] auto CodegenEmitter__emit_file(CodegenEmitter& e, const cfire::frontend::CheckedFile& cf) -> std::string;
-[[nodiscard]] auto selfhost_emit_cpp_file(const cfire::frontend::CheckedFile& cf, bool test_mode) -> std::string;
+[[nodiscard]] inline auto codegen_starts_with(const std::string& s, const std::string& prefix) -> bool;
+[[nodiscard]] inline auto clean_header_path(const std::string& path) -> std::string;
+inline auto CodegenEmitter__write(CodegenEmitter& e, const std::string& s) -> void;
+inline auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void;
+[[nodiscard]] inline auto CodegenEmitter__emit_file(CodegenEmitter& e, const cfire::frontend::CheckedFile& cf) -> std::string;
+[[nodiscard]] inline auto selfhost_emit_cpp_file(const cfire::frontend::CheckedFile& cf, bool test_mode) -> std::string;
 
-[[nodiscard]] auto codegen_starts_with(const std::string& s, const std::string& prefix) -> bool {
+[[nodiscard]] inline auto codegen_starts_with(const std::string& s, const std::string& prefix) -> bool {
     auto n = s.size();
     auto pn = prefix.size();
     if (pn > n) {
@@ -83,7 +83,7 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void;
     return (cfire::slice(s, 0, pn) == prefix);
 }
 
-[[nodiscard]] auto clean_header_path(const std::string& path) -> std::string {
+[[nodiscard]] inline auto clean_header_path(const std::string& path) -> std::string {
     auto p = path;
     while ((p.size() > 0) && ((p[0] == 60) || (p[0] == 34))) {
         p = cfire::slice(p, 1, p.size());
@@ -94,11 +94,11 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void;
     return p;
 }
 
-auto CodegenEmitter__write(CodegenEmitter& e, const std::string& s) -> void {
+inline auto CodegenEmitter__write(CodegenEmitter& e, const std::string& s) -> void {
     e.buf += s;
 }
 
-auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
+inline auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
     if (s.size() == 0) {
         e.buf += "\n";
         return;
@@ -111,7 +111,7 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
     e.buf += (s + "\n");
 }
 
-[[nodiscard]] auto CodegenEmitter__emit_file(CodegenEmitter& e, const cfire::frontend::CheckedFile& cf) -> std::string {
+[[nodiscard]] inline auto CodegenEmitter__emit_file(CodegenEmitter& e, const cfire::frontend::CheckedFile& cf) -> std::string {
     std::vector<std::string> link_tags = {};
     std::vector<std::string> defines = {};
     std::vector<CppHeaderInfo> cpp_headers = {};
@@ -446,7 +446,7 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
     return e.buf;
 }
 
-[[nodiscard]] auto selfhost_emit_cpp_file(const cfire::frontend::CheckedFile& cf, bool test_mode) -> std::string {
+[[nodiscard]] inline auto selfhost_emit_cpp_file(const cfire::frontend::CheckedFile& cf, bool test_mode) -> std::string {
     auto emitter = CodegenEmitter{.buf = "", .indent_level = 0, .test_mode = test_mode};
     return CodegenEmitter__emit_file(emitter, cf);
 }
