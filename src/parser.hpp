@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include <regex>
+
 namespace cfire::frontend {
 
 struct ParseResult {
@@ -15,6 +17,20 @@ struct ParseResult {
 
     [[nodiscard]] bool ok() const noexcept { return errors.empty(); }
 };
+
+[[nodiscard]] inline auto is_make_ident(const ExprPtr& callee) -> bool {
+    if (!callee) return false;
+    if (const auto* id = std::get_if<IdentExpr>(&callee->node)) {
+        return id->name == "make";
+    }
+    return false;
+}
+
+} // namespace cfire::frontend
+
+#include "bootstrap/parser.generated.hpp"
+
+namespace cfire::frontend {
 
 class Parser {
 public:
@@ -1219,7 +1235,8 @@ private:
                 case TokenKind::DoubleColon: {
                     Token sep = advance();
                     std::string field;
-                    if (cur().kind == TokenKind::Ident || cur().kind == TokenKind::KwIn || cur().kind == TokenKind::KwMut) {
+                    if (cur().kind == TokenKind::Ident ||
+                        (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
                         field = advance().lexeme;
                     } else {
                         return std::unexpected(std::format("{}:{}:{}: expected member name after '{}'",
@@ -1425,12 +1442,19 @@ private:
                     StructLitExpr st;
                     st.type_name = std::move(name);
                     while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
-                        auto fn = expect(TokenKind::Ident);
-                        if (!fn) return std::unexpected(fn.error());
+                        std::string fn_name;
+                        if (cur().kind == TokenKind::Ident ||
+                            (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
+                            fn_name = advance().lexeme;
+                        } else {
+                            auto fn = expect(TokenKind::Ident);
+                            if (!fn) return std::unexpected(fn.error());
+                            fn_name = fn->lexeme;
+                        }
                         if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
                         auto fv = parse_expr();
                         if (!fv) return std::unexpected(fv.error());
-                        st.fields.push_back(StructLitField{fn->lexeme, std::move(*fv)});
+                        st.fields.push_back(StructLitField{std::move(fn_name), std::move(*fv)});
                         if (cur().kind == TokenKind::Comma) advance();
                     }
                     if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
@@ -1498,25 +1522,77 @@ private:
     }
 };
 
-[[nodiscard]] inline auto parse_source_resilient(std::string_view path, std::string_view src)
+[[nodiscard]] inline auto parse_source_resilient_cxx(std::string_view path, std::string_view src)
     -> ParseResult
 {
     auto toks = tokenize(path, src);
     if (!toks) {
-        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}}, {toks.error()}};
+        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}}, {toks.error()}};
     }
     Parser p(std::string(path), std::move(*toks), true);
     return p.parse_file_result();
 }
 
-[[nodiscard]] inline auto parse_source(std::string_view path, std::string_view src)
+[[nodiscard]] inline auto parse_source_cxx(std::string_view path, std::string_view src)
     -> std::expected<FileAST, std::string>
 {
-    auto res = parse_source_resilient(path, src);
+    auto res = parse_source_resilient_cxx(path, src);
     if (!res.ok()) {
         return std::unexpected(res.errors.front());
     }
     return std::move(res.ast);
+}
+
+[[nodiscard]] inline auto selfhost_parse_source_resilient(std::string_view path, std::string_view src)
+    -> ParseResult
+{
+    auto toks = tokenize(path, src);
+    if (!toks) {
+        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}}, {toks.error()}};
+    }
+    auto res = ::selfhost_parse_file_result(path, *toks, true);
+    for (auto& st : res.ast.structs) {
+        for (auto& f : st.fields) {
+            if (!f.raw_tag.empty() && f.tags.empty()) {
+                static const std::regex s_tag_re(R"re((\w+):"([^"]*)")re");
+                for (auto it = std::sregex_iterator(f.raw_tag.begin(), f.raw_tag.end(), s_tag_re);
+                     it != std::sregex_iterator(); ++it) {
+                    f.tags[(*it)[1].str()] = (*it)[2].str();
+                }
+            }
+        }
+    }
+    return res;
+}
+
+[[nodiscard]] inline auto selfhost_parse_source(std::string_view path, std::string_view src)
+    -> std::expected<FileAST, std::string>
+{
+    auto res = selfhost_parse_source_resilient(path, src);
+    if (!res.ok()) {
+        return std::unexpected(res.errors.front());
+    }
+    return std::move(res.ast);
+}
+
+[[nodiscard]] inline auto parse_source_resilient(std::string_view path, std::string_view src)
+    -> ParseResult
+{
+    const char* force_cxx = std::getenv("CFIRE_CXX_PARSER");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return parse_source_resilient_cxx(path, src);
+    }
+    return selfhost_parse_source_resilient(path, src);
+}
+
+[[nodiscard]] inline auto parse_source(std::string_view path, std::string_view src)
+    -> std::expected<FileAST, std::string>
+{
+    const char* force_cxx = std::getenv("CFIRE_CXX_PARSER");
+    if (force_cxx && std::string_view(force_cxx) == "1") {
+        return parse_source_cxx(path, src);
+    }
+    return selfhost_parse_source(path, src);
 }
 
 } // namespace cfire::frontend

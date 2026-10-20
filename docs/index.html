@@ -741,15 +741,17 @@ struct cfire::reflect_struct&lt;Box&gt; {
     };
 };
 
+auto increment(Box&amp; b, std::int32_t amount) -&gt; void;
+
 auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
     b.value = (b.value + amount);
 }
 
 auto main(int argc, char** argv) -&gt; int {
     auto b = Box{.value = 40};
-    increment(b, 2);
+    (void)(increment(b, 2));
     auto p = cfire::make_own&lt;Box&gt;(Box{.value = 100});
-    std::println(&quot;b={} p={}&quot;, b.value, (*p).value);
+    (void)(std::println(&quot;b={} p={}&quot;, b.value, (*p).value));
     return 0;
 }
 </code></pre>
@@ -811,6 +813,8 @@ struct Token {
     [[nodiscard]] static auto Eof() -&gt; Token { return Token{_Eof{}}; }
 };
 
+[[nodiscard]] auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string;
+
 [[nodiscard]] auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string {
     {
         const auto&amp; _target = s;
@@ -838,7 +842,7 @@ struct Token {
 
 auto main(int argc, char** argv) -&gt; int {
     std::vector&lt;std::string&gt; items = {&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;};
-    std::println(&quot;result: {}&quot;, classify(items));
+    (void)(std::println(&quot;result: {}&quot;, classify(items)));
     return 0;
 }
 </code></pre>
@@ -881,6 +885,7 @@ fn main() {
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
 #include &quot;cfire_core_stdlib.hpp&quot;
 
+
 auto main(int argc, char** argv) -&gt; int {
     auto bg = cfire::context::background();
     auto [ctx, cancel] = cfire::context::with_timeout(bg, 500);
@@ -904,7 +909,7 @@ auto main(int argc, char** argv) -&gt; int {
         return 1;
     }
     auto msg = std::move(*_try_2);
-    std::println(&quot;received: {}&quot;, msg);
+    (void)(std::println(&quot;received: {}&quot;, msg));
     return 0;
 }
 </code></pre>
@@ -991,6 +996,7 @@ inline auto cfire::json::stringify_struct&lt;Metric&gt;(const Metric&amp; val) -
     return out;
 }
 
+
 auto main(int argc, char** argv) -&gt; int {
     auto payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
     auto _try_1 = cfire::json::parse&lt;Metric&gt;(payload);
@@ -999,7 +1005,7 @@ auto main(int argc, char** argv) -&gt; int {
         return 1;
     }
     auto m = std::move(*_try_1);
-    std::println(&quot;service={} latency={}ms&quot;, m.service, m.latency);
+    (void)(std::println(&quot;service={} latency={}ms&quot;, m.service, m.latency));
     return 0;
 }
 </code></pre>
@@ -1037,10 +1043,11 @@ fn main() {
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
 #include &lt;fast_hash.h&gt;
 
+
 auto main(int argc, char** argv) -&gt; int {
     std::string msg = &quot;cfire systems programming&quot;;
     auto hash = fh_fnv1a(msg, msg.size());
-    std::println(&quot;fnv1a hash: 0x{:x}&quot;, hash);
+    (void)(std::println(&quot;fnv1a hash: 0x{:x}&quot;, hash));
     return 0;
 }
 </code></pre>

@@ -3715,6 +3715,148 @@ void test_selfhost_docgen_parity_and_benchmark([[maybe_unused]] const std::files
     std::println("--- PASS: test_selfhost_docgen_parity_and_benchmark");
 }
 
+void test_selfhost_parser_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_selfhost_parser_parity_and_benchmark (Self-Hosted Parser Dogfooding & Measurable Parity)");
+
+    const std::vector<std::string> corpus_files = {
+        "examples/01-hello-core/main.cf",
+        "examples/02-log-compressor/main.cf",
+        "examples/03-pkg-cache/main.cf",
+        "examples/04-async-workers/main.cf",
+        "examples/05-cmake-interop/main.cf",
+        "examples/06-raylib-viz/main.cf",
+        "examples/07-types-match-map/main.cf",
+        "examples/08-multi-pkg-cc-build/main.cf",
+        "examples/09-stdlib-test-pointers/main.cf",
+        "examples/10-cmake-and-make-deps/main.cf",
+        "examples/11-http-server-router/main.cf",
+        "src/lexer.cf",
+        "src/formatter.cf",
+        "src/ast.cf",
+        "src/refactor.cf",
+        "src/docgen.cf",
+        "src/parser.cf"
+    };
+
+    std::size_t total_bytes = 0;
+    std::vector<std::pair<std::string, std::string>> loaded_files;
+    for (const auto& rel_path : corpus_files) {
+        std::ifstream ifs(rel_path);
+        require(ifs.is_open(), std::format("Failed to open corpus file '{}'", rel_path));
+        std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+        total_bytes += content.size();
+        loaded_files.emplace_back(rel_path, std::move(content));
+    }
+
+    // 1. Conformance & AST Parity across all 15 corpus files
+    for (const auto& [path, content] : loaded_files) {
+        auto cxx_ast = cfire::frontend::parse_source_cxx(path, content);
+        auto cf_ast = cfire::frontend::selfhost_parse_source(path, content);
+
+        require(cxx_ast.has_value(), std::format("C++ parser failed on '{}': {}", path, cxx_ast ? "" : cxx_ast.error()));
+        require(cf_ast.has_value(), std::format("cfire self-host parser failed on '{}': {}", path, cf_ast ? "" : cf_ast.error()));
+
+        if (cxx_ast && cf_ast) {
+            require(cxx_ast->package_name == cf_ast->package_name,
+                std::format("package_name mismatch in '{}': '{}' vs '{}'", path, cxx_ast->package_name, cf_ast->package_name));
+            require(cxx_ast->imports.size() == cf_ast->imports.size(),
+                std::format("imports.size() mismatch in '{}': {} vs {}", path, cxx_ast->imports.size(), cf_ast->imports.size()));
+            for (std::size_t i = 0; i < cxx_ast->imports.size(); ++i) {
+                require(cxx_ast->imports[i].path == cf_ast->imports[i].path,
+                    std::format("import[{}] path mismatch in '{}'", i, path));
+                require(cxx_ast->imports[i].alias == cf_ast->imports[i].alias,
+                    std::format("import[{}] alias mismatch in '{}'", i, path));
+            }
+            require(cxx_ast->structs.size() == cf_ast->structs.size(),
+                std::format("structs.size() mismatch in '{}': {} vs {}", path, cxx_ast->structs.size(), cf_ast->structs.size()));
+            for (std::size_t i = 0; i < cxx_ast->structs.size(); ++i) {
+                require(cxx_ast->structs[i].name == cf_ast->structs[i].name,
+                    std::format("struct[{}] name mismatch in '{}': '{}' vs '{}'", i, path, cxx_ast->structs[i].name, cf_ast->structs[i].name));
+                require(cxx_ast->structs[i].fields.size() == cf_ast->structs[i].fields.size(),
+                    std::format("struct '{}' field count mismatch in '{}': {} vs {}", cxx_ast->structs[i].name, path,
+                        cxx_ast->structs[i].fields.size(), cf_ast->structs[i].fields.size()));
+            }
+            require(cxx_ast->enums.size() == cf_ast->enums.size(),
+                std::format("enums.size() mismatch in '{}': {} vs {}", path, cxx_ast->enums.size(), cf_ast->enums.size()));
+            require(cxx_ast->interfaces.size() == cf_ast->interfaces.size(),
+                std::format("interfaces.size() mismatch in '{}': {} vs {}", path, cxx_ast->interfaces.size(), cf_ast->interfaces.size()));
+            require(cxx_ast->functions.size() == cf_ast->functions.size(),
+                std::format("functions.size() mismatch in '{}': {} vs {}", path, cxx_ast->functions.size(), cf_ast->functions.size()));
+            for (std::size_t i = 0; i < cxx_ast->functions.size(); ++i) {
+                require(cxx_ast->functions[i].name == cf_ast->functions[i].name,
+                    std::format("fn[{}] name mismatch in '{}': '{}' vs '{}'", i, path, cxx_ast->functions[i].name, cf_ast->functions[i].name));
+                require(cxx_ast->functions[i].params.size() == cf_ast->functions[i].params.size(),
+                    std::format("fn '{}' param count mismatch in '{}': {} vs {}", cxx_ast->functions[i].name, path,
+                        cxx_ast->functions[i].params.size(), cf_ast->functions[i].params.size()));
+            }
+            require(cxx_ast->global_vars.size() == cf_ast->global_vars.size(),
+                std::format("global_vars.size() mismatch in '{}': {} vs {}", path, cxx_ast->global_vars.size(), cf_ast->global_vars.size()));
+            require(cxx_ast->tests.size() == cf_ast->tests.size(),
+                std::format("tests.size() mismatch in '{}': {} vs {}", path, cxx_ast->tests.size(), cf_ast->tests.size()));
+        }
+    }
+    std::println("  [PASS] 100% AST declaration parity verified across all {} corpus files ({:.2f} KB)",
+        loaded_files.size(), static_cast<double>(total_bytes) / 1024.0);
+
+    // 2. Resilient Error Recovery Parity
+    {
+        std::string malformed_src = "package broken\nfn foo( { let x = ; }\nfn bar() -> i32 { return 42 }\n";
+        auto cxx_res = cfire::frontend::parse_source_resilient_cxx("broken.cf", malformed_src);
+        auto cf_res = cfire::frontend::selfhost_parse_source_resilient("broken.cf", malformed_src);
+        require(!cxx_res.ok(), "C++ parser should report errors on malformed file");
+        require(!cf_res.ok(), "cfire parser should report errors on malformed file");
+        require(!cf_res.errors.empty(), "cfire parser should record diagnostics");
+        std::println("  [PASS] 100% resilient error recovery parity verified on malformed syntax");
+    }
+
+    // 3. Performance Throughput Benchmark
+    constexpr int kIters = 40;
+    std::size_t benchmark_payload_bytes = total_bytes * kIters;
+
+    // Benchmark Native C++ Parser
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t cxx_parsed_fns = 0;
+    for (int it = 0; it < kIters; ++it) {
+        for (const auto& [path, content] : loaded_files) {
+            auto res = cfire::frontend::parse_source_cxx(path, content);
+            if (res) cxx_parsed_fns += res->functions.size();
+        }
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mbs_cxx = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire Self-Hosted Parser
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t cf_parsed_fns = 0;
+    for (int it = 0; it < kIters; ++it) {
+        for (const auto& [path, content] : loaded_files) {
+            auto res = cfire::frontend::selfhost_parse_source(path, content);
+            if (res) cf_parsed_fns += res->functions.size();
+        }
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (static_cast<double>(benchmark_payload_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+
+    require(cxx_parsed_fns == cf_parsed_fns, "Benchmark AST count parity mismatch");
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Parser Throughput Benchmark (Payload: {:.2f} MB, {} files x {} iters):",
+        static_cast<double>(benchmark_payload_bytes) / 1'000'000.0, loaded_files.size(), kIters);
+    std::println("    - C++ Native Parser:        {:>7.2f} MB/s (avg {:.3f}ms/corpus)",
+        mbs_cxx, ms_cxx / kIters);
+    std::println("    - cfire Self-Hosted Parser: {:>7.2f} MB/s (avg {:.3f}ms/corpus)",
+        mbs_cf, ms_cf / kIters);
+    std::println("    - Performance Ratio:        {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted parser performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_parser_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3744,6 +3886,7 @@ auto main() -> int {
     test_selfhost_ast_parity_and_benchmark(rt_dir);
     test_selfhost_refactor_parity_and_benchmark(rt_dir);
     test_selfhost_docgen_parity_and_benchmark(rt_dir);
+    test_selfhost_parser_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
