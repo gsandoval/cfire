@@ -12,6 +12,10 @@
 #include <unordered_map>
 #include <vector>
 
+#if !defined(CFIRE_CXX_CLANG_BRIDGE)
+#include "bootstrap/clang_bridge.generated.hpp"
+#endif
+
 namespace cfire::bridge {
 
 struct CppSymbol {
@@ -45,12 +49,16 @@ struct HeaderIndex {
 }
 
 [[nodiscard]] inline auto hash_key(std::string_view sv) noexcept -> std::uint64_t {
+#if !defined(CFIRE_CXX_CLANG_BRIDGE)
+    return selfhost_clang_hash_key(sv);
+#else
     std::uint64_t h = 0xcbf29ce484222325ULL;
     for (char c : sv) {
         h ^= static_cast<std::uint8_t>(c);
         h *= 0x100000001b3ULL;
     }
     return h;
+#endif
 }
 
 [[nodiscard]] inline auto trim_qual(std::string_view sv) noexcept -> std::string_view {
@@ -60,6 +68,11 @@ struct HeaderIndex {
 }
 
 inline void parse_fn_qual_type(std::string_view full_sig, CppSymbol& sym) {
+#if !defined(CFIRE_CXX_CLANG_BRIDGE)
+    auto parsed = selfhost_clang_parse_fn_sig(full_sig);
+    sym.return_type = std::move(parsed.return_type);
+    sym.param_types = std::move(parsed.param_types);
+#else
     std::size_t lp = full_sig.find('(');
     std::size_t rp = full_sig.rfind(')');
     if (lp == std::string_view::npos || rp == std::string_view::npos || rp <= lp) {
@@ -85,6 +98,7 @@ inline void parse_fn_qual_type(std::string_view full_sig, CppSymbol& sym) {
     }
     auto last_pt = trim_qual(params_sv.substr(start));
     if (!last_pt.empty()) sym.param_types.emplace_back(last_pt);
+#endif
 }
 
 class ClangAstParser {
@@ -311,6 +325,14 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
     std::filesystem::create_directories(cache_file.parent_path());
     std::ofstream out(cache_file, std::ios::binary | std::ios::trunc);
     for (const auto& [key, sym] : idx.symbols) {
+#if !defined(CFIRE_CXX_CLANG_BRIDGE)
+        CppCacheEntry entry{.key = key, .name = sym.name, .kind = sym.kind, .return_type = sym.return_type, .param_types = sym.param_types};
+        out << selfhost_clang_format_cache_entry(entry);
+        for (const auto& ov : sym.overloads) {
+            CppCacheEntry ov_entry{.key = key, .name = ov.name, .kind = ov.kind, .return_type = ov.return_type, .param_types = ov.param_types};
+            out << selfhost_clang_format_cache_entry(ov_entry);
+        }
+#else
         out << key << "\t" << sym.name << "\t" << sym.kind << "\t" << sym.return_type;
         for (const auto& pt : sym.param_types) {
             out << "\t" << pt;
@@ -323,6 +345,7 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
             }
             out << "\n";
         }
+#endif
     }
 }
 
@@ -340,6 +363,22 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
     std::string line;
     while (std::getline(in, line)) {
         if (line.empty()) continue;
+#if !defined(CFIRE_CXX_CLANG_BRIDGE)
+        auto entry = selfhost_clang_parse_cache_line(line);
+        if (!entry.key.empty()) {
+            CppSymbol sym;
+            sym.name = std::move(entry.name);
+            sym.kind = std::move(entry.kind);
+            sym.return_type = std::move(entry.return_type);
+            sym.param_types = std::move(entry.param_types);
+            auto it = idx.symbols.find(entry.key);
+            if (it == idx.symbols.end()) {
+                idx.symbols[entry.key] = std::move(sym);
+            } else {
+                it->second.overloads.push_back(std::move(sym));
+            }
+        }
+#else
         std::vector<std::string> cols;
         std::size_t start = 0;
         for (;;) {
@@ -367,6 +406,7 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
                 it->second.overloads.push_back(std::move(sym));
             }
         }
+#endif
     }
     return idx;
 }
