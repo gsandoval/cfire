@@ -1884,6 +1884,9 @@ public:
             auto ws = resolve_workspace(uri, pres.ast);
             FileAST merged = pres.ast;
             for (const auto& pkg : ws.local_packages) {
+                if (pkg.ast.arena) merged.child_arenas.push_back(pkg.ast.arena);
+                merged.child_arenas.insert(merged.child_arenas.end(),
+                    pkg.ast.child_arenas.begin(), pkg.ast.child_arenas.end());
                 for (const auto& st : pkg.ast.structs) merged.structs.push_back(st);
                 for (const auto& en : pkg.ast.enums) merged.enums.push_back(en);
                 for (const auto& ifc : pkg.ast.interfaces) merged.interfaces.push_back(ifc);
