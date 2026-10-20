@@ -36,6 +36,41 @@ inline auto operator+(std::string_view lhs, const std::string& rhs) -> std::stri
     return res;
 }
 
+// Allow comparison between smart pointers and `none` (std::nullopt)
+template <typename T>
+inline auto operator==(const std::shared_ptr<T>& ptr, std::nullopt_t) noexcept -> bool {
+    return ptr == nullptr;
+}
+template <typename T>
+inline auto operator!=(const std::shared_ptr<T>& ptr, std::nullopt_t) noexcept -> bool {
+    return ptr != nullptr;
+}
+template <typename T>
+inline auto operator==(std::nullopt_t, const std::shared_ptr<T>& ptr) noexcept -> bool {
+    return ptr == nullptr;
+}
+template <typename T>
+inline auto operator!=(std::nullopt_t, const std::shared_ptr<T>& ptr) noexcept -> bool {
+    return ptr != nullptr;
+}
+
+template <typename T>
+inline auto operator==(const std::unique_ptr<T>& ptr, std::nullopt_t) noexcept -> bool {
+    return ptr == nullptr;
+}
+template <typename T>
+inline auto operator!=(const std::unique_ptr<T>& ptr, std::nullopt_t) noexcept -> bool {
+    return ptr != nullptr;
+}
+template <typename T>
+inline auto operator==(std::nullopt_t, const std::unique_ptr<T>& ptr) noexcept -> bool {
+    return ptr == nullptr;
+}
+template <typename T>
+inline auto operator!=(std::nullopt_t, const std::unique_ptr<T>& ptr) noexcept -> bool {
+    return ptr != nullptr;
+}
+
 namespace cfire {
 
 // --- Error Type for T! (std::expected<T, cfire::Error>) ---

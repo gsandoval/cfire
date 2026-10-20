@@ -1,0 +1,454 @@
+package frontend
+
+// src/ast.cf — Native cfire AST Domain Model & TypeRef Serialization
+
+// --- Type References ---
+
+type TypeRef struct {
+    name: str
+    is_slice: bool
+    is_array: bool
+    array_len: str
+    is_map: bool
+    key_type: shared[TypeRef]
+    elem_type: shared[TypeRef]
+    is_fallible: bool // T!
+    is_optional: bool // T?
+    is_mut_ptr: bool  // *mut T
+    is_ptr: bool      // *T
+    is_borrow: bool   // &T
+    is_mut_borrow: bool // &mut T
+    is_tuple: bool    // (T1, T2, ...)
+    tuple_types: []TypeRef
+    smart_wrap: str   // "own" or "shared"
+}
+
+// --- Import Declarations ---
+
+type ImportAttr struct {
+    name: str
+    args: []str
+}
+
+type ImportDecl struct {
+    is_cpp: bool
+    path: str
+    alias: str
+    attrs: []ImportAttr
+    line: i32
+}
+
+// --- Struct Declarations ---
+
+type StructField struct {
+    name: str
+    field_type: TypeRef
+    default_val: shared[Expr]
+    raw_tag: str
+    line: i32
+}
+
+type StructDecl struct {
+    name: str
+    fields: []StructField
+    line: i32
+}
+
+// --- Enum Declarations ---
+
+type EnumVariant struct {
+    name: str
+    payload_types: []TypeRef
+    line: i32
+}
+
+type EnumDecl struct {
+    name: str
+    variants: []EnumVariant
+    line: i32
+}
+
+// --- Interface Declarations ---
+
+type InterfaceMethodSig struct {
+    name: str
+    param_types: []TypeRef
+    return_type: TypeRef
+}
+
+type InterfaceDecl struct {
+    name: str
+    methods: []InterfaceMethodSig
+    line: i32
+}
+
+// --- Function & Method Signatures ---
+
+type TypeParam struct {
+    name: str
+    constraint: str
+}
+
+type ReceiverDecl struct {
+    intent: str // "in" or "mut"
+    name: str
+    receiver_type: TypeRef
+}
+
+type ParamDecl struct {
+    intent: str // "in", "mut", "move"
+    name: str
+    param_type: TypeRef
+    line: i32
+    col: i32
+}
+
+// --- Expressions ---
+
+type IdentExpr struct {
+    name: str
+}
+
+type LiteralExpr struct {
+    kind: i32
+    value: str
+}
+
+type UnaryExpr struct {
+    op: str
+    operand: shared[Expr]
+}
+
+type BinaryExpr struct {
+    left: shared[Expr]
+    op: str
+    right: shared[Expr]
+}
+
+type MemberExpr struct {
+    object: shared[Expr]
+    field: str
+    is_namespace: bool
+}
+
+type IndexExpr struct {
+    object: shared[Expr]
+    index: shared[Expr]
+}
+
+type SliceExpr struct {
+    object: shared[Expr]
+    start: shared[Expr]
+    end: shared[Expr]
+}
+
+type StructLitField struct {
+    name: str
+    value: shared[Expr]
+}
+
+type StructLitExpr struct {
+    type_name: str
+    fields: []StructLitField
+}
+
+type ArrayLitExpr struct {
+    elements: []shared[Expr]
+}
+
+type ClosureExpr struct {
+    params: []str
+    is_async: bool
+    body: []shared[Stmt]
+}
+
+type CallArg struct {
+    intent: str
+    label: str
+    value: shared[Expr]
+    line: i32
+    col: i32
+}
+
+type CallExpr struct {
+    callee: shared[Expr]
+    type_args: []TypeRef
+    args: []CallArg
+    block_arg: shared[ClosureExpr]
+}
+
+type TryExpr struct {
+    inner: shared[Expr]
+}
+
+type OrExpr struct {
+    inner: shared[Expr]
+    err_var: str
+    handler_body: []shared[Stmt]
+    fallback_val: shared[Expr]
+}
+
+type TupleExpr struct {
+    elements: []shared[Expr]
+}
+
+type ExprNode enum {
+    Ident(IdentExpr),
+    Literal(LiteralExpr),
+    Unary(UnaryExpr),
+    Binary(BinaryExpr),
+    Member(MemberExpr),
+    Index(IndexExpr),
+    Slice(SliceExpr),
+    StructLit(StructLitExpr),
+    ArrayLit(ArrayLitExpr),
+    Closure(ClosureExpr),
+    Call(CallExpr),
+    Try(TryExpr),
+    Or(OrExpr),
+    Tuple(TupleExpr),
+}
+
+type Expr struct {
+    node: ExprNode
+    line: i32
+    col: i32
+}
+
+// --- Statements ---
+
+type VarDeclStmt struct {
+    name: str
+    is_mut: bool
+    type_annot: TypeRef
+    has_type: bool
+    init: shared[Expr]
+    was_var: bool
+    line: i32
+    col: i32
+}
+
+type AssignStmt struct {
+    target: shared[Expr]
+    op: str
+    value: shared[Expr]
+    line: i32
+}
+
+type DeferStmt struct {
+    call: shared[Expr]
+    line: i32
+}
+
+type ReturnStmt struct {
+    value: shared[Expr]
+    line: i32
+}
+
+type IfStmt struct {
+    cond: shared[Expr]
+    then_body: []shared[Stmt]
+    else_body: []shared[Stmt]
+    line: i32
+}
+
+type ForStmt struct {
+    index_var: str
+    item_var: str
+    iter_expr: shared[Expr]
+    body: []shared[Stmt]
+    line: i32
+}
+
+type MatchArm struct {
+    enum_prefix: str
+    variant_name: str
+    bindings: []str
+    is_slice_pattern: bool
+    slice_head: []str
+    slice_rest: str
+    slice_has_rest: bool
+    slice_tail: []str
+    body: []shared[Stmt]
+    line: i32
+}
+
+type MatchStmt struct {
+    target: shared[Expr]
+    is_move: bool
+    arms: []MatchArm
+    line: i32
+    col: i32
+}
+
+type CppBlockStmt struct {
+    raw_code: str
+    line: i32
+}
+
+type AsyncScopeStmt struct {
+    workers: shared[Expr]
+    scope_var: str
+    body: []shared[Stmt]
+    line: i32
+}
+
+type ExprStmt struct {
+    expr: shared[Expr]
+    line: i32
+}
+
+type BindingPair struct {
+    name: str
+    is_mut: bool
+}
+
+type DestructureVarDeclStmt struct {
+    bindings: []BindingPair
+    init: shared[Expr]
+    line: i32
+    col: i32
+}
+
+type DestructureAssignStmt struct {
+    targets: []shared[Expr]
+    op: str
+    value: shared[Expr]
+    line: i32
+}
+
+type StmtNode enum {
+    VarDecl(VarDeclStmt),
+    Assign(AssignStmt),
+    Defer(DeferStmt),
+    Return(ReturnStmt),
+    If(IfStmt),
+    For(ForStmt),
+    Match(MatchStmt),
+    CppBlock(CppBlockStmt),
+    AsyncScope(AsyncScopeStmt),
+    Expr(ExprStmt),
+    DestructureVarDecl(DestructureVarDeclStmt),
+    DestructureAssign(DestructureAssignStmt),
+}
+
+type Stmt struct {
+    node: StmtNode
+    line: i32
+}
+
+// --- Top-Level Declarations ---
+
+type FnDecl struct {
+    has_receiver: bool
+    receiver: ReceiverDecl
+    name: str
+    type_params: []TypeParam
+    params: []ParamDecl
+    is_async: bool
+    return_type: TypeRef
+    body: []shared[Stmt]
+    line: i32
+}
+
+type GlobalVarDecl struct {
+    name: str
+    is_mut: bool
+    has_type: bool
+    type_annot: TypeRef
+    value: shared[Expr]
+    was_var: bool
+    line: i32
+}
+
+type TestDecl struct {
+    name: str
+    body: []shared[Stmt]
+    line: i32
+}
+
+type FileAST struct {
+    path: str
+    package_name: str
+    imports: []ImportDecl
+    structs: []StructDecl
+    enums: []EnumDecl
+    interfaces: []InterfaceDecl
+    functions: []FnDecl
+    global_vars: []GlobalVarDecl
+    tests: []TestDecl
+}
+
+// --- AST Helper Routines ---
+
+// make_typeref: Constructs a simple primitive or named TypeRef
+fn make_typeref(name: &str) -> TypeRef {
+    return TypeRef{
+        name: "" + name,
+        is_slice: false,
+        is_array: false,
+        array_len: "",
+        is_map: false,
+        is_fallible: false,
+        is_optional: false,
+        is_mut_ptr: false,
+        is_ptr: false,
+        is_borrow: false,
+        is_mut_borrow: false,
+        is_tuple: false,
+        tuple_types: [],
+        smart_wrap: "",
+    }
+}
+
+// format_typeref_cf: Formats a TypeRef into canonical cfire source representation
+fn format_typeref_cf(t: &TypeRef) -> str {
+    mut base: str = ""
+    if t.is_tuple {
+        base = "("
+        mut i: usize = 0
+        n := t.tuple_types.len
+        for i < n {
+            if i > 0 {
+                base = base + ", "
+            }
+            base = base + format_typeref_cf(t.tuple_types[i])
+            i = i + 1
+        }
+        base = base + ")"
+    } else if t.smart_wrap.len > 0 && t.elem_type != none {
+        base = t.smart_wrap + "[" + format_typeref_cf(*t.elem_type) + "]"
+    } else if t.is_slice && t.elem_type != none {
+        base = "[]" + format_typeref_cf(*t.elem_type)
+    } else if t.is_array && t.elem_type != none {
+        base = "[" + t.array_len + "]" + format_typeref_cf(*t.elem_type)
+    } else if t.is_map && t.key_type != none && t.elem_type != none {
+        base = "map[" + format_typeref_cf(*t.key_type) + "]" + format_typeref_cf(*t.elem_type)
+    } else if t.is_mut_ptr && t.elem_type != none {
+        base = "*mut " + format_typeref_cf(*t.elem_type)
+    } else if t.is_ptr && t.elem_type != none {
+        base = "*" + format_typeref_cf(*t.elem_type)
+    } else if t.is_mut_borrow && t.elem_type != none {
+        base = "&mut " + format_typeref_cf(*t.elem_type)
+    } else if t.is_borrow && t.elem_type != none {
+        base = "&" + format_typeref_cf(*t.elem_type)
+    } else {
+        if t.name.len == 0 {
+            base = "void"
+        } else {
+            base = t.name
+        }
+    }
+    if t.is_optional {
+        base = base + "?"
+    }
+    if t.is_fallible {
+        base = base + "!"
+    }
+    return base
+}
+
+// count_ast_declarations: Returns count of (structs, enums, functions) in FileAST
+fn count_ast_declarations(ast: &FileAST) -> (usize, usize, usize) {
+    return (ast.structs.len, ast.enums.len, ast.functions.len)
+}

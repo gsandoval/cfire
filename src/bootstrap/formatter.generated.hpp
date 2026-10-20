@@ -1,5 +1,7 @@
 #include "cfire_prelude.hpp"
 
+struct StructFieldLine;
+
 struct StructFieldLine {
     bool is_valid{};
     bool is_comment_only{};
