@@ -248,6 +248,7 @@ void test_raylib_vendor_codegen_and_eject(const std::filesystem::path& rt_dir) {
 
 
 void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_cfire_cross_compile");
     (void)rt_dir;
     ScopedTempDir tmp("cfire_cross");
     auto main_cf = tmp.file("main.cf", "package main\n\nfn main() {\n    println(\"cross target test ok\")\n}\n");
@@ -263,7 +264,7 @@ void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
         .assert_ok("cfire emit-cpp --target exit 0 (BS-EXT-02)")
         .assert_contains("auto main(", "emit-cpp contains main (BS-EXT-02)");
 
-    std::println("--- PASS: test_cfire_cross_compile (BS-EXT-02)");
+    std::println("--- PASS: test_cfire_cross_compile");
 }
 
 

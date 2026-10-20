@@ -49,6 +49,7 @@ fn main() { mut acc: i32 = 100; transfer(mut acc, mut acc) }
 }
 
 void test_slice_pattern_matching(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_slice_pattern_matching");
     (void)rt_dir;
     // 1. In-process AST and Codegen verification
     std::string_view cf_src = R"(package main
@@ -158,7 +159,7 @@ fn main() {
         .assert_contains("c2=pair:cat+dog", "pair slice pattern output (LD-EXT-01)")
         .assert_contains("c3=sandwich:alpha..omega", "sandwich slice pattern output (LD-EXT-01)");
 
-    std::println("--- PASS: test_slice_pattern_matching (LD-EXT-01)");
+    std::println("--- PASS: test_slice_pattern_matching");
 }
 
 
