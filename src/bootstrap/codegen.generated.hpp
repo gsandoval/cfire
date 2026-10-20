@@ -151,8 +151,8 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
                 if (ipath == "core:cli") {
                     used_core["cli"] = true;
                 } else {
-                    if (ipath == "core:compress/zstd") {
-                        used_core["zstd"] = true;
+                    if ((((ipath == "core:compress/zstd") || (ipath == "core:compress")) || (ipath == "core:zstd")) || codegen_starts_with(ipath, "core:compress/")) {
+                        used_core["compress"] = true;
                         (void)(defines.push_back("#define CFIRE_USE_ZSTD 1"));
                         (void)(link_tags.push_back("-lzstd"));
                     } else {
@@ -161,7 +161,7 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
                             (void)(defines.push_back("#define CFIRE_USE_SIMDJSON 1"));
                             (void)(link_tags.push_back("-lsimdjson"));
                         } else {
-                            if (ipath == "core:db/sqlite") {
+                            if ((ipath == "core:db/sqlite") || (ipath == "core:sqlite")) {
                                 used_core["sqlite"] = true;
                                 (void)(defines.push_back("#define CFIRE_USE_SQLITE 1"));
                                 (void)(link_tags.push_back("-lsqlite3"));
@@ -169,7 +169,7 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
                                 if ((ipath == "core:crypto") || codegen_starts_with(ipath, "core:crypto/")) {
                                     used_core["crypto"] = true;
                                 } else {
-                                    if ((ipath == "core:net") || (ipath == "core:http")) {
+                                    if ((((ipath == "core:net") || (ipath == "core:http")) || (ipath == "core:websocket")) || codegen_starts_with(ipath, "core:net/")) {
                                         used_core["net"] = true;
                                     } else {
                                         if (ipath == "core:time") {
@@ -178,45 +178,41 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
                                             if (ipath == "core:os") {
                                                 used_core["os"] = true;
                                             } else {
-                                                if (ipath == "core:sync") {
+                                                if (((ipath == "core:sync") || (ipath == "core:context")) || codegen_starts_with(ipath, "core:sync/")) {
                                                     used_core["sync"] = true;
                                                 } else {
                                                     if (ipath == "core:str") {
                                                         used_core["str"] = true;
                                                     } else {
-                                                        if (ipath == "core:math") {
+                                                        if ((ipath == "core:math") || (ipath == "core:rand")) {
                                                             used_core["math"] = true;
                                                         } else {
-                                                            if (ipath == "core:rand") {
-                                                                used_core["rand"] = true;
+                                                            if ((((codegen_starts_with(ipath, "core:encoding/") || (ipath == "core:encoding")) || (ipath == "core:base64")) || (ipath == "core:hex")) || (ipath == "core:csv")) {
+                                                                used_core["encoding"] = true;
                                                             } else {
-                                                                if (((codegen_starts_with(ipath, "core:encoding/") || (ipath == "core:base64")) || (ipath == "core:hex")) || (ipath == "core:csv")) {
-                                                                    used_core["encoding"] = true;
+                                                                if (ipath == "core:regex") {
+                                                                    used_core["regex"] = true;
                                                                 } else {
-                                                                    if (ipath == "core:regex") {
-                                                                        used_core["regex"] = true;
+                                                                    if ((ipath == "core:collections") || (ipath == "core:sort")) {
+                                                                        used_core["collections"] = true;
                                                                     } else {
-                                                                        if (ipath == "core:collections") {
-                                                                            used_core["collections"] = true;
+                                                                        if (ipath == "core:log") {
+                                                                            used_core["log"] = true;
                                                                         } else {
-                                                                            if (ipath == "core:sort") {
-                                                                                used_core["sort"] = true;
+                                                                            if (ipath == "core:unicode") {
+                                                                                used_core["unicode"] = true;
                                                                             } else {
-                                                                                if (ipath == "core:log") {
-                                                                                    used_core["log"] = true;
+                                                                                if (codegen_starts_with(ipath, "core:")) {
+                                                                                    auto mod_name = cfire::slice(ipath, 5, ipath.size());
+                                                                                    used_core[mod_name] = true;
                                                                                 } else {
-                                                                                    if (codegen_starts_with(ipath, "core:")) {
-                                                                                        auto mod_name = cfire::slice(ipath, 5, ipath.size());
-                                                                                        used_core[mod_name] = true;
-                                                                                    } else {
-                                                                                        if (ipath == "vendor:raylib") {
-                                                                                            std::string alias = "raylib";
-                                                                                            if (imp.alias.size() > 0) {
-                                                                                                alias = imp.alias;
-                                                                                            }
-                                                                                            used_vendor["raylib"] = alias;
-                                                                                            (void)(link_tags.push_back("-lraylib"));
+                                                                                    if (ipath == "vendor:raylib") {
+                                                                                        std::string alias = "raylib";
+                                                                                        if (imp.alias.size() > 0) {
+                                                                                            alias = imp.alias;
                                                                                         }
+                                                                                        used_vendor["raylib"] = alias;
+                                                                                        (void)(link_tags.push_back("-lraylib"));
                                                                                     }
                                                                                 }
                                                                             }
@@ -260,7 +256,57 @@ auto CodegenEmitter__writeln(CodegenEmitter& e, const std::string& s) -> void {
     }
     (void)(CodegenEmitter__writeln(e, "#include \"cfire_prelude.hpp\""));
     if (used_core.size() > 0) {
-        (void)(CodegenEmitter__writeln(e, "#include \"cfire_core_stdlib.hpp\""));
+        if (used_core["cli"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/cli.hpp\""));
+        }
+        if (used_core["collections"] || used_core["sort"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/collections.hpp\""));
+        }
+        if (used_core["zstd"] || used_core["compress"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/compress.hpp\""));
+        }
+        if (used_core["crypto"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/crypto.hpp\""));
+        }
+        if (((used_core["encoding"] || used_core["base64"]) || used_core["hex"]) || used_core["csv"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/encoding.hpp\""));
+        }
+        if (used_core["fs"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/fs.hpp\""));
+        }
+        if (used_core["json"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/json.hpp\""));
+        }
+        if (used_core["log"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/log.hpp\""));
+        }
+        if (used_core["math"] || used_core["rand"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/math.hpp\""));
+        }
+        if (((used_core["net"] || used_core["http"]) || used_core["websocket"]) || used_core["url"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/net.hpp\""));
+        }
+        if (used_core["os"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/os.hpp\""));
+        }
+        if (used_core["regex"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/regex.hpp\""));
+        }
+        if (used_core["sqlite"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/sqlite.hpp\""));
+        }
+        if (used_core["str"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/str.hpp\""));
+        }
+        if (used_core["sync"] || used_core["context"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/sync.hpp\""));
+        }
+        if (used_core["time"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/time.hpp\""));
+        }
+        if (used_core["unicode"]) {
+            (void)(CodegenEmitter__writeln(e, "#include \"core/unicode.hpp\""));
+        }
     }
     std::size_t chi = 0;
     auto n_ch = cpp_headers.size();
