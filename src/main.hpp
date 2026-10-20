@@ -20,11 +20,9 @@
 #include <mach-o/dyld.h>
 #endif
 
-#if !defined(CFIRE_CXX_MAIN)
 // Forward declaration from self-hosted driver
 [[nodiscard]] auto selfhost_wrap_eval_code(const std::string& raw_code, bool expr_mode) -> std::string;
 [[nodiscard]] auto selfhost_get_llm_doc() -> std::string;
-#endif
 
 namespace cfire::main_driver {
 

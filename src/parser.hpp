@@ -1585,20 +1585,12 @@ private:
 [[nodiscard]] inline auto parse_source_resilient(std::string_view path, std::string_view src)
     -> ParseResult
 {
-    const char* force_cxx = std::getenv("CFIRE_CXX_PARSER");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return parse_source_resilient_cxx(path, src);
-    }
     return selfhost_parse_source_resilient(path, src);
 }
 
 [[nodiscard]] inline auto parse_source(std::string_view path, std::string_view src)
     -> std::expected<FileAST, std::string>
 {
-    const char* force_cxx = std::getenv("CFIRE_CXX_PARSER");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return parse_source_cxx(path, src);
-    }
     return selfhost_parse_source(path, src);
 }
 

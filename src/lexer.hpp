@@ -288,10 +288,6 @@ namespace cfire::frontend {
 [[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
     -> std::expected<std::vector<Token>, std::string>
 {
-    const char* force_cxx = std::getenv("CFIRE_CXX_LEXER");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return tokenize_cxx(file, src);
-    }
     return selfhost_tokenize_adapter(file, src);
 }
 

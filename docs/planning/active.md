@@ -21,43 +21,36 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
-## Active Task: `ARCH-04` Arena Memory Allocator for AST Nodes
+## Active Task: `ARCH-05` Deprecate Dual-Engine C++ Fallback Headers
 
 ### 1. Scope & Problem Statement
 - **Problem**:
-  AST nodes currently use `using ExprPtr = std::shared_ptr<Expr>` and `using StmtPtr = std::shared_ptr<Stmt>`.
-  Every AST expression and statement allocation invokes `std::make_shared` (allocating a separate heap control block and atomic ref-counters).
-  This causes cache fragmentation across hundreds of dispersed heap allocations, 16-byte vector elements, and atomic reference count overhead during AST cloning and traversal.
+  Maintaining dual implementations of the compiler in both C++ (`src/*.hpp`, 17,610 lines) and `cfire` (`src/*.cf`) doubles maintenance overhead, introduces cognitive confusion over which file is authoritative, and bloats the production repository.
 - **In Scope**:
-  - Implement `AstArena`: a high-performance monotonic bump allocator in `src/ast.hpp` allocating 64KB contiguous memory blocks with scoped destruction and batch reset.
-  - Transition `ExprPtr` and `StmtPtr` in `src/ast.hpp` from `std::shared_ptr<T>` to raw non-atomic owning pointer aliases (`Expr*` and `Stmt*`).
-  - Introduce `std::shared_ptr<AstArena> arena` in `FileAST` with thread-local `ArenaScope` to tie AST node lifetimes strictly to the owning file AST.
-  - Keep `make_expr()` and `make_stmt()` APIs identical so that parser and sema call sites in both C++ (`src/parser.hpp`, `src/sema.hpp`) and self-hosted `.cf` (`src/parser.cf`, `src/sema.cf`) require zero syntax modifications.
-  - Measure parser throughput and memory locality improvements in `tests/benchmarks/test_selfhost.cpp`.
+  - Snapshot the stable Stage 0 C++ implementations into `bootstrap/stage0/` as a permanent bootstrapping artifact.
+  - Turn `src/*.hpp` into clean, thin dispatch wrappers forwarding directly to `src/bootstrap/*.generated.hpp` (generated from `src/*.cf`).
+  - Add `make bootstrap-from-stage0` to build a working bootstrap compiler purely from `bootstrap/stage0/` without needing pre-existing binaries.
+  - Update `test_selfhost.cpp` benchmarks to include `bootstrap/stage0/` as the native C++ baseline for continuous throughput comparisons.
 - **Out of Scope**:
-  - Changing `TypeRef` recursive pointer mechanics (which remains lightweight `std::shared_ptr<TypeRef>`).
-  - Modifying grammar or AST node fields.
+  - Changing the behavior or grammar of the compiler.
+  - Modifying `runtime/core/`.
 
 ### 2. Open Questions & Architectural Clarifications
-- **Lifetime & Ownership**:
-  `FileAST` owns `std::shared_ptr<AstArena> arena`. As `FileAST` is moved into `CheckedFile`, the arena remains alive. When `CheckedFile` drops out of scope, the entire arena releases its 64KB blocks in batch.
-- **Node Destruction**:
-  Non-trivially-destructible AST nodes (those containing `std::string` or `std::vector`) register a lightweight destructor trampoline in `AstArena`. On arena reset, destructors run in LIFO order before free, guaranteeing zero memory leaks.
-- **Fallback Safety**:
-  If `make_expr()` is called outside an active `ArenaScope` (e.g. in a unit test), a thread-local fallback arena ensures safe allocation without crashing or leaking.
+- **Why do we need .cf and .hpp headers?**:
+  The canonical code of the `cfire` compiler is written entirely in `.cf` (`src/*.cf`). The C++ host compiler (`clang++`/`g++`) requires C++ headers to compile `cfire`. `cfire emit-cpp` compiles `.cf` into `src/bootstrap/*.generated.hpp`. The handwritten `src/*.hpp` were legacy bootstrap code from before the compiler was self-hosted. ARCH-05 eliminates this duality.
+- **Stage 0 Archive**:
+  `bootstrap/stage0/` stores the pure C++ implementation so anyone on a clean machine without `cfire` can compile `cfire` from scratch using standard C++23.
 
 ### 3. Testing Strategy Defined Across Tiers
-- **Unit Tests**:
-  - `AstArena` allocation alignment, capacity expansion across multiple chunks, and proper destructor execution.
-- **Integration Tests**:
-  - Lexer -> Parser -> Sema -> Codegen compiler pipeline end-to-end with arena-allocated nodes.
-- **Conformance Tests**:
-  - All 30 conformance test suites (`test-unit`, `test-stdlib`, `test-e2e`, `test-selfhost`) pass with 100% parity.
-- **Performance Benchmark**:
-  - Validate parser throughput in `test_selfhost_parser_parity_and_benchmark` and ensure zero memory leaks.
+- **Compilation Check**:
+  - `make clean && make build` using generated headers.
+  - `make bootstrap-from-stage0` builds a functional binary.
+- **Regression Parity**:
+  - `make review-check` passes all 4 quality gates.
+  - All 12 dogfood benchmarks in `tests/benchmarks/test_selfhost.cpp` continue to pass.
 
 ### 4. Implementation Plan
-- **Step 1**: Implement `AstArena` and `ArenaScope` in `src/ast.hpp`.
-- **Step 2**: Update `ExprPtr` to `Expr*` and `StmtPtr` to `Stmt*` in `src/ast.hpp`.
-- **Step 3**: Add `std::shared_ptr<AstArena> arena` to `FileAST` and instrument `parse_source()` in `src/parser.hpp` and `src/parser.cf` with `ArenaScope`.
-- **Step 4**: Verify clean compilation, re-transpile self-hosted compiler via `make dogfood`, run benchmarks, and execute `make review-check`.
+- **Step 1**: Create `bootstrap/stage0/` and copy the stable C++ implementations.
+- **Step 2**: Add `bootstrap-from-stage0` target in `Makefile`.
+- **Step 3**: Simplify `src/*.hpp` to forward directly to self-hosted generated headers.
+- **Step 4**: Run full `make review-check` and verify zero regressions.

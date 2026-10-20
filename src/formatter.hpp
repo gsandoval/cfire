@@ -308,10 +308,6 @@ inline auto format_lines_internal_cxx(const std::vector<std::string>& raw_lines)
 }
 
 inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
-    const char* force_cxx = std::getenv("CFIRE_CXX_FORMATTER");
-    if (force_cxx && std::string_view(force_cxx) == "1") {
-        return format_lines_internal_cxx(raw_lines);
-    }
     return ::selfhost_format_lines(raw_lines);
 }
 
@@ -389,9 +385,7 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
 [[nodiscard]] inline auto format_source(std::string_view src, std::string_view filename = "<input>")
     -> std::expected<std::string, std::string>
 {
-    const char* force_cxx = std::getenv("CFIRE_CXX_FORMATTER");
-    bool use_cxx = force_cxx && std::string_view(force_cxx) == "1";
-    return format_source_internal(src, filename, use_cxx);
+    return format_source_internal(src, filename, false);
 }
 
 // Formats a bounded range of lines [start_line, end_line] in a source string:
