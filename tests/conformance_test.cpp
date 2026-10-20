@@ -2480,6 +2480,29 @@ void test_cfire_remote_vendor(const std::filesystem::path& rt_dir) {
     std::println("--- PASS: test_cfire_remote_vendor (BS-EXT-01)");
 }
 
+void test_in_process_sha256_file_hashing() {
+    ScopedTempDir tmp("cfire_sha_test");
+    auto empty_file = tmp.path / "empty.txt";
+    (void)cfire::fs::write_text(empty_file, "");
+    auto h_empty = cfire::sha256::hash_file_hex(empty_file);
+    require(h_empty.has_value(), "hash_file_hex on empty file succeeds");
+    require(*h_empty == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        std::format("empty file SHA-256 mismatch: {}", *h_empty));
+
+    auto hello_file = tmp.path / "hello.txt";
+    (void)cfire::fs::write_text(hello_file, "hello world");
+    auto h_hello = cfire::sha256::hash_file_hex(hello_file);
+    require(h_hello.has_value(), "hash_file_hex on hello world succeeds");
+    require(*h_hello == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+        std::format("hello world SHA-256 mismatch: {}", *h_hello));
+
+    auto nonexistent = tmp.path / "does_not_exist.txt";
+    auto h_missing = cfire::sha256::hash_file_hex(nonexistent);
+    require(!h_missing.has_value(), "hash_file_hex on missing file returns error");
+
+    std::println("--- PASS: test_in_process_sha256_file_hashing (ARCH-01)");
+}
+
 void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
     (void)rt_dir;
     ScopedTempDir tmp("cfire_cross");
@@ -4545,6 +4568,7 @@ auto main() -> int {
     test_cfire_eval(rt_dir);
     test_cfire_refactor_rename(rt_dir);
     test_cfire_remote_vendor(rt_dir);
+    test_in_process_sha256_file_hashing();
     test_cfire_cross_compile(rt_dir);
     test_crypto_hmac_and_aes(rt_dir);
     test_slice_pattern_matching(rt_dir);

@@ -1157,6 +1157,40 @@ namespace detail {
     return hash_hex(std::span<const std::byte>(reinterpret_cast<const std::byte*>(sv.data()), sv.size()));
 }
 
+[[nodiscard]] inline auto hash_file_hex(const std::filesystem::path& file_path) -> std::expected<std::string, std::string> {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(file_path, ec)) {
+        return std::unexpected(std::format("path '{}' is not a regular file", file_path.string()));
+    }
+    std::ifstream ifs(file_path, std::ios::binary);
+    if (!ifs) {
+        return std::unexpected(std::format("failed to open file '{}' for hashing", file_path.string()));
+    }
+#ifdef __APPLE__
+    CC_SHA256_CTX ctx;
+    CC_SHA256_Init(&ctx);
+    char buf[65536];
+    while (ifs.good()) {
+        ifs.read(buf, sizeof(buf));
+        auto bytes_read = ifs.gcount();
+        if (bytes_read > 0) {
+            CC_SHA256_Update(&ctx, buf, static_cast<CC_LONG>(bytes_read));
+        }
+    }
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256_Final(digest, &ctx);
+    std::string hex;
+    hex.reserve(64);
+    for (unsigned char b : digest) {
+        hex += std::format("{:02x}", b);
+    }
+    return hex;
+#else
+    std::vector<std::byte> all_data((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    return hash_hex(std::span<const std::byte>(all_data.data(), all_data.size()));
+#endif
+}
+
 } // namespace cfire::sha256
 
 namespace cfire::hmac {
