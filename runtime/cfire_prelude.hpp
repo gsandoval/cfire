@@ -36,6 +36,24 @@ inline auto operator+(std::string_view lhs, const std::string& rhs) -> std::stri
     return res;
 }
 
+inline auto operator+(std::string_view lhs, std::string_view rhs) -> std::string {
+    std::string res(lhs);
+    res.append(rhs);
+    return res;
+}
+
+inline auto operator+(const char* lhs, std::string_view rhs) -> std::string {
+    std::string res(lhs);
+    res.append(rhs);
+    return res;
+}
+
+inline auto operator+(std::string_view lhs, const char* rhs) -> std::string {
+    std::string res(lhs);
+    res.append(rhs);
+    return res;
+}
+
 // Allow comparison between smart pointers and `none` (std::nullopt)
 template <typename T>
 inline auto operator==(const std::shared_ptr<T>& ptr, std::nullopt_t) noexcept -> bool {
