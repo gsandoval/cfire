@@ -89,6 +89,23 @@ inline auto operator!=(std::nullopt_t, const std::unique_ptr<T>& ptr) noexcept -
     return ptr != nullptr;
 }
 
+template <typename T>
+inline auto operator==(T* ptr, std::nullopt_t) noexcept -> bool {
+    return ptr == nullptr;
+}
+template <typename T>
+inline auto operator!=(T* ptr, std::nullopt_t) noexcept -> bool {
+    return ptr != nullptr;
+}
+template <typename T>
+inline auto operator==(std::nullopt_t, T* ptr) noexcept -> bool {
+    return ptr == nullptr;
+}
+template <typename T>
+inline auto operator!=(std::nullopt_t, T* ptr) noexcept -> bool {
+    return ptr != nullptr;
+}
+
 namespace cfire {
 
 // --- Error Type for T! (std::expected<T, cfire::Error>) ---

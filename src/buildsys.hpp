@@ -1035,6 +1035,11 @@ inline auto resolve_external_dep_source(
                     queue.push_back({fpath.parent_path(), simp});
                 }
 
+                // Preserve subpackage AST arena lifetime in root_ast
+                if (sub_ast->arena) root_ast.child_arenas.push_back(sub_ast->arena);
+                root_ast.child_arenas.insert(root_ast.child_arenas.end(),
+                    sub_ast->child_arenas.begin(), sub_ast->child_arenas.end());
+
                 // Merge AST declarations
                 for (auto& st : sub_ast->structs) root_ast.structs.push_back(std::move(st));
                 for (auto& en : sub_ast->enums) root_ast.enums.push_back(std::move(en));

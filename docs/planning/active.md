@@ -21,40 +21,43 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
-## Active Task: `ARCH-03` Decompose Monolithic Conformance Test Runner
+## Active Task: `ARCH-04` Arena Memory Allocator for AST Nodes
 
 ### 1. Scope & Problem Statement
-- **Problem**: `tests/conformance_test.cpp` compiles all 30 test suites (unit tests, language diagnostics, end-to-end examples, and 12 self-hosting dogfood benchmarks) in a single **4,598-line translation unit**. A clean rebuild takes 15–20 seconds on modern multicore CPUs, bottlenecking developer TDD iteration speed.
+- **Problem**:
+  AST nodes currently use `using ExprPtr = std::shared_ptr<Expr>` and `using StmtPtr = std::shared_ptr<Stmt>`.
+  Every AST expression and statement allocation invokes `std::make_shared` (allocating a separate heap control block and atomic ref-counters).
+  This causes cache fragmentation across hundreds of dispersed heap allocations, 16-byte vector elements, and atomic reference count overhead during AST cloning and traversal.
 - **In Scope**:
-  - Decompose `tests/conformance_test.cpp` into modular suites under `tests/`:
-    - `tests/test_harness.hpp` (shared `require()`, `RunResult`, `ScopedTempDir`, `run_cfire()`, `run_cfire_source()`, runner prototypes)
-    - `tests/unit/test_frontend.cpp` (Lexer, Parser, AST TypeRef, Formatter, Refactor rename)
-    - `tests/unit/test_sema.cpp` (Intent & move diagnostics, alias checks, type checker rules)
-    - `tests/unit/test_stdlib.cpp` (HTTP, WebSocket, SQLite, Blake3/AES/HMAC/SHA-256, Sync Context, Eval, Vendor)
-    - `tests/e2e/test_canonical.cpp` (Examples 01–11 end-to-end execution, Raylib ejection, Cross-compilation)
-    - `tests/benchmarks/test_selfhost.cpp` (12 self-hosting dogfood parity & throughput benchmarks)
-    - `tests/test_main.cpp` (Main test entrypoint orchestrating the test suites)
-  - Update `Makefile` with parallel compilation support (`-j`) and granular test targets (`make test-unit`, `make test-stdlib`, `make test-selfhost`, `make test-e2e`).
-  - Keep `tests/conformance_test.cpp` as an umbrella forwarder or alias to guarantee zero breaking changes for existing scripts.
+  - Implement `AstArena`: a high-performance monotonic bump allocator in `src/ast.hpp` allocating 64KB contiguous memory blocks with scoped destruction and batch reset.
+  - Transition `ExprPtr` and `StmtPtr` in `src/ast.hpp` from `std::shared_ptr<T>` to raw non-atomic owning pointer aliases (`Expr*` and `Stmt*`).
+  - Introduce `std::shared_ptr<AstArena> arena` in `FileAST` with thread-local `ArenaScope` to tie AST node lifetimes strictly to the owning file AST.
+  - Keep `make_expr()` and `make_stmt()` APIs identical so that parser and sema call sites in both C++ (`src/parser.hpp`, `src/sema.hpp`) and self-hosted `.cf` (`src/parser.cf`, `src/sema.cf`) require zero syntax modifications.
+  - Measure parser throughput and memory locality improvements in `tests/benchmarks/test_selfhost.cpp`.
 - **Out of Scope**:
-  - Rewriting existing test assertion logic.
-  - Removing any of the existing 30 test suites.
+  - Changing `TypeRef` recursive pointer mechanics (which remains lightweight `std::shared_ptr<TypeRef>`).
+  - Modifying grammar or AST node fields.
 
 ### 2. Open Questions & Architectural Clarifications
-- **Shared Test State**: `g_failures` is declared as `inline std::atomic<int> g_failures{0};` in `tests/test_harness.hpp` to ensure thread safety across suites.
-- **Execution Order**: Retain the exact test execution sequence so that failure logs and benchmark outputs remain familiar and reproducible.
-- **Granular CLI Targets**: Enable running individual suites (e.g., `make test-unit` compiling only `test_frontend.cpp` and `test_sema.cpp` in $<2$ seconds).
+- **Lifetime & Ownership**:
+  `FileAST` owns `std::shared_ptr<AstArena> arena`. As `FileAST` is moved into `CheckedFile`, the arena remains alive. When `CheckedFile` drops out of scope, the entire arena releases its 64KB blocks in batch.
+- **Node Destruction**:
+  Non-trivially-destructible AST nodes (those containing `std::string` or `std::vector`) register a lightweight destructor trampoline in `AstArena`. On arena reset, destructors run in LIFO order before free, guaranteeing zero memory leaks.
+- **Fallback Safety**:
+  If `make_expr()` is called outside an active `ArenaScope` (e.g. in a unit test), a thread-local fallback arena ensures safe allocation without crashing or leaking.
 
 ### 3. Testing Strategy Defined Across Tiers
-- **Compilation Speed Benchmark**:
-  - Measure clean compile time of single TU vs parallel compile of decomposed objects (`make -j8 test`).
-- **Regression Parity**:
-  - Verify all 30 suites execute and pass with zero failures.
-  - Verify `make review-check` passes cleanly.
+- **Unit Tests**:
+  - `AstArena` allocation alignment, capacity expansion across multiple chunks, and proper destructor execution.
+- **Integration Tests**:
+  - Lexer -> Parser -> Sema -> Codegen compiler pipeline end-to-end with arena-allocated nodes.
+- **Conformance Tests**:
+  - All 30 conformance test suites (`test-unit`, `test-stdlib`, `test-e2e`, `test-selfhost`) pass with 100% parity.
+- **Performance Benchmark**:
+  - Validate parser throughput in `test_selfhost_parser_parity_and_benchmark` and ensure zero memory leaks.
 
 ### 4. Implementation Plan
-- **Shared Harness**: Extract `tests/test_harness.hpp`.
-- **Directory Structure**: Create `tests/unit/`, `tests/e2e/`, `tests/benchmarks/`.
-- **Suite Decomposition**: Extract test suites into modular `.cpp` files.
-- **Entrypoint**: Create `tests/test_main.cpp` and update `tests/conformance_test.cpp`.
-- **Makefile**: Update `Makefile` rules for parallel object compilation and granular targets.
+- **Step 1**: Implement `AstArena` and `ArenaScope` in `src/ast.hpp`.
+- **Step 2**: Update `ExprPtr` to `Expr*` and `StmtPtr` to `Stmt*` in `src/ast.hpp`.
+- **Step 3**: Add `std::shared_ptr<AstArena> arena` to `FileAST` and instrument `parse_source()` in `src/parser.hpp` and `src/parser.cf` with `ArenaScope`.
+- **Step 4**: Verify clean compilation, re-transpile self-hosted compiler via `make dogfood`, run benchmarks, and execute `make review-check`.

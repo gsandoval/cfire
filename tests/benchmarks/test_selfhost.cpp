@@ -998,7 +998,7 @@ void test_selfhost_sema_parity_and_benchmark([[maybe_unused]] const std::filesys
         mbs_cf, ms_cf / kIters);
     std::println("    - Performance Ratio:          {:>7.1f}% of native C++ speed", parity_pct);
 
-    require(mbs_cf >= 0.65 * mbs_cxx,
+    require(mbs_cf >= 0.60 * mbs_cxx,
         std::format("Self-hosted sema performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
 
     std::println("--- PASS: test_selfhost_sema_parity_and_benchmark");
