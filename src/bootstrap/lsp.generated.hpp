@@ -2,6 +2,8 @@
 
 [[nodiscard]] inline auto lsp_json_escape(const std::string& s) -> std::string;
 [[nodiscard]] inline auto lsp_json_unescape(const std::string& s) -> std::string;
+[[nodiscard]] inline auto lsp_usize_to_str(std::size_t val) -> std::string;
+[[nodiscard]] inline auto lsp_i32_to_str(std::int32_t val) -> std::string;
 [[nodiscard]] inline auto selfhost_make_rpc_frame(const std::string& body) -> std::string;
 [[nodiscard]] inline auto selfhost_make_rpc_response(const std::string& id, const std::string& result_json) -> std::string;
 [[nodiscard]] inline auto selfhost_make_rpc_notification(const std::string& method, const std::string& params_json) -> std::string;
@@ -100,8 +102,46 @@
     return res;
 }
 
+[[nodiscard]] inline auto lsp_usize_to_str(std::size_t val) -> std::string {
+    if (val == 0) {
+        return "0";
+    }
+    std::string digits_table = "0123456789";
+    auto v = val;
+    std::string digits = "";
+    while (v > 0) {
+        auto d = (v % 10);
+        digits = (cfire::slice(digits_table, d, (d + 1)) + digits);
+        v = (v / 10);
+    }
+    return digits;
+}
+
+[[nodiscard]] inline auto lsp_i32_to_str(std::int32_t val) -> std::string {
+    if (val == 0) {
+        return "0";
+    }
+    auto is_neg = false;
+    std::int64_t v = val;
+    if (v < 0) {
+        is_neg = true;
+        v = (0 - v);
+    }
+    std::string digits_table = "0123456789";
+    std::string digits = "";
+    while (v > 0) {
+        auto d = (v % 10);
+        digits = (cfire::slice(digits_table, d, (d + 1)) + digits);
+        v = (v / 10);
+    }
+    if (is_neg) {
+        return ("-" + digits);
+    }
+    return digits;
+}
+
 [[nodiscard]] inline auto selfhost_make_rpc_frame(const std::string& body) -> std::string {
-    return ((("Content-Length: " + cfire::frontend::codegen_usize_to_str(body.size())) + "\r\n\r\n") + body);
+    return ((("Content-Length: " + lsp_usize_to_str(body.size())) + "\r\n\r\n") + body);
 }
 
 [[nodiscard]] inline auto selfhost_make_rpc_response(const std::string& id, const std::string& result_json) -> std::string {
@@ -113,7 +153,7 @@
 }
 
 [[nodiscard]] inline auto selfhost_make_rpc_error(const std::string& id, std::int32_t code, const std::string& message) -> std::string {
-    return (((((("{\"jsonrpc\":\"2.0\",\"id\":" + id) + ",\"error\":{\"code\":") + cfire::frontend::codegen_to_str(code)) + ",\"message\":\"") + lsp_json_escape(message)) + "\"}}");
+    return (((((("{\"jsonrpc\":\"2.0\",\"id\":" + id) + ",\"error\":{\"code\":") + lsp_i32_to_str(code)) + ",\"message\":\"") + lsp_json_escape(message)) + "\"}}");
 }
 
 [[nodiscard]] inline auto selfhost_format_hover_markdown(const std::string& id, const std::string& markdown_content) -> std::string {

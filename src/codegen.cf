@@ -56,6 +56,21 @@ fn (mut e: CodegenEmitter) writeln(s: str) {
     e.buf += s + "\n"
 }
 
+fn cf_usize_to_str(val: usize) -> str {
+    if val == 0 {
+        return "0"
+    }
+    digits_table := "0123456789"
+    mut v := val
+    mut digits: str = ""
+    for v > 0 {
+        d := v % 10
+        digits = digits_table[d..(d + 1)] + digits
+        v = v / 10
+    }
+    return digits
+}
+
 fn (mut e: CodegenEmitter) emit_file(cf: cpp::cfire::frontend::CheckedFile) -> str {
     mut link_tags: []str = []
     mut defines: []str = []
@@ -267,18 +282,18 @@ fn (mut e: CodegenEmitter) emit_file(cf: cpp::cfire::frontend::CheckedFile) -> s
     n_enums := cf.ast.enums.len
     for ei < n_enums {
         items.push(TypeDeclItem{
-            line: cf.ast.enums[ei].line,
-            is_enum: true,
-            idx: ei,
+                line: cf.ast.enums[ei].line,
+                is_enum: true,
+                idx: ei,
         })
         ei = ei + 1
     }
     mut si: usize = 0
     for si < n_structs {
         items.push(TypeDeclItem{
-            line: cf.ast.structs[si].line,
-            is_enum: false,
-            idx: si,
+                line: cf.ast.structs[si].line,
+                is_enum: false,
+                idx: si,
         })
         si = si + 1
     }
@@ -372,11 +387,11 @@ fn (mut e: CodegenEmitter) emit_file(cf: cpp::cfire::frontend::CheckedFile) -> s
         for ri < n_tests {
             t_name := cf.ast.tests[ri].name
             e.writeln("std::println(\"=== RUN   " + t_name + "\");")
-            e.writeln("__cfire_test_" + cpp::cfire::frontend::codegen_usize_to_str(ri) + "();")
+            e.writeln("__cfire_test_" + cf_usize_to_str(ri) + "();")
             e.writeln("std::println(\"--- PASS: " + t_name + "\");")
             ri = ri + 1
         }
-        e.writeln("std::println(\"PASS (" + cpp::cfire::frontend::codegen_usize_to_str(n_tests) + " cfire tests succeeded)\");")
+        e.writeln("std::println(\"PASS (" + cf_usize_to_str(n_tests) + " cfire tests succeeded)\");")
         e.writeln("return 0;")
         e.indent_level = e.indent_level - 1
         e.writeln("}")

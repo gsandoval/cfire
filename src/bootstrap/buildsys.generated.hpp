@@ -21,6 +21,7 @@ struct cfire::reflect_struct<BuildEmitter> {
 inline auto BuildEmitter__write(BuildEmitter& e, const std::string& s) -> void;
 inline auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void;
 [[nodiscard]] inline auto buildsys_starts_with(const std::string& s, const std::string& prefix) -> bool;
+[[nodiscard]] inline auto buildsys_usize_to_str(std::size_t val) -> std::string;
 [[nodiscard]] inline auto selfhost_generate_cmake_file(const cfire::build::BuildPlan& plan) -> std::string;
 
 inline auto BuildEmitter__write(BuildEmitter& e, const std::string& s) -> void {
@@ -40,6 +41,21 @@ inline auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void
     return (cfire::slice(s, 0, pn) == prefix);
 }
 
+[[nodiscard]] inline auto buildsys_usize_to_str(std::size_t val) -> std::string {
+    if (val == 0) {
+        return "0";
+    }
+    std::string digits_table = "0123456789";
+    auto v = val;
+    std::string digits = "";
+    while (v > 0) {
+        auto d = (v % 10);
+        digits = (cfire::slice(digits_table, d, (d + 1)) + digits);
+        v = (v / 10);
+    }
+    return digits;
+}
+
 [[nodiscard]] inline auto selfhost_generate_cmake_file(const cfire::build::BuildPlan& plan) -> std::string {
     auto e = BuildEmitter{.buf = ""};
     std::string cm_dir = "${";
@@ -55,7 +71,7 @@ inline auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void
         std::size_t pi = 0;
         while (pi < n_pkg) {
             auto dep_name = plan.pkg_config_deps[pi];
-            (void)(BuildEmitter__writeln(e, (((("pkg_check_modules(DEP_" + cfire::frontend::codegen_usize_to_str(pi)) + " REQUIRED IMPORTED_TARGET ") + dep_name) + ")")));
+            (void)(BuildEmitter__writeln(e, (((("pkg_check_modules(DEP_" + buildsys_usize_to_str(pi)) + " REQUIRED IMPORTED_TARGET ") + dep_name) + ")")));
             pi = (pi + 1);
         }
         (void)(BuildEmitter__writeln(e, ""));
@@ -97,7 +113,7 @@ inline auto BuildEmitter__writeln(BuildEmitter& e, const std::string& s) -> void
     (void)(BuildEmitter__writeln(e, (("target_include_directories(app PRIVATE \"" + cm_dir) + "\")")));
     std::size_t pki = 0;
     while (pki < n_pkg) {
-        (void)(BuildEmitter__writeln(e, (("target_link_libraries(app PRIVATE PkgConfig::DEP_" + cfire::frontend::codegen_usize_to_str(pki)) + ")")));
+        (void)(BuildEmitter__writeln(e, (("target_link_libraries(app PRIVATE PkgConfig::DEP_" + buildsys_usize_to_str(pki)) + ")")));
         pki = (pki + 1);
     }
     std::size_t dli = 0;
