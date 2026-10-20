@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Language Guide — cfire (Sapphire on Fire)</title>
+  <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
   <style>
 :root {
     --bg: #FAFAF9;
@@ -536,14 +537,15 @@ tr:hover td { background: #FAFAF9; }
           <ul>
             <li><a href="#chapter-1">1. Philosophy &amp; Architecture</a></li>
             <li><a href="#chapter-2">2. Tour of the Toolchain</a></li>
-            <li><a href="#chapter-3">3. Syntax &amp; Control Flow</a></li>
-            <li><a href="#chapter-4">4. Functions &amp; Intents</a></li>
-            <li><a href="#chapter-5">5. Structs, Tags &amp; Enums</a></li>
-            <li><a href="#chapter-6">6. Error Handling &amp; Defer</a></li>
-            <li><a href="#chapter-7">7. Concurrency &amp; Contexts</a></li>
-            <li><a href="#chapter-8">8. C &amp; C++ Interop</a></li>
-            <li><a href="#chapter-9">9. Build System &amp; Eject</a></li>
-            <li><a href="#chapter-10">10. HTTP Servers &amp; Routers</a></li>
+            <li><a href="#chapter-3">3. Syntax, Primitives, Variables &amp; Control Flow</a></li>
+            <li><a href="#chapter-4">4. Functions &amp; Call-Site Intent Safety</a></li>
+            <li><a href="#chapter-5">5. Structs, Compile-Time Tags &amp; Algebraic Enums</a></li>
+            <li><a href="#chapter-6">6. Fearless Error Handling &amp; Cleanup</a></li>
+            <li><a href="#chapter-7">7. Structured Concurrency &amp; Contexts</a></li>
+            <li><a href="#chapter-8">8. Zero-Friction C &amp; C++ Interop</a></li>
+            <li><a href="#chapter-9">9. The Unified Build System &amp; CMake Ejection</a></li>
+            <li><a href="#chapter-10">10. Building Web Services, HTTP Servers &amp; Independent Routers (`core:net/http`)</a></li>
+            <li><a href="#chapter-11">11. 100% Self-Hosting &amp; Continuous Dogfooding</a></li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
@@ -555,427 +557,537 @@ tr:hover td { background: #FAFAF9; }
       </details>
     </aside>
     <main>
-      <h1>The <code>cfire</code> Language &amp; Systems Programming Guide</h1>
-      <p class="subtitle" style="margin: 0 0 2rem;">
-        An in-depth tutorial and reference manual for writing robust, high-performance systems software targeting modern ISO C++23.
-      </p>
+<h1>The <code>cfire</code> Language &amp; Systems Programming Guide</h1>
+<p class="subtitle" style="margin: 0 0 2rem;"><strong>Sapphire on Fire (<code>cfire</code>)</strong> is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern <strong>ISO C++23</strong>. It combines the clean syntax and rapid onboarding of Go, the batteries-included <code>core:*</code> catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.</p>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-1"><a id="ch1"></a>1. Philosophy &amp; Architecture</h2>
+<h3 id="11-the-systems-programming-landscape">1.1 The Systems Programming Landscape</h3>
+<p>Modern systems software demands both high developer velocity and uncompromising runtime performance. For decades, engineers have navigated difficult compromises:</p>
+<ul>
+  <li><strong>C++</strong> offers unmatched performance, vast ecosystem reach, and zero-cost abstractions, but suffers from forty years of accumulated syntactic complexity, implicit mutable references, and silent use-after-move bugs.</li>
+  <li><strong>Rust</strong> provides ironclad memory safety guarantees via compile-time lifetime analysis (<code>'a</code>), but introduces steep cognitive overhead and challenging FFI barriers when integrating with existing C++ codebases.</li>
+  <li><strong>Go</strong> offers outstanding developer ergonomics and networking libraries, but mandates a garbage collector and non-deterministic pause times unsuitable for real-time, game engine, or embedded kernels.</li>
+  <li><strong>Zig and Odin</strong> provide brilliant C replacements with manual allocators, but cannot directly consume C++ templates, classes, or standard library types without brittle C ABI wrappers.</li>
+</ul>
+<p><code>cfire</code> takes a pragmatic path designed specifically for teams whose target environment is <strong>ISO C++23</strong>:</p>
+<ol>
+  <li><strong>Ergonomic, Modern Frontend</strong>: Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>move</code>), multi-return tuples, algebraic enums, and monadic error handling (<code>T!</code>).</li>
+  <li><strong>1-to-1 ISO C++23 Lowering</strong>: Every <code>cfire</code> type, function, and expression lowers directly to standard C++23 concepts (<code>std::string_view</code>, <code>std::span</code>, <code>std::variant</code>, <code>std::expected</code>, <code>std::unique_ptr</code>).</li>
+  <li><strong>Zero FFI Marshaling</strong>: Call any C or C++ header directly without writing manual wrappers.</li>
+  <li><strong>Zero Lock-In</strong>: Run <code>cfire eject</code> at any time to export your entire project as standard C++23 source code with a standard <code>CMakeLists.txt</code>.</li>
+</ol>
+<h3 id="12-predictable-11-lowering-table">1.2 Predictable 1:1 Lowering Table</h3>
+<p>The following table summarizes how core <code>cfire</code> types lower into standard ISO C++23:</p>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th><code>cfire</code> Type</th><th>ISO C++23 Lowering</th><th>Ownership &amp; Semantics</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code></td><td><code>int8_t</code>, <code>int16_t</code>, <code>int32_t</code>, <code>int64_t</code></td><td>Signed fixed-width integers</td></tr>
+      <tr><td><code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code></td><td><code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code>, <code>uint64_t</code></td><td>Unsigned fixed-width integers</td></tr>
+      <tr><td><code>f32</code>, <code>f64</code></td><td><code>float</code>, <code>double</code></td><td>IEEE 754 floating point</td></tr>
+      <tr><td><code>bool</code>, <code>char</code></td><td><code>bool</code>, <code>char</code></td><td>Boolean flag, ASCII/UTF-8 byte</td></tr>
+      <tr><td><code>str</code> (value)</td><td><code>std::string</code></td><td>Owned, heap-backed UTF-8 string</td></tr>
+      <tr><td><code>str</code> (<code>in</code> param)</td><td><code>std::string_view</code></td><td>Non-allocating read-only string view</td></tr>
+      <tr><td><code>path</code></td><td><code>std::filesystem::path</code></td><td>Platform-native filesystem path</td></tr>
+      <tr><td><code>[N]T</code></td><td><code>std::array&lt;T, N&gt;</code></td><td>Contiguous stack array, zero overhead</td></tr>
+      <tr><td><code>[]T</code> (value)</td><td><code>std::vector&lt;T&gt;</code></td><td>Owned, dynamic contiguous buffer</td></tr>
+      <tr><td><code>[]T</code> (<code>in</code> param)</td><td><code>std::span&lt;const T&gt;</code></td><td>Non-allocating contiguous slice borrow</td></tr>
+      <tr><td><code>map[K]V</code></td><td><code>std::unordered_map&lt;K, V&gt;</code></td><td>Hash table with O(1) average lookup</td></tr>
+      <tr><td><code>(T1, T2)</code></td><td><code>std::tuple&lt;T1, T2&gt;</code></td><td>Heterogeneous value tuple</td></tr>
+      <tr><td><code>T?</code></td><td><code>std::optional&lt;T&gt;</code></td><td>Nullable value container</td></tr>
+      <tr><td><code>T!</code></td><td><code>std::expected&lt;T, cfire::Error&gt;</code></td><td>Value-or-error monadic result</td></tr>
+      <tr><td><code>own[T]</code></td><td><code>std::unique_ptr&lt;T&gt;</code></td><td>Single heap ownership with RAII cleanup</td></tr>
+      <tr><td><code>shared[T]</code></td><td><code>std::shared_ptr&lt;T&gt;</code></td><td>Atomic reference-counted shared ownership</td></tr>
+      <tr><td><code>type S struct</code></td><td><code>struct S { ... }</code></td><td>Standard C++ aggregate struct</td></tr>
+      <tr><td><code>type E enum</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Tagged union with exhaustive <code>match</code></td></tr>
+    </tbody>
+  </table>
+</div>
+<h3 id="13-hello-systems-a-first-look">1.3 Hello, Systems! (A First Look)</h3>
+<p>Here is a complete, working <code>cfire</code> program showing basic syntax, imports, error handling, and deterministic deferral:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
 
-      <!-- CHAPTER 1 -->
-      <h2 id="chapter-1"><a id="ch1"></a>1. Philosophy &amp; Architecture</h2>
-      <p>
-        Modern systems software demands both rapid developer velocity and uncompromising mechanical sympathy. For decades, developers have navigated difficult compromises:
-      </p>
-      <ul>
-        <li><strong>C++</strong> offers unmatched performance, vast ecosystem reach, and zero-cost abstractions, but suffers from forty years of accumulated syntactic complexity, implicit mutable references, and silent use-after-move bugs.</li>
-        <li><strong>Rust</strong> provides ironclad memory safety guarantees via compile-time lifetime analysis (<code>'a</code>), but introduces steep cognitive overhead and challenging FFI barriers when integrating with existing C++ codebases.</li>
-        <li><strong>Go</strong> offers outstanding developer ergonomics and networking libraries, but mandates a garbage collector and non-deterministic pause times unsuitable for real-time, game engine, or embedded kernels.</li>
-        <li><strong>Zig and Odin</strong> provide brilliant C replacements with manual allocators, but cannot directly consume C++ templates, classes, or standard library types without brittle C ABI wrappers.</li>
-      </ul>
-      <p>
-        <code>cfire</code> takes a pragmatic path designed specifically for teams whose target environment is <strong>ISO C++23</strong>:
-      </p>
-      <ol>
-        <li><strong>Ergonomic, Modern Frontend:</strong> Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>move</code>), multi-return tuples, algebraic enums, and monadic error handling (<code>T!</code>).</li>
-        <li><strong>1-to-1 ISO C++23 Lowering:</strong> Every <code>cfire</code> type, function, and expression lowers directly to standard C++23 concepts (<code>std::string_view</code>, <code>std::span</code>, <code>std::variant</code>, <code>std::expected</code>, <code>std::unique_ptr</code>).</li>
-        <li><strong>Zero FFI Marshaling:</strong> Call any C or C++ header directly without writing manual wrappers.</li>
-        <li><strong>Zero Lock-In:</strong> Run <code>cfire eject</code> at any time to export your entire project as standard C++23 source code with a standard <code>CMakeLists.txt</code>.</li>
-      </ol>
-
-      <h3>1.2 Predictable 1:1 Lowering Table</h3>
-      <div class="table-wrap">
-        <div class="table-scroll-cue">Scroll table &rarr;</div>
-        <table>
-          <thead>
-            <tr><th><code>cfire</code> Type</th><th>ISO C++23 Lowering</th><th>Ownership &amp; Semantics</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code></td><td><code>int8_t</code>, <code>int16_t</code>, <code>int32_t</code>, <code>int64_t</code></td><td>Signed fixed-width integers</td></tr>
-            <tr><td><code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code></td><td><code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code>, <code>uint64_t</code></td><td>Unsigned fixed-width integers</td></tr>
-            <tr><td><code>f32</code>, <code>f64</code></td><td><code>float</code>, <code>double</code></td><td>IEEE 754 floating point</td></tr>
-            <tr><td><code>bool</code>, <code>char</code></td><td><code>bool</code>, <code>char</code></td><td>Boolean flag, ASCII/UTF-8 byte</td></tr>
-            <tr><td><code>str</code> (value)</td><td><code>std::string</code></td><td>Owned, heap-backed UTF-8 string</td></tr>
-            <tr><td><code>str</code> (<code>in</code> param)</td><td><code>std::string_view</code></td><td>Non-allocating read-only string view</td></tr>
-            <tr><td><code>path</code></td><td><code>std::filesystem::path</code></td><td>Platform-native filesystem path</td></tr>
-            <tr><td><code>[N]T</code></td><td><code>std::array&lt;T, N&gt;</code></td><td>Contiguous stack array, zero overhead</td></tr>
-            <tr><td><code>[]T</code> (value)</td><td><code>std::vector&lt;T&gt;</code></td><td>Owned, dynamic contiguous buffer</td></tr>
-            <tr><td><code>[]T</code> (<code>in</code> param)</td><td><code>std::span&lt;const T&gt;</code></td><td>Non-allocating contiguous slice borrow</td></tr>
-            <tr><td><code>map[K]V</code></td><td><code>std::unordered_map&lt;K, V&gt;</code></td><td>Hash table with O(1) average lookup</td></tr>
-            <tr><td><code>(T1, T2)</code></td><td><code>std::tuple&lt;T1, T2&gt;</code></td><td>Heterogeneous value tuple</td></tr>
-            <tr><td><code>T?</code></td><td><code>std::optional&lt;T&gt;</code></td><td>Nullable value container</td></tr>
-            <tr><td><code>T!</code></td><td><code>std::expected&lt;T, cfire::Error&gt;</code></td><td>Value-or-error monadic result</td></tr>
-            <tr><td><code>own[T]</code></td><td><code>std::unique_ptr&lt;T&gt;</code></td><td>Single heap ownership with RAII cleanup</td></tr>
-            <tr><td><code>shared[T]</code></td><td><code>std::shared_ptr&lt;T&gt;</code></td><td>Atomic reference-counted shared ownership</td></tr>
-            <tr><td><code>type S struct</code></td><td><code>struct S { ... }</code></td><td>Standard C++ aggregate struct</td></tr>
-            <tr><td><code>type E enum</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Tagged union with exhaustive <code>match</code></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <h3>1.3 Hello, Systems! (A First Look)</h3>
-      <div class="code-header"><span class="tag-cf">cfire</span><span>examples/01-hello-core/main.cf</span></div>
-      <pre><code>package main
-
-import "core:fs"
-import "core:time"
-import "core:str"
+import &quot;core:fs&quot;
+import &quot;core:time&quot;
+import &quot;core:str&quot;
 
 fn main() {
     t0 := time.now_ms()
 
     // Immutability by default: 'msg' cannot be reassigned
-    msg := "Hello from Sapphire on Fire (cfire)!"
-    println("{}", msg)
+    msg := &quot;Hello from Sapphire on Fire (cfire)!&quot;
+    println(&quot;{}&quot;, msg)
 
     // Fallible file operation with early-exit 'try'
-    try fs.write_text("build_info.txt", "runtime=cfire\nstandard=c++23\n")
+    try fs.write_text(&quot;build_info.txt&quot;, &quot;runtime=cfire\nstandard=c++23\n&quot;)
     
     // Deterministic scope cleanup: runs when main exits
     defer {
-        println("Cleanup: execution finished in {} ms", time.now_ms() - t0)
+        println(&quot;Cleanup: execution finished in {} ms&quot;, time.now_ms() - t0)
     }
 
-    content := try fs.read_text("build_info.txt")
-    lines := str.split(content, "\n")
+    content := try fs.read_text(&quot;build_info.txt&quot;)
+    lines := str.split(content, &quot;\n&quot;)
     for idx, line in lines {
-        if line.len() > 0 {
-            println("  [{}] {}", idx + 1, line)
+        if line.len() &gt; 0 {
+            println(&quot;  [{}] {}&quot;, idx + 1, line)
         }
     }
-}</code></pre>
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-2"><a id="ch2"></a>2. Tour of the Toolchain</h2>
+<p><code>cfire</code> ships as a single, self-contained binary. There are no secondary package managers, formatters, or test runners to install.</p>
+<h3 id="21-toolchain-subcommands-reference">2.1 Toolchain Subcommands Reference</h3>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th>Subcommand</th><th>Usage</th><th>Purpose &amp; Details</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>run</code></td><td><code>cfire run main.cf</code></td><td>Compiles and executes the program. Auto-links required <code>core:*</code> and C/C++ libraries.</td></tr>
+      <tr><td><code>run --sanitize</code></td><td><code>cfire run --sanitize main.cf</code></td><td>Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (<code>-fsanitize=address,undefined</code>).</td></tr>
+      <tr><td><code>build</code></td><td><code>cfire build main.cf -o app</code></td><td>Produces an optimized native executable (<code>-O3</code>) in the current directory.</td></tr>
+      <tr><td><code>test</code></td><td><code>cfire test main.cf</code></td><td>Discovers and executes all embedded <code>test &quot;...&quot; { ... }</code> suites in parallel.</td></tr>
+      <tr><td><code>test --sanitize</code></td><td><code>cfire test --sanitize main.cf</code></td><td>Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors.</td></tr>
+      <tr><td><code>fmt</code></td><td><code>cfire fmt src/</code></td><td>Canonically formats <code>.cf</code> files in-place according to strict formatting rules.</td></tr>
+      <tr><td><code>fmt --check</code></td><td><code>cfire fmt --check src/</code></td><td>CI validation mode. Exits with non-zero status if any file is unformatted.</td></tr>
+      <tr><td><code>check</code></td><td><code>cfire check main.cf</code></td><td>Fast frontend validation: parses and runs semantic analysis without invoking the C++ backend.</td></tr>
+      <tr><td><code>eval</code></td><td><code>cfire eval '2 + 2'</code></td><td>Evaluates a single <code>cfire</code> expression or statement directly from the command line.</td></tr>
+      <tr><td><code>lsp</code></td><td><code>cfire lsp</code></td><td>Starts the standard Language Server Protocol daemon for VSCode, Neovim, and Helix.</td></tr>
+      <tr><td><code>doc</code></td><td><code>cfire doc</code></td><td>Generates verified HTML and Markdown documentation from the compiler catalog.</td></tr>
+      <tr><td><code>doc --check</code></td><td><code>cfire doc --check</code></td><td>Verifies that documentation files match the compiler catalog character-for-character.</td></tr>
+      <tr><td><code>eject</code></td><td><code>cfire eject main.cf ./export</code></td><td>Exports the program and all dependencies into standalone ISO C++23 files + <code>CMakeLists.txt</code>.</td></tr>
+    </tbody>
+  </table>
+</div>
+<h3 id="22-embedded-unit-testing">2.2 Embedded Unit Testing</h3>
+<p><code>cfire</code> includes testing as a core language primitive. You can write isolated test suites directly inside any <code>.cf</code> file:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package math_util
 
-      <!-- CHAPTER 2 -->
-      <h2 id="chapter-2"><a id="ch2"></a>2. Tour of the Toolchain</h2>
-      <p>
-        <code>cfire</code> ships as a single, self-contained executable. There are no secondary package managers, external formatters, or test runners to install.
-      </p>
-
-      <div class="table-wrap">
-        <div class="table-scroll-cue">Scroll table &rarr;</div>
-        <table>
-          <thead>
-            <tr><th>Subcommand</th><th>Usage</th><th>Purpose &amp; Details</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>run</code></td><td><code>./cfire run main.cf</code></td><td>Compiles and executes the program. Auto-links required <code>core:*</code> and C/C++ libraries.</td></tr>
-            <tr><td><code>run --sanitize</code></td><td><code>./cfire run --sanitize main.cf</code></td><td>Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (<code>-fsanitize=address,undefined</code>).</td></tr>
-            <tr><td><code>build</code></td><td><code>./cfire build main.cf -o app</code></td><td>Produces an optimized native executable (<code>-O3</code>) in the current directory.</td></tr>
-            <tr><td><code>test</code></td><td><code>./cfire test main.cf</code></td><td>Discovers and executes all embedded <code>test "..." { ... }</code> suites in parallel.</td></tr>
-            <tr><td><code>test --sanitize</code></td><td><code>./cfire test --sanitize main.cf</code></td><td>Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors.</td></tr>
-            <tr><td><code>fmt</code></td><td><code>./cfire fmt src/</code></td><td>Canonically formats <code>.cf</code> files in-place according to strict formatting rules.</td></tr>
-            <tr><td><code>fmt --check</code></td><td><code>./cfire fmt --check src/</code></td><td>CI validation mode. Exits with non-zero status if any file is unformatted.</td></tr>
-            <tr><td><code>check</code></td><td><code>./cfire check main.cf</code></td><td>Fast frontend validation: parses and runs semantic analysis without invoking the C++ backend.</td></tr>
-            <tr><td><code>eval</code></td><td><code>./cfire eval '2 + 2'</code></td><td>Evaluates a single <code>cfire</code> expression or statement directly from the command line.</td></tr>
-            <tr><td><code>lsp</code></td><td><code>./cfire lsp</code></td><td>Starts the standard Language Server Protocol daemon for VSCode, Neovim, and Helix.</td></tr>
-            <tr><td><code>doc</code></td><td><code>./cfire doc</code></td><td>Generates verified HTML and Markdown documentation from the compiler catalog.</td></tr>
-            <tr><td><code>doc --check</code></td><td><code>./cfire doc --check</code></td><td>Verifies that documentation files match the compiler catalog character-for-character.</td></tr>
-            <tr><td><code>eject</code></td><td><code>./cfire eject main.cf ./export</code></td><td>Exports the program and all dependencies into standalone ISO C++23 files + <code>CMakeLists.txt</code>.</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <h3>2.2 Embedded Unit Testing</h3>
-      <p>
-        <code>cfire</code> includes testing as a core language primitive. You can write isolated test suites directly inside any <code>.cf</code> file:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span><span>math_util.cf</span></div>
-      <pre><code>package math_util
-
-fn add(a: i64, b: i64) -> i64 {
+fn add(a: i64, b: i64) -&gt; i64 {
     return a + b
 }
 
-fn clamp(val: f64, low: f64, high: f64) -> f64 {
+fn clamp(val: f64, low: f64, high: f64) -&gt; f64 {
     if val &lt; low { return low }
     if val &gt; high { return high }
     return val
 }
 
-test "integer arithmetic addition" {
+test &quot;integer arithmetic addition&quot; {
     assert(add(10, 20) == 30)
     assert(add(-5, 5) == 0)
 }
 
-test "floating-point clamp bounds" {
+test &quot;floating-point clamp bounds&quot; {
     assert(clamp(5.0, 0.0, 10.0) == 5.0)
     assert(clamp(-2.0, 0.0, 10.0) == 0.0)
     assert(clamp(15.0, 0.0, 10.0) == 10.0)
-}</code></pre>
-
-      <!-- CHAPTER 3 -->
-      <h2 id="chapter-3"><a id="ch3"></a>3. Syntax, Primitives, Variables &amp; Control Flow</h2>
-
-      <h3>3.1 Immutability by Default</h3>
-      <p>
-        In <code>cfire</code>, bindings declared with <code>:=</code> or explicit type annotations without <code>mut</code> are strictly <strong>immutable (<code>const</code>)</strong>. Attempting to reassign an immutable binding triggers a compile error:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>limit := 100
+}
+</code></pre>
+<p>Run tests with a single command:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code>./cfire test math_util.cf
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-3"><a id="ch3"></a>3. Syntax, Primitives, Variables &amp; Control Flow</h2>
+<h3 id="31-immutability-by-default">3.1 Immutability by Default</h3>
+<p>In <code>cfire</code>, bindings declared with <code>:=</code> or explicit type annotations without <code>mut</code> are strictly <strong>immutable (<code>const</code>)</strong>. Attempting to reassign an immutable binding triggers a compiler error:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>limit := 100
 // limit = 200 // ERROR: cannot assign to immutable binding 'limit'
 
 mut counter := 0 // Mutable binding
 counter += 1     // OK
-
-max_payload: u64 = 1048576
-mut buffer_size: i32 = 4096</code></pre>
-
-      <h3>3.2 Slices (<code>[]T</code>) vs Fixed Arrays (<code>[N]T</code>)</h3>
-      <p>
-        <code>cfire</code> makes a sharp distinction between stack-allocated fixed arrays and dynamically sized slices:
-      </p>
-      <ul>
-        <li><strong>Fixed Arrays (<code>[N]T</code>):</strong> Size is known at compile time, memory is allocated on the stack with zero overhead, lowering to <code>std::array&lt;T, N&gt;</code>.</li>
-        <li><strong>Dynamic Slices (<code>[]T</code>):</strong> Growable dynamic buffers backed by the heap, lowering to <code>std::vector&lt;T&gt;</code> when owned, or <code>std::span&lt;const T&gt;</code> when borrowed as an <code>in</code> parameter.</li>
-      </ul>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>// Fixed array (std::array&lt;int32_t, 4&gt;)
+</code></pre>
+<p>Explicit type declarations follow the <code>name: Type = value</code> syntax:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>max_payload: u64 = 1048576
+mut buffer_size: i32 = 4096
+</code></pre>
+<h3 id="32-slices-t-vs-fixed-arrays-nt">3.2 Slices (<code>[]T</code>) vs Fixed Arrays (<code>[N]T</code>)</h3>
+<p><code>cfire</code> makes a sharp distinction between stack-allocated fixed arrays and dynamically sized slices:</p>
+<ul>
+  <li><strong>Fixed Arrays (<code>[N]T</code>)</strong>: Size is known at compile time, memory is allocated on the stack with zero overhead, lowering to <code>std::array&lt;T, N&gt;</code>.</li>
+  <li><strong>Dynamic Slices (<code>[]T</code>)</strong>: Growable dynamic buffers backed by the heap, lowering to <code>std::vector&lt;T&gt;</code> when owned, or <code>std::span&lt;const T&gt;</code> when borrowed as an <code>in</code> parameter.</li>
+</ul>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>// Fixed array (std::array&lt;int32_t, 4&gt;)
 fixed: [4]i32 = [10, 20, 30, 40]
-println("fixed length: {}", fixed.len())
+println(&quot;fixed length: {}&quot;, fixed.len())
 
 // Dynamic slice (std::vector&lt;int32_t&gt;)
 mut dynamic: []i32 = [1, 2, 3]
 dynamic.push(4)
 dynamic.push(5)
-println("dynamic length: {}", dynamic.len())
+println(&quot;dynamic length: {}&quot;, dynamic.len())
 
 // Slicing views (std::span)
-sub := dynamic[1:3] // View of elements at index 1 and 2</code></pre>
-
-      <h3>3.3 Hash Maps (<code>map[K]V</code>)</h3>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>mut scores: map[str]i64 = {}
-scores["Alice"] = 95
-scores["Bob"] = 88
+sub := dynamic[1:3] // View of elements at index 1 and 2
+</code></pre>
+<h3 id="33-hash-maps-mapkv">3.3 Hash Maps (<code>map[K]V</code>)</h3>
+<p>Hash maps provide $O(1)$ key-value lookups backed by <code>std::unordered_map</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>mut scores: map[str]i64 = {}
+scores[&quot;Alice&quot;] = 95
+scores[&quot;Bob&quot;] = 88
 
 // Safe retrieval with 'or' fallback
-alice_score := scores["Alice"] or 0
-charlie_score := scores["Charlie"] or -1
+alice_score := scores[&quot;Alice&quot;] or 0
+charlie_score := scores[&quot;Charlie&quot;] or -1
 
-println("Alice: {}, Charlie: {}", alice_score, charlie_score)
+println(&quot;Alice: {}, Charlie: {}&quot;, alice_score, charlie_score)
 
 // Check existence
-if scores.contains("Alice") {
-    println("Alice is enrolled")
-}</code></pre>
+if scores.contains(&quot;Alice&quot;) {
+    println(&quot;Alice is enrolled&quot;)
+}
+</code></pre>
+<h3 id="34-tuples-destructuring">3.4 Tuples &amp; Destructuring</h3>
+<p>Tuples group multiple values together without declaring a formal struct:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>// Constructing a tuple
+coord := (12.5, 45.8, &quot;GPS-Locked&quot;)
 
-      <h3>3.4 Smart Pointers (<code>own[T]</code> &amp; <code>shared[T]</code>)</h3>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>type Node struct {
+// Destructuring into individual bindings
+(lat, lon, status) := coord
+println(&quot;Lat: {}, Lon: {}, Status: {}&quot;, lat, lon, status)
+</code></pre>
+<h3 id="35-optionals-t">3.5 Optionals (<code>T?</code>)</h3>
+<p>Values that may be absent are wrapped in <code>T?</code>, lowering directly to <code>std::optional&lt;T&gt;</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn find_user(id: i64) -&gt; str? {
+    if id == 42 {
+        return &quot;Alice&quot;
+    }
+    return null
+}
+
+user := find_user(42) or &quot;Guest&quot;
+println(&quot;User: {}&quot;, user)
+</code></pre>
+<h3 id="36-smart-pointers-ownt-and-sharedt">3.6 Smart Pointers (<code>own[T]</code> and <code>shared[T]</code>)</h3>
+<p>Value semantics and slices cover most systems programming needs. For recursive data structures or explicit heap allocations, <code>cfire</code> provides <code>own[T]</code> (<code>std::unique_ptr&lt;T&gt;</code>) and <code>shared[T]</code> (<code>std::shared_ptr&lt;T&gt;</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>type Node struct {
     Value: i64,
     Next:  own[Node]?,
 }
 
-// Allocate an owned heap box (std::unique_ptr&lt;Node&gt;)
+// Allocate an owned heap box
 first := make(own[Node], Node{Value: 10, Next: null})
-println("Node value: {}", (*first).Value)</code></pre>
-
-      <h3>3.5 Control Flow</h3>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>// 1. Conditional branching
+println(&quot;Node value: {}&quot;, (*first).Value)
+</code></pre>
+<h3 id="37-control-flow-if-for-match">3.7 Control Flow (<code>if</code>, <code>for</code>, <code>match</code>)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>// 1. Conditional branching
 if score &gt;= 90 {
-    println("Grade: A")
+    println(&quot;Grade: A&quot;)
 } else if score &gt;= 80 {
-    println("Grade: B")
+    println(&quot;Grade: B&quot;)
 } else {
-    println("Grade: C")
+    println(&quot;Grade: C&quot;)
 }
 
 // 2. Iterating elements
-items := ["alpha", "beta", "gamma"]
+items := [&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;]
 for item in items {
-    println("Item: {}", item)
+    println(&quot;Item: {}&quot;, item)
 }
 
 // 3. Iterating with index
 for idx, item in items {
-    println("[{}] = {}", idx, item)
+    println(&quot;[{}] = {}&quot;, idx, item)
 }
 
 // 4. Iterating map key-value pairs
 for key, val in scores {
-    println("{} => {}", key, val)
+    println(&quot;{} =&gt; {}&quot;, key, val)
 }
 
 // 5. C-style numeric loop
 for mut i := 0; i &lt; 5; i += 1 {
     if i == 2 { continue }
-    println("i = {}", i)
-}</code></pre>
-
-      <!-- CHAPTER 4 -->
-      <h2 id="chapter-4"><a id="ch4"></a>4. Functions &amp; Call-Site Intent Safety</h2>
-
-      <h3>4.1 Function Declarations and Methods</h3>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>type Account struct {
+    println(&quot;i = {}&quot;, i)
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-4"><a id="ch4"></a>4. Functions &amp; Call-Site Intent Safety</h2>
+<h3 id="41-function-declarations-and-methods">4.1 Function Declarations and Methods</h3>
+<p>Functions are declared with <code>fn</code>. Associated methods specify a receiver before the function name:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>type Account struct {
     Owner:   str,
     Balance: i64,
 }
 
+// Function with regular parameters
+fn calculate_fee(amount: i64) -&gt; i64 {
+    return amount / 100
+}
+
 // Read-only receiver method
 fn (self: Account) display() {
-    println("Account {}: ${}", self.Owner, self.Balance)
+    println(&quot;Account {}: ${}&quot;, self.Owner, self.Balance)
 }
 
 // Mutable receiver method: requires 'mut self'
 fn (mut self: Account) deposit(amount: i64) {
     self.Balance += amount
-}</code></pre>
-
-      <h3>4.2 Explicit Parameter Intents</h3>
-      <p>
-        In C++, calling <code>process(data)</code> hides whether <code>data</code> is read-only, modified in-place, or moved from. <code>cfire</code> enforces visibility at <strong>both</strong> declaration and call site:
-      </p>
-      <div class="table-wrap">
-        <div class="table-scroll-cue">Scroll table &rarr;</div>
-        <table>
-          <thead>
-            <tr><th>Intent</th><th>Declaration</th><th>Call Site</th><th>C++23 Lowering</th><th>Guarantee</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><strong><code>in</code> (default)</strong></td><td><code>x: T</code></td><td><code>f(x)</code></td><td><code>const T&amp;</code> / <code>string_view</code> / <code>span</code></td><td>Read-only borrow; zero copy overhead.</td></tr>
-            <tr><td><strong><code>mut</code></strong></td><td><code>mut x: T</code></td><td><code>f(mut x)</code></td><td><code>T&amp;</code></td><td>In-place mutation; requires <code>mut</code> at call site.</td></tr>
-            <tr><td><strong><code>move</code></strong></td><td><code>move x: T</code></td><td><code>f(move x)</code></td><td><code>T&amp;&amp;</code> + <code>std::move(x)</code></td><td>Ownership transfer; callee consumes value.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p style="margin-top:0.85rem;">
-        To return multiple values, <code>cfire</code> uses first-class tuples and deconstructing assignments instead of mutable output parameters:
-      </p>
-      <pre><code>fn parse_coords(raw: str) -&gt; (f64, f64)! {
+}
+</code></pre>
+<h3 id="42-explicit-parameter-intents-in-mut-move">4.2 Explicit Parameter Intents (<code>in</code>, <code>mut</code>, <code>move</code>)</h3>
+<p>In raw C++, calling <code>process(data)</code> hides whether <code>data</code> is read-only, modified in-place, or moved from. <code>cfire</code> enforces visibility at <strong>both</strong> declaration and call site:</p>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th>Intent</th><th>Declaration</th><th>Call Site</th><th>C++23 Lowering</th><th>Guarantee</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong><code>in</code> (default)</strong></td><td><code>x: T</code></td><td><code>f(x)</code></td><td><code>const T&amp;</code> / <code>std::string_view</code> / <code>std::span</code></td><td>Read-only borrow; zero copy overhead.</td></tr>
+      <tr><td><strong><code>mut</code></strong></td><td><code>mut x: T</code></td><td><code>f(mut x)</code></td><td><code>T&amp;</code></td><td>In-place mutation; requires <code>mut</code> at call site.</td></tr>
+      <tr><td><strong><code>move</code></strong></td><td><code>move x: T</code></td><td><code>f(move x)</code></td><td><code>T&amp;&amp;</code> + <code>std::move(x)</code></td><td>Ownership transfer; callee consumes value.</td></tr>
+    </tbody>
+  </table>
+</div>
+<p>To return multiple values, <code>cfire</code> uses first-class tuples rather than mutable output parameters:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn parse_coords(raw: str) -&gt; (f64, f64)! {
     return (12.5, 45.2)
 }
 
-(lat, lon) := try parse_coords("12.5,45.2")</code></pre>
+(lat, lon) := try parse_coords(&quot;12.5,45.2&quot;)
+</code></pre>
+<h3 id="43-semantic-safety-invariants">4.3 Semantic Safety Invariants</h3>
+<p>The <code>cfire</code> semantic analyzer verifies parameter intents at compile time:</p>
+<h4 id="1-cfiremut-callsite">1. <code>cfire/MUT-CALLSITE</code></h4>
+<p>Passing a variable to a <code>mut</code> parameter without the <code>mut</code> marker at the call site is rejected:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn increment(mut val: i32) { val += 1 }
 
-      <h3>4.3 Call-Site Safety Diagnostics</h3>
-      <p>The compiler enforces strict aliasing and mutation invariants:</p>
-      <ul>
-        <li><strong><code>cfire/MUT-CALLSITE</code>:</strong> Caller must explicitly write <code>mut</code> when passing to a mutable parameter (e.g., <code>increment(mut count)</code>).</li>
-        <li><strong><code>cfire/IMMUTABLE-MUT-ARG</code>:</strong> Rejects passing an immutable binding to a mutable parameter.</li>
-        <li><strong><code>cfire/MUT-ALIAS</code> (Law of Exclusivity):</strong> Rejects passing the same variable to multiple mutable parameters in the same call:
-          <pre><code>// transfer(mut account, mut account, 100) // REJECTED: [cfire/MUT-ALIAS]</code></pre>
-        </li>
-        <li><strong><code>cfire/USE-AFTER-MOVE</code>:</strong> Rejects reading or passing a variable after it has been moved:
-          <pre><code>sink(move payload)
-// println("len = {}", payload.len()) // REJECTED: [cfire/USE-AFTER-MOVE]</code></pre>
-        </li>
-      </ul>
-
-      <!-- CHAPTER 5 -->
-      <h2 id="chapter-5"><a id="ch5"></a>5. Structs, Compile-Time Tags &amp; Algebraic Enums</h2>
-
-      <h3>5.1 Structs &amp; Compile-Time Field Metadata</h3>
-      <p>
-        Field tags (enclosed in backticks) provide zero-cost metadata inspected by the compiler during code generation to eliminate runtime reflection:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>type DatabaseConfig struct {
-    Host:     str  `json:"host"     cli:"--host,-h"    sql:"host"`
-    Port:     u16  `json:"port"     cli:"--port,-p"    sql:"port"`
-    MaxConns: i32  `json:"max_conns" cli:"--max-conns" sql:"max_connections"`
-    SSL:      bool `json:"ssl"      cli:"--ssl"        sql:"use_ssl"`
+mut count := 0
+// increment(count)     // ERROR: [cfire/MUT-CALLSITE] missing 'mut' keyword
+increment(mut count)    // OK
+</code></pre>
+<h4 id="2-cfireimmutable-mut-arg">2. <code>cfire/IMMUTABLE-MUT-ARG</code></h4>
+<p>Passing an immutable binding to a <code>mut</code> parameter is rejected:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>val := 42
+// increment(mut val)   // ERROR: [cfire/IMMUTABLE-MUT-ARG] 'val' is immutable
+</code></pre>
+<h4 id="3-cfiremut-alias-the-law-of-exclusivity">3. <code>cfire/MUT-ALIAS</code> (The Law of Exclusivity)</h4>
+<p>A variable cannot be passed as a mutable argument while simultaneously aliased as another argument in the same call:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn transfer(mut from: i64, mut to: i64, amount: i64) {
+    from -= amount
+    to += amount
 }
 
+mut account_a := 1000
+// transfer(mut account_a, mut account_a, 100) // ERROR: [cfire/MUT-ALIAS]
+mut account_b := 500
+transfer(mut account_a, mut account_b, 100)    // OK: distinct bindings
+</code></pre>
+<h4 id="4-cfireuse-after-move">4. <code>cfire/USE-AFTER-MOVE</code></h4>
+<p>Referencing a variable after it has been transferred via <code>move</code> is rejected:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn sink(move data: []byte) { /* takes ownership */ }
+
+mut payload: []byte = [1, 2, 3]
+sink(move payload)
+// println(&quot;len = {}&quot;, payload.len()) // ERROR: [cfire/USE-AFTER-MOVE]
+</code></pre>
+<h3 id="44-closures-lambdas">4.4 Closures &amp; Lambdas</h3>
+<p>Closures use pipe syntax <code>|params| -&gt; ReturnType { ... }</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>items := [1, 2, 3, 4, 5]
+
+// Inline closure passed to higher-order transform
+multiplier := 10
+transform := |x: i32| -&gt; i32 {
+    return x * multiplier
+}
+
+for item in items {
+    println(&quot;transformed: {}&quot;, transform(item))
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-5"><a id="ch5"></a>5. Structs, Compile-Time Tags &amp; Algebraic Enums</h2>
+<h3 id="51-structs-compile-time-field-metadata">5.1 Structs &amp; Compile-Time Field Metadata</h3>
+<p>Structs define composite data records. Field tags (enclosed in backticks) provide zero-cost metadata inspected by the compiler during code generation:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>type DatabaseConfig struct {
+    Host:     str  `json:&quot;host&quot;     cli:&quot;--host,-h&quot;    sql:&quot;host&quot;`
+    Port:     u16  `json:&quot;port&quot;     cli:&quot;--port,-p&quot;    sql:&quot;port&quot;`
+    MaxConns: i32  `json:&quot;max_conns&quot; cli:&quot;--max-conns&quot; sql:&quot;max_connections&quot;`
+    SSL:      bool `json:&quot;ssl&quot;      cli:&quot;--ssl&quot;        sql:&quot;use_ssl&quot;`
+}
+</code></pre>
+<p>Because these tags are processed at compile time, <code>core:json</code>, <code>core:cli</code>, and <code>core:db/sqlite</code> generate direct C++ assignments without runtime reflection overhead:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;core:json&quot;
+import &quot;core:cli&quot;
+
 fn main() {
-    // Automatic CLI flag parsing directly into typed struct
+    // 1. Automatic CLI flag parsing directly into typed struct
     cfg := try cli.parse[DatabaseConfig]()
-    println("Config loaded: host={}, port={}", cfg.Host, cfg.Port)
+    println(&quot;Config loaded: host={}, port={}&quot;, cfg.Host, cfg.Port)
 
-    // Automatic JSON serialization
+    // 2. Automatic JSON serialization
     json_str := try json.stringify(cfg)
-    println("Serialized: {}", json_str)
-}</code></pre>
-
-      <h3>5.2 Algebraic Enums &amp; Exhaustive Pattern Matching</h3>
-      <p>
-        Algebraic enums represent tagged unions, lowering to <code>std::variant</code> in C++23. The compiler enforces exhaustiveness (<code>cfire/NON-EXHAUSTIVE-MATCH</code>):
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>type NetworkEvent enum {
+    println(&quot;Serialized: {}&quot;, json_str)
+}
+</code></pre>
+<h3 id="52-algebraic-enums-tagged-unions">5.2 Algebraic Enums (Tagged Unions)</h3>
+<p>Algebraic enums represent data that can take one of several distinct variants, each carrying its own typed payload:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>type NetworkEvent enum {
     Connected(peer_ip: str, port: u16),
     DataReceived(payload: []byte),
     Disconnected(reason: str),
     Heartbeat,
 }
-
-fn handle_event(event: NetworkEvent) {
+</code></pre>
+<p>This lowers to <code>std::variant&lt;Connected, DataReceived, Disconnected, Heartbeat&gt;</code> in ISO C++23.</p>
+<h3 id="53-exhaustive-pattern-matching-match">5.3 Exhaustive Pattern Matching (<code>match</code>)</h3>
+<p>Pattern matching inspects algebraic enums and binds variant payloads. The compiler enforces exhaustiveness (<code>cfire/NON-EXHAUSTIVE-MATCH</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn handle_event(event: NetworkEvent) {
     match event {
-        Connected(ip, port) => {
-            println("Peer connected: {}:{}", ip, port)
+        Connected(ip, port) =&gt; {
+            println(&quot;Peer connected: {}:{}&quot;, ip, port)
         }
-        DataReceived(data) => {
-            println("Received payload of {} bytes", data.len())
+        DataReceived(data) =&gt; {
+            println(&quot;Received payload of {} bytes&quot;, data.len())
         }
-        Disconnected(reason) => {
-            println("Connection closed: {}", reason)
+        Disconnected(reason) =&gt; {
+            println(&quot;Connection closed: {}&quot;, reason)
         }
-        Heartbeat => {
+        Heartbeat =&gt; {
             // Keep-alive ack
         }
     }
-}</code></pre>
+}
+</code></pre>
+<p>If a new variant is added to <code>NetworkEvent</code>, every <code>match</code> statement across your codebase that lacks a wildcard <code>_ =&gt;</code> arm will fail compilation at build time.</p>
+<h3 id="54-slice-destructuring-matching">5.4 Slice Destructuring Matching</h3>
+<p><code>match</code> can also destructure slices into head and tail elements:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn summarize_tokens(tokens: []str) {
+    match tokens {
+        [] =&gt; {
+            println(&quot;No tokens found&quot;)
+        }
+        [command] =&gt; {
+            println(&quot;Single command: {}&quot;, command)
+        }
+        [cmd, ..args] =&gt; {
+            println(&quot;Command: {}, Argument count: {}&quot;, cmd, args.len())
+        }
+    }
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-6"><a id="ch6"></a>6. Fearless Error Handling &amp; Cleanup</h2>
+<h3 id="61-the-fallible-return-type-t">6.1 The Fallible Return Type <code>T!</code></h3>
+<p><code>cfire</code> rejects hidden C++ exceptions. Functions that can fail return <code>T!</code>, which lowers directly to <code>std::expected&lt;T, cfire::Error&gt;</code>. Errors are concrete value objects carrying a code, an error message, and source context:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;core:fs&quot;
 
-      <!-- CHAPTER 6 -->
-      <h2 id="chapter-6"><a id="ch6"></a>6. Fearless Error Handling &amp; Cleanup</h2>
-      <p>
-        <code>cfire</code> eliminates hidden C++ exceptions. Functions that can fail return <code>T!</code>, which lowers directly to <code>std::expected&lt;T, cfire::Error&gt;</code>:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>import "core:fs"
-import "core:sync"
+fn load_api_key(path: str) -&gt; str! {
+    if !fs.exists(path) {
+        return cfire.error(&quot;API key file not found: {}&quot;, path)
+    }
+    raw := try fs.read_text(path)
+    return str.trim(raw)
+}
+</code></pre>
+<h3 id="62-the-three-ways-to-handle-errors">6.2 The Three Ways to Handle Errors</h3>
+<h4 id="1-early-return-propagation-try">1. Early Return Propagation (<code>try</code>)</h4>
+<p>The <code>try</code> operator unwraps the success value or immediately returns the error from the enclosing function:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn setup_system() -&gt; void! {
+    cfg := try load_api_key(&quot;api.key&quot;)
+    println(&quot;Key loaded: {} chars&quot;, cfg.len())
+}
+</code></pre>
+<p>If used inside <code>fn main()</code>, an unhandled error printed via <code>try</code> outputs a formatted diagnostic and exits the process with status code <code>1</code>.</p>
+<h4 id="2-default-fallbacks-or-value">2. Default Fallbacks (<code>or value</code>)</h4>
+<p>When a reasonable default exists, use <code>or fallback</code> (lowers to <code>std::expected::value_or</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>port := try parse_port(os.getenv(&quot;PORT&quot;)) or 8080
+println(&quot;Binding to port {}&quot;, port)
+</code></pre>
+<h4 id="3-inline-recovery-blocks-or-err">3. Inline Recovery Blocks (<code>or err { ... }</code>)</h4>
+<p>When you need to log an error, clean up local state, or alter control flow, use an <code>or err { ... }</code> block. To prevent unwrapping an uninitialized value, the compiler enforces that value-binding recovery blocks must definitely diverge (<code>cfire/NON-DIVERGING-OR-BLOCK</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>token := load_api_key(&quot;secret.key&quot;) or err {
+    println(&quot;[WARN] Failed to load key: {}. Falling back to sandbox mode.&quot;, err.message())
+    return // Diverges cleanly
+}
+</code></pre>
+<h3 id="63-deterministic-scope-cleanup-defer">6.3 Deterministic Scope Cleanup (<code>defer</code>)</h3>
+<p>The <code>defer</code> statement registers an action to be executed in Last-In, First-Out (LIFO) order when the surrounding scope exits. It is implemented via RAII scope guards, guaranteeing execution regardless of whether the scope exits via normal return, <code>try</code> error propagation, or a <code>break</code> statement:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;core:fs&quot;
+import &quot;core:sync&quot;
 
 mut mtx: sync.Mutex = {}
 
-fn process_transaction() -> void! {
+fn process_transaction() -&gt; void! {
     mtx.lock()
-    defer mtx.unlock() // Guaranteed to unlock even on early return
+    defer mtx.unlock() // Guaranteed to unlock even on error return
 
-    mut file := try fs.open("audit.log", fs.OpenMode::Append)
-    defer file.close() // File closed cleanly
+    mut file := try fs.open(&quot;audit.log&quot;, fs.OpenMode::Append)
+    defer file.close() // File descriptor closed cleanly
 
-    try file.write_str("Transaction started\n")
+    try file.write_str(&quot;Transaction started\n&quot;)
+    // If an error happens below, both file.close() and mtx.unlock() execute deterministically
     try execute_db_write()
-    try file.write_str("Transaction committed\n")
-}</code></pre>
-
-      <h3>6.2 The Three Ways to Handle Errors</h3>
-      <ol>
-        <li><strong>Early Return (<code>try</code>):</strong> Unwraps the value or returns the error up the call stack immediately.</li>
-        <li><strong>Default Fallback (<code>or value</code>):</strong> Provides a fallback value if an error occurs (e.g. <code>port := parse_port(env) or 8080</code>).</li>
-        <li><strong>Inline Recovery (<code>or err { ... }</code>):</strong> Executes a custom block that must definitely diverge (<code>return</code>, <code>panic</code>, <code>break</code>).</li>
-      </ol>
-
-      <!-- CHAPTER 7 -->
-      <h2 id="chapter-7"><a id="ch7"></a>7. Structured Concurrency &amp; Contexts</h2>
-
-      <h3>7.1 Structured Concurrency with <code>async.scope</code></h3>
-      <p>
-        Unlike raw threads, an <code>async.scope</code> block guarantees that all spawned worker tasks join completely before the scope exits:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>import "core:time"
+    try file.write_str(&quot;Transaction committed\n&quot;)
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-7"><a id="ch7"></a>7. Structured Concurrency &amp; Contexts</h2>
+<h3 id="71-structured-concurrency-with-asyncscope">7.1 Structured Concurrency with <code>async.scope</code></h3>
+<p>Unlike raw threads or Go's unconstrained <code>go func()</code>, <code>cfire</code> uses structured task pools. An <code>async.scope</code> block defines a lexical boundary: the scope <strong>cannot exit</strong> until every spawned child task has completed:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;core:time&quot;
 
 fn process_batch(items: []str) {
+    // Spawns a pool of 4 worker threads
     async.scope(workers: 4) |scope| {
         for idx, item in items {
             scope.spawn || {
-                println("Worker processing item [{}]: {}", idx, item)
+                println(&quot;Worker processing item [{}]: {}&quot;, idx, item)
                 time.sleep_ms(50)
             }
         }
     }
     // All 4 worker tasks are 100% joined before this line executes!
-    println("All batch items successfully processed.")
-}</code></pre>
-
-      <h3>7.2 Message Passing via Typed Channels (<code>core:sync</code>)</h3>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>import "core:sync"
+    println(&quot;All batch items successfully processed.&quot;)
+}
+</code></pre>
+<p>Structured concurrency eliminates orphaned background threads, use-after-free references to stack frames, and race conditions during application shutdown.</p>
+<h3 id="72-message-passing-via-typed-channels-coresync">7.2 Message Passing via Typed Channels (<code>core:sync</code>)</h3>
+<p>For decoupled producer-consumer pipelines, <code>core:sync</code> provides Go-style typed channels:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;core:sync&quot;
 
 fn main() {
     ch := sync.make_channel[i64](capacity: 10)
 
     async.scope(workers: 2) |scope| {
+        // Producer task
         scope.spawn || {
             for mut i := 1; i &lt;= 5; i += 1 {
                 ch.send(i * 10)
@@ -983,197 +1095,309 @@ fn main() {
             ch.close()
         }
 
+        // Consumer task
         scope.spawn || {
             for {
-                val := ch.recv() or break
-                println("Received: {}", val)
+                val := ch.recv() or break // Exits loop when channel is closed and empty
+                println(&quot;Received: {}&quot;, val)
             }
         }
     }
-}</code></pre>
+}
+</code></pre>
+<h3 id="73-cancellation-contexts-deadlines-coresynccontext">7.3 Cancellation Contexts &amp; Deadlines (<code>core:sync/context</code>)</h3>
+<p>Long-running background operations support cooperative cancellation via <code>Context</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;core:sync/context&quot;
+import &quot;core:time&quot;
 
-      <!-- CHAPTER 8 -->
-      <h2 id="chapter-8"><a id="ch8"></a>8. Zero-Friction C &amp; C++ Interop</h2>
+fn worker(ctx: context.Context, id: i32) {
+    for {
+        if ctx.is_cancelled() {
+            println(&quot;Worker [{}] received cancellation notice&quot;, id)
+            return
+        }
+        time.sleep_ms(100)
+    }
+}
 
-      <h3>8.1 Direct C Header Ingestion</h3>
-      <p>
-        When you write <code>import "c:zlib.h" as zlib</code>, <code>cfire</code> extracts the Clang AST JSON dump, caches the signatures in <code>.cfire/cache/ast/</code>, and automatically coerces <code>str</code> to <code>const char*</code> via <code>cfire::c_str(s)</code>:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>package main
+fn main() {
+    // Derive a context that cancels automatically after 250 milliseconds
+    (ctx, cancel) := context.with_timeout(context.background(), 250)
+    defer cancel()
 
-import "c:zlib.h" as zlib
-import "c:stdio.h" as c_io
+    async.scope(workers: 2) |scope| {
+        scope.spawn || { worker(ctx, 1) }
+        scope.spawn || { worker(ctx, 2) }
+    }
+    println(&quot;Workers shut down cleanly.&quot;)
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-8"><a id="ch8"></a>8. Zero-Friction C &amp; C++ Interop</h2>
+<h3 id="81-direct-c-header-ingestion">8.1 Direct C Header Ingestion</h3>
+<p><code>cfire</code> compiles natively to C++23, which means communicating with C libraries requires no manual binding generation. When you import a C header with <code>import &quot;c:...&quot;</code>, the compiler automatically invokes Clang to extract type definitions and function prototypes, caching the result in <code>.cfire/cache/ast/</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+// Directly imports the system zlib header
+import &quot;c:zlib.h&quot; as zlib
 
 fn main() {
     version_str := zlib.zlibVersion()
-    println("Zlib library version: {}", version_str)
+    println(&quot;Zlib library version: {}&quot;, version_str)
+}
+</code></pre>
+<h3 id="82-automatic-string-boundary-coercion">8.2 Automatic String Boundary Coercion</h3>
+<p>When calling a C function expecting a null-terminated <code>const char*</code>, <code>cfire</code> automatically inserts <code>cfire::c_str(arg)</code> at compile time. You can pass a native <code>cfire</code> <code>str</code> directly without handwritten conversion:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;c:stdio.h&quot; as c_io
 
-    // Direct C file operations with automatic const char* coercion
-    mut f := c_io.fopen("output.txt", "w")
+fn main() {
+    filename := &quot;output.txt&quot;
+    mode := &quot;w&quot;
+    
+    // Automatically coerces 'filename' and 'mode' to const char*
+    mut f := c_io.fopen(filename, mode)
     if f != null {
-        c_io.fputs("Written via direct C interop\n", f)
+        c_io.fputs(&quot;Written via direct C interop\n&quot;, f)
         c_io.fclose(f)
     }
-}</code></pre>
+}
+</code></pre>
+<h3 id="83-direct-c-header-imports">8.3 Direct C++ Header Imports</h3>
+<p>You can import modern C++ standard and third-party headers directly:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>import &quot;cpp:vector&quot;
+import &quot;cpp:algorithm&quot;
 
-      <h3>8.2 Inline C++ Escape Hatch (<code>cpp { ... }</code>)</h3>
-      <p>
-        For platform intrinsics, inline assembly, or specialized template metaprogramming, drop raw C++ statements inside any function:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>fn get_cpu_cycle_count() -> u64 {
+fn main() {
+    // Direct access to C++ standard library algorithms
+    mut values: []i32 = [5, 2, 8, 1, 9]
+    // Under the hood, values is std::vector&lt;int32_t&gt;
+    println(&quot;Sorted elements:&quot;)
+    // ...
+}
+</code></pre>
+<h3 id="84-inline-c-escape-hatch-cpp">8.4 Inline C++ Escape Hatch (<code>cpp { ... }</code>)</h3>
+<p>For platform intrinsics, inline assembly, or specialized template metaprogramming, <code>cfire</code> allows raw C++ statements inside any function:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>fn get_cpu_cycle_count() -&gt; u64 {
     mut cycles: u64 = 0
     cpp {
         #if defined(__x86_64__)
         cycles = __rdtsc();
         #elif defined(__aarch64__)
-        asm volatile("mrs %0, cntvct_el0" : "=r"(cycles));
+        asm volatile(&quot;mrs %0, cntvct_el0&quot; : &quot;=r&quot;(cycles));
         #endif
     }
     return cycles
-}</code></pre>
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-9"><a id="ch9"></a>9. The Unified Build System &amp; CMake Ejection</h2>
+<h3 id="91-declarative-buildcf">9.1 Declarative <code>build.cf</code></h3>
+<p>Projects with complex C/C++ static dependencies or CMake subprojects include a declarative <code>build.cf</code> file in the root directory:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package build
 
-      <!-- CHAPTER 9 -->
-      <h2 id="chapter-9"><a id="ch9"></a>9. The Unified Build System &amp; CMake Ejection</h2>
-
-      <h3>9.1 Declarative <code>build.cf</code></h3>
-      <div class="code-header"><span class="tag-cf">cfire</span><span>build.cf</span></div>
-      <pre><code>package build
-
-import "core:build"
+import &quot;core:build&quot;
 
 // 1. Build a local C static library dependency
-FastHash := build.CC("./native/fast_hash", {
-    Sources:  ["fast_hash.c"],
-    Includes: ["."],
-    CFlags:   ["-O3", "-march=native"],
+FastHash := build.CC(&quot;./native/fast_hash&quot;, {
+    Sources:  [&quot;fast_hash.c&quot;],
+    Includes: [&quot;.&quot;],
+    CFlags:   [&quot;-O3&quot;, &quot;-march=native&quot;],
 })
 
 // 2. Build a CMake-based vendor subproject
-KVStore := build.CMake("./vendor/libkv_cmake", {
-    Target:   "kvstore",
-    Includes: ["include"],
-    Defines:  {"KV_SALT": 42},
+KVStore := build.CMake(&quot;./vendor/libkv_cmake&quot;, {
+    Target:   &quot;kvstore&quot;,
+    Includes: [&quot;include&quot;],
+    Defines:  {&quot;KV_SALT&quot;: 42},
 })
 
 // 3. Link a system package via pkg-config
-Sqlite3 := build.SystemLib("sqlite3")</code></pre>
-
-      <h3>9.2 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
-      <p>
-        Export your entire codebase to standard ISO C++23 with a single command:
-      </p>
-      <pre><code>./cfire eject src/main.cf ./standalone_project</code></pre>
-      <p>
-        This generates standalone ISO C++23 source files, header-only runtime preludes, and a complete <code>CMakeLists.txt</code>. Anyone on your team can now build your software using standard CMake and Clang without needing <code>cfire</code> installed:
-      </p>
-      <pre><code>cd standalone_project
+Sqlite3 := build.SystemLib(&quot;sqlite3&quot;)
+</code></pre>
+<p>When you run <code>./cfire build main.cf</code>:</p>
+<ol>
+  <li><code>cfire</code> discovers <code>build.cf</code>.</li>
+  <li>It compiles <code>FastHash</code> and <code>LibZstd</code> into static archives in <code>.cfire/cache/lib/*.a</code>.</li>
+  <li>It links all libraries together into a single, high-performance binary.</li>
+</ol>
+<h3 id="92-zero-lock-in-cmake-ejection-cfire-eject">9.2 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
+<p>One of the most important architectural design decisions in <code>cfire</code> is that <strong>you are never locked in</strong>. At any point in your project lifecycle, you can eject to standard ISO C++23:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code>./cfire eject src/main.cf ./standalone_project
+</code></pre>
+<p>This exports:</p>
+<ul>
+  <li><code>standalone_project/src/main.cpp</code>: Clean, human-readable ISO C++23 source code corresponding to your <code>.cf</code> files.</li>
+  <li><code>standalone_project/include/cfire_prelude.hpp</code>: The lightweight, header-only runtime prelude.</li>
+  <li><code>standalone_project/CMakeLists.txt</code>: A standard, production-ready CMake build file configuring all include directories, dependencies, and compilation flags.</li>
+</ul>
+<p>Anyone on your team can now build your software using standard CMake and Clang without needing <code>cfire</code> installed:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code>cd standalone_project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build</code></pre>
+cmake --build build
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-10"><a id="ch10"></a>10. Building Web Services, HTTP Servers &amp; Independent Routers (<code>core:net/http</code>)</h2>
+<p>Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Unlike traditional frameworks that force heavy external dependencies or invasive event-loop architectures, <code>cfire</code> provides a zero-dependency, native HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.</p>
+<h3 id="101-philosophy-zero-external-dependencies">10.1 Philosophy &amp; Zero External Dependencies</h3>
+<p>The <code>core:net/http</code> module is designed with two fundamental principles:</p>
+<ol>
+  <li><strong>Zero Third-Party Libraries:</strong> The HTTP wire parser, response serializer, server accept loop, and route matcher are implemented in standard ISO C++23 without requiring <code>libmicrohttpd</code>, <code>boost::beast</code>, or external C libraries.</li>
+  <li><strong>Decoupled &amp; Independent Features:</strong> Routing and dispatch are strictly decoupled from network sockets. You can create an independent <code>Router</code>, register parameterized routes, and unit-test request dispatching purely in memory without opening sockets or listening on network ports.</li>
+</ol>
+<h3 id="102-request-parsing-response-writing">10.2 Request Parsing &amp; Response Writing</h3>
+<p>The <code>http.Request</code> struct represents an incoming HTTP/1.1 request:</p>
+<ul>
+  <li><code>req.method</code>: Normalized uppercase HTTP verb (<code>&quot;GET&quot;</code>, <code>&quot;POST&quot;</code>, <code>&quot;PUT&quot;</code>, <code>&quot;DELETE&quot;</code>, etc.).</li>
+  <li><code>req.path</code>: Clean decoded URI path (e.g. <code>&quot;/api/users/42&quot;</code>).</li>
+  <li><code>req.query(key, fallback)</code>: Decoded query parameters (e.g. <code>req.query(&quot;limit&quot;, &quot;10&quot;)</code>).</li>
+  <li><code>req.header(name, fallback)</code>: Case-insensitive header lookup (e.g. <code>req.header(&quot;Authorization&quot;)</code>).</li>
+  <li><code>req.param(name, fallback)</code>: Named path parameters extracted by the router (e.g. <code>req.param(&quot;id&quot;)</code>).</li>
+  <li><code>req.body</code>: Complete payload body.</li>
+</ul>
+<p>The <code>http.Response</code> struct provides fluent static constructors for standard HTTP responses:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>// 200 OK with plain text
+res1 := http.Response.text(200, &quot;operation successful&quot;)
 
-      <!-- CHAPTER 10 -->
-      <h2 id="chapter-10"><a id="ch10"></a>10. Building Web Services, HTTP Servers &amp; Independent Routers</h2>
-      <p>
-        Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Rather than forcing invasive third-party event loops or heavy foreign C libraries, <code>cfire</code> provides a native, zero-dependency HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.
-      </p>
+// 200 OK with JSON payload
+res2 := http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)
 
-      <h3>10.1 Decoupled Architecture &amp; Zero External Dependencies</h3>
-      <p>
-        The <code>core:net/http</code> module adheres to two key design principles:
-      </p>
-      <ul>
-        <li><strong>Zero Third-Party Libraries:</strong> The wire stream parser, response serializer, multi-mode server, and route matcher are pure standard C++23. No <code>libmicrohttpd</code> or external libraries required.</li>
-        <li><strong>Independent Features:</strong> Routing and dispatching operate strictly on <code>http.Request &rarr; http.Response</code>. Routers can be created, configured, and unit-tested purely in memory without opening sockets or listening on network ports.</li>
-      </ul>
+// 201 Created with JSON
+res3 := http.Response.json(201, &quot;{\&quot;id\&quot;:42}&quot;)
 
-      <h3>10.2 Request Parsing &amp; Fluent Response Builders</h3>
-      <p>
-        Incoming requests are automatically parsed into the structured <code>http.Request</code> model, providing clean decoded paths, query parameters, and case-insensitive headers:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>// Method, path, queries, and headers
-method := req.method            // "GET", "POST", etc.
-path   := req.path              // "/api/users/42"
-limit  := req.query("limit", "10") // auto percent-decoded
-token  := req.header("Authorization") // case-insensitive
-id     := req.param("id")       // extracted by router (:id)</code></pre>
+// 302 Found redirect
+res4 := http.Response.redirect(&quot;/login&quot;)
 
-      <p>
-        Construct responses using fluent type-safe factory methods:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>// Type-safe status &amp; MIME constructors
-res1 := http.Response.text(200, "operation successful")
-res2 := http.Response.json(200, "{\"status\":\"healthy\"}")
-res3 := http.Response.redirect("/dashboard", 302)
-res4 := http.Response.not_found("user not found")</code></pre>
+// Standard error responses
+res5 := http.Response.not_found(&quot;user not found&quot;)
+res6 := http.Response.bad_request(&quot;invalid payload&quot;)
+</code></pre>
+<h3 id="103-the-independent-http-request-router">10.3 The Independent HTTP Request Router</h3>
+<p>The router matches incoming requests based on path patterns and HTTP verbs:</p>
+<ul>
+  <li><strong>Exact Path Matching:</strong> <code>/health</code>, <code>/api/v1/metrics</code></li>
+  <li><strong>Named Path Parameters (<code>:param</code>):</strong> <code>/users/:id</code> matches <code>/users/42</code> with <code>req.param(&quot;id&quot;) == &quot;42&quot;</code>.</li>
+  <li><strong>Greedy Suffix Wildcards (<code>*filepath</code>):</strong> <code>/static/*filepath</code> matches <code>/static/css/theme.css</code> with <code>req.param(&quot;filepath&quot;) == &quot;css/theme.css&quot;</code>.</li>
+  <li><strong>Method Filtering:</strong> <code>router.get</code>, <code>router.post</code>, <code>router.put</code>, <code>router.delete_</code>, <code>router.patch</code>, <code>router.all</code>.</li>
+  <li><strong>RFC-Compliant Status Handlers:</strong> Automatically returns <code>405 Method Not Allowed</code> with an <code>Allow</code> header if the path matches a route registered for different verbs, or <code>404 Not Found</code> if unmatched.</li>
+  <li><strong>Middleware Pipeline:</strong> <code>router.use(middleware)</code> allows adding pre-routing authentication, audit logging, or header validation.</li>
+</ul>
+<h3 id="104-in-memory-standalone-unit-testing">10.4 In-Memory Standalone Unit Testing</h3>
+<p>Because the <code>Router</code> is completely independent of network sockets, request handlers can be tested in-memory in pure unit tests without flakiness or port collisions:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
 
-      <h3>10.3 Path Parameters, Wildcards &amp; Independent Routing</h3>
-      <p>
-        The <code>http.Router</code> matches routes by HTTP verb and pattern. It supports single-segment path parameters (<code>:param</code>) and greedy suffix wildcards (<code>*filepath</code>):
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>mut router := http.make_router()
-
-// Exact match
-router.get("/health", |req| http.Response.json(200, "{\"status\":\"ok\"}"))
-
-// Path parameters (:id)
-router.get("/users/:id", |req| {
-    return http.Response.text(200, "User ID: " + req.param("id"))
-})
-
-// Greedy wildcard (*filepath)
-router.get("/static/*filepath", |req| {
-    return http.Response.text(200, "Serving: " + req.param("filepath"))
-})
-
-// HTTP verb differentiation
-router.post("/items", |req| {
-    return http.Response.json(201, "{\"created\":true}")
-})</code></pre>
-
-      <h3>10.4 In-Memory Standalone Unit Testing</h3>
-      <p>
-        Because the router is independent of networking sockets, handlers can be verified with instant, deterministic unit tests without opening sockets or risking port conflicts:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span></div>
-      <pre><code>// Dispatch synthetic requests directly in-memory
-test_req := http.Request{ method: "GET", path: "/users/42" }
-test_res := router.dispatch(test_req)
-
-assert(test_res.status_code == 200)
-assert(test_res.body == "User ID: 42")</code></pre>
-
-      <h3>10.5 Serving Live Requests with <code>HttpServer</code></h3>
-      <p>
-        When you are ready to serve live network traffic, instantiate <code>http.make_server</code> and pass the router directly to <code>server.serve_in_background(router)</code> or <code>server.listen_and_serve(router)</code>:
-      </p>
-      <div class="code-header"><span class="tag-cf">cfire</span><span>examples/11-http-server-router/main.cf</span></div>
-      <pre><code>package main
-
-import "core:net/http"
+import &quot;core:net/http&quot;
 
 fn main() {
     mut router := http.make_router()
-    router.get("/health", |req| http.Response.json(200, "{\"status\":\"healthy\"}"))
-    router.get("/users/:id", |req| http.Response.text(200, "User: " + req.param("id")))
+    router.get(&quot;/users/:id&quot;, |req| {
+        return http.Response.text(200, &quot;User ID: &quot; + req.param(&quot;id&quot;))
+    })
 
-    // Bind server to port (0 selects an ephemeral port for testing)
+    // Pure in-memory unit test — NO network sockets opened!
+    req := http.Request{ method: &quot;GET&quot;, path: &quot;/users/100&quot; }
+    res := router.dispatch(req)
+    assert(res.status_code == 200)
+    assert(res.body == &quot;User ID: 100&quot;)
+}
+</code></pre>
+<h3 id="105-running-the-live-http-server">10.5 Running the Live HTTP Server</h3>
+<p>When you are ready to serve live network traffic, instantiate <code>http.make_server</code> and pass the router directly to <code>server.serve_in_background(router)</code> or <code>server.listen_and_serve(router)</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;core:net/http&quot;
+import &quot;core:json&quot;
+
+type Item struct {
+    id: i64 `json:&quot;id&quot;`
+    name: str `json:&quot;name&quot;`
+}
+
+fn main() {
+    mut router := http.make_router()
+
+    router.get(&quot;/health&quot;, |req| {
+        return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;}&quot;)
+    })
+
+    router.get(&quot;/items/:id&quot;, |req| {
+        return http.Response.text(200, &quot;Lookup id=&quot; + req.param(&quot;id&quot;))
+    })
+
+    router.post(&quot;/items&quot;, |req| {
+        return http.Response.json(201, &quot;{\&quot;created\&quot;:true,\&quot;data\&quot;:&quot; + req.body + &quot;}&quot;)
+    })
+
+    // Start server on port 8080 (or 0 for an ephemeral port)
     mut server := try http.make_server(port: 8080)
-    println("Listening on http://127.0.0.1:{}", server.port())
+    println(&quot;Server listening on http://127.0.0.1:{}&quot;, server.port())
 
-    // Serve requests asynchronously in a dedicated worker thread
+    // Run non-blocking background event loop
     server.serve_in_background(router)
 
     // Execute client requests
-    resp := try http.get("http://127.0.0.1:8080/health")
-    println("Response: {} -> {}", resp.status_code, resp.body)
+    resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;)
+    println(&quot;GET /health -&gt; status: {}, body: {}&quot;, resp.status_code, resp.body)
 
-    // Clean graceful shutdown
+    // Gracefully stop the server when done
     server.stop()
-}</code></pre>
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-11"><a id="ch11"></a>11. 100% Self-Hosting &amp; Continuous Dogfooding</h2>
+<h3 id="111-complete-self-hosting-architecture">11.1 Complete Self-Hosting Architecture</h3>
+<p>The entire <code>cfire</code> compiler, toolchain, build system, and developer tooling are <strong>100% written in pure <code>cfire</code> (<code>.cf</code>)</strong>.</p>
+<p>Every major subsystem is authored in <code>src/*.cf</code> and generates a clean, standalone bootstrap C++23 header in <code>src/bootstrap/*.generated.hpp</code>:</p>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th>Subsystem</th><th>Source Implementation</th><th>Bootstrap Artifact</th><th>Native Speed Parity</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Lexer</strong></td><td><code>src/lexer.cf</code></td><td><code>src/bootstrap/lexer.generated.hpp</code></td><td><strong>88.0%</strong> (275 MB/s)</td></tr>
+      <tr><td><strong>Formatter</strong></td><td><code>src/formatter.cf</code></td><td><code>src/bootstrap/formatter.generated.hpp</code></td><td><strong>100.6%</strong> (91 MB/s)</td></tr>
+      <tr><td><strong>AST Definitions</strong></td><td><code>src/ast.cf</code></td><td><code>src/bootstrap/ast.generated.hpp</code></td><td><strong>209.1%</strong> (30.8M types/s)</td></tr>
+      <tr><td><strong>Refactoring Engine</strong></td><td><code>src/refactor.cf</code></td><td><code>src/bootstrap/refactor.generated.hpp</code></td><td><strong>73.0%</strong> (272 MB/s)</td></tr>
+      <tr><td><strong>Doc Generator</strong></td><td><code>src/docgen.cf</code></td><td><code>src/bootstrap/docgen.generated.hpp</code></td><td><strong>109.0%</strong> (2,204 MB/s)</td></tr>
+      <tr><td><strong>Parser</strong></td><td><code>src/parser.cf</code></td><td><code>src/bootstrap/parser.generated.hpp</code></td><td><strong>86.0%</strong> (92 MB/s)</td></tr>
+      <tr><td><strong>Semantic Analyzer</strong></td><td><code>src/sema.cf</code></td><td><code>src/bootstrap/sema.generated.hpp</code></td><td><strong>72.2%</strong> (187 MB/s)</td></tr>
+      <tr><td><strong>Code Generator</strong></td><td><code>src/codegen.cf</code></td><td><code>src/bootstrap/codegen.generated.hpp</code></td><td><strong>91.4%</strong> (95 MB/s)</td></tr>
+      <tr><td><strong>Build System &amp; Ejector</strong></td><td><code>src/buildsys.cf</code></td><td><code>src/bootstrap/buildsys.generated.hpp</code></td><td><strong>95.5%</strong> (860 MB/s)</td></tr>
+      <tr><td><strong>Language Server Protocol</strong></td><td><code>src/lsp.cf</code></td><td><code>src/bootstrap/lsp.generated.hpp</code></td><td><strong>112.5%</strong> (569 MB/s)</td></tr>
+      <tr><td><strong>Main CLI Driver</strong></td><td><code>src/main.cf</code></td><td><code>src/bootstrap/main.generated.hpp</code></td><td><strong>81.2%</strong> (350 MB/s)</td></tr>
+      <tr><td><strong>Clang AST Header Bridge</strong></td><td><code>src/clang_bridge.cf</code></td><td><code>src/bootstrap/clang_bridge.generated.hpp</code></td><td><strong>110.7%</strong> (2,082 MB/s)</td></tr>
+    </tbody>
+  </table>
+</div>
+<h3 id="112-the-continuous-dogfooding-loop">11.2 The Continuous Dogfooding Loop</h3>
+<p>To verify compiler stability and prevent bootstrapping regressions, run:</p>
+<div class="code-header"><span class="tag-cf">terminal</span></div>
+<pre><code>make dogfood
+</code></pre>
+<p>This command runs the complete self-hosting cycle:</p>
+<ol>
+  <li>Re-compiles <code>cfire</code> to ensure a working host binary.</li>
+  <li>Runs <code>./cfire emit-cpp</code> across all 12 <code>src/*.cf</code> files, emitting fresh <code>src/bootstrap/*.generated.hpp</code> headers.</li>
+  <li>Re-compiles <code>cfire</code> using the newly generated bootstrap headers (cfire compiling cfire).</li>
+  <li>Executes the complete 30-suite conformance and performance benchmark suite (<code>make test</code>).</li>
+</ol>
+<h3 id="113-dual-engine-safety-fallback">11.3 Dual-Engine Safety Fallback</h3>
+<p>Every component maintains an optional C++ fallback toggle via compiler/preprocessor defines (<code>CFIRE_CXX_LEXER=1</code>, <code>CFIRE_CXX_PARSER=1</code>, etc.). This dual-engine architecture ensures:</p>
+<ul>
+  <li>Instant fallback debugging should an unforeseen edge case arise during active compiler development.</li>
+  <li>Continuous comparative benchmarking between native C++23 and pure <code>cfire</code> emissions in the conformance test runner.</li>
+</ul>
     </main>
   </div>
 </div>
