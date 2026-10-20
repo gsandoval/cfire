@@ -1478,6 +1478,11 @@ namespace cfire::build {
         std::filesystem::copy_file(runtime_dir / hdr, out_dir / hdr,
             std::filesystem::copy_options::overwrite_existing, ec);
     }
+    if (std::filesystem::exists(runtime_dir / "core")) {
+        std::error_code ec;
+        std::filesystem::copy(runtime_dir / "core", out_dir / "core",
+            std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+    }
 
     std::filesystem::path cf_dir = std::filesystem::absolute(cf_file).parent_path();
     for (const auto& dep : plan.external_deps) {

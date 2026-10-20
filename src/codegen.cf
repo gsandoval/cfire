@@ -92,44 +92,42 @@ fn (mut e: CodegenEmitter) emit_file(cf: cpp::cfire::frontend::CheckedFile) -> s
                 used_core["fs"] = true
             } else if ipath == "core:cli" {
                 used_core["cli"] = true
-            } else if ipath == "core:compress/zstd" {
-                used_core["zstd"] = true
+            } else if ipath == "core:compress/zstd" || ipath == "core:compress" || ipath == "core:zstd" || codegen_starts_with(ipath, "core:compress/") {
+                used_core["compress"] = true
                 defines.push("#define CFIRE_USE_ZSTD 1")
                 link_tags.push("-lzstd")
             } else if ipath == "core:json" {
                 used_core["json"] = true
                 defines.push("#define CFIRE_USE_SIMDJSON 1")
                 link_tags.push("-lsimdjson")
-            } else if ipath == "core:db/sqlite" {
+            } else if ipath == "core:db/sqlite" || ipath == "core:sqlite" {
                 used_core["sqlite"] = true
                 defines.push("#define CFIRE_USE_SQLITE 1")
                 link_tags.push("-lsqlite3")
             } else if ipath == "core:crypto" || codegen_starts_with(ipath, "core:crypto/") {
                 used_core["crypto"] = true
-            } else if ipath == "core:net" || ipath == "core:http" {
+            } else if ipath == "core:net" || ipath == "core:http" || ipath == "core:websocket" || codegen_starts_with(ipath, "core:net/") {
                 used_core["net"] = true
             } else if ipath == "core:time" {
                 used_core["time"] = true
             } else if ipath == "core:os" {
                 used_core["os"] = true
-            } else if ipath == "core:sync" {
+            } else if ipath == "core:sync" || ipath == "core:context" || codegen_starts_with(ipath, "core:sync/") {
                 used_core["sync"] = true
             } else if ipath == "core:str" {
                 used_core["str"] = true
-            } else if ipath == "core:math" {
+            } else if ipath == "core:math" || ipath == "core:rand" {
                 used_core["math"] = true
-            } else if ipath == "core:rand" {
-                used_core["rand"] = true
-            } else if codegen_starts_with(ipath, "core:encoding/") || ipath == "core:base64" || ipath == "core:hex" || ipath == "core:csv" {
+            } else if codegen_starts_with(ipath, "core:encoding/") || ipath == "core:encoding" || ipath == "core:base64" || ipath == "core:hex" || ipath == "core:csv" {
                 used_core["encoding"] = true
             } else if ipath == "core:regex" {
                 used_core["regex"] = true
-            } else if ipath == "core:collections" {
+            } else if ipath == "core:collections" || ipath == "core:sort" {
                 used_core["collections"] = true
-            } else if ipath == "core:sort" {
-                used_core["sort"] = true
             } else if ipath == "core:log" {
                 used_core["log"] = true
+            } else if ipath == "core:unicode" {
+                used_core["unicode"] = true
             } else if codegen_starts_with(ipath, "core:") {
                 mod_name := ipath[5..ipath.len]
                 used_core[mod_name] = true
@@ -171,7 +169,57 @@ fn (mut e: CodegenEmitter) emit_file(cf: cpp::cfire::frontend::CheckedFile) -> s
     // 4. Emit includes
     e.writeln("#include \"cfire_prelude.hpp\"")
     if used_core.len > 0 {
-        e.writeln("#include \"cfire_core_stdlib.hpp\"")
+        if used_core["cli"] {
+            e.writeln("#include \"core/cli.hpp\"")
+        }
+        if used_core["collections"] || used_core["sort"] {
+            e.writeln("#include \"core/collections.hpp\"")
+        }
+        if used_core["zstd"] || used_core["compress"] {
+            e.writeln("#include \"core/compress.hpp\"")
+        }
+        if used_core["crypto"] {
+            e.writeln("#include \"core/crypto.hpp\"")
+        }
+        if used_core["encoding"] || used_core["base64"] || used_core["hex"] || used_core["csv"] {
+            e.writeln("#include \"core/encoding.hpp\"")
+        }
+        if used_core["fs"] {
+            e.writeln("#include \"core/fs.hpp\"")
+        }
+        if used_core["json"] {
+            e.writeln("#include \"core/json.hpp\"")
+        }
+        if used_core["log"] {
+            e.writeln("#include \"core/log.hpp\"")
+        }
+        if used_core["math"] || used_core["rand"] {
+            e.writeln("#include \"core/math.hpp\"")
+        }
+        if used_core["net"] || used_core["http"] || used_core["websocket"] || used_core["url"] {
+            e.writeln("#include \"core/net.hpp\"")
+        }
+        if used_core["os"] {
+            e.writeln("#include \"core/os.hpp\"")
+        }
+        if used_core["regex"] {
+            e.writeln("#include \"core/regex.hpp\"")
+        }
+        if used_core["sqlite"] {
+            e.writeln("#include \"core/sqlite.hpp\"")
+        }
+        if used_core["str"] {
+            e.writeln("#include \"core/str.hpp\"")
+        }
+        if used_core["sync"] || used_core["context"] {
+            e.writeln("#include \"core/sync.hpp\"")
+        }
+        if used_core["time"] {
+            e.writeln("#include \"core/time.hpp\"")
+        }
+        if used_core["unicode"] {
+            e.writeln("#include \"core/unicode.hpp\"")
+        }
     }
     mut chi: usize = 0
     n_ch := cpp_headers.len

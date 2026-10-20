@@ -61,14 +61,15 @@ gantt
 
 ---
 
-### `ARCH-02`: Modularize Standard Library Runtime Headers (`runtime/core/*.hpp`)
+### `ARCH-02`: Modularize Standard Library Runtime Headers (`runtime/core/*.hpp`) `[COMPLETED]`
+- **Status**: Completed (2026-10-20)
 - **Priority**: P0 (Immediate)
 - **Category**: Runtime Architecture / Build Speed / Compilation Scalability
 - **Target Files**:
-  - `runtime/cfire_core_stdlib.hpp` (decomposition)
-  - `runtime/core/*.hpp` (new modular headers)
+  - `runtime/cfire_core_stdlib.hpp` (umbrella header)
+  - `runtime/core/*.hpp` (17 granular headers)
   - `src/codegen.cf` & `src/codegen.hpp`
-  - `src/buildsys.cf` & `src/buildsys.hpp`
+  - `src/buildsys.hpp`
 - **Problem Statement**:
   `runtime/cfire_core_stdlib.hpp` is currently a monolithic **4,606-line header** containing 28 distinct modules (SQLite3, WebSockets, AES-256 GCM, HTTP router, SIMD JSON, RegEx, etc.).
   Whenever a user program imports *any* module (e.g., `import "core:math"`), `codegen` emits `#include "cfire_core_stdlib.hpp"`. The C++ compiler must parse all 4,606 lines, introducing 400–800 ms of parsing overhead per compilation unit.

@@ -883,7 +883,9 @@ fn main() {
       <div class="rosetta-pane-cpp">
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>RFC 6455 Loopback Pair</span></div>
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
-#include &quot;cfire_core_stdlib.hpp&quot;
+#include &quot;core/net.hpp&quot;
+#include &quot;core/sync.hpp&quot;
+#include &quot;core/time.hpp&quot;
 
 
 auto main(int argc, char** argv) -&gt; int {
@@ -951,7 +953,7 @@ fn main() {
         <pre><code>// @cfire-link: -lsimdjson
 #define CFIRE_USE_SIMDJSON 1
 #include &quot;cfire_prelude.hpp&quot;
-#include &quot;cfire_core_stdlib.hpp&quot;
+#include &quot;core/json.hpp&quot;
 
 struct Metric;
 

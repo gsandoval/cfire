@@ -5,6 +5,7 @@
 #include <format>
 #include <regex>
 #include <sstream>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -44,38 +45,36 @@ public:
                 used_core_.insert("fs");
             } else if (imp.path == "core:cli") {
                 used_core_.insert("cli");
-            } else if (imp.path == "core:compress/zstd") {
-                used_core_.insert("zstd");
+            } else if (imp.path.starts_with("core:compress/") || imp.path == "core:compress" || imp.path == "core:zstd") {
+                used_core_.insert("compress");
             } else if (imp.path == "core:json") {
                 used_core_.insert("json");
-            } else if (imp.path == "core:db/sqlite") {
+            } else if (imp.path == "core:db/sqlite" || imp.path == "core:sqlite") {
                 used_core_.insert("sqlite");
             } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
                 used_core_.insert("crypto");
-            } else if (imp.path == "core:net" || imp.path == "core:http") {
+            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket") {
                 used_core_.insert("net");
             } else if (imp.path == "core:time") {
                 used_core_.insert("time");
             } else if (imp.path == "core:os") {
                 used_core_.insert("os");
-            } else if (imp.path == "core:sync") {
+            } else if (imp.path.starts_with("core:sync/") || imp.path == "core:sync" || imp.path == "core:context") {
                 used_core_.insert("sync");
             } else if (imp.path == "core:str") {
                 used_core_.insert("str");
-            } else if (imp.path == "core:math") {
+            } else if (imp.path == "core:math" || imp.path == "core:rand") {
                 used_core_.insert("math");
-            } else if (imp.path == "core:rand") {
-                used_core_.insert("rand");
-            } else if (imp.path.starts_with("core:encoding/") || imp.path == "core:base64" || imp.path == "core:hex" || imp.path == "core:csv") {
+            } else if (imp.path.starts_with("core:encoding/") || imp.path == "core:encoding" || imp.path == "core:base64" || imp.path == "core:hex" || imp.path == "core:csv") {
                 used_core_.insert("encoding");
             } else if (imp.path == "core:regex") {
                 used_core_.insert("regex");
-            } else if (imp.path == "core:collections") {
+            } else if (imp.path == "core:collections" || imp.path == "core:sort") {
                 used_core_.insert("collections");
-            } else if (imp.path == "core:sort") {
-                used_core_.insert("sort");
             } else if (imp.path == "core:log") {
                 used_core_.insert("log");
+            } else if (imp.path == "core:unicode") {
+                used_core_.insert("unicode");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -126,44 +125,42 @@ public:
                 used_core_.insert("fs");
             } else if (imp.path == "core:cli") {
                 used_core_.insert("cli");
-            } else if (imp.path == "core:compress/zstd") {
-                used_core_.insert("zstd");
+            } else if (imp.path.starts_with("core:compress/") || imp.path == "core:compress" || imp.path == "core:zstd") {
+                used_core_.insert("compress");
                 defines.push_back("#define CFIRE_USE_ZSTD 1");
                 link_tags.push_back("-lzstd");
             } else if (imp.path == "core:json") {
                 used_core_.insert("json");
                 defines.push_back("#define CFIRE_USE_SIMDJSON 1");
                 link_tags.push_back("-lsimdjson");
-            } else if (imp.path == "core:db/sqlite") {
+            } else if (imp.path == "core:db/sqlite" || imp.path == "core:sqlite") {
                 used_core_.insert("sqlite");
                 defines.push_back("#define CFIRE_USE_SQLITE 1");
                 link_tags.push_back("-lsqlite3");
             } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
                 used_core_.insert("crypto");
-            } else if (imp.path == "core:net" || imp.path == "core:http") {
+            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket") {
                 used_core_.insert("net");
             } else if (imp.path == "core:time") {
                 used_core_.insert("time");
             } else if (imp.path == "core:os") {
                 used_core_.insert("os");
-            } else if (imp.path == "core:sync") {
+            } else if (imp.path.starts_with("core:sync/") || imp.path == "core:sync" || imp.path == "core:context") {
                 used_core_.insert("sync");
             } else if (imp.path == "core:str") {
                 used_core_.insert("str");
-            } else if (imp.path == "core:math") {
+            } else if (imp.path == "core:math" || imp.path == "core:rand") {
                 used_core_.insert("math");
-            } else if (imp.path == "core:rand") {
-                used_core_.insert("rand");
-            } else if (imp.path.starts_with("core:encoding/") || imp.path == "core:base64" || imp.path == "core:hex" || imp.path == "core:csv") {
+            } else if (imp.path.starts_with("core:encoding/") || imp.path == "core:encoding" || imp.path == "core:base64" || imp.path == "core:hex" || imp.path == "core:csv") {
                 used_core_.insert("encoding");
             } else if (imp.path == "core:regex") {
                 used_core_.insert("regex");
-            } else if (imp.path == "core:collections") {
+            } else if (imp.path == "core:collections" || imp.path == "core:sort") {
                 used_core_.insert("collections");
-            } else if (imp.path == "core:sort") {
-                used_core_.insert("sort");
             } else if (imp.path == "core:log") {
                 used_core_.insert("log");
+            } else if (imp.path == "core:unicode") {
+                used_core_.insert("unicode");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -184,7 +181,30 @@ public:
         for (const auto& d : defines) writeln(d);
         writeln("#include \"cfire_prelude.hpp\"");
         if (!used_core_.empty()) {
-            writeln("#include \"cfire_core_stdlib.hpp\"");
+            std::set<std::string> core_headers;
+            for (const auto& mod : used_core_) {
+                if (mod == "cli") core_headers.insert("core/cli.hpp");
+                else if (mod == "collections" || mod == "sort") core_headers.insert("core/collections.hpp");
+                else if (mod == "zstd" || mod == "compress") core_headers.insert("core/compress.hpp");
+                else if (mod == "crypto") core_headers.insert("core/crypto.hpp");
+                else if (mod == "encoding" || mod == "base64" || mod == "hex" || mod == "csv") core_headers.insert("core/encoding.hpp");
+                else if (mod == "fs") core_headers.insert("core/fs.hpp");
+                else if (mod == "json") core_headers.insert("core/json.hpp");
+                else if (mod == "log") core_headers.insert("core/log.hpp");
+                else if (mod == "math" || mod == "rand") core_headers.insert("core/math.hpp");
+                else if (mod == "net" || mod == "http" || mod == "websocket" || mod == "url") core_headers.insert("core/net.hpp");
+                else if (mod == "os") core_headers.insert("core/os.hpp");
+                else if (mod == "regex") core_headers.insert("core/regex.hpp");
+                else if (mod == "sqlite") core_headers.insert("core/sqlite.hpp");
+                else if (mod == "str") core_headers.insert("core/str.hpp");
+                else if (mod == "sync" || mod == "context") core_headers.insert("core/sync.hpp");
+                else if (mod == "time") core_headers.insert("core/time.hpp");
+                else if (mod == "unicode") core_headers.insert("core/unicode.hpp");
+                else core_headers.insert("cfire_core_stdlib.hpp");
+            }
+            for (const auto& hdr : core_headers) {
+                writeln(std::format("#include \"{}\"", hdr));
+            }
         }
         for (const auto& h : cpp_headers) {
             for (const auto& def : h.defines) {
