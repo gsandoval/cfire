@@ -1,7 +1,7 @@
 CXX      := clang++
 CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc
 
-.PHONY: all build test docs fmt dogfood clean
+.PHONY: all build test docs fmt dogfood review-check clean
 
 all: build
 
@@ -23,6 +23,17 @@ dogfood: build
 	./cfire emit-cpp src/main.cf > src/bootstrap/main.generated.hpp
 	./cfire emit-cpp src/clang_bridge.cf > src/bootstrap/clang_bridge.generated.hpp
 	$(MAKE) test
+
+review-check: build
+	@echo "=== [1/4] Checking Canonical Code Formatting ==="
+	./cfire fmt --check src/ examples/
+	@echo "=== [2/4] Checking Documentation Synchronization ==="
+	./cfire doc --check
+	@echo "=== [3/4] Re-transpiling and Dogfooding Self-Hosted Compiler ==="
+	$(MAKE) dogfood
+	@echo "=== [4/4] Running Full Conformance Test Suite ==="
+	$(MAKE) test
+	@echo "✓ All Senior Engineer Review Quality Gates PASSED"
 
 docs: build
 	./cfire doc
