@@ -3,7 +3,9 @@
 
 #include "lexer.hpp"
 #include "bootstrap/ast.generated.hpp"
+#include <cstdlib>
 #include <memory>
+#include <new>
 #include <optional>
 #include <string>
 #include <variant>
@@ -12,10 +14,104 @@
 namespace cfire::frontend {
 
 struct Expr;
-using ExprPtr = std::shared_ptr<Expr>;
+using ExprPtr = Expr*;
 
 struct Stmt;
-using StmtPtr = std::shared_ptr<Stmt>;
+using StmtPtr = Stmt*;
+
+// Monotonic Bump Arena Allocator for AST Nodes
+class AstArena {
+public:
+    AstArena() = default;
+    ~AstArena() { reset(); }
+
+    AstArena(const AstArena&) = delete;
+    AstArena& operator=(const AstArena&) = delete;
+    AstArena(AstArena&&) noexcept = default;
+    AstArena& operator=(AstArena&&) noexcept = default;
+
+    template <typename T, typename... Args>
+    [[nodiscard]] auto alloc(Args&&... args) -> T* {
+        void* mem = allocate_bytes(sizeof(T), alignof(T));
+        T* obj = ::new (mem) T(std::forward<Args>(args)...);
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            destructors_.push_back({
+                .fn = [](void* p) { static_cast<T*>(p)->~T(); },
+                .obj = obj
+            });
+        }
+        return obj;
+    }
+
+    void reset() {
+        for (auto it = destructors_.rbegin(); it != destructors_.rend(); ++it) {
+            it->fn(it->obj);
+        }
+        destructors_.clear();
+        for (auto& chunk : chunks_) {
+            std::free(chunk.data);
+        }
+        chunks_.clear();
+        current_chunk_ = 0;
+        current_offset_ = 0;
+    }
+
+    [[nodiscard]] auto total_allocated_bytes() const noexcept -> std::size_t {
+        std::size_t total = 0;
+        for (const auto& c : chunks_) total += c.capacity;
+        return total;
+    }
+
+private:
+    struct Chunk {
+        uint8_t* data = nullptr;
+        std::size_t capacity = 0;
+    };
+
+    struct DestructorNode {
+        void (*fn)(void*);
+        void* obj;
+    };
+
+    auto allocate_bytes(std::size_t size, std::size_t align) -> void* {
+        if (current_chunk_ < chunks_.size()) {
+            std::size_t aligned_offset = (current_offset_ + (align - 1)) & ~(align - 1);
+            if (aligned_offset + size <= chunks_[current_chunk_].capacity) {
+                void* ptr = chunks_[current_chunk_].data + aligned_offset;
+                current_offset_ = aligned_offset + size;
+                return ptr;
+            }
+        }
+
+        std::size_t new_cap = std::max<std::size_t>(64 * 1024, size + align);
+        void* mem = nullptr;
+        if (::posix_memalign(&mem, std::max<std::size_t>(alignof(std::max_align_t), align), new_cap) != 0) {
+            mem = std::malloc(new_cap);
+        }
+        uint8_t* new_data = static_cast<uint8_t*>(mem);
+        chunks_.push_back(Chunk{.data = new_data, .capacity = new_cap});
+        current_chunk_ = chunks_.size() - 1;
+        std::size_t aligned_offset = (0 + (align - 1)) & ~(align - 1);
+        current_offset_ = aligned_offset + size;
+        return new_data + aligned_offset;
+    }
+
+    std::vector<Chunk> chunks_;
+    std::vector<DestructorNode> destructors_;
+    std::size_t current_chunk_ = 0;
+    std::size_t current_offset_ = 0;
+};
+
+inline thread_local AstArena* g_current_arena = nullptr;
+
+struct ArenaScope {
+    AstArena* prev = nullptr;
+    explicit ArenaScope(AstArena* a) : prev(g_current_arena) { g_current_arena = a; }
+    ~ArenaScope() { g_current_arena = prev; }
+
+    ArenaScope(const ArenaScope&) = delete;
+    ArenaScope& operator=(const ArenaScope&) = delete;
+};
 
 struct TypeRef {
     std::string name{};
@@ -225,7 +321,11 @@ struct Expr {
 
 template <typename T>
 [[nodiscard]] inline auto make_expr(T&& v, int line, int col) -> ExprPtr {
-    return std::make_shared<Expr>(Expr{ExprVariant{std::forward<T>(v)}, line, col});
+    if (g_current_arena) {
+        return g_current_arena->alloc<Expr>(ExprVariant{std::forward<T>(v)}, line, col);
+    }
+    static thread_local AstArena fallback_arena;
+    return fallback_arena.alloc<Expr>(ExprVariant{std::forward<T>(v)}, line, col);
 }
 
 // --- Statements ---
@@ -348,7 +448,11 @@ struct Stmt {
 
 template <typename T>
 [[nodiscard]] inline auto make_stmt(T&& v, int line) -> StmtPtr {
-    return std::make_shared<Stmt>(Stmt{StmtVariant{std::forward<T>(v)}, line});
+    if (g_current_arena) {
+        return g_current_arena->alloc<Stmt>(StmtVariant{std::forward<T>(v)}, line);
+    }
+    static thread_local AstArena fallback_arena;
+    return fallback_arena.alloc<Stmt>(StmtVariant{std::forward<T>(v)}, line);
 }
 
 // --- Top-Level Declarations ---
@@ -389,6 +493,8 @@ struct FileAST {
     std::vector<FnDecl> functions{};
     std::vector<GlobalVarDecl> global_vars{};
     std::vector<TestDecl> tests{};
+    std::shared_ptr<AstArena> arena = nullptr;
+    std::vector<std::shared_ptr<AstArena>> child_arenas{};
 };
 
 } // namespace cfire::frontend

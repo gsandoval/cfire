@@ -1525,12 +1525,16 @@ private:
 [[nodiscard]] inline auto parse_source_resilient_cxx(std::string_view path, std::string_view src)
     -> ParseResult
 {
+    auto arena = std::make_shared<AstArena>();
+    ArenaScope scope(arena.get());
     auto toks = tokenize(path, src);
     if (!toks) {
-        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}}, {toks.error()}};
+        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}, arena}, {toks.error()}};
     }
     Parser p(std::string(path), std::move(*toks), true);
-    return p.parse_file_result();
+    auto res = p.parse_file_result();
+    res.ast.arena = arena;
+    return res;
 }
 
 [[nodiscard]] inline auto parse_source_cxx(std::string_view path, std::string_view src)
@@ -1546,11 +1550,14 @@ private:
 [[nodiscard]] inline auto selfhost_parse_source_resilient(std::string_view path, std::string_view src)
     -> ParseResult
 {
+    auto arena = std::make_shared<AstArena>();
+    ArenaScope scope(arena.get());
     auto toks = tokenize(path, src);
     if (!toks) {
-        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}}, {toks.error()}};
+        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}, arena}, {toks.error()}};
     }
     auto res = ::selfhost_parse_file_result(path, *toks, true);
+    res.ast.arena = arena;
     for (auto& st : res.ast.structs) {
         for (auto& f : st.fields) {
             if (!f.raw_tag.empty() && f.tags.empty()) {

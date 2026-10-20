@@ -133,12 +133,15 @@ gantt
 
 ---
 
-### `ARCH-04`: Arena Memory Allocator for AST Nodes
+### `ARCH-04`: Arena Memory Allocator for AST Nodes `[COMPLETED]`
+- **Status**: Completed (2026-10-20)
 - **Priority**: P1
 - **Category**: Compiler Performance / Memory Locality
 - **Target Files**:
   - `src/ast.hpp` & `src/ast.cf`
-  - `src/parser.hpp` & `src/parser.cf`
+  - `src/parser.hpp`
+  - `src/buildsys.hpp`
+  - `src/lsp.hpp`
   - `runtime/cfire_prelude.hpp`
 - **Problem Statement**:
   AST nodes currently use `using ExprPtr = std::shared_ptr<Expr>` and `using StmtPtr = std::shared_ptr<Stmt>`.
