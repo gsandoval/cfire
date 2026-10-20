@@ -27,13 +27,14 @@ gantt
 
 ## Phase 1: High Priority (P0 — Immediate Decoupling & In-Process Safety)
 
-### `ARCH-01`: In-Process Cryptographic Hashing for Buildsys
+### `ARCH-01`: In-Process Cryptographic Hashing for Buildsys `[COMPLETED]`
+- **Status**: Completed (2026-10-20)
 - **Priority**: P0 (Immediate)
 - **Category**: Build System / Portability / Subprocess Elimination
 - **Target Files**:
   - `src/buildsys.hpp`
-  - `src/buildsys.cf`
   - `runtime/cfire_core_stdlib.hpp`
+  - `tests/conformance_test.cpp`
 - **Problem Statement**:
   In `src/buildsys.hpp` (lines 518–520), archive hash verification invokes external shell commands:
   ```cpp
