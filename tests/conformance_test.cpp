@@ -3622,6 +3622,99 @@ void test_selfhost_refactor_parity_and_benchmark([[maybe_unused]] const std::fil
     std::println("--- PASS: test_selfhost_refactor_parity_and_benchmark");
 }
 
+void test_selfhost_docgen_parity_and_benchmark([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_selfhost_docgen_parity_and_benchmark (Self-Hosted Documentation Generator Dogfooding & Parity)");
+
+    // 1. HTML Escaping Parity
+    const std::vector<std::string> test_strings = {
+        "", "hello world", "cfire <language>", "5 > 3 && 2 < 4",
+        "\"quoted\" text with 'single' & amp", "<script>alert(\"xss\")</script>",
+        "Line1\nLine2\tTab\r\nCRLF", "Special chars: & < > \" &amp; &lt;"
+    };
+    for (const auto& s : test_strings) {
+        auto cxx_esc = cfire::doc::detail::html_escape_cxx(s);
+        auto cf_esc = ::html_escape(s);
+        require(cxx_esc == cf_esc, std::format("html_escape parity mismatch on '{}'", s));
+    }
+    std::println("  [PASS] 100% html_escape parity verified across {} test strings", test_strings.size());
+
+    // 2. Navbar HTML Parity
+    for (std::string_view page : {"index", "guide", "reference", "other", ""}) {
+        auto cxx_nav = cfire::doc::detail::navbar_html_cxx(page);
+        auto cf_nav = ::navbar_html(page);
+        require(cxx_nav == cf_nav, std::format("navbar_html parity mismatch on page '{}'", page));
+    }
+    std::println("  [PASS] 100% navbar_html parity verified across all page states");
+
+    // 3. Reference Markdown Parity (STDLIB_REFERENCE.md)
+    auto cxx_ref_md = cfire::doc::generate_reference_markdown_cxx();
+    auto cf_ref_md = cfire::doc::generate_reference_markdown();
+    require(cxx_ref_md == cf_ref_md, "generate_reference_markdown output mismatch between C++ and cfire");
+    require(cf_ref_md.contains("## 1. Built-In `core:*` Standard Library Modules"), "Markdown missing Section 1 header");
+    require(cf_ref_md.contains("## 2. Semantic Diagnostic Codes"), "Markdown missing Section 2 header");
+    std::println("  [PASS] 100% generate_reference_markdown parity verified byte-for-byte ({} bytes)", cf_ref_md.size());
+
+    // 4. Reference HTML Parity (reference.html)
+    auto cxx_ref_html = cfire::doc::generate_reference_html_cxx();
+    auto cf_ref_html = cfire::doc::generate_reference_html();
+    require(cxx_ref_html == cf_ref_html, "generate_reference_html output mismatch between C++ and cfire");
+    require(cf_ref_html.contains("<!DOCTYPE html>"), "HTML missing doctype");
+    require(cf_ref_html.contains("`core:*` Standard Library &amp; Diagnostics Reference"), "HTML missing title");
+    std::println("  [PASS] 100% generate_reference_html parity verified byte-for-byte ({} bytes)", cf_ref_html.size());
+
+    // 5. Package Documentation Extraction Parity
+    auto cxx_pkg = cfire::doc::extract_file_markdown_doc_cxx("examples/09-stdlib-test-pointers/main.cf");
+    auto cf_pkg = cfire::doc::extract_file_markdown_doc("examples/09-stdlib-test-pointers/main.cf");
+    require(cxx_pkg.has_value() && cf_pkg.has_value(), "extract_file_markdown_doc failed");
+    require(*cxx_pkg == *cf_pkg, "extract_file_markdown_doc output mismatch between C++ and cfire");
+    std::println("  [PASS] 100% extract_file_markdown_doc parity verified on examples/09-stdlib-test-pointers/main.cf");
+
+    // 6. Performance Benchmark (generate_reference_markdown)
+    constexpr int kIters = 2'000;
+    std::size_t payload_bytes = cf_ref_md.size() * kIters;
+
+    // Benchmark C++
+    auto t0_cxx = std::chrono::high_resolution_clock::now();
+    std::size_t cxx_out_len = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto s = cfire::doc::generate_reference_markdown_cxx();
+        cxx_out_len += s.size();
+    }
+    auto t1_cxx = std::chrono::high_resolution_clock::now();
+    double ms_cxx = std::chrono::duration<double, std::milli>(t1_cxx - t0_cxx).count();
+    double mbs_cxx = (static_cast<double>(payload_bytes) / 1'000'000.0) / (ms_cxx / 1000.0);
+    double docs_cxx = static_cast<double>(kIters) / (ms_cxx / 1000.0);
+
+    // Benchmark cfire self-hosted
+    auto t0_cf = std::chrono::high_resolution_clock::now();
+    std::size_t cf_out_len = 0;
+    for (int i = 0; i < kIters; ++i) {
+        auto s = cfire::doc::generate_reference_markdown();
+        cf_out_len += s.size();
+    }
+    auto t1_cf = std::chrono::high_resolution_clock::now();
+    double ms_cf = std::chrono::duration<double, std::milli>(t1_cf - t0_cf).count();
+    double mbs_cf = (static_cast<double>(payload_bytes) / 1'000'000.0) / (ms_cf / 1000.0);
+    double docs_cf = static_cast<double>(kIters) / (ms_cf / 1000.0);
+
+    require(cxx_out_len == cf_out_len, "Benchmark output length mismatch");
+
+    double parity_pct = (mbs_cf / mbs_cxx) * 100.0;
+
+    std::println("  [BENCHMARK] Reference Doc Markdown Benchmark (Payload: {:.2f} MB, {} iterations):",
+        static_cast<double>(payload_bytes) / 1'000'000.0, kIters);
+    std::println("    - C++ Native Generator:     {:>7.2f} MB/s ({:>7.0f} docs/s, avg {:.3f}µs/doc)",
+        mbs_cxx, docs_cxx, (ms_cxx * 1000.0) / kIters);
+    std::println("    - cfire Self-Hosted Engine: {:>7.2f} MB/s ({:>7.0f} docs/s, avg {:.3f}µs/doc)",
+        mbs_cf, docs_cf, (ms_cf * 1000.0) / kIters);
+    std::println("    - Performance Ratio:        {:>7.1f}% of native C++ speed", parity_pct);
+
+    require(mbs_cf >= 0.70 * mbs_cxx,
+        std::format("Self-hosted docgen performance regression ({:.1f} MB/s vs {:.1f} MB/s baseline)", mbs_cf, mbs_cxx));
+
+    std::println("--- PASS: test_selfhost_docgen_parity_and_benchmark");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3650,6 +3743,7 @@ auto main() -> int {
     test_selfhost_formatter_parity_and_benchmark(rt_dir);
     test_selfhost_ast_parity_and_benchmark(rt_dir);
     test_selfhost_refactor_parity_and_benchmark(rt_dir);
+    test_selfhost_docgen_parity_and_benchmark(rt_dir);
 
     if (g_failures > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures);
