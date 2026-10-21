@@ -1382,15 +1382,7 @@ inline auto resolve_external_dep_source(
     return plan;
 }
 
-[[nodiscard]] inline auto buildsys_emit_dep_defines(const ExternalDepSpec& dep) -> std::string {
-    std::string out;
-    for (const auto& [k, v] : dep.defines) {
-        out += std::format("target_compile_definitions({} PRIVATE {}={})\n", dep.name, k, v);
-    }
-    return out;
-}
-
-[[nodiscard]] inline auto generate_cmake_content_cxx(const BuildPlan& plan) -> std::string {
+[[nodiscard]] inline auto generate_cmake_content(const BuildPlan& plan) -> std::string {
     std::ostringstream cmake;
     cmake << "cmake_minimum_required(VERSION 3.25)\n";
     cmake << "project(cfire_ejected_app LANGUAGES C CXX)\n";
@@ -1444,20 +1436,6 @@ inline auto resolve_external_dep_source(
         }
     }
     return cmake.str();
-}
-
-} // namespace cfire::build
-
-#include "bootstrap/buildsys.generated.hpp"
-
-namespace cfire::build {
-
-[[nodiscard]] inline auto selfhost_generate_cmake(const BuildPlan& plan) -> std::string {
-    return ::selfhost_generate_cmake_file(plan);
-}
-
-[[nodiscard]] inline auto generate_cmake_content(const BuildPlan& plan) -> std::string {
-    return selfhost_generate_cmake(plan);
 }
 
 [[nodiscard]] inline auto eject_cmake(

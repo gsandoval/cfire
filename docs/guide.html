@@ -545,7 +545,6 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#chapter-8">8. Zero-Friction C &amp; C++ Interop</a></li>
             <li><a href="#chapter-9">9. The Unified Build System &amp; CMake Ejection</a></li>
             <li><a href="#chapter-10">10. Building Web Services, HTTP Servers &amp; Independent Routers (`core:net/http`)</a></li>
-            <li><a href="#chapter-11">11. 100% Self-Hosting &amp; Continuous Dogfooding</a></li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
@@ -1353,51 +1352,6 @@ fn main() {
     server.stop()
 }
 </code></pre>
-<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-11"><a id="ch11"></a>11. 100% Self-Hosting &amp; Continuous Dogfooding</h2>
-<h3 id="111-complete-self-hosting-architecture">11.1 Complete Self-Hosting Architecture</h3>
-<p>The entire <code>cfire</code> compiler, toolchain, build system, and developer tooling are <strong>100% written in pure <code>cfire</code> (<code>.cf</code>)</strong>.</p>
-<p>Every major subsystem is authored in <code>src/*.cf</code> and generates a clean, standalone bootstrap C++23 header in <code>src/bootstrap/*.generated.hpp</code>:</p>
-<div class="table-wrap">
-  <div class="table-scroll-cue">Scroll table &rarr;</div>
-  <table>
-    <thead>
-      <tr><th>Subsystem</th><th>Source Implementation</th><th>Bootstrap Artifact</th><th>Native Speed Parity</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><strong>Lexer</strong></td><td><code>src/lexer.cf</code></td><td><code>src/bootstrap/lexer.generated.hpp</code></td><td><strong>88.0%</strong> (275 MB/s)</td></tr>
-      <tr><td><strong>Formatter</strong></td><td><code>src/formatter.cf</code></td><td><code>src/bootstrap/formatter.generated.hpp</code></td><td><strong>100.6%</strong> (91 MB/s)</td></tr>
-      <tr><td><strong>AST Definitions</strong></td><td><code>src/ast.cf</code></td><td><code>src/bootstrap/ast.generated.hpp</code></td><td><strong>209.1%</strong> (30.8M types/s)</td></tr>
-      <tr><td><strong>Refactoring Engine</strong></td><td><code>src/refactor.cf</code></td><td><code>src/bootstrap/refactor.generated.hpp</code></td><td><strong>73.0%</strong> (272 MB/s)</td></tr>
-      <tr><td><strong>Doc Generator</strong></td><td><code>src/docgen.cf</code></td><td><code>src/bootstrap/docgen.generated.hpp</code></td><td><strong>109.0%</strong> (2,204 MB/s)</td></tr>
-      <tr><td><strong>Parser</strong></td><td><code>src/parser.cf</code></td><td><code>src/bootstrap/parser.generated.hpp</code></td><td><strong>86.0%</strong> (92 MB/s)</td></tr>
-      <tr><td><strong>Semantic Analyzer</strong></td><td><code>src/sema.cf</code></td><td><code>src/bootstrap/sema.generated.hpp</code></td><td><strong>72.2%</strong> (187 MB/s)</td></tr>
-      <tr><td><strong>Code Generator</strong></td><td><code>src/codegen.cf</code></td><td><code>src/bootstrap/codegen.generated.hpp</code></td><td><strong>91.4%</strong> (95 MB/s)</td></tr>
-      <tr><td><strong>Build System &amp; Ejector</strong></td><td><code>src/buildsys.cf</code></td><td><code>src/bootstrap/buildsys.generated.hpp</code></td><td><strong>95.5%</strong> (860 MB/s)</td></tr>
-      <tr><td><strong>Language Server Protocol</strong></td><td><code>src/lsp.cf</code></td><td><code>src/bootstrap/lsp.generated.hpp</code></td><td><strong>112.5%</strong> (569 MB/s)</td></tr>
-      <tr><td><strong>Main CLI Driver</strong></td><td><code>src/main.cf</code></td><td><code>src/bootstrap/main.generated.hpp</code></td><td><strong>81.2%</strong> (350 MB/s)</td></tr>
-      <tr><td><strong>Clang AST Header Bridge</strong></td><td><code>src/clang_bridge.cf</code></td><td><code>src/bootstrap/clang_bridge.generated.hpp</code></td><td><strong>110.7%</strong> (2,082 MB/s)</td></tr>
-    </tbody>
-  </table>
-</div>
-<h3 id="112-the-continuous-dogfooding-loop">11.2 The Continuous Dogfooding Loop</h3>
-<p>To verify compiler stability and prevent bootstrapping regressions, run:</p>
-<div class="code-header"><span class="tag-cf">terminal</span></div>
-<pre><code>make dogfood
-</code></pre>
-<p>This command runs the complete self-hosting cycle:</p>
-<ol>
-  <li>Re-compiles <code>cfire</code> to ensure a working host binary.</li>
-  <li>Runs <code>./cfire emit-cpp</code> across all 12 <code>src/*.cf</code> files, emitting fresh <code>src/bootstrap/*.generated.hpp</code> headers.</li>
-  <li>Re-compiles <code>cfire</code> using the newly generated bootstrap headers (cfire compiling cfire).</li>
-  <li>Executes the complete 30-suite conformance and performance benchmark suite (<code>make test</code>).</li>
-</ol>
-<h3 id="113-dual-engine-safety-fallback">11.3 Dual-Engine Safety Fallback</h3>
-<p>Every component maintains an optional C++ fallback toggle via compiler/preprocessor defines (<code>CFIRE_CXX_LEXER=1</code>, <code>CFIRE_CXX_PARSER=1</code>, etc.). This dual-engine architecture ensures:</p>
-<ul>
-  <li>Instant fallback debugging should an unforeseen edge case arise during active compiler development.</li>
-  <li>Continuous comparative benchmarking between native C++23 and pure <code>cfire</code> emissions in the conformance test runner.</li>
-</ul>
     </main>
   </div>
 </div>

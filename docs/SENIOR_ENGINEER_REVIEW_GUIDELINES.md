@@ -13,22 +13,21 @@ Every contribution, refactoring, or feature addition **must** satisfy this proto
 │                        CHANGE VERIFICATION TIERS                       │
 ├────────────────────────────────────────────────────────────────────────┤
 │ TIER 1: Automated Gate (Every commit / PR)                             │
-│   • make dogfood (12-component bootstrap transpile + parity check)     │
-│   • make test (30 conformance suites pass, 0 warnings)                 │
+│   • make test (40+ conformance suites pass, 0 warnings)                │
 │   • ./cfire doc --check (Documentation sync check)                     │
-│   • ./cfire fmt --check (Canonical code formatting check)              │
+│   • ./cfire fmt --check examples/ (Canonical code formatting check)    │
 ├────────────────────────────────────────────────────────────────────────┤
 │ TIER 2: Senior Engineer Code Review (Every PR / Architectural change) │
 │   • Section A: ABI & Lowering Correctness                              │
 │   • Section B: Memory & Lifetime Safety                                │
 │   • Section C: Language Semantics & Intent Soundness                   │
-│   • Section D: Self-Hosting Parity & Performance Invariants            │
+│   • Section D: Error Handling & Performance Invariants                 │
 │   • Section E: Toolchain & Standard Library Completeness               │
 ├────────────────────────────────────────────────────────────────────────┤
 │ TIER 3: Milestone Architectural Audit (Periodic / Major milestones)   │
 │   • Complexity hotspot sweeps (LOC, nesting depth, coupling)           │
 │   • Technical debt backlog review (docs/planning/architectural-backlog)│
-│   • Dependency decoupling & stage-0 bootstrap retirement checks        │
+│   • Header modularization & compilation speed checks                   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -78,42 +77,30 @@ Reviewers must inspect and verify the following criteria for all proposed code c
 4. **Definite Divergence for Fallible Fallbacks (`cfire/NON-DIVERGING-OR-BLOCK`)**:
    - In `val := fallible() or err { ... }`, the block **must** terminate via `return`, `panic()`, or process exit.
 
-### D. Self-Hosting Parity & Performance Invariants
-1. **Continuous Dogfooding Invariant**:
-   - Any modification to compiler logic in `src/*.cf` **must** be re-transpiled to `src/bootstrap/*.generated.hpp` via:
-     ```bash
-     make dogfood
-     ```
-   - Commit history must include both the `.cf` source and the bootstrap `.generated.hpp` header.
-2. **Parity Benchmarks**:
-   - Self-hosted throughput must maintain $\ge 70\%$ of the native C++ baseline across all dogfood benchmarks:
-     - Lexer throughput: $\ge 250\text{ MB/s}$ ($\ge 80\%$ native C++)
-     - Formatter throughput: $\ge 85\text{ MB/s}$ ($\ge 95\%$ native C++)
-     - Parser throughput: $\ge 85\text{ MB/s}$ ($\ge 75\%$ native C++)
-     - Codegen throughput: $\ge 90\text{ MB/s}$ ($\ge 90\%$ native C++)
-     - Docgen throughput: $\ge 2000\text{ MB/s}$ ($\ge 100\%$ native C++)
-     - Clang Bridge hash: $\ge 2000\text{ MB/s}$ ($\ge 100\%$ native C++)
-3. **No Unchecked Exceptions or Panics**:
+### D. Error Handling & Performance Invariants
+1. **Arena-Backed AST Allocation**:
+   -Recursive AST expressions (`Expr`) and statements (`Stmt`) are allocated in `AstArena` inside `FileAST`, avoiding atomic reference-counting overhead.
+2. **No Unchecked Exceptions or Panics**:
    - All errors must return `std::expected<T, std::string>`.
    - No bare `throw` statements in `src/` or `runtime/`.
    - No unchecked `.value()` calls on optionals or expected values without preceding guard checks.
 
 ### E. Toolchain & Standard Library Completeness
 1. **LSP Integration**:
-   - Any new syntax construct or AST node must update `src/lsp.hpp` and `src/lsp.cf`:
+   - Any new syntax construct or AST node must update `src/lsp.hpp`:
      - Hover documentation (`textDocument/hover`)
      - Auto-complete snippets (`textDocument/completion`)
      - Semantic token highlight classes (`textDocument/semanticTokens/full`)
 2. **Documentation Invariance**:
-   - If language syntax, CLI flags, or standard library APIs change, update the single-source-of-truth in `src/docgen.hpp` and run:
+   - If language syntax, CLI flags, or standard library APIs change, update the single-source-of-truth in `src/docgen.hpp` and `docs/GUIDE.md` and run:
      ```bash
      ./cfire doc
      ./cfire doc --check
      ```
    - Build **must fail** if docs are out of sync.
 3. **Canonical Formatting**:
-   - Format all files with `./cfire fmt`.
-   - Verify with `./cfire fmt --check src/ examples/`.
+   - Format all example `.cf` files with `./cfire fmt examples/`.
+   - Verify with `./cfire fmt --check examples/`.
 
 ---
 
@@ -121,26 +108,26 @@ Reviewers must inspect and verify the following criteria for all proposed code c
 
 | Trigger Event | Required Tier | Action Items |
 | :--- | :---: | :--- |
-| **Every local code change** | **Tier 1** | Run `make dogfood && ./cfire doc --check && ./cfire fmt --check`. |
-| **Pull Request / Pre-Merge** | **Tier 1 + 2** | Execute the Senior Engineer Review Checklist; inspect git diff for code smells, unnecessary allocations, or dual-engine divergence. |
-| **Standard Library Expansion** | **Tier 2** | Verify C++ lowering, error expected return (`T!`), POSIX / platform safety, and add conformance tests in `tests/conformance_test.cpp`. |
-| **Milestone Completion** | **Tier 3** | Conduct deep architectural audit against `docs/planning/architectural-backlog.md`; measure benchmark regressions and compile time deltas. |
+| **Every local code change** | **Tier 1** | Run `make review-check`. |
+| **Pull Request / Pre-Merge** | **Tier 1 + 2** | Execute the Senior Engineer Review Checklist; inspect git diff for code smells or unnecessary allocations. |
+| **Standard Library Expansion** | **Tier 2** | Verify C++ lowering, error expected return (`T!`), POSIX / platform safety, and add conformance tests in `tests/`. |
+| **Milestone Completion** | **Tier 3** | Conduct deep architectural audit against `docs/planning/architectural-backlog.md`; measure compile time deltas. |
 
 ---
 
 ## 4. Enforcement Script (`make review-check`)
 
-Add the following target to `Makefile` to automate the verification gate:
+The `review-check` target in `Makefile` automates the verification gate:
 
 ```makefile
-review-check:
-	@echo "=== [1/4] Checking Canonical Code Formatting ==="
-	./cfire fmt --check src/ examples/
-	@echo "=== [2/4] Checking Documentation Synchronization ==="
+review-check: build
+	@echo "=== [1/3] Checking Canonical Code Formatting ==="
+	./cfire fmt --check examples/
+	@echo "✓ Canonical code formatting verified"
+	@echo "=== [2/3] Checking Documentation Synchronization ==="
 	./cfire doc --check
-	@echo "=== [3/4] Re-transpiling and Dogfooding Self-Hosted Compiler ==="
-	$(MAKE) dogfood
-	@echo "=== [4/4] Running Full Conformance Test Suite ==="
+	@echo "✓ Documentation guides and stdlib references synchronized"
+	@echo "=== [3/3] Running Full Conformance Test Suite ==="
 	$(MAKE) test
-	@echo "✓ All Senior Engineer Review Quality Gates PASSED"
+	@echo "✓ Conformance test suites passed"
 ```

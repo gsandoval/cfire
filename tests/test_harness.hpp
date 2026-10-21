@@ -5,7 +5,6 @@
 #include "../src/docgen.hpp"
 #include "../src/formatter.hpp"
 #include "../src/lsp.hpp"
-#include "../src/main.hpp"
 #include "../src/refactor.hpp"
 #include "../runtime/cfire_core_stdlib.hpp"
 #include <atomic>
@@ -203,17 +202,3 @@ void test_net_http_and_router(const std::filesystem::path& rt_dir);
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);
 void test_raylib_vendor_codegen_and_eject(const std::filesystem::path& rt_dir);
 void test_cfire_cross_compile(const std::filesystem::path& rt_dir);
-
-// Benchmark Suites
-void test_selfhost_lexer_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_formatter_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_ast_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_refactor_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_docgen_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_parser_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_sema_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_codegen_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_buildsys_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_lsp_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_main_parity_and_benchmark(const std::filesystem::path& rt_dir);
-void test_selfhost_clang_bridge_parity_and_benchmark(const std::filesystem::path& rt_dir);
