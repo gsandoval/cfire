@@ -1,5 +1,8 @@
 # Production-Grade LSP Capability Sweep & Gap Analysis
 
+> [!NOTE]
+> **Historical Baseline Audit (All Findings Resolved)**: This document records the initial capability sweep of `cfire-lsp`. All priority gaps identified in the matrix below (`LSP-01` through `LSP-10` and `IDE-EXT-01`) have been **100% implemented and verified** in [`src/lsp.hpp`](../../src/lsp.hpp).
+
 This document provides a comprehensive evaluation of the Language Server Protocol (LSP) capabilities implemented in `cfire-lsp` compared against industry-standard production language servers (`rust-analyzer`, `clangd`, `gopls`, and `zls`).
 
 ---

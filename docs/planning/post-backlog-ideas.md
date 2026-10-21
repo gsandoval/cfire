@@ -1,9 +1,8 @@
 # Post-Backlog Strategic Explorations: Build System, Agent Tooling, and Multi-IDE
 
 > [!NOTE]
-> **Status**: Strategic Explorations (Post-Backlog).  
-> **Target Timeline**: To be scheduled after completion of the core backlog items (`LSP-*`, `LD-*`, `BS-*`, `LIB-*`) in [`backlog.md`](./backlog.md).  
-> **Safety Notice**: This file is completely decoupled from [`active.md`](./active.md) to ensure ongoing autonomous agents are not interrupted.
+> **Status**: **All 7 Explorations Completed & Shipped in Production**.  
+> Every strategic proposal in this document has been promoted to [`backlog.md`](./backlog.md) (`BS-EXT-01`, `TOOL-01`, `TOOL-02`, `TOOL-03`, `IDE-01`) and is 100% implemented and verified in the `cfire` CLI (`cfire vendor`, `cfire check --json`, `cfire outline --json`, `cfire doc --llm`, `cfire refactor rename`, `cfire eval`, and `cfire ide`). This document is preserved as the architectural design record for those features.
 
 ---
 
