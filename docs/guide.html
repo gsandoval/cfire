@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Language Guide — cfire (Sapphire on Fire)</title>
+  <title>Language Guide — cfire (pronounced sapphire)</title>
   <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
   <style>
 :root {
@@ -557,10 +557,16 @@ tr:hover td { background: #FAFAF9; }
     </aside>
     <main>
 <h1>The <code>cfire</code> Language &amp; Systems Programming Guide</h1>
-<p class="subtitle" style="margin: 0 0 2rem;"><strong>Sapphire on Fire (<code>cfire</code>)</strong> is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern <strong>ISO C++23</strong>. It combines the clean syntax and rapid onboarding of Go, the batteries-included <code>core:*</code> catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.</p>
+<p class="subtitle" style="margin: 0 0 2rem;"><strong><code>cfire</code></strong> (pronounced like <strong>&quot;sapphire&quot;</strong> <code>/ˈsæf.aɪ.ər/</code>, or <strong>&quot;C-fire&quot;</strong>) is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern <strong>ISO C++23</strong>. The name pairs <strong>&quot;C&quot;</strong> (the bedrock of systems engineering) with <strong>&quot;fire&quot;</strong> (blazing modern velocity, or developer slang for <em>top-tier</em>). It combines the clean syntax and rapid onboarding of Go, the batteries-included <code>core:*</code> catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.</p>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
 <h2 id="chapter-1"><a id="ch1"></a>1. Philosophy &amp; Architecture</h2>
-<h3 id="11-the-systems-programming-landscape">1.1 The Systems Programming Landscape</h3>
+<h3 id="11-the-systems-programming-landscape-the-cfire-name">1.1 The Systems Programming Landscape &amp; The <code>cfire</code> Name</h3>
+<p>Where does the name <strong><code>cfire</code></strong> come from?</p>
+<ul>
+  <li><strong><code>C</code></strong>: The programming language heritage of systems software—deterministic memory control, zero-overhead abstractions, and mechanical sympathy.</li>
+  <li><strong><code>fire</code></strong>: In modern engineering slang, <em>&quot;it's fire&quot;</em>—blazing fast, lightweight, and genuinely exciting to work with.</li>
+  <li><strong>Pronounced like &quot;sapphire&quot;</strong>: The name rolls off the tongue as <em>sapphire</em> (<code>/ˈsæf.aɪ.ər/</code>), matching its visual identity—the crystalline structure and precision of a sapphire gem ignited by the speed and focus of fire.</li>
+</ul>
 <p>Modern systems software demands both high developer velocity and uncompromising runtime performance. For decades, engineers have navigated difficult compromises:</p>
 <ul>
   <li><strong>C++</strong> offers unmatched performance, vast ecosystem reach, and zero-cost abstractions, but suffers from forty years of accumulated syntactic complexity, implicit mutable references, and silent use-after-move bugs.</li>
@@ -618,7 +624,7 @@ fn main() {
     t0 := time.now_ms()
 
     // Immutability by default: 'msg' cannot be reassigned
-    msg := &quot;Hello from Sapphire on Fire (cfire)!&quot;
+    msg := &quot;Hello from cfire (pronounced sapphire)!&quot;
     println(&quot;{}&quot;, msg)
 
     // Fallible file operation with early-exit 'try'

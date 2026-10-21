@@ -380,7 +380,7 @@ namespace detail {
     out += "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n";
     out += "  <meta charset=\"UTF-8\" />\n";
     out += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n";
-    out += "  <title>Language Guide — cfire (Sapphire on Fire)</title>\n";
+    out += "  <title>Language Guide — cfire (pronounced sapphire)</title>\n";
     out += "  <link rel=\"icon\" type=\"image/png\" href=\"assets/cfire_logo_emblem.png\" />\n";
     out += "  <style>" + detail::shared_css() + "</style>\n";
     out += "</head>\n<body>\n";
