@@ -1323,38 +1323,131 @@ void test_agent_tooling_outline_and_json([[maybe_unused]] const std::filesystem:
 import "core:fs"
 
 type Config struct {
-threads: i32 `json:"threads"`
+    threads: i32 `json:"threads"`
 }
 
 type Status enum {
-Active,
-Idle
+    Active(i32),
+    Idle
+}
+
+type Runner interface {
+    run(task: &str) -> bool!
+}
+
+type Box struct {
+    id: i32
+}
+
+fn (mut self: Config) execute[T: Runner](mut task: &str, move payload: own[Box]) -> (i32, str)! {
+    return (0, "done")
 }
 
 fn worker(cfg: Config) -> bool {
-return true
+    return true
 }
 )");
 
-    // 1. Test outline generation
+    // 1. Test outline generation with rich fidelity
     run_cfire(std::format("outline --json \"{}\"", tmp_ws.path.string()))
         .assert_ok("cfire outline exit 0 (TOOL-01)")
         .assert_contains("\"package\": \"mymod\"", "outline contains package name (TOOL-01)")
         .assert_contains("\"imports\": [\"core:fs\"]", "outline contains imports (TOOL-01)")
         .assert_contains("\"name\": \"Config\"", "outline contains struct Config (TOOL-01)")
         .assert_contains("\"name\": \"Status\"", "outline contains enum Status (TOOL-01)")
+        .assert_contains("Active(i32)", "outline contains enum variant payload (TOOL-01)")
+        .assert_contains("\"name\": \"Runner\"", "outline contains interface Runner (TOOL-01)")
+        .assert_contains("\"receiver\": \"(mut self: Config)\"", "outline contains method receiver (TOOL-01)")
+        .assert_contains("\"type_params\": [\"T: Runner\"]", "outline contains type params (TOOL-01)")
+        .assert_contains("\"intent\": \"mut\"", "outline contains mut parameter intent (TOOL-01)")
+        .assert_contains("\"type\": \"&str\"", "outline contains &str borrow type (TOOL-01)")
+        .assert_contains("\"type\": \"own[Box]\"", "outline contains generic own[Box] (TOOL-01)")
+        .assert_contains("\"returns\": \"(i32, str)!\"", "outline contains fallible tuple return (TOOL-01)")
         .assert_contains("\"name\": \"worker\"", "outline contains function worker (TOOL-01)");
 
-    // 2. Test check --json
+    // 2. Test check --json with clean file
     run_cfire(std::format("check --json \"{}\"", mod_cf.string()))
-        .assert_ok("cfire check --json exit 0 (TOOL-01)")
+        .assert_ok("cfire check --json exit 0 on clean file (TOOL-01)")
         .assert_contains("\"success\": true", "check --json reports success (TOOL-01)");
 
-    // 3. Test doc --llm
-    run_cfire("doc --llm")
-        .assert_ok("cfire doc --llm exit 0 (TOOL-01)")
-        .assert_contains("Reference Sheet", "doc --llm emits reference sheet (TOOL-01)")
-        .assert_contains("core:unicode", "doc --llm lists core:unicode (TOOL-01)");
+    // 3. Test check --json with multi-error and fixits (AGENT-P0-01)
+    auto multi_err_cf = tmp_ws.file("multi_err.cf", R"(package main
+
+fn modify(mut x: i32) {
+    x = x + 1
+}
+
+fn consumer(move s: str) {
+    _ = s
+}
+
+fn main() {
+    a := 10
+    modify(a)
+
+    msg := "hello"
+    consumer(move msg)
+    println(msg)
+}
+)");
+
+    auto multi_res = run_cfire(std::format("check --json \"{}\"", multi_err_cf.string()));
+    multi_res.assert_fail("cfire check --json on multi-error file fails with non-zero exit code")
+        .assert_contains("\"success\": false", "reports success: false")
+        .assert_contains("\"code\": \"cfire/MUT-CALLSITE\"", "contains MUT-CALLSITE diagnostic code")
+        .assert_contains("\"line\": 13", "MUT-CALLSITE diagnostic has exact 1-based line 13")
+        .assert_contains("\"title\": \"Insert 'mut ' at call site (cfire/MUT-CALLSITE)\"", "contains fixit for MUT-CALLSITE")
+        .assert_contains("\"replacement\": \"mut \"", "fixit replacement is 'mut '")
+        .assert_contains("\"code\": \"cfire/USE-AFTER-MOVE\"", "contains USE-AFTER-MOVE diagnostic code")
+        .assert_contains("\"line\": 17", "USE-AFTER-MOVE diagnostic has exact 1-based line 17");
+
+    // 4. Test arity mismatch check (AGENT-P0-02)
+    auto arity_err_cf = tmp_ws.file("arity_err.cf", R"(package main
+
+fn calc(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+fn main() {
+    _ = calc(10)
+}
+)");
+    auto arity_res = run_cfire(std::format("check --json \"{}\"", arity_err_cf.string()));
+    arity_res.assert_fail("arity mismatch fails check --json")
+        .assert_contains("\"code\": \"cfire/ARITY-MISMATCH\"", "contains ARITY-MISMATCH code")
+        .assert_contains("call to 'calc' expects 2 argument(s), got 1", "arity mismatch message specifies counts");
+
+    // 5. Test #line and backend type/symbol check (AGENT-P0-02)
+    auto undef_err_cf = tmp_ws.file("undef_err.cf", R"(package main
+
+fn main() {
+    completely_nonexistent_function(999)
+}
+)");
+    auto undef_res = run_cfire(std::format("check --json \"{}\"", undef_err_cf.string()));
+    undef_res.assert_fail("undefined symbol fails check --json")
+        .assert_contains("\"code\": \"cfire/TYPE-ERROR\"", "reports TYPE-ERROR for undeclared identifier")
+        .assert_contains("\"line\": 4", "TYPE-ERROR points to line 4 of .cf file")
+        .assert_contains("completely_nonexistent_function", "TYPE-ERROR mentions undeclared function");
+
+    auto undef_text = run_cfire(std::format("check \"{}\"", undef_err_cf.string()));
+    undef_text.assert_fail("undefined symbol fails text cfire check")
+        .assert_contains("undef_err.cf:4:", "text check error points to .cf file and line 4");
+
+    // 6. Test doc --llm & doc --check (AGENT-P0-04)
+    auto llm_res = run_cfire("doc --llm");
+    llm_res.assert_ok("cfire doc --llm exit 0 (TOOL-01)");
+    llm_res.assert_contains("Reference Sheet", "doc --llm emits reference sheet (TOOL-01)");
+    llm_res.assert_contains("core:unicode", "doc --llm lists core:unicode (TOOL-01)");
+    llm_res.assert_contains("core:cli", "doc --llm lists core:cli");
+    llm_res.assert_contains("core:log", "doc --llm lists core:log");
+    llm_res.assert_contains("core:db/sqlite", "doc --llm lists core:db/sqlite");
+    llm_res.assert_contains("json.parse", "doc --llm contains exact json.parse API");
+    require(!llm_res.output.contains("json.decode"), "doc --llm does not contain hallucinated json.decode");
+    require(!llm_res.output.contains("sort.slice_by"), "doc --llm does not contain hallucinated sort.slice_by");
+
+    run_cfire("doc --check").assert_ok("cfire doc --check exit 0 (AGENT-P0-04)");
+
     std::println("--- PASS: test_agent_tooling_outline_and_json");
 }
 
@@ -1452,6 +1545,26 @@ fn main() {
             .assert_contains("arg[2]=$LITERAL_DOLLAR", "cfire run prevented shell expansion of $LITERAL_DOLLAR")
             .assert_contains("arg[3]=quote\"inside", "cfire run preserved double quote in arg[3]");
     }
+
+    // 8. AGENT-P2-05: Tokenizer-backed eval package literal string protection
+    run_cfire("eval 'println(\"package manager ready\")'")
+        .assert_ok("eval string literal containing 'package ' exit 0")
+        .assert_contains("package manager ready", "eval package literal string match");
+
+    // 9. AGENT-P2-05: Tokenizer-backed auto-injected core:* stdlib modules (sha256 + base64)
+    run_cfire("eval -e 'sha256.hash_hex(\"abc\")'")
+        .assert_ok("eval sha256 auto-import exit 0")
+        .assert_contains("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "eval sha256 auto-import match");
+
+    run_cfire("eval -e 'base64.encode(\"hello\")'")
+        .assert_ok("eval base64 auto-import exit 0")
+        .assert_contains("aGVsbG8=", "eval base64 auto-import match");
+
+    // 10. AGENT-P2-05: Tokenizer-backed declaration brace matching with unbalanced brace in string literal
+    run_cfire(R"(eval 'fn get_unbalanced() -> str { return "{unbalanced brace in string" }
+println("{}", get_unbalanced())')")
+        .assert_ok("eval helper with unbalanced brace in string exit 0")
+        .assert_contains("{unbalanced brace in string", "eval unbalanced brace string output match");
 
     std::println("--- PASS: test_cfire_eval");
 }
@@ -1987,6 +2100,122 @@ fn main() {
         .assert_contains("cf.router.user=uid:99", "http router user parameter dispatch output");
 
     std::println("--- PASS: test_net_http_and_router");
+}
+
+void test_section3_agent_tooling([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_section3_agent_tooling");
+
+    // 1. AGENT-P2-02: Headless Auto-Fix Engine (dry-run, json, and in-place fix)
+    {
+        ScopedTempDir fix_dir("cfire_fix_test");
+        auto f = fix_dir.file("fix_target.cf", R"(package main
+
+type Color enum {
+    Red
+    Green
+    Blue
+}
+
+fn mutate_num(mut n: i32) {
+    n = n + 10
+}
+
+fn describe_color(c: Color) {
+    match c {
+        Color::Red => { println("red") }
+    }
+}
+
+fn main() {
+    x := 5
+    mutate_num(x)
+    describe_color(Color::Red)
+    _ = fs.exists("nonexistent")
+}
+)");
+
+        // Dry-run mode: should propose fixes in JSON but NOT alter the file on disk
+        auto dry_res = run_cfire(std::format("fix --dry-run --json '{}'", f.string()));
+        dry_res.assert_ok("cfire fix dry run exit 0")
+            .assert_contains("\"success\": true", "dry run json success")
+            .assert_contains("\"applied_fixes\":", "dry run json applied_fixes");
+
+        // Verify file is still untouched
+        auto untouched_content = cfire::build::read_file_text(f);
+        require(untouched_content.has_value() && !untouched_content->contains("mut x :="), "dry-run preserved original file");
+
+        // Real fix mode: applies fixes and modifies file
+        auto fix_res = run_cfire(std::format("fix '{}'", f.string()));
+        fix_res.assert_ok("cfire fix exit 0")
+            .assert_contains("Applied", "cfire fix report");
+
+        // Check that repaired file passes cfire check with 0 errors!
+        auto chk_res = run_cfire(std::format("check '{}'", f.string()));
+        chk_res.assert_ok("cfire check on auto-fixed file passes with 0 errors");
+    }
+
+    // 2. AGENT-P2-03: Structured Test Runner (--json, --filter, and setjmp location assertion failure)
+    {
+        ScopedTempDir test_dir("cfire_test_runner");
+        auto f = test_dir.file("tests.cf", R"(package main
+
+test "failing test assertion" {
+    a := 10
+    b := 20
+    assert(a == b, "a must equal b")
+}
+
+test "passing test assertion" {
+    assert(100 == 100)
+}
+)");
+
+        // Run --json mode: both tests execute, failing test doesn't abort whole runner
+        int exit_code = 0;
+        std::string json_out = cfire::bridge::run_command_capture(std::format("./cfire test --json '{}'", f.string()), exit_code);
+        require(exit_code == 1, "test --json returns exit code 1 when tests fail");
+        require(json_out.contains("\"success\": false"), "test --json output has success: false");
+        require(json_out.contains("\"passed\": 1"), "test --json output has passed: 1");
+        require(json_out.contains("\"failed\": 1"), "test --json output has failed: 1");
+        require(json_out.contains("failing test assertion"), "test --json has failing test name");
+        require(json_out.contains("passing test assertion"), "test --json has passing test name");
+        require(json_out.contains("(a == b)"), "test --json captured assertion expression");
+
+        // Run --filter mode: only runs matching test
+        auto filt_res = run_cfire(std::format("test --filter passing '{}'", f.string()));
+        filt_res.assert_ok("cfire test --filter passing exit 0")
+            .assert_contains("PASS (1 cfire tests succeeded)", "filtered test ran 1 passing test");
+    }
+
+    // 3. AGENT-P2-04: Stateless CLI Symbol, Type & Foreign C/C++ Header Inspector (cfire inspect)
+    {
+        // Form 1: Source coordinate
+        auto insp1 = run_cfire("inspect examples/01-hello-core/main.cf:22:15 --json");
+        insp1.assert_ok("cfire inspect source coordinate exit 0")
+            .assert_contains("examples/01-hello-core/main.cf:22:15", "inspect target match")
+            .assert_contains("record", "inspect hover contains symbol name")
+            .assert_contains("definition", "inspect contains definition location");
+
+        // Form 2: Foreign C header
+        auto insp2 = run_cfire("inspect cpp math.h --json");
+        insp2.assert_ok("cfire inspect cpp math.h exit 0")
+            .assert_contains("\"header\": \"math.h\"", "inspect cpp header match")
+            .assert_contains("\"name\": \"cos\"", "inspect cpp contains math function cos");
+
+        // Form 3: stdlib module & symbol
+        auto insp3 = run_cfire("inspect core:json --json");
+        insp3.assert_ok("cfire inspect core:json exit 0")
+            .assert_contains("\"name\": \"json\"", "inspect core:json name match")
+            .assert_contains("\"import_path\": \"core:json\"", "inspect core:json import_path match")
+            .assert_contains("stringify", "inspect core:json functions contains stringify");
+
+        auto insp4 = run_cfire("inspect json.stringify --json");
+        insp4.assert_ok("cfire inspect json.stringify exit 0")
+            .assert_contains("\"name\": \"stringify\"", "inspect json.stringify name match")
+            .assert_contains("fn stringify", "inspect json.stringify signature match");
+    }
+
+    std::println("--- PASS: test_section3_agent_tooling");
 }
 
 

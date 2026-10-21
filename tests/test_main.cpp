@@ -15,6 +15,8 @@ auto main(int argc, char** argv) -> int {
         test_cfire_refactor_rename(rt_dir);
         test_slice_pattern_matching(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
+        test_section2_language_ergonomics(rt_dir);
+        test_section3_agent_tooling(rt_dir);
     }
     if (should_run("e2e")) {
         test_end_to_end_canonical_examples(rt_dir);
