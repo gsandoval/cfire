@@ -1427,6 +1427,32 @@ fn main() {
         .assert_ok("eval complete package exit 0")
         .assert_contains("full-pkg-ok", "eval complete package stdout match");
 
+    // 7. Subprocess argument shell-quoting safety (CPP-QA-02: spaces, quotes, and literal $VAR)
+    {
+        ScopedTempDir arg_dir("cfire_arg_quote");
+        auto f = arg_dir.file("args_test.cf", R"(package main
+import "core:cli"
+
+type Args struct {
+    A: str `cli:"--a"`
+    B: str `cli:"--b"`
+    C: str `cli:"--c"`
+}
+
+fn main() {
+    opts := cli.parse[Args]()
+    println("arg[1]={}", opts.A)
+    println("arg[2]={}", opts.B)
+    println("arg[3]={}", opts.C)
+}
+)");
+        run_cfire(std::format("run '{}' -- --a 'hello world' --b '$LITERAL_DOLLAR' --c 'quote\"inside'", f.string()))
+            .assert_ok("cfire run with special shell args exit 0")
+            .assert_contains("arg[1]=hello world", "cfire run preserved space in arg[1]")
+            .assert_contains("arg[2]=$LITERAL_DOLLAR", "cfire run prevented shell expansion of $LITERAL_DOLLAR")
+            .assert_contains("arg[3]=quote\"inside", "cfire run preserved double quote in arg[3]");
+    }
+
     std::println("--- PASS: test_cfire_eval");
 }
 

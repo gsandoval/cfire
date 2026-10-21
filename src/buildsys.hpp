@@ -100,11 +100,12 @@ struct BuildPlan {
 
 inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& cflags, std::vector<std::string>& libs) {
     int code = 0;
-    std::string cf_out = bridge::run_command_capture("pkg-config --cflags " + pkg, code);
+    std::string qpkg = bridge::shell_quote(pkg);
+    std::string cf_out = bridge::run_command_capture("pkg-config --cflags " + qpkg, code);
     if (code == 0) {
         for (auto& f : split_ws(cf_out)) cflags.push_back(std::move(f));
     }
-    std::string lb_out = bridge::run_command_capture("pkg-config --libs " + pkg, code);
+    std::string lb_out = bridge::run_command_capture("pkg-config --libs " + qpkg, code);
     if (code == 0) {
         for (auto& l : split_ws(lb_out)) libs.push_back(std::move(l));
     }
