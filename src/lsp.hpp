@@ -19,7 +19,6 @@
 #include "docgen.hpp"
 #include "formatter.hpp"
 #include "sema.hpp"
-#include "bootstrap/lsp.generated.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -46,8 +45,7 @@ namespace cfire::lsp {
 
 namespace detail {
 
-// Reference baseline implementations for selfhost parity benchmarking
-[[nodiscard]] inline auto json_escape_cxx(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size() + 16);
     for (char c : sv) {
@@ -63,7 +61,7 @@ namespace detail {
     return out;
 }
 
-[[nodiscard]] inline auto json_unescape_cxx(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size());
     for (std::size_t i = 0; i < sv.size(); ++i) {
@@ -83,14 +81,6 @@ namespace detail {
         }
     }
     return out;
-}
-
-[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
-    return ::lsp_json_escape(std::string(sv));
-}
-
-[[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
-    return ::lsp_json_unescape(std::string(sv));
 }
 
 [[nodiscard]] inline auto extract_json_string(std::string_view json, std::string_view key, std::size_t start_pos = 0)
@@ -1294,7 +1284,7 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
 }
 
 inline void write_rpc_message(std::ostream& out, std::string_view body) {
-    out << ::selfhost_make_rpc_frame(std::string(body));
+    out << "Content-Length: " << body.size() << "\r\n\r\n" << body;
     out.flush();
 }
 
@@ -1418,7 +1408,9 @@ public:
                 client_snippet_support_ = *snip;
             }
             std::string id = id_opt.value_or("1");
-            std::string resp = ::selfhost_format_initialize_response(id);
+            std::string resp = std::format(
+                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"textDocumentSync":1,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"1.3.0"}}}}}})",
+                id);
             send_rpc(out, resp);
             return true;
         }
@@ -1427,7 +1419,7 @@ public:
         }
         if (method == "shutdown") {
             std::string id = id_opt.value_or("1");
-            send_rpc(out, ::selfhost_format_null_response(id));
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":null}})", id));
             return true;
         }
         if (method == "exit") {
@@ -1466,9 +1458,11 @@ public:
             int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
             std::string hover_md = compute_hover(uri, line, character);
             if (hover_md.empty()) {
-                send_rpc(out, ::selfhost_format_null_response(id));
+                send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":null}})", id));
             } else {
-                std::string resp = ::selfhost_format_hover_markdown(id, hover_md);
+                std::string resp = std::format(
+                    R"({{"jsonrpc":"2.0","id":{},"result":{{"contents":{{"kind":"markdown","value":"{}"}}}}}})",
+                    id, detail::json_escape(hover_md));
                 send_rpc(out, resp);
             }
             return true;
@@ -1481,7 +1475,7 @@ public:
             int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
             int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
             std::string sig_json = compute_signature_help(uri, line, character);
-            send_rpc(out, ::selfhost_make_rpc_response(id, sig_json));
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, sig_json));
             return true;
         }
 
@@ -1489,7 +1483,7 @@ public:
             std::string id = id_opt.value_or("1");
             auto uri = detail::extract_json_string(msg, "uri").value_or("");
             std::string hints_json = compute_inlay_hints(uri);
-            send_rpc(out, ::selfhost_make_rpc_response(id, hints_json));
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, hints_json));
             return true;
         }
 
@@ -1500,7 +1494,9 @@ public:
             int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
             int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
             std::string items_json = compute_completions(uri, line, character);
-            std::string resp = ::selfhost_format_completion_list(id, items_json);
+            std::string resp = std::format(
+                R"({{"jsonrpc":"2.0","id":{},"result":{{"isIncomplete":false,"items":{}}}}})",
+                id, items_json);
             send_rpc(out, resp);
             return true;
         }
@@ -1898,7 +1894,9 @@ public:
         }
         diags_json += "]";
 
-        std::string notif = ::selfhost_format_publish_diagnostics(detail::json_escape(uri), diags_json);
+        std::string notif = std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{}","diagnostics":{}}}}})",
+            detail::json_escape(uri), diags_json);
         send_rpc_async(notif);
     }
 
@@ -1914,7 +1912,9 @@ public:
         }
         diags_json += "]";
 
-        std::string notif = ::selfhost_format_publish_diagnostics(detail::json_escape(uri), diags_json);
+        std::string notif = std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{}","diagnostics":{}}}}})",
+            detail::json_escape(uri), diags_json);
         send_rpc(out, notif);
     }
 

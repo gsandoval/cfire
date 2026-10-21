@@ -26,12 +26,6 @@ struct ParseResult {
     return false;
 }
 
-} // namespace cfire::frontend
-
-#include "bootstrap/parser.generated.hpp"
-
-namespace cfire::frontend {
-
 class Parser {
 public:
     Parser(std::string file, std::vector<Token> tokens, bool resilient = true)
@@ -1522,7 +1516,7 @@ private:
     }
 };
 
-[[nodiscard]] inline auto parse_source_resilient_cxx(std::string_view path, std::string_view src)
+[[nodiscard]] inline auto parse_source_resilient(std::string_view path, std::string_view src)
     -> ParseResult
 {
     auto arena = std::make_shared<AstArena>();
@@ -1537,61 +1531,14 @@ private:
     return res;
 }
 
-[[nodiscard]] inline auto parse_source_cxx(std::string_view path, std::string_view src)
-    -> std::expected<FileAST, std::string>
-{
-    auto res = parse_source_resilient_cxx(path, src);
-    if (!res.ok()) {
-        return std::unexpected(res.errors.front());
-    }
-    return std::move(res.ast);
-}
-
-[[nodiscard]] inline auto selfhost_parse_source_resilient(std::string_view path, std::string_view src)
-    -> ParseResult
-{
-    auto arena = std::make_shared<AstArena>();
-    ArenaScope scope(arena.get());
-    auto toks = tokenize(path, src);
-    if (!toks) {
-        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}, arena}, {toks.error()}};
-    }
-    auto res = ::selfhost_parse_file_result(path, *toks, true);
-    res.ast.arena = arena;
-    for (auto& st : res.ast.structs) {
-        for (auto& f : st.fields) {
-            if (!f.raw_tag.empty() && f.tags.empty()) {
-                static const std::regex s_tag_re(R"re((\w+):"([^"]*)")re");
-                for (auto it = std::sregex_iterator(f.raw_tag.begin(), f.raw_tag.end(), s_tag_re);
-                     it != std::sregex_iterator(); ++it) {
-                    f.tags[(*it)[1].str()] = (*it)[2].str();
-                }
-            }
-        }
-    }
-    return res;
-}
-
-[[nodiscard]] inline auto selfhost_parse_source(std::string_view path, std::string_view src)
-    -> std::expected<FileAST, std::string>
-{
-    auto res = selfhost_parse_source_resilient(path, src);
-    if (!res.ok()) {
-        return std::unexpected(res.errors.front());
-    }
-    return std::move(res.ast);
-}
-
-[[nodiscard]] inline auto parse_source_resilient(std::string_view path, std::string_view src)
-    -> ParseResult
-{
-    return selfhost_parse_source_resilient(path, src);
-}
-
 [[nodiscard]] inline auto parse_source(std::string_view path, std::string_view src)
     -> std::expected<FileAST, std::string>
 {
-    return selfhost_parse_source(path, src);
+    auto res = parse_source_resilient(path, src);
+    if (!res.ok()) {
+        return std::unexpected(res.errors.front());
+    }
+    return std::move(res.ast);
 }
 
 } // namespace cfire::frontend

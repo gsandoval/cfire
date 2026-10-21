@@ -8,12 +8,15 @@ This document tracks items currently under active design, scoping, or implementa
 
 | Task ID | Component | Status | Assignee | Review Check Gate |
 | :--- | :--- | :---: | :---: | :---: |
-| `CLEAN-01` | Tests & CI / Intent Diagnostics | `[COMPLETED]` | Principal Compiler Engineer | Passed (Commit `74f7c2f`) |
-| `CLEAN-02` | Stdlib / Pure `.cf` Migration | `[COMPLETED]` | Principal Compiler Engineer | Passed (Commit `139e3aa`) |
-| `CLEAN-03` | Compiler / Host Separation & De-duplication | `[COMPLETED]` | Principal Compiler Engineer | Passed (All 4 Quality Gates) |
+| `CPP-01` | Repo Hygiene & Pure C++23 Runtime (`runtime/core/*.hpp`) | `[COMPLETED]` | Principal Compiler Engineer | Passed |
+| `CPP-02` | Native C++23 Frontend, Formatter, Refactor, LSP, Buildsys | `[COMPLETED]` | Principal Compiler Engineer | Passed |
+| `CPP-03` | Native C++23 Semantic Analyzer (`src/sema.hpp`) | `[COMPLETED]` | Principal Compiler Engineer | Passed |
+| `CPP-04` | Native C++23 Code Generator (`src/codegen.hpp`) | `[COMPLETED]` | Principal Compiler Engineer | Passed |
+| `CPP-05` | Native C++23 Docgen (`src/docgen.hpp`) & CLI Driver (`src/main.cpp`) | `[COMPLETED]` | Principal Compiler Engineer | Passed |
+| `CPP-06` | Public Docs Invariance (`docs/reference.html`) & Full Test Verification | `[COMPLETED]` | Principal Compiler Engineer | Passed |
 
 ---
 
 ## Active Milestone Status: Complete
 
-All architectural tasks in the active modernization backlog (`CLEAN-01`, `CLEAN-02`, and `CLEAN-03`) have been fully executed, validated across all 4 review-check quality gates, and verified against the comprehensive 40+ test runner suite.
+All tasks in the Pure C++23 Restoration & Technical Debt Backlog (`CPP-01` through `CPP-06`) have been completed and verified across all quality gates. Next candidates for promotion live in [`docs/planning/architectural-backlog.md`](./architectural-backlog.md) and [`docs/planning/backlog.md`](./backlog.md).

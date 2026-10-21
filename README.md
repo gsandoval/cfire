@@ -11,11 +11,11 @@
 
 ---
 
-`cfire` is a high-productivity systems programming language and unified C/C++ build toolchain—**100% self-hosted in pure `cfire` (`.cf`)**—that transpiles 1:1 to human-readable, standard **C++23** with zero runtime overhead and measurable performance parity ($\ge 70-179\%$ of native C++ speed).
+`cfire` is a high-productivity systems programming language and unified C/C++ build toolchain—**implemented in 100% pure ISO C++23**—that transpiles 1:1 to human-readable, standard **C++23** with zero runtime overhead.
 
 ## Core Pillars
 1. **TypeScript's Approach to C++23:** A clean, ergonomic structural skin that lowers directly to native C++23 (`std::expected`, `std::variant`, `std::span`, `std::string_view`, `std::format`, C++20 `concept`s) without a garbage collector or runtime reflection overhead.
-2. **100% Self-Hosted & Self-Building:** All 12 compiler and toolchain subsystems (Lexer, Parser, AST, Sema, Codegen, Buildsys, Formatter, Docgen, LSP, Refactoring Engine, Main Driver, Clang Bridge) are written in pure `cfire` (`src/*.cf`), dogfooded continuously via `make dogfood`.
+2. **Pure ISO C++23 Compiler & Runtime:** All compiler and toolchain subsystems (`src/*.hpp`, `src/main.cpp`) and the modular `core:*` runtime (`runtime/core/*.hpp`) are authored in clean, zero-dependency ISO C++23.
 3. **Odin-Style Auto-Linked `core:` & `vendor:` Standard Library:** Import `core:compress/zstd`, `core:json`, `core:db/sqlite`, `core:net/http`, `core:sync`, or `vendor:raylib` and `cfire` automatically includes and links the underlying C/C++ engines (`libzstd`, `simdjson`, `sqlite3`, POSIX sockets, `raylib`).
 4. **Clang AST C/C++ Interop + Unified `build.cf` Build System:** Import any C/C++ header (`import cpp "<header.h>"`) or build local/external `build.CC` and `build.CMake` dependencies into cached static archives (`.cfire/cache/lib/*.a`) with automatic `str` $\rightarrow$ `const char*` boundary coercion (`cfire::c_str`).
 5. **Intent Over Ceremony:** Replace `const T&`, `T&&`, `std::move`, `std::string_view`, and pointer hazards with `in` (default), `mut`, `move` (with definite last-use move insertion), multi-return tuples `(T1, T2)`, unified `str`/`path`/`bytes`, `own[T]`/`shared[T]`, `T!`, `defer`, `match`, and `test "..." { ... }` blocks.
@@ -59,9 +59,6 @@
 # Build the cfire compiler and run the full C++23 conformance suite:
 make test
 
-# Dogfood the full 12-component self-hosting pipeline (cfire compiles cfire):
-make dogfood
-
 # Run canonical examples directly:
 ./cfire run examples/01-hello-core/main.cf
 ./cfire run examples/02-log-compressor/main.cf -- --input README.md --level 3
@@ -77,7 +74,7 @@ make dogfood
 ./cfire eval "println(\"Hello from cfire eval!\")"
 
 # Semantic rename refactoring across workspace:
-./cfire refactor rename src/main.cf:42:5 my_new_symbol --diff
+./cfire refactor rename examples/01-hello-core/main.cf:6:5 my_new_symbol --diff
 
 # Configure IDE integrations (VS Code, Cursor, Zed, Neovim, CLion):
 ./cfire ide --all

@@ -5,20 +5,16 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
              tests/unit/test_sema.cpp \
              tests/unit/test_stdlib.cpp \
              tests/e2e/test_canonical.cpp \
-             tests/benchmarks/test_selfhost.cpp \
              tests/test_main.cpp
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: all build test test-unit test-stdlib test-e2e test-selfhost docs fmt dogfood review-check clean bootstrap-from-stage0
+.PHONY: all build test test-unit test-stdlib test-e2e docs fmt review-check clean
 
 all: build
 
 build:
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
-
-bootstrap-from-stage0:
-	$(CXX) -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Ibootstrap/stage0 bootstrap/stage0/main.cpp -o cfire
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -26,38 +22,16 @@ bootstrap-from-stage0:
 .cfire_test_runner: $(TEST_OBJS)
 	$(CXX) $(CXXFLAGS) $(TEST_OBJS) -o $@
 
-dogfood: build
-	mkdir -p src/bootstrap
-	mkdir -p runtime/core
-	./cfire emit-cpp src/lexer.cf > src/bootstrap/lexer.generated.hpp
-	./cfire emit-cpp src/formatter.cf > src/bootstrap/formatter.generated.hpp
-	./cfire emit-cpp src/ast.cf > src/bootstrap/ast.generated.hpp
-	./cfire emit-cpp src/refactor.cf > src/bootstrap/refactor.generated.hpp
-	./cfire emit-cpp src/docgen.cf > src/bootstrap/docgen.generated.hpp
-	./cfire emit-cpp src/parser.cf > src/bootstrap/parser.generated.hpp
-	./cfire emit-cpp src/sema.cf > src/bootstrap/sema.generated.hpp
-	./cfire emit-cpp src/codegen.cf > src/bootstrap/codegen.generated.hpp
-	./cfire emit-cpp src/buildsys.cf > src/bootstrap/buildsys.generated.hpp
-	./cfire emit-cpp src/lsp.cf > src/bootstrap/lsp.generated.hpp
-	./cfire emit-cpp src/main.cf > src/bootstrap/main.generated.hpp
-	./cfire emit-cpp src/clang_bridge.cf > src/bootstrap/clang_bridge.generated.hpp
-	./cfire emit-cpp lib/str.cf > runtime/core/str.generated.hpp
-	./cfire emit-cpp lib/encoding.cf > runtime/core/encoding.generated.hpp
-	$(MAKE) test
-
 review-check: build
-	@echo "=== [1/4] Checking Canonical Code Formatting ==="
-	./cfire fmt --check src/ examples/ lib/
+	@echo "=== [1/3] Checking Canonical Code Formatting ==="
+	./cfire fmt --check examples/
 	@echo "✓ Canonical code formatting verified"
-	@echo "=== [2/4] Checking Documentation Synchronization ==="
+	@echo "=== [2/3] Checking Documentation Synchronization ==="
 	./cfire doc --check
 	@echo "✓ Documentation guides and stdlib references synchronized"
-	@echo "=== [3/4] Re-transpiling and Dogfooding Self-Hosted Compiler ==="
-	$(MAKE) dogfood
-	@echo "✓ Compiler transpiled all self-hosted modules without warnings"
-	@echo "=== [4/4] Running Full Conformance Test Suite ==="
+	@echo "=== [3/3] Running Full Conformance Test Suite ==="
 	$(MAKE) test
-	@echo "✓ Conformance test suites and selfhost parity benchmarks passed"
+	@echo "✓ Conformance test suites passed"
 
 docs: build
 	./cfire doc
@@ -78,9 +52,6 @@ test-stdlib: build .cfire_test_runner
 
 test-e2e: build .cfire_test_runner
 	./.cfire_test_runner e2e
-
-test-selfhost: build .cfire_test_runner
-	./.cfire_test_runner selfhost
 
 clean:
 	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire

@@ -2,7 +2,6 @@
 // src/lexer.hpp — Tokenizer for cfire (.cf)
 
 #include "lexer_types.hpp"
-#include "bootstrap/lexer.generated.hpp"
 #include <cctype>
 #include <expected>
 #include <format>
@@ -13,7 +12,7 @@
 
 namespace cfire::frontend {
 
-[[nodiscard]] inline auto tokenize_cxx(std::string_view file, std::string_view src)
+[[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
     -> std::expected<std::vector<Token>, std::string>
 {
     static const std::unordered_map<std::string_view, TokenKind> keywords = {
@@ -273,22 +272,6 @@ namespace cfire::frontend {
 
     tokens.push_back(Token{TokenKind::Eof, "", line, col});
     return tokens;
-}
-
-[[nodiscard]] inline auto selfhost_tokenize_adapter(std::string_view file, std::string_view src)
-    -> std::expected<std::vector<Token>, std::string>
-{
-    auto res = ::selfhost_tokenize(file, src);
-    if (!res) {
-        return std::unexpected(std::string(res.error().message()));
-    }
-    return std::move(res.value());
-}
-
-[[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
-    -> std::expected<std::vector<Token>, std::string>
-{
-    return selfhost_tokenize_adapter(file, src);
 }
 
 } // namespace cfire::frontend

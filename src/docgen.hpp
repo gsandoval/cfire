@@ -2,13 +2,12 @@
 // src/docgen.hpp — Single-Source-Of-Truth Metadata Catalog & Documentation Generator (`cfire doc`)
 // Generates:
 //   - docs/index.html            (Interactive "Sapphire on Fire" Landing Page)
-//   - docs/guide.html & GUIDE.md (11-Chapter Language & Systems Programming Guide)
+//   - docs/guide.html & GUIDE.md (10-Chapter Language & Systems Programming Guide)
 //   - docs/reference.html & STDLIB_REFERENCE.md (Complete `core:*` Stdlib & Diagnostics Reference)
 // Also powers `cfire lsp` hover/autocomplete and `./cfire doc <file.cf>` package doc extraction.
 
 #include "buildsys.hpp"
 #include "formatter.hpp"
-#include "bootstrap/docgen.generated.hpp"
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -20,13 +19,30 @@
 
 namespace cfire::doc {
 
-using StdFnDoc = ::StdFnDoc;
-using StdModuleDoc = ::StdModuleDoc;
-using DiagnosticDoc = ::DiagnosticDoc;
-using DocStruct = ::DocStruct;
-using DocEnum = ::DocEnum;
-using DocFunction = ::DocFunction;
-using DocTest = ::DocTest;
+struct StdFnDoc {
+    std::string name;
+    std::string cf_sig;
+    std::string cpp_lowering;
+    std::string summary;
+    std::string example;
+};
+
+struct StdModuleDoc {
+    std::string import_path; // e.g. "core:fs"
+    std::string ns_alias;    // e.g. "fs"
+    std::string title;
+    std::string link_flags;
+    std::string overview;
+    std::vector<StdFnDoc> functions;
+};
+
+struct DiagnosticDoc {
+    std::string code;
+    std::string title;
+    std::string rule;
+    std::string bad_example;
+    std::string good_example;
+};
 
 [[nodiscard]] inline auto stdlib_catalog() -> const std::vector<StdModuleDoc>& {
     static const std::vector<StdModuleDoc> catalog = {
@@ -415,7 +431,7 @@ using DocTest = ::DocTest;
 
 namespace detail {
 
-[[nodiscard]] inline auto html_escape_cxx(std::string_view sv) -> std::string {
+[[nodiscard]] inline auto html_escape(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size() + 32);
     for (char c : sv) {
@@ -428,10 +444,6 @@ namespace detail {
         }
     }
     return out;
-}
-
-[[nodiscard]] inline auto html_escape(std::string_view sv) -> std::string {
-    return ::html_escape(sv);
 }
 
 [[nodiscard]] inline auto module_practical_example(std::string_view mod) -> std::string_view {
@@ -1453,7 +1465,7 @@ tr:hover td { background: #FAFAF9; }
 )CSS";
 }
 
-[[nodiscard]] inline auto navbar_html_cxx(std::string_view active_page) -> std::string {
+[[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string {
     return std::format(R"HTML(
 <nav class="navbar">
   <div class="navbar-inner">
@@ -1475,10 +1487,6 @@ tr:hover td { background: #FAFAF9; }
         active_page == "index" ? "active" : "",
         active_page == "guide" ? "active" : "",
         active_page == "reference" ? "active" : "");
-}
-
-[[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string {
-    return ::navbar_html(active_page);
 }
 
 } // namespace detail
@@ -1790,7 +1798,7 @@ fn main() {
 )HTML" + detail::navbar_html("index") + R"HTML(
 <div class="container">
   <section class="hero">
-    <div><span class="badge">&#128507; PURE C++23 SELF-HOSTED &bull; ZERO-WRAPPER ABI &bull; BUILT-IN LSP &amp; FMT</span></div>
+    <div><span class="badge">&#128507; PURE C++23 COMPILER &bull; ZERO-WRAPPER ABI &bull; BUILT-IN LSP &amp; FMT</span></div>
 
     <!-- Interactive Logo Showcase -->
     <div class="logo-showcase">
@@ -1820,7 +1828,7 @@ fn main() {
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">&#128640; Start in 5 Minutes &rarr;</a>
-      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 11-Chapter Guide</a>
+      <a class="btn btn-secondary" href="guide.html">&#128214; Read the 10-Chapter Guide</a>
       <a class="btn btn-secondary" href="reference.html">&#9889; Explore Stdlib Reference</a>
     </div>
 
@@ -2025,11 +2033,6 @@ fn main() {
       <h4>HTTP Servers &amp; Routers</h4>
       <p>Native HTTP/1.1 wire parser, fluent response builder, path parameters (<code>:id</code>), and independent routing.</p>
     </a>
-    <a class="roadmap-card" href="guide.html#chapter-11">
-      <div class="roadmap-num">Chapter 11</div>
-      <h4>100% Self-Hosting &amp; Dogfooding</h4>
-      <p>Pure cfire compiler architecture, 12 self-hosted modules, reproducible bootstrap headers, and dual-engine fallback.</p>
-    </a>
   </div>
 
   <div style="text-align: center; margin-top: 2rem;">
@@ -2122,7 +2125,7 @@ namespace detail {
             size_t end = text.find('`', i + 1);
             if (end != std::string_view::npos) {
                 out += "<code>";
-                out += html_escape_cxx(text.substr(i + 1, end - i - 1));
+                out += html_escape(text.substr(i + 1, end - i - 1));
                 out += "</code>";
                 i = end + 1;
                 continue;
@@ -2155,7 +2158,7 @@ namespace detail {
                 if (cp != std::string_view::npos) {
                     auto lt = text.substr(i + 1, cb - i - 1);
                     auto lu = text.substr(cb + 2, cp - cb - 2);
-                    out += "<a href=\"" + html_escape_cxx(lu) + "\">" + render_inline_md(lt) + "</a>";
+                    out += "<a href=\"" + html_escape(lu) + "\">" + render_inline_md(lt) + "</a>";
                     i = cp + 1;
                     continue;
                 }
@@ -2298,8 +2301,8 @@ namespace detail {
                 tag_name = "text";
             }
 
-            main_body += "<div class=\"code-header\"><span class=\"" + tag_cls + "\">" + detail::html_escape_cxx(tag_name) + "</span></div>\n";
-            main_body += "<pre><code>" + detail::html_escape_cxx(code) + "</code></pre>\n";
+            main_body += "<div class=\"code-header\"><span class=\"" + tag_cls + "\">" + detail::html_escape(tag_name) + "</span></div>\n";
+            main_body += "<pre><code>" + detail::html_escape(code) + "</code></pre>\n";
             continue;
         }
 
@@ -2482,7 +2485,7 @@ namespace detail {
     out += "          <h4>Guide Chapters</h4>\n";
     out += "          <ul>\n";
     for (const auto& ch : chapters) {
-        out += "            <li><a href=\"" + ch.first + "\">" + detail::html_escape_cxx(ch.second) + "</a></li>\n";
+        out += "            <li><a href=\"" + ch.first + "\">" + detail::html_escape(ch.second) + "</a></li>\n";
     }
     out += "          </ul>\n";
     out += "          <h4 style=\"margin-top: 1.25rem;\">Quick Links</h4>\n";
@@ -2525,7 +2528,7 @@ namespace detail {
     return "# The `cfire` Language & Systems Programming Guide\n";
 }
 
-[[nodiscard]] inline auto generate_reference_markdown_cxx() -> std::string {
+[[nodiscard]] inline auto generate_reference_markdown() -> std::string {
     std::string out = "# `cfire` Standard Library (`core:*`) & Diagnostics Reference\n\n";
     out += "> Auto-generated from the compiler's single-source-of-truth catalog via `./cfire doc`.\n\n";
     out += "## 1. Built-In `core:*` Standard Library Modules\n\n";
@@ -2556,17 +2559,7 @@ namespace detail {
     return out;
 }
 
-[[nodiscard]] inline auto generate_reference_markdown() -> std::string {
-    const auto& catalog = stdlib_catalog();
-    std::vector<std::string> examples;
-    examples.reserve(catalog.size());
-    for (const auto& mod : catalog) {
-        examples.emplace_back(detail::module_practical_example(mod.import_path));
-    }
-    return ::generate_reference_markdown(catalog, diagnostics_catalog(), examples);
-}
-
-[[nodiscard]] inline auto generate_reference_html_cxx() -> std::string {
+[[nodiscard]] inline auto generate_reference_html() -> std::string {
     std::string out;
     out += "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n";
     out += "  <meta charset=\"UTF-8\" />\n";
@@ -2636,18 +2629,8 @@ namespace detail {
     return out;
 }
 
-[[nodiscard]] inline auto generate_reference_html() -> std::string {
-    const auto& catalog = stdlib_catalog();
-    std::vector<std::string> examples;
-    examples.reserve(catalog.size());
-    for (const auto& mod : catalog) {
-        examples.emplace_back(detail::module_practical_example(mod.import_path));
-    }
-    return ::generate_reference_html(catalog, diagnostics_catalog(), detail::shared_css(), examples);
-}
-
 // Extracts Markdown API documentation for a specific `.cf` file (including doc comments and lowered C++23 signatures)
-[[nodiscard]] inline auto extract_file_markdown_doc_cxx(const std::filesystem::path& cf_file)
+[[nodiscard]] inline auto extract_file_markdown_doc(const std::filesystem::path& cf_file)
     -> std::expected<std::string, std::string>
 {
     if (!std::filesystem::exists(cf_file)) {
@@ -2735,104 +2718,6 @@ namespace detail {
         md += "\n";
     }
     return md;
-}
-
-[[nodiscard]] inline auto extract_file_markdown_doc(const std::filesystem::path& cf_file)
-    -> std::expected<std::string, std::string>
-{
-    if (!std::filesystem::exists(cf_file)) {
-        return std::unexpected(std::format("file not found: {}", cf_file.string()));
-    }
-    std::ifstream ifs(cf_file);
-    std::stringstream ss;
-    ss << ifs.rdbuf();
-    std::string src = ss.str();
-
-    std::vector<std::string> lines;
-    {
-        std::istringstream ls(src);
-        std::string l;
-        while (std::getline(ls, l)) {
-            if (!l.empty() && l.back() == '\r') l.pop_back();
-            lines.push_back(l);
-        }
-    }
-
-    auto comment_above = [&](int one_based_line) -> std::string {
-        int idx = one_based_line - 2;
-        std::vector<std::string> collected;
-        while (idx >= 0) {
-            std::string t = cfire::fmt::detail::trim_ws(lines[static_cast<std::size_t>(idx)]);
-            if (t.starts_with("//")) {
-                std::string clean = cfire::fmt::detail::trim_ws(std::string_view(t).substr(t.starts_with("///") ? 3 : 2));
-                collected.push_back(clean);
-                --idx;
-            } else {
-                break;
-            }
-        }
-        std::reverse(collected.begin(), collected.end());
-        std::string out;
-        for (const auto& c : collected) {
-            if (!out.empty()) out += " ";
-            out += c;
-        }
-        return out;
-    };
-
-    auto ast_res = cfire::frontend::parse_source(cf_file.string(), src);
-    if (!ast_res) {
-        return std::unexpected(ast_res.error());
-    }
-    const auto& ast = *ast_res;
-
-    std::vector<std::string> imp_paths;
-    for (const auto& imp : ast.imports) imp_paths.push_back(imp.path);
-
-    std::vector<DocStruct> doc_structs;
-    for (const auto& st : ast.structs) {
-        doc_structs.push_back(DocStruct{
-            st.name,
-            comment_above(st.line),
-            cfire::fmt::format_struct_signature(st)
-        });
-    }
-
-    std::vector<DocEnum> doc_enums;
-    for (const auto& en : ast.enums) {
-        doc_enums.push_back(DocEnum{
-            en.name,
-            comment_above(en.line),
-            cfire::fmt::format_enum_signature(en)
-        });
-    }
-
-    std::vector<DocFunction> doc_functions;
-    for (const auto& fn : ast.functions) {
-        doc_functions.push_back(DocFunction{
-            fn.name,
-            comment_above(fn.line),
-            cfire::fmt::format_fn_signature(fn)
-        });
-    }
-
-    std::vector<DocTest> doc_tests;
-    for (const auto& t : ast.tests) {
-        doc_tests.push_back(DocTest{
-            t.name,
-            static_cast<std::size_t>(t.line)
-        });
-    }
-
-    return ::format_package_markdown(
-        ast.package_name,
-        cf_file.filename().string(),
-        imp_paths,
-        doc_structs,
-        doc_enums,
-        doc_functions,
-        doc_tests
-    );
 }
 
 // Generates or verifies (`check_only = true`) the full documentation suite in `<repo>/docs/`.
