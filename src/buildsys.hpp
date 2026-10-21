@@ -78,6 +78,8 @@ struct BuildPlan {
     bool sanitized = false;
     std::string target_triple{};
     std::string sysroot{};
+    std::vector<std::string> extra_link_libs{};
+    std::vector<std::string> extra_includes{};
 };
 
 [[nodiscard]] inline auto read_file_text(const std::filesystem::path& p) -> std::expected<std::string, std::string> {
@@ -1339,12 +1341,26 @@ inline auto resolve_external_dep_source(
     bool test_mode = false,
     bool sanitize = false,
     const std::string& target_triple = "",
-    const std::string& sysroot = ""
+    const std::string& sysroot = "",
+    const std::vector<std::string>& extra_link_libs = {},
+    const std::vector<std::string>& extra_includes = {}
 ) -> std::expected<BuildPlan, std::string> {
     auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot);
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
     plan.sanitized = sanitize;
+    plan.extra_link_libs = extra_link_libs;
+    plan.extra_includes = extra_includes;
+
+    for (const auto& lib : extra_link_libs) {
+        plan.ldflags.push_back(lib);
+        plan.ldflags.push_back("-lpthread");
+        plan.ldflags.push_back("-ldl");
+        plan.ldflags.push_back("-lm");
+    }
+    for (const auto& inc : extra_includes) {
+        plan.cflags.push_back("-I \"" + inc + "\"");
+    }
 
     auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
     std::filesystem::create_directories(gen_dir);
