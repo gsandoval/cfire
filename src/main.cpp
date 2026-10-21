@@ -549,7 +549,8 @@ auto main(int argc, char** argv) -> int {
                 json += std::format("        {{\"name\": \"{}\", \"kind\": \"struct\", \"fields\": [", st.name);
                 for (std::size_t i = 0; i < st.fields.size(); ++i) {
                     if (i > 0) json += ", ";
-                    json += std::format("\"{}: {}\"", st.fields[i].name, st.fields[i].type.name);
+                    json += std::format("{{\"name\": \"{}\", \"type\": \"{}\", \"tag\": \"{}\"}}",
+                        st.fields[i].name, st.fields[i].type.name, cfire::lsp::detail::json_escape(st.fields[i].raw_tag));
                 }
                 json += "]}";
             }
@@ -564,7 +565,43 @@ auto main(int argc, char** argv) -> int {
                 json += "]}";
             }
             json += "\n      ],\n";
-
+            json += "      \"global_vars\": [\n";
+            for (std::size_t i = 0; i < ast->global_vars.size(); ++i) {
+                if (i > 0) json += ",\n";
+                const auto& gv = ast->global_vars[i];
+                std::string ctor_call;
+                std::vector<std::string> args;
+                std::string type_arg;
+                if (gv.value) {
+                    if (const auto* c = std::get_if<cfire::frontend::CallExpr>(&gv.value->node)) {
+                        if (const auto* m = std::get_if<cfire::frontend::MemberExpr>(&c->callee->node)) {
+                            if (const auto* id = std::get_if<cfire::frontend::IdentExpr>(&m->object->node)) {
+                                ctor_call = id->name + "." + m->field;
+                            }
+                        }
+                        if (!c->type_args.empty()) {
+                            type_arg = c->type_args[0].name;
+                        }
+                        for (const auto& a : c->args) {
+                            if (const auto* lit = std::get_if<cfire::frontend::LiteralExpr>(&a.value->node)) {
+                                std::string s = lit->value;
+                                if (s.size() >= 2 && (s.front() == '"' || s.front() == '`')) s = s.substr(1, s.size() - 2);
+                                args.push_back(s);
+                            } else if (const auto* id = std::get_if<cfire::frontend::IdentExpr>(&a.value->node)) {
+                                args.push_back(id->name);
+                            }
+                        }
+                    }
+                }
+                json += std::format("        {{\"name\": \"{}\", \"line\": {}, \"call\": \"{}\", \"type_arg\": \"{}\", \"args\": [",
+                    gv.name, gv.line, ctor_call, type_arg);
+                for (std::size_t a = 0; a < args.size(); ++a) {
+                    if (a > 0) json += ", ";
+                    json += std::format("\"{}\"", cfire::lsp::detail::json_escape(args[a]));
+                }
+                json += "]}";
+            }
+            json += "\n      ],\n";
             json += "      \"functions\": [\n";
             for (std::size_t i = 0; i < ast->functions.size(); ++i) {
                 if (i > 0) json += ",\n";
@@ -592,6 +629,8 @@ auto main(int argc, char** argv) -> int {
     bool json_mode = false;
     std::string target_triple;
     std::string sysroot;
+    std::vector<std::string> extra_link_libs;
+    std::vector<std::string> extra_includes;
     std::filesystem::path target;
     std::vector<std::string> run_args;
     bool after_dashdash = false;
@@ -631,6 +670,22 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg.starts_with("--sysroot=")) {
             sysroot = arg.substr(10);
+            continue;
+        }
+        if (arg == "--link-lib" && i + 1 < argc) {
+            extra_link_libs.emplace_back(argv[++i]);
+            continue;
+        }
+        if (arg.starts_with("--link-lib=")) {
+            extra_link_libs.emplace_back(arg.substr(11));
+            continue;
+        }
+        if (arg == "--include" && i + 1 < argc) {
+            extra_includes.emplace_back(argv[++i]);
+            continue;
+        }
+        if (arg.starts_with("--include=")) {
+            extra_includes.emplace_back(arg.substr(10));
             continue;
         }
         if (target.empty()) {
@@ -701,7 +756,7 @@ auto main(int argc, char** argv) -> int {
         if (!target_triple.empty() && (target_triple.find("windows") != std::string::npos || target_triple.find("win32") != std::string::npos || target_triple.find("msvc") != std::string::npos)) {
             if (!out_bin.ends_with(".exe")) out_bin += ".exe";
         }
-        auto plan = cfire::build::build_native(target, runtime_dir, out_bin, false, sanitize, target_triple, sysroot);
+        auto plan = cfire::build::build_native(target, runtime_dir, out_bin, false, sanitize, target_triple, sysroot, extra_link_libs, extra_includes);
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;
@@ -715,7 +770,7 @@ auto main(int argc, char** argv) -> int {
     if (sub == "run" || sub == "test") {
         bool is_test = (sub == "test");
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());
-        auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot);
+        auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes);
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;
