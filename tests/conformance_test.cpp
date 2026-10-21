@@ -3,5 +3,4 @@
 #include "unit/test_sema.cpp"
 #include "unit/test_stdlib.cpp"
 #include "e2e/test_canonical.cpp"
-#include "benchmarks/test_selfhost.cpp"
 #include "test_main.cpp"

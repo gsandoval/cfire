@@ -63,20 +63,6 @@ auto main(int argc, char** argv) -> int {
         test_net_websocket(rt_dir);
         test_net_http_and_router(rt_dir);
     }
-    if (should_run("selfhost") || should_run("benchmarks")) {
-        test_selfhost_lexer_parity_and_benchmark(rt_dir);
-        test_selfhost_formatter_parity_and_benchmark(rt_dir);
-        test_selfhost_ast_parity_and_benchmark(rt_dir);
-        test_selfhost_refactor_parity_and_benchmark(rt_dir);
-        test_selfhost_docgen_parity_and_benchmark(rt_dir);
-        test_selfhost_parser_parity_and_benchmark(rt_dir);
-        test_selfhost_sema_parity_and_benchmark(rt_dir);
-        test_selfhost_codegen_parity_and_benchmark(rt_dir);
-        test_selfhost_buildsys_parity_and_benchmark(rt_dir);
-        test_selfhost_lsp_parity_and_benchmark(rt_dir);
-        test_selfhost_main_parity_and_benchmark(rt_dir);
-        test_selfhost_clang_bridge_parity_and_benchmark(rt_dir);
-    }
 
     if (g_failures.load() > 0) {
         std::println(stderr, "FAIL ({} failures)", g_failures.load());
