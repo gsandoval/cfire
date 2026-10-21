@@ -305,7 +305,7 @@ fn main() {
 
     if (tmpl.empty()) {
         tmpl = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n"
-               "  <title>cfire — Sapphire on Fire</title>\n  <style>" + detail::shared_css() + "</style>\n"
+               "  <title>cfire — Systems Language (pronounced sapphire)</title>\n  <style>" + detail::shared_css() + "</style>\n"
                "</head>\n<body>\n" + detail::navbar_html("index") +
                "<div class=\"container\">\n  <!-- REPRODUCIBLE_METRICS -->\n  <!-- REPRODUCIBLE_ROSETTA_SHOWCASE -->\n</div>\n"
                "</body>\n</html>\n";
