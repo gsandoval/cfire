@@ -187,11 +187,7 @@ inline auto parse_response(std::string_view raw) -> std::expected<Response, cfir
                 std::string_view code_sv = (sp2 != std::string_view::npos)
                     ? line.substr(sp1 + 1, sp2 - (sp1 + 1))
                     : line.substr(sp1 + 1);
-                try {
-                    res.status_code = std::stoi(std::string(code_sv));
-                } catch (...) {
-                    res.status_code = 0;
-                }
+                res.status_code = cfire::detail::parse_int<int>(code_sv).value_or(0);
                 if (sp2 != std::string_view::npos) {
                     res.status_text = std::string(line.substr(sp2 + 1));
                 }
@@ -331,11 +327,7 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     std::size_t content_len = 0;
     auto cl_it = req.headers.find("content-length");
     if (cl_it != req.headers.end()) {
-        try {
-            content_len = static_cast<std::size_t>(std::stoull(cl_it->second));
-        } catch (...) {
-            content_len = 0;
-        }
+        content_len = cfire::detail::parse_int<std::size_t>(cl_it->second).value_or(0);
     }
     if (content_len > max_body_size) {
         return cfire::make_error(std::format("payload too large: Content-Length {} exceeds limit {}", content_len, max_body_size));

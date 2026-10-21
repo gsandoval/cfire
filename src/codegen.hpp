@@ -531,7 +531,12 @@ public:
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
-        writeln(std::format("{}inline auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+        if (fn.receiver) {
+            writeln(std::format("{}inline auto cfire_method_{}({}) -> {};", prefix, fn.name, param_list, ret_str));
+            writeln(std::format("{}inline auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+        } else {
+            writeln(std::format("{}inline auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+        }
     }
 
     void emit_function(const FnDecl& fn) {
@@ -566,16 +571,21 @@ public:
         }
 
         std::string param_list;
+        std::string pass_args;
         if (fn.receiver) {
             param_list += std::format("{} {}", lower_param_type(fn.receiver->intent, fn.receiver->type), fn.receiver->name);
+            pass_args += fn.receiver->name;
         }
         for (std::size_t i = 0; i < fn.params.size(); ++i) {
             if (!param_list.empty()) param_list += ", ";
             param_list += std::format("{} {}", lower_param_type(fn.params[i].intent, fn.params[i].type), fn.params[i].name);
+            if (!pass_args.empty()) pass_args += ", ";
+            pass_args += (fn.params[i].intent == "move") ? std::format("std::move({})", fn.params[i].name) : fn.params[i].name;
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
-        writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
+        std::string method_fn = fn.receiver ? std::format("cfire_method_{}", fn.name) : cur_fn_;
+        writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, method_fn, param_list, ret_str));
         ++indent_;
         for (const auto& st : fn.body) emit_stmt(st, false);
         if (fn.return_type.name == "void" && fn.return_type.is_fallible) {
@@ -584,6 +594,18 @@ public:
         }
         --indent_;
         writeln("}");
+
+        if (fn.receiver) {
+            writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
+            ++indent_;
+            if (ret_str == "void") {
+                writeln(std::format("cfire_method_{}({});", fn.name, pass_args));
+            } else {
+                writeln(std::format("return cfire_method_{}({});", fn.name, pass_args));
+            }
+            --indent_;
+            writeln("}");
+        }
     }
 
     void emit_stmt(const StmtPtr& s, bool in_main) {
@@ -1144,13 +1166,21 @@ public:
                 return std::format("{}::{}({})", id->name, mem->field, args);
             }
 
-            // Check if this is a user-defined receiver method `obj.method(args...)` -> `Type__method(obj, args...)`
+            // Check if this is a user-defined receiver method `obj.method(args...)` -> `cfire_method_<name>(obj, args...)`
+            // Overloaded cfire_method_<name> resolves via C++ overload resolution natively across multiple receiver types!
+            if (auto owners_it = cf_.method_owners.find(mem->field); owners_it != cf_.method_owners.end()) {
+                std::string args = emit_expr(mem->object);
+                for (const auto& a : call.args) {
+                    args += ", " + emit_call_arg(a);
+                }
+                return std::format("cfire_method_{}({})", mem->field, args);
+            }
             if (auto owner_it = cf_.method_owner.find(mem->field); owner_it != cf_.method_owner.end()) {
                 std::string args = emit_expr(mem->object);
                 for (const auto& a : call.args) {
                     args += ", " + emit_call_arg(a);
                 }
-                return std::format("{}__{}({})", owner_it->second, mem->field, args);
+                return std::format("cfire_method_{}({})", mem->field, args);
             }
 
             // Check if `pkg.fn(args...)` refers to a merged local package function in `cf_.fn_sigs`

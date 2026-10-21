@@ -13,10 +13,12 @@ TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
 all: build
 
-build:
+HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp)
+
+build: $(HEADERS)
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
 
-%.o: %.cpp
+%.o: %.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 .cfire_test_runner: $(TEST_OBJS)
