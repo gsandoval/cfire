@@ -18,6 +18,13 @@ namespace cfire::fmt {
 using namespace cfire::frontend;
 
 [[nodiscard]] inline auto format_type_ref(const TypeRef& t) -> std::string {
+    std::string prefix;
+    if (t.is_mut_borrow) {
+        prefix = "&mut ";
+    } else if (t.is_borrow) {
+        prefix = "&";
+    }
+
     std::string base;
     if (t.is_tuple) {
         base = "(";
@@ -39,11 +46,28 @@ using namespace cfire::frontend;
     } else if (t.is_ptr && t.elem_type) {
         base = std::format("*{}", format_type_ref(*t.elem_type));
     } else {
-        base = t.name.empty() ? "void" : t.name;
+        std::string raw_name = t.name.empty() ? "void" : t.name;
+        if (!raw_name.starts_with("cpp::") && raw_name.contains("::")) {
+            std::string normalized;
+            for (std::size_t i = 0; i < raw_name.size(); ++i) {
+                if (i + 1 < raw_name.size() && raw_name[i] == ':' && raw_name[i + 1] == ':') {
+                    normalized += '.';
+                    ++i;
+                } else {
+                    normalized += raw_name[i];
+                }
+            }
+            raw_name = std::move(normalized);
+        }
+        if (!t.is_borrow && !t.is_mut_borrow && t.elem_type) {
+            base = std::format("{}[{}]", raw_name, format_type_ref(*t.elem_type));
+        } else {
+            base = std::move(raw_name);
+        }
     }
     if (t.is_optional) base += "?";
     if (t.is_fallible) base += "!";
-    return base;
+    return prefix + base;
 }
 
 [[nodiscard]] inline auto format_fn_signature(const FnDecl& fn) -> std::string {

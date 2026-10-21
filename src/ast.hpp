@@ -296,6 +296,31 @@ struct TupleExpr {
     std::vector<ExprPtr> elements{};
 };
 
+struct MatchArm {
+    std::string enum_prefix{}; // optional `Shape::`
+    std::string variant_name{};
+    std::vector<std::string> bindings{};
+    std::string literal_val{}; // for primitive/string literals e.g. "\"GET\""
+
+    // Slice pattern matching:
+    bool is_slice_pattern = false;
+    std::vector<std::string> slice_head{};
+    std::string slice_rest{}; // e.g. "tail" in "..tail", or empty if no rest or ".._"
+    bool slice_has_rest = false;
+    std::vector<std::string> slice_tail{};
+
+    std::vector<StmtPtr> body{};
+    int line = 1;
+};
+
+struct MatchExpr {
+    ExprPtr target{};
+    bool is_move = false;
+    std::vector<MatchArm> arms{};
+    int line = 1;
+    int col = 1;
+};
+
 using ExprVariant = std::variant<
     IdentExpr,
     LiteralExpr,
@@ -310,7 +335,8 @@ using ExprVariant = std::variant<
     CallExpr,
     TryExpr,
     OrExpr,
-    TupleExpr>;
+    TupleExpr,
+    MatchExpr>;
 
 struct Expr {
     ExprVariant node;
@@ -367,22 +393,6 @@ struct ForStmt {
     std::string index_var{};
     std::string item_var{};
     ExprPtr iter_expr{};
-    std::vector<StmtPtr> body{};
-    int line = 1;
-};
-
-struct MatchArm {
-    std::string enum_prefix{}; // optional `Shape::`
-    std::string variant_name{};
-    std::vector<std::string> bindings{};
-
-    // Slice pattern matching:
-    bool is_slice_pattern = false;
-    std::vector<std::string> slice_head{};
-    std::string slice_rest{}; // e.g. "tail" in "..tail", or empty if no rest or ".._"
-    bool slice_has_rest = false;
-    std::vector<std::string> slice_tail{};
-
     std::vector<StmtPtr> body{};
     int line = 1;
 };

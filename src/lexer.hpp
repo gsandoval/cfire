@@ -95,6 +95,39 @@ namespace cfire::frontend {
         if (std::isdigit(static_cast<unsigned char>(c))) {
             std::string num;
             bool is_float = false;
+            if (c == '0' && (peek(1) == 'x' || peek(1) == 'X')) {
+                num.push_back(advance()); // '0'
+                num.push_back(advance()); // 'x'
+                while (i < n && (std::isxdigit(static_cast<unsigned char>(peek())) || peek() == '_')) {
+                    char ch = advance();
+                    if (ch == '_') continue;
+                    num.push_back(ch);
+                }
+                tokens.push_back(Token{TokenKind::Int, std::move(num), start_line, start_col});
+                continue;
+            }
+            if (c == '0' && (peek(1) == 'b' || peek(1) == 'B')) {
+                num.push_back(advance()); // '0'
+                num.push_back(advance()); // 'b'
+                while (i < n && (peek() == '0' || peek() == '1' || peek() == '_')) {
+                    char ch = advance();
+                    if (ch == '_') continue;
+                    num.push_back(ch);
+                }
+                tokens.push_back(Token{TokenKind::Int, std::move(num), start_line, start_col});
+                continue;
+            }
+            if (c == '0' && (peek(1) == 'o' || peek(1) == 'O')) {
+                num.push_back(advance()); // '0'
+                num.push_back(advance()); // 'o'
+                while (i < n && ((peek() >= '0' && peek() <= '7') || peek() == '_')) {
+                    char ch = advance();
+                    if (ch == '_') continue;
+                    num.push_back(ch);
+                }
+                tokens.push_back(Token{TokenKind::Int, std::move(num), start_line, start_col});
+                continue;
+            }
             while (i < n && (std::isdigit(static_cast<unsigned char>(peek())) || peek() == '_' ||
                              (peek() == '.' && peek(1) != '.'))) {
                 char ch = advance();
@@ -139,8 +172,21 @@ namespace cfire::frontend {
             continue;
         }
 
-        // Two-character operators
+        // Three-character operators
         char c2 = peek(1);
+        char c3 = peek(2);
+        if (c == '<' && c2 == '<' && c3 == '=') {
+            advance(); advance(); advance();
+            tokens.push_back(Token{TokenKind::ShlEq, "<<=", start_line, start_col});
+            continue;
+        }
+        if (c == '>' && c2 == '>' && c3 == '=') {
+            advance(); advance(); advance();
+            tokens.push_back(Token{TokenKind::ShrEq, ">>=", start_line, start_col});
+            continue;
+        }
+
+        // Two-character operators
         if (c == '.' && c2 == '.') {
             advance(); advance();
             tokens.push_back(Token{TokenKind::DotDot, "..", start_line, start_col});
@@ -206,6 +252,46 @@ namespace cfire::frontend {
             tokens.push_back(Token{TokenKind::DoublePipe, "||", start_line, start_col});
             continue;
         }
+        if (c == '<' && c2 == '<') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::Shl, "<<", start_line, start_col});
+            continue;
+        }
+        if (c == '>' && c2 == '>') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::Shr, ">>", start_line, start_col});
+            continue;
+        }
+        if (c == '*' && c2 == '=') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::StarEq, "*=", start_line, start_col});
+            continue;
+        }
+        if (c == '/' && c2 == '=') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::SlashEq, "/=", start_line, start_col});
+            continue;
+        }
+        if (c == '%' && c2 == '=') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::PercentEq, "%=", start_line, start_col});
+            continue;
+        }
+        if (c == '&' && c2 == '=') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::AmpEq, "&=", start_line, start_col});
+            continue;
+        }
+        if (c == '|' && c2 == '=') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::PipeEq, "|=", start_line, start_col});
+            continue;
+        }
+        if (c == '^' && c2 == '=') {
+            advance(); advance();
+            tokens.push_back(Token{TokenKind::CaretEq, "^=", start_line, start_col});
+            continue;
+        }
 
         // Single-character symbols
         advance();
@@ -227,6 +313,8 @@ namespace cfire::frontend {
             case '%': tokens.push_back(Token{TokenKind::Percent, "%", start_line, start_col}); break;
             case '&': tokens.push_back(Token{TokenKind::Amp, "&", start_line, start_col}); break;
             case '|': tokens.push_back(Token{TokenKind::Pipe, "|", start_line, start_col}); break;
+            case '^': tokens.push_back(Token{TokenKind::Caret, "^", start_line, start_col}); break;
+            case '~': tokens.push_back(Token{TokenKind::Tilde, "~", start_line, start_col}); break;
             case '!': tokens.push_back(Token{TokenKind::Bang, "!", start_line, start_col}); break;
             case '?': tokens.push_back(Token{TokenKind::Question, "?", start_line, start_col}); break;
             case '@': tokens.push_back(Token{TokenKind::At, "@", start_line, start_col}); break;

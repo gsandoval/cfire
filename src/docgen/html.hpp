@@ -423,6 +423,12 @@ fn main() {
         if (!std::filesystem::exists(docs_dir / "index.template.html")) {
             return std::unexpected(std::format("missing documentation file: {} (authoritative landing template required)", (docs_dir / "index.template.html").string()));
         }
+        auto llm_ref = generate_llm_reference();
+        for (const auto& mod : stdlib_catalog()) {
+            if (!llm_ref.contains(mod.import_path)) {
+                return std::unexpected(std::format("llm reference missing module: {}", mod.import_path));
+            }
+        }
     }
 
     std::vector<DocTarget> targets = {

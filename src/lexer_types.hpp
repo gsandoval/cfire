@@ -84,6 +84,18 @@ enum class TokenKind : int {
     Gt,
     Le,
     Ge,
+    StarEq,
+    SlashEq,
+    PercentEq,
+    AmpEq,
+    PipeEq,
+    Caret,
+    CaretEq,
+    Tilde,
+    Shl,
+    Shr,
+    ShlEq,
+    ShrEq,
     Semicolon,
 };
 
@@ -152,6 +164,18 @@ struct Token {
         case TokenKind::Assign: return "=";
         case TokenKind::PlusEq: return "+=";
         case TokenKind::MinusEq: return "-=";
+        case TokenKind::StarEq: return "*=";
+        case TokenKind::SlashEq: return "/=";
+        case TokenKind::PercentEq: return "%=";
+        case TokenKind::AmpEq: return "&=";
+        case TokenKind::PipeEq: return "|=";
+        case TokenKind::Caret: return "^";
+        case TokenKind::CaretEq: return "^=";
+        case TokenKind::Tilde: return "~";
+        case TokenKind::Shl: return "<<";
+        case TokenKind::Shr: return ">>";
+        case TokenKind::ShlEq: return "<<=";
+        case TokenKind::ShrEq: return ">>=";
         case TokenKind::Plus: return "+";
         case TokenKind::Minus: return "-";
         case TokenKind::Star: return "*";

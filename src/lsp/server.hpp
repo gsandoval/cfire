@@ -568,10 +568,10 @@ public:
             if (auto c1 = err_str.find(':', file_path.size()); c1 != std::string::npos) {
                 if (auto c2 = err_str.find(':', c1 + 1); c2 != std::string::npos) {
                     if (auto c3 = err_str.find(':', c2 + 1); c3 != std::string::npos) {
-                        try {
-                            ln = std::max(0, std::stoi(err_str.substr(c1 + 1, c2 - c1 - 1)) - 1);
-                            col = std::max(0, std::stoi(err_str.substr(c2 + 1, c3 - c2 - 1)) - 1);
-                        } catch (...) {}
+                        auto p_line = cfire::detail::parse_int<int>(err_str.substr(c1 + 1, c2 - c1 - 1));
+                        auto p_col = cfire::detail::parse_int<int>(err_str.substr(c2 + 1, c3 - c2 - 1));
+                        if (p_line) ln = std::max(0, *p_line - 1);
+                        if (p_col) col = std::max(0, *p_col - 1);
                     }
                 }
             }
@@ -600,9 +600,12 @@ public:
                 for (const auto& ifc : pkg.ast.interfaces) merged.interfaces.push_back(ifc);
                 for (const auto& fn : pkg.ast.functions) merged.functions.insert(merged.functions.begin(), fn);
             }
-            auto checked = analyze(std::move(merged));
-            if (!checked) {
-                entries.push_back(parse_err(checked.error(), "cfire/SEMA"));
+            auto checked = analyze_resilient(std::move(merged));
+            for (const auto& err : checked.errors) {
+                entries.push_back(parse_err(err, "cfire/SEMA"));
+            }
+            for (const auto& warn : checked.warnings) {
+                entries.push_back(parse_err(warn, "cfire/WARNING"));
             }
         }
         {
