@@ -3,6 +3,7 @@
 /.cfire_test_runner
 /cfire_cross_*
 *.o
+*.d
 *.a
 *.so
 *.dylib
