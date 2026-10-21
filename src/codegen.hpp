@@ -201,7 +201,7 @@ public:
                 else if (mod == "sync" || mod == "context") core_headers.insert("core/sync.hpp");
                 else if (mod == "time") core_headers.insert("core/time.hpp");
                 else if (mod == "unicode") core_headers.insert("core/unicode.hpp");
-                else core_headers.insert("cfire_core_stdlib.hpp");
+                else core_headers.insert(std::format("core/{}.hpp", mod));
             }
             for (const auto& hdr : core_headers) {
                 writeln(std::format("#include \"{}\"", hdr));
