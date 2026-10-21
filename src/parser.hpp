@@ -1439,10 +1439,15 @@ private:
 
         while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
             if (cur().kind == TokenKind::Pipe || cur().kind == TokenKind::DoublePipe) {
+                Token cl_tok = cur();
                 auto cl = parse_closure_expr();
                 if (!cl) return std::unexpected(cl.error());
-                call.block_arg = std::move(*cl);
                 if (cur().kind == TokenKind::Comma) advance();
+                if (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    call.args.push_back(CallArg{"", "", make_expr(std::move(*cl), cl_tok.line, cl_tok.col), cl_tok.line, cl_tok.col});
+                } else {
+                    call.block_arg = std::move(*cl);
+                }
                 continue;
             }
             Token arg_tok = cur();
@@ -1471,12 +1476,37 @@ private:
         } else {
             if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
             while (cur().kind != TokenKind::Pipe && cur().kind != TokenKind::Eof) {
+                std::string p_intent = "in";
+                if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwMove ||
+                    cur().kind == TokenKind::KwOut || cur().kind == TokenKind::KwIn) {
+                    p_intent = advance().lexeme;
+                }
                 auto id = expect(TokenKind::Ident);
                 if (!id) return std::unexpected(id.error());
                 cl.params.push_back(id->lexeme);
+                cl.param_intents.push_back(std::move(p_intent));
+                if (cur().kind == TokenKind::Colon) {
+                    advance(); // ':'
+                    auto tref = parse_type_ref();
+                    if (!tref) return std::unexpected(tref.error());
+                    cl.param_types.push_back(std::move(*tref));
+                } else {
+                    cl.param_types.push_back(std::nullopt);
+                }
                 if (cur().kind == TokenKind::Comma) advance();
             }
             if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
+        }
+        if (cur().kind == TokenKind::KwAsync) {
+            advance();
+            cl.is_async = true;
+        }
+        if (cur().kind == TokenKind::Arrow) {
+            advance(); // '->'
+            StructLitScope scope(*this, false);
+            auto rtype = parse_type_ref();
+            if (!rtype) return std::unexpected(rtype.error());
+            cl.return_type = std::move(*rtype);
         }
         if (cur().kind == TokenKind::KwAsync) {
             advance();

@@ -31,6 +31,7 @@ public:
     bool test_mode_ = false;
     bool in_main_ = false;
     bool in_test_ = false;
+    bool in_fallible_void_ = false;
     std::string source_path_{};
     int last_source_line_ = -1;
     std::ostringstream buf_;
@@ -41,6 +42,7 @@ public:
     std::unordered_set<std::string> used_core_{};
     std::unordered_map<std::string, std::string> used_vendor_{};
     std::vector<std::string> active_async_scopes_{};
+    std::unordered_set<std::string> local_vars_{};
 
     [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
         std::string out;
@@ -191,6 +193,19 @@ public:
             }
         }
 
+        bool any_json_tag = false;
+        for (const auto& [sname, tags] : cf_.struct_tags) {
+            for (const auto& t : tags) {
+                if (!t.json_key.empty()) { any_json_tag = true; break; }
+            }
+            if (any_json_tag) break;
+        }
+        if (any_json_tag && !used_core_.contains("json")) {
+            used_core_.insert("json");
+            defines.push_back("#define CFIRE_USE_SIMDJSON 1");
+            link_tags.push_back("-lsimdjson");
+        }
+
         if (!link_tags.empty()) {
             std::string joined;
             for (std::size_t i = 0; i < link_tags.size(); ++i) {
@@ -279,7 +294,13 @@ public:
             writeln();
         }
 
-        // 4. Emit Global / Package-level Variables
+        // 4. Forward Declarations for Functions & Receiver Methods (before global vars so globals can reference functions)
+        for (const auto& fn : ast.functions) {
+            emit_function_forward_decl(fn);
+        }
+        if (!ast.functions.empty()) writeln();
+
+        // 5a. Emit Global / Package-level Variables
         for (const auto& gv : ast.global_vars) {
             std::string type_str = gv.type ? lower_owning_type(*gv.type) : "auto";
             std::string mut_str = gv.is_mut ? "" : "const ";
@@ -290,12 +311,6 @@ public:
             }
         }
         if (!ast.global_vars.empty()) writeln();
-
-        // 5a. Forward Declarations for Functions & Receiver Methods
-        for (const auto& fn : ast.functions) {
-            emit_function_forward_decl(fn);
-        }
-        if (!ast.functions.empty()) writeln();
 
         // 5b. Emit Functions & Receiver Methods
         bool has_user_main = false;
@@ -393,12 +408,15 @@ public:
         cur_fn_ = std::format("__cfire_test_{}", idx);
         defer_count_ = 0;
         in_test_ = true;
+        in_fallible_void_ = false;
+        local_vars_.clear();
         writeln(std::format("inline void {}() {{", cur_fn_));
         ++indent_;
         for (const auto& st : td.body) emit_stmt(st, false);
         --indent_;
         writeln("}");
         in_test_ = false;
+        local_vars_.clear();
     }
 
     void emit_interface(const InterfaceDecl& iface) {
@@ -624,9 +642,15 @@ public:
         if (fn.line > 0) emit_line_directive(fn.line);
         cur_fn_ = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
         defer_count_ = 0;
+        local_vars_.clear();
+        if (fn.receiver) local_vars_.insert(fn.receiver->name);
+        for (const auto& p : fn.params) local_vars_.insert(p.name);
 
         if (fn.name == "main" && !fn.receiver) {
             in_main_ = true;
+            in_fallible_void_ = false;
+            local_vars_.insert("argc");
+            local_vars_.insert("argv");
             writeln("auto main(int argc, char** argv) -> int {");
             ++indent_;
             for (const auto& st : fn.body) emit_stmt(st, true);
@@ -634,9 +658,11 @@ public:
             --indent_;
             writeln("}");
             in_main_ = false;
+            local_vars_.clear();
             return;
         }
         in_main_ = false;
+        in_fallible_void_ = (fn.return_type.name == "void" && fn.return_type.is_fallible);
 
         if (!fn.type_params.empty()) {
             std::string tparams;
@@ -676,6 +702,8 @@ public:
         }
         --indent_;
         writeln("}");
+        in_fallible_void_ = false;
+        local_vars_.clear();
 
         if (fn.receiver) {
             if (!fn.type_params.empty()) {
@@ -724,6 +752,7 @@ public:
         std::visit([&](const auto& st) {
             using T = std::decay_t<decltype(st)>;
             if constexpr (std::is_same_v<T, VarDeclStmt>) {
+                local_vars_.insert(st.name);
                 if (st.init) {
                     if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
                         if (in_main) {
@@ -739,6 +768,20 @@ public:
                             writeln(std::format("auto {} = std::move(*{});", st.name, tmp));
                             return;
                         }
+                        if (in_test_) {
+                            int id = ++try_count_;
+                            std::string tmp = std::format("_try_{}", id);
+                            writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
+                            writeln(std::format("if (!{}.has_value()) {{", tmp));
+                            ++indent_;
+                            writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
+                                tmp, escape_line_path(cf_.ast.path), s->line));
+                            writeln("return;");
+                            --indent_;
+                            writeln("}");
+                            writeln(std::format("auto {} = std::move(*{});", st.name, tmp));
+                            return;
+                        }
                         std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
                         writeln(std::format("CFIRE_TRY_ASSIGN({} {}, {});", cpp_type, st.name, emit_expr(try_ex->inner)));
                         return;
@@ -749,6 +792,7 @@ public:
                         writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
                         writeln(std::format("if (!{}.has_value()) {{", tmp));
                         ++indent_;
+                        local_vars_.insert(or_ex->err_var);
                         writeln(std::format("const cfire::Error& {} = {}.error();", or_ex->err_var, tmp));
                         for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
                         --indent_;
@@ -801,7 +845,7 @@ public:
                 }
             } else if constexpr (std::is_same_v<T, ReturnStmt>) {
                 if (!st.value) {
-                    writeln(in_main ? "return 0;" : "return;");
+                    writeln(in_main ? "return 0;" : (in_fallible_void_ ? "return {};" : "return;"));
                 } else {
                     writeln(std::format("return {};", emit_expr(st.value)));
                 }
@@ -824,7 +868,9 @@ public:
                 writeln("}");
             } else if constexpr (std::is_same_v<T, ForStmt>) {
                 if (!st.item_var.empty()) {
+                    local_vars_.insert(st.item_var);
                     if (!st.index_var.empty()) {
+                        local_vars_.insert(st.index_var);
                         std::string col = emit_expr(st.iter_expr);
                         writeln(std::format("for (std::size_t {0} = 0; {0} < {1}.size(); ++{0}) {{", st.index_var, col));
                         ++indent_;
@@ -856,6 +902,7 @@ public:
             } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
                 writeln("{");
                 ++indent_;
+                local_vars_.insert(st.scope_var);
                 writeln(std::format("cfire::async::Scope {}({});", st.scope_var, emit_expr(st.workers)));
                 active_async_scopes_.push_back(st.scope_var);
                 for (const auto& b : st.body) emit_stmt(b, in_main);
@@ -897,6 +944,19 @@ public:
                         writeln("}");
                         return;
                     }
+                    if (in_test_) {
+                        int id = ++try_count_;
+                        std::string tmp = std::format("_try_v_{}", id);
+                        writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
+                        writeln(std::format("if (!{}.has_value()) {{", tmp));
+                        ++indent_;
+                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
+                            tmp, escape_line_path(cf_.ast.path), s->line));
+                        writeln("return;");
+                        --indent_;
+                        writeln("}");
+                        return;
+                    }
                     writeln(std::format("CFIRE_TRY({});", emit_expr(try_ex->inner)));
                     return;
                 }
@@ -906,6 +966,7 @@ public:
                     writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
                     writeln(std::format("if (!{}.has_value()) {{", tmp));
                     ++indent_;
+                    local_vars_.insert(or_ex->err_var);
                     writeln(std::format("const cfire::Error& {} = {}.error();", or_ex->err_var, tmp));
                     for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
                     --indent_;
@@ -918,6 +979,7 @@ public:
                 for (std::size_t i = 0; i < st.bindings.size(); ++i) {
                     if (i > 0) names += ", ";
                     names += st.bindings[i].first;
+                    local_vars_.insert(st.bindings[i].first);
                 }
                 writeln(std::format("auto [{}] = {};", names, emit_expr(st.init)));
             } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
@@ -974,12 +1036,14 @@ public:
                     // Bind head elements
                     for (std::size_t i = 0; i < head_count; ++i) {
                         if (arm.slice_head[i] != "_") {
+                            local_vars_.insert(arm.slice_head[i]);
                             writeln(std::format("const auto& {} = _target[{}];", arm.slice_head[i], i));
                         }
                     }
 
                     // Bind rest slice
                     if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_") {
+                        local_vars_.insert(arm.slice_rest);
                         std::string rest_start = std::to_string(head_count);
                         std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
                         writeln(std::format("auto {} = cfire::slice(_target, {}, {});", arm.slice_rest, rest_start, rest_end));
@@ -988,6 +1052,7 @@ public:
                     // Bind tail elements
                     for (std::size_t i = 0; i < tail_count; ++i) {
                         if (arm.slice_tail[i] != "_") {
+                            local_vars_.insert(arm.slice_tail[i]);
                             std::size_t offset_from_end = tail_count - i;
                             writeln(std::format("const auto& {} = _target[_target.size() - {}];", arm.slice_tail[i], offset_from_end));
                         }
@@ -1074,6 +1139,7 @@ public:
             }
             ++indent_;
             for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
+                local_vars_.insert(arm.bindings[i]);
                 if (is_rvalue) {
                     writeln(std::format("auto&& {} = std::move(_m._{});", arm.bindings[i], i));
                 } else {
@@ -1123,9 +1189,11 @@ public:
             sub.cur_fn_ = cur_fn_;
             sub.used_core_ = used_core_;
             sub.used_vendor_ = used_vendor_;
+            sub.local_vars_ = local_vars_;
             sub.in_main_ = in_main_;
             sub.emit_stmt(body[i], false);
             sb << sub.buf_.str();
+            local_vars_ = sub.local_vars_;
         }
     }
 
@@ -1275,6 +1343,7 @@ public:
             }
             ++indent_;
             for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
+                local_vars_.insert(arm.bindings[i]);
                 for (int j = 0; j < indent_; ++j) sb << "    ";
                 if (is_rvalue) {
                     sb << std::format("auto&& {} = std::move(_m._{});\n", arm.bindings[i], i);
@@ -1308,11 +1377,39 @@ public:
         std::vector<std::string> args{};
     };
 
+    [[nodiscard]] auto is_local_type(const std::string& name) const -> bool {
+        if (cf_.struct_tags.contains(name) || cf_.enums.contains(name)) return true;
+        for (const auto& st : cf_.ast.structs) {
+            if (st.name == name) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto is_ident_in_scope(const std::string& ident) const -> bool {
+        if (local_vars_.contains(ident)) return true;
+        if (cf_.fn_sigs.contains(ident)) return true;
+        for (const auto& gv : cf_.ast.global_vars) {
+            if (gv.name == ident) return true;
+        }
+        return false;
+    }
+
     [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) const -> std::optional<InterpolationResult> {
         if (lit.kind != TokenKind::String) return std::nullopt;
         static const std::regex interp_re(R"(\{([a-zA-Z_][a-zA-Z0-9_.\(\)]*)\})");
         auto begin = std::sregex_iterator(lit.value.begin(), lit.value.end(), interp_re);
         if (begin == std::sregex_iterator()) return std::nullopt;
+
+        for (auto it = begin; it != std::sregex_iterator(); ++it) {
+            std::string v = (*it)[1].str();
+            std::string root = v;
+            if (auto p = root.find_first_of(".("); p != std::string::npos) {
+                root = root.substr(0, p);
+            }
+            if (!is_ident_in_scope(root)) {
+                return std::nullopt;
+            }
+        }
 
         InterpolationResult res;
         res.fmt_str = std::regex_replace(lit.value, interp_re, "{}");
@@ -1407,8 +1504,14 @@ public:
                         id->name == "collections" || id->name == "sort" || id->name == "unicode" ||
                         id->name == "base64" || id->name == "hex" || id->name == "csv" ||
                         id->name == "aes" || id->name == "hmac" || id->name == "sha256" ||
-                        id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url") {
+                        id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url" ||
+                        used_core_.contains(id->name)) {
                         return std::format("cfire::{}::{}", id->name, ex.field);
+                    }
+                    if (!is_ident_in_scope(id->name)) {
+                        for (const auto& gv : cf_.ast.global_vars) {
+                            if (gv.name == ex.field) return ex.field;
+                        }
                     }
                 }
                 std::string obj = emit_expr(ex.object);
@@ -1435,6 +1538,25 @@ public:
                 if (tname == "http.Router" || tname == "http::Router") tname = "cfire::http::Router";
                 if (tname == "http.HttpServer" || tname == "http::HttpServer") tname = "cfire::http::HttpServer";
                 if (tname == "url.Url" || tname == "url::Url") tname = "cfire::url::Url";
+                if (auto dot_pos = tname.find('.'); dot_pos != std::string::npos) {
+                    std::string mod = tname.substr(0, dot_pos);
+                    std::string rest = tname.substr(dot_pos + 1);
+                    if (used_core_.contains(mod)) {
+                        tname = std::format("cfire::{}::{}", mod, rest);
+                    } else if (is_local_type(rest)) {
+                        tname = rest;
+                    } else {
+                        tname = std::format("{}::{}", mod, rest);
+                    }
+                } else if (auto col_pos = tname.find("::"); col_pos != std::string::npos) {
+                    std::string mod = tname.substr(0, col_pos);
+                    std::string rest = tname.substr(col_pos + 2);
+                    if (used_core_.contains(mod)) {
+                        tname = std::format("cfire::{}::{}", mod, rest);
+                    } else if (is_local_type(rest)) {
+                        tname = rest;
+                    }
+                }
                 if (ex.fields.empty()) return tname + "{}";
                 std::string inits;
                 for (std::size_t i = 0; i < ex.fields.size(); ++i) {
@@ -1535,6 +1657,29 @@ public:
                 }
                 return std::format("{}({})", fn, args);
             }
+            if (id->name == "assert_eq" && call.args.size() >= 2) {
+                std::string lhs = emit_call_arg(call.args[0]);
+                std::string rhs = emit_call_arg(call.args[1]);
+                std::string cond = std::format("(({}) == ({}))", lhs, rhs);
+                std::string msg = (call.args.size() >= 3) ? emit_call_arg(call.args[2]) : "\"assert_eq failed\"";
+                std::string expr_str = cond;
+                std::string escaped_expr;
+                for (char ch : expr_str) {
+                    if (ch == '\\') escaped_expr += "\\\\";
+                    else if (ch == '"') escaped_expr += "\\\"";
+                    else escaped_expr += ch;
+                }
+                int line = call.args[0].value ? call.args[0].value->line : 0;
+                std::string file_str = cf_.ast.path;
+                std::string escaped_file;
+                for (char ch : file_str) {
+                    if (ch == '\\') escaped_file += "\\\\";
+                    else if (ch == '"') escaped_file += "\\\"";
+                    else escaped_file += ch;
+                }
+                return std::format("cfire::assert_true_at({}, {}, \"{}\", {}, \"{}\")",
+                    cond, msg, escaped_file, line, escaped_expr);
+            }
             if (id->name == "assert" && !call.args.empty()) {
                 std::string cond = emit_call_arg(call.args[0]);
                 std::string msg = (call.args.size() >= 2) ? emit_call_arg(call.args[1]) : "\"assertion failed\"";
@@ -1571,7 +1716,7 @@ public:
                 }
                 return std::format("{}{{{}}}", lower_owning_type(ta), args);
             }
-            if (id->name == "error" && call.args.size() == 1) {
+            if ((id->name == "error" || id->name == "Err") && call.args.size() == 1) {
                 return std::format("cfire::make_error({})", emit_call_arg(call.args[0]));
             }
         }
@@ -1632,20 +1777,23 @@ public:
                     return std::format("cfire::cli::parse<{}>(argc, argv)", call.type_args[0].name);
                 }
             }
-            if (mem->field == "tx" && call.block_arg && call.block_arg->params.size() == 1) {
+            if (mem->field == "tx" && call.args.empty() && call.block_arg && call.block_arg->params.size() == 1) {
                 std::string tx_param = call.block_arg->params[0];
                 std::ostringstream sb;
                 sb << std::format("{}.tx([&](cfire::sqlite::Conn& {}) -> std::expected<void, cfire::Error> {{\n", obj, tx_param);
                 ++indent_;
+                Emitter sub(cf_);
+                sub.indent_ = indent_;
+                sub.cur_fn_ = cur_fn_;
+                sub.used_core_ = used_core_;
+                sub.used_vendor_ = used_vendor_;
+                sub.local_vars_ = local_vars_;
+                sub.local_vars_.insert(tx_param);
+                sub.in_fallible_void_ = true;
                 for (const auto& st : call.block_arg->body) {
-                    Emitter sub(cf_);
-                    sub.indent_ = indent_;
-                    sub.cur_fn_ = cur_fn_;
-                    sub.used_core_ = used_core_;
-                    sub.used_vendor_ = used_vendor_;
                     sub.emit_stmt(st, false);
-                    sb << sub.buf_.str();
                 }
+                sb << sub.buf_.str();
                 for (int i = 0; i < indent_; ++i) sb << "    ";
                 sb << "return {};\n";
                 --indent_;
@@ -1657,15 +1805,16 @@ public:
                 std::ostringstream sb;
                 sb << std::format("{}.spawn([=]() {{\n", obj);
                 ++indent_;
+                Emitter sub(cf_);
+                sub.indent_ = indent_;
+                sub.cur_fn_ = cur_fn_;
+                sub.used_core_ = used_core_;
+                sub.used_vendor_ = used_vendor_;
+                sub.local_vars_ = local_vars_;
                 for (const auto& st : call.block_arg->body) {
-                    Emitter sub(cf_);
-                    sub.indent_ = indent_;
-                    sub.cur_fn_ = cur_fn_;
-                    sub.used_core_ = used_core_;
-                    sub.used_vendor_ = used_vendor_;
                     sub.emit_stmt(st, false);
-                    sb << sub.buf_.str();
                 }
+                sb << sub.buf_.str();
                 --indent_;
                 for (int i = 0; i < indent_; ++i) sb << "    ";
                 sb << "})";
@@ -1714,24 +1863,74 @@ public:
         return std::format("{}({})", callee, args);
     }
 
+    static auto stmt_contains_try_without_val_return(const std::vector<StmtPtr>& stmts, bool& has_try, bool& has_val_ret) -> void {
+        for (const auto& s : stmts) {
+            if (!s) continue;
+            if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
+                if (vd->init && std::holds_alternative<TryExpr>(vd->init->node)) has_try = true;
+            } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
+                if (es->expr && std::holds_alternative<TryExpr>(es->expr->node)) has_try = true;
+            } else if (const auto* rs = std::get_if<ReturnStmt>(&s->node)) {
+                if (rs->value) has_val_ret = true;
+            } else if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
+                stmt_contains_try_without_val_return(ifs->then_body, has_try, has_val_ret);
+                stmt_contains_try_without_val_return(ifs->else_body, has_try, has_val_ret);
+            } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
+                stmt_contains_try_without_val_return(fs->body, has_try, has_val_ret);
+            }
+        }
+    }
+
     [[nodiscard]] auto emit_closure(const ClosureExpr& cl) -> std::string {
         std::ostringstream sb;
         sb << "[&](";
         for (std::size_t i = 0; i < cl.params.size(); ++i) {
             if (i > 0) sb << ", ";
-            sb << "auto&& " << cl.params[i];
+            if (i < cl.param_types.size() && cl.param_types[i].has_value()) {
+                std::string p_intent = (i < cl.param_intents.size()) ? cl.param_intents[i] : "in";
+                sb << lower_param_type(p_intent, *cl.param_types[i]) << " " << cl.params[i];
+            } else {
+                sb << "auto&& " << cl.params[i];
+            }
         }
-        sb << ") {\n";
+        bool is_fallible_void = false;
+        if (cl.return_type) {
+            sb << ") -> " << lower_return_type(*cl.return_type) << " {\n";
+            if (cl.return_type->name == "void" && cl.return_type->is_fallible) {
+                is_fallible_void = true;
+            }
+        } else {
+            bool has_try = false;
+            bool has_val_ret = false;
+            stmt_contains_try_without_val_return(cl.body, has_try, has_val_ret);
+            if (has_try && !has_val_ret) {
+                sb << ") -> std::expected<void, cfire::Error> {\n";
+                is_fallible_void = true;
+            } else {
+                sb << ") {\n";
+            }
+        }
         ++indent_;
+        Emitter sub(cf_);
+        sub.indent_ = indent_;
+        sub.cur_fn_ = cur_fn_;
+        sub.used_core_ = used_core_;
+        sub.used_vendor_ = used_vendor_;
+        sub.local_vars_ = local_vars_;
+        for (const auto& p : cl.params) sub.local_vars_.insert(p);
+        sub.in_main_ = false;
+        sub.in_test_ = false;
+        sub.in_fallible_void_ = is_fallible_void;
         for (const auto& st : cl.body) {
-            Emitter sub(cf_);
-            sub.indent_ = indent_;
-            sub.cur_fn_ = cur_fn_;
-            sub.used_core_ = used_core_;
-            sub.used_vendor_ = used_vendor_;
-            sub.in_main_ = in_main_;
             sub.emit_stmt(st, false);
-            sb << sub.buf_.str();
+        }
+        sb << sub.buf_.str();
+        if (is_fallible_void) {
+            bool has_ret = !cl.body.empty() && std::holds_alternative<ReturnStmt>(cl.body.back()->node);
+            if (!has_ret) {
+                for (int i = 0; i < indent_; ++i) sb << "    ";
+                sb << "return {};\n";
+            }
         }
         --indent_;
         for (int i = 0; i < indent_; ++i) sb << "    ";
@@ -1820,6 +2019,16 @@ public:
         }
         std::string clean = tr.name;
         if (clean.starts_with("cpp::")) clean.erase(0, 5);
+        if (auto col_pos = clean.find("::"); col_pos != std::string::npos) {
+            std::string mod = clean.substr(0, col_pos);
+            std::string rest = clean.substr(col_pos + 2);
+            if (used_core_.contains(mod)) {
+                return std::format("cfire::{}::{}", mod, rest);
+            }
+            if (is_local_type(rest)) {
+                return rest;
+            }
+        }
         return clean;
     }
 
