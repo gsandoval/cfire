@@ -150,6 +150,7 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
 // Frontend Suites
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir);
 void test_cfire_refactor_rename(const std::filesystem::path& rt_dir);
+void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir);
 
 // Sema Suites
 void test_sema_intent_and_move_diagnostics();

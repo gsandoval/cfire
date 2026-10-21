@@ -526,4 +526,87 @@ fn main() {
     std::println("--- PASS: test_cfire_refactor_rename");
 }
 
+void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_google_cpp_and_language_design");
+
+    // 1. ARCH-CPP-04: Test zero-allocation <charconv> integer parsing
+    {
+        auto v1 = cfire::detail::parse_int<int>("12345");
+        require(v1.has_value() && *v1 == 12345, "parse_int<int>(12345)");
+
+        auto v2 = cfire::detail::parse_int<std::uint16_t>("8080");
+        require(v2.has_value() && *v2 == 8080, "parse_int<uint16>(8080)");
+
+        auto v3 = cfire::detail::parse_int<int>("-42");
+        require(v3.has_value() && *v3 == -42, "parse_int<int>(-42)");
+
+        auto v4 = cfire::detail::parse_int<int>("invalid");
+        require(!v4.has_value(), "parse_int<int>(invalid) returns nullopt");
+
+        auto v5 = cfire::detail::parse_int<std::uint8_t>("99999");
+        require(!v5.has_value(), "parse_int<uint8>(overflow) returns nullopt");
+
+        auto v6 = cfire::detail::parse_int<std::size_t>("");
+        require(!v6.has_value(), "parse_int(empty) returns nullopt");
+    }
+
+    // 2. ARCH-CPP-05: Test CFIRE_LIFETIMEBOUND and slice / view accessors
+    {
+        std::string text = "hello google cpp";
+        std::string_view sub = cfire::slice(text, 6, 12);
+        require(sub == "google", "slice string_view");
+
+        std::vector<int> nums = {10, 20, 30, 40};
+        std::span<const int> sp = cfire::slice(nums, 1, 3);
+        require(sp.size() == 2 && sp[0] == 20 && sp[1] == 30, "slice vector span");
+
+        cfire::Error err("operation timed out");
+        require(err.message() == "operation timed out", "Error::message() lifetimebound view");
+    }
+
+    // 3. ARCH-CPP-01: Multi-struct receiver method name collision resolution (LD-NEXT-03)
+    {
+        ScopedTempDir tmp("cfire_shapes");
+        auto cf_path = tmp.file("shapes.cf", R"(package main
+
+type Circle struct {
+    r: i32
+}
+
+type Rect struct {
+    w: i32
+    h: i32
+}
+
+fn (self: Circle) area() -> i32 {
+    return 3 * self.r * self.r
+}
+
+fn (self: Rect) area() -> i32 {
+    return self.w * self.h
+}
+
+fn main() {
+    c := Circle{r: 2}
+    r := Rect{w: 3, h: 4}
+    println("circle_area={}, rect_area={}", c.area(), r.area())
+}
+)");
+
+        auto out_bin = tmp.path / "shapes_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(shapes.cf) with multi-struct area() methods: {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("shapes exited with code {}", rc));
+            require(out.contains("circle_area=12, rect_area=12"),
+                std::format("expected 'circle_area=12, rect_area=12', got:\n{}", out));
+        }
+    }
+
+    std::println("--- PASS: test_google_cpp_and_language_design");
+}
+
+
 

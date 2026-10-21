@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +24,12 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+#if defined(__clang__)
+#define CFIRE_LIFETIMEBOUND [[clang::lifetimebound]]
+#else
+#define CFIRE_LIFETIMEBOUND
+#endif
 
 inline auto operator+(const std::string& lhs, std::string_view rhs) -> std::string {
     std::string res = lhs;
@@ -113,7 +120,7 @@ class Error {
 public:
     Error(std::string msg) : msg_(std::move(msg)) {}
     Error(const char* msg) : msg_(msg) {}
-    [[nodiscard]] auto message() const noexcept -> std::string_view { return msg_; }
+    [[nodiscard]] auto message() const noexcept CFIRE_LIFETIMEBOUND -> std::string_view { return msg_; }
 private:
     std::string msg_;
 };
@@ -228,7 +235,7 @@ private:
 };
 
 // --- Zero-Copy Slicing (`s[start..end]`) for `str`, `[]T`, `[N]T`, and `bytes` ---
-[[nodiscard]] inline auto slice(std::string_view sv, std::size_t start, std::size_t end) noexcept -> std::string_view {
+[[nodiscard]] inline auto slice(std::string_view sv CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::string_view {
     if (start > sv.size()) start = sv.size();
     if (end > sv.size()) end = sv.size();
     if (end < start) end = start;
@@ -236,7 +243,7 @@ private:
 }
 
 template <typename T>
-[[nodiscard]] inline auto slice(const std::vector<T>& vec, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
+[[nodiscard]] inline auto slice(const std::vector<T>& vec CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
     if (start > vec.size()) start = vec.size();
     if (end > vec.size()) end = vec.size();
     if (end < start) end = start;
@@ -244,7 +251,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] inline auto slice(std::span<const T> sp, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
+[[nodiscard]] inline auto slice(std::span<const T> sp CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
     if (start > sp.size()) start = sp.size();
     if (end > sp.size()) end = sp.size();
     if (end < start) end = start;
@@ -252,7 +259,7 @@ template <typename T>
 }
 
 template <typename T, std::size_t N>
-[[nodiscard]] inline auto slice(const std::array<T, N>& arr, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
+[[nodiscard]] inline auto slice(const std::array<T, N>& arr CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
     if (start > N) start = N;
     if (end > N) end = N;
     if (end < start) end = start;
@@ -294,8 +301,8 @@ public:
         }
     }
     // Implicit conversion to `const char*` for C function arguments
-    [[nodiscard]] operator const char*() const noexcept { return ptr_; }
-    [[nodiscard]] auto get() const noexcept -> const char* { return ptr_; }
+    [[nodiscard]] operator const char*() const noexcept CFIRE_LIFETIMEBOUND { return ptr_; }
+    [[nodiscard]] auto get() const noexcept CFIRE_LIFETIMEBOUND -> const char* { return ptr_; }
 
 private:
     std::array<char, 256> small_buf_{};
@@ -303,13 +310,13 @@ private:
     const char* ptr_ = nullptr;
 };
 
-[[nodiscard]] inline auto c_str(const std::string& s) noexcept -> const char* {
+[[nodiscard]] inline auto c_str(const std::string& s CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return s.c_str();
 }
-[[nodiscard]] inline auto c_str(const std::filesystem::path& p) noexcept -> const char* {
+[[nodiscard]] inline auto c_str(const std::filesystem::path& p CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return p.c_str();
 }
-[[nodiscard]] inline auto c_str(const char* s) noexcept -> const char* {
+[[nodiscard]] inline auto c_str(const char* s CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return s;
 }
 [[nodiscard]] inline auto c_str(std::string_view sv) noexcept -> CStrViewHolder {
@@ -319,7 +326,7 @@ private:
     p.replace_extension(ext);
     return p;
 }
-[[nodiscard]] inline auto to_bytes(std::string_view sv) noexcept -> std::span<const std::byte> {
+[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> std::span<const std::byte> {
     return std::as_bytes(std::span<const char>(sv.data(), sv.size()));
 }
 
@@ -331,6 +338,24 @@ template <typename T>
         return std::format("{}", val);
     }
 }
+
+// --- High-Performance Zero-Allocation Exception-Free Integer Parsing (<charconv>) ---
+namespace detail {
+
+template <typename T>
+[[nodiscard]] inline auto parse_int(std::string_view sv) noexcept -> std::optional<T> {
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+    while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) sv.remove_suffix(1);
+    if (sv.empty()) return std::nullopt;
+    T val{};
+    auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), val);
+    if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
+        return val;
+    }
+    return std::nullopt;
+}
+
+} // namespace detail
 
 // --- Structured Concurrency (`async.scope`) ---
 namespace async {

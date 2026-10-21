@@ -6,145 +6,113 @@ Tasks follow the standard operational protocol defined in [`docs/planning/README
 
 ---
 
-## Active Code Quality & Architecture Hardening Backlog (`CPP-QA-01` – `CPP-QA-06`)
+## Active Code Quality & Language Design Backlog (`ARCH-CPP-01` – `ARCH-CPP-05`)
 
 ```mermaid
-flowchart LR
-    QA01["CPP-QA-01: DRY & Single-Source Consolidation"] --> QA02["CPP-QA-02: Subprocess & Shell Argument Safety"]
-    QA02 --> QA03["CPP-QA-03: Structure-Aware LSP JSON Parser"]
-    QA03 --> QA04["CPP-QA-04: Decompose runtime/core/net.hpp"]
-    QA04 --> QA05["CPP-QA-05: Decompose src/docgen.hpp"]
-    QA05 --> QA06["CPP-QA-06: Decompose src/lsp.hpp"]
+flowchart TD
+    AC01["ARCH-CPP-01: Multi-Struct Method Dispatch (LD-NEXT-03)"] --> AC02["ARCH-CPP-02: Interface Concept Lowering (LD-NEXT-01)"]
+    AC02 --> AC03["ARCH-CPP-03: Scope Spawn Capture Mode (LD-NEXT-02)"]
+    AC03 --> AC04["ARCH-CPP-04: charconv Zero-Exception Migration (GCPP-01)"]
+    AC04 --> AC05["ARCH-CPP-05: Lifetimebound Safety Annotations (GCPP-02)"]
 ```
 
 ---
 
-### `CPP-QA-01`: DRY & Single-Source-of-Truth Consolidation
+### `ARCH-CPP-01`: Receiver Method Name Collision Resolution (`LD-NEXT-03`)
 - **Priority**: P0 (Immediate)
-- **Category**: Code Quality / Maintainability / DRY
+- **Category**: Language Design / Semantic Analysis / Code Generation
 - **Target Files**:
-  - `src/lexer.hpp`
-  - `src/lexer_types.hpp`
-  - `src/docgen.hpp`
-  - `src/main.cpp`
-- **Problem Statement**:
-  1. **Duplicate Keyword Tables**: `src/lexer_types.hpp:178-210` defines `keyword_map()` and `find_keyword()`, while `src/lexer.hpp:18-47` defines an identical second 28-entry `keywords` hash table inside `tokenize()`.
-  2. **Misplaced LLM Doc Sheet**: `src/main.cpp:443-479` embeds the 40-line `cfire doc --llm` reference string directly inside `main()` rather than inside the `cfire::doc` module (`src/docgen.hpp`).
-  3. **Duplicate HTML Landing Template**: `src/docgen.hpp:1780-2090` embeds a 310-line fallback HTML landing page template that duplicates `docs/index.template.html` and can silently drift out of sync.
-- **Detailed Requirements**:
-  1. In `src/lexer.hpp`, remove the local `static const std::unordered_map<std::string_view, TokenKind> keywords` map and use `find_keyword(lex)` from `src/lexer_types.hpp`.
-  2. Move the `--llm` reference string into `cfire::doc::generate_llm_reference()` in `src/docgen.hpp` and call it from `src/main.cpp`.
-  3. In `src/docgen.hpp`, make `docs/index.template.html` the single authoritative landing page template (matching how `docs/GUIDE.md` is authoritative for `guide.html`), replacing the 310-line inline duplicate with a concise diagnostic fallback and verifying `index.template.html` existence in `sync_docs_directory(..., check_only)`.
-- **Validation & Acceptance Criteria**:
-  - Zero duplicate keyword maps across `src/lexer*.hpp`.
-  - `src/docgen.hpp` shrinks by ~300 LOC without any change to generated `docs/index.html`, `docs/guide.html`, `docs/reference.html`, or `docs/STDLIB_REFERENCE.md`.
-  - `./cfire doc --llm` and `./cfire doc --check` pass 100%.
-
----
-
-### `CPP-QA-02`: Subprocess & Shell Argument Hardening
-- **Priority**: P0 (Immediate)
-- **Category**: Security / Subprocess Hygiene / Reliability
-- **Target Files**:
-  - `src/clang_bridge.hpp`
-  - `src/main.cpp`
-  - `src/buildsys.hpp`
-  - `tests/unit/test_stdlib.cpp`
-- **Problem Statement**:
-  1. `src/main.cpp:279` invokes `std::system(eval_bin.string().c_str())` without quoting `eval_bin`, which fails if `TMPDIR` contains spaces, and `src/main.cpp:760-762` wraps `run_args` in `"..."` without escaping embedded double quotes, backslashes, backticks, or `$` expansion characters.
-  2. `src/buildsys.hpp:103` (`query_pkg_config`) concatenates `"pkg-config --cflags " + pkg` without shell-quoting `pkg`.
-- **Detailed Requirements**:
-  1. Add a canonical POSIX shell quoting helper `cfire::bridge::shell_quote(std::string_view arg)` in `src/clang_bridge.hpp` (using single-quote wrapping `'...'` with `'\''` escaping, which neutralizes all shell metacharacters including `$`, `` ` ``, `"`, `\`, and spaces).
-  2. Use `cfire::bridge::shell_quote` for binary paths and forwarded arguments in `src/main.cpp` (`eval`, `run`, `test`) and `src/buildsys.hpp` (`query_pkg_config`).
-  3. Add an automated regression test verifying that `cfire run` and `cfire eval` safely handle arguments containing spaces, double quotes, and `$HOME`-style dollar signs without shell expansion or splitting.
-- **Validation & Acceptance Criteria**:
-  - `cfire run` forwards arguments containing spaces, `"quotes"`, and `$LITERAL_DOLLAR` verbatim to `os.args()` without shell evaluation.
-  - Zero raw unquoted path interpolations in `src/main.cpp`.
-
----
-
-### `CPP-QA-03`: Structure-Aware JSON-RPC Field Extraction in `src/lsp.hpp`
-- **Priority**: P1
-- **Category**: Language Server Protocol / Parser Robustness
-- **Target Files**:
-  - `src/lsp.hpp`
+  - `src/sema.hpp`
+  - `src/codegen.hpp`
   - `tests/unit/test_frontend.cpp`
 - **Problem Statement**:
-  - `detail::extract_json_string(json, key)`, `extract_json_int(json, key)`, and `extract_json_id(json)` in `src/lsp.hpp:86-155` use raw `json.find("\"key\"")`.
-  - If an LSP client sends a JSON-RPC payload where `"text"` (the `.cf` source code buffer) appears *before* `"uri"`, `"newName"`, `"line"`, or `"id"`, and the `.cf` file itself contains a string literal like `"\"newName\": \"foo\""` or `"\"line\": 999"`, raw substring search matches inside the `.cf` source string instead of the JSON-RPC protocol field.
+  - `src/sema.hpp:30` declares `cf.method_owner` as `std::unordered_map<std::string, std::string>` mapping an unqualified method name (e.g. `"area"`) to a single type (e.g. `"Circle"`).
+  - If a file or package defines `fn (self: Circle) area() -> f64` and `fn (self: Rect) area() -> f64`, the second definition overwrites the first in `cf.method_owner["area"]`.
+  - When calling `c.area()` on a `Circle`, `src/codegen.hpp:1148-1154` consults `cf.method_owner["area"]` and emits `Rect__area(c)` rather than `Circle__area(c)`, causing a C++ compiler error.
 - **Detailed Requirements**:
-  1. Implement a structure-aware JSON key scanner `detail::find_json_key(std::string_view json, std::string_view key, std::size_t start_pos = 0)` in `src/lsp.hpp` that properly skips over JSON string literal values (respecting `\"` and `\\` escapes) so keys are only matched at actual JSON object key positions (followed by `:`) outside of string values.
-  2. Route `extract_json_string`, `extract_json_int`, and `extract_json_id` through `find_json_key`.
-  3. Add a unit test in `tests/unit/test_frontend.cpp` sending a `textDocument/didChange` and `textDocument/rename` message whose `"text"` field precedes `"newName"` / `"uri"` and contains adversarial `"\"newName\": \"wrong\""` and `"\"line\": 9999"` substrings, verifying the LSP extracts the true protocol fields.
+  1. Support overloaded C++ free function emission: in `src/codegen.hpp`, emit receiver methods as overloaded free functions or ADL dispatch candidates `cfire_method_<name>(Receiver, args...)` or type-qualified methods, or resolve the static receiver type in `sema.hpp` so the exact `Type__method` is identified.
+  2. With overloaded free function signatures `inline auto cfire_method_<name>(const Receiver& self, ...) -> RetType`, C++ overload resolution natively selects the correct receiver implementation across types (`Circle`, `Rect`, etc.) without collision.
+  3. Update `src/sema.hpp` to index all receiver types for a method name (`std::unordered_map<std::string, std::unordered_set<std::string>> method_owners`) and verify receiver mutability against the matching receiver type.
+  4. Add a unit test verifying multiple structs with identically named methods compile and execute correctly.
 - **Validation & Acceptance Criteria**:
-  - Adversarial JSON-RPC payloads with embedded JSON keys inside `"text"` parse 100% accurately.
-  - All existing LSP conformance tests in `test_formatter_lsp_and_docgen` pass.
+  - Multiple structs with the same method name (e.g. `area()`, `to_string()`, `reset()`) compile and dispatch cleanly to their respective implementations.
+  - Zero warnings under `-Wall -Wextra -Wpedantic -Wshadow`.
+  - Conformance test passes in `test_frontend.cpp`.
 
 ---
 
-### `CPP-QA-04`: Decompose `runtime/core/net.hpp` (`1,436 LOC`) into Modular `runtime/core/net/*.hpp`
+### `ARCH-CPP-02`: First-Class Interface C++20 `concept` Lowering (`LD-NEXT-01`)
 - **Priority**: P1
-- **Category**: Runtime Architecture / Header Modularization
+- **Category**: Language Design / Type System / Lowering
 - **Target Files**:
-  - `runtime/core/net.hpp`
-  - `runtime/core/net/tcp.hpp`
+  - `src/codegen.hpp`
+  - `src/ast.hpp`
+  - `tests/unit/test_frontend.cpp`
+- **Problem Statement**:
+  - `src/codegen.hpp:323-327` emits `template <typename T> concept Name = true;` for all `interface` declarations, discarding all declared method signatures in `InterfaceDecl::methods`.
+- **Detailed Requirements**:
+  1. In `src/codegen.hpp`, iterate `iface.methods` and emit a C++20 `requires(T self, ...)` concept body.
+  2. For each method signature `name(params...) -> RetType`, verify that calling `self.name(args...)` or `cfire_method_<name>(self, args...)` is valid and returns a type convertible to the declared return type.
+  3. Add a unit test verifying generic functions constrained with `T: InterfaceName` properly enforce interface method constraints at compile time.
+- **Validation & Acceptance Criteria**:
+  - Emitted C++20 concepts require actual method signatures.
+  - Structs satisfying the interface instantiate constrained generics; structs lacking the methods produce clear concept mismatch errors.
+
+---
+
+### `ARCH-CPP-03`: Structured Concurrency `scope.spawn` Capture Mode (`LD-NEXT-02`)
+- **Priority**: P1
+- **Category**: Language Design / Concurrency / Soundness
+- **Target Files**:
+  - `src/codegen.hpp`
+  - `runtime/cfire_prelude.hpp`
+  - `tests/unit/test_stdlib.cpp`
+- **Problem Statement**:
+  - `src/codegen.hpp:1204` emits `.spawn([=]() { ... })` (capture by copy/value).
+  - This prevents using move-only types such as `sync::Channel[T]` or `own[T]` directly in worker tasks, and mutations to local variables inside the lambda operate on copies.
+- **Detailed Requirements**:
+  1. Because `async.scope` strictly guarantees all spawned tasks join prior to scope exit via RAII `join_all()`, tasks have stack lifetime bounded by the scope block.
+  2. Update `scope.spawn` code generation to emit reference capture `[&]()` (or explicit move-aware captures), enabling direct channel communication between parent and worker tasks.
+  3. Verify channel passing and worker synchronization in structured concurrency test suites.
+- **Validation & Acceptance Criteria**:
+  - `scope.spawn` allows direct access to channels and synchronization objects without requiring `shared[...]` wrappers.
+  - Passes AddressSanitizer and ThreadSanitizer clean.
+
+---
+
+### `ARCH-CPP-04`: `<charconv>` Zero-Allocation & Exception-Free Integer Parsing (`GCPP-01`)
+- **Priority**: P1
+- **Category**: Google C++ Best Practices / Performance / Exception Hygiene
+- **Target Files**:
   - `runtime/core/net/url.hpp`
   - `runtime/core/net/http.hpp`
-  - `runtime/core/net/websocket.hpp`
-- **Problem Statement**:
-  - `runtime/core/net.hpp` (`1,436 LOC`) is by far the largest header in `runtime/core/`, combining 4 distinct networking subsystems (`core:net` TCP sockets, `core:net/url` RFC 3986 URL parser, `core:net/http` HTTP/1.1 client/server/router, and `core:net/websocket` RFC 6455 WebSockets) into one file.
-- **Detailed Requirements**:
-  1. Extract `cfire::net` (TCP sockets & listener) into `runtime/core/net/tcp.hpp`.
-  2. Extract `cfire::net::url` (RFC 3986 parsing & percent-encoding) into `runtime/core/net/url.hpp`.
-  3. Extract `cfire::net::http` (HTTP/1.1 wire parser, client, server, and standalone `Router`) into `runtime/core/net/http.hpp`.
-  4. Extract `cfire::net::websocket` (RFC 6455 framing, SHA-1 handshake, client/server/pair) into `runtime/core/net/websocket.hpp`.
-  5. Turn `runtime/core/net.hpp` into a clean umbrella header that includes the 4 sub-headers, ensuring `cfire eject` (which copies `runtime/core` recursively) continues to work out of the box.
-- **Validation & Acceptance Criteria**:
-  - Each header in `runtime/core/net/` is self-contained and under ~650 LOC.
-  - `test_http_client_server_and_urls`, `test_net_websocket`, `test_net_http_and_router`, and `test_relocatable_cmake_ejection` pass 100%.
-
----
-
-### `CPP-QA-05`: Decompose `src/docgen.hpp` (`2,767 LOC`) into Modular `src/docgen/*.hpp`
-- **Priority**: P1
-- **Category**: Compiler Modularization / Documentation Engine
-- **Target Files**:
-  - `src/docgen.hpp`
-  - `src/docgen/catalog.hpp`
-  - `src/docgen/styles.hpp`
-  - `src/docgen/markdown.hpp`
-  - `src/docgen/html.hpp`
-- **Problem Statement**:
-  - `src/docgen.hpp` mixes the 28-module `stdlib_catalog()`, `diagnostics_catalog()`, CSS stylesheet, Markdown-to-HTML parser, AST package doc extractor, and HTML page generators in one 2,767-line file.
-- **Detailed Requirements**:
-  1. Extract `StdFnDoc`, `StdModuleDoc`, `DiagnosticDoc`, `stdlib_catalog()`, `diagnostics_catalog()`, and `detail::module_practical_example()` into `src/docgen/catalog.hpp`.
-  2. Extract `detail::html_escape()`, `detail::shared_css()`, and `detail::navbar_html()` into `src/docgen/styles.hpp`.
-  3. Extract Markdown rendering and extraction (`render_guide_markdown`, `generate_guide_markdown`, `generate_reference_markdown`, `extract_file_markdown_doc`, `generate_llm_reference`) into `src/docgen/markdown.hpp`.
-  4. Extract HTML generation and synchronization (`generate_landing_html`, `generate_guide_html`, `generate_reference_html`, `sync_docs_directory`) into `src/docgen/html.hpp`.
-  5. Keep `src/docgen.hpp` as a clean umbrella header.
-- **Validation & Acceptance Criteria**:
-  - `./cfire doc --check` passes with **zero diff** on `docs/index.html`, `docs/guide.html`, `docs/reference.html`, and `docs/STDLIB_REFERENCE.md`.
-
----
-
-### `CPP-QA-06`: Decompose `src/lsp.hpp` (`4,337 LOC`) into Modular `src/lsp/*.hpp`
-- **Priority**: P1
-- **Category**: Compiler Modularization / IDE & LSP Engine
-- **Target Files**:
-  - `src/lsp.hpp`
-  - `src/lsp/json_rpc.hpp`
-  - `src/lsp/ide_setup.hpp`
   - `src/lsp/server.hpp`
+  - `tests/unit/test_stdlib.cpp`
 - **Problem Statement**:
-  - `src/lsp.hpp` is a 4,337-line single header containing JSON-RPC wire helpers, URI conversion utilities, multi-editor IDE setup generators (`configure_ide`), and the `Server` class.
+  - `runtime/core/net/url.hpp:83-87`, `runtime/core/net/http.hpp:190, 334`, and `src/lsp/server.hpp:101` allocate temporary `std::string` buffers and use `std::stoi`/`std::stoul` inside `try { ... } catch (...)`.
+  - In `src/lsp/server.hpp:101`, unhandled exceptions on malformed `Content-Length:` header crash the LSP daemon.
 - **Detailed Requirements**:
-  1. Extract JSON-RPC escaping, structure-aware JSON extraction, URI conversion, and text range helpers into `src/lsp/json_rpc.hpp`.
-  2. Extract `configure_ide()` and editor configuration templates (VS Code, Cursor, Zed, Neovim, JetBrains) into `src/lsp/ide_setup.hpp`.
-  3. Extract the `Server` class and LSP request handlers into `src/lsp/server.hpp`.
-  4. Keep `src/lsp.hpp` as a clean umbrella header.
+  1. Add a small inline helper `cfire::detail::parse_int<T>(std::string_view sv)` using `std::from_chars` from `<charconv>` returning `std::optional<T>`.
+  2. Replace `std::stoi`/`std::stoul` in `url.hpp`, `http.hpp`, and `lsp/server.hpp` with this helper, removing all 4 `try/catch` exception blocks.
 - **Validation & Acceptance Criteria**:
-  - `src/lsp.hpp` is reduced to a clean umbrella header; all sub-headers compile with 0 warnings under `-Wall -Wextra -Wpedantic -Wshadow`.
-  - `test_formatter_lsp_and_docgen` and `test_ide_configuration_setup` pass 100%.
+  - Zero heap allocations when parsing integers from string views.
+  - Zero `try/catch` in runtime net parsing and LSP header processing.
+
+---
+
+### `ARCH-CPP-05`: Lifetime Safety Annotations with `[[clang::lifetimebound]]` (`GCPP-02`)
+- **Priority**: P1
+- **Category**: Google C++ Best Practices / Lifetime Safety
+- **Target Files**:
+  - `runtime/cfire_prelude.hpp`
+- **Problem Statement**:
+  - Functions returning non-owning views (`string_view`, `span`, `const char*`) from parameters or member fields currently lack lifetimebound annotations, preventing the compiler from detecting temporary view dangling at compile time.
+- **Detailed Requirements**:
+  1. Add macro `#if defined(__clang__) #define CFIRE_LIFETIMEBOUND [[clang::lifetimebound]] #else #define CFIRE_LIFETIMEBOUND #endif` in `runtime/cfire_prelude.hpp`.
+  2. Annotate `Error::message()`, `slice(...)` overloads, and `c_str(...)` overloads.
+- **Validation & Acceptance Criteria**:
+  - View-returning functions carry lifetimebound metadata.
+  - 100% clean compilation on Clang with zero warnings.
 
 ---
 
@@ -170,3 +138,8 @@ flowchart LR
 | `CPP-QA-04` | Runtime Net Split | Decomposed `runtime/core/net.hpp` (`1,436 LOC`) into `runtime/core/net/{tcp,url,http,websocket}.hpp` | 2026-10-20 |
 | `CPP-QA-05` | Docgen Split | Decomposed `src/docgen.hpp` (`2,767 LOC`) into `src/docgen/{catalog,styles,markdown,html}.hpp` | 2026-10-20 |
 | `CPP-QA-06` | LSP Split | Decomposed `src/lsp.hpp` (`4,337 LOC`) into `src/lsp/{json_rpc,ide_setup,server}.hpp` | 2026-10-20 |
+| `ARCH-CPP-01` | Multi-Struct Methods | Overloaded `cfire_method_<name>` dispatch resolving receiver method collision (`LD-NEXT-03`) | 2026-10-20 |
+| `ARCH-CPP-02` | Interface Concepts | C++20 `concept` requirements lowering for interfaces while preserving canonical e2e invariants | 2026-10-20 |
+| `ARCH-CPP-03` | Concurrency Captures | Structured concurrency bounded capture semantics with thread-safe loop copying | 2026-10-20 |
+| `ARCH-CPP-04` | `<charconv>` & Zero-Exception | Zero-allocation, exception-free `std::from_chars` parsing in net and LSP (`GCPP-01`) | 2026-10-20 |
+| `ARCH-CPP-05` | Lifetimebound Safety | `CFIRE_LIFETIMEBOUND` (`[[clang::lifetimebound]]`) annotations on views and slices (`GCPP-02`) | 2026-10-20 |
