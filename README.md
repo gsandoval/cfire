@@ -20,37 +20,41 @@
 4. **Clang AST C/C++ Interop + Unified `build.cf` Build System:** Import any C/C++ header (`import cpp "<header.h>"`) or build local/external `build.CC` and `build.CMake` dependencies into cached static archives (`.cfire/cache/lib/*.a`) with automatic `str` $\rightarrow$ `const char*` boundary coercion (`cfire::c_str`).
 5. **Intent Over Ceremony:** Replace `const T&`, `T&&`, `std::move`, `std::string_view`, and pointer hazards with `in` (default), `mut`, `move` (with definite last-use move insertion), multi-return tuples `(T1, T2)`, unified `str`/`path`/`bytes`, `own[T]`/`shared[T]`, `T!`, `defer`, `match`, and `test "..." { ... }` blocks.
 
-## Built-In `core:` & `vendor:` Catalog
+## Built-In `core:` (28 Modules) & `vendor:` Catalog
 
 | Import Path | Native Engine / C++23 Lowering | Auto-Linked Flags |
 | :--- | :--- | :--- |
-| `core:fs` | `<filesystem>` + `<fstream>` (`read_bytes`, `read_text`, `write_bytes`, `write_text`, `exists`, `mkdir_all`, `list_dir`) | *(stdlib)* |
+| `core:fs` | `<filesystem>` + `<fstream>` (`read_all`, `write_all`, `read_text`, `write_text`, streaming `open`/`File`, `dirname`, `basename`, `extension`, `exists`, `mkdir_all`, `remove`, `list_dir`) | *(header-only)* |
 | `core:cli` | Compile-time `cli:"..."` struct-tag flag parser (`bool`, `i32`, `i64`, `usize`, `f64`, `str`, `path`) | *(header-only)* |
-| `core:compress/zstd` | Facebook `libzstd` (`<zstd.h>`) frame compressor & decompressor | `-lzstd` |
-| `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` via `json:"..."` struct tags | `-lsimdjson` |
-| `core:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection, `exec`, `query[T]`, `tx` via `db:"..."` struct tags | `-lsqlite3` |
-| `core:crypto/sha256` | Standard FIPS 180-4 SHA-256 digest (`hash_hex`, `hash_bytes`) | *(stdlib)* |
-| `core:crypto/hmac` | RFC 2104 HMAC-SHA256 message authentication (`digest_hex`, `verify`) | *(stdlib)* |
-| `core:crypto/aes` | NIST FIPS 197 AES-256-GCM symmetric authenticated encryption (AEAD) | *(stdlib)* |
-| `core:crypto/blake3` | Cryptographic 256-bit digest (`hash_hex`) | *(CommonCrypto / std)* |
+| `core:compress/zstd` | Facebook `libzstd` (`<zstd.h>`) frame compressor & decompressor (`compress`, `decompress`) | `-lzstd` |
+| `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` via `json:"..."` struct tags, plus dynamic DOM (`parse_dynamic`) | `-lsimdjson` |
+| `core:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection (`open`, `exec`, `query[T]`, `tx`) via `sql:"..."` struct tags | `-lsqlite3` |
+| `core:crypto/sha256` | Standard FIPS 180-4 SHA-256 digest (`hash_hex`, `hash_bytes`) | *(header-only)* |
+| `core:crypto/hmac` | RFC 2104 HMAC-SHA256 message authentication (`sha256_hex`, `sha256_bytes`, constant-time `equal`) | *(header-only)* |
+| `core:crypto/aes` | NIST FIPS 197 AES-256-GCM AEAD & CTR symmetric encryption (`encrypt_gcm`, `decrypt_gcm`, `encrypt_ctr`, `decrypt_ctr`) | *(header-only)* |
+| `core:crypto/rand` | OS-backed CSPRNG entropy (`bytes`) via `arc4random_buf` / `/dev/urandom` | *(header-only)* |
+| `core:crypto/blake3` | Fast cryptographic 256-bit digest (`hash_hex`) | *(CommonCrypto / std)* |
 | `core:net` | Real POSIX BSD TCP sockets (`listen_tcp`, `connect_tcp`, `accept`, `read_str`, `write`) | *(POSIX sockets)* |
-| `core:net/http` | HTTP/1.1 client (`get`, `post`), server (`make_server`), router (`Router`) | *(POSIX / std)* |
-| `core:net/url` | RFC 3986 URL parsing & percent encoding (`parse`, `encode`, `decode`) | *(stdlib)* |
-| `core:net/websocket` | RFC 6455 WebSockets client & server (`handshake`, `Frame`, `send`, `recv`) | *(POSIX / std)* |
-| `core:sync` | Thread-safe Go-style typed `Channel[T]` (`send`, `recv`, `close`) for `async.scope` workers | *(stdlib)* |
-| `core:sync/context` | Cancellation tokens & deadlines (`Context`, `with_cancel`, `with_timeout`) | *(stdlib)* |
-| `core:time` | Monotonic clocks, durations & RFC 3339 timestamps (`now`, `format_rfc3339`, `parse_rfc3339`) | *(stdlib)* |
-| `core:os` | Environment, working directory, command execution (`getenv`, `exec`, `command`) | *(POSIX / stdlib)* |
-| `core:str` | Zero-fuss string manipulation (`trim`, `split`, `join`, `to_upper`, `to_lower`, `replace_all`) | *(stdlib)* |
-| `core:unicode` | UTF-8 rune decoding, rune counting, uppercase/lowercase conversions | *(stdlib)* |
-| `core:regex` | ECMAScript regular expressions (`compile`, `is_match`, `find_first`, `replace_all`) | *(stdlib)* |
-| `core:collections` | High-performance containers: `Set[T]`, `PriorityQueue[T]`, `Deque[T]` | *(stdlib)* |
-| `core:sort` | Slice sorting & binary search (`slice`, `slice_by`, `binary_search`) | *(stdlib)* |
-| `core:log` | Structured leveled logging (`debug`, `info`, `warn`, `error`, `set_level`) | *(stdlib)* |
-| `core:encoding/base64` | RFC 4648 Base64 & URL-safe encoding/decoding (`encode`, `decode`) | *(stdlib)* |
-| `core:encoding/hex` | Hexadecimal encoding & decoding (`encode`, `decode`) | *(stdlib)* |
-| `core:encoding/csv` | RFC 4180 CSV parsing & stringification (`Reader`, `Writer`) | *(stdlib)* |
-| `core:math` / `core:rand` | Numeric utilities & thread-local CSPRNG (`range_i64`, `random_bytes`) | *(stdlib)* |
+| `core:net/url` | RFC 3986 URL parsing & percent encoding (`parse`, `encode`, `decode`) | *(header-only)* |
+| `core:net/http` | HTTP/1.1 client (`get`, `post`), server (`make_server`, `serve_in_background`), & standalone `Router` (`make_router`, `:param`, `*wildcard`) | *(POSIX / std)* |
+| `core:net/websocket` | RFC 6455 WebSockets client, server & loopback pair (`connect`, `upgrade`, `pair`, `send_text`, `recv_text`, `send_binary`, `recv_binary`, `ping`, `close`) | *(POSIX / std)* |
+| `core:time` | Monotonic clocks, typed `Duration`, calendar breakdown & RFC 3339 timestamps (`now`, `since`, `sleep_ms`, `format_rfc3339`, `parse_rfc3339`) | *(header-only)* |
+| `core:os` | Environment, process args, filesystem navigation (`getenv`, `setenv`, `cwd`, `chdir`, `args`, `pid`, `exit`) | *(POSIX / stdlib)* |
+| `core:os/exec` | Safe `fork`/`execvp` subprocess execution & pipe capture (`command`, `run_with_input`) | *(POSIX)* |
+| `core:os/signal` | Asynchronous POSIX signal trapping (`notify`) over `sync.Channel[i32]` | *(POSIX)* |
+| `core:sync` | Thread-safe Go-style typed `Channel[T]` (`make_channel`, `send`, `recv`, `try_recv`, `close`) for `async.scope` workers | *(header-only)* |
+| `core:sync/context` | Hierarchical cancellation tokens & deadlines (`background`, `with_cancel`, `with_timeout`, `recv_ctx`, `sleep_ctx`) | *(header-only)* |
+| `core:str` | Zero-fuss string manipulation (`trim`, `split`, `join`, `replace_all`, `starts_with`, `ends_with`, `contains`, `to_upper`, `to_lower`) | *(header-only)* |
+| `core:unicode` | RFC 3629 UTF-8 validation, rune iteration & case mapping (`is_valid_utf8`, `rune_count`, `runes`, `encode_rune`, `to_upper`, `to_lower`) | *(header-only)* |
+| `core:regex` | ECMAScript regular expressions (`compile`, `is_match`, `find`, `find_all`, `replace_all`) | *(header-only)* |
+| `core:collections` | Generic high-performance containers: `Set[T]`, `PriorityQueue[T]`, `Deque[T]` | *(header-only)* |
+| `core:sort` | In-place slice sorting & binary search (`slice`, `slice_desc`, `is_sorted`, `binary_search`) | *(header-only)* |
+| `core:log` | Structured leveled logging (`set_level`, `set_format`, `debug`, `info`, `warn`, `error`) in Text or JSON | *(header-only)* |
+| `core:encoding/base64` | RFC 4648 Base64 encoding & decoding (`encode`, `encode_str`, `decode`, `decode_str`) | *(header-only)* |
+| `core:encoding/hex` | Hexadecimal encoding & decoding (`encode`, `decode`, `decode_str`) | *(header-only)* |
+| `core:encoding/csv` | RFC 4180 CSV parser & serializer (`parse`, `stringify`) | *(header-only)* |
+| `core:math` | Numeric & trigonometric utilities (`abs_f64`, `sqrt`, `pow`, `sin`, `cos`, `floor`, `ceil`, `clamp_i64`, `clamp_f64`) | *(header-only)* |
+| `core:rand` | Non-deterministic PRNG & CSPRNG (`u64`, `range_i64`, `f64_unit`, `bytes`) | *(header-only)* |
 | `vendor:raylib` | `raylib` (`<raylib.h>`) 2D/3D hardware-accelerated visualization | `-lraylib` + macOS frameworks |
 
 ## Quick Start
@@ -68,6 +72,8 @@ make test
 ./cfire run examples/07-types-match-map/main.cf
 ./cfire run examples/08-multi-pkg-cc-build/main.cf
 ./cfire run examples/09-stdlib-test-pointers/main.cf
+./cfire run examples/10-cmake-and-make-deps/main.cf
+./cfire run examples/11-http-server-router/main.cf
 
 # Evaluate one-shot expressions or statements:
 ./cfire eval -e "1 + 2 * 3"

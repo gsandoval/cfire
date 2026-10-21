@@ -14,6 +14,6 @@ When working in this repository:
    - Testing strategy is identified, defined, and executed across all applicable tiers:
      - **Unit Tests** (isolated component logic)
      - **Integration Tests** (compiler subsystems and pipelines)
-     - **Conformance Tests** (language execution & LSP streams in `tests/conformance_test.cpp`)
+     - **Conformance Tests** (language execution & LSP streams in `tests/unit/` and `tests/e2e/`)
      - **Manual Validation** (real-world validation in Zed/VS Code or CLI)
 4. Every change must compile cleanly with `clang++ -std=c++23 -O2 -Wall -Wextra` (zero warnings), pass `make test` 100%, and pass `./cfire doc --check`.

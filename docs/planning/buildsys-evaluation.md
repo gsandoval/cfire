@@ -1,5 +1,8 @@
 # Build System & Project Extensibility Architecture Evaluation
 
+> [!NOTE]
+> **Historical Baseline Audit (All Findings Resolved)**: This document records the initial adversarial audit of `cfire`'s build system and C/C++ interop. Every finding identified below (`BS-01` through `BS-08`, `BS-EXT-01`, and `BS-EXT-02`) has been **100% resolved and verified** in [`src/buildsys.hpp`](../../src/buildsys.hpp) and [`src/clang_bridge.hpp`](../../src/clang_bridge.hpp).
+
 This document provides a comprehensive, rigorous adversarial audit of the `cfire` build system, foreign project integration, and C/C++ compiler drivers. It benchmarks `cfire` against modern language build systems (**Cargo**, **Zig build**, **Meson**, **CMake**, and **Go/cgo**) and identifies friction points when integrating real-world custom libraries.
 
 ---

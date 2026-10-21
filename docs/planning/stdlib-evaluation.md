@@ -1,6 +1,9 @@
 # Core Library Catalog & Daily Developer Utility Evaluation
 
-This document provides a comprehensive, adversarial audit of the `cfire` standard library (`core:*`) implemented in [`runtime/cfire_core_stdlib.hpp`](../../runtime/cfire_core_stdlib.hpp) and cataloged in [`src/docgen.hpp`](../../src/docgen.hpp). It benchmarks `cfire` against modern gold-standard standard libraries (**Go**, **Python**, **Rust**, **Zig**, and **Odin**) to identify gaps in day-to-day developer workflows.
+> [!NOTE]
+> **Historical Baseline Audit (All Findings Resolved)**: This document records the initial adversarial audit of `cfire`'s original 13-module prototype. Every gap, security finding, and catalog discrepancy identified below (`LIB-01` through `LIB-12`, plus `LIB-EXT-01` through `LIB-EXT-05`) has been **100% resolved**. `cfire` now ships with **28 production `core:*` modules** in [`runtime/core/`](../../runtime/core/) and [`src/docgen.hpp`](../../src/docgen.hpp).
+
+This document provides a comprehensive, adversarial audit of the initial `cfire` standard library (`core:*`) benchmarked against modern gold-standard standard libraries (**Go**, **Python**, **Rust**, **Zig**, and **Odin**) to identify gaps in day-to-day developer workflows.
 
 ---
 
