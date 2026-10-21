@@ -1,17 +1,24 @@
 <p align="center">
-  <img src="docs/assets/cfire_logo.jpg" alt="cfire Logo — A Sapphire on Fire" width="240" />
+  <img src="docs/assets/cfire_logo_horizontal.png" alt="cfire logo" width="280" />
 </p>
 
 <h1 align="center"><code>cfire</code> (<code>.cf</code>)</h1>
 
 <p align="center">
-  <strong>Crystalline C++23 Precision. Blazing Productivity.</strong><br/>
-  <em>Write clean, Go/Tako/Odin-inspired code. Get zero-overhead native C++23.</em>
+  <strong>Pronounced <em>sapphire</em> (/ˈsæf.aɪ.ər/). C Systems Heritage. Blazing Modern Velocity.</strong><br/>
+  <em>Write clean, Go/Odin-inspired code. Lower 1:1 to zero-overhead ISO C++23.</em>
 </p>
 
 ---
 
 `cfire` is a high-productivity systems programming language and unified C/C++ build toolchain—**implemented in 100% pure ISO C++23**—that transpiles 1:1 to human-readable, standard **C++23** with zero runtime overhead.
+
+### What's in the Name?
+**`cfire`** (pronounced like **"sapphire"**, or phonetically **"C-fire"**) brings together two core ideas:
+- **`C`**: The bedrock of systems programming—direct mechanical sympathy, raw execution speed, and standard ISO C++23 precision.
+- **`fire`**: In modern developer parlance, *it's fire*—blazing fast, lightweight, and genuinely fun to write without forty years of ceremonial baggage.
+
+The phonetic homophone to **sapphire** captures the visual identity: crystalline, structured rigor on the inside, fueled by a blazing developer workflow on the outside.
 
 ## Core Pillars
 1. **TypeScript's Approach to C++23:** A clean, ergonomic structural skin that lowers directly to native C++23 (`std::expected`, `std::variant`, `std::span`, `std::string_view`, `std::format`, C++20 `concept`s) without a garbage collector or runtime reflection overhead.

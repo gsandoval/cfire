@@ -1,5 +1,5 @@
 #!/bin/sh
-# cfire installer — Sapphire on Fire (ISO C++23 frontend)
+# cfire installer — cfire (pronounced sapphire) ISO C++23 frontend
 # Usage: curl -fsSL https://cfire.memo.engineer/install.sh | sh
 set -e
 
@@ -10,7 +10,7 @@ BLUE="\033[34m"
 YELLOW="\033[33m"
 RED="\033[31m"
 
-printf "%b\n" "${BOLD}Installing cfire (Sapphire on Fire)...${RESET}"
+printf "%b\n" "${BOLD}Installing cfire (pronounced sapphire)...${RESET}"
 
 # 1. Detect platform and tools
 OS="$(uname -s)"

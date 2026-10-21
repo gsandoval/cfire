@@ -1,12 +1,18 @@
 # The `cfire` Language & Systems Programming Guide
 
-> **Sapphire on Fire (`cfire`)** is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern **ISO C++23**. It combines the clean syntax and rapid onboarding of Go, the batteries-included `core:*` catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.
+> **`cfire`** (pronounced like **"sapphire"** `/ˈsæf.aɪ.ər/`, or **"C-fire"**) is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern **ISO C++23**. The name pairs **"C"** (the bedrock of systems engineering) with **"fire"** (blazing modern velocity, or developer slang for *top-tier*). It combines the clean syntax and rapid onboarding of Go, the batteries-included `core:*` catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.
 
 ---
 
 ## Chapter 1: Philosophy & Architecture
 
-### 1.1 The Systems Programming Landscape
+### 1.1 The Systems Programming Landscape & The `cfire` Name
+
+Where does the name **`cfire`** come from?
+- **`C`**: The programming language heritage of systems software—deterministic memory control, zero-overhead abstractions, and mechanical sympathy.
+- **`fire`**: In modern engineering slang, *"it's fire"*—blazing fast, lightweight, and genuinely exciting to work with.
+- **Pronounced like "sapphire"**: The name rolls off the tongue as *sapphire* (`/ˈsæf.aɪ.ər/`), matching its visual identity—the crystalline structure and precision of a sapphire gem ignited by the speed and focus of fire.
+
 Modern systems software demands both high developer velocity and uncompromising runtime performance. For decades, engineers have navigated difficult compromises:
 - **C++** offers unmatched performance, vast ecosystem reach, and zero-cost abstractions, but suffers from forty years of accumulated syntactic complexity, implicit mutable references, and silent use-after-move bugs.
 - **Rust** provides ironclad memory safety guarantees via compile-time lifetime analysis (`'a`), but introduces steep cognitive overhead and challenging FFI barriers when integrating with existing C++ codebases.
@@ -59,7 +65,7 @@ fn main() {
     t0 := time.now_ms()
 
     // Immutability by default: 'msg' cannot be reassigned
-    msg := "Hello from Sapphire on Fire (cfire)!"
+    msg := "Hello from cfire (pronounced sapphire)!"
     println("{}", msg)
 
     // Fallible file operation with early-exit 'try'
