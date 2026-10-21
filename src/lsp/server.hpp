@@ -98,7 +98,8 @@ public:
         while (std::getline(in, line)) {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             if (line.starts_with("Content-Length:")) {
-                std::size_t len = std::stoul(line.substr(15));
+                std::string_view len_sv = std::string_view(line).substr(15);
+                std::size_t len = cfire::detail::parse_int<std::size_t>(len_sv).value_or(0);
                 while (std::getline(in, line)) {
                     if (!line.empty() && line.back() == '\r') line.pop_back();
                     if (line.empty()) break;

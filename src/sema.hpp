@@ -27,7 +27,8 @@ struct CheckedFile {
     FileAST ast{};
     std::unordered_map<std::string, FnDecl> fn_sigs{};
     std::unordered_map<std::string, FnDecl> methods{};     // "Type::method" -> FnDecl
-    std::unordered_map<std::string, std::string> method_owner{}; // "method" -> "Type"
+    std::unordered_map<std::string, std::string> method_owner{}; // "method" -> "Type" (primary owner for single-owner methods)
+    std::unordered_map<std::string, std::unordered_set<std::string>> method_owners{}; // "method" -> set of "Type"s
     std::unordered_map<std::string, EnumDecl> enums{};     // "EnumName" -> EnumDecl
     std::unordered_map<std::string, std::string> variant_to_enum{}; // "VariantName" -> "EnumName"
     std::unordered_map<std::string, std::vector<StructTagInfo>> struct_tags{};
@@ -596,6 +597,7 @@ private:
             std::string key = fn.receiver->type.name + "::" + fn.name;
             cf.methods[key] = fn;
             cf.method_owner[fn.name] = fn.receiver->type.name;
+            cf.method_owners[fn.name].insert(fn.receiver->type.name);
         } else {
             cf.fn_sigs[fn.name] = fn;
         }

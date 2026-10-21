@@ -80,9 +80,10 @@ struct Url {
     std::size_t colon = host_port.find(':');
     if (colon != std::string_view::npos) {
         u.host = std::string(host_port.substr(0, colon));
-        try {
-            u.port = static_cast<std::uint16_t>(std::stoi(std::string(host_port.substr(colon + 1))));
-        } catch (...) {
+        std::string_view port_str = host_port.substr(colon + 1);
+        if (auto p = cfire::detail::parse_int<std::uint16_t>(port_str)) {
+            u.port = *p;
+        } else {
             u.port = (u.scheme == "https") ? 443 : 80;
         }
     } else {
