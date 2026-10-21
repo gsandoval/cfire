@@ -4,14 +4,15 @@ This directory maintains the project backlog, active development tasks, and arch
 
 ## Core Files
 
-1. [`language-design-evaluation.md`](./language-design-evaluation.md): Deep architectural critique and language design analysis across orthogonality, regularity, cognitive budget, lifetime safety, and modern PL lessons (Go, Rust, C#, Zig, Swift, Odin).
-2. [`buildsys-evaluation.md`](./buildsys-evaluation.md): Adversarial audit of `build.cf`, foreign C/C++ project integration, multi-driver compilation (CMake, Make, CC), header inspection, and ejection fidelity.
-3. [`stdlib-evaluation.md`](./stdlib-evaluation.md): Thorough gap analysis of the 13 `core:*` modules benchmarked against Go, Python, Rust, Zig, and Odin for daily developer workflows.
-4. [`lsp-evaluation.md`](./lsp-evaluation.md): Comprehensive capability sweep and gap analysis comparing `cfire-lsp` against production-grade language servers (`rust-analyzer`, `clangd`, `gopls`, `zls`).
-5. [`backlog.md`](./backlog.md): Prioritized catalog of all planned improvements, features, and fixes across LSP, Language Design (LD), Build System (BS), and Standard Library (LIB).
-6. [`architectural-backlog.md`](./architectural-backlog.md): Prioritized technical debt, decoupling initiatives, header modularization, and AST allocator milestones (`ARCH-01` through `ARCH-06`).
+1. [`language-design-evaluation.md`](./language-design-evaluation.md): Historical architectural critique and language design analysis across orthogonality, regularity, cognitive budget, lifetime safety, and modern PL lessons (all findings `LD-01`–`LD-14` resolved).
+2. [`buildsys-evaluation.md`](./buildsys-evaluation.md): Historical adversarial audit of `build.cf`, foreign C/C++ project integration, multi-driver compilation, header inspection, and ejection fidelity (all findings `BS-01`–`BS-08` resolved).
+3. [`stdlib-evaluation.md`](./stdlib-evaluation.md): Historical gap analysis of the initial 13 `core:*` modules benchmarked against Go, Python, Rust, Zig, and Odin that drove the expansion to 28 production `core:*` modules (all findings `LIB-01`–`LIB-12` resolved).
+4. [`lsp-evaluation.md`](./lsp-evaluation.md): Historical capability sweep and gap analysis comparing `cfire-lsp` against `rust-analyzer`, `clangd`, `gopls`, and `zls` (all findings `LSP-01`–`LSP-10` resolved).
+5. [`backlog.md`](./backlog.md): Complete catalog of implemented improvements, features, and fixes across LSP, Language Design (LD), Build System (BS), Standard Library (LIB), and Developer/Agent Tooling (`TOOL-*`, `IDE-*`, `*-EXT-*`).
+6. [`architectural-backlog.md`](./architectural-backlog.md): Prioritized C++23 technical debt, header decomposition initiatives (`CPP-ARCH-01` through `CPP-ARCH-03`), and completed architectural milestones (`ARCH-*`, `CPP-01`–`CPP-06`).
 7. [`active.md`](./active.md): The live in-flight workbench. Tasks currently being designed or coded live here with detailed scoping and verification criteria.
-8. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
+8. [`post-backlog-ideas.md`](./post-backlog-ideas.md): Archive of strategic explorations (`cfire vendor`, `cfire check --json`, `cfire outline`, `cfire doc --llm`, `cfire refactor`, `cfire eval`, `cfire ide`) that have since been promoted and implemented.
+9. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
 
 ---
 
@@ -33,7 +34,7 @@ Before writing any implementation code for an item in [`active.md`](./active.md)
 - **Testing & Verification Matrix**: Explicit definition of required tests across applicable tiers:
   - **Unit Tests**: Isolated validation of parsers, helper algorithms, or utility functions.
   - **Integration Tests**: Inter-module compiler pipelines (e.g., frontend $\rightarrow$ sema $\rightarrow$ codegen $\rightarrow$ build system).
-  - **Conformance Tests**: End-to-end runtime behavior, ISO C++23 lowered code emission, and LSP JSON-RPC protocol assertions in `tests/conformance_test.cpp`.
+  - **Conformance Tests**: End-to-end runtime behavior, ISO C++23 lowered code emission, and LSP JSON-RPC protocol assertions in `tests/unit/` and `tests/e2e/`.
   - **Manual Validation**: Real-world validation in target editors (Zed, VS Code) or CLI invocation verifying live UX, trigger characters, and timing.
 - **Implementation Design**: The exact files, classes, methods, and protocols to modify.
 

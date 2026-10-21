@@ -8,19 +8,25 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
 
 `cfire` (pronounced *C-fire / Sapphire*) is an ISO C++23-lowering native systems programming language combining modern Go/Rust ergonomics with zero-overhead C++23 interoperability, memory safety intents (`in`, `mut`, `move`), and a unified build system with a native Clang AST Header Bridge.
 
-- `src/` — Complete C++23 compiler and toolchain:
-  - `lexer.hpp`, `parser.hpp` — Scanner and AST recursive-descent parser.
-  - `sema.hpp` — Semantic analysis, parameter intent enforcement, borrow checker.
+- `src/` — Complete ISO C++23 compiler and toolchain:
+  - `lexer_types.hpp`, `lexer.hpp` — Token definitions and scanner.
+  - `ast.hpp`, `parser.hpp` — `AstArena` bump allocator, AST definitions, and recursive-descent parser.
+  - `sema.hpp` — Semantic analysis, CFG move/divergence checking, and parameter intent enforcement.
   - `codegen.hpp` — Zero-overhead ISO C++23 emitter.
-  - `buildsys.hpp` — Native live multi-driver build engine (C/C++, CMake, Make, Ninja).
-  - `clang_bridge.hpp` — Clang AST header inspection bridge.
-  - `lsp.hpp` — High-performance JSON-RPC 2.0 language server.
+  - `buildsys.hpp` — Native live multi-driver build engine (C/C++, CMake, Make, Ninja, in-process SHA-256 caching, CMake ejection).
+  - `clang_bridge.hpp` — Clang JSON AST header inspection bridge.
+  - `lsp.hpp` — High-performance JSON-RPC 2.0 language server & multi-IDE setup (`cfire ide`).
   - `formatter.hpp` — Canonical code formatter (`cfire fmt`).
-  - `docgen.hpp` — HTML & Markdown doc generator (`cfire doc`).
+  - `refactor.hpp` — AST-backed cross-workspace symbol rename engine (`cfire refactor`).
+  - `docgen.hpp` — Single-source metadata catalog and HTML/Markdown generator (`cfire doc`).
+  - `main.cpp` — Standalone CLI driver entrypoint.
+- `runtime/` — Modular ISO C++23 runtime & 28 built-in `core:*` modules:
+  - `cfire_prelude.hpp` — Core primitives (`Error`, `slice`, `async.scope`, `own[T]`, `shared[T]`).
+  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` — Modular header implementations for all 28 `core:*` standard library packages.
 - `docs/planning/README.md` — The authoritative operational protocol and validation process guidelines.
 - `docs/planning/` — The project backlog, active development tasks, and architectural evaluations.
-- `tests/conformance_test.cpp` — Full end-to-end conformance test suite.
-- `examples/` — Canonical verified examples (`01-hello-core` through `10-cmake-and-make-deps`).
+- `tests/` — Modular conformance test suite (`tests/unit/`, `tests/e2e/`, `tests/test_main.cpp`, `tests/test_harness.hpp`).
+- `examples/` — Canonical verified examples (`01-hello-core` through `11-http-server-router`).
 
 ---
 
@@ -56,7 +62,7 @@ Before editing code for any non-trivial task:
    Every feature or fix must explicitly define and pass tests across its applicable tiers:
    - **Unit Tests**: Granular component/function validation (parser rules, data structures, tokenizers).
    - **Integration Tests**: Inter-module compiler pipelines (e.g., driver CLI flags, eject workflows, vendor builds).
-   - **Conformance Tests**: End-to-end language execution, memory safety, and LSP JSON-RPC stream assertions in `tests/conformance_test.cpp`.
+   - **Conformance Tests**: End-to-end language execution, memory safety, and LSP JSON-RPC stream assertions in `tests/unit/` and `tests/e2e/`.
    - **Manual Validation**: Live reproduction in target environments (e.g. Zed editor, VS Code, or interactive shell) confirming interactive UI, tabstops, and timing.
 6. **Quality Standards**:
    - Compiler builds must compile with **zero warnings** using `clang++ -std=c++23 -O2 -Wall -Wextra`.

@@ -1,5 +1,8 @@
 # Language Design & Frontend Architecture Evaluation
 
+> [!NOTE]
+> **Historical Baseline Audit (All Findings Resolved)**: This document records the initial adversarial PL critique of `cfire`'s frontend and C++23 lowering. Every finding identified below (`LD-01` through `LD-14` and `LD-EXT-01`) has been **100% resolved and verified** in [`src/parser.hpp`](../../src/parser.hpp), [`src/sema.hpp`](../../src/sema.hpp), and [`src/codegen.hpp`](../../src/codegen.hpp).
+
 This document provides a comprehensive, rigorous critique of the `cfire` frontend language design and its lowering to ISO C++23. It applies programming language design theory (orthogonality, regularity, cognitive load, compositionality, sound type systems) alongside lessons learned and community perceptions from modern systems languages (**Go**, **Rust**, **C#**, **Zig**, **Swift**, and **Odin**).
 
 ---

@@ -8,7 +8,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ## High Priority (P1)
 
 ### `LSP-01`: Snippet Completions for Core Language Constructs `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Developer Ergonomics
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: Typing `fn`, `for`, `match`, or `type` currently only suggests keywords as plain text labels. Developers expect tabstop-enabled templates so they don't have to write boilerplate syntax by hand.
@@ -29,7 +29,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-02`: Go to Type Definition (`textDocument/typeDefinition`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Navigation
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: When the cursor is on an instance variable (e.g. `audit` in `record("INFO", mut audit, ...)`), pressing "Go to Type Definition" should jump directly to `type AuditLog struct {` rather than where `audit` was declared.
@@ -47,7 +47,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-03`: Semantic Tokens Provider (`textDocument/semanticTokens/full`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Syntax Highlighting
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: Standard regex/TextMate grammars cannot distinguish mutable variables, parameter intents (`in`, `mut`, `move`, `out`), or native C++ bridge calls. Semantic tokens provide high-fidelity coloring in Zed and VS Code.
@@ -66,7 +66,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ## Medium Priority (P2)
 
 ### `LSP-04`: Multi-File Cross-Workspace References & Rename `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Refactoring
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: `textDocument/references` and `textDocument/rename` currently only scan the active document. Renaming an exported struct or function in a package should update all importer files across the project workspace.
@@ -79,7 +79,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-05`: Auto-Import Completions for `core:*` Standard Library `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Developer Ergonomics
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: Typing `read_all` should suggest `fs.read_all` even if `import "core:fs"` has not yet been added to the file, and selecting it should automatically insert the import statement at the top of the file.
@@ -92,7 +92,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-06`: Exhaustive `match` Arm Generation Code Action `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Code Actions
 - **Target Files**: `src/lsp.hpp`, `src/sema.hpp`
 - **Rationale**: When matching on an algebraic enum, developers should have a quick-fix (`textDocument/codeAction`) to auto-generate skeleton arms for all missing variants.
@@ -106,7 +106,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-07`: Sub-expression Type Hover & Struct Memory Layout Inspection `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Inspection
 - **Target Files**: `src/lsp.hpp`, `src/codegen.hpp`
 - **Rationale**: Developers want to hover over expressions (`a + b`, `obj.method()`) to see their evaluated types, and hover over structs to see memory layout (`sizeof`, `alignof`, field offsets).
@@ -121,7 +121,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ## Lower Priority / Architectural (P3)
 
 ### `LSP-08`: Debounced Background Diagnostics Worker Thread `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server / Performance
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: Currently, diagnostics are published synchronously on `textDocument/didChange`. A dedicated worker thread with a ~150ms debounce eliminates unnecessary re-parses during rapid typing bursts.
@@ -134,7 +134,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-09`: Resilient Statement-Level AST Recovery in Parser `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Frontend Compiler Architecture
 - **Target Files**: `src/parser.hpp`
 - **Rationale**: Current parser is recursive-descent fail-stop. While the LSP now synthesizes tokens for trailing dots, a broader resilient parser with statement-level synchronization tokens (panic mode recovery to `;`, `}`, `fn`, `type`) keeps valid AST nodes alive even when arbitrary statements contain syntax errors.
@@ -147,7 +147,7 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 ---
 
 ### `LSP-10`: Selection Range Formatting `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Formatter / LSP
 - **Target Files**: `src/formatter.hpp`, `src/lsp.hpp`
 - **Rationale**: Support `textDocument/rangeFormatting` to format only user-selected blocks without reflowing the entire document.
@@ -168,7 +168,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ## High Priority: Critical Soundness & Orthogonality (P1)
 
 ### `LD-01`: Recursive Monadic Type Orthogonality (`T!` and `T?` in Containers & Fields) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Type System / Lowering
 - **Target Files**: `src/ast.hpp`, `src/codegen.hpp`
 - **Rationale**: Currently `is_fallible` (`!`) and `is_optional` (`?`) are ad-hoc flags on `TypeRef` that `lower_owning_type` ignores, silently stripping `std::expected` and `std::optional` from struct fields and slice element types (`[]i32!`, `Item: str?`).
@@ -182,7 +182,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-03`: Structured Concurrency Integrity & Destruction Ordering in `async.scope` `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Concurrency / Semantics
 - **Target Files**: `src/codegen.hpp`, `runtime/cfire_prelude.hpp`
 - **Rationale**: Currently `async.scope` lowers to a raw C++ lambda. An early `return` inside `async.scope` only exits the lambda, letting outer function execution continue prematurely. Additionally, local `defer` statements run *before* `scope.join_all()`, creating data races with background worker threads.
@@ -196,7 +196,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-04`: Explicit Borrow References (`&str`, `&[]T`) to Prevent Auto-View Dangling `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Memory Safety / Lowering
 - **Target Files**: `src/codegen.hpp`, `src/sema.hpp`
 - **Rationale**: `in` parameters typed `str` and `[]T` automatically lower to `std::string_view` and `std::span<const T>`. When callers pass temporaries (e.g. `f(str.to_upper("x"))` or `f([1, 2, 3])`), the non-owning view immediately dangles if stored or returned.
@@ -210,7 +210,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-05`: CFG-Based Definite Assignment & Move Analysis `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Semantic Analysis / Compiler Architecture
 - **Target Files**: `src/sema.hpp`, `src/codegen.hpp`
 - **Rationale**: The move checker currently tracks line numbers (`moved_at_line_`). It is blind to loops (moving inside a loop causes runtime UB on iteration 2), prevents reassigning to moved variables (`x = new_val`), and misreports branches.
@@ -226,7 +226,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-11`: Composable Expression-Level `try` Lowering `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Error Handling / Expressions
 - **Target Files**: `src/codegen.hpp`, `runtime/cfire_prelude.hpp`
 - **Rationale**: `try` is parsed as an expression, but codegen lowers it as a statement-level macro. Inside sub-expressions (e.g. `10 + try f()`), the `try` keyword is silently discarded, emitting invalid C++.
@@ -240,7 +240,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-12`: Definite Divergence Verification for `or err { ... }` Blocks `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Control Flow / Safety
 - **Target Files**: `src/sema.hpp`, `src/codegen.hpp`
 - **Rationale**: If an `or err { ... }` block does not return, codegen unconditionally dereferences the empty `std::expected`, causing runtime undefined behavior.
@@ -256,7 +256,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ## Medium Priority: Soundness & Ergonomics (P2)
 
 ### `LD-02`: Value-Category-Aware Variant Matching (Moving Out of Match Arms) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Pattern Matching / Ownership
 - **Target Files**: `src/codegen.hpp`
 - **Rationale**: `match` arm visitors currently bind variant payloads as `const auto&`, preventing `own[T]` or move-only payloads from being moved out.
@@ -269,7 +269,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-06`: Path-Based Mutation Exclusivity Verification (`cfire/MUT-ALIAS`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Semantic Analysis / Aliasing
 - **Target Files**: `src/sema.hpp`
 - **Rationale**: `cfire/MUT-ALIAS` only checks bare identifier nodes; wrapping in field access (`p.data`) or indexing (`arr[0]`) bypasses aliasing checks.
@@ -282,7 +282,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-08`: Unify Foreign Escape Syntax to `cpp { ... }` `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Lexer / Language Consistency
 - **Target Files**: `src/lexer.hpp`
 - **Rationale**: Standardize on concise, ergonomic `cpp { ... }` as the single foreign C++ escape syntax.
@@ -295,7 +295,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-09`: Unambiguous Generic Call Disambiguation (`f[T, U](...)`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Parser / Grammar
 - **Target Files**: `src/parser.hpp`
 - **Rationale**: The previous 4-token lookahead `[Ident](` failed on multiple generic arguments (`make_pair[i32, str]()`) and compound types (`cast[[]i32]()`).
@@ -308,7 +308,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-13`: Multi-Return Tuples & Deconstructing Assignment `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Ergonomics / Types
 - **Target Files**: `src/parser.hpp`, `src/sema.hpp`, `src/codegen.hpp`
 - **Rationale**: Provide first-class value semantics for returning multiple values, avoiding mutable parameter boilerplate.
@@ -323,7 +323,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ## Low Priority: Polish & Regularity (P3)
 
 ### `LD-07`: Unify Variable Declarations `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Syntax Regularity
 - **Target Files**: `src/parser.hpp`
 - **Rationale**: Establish one clean, consistent syntax for binding declarations across all scopes.
@@ -336,7 +336,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-10`: Decouple Struct Tags from Compiler Codegen `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Architecture / Metaprogramming
 - **Target Files**: `src/parser.hpp`, `src/codegen.hpp`
 - **Rationale**: The compiler core currently has hardcoded logic for `simdjson` and `sqlite3`, while discarding user-defined struct tags (`yaml`, `toml`).
@@ -349,7 +349,7 @@ Detailed rationale, theoretical foundations, and modern language parallels are d
 ---
 
 ### `LD-14`: Remove Phantom Parameter Intent `forward` `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Hygiene
 - **Target Files**: `src/ast.hpp`, `src/parser.hpp`, `src/lexer.hpp`
 - **Rationale**: `forward` is accepted in function signatures, but silently lowers to `const T&` and is unsupported at call sites.
@@ -369,7 +369,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ## High Priority: Correctness & Build Performance (P1)
 
 ### `BS-01`: Reconcile Documentation & AST Scraper (Phantom `build.Context` API) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Build System / Ergonomics
 - **Target Files**: `src/buildsys.hpp`, `docs/GUIDE.md`
 - **Rationale**: `docs/GUIDE.md` Chapter 8 describes a programmatic `pub fn configure(mut b: build.Context)` API that does not exist in the compiler. `buildsys.hpp` only scrapes top-level `var X = build.<Driver>()` expressions.
@@ -381,7 +381,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ---
 
 ### `BS-02`: Object-Level Timestamp / Content Caching for `build.CC` `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Build System / Performance
 - **Target Files**: `src/buildsys.hpp`
 - **Rationale**: Every invocation of `cfire run`/`build` recompiles all C/C++ source files from scratch. Furthermore, identical file stems in different directories collide in `<cache>/objs/<dep>/<stem>.o`.
@@ -394,7 +394,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ---
 
 ### `BS-03`: Structured Header AST Ingestion (Preserve Namespaces & Overloads) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Clang Bridge / Interop
 - **Target Files**: `src/clang_bridge.hpp`
 - **Rationale**: Substring searching in Clang AST JSON dumps drops C++ namespaces and overwrites overloaded functions.
@@ -409,7 +409,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ## Medium Priority: Interop & Modularity (P2)
 
 ### `BS-04`: Hermetic & Relocatable CMake Ejection (`cfire eject`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Toolchain / Ejection
 - **Target Files**: `src/buildsys.hpp`
 - **Rationale**: `cfire eject` emits broken CMake configurations for dependencies with empty `dep.sources`, drops custom linker flags, and leaves vendor paths un-copied.
@@ -422,7 +422,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ---
 
 ### `BS-05`: Preprocessor Macro Injection for Header-Only C Libraries `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Foreign Interop / Syntax
 - **Target Files**: `src/parser.hpp`, `src/codegen.hpp`
 - **Rationale**: Single-file libraries like `stb_image.h` require `#define STB_IMAGE_IMPLEMENTATION` before inclusion.
@@ -435,7 +435,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ---
 
 ### `BS-06`: Shared Library (`.so` / `.dylib`) & Dynamic Link Support `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Build System / Linking
 - **Target Files**: `src/buildsys.hpp`
 - **Rationale**: CMake and Make dependencies generating shared libraries fail because `buildsys.hpp` only links `.a` archives.
@@ -448,7 +448,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ---
 
 ### `BS-07`: Recursive Local Package Resolution & Subpackage `build.cf` `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Module System / Build
 - **Target Files**: `src/buildsys.hpp`
 - **Rationale**: Local package import resolution is non-recursive, and subdirectories cannot declare isolated `build.cf` manifests.
@@ -463,7 +463,7 @@ Detailed rationale, failure modes, and industry comparisons are documented in [`
 ## Low Priority: Tooling (P3)
 
 ### `BS-08`: Pre-Build Code Generation Hooks (`build.Command`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Build System / Metaprogramming
 - **Target Files**: `src/buildsys.hpp`, `src/parser.hpp`
 - **Rationale**: Projects using Protobuf, Flatbuffers, or parser generators cannot declare pre-compilation generation steps in `build.cf`.
@@ -483,7 +483,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ## High Priority: Critical Infrastructure & Security (P1)
 
 ### `LIB-01`: High-Level HTTP Client, Server & URL Parsing (`core:net/http`, `core:net/url`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Networking / Web
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`, `src/docgen.hpp`
 - **Rationale**: Essential for REST APIs, webhooks, microservices, and external cloud communication.
@@ -497,7 +497,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-02`: Safe Process Execution, Piping & Signal Trapping (`core:os/exec`, `core:os/signal`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: OS / Process Management
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Replaces vulnerable `popen` shell interpolation with parameter-list execution (`execve`), stdin/stdout streaming pipes, and POSIX signal trapping.
@@ -510,7 +510,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-03`: Cryptographic Suite & True CSPRNG (`core:crypto/sha256`, `core:crypto/rand`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Security / Cryptography
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Replaces misnamed blake3 and static PRNG seed with standard SHA-256, HMAC-SHA256, and OS-backed random bytes (`arc4random_buf` / `getentropy`).
@@ -524,7 +524,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-12`: Reconcile Core Library Documentation & Catalog Desyncs `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Quality / Consistency
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`, `src/docgen.hpp`
 - **Rationale**: Fixes all 7 naming and return type discrepancies between `docgen.hpp` and `cfire_core_stdlib.hpp`.
@@ -542,7 +542,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ## Medium Priority: Daily Developer Staples (P2)
 
 ### `LIB-04`: Standard Data Encodings (`core:encoding/base64`, `core:encoding/hex`, `core:encoding/csv`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Text / Data Formats
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Required for API authentication tokens, hashes, and CSV data processing.
@@ -556,7 +556,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-05`: Regular Expressions Engine (`core:regex`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Text Processing
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Input validation, text sanitization, and pattern matching.
@@ -568,7 +568,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-06`: Time, Date & Duration Modernization (`core:time`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Time / Dates
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Adds typed `Duration` arithmetic, calendar breakdowns (year, month, day), and ISO 8601 / RFC 3339 parsing and formatting via C++20 `<chrono>`.
@@ -581,7 +581,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-07`: Data Structures & Algorithms (`core:collections`, `core:sort`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Collections / Algorithms
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Adds `Set[T]`, `PriorityQueue[T]`, `Deque[T]`, `sort.slice()`, and `sort.binary_search()`.
@@ -595,7 +595,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-08`: Structured Leveled Logging (`core:log` / `slog`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Observability
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Leveled, structured logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) with key-value contextual attributes and JSON / terminal formatters.
@@ -608,7 +608,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-09`: Streaming Filesystem I/O (`core:fs` Modernization) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Filesystem / I/O
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Introduces streaming `File` handles with explicit open modes (`Read`, `Write`, `Append`), chunked reading, and path utility functions (`dirname`, `basename`, `extension`).
@@ -621,7 +621,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-10`: JSON Dynamic DOM & Structured Serializer Fixes (`core:json`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Serialization
 - **Target Files**: `src/codegen.hpp`, `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Adds dynamic JSON DOM inspection (`simdjson::dom`) and enforces character escaping in string serialization.
@@ -636,7 +636,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ## Low Priority: Text Refinement (P3)
 
 ### `LIB-11`: Multi-Byte UTF-8 & Unicode Support (`core:unicode`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Unicode / Text
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`
 - **Rationale**: Safe UTF-8 rune iteration, rune counting, and validation without multi-byte corruption.
@@ -650,7 +650,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 # Developer, Editor & AI Agent Tooling (TOOL / IDE)
 
 ### `TOOL-01`: Agent Tooling Suite (`--json`, `outline`, `--llm`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: CLI Tooling / AI Agent Ergonomics
 - **Target Files**: `src/main.cpp`
 - **Rationale**: Eliminates fragile stderr regex parsing for agents, saves 90% context tokens on codebase discovery, and eliminates hallucinated syntax.
@@ -664,7 +664,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `IDE-01`: Universal Multi-IDE Auto-Detection & Setup (`cfire ide`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Developer Ergonomics / IDE Integration
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: Automatically configures language servers and format hooks for VS Code, Cursor, Zed, Neovim, and CLion.
@@ -677,7 +677,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `TOOL-02`: One-Shot REPL & CLI Evaluator (`cfire eval`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: CLI Tooling / Developer Ergonomics
 - **Target Files**: `src/main.cpp`
 - **Rationale**: Developers and agents frequently want to evaluate snippets, test expressions, or run ad-hoc scripts without creating scratch projects or writing boilerplate `package main` and `fn main()`.
@@ -695,7 +695,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `TOOL-03`: Semantic CLI Renaming & Refactoring Engine (`cfire refactor rename`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: CLI Tooling / Refactoring / AI Ergonomics
 - **Target Files**: `src/refactor.hpp`, `src/main.cpp`, `src/lsp.hpp`
 - **Rationale**: Headless AI agents and CLI users need scriptable, multi-file semantic renaming with collision checks and atomic diff previews without needing a running LSP JSON-RPC daemon.
@@ -715,7 +715,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `BS-EXT-01`: Remote Fetching, Integrity Lockfile & Offline Vendoring (`cfire vendor`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Build System / Package Management & Hermeticity
 - **Target Files**: `src/buildsys.hpp`, `src/main.cpp`
 - **Rationale**: Real-world projects need remote Git repositories and tarball archives without manual submodules. Developers require reproducible builds via `build.lock` and air-gapped repositories via `cfire vendor`.
@@ -732,7 +732,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `IDE-EXT-01`: LSP Semantic Parameter & Type Inlay Hints (`textDocument/inlayHint`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Server Protocol / Developer Ergonomics
 - **Target Files**: `src/lsp.hpp`
 - **Rationale**: Developers in modern editors (Zed, VS Code, Neovim) expect inline parameter name hints on function and method call arguments alongside existing type inference annotations.
@@ -750,7 +750,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `BS-EXT-02`: Multi-Target Cross-Compilation (`--target <triple>`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Build System / Cross-Compilation & Portability
 - **Target Files**: `src/buildsys.hpp`, `src/main.cpp`
 - **Rationale**: Developers need to cross-compile `.cf` binaries for remote deployment (Linux x86_64, aarch64, Windows, etc.) directly using Clang's multi-target backend.
@@ -767,7 +767,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-EXT-01`: Cryptographic Hashing & Symmetric Encryption (`core:crypto/aes`, `core:crypto/hmac`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Standard Library / Cryptography & Security
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`, `src/docgen.hpp`, `src/codegen.hpp`
 - **Rationale**: Production services require constant-time message authentication comparison and standard AES-256 symmetric authenticated encryption (CTR and GCM AEAD) without external dynamic library linkages.
@@ -784,7 +784,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LD-EXT-01`: Slice Pattern Matching & Destructuring (`match slice { [head, ..tail] => ... }`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Language Design / Pattern Matching & Ergonomics
 - **Target Files**: `src/ast.hpp`, `src/parser.hpp`, `src/sema.hpp`, `src/codegen.hpp`
 - **Rationale**: Slices are idiomatic in systems programming. Slicing and pattern matching on head/tail or fixed elements reduces boilerplate indexing and boundary checks.
@@ -801,7 +801,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-EXT-04`: Structured Concurrency Cancellation Tokens & Context (`core:sync/context`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Concurrency / Structured Cancellation
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`, `src/docgen.hpp`, `src/codegen.hpp`, `tests/conformance_test.cpp`
 - **Rationale**: Modern concurrent systems require deterministic propagation of deadlines and cancellation signals without thread leaking or polling.
@@ -818,7 +818,7 @@ Detailed rationale, API designs, and modern language parity analyses are documen
 ---
 
 ### `LIB-EXT-02`: High-Level WebSockets Client & Server (`core:net/websocket`) `[Completed]`
-- **Status**: Completed (commit ready)
+- **Status**: Completed
 - **Category**: Networking / Web Protocols
 - **Target Files**: `runtime/cfire_core_stdlib.hpp`, `src/docgen.hpp`, `src/codegen.hpp`, `tests/conformance_test.cpp`
 - **Rationale**: Real-time services, distributed agents, and interactive frontends require standard RFC 6455 WebSockets for full-duplex streaming without heavy external dependencies.
@@ -832,5 +832,23 @@ Detailed rationale, API designs, and modern language parity analyses are documen
   - Correct masking of client frames and unmasked server frames.
   - Automatic Pong reply to incoming Ping control frames.
   - 100% test pass in `make test` and `./cfire doc --check` clean.
+
+---
+
+### `LIB-EXT-05`: Production HTTP/1.1 Server, Request/Response Wire Engine & Standalone Router (`core:net/http`) `[Completed]`
+- **Status**: Completed
+- **Category**: Networking / Web Services & Routing
+- **Target Files**: `runtime/core/net.hpp`, `src/docgen.hpp`, `src/codegen.hpp`, `examples/11-http-server-router/main.cf`, `tests/unit/test_stdlib.cpp`
+- **Rationale**: Production web services and microservices require a complete HTTP/1.1 request parser, fluent response builder, middleware-capable router with path parameters (`:id`) and wildcards (`*filepath`), and background server execution.
+- **Detailed Requirements**:
+  1. Implement `http.parse_request(raw)` and `Response.to_wire()` supporting headers, query strings, and status codes.
+  2. Implement fluent `http.Response` builders (`Response.text`, `Response.json`, `Response.html`, `Response.redirect`, `with_header`).
+  3. Implement standalone `http.Router` (`make_router`, `get`, `post`, `put`, `delete_`, `patch`, `all`, `use`, `dispatch`) supporting `:param`, `*wildcard`, automatic `405 Method Not Allowed` with `Allow` header, and `404 Not Found` handlers.
+  4. Implement `Server.serve_in_background(router)` and `Server.listen_and_serve(router)`.
+- **Acceptance Criteria**:
+  - Standalone `Router.dispatch(req)` executes in-memory unit tests without opening sockets.
+  - Live `Server.serve_in_background(router)` serves concurrent HTTP client requests cleanly.
+  - Verified in `test_net_http_and_router` and `examples/11-http-server-router/main.cf`.
+
 
 
