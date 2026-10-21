@@ -365,6 +365,37 @@ type AuditLog struct {
             "LSP hover on intact_second succeeded despite earlier syntax error (LSP-09)");
     }
 
+    // 2f. Test LSP structure-aware JSON-RPC key extraction (CPP-QA-03: embedded JSON strings with "id": / "method": / "uri": / "line":)
+    {
+        cfire::lsp::Server qa_srv(10);
+        std::stringstream qa_in;
+        std::stringstream qa_out;
+
+        std::string_view qa_src = R"(package main
+
+fn main() -> i32 {
+    msg := "{\"id\":999,\"method\":\"shutdown\",\"uri\":\"file:///tmp/wrong.cf\",\"line\":99,\"character\":88}"
+    val := 42
+    return val
+}
+)";
+        qa_in << rpc_frame(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
+        qa_in << rpc_frame(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"text":"{}","uri":"file:///tmp/qa03.cf","languageId":"cfire","version":1}}}}}})",
+            cfire::lsp::detail::json_escape(qa_src)));
+        qa_in << rpc_frame(R"({"jsonrpc":"2.0","id":301,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/qa03.cf"},"position":{"line":4,"character":4}}})");
+        qa_in << rpc_frame(R"({"jsonrpc":"2.0","id":302,"method":"shutdown","params":null})");
+        qa_in << rpc_frame(R"({"jsonrpc":"2.0","method":"exit","params":null})");
+
+        qa_srv.handle_stream(qa_in, qa_out);
+        std::string qa_resp = qa_out.str();
+
+        require(qa_resp.contains(R"("id":301)") && qa_resp.contains("val: i64"),
+            "LSP structure-aware JSON key extraction ignores embedded JSON keys inside source strings (CPP-QA-03)");
+        require(!qa_resp.contains(R"("id":999)"),
+            "LSP did not confuse embedded \"id\":999 in string literal with RPC message id (CPP-QA-03)");
+    }
+
     auto ide_res = cfire::lsp::configure_ide(rt_dir.parent_path(), "zed");
     require(ide_res.has_value(), "cfire::lsp::configure_ide(zed)");
 
