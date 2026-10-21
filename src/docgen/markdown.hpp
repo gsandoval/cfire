@@ -551,21 +551,41 @@ namespace detail {
 }
 
 // Generates the compressed LLM & AI Agent language reference sheet (`cfire doc --llm`).
-[[nodiscard]] inline auto generate_llm_reference() -> std::string_view {
-    return R"(# cfire Language Reference Sheet for LLMs & AI Agents
-Grammar:
-- Package: `package <name>` (canonical: main)
-- Imports: `import "core:<mod>"`, `import "./path"`, `import cpp "header.h" @define("MACRO")`
-- Declarations:
-  - Const: `x := 42`, `name: str = "cfire"`
-  - Mutable: `mut y := 10`, `mut count: i64 = 0`
-- Signatures: `fn name(in a: i32, mut b: str, move c: []byte) -> Ret! { ... }`
+[[nodiscard]] inline auto generate_llm_reference() -> std::string {
+    static std::string cached_ref;
+    if (!cached_ref.empty()) return cached_ref;
+
+    std::string md = R"(# cfire Language Reference Sheet for LLMs & AI Agents
+
+## Grammar & Syntax Rules
+- Package: `package <name>` (canonical entry: `package main`)
+- Imports:
+  - Stdlib: `import "core:<module>"` (e.g. `import "core:fs"`)
+  - Local package: `import "./path/to/pkg"`
+  - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")`
+- Variable Declarations:
+  - Immutable binding: `x := 42`, `name: str = "cfire"`
+  - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
+- Function Signatures:
+  - `fn name(a: i32, mut b: str, move c: []byte) -> Ret! { ... }`
+  - Method with receiver: `fn (mut self: Server) start() -> void! { ... }`
   - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
   - Optional return: `-> T?` lowers to `std::optional<T>`
-  - Tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, deconstruct: `(x, y) := coords()`
+  - Multi-return tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, destructuring: `(x, y) := coords()`
+  - Generic parameters: `fn process[T: Display](item: T) { ... }`
+- Parameter Intent Rules:
+  - Default: immutable view / read-only
+  - `mut`: must pass mutable variable with `mut` at call site: `update(mut val)`
+  - `move`: transfers ownership with `move` at call site: `consume(move item)`
 - Types:
+  - Primitives: `i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`, `bool`, `char`, `void`
+  - Strings & Bytes: `str`, `&str`, `bytes`, `[]byte`
+  - Slices & Arrays: `[]T`, `&[]T`, `&mut []T`, `[N]T`
+  - Maps: `map[Key]Val`
+  - Smart Pointers: `own[T]` (unique), `shared[T]` (reference-counted)
+  - Raw Pointers: `*T`, `*mut T`
   - Struct: `type User struct { id: i64, name: str `json:"name"` }`
-  - Enum: `type Shape enum { Circle(f64), Rect(f64, f64) }`
+  - Enum: `type Shape enum { Circle(f64), Rect(f64, f64), None }`
   - Interface: `type Writer interface { write(b: []byte) -> usize! }`
 - Control Flow:
   - `if cond { ... } else { ... }`
@@ -573,22 +593,37 @@ Grammar:
   - `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
   - `defer resource.close()`
 - Error Handling:
-  - `val := try fallible()` (early return on error)
+  - `val := try fallible()` (early return error on failure)
   - `val := fallible() or fallback_expr`
-  - `val := fallible() or err { return -1 }` (must diverge or panic)
-- Foreign C/C++: `cpp { /* verbatim C++23 */ }`
-- Standard Library Modules:
-  - `core:fs`: open, File (read, read_all, write, seek, tell, flush, close), dirname, basename, extension
-  - `core:json`: parse_dynamic, stringify_dynamic, Value, decode[T], stringify[T]
-  - `core:net/http`: get, post, make_server; `core:net/url`: parse, encode, decode
-  - `core:unicode`: rune_count, runes, is_valid_utf8, to_lower, to_upper, encode_rune
-  - `core:os`: command, exec, getenv; `core:os/exec`: exec.command
-  - `core:time`: now, Duration, format_rfc3339, parse_rfc3339
-  - `core:regex`: compile, is_match, replace_all
-  - `core:collections`: Set[T], PriorityQueue[T], Deque[T]
-  - `core:sort`: slice, slice_by, binary_search
-  - `core:crypto/sha256`: hash_hex, hash_bytes; `core:crypto/rand`: bytes
-  - `core:log`: set_level, debug, info, warn, error)";
+  - `val := fallible() or err { return -1 }` (block must definitely diverge or panic)
+- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp::some_c_func()`
+- CLI Tooling:
+  - `cfire check --json <file>`: Multi-error structured diagnostics with 1-based coordinates and fixits
+  - `cfire outline --json <file|dir>`: AST symbol outline with exact types, intents, receivers
+  - `cfire doc --llm`: Dump this LLM context reference sheet
+  - `cfire test`: Run tests with assertion location reporting
+  - `cfire eval 'expr'`: Immediate evaluation of expressions
+
+## Standard Library Modules (`core:*`)
+)";
+
+    for (const auto& mod : stdlib_catalog()) {
+        md += std::format("\n### `import \"{}\"` (alias: `{}`)\n", mod.import_path, mod.ns_alias);
+        md += std::format("{}\n", mod.overview);
+        if (!mod.functions.empty()) {
+            md += "Functions & Methods:\n";
+            for (const auto& fn : mod.functions) {
+                if (fn.name.contains('.')) {
+                    md += std::format("- `{}`: {}\n", fn.cf_sig, fn.summary);
+                } else {
+                    md += std::format("- `{}` (call: `{}.{}`): {}\n", fn.cf_sig, mod.ns_alias, fn.name, fn.summary);
+                }
+            }
+        }
+    }
+
+    cached_ref = std::move(md);
+    return cached_ref;
 }
 
 } // namespace cfire::doc

@@ -1,6 +1,7 @@
 // src/main.cpp — Native C++23 CLI Driver for cfire (.cf)
 
 #include "buildsys.hpp"
+#include "diagnostics.hpp"
 #include "docgen.hpp"
 #include "formatter.hpp"
 #include "lsp.hpp"
@@ -11,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <print>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -75,11 +77,13 @@ void print_usage() {
     std::println("Usage: cfire <command> [args...]");
     std::println("Commands:");
     std::println("  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run");
-    std::println("  test     <file.cf>            Compile and execute all `test \"...\" {{ ... }}` blocks in file");
-    std::println("  build    [--target <triple>] <file.cf> Compile optimized binary for host or target triple");
+    std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
+    std::println("  build    [--target <triple>] [-o <path>] <file.cf> Compile optimized binary for host or target triple");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
-    std::println("  check    [--json] <file.cf>   Type-check, verify parameter intents, and inspect C++ headers");
+    std::println("  check    [--json] [--fix] <file.cf> Type-check, verify parameter intents, and inspect C++ headers");
+    std::println("  fix      [--dry-run] [--json] <file.cf> Auto-fix missing imports, mut annotations, and enum matches");
+    std::println("  inspect  <target> [--json]    Stateless symbol/type hover, foreign C header, or stdlib docs");
     std::println("  outline  [--json] [path]      Token-compressed outline of packages, types, and functions");
     std::println("  fmt      [--check] <path>     Canonically format .cf file(s) or directory");
     std::println("  lsp                           Start built-in Language Server Protocol (JSON-RPC 2.0 stdio)");
@@ -91,42 +95,80 @@ void print_usage() {
 }
 
 auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
-    std::string_view trimmed = raw_code;
-    auto start = trimmed.find_first_not_of(" \t\r\n");
-    if (start != std::string_view::npos) {
-        trimmed.remove_prefix(start);
+    auto tokens_res = cfire::frontend::tokenize("<eval>", raw_code);
+    if (!tokens_res) {
+        return std::string(raw_code);
     }
-    if (trimmed.starts_with("package ")) {
+    const auto& tokens = *tokens_res;
+    if (!tokens.empty() && tokens[0].kind == cfire::frontend::TokenKind::KwPackage) {
         return std::string(raw_code);
     }
 
-    std::vector<std::string> imports;
+    const auto& catalog = cfire::doc::stdlib_catalog();
+    std::set<std::string> auto_imports;
+
+    // Always include essential prelude modules
+    auto_imports.insert("core:fs");
+    auto_imports.insert("core:str");
+    auto_imports.insert("core:math");
+    auto_imports.insert("core:time");
+    auto_imports.insert("core:unicode");
+    auto_imports.insert("core:json");
+
+    for (std::size_t i = 0; i + 1 < tokens.size(); ++i) {
+        if (tokens[i].kind == cfire::frontend::TokenKind::Ident &&
+            tokens[i + 1].kind == cfire::frontend::TokenKind::Dot) {
+            std::string_view alias = tokens[i].lexeme;
+            for (const auto& mod : catalog) {
+                if (mod.ns_alias == alias) {
+                    auto_imports.insert(mod.import_path);
+                    break;
+                }
+            }
+        }
+    }
+
+    auto lines = cfire::diag::split_lines(raw_code);
+    int token_idx = 0;
+    int brace_depth = 0;
+    bool in_decl_block = false;
+    std::string current_block;
+
+    std::vector<std::string> user_imports;
     std::vector<std::string> decls;
     std::vector<std::string> stmts;
 
-    std::istringstream stream{std::string(raw_code)};
-    std::string line;
-    bool in_decl_block = false;
-    int brace_depth = 0;
-    std::string current_block;
+    for (int ln = 1; ln <= static_cast<int>(lines.size()); ++ln) {
+        const auto& line = lines[static_cast<std::size_t>(ln - 1)];
 
-    while (std::getline(stream, line)) {
-        std::string_view ltrim = line;
-        auto ls = ltrim.find_first_not_of(" \t\r\n");
-        if (ls != std::string_view::npos) ltrim.remove_prefix(ls);
+        bool line_has_top_level_decl = false;
+        bool line_has_import = false;
 
-        if (!in_decl_block && ltrim.starts_with("import ")) {
-            imports.push_back(line);
+        while (token_idx < static_cast<int>(tokens.size()) && tokens[static_cast<std::size_t>(token_idx)].line == ln) {
+            const auto& tok = tokens[static_cast<std::size_t>(token_idx)];
+            if (brace_depth == 0) {
+                if (tok.kind == cfire::frontend::TokenKind::KwImport) {
+                    line_has_import = true;
+                } else if (tok.kind == cfire::frontend::TokenKind::KwFn || tok.kind == cfire::frontend::TokenKind::KwType) {
+                    line_has_top_level_decl = true;
+                }
+            }
+            if (tok.kind == cfire::frontend::TokenKind::LBrace) {
+                brace_depth++;
+            } else if (tok.kind == cfire::frontend::TokenKind::RBrace) {
+                brace_depth--;
+            }
+            token_idx++;
+        }
+
+        if (!in_decl_block && line_has_import) {
+            user_imports.push_back(line);
             continue;
         }
 
-        if (!in_decl_block && (ltrim.starts_with("fn ") || ltrim.starts_with("type "))) {
+        if (!in_decl_block && line_has_top_level_decl) {
             in_decl_block = true;
             current_block = line + "\n";
-            for (char c : line) {
-                if (c == '{') brace_depth++;
-                else if (c == '}') brace_depth--;
-            }
             if (brace_depth <= 0) {
                 in_decl_block = false;
                 decls.push_back(std::move(current_block));
@@ -138,10 +180,6 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
 
         if (in_decl_block) {
             current_block += line + "\n";
-            for (char c : line) {
-                if (c == '{') brace_depth++;
-                else if (c == '}') brace_depth--;
-            }
             if (brace_depth <= 0) {
                 in_decl_block = false;
                 decls.push_back(std::move(current_block));
@@ -153,15 +191,15 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
 
         stmts.push_back(line);
     }
+    if (!current_block.empty()) {
+        decls.push_back(std::move(current_block));
+    }
 
     std::string out = "package main\n\n";
-    out += "import \"core:fs\"\n";
-    out += "import \"core:str\"\n";
-    out += "import \"core:math\"\n";
-    out += "import \"core:time\"\n";
-    out += "import \"core:unicode\"\n";
-
-    for (const auto& imp : imports) {
+    for (const auto& imp : auto_imports) {
+        out += std::format("import \"{}\"\n", imp);
+    }
+    for (const auto& imp : user_imports) {
         out += imp + "\n";
     }
     out += "\n";
@@ -550,7 +588,9 @@ auto main(int argc, char** argv) -> int {
                 for (std::size_t i = 0; i < st.fields.size(); ++i) {
                     if (i > 0) json += ", ";
                     json += std::format("{{\"name\": \"{}\", \"type\": \"{}\", \"tag\": \"{}\"}}",
-                        st.fields[i].name, st.fields[i].type.name, cfire::lsp::detail::json_escape(st.fields[i].raw_tag));
+                        st.fields[i].name,
+                        cfire::lsp::detail::json_escape(cfire::fmt::format_type_ref(st.fields[i].type)),
+                        cfire::lsp::detail::json_escape(st.fields[i].raw_tag));
                 }
                 json += "]}";
             }
@@ -560,7 +600,32 @@ auto main(int argc, char** argv) -> int {
                 json += std::format("        {{\"name\": \"{}\", \"kind\": \"enum\", \"variants\": [", en.name);
                 for (std::size_t i = 0; i < en.variants.size(); ++i) {
                     if (i > 0) json += ", ";
-                    json += std::format("\"{}\"", en.variants[i].name);
+                    std::string var_str = en.variants[i].name;
+                    if (!en.variants[i].payload_types.empty()) {
+                        var_str += "(";
+                        for (std::size_t pt = 0; pt < en.variants[i].payload_types.size(); ++pt) {
+                            if (pt > 0) var_str += ", ";
+                            var_str += cfire::fmt::format_type_ref(en.variants[i].payload_types[pt]);
+                        }
+                        var_str += ")";
+                    }
+                    json += std::format("\"{}\"", cfire::lsp::detail::json_escape(var_str));
+                }
+                json += "]}";
+            }
+            for (const auto& ifc : ast->interfaces) {
+                if (!first_type) json += ",\n";
+                first_type = false;
+                json += std::format("        {{\"name\": \"{}\", \"kind\": \"interface\", \"methods\": [", ifc.name);
+                for (std::size_t i = 0; i < ifc.methods.size(); ++i) {
+                    if (i > 0) json += ", ";
+                    std::string sig = std::format("fn {}(", ifc.methods[i].name);
+                    for (std::size_t p = 0; p < ifc.methods[i].param_types.size(); ++p) {
+                        if (p > 0) sig += ", ";
+                        sig += cfire::fmt::format_type_ref(ifc.methods[i].param_types[p]);
+                    }
+                    sig += std::format(") -> {}", cfire::fmt::format_type_ref(ifc.methods[i].return_type));
+                    json += std::format("\"{}\"", cfire::lsp::detail::json_escape(sig));
                 }
                 json += "]}";
             }
@@ -606,12 +671,35 @@ auto main(int argc, char** argv) -> int {
             for (std::size_t i = 0; i < ast->functions.size(); ++i) {
                 if (i > 0) json += ",\n";
                 const auto& fn = ast->functions[i];
-                json += std::format("        {{\"name\": \"{}\", \"params\": [", fn.name);
+                std::string rec_str;
+                if (fn.receiver) {
+                    std::string rec_intent = (fn.receiver->intent == "mut") ? "mut " : "";
+                    rec_str = std::format("({}{}: {})", rec_intent, fn.receiver->name, cfire::fmt::format_type_ref(fn.receiver->type));
+                }
+                std::string tparams_str = "[";
+                for (std::size_t tp = 0; tp < fn.type_params.size(); ++tp) {
+                    if (tp > 0) tparams_str += ", ";
+                    const auto& t = fn.type_params[tp];
+                    tparams_str += std::format("\"{}\"", t.constraint.empty() ? t.name : std::format("{}: {}", t.name, t.constraint));
+                }
+                tparams_str += "]";
+
+                json += std::format("        {{\"name\": \"{}\", \"receiver\": \"{}\", \"type_params\": {}, \"params\": [",
+                    fn.name, cfire::lsp::detail::json_escape(rec_str), tparams_str);
                 for (std::size_t p = 0; p < fn.params.size(); ++p) {
                     if (p > 0) json += ", ";
-                    json += std::format("\"{}: {}\"", fn.params[p].name, fn.params[p].type.name);
+                    std::string param_type = cfire::fmt::format_type_ref(fn.params[p].type);
+                    std::string intent = fn.params[p].intent.empty() ? "in" : fn.params[p].intent;
+                    std::string intent_prefix = (intent != "in") ? (intent + " ") : "";
+                    json += std::format("{{\"name\": \"{}\", \"type\": \"{}\", \"intent\": \"{}\", \"signature\": \"{}{}: {}\"}}",
+                        fn.params[p].name,
+                        cfire::lsp::detail::json_escape(param_type),
+                        cfire::lsp::detail::json_escape(intent),
+                        intent_prefix, fn.params[p].name, cfire::lsp::detail::json_escape(param_type));
                 }
-                json += std::format("], \"returns\": \"{}\", \"async\": {}}}", fn.return_type.name, fn.is_async ? "true" : "false");
+                json += std::format("], \"returns\": \"{}\", \"async\": {}}}",
+                    cfire::lsp::detail::json_escape(cfire::fmt::format_type_ref(fn.return_type)),
+                    fn.is_async ? "true" : "false");
             }
             json += "\n      ]\n";
             json += "    }";
@@ -627,6 +715,10 @@ auto main(int argc, char** argv) -> int {
     }
     bool sanitize = false;
     bool json_mode = false;
+    bool fix_mode = false;
+    bool dry_run = false;
+    std::string filter_pattern;
+    std::string custom_output_path;
     std::string target_triple;
     std::string sysroot;
     std::vector<std::string> extra_link_libs;
@@ -650,6 +742,38 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg == "--json") {
             json_mode = true;
+            continue;
+        }
+        if (arg == "--fix") {
+            fix_mode = true;
+            continue;
+        }
+        if (arg == "--dry-run") {
+            dry_run = true;
+            continue;
+        }
+        if ((arg == "--filter" || arg == "-filter") && i + 1 < argc) {
+            filter_pattern = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--filter=")) {
+            filter_pattern = arg.substr(9);
+            continue;
+        }
+        if (arg.starts_with("-filter=")) {
+            filter_pattern = arg.substr(8);
+            continue;
+        }
+        if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
+            custom_output_path = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--output=")) {
+            custom_output_path = arg.substr(9);
+            continue;
+        }
+        if (arg.starts_with("-o=")) {
+            custom_output_path = arg.substr(3);
             continue;
         }
         if ((arg == "--target" || arg == "-target") && i + 1 < argc) {
@@ -699,6 +823,272 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
+    if (sub == "fix" || (sub == "check" && fix_mode)) {
+        auto raw_txt = cfire::build::read_file_text(target);
+        if (!raw_txt) {
+            if (json_mode) {
+                std::println("{{\"success\": false, \"file\": \"{}\", \"applied_fixes\": 0, \"edits\": []}}",
+                    cfire::diag::json_escape(target.string()));
+            } else {
+                std::println(stderr, "error reading '{}': {}", target.string(), raw_txt.error());
+            }
+            return 1;
+        }
+
+        std::string current_text = *raw_txt;
+        std::vector<cfire::diag::FixItEdit> total_applied;
+
+        for (int pass = 0; pass < 3; ++pass) {
+            auto pres = cfire::frontend::parse_source_resilient(target.string(), current_text);
+            auto lines = cfire::diag::split_lines(current_text);
+            std::vector<cfire::diag::FixItEdit> pass_edits;
+
+            // 1. Missing stdlib imports
+            auto import_fixes = cfire::diag::detect_missing_stdlib_imports(pres.ast, lines);
+            for (auto& f : import_fixes) {
+                pass_edits.push_back(std::move(f));
+            }
+
+            // 2. Sema diagnostics & quick-fixes
+            auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
+            for (const auto& w : chk.warnings) {
+                auto d = cfire::diag::parse_diagnostic_string(w, target.string(), "warning", "cfire/WARNING");
+                cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                for (auto& fix : d.fixits) {
+                    pass_edits.push_back(std::move(fix));
+                }
+            }
+            for (const auto& err : chk.errors) {
+                auto d = cfire::diag::parse_diagnostic_string(err, target.string(), "error", "cfire/SEMA-ERROR");
+                cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                for (auto& fix : d.fixits) {
+                    pass_edits.push_back(std::move(fix));
+                }
+            }
+
+            if (pass_edits.empty()) {
+                break;
+            }
+
+            auto [new_text, applied] = cfire::diag::apply_fixits(current_text, pass_edits);
+            if (applied.empty() || new_text == current_text) {
+                break;
+            }
+
+            for (auto& a : applied) {
+                total_applied.push_back(std::move(a));
+            }
+            current_text = std::move(new_text);
+        }
+
+        if (!dry_run && !total_applied.empty()) {
+            std::ofstream out(target, std::ios::binary | std::ios::trunc);
+            out << current_text;
+        }
+
+        if (sub == "fix") {
+            if (json_mode) {
+                std::println("{}", cfire::diag::serialize_fix_result_json(target.string(), true, total_applied.size(), total_applied));
+            } else {
+                if (total_applied.empty()) {
+                    std::println("✓ No fixes needed for {}", target.string());
+                } else {
+                    std::println("✓ Applied {} fix(es) to {}{}", total_applied.size(), target.string(), dry_run ? " (dry run)" : "");
+                    for (const auto& edit : total_applied) {
+                        std::println("  - {}", edit.title);
+                    }
+                }
+            }
+            return 0;
+        }
+    }
+
+    if (sub == "inspect") {
+        std::string target_str = target.string();
+
+        // Form 2: Foreign C/C++ Header: `cpp <header.h> [@pkg("<lib>")]`
+        if (target_str == "cpp" || target_str.starts_with("cpp ")) {
+            std::string header;
+            if (target_str == "cpp") {
+                if (!run_args.empty()) {
+                    header = run_args[0];
+                }
+            } else {
+                header = target_str.substr(4);
+            }
+            while (!header.empty() && std::isspace(static_cast<unsigned char>(header.front()))) header.erase(header.begin());
+            while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back()))) header.pop_back();
+
+            if (!header.empty()) {
+                std::vector<std::string> cflags;
+                for (const auto& inc : extra_includes) {
+                    cflags.push_back("-I" + inc);
+                }
+                auto cache_dir = runtime_dir.parent_path() / ".cfire" / "cache";
+                auto idx = cfire::bridge::inspect_header(header, cflags, cache_dir);
+                if (!idx) {
+                    if (json_mode) {
+                        std::println("{{\"success\": false, \"header\": \"{}\", \"error\": \"{}\"}}",
+                            cfire::diag::json_escape(header), cfire::diag::json_escape(idx.error()));
+                    } else {
+                        std::println(stderr, "error inspecting header '{}': {}", header, idx.error());
+                    }
+                    return 1;
+                }
+
+                std::vector<std::pair<std::string, cfire::bridge::CppSymbol>> sorted_syms(idx->symbols.begin(), idx->symbols.end());
+                std::sort(sorted_syms.begin(), sorted_syms.end(), [](const auto& a, const auto& b) {
+                    return a.first < b.first;
+                });
+
+                if (json_mode) {
+                    std::string json = std::format("{{\"success\": true, \"header\": \"{}\", \"symbols\": [", cfire::diag::json_escape(header));
+                    for (std::size_t i = 0; i < sorted_syms.size(); ++i) {
+                        if (i > 0) json += ", ";
+                        const auto& sym = sorted_syms[i].second;
+                        json += std::format("{{\"name\": \"{}\", \"kind\": \"{}\", \"return_type\": \"{}\", \"params\": [",
+                            cfire::diag::json_escape(sym.name),
+                            cfire::diag::json_escape(sym.kind),
+                            cfire::diag::json_escape(sym.return_type));
+                        for (std::size_t p = 0; p < sym.param_types.size(); ++p) {
+                            if (p > 0) json += ", ";
+                            json += std::format("\"{}\"", cfire::diag::json_escape(sym.param_types[p]));
+                        }
+                        json += "]}";
+                    }
+                    json += "]}";
+                    std::println("{}", json);
+                } else {
+                    std::println("Header: <{}> ({} symbols)", header, sorted_syms.size());
+                    for (const auto& [sname, sym] : sorted_syms) {
+                        std::string params_str;
+                        for (std::size_t p = 0; p < sym.param_types.size(); ++p) {
+                            if (p > 0) params_str += ", ";
+                            params_str += sym.param_types[p];
+                        }
+                        std::println("  cpp::{}({}) -> {}", sym.name, params_str, sym.return_type.empty() ? "void" : sym.return_type);
+                    }
+                }
+                return 0;
+            }
+        }
+
+        // Form 1: Source coordinate `<file.cf>:<line>:<col>`
+        auto c1 = target_str.rfind(':');
+        auto c2 = (c1 != std::string::npos && c1 > 0) ? target_str.rfind(':', c1 - 1) : std::string::npos;
+        if (c1 != std::string::npos && c2 != std::string::npos && c2 < c1) {
+            auto pline = cfire::detail::parse_int<int>(target_str.substr(c2 + 1, c1 - c2 - 1));
+            auto pcol = cfire::detail::parse_int<int>(target_str.substr(c1 + 1));
+            if (pline && pcol && *pline > 0 && *pcol > 0) {
+                std::string req_file = target_str.substr(0, c2);
+                cfire::lsp::Server srv;
+                std::filesystem::path p(req_file);
+                std::error_code ec;
+                auto abs_p = std::filesystem::absolute(p, ec);
+                std::string uri = cfire::lsp::detail::path_to_uri(abs_p);
+                int lsp_line = std::max(0, *pline - 1);
+                int lsp_col = std::max(0, *pcol - 1);
+                std::string hover_md = srv.compute_hover(uri, lsp_line, lsp_col);
+                std::string def_json = srv.compute_definition(uri, lsp_line, lsp_col);
+
+                if (json_mode) {
+                    std::println("{{\"target\": \"{}\", \"file\": \"{}\", \"line\": {}, \"col\": {}, \"hover\": \"{}\", \"definition\": {}}}",
+                        cfire::diag::json_escape(target_str),
+                        cfire::diag::json_escape(req_file),
+                        *pline,
+                        *pcol,
+                        cfire::diag::json_escape(hover_md),
+                        def_json.empty() ? "null" : def_json);
+                } else {
+                    std::println("Target: {}:{}:{}", req_file, *pline, *pcol);
+                    if (!hover_md.empty()) {
+                        std::println("\n{}", hover_md);
+                    }
+                    if (def_json != "null" && !def_json.empty()) {
+                        std::println("\nDefinition:\n{}", def_json);
+                    }
+                }
+                return 0;
+            }
+        }
+
+        // Form 3: `core:<mod>` or `<mod>.<symbol>`
+        const auto& catalog = cfire::doc::stdlib_catalog();
+        auto dot_pos = target_str.find('.');
+        if (dot_pos != std::string::npos && !target_str.starts_with("core:")) {
+            std::string mod_part = target_str.substr(0, dot_pos);
+            std::string sym_part = target_str.substr(dot_pos + 1);
+
+            const cfire::doc::StdModuleDoc* found_mod = nullptr;
+            for (const auto& m : catalog) {
+                if (m.ns_alias == mod_part || m.import_path == mod_part || ("core:" + m.ns_alias) == mod_part) {
+                    found_mod = &m;
+                    break;
+                }
+            }
+
+            if (found_mod) {
+                for (const auto& fn : found_mod->functions) {
+                    if (fn.name == sym_part) {
+                        if (json_mode) {
+                            std::println("{{\"module\": \"{}\", \"import_path\": \"{}\", \"name\": \"{}\", \"signature\": \"{}\", \"doc\": \"{}\", \"example\": \"{}\"}}",
+                                cfire::diag::json_escape(found_mod->ns_alias),
+                                cfire::diag::json_escape(found_mod->import_path),
+                                cfire::diag::json_escape(fn.name),
+                                cfire::diag::json_escape(fn.cf_sig),
+                                cfire::diag::json_escape(fn.summary),
+                                cfire::diag::json_escape(fn.example));
+                        } else {
+                            std::println("### {}\n\n{}\n\n**Example:**\n```cf\n{}\n```",
+                                fn.cf_sig, fn.summary, fn.example);
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+
+        const cfire::doc::StdModuleDoc* matched_mod = nullptr;
+        for (const auto& m : catalog) {
+            if (m.import_path == target_str || m.ns_alias == target_str ||
+                ("core:" + m.ns_alias) == target_str) {
+                matched_mod = &m;
+                break;
+            }
+        }
+
+        if (matched_mod) {
+            if (json_mode) {
+                std::string json = std::format(
+                    "{{\"name\": \"{}\", \"import_path\": \"{}\", \"title\": \"{}\", \"overview\": \"{}\", \"functions\": [",
+                    cfire::diag::json_escape(matched_mod->ns_alias),
+                    cfire::diag::json_escape(matched_mod->import_path),
+                    cfire::diag::json_escape(matched_mod->title),
+                    cfire::diag::json_escape(matched_mod->overview));
+                for (std::size_t i = 0; i < matched_mod->functions.size(); ++i) {
+                    if (i > 0) json += ", ";
+                    const auto& fn = matched_mod->functions[i];
+                    json += std::format("{{\"name\": \"{}\", \"signature\": \"{}\", \"doc\": \"{}\", \"example\": \"{}\"}}",
+                        cfire::diag::json_escape(fn.name),
+                        cfire::diag::json_escape(fn.cf_sig),
+                        cfire::diag::json_escape(fn.summary),
+                        cfire::diag::json_escape(fn.example));
+                }
+                json += "]}";
+                std::println("{}", json);
+            } else {
+                std::println("# {} (import \"{}\")\n\n{}\n\n{}", matched_mod->title, matched_mod->import_path, matched_mod->overview, "## Functions:");
+                for (const auto& fn : matched_mod->functions) {
+                    std::println("  - {}", fn.cf_sig);
+                }
+            }
+            return 0;
+        }
+
+        std::println(stderr, "error: unknown inspect target '{}'", target_str);
+        return 1;
+    }
+
     if (sub == "emit-cpp") {
         auto res = cfire::build::analyze_and_emit(target, runtime_dir, false, false, target_triple, sysroot);
         if (!res) {
@@ -713,36 +1103,82 @@ auto main(int argc, char** argv) -> int {
         if (json_mode) {
             auto raw_txt = cfire::build::read_file_text(target);
             if (!raw_txt) {
-                std::println("{{\"success\": false, \"file\": \"{}\", \"diagnostics\": [{{\"file\": \"{}\", \"line\": 1, \"col\": 1, \"severity\": \"error\", \"message\": \"{}\", \"code\": \"cfire/FILE-NOT-FOUND\"}}]}}",
-                    target.string(), target.string(), raw_txt.error());
+                std::println("{{\"success\": false, \"file\": \"{}\", \"diagnostics\": [{{\"file\": \"{}\", \"line\": 1, \"col\": 1, \"severity\": \"error\", \"message\": \"{}\", \"code\": \"cfire/FILE-NOT-FOUND\", \"fixits\": []}}]}}",
+                    cfire::diag::json_escape(target.string()), cfire::diag::json_escape(target.string()), cfire::diag::json_escape(raw_txt.error()));
                 return 1;
             }
-            auto ast = cfire::frontend::parse_source(target.string(), *raw_txt);
-            if (!ast) {
-                std::println("{{\"success\": false, \"file\": \"{}\", \"diagnostics\": [{{\"file\": \"{}\", \"line\": 1, \"col\": 1, \"severity\": \"error\", \"message\": \"{}\", \"code\": \"cfire/SYNTAX-ERROR\"}}]}}",
-                    target.string(), target.string(), cfire::lsp::detail::json_escape(ast.error()));
-                return 1;
+
+            std::vector<cfire::diag::StructuredDiagnostic> diags;
+            auto pres = cfire::frontend::parse_source_resilient(target.string(), *raw_txt);
+            if (!pres.ok()) {
+                for (const auto& err : pres.errors) {
+                    diags.push_back(cfire::diag::parse_diagnostic_string(err, target.string(), "error", "cfire/SYNTAX-ERROR"));
+                }
+            } else {
+                auto lines = cfire::diag::split_lines(*raw_txt);
+                cfire::build::BuildPlan local_plan;
+                local_plan.entry_file = target.string();
+                auto dir = target.parent_path();
+                if (dir.empty()) dir = ".";
+                (void)cfire::build::resolve_local_cf_imports(dir, pres.ast, local_plan);
+
+                auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
+                for (const auto& w : chk.warnings) {
+                    auto d = cfire::diag::parse_diagnostic_string(w, target.string(), "warning", "cfire/WARNING");
+                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                    diags.push_back(std::move(d));
+                }
+                for (const auto& err : chk.errors) {
+                    auto d = cfire::diag::parse_diagnostic_string(err, target.string(), "error", "cfire/SEMA-ERROR");
+                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                    diags.push_back(std::move(d));
+                }
+
+                if (chk.errors.empty()) {
+                    auto emit_res = cfire::build::analyze_and_emit(target, runtime_dir, true, false, target_triple, sysroot);
+                    if (!emit_res) {
+                        auto d = cfire::diag::parse_diagnostic_string(emit_res.error(), target.string(), "error", "cfire/SEMA-ERROR");
+                        diags.push_back(std::move(d));
+                    } else {
+                        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, emit_res->first, emit_res->second, runtime_dir);
+                        if (!syntax_check) {
+                            auto clang_lines = cfire::diag::split_lines(syntax_check.error());
+                            bool found_diag = false;
+                            for (const auto& cl : clang_lines) {
+                                if (cl.contains(": error:") || cl.contains(": warning:")) {
+                                    auto d = cfire::diag::parse_diagnostic_string(cl, target.string(), cl.contains(": error:") ? "error" : "warning", "cfire/TYPE-ERROR");
+                                    diags.push_back(std::move(d));
+                                    found_diag = true;
+                                }
+                            }
+                            if (!found_diag && !syntax_check.error().empty()) {
+                                auto d = cfire::diag::parse_diagnostic_string(syntax_check.error(), target.string(), "error", "cfire/TYPE-ERROR");
+                                diags.push_back(std::move(d));
+                            }
+                        }
+                    }
+                }
             }
-            auto chk = cfire::frontend::analyze(std::move(*ast));
-            if (!chk) {
-                std::println("{{\"success\": false, \"file\": \"{}\", \"diagnostics\": [{{\"file\": \"{}\", \"line\": 1, \"col\": 1, \"severity\": \"error\", \"message\": \"{}\", \"code\": \"cfire/SEMA-ERROR\"}}]}}",
-                    target.string(), target.string(), cfire::lsp::detail::json_escape(chk.error()));
-                return 1;
+
+            bool has_errors = false;
+            for (const auto& d : diags) {
+                if (d.severity == "error") {
+                    has_errors = true;
+                    break;
+                }
             }
-            std::string diag_json = "[";
-            for (std::size_t i = 0; i < chk->warnings.size(); ++i) {
-                if (i > 0) diag_json += ", ";
-                diag_json += std::format("{{\"file\": \"{}\", \"line\": 1, \"col\": 1, \"severity\": \"warning\", \"message\": \"{}\", \"code\": \"cfire/WARNING\"}}",
-                    target.string(), cfire::lsp::detail::json_escape(chk->warnings[i]));
-            }
-            diag_json += "]";
-            std::println("{{\"success\": true, \"file\": \"{}\", \"diagnostics\": {}}}", target.string(), diag_json);
-            return 0;
+            std::println("{}", cfire::diag::serialize_diagnostics_json(target.string(), !has_errors, diags));
+            return has_errors ? 1 : 0;
         }
 
         auto res = cfire::build::analyze_and_emit(target, runtime_dir, true, false, target_triple, sysroot);
         if (!res) {
             std::println(stderr, "{}", res.error());
+            return 1;
+        }
+        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, res->first, res->second, runtime_dir);
+        if (!syntax_check) {
+            std::println(stderr, "{}", syntax_check.error());
             return 1;
         }
         std::println("✓ {} checked cleanly ({} auto-linked packages, {} C++ headers ingested)",
@@ -751,8 +1187,13 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "build") {
-        std::string out_bin = target.parent_path().filename().string();
-        if (out_bin.empty() || out_bin == ".") out_bin = "cfire_app";
+        std::string out_bin;
+        if (!custom_output_path.empty()) {
+            out_bin = custom_output_path;
+        } else {
+            out_bin = target.parent_path().filename().string();
+            if (out_bin.empty() || out_bin == ".") out_bin = "cfire_app";
+        }
         if (!target_triple.empty() && (target_triple.find("windows") != std::string::npos || target_triple.find("win32") != std::string::npos || target_triple.find("msvc") != std::string::npos)) {
             if (!out_bin.ends_with(".exe")) out_bin += ".exe";
         }
@@ -769,6 +1210,14 @@ auto main(int argc, char** argv) -> int {
 
     if (sub == "run" || sub == "test") {
         bool is_test = (sub == "test");
+        if (is_test) {
+            if (json_mode) {
+                run_args.emplace_back("--cfire-test-json");
+            }
+            if (!filter_pattern.empty()) {
+                run_args.emplace_back(std::format("--cfire-test-filter={}", filter_pattern));
+            }
+        }
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());
         auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes);
         if (!plan) {

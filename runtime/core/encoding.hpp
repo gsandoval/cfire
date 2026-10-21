@@ -52,6 +52,10 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
     return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()), url_safe);
 }
 
+[[nodiscard]] inline auto encode(std::string_view s, bool url_safe = false) -> std::string {
+    return encode_str(s, url_safe);
+}
+
 [[nodiscard]] inline auto decode(std::string_view s) -> std::expected<std::vector<std::byte>, cfire::Error> {
     auto decode_char = [](char c) -> int {
         if (c >= 'A' && c <= 'Z') return c - 'A';

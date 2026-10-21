@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <csetjmp>
 #include <charconv>
 #include <cinttypes>
 #include <cstddef>
@@ -278,11 +279,44 @@ template <typename T, typename... Args>
 }
 
 // --- Built-in `assert(cond)` for `test "..."` Blocks & Contracts ---
-inline void assert_true(bool cond, std::string_view msg = "assertion failed") {
+namespace testing_detail {
+inline bool in_test_harness = false;
+inline std::jmp_buf test_env;
+inline bool current_test_failed = false;
+inline std::string failure_file;
+inline int failure_line = 0;
+inline std::string failure_expr;
+inline std::string failure_msg;
+} // namespace testing_detail
+
+inline void assert_true_at(
+    bool cond,
+    std::string_view msg,
+    std::string_view file,
+    int line,
+    std::string_view expr_text
+) {
     if (!cond) {
-        std::println(stderr, "panic: {}", msg);
-        std::abort();
+        if (testing_detail::in_test_harness) {
+            testing_detail::current_test_failed = true;
+            testing_detail::failure_file = std::string(file);
+            testing_detail::failure_line = line;
+            testing_detail::failure_expr = std::string(expr_text);
+            testing_detail::failure_msg = std::string(msg);
+            std::longjmp(testing_detail::test_env, 1);
+        } else {
+            if (!file.empty() && line > 0) {
+                std::println(stderr, "{}:{}: panic: assertion failed: {} ({})", file, line, expr_text, msg);
+            } else {
+                std::println(stderr, "panic: {}", msg);
+            }
+            std::abort();
+        }
     }
+}
+
+inline void assert_true(bool cond, std::string_view msg = "assertion failed") {
+    assert_true_at(cond, msg, "", 0, "");
 }
 
 // --- String / Path / C-String Boundary Coercions ---

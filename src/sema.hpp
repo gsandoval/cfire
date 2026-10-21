@@ -2,6 +2,7 @@
 // src/sema.hpp — C++23 Semantic Analyzer, Intent Verifier, Exhaustive Match & Struct Tag Extractor
 
 #include "ast.hpp"
+#include "diagnostics.hpp"
 #include <expected>
 #include <format>
 #include <regex>
@@ -35,6 +36,7 @@ struct CheckedFile {
     std::unordered_map<std::string, int> last_use_move{}; // "fnName:varName" -> line
     std::unordered_map<std::string, std::vector<std::string>> cpp_fn_params{}; // C/C++ fn -> param QualTypes
     std::vector<std::string> warnings{};
+    std::vector<std::string> errors{};
 };
 
 [[nodiscard]] inline auto trim_str(std::string_view sv) -> std::string {
@@ -46,8 +48,9 @@ struct CheckedFile {
 
 class SemaFnChecker {
 public:
-    SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf, std::vector<std::string>& warnings)
-        : path_(path), cf_(cf), warnings_(warnings)
+    SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf,
+                  std::vector<std::string>& warnings, std::vector<std::string>& errors, bool resilient = false)
+        : path_(path), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient)
     {
         if (fn.receiver) {
             if (fn.receiver->intent == "mut") {
@@ -73,13 +76,24 @@ public:
         }
     }
 
+    SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf, std::vector<std::string>& warnings)
+        : SemaFnChecker(path, fn, cf, warnings, fallback_errors_, false) {}
+
     std::unordered_map<std::string, int> last_read_line{};
+
+    [[nodiscard]] auto emit_error(std::string msg) -> std::expected<void, std::string> {
+        if (resilient_) {
+            errors_.push_back(std::move(msg));
+            return {};
+        }
+        return std::unexpected(std::move(msg));
+    }
 
     [[nodiscard]] auto record_var_read(const std::string& name, int line, int col)
         -> std::expected<void, std::string>
     {
         if (auto it = moved_at_line_.find(name); it != moved_at_line_.end()) {
-            return std::unexpected(std::format(
+            return emit_error(std::format(
                 "{}:{}:{}: use of moved variable '{}' (previously moved at line {}) (cfire/USE-AFTER-MOVE)",
                 path_, line, col, name, it->second));
         }
@@ -226,15 +240,24 @@ public:
                         if (target_sig->receiver && target_sig->receiver->intent == "mut") {
                             if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node)) {
                                 if (imm_vars_.contains(obj_id->name)) {
-                                    return std::unexpected(std::format(
+                                    if (auto r = emit_error(std::format(
                                         "{}:{}:{}: cannot call mutating method '{}' on immutable variable '{}' (cfire/MUT-RECEIVER)",
-                                        path_, e->line, e->col, mem->field, obj_id->name));
+                                        path_, e->line, e->col, mem->field, obj_id->name)); !r) return r;
                                 }
                             }
                         }
                     }
                 }
             }
+
+            if (target_sig) {
+                if (call->args.size() != target_sig->params.size()) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: call to '{}' expects {} argument(s), got {} (cfire/ARITY-MISMATCH)",
+                        path_, e->line, e->col, target_sig->name, target_sig->params.size(), call->args.size())); !r) return r;
+                }
+            }
+
             struct SeenArgPath {
                 PathInfo info;
                 bool is_mut_or_out;
@@ -260,9 +283,9 @@ public:
                     const auto& expected = target_sig->params[i].intent;
                     if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
                         std::string_view rule = (expected == "out") ? "cfire/OUT-CALLSITE" : "cfire/MUT-CALLSITE";
-                        return std::unexpected(std::format(
+                        if (auto r = emit_error(std::format(
                             "{}:{}:{}: parameter '{}' of {} requires explicit '{}' annotation at call-site ({})",
-                            path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule));
+                            path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule)); !r) return r;
                     }
                 }
                 if (auto pi = extract_path_info(arg.value)) {
@@ -273,9 +296,9 @@ public:
                                 std::string entity = (pi->path == pi->root && prev.info.path == prev.info.root)
                                     ? std::format("variable '{}'", pi->root)
                                     : std::format("projection '{}'", pi->path);
-                                return std::unexpected(std::format(
+                                if (auto r = emit_error(std::format(
                                     "{}:{}:{}: cannot alias {} with a mut/out parameter in the same call (cfire/MUT-ALIAS)",
-                                    path_, arg.line, arg.col, entity));
+                                    path_, arg.line, arg.col, entity)); !r) return r;
                             }
                         }
                     }
@@ -284,9 +307,9 @@ public:
                     if (is_mut_or_out) {
                         if (imm_vars_.contains(pi->root)) {
                             std::string entity = (pi->path == pi->root) ? pi->root : pi->path;
-                            return std::unexpected(std::format(
+                            if (auto r = emit_error(std::format(
                                 "{}:{}:{}: cannot pass immutable variable '{}' as '{}' argument (cfire/IMMUTABLE-MUT-ARG)",
-                                path_, arg.line, arg.col, entity, arg.intent));
+                                path_, arg.line, arg.col, entity, arg.intent)); !r) return r;
                         }
                     }
                     if (arg.intent == "move") {
@@ -298,6 +321,61 @@ public:
                 for (const auto& s : call->block_arg->body) {
                     if (auto r = check_stmt(s); !r) return r;
                 }
+            }
+            return {};
+        }
+        if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            if (auto r = check_expr(me->target); !r) return r;
+            if (me->is_move && me->target) {
+                if (auto pi = extract_path_info(me->target)) {
+                    moved_at_line_[pi->root] = me->line;
+                }
+            }
+            bool is_slice_match = false;
+            bool is_primitive_match = false;
+            for (const auto& a : me->arms) {
+                if (a.is_slice_pattern) {
+                    is_slice_match = true;
+                }
+                if (!a.literal_val.empty()) {
+                    is_primitive_match = true;
+                }
+            }
+
+            std::string enum_name;
+            std::unordered_set<std::string> covered;
+            bool has_wildcard = false;
+
+            for (const auto& arm : me->arms) {
+                if (arm.variant_name == "_") {
+                    has_wildcard = true;
+                } else {
+                    covered.insert(arm.variant_name);
+                    if (!arm.enum_prefix.empty()) {
+                        enum_name = arm.enum_prefix;
+                    } else if (auto vit = cf_.variant_to_enum.find(arm.variant_name); vit != cf_.variant_to_enum.end()) {
+                        enum_name = vit->second;
+                    }
+                }
+                for (const auto& b : arm.body) {
+                    if (auto r = check_stmt(b); !r) return r;
+                }
+            }
+
+            if (!has_wildcard && !enum_name.empty()) {
+                if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
+                    for (const auto& v : eit->second.variants) {
+                        if (!covered.contains(v.name)) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
+                                path_, me->line, me->col, enum_name, v.name)); !r) return r;
+                        }
+                    }
+                }
+            } else if ((is_slice_match || is_primitive_match || enum_name.empty()) && !has_wildcard) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: match expression must have a wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
+                    path_, me->line, me->col)); !r) return r;
             }
             return {};
         }
@@ -347,9 +425,9 @@ public:
             if (vd->init) {
                 if (const auto* or_ex = std::get_if<OrExpr>(&vd->init->node); or_ex && !or_ex->handler_body.empty()) {
                     if (!block_diverges(or_ex->handler_body)) {
-                        return std::unexpected(std::format(
+                        if (auto r = emit_error(std::format(
                             "{}:{}:{}: block 'or {} {{ ... }}' must definitely diverge with return or panic, otherwise unwrapping empty value causes undefined behavior (cfire/NON-DIVERGING-OR-BLOCK)",
-                            path_, vd->line, vd->col, or_ex->err_var.empty() ? "err" : or_ex->err_var));
+                            path_, vd->line, vd->col, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
                     }
                 }
             }
@@ -369,22 +447,27 @@ public:
             if (as->value) {
                 if (const auto* or_ex = std::get_if<OrExpr>(&as->value->node); or_ex && !or_ex->handler_body.empty()) {
                     if (!block_diverges(or_ex->handler_body)) {
-                        return std::unexpected(std::format(
+                        if (auto r = emit_error(std::format(
                             "{}:{}:{}: assignment from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
-                            path_, as->line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var));
+                            path_, as->line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
                     }
                 }
             }
             if (auto r = check_expr(as->value); !r) return r;
+            if (as->op != "=") {
+                if (auto r = check_expr(as->target); !r) return r;
+            }
             if (const auto* id = std::get_if<IdentExpr>(&as->target->node)) {
                 if (imm_vars_.contains(id->name)) {
-                    return std::unexpected(std::format(
-                        "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/IMMUTABLE-ASSIGN)",
-                        path_, as->line, 1, id->name));
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
+                        path_, as->line, 1, id->name)); !r) return r;
                 }
                 moved_at_line_.erase(id->name);
             } else {
-                if (auto r = check_expr(as->target); !r) return r;
+                if (as->op == "=") {
+                    if (auto r = check_expr(as->target); !r) return r;
+                }
             }
             return {};
         }
@@ -393,9 +476,9 @@ public:
             for (const auto& targ : das->targets) {
                 if (const auto* id = std::get_if<IdentExpr>(&targ->node)) {
                     if (imm_vars_.contains(id->name)) {
-                        return std::unexpected(std::format(
-                            "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/IMMUTABLE-ASSIGN)",
-                            path_, das->line, 1, id->name));
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
+                            path_, das->line, 1, id->name)); !r) return r;
                     }
                     moved_at_line_.erase(id->name);
                 } else {
@@ -446,9 +529,9 @@ public:
             for (const auto& b : fs->body) if (auto r = check_stmt(b); !r) return r;
             for (const auto& [var, line] : moved_at_line_) {
                 if (!pre_loop_moves.contains(var)) {
-                    return std::unexpected(std::format(
+                    if (auto r = emit_error(std::format(
                         "{}:{}:{}: variable '{}' moved inside loop body without reassignment before next iteration (cfire/USE-AFTER-MOVE)",
-                        path_, line, 1, var));
+                        path_, line, 1, var)); !r) return r;
                 }
             }
             return {};
@@ -501,9 +584,9 @@ public:
                 if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
                     for (const auto& v : eit->second.variants) {
                         if (!covered.contains(v.name)) {
-                            return std::unexpected(std::format(
+                            if (auto r = emit_error(std::format(
                                 "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
-                                path_, ms->line, ms->col, enum_name, v.name));
+                                path_, ms->line, ms->col, enum_name, v.name)); !r) return r;
                         }
                     }
                 }
@@ -525,6 +608,9 @@ private:
     std::string_view path_;
     const CheckedFile& cf_;
     std::vector<std::string>& warnings_;
+    std::vector<std::string>& errors_;
+    bool resilient_{false};
+    std::vector<std::string> fallback_errors_{};
     std::unordered_map<std::string, int> moved_at_line_{};
     std::unordered_set<std::string> move_params_{};
     std::unordered_set<std::string> mut_vars_{};
@@ -532,7 +618,7 @@ private:
 };
 
 
-[[nodiscard]] inline auto analyze(FileAST ast) -> std::expected<CheckedFile, std::string> {
+[[nodiscard]] inline auto analyze_resilient(FileAST ast) -> CheckedFile {
     CheckedFile cf;
     static const std::regex tag_re(R"re((\w+):"([^"]*)")re");
 
@@ -605,9 +691,9 @@ private:
 
     // 4. Validate Function & Method Bodies
     for (const auto& fn : ast.functions) {
-        SemaFnChecker checker(ast.path, fn, cf, cf.warnings);
+        SemaFnChecker checker(ast.path, fn, cf, cf.warnings, cf.errors, true);
         for (const auto& st : fn.body) {
-            if (auto r = checker.check_stmt(st); !r) return std::unexpected(r.error());
+            (void)checker.check_stmt(st);
         }
         std::string fn_key = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
         for (const auto& [p_name, ln] : checker.last_read_line) {
@@ -619,13 +705,21 @@ private:
     for (std::size_t idx = 0; idx < ast.tests.size(); ++idx) {
         FnDecl dummy_fn;
         dummy_fn.name = std::format("__cfire_test_{}", idx);
-        SemaFnChecker checker(ast.path, dummy_fn, cf, cf.warnings);
+        SemaFnChecker checker(ast.path, dummy_fn, cf, cf.warnings, cf.errors, true);
         for (const auto& st : ast.tests[idx].body) {
-            if (auto r = checker.check_stmt(st); !r) return std::unexpected(r.error());
+            (void)checker.check_stmt(st);
         }
     }
 
     cf.ast = std::move(ast);
+    return cf;
+}
+
+[[nodiscard]] inline auto analyze(FileAST ast) -> std::expected<CheckedFile, std::string> {
+    auto cf = analyze_resilient(std::move(ast));
+    if (!cf.errors.empty()) {
+        return std::unexpected(cf.errors.front());
+    }
     return cf;
 }
 

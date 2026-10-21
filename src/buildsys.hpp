@@ -1334,6 +1334,42 @@ inline auto resolve_external_dep_source(
     return pch_path.string();
 }
 
+[[nodiscard]] inline auto verify_cpp_syntax_only(
+    const std::filesystem::path& cf_file,
+    std::string_view cpp_code,
+    const BuildPlan& plan,
+    const std::filesystem::path& runtime_dir
+) -> std::expected<void, std::string> {
+    auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
+    std::error_code ec;
+    std::filesystem::create_directories(gen_dir, ec);
+    auto cpp_path = gen_dir / (cf_file.stem().string() + ".cpp");
+    if (ec) {
+        cpp_path = std::filesystem::temp_directory_path() / (cf_file.stem().string() + "_check.cpp");
+    }
+    {
+        std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
+        out << cpp_code;
+    }
+
+    std::string pch_path;
+    if (plan.target_triple.empty()) {
+        pch_path = ensure_prelude_pch(runtime_dir, false);
+    }
+    std::string cmd = "clang++ -O2";
+    for (const auto& f : plan.cflags) cmd += " " + f;
+    if (!pch_path.empty()) {
+        cmd += std::format(" -include-pch \"{}\"", pch_path);
+    }
+    cmd += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
+    int rc = 0;
+    auto output = bridge::run_command_capture(cmd, rc);
+    if (rc != 0) {
+        return std::unexpected(output);
+    }
+    return {};
+}
+
 [[nodiscard]] inline auto build_native(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,

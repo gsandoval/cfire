@@ -16,7 +16,8 @@ namespace cfire::frontend {
 
 class Emitter {
 public:
-    explicit Emitter(const CheckedFile& cf, bool test_mode = false) : cf_(cf), test_mode_(test_mode) {
+    explicit Emitter(const CheckedFile& cf, bool test_mode = false)
+        : cf_(cf), test_mode_(test_mode), source_path_(cf.ast.path) {
         init_imports();
     }
 
@@ -30,6 +31,8 @@ public:
     bool test_mode_ = false;
     bool in_main_ = false;
     bool in_test_ = false;
+    std::string source_path_{};
+    int last_source_line_ = -1;
     std::ostringstream buf_;
     int indent_ = 0;
     std::string cur_fn_{};
@@ -38,6 +41,23 @@ public:
     std::unordered_set<std::string> used_core_{};
     std::unordered_map<std::string, std::string> used_vendor_{};
     std::vector<std::string> active_async_scopes_{};
+
+    [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
+        std::string out;
+        for (char c : p) {
+            if (c == '\\') out += "\\\\";
+            else if (c == '"') out += "\\\"";
+            else out += c;
+        }
+        return out;
+    }
+
+    void emit_line_directive(int line) {
+        if (line > 0 && line != last_source_line_ && !source_path_.empty()) {
+            last_source_line_ = line;
+            writeln(std::format("#line {} \"{}\"", line, escape_line_path(source_path_)));
+        }
+    }
 
     void init_imports() {
         for (const auto& imp : cf_.ast.imports) {
@@ -294,21 +314,82 @@ public:
             writeln();
         }
         if ((test_mode_ || !has_user_main) && !ast.tests.empty()) {
-            writeln("auto main() -> int {");
+            writeln("auto main(int argc, char** argv) -> int {");
             ++indent_;
+            writeln("bool json_mode = false;");
+            writeln("std::string filter;");
+            writeln("for (int i = 1; i < argc; ++i) {");
+            writeln("    std::string_view a = argv[i];");
+            writeln("    if (a == \"--cfire-test-json\") json_mode = true;");
+            writeln("    else if (a.starts_with(\"--cfire-test-filter=\")) filter = a.substr(20);");
+            writeln("}");
+            writeln("cfire::testing_detail::in_test_harness = true;");
+            writeln("int passed_count = 0;");
+            writeln("int failed_count = 0;");
+            writeln("struct TestResultRecord { std::string name; bool passed; double duration_ms; std::string file; int line; std::string error; };");
+            writeln("std::vector<TestResultRecord> records;");
             for (std::size_t i = 0; i < ast.tests.size(); ++i) {
-                writeln(std::format("std::println(\"=== RUN   {}\");", ast.tests[i].name));
-                writeln(std::format("__cfire_test_{}();", i));
-                writeln(std::format("std::println(\"--- PASS: {}\");", ast.tests[i].name));
+                std::string t_name = ast.tests[i].name;
+                writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", t_name));
+                ++indent_;
+                writeln(std::format("if (!json_mode) std::println(\"=== RUN   {}\");", t_name));
+                writeln("cfire::testing_detail::current_test_failed = false;");
+                writeln("cfire::testing_detail::failure_file.clear();");
+                writeln("cfire::testing_detail::failure_line = 0;");
+                writeln("cfire::testing_detail::failure_expr.clear();");
+                writeln("cfire::testing_detail::failure_msg.clear();");
+                writeln("auto start_t = std::chrono::steady_clock::now();");
+                writeln("if (setjmp(cfire::testing_detail::test_env) == 0) {");
+                writeln(std::format("    __cfire_test_{}();", i));
+                writeln("}");
+                writeln("auto end_t = std::chrono::steady_clock::now();");
+                writeln("double dur_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();");
+                writeln("bool test_pass = !cfire::testing_detail::current_test_failed;");
+                writeln("if (test_pass) {");
+                writeln("    passed_count++;");
+                writeln(std::format("    if (!json_mode) std::println(\"--- PASS: {}\");", t_name));
+                writeln(std::format("    records.push_back({{\"{}\", true, dur_ms, \"\", 0, \"\"}});", t_name));
+                writeln("} else {");
+                writeln("    failed_count++;");
+                    writeln("    if (!json_mode) std::println(\"--- FAIL: " + t_name + " ({}:{}: {})\", cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, (cfire::testing_detail::failure_expr.empty() ? cfire::testing_detail::failure_msg : cfire::testing_detail::failure_expr));");
+                writeln(std::format("    records.push_back({{\"{}\", false, dur_ms, cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, (cfire::testing_detail::failure_expr.empty() ? cfire::testing_detail::failure_msg : cfire::testing_detail::failure_expr)}});", t_name));
+                writeln("}");
+                --indent_;
+                writeln("}");
             }
-            writeln(std::format("std::println(\"PASS ({} cfire tests succeeded)\");", ast.tests.size()));
-            writeln("return 0;");
+            writeln("if (json_mode) {");
+            writeln("    auto escape_json = [](std::string_view s) -> std::string {");
+            writeln("        std::string out;");
+            writeln("        for (char c : s) {");
+            writeln("            if (c == '\"') out += \"\\\\\\\"\";");
+            writeln("            else if (c == '\\\\') out += \"\\\\\\\\\";");
+            writeln("            else if (c == '\\n') out += \"\\\\n\";");
+            writeln("            else out += c;");
+            writeln("        }");
+            writeln("        return out;");
+            writeln("    };");
+            writeln("    std::print(\"{{\\\"success\\\": {}, \\\"passed\\\": {}, \\\"failed\\\": {}, \\\"tests\\\": [\", (failed_count == 0 ? \"true\" : \"false\"), passed_count, failed_count);");
+            writeln("    for (std::size_t r = 0; r < records.size(); ++r) {");
+            writeln("        if (r > 0) std::print(\", \");");
+            writeln("        const auto& rec = records[r];");
+            writeln("        std::print(\"{{\\\"name\\\": \\\"{}\\\", \\\"status\\\": \\\"{}\\\", \\\"duration_ms\\\": {:.2f}, \\\"file\\\": \\\"{}\\\", \\\"line\\\": {}, \\\"error\\\": \\\"{}\\\"}}\", escape_json(rec.name), (rec.passed ? \"pass\" : \"fail\"), rec.duration_ms, escape_json(rec.file), rec.line, escape_json(rec.error));");
+            writeln("    }");
+            writeln("    std::println(\"]}}\");");
+            writeln("} else {");
+            writeln("    if (failed_count == 0) {");
+            writeln("        std::println(\"PASS ({} cfire tests succeeded)\", passed_count);");
+            writeln("    } else {");
+            writeln("        std::println(\"FAIL ({} of {} cfire tests failed)\", failed_count, (passed_count + failed_count));");
+            writeln("    }");
+            writeln("}");
+            writeln("return failed_count > 0 ? 1 : 0;");
             --indent_;
             writeln("}");
         }
     }
 
     void emit_test_decl(const TestDecl& td, std::size_t idx) {
+        if (td.line > 0) emit_line_directive(td.line);
         cur_fn_ = std::format("__cfire_test_{}", idx);
         defer_count_ = 0;
         in_test_ = true;
@@ -540,6 +621,7 @@ public:
     }
 
     void emit_function(const FnDecl& fn) {
+        if (fn.line > 0) emit_line_directive(fn.line);
         cur_fn_ = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
         defer_count_ = 0;
 
@@ -596,20 +678,49 @@ public:
         writeln("}");
 
         if (fn.receiver) {
-            writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
-            ++indent_;
-            if (ret_str == "void") {
-                writeln(std::format("cfire_method_{}({});", fn.name, pass_args));
+            if (!fn.type_params.empty()) {
+                std::string tparams;
+                std::string targs;
+                for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
+                    if (i > 0) {
+                        tparams += ", ";
+                        targs += ", ";
+                    }
+                    const auto& tp = fn.type_params[i];
+                    if (!tp.constraint.empty()) {
+                        tparams += std::format("{} {}", tp.constraint, tp.name);
+                    } else {
+                        tparams += std::format("typename {}", tp.name);
+                    }
+                    targs += tp.name;
+                }
+                writeln(std::format("template <{}>", tparams));
+                writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
+                ++indent_;
+                if (ret_str == "void") {
+                    writeln(std::format("cfire_method_{}<{}>({});", fn.name, targs, pass_args));
+                } else {
+                    writeln(std::format("return cfire_method_{}<{}>({});", fn.name, targs, pass_args));
+                }
+                --indent_;
+                writeln("}");
             } else {
-                writeln(std::format("return cfire_method_{}({});", fn.name, pass_args));
+                writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
+                ++indent_;
+                if (ret_str == "void") {
+                    writeln(std::format("cfire_method_{}({});", fn.name, pass_args));
+                } else {
+                    writeln(std::format("return cfire_method_{}({});", fn.name, pass_args));
+                }
+                --indent_;
+                writeln("}");
             }
-            --indent_;
-            writeln("}");
         }
     }
 
     void emit_stmt(const StmtPtr& s, bool in_main) {
         if (!s) return;
+        if (s->line > 0) emit_line_directive(s->line);
         std::visit([&](const auto& st) {
             using T = std::decay_t<decltype(st)>;
             if constexpr (std::is_same_v<T, VarDeclStmt>) {
@@ -822,10 +933,13 @@ public:
 
     void emit_match_stmt(const MatchStmt& ms, bool in_main) {
         bool is_slice_match = false;
+        bool is_primitive_match = false;
         for (const auto& a : ms.arms) {
             if (a.is_slice_pattern) {
                 is_slice_match = true;
-                break;
+            }
+            if (!a.literal_val.empty()) {
+                is_primitive_match = true;
             }
         }
 
@@ -912,6 +1026,38 @@ public:
             }
         }
 
+        if (is_primitive_match || (enum_name.empty() && !is_slice_match)) {
+            std::string target_expr = emit_expr(ms.target);
+            writeln("{");
+            ++indent_;
+            writeln(std::format("const auto& _target = {};", target_expr));
+            bool first = true;
+            for (const auto& arm : ms.arms) {
+                if (arm.variant_name == "_" && arm.literal_val.empty()) {
+                    writeln("else {");
+                    ++indent_;
+                    for (const auto& b : arm.body) emit_stmt(b, in_main);
+                    --indent_;
+                    writeln("}");
+                } else {
+                    std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
+                    if (first) {
+                        writeln(std::format("if (_target == {}) {{", pat));
+                        first = false;
+                    } else {
+                        writeln(std::format("else if (_target == {}) {{", pat));
+                    }
+                    ++indent_;
+                    for (const auto& b : arm.body) emit_stmt(b, in_main);
+                    --indent_;
+                    writeln("}");
+                }
+            }
+            --indent_;
+            writeln("}");
+            return;
+        }
+
         bool is_rvalue = ms.is_move || (ms.target && std::holds_alternative<CallExpr>(ms.target->node));
 
         writeln(std::format("std::visit(cfire::overloaded{{"));
@@ -954,6 +1100,232 @@ public:
         }
     }
 
+    void emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr) {
+        if (body.empty()) {
+            if (is_expr) {
+                for (int i = 0; i < indent_; ++i) sb << "    ";
+                sb << "return {};\n";
+            }
+            return;
+        }
+        for (std::size_t i = 0; i < body.size(); ++i) {
+            bool is_last = (i + 1 == body.size());
+            if (is_expr && is_last) {
+                if (std::holds_alternative<ExprStmt>(body[i]->node)) {
+                    const auto& es = std::get<ExprStmt>(body[i]->node);
+                    for (int j = 0; j < indent_; ++j) sb << "    ";
+                    sb << "return " << emit_expr(es.expr) << ";\n";
+                    continue;
+                }
+            }
+            Emitter sub(cf_);
+            sub.indent_ = indent_;
+            sub.cur_fn_ = cur_fn_;
+            sub.used_core_ = used_core_;
+            sub.used_vendor_ = used_vendor_;
+            sub.in_main_ = in_main_;
+            sub.emit_stmt(body[i], false);
+            sb << sub.buf_.str();
+        }
+    }
+
+    [[nodiscard]] auto emit_match_expr(const MatchExpr& me) -> std::string {
+        bool is_slice_match = false;
+        bool is_primitive_match = false;
+        for (const auto& a : me.arms) {
+            if (a.is_slice_pattern) is_slice_match = true;
+            if (!a.literal_val.empty()) is_primitive_match = true;
+        }
+
+        std::string enum_name;
+        for (const auto& arm : me.arms) {
+            if (!arm.enum_prefix.empty()) {
+                enum_name = arm.enum_prefix;
+                break;
+            }
+            if (auto it = cf_.variant_to_enum.find(arm.variant_name); it != cf_.variant_to_enum.end()) {
+                enum_name = it->second;
+                break;
+            }
+        }
+
+        std::ostringstream sb;
+        if (is_slice_match) {
+            sb << "([&]() -> auto {\n";
+            ++indent_;
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "const auto& _target = " << emit_expr(me.target) << ";\n";
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "bool _matched = false;\n";
+
+            for (const auto& arm : me.arms) {
+                if (arm.is_slice_pattern) {
+                    std::size_t head_count = arm.slice_head.size();
+                    std::size_t tail_count = arm.slice_tail.size();
+                    std::size_t min_size = head_count + tail_count;
+
+                    std::string cond;
+                    if (!arm.slice_has_rest) {
+                        cond = std::format("_target.size() == {}", min_size);
+                    } else {
+                        if (min_size == 0) cond = "true";
+                        else cond = std::format("_target.size() >= {}", min_size);
+                    }
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "if (!_matched && " << cond << ") {\n";
+                    ++indent_;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "_matched = true;\n";
+                    for (std::size_t i = 0; i < head_count; ++i) {
+                        if (arm.slice_head[i] != "_") {
+                            for (int j = 0; j < indent_; ++j) sb << "    ";
+                            sb << "const auto& " << arm.slice_head[i] << " = _target[" << i << "];\n";
+                        }
+                    }
+                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_") {
+                        std::string rest_start = std::to_string(head_count);
+                        std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
+                        for (int j = 0; j < indent_; ++j) sb << "    ";
+                        sb << "auto " << arm.slice_rest << " = cfire::slice(_target, " << rest_start << ", " << rest_end << ");\n";
+                    }
+                    for (std::size_t i = 0; i < tail_count; ++i) {
+                        if (arm.slice_tail[i] != "_") {
+                            std::size_t offset_from_end = tail_count - i;
+                            for (int j = 0; j < indent_; ++j) sb << "    ";
+                            sb << "const auto& " << arm.slice_tail[i] << " = _target[_target.size() - " << offset_from_end << "];\n";
+                        }
+                    }
+                    emit_match_arm_body(sb, arm.body, true);
+                    --indent_;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "}\n";
+                } else if (arm.variant_name == "_") {
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "if (!_matched) {\n";
+                    ++indent_;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "_matched = true;\n";
+                    emit_match_arm_body(sb, arm.body, true);
+                    --indent_;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "}\n";
+                }
+            }
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "cfire::assert_true(false, \"unreachable slice match\");\n";
+            --indent_;
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "})()";
+            return sb.str();
+        }
+
+        if (is_primitive_match || enum_name.empty()) {
+            sb << "([&]() -> auto {\n";
+            ++indent_;
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "const auto& _target = " << emit_expr(me.target) << ";\n";
+            bool first = true;
+            for (const auto& arm : me.arms) {
+                if (arm.variant_name == "_" && arm.literal_val.empty()) {
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "else {\n";
+                    ++indent_;
+                    emit_match_arm_body(sb, arm.body, true);
+                    --indent_;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "}\n";
+                } else {
+                    std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    if (first) {
+                        sb << "if (_target == " << pat << ") {\n";
+                        first = false;
+                    } else {
+                        sb << "else if (_target == " << pat << ") {\n";
+                    }
+                    ++indent_;
+                    emit_match_arm_body(sb, arm.body, true);
+                    --indent_;
+                    for (int i = 0; i < indent_; ++i) sb << "    ";
+                    sb << "}\n";
+                }
+            }
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "cfire::assert_true(false, \"unreachable match\");\n";
+            --indent_;
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "})()";
+            return sb.str();
+        }
+
+        // Tagged enum match:
+        bool is_rvalue = me.is_move || (me.target && std::holds_alternative<CallExpr>(me.target->node));
+        sb << "std::visit(cfire::overloaded{\n";
+        ++indent_;
+        for (const auto& arm : me.arms) {
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            if (arm.variant_name == "_") {
+                sb << (is_rvalue ? "[&](auto&&) -> auto {\n" : "[&](const auto&) -> auto {\n");
+            } else {
+                if (is_rvalue) {
+                    sb << std::format("[&]({}::_{}&& _m) -> auto {{\n", enum_name, arm.variant_name);
+                } else {
+                    sb << std::format("[&](const {}::_{}& _m) -> auto {{\n", enum_name, arm.variant_name);
+                }
+            }
+            ++indent_;
+            for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
+                for (int j = 0; j < indent_; ++j) sb << "    ";
+                if (is_rvalue) {
+                    sb << std::format("auto&& {} = std::move(_m._{});\n", arm.bindings[i], i);
+                } else {
+                    sb << std::format("const auto& {} = _m._{};\n", arm.bindings[i], i);
+                }
+            }
+            emit_match_arm_body(sb, arm.body, true);
+            --indent_;
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << "},\n";
+        }
+        --indent_;
+        for (int i = 0; i < indent_; ++i) sb << "    ";
+        if (is_rvalue) {
+            std::string t_str = emit_expr(me.target);
+            if (t_str.starts_with("std::move(") && t_str.ends_with(")")) {
+                std::string inner = t_str.substr(10, t_str.size() - 11);
+                sb << "}, std::move(" << inner << "._v))";
+            } else {
+                sb << "}, std::move(" << t_str << "._v))";
+            }
+        } else {
+            sb << "}, " << emit_expr(me.target) << "._v)";
+        }
+        return sb.str();
+    }
+
+    struct InterpolationResult {
+        std::string fmt_str{};
+        std::vector<std::string> args{};
+    };
+
+    [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) const -> std::optional<InterpolationResult> {
+        if (lit.kind != TokenKind::String) return std::nullopt;
+        static const std::regex interp_re(R"(\{([a-zA-Z_][a-zA-Z0-9_.\(\)]*)\})");
+        auto begin = std::sregex_iterator(lit.value.begin(), lit.value.end(), interp_re);
+        if (begin == std::sregex_iterator()) return std::nullopt;
+
+        InterpolationResult res;
+        res.fmt_str = std::regex_replace(lit.value, interp_re, "{}");
+        for (auto it = begin; it != std::sregex_iterator(); ++it) {
+            std::string v = (*it)[1].str();
+            if (auto mv = cf_.last_use_move.find(cur_fn_ + ":" + v); mv != cf_.last_use_move.end() && mv->second == line) {
+                v = std::format("std::move({})", v);
+            }
+            res.args.push_back(std::move(v));
+        }
+        return res;
+    }
+
     [[nodiscard]] auto emit_expr(const ExprPtr& e) -> std::string {
         if (!e) return "";
         return std::visit([&](const auto& ex) -> std::string {
@@ -974,12 +1346,20 @@ public:
                     std::string pref = it->second + "::";
                     if (name.starts_with(pref)) name.erase(0, pref.size());
                 }
-                // Check if this is a zero-arg Enum Variant e.g. `Shape::Empty`
+                // Check if this is an Enum Variant e.g. `Shape::Empty` (0-arg) or `Shape::Circle` (constructor)
                 if (auto pos = name.find("::"); pos != std::string::npos) {
                     std::string en_name = name.substr(0, pos);
                     std::string v_name = name.substr(pos + 2);
-                    if (cf_.enums.contains(en_name)) {
-                        return std::format("{}::{}()", en_name, v_name);
+                    if (auto it = cf_.enums.find(en_name); it != cf_.enums.end()) {
+                        for (const auto& v : it->second.variants) {
+                            if (v.name == v_name) {
+                                if (v.payload_types.empty()) {
+                                    return std::format("{}::{}()", en_name, v_name);
+                                } else {
+                                    return std::format("{}::{}", en_name, v_name);
+                                }
+                            }
+                        }
                     }
                 }
                 if (auto it = cf_.last_use_move.find(cur_fn_ + ":" + ex.name); it != cf_.last_use_move.end() && it->second == e->line) {
@@ -991,20 +1371,13 @@ public:
                     return "std::nullopt";
                 }
                 if (ex.kind == TokenKind::String) {
-                    static const std::regex interp_re(R"(\{([a-zA-Z_][a-zA-Z0-9_.\(\)]*)\})");
-                    auto begin = std::sregex_iterator(ex.value.begin(), ex.value.end(), interp_re);
-                    if (begin != std::sregex_iterator()) {
-                        std::string fmt_str = std::regex_replace(ex.value, interp_re, "{}");
+                    if (auto interp = extract_interpolation(ex, e->line)) {
                         std::string args;
-                        for (auto it = begin; it != std::sregex_iterator(); ++it) {
-                            if (!args.empty()) args += ", ";
-                            std::string v = (*it)[1].str();
-                            if (auto mv = cf_.last_use_move.find(cur_fn_ + ":" + v); mv != cf_.last_use_move.end() && mv->second == e->line) {
-                                v = std::format("std::move({})", v);
-                            }
-                            args += v;
+                        for (std::size_t i = 0; i < interp->args.size(); ++i) {
+                            if (i > 0) args += ", ";
+                            args += interp->args[i];
                         }
-                        return std::format("std::format(\"{}\", {})", fmt_str, args);
+                        return std::format("std::format(\"{}\", {})", interp->fmt_str, args);
                     }
                     return std::format("\"{}\"", ex.value);
                 }
@@ -1109,6 +1482,8 @@ public:
                     elems += emit_expr(ex.elements[i]);
                 }
                 return std::format("std::make_tuple({})", elems);
+            } else if constexpr (std::is_same_v<T, MatchExpr>) {
+                return emit_match_expr(ex);
             }
             return "";
         }, e->node);
@@ -1118,6 +1493,41 @@ public:
         if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
             if (id->name == "println" || id->name == "print") {
                 std::string fn = (id->name == "print") ? "std::print" : "std::println";
+                if (call.args.empty()) {
+                    return std::format("{}()", fn);
+                }
+                const auto* first_lit = (call.args[0].value) ? std::get_if<LiteralExpr>(&call.args[0].value->node) : nullptr;
+                if (first_lit && (first_lit->kind == TokenKind::String || first_lit->kind == TokenKind::RawString)) {
+                    if (first_lit->kind == TokenKind::RawString) {
+                        std::string trailing;
+                        for (std::size_t i = 1; i < call.args.size(); ++i) {
+                            trailing += ", " + emit_call_arg(call.args[i]);
+                        }
+                        return std::format("{}(R\"({})\"{})", fn, first_lit->value, trailing);
+                    }
+                    auto interp = extract_interpolation(*first_lit, call.args[0].line);
+                    std::string fmt_str = interp ? interp->fmt_str : first_lit->value;
+                    std::string all_args;
+                    if (interp) {
+                        for (const auto& a : interp->args) {
+                            if (!all_args.empty()) all_args += ", ";
+                            all_args += a;
+                        }
+                    }
+                    for (std::size_t i = 1; i < call.args.size(); ++i) {
+                        if (!all_args.empty()) all_args += ", ";
+                        all_args += emit_call_arg(call.args[i]);
+                    }
+                    if (all_args.empty()) {
+                        return std::format("{}(\"{}\")", fn, fmt_str);
+                    }
+                    return std::format("{}(\"{}\", {})", fn, fmt_str, all_args);
+                }
+
+                // First argument is not a string literal
+                if (call.args.size() == 1) {
+                    return std::format("{}(\"{{}}\", {})", fn, emit_call_arg(call.args[0]));
+                }
                 std::string args;
                 for (std::size_t i = 0; i < call.args.size(); ++i) {
                     if (i > 0) args += ", ";
@@ -1127,10 +1537,24 @@ public:
             }
             if (id->name == "assert" && !call.args.empty()) {
                 std::string cond = emit_call_arg(call.args[0]);
-                if (call.args.size() >= 2) {
-                    return std::format("cfire::assert_true({}, {})", cond, emit_call_arg(call.args[1]));
+                std::string msg = (call.args.size() >= 2) ? emit_call_arg(call.args[1]) : "\"assertion failed\"";
+                std::string expr_str = cond;
+                std::string escaped_expr;
+                for (char ch : expr_str) {
+                    if (ch == '\\') escaped_expr += "\\\\";
+                    else if (ch == '"') escaped_expr += "\\\"";
+                    else escaped_expr += ch;
                 }
-                return std::format("cfire::assert_true({})", cond);
+                int line = call.args[0].value ? call.args[0].value->line : 0;
+                std::string file_str = cf_.ast.path;
+                std::string escaped_file;
+                for (char ch : file_str) {
+                    if (ch == '\\') escaped_file += "\\\\";
+                    else if (ch == '"') escaped_file += "\\\"";
+                    else escaped_file += ch;
+                }
+                return std::format("cfire::assert_true_at({}, {}, \"{}\", {}, \"{}\")",
+                    cond, msg, escaped_file, line, escaped_expr);
             }
             if (id->name == "make" && call.type_args.size() == 1) {
                 const auto& ta = call.type_args[0];

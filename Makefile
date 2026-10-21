@@ -56,4 +56,4 @@ test-e2e: build .cfire_test_runner
 	./.cfire_test_runner e2e
 
 clean:
-	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire
+	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire cfire_cross_*

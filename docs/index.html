@@ -743,14 +743,21 @@ struct cfire::reflect_struct&lt;Box&gt; {
 
 inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void;
 
+#line 7 &quot;snippet_intents.cf&quot;
 inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
+    #line 8 &quot;snippet_intents.cf&quot;
     b.value = (b.value + amount);
 }
 
+#line 11 &quot;snippet_intents.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    #line 12 &quot;snippet_intents.cf&quot;
     auto b = Box{.value = 40};
+    #line 14 &quot;snippet_intents.cf&quot;
     (void)(increment(b, 2));
+    #line 17 &quot;snippet_intents.cf&quot;
     auto p = cfire::make_own&lt;Box&gt;(Box{.value = 100});
+    #line 18 &quot;snippet_intents.cf&quot;
     (void)(std::println(&quot;b={} p={}&quot;, b.value, (*p).value));
     return 0;
 }
@@ -815,18 +822,22 @@ struct Token {
 
 [[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string;
 
+#line 9 &quot;snippet_patterns.cf&quot;
 [[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string {
+    #line 10 &quot;snippet_patterns.cf&quot;
     {
         const auto&amp; _target = s;
         bool _matched = false;
         if (!_matched &amp;&amp; _target.size() == 0) {
             _matched = true;
+            #line 11 &quot;snippet_patterns.cf&quot;
             return &quot;empty&quot;;
         }
         if (!_matched &amp;&amp; _target.size() &gt;= 1) {
             _matched = true;
             const auto&amp; head = _target[0];
             auto tail = cfire::slice(_target, 1, _target.size());
+            #line 12 &quot;snippet_patterns.cf&quot;
             return (&quot;head=&quot; + head);
         }
         if (!_matched &amp;&amp; _target.size() &gt;= 2) {
@@ -834,14 +845,19 @@ struct Token {
             const auto&amp; first = _target[0];
             auto mid = cfire::slice(_target, 1, (_target.size() - 1));
             const auto&amp; last = _target[_target.size() - 1];
+            #line 13 &quot;snippet_patterns.cf&quot;
             return ((first + &quot;..&quot;) + last);
         }
     }
+    #line 15 &quot;snippet_patterns.cf&quot;
     return &quot;other&quot;;
 }
 
+#line 18 &quot;snippet_patterns.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    #line 19 &quot;snippet_patterns.cf&quot;
     std::vector&lt;std::string&gt; items = {&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;};
+    #line 20 &quot;snippet_patterns.cf&quot;
     (void)(std::println(&quot;result: {}&quot;, classify(items)));
     return 0;
 }
@@ -888,10 +904,15 @@ fn main() {
 #include &quot;core/time.hpp&quot;
 
 
+#line 7 &quot;snippet_net.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    #line 8 &quot;snippet_net.cf&quot;
     auto bg = cfire::context::background();
+    #line 9 &quot;snippet_net.cf&quot;
     auto [ctx, cancel] = cfire::context::with_timeout(bg, 500);
+    #line 10 &quot;snippet_net.cf&quot;
     auto _defer_1 = cfire::scope_exit([&amp;] { cancel(&quot;done&quot;); });
+    #line 12 &quot;snippet_net.cf&quot;
     auto [client, server] = ({
     auto&amp;&amp; _res = (cfire::websocket::pair());
     if (!_res.has_value()) {
@@ -900,17 +921,20 @@ auto main(int argc, char** argv) -&gt; int {
     }
     cfire::unwrap_val(std::forward&lt;decltype(_res)&gt;(_res));
 });
+    #line 13 &quot;snippet_net.cf&quot;
     auto _try_v_1 = client.send_text(&quot;ping-payload&quot;);
     if (!_try_v_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_v_1.error().message());
         return 1;
     }
+    #line 14 &quot;snippet_net.cf&quot;
     auto _try_2 = server.recv_text();
     if (!_try_2.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
         return 1;
     }
     auto msg = std::move(*_try_2);
+    #line 15 &quot;snippet_net.cf&quot;
     (void)(std::println(&quot;received: {}&quot;, msg));
     return 0;
 }
@@ -999,14 +1023,18 @@ inline auto cfire::json::stringify_struct&lt;Metric&gt;(const Metric&amp; val) -
 }
 
 
+#line 11 &quot;snippet_json.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    #line 12 &quot;snippet_json.cf&quot;
     auto payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
+    #line 13 &quot;snippet_json.cf&quot;
     auto _try_1 = cfire::json::parse&lt;Metric&gt;(payload);
     if (!_try_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
         return 1;
     }
     auto m = std::move(*_try_1);
+    #line 14 &quot;snippet_json.cf&quot;
     (void)(std::println(&quot;service={} latency={}ms&quot;, m.service, m.latency));
     return 0;
 }
@@ -1046,9 +1074,13 @@ fn main() {
 #include &lt;fast_hash.h&gt;
 
 
+#line 6 &quot;snippet_interop.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    #line 7 &quot;snippet_interop.cf&quot;
     std::string msg = &quot;cfire systems programming&quot;;
+    #line 9 &quot;snippet_interop.cf&quot;
     auto hash = fh_fnv1a(msg, msg.size());
+    #line 10 &quot;snippet_interop.cf&quot;
     (void)(std::println(&quot;fnv1a hash: 0x{:x}&quot;, hash));
     return 0;
 }

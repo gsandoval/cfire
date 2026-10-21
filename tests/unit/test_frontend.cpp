@@ -608,5 +608,237 @@ fn main() {
     std::println("--- PASS: test_google_cpp_and_language_design");
 }
 
+void test_section2_language_ergonomics(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_section2_language_ergonomics");
+
+    // 1. AGENT-P1-01: String interpolation & format lowering in println / print
+    {
+        ScopedTempDir tmp("cfire_p1_01");
+        auto cf_path = tmp.file("print_test.cf", R"(package main
+
+fn main() {
+    name := "cfire"
+    println("hello {name}")
+    count := 42
+    println("item count={}", count)
+    msg := "runtime msg"
+    println(msg)
+    println(100)
+    print("prefix: ")
+    println("done")
+}
+)");
+
+        auto out_bin = tmp.path / "print_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(print_test.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("print_test exited with code {}", rc));
+            require(out.contains("hello cfire"), "contains 'hello cfire'");
+            require(out.contains("item count=42"), "contains 'item count=42'");
+            require(out.contains("runtime msg"), "contains 'runtime msg'");
+            require(out.contains("100"), "contains '100'");
+            require(out.contains("prefix: done"), "contains 'prefix: done'");
+        }
+    }
+
+    // 2. AGENT-P1-02: Struct literal disambiguation in control-flow headers
+    {
+        ScopedTempDir tmp("cfire_p1_02");
+        auto cf_path = tmp.file("control_flow_disambig.cf", R"(package main
+
+type Point struct {
+    x: i32
+    y: i32
+}
+
+fn is_origin(p: Point) -> bool {
+    return p.x == 0 && p.y == 0
+}
+
+fn check_point(p: Point) -> bool {
+    return p.x == 1 && p.y == 2
+}
+
+fn main() {
+    MAX_LIMIT := 10
+    count := 5
+    if count < MAX_LIMIT {
+        println("if_limit_ok")
+    }
+
+    mut i := 0
+    LIMIT := 3
+    for i < LIMIT {
+        i += 1
+    }
+    println("for_limit_ok={}", i)
+
+    STATE := 2
+    match STATE {
+        1 => println("one"),
+        2 => println("match_state_ok"),
+        _ => println("other"),
+    }
+
+    if is_origin(Point{ x: 0, y: 0 }) {
+        println("origin_ok")
+    }
+
+    if check_point(Point{ x: 1, y: 2 }) {
+        println("check_point_ok")
+    }
+
+    if (Point{ x: 1, y: 2 }.x == 1) {
+        println("paren_struct_ok")
+    }
+}
+)");
+
+        auto out_bin = tmp.path / "control_flow_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(control_flow_disambig.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("control_flow exited with code {}", rc));
+            require(out.contains("if_limit_ok"), "contains 'if_limit_ok'");
+            require(out.contains("for_limit_ok=3"), "contains 'for_limit_ok=3'");
+            require(out.contains("match_state_ok"), "contains 'match_state_ok'");
+            require(out.contains("origin_ok"), "contains 'origin_ok'");
+            require(out.contains("check_point_ok"), "contains 'check_point_ok'");
+            require(out.contains("paren_struct_ok"), "contains 'paren_struct_ok'");
+        }
+    }
+
+    // 3. AGENT-P1-03: Expression-Oriented match (MatchExpr)
+    {
+        ScopedTempDir tmp("cfire_p1_03");
+        auto cf_path = tmp.file("match_expr_test.cf", R"(package main
+
+type Shape enum {
+    Circle(i32)
+    Rect(i32, i32)
+}
+
+fn describe(s: Shape) -> str {
+    return match s {
+        Shape::Circle(r) => "circle",
+        Shape::Rect(w, h) => "rect",
+    }
+}
+
+fn http_code(verb: str) -> i32 {
+    code := match verb {
+        "GET" => 200,
+        "POST" => 201,
+        _ => 400,
+    }
+    return code
+}
+
+fn main() {
+    c := Shape::Circle(5)
+    r := Shape::Rect(10, 20)
+    println("c={}, r={}, code_get={}, code_post={}, code_unk={}",
+        describe(c), describe(r), http_code("GET"), http_code("POST"), http_code("DELETE"))
+}
+)");
+
+        auto out_bin = tmp.path / "match_expr_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(match_expr_test.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("match_expr exited with code {}", rc));
+            require(out.contains("c=circle, r=rect, code_get=200, code_post=201, code_unk=400"),
+                std::format("expected match expressions to evaluate, got: {}", out));
+        }
+
+        // Test formatter roundtrip on MatchExpr
+        auto fmt_res = cfire::fmt::format_source(R"(package main
+
+fn test_fn(x: str) -> i32 {
+    return match x {
+        "A" => 1,
+        _ => 0,
+    }
+}
+)", "fmt_match.cf");
+        require(fmt_res.has_value(), "cfire::fmt::format_source on match expression");
+
+        // Negative sema tests for MatchExpr:
+        // A. Enum missing variant
+        require_sema_error(R"(package main
+type Shape enum { Circle(i32), Rect(i32, i32) }
+fn test_fn(s: Shape) -> str {
+    return match s {
+        Shape::Circle(r) => "circle",
+    }
+}
+)", "cfire/NON-EXHAUSTIVE-MATCH", "missing_rect.cf");
+
+        // B. Primitive match missing wildcard '_' fallback
+        require_sema_error(R"(package main
+fn test_fn(v: str) -> i32 {
+    return match v {
+        "GET" => 1,
+    }
+}
+)", "cfire/NON-EXHAUSTIVE-MATCH", "missing_wildcard.cf");
+    }
+
+    // 4. AGENT-P1-04: Compound Assignment & Bitwise Operators
+    {
+        ScopedTempDir tmp("cfire_p1_04");
+        auto cf_path = tmp.file("bitwise_and_compound.cf", R"(package main
+
+fn main() {
+    mut x := 10
+    x *= 3      // 30
+    x /= 2      // 15
+    x %= 4      // 3
+    x <<= 2     // 12
+    x >>= 1     // 6
+    x |= 1      // 7
+    x &= 3      // 3
+    x ^= 6      // 5
+    println("compound_x={}", x)
+
+    // Bitwise operators
+    a := 0xF0
+    b := 0x3F
+    c := (a & b) | (1 << 4) ^ (~0)
+    shift := 16 >> 2
+    println("c={}, shift={}", c, shift)
+}
+)");
+
+        auto out_bin = tmp.path / "bitwise_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(bitwise_and_compound.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("bitwise exited with code {}", rc));
+            require(out.contains("compound_x=5"), std::format("expected compound_x=5, got: {}", out));
+            require(out.contains("shift=4"), std::format("expected shift=4, got: {}", out));
+        }
+
+        // Negative sema test: compound assignment on immutable variable
+        require_sema_error(R"(package main
+fn test_fn() {
+    x := 5
+    x *= 2
+}
+)", "cfire/ASSIGN-IMMUTABLE", "imm_compound.cf");
+    }
+
+    std::println("--- PASS: test_section2_language_ergonomics");
+}
+
 
 

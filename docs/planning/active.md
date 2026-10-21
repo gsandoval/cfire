@@ -1,10 +1,33 @@
 # Active Workbench: In-Flight Implementation Tasks
 
-This document tracks items currently under active design, scoping, or implementation from [`docs/planning/architectural-backlog.md`](./architectural-backlog.md).
+This document tracks items currently under active design, scoping, or implementation from [`docs/planning/backlog.md`](./backlog.md) and [`docs/planning/architectural-backlog.md`](./architectural-backlog.md).
 
 ---
 
-## Active Task Registry & State Machine (`ARCH-CPP-01` – `ARCH-CPP-05`)
+## Up Next: Agent-Friendliness & Language Ergonomics (`AGENT-P0-01` – `AGENT-P2-05`)
+
+> **Instructions for the Implementing Agent**:
+> Before writing any code for an `AGENT-*` task below, read its full specification, **Critical Details, Edge Cases & Pitfalls (Do Not Miss)**, and **Section Success Instructions & Sign-Off Gate** in [`docs/planning/backlog.md`](./backlog.md). Populate the Pre-Implementation Quality Gate below for the active item/section before editing `src/` or `runtime/`.
+
+| Task ID | Section / Priority | Component | Summary | Status | Section Gate |
+| :--- | :---: | :--- | :--- | :---: | :---: |
+| `AGENT-P0-01` | Section 1 (P0) | `src/main.cpp`, `src/sema.hpp`, `src/lsp/server.hpp` | **Multi-Error & Fix-It JSON in `cfire check --json`**: 1-based line/col extraction, specific `cfire/<CODE>`, resilient multi-error sema, local package resolution, and `"fixits"` array | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P0-02` | Section 1 (P0) | `src/codegen.hpp`, `src/buildsys.hpp`, `src/sema.hpp` | **`#line` Source Mapping & `-fsyntax-only` Verification in `cfire check`**: Emit `#line <ln> "<file.cf>"` in C++ codegen, add native sema arity checks (`cfire/ARITY-MISMATCH`), and verify types/symbols via PCH-backed `-fsyntax-only` | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P0-03` | Section 1 (P0) | `src/formatter.hpp`, `src/main.cpp` | **Complete Type & Intent Fidelity in `cfire outline` & `format_type_ref`**: Fix `&`/`&mut` and generic `[T]` in `format_type_ref`; emit full types, intents, receivers, and type params in `cfire outline` | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P0-04` | Section 1 (P0) | `src/docgen/markdown.hpp`, `src/docgen.hpp` | **Catalog-Generated `cfire doc --llm` & `--check` Sync**: Synthesize `--llm` reference from `stdlib_catalog()` (all 28 modules), removing hallucinated `json.decode` / `sort.slice_by` | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P1-01` | Section 2 (P1) | `src/codegen.hpp` | **`println` / `print` String Interpolation Lowering Fix**: Flatten `"Hello {name}"` into `std::println("Hello {}", name)` and single non-literal `println(x)` into `std::println("{}", x)` | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P1-02` | Section 2 (P1) | `src/parser.hpp` | **Context-Aware Struct Literal Disambiguation (`allow_struct_lit_`)**: Prevent uppercase identifiers (`if x < MAX_LIMIT {`) from consuming control-flow block `{` as a struct literal | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P1-03` | Section 2 (P1) | `src/ast.hpp`, `src/parser.hpp`, `src/sema.hpp`, `src/codegen.hpp`, `src/formatter.hpp` | **First-Class Expression-Oriented `match` (`MatchExpr`)**: Parse, check exhaustiveness, format, and lower `x := match v { ... }` for enums and primitives | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P1-04` | Section 2 (P1) | `src/lexer.hpp`, `src/parser.hpp`, `src/sema.hpp`, `src/codegen.hpp`, `src/formatter.hpp` | **Compound Assignment & Bitwise Operators**: Support `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `&`, `|`, `^`, `~`, `<<`, `>>` with mutability checking | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P2-01` | Section 3 (P2) | `src/main.cpp`, `tests/e2e/test_canonical.cpp` | **CLI `-o` / `--output` Flag & Repo Hygiene**: Parse `-o <path>` in `cfire build` and remove stray `cfire_cross_*` binaries from repo root | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P2-02` | Section 3 (P2) | `src/main.cpp`, `src/sema.hpp`, `src/lsp/server.hpp` | **Headless Auto-Fix Engine (`cfire fix` & `cfire check --fix`)**: Apply reverse-ordered non-overlapping fix-its and missing `core:*` imports | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P2-03` | Section 3 (P2) | `runtime/cfire_prelude.hpp`, `src/codegen.hpp`, `src/main.cpp` | **Structured Test Runner (`cfire test --json`, `--filter`, Rich `assert`)**: Location/expression-aware `assert`, non-aborting test isolation, and JSON output | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P2-04` | Section 3 (P2) | `src/main.cpp`, `src/lsp/server.hpp`, `src/clang_bridge.hpp` | **Stateless CLI Inspector (`cfire inspect`)**: Query `<file>:<line>:<col>`, `cpp <header.h>`, or `core:<mod>` via CLI | `[DONE]` | Passed (`make review-check`) |
+| `AGENT-P2-05` | Section 3 (P2) | `src/main.cpp` | **Tokenizer-Backed `cfire eval` & Auto-Imported `core:*` Modules**: Token-level `package`/`{}` detection and automatic `core:*` import injection for all 28 modules | `[DONE]` | Passed (`make review-check`) |
+
+---
+
+## Completed Task Registry (`ARCH-CPP-01` – `ARCH-CPP-05`)
 
 | Task ID | Component | Summary | Status | Review Check Gate |
 | :--- | :--- | :--- | :---: | :---: |
