@@ -28,6 +28,20 @@ struct HeaderIndex {
     std::unordered_map<std::string, CppSymbol> symbols{};
 };
 
+[[nodiscard]] inline auto shell_quote(std::string_view arg) -> std::string {
+    std::string out = "'";
+    out.reserve(arg.size() + 8);
+    for (char c : arg) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
 [[nodiscard]] inline auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string {
     std::string out;
     FILE* pipe = popen((cmd + " 2>&1").c_str(), "r");

@@ -276,7 +276,8 @@ auto main(int argc, char** argv) -> int {
             return 1;
         }
 
-        int rc = std::system(eval_bin.string().c_str());
+        std::string eval_cmd = cfire::bridge::shell_quote(eval_bin.string());
+        int rc = std::system(eval_cmd.c_str());
         return rc == 0 ? 0 : (rc >> 8 != 0 ? rc >> 8 : 1);
     }
 
@@ -440,43 +441,7 @@ auto main(int argc, char** argv) -> int {
             }
         }
         if (llm_mode) {
-            std::println("{}", R"(# cfire Language Reference Sheet for LLMs & AI Agents
-Grammar:
-- Package: `package <name>` (canonical: main)
-- Imports: `import "core:<mod>"`, `import "./path"`, `import cpp "header.h" @define("MACRO")`
-- Declarations:
-  - Const: `x := 42`, `name: str = "cfire"`
-  - Mutable: `mut y := 10`, `mut count: i64 = 0`
-- Signatures: `fn name(in a: i32, mut b: str, move c: []byte) -> Ret! { ... }`
-  - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
-  - Optional return: `-> T?` lowers to `std::optional<T>`
-  - Tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, deconstruct: `(x, y) := coords()`
-- Types:
-  - Struct: `type User struct { id: i64, name: str `json:"name"` }`
-  - Enum: `type Shape enum { Circle(f64), Rect(f64, f64) }`
-  - Interface: `type Writer interface { write(b: []byte) -> usize! }`
-- Control Flow:
-  - `if cond { ... } else { ... }`
-  - `for item in slice { ... }` / `for i, item in slice { ... }`
-  - `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
-  - `defer resource.close()`
-- Error Handling:
-  - `val := try fallible()` (early return on error)
-  - `val := fallible() or fallback_expr`
-  - `val := fallible() or err { return -1 }` (must diverge or panic)
-- Foreign C/C++: `cpp { /* verbatim C++23 */ }`
-- Standard Library Modules:
-  - `core:fs`: open, File (read, read_all, write, seek, tell, flush, close), dirname, basename, extension
-  - `core:json`: parse_dynamic, stringify_dynamic, Value, decode[T], stringify[T]
-  - `core:net/http`: get, post, make_server; `core:net/url`: parse, encode, decode
-  - `core:unicode`: rune_count, runes, is_valid_utf8, to_lower, to_upper, encode_rune
-  - `core:os`: command, exec, getenv; `core:os/exec`: exec.command
-  - `core:time`: now, Duration, format_rfc3339, parse_rfc3339
-  - `core:regex`: compile, is_match, replace_all
-  - `core:collections`: Set[T], PriorityQueue[T], Deque[T]
-  - `core:sort`: slice, slice_by, binary_search
-  - `core:crypto/sha256`: hash_hex, hash_bytes; `core:crypto/rand`: bytes
-  - `core:log`: set_level, debug, info, warn, error)");
+            std::println("{}", cfire::doc::generate_llm_reference());
             return 0;
         }
         if (!target_cf.empty() && target_cf.extension() == ".cf") {
@@ -755,9 +720,9 @@ Grammar:
             std::println(stderr, "{}", plan.error());
             return 1;
         }
-        std::string cmd = "\"" + tmp_bin.string() + "\"";
+        std::string cmd = cfire::bridge::shell_quote(tmp_bin.string());
         for (const auto& arg : run_args) {
-            cmd += std::format(" \"{}\"", arg);
+            cmd += " " + cfire::bridge::shell_quote(arg);
         }
         int rc = std::system(cmd.c_str());
         std::filesystem::remove(tmp_bin);

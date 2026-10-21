@@ -7,7 +7,6 @@
 #include <format>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace cfire::frontend {
@@ -15,37 +14,6 @@ namespace cfire::frontend {
 [[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
     -> std::expected<std::vector<Token>, std::string>
 {
-    static const std::unordered_map<std::string_view, TokenKind> keywords = {
-        {"package", TokenKind::KwPackage},
-        {"import", TokenKind::KwImport},
-        {"cpp", TokenKind::KwCpp},
-        {"as", TokenKind::KwAs},
-        {"type", TokenKind::KwType},
-        {"struct", TokenKind::KwStruct},
-        {"enum", TokenKind::KwEnum},
-        {"interface", TokenKind::KwInterface},
-        {"map", TokenKind::KwMap},
-        {"fn", TokenKind::KwFn},
-        {"async", TokenKind::KwAsync},
-        {"in", TokenKind::KwIn},
-        {"mut", TokenKind::KwMut},
-        {"out", TokenKind::KwOut},
-        {"move", TokenKind::KwMove},
-        {"var", TokenKind::KwVar},
-        {"if", TokenKind::KwIf},
-        {"else", TokenKind::KwElse},
-        {"for", TokenKind::KwFor},
-        {"match", TokenKind::KwMatch},
-        {"defer", TokenKind::KwDefer},
-        {"return", TokenKind::KwReturn},
-        {"try", TokenKind::KwTry},
-        {"or", TokenKind::KwOr},
-        {"test", TokenKind::KwTest},
-        {"true", TokenKind::KwTrue},
-        {"false", TokenKind::KwFalse},
-        {"none", TokenKind::KwNone},
-    };
-
     std::vector<Token> tokens;
     std::size_t i = 0;
     const std::size_t n = src.size();
@@ -115,8 +83,8 @@ namespace cfire::frontend {
                 tokens.push_back(Token{TokenKind::KwCpp, std::move(word), start_line, start_col});
                 continue;
             }
-            if (auto it = keywords.find(word); it != keywords.end()) {
-                tokens.push_back(Token{it->second, std::move(word), start_line, start_col});
+            if (auto kw = find_keyword(word)) {
+                tokens.push_back(Token{*kw, std::move(word), start_line, start_col});
             } else {
                 tokens.push_back(Token{TokenKind::Ident, std::move(word), start_line, start_col});
             }

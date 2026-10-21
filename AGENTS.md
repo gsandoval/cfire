@@ -15,14 +15,14 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
   - `codegen.hpp` — Zero-overhead ISO C++23 emitter.
   - `buildsys.hpp` — Native live multi-driver build engine (C/C++, CMake, Make, Ninja, in-process SHA-256 caching, CMake ejection).
   - `clang_bridge.hpp` — Clang JSON AST header inspection bridge.
-  - `lsp.hpp` — High-performance JSON-RPC 2.0 language server & multi-IDE setup (`cfire ide`).
+  - `lsp.hpp` (`src/lsp/{json_rpc,ide_setup,server}.hpp`) — High-performance JSON-RPC 2.0 language server & multi-IDE setup (`cfire ide`).
   - `formatter.hpp` — Canonical code formatter (`cfire fmt`).
   - `refactor.hpp` — AST-backed cross-workspace symbol rename engine (`cfire refactor`).
-  - `docgen.hpp` — Single-source metadata catalog and HTML/Markdown generator (`cfire doc`).
+  - `docgen.hpp` (`src/docgen/{catalog,styles,markdown,html}.hpp`) — Single-source metadata catalog and HTML/Markdown generator (`cfire doc`).
   - `main.cpp` — Standalone CLI driver entrypoint.
 - `runtime/` — Modular ISO C++23 runtime & 28 built-in `core:*` modules:
   - `cfire_prelude.hpp` — Core primitives (`Error`, `slice`, `async.scope`, `own[T]`, `shared[T]`).
-  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` — Modular header implementations for all 28 `core:*` standard library packages.
+  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` (`runtime/core/net/{tcp,url,http,websocket}.hpp`) — Modular header implementations for all 28 `core:*` standard library packages.
 - `docs/planning/README.md` — The authoritative operational protocol and validation process guidelines.
 - `docs/planning/` — The project backlog, active development tasks, and architectural evaluations.
 - `tests/` — Modular conformance test suite (`tests/unit/`, `tests/e2e/`, `tests/test_main.cpp`, `tests/test_harness.hpp`).
