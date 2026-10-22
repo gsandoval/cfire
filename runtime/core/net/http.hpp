@@ -1,5 +1,6 @@
 #pragma once
 #include "tcp.hpp"
+#include "tls.hpp"
 #include "url.hpp"
 
 #include <functional>
@@ -11,14 +12,41 @@
 #include <unordered_map>
 #include <atomic>
 #include <thread>
+#include <type_traits>
 #include <cctype>
 #include <algorithm>
 
-// --- `core:net/http` (RFC 9112 HTTP/1.1 Client, Wire Protocol Engine, Server & Independent Router) ---
 namespace cfire::http {
+struct Request;
+}
+
+namespace cfire::websocket {
+class Conn;
+[[nodiscard]] inline auto upgrade(const cfire::http::Request& req, cfire::net::TcpConn& tcp) -> std::expected<Conn, cfire::Error>;
+}
+
+// --- `core:net/http` (RFC 9112 HTTP/1.1 & HTTPS Client, Wire Protocol Engine, Server & Independent Router) ---
+namespace cfire::http {
+
+inline constexpr std::size_t kMaxHttpHeaders = 128;
+inline constexpr std::size_t kMaxHttpQueryParams = 256;
+
+namespace detail {
+[[nodiscard]] inline auto strip_crlf(std::string_view sv) -> std::string {
+    std::string out;
+    out.reserve(sv.size());
+    for (char c : sv) {
+        if (c != '\r' && c != '\n' && c != '\0') {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+} // namespace detail
 
 [[nodiscard]] inline auto status_text_for_code(int code) -> std::string {
     switch (code) {
+        case 101: return "Switching Protocols";
         case 200: return "OK";
         case 201: return "Created";
         case 202: return "Accepted";
@@ -33,6 +61,7 @@ namespace cfire::http {
         case 405: return "Method Not Allowed";
         case 409: return "Conflict";
         case 422: return "Unprocessable Entity";
+        case 426: return "Upgrade Required";
         case 500: return "Internal Server Error";
         case 501: return "Not Implemented";
         case 502: return "Bad Gateway";
@@ -52,8 +81,12 @@ struct Response {
     auto set_header(std::string_view key, std::string_view val) -> Response& {
         std::string lower_k;
         lower_k.reserve(key.size());
-        for (char c : key) lower_k.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        headers[lower_k] = std::string(val);
+        for (char c : key) {
+            if (c != '\r' && c != '\n' && c != '\0') {
+                lower_k.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            }
+        }
+        headers[lower_k] = detail::strip_crlf(val);
         return *this;
     }
 
@@ -66,11 +99,11 @@ struct Response {
     }
 
     [[nodiscard]] auto to_http_wire() const -> std::string {
-        std::string text = status_text.empty() ? status_text_for_code(status_code) : status_text;
+        std::string text = status_text.empty() ? status_text_for_code(status_code) : detail::strip_crlf(status_text);
         std::string out = std::format("HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n",
             status_code, text, body.size());
         for (const auto& [k, v] : headers) {
-            out += std::format("{}: {}\r\n", k, v);
+            out += std::format("{}: {}\r\n", detail::strip_crlf(k), detail::strip_crlf(v));
         }
         out += "\r\n";
         out += body;
@@ -108,7 +141,7 @@ struct Response {
         Response r;
         r.status_code = code;
         r.status_text = status_text_for_code(code);
-        r.headers["location"] = std::string(location);
+        r.headers["location"] = detail::strip_crlf(location);
         r.body = "";
         return r;
     }
@@ -195,6 +228,9 @@ inline auto parse_response(std::string_view raw) -> std::expected<Response, cfir
         } else {
             std::size_t colon = line.find(':');
             if (colon != std::string_view::npos) {
+                if (res.headers.size() >= kMaxHttpHeaders) {
+                    return cfire::make_error("HTTP response header count exceeds maximum limit (128)");
+                }
                 std::string_view k = line.substr(0, colon);
                 std::string_view v = line.substr(colon + 1);
                 while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.remove_prefix(1);
@@ -261,8 +297,14 @@ inline auto parse_request(std::string_view raw) -> std::expected<Request, cfire:
                     std::string_view pair = qsv.substr(pos, next_amp - pos);
                     std::size_t eq = pair.find('=');
                     if (eq != std::string_view::npos) {
+                        if (req.query_params.size() >= kMaxHttpQueryParams) {
+                            return cfire::make_error("HTTP query parameter count exceeds maximum limit (256)");
+                        }
                         req.query_params[cfire::url::decode(pair.substr(0, eq))] = cfire::url::decode(pair.substr(eq + 1));
                     } else if (!pair.empty()) {
+                        if (req.query_params.size() >= kMaxHttpQueryParams) {
+                            return cfire::make_error("HTTP query parameter count exceeds maximum limit (256)");
+                        }
                         req.query_params[cfire::url::decode(pair)] = "";
                     }
                     pos = next_amp + 1;
@@ -274,6 +316,9 @@ inline auto parse_request(std::string_view raw) -> std::expected<Request, cfire:
         } else if (!line.empty()) {
             std::size_t colon = line.find(':');
             if (colon != std::string_view::npos) {
+                if (req.headers.size() >= kMaxHttpHeaders) {
+                    return cfire::make_error("HTTP request header count exceeds maximum limit (128)");
+                }
                 std::string_view k = line.substr(0, colon);
                 std::string_view v = line.substr(colon + 1);
                 while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.remove_prefix(1);
@@ -348,7 +393,8 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     std::string_view url_str,
     std::string_view body = "",
     std::string_view content_type = "",
-    const std::unordered_map<std::string, std::string>& extra_headers = {}
+    const std::unordered_map<std::string, std::string>& extra_headers = {},
+    bool verify_peer = true
 ) -> std::expected<Response, cfire::Error> {
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
@@ -357,22 +403,42 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
 
+    bool effective_verify = verify_peer;
+    std::string ca_file;
+    for (const auto& [k, v] : extra_headers) {
+        std::string lk;
+        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (lk == "x-cfire-tls-verify" && (v == "false" || v == "0")) {
+            effective_verify = false;
+        } else if (lk == "x-cfire-tls-ca") {
+            ca_file = v;
+        }
+    }
+
+    if (u->scheme == "https") {
+        auto tls_res = cfire::tls::wrap_client(conn, u->host, effective_verify, ca_file);
+        if (!tls_res) return std::unexpected(tls_res.error());
+    }
+
     std::string req;
     std::string full_path = u->path;
     if (!u->query.empty()) full_path += "?" + u->query;
 
-    req += std::format("{} {} HTTP/1.1\r\n", method, full_path);
-    req += std::format("Host: {}\r\n", u->host);
+    req += std::format("{} {} HTTP/1.1\r\n", detail::strip_crlf(method), detail::strip_crlf(full_path));
+    req += std::format("Host: {}\r\n", detail::strip_crlf(u->host));
     req += "Connection: close\r\n";
     req += "User-Agent: cfire-http/1.0\r\n";
     if (!content_type.empty()) {
-        req += std::format("Content-Type: {}\r\n", content_type);
+        req += std::format("Content-Type: {}\r\n", detail::strip_crlf(content_type));
     }
     if (!body.empty() || method == "POST" || method == "PUT" || method == "PATCH") {
         req += std::format("Content-Length: {}\r\n", body.size());
     }
     for (const auto& [k, v] : extra_headers) {
-        req += std::format("{}: {}\r\n", k, v);
+        std::string lk;
+        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (lk == "x-cfire-tls-verify" || lk == "x-cfire-tls-ca") continue;
+        req += std::format("{}: {}\r\n", detail::strip_crlf(k), detail::strip_crlf(v));
     }
     req += "\r\n";
     if (!body.empty()) {
@@ -394,30 +460,55 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
 
 [[nodiscard]] inline auto get(
     std::string_view url_str,
+    const std::unordered_map<std::string, std::string>& headers = {},
+    bool verify_peer = true
+) -> std::expected<Response, cfire::Error> {
+    return request("GET", url_str, "", "", headers, verify_peer);
+}
+
+[[nodiscard]] inline auto get_insecure(
+    std::string_view url_str,
     const std::unordered_map<std::string, std::string>& headers = {}
 ) -> std::expected<Response, cfire::Error> {
-    return request("GET", url_str, "", "", headers);
+    return request("GET", url_str, "", "", headers, false);
 }
 
 [[nodiscard]] inline auto post(
     std::string_view url_str,
     std::string_view body,
     std::string_view content_type = "application/json",
+    const std::unordered_map<std::string, std::string>& headers = {},
+    bool verify_peer = true
+) -> std::expected<Response, cfire::Error> {
+    return request("POST", url_str, body, content_type, headers, verify_peer);
+}
+
+[[nodiscard]] inline auto post_insecure(
+    std::string_view url_str,
+    std::string_view body,
+    std::string_view content_type = "application/json",
     const std::unordered_map<std::string, std::string>& headers = {}
 ) -> std::expected<Response, cfire::Error> {
-    return request("POST", url_str, body, content_type, headers);
+    return request("POST", url_str, body, content_type, headers, false);
 }
 
 class Router {
 public:
     using Handler = std::function<Response(const Request&)>;
     using Middleware = std::function<std::optional<Response>(Request&)>;
+    using WsHandler = std::function<void(const Request&, cfire::websocket::Conn&)>;
 
     struct Route {
         std::string method{};
         std::string pattern{};
         std::vector<std::string> segments{};
         Handler handler{};
+    };
+
+    struct WsRoute {
+        std::string pattern{};
+        std::vector<std::string> segments{};
+        WsHandler handler{};
     };
 
     Router() = default;
@@ -462,8 +553,53 @@ public:
         return handle("*", pattern, std::move(handler));
     }
 
+    auto ws(std::string_view pattern, WsHandler handler) -> Router& {
+        WsRoute r;
+        r.pattern = std::string(pattern);
+        r.segments = split_path(pattern);
+        r.handler = std::move(handler);
+        ws_routes_.push_back(std::move(r));
+        return *this;
+    }
+
+    [[nodiscard]] auto has_ws_routes() const noexcept -> bool {
+        return !ws_routes_.empty();
+    }
+
     void set_not_found_handler(Handler handler) {
         not_found_handler_ = std::move(handler);
+    }
+
+    template <typename TcpConnT = cfire::net::TcpConn>
+    [[nodiscard]] auto try_dispatch_ws(Request& req, TcpConnT& conn) const -> bool {
+        if (ws_routes_.empty()) return false;
+        std::string upg = req.header("upgrade");
+        for (char& c : upg) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (upg != "websocket") return false;
+
+        std::vector<std::string> path_segs = split_path(req.path);
+        for (const auto& ws_route : ws_routes_) {
+            std::unordered_map<std::string, std::string> params;
+            if (match_route(ws_route.segments, path_segs, params)) {
+                req.params = std::move(params);
+                for (const auto& mw : middlewares_) {
+                    auto early = mw(req);
+                    if (early.has_value()) {
+                        (void)conn.write(early->to_http_wire());
+                        return true;
+                    }
+                }
+                auto ws_res = cfire::websocket::upgrade(req, conn);
+                if (!ws_res) {
+                    Response err_resp = Response::bad_request(ws_res.error().message());
+                    (void)conn.write(err_resp.to_http_wire());
+                    return true;
+                }
+                ws_route.handler(req, *ws_res);
+                return true;
+            }
+        }
+        return false;
     }
 
     [[nodiscard]] auto dispatch(Request req) const -> Response {
@@ -488,6 +624,15 @@ public:
                 if (route.method == "*" || route.method == req.method) {
                     req.params = std::move(params);
                     return route.handler(req);
+                }
+            }
+        }
+
+        if (!ws_routes_.empty()) {
+            for (const auto& ws_route : ws_routes_) {
+                std::unordered_map<std::string, std::string> params;
+                if (match_route(ws_route.segments, path_segs, params)) {
+                    return Response::text(426, "426 Upgrade Required: WebSocket connection expected");
                 }
             }
         }
@@ -572,6 +717,7 @@ private:
     }
 
     std::vector<Route> routes_{};
+    std::vector<WsRoute> ws_routes_{};
     std::vector<Middleware> middlewares_{};
     Handler not_found_handler_{};
 };
@@ -582,13 +728,16 @@ private:
 
 class HttpServer {
 public:
-    HttpServer(cfire::net::TcpListener listener) : listener_(std::move(listener)) {}
+    HttpServer(cfire::net::TcpListener listener, std::optional<cfire::tls::ServerContext> tls_ctx = std::nullopt)
+        : listener_(std::move(listener)), tls_ctx_(std::move(tls_ctx)) {}
     ~HttpServer() {
         stop();
     }
 
     HttpServer(HttpServer&& o) noexcept
-        : listener_(std::move(o.listener_)), running_(o.running_.load()) {
+        : listener_(std::move(o.listener_)),
+          tls_ctx_(std::move(o.tls_ctx_)),
+          running_(o.running_.load()) {
         o.running_ = false;
         if (o.worker_.joinable()) {
             worker_ = std::move(o.worker_);
@@ -599,6 +748,7 @@ public:
         if (this != &o) {
             stop();
             listener_ = std::move(o.listener_);
+            tls_ctx_ = std::move(o.tls_ctx_);
             running_ = o.running_.load();
             o.running_ = false;
             if (o.worker_.joinable()) {
@@ -609,6 +759,30 @@ public:
     }
 
     auto port() const noexcept -> std::uint16_t { return listener_.port(); }
+    [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ctx_.has_value() && tls_ctx_->valid(); }
+
+    auto enable_tls(cfire::tls::ServerContext ctx) -> HttpServer& {
+        tls_ctx_ = std::move(ctx);
+        return *this;
+    }
+
+    auto enable_tls_files(std::string_view cert_file, std::string_view key_file)
+        -> std::expected<void, cfire::Error>
+    {
+        auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
+        if (!ctx_res) return std::unexpected(ctx_res.error());
+        tls_ctx_ = std::move(*ctx_res);
+        return {};
+    }
+
+    auto enable_tls_pem(std::string_view cert_pem, std::string_view key_pem)
+        -> std::expected<void, cfire::Error>
+    {
+        auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
+        if (!ctx_res) return std::unexpected(ctx_res.error());
+        tls_ctx_ = std::move(*ctx_res);
+        return {};
+    }
 
     void stop() noexcept {
         running_ = false;
@@ -621,15 +795,7 @@ public:
     void serve_once(Handler&& handler) {
         auto conn_res = listener_.accept();
         if (!conn_res) return;
-        auto& conn = *conn_res;
-        auto req_res = read_http_request(conn);
-        if (!req_res) {
-            Response err_resp = Response::bad_request("400 Bad Request");
-            (void)conn.write(err_resp.to_http_wire());
-            return;
-        }
-        Response resp = handler(*req_res);
-        (void)conn.write(resp.to_http_wire());
+        handle_conn(*conn_res, handler);
     }
 
     template <typename Handler>
@@ -641,15 +807,7 @@ public:
                 if (!running_) break;
                 continue;
             }
-            auto& conn = *conn_res;
-            auto req_res = read_http_request(conn);
-            if (!req_res) {
-                Response err_resp = Response::bad_request("400 Bad Request");
-                (void)conn.write(err_resp.to_http_wire());
-                continue;
-            }
-            Response resp = handler(*req_res);
-            (void)conn.write(resp.to_http_wire());
+            handle_conn(*conn_res, handler);
         }
     }
 
@@ -663,7 +821,29 @@ public:
     }
 
 private:
+    template <typename Handler>
+    void handle_conn(cfire::net::TcpConn& conn, Handler& handler) {
+        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
+            auto wr = tls_ctx_->wrap_server(conn);
+            if (!wr) return;
+        }
+        auto req_res = read_http_request(conn);
+        if (!req_res) {
+            Response err_resp = Response::bad_request("400 Bad Request");
+            (void)conn.write(err_resp.to_http_wire());
+            return;
+        }
+        if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
+            if (handler.try_dispatch_ws(*req_res, conn)) {
+                return;
+            }
+        }
+        Response resp = handler(*req_res);
+        (void)conn.write(resp.to_http_wire());
+    }
+
     cfire::net::TcpListener listener_;
+    std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
     std::atomic<bool> running_{false};
     std::thread worker_{};
 };
@@ -676,4 +856,30 @@ private:
     return HttpServer(std::move(*l));
 }
 
+[[nodiscard]] inline auto make_tls_server(
+    std::uint16_t port,
+    std::string_view cert_file,
+    std::string_view key_file
+) -> std::expected<HttpServer, cfire::Error> {
+    auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
+    if (!ctx_res) return std::unexpected(ctx_res.error());
+    auto l = cfire::net::listen_tcp(port);
+    if (!l) return std::unexpected(l.error());
+    return HttpServer(std::move(*l), std::move(*ctx_res));
+}
+
+[[nodiscard]] inline auto make_tls_server_pem(
+    std::uint16_t port,
+    std::string_view cert_pem,
+    std::string_view key_pem
+) -> std::expected<HttpServer, cfire::Error> {
+    auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
+    if (!ctx_res) return std::unexpected(ctx_res.error());
+    auto l = cfire::net::listen_tcp(port);
+    if (!l) return std::unexpected(l.error());
+    return HttpServer(std::move(*l), std::move(*ctx_res));
+}
+
 } // namespace cfire::http
+
+#include "websocket.hpp"

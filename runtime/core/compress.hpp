@@ -22,12 +22,17 @@ namespace cfire::zstd {
     return out;
 }
 
-[[nodiscard]] inline auto decompress(std::span<const std::byte> src)
-    -> std::expected<std::vector<std::byte>, cfire::Error>
+[[nodiscard]] inline auto decompress(
+    std::span<const std::byte> src,
+    std::size_t max_output_bytes = 64 * 1024 * 1024
+) -> std::expected<std::vector<std::byte>, cfire::Error>
 {
     unsigned long long content_size = ZSTD_getFrameContentSize(src.data(), src.size());
     if (content_size == ZSTD_CONTENTSIZE_ERROR || content_size == ZSTD_CONTENTSIZE_UNKNOWN) {
         return cfire::make_error("zstd unknown or invalid frame content size");
+    }
+    if (content_size > max_output_bytes) {
+        return cfire::make_error(std::format("zstd frame content size {} exceeds maximum allowed limit {}", content_size, max_output_bytes));
     }
     std::vector<std::byte> out(static_cast<std::size_t>(content_size));
     std::size_t decoded = ZSTD_decompress(out.data(), out.size(), src.data(), src.size());
