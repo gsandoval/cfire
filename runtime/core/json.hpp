@@ -158,8 +158,16 @@ public:
     }
 
 private:
+    static constexpr int kMaxJsonDepth = 128;
     std::string_view src_;
     std::size_t pos_ = 0;
+    int depth_ = 0;
+
+    struct DepthGuard {
+        int& d;
+        explicit DepthGuard(int& depth) noexcept : d(depth) { ++d; }
+        ~DepthGuard() { --d; }
+    };
 
     void skip_ws() {
         while (pos_ < src_.size() && (src_[pos_] == ' ' || src_[pos_] == '\t' || src_[pos_] == '\n' || src_[pos_] == '\r')) {
@@ -170,6 +178,10 @@ private:
     char cur() const { return pos_ < src_.size() ? src_[pos_] : '\0'; }
 
     auto parse_val() -> std::expected<Value, cfire::Error> {
+        if (depth_ >= kMaxJsonDepth) {
+            return cfire::make_error("maximum JSON nesting depth (128) exceeded");
+        }
+        DepthGuard guard(depth_);
         skip_ws();
         char c = cur();
         if (c == '{') return parse_obj();

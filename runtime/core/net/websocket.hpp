@@ -9,11 +9,17 @@
 #include <expected>
 #include <unordered_map>
 #include <optional>
+#include <memory>
 #include <random>
 #include <utility>
+#include <type_traits>
 #include <cctype>
 
-// --- `core:net/websocket` (RFC 6455 High-Level WebSockets Client & Server) ---
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
+// --- `core:net/websocket` (RFC 6455 High-Level WebSockets & WSS Client & Server) ---
 namespace cfire::websocket {
 
 namespace detail {
@@ -92,13 +98,38 @@ inline auto sha1(std::string_view input) -> std::vector<std::uint8_t> {
     return digest;
 }
 
-inline auto recv_exact(int fd, void* buf, std::size_t len) -> bool {
+inline auto recv_exact(
+    int fd,
+    void* buf,
+    std::size_t len,
+    const std::shared_ptr<cfire::net::TlsStream>& tls = nullptr
+) -> bool {
     std::size_t received = 0;
     auto* ptr = static_cast<std::uint8_t*>(buf);
     while (received < len) {
-        ssize_t n = ::recv(fd, ptr + received, len - received, 0);
+        ssize_t n = (tls && tls->ssl && tls->read_fn)
+            ? tls->read_fn(tls->ssl, ptr + received, len - received)
+            : ::recv(fd, ptr + received, len - received, 0);
         if (n <= 0) return false;
         received += static_cast<std::size_t>(n);
+    }
+    return true;
+}
+
+inline auto send_all(
+    int fd,
+    const void* buf,
+    std::size_t len,
+    const std::shared_ptr<cfire::net::TlsStream>& tls = nullptr
+) -> bool {
+    std::size_t sent_total = 0;
+    const auto* ptr = static_cast<const std::uint8_t*>(buf);
+    while (sent_total < len) {
+        ssize_t n = (tls && tls->ssl && tls->write_fn)
+            ? tls->write_fn(tls->ssl, ptr + sent_total, len - sent_total)
+            : ::send(fd, ptr + sent_total, len - sent_total, MSG_NOSIGNAL);
+        if (n <= 0) return false;
+        sent_total += static_cast<std::size_t>(n);
     }
     return true;
 }
@@ -165,9 +196,15 @@ struct WsFrame {
     return out;
 }
 
-[[nodiscard]] inline auto decode_frame(int fd) -> std::optional<WsFrame> {
+inline constexpr std::size_t kDefaultMaxFrameSize = 16 * 1024 * 1024; // 16 MiB
+
+[[nodiscard]] inline auto decode_frame(
+    int fd,
+    const std::shared_ptr<cfire::net::TlsStream>& tls = nullptr,
+    std::size_t max_frame_size = kDefaultMaxFrameSize
+) -> std::optional<WsFrame> {
     std::uint8_t header[2];
-    if (!detail::recv_exact(fd, header, 2)) return std::nullopt;
+    if (!detail::recv_exact(fd, header, 2, tls)) return std::nullopt;
 
     WsFrame f;
     f.is_final = (header[0] & 0x80) != 0;
@@ -177,23 +214,39 @@ struct WsFrame {
 
     if (len == 126) {
         std::uint8_t ext[2];
-        if (!detail::recv_exact(fd, ext, 2)) return std::nullopt;
+        if (!detail::recv_exact(fd, ext, 2, tls)) return std::nullopt;
         len = (static_cast<std::uint64_t>(ext[0]) << 8) | ext[1];
     } else if (len == 127) {
         std::uint8_t ext[8];
-        if (!detail::recv_exact(fd, ext, 8)) return std::nullopt;
+        if (!detail::recv_exact(fd, ext, 8, tls)) return std::nullopt;
         len = 0;
         for (int i = 0; i < 8; ++i) len = (len << 8) | ext[i];
+        // RFC 6455 Section 5.2: most significant bit of 64-bit length MUST be 0
+        if ((len & (1ULL << 63)) != 0) return std::nullopt;
+    }
+
+    if (len > max_frame_size) {
+        return std::nullopt;
     }
 
     std::uint8_t mask_key[4] = {0};
     if (has_mask) {
-        if (!detail::recv_exact(fd, mask_key, 4)) return std::nullopt;
+        if (!detail::recv_exact(fd, mask_key, 4, tls)) return std::nullopt;
     }
 
-    f.payload.resize(len);
     if (len > 0) {
-        if (!detail::recv_exact(fd, f.payload.data(), len)) return std::nullopt;
+        static constexpr std::size_t kChunkSize = 65536;
+        f.payload.reserve(std::min<std::size_t>(static_cast<std::size_t>(len), kChunkSize));
+        std::size_t remaining = static_cast<std::size_t>(len);
+        while (remaining > 0) {
+            std::size_t chunk_len = std::min<std::size_t>(remaining, kChunkSize);
+            std::size_t prev_size = f.payload.size();
+            f.payload.resize(prev_size + chunk_len);
+            if (!detail::recv_exact(fd, f.payload.data() + prev_size, chunk_len, tls)) {
+                return std::nullopt;
+            }
+            remaining -= chunk_len;
+        }
     }
 
     if (has_mask) {
@@ -205,14 +258,15 @@ struct WsFrame {
     return f;
 }
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL 0
-#endif
-
 class Conn {
 public:
-    explicit Conn(int fd = -1, bool is_client = true) noexcept : fd_(fd), is_client_(is_client) {
+    explicit Conn(int fd = -1, bool is_client = true, std::shared_ptr<cfire::net::TlsStream> tls = nullptr) noexcept
+        : fd_(fd), is_client_(is_client), tls_(std::move(tls)) {
         if (fd_ >= 0) {
+            // Clear the 2-second HTTP header timeout so long-lived WebSocket connections do not time out when idle
+            timeval tv{.tv_sec = 0, .tv_usec = 0};
+            ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #ifdef SO_NOSIGPIPE
             int opt = 1;
             ::setsockopt(fd_, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
@@ -220,12 +274,16 @@ public:
         }
     }
     ~Conn() { close(); }
-    Conn(Conn&& o) noexcept : fd_(std::exchange(o.fd_, -1)), is_client_(o.is_client_) {}
+    Conn(Conn&& o) noexcept
+        : fd_(std::exchange(o.fd_, -1)),
+          is_client_(o.is_client_),
+          tls_(std::move(o.tls_)) {}
     auto operator=(Conn&& o) noexcept -> Conn& {
         if (this != &o) {
             close();
             fd_ = std::exchange(o.fd_, -1);
             is_client_ = o.is_client_;
+            tls_ = std::move(o.tls_);
         }
         return *this;
     }
@@ -233,7 +291,21 @@ public:
     auto operator=(const Conn&) = delete;
 
     [[nodiscard]] auto is_open() const noexcept -> bool { return fd_ >= 0; }
+    [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ != nullptr && tls_->ssl != nullptr; }
     [[nodiscard]] auto fd() const noexcept -> int { return fd_; }
+    void set_max_frame_size(std::size_t max_bytes) noexcept { max_frame_size_ = max_bytes; }
+    [[nodiscard]] auto max_frame_size() const noexcept -> std::size_t { return max_frame_size_; }
+
+    void set_timeout_ms(int ms) noexcept {
+        if (fd_ < 0) return;
+        timeval tv{};
+        if (ms > 0) {
+            tv.tv_sec = ms / 1000;
+            tv.tv_usec = (ms % 1000) * 1000;
+        }
+        ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    }
 
     auto send_text(std::string_view msg) -> std::expected<void, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("websocket connection is closed");
@@ -243,8 +315,7 @@ public:
             .payload = std::vector<std::uint8_t>(msg.begin(), msg.end())
         };
         auto bytes = encode_frame(f, is_client_);
-        ssize_t sent = ::send(fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL);
-        if (sent < 0 || static_cast<std::size_t>(sent) != bytes.size()) {
+        if (!detail::send_all(fd_, bytes.data(), bytes.size(), tls_)) {
             return cfire::make_error("failed to send websocket text frame");
         }
         return {};
@@ -258,8 +329,7 @@ public:
             .payload = std::vector<std::uint8_t>(data.begin(), data.end())
         };
         auto bytes = encode_frame(f, is_client_);
-        ssize_t sent = ::send(fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL);
-        if (sent < 0 || static_cast<std::size_t>(sent) != bytes.size()) {
+        if (!detail::send_all(fd_, bytes.data(), bytes.size(), tls_)) {
             return cfire::make_error("failed to send websocket binary frame");
         }
         return {};
@@ -277,8 +347,7 @@ public:
             .payload = std::vector<std::uint8_t>(payload.begin(), payload.end())
         };
         auto bytes = encode_frame(f, is_client_);
-        ssize_t sent = ::send(fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL);
-        if (sent < 0 || static_cast<std::size_t>(sent) != bytes.size()) {
+        if (!detail::send_all(fd_, bytes.data(), bytes.size(), tls_)) {
             return cfire::make_error("failed to send websocket ping frame");
         }
         return {};
@@ -286,13 +355,15 @@ public:
 
     auto recv_frame() -> std::expected<WsFrame, cfire::Error> {
         while (fd_ >= 0) {
-            auto f_opt = decode_frame(fd_);
+            auto f_opt = decode_frame(fd_, tls_, max_frame_size_);
             if (!f_opt) {
+                tls_.reset();
                 if (fd_ >= 0) ::close(std::exchange(fd_, -1));
                 return cfire::make_error("websocket connection closed by peer");
             }
             auto& f = *f_opt;
             if (f.opcode == 0x8) { // Close
+                tls_.reset();
                 if (fd_ >= 0) ::close(std::exchange(fd_, -1));
                 return cfire::make_error("websocket closed by peer");
             }
@@ -303,7 +374,7 @@ public:
                     .payload = std::move(f.payload)
                 };
                 auto bytes = encode_frame(pong, is_client_);
-                (void)::send(fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL);
+                (void)detail::send_all(fd_, bytes.data(), bytes.size(), tls_);
                 continue;
             }
             if (f.opcode == 0xA) { // Pong
@@ -341,7 +412,8 @@ public:
             payload.insert(payload.end(), reason.begin(), reason.end());
             WsFrame f{.opcode = 0x8, .is_final = true, .payload = std::move(payload)};
             auto bytes = encode_frame(f, is_client_);
-            (void)::send(sock, bytes.data(), bytes.size(), MSG_NOSIGNAL);
+            (void)detail::send_all(sock, bytes.data(), bytes.size(), tls_);
+            tls_.reset();
             ::close(sock);
         }
     }
@@ -349,6 +421,8 @@ public:
 private:
     int fd_ = -1;
     bool is_client_ = true;
+    std::shared_ptr<cfire::net::TlsStream> tls_{nullptr};
+    std::size_t max_frame_size_ = kDefaultMaxFrameSize;
 };
 
 [[nodiscard]] inline auto from_fd(int fd, bool is_client = true) -> Conn {
@@ -363,7 +437,11 @@ private:
     return std::make_pair(Conn(sv[0], /*is_client=*/true), Conn(sv[1], /*is_client=*/false));
 }
 
-[[nodiscard]] inline auto upgrade(int client_fd, const std::unordered_map<std::string, std::string>& headers) -> std::expected<Conn, cfire::Error> {
+[[nodiscard]] inline auto upgrade(
+    int client_fd,
+    const std::unordered_map<std::string, std::string>& headers,
+    std::shared_ptr<cfire::net::TlsStream> tls = nullptr
+) -> std::expected<Conn, cfire::Error> {
     std::string client_key;
     for (const auto& [k, v] : headers) {
         std::string lk;
@@ -384,30 +462,35 @@ private:
         "Sec-WebSocket-Accept: {}\r\n\r\n",
         accept
     );
-    ssize_t sent = ::send(client_fd, resp.data(), resp.size(), 0);
-    if (sent < 0) {
+    if (!detail::send_all(client_fd, resp.data(), resp.size(), tls)) {
         return cfire::make_error("failed to send websocket upgrade response");
     }
-    return Conn(client_fd, /*is_client=*/false);
+    return Conn(client_fd, /*is_client=*/false, std::move(tls));
 }
 
 [[nodiscard]] inline auto upgrade(cfire::net::TcpConn& tcp, const std::unordered_map<std::string, std::string>& headers) -> std::expected<Conn, cfire::Error> {
     int fd = tcp.release_fd();
-    return upgrade(fd, headers);
+    auto tls = tcp.release_tls();
+    return upgrade(fd, headers, std::move(tls));
 }
 
 [[nodiscard]] inline auto upgrade(const cfire::http::Request& req, cfire::net::TcpConn& tcp) -> std::expected<Conn, cfire::Error> {
     return upgrade(tcp, req.headers);
 }
 
-[[nodiscard]] inline auto connect(std::string_view url_str) -> std::expected<Conn, cfire::Error> {
+[[nodiscard]] inline auto connect(std::string_view url_str, bool verify_peer = true) -> std::expected<Conn, cfire::Error> {
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
-    std::uint16_t port = u->port != 0 ? u->port : 80;
+    std::uint16_t port = u->port != 0 ? u->port : ((u->scheme == "wss" || u->scheme == "https") ? 443 : 80);
 
     auto tcp_res = cfire::net::connect_tcp(u->host, port);
     if (!tcp_res) return std::unexpected(tcp_res.error());
     auto& tcp = *tcp_res;
+
+    if (u->scheme == "wss" || u->scheme == "https") {
+        auto tls_res = cfire::tls::wrap_client(tcp, u->host, verify_peer);
+        if (!tls_res) return std::unexpected(tls_res.error());
+    }
 
     std::string nonce = generate_nonce();
     std::string expected_accept = compute_accept_key(nonce);
@@ -437,8 +520,205 @@ private:
         return cfire::make_error("websocket handshake failed: server did not return 101 Switching Protocols");
     }
 
+    auto parsed_resp = cfire::http::parse_response(resp_buf);
+    if (parsed_resp) {
+        std::string accept_hdr = parsed_resp->header("sec-websocket-accept");
+        if (!accept_hdr.empty() && accept_hdr != expected_accept) {
+            return cfire::make_error("websocket handshake failed: Sec-WebSocket-Accept key mismatch");
+        }
+    }
+
     int raw_fd = tcp.release_fd();
-    return Conn(raw_fd, /*is_client=*/true);
+    auto tls = tcp.release_tls();
+    return Conn(raw_fd, /*is_client=*/true, std::move(tls));
+}
+
+[[nodiscard]] inline auto connect_insecure(std::string_view url_str) -> std::expected<Conn, cfire::Error> {
+    return connect(url_str, /*verify_peer=*/false);
+}
+
+class Server {
+public:
+    explicit Server(cfire::net::TcpListener listener, std::optional<cfire::tls::ServerContext> tls_ctx = std::nullopt)
+        : listener_(std::move(listener)), tls_ctx_(std::move(tls_ctx)) {}
+    ~Server() {
+        stop();
+    }
+
+    Server(Server&& o) noexcept
+        : listener_(std::move(o.listener_)),
+          tls_ctx_(std::move(o.tls_ctx_)),
+          running_(o.running_.load()) {
+        o.running_ = false;
+        if (o.worker_.joinable()) {
+            worker_ = std::move(o.worker_);
+        }
+    }
+
+    auto operator=(Server&& o) noexcept -> Server& {
+        if (this != &o) {
+            stop();
+            listener_ = std::move(o.listener_);
+            tls_ctx_ = std::move(o.tls_ctx_);
+            running_ = o.running_.load();
+            o.running_ = false;
+            if (o.worker_.joinable()) {
+                worker_ = std::move(o.worker_);
+            }
+        }
+        return *this;
+    }
+
+    [[nodiscard]] auto port() const noexcept -> std::uint16_t { return listener_.port(); }
+    [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ctx_.has_value() && tls_ctx_->valid(); }
+
+    auto enable_tls(cfire::tls::ServerContext ctx) -> Server& {
+        tls_ctx_ = std::move(ctx);
+        return *this;
+    }
+
+    auto enable_tls_files(std::string_view cert_file, std::string_view key_file)
+        -> std::expected<void, cfire::Error>
+    {
+        auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
+        if (!ctx_res) return std::unexpected(ctx_res.error());
+        tls_ctx_ = std::move(*ctx_res);
+        return {};
+    }
+
+    auto enable_tls_pem(std::string_view cert_pem, std::string_view key_pem)
+        -> std::expected<void, cfire::Error>
+    {
+        auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
+        if (!ctx_res) return std::unexpected(ctx_res.error());
+        tls_ctx_ = std::move(*ctx_res);
+        return {};
+    }
+
+    void stop() noexcept {
+        running_ = false;
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+    }
+
+    [[nodiscard]] auto accept() -> std::expected<Conn, cfire::Error> {
+        auto conn_res = listener_.accept();
+        if (!conn_res) return std::unexpected(conn_res.error());
+        auto& conn = *conn_res;
+
+        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
+            auto wr = tls_ctx_->wrap_server(conn);
+            if (!wr) return std::unexpected(wr.error());
+        }
+
+        auto req_res = cfire::http::read_http_request(conn);
+        if (!req_res) {
+            cfire::http::Response err_resp = cfire::http::Response::bad_request("400 Bad Request");
+            (void)conn.write(err_resp.to_http_wire());
+            return std::unexpected(req_res.error());
+        }
+
+        auto ws_res = upgrade(*req_res, conn);
+        if (!ws_res) {
+            cfire::http::Response err_resp = cfire::http::Response::bad_request(ws_res.error().message());
+            (void)conn.write(err_resp.to_http_wire());
+            return std::unexpected(ws_res.error());
+        }
+        return std::move(*ws_res);
+    }
+
+    template <typename Handler>
+    void serve_once(Handler&& handler) {
+        auto conn_res = listener_.accept();
+        if (!conn_res) return;
+        handle_conn(*conn_res, handler);
+    }
+
+    template <typename Handler>
+    void listen_and_serve(Handler&& handler) {
+        running_ = true;
+        while (running_) {
+            auto conn_res = listener_.accept();
+            if (!conn_res) {
+                if (!running_) break;
+                continue;
+            }
+            handle_conn(*conn_res, handler);
+        }
+    }
+
+    template <typename Handler>
+    void serve_in_background(Handler handler) {
+        stop();
+        running_ = true;
+        worker_ = std::thread([this, h = std::move(handler)]() mutable {
+            this->listen_and_serve(h);
+        });
+    }
+
+private:
+    template <typename Handler>
+    void handle_conn(cfire::net::TcpConn& conn, Handler& handler) {
+        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
+            auto wr = tls_ctx_->wrap_server(conn);
+            if (!wr) return;
+        }
+        auto req_res = cfire::http::read_http_request(conn);
+        if (!req_res) {
+            cfire::http::Response err_resp = cfire::http::Response::bad_request("400 Bad Request");
+            (void)conn.write(err_resp.to_http_wire());
+            return;
+        }
+        auto ws_res = upgrade(*req_res, conn);
+        if (!ws_res) {
+            cfire::http::Response err_resp = cfire::http::Response::bad_request(ws_res.error().message());
+            (void)conn.write(err_resp.to_http_wire());
+            return;
+        }
+        if constexpr (std::is_invocable_v<Handler, const cfire::http::Request&, Conn&>) {
+            handler(*req_res, *ws_res);
+        } else {
+            handler(*ws_res);
+        }
+    }
+
+    cfire::net::TcpListener listener_;
+    std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
+    std::atomic<bool> running_{false};
+    std::thread worker_{};
+};
+
+[[nodiscard]] inline auto make_server(std::uint16_t port = 0)
+    -> std::expected<Server, cfire::Error>
+{
+    auto l = cfire::net::listen_tcp(port);
+    if (!l) return std::unexpected(l.error());
+    return Server(std::move(*l));
+}
+
+[[nodiscard]] inline auto make_tls_server(
+    std::uint16_t port,
+    std::string_view cert_file,
+    std::string_view key_file
+) -> std::expected<Server, cfire::Error> {
+    auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
+    if (!ctx_res) return std::unexpected(ctx_res.error());
+    auto l = cfire::net::listen_tcp(port);
+    if (!l) return std::unexpected(l.error());
+    return Server(std::move(*l), std::move(*ctx_res));
+}
+
+[[nodiscard]] inline auto make_tls_server_pem(
+    std::uint16_t port,
+    std::string_view cert_pem,
+    std::string_view key_pem
+) -> std::expected<Server, cfire::Error> {
+    auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
+    if (!ctx_res) return std::unexpected(ctx_res.error());
+    auto l = cfire::net::listen_tcp(port);
+    if (!l) return std::unexpected(l.error());
+    return Server(std::move(*l), std::move(*ctx_res));
 }
 
 } // namespace cfire::websocket

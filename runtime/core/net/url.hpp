@@ -38,14 +38,25 @@ struct Url {
 }
 
 [[nodiscard]] inline auto decode(std::string_view sv) -> std::string {
+    auto hex_nibble = [](char c) noexcept -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
     std::string out;
+    out.reserve(sv.size());
     for (std::size_t i = 0; i < sv.size(); ++i) {
         if (sv[i] == '%' && i + 2 < sv.size()) {
-            int h1 = std::isdigit(sv[i + 1]) ? sv[i + 1] - '0' : std::tolower(sv[i + 1]) - 'a' + 10;
-            int h2 = std::isdigit(sv[i + 2]) ? sv[i + 2] - '0' : std::tolower(sv[i + 2]) - 'a' + 10;
-            out.push_back(static_cast<char>((h1 << 4) | h2));
-            i += 2;
-        } else if (sv[i] == '+') {
+            int h1 = hex_nibble(sv[i + 1]);
+            int h2 = hex_nibble(sv[i + 2]);
+            if (h1 >= 0 && h2 >= 0) {
+                out.push_back(static_cast<char>((h1 << 4) | h2));
+                i += 2;
+                continue;
+            }
+        }
+        if (sv[i] == '+') {
             out.push_back(' ');
         } else {
             out.push_back(sv[i]);
@@ -54,8 +65,17 @@ struct Url {
     return out;
 }
 
+inline constexpr std::size_t kMaxUrlLength = 16384;
+inline constexpr std::size_t kMaxQueryParams = 256;
+
 [[nodiscard]] inline auto parse(std::string_view raw) -> std::expected<Url, cfire::Error> {
     if (raw.empty()) return cfire::make_error("empty URL string");
+    if (raw.size() > kMaxUrlLength) return cfire::make_error("URL exceeds maximum allowed length (16KB)");
+    for (char c : raw) {
+        if (c == '\r' || c == '\n' || c == '\0') {
+            return cfire::make_error("URL contains illegal control characters (CR/LF/NUL)");
+        }
+    }
     Url u;
     std::size_t scheme_end = raw.find("://");
     std::size_t host_start = 0;
@@ -84,11 +104,11 @@ struct Url {
         if (auto p = cfire::detail::parse_int<std::uint16_t>(port_str)) {
             u.port = *p;
         } else {
-            u.port = (u.scheme == "https") ? 443 : 80;
+            u.port = (u.scheme == "https" || u.scheme == "wss") ? 443 : 80;
         }
     } else {
         u.host = std::string(host_port);
-        u.port = (u.scheme == "https") ? 443 : 80;
+        u.port = (u.scheme == "https" || u.scheme == "wss") ? 443 : 80;
     }
 
     if (frag_start != std::string_view::npos) {
@@ -106,8 +126,14 @@ struct Url {
             std::string_view pair = qsv.substr(pos, next_amp - pos);
             std::size_t eq = pair.find('=');
             if (eq != std::string_view::npos) {
+                if (u.query_params.size() >= kMaxQueryParams) {
+                    return cfire::make_error("URL query parameter count exceeds maximum limit (256)");
+                }
                 u.query_params[decode(pair.substr(0, eq))] = decode(pair.substr(eq + 1));
             } else if (!pair.empty()) {
+                if (u.query_params.size() >= kMaxQueryParams) {
+                    return cfire::make_error("URL query parameter count exceeds maximum limit (256)");
+                }
                 u.query_params[decode(pair)] = "";
             }
             pos = next_amp + 1;

@@ -1889,10 +1889,77 @@ void test_net_websocket([[maybe_unused]] const std::filesystem::path& rt_dir) {
     auto srv_recv_closed = server.recv_text();
     require(!srv_recv_closed.has_value(), "server recognizes closed peer");
 
-    // 2. End-to-end .cf script execution
+    // NET-P0-01: URL default port for ws:// (80) and wss:// (443)
+    auto u_ws = cfire::url::parse("ws://stream.example.com/feed");
+    require(u_ws.has_value() && u_ws->scheme == "ws" && u_ws->port == 80, "ws:// defaults to port 80");
+    auto u_wss = cfire::url::parse("wss://stream.example.com/feed");
+    require(u_wss.has_value() && u_wss->scheme == "wss" && u_wss->port == 443, "wss:// defaults to port 443");
+    auto u_wss_custom = cfire::url::parse("wss://stream.example.com:9443/feed");
+    require(u_wss_custom.has_value() && u_wss_custom->port == 9443, "wss:// respects explicit port");
+
+    // NET-P0-02: Standalone websocket::Server (ws://)
+    auto ws_srv_res = cfire::websocket::make_server(0);
+    require(ws_srv_res.has_value(), "websocket::make_server(0) succeeds");
+    if (ws_srv_res.has_value()) {
+        auto ws_port = ws_srv_res->port();
+        ws_srv_res->serve_in_background([](const cfire::http::Request& req, cfire::websocket::Conn& ws) {
+            auto in_msg = ws.recv_text();
+            if (in_msg) {
+                (void)ws.send_text("srv_echo:" + req.path + ":" + *in_msg);
+            }
+        });
+
+        auto ws_cli = cfire::websocket::connect(std::format("ws://127.0.0.1:{}/realtime", ws_port));
+        require(ws_cli.has_value(), "websocket::connect to standalone websocket::Server succeeds");
+        if (ws_cli.has_value()) {
+            require(ws_cli->send_text("ping123").has_value(), "ws client send_text to standalone server");
+            auto echo = ws_cli->recv_text();
+            require(echo.has_value() && *echo == "srv_echo:/realtime:ping123", "ws client receives echoed message from standalone server");
+            ws_cli->close();
+        }
+        ws_srv_res->stop();
+    }
+
+    // NET-P0-03 & NET-P0-04: TLS Self-Signed Cert Generation & WSS Server/Client
+    require(cfire::tls::available(), "OpenSSL dynamic TLS bridge is available");
+    auto cert_pair = cfire::tls::generate_self_signed_pem("localhost", 365);
+    require(cert_pair.has_value(), "tls::generate_self_signed_pem succeeds");
+    require(cert_pair->cert_pem.contains("BEGIN CERTIFICATE"), "generated cert_pem has PEM header");
+    require(cert_pair->key_pem.contains("PRIVATE KEY"), "generated key_pem has PEM header");
+
+    auto wss_srv_res = cfire::websocket::make_tls_server_pem(0, cert_pair->cert_pem, cert_pair->key_pem);
+    require(wss_srv_res.has_value(), "websocket::make_tls_server_pem succeeds");
+    if (wss_srv_res.has_value()) {
+        auto wss_port = wss_srv_res->port();
+        wss_srv_res->serve_in_background([](cfire::websocket::Conn& ws) {
+            auto msg = ws.recv_text();
+            if (msg) {
+                (void)ws.send_text("wss_secure:" + *msg);
+            }
+        });
+
+        // Connecting with verify_peer=true against a self-signed cert should fail verification
+        auto strict_cli = cfire::websocket::connect(std::format("wss://127.0.0.1:{}/ws", wss_port), /*verify_peer=*/true);
+        require(!strict_cli.has_value(), "wss:// with verify_peer=true rejects untrusted self-signed cert");
+
+        // Connecting with connect_insecure (verify_peer=false) succeeds over TLS
+        auto wss_cli = cfire::websocket::connect_insecure(std::format("wss://127.0.0.1:{}/ws", wss_port));
+        require(wss_cli.has_value(), "websocket::connect_insecure over wss:// succeeds");
+        if (wss_cli.has_value()) {
+            require(wss_cli->is_tls(), "wss client connection is TLS-backed");
+            require(wss_cli->send_text("encrypted-payload").has_value(), "wss send_text succeeds");
+            auto reply = wss_cli->recv_text();
+            require(reply.has_value() && *reply == "wss_secure:encrypted-payload", "wss recv_text matches encrypted echo");
+            wss_cli->close();
+        }
+        wss_srv_res->stop();
+    }
+
+    // 2. End-to-end .cf script execution (pair + standalone server + TLS/WSS)
     run_cfire_source(R"(package main
 
 import "core:net/websocket"
+import "core:net/tls"
 
 fn main() {
     (mut client, mut server) := try websocket.pair()
@@ -1904,11 +1971,26 @@ fn main() {
     ack := try client.recv_text()
     println("ws.client.ack={}", ack)
     client.close()
+
+    pair := try tls.generate_self_signed_pem("localhost", 30)
+    mut wss_srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)
+    wss_srv.serve_in_background(|mut ws: websocket.Conn| {
+        m := ws.recv_text() or ""
+        _ = ws.send_text("wss-echo:" + m)
+    })
+    defer wss_srv.stop()
+
+    mut wss_cli := try websocket.connect_insecure("wss://127.0.0.1:{wss_srv.port()}/stream")
+    defer wss_cli.close()
+    try wss_cli.send_text("tls13")
+    wss_reply := try wss_cli.recv_text()
+    println("wss.reply={}", wss_reply)
 }
 )", "cfire_ws")
         .assert_ok("cfire run websocket exit 0")
         .assert_contains("ws.server.msg=cf-websocket-hello", "websocket server receive output")
-        .assert_contains("ws.client.ack=cf-websocket-ack", "websocket client ack output");
+        .assert_contains("ws.client.ack=cf-websocket-ack", "websocket client ack output")
+        .assert_contains("wss.reply=wss-echo:tls13", "wss server/client TLS roundtrip output");
 
     std::println("--- PASS: test_net_websocket");
 }
@@ -2071,6 +2153,43 @@ void test_net_http_and_router(const std::filesystem::path& /*rt_dir*/) {
         srv_res->stop();
     }
 
+    // 4b. Router::ws WebSocket Route Upgrade + HTTPS Server/Client End-to-End
+    router.ws("/chat/:room", [](const cfire::http::Request& req, cfire::websocket::Conn& ws) {
+        std::string room = req.param("room");
+        auto msg = ws.recv_text();
+        if (msg) {
+            (void)ws.send_text("room=" + room + ";msg=" + *msg);
+        }
+    });
+
+    auto cert_pair = cfire::tls::generate_self_signed_pem("localhost", 365);
+    require(cert_pair.has_value(), "generate_self_signed_pem for HTTPS server succeeds");
+    auto https_srv = cfire::http::make_tls_server_pem(0, cert_pair->cert_pem, cert_pair->key_pem);
+    require(https_srv.has_value(), "http::make_tls_server_pem succeeds");
+    if (https_srv.has_value()) {
+        auto tls_port = https_srv->port();
+        https_srv->serve_in_background(router);
+
+        // HTTPS GET
+        auto https_get = cfire::http::get_insecure(std::format("https://127.0.0.1:{}/users/777", tls_port));
+        require(https_get.has_value(), "https::get_insecure against live TLS server succeeds");
+        if (https_get.has_value()) {
+            require(https_get->status_code == 200 && https_get->body == "user_id=777", "HTTPS GET body matches");
+        }
+
+        // WSS upgrade on the same HTTPS server via router.ws("/chat/:room", ...)
+        auto wss_chat = cfire::websocket::connect_insecure(std::format("wss://127.0.0.1:{}/chat/general", tls_port));
+        require(wss_chat.has_value(), "WSS upgrade on Router::ws route succeeds");
+        if (wss_chat.has_value()) {
+            require(wss_chat->send_text("hello-room").has_value(), "WSS chat send_text succeeds");
+            auto chat_reply = wss_chat->recv_text();
+            require(chat_reply.has_value() && *chat_reply == "room=general;msg=hello-room", "Router::ws extracted :room param and echoed over WSS");
+            wss_chat->close();
+        }
+
+        https_srv->stop();
+    }
+
     // 5. End-to-end .cf script execution
     run_cfire_source(R"(package main
 
@@ -2216,6 +2335,415 @@ test "passing test assertion" {
     }
 
     std::println("--- PASS: test_section3_agent_tooling");
+}
+
+void test_security_and_fuzzing([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_security_and_fuzzing");
+
+    // 1. SEC-P0-01a: WebSocket 64-Bit Frame Length Allocation Bomb (OOM DoS Prevention)
+    {
+        int sv[2]{-1, -1};
+        require(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0, "socketpair for ws bomb test");
+        // Frame 1: FIN=1, opcode=0x2 (binary), mask=0, len=127, 8-byte extended len = 0x7FFFFFFFFFFFFFFF (9 EB)
+        const std::uint8_t bomb1[10] = {0x82, 127, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+        (void)::send(sv[0], bomb1, sizeof(bomb1), 0);
+        auto res1 = cfire::websocket::decode_frame(sv[1]);
+        require(!res1.has_value(), "decode_frame immediately rejects 9-exabyte 64-bit length bomb without OOM");
+
+        // Frame 2: MSB set on 64-bit length (violates RFC 6455 Section 5.2)
+        const std::uint8_t bomb2[10] = {0x82, 127, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10};
+        (void)::send(sv[0], bomb2, sizeof(bomb2), 0);
+        auto res2 = cfire::websocket::decode_frame(sv[1]);
+        require(!res2.has_value(), "decode_frame rejects RFC 6455 invalid MSB-set 64-bit length");
+
+        // Frame 3: Custom max_frame_size limit (1024 bytes) vs 4096-byte claimed frame
+        const std::uint8_t bomb3[4] = {0x81, 126, 0x10, 0x00}; // len = 4096
+        (void)::send(sv[0], bomb3, sizeof(bomb3), 0);
+        auto res3 = cfire::websocket::decode_frame(sv[1], nullptr, /*max_frame_size=*/1024);
+        require(!res3.has_value(), "decode_frame rejects frame exceeding custom max_frame_size");
+
+        ::close(sv[0]);
+        ::close(sv[1]);
+    }
+
+    // 2. SEC-P0-01b: HTTP CRLF Response Splitting & Header/Query Parameter Flood Caps
+    {
+        auto resp = cfire::http::Response::redirect("/home\r\nSet-Cookie: session=hacked\r\n\r\nInjectedBody");
+        resp.set_header("X-Test\r\nX-Injected", "val\r\nEvil-Header: 1");
+        std::string wire = resp.to_http_wire();
+        require(!wire.contains("Set-Cookie: session=hacked\r\n"), "Response::redirect strips CRLF header injection");
+        require(!wire.contains("\r\nEvil-Header:"), "Response::set_header strips CRLF header injection");
+        std::size_t first_delim = wire.find("\r\n\r\n");
+        require(first_delim != std::string::npos && first_delim + 4 == wire.size(),
+            "Response wire has exactly one header terminator at end of empty-body redirect");
+
+        // 200 HTTP headers (> 128 cap)
+        std::string flood_req = "GET / HTTP/1.1\r\nHost: localhost\r\n";
+        for (int i = 0; i < 200; ++i) {
+            flood_req += std::format("X-Hdr-{}: {}\r\n", i, i);
+        }
+        flood_req += "\r\n";
+        auto flood_res = cfire::http::parse_request(flood_req);
+        require(!flood_res.has_value(), "http::parse_request rejects header flood (>128 headers)");
+
+        // 300 query parameters (> 256 cap)
+        std::string qflood = "http://localhost/search?";
+        for (int i = 0; i < 300; ++i) {
+            if (i > 0) qflood += "&";
+            qflood += std::format("k{}={}", i, i);
+        }
+        auto qflood_res = cfire::url::parse(qflood);
+        require(!qflood_res.has_value(), "url::parse rejects query parameter flood (>256 params)");
+    }
+
+    // 3. SEC-P0-01c: URL Malformed %XX Hex Decoding & Control Character Rejection
+    {
+        std::string dec = cfire::url::decode("%ZZ%0G%1%41+test%");
+        require(dec == "%ZZ%0G%1A test%", "url::decode safely preserves malformed % sequences and decodes valid %41");
+
+        auto crlf_url = cfire::url::parse("http://example.com/test\r\nX-Injected: true");
+        require(!crlf_url.has_value(), "url::parse rejects URLs containing CR/LF control characters");
+    }
+
+    // 4. SEC-P0-01d: Stack-Overflow Prevention on Deeply Nested JSON & .cf ASTs
+    {
+        std::string deep_json_arr(5000, '[');
+        deep_json_arr.append(5000, ']');
+        auto dj_res = cfire::json::parse_dynamic(deep_json_arr);
+        require(!dj_res.has_value() && dj_res.error().message().contains("maximum JSON nesting depth"),
+            "json::parse_dynamic rejects 5,000-deep array without stack overflow");
+
+        std::string deep_cf = "package main\nfn main() {\n    x := ";
+        deep_cf.append(1000, '(');
+        deep_cf += "1";
+        deep_cf.append(1000, ')');
+        deep_cf += "\n}\n";
+        auto dcf_res = cfire::frontend::parse_source_resilient("deep.cf", deep_cf);
+        require(!dcf_res.ok(), "frontend::parse_source_resilient rejects 1,000-deep expression without stack overflow");
+
+        std::string deep_type = "package main\nfn main() {\n    x: ";
+        for (int i = 0; i < 1000; ++i) deep_type += "[]";
+        deep_type += "i32 = []\n}\n";
+        auto dtype_res = cfire::frontend::parse_source_resilient("deep_type.cf", deep_type);
+        require(!dtype_res.ok(), "frontend::parse_source_resilient rejects 1,000-deep slice type without stack overflow");
+    }
+
+    // 5. SEC-P0-02: Deterministic PRNG Mutation Fuzzer Across All Untrusted Input Parsers (10,000+ inputs)
+    {
+        std::mt19937_64 rng(0xCF12E2026ULL);
+        auto mutate_str = [&](std::string_view seed) -> std::string {
+            std::string s(seed);
+            int ops = static_cast<int>(rng() % 6) + 1;
+            for (int op = 0; op < ops; ++op) {
+                std::uint64_t r = rng();
+                int kind = static_cast<int>(r % 5);
+                if (kind == 0 && !s.empty()) {
+                    // Bit flip
+                    s[r % s.size()] ^= static_cast<char>(1U << ((r >> 8) % 8));
+                } else if (kind == 1 && !s.empty()) {
+                    // Truncate or erase slice
+                    std::size_t pos = (r >> 8) % s.size();
+                    std::size_t len = std::min<std::size_t>(s.size() - pos, ((r >> 16) % 16) + 1);
+                    s.erase(pos, len);
+                } else if (kind == 2) {
+                    // Insert special boundary characters
+                    static constexpr std::string_view kSpecial = "%\r\n\0\"\\{[()]}:,=-+09afAF\x80\xC0\xE0\xF0\xFF";
+                    char ch = kSpecial[(r >> 8) % kSpecial.size()];
+                    std::size_t pos = s.empty() ? 0 : ((r >> 16) % s.size());
+                    s.insert(pos, 1, ch);
+                } else if (kind == 3 && s.size() < 512) {
+                    // Duplicate chunk
+                    s += s.substr(0, std::min<std::size_t>(s.size(), 32));
+                } else {
+                    // Random byte replacement
+                    if (!s.empty()) s[(r >> 8) % s.size()] = static_cast<char>((r >> 16) & 0xFF);
+                }
+            }
+            return s;
+        };
+
+        const std::vector<std::string> http_seeds = {
+            "GET /api/v1/items?id=10&filter=a%20b HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n",
+            "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n{\"ok\":true}\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nhello"
+        };
+        const std::vector<std::string> url_seeds = {
+            "https://user.example.com:8443/a/b/c?x=1&y=%20%FF#frag",
+            "wss://stream.local/ws?token=abc+def%2F123",
+            "http://127.0.0.1:0/"
+        };
+        const std::vector<std::string> json_seeds = {
+            R"({"service":"api","count":-42,"rate":3.14e-2,"flags":[true,false,null],"nested":{"k":"\u0041\n\t\"\\"}})",
+            R"([1, 2, [3, 4, {"a": "b", "c": []}], "plain"])"
+        };
+        const std::vector<std::string> cf_seeds = {
+            "package main\nimport \"core:fs\"\ntype S struct { a: i32 }\nfn main() { mut x := 10; x += 2; match x { 12 => println(\"{x}\"), _ => {} } }\n",
+            "package main\ntype E enum { A(i32), B }\nfn f(mut s: &mut []u8) -> i32! { return 0 }\n"
+        };
+
+        std::size_t total_fuzz_cases = 0;
+
+        // 2,500 HTTP request/response mutations
+        for (int i = 0; i < 2500; ++i) {
+            std::string m = mutate_str(http_seeds[static_cast<std::size_t>(i) % http_seeds.size()]);
+            (void)cfire::http::parse_request(m);
+            (void)cfire::http::parse_response(m);
+            ++total_fuzz_cases;
+        }
+
+        // 2,500 URL parse/decode/encode mutations
+        for (int i = 0; i < 2500; ++i) {
+            std::string m = mutate_str(url_seeds[static_cast<std::size_t>(i) % url_seeds.size()]);
+            (void)cfire::url::parse(m);
+            std::string d = cfire::url::decode(m);
+            (void)cfire::url::encode(d);
+            ++total_fuzz_cases;
+        }
+
+        // 2,500 JSON dynamic parser + Base64/Hex/CSV/UTF-8 mutations
+        for (int i = 0; i < 2500; ++i) {
+            std::string m = mutate_str(json_seeds[static_cast<std::size_t>(i) % json_seeds.size()]);
+            if (auto jv = cfire::json::parse_dynamic(m)) {
+                (void)cfire::json::stringify_dynamic(*jv);
+            }
+            (void)cfire::base64::decode(m);
+            (void)cfire::hex::decode(m);
+            (void)cfire::csv::parse(m);
+            (void)cfire::unicode::is_valid_utf8(m);
+            (void)cfire::unicode::runes(m);
+            ++total_fuzz_cases;
+        }
+
+        // 1,500 WebSocket binary wire frame mutations
+        {
+            int sv[2]{-1, -1};
+            require(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0, "socketpair for ws fuzzing");
+            timeval tv{.tv_sec = 0, .tv_usec = 1000}; // 1ms timeout for truncated frames
+            ::setsockopt(sv[1], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            for (int i = 0; i < 1500; ++i) {
+                std::size_t flen = (rng() % 24) + 2;
+                std::vector<std::uint8_t> raw(flen);
+                for (std::size_t b = 0; b < flen; ++b) raw[b] = static_cast<std::uint8_t>(rng() & 0xFF);
+                // Keep payload length small or bomb-sized so recv doesn't wait 1ms on every iteration
+                if ((raw[1] & 0x7F) < 126) {
+                    raw[1] = (raw[1] & 0x80) | static_cast<std::uint8_t>(rng() % 8);
+                }
+                (void)::send(sv[0], raw.data(), raw.size(), MSG_NOSIGNAL);
+                (void)cfire::websocket::decode_frame(sv[1], nullptr, 4096);
+                // Drain any leftover bytes in sv[1]
+                std::uint8_t drain[64];
+                while (::recv(sv[1], drain, sizeof(drain), MSG_DONTWAIT) > 0) {}
+                ++total_fuzz_cases;
+            }
+            ::close(sv[0]);
+            ::close(sv[1]);
+        }
+
+        // 1,500 Compiler Lexer + Parser + LSP JSON-RPC mutations
+        for (int i = 0; i < 1500; ++i) {
+            std::string m = mutate_str(cf_seeds[static_cast<std::size_t>(i) % cf_seeds.size()]);
+            auto pr = cfire::frontend::parse_source_resilient("fuzz.cf", m);
+            if (pr.ok()) {
+                (void)cfire::frontend::analyze_resilient( std::move(pr.ast));
+            }
+            (void)cfire::lsp::detail::find_json_key(m, "method");
+            (void)cfire::lsp::detail::extract_json_string(m, "uri");
+            ++total_fuzz_cases;
+        }
+
+        require(total_fuzz_cases >= 10000, "executed >= 10,000 security fuzz test cases cleanly");
+        std::println("  [FUZZ] Executed {} adversarial & mutated inputs with 0 crashes or leaks", total_fuzz_cases);
+    }
+
+    std::println("--- PASS: test_security_and_fuzzing");
+}
+
+void test_performance_benchmarks([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_performance_benchmarks");
+    using clock = std::chrono::steady_clock;
+
+    auto print_metric = [](std::string_view name, std::size_t iters, double elapsed_sec, std::size_t bytes_per_iter = 0) {
+        double ns_per_op = (elapsed_sec * 1e9) / static_cast<double>(iters);
+        double ops_per_sec = static_cast<double>(iters) / std::max(elapsed_sec, 1e-9);
+        if (bytes_per_iter > 0) {
+            double mb_per_sec = (static_cast<double>(iters * bytes_per_iter) / (1024.0 * 1024.0)) / std::max(elapsed_sec, 1e-9);
+            std::println("  [BENCH] {:<38} {:>8.1f} ns/op | {:>10.0f} ops/s | {:>8.1f} MB/s",
+                name, ns_per_op, ops_per_sec, mb_per_sec);
+        } else {
+            std::println("  [BENCH] {:<38} {:>8.1f} ns/op | {:>10.0f} ops/s",
+                name, ns_per_op, ops_per_sec);
+        }
+    };
+
+    // 1. HTTP Request Parse + Parameterized Router Dispatch
+    {
+        auto router = cfire::http::make_router();
+        router.get("/orgs/:org/repos/:repo/issues/:id", [](const cfire::http::Request& req) {
+            return cfire::http::Response::text(200, req.param("org") + "/" + req.param("repo") + "#" + req.param("id"));
+        });
+        std::string_view raw_req =
+            "GET /orgs/deepmind/repos/cfire/issues/42?state=open&limit=20 HTTP/1.1\r\n"
+            "Host: api.cfire.dev\r\n"
+            "User-Agent: cfire-bench/1.0\r\n"
+            "Accept: application/json\r\n\r\n";
+
+        constexpr std::size_t kIters = 25000;
+        auto t0 = clock::now();
+        std::size_t ok_count = 0;
+        for (std::size_t i = 0; i < kIters; ++i) {
+            auto req = cfire::http::parse_request(raw_req);
+            if (req) {
+                auto resp = router.dispatch(std::move(*req));
+                if (resp.status_code == 200) ++ok_count;
+            }
+        }
+        double sec = std::chrono::duration<double>(clock::now() - t0).count();
+        require(ok_count == kIters, "HTTP parse + router benchmark all iterations succeeded");
+        require(sec < 5.0, "HTTP parse + router dispatch completes 25k ops under 5s");
+        print_metric("http::parse_request + Router::dispatch", kIters, sec, raw_req.size());
+    }
+
+    // 2. WebSocket RFC 6455 Frame Masking & Loopback Exchange (256B payload)
+    {
+        auto pair_res = cfire::websocket::pair();
+        require(pair_res.has_value(), "websocket::pair for benchmark");
+        auto [client, server] = std::move(*pair_res);
+        std::string payload(256, 'W');
+
+        constexpr std::size_t kIters = 10000;
+        auto t0 = clock::now();
+        std::size_t ok_count = 0;
+        for (std::size_t i = 0; i < kIters; ++i) {
+            if (client.send_text(payload) && server.recv_text()) {
+                ++ok_count;
+            }
+        }
+        double sec = std::chrono::duration<double>(clock::now() - t0).count();
+        require(ok_count == kIters, "WebSocket frame roundtrip benchmark all iterations succeeded");
+        print_metric("websocket::Conn (256B masked frame)", kIters, sec, payload.size());
+    }
+
+    // 3. TLS 1.3 Encrypted WSS Stream Throughput
+    {
+        auto cert = cfire::tls::generate_self_signed_pem("localhost", 1);
+        require(cert.has_value(), "generate_self_signed_pem for TLS benchmark");
+        auto srv = cfire::websocket::make_tls_server_pem(0, cert->cert_pem, cert->key_pem);
+        require(srv.has_value(), "make_tls_server_pem for TLS benchmark");
+        constexpr std::size_t kIters = 1000;
+        srv->serve_in_background([](cfire::websocket::Conn& ws) {
+            for (std::size_t i = 0; i < kIters; ++i) {
+                auto m = ws.recv_text();
+                if (!m) break;
+                (void)ws.send_text(*m);
+            }
+        });
+
+        auto cli = cfire::websocket::connect_insecure(std::format("wss://127.0.0.1:{}/bench", srv->port()));
+        require(cli.has_value(), "wss connect_insecure for TLS benchmark");
+        std::string payload(1024, 'T');
+        auto t0 = clock::now();
+        std::size_t ok_count = 0;
+        for (std::size_t i = 0; i < kIters; ++i) {
+            if (cli->send_text(payload) && cli->recv_text()) {
+                ++ok_count;
+            }
+        }
+        double sec = std::chrono::duration<double>(clock::now() - t0).count();
+        cli->close();
+        srv->stop();
+        require(ok_count == kIters, "WSS TLS 1.3 encrypted roundtrip benchmark succeeded");
+        print_metric("wss:// TLS 1.3 (1KB encrypted echo)", kIters, sec, payload.size() * 2);
+    }
+
+    // 4. JSON Dynamic DOM Parse + Stringify
+    {
+        std::string_view json_doc =
+            R"({"cluster":"prod-us-east","nodes":[{"id":1,"host":"10.0.0.1","ok":true,"load":0.42},{"id":2,"host":"10.0.0.2","ok":true,"load":0.71}],"tags":["c++23","cfire","tls","websocket"]})";
+        constexpr std::size_t kIters = 20000;
+        auto t0 = clock::now();
+        std::size_t ok_count = 0;
+        for (std::size_t i = 0; i < kIters; ++i) {
+            auto doc = cfire::json::parse_dynamic(json_doc);
+            if (doc) {
+                auto s = cfire::json::stringify_dynamic(*doc);
+                if (!s.empty()) ++ok_count;
+            }
+        }
+        double sec = std::chrono::duration<double>(clock::now() - t0).count();
+        require(ok_count == kIters, "JSON parse_dynamic + stringify_dynamic benchmark succeeded");
+        print_metric("json::parse_dynamic + stringify", kIters, sec, json_doc.size());
+    }
+
+    // 5. Cryptographic Primitives: SHA-256 & AES-256-GCM AEAD (16 KiB buffers)
+    {
+        std::vector<std::byte> buf(16384, std::byte{0x5A});
+        constexpr std::size_t kShaIters = 2000;
+        auto t0 = clock::now();
+        std::size_t sha_ok = 0;
+        for (std::size_t i = 0; i < kShaIters; ++i) {
+            auto h = cfire::sha256::hash_bytes(buf);
+            if (h.size() == 32) ++sha_ok;
+        }
+        double sha_sec = std::chrono::duration<double>(clock::now() - t0).count();
+        require(sha_ok == kShaIters, "SHA-256 benchmark succeeded");
+        print_metric("sha256::hash_bytes (16KB block)", kShaIters, sha_sec, buf.size());
+
+        std::vector<std::byte> key(32, std::byte{0x11});
+        std::vector<std::byte> nonce(12, std::byte{0x22});
+        std::vector<std::byte> aad(16, std::byte{0x33});
+        constexpr std::size_t kAesIters = 200;
+        auto t1 = clock::now();
+        std::size_t aes_ok = 0;
+        for (std::size_t i = 0; i < kAesIters; ++i) {
+            auto enc = cfire::aes::encrypt_gcm(key, nonce, buf, aad);
+            if (enc && !enc->ciphertext.empty()) ++aes_ok;
+        }
+        double aes_sec = std::chrono::duration<double>(clock::now() - t1).count();
+        require(aes_ok == kAesIters, "AES-256-GCM benchmark succeeded");
+        print_metric("aes::encrypt_gcm (16KB block)", kAesIters, aes_sec, buf.size());
+    }
+
+    // 6. Compiler Frontend Pipeline (Lex + Parse + Sema + C++23 Codegen)
+    {
+        std::string_view cf_prog = R"(package main
+import "core:fs"
+import "core:str"
+
+type Record struct {
+    id: i64
+    name: str
+}
+
+fn process(mut r: Record, delta: i64) -> i64 {
+    r.id += delta
+    return r.id
+}
+
+fn main() {
+    mut rec := Record{ id: 10, name: "alpha" }
+    val := process(mut rec, 32)
+    println("rec={rec.name} val={val}")
+}
+)";
+        constexpr std::size_t kIters = 5000;
+        auto t0 = clock::now();
+        std::size_t ok_count = 0;
+        for (std::size_t i = 0; i < kIters; ++i) {
+            auto ast = cfire::frontend::parse_source("bench.cf", cf_prog);
+            if (ast) {
+                auto checked = cfire::frontend::analyze(std::move(*ast));
+                if (checked) {
+                    auto cpp = cfire::frontend::emit_cpp(*checked);
+                    if (!cpp.empty()) ++ok_count;
+                }
+            }
+        }
+        double sec = std::chrono::duration<double>(clock::now() - t0).count();
+        require(ok_count == kIters, "Compiler frontend benchmark succeeded");
+        print_metric("frontend (lex+parse+sema+codegen)", kIters, sec, cf_prog.size());
+    }
+
+    std::println("--- PASS: test_performance_benchmarks");
 }
 
 

@@ -200,6 +200,8 @@ void test_sync_context(const std::filesystem::path& rt_dir);
 void test_net_websocket(const std::filesystem::path& rt_dir);
 void test_net_http_and_router(const std::filesystem::path& rt_dir);
 void test_section3_agent_tooling(const std::filesystem::path& rt_dir);
+void test_security_and_fuzzing(const std::filesystem::path& rt_dir);
+void test_performance_benchmarks(const std::filesystem::path& rt_dir);
 
 // E2E Suites
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);
