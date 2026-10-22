@@ -76,7 +76,7 @@ public:
                 used_core_.insert("sqlite");
             } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
                 used_core_.insert("crypto");
-            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket") {
+            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket" || imp.path == "core:tls") {
                 used_core_.insert("net");
             } else if (imp.path == "core:time") {
                 used_core_.insert("time");
@@ -162,7 +162,7 @@ public:
                 link_tags.push_back("-lsqlite3");
             } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
                 used_core_.insert("crypto");
-            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket") {
+            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket" || imp.path == "core:tls") {
                 used_core_.insert("net");
             } else if (imp.path == "core:time") {
                 used_core_.insert("time");
@@ -228,7 +228,7 @@ public:
                 else if (mod == "json") core_headers.insert("core/json.hpp");
                 else if (mod == "log") core_headers.insert("core/log.hpp");
                 else if (mod == "math" || mod == "rand") core_headers.insert("core/math.hpp");
-                else if (mod == "net" || mod == "http" || mod == "websocket" || mod == "url") core_headers.insert("core/net.hpp");
+                else if (mod == "net" || mod == "http" || mod == "websocket" || mod == "url" || mod == "tls") core_headers.insert("core/net.hpp");
                 else if (mod == "os") core_headers.insert("core/os.hpp");
                 else if (mod == "regex") core_headers.insert("core/regex.hpp");
                 else if (mod == "sqlite") core_headers.insert("core/sqlite.hpp");
@@ -1504,7 +1504,7 @@ public:
                         id->name == "collections" || id->name == "sort" || id->name == "unicode" ||
                         id->name == "base64" || id->name == "hex" || id->name == "csv" ||
                         id->name == "aes" || id->name == "hmac" || id->name == "sha256" ||
-                        id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url" ||
+                        id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url" || id->name == "tls" ||
                         used_core_.contains(id->name)) {
                         return std::format("cfire::{}::{}", id->name, ex.field);
                     }
@@ -1517,7 +1517,8 @@ public:
                 std::string obj = emit_expr(ex.object);
                 if (ex.is_namespace) return obj + "::" + ex.field;
                 if (obj.ends_with("::Response") || obj.ends_with("::Request") || obj.ends_with("::Router") || obj.ends_with("::HttpServer") ||
-                    obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer") {
+                    obj.ends_with("::ServerContext") ||
+                    obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer" || obj == "ServerContext") {
                     return obj + "::" + ex.field;
                 }
                 if (ex.field == "len") return obj + ".size()";
@@ -2009,11 +2010,16 @@ public:
         if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
         if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
         if (tr.name == "websocket::Conn" || tr.name == "Conn") return "cfire::websocket::Conn";
+        if (tr.name == "websocket::Server") return "cfire::websocket::Server";
         if (tr.name == "http::Request" || tr.name == "Request") return "cfire::http::Request";
         if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
         if (tr.name == "http::Router" || tr.name == "Router") return "cfire::http::Router";
         if (tr.name == "http::HttpServer" || tr.name == "HttpServer") return "cfire::http::HttpServer";
         if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
+        if (tr.name == "tls::ServerContext" || tr.name == "ServerContext") return "cfire::tls::ServerContext";
+        if (tr.name == "tls::CertKeyPair" || tr.name == "CertKeyPair") return "cfire::tls::CertKeyPair";
+        if (tr.name == "net::TcpConn" || tr.name == "TcpConn") return "cfire::net::TcpConn";
+        if (tr.name == "net::TcpListener" || tr.name == "TcpListener") return "cfire::net::TcpListener";
         if (tr.name == "sync::Channel" && tr.elem_type) {
             return std::format("cfire::sync::Channel<{}>", lower_owning_type(*tr.elem_type));
         }

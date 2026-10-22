@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <queue>
 #include <mutex>
+#include <memory>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -21,6 +22,10 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 
 namespace cfire::net {
 
@@ -44,29 +49,81 @@ inline void push_loopback_fd(std::uint16_t port, int fd) {
 }
 } // namespace detail
 
+struct TlsStream {
+    void* ssl = nullptr;
+    void* owned_ctx = nullptr;
+    ssize_t (*read_fn)(void* ssl, void* buf, std::size_t len) = nullptr;
+    ssize_t (*write_fn)(void* ssl, const void* buf, std::size_t len) = nullptr;
+    void (*close_fn)(void* ssl, void* owned_ctx) = nullptr;
+
+    TlsStream() = default;
+    ~TlsStream() {
+        close();
+    }
+    TlsStream(const TlsStream&) = delete;
+    auto operator=(const TlsStream&) -> TlsStream& = delete;
+
+    void close() noexcept {
+        if (close_fn && (ssl != nullptr || owned_ctx != nullptr)) {
+            close_fn(ssl, owned_ctx);
+            ssl = nullptr;
+            owned_ctx = nullptr;
+            close_fn = nullptr;
+        }
+    }
+};
+
 class TcpConn {
 public:
-    explicit TcpConn(int fd, std::string endpoint = "") noexcept : fd_(fd), endpoint_(std::move(endpoint)) {
+    explicit TcpConn(int fd, std::string endpoint = "", std::shared_ptr<TlsStream> tls = nullptr) noexcept
+        : fd_(fd), endpoint_(std::move(endpoint)), tls_(std::move(tls)) {
         if (fd_ >= 0) {
             timeval tv{.tv_sec = 2, .tv_usec = 0};
             ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#ifdef SO_NOSIGPIPE
+            int opt = 1;
+            ::setsockopt(fd_, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+#endif
         }
     }
     ~TcpConn() {
+        tls_.reset();
         if (fd_ >= 0) ::close(fd_);
     }
-    TcpConn(TcpConn&& o) noexcept : fd_(std::exchange(o.fd_, -1)), endpoint_(std::move(o.endpoint_)) {}
+    TcpConn(TcpConn&& o) noexcept
+        : fd_(std::exchange(o.fd_, -1)),
+          endpoint_(std::move(o.endpoint_)),
+          tls_(std::move(o.tls_)) {}
     auto operator=(TcpConn&& o) noexcept -> TcpConn& {
         if (this != &o) {
+            tls_.reset();
             if (fd_ >= 0) ::close(fd_);
             fd_ = std::exchange(o.fd_, -1);
             endpoint_ = std::move(o.endpoint_);
+            tls_ = std::move(o.tls_);
         }
         return *this;
     }
 
     [[nodiscard]] auto fd() const noexcept -> int { return fd_; }
     [[nodiscard]] auto release_fd() noexcept -> int { return std::exchange(fd_, -1); }
+    [[nodiscard]] auto endpoint() const noexcept -> const std::string& { return endpoint_; }
+
+    [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ != nullptr && tls_->ssl != nullptr; }
+    void set_tls(std::shared_ptr<TlsStream> tls) noexcept { tls_ = std::move(tls); }
+    [[nodiscard]] auto tls() const noexcept -> const std::shared_ptr<TlsStream>& { return tls_; }
+    [[nodiscard]] auto release_tls() noexcept -> std::shared_ptr<TlsStream> { return std::exchange(tls_, nullptr); }
+
+    void set_timeout_ms(int ms) noexcept {
+        if (fd_ < 0) return;
+        timeval tv{};
+        if (ms > 0) {
+            tv.tv_sec = ms / 1000;
+            tv.tv_usec = (ms % 1000) * 1000;
+        }
+        ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    }
 
     [[nodiscard]] auto write(std::string_view payload) -> std::expected<std::size_t, cfire::Error> {
         if (endpoint_.starts_with("down.")) {
@@ -75,7 +132,18 @@ public:
         if (fd_ < 0) {
             return payload.size();
         }
-        ssize_t sent = ::send(fd_, payload.data(), payload.size(), 0);
+        if (tls_ && tls_->ssl && tls_->write_fn) {
+            std::size_t total = 0;
+            while (total < payload.size()) {
+                ssize_t n = tls_->write_fn(tls_->ssl, payload.data() + total, payload.size() - total);
+                if (n <= 0) {
+                    return cfire::make_error("tls socket write failed");
+                }
+                total += static_cast<std::size_t>(n);
+            }
+            return total;
+        }
+        ssize_t sent = ::send(fd_, payload.data(), payload.size(), MSG_NOSIGNAL);
         if (sent < 0) {
             return cfire::make_error("tcp socket send failed");
         }
@@ -84,6 +152,15 @@ public:
 
     [[nodiscard]] auto read_str(std::size_t max_bytes = 1024) -> std::expected<std::string, cfire::Error> {
         if (fd_ < 0) return std::string{};
+        if (tls_ && tls_->ssl && tls_->read_fn) {
+            std::string buf(max_bytes, '\0');
+            ssize_t n = tls_->read_fn(tls_->ssl, buf.data(), max_bytes);
+            if (n < 0) {
+                return cfire::make_error("tls socket read failed");
+            }
+            buf.resize(static_cast<std::size_t>(n));
+            return buf;
+        }
         std::string buf(max_bytes, '\0');
         ssize_t n = ::recv(fd_, buf.data(), max_bytes, 0);
         if (n < 0) {
@@ -96,6 +173,7 @@ public:
 private:
     int fd_ = -1;
     std::string endpoint_;
+    std::shared_ptr<TlsStream> tls_{nullptr};
 };
 
 class TcpListener {
@@ -144,7 +222,9 @@ private:
     std::uint16_t port_ = 0;
 };
 
-[[nodiscard]] inline auto listen_tcp(std::uint16_t port = 0) -> std::expected<TcpListener, cfire::Error> {
+[[nodiscard]] inline auto listen_tcp_addr(std::string_view host, std::uint16_t port = 0)
+    -> std::expected<TcpListener, cfire::Error>
+{
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd >= 0) {
         int opt = 1;
@@ -152,7 +232,16 @@ private:
 
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (host.empty() || host == "0.0.0.0" || host == "*") {
+            addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        } else if (host == "127.0.0.1" || host == "localhost") {
+            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        } else {
+            std::string host_str(host);
+            if (::inet_pton(AF_INET, host_str.c_str(), &addr.sin_addr) <= 0) {
+                addr.sin_addr.s_addr = htonl(INADDR_ANY);
+            }
+        }
         addr.sin_port = htons(port);
 
         if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0 && ::listen(fd, 16) == 0) {
@@ -164,6 +253,10 @@ private:
     }
     std::uint16_t vport = (port == 0) ? detail::next_vport++ : port;
     return TcpListener(-1, vport);
+}
+
+[[nodiscard]] inline auto listen_tcp(std::uint16_t port = 0) -> std::expected<TcpListener, cfire::Error> {
+    return listen_tcp_addr("0.0.0.0", port);
 }
 
 [[nodiscard]] inline auto connect_tcp(std::string_view host, std::uint16_t port)

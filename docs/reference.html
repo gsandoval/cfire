@@ -544,6 +544,7 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#mod-aes"><code>core:crypto/aes</code></a></li>
             <li><a href="#mod-blake3"><code>core:crypto/blake3</code></a></li>
             <li><a href="#mod-net"><code>core:net</code></a></li>
+            <li><a href="#mod-tls"><code>core:net/tls</code></a></li>
             <li><a href="#mod-url"><code>core:net/url</code></a></li>
             <li><a href="#mod-http"><code>core:net/http</code></a></li>
             <li><a href="#mod-websocket"><code>core:net/websocket</code></a></li>
@@ -873,12 +874,47 @@ fn main() {
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn listen_tcp(port: u16 = 0) -&gt; TcpListener!</code></td><td><code>cfire::net::listen_tcp(port)</code></td><td>Binds a loopback TCP listener on `127.0.0.1:port` (`0` selects an ephemeral port).<br/><code>mut ln := try net.listen_tcp(0)</code></td></tr>
+          <tr><td><code>fn listen_tcp(port: u16 = 0) -&gt; TcpListener!</code></td><td><code>cfire::net::listen_tcp(port)</code></td><td>Binds a TCP listener on `0.0.0.0:port` (`0` selects an ephemeral port).<br/><code>mut ln := try net.listen_tcp(0)</code></td></tr>
+          <tr><td><code>fn listen_tcp_addr(host: str, port: u16 = 0) -&gt; TcpListener!</code></td><td><code>cfire::net::listen_tcp_addr(host, port)</code></td><td>Binds a TCP listener on a specific interface address (`host:port`).<br/><code>mut ln := try net.listen_tcp_addr(&quot;127.0.0.1&quot;, 8080)</code></td></tr>
           <tr><td><code>fn (ln: TcpListener) port() -&gt; u16</code></td><td><code>ln.port()</code></td><td>Returns the bound TCP port.<br/><code>p := ln.port()</code></td></tr>
           <tr><td><code>fn (mut ln: TcpListener) accept() -&gt; TcpConn!</code></td><td><code>ln.accept()</code></td><td>Accepts an incoming TCP connection with a safe poll timeout.<br/><code>mut conn := try ln.accept()</code></td></tr>
           <tr><td><code>fn connect_tcp(host: str, port: u16) -&gt; TcpConn!</code></td><td><code>cfire::net::connect_tcp(host, port)</code></td><td>Connects a `TcpConn` to `host:port`.<br/><code>mut c := try net.connect_tcp(&quot;127.0.0.1&quot;, p)</code></td></tr>
           <tr><td><code>fn (mut c: TcpConn) write(payload: str) -&gt; usize!</code></td><td><code>c.write(payload)</code></td><td>Writes bytes to an open TCP connection.<br/><code>_ := try c.write(&quot;PING&quot;)</code></td></tr>
           <tr><td><code>fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -&gt; str!</code></td><td><code>c.read_str(max_bytes)</code></td><td>Reads up to `max_bytes` from the socket as a string.<br/><code>msg := try conn.read_str(64)</code></td></tr>
+          <tr><td><code>fn (mut c: TcpConn) set_timeout_ms(ms: i32) -&gt; void</code></td><td><code>c.set_timeout_ms(ms)</code></td><td>Sets socket read/write timeout in milliseconds (`0` for blocking).<br/><code>conn.set_timeout_ms(5000)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-tls"><code>import "core:net/tls"</code> &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</h2>
+      <p>Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(OpenSSL dynamic bridge)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:net/tls&quot;
+import &quot;core:net/http&quot;
+
+fn main() {
+    // 1. Generate an in-memory RSA-2048 X.509 self-signed certificate pair
+    pair := try tls.generate_self_signed_pem(&quot;localhost&quot;, 365)
+
+    // 2. Start an HTTPS server backed by the in-memory certificate
+    mut router := http.make_router()
+    router.get(&quot;/secure&quot;, |req| {
+        return http.Response.text(200, &quot;TLS 1.3 Secure OK&quot;)
+    })
+    mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)
+    srv.serve_in_background(router)
+    defer srv.stop()
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn available() -&gt; bool</code></td><td><code>cfire::tls::available()</code></td><td>Returns `true` if the OpenSSL (`libssl` / `libcrypto`) runtime bridge is available.<br/><code>if tls.available() { ... }</code></td></tr>
+          <tr><td><code>fn generate_self_signed_pem(common_name: str = &quot;localhost&quot;, days: i32 = 365) -&gt; CertKeyPair!</code></td><td><code>cfire::tls::generate_self_signed_pem(common_name, days)</code></td><td>Generates an in-memory RSA-2048 X.509v3 self-signed certificate and private key in PEM format.<br/><code>pair := try tls.generate_self_signed_pem(&quot;localhost&quot;)</code></td></tr>
+          <tr><td><code>fn wrap_client(mut conn: TcpConn, server_name: str = &quot;&quot;, verify_peer: bool = true, ca_file: str = &quot;&quot;) -&gt; void!</code></td><td><code>cfire::tls::wrap_client(conn, server_name, verify_peer, ca_file)</code></td><td>Upgrades an open `TcpConn` to a client TLS session with SNI and optional X.509 certificate verification.<br/><code>try tls.wrap_client(mut conn, &quot;example.com&quot;, true)</code></td></tr>
+          <tr><td><code>fn connect(host: str, port: u16 = 443, verify_peer: bool = true, ca_file: str = &quot;&quot;) -&gt; TcpConn!</code></td><td><code>cfire::tls::connect(host, port, verify_peer, ca_file)</code></td><td>Connects a TCP socket to `host:port` and completes a TLS client handshake.<br/><code>mut c := try tls.connect(&quot;example.com&quot;, 443)</code></td></tr>
+          <tr><td><code>fn ServerContext.from_files(cert_file: str, key_file: str) -&gt; ServerContext!</code></td><td><code>cfire::tls::ServerContext::from_files(cert_file, key_file)</code></td><td>Creates a TLS server context from X.509 certificate chain and private key PEM files on disk.<br/><code>ctx := try tls.ServerContext.from_files(&quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
+          <tr><td><code>fn ServerContext.from_pem(cert_pem: str, key_pem: str) -&gt; ServerContext!</code></td><td><code>cfire::tls::ServerContext::from_pem(cert_pem, key_pem)</code></td><td>Creates a TLS server context directly from in-memory certificate and private key PEM strings.<br/><code>ctx := try tls.ServerContext.from_pem(pair.cert_pem, pair.key_pem)</code></td></tr>
+          <tr><td><code>fn (ctx: ServerContext) wrap_server(mut conn: TcpConn) -&gt; void!</code></td><td><code>ctx.wrap_server(conn)</code></td><td>Performs a server-side TLS handshake (`SSL_accept`) on an accepted `TcpConn`.<br/><code>try ctx.wrap_server(mut conn)</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-url"><code>import "core:net/url"</code> &mdash; RFC 3986 URL Parsing &amp; URL Encoding</h2>
@@ -900,13 +936,13 @@ fn main() {
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn parse(raw: str) -&gt; Url!</code></td><td><code>cfire::url::parse(raw)</code></td><td>Parses an RFC 3986 URL string into component fields and query parameters.<br/><code>u := try url.parse(&quot;http://127.0.0.1:8080/api/items?q=shoes#top&quot;)</code></td></tr>
+          <tr><td><code>fn parse(raw: str) -&gt; Url!</code></td><td><code>cfire::url::parse(raw)</code></td><td>Parses an RFC 3986 URL string into component fields and query parameters (`https` and `wss` default to port 443).<br/><code>u := try url.parse(&quot;wss://stream.example.com/ws?q=1&quot;)</code></td></tr>
           <tr><td><code>fn encode(s: str) -&gt; str</code></td><td><code>cfire::url::encode(s)</code></td><td>Percent-encodes a string for safe use in URL path or query strings.<br/><code>enc := url.encode(&quot;hello world!&quot;)</code></td></tr>
           <tr><td><code>fn decode(s: str) -&gt; str</code></td><td><code>cfire::url::decode(s)</code></td><td>Decodes a percent-encoded URL string.<br/><code>dec := url.decode(enc)</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 Client, Wire Protocol Engine, Server &amp; Independent Router</h2>
-      <p>RFC 9112 HTTP/1.1 client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode server (`make_server`), and independent request router (`make_router`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 &amp; HTTPS Client, Wire Protocol Engine, Server &amp; Router</h2>
+      <p>RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
@@ -943,11 +979,15 @@ fn main() {
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn get(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers)</code></td><td>Executes an HTTP GET request against a target URL.<br/><code>resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;)</code></td></tr>
-          <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers)</code></td><td>Executes an HTTP POST request with payload body.<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
-          <tr><td><code>fn request(method: str, url: str, body: str = &quot;&quot;, content_type: str = &quot;&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::request(method, url, body, content_type, headers)</code></td><td>Executes an arbitrary HTTP request (PUT, DELETE, PATCH, etc.).<br/><code>resp := try http.request(&quot;DELETE&quot;, &quot;http://127.0.0.1:8080/items/1&quot;)</code></td></tr>
+          <tr><td><code>fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS GET request against a target URL.<br/><code>resp := try http.get(&quot;https://127.0.0.1:8443/health&quot;, {}, false)</code></td></tr>
+          <tr><td><code>fn get_insecure(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get_insecure(url, headers)</code></td><td>Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs).<br/><code>resp := try http.get_insecure(&quot;https://127.0.0.1:8443/health&quot;)</code></td></tr>
+          <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS POST request with payload body.<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
+          <tr><td><code>fn post_insecure(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::post_insecure(url, body, content_type, headers)</code></td><td>Executes an HTTPS POST request skipping peer certificate verification.<br/><code>resp := try http.post_insecure(&quot;https://127.0.0.1:8443/items&quot;, &quot;{}&quot;)</code></td></tr>
+          <tr><td><code>fn request(method: str, url: str, body: str = &quot;&quot;, content_type: str = &quot;&quot;, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::request(method, url, body, content_type, headers, verify_peer)</code></td><td>Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).<br/><code>resp := try http.request(&quot;DELETE&quot;, &quot;http://127.0.0.1:8080/items/1&quot;)</code></td></tr>
           <tr><td><code>fn make_server(port: u16 = 0) -&gt; HttpServer!</code></td><td><code>cfire::http::make_server(port)</code></td><td>Creates a lightweight HTTP server listening on `port` (0 for ephemeral).<br/><code>mut srv := try http.make_server(8080)</code></td></tr>
-          <tr><td><code>fn make_router() -&gt; Router</code></td><td><code>cfire::http::make_router()</code></td><td>Creates an independent HTTP request router supporting path parameters (`:id`), wildcards (`*path`), and standalone dispatch.<br/><code>mut r := http.make_router()</code></td></tr>
+          <tr><td><code>fn make_tls_server(port: u16, cert_file: str, key_file: str) -&gt; HttpServer!</code></td><td><code>cfire::http::make_tls_server(port, cert_file, key_file)</code></td><td>Creates an HTTPS/WSS server backed by certificate and private key PEM files.<br/><code>mut srv := try http.make_tls_server(8443, &quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
+          <tr><td><code>fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -&gt; HttpServer!</code></td><td><code>cfire::http::make_tls_server_pem(port, cert_pem, key_pem)</code></td><td>Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings.<br/><code>mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)</code></td></tr>
+          <tr><td><code>fn make_router() -&gt; Router</code></td><td><code>cfire::http::make_router()</code></td><td>Creates an independent HTTP &amp; WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).<br/><code>mut r := http.make_router()</code></td></tr>
           <tr><td><code>fn parse_request(raw: str) -&gt; Request!</code></td><td><code>cfire::http::parse_request(raw)</code></td><td>Parses raw HTTP/1.1 wire text into a structured Request model.<br/><code>req := try http.parse_request(raw_text)</code></td></tr>
           <tr><td><code>fn Response.text(code: i32, payload: str) -&gt; Response</code></td><td><code>cfire::http::Response::text(code, payload)</code></td><td>Creates an HTTP Response with text/plain content-type and standard status reason.<br/><code>return http.Response.text(200, &quot;OK&quot;)</code></td></tr>
           <tr><td><code>fn Response.json(code: i32, json_str: str) -&gt; Response</code></td><td><code>cfire::http::Response::json(code, json_str)</code></td><td>Creates an HTTP Response with application/json content-type.<br/><code>return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)</code></td></tr>
@@ -955,25 +995,36 @@ fn main() {
           <tr><td><code>fn Response.redirect(location: str, code: i32 = 302) -&gt; Response</code></td><td><code>cfire::http::Response::redirect(location, code)</code></td><td>Creates an HTTP redirect Response setting Location header.<br/><code>return http.Response.redirect(&quot;/login&quot;, 302)</code></td></tr>
           <tr><td><code>fn (mut r: Router) get(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.get(pattern, handler)</code></td><td>Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).<br/><code>r.get(&quot;/users/:id&quot;, |req| http.Response.text(200, req.param(&quot;id&quot;)))</code></td></tr>
           <tr><td><code>fn (mut r: Router) post(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.post(pattern, handler)</code></td><td>Registers an HTTP POST route handler.<br/><code>r.post(&quot;/items&quot;, |req| http.Response.json(201, &quot;{}&quot;))</code></td></tr>
+          <tr><td><code>fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -&gt; void) -&gt; Router&amp;</code></td><td><code>r.ws(pattern, handler)</code></td><td>Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.<br/><code>r.ws(&quot;/chat/:room&quot;, |req, mut ws| { ... })</code></td></tr>
           <tr><td><code>fn (r: Router) dispatch(req: Request) -&gt; Response</code></td><td><code>r.dispatch(req)</code></td><td>Dispatches an HTTP request through the router in-memory without open network sockets.<br/><code>res := router.dispatch(test_req)</code></td></tr>
-          <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router&amp;</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate requests.<br/><code>r.use(|req| { return None })</code></td></tr>
-          <tr><td><code>fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -&gt; Response) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a non-blocking background accept loop serving requests with the specified handler or router.<br/><code>server.serve_in_background(router)</code></td></tr>
+          <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router&amp;</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.<br/><code>r.use(|req| { return None })</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -&gt; void!</code></td><td><code>s.enable_tls_files(cert_file, key_file)</code></td><td>Enables TLS on the server using certificate and private key PEM files.<br/><code>try srv.enable_tls_files(&quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -&gt; void!</code></td><td><code>s.enable_tls_pem(cert_pem, key_pem)</code></td><td>Enables TLS on the server using in-memory certificate and private key PEM strings.<br/><code>try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -&gt; Response | Router) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.<br/><code>server.serve_in_background(router)</code></td></tr>
           <tr><td><code>fn (mut s: HttpServer) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Gracefully closes the listening socket and stops worker threads.<br/><code>server.stop()</code></td></tr>
           <tr><td><code>fn (req: Request) param(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.param(key, fallback)</code></td><td>Retrieves a named route path parameter extracted by the router.<br/><code>id := req.param(&quot;id&quot;)</code></td></tr>
           <tr><td><code>fn (req: Request) query(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.query(key, fallback)</code></td><td>Retrieves a decoded URL query parameter.<br/><code>page := req.query(&quot;page&quot;, &quot;1&quot;)</code></td></tr>
           <tr><td><code>fn (req: Request) header(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.header(key, fallback)</code></td><td>Performs a case-insensitive header lookup.<br/><code>auth := req.header(&quot;Authorization&quot;)</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-websocket"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets Client &amp; Server</h2>
-      <p>RFC 6455 full-duplex WebSocket client (`connect`) and server upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
+      <h2 id="mod-websocket"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</h2>
+      <p>RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
 import &quot;core:net/websocket&quot;
 
 fn main() {
-    // Establish full-duplex RFC 6455 WebSocket connection
-    mut ws := try websocket.connect(&quot;ws://127.0.0.1:8080/market-data&quot;)
+    // 1. Start a standalone WebSocket server on an ephemeral port
+    mut srv := try websocket.make_server(0)
+    srv.serve_in_background(|mut ws: websocket.Conn| {
+        msg := ws.recv_text() or &quot;&quot;
+        _ = ws.send_text(&quot;ECHO: &quot; + msg)
+    })
+    defer srv.stop()
+
+    // 2. Connect full-duplex RFC 6455 WebSocket client
+    mut ws := try websocket.connect(&quot;ws://127.0.0.1:&quot; + str(srv.port()) + &quot;/stream&quot;)
     defer ws.close()
 
     try ws.send_text(&quot;SUBSCRIBE BTC-USD&quot;)
@@ -983,16 +1034,26 @@ fn main() {
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn connect(url: str) -&gt; Conn!</code></td><td><code>cfire::websocket::connect(url)</code></td><td>Establishes a WebSocket connection to `ws://&lt;host&gt;[:port]/&lt;path&gt;` and completes the RFC 6455 handshake.<br/><code>mut ws := try websocket.connect(&quot;ws://127.0.0.1:8080/ws&quot;)</code></td></tr>
-          <tr><td><code>fn upgrade(req: Request, mut conn: TcpConn) -&gt; Conn!</code></td><td><code>cfire::websocket::upgrade(req, conn)</code></td><td>Upgrades an incoming HTTP connection to a WebSocket connection.<br/><code>mut ws := try websocket.upgrade(req, mut conn)</code></td></tr>
+          <tr><td><code>fn connect(url: str, verify_peer: bool = true) -&gt; Conn!</code></td><td><code>cfire::websocket::connect(url, verify_peer)</code></td><td>Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.<br/><code>mut ws := try websocket.connect(&quot;ws://127.0.0.1:8080/ws&quot;)</code></td></tr>
+          <tr><td><code>fn connect_insecure(url: str) -&gt; Conn!</code></td><td><code>cfire::websocket::connect_insecure(url)</code></td><td>Establishes a `wss://` WebSocket connection skipping peer certificate verification (for self-signed certs).<br/><code>mut ws := try websocket.connect_insecure(&quot;wss://127.0.0.1:8443/ws&quot;)</code></td></tr>
+          <tr><td><code>fn make_server(port: u16 = 0) -&gt; Server!</code></td><td><code>cfire::websocket::make_server(port)</code></td><td>Creates a standalone WebSocket server listening on `port` (`0` for ephemeral).<br/><code>mut srv := try websocket.make_server(0)</code></td></tr>
+          <tr><td><code>fn make_tls_server(port: u16, cert_file: str, key_file: str) -&gt; Server!</code></td><td><code>cfire::websocket::make_tls_server(port, cert_file, key_file)</code></td><td>Creates a standalone `wss://` WebSocket server backed by certificate and private key PEM files.<br/><code>mut srv := try websocket.make_tls_server(8443, &quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
+          <tr><td><code>fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -&gt; Server!</code></td><td><code>cfire::websocket::make_tls_server_pem(port, cert_pem, key_pem)</code></td><td>Creates a standalone `wss://` WebSocket server from in-memory certificate and private key PEM strings.<br/><code>mut srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)</code></td></tr>
+          <tr><td><code>fn upgrade(req: Request, mut conn: TcpConn) -&gt; Conn!</code></td><td><code>cfire::websocket::upgrade(req, conn)</code></td><td>Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.<br/><code>mut ws := try websocket.upgrade(req, mut conn)</code></td></tr>
           <tr><td><code>fn pair() -&gt; (Conn, Conn)!</code></td><td><code>cfire::websocket::pair()</code></td><td>Creates an in-process full-duplex WebSocket client/server loopback pair.<br/><code>mut (client, server) := try websocket.pair()</code></td></tr>
           <tr><td><code>fn (mut ws: Conn) send_text(msg: str) -&gt; void!</code></td><td><code>ws.send_text(msg)</code></td><td>Sends a UTF-8 text frame to the peer (masked if client).<br/><code>try ws.send_text(&quot;hello world&quot;)</code></td></tr>
           <tr><td><code>fn (mut ws: Conn) send_binary(data: []byte) -&gt; void!</code></td><td><code>ws.send_binary(data)</code></td><td>Sends a binary data frame to the peer (masked if client).<br/><code>try ws.send_binary(payload)</code></td></tr>
           <tr><td><code>fn (mut ws: Conn) recv_text() -&gt; str!</code></td><td><code>ws.recv_text()</code></td><td>Receives the next text frame from the peer, automatically responding to Ping frames with Pong.<br/><code>msg := try ws.recv_text()</code></td></tr>
           <tr><td><code>fn (mut ws: Conn) recv_binary() -&gt; []byte!</code></td><td><code>ws.recv_binary()</code></td><td>Receives the next binary frame from the peer.<br/><code>bytes := try ws.recv_binary()</code></td></tr>
           <tr><td><code>fn (mut ws: Conn) ping(payload: str = &quot;&quot;) -&gt; void!</code></td><td><code>ws.ping(payload)</code></td><td>Sends a Ping control frame to check peer liveness.<br/><code>try ws.ping(&quot;heartbeat&quot;)</code></td></tr>
+          <tr><td><code>fn (mut ws: Conn) set_timeout_ms(ms: i32) -&gt; void</code></td><td><code>ws.set_timeout_ms(ms)</code></td><td>Sets read/write socket timeout in milliseconds (`0` for blocking).<br/><code>ws.set_timeout_ms(10000)</code></td></tr>
           <tr><td><code>fn (mut ws: Conn) close(code: u16 = 1000, reason: str = &quot;&quot;)</code></td><td><code>ws.close(code, reason)</code></td><td>Initiates a clean RFC 6455 closure handshake and closes the socket.<br/><code>ws.close()</code></td></tr>
           <tr><td><code>fn (ws: Conn) is_open() -&gt; bool</code></td><td><code>ws.is_open()</code></td><td>Returns true if the WebSocket connection is open.<br/><code>if ws.is_open() { ... }</code></td></tr>
+          <tr><td><code>fn (mut s: Server) accept() -&gt; Conn!</code></td><td><code>s.accept()</code></td><td>Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`.<br/><code>mut ws := try srv.accept()</code></td></tr>
+          <tr><td><code>fn (mut s: Server) serve_once(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.serve_once(handler)</code></td><td>Accepts and serves a single WebSocket connection with `handler`.<br/><code>srv.serve_once(|mut ws| { ... })</code></td></tr>
+          <tr><td><code>fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.listen_and_serve(handler)</code></td><td>Runs a blocking accept loop upgrading and serving WebSocket connections.<br/><code>srv.listen_and_serve(|mut ws| { ... })</code></td></tr>
+          <tr><td><code>fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a background thread accepting and serving WebSocket connections.<br/><code>srv.serve_in_background(|mut ws| { ... })</code></td></tr>
+          <tr><td><code>fn (mut s: Server) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Stops the background WebSocket server thread.<br/><code>srv.stop()</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-time"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>

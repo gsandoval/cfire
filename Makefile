@@ -9,7 +9,7 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: all build test test-unit test-stdlib test-e2e docs fmt review-check clean
+.PHONY: all build test test-unit test-stdlib test-e2e fuzz bench docs fmt review-check clean
 
 all: build
 
@@ -54,6 +54,12 @@ test-stdlib: build .cfire_test_runner
 
 test-e2e: build .cfire_test_runner
 	./.cfire_test_runner e2e
+
+fuzz: build .cfire_test_runner
+	./.cfire_test_runner fuzz
+
+bench: build .cfire_test_runner
+	./.cfire_test_runner bench
 
 clean:
 	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire cfire_cross_*

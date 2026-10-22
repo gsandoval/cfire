@@ -166,6 +166,14 @@ private:
     std::vector<std::string> errors_;
     bool resilient_ = true;
     bool allow_struct_lit_ = true;
+    int recursion_depth_ = 0;
+    static constexpr int kMaxParseDepth = 256;
+
+    struct DepthGuard {
+        int& d;
+        explicit DepthGuard(int& depth) noexcept : d(depth) { ++d; }
+        ~DepthGuard() { --d; }
+    };
 
     struct StructLitScope {
         Parser& p;
@@ -511,6 +519,11 @@ private:
     }
 
     [[nodiscard]] auto parse_type_ref() -> std::expected<TypeRef, std::string> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
+                file_, cur().line, cur().col));
+        }
+        DepthGuard depth_guard(recursion_depth_);
         TypeRef tr;
         if (cur().kind == TokenKind::Amp) {
             advance();
@@ -788,6 +801,11 @@ private:
     }
 
     [[nodiscard]] auto parse_block() -> std::expected<std::vector<StmtPtr>, std::string> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
+                file_, cur().line, cur().col));
+        }
+        DepthGuard depth_guard(recursion_depth_);
         if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
         std::vector<StmtPtr> stmts;
         while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
@@ -1204,6 +1222,11 @@ private:
     // --- Expression Parsing ---
 
     [[nodiscard]] auto parse_expr() -> std::expected<ExprPtr, std::string> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
+                file_, cur().line, cur().col));
+        }
+        DepthGuard depth_guard(recursion_depth_);
         return parse_or_expr();
     }
 
@@ -1265,6 +1288,11 @@ private:
     }
 
     [[nodiscard]] auto parse_unary_expr() -> std::expected<ExprPtr, std::string> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
+                file_, cur().line, cur().col));
+        }
+        DepthGuard depth_guard(recursion_depth_);
         Token tok = cur();
         if (tok.kind == TokenKind::KwTry) {
             advance();
