@@ -1007,7 +1007,9 @@ inline auto resolve_external_dep_source(
             if (std::filesystem::is_directory(target)) {
                 pkg_dir = target;
                 for (const auto& entry : std::filesystem::directory_iterator(target)) {
-                    if (entry.is_regular_file() && entry.path().extension() == ".cf" && entry.path().filename() != "build.cf") {
+                    auto fname = entry.path().filename().string();
+                    if (entry.is_regular_file() && entry.path().extension() == ".cf" &&
+                        fname != "build.cf" && !fname.ends_with("_test.cf")) {
                         cf_files.push_back(entry.path());
                     }
                 }
@@ -1119,6 +1121,22 @@ inline auto resolve_external_dep_source(
     auto ast = frontend::parse_source(cf_file.string(), *raw);
     if (!ast) return std::unexpected(ast.error());
 
+    // 2b. If compiling/checking a *_test.cf file, automatically include sibling package .cf files in the same directory
+    if ((test_mode || cf_file.filename().string().ends_with("_test.cf")) && !ast->package_name.empty()) {
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            if (!entry.is_regular_file()) continue;
+            auto fname = entry.path().filename().string();
+            if (entry.path().extension() == ".cf" && fname != "build.cf" &&
+                !fname.ends_with("_test.cf") && entry.path() != cf_file) {
+                frontend::ImportDecl sib_imp;
+                sib_imp.is_cpp = false;
+                sib_imp.path = "./" + fname;
+                ast->imports.push_back(std::move(sib_imp));
+            }
+        }
+    }
+
     // 3. Resolve local `.cf` package imports (`import "./..."`) recursively
     if (auto r = resolve_local_cf_imports(dir, *ast, plan); !r) {
         return std::unexpected(r.error());
@@ -1150,6 +1168,16 @@ inline auto resolve_external_dep_source(
     };
 
     auto cache_dir = dir / ".cfire" / "cache";
+    for (const auto& [sname, tags] : checked->struct_tags) {
+        bool has_j = false;
+        for (const auto& t : tags) {
+            if (!t.json_key.empty()) { has_j = true; break; }
+        }
+        if (has_j) {
+            add_pc("simdjson");
+            break;
+        }
+    }
     for (const auto& imp : checked->ast.imports) {
         if (!imp.is_cpp) {
             plan.auto_linked.push_back(imp.path);
@@ -1338,7 +1366,8 @@ inline auto resolve_external_dep_source(
     const std::filesystem::path& cf_file,
     std::string_view cpp_code,
     const BuildPlan& plan,
-    const std::filesystem::path& runtime_dir
+    const std::filesystem::path& runtime_dir,
+    const std::vector<std::string>& extra_includes = {}
 ) -> std::expected<void, std::string> {
     auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
     std::error_code ec;
@@ -1358,6 +1387,7 @@ inline auto resolve_external_dep_source(
     }
     std::string cmd = "clang++ -O2";
     for (const auto& f : plan.cflags) cmd += " " + f;
+    for (const auto& inc : extra_includes) cmd += " -I \"" + inc + "\"";
     if (!pch_path.empty()) {
         cmd += std::format(" -include-pch \"{}\"", pch_path);
     }
@@ -1393,6 +1423,16 @@ inline auto resolve_external_dep_source(
         plan.ldflags.push_back("-lpthread");
         plan.ldflags.push_back("-ldl");
         plan.ldflags.push_back("-lm");
+#if defined(__APPLE__)
+        if (target_triple.empty()) {
+            plan.ldflags.insert(plan.ldflags.end(), {
+                "-framework", "CoreFoundation",
+                "-framework", "Security",
+                "-framework", "SystemConfiguration",
+                "-lresolv"
+            });
+        }
+#endif
     }
     for (const auto& inc : extra_includes) {
         plan.cflags.push_back("-I \"" + inc + "\"");

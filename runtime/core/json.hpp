@@ -414,29 +414,93 @@ inline void stringify_value_to(const Value& val, std::string& out, int indent, i
 namespace cfire::json {
 
 template <typename T>
-auto parse_struct(simdjson::ondemand::object obj) -> std::expected<T, cfire::Error>;
+auto parse_struct(simdjson::ondemand::object) -> std::expected<T, cfire::Error> {
+    return T{};
+}
 
 template <typename T>
-auto stringify_struct(const T& val) -> std::string;
+auto stringify_struct(const T&) -> std::string {
+    return "{}";
+}
+
+namespace detail {
+template <typename T>
+struct is_std_vector : std::false_type {};
+template <typename U, typename A>
+struct is_std_vector<std::vector<U, A>> : std::true_type {};
+} // namespace detail
 
 template <typename T>
 [[nodiscard]] auto parse(std::string_view payload) -> std::expected<T, cfire::Error> {
-    simdjson::ondemand::parser parser;
-    simdjson::padded_string padded(payload.data(), payload.size());
-    auto doc = parser.iterate(padded);
-    if (doc.error()) {
-        return cfire::make_error(std::format("simdjson iterate error: {}", simdjson::error_message(doc.error())));
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
+            auto dyn = parse_dynamic(payload);
+            if (dyn && dyn->is_string()) return std::string(dyn->as_str());
+            return std::string(payload.substr(1, payload.size() - 2));
+        }
+        return std::string(payload);
+    } else if constexpr (detail::is_std_vector<T>::value) {
+        using Elem = typename T::value_type;
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(payload.data(), payload.size());
+        auto doc = parser.iterate(padded);
+        if (doc.error()) {
+            return cfire::make_error(std::format("simdjson iterate error: {}", simdjson::error_message(doc.error())));
+        }
+        auto arr = doc.get_array();
+        if (arr.error()) {
+            return cfire::make_error(std::format("simdjson array error: {}", simdjson::error_message(arr.error())));
+        }
+        T out;
+        for (auto elem : arr.value()) {
+            if constexpr (std::is_same_v<Elem, std::string>) {
+                auto sv = elem.get_string();
+                if (sv.error()) return cfire::make_error("invalid string in json array");
+                out.emplace_back(sv.value());
+            } else {
+                auto obj = elem.get_object();
+                if (obj.error()) return cfire::make_error("invalid object in json array");
+                auto parsed = parse_struct<Elem>(obj.value());
+                if (!parsed) return std::unexpected(parsed.error());
+                out.push_back(std::move(*parsed));
+            }
+        }
+        return out;
+    } else {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(payload.data(), payload.size());
+        auto doc = parser.iterate(padded);
+        if (doc.error()) {
+            return cfire::make_error(std::format("simdjson iterate error: {}", simdjson::error_message(doc.error())));
+        }
+        auto obj = doc.get_object();
+        if (obj.error()) {
+            return cfire::make_error(std::format("simdjson object error: {}", simdjson::error_message(obj.error())));
+        }
+        return parse_struct<T>(obj.value());
     }
-    auto obj = doc.get_object();
-    if (obj.error()) {
-        return cfire::make_error(std::format("simdjson object error: {}", simdjson::error_message(obj.error())));
-    }
-    return parse_struct<T>(obj.value());
 }
 
 template <typename T>
 [[nodiscard]] auto stringify(const T& val) -> std::string {
-    return stringify_struct<T>(val);
+    using D = std::decay_t<T>;
+    if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
+        return std::format("\"{}\"", escape_string(val));
+    } else if constexpr (std::is_same_v<D, bool>) {
+        return val ? "true" : "false";
+    } else if constexpr (std::is_arithmetic_v<D>) {
+        return std::format("{}", val);
+    } else if constexpr (detail::is_std_vector<D>::value) {
+        std::string out = "[";
+        for (std::size_t i = 0; i < val.size(); ++i) {
+            if (i > 0) out += ",";
+            out += stringify(val[i]);
+        }
+        out += "]";
+        return out;
+    } else {
+        return stringify_struct<D>(val);
+    }
 }
 
 [[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)

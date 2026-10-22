@@ -262,6 +262,9 @@ struct ArrayLitExpr {
 
 struct ClosureExpr {
     std::vector<std::string> params{};
+    std::vector<std::string> param_intents{};
+    std::vector<std::optional<TypeRef>> param_types{};
+    std::optional<TypeRef> return_type{};
     bool is_async = false;
     std::vector<StmtPtr> body{};
 };

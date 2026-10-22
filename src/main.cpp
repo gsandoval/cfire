@@ -1140,7 +1140,7 @@ auto main(int argc, char** argv) -> int {
                         auto d = cfire::diag::parse_diagnostic_string(emit_res.error(), target.string(), "error", "cfire/SEMA-ERROR");
                         diags.push_back(std::move(d));
                     } else {
-                        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, emit_res->first, emit_res->second, runtime_dir);
+                        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, emit_res->first, emit_res->second, runtime_dir, extra_includes);
                         if (!syntax_check) {
                             auto clang_lines = cfire::diag::split_lines(syntax_check.error());
                             bool found_diag = false;
@@ -1176,7 +1176,7 @@ auto main(int argc, char** argv) -> int {
             std::println(stderr, "{}", res.error());
             return 1;
         }
-        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, res->first, res->second, runtime_dir);
+        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, res->first, res->second, runtime_dir, extra_includes);
         if (!syntax_check) {
             std::println(stderr, "{}", syntax_check.error());
             return 1;

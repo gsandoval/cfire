@@ -120,14 +120,34 @@ namespace cfire {
 class Error {
 public:
     Error(std::string msg) : msg_(std::move(msg)) {}
+    Error(std::string_view msg) : msg_(msg) {}
     Error(const char* msg) : msg_(msg) {}
     [[nodiscard]] auto message() const noexcept CFIRE_LIFETIMEBOUND -> std::string_view { return msg_; }
+    [[nodiscard]] auto size() const noexcept -> std::size_t { return msg_.size(); }
+    [[nodiscard]] auto data() const noexcept -> const char* { return msg_.data(); }
+    [[nodiscard]] auto c_str() const noexcept -> const char* { return msg_.c_str(); }
 private:
     std::string msg_;
 };
 
 [[nodiscard]] inline auto make_error(std::string msg) -> std::unexpected<Error> {
     return std::unexpected<Error>(Error(std::move(msg)));
+}
+
+[[nodiscard]] inline auto make_error(std::string_view msg) -> std::unexpected<Error> {
+    return std::unexpected<Error>(Error(std::string(msg)));
+}
+
+[[nodiscard]] inline auto make_error(const char* msg) -> std::unexpected<Error> {
+    return std::unexpected<Error>(Error(msg ? std::string(msg) : std::string{}));
+}
+
+[[nodiscard]] inline auto make_error(Error err) -> std::unexpected<Error> {
+    return std::unexpected<Error>(std::move(err));
+}
+
+[[nodiscard]] inline auto make_error(std::unexpected<Error> err) -> std::unexpected<Error> {
+    return err;
 }
 
 // --- Overloaded Visitor Helper for `match` on Tagged Enums (`std::variant`) ---
