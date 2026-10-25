@@ -345,6 +345,9 @@ struct Expr {
     ExprVariant node;
     int line = 1;
     int col = 1;
+
+    Expr() = default;
+    Expr(ExprVariant n, int l, int c) : node(std::move(n)), line(l), col(c) {}
 };
 
 template <typename T>
@@ -456,6 +459,9 @@ using StmtVariant = std::variant<
 struct Stmt {
     StmtVariant node;
     int line = 1;
+
+    Stmt() = default;
+    Stmt(StmtVariant n, int l) : node(std::move(n)), line(l) {}
 };
 
 template <typename T>
