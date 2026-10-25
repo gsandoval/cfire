@@ -6,6 +6,7 @@
 #include "formatter.hpp"
 #include "lsp.hpp"
 #include "refactor.hpp"
+#include "server.hpp"
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -79,6 +80,8 @@ void print_usage() {
     std::println("  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run");
     std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
     std::println("  build    [--target wasm|<triple>] [--web-profile auto|cli|canvas] [--subsystem auto|gui|console] [-o <path>] <file.cf>");
+    std::println("  serve    [--port <n>] [--no-open] [path] Serve static assets & WebAssembly with MIME and COOP/COEP headers");
+    std::println("  wasm     serve|build|run [args...] Native WebAssembly tools and development server");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
     std::println("  check    [--json] [--fix] <file.cf> Type-check, verify parameter intents, and inspect C++ headers");
@@ -236,6 +239,86 @@ auto main(int argc, char** argv) -> int {
     }
     std::string sub = argv[1];
     auto runtime_dir = locate_runtime_dir();
+
+    if (sub == "serve" || sub == "server" || sub == "wasm-server") {
+        int port = 8080;
+        bool open_browser = true;
+        std::filesystem::path target_path = ".";
+        for (int i = 2; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--no-open") {
+                open_browser = false;
+                continue;
+            }
+            if (arg == "--open") {
+                open_browser = true;
+                continue;
+            }
+            if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
+                try { port = std::stoi(argv[++i]); } catch (...) {}
+                continue;
+            }
+            if (arg.starts_with("--port=")) {
+                try { port = std::stoi(std::string(arg.substr(7))); } catch (...) {}
+                continue;
+            }
+            if (arg.starts_with("-p=")) {
+                try { port = std::stoi(std::string(arg.substr(3))); } catch (...) {}
+                continue;
+            }
+            target_path = arg;
+        }
+        return cfire::serve::run_server(target_path, port, open_browser);
+    }
+
+    if (sub == "wasm") {
+        if (argc < 3) {
+            return cfire::serve::run_server(".", 8080, true);
+        }
+        std::string wasm_cmd = argv[2];
+        if (wasm_cmd == "serve" || wasm_cmd == "server") {
+            int port = 8080;
+            bool open_browser = true;
+            std::filesystem::path target_path = ".";
+            for (int i = 3; i < argc; ++i) {
+                std::string_view arg = argv[i];
+                if (arg == "--no-open") {
+                    open_browser = false;
+                    continue;
+                }
+                if (arg == "--open") {
+                    open_browser = true;
+                    continue;
+                }
+                if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
+                    try { port = std::stoi(argv[++i]); } catch (...) {}
+                    continue;
+                }
+                if (arg.starts_with("--port=")) {
+                    try { port = std::stoi(std::string(arg.substr(7))); } catch (...) {}
+                    continue;
+                }
+                if (arg.starts_with("-p=")) {
+                    try { port = std::stoi(std::string(arg.substr(3))); } catch (...) {}
+                    continue;
+                }
+                target_path = arg;
+            }
+            return cfire::serve::run_server(target_path, port, open_browser);
+        }
+        std::vector<std::string> new_args;
+        new_args.push_back(argv[0]);
+        new_args.push_back(wasm_cmd);
+        new_args.push_back("--target=wasm");
+        for (int i = 3; i < argc; ++i) {
+            new_args.push_back(argv[i]);
+        }
+        std::vector<char*> c_args;
+        for (auto& s : new_args) {
+            c_args.push_back(s.data());
+        }
+        return main(static_cast<int>(c_args.size()), c_args.data());
+    }
 
     if (sub == "lsp") {
         cfire::lsp::Server srv;
@@ -1284,20 +1367,7 @@ auto main(int argc, char** argv) -> int {
                     return rc == 0 ? 0 : 1;
                 }
             }
-            std::string url = std::format("http://localhost:{}/{}", web_port, tmp_html.filename().string());
-            std::println("==> Serving cfire WebAssembly application at {}", url);
-            std::string open_cmd;
-#if defined(__APPLE__)
-            open_cmd = "open " + url;
-#elif defined(_WIN32)
-            open_cmd = "start " + url;
-#else
-            open_cmd = "xdg-open " + url;
-#endif
-            (void)std::system(open_cmd.c_str());
-            std::string srv_cmd = std::format("python3 -m http.server {} --directory \"{}\"", web_port, tmp_html.parent_path().string());
-            int rc = std::system(srv_cmd.c_str());
-            return rc == 0 ? 0 : 1;
+            return cfire::serve::run_server(tmp_html, web_port, true);
         }
 
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());

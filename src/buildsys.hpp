@@ -350,6 +350,10 @@ inline auto get_package_cache_root() -> std::filesystem::path {
         return p;
     }
     if (const char* home = std::getenv("HOME")) {
+        auto xdg_pkg = std::filesystem::path(home) / ".cache" / "cfire" / "pkg";
+        if (std::filesystem::exists(xdg_pkg)) {
+            return xdg_pkg;
+        }
         auto home_pkg = std::filesystem::path(home) / ".cfire" / "cache" / "pkg";
         std::error_code ec;
         std::filesystem::create_directories(home_pkg, ec);
@@ -1230,13 +1234,20 @@ inline auto resolve_external_dep_source(
 
                 if (is_wasm) {
                     bool found_raylib_wasm = false;
-                    auto cache_raylib_wasm = get_package_cache_root() / "vendor_raylib_wasm";
-                    if (std::filesystem::exists(cache_raylib_wasm / "include" / "raylib.h")) {
-                        plan.cflags.push_back("-I" + (cache_raylib_wasm / "include").string());
-                        if (std::filesystem::exists(cache_raylib_wasm / "lib" / "libraylib.a")) {
-                            plan.ldflags.push_back((cache_raylib_wasm / "lib" / "libraylib.a").string());
+                    for (const auto& cache_raylib_wasm : {
+                        get_package_cache_root() / "vendor_raylib_wasm",
+                        std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "") / ".cache" / "cfire" / "pkg" / "vendor_raylib_wasm",
+                        std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "") / ".cfire" / "cache" / "pkg" / "vendor_raylib_wasm",
+                        std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib_wasm")
+                    }) {
+                        if (std::filesystem::exists(cache_raylib_wasm / "include" / "raylib.h")) {
+                            plan.cflags.push_back("-I" + (cache_raylib_wasm / "include").string());
+                            if (std::filesystem::exists(cache_raylib_wasm / "lib" / "libraylib.a")) {
+                                plan.ldflags.push_back((cache_raylib_wasm / "lib" / "libraylib.a").string());
+                            }
+                            found_raylib_wasm = true;
+                            break;
                         }
-                        found_raylib_wasm = true;
                     }
                     if (!found_raylib_wasm) {
                         for (auto cur = std::filesystem::absolute(dir); !cur.empty() && cur != cur.parent_path(); cur = cur.parent_path()) {
@@ -1262,6 +1273,7 @@ inline auto resolve_external_dep_source(
                                 break;
                             }
                         }
+                        auto cache_raylib_wasm = get_package_cache_root() / "vendor_raylib_wasm";
                         std::string raylib_web_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_webassembly.zip";
                         std::cout << "==> Auto-resolving missing vendor:raylib WebAssembly build from " << raylib_web_url << "..." << std::endl;
                         std::string actual_sha;
@@ -1793,6 +1805,20 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         cmd += std::format(" -include-pch \"{}\"", pch_path);
         plan.used_pch = true;
     }
+    for (auto& l : plan.ldflags) {
+        if (l == "-lsimdjson") {
+            for (const auto& d : plan.ldflags) {
+                if (d.starts_with("-L")) {
+                    auto p = std::filesystem::path(d.substr(2)) / "libsimdjson_static.a";
+                    if (std::filesystem::exists(p)) {
+                        l = p.string();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     cmd += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
     for (const auto& l : plan.ldflags) {
         if (is_wasm && (l.find(".dylib") != std::string::npos || l.find(".so") != std::string::npos || l == "-lsimdjson" || l == "-lsqlite3" || l == "-lzstd")) {
@@ -1842,6 +1868,13 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 </dict>
 </plist>
 )", bin_name, bin_name, bin_name);
+        plist.close();
+
+#if defined(__APPLE__)
+        int cs_rc = 0;
+        std::string cs_cmd = std::format("codesign --force --deep --sign - \"{}\" 2>/dev/null", app_bundle.string());
+        (void)bridge::run_command_capture(cs_cmd, cs_rc);
+#endif
     }
 
     return plan;
