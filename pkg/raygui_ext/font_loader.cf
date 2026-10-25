@@ -4,6 +4,7 @@ import "vendor:raylib" as rl
 import "vendor:raygui" as rg
 import "core:encoding/base64"
 import "./embedded_font.cf"
+import "./embedded_mono_font.cf"
 
 fn build_extended_codepoints() -> []i32 {
     mut cps: []i32 = []
@@ -29,7 +30,7 @@ fn build_extended_codepoints() -> []i32 {
 }
 
 // GuiLoadSystemFontExtended: Tries each font path in order, loading the first found font
-// with full Latin/accent/symbol codepoints and bilinear texture filtering.
+// with full Latin/accent/symbol codepoints, GPU mipmaps, and trilinear texture filtering.
 // If no filesystem path exists (e.g. WebAssembly virtual MEMFS), falls back to the embedded TrueType font.
 fn GuiLoadSystemFontExtended(paths: []str, font_size: i32) -> rl.Font {
     if !rl.IsWindowReady() {
@@ -41,18 +42,65 @@ fn GuiLoadSystemFontExtended(paths: []str, font_size: i32) -> rl.Font {
         if rl.FileExists(p) {
             loaded_font = rl.LoadFontEx(p, font_size, codepoints.data(), codepoints.len())
             if loaded_font.texture.id > 0 {
-                rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_BILINEAR)
+                rl.GenTextureMipmaps(&mut loaded_font.texture)
+                rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_TRILINEAR)
                 return loaded_font
             }
         }
     }
-    // WebAssembly & container fallback: load embedded high-resolution TrueType vector font
+    // WebAssembly & container fallback: load embedded high-resolution TrueType vector font (Lato)
     b64 := get_embedded_lato_ttf_b64()
     font_bytes := base64.decode(b64) or []
     if font_bytes.len() > 0 {
         loaded_font = rl.LoadFontFromMemory(".ttf", font_bytes.data(), font_bytes.len(), font_size, codepoints.data(), codepoints.len())
         if loaded_font.texture.id > 0 {
-            rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_BILINEAR)
+            rl.GenTextureMipmaps(&mut loaded_font.texture)
+            rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_TRILINEAR)
+            return loaded_font
+        }
+    }
+    return loaded_font
+}
+
+// GuiDefaultSystemMonoFontPaths: Returns standard macOS/Linux monospace font candidates.
+fn GuiDefaultSystemMonoFontPaths() -> []str {
+    return [
+        "/System/Library/Fonts/SFNSMono.ttf",
+        "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
+        "/System/Library/Fonts/Supplemental/Courier New.ttf",
+        "/System/Library/Fonts/Monaco.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
+    ]
+}
+
+// GuiLoadSystemMonoFontExtended: Tries each monospace font path in order, loading the first found font
+// with full Latin/accent/symbol codepoints, GPU mipmaps, and trilinear texture filtering.
+// If no filesystem path exists (e.g. WebAssembly virtual MEMFS), falls back to embedded Source Code Pro.
+fn GuiLoadSystemMonoFontExtended(paths: []str, font_size: i32) -> rl.Font {
+    if !rl.IsWindowReady() {
+        return rl.Font{}
+    }
+    codepoints := build_extended_codepoints()
+    mut loaded_font: rl.Font = rl.Font{}
+    for p in paths {
+        if rl.FileExists(p) {
+            loaded_font = rl.LoadFontEx(p, font_size, codepoints.data(), codepoints.len())
+            if loaded_font.texture.id > 0 {
+                rl.GenTextureMipmaps(&mut loaded_font.texture)
+                rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_TRILINEAR)
+                return loaded_font
+            }
+        }
+    }
+    // WebAssembly & container fallback: load embedded Source Code Pro monospace font
+    b64 := get_embedded_source_code_pro_b64()
+    font_bytes := base64.decode(b64) or []
+    if font_bytes.len() > 0 {
+        loaded_font = rl.LoadFontFromMemory(".ttf", font_bytes.data(), font_bytes.len(), font_size, codepoints.data(), codepoints.len())
+        if loaded_font.texture.id > 0 {
+            rl.GenTextureMipmaps(&mut loaded_font.texture)
+            rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_TRILINEAR)
             return loaded_font
         }
     }
