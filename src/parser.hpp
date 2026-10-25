@@ -1279,6 +1279,7 @@ private:
             TokenKind k = cur().kind;
             int prec = get_binary_precedence(k);
             if (prec < min_prec) break;
+            if (pos_ > 0 && cur().line > tokens_[pos_ - 1].line) break;
             Token op = advance();
             auto right = parse_binary_expr(prec + 1);
             if (!right) return std::unexpected(right.error());

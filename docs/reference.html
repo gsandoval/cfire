@@ -563,6 +563,8 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#mod-sort"><code>core:sort</code></a></li>
             <li><a href="#mod-log"><code>core:log</code></a></li>
             <li><a href="#mod-unicode"><code>core:unicode</code></a></li>
+            <li><a href="#mod-rl"><code>vendor:raylib</code></a></li>
+            <li><a href="#mod-rg"><code>vendor:raygui</code></a></li>
           </ul>
           <h4 style="margin-top:1.25rem;">Diagnostics</h4>
           <ul>
@@ -1209,6 +1211,15 @@ fn main() {
           <tr><td><code>fn replace(s: str, from: str, to: str) -&gt; str</code></td><td><code>cfire::str::replace(s, from, to)</code></td><td>Replaces all occurrences of `from` in `s` with `to`.<br/><code>r := str.replace(s, &quot;old&quot;, &quot;new&quot;)</code></td></tr>
           <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::str::to_upper(s)</code></td><td>Converts ASCII characters to uppercase.<br/><code>u := str.to_upper(&quot;cfire&quot;)</code></td></tr>
           <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::str::to_lower(s)</code></td><td>Converts ASCII characters to lowercase.<br/><code>l := str.to_lower(&quot;CFIRE&quot;)</code></td></tr>
+          <tr><td><code>fn index_of(s: str, substr: str, start_pos: usize = 0) -&gt; i64</code></td><td><code>cfire::str::index_of(s, substr, start_pos)</code></td><td>Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.<br/><code>idx := str.index_of(path, &quot;.&quot;)</code></td></tr>
+          <tr><td><code>fn last_index_of(s: str, substr: str) -&gt; i64</code></td><td><code>cfire::str::last_index_of(s, substr)</code></td><td>Finds last occurrence of `substr` in `s`; returns index or -1.<br/><code>idx := str.last_index_of(path, &quot;/&quot;)</code></td></tr>
+          <tr><td><code>fn rfind(s: str, substr: str, start_pos: usize = npos) -&gt; i64</code></td><td><code>cfire::str::rfind(s, substr, start_pos)</code></td><td>Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.<br/><code>pos := str.rfind(s, &quot;#&quot;)</code></td></tr>
+          <tr><td><code>fn byte_ptr(s: str) -&gt; *c_char</code></td><td><code>cfire::str::byte_ptr(s)</code></td><td>Returns a raw pointer to the underlying buffer of `s` for C FFI interop.<br/><code>ptr := s.byte_ptr()</code></td></tr>
+          <tr><td><code>fn byte_ptr_at(s: str, offset: i64) -&gt; *c_char</code></td><td><code>cfire::str::byte_ptr_at(s, offset)</code></td><td>Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.<br/><code>ptr := s.byte_ptr_at(4)</code></td></tr>
+          <tr><td><code>fn (s: str) data() -&gt; *const c_char</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.<br/><code>ptr := s.data()</code></td></tr>
+          <tr><td><code>fn (s: str) bytes() -&gt; []byte</code></td><td><code>cfire::to_bytes(s)</code></td><td>Returns a safe byte slice view (`std::span&lt;const std::byte&gt;`) over the UTF-8 bytes of `s`.<br/><code>b := s.bytes()</code></td></tr>
+          <tr><td><code>fn (s: []T) data() -&gt; *T / *const T</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.<br/><code>ptr := s.data()</code></td></tr>
+          <tr><td><code>fn (s: []T) data_ptr() -&gt; *T / *const T</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).<br/><code>ptr := s.data_ptr()</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-math"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
@@ -1474,6 +1485,108 @@ fn main() {
           <tr><td><code>fn encode_rune(r: u32) -&gt; str</code></td><td><code>cfire::unicode::encode_rune(r)</code></td><td>Encodes a 32-bit Unicode codepoint into its UTF-8 string representation.<br/><code>char := unicode.encode_rune(0x1F525)</code></td></tr>
           <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::unicode::to_lower(s)</code></td><td>Converts Latin, Greek, and Cyrillic Unicode characters to lowercase.<br/><code>lower := unicode.to_lower(&quot;HELLO, СВЕТ!&quot;)</code></td></tr>
           <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::unicode::to_upper(s)</code></td><td>Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.<br/><code>upper := unicode.to_upper(&quot;hello, свет!&quot;)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-rl"><code>import "vendor:raylib"</code> &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Raymath (`&lt;raylib.h&gt;`, `&lt;raymath.h&gt;`, `&lt;rlgl.h&gt;`)</h2>
+      <p>Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;vendor:raylib&quot; as rl
+
+fn main() {
+    rl.InitWindow(800, 450, &quot;cfire + vendor:raylib&quot;)
+    defer rl.CloseWindow()
+
+    mut pos := rl.Vector2{x: 400.0, y: 225.0}
+    mut score := 0
+    rl.SetTargetFPS(60)
+
+    for !rl.WindowShouldClose() {
+        dt := rl.GetFrameTime()
+        if rl.IsKeyDown(rl.KEY_RIGHT) {
+            pos = rl.Vector2Add(pos, rl.Vector2{x: 200.0 * dt, y: 0.0})
+        }
+
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+        rl.ClearBackground(rl.RAYWHITE)
+        rl.DrawCircleV(pos, 24.0, rl.MAROON)
+        rl.DrawText(&quot;Score: {score}&quot;, 20, 20, 20, rl.DARKGRAY)
+    }
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn InitWindow(width: i32, height: i32, title: str)</code></td><td><code>InitWindow(width, height, cfire::c_arg(title))</code></td><td>Initializes window and OpenGL context.<br/><code>rl.InitWindow(800, 450, &quot;cfire + raylib&quot;)</code></td></tr>
+          <tr><td><code>fn WindowShouldClose() -&gt; bool</code></td><td><code>WindowShouldClose()</code></td><td>Checks if KEY_ESCAPE or window close icon was pressed.<br/><code>for !rl.WindowShouldClose() { ... }</code></td></tr>
+          <tr><td><code>fn CloseWindow()</code></td><td><code>CloseWindow()</code></td><td>Closes window and unloads OpenGL context.<br/><code>defer rl.CloseWindow()</code></td></tr>
+          <tr><td><code>fn SetTargetFPS(fps: i32)</code></td><td><code>SetTargetFPS(fps)</code></td><td>Sets target framerate (maximum) for the render loop.<br/><code>rl.SetTargetFPS(60)</code></td></tr>
+          <tr><td><code>fn GetFrameTime() -&gt; f32</code></td><td><code>GetFrameTime()</code></td><td>Returns time in seconds for the last frame drawn (delta time).<br/><code>dt := rl.GetFrameTime()</code></td></tr>
+          <tr><td><code>fn BeginDrawing()</code></td><td><code>BeginDrawing()</code></td><td>Sets up canvas (framebuffer) to start drawing.<br/><code>rl.BeginDrawing()</code></td></tr>
+          <tr><td><code>fn EndDrawing()</code></td><td><code>EndDrawing()</code></td><td>Ends canvas drawing and swaps buffers (double buffering).<br/><code>defer rl.EndDrawing()</code></td></tr>
+          <tr><td><code>fn ClearBackground(color: rl.Color)</code></td><td><code>ClearBackground(color)</code></td><td>Sets background color (framebuffer clear color).<br/><code>rl.ClearBackground(rl.RAYWHITE)</code></td></tr>
+          <tr><td><code>fn BeginMode2D(camera: rl.Camera2D)</code></td><td><code>BeginMode2D(camera)</code></td><td>Begins 2D mode with custom `rl.Camera2D`.<br/><code>rl.BeginMode2D(cam)</code></td></tr>
+          <tr><td><code>fn EndMode2D()</code></td><td><code>EndMode2D()</code></td><td>Ends 2D mode with custom camera.<br/><code>rl.EndMode2D()</code></td></tr>
+          <tr><td><code>fn DrawText(text: str, posX: i32, posY: i32, fontSize: i32, color: rl.Color)</code></td><td><code>DrawText(cfire::c_arg(text), posX, posY, fontSize, color)</code></td><td>Draws text (using default font) with automatic `str` interpolation support.<br/><code>rl.DrawText(&quot;Score: {score}&quot;, 20, 20, 24, rl.DARKGRAY)</code></td></tr>
+          <tr><td><code>fn DrawCircleV(center: rl.Vector2, radius: f32, color: rl.Color)</code></td><td><code>DrawCircleV(center, radius, color)</code></td><td>Draws a color-filled circle (Vector version).<br/><code>rl.DrawCircleV(pos, 16.0, rl.MAROON)</code></td></tr>
+          <tr><td><code>fn DrawRectangleRec(rec: rl.Rectangle, color: rl.Color)</code></td><td><code>DrawRectangleRec(rec, color)</code></td><td>Draws a color-filled rectangle from an `rl.Rectangle` struct.<br/><code>rl.DrawRectangleRec(box, rl.SKYBLUE)</code></td></tr>
+          <tr><td><code>fn IsKeyDown(key: i32) -&gt; bool</code></td><td><code>IsKeyDown(key)</code></td><td>Checks if a key is currently being pressed.<br/><code>if rl.IsKeyDown(rl.KEY_RIGHT) { ... }</code></td></tr>
+          <tr><td><code>fn GetMousePosition() -&gt; rl.Vector2</code></td><td><code>GetMousePosition()</code></td><td>Returns current mouse position XY as `rl.Vector2`.<br/><code>mouse := rl.GetMousePosition()</code></td></tr>
+          <tr><td><code>fn CheckCollisionRecs(rec1: rl.Rectangle, rec2: rl.Rectangle) -&gt; bool</code></td><td><code>CheckCollisionRecs(rec1, rec2)</code></td><td>Checks collision between two rectangles.<br/><code>hit := rl.CheckCollisionRecs(player_box, wall_box)</code></td></tr>
+          <tr><td><code>fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -&gt; rl.Vector2</code></td><td><code>Vector2Add(v1, v2)</code></td><td>Adds two vectors (`&lt;raymath.h&gt;`).<br/><code>pos = rl.Vector2Add(pos, vel)</code></td></tr>
+          <tr><td><code>fn Vector2Scale(v: rl.Vector2, scale: f32) -&gt; rl.Vector2</code></td><td><code>Vector2Scale(v, scale)</code></td><td>Scales vector by float value (`&lt;raymath.h&gt;`).<br/><code>step := rl.Vector2Scale(dir, speed * dt)</code></td></tr>
+          <tr><td><code>fn Clamp(value: f32, min: f32, max: f32) -&gt; f32</code></td><td><code>Clamp(value, min, max)</code></td><td>Clamps float value between `[min, max]` (`&lt;raymath.h&gt;`).<br/><code>x := rl.Clamp(pos.x, 0.0, 800.0)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-rg"><code>import "vendor:raygui"</code> &mdash; Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`&lt;raygui.h&gt;`)</h2>
+      <p>Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;vendor:raylib&quot; as rl
+import &quot;vendor:raygui&quot; as rg
+
+fn main() {
+    rl.InitWindow(640, 360, &quot;cfire + vendor:raygui&quot;)
+    defer rl.CloseWindow()
+
+    mut volume: f32 = 75.0
+    mut vsync := true
+    mut name := &quot;Player1&quot;
+    mut edit_name := false
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+        rl.ClearBackground(rl.RAYWHITE)
+
+        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 320.0, height: 220.0}, &quot;Settings&quot;)
+        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 70.0, width: 20.0, height: 20.0}, &quot;Enable VSync&quot;, &amp;mut vsync)
+        rg.GuiSliderBar(rl.Rectangle{x: 100.0, y: 110.0, width: 180.0, height: 20.0}, &quot;Vol&quot;, &quot;{volume}&quot;, &amp;mut volume, 0.0, 100.0)
+        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 150.0, width: 220.0, height: 28.0}, &amp;mut name, 64, edit_name) != 0 {
+            edit_name = !edit_name
+        }
+    }
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn GuiEnable()</code></td><td><code>GuiEnable()</code></td><td>Enables gui controls (global state).<br/><code>rg.GuiEnable()</code></td></tr>
+          <tr><td><code>fn GuiDisable()</code></td><td><code>GuiDisable()</code></td><td>Disables gui controls (global state).<br/><code>rg.GuiDisable()</code></td></tr>
+          <tr><td><code>fn GuiLock()</code></td><td><code>GuiLock()</code></td><td>Locks gui controls (global state).<br/><code>rg.GuiLock()</code></td></tr>
+          <tr><td><code>fn GuiUnlock()</code></td><td><code>GuiUnlock()</code></td><td>Unlocks gui controls (global state).<br/><code>rg.GuiUnlock()</code></td></tr>
+          <tr><td><code>fn GuiSetStyle(control: i32, property: i32, value: i32)</code></td><td><code>GuiSetStyle(control, property, value)</code></td><td>Sets one style property value for a control.<br/><code>rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)</code></td></tr>
+          <tr><td><code>fn GuiGetStyle(control: i32, property: i32) -&gt; i32</code></td><td><code>GuiGetStyle(control, property)</code></td><td>Gets one style property value for a control.<br/><code>sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)</code></td></tr>
+          <tr><td><code>fn GuiWindowBox(bounds: rl.Rectangle, title: str) -&gt; i32</code></td><td><code>GuiWindowBox(bounds, cfire::c_arg(title))</code></td><td>Draws a window box control with a title bar and close button (returns 1 when close clicked).<br/><code>closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, &quot;Settings&quot;)</code></td></tr>
+          <tr><td><code>fn GuiGroupBox(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiGroupBox(bounds, cfire::c_arg(text))</code></td><td>Draws a group box control with text name.<br/><code>rg.GuiGroupBox(bounds, &quot;Audio&quot;)</code></td></tr>
+          <tr><td><code>fn GuiLabel(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiLabel(bounds, cfire::c_arg(text))</code></td><td>Draws a text label control.<br/><code>rg.GuiLabel(bounds, &quot;Volume&quot;)</code></td></tr>
+          <tr><td><code>fn GuiButton(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiButton(bounds, cfire::c_arg(text))</code></td><td>Draws a clickable button control (returns 1 when clicked).<br/><code>if rg.GuiButton(bounds, &quot;Apply&quot;) != 0 { ... }</code></td></tr>
+          <tr><td><code>fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &amp;mut bool) -&gt; i32</code></td><td><code>GuiCheckBox(bounds, cfire::c_arg(text), &amp;checked)</code></td><td>Draws a check box control and mutates `checked` in-place.<br/><code>rg.GuiCheckBox(bounds, &quot;VSync&quot;, &amp;mut vsync)</code></td></tr>
+          <tr><td><code>fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &amp;mut f32, minValue: f32, maxValue: f32) -&gt; i32</code></td><td><code>GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &amp;value, minValue, maxValue)</code></td><td>Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.<br/><code>rg.GuiSliderBar(bounds, &quot;0%&quot;, &quot;100%&quot;, &amp;mut volume, 0.0, 100.0)</code></td></tr>
+          <tr><td><code>fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &amp;mut f32, minValue: f32, maxValue: f32) -&gt; i32</code></td><td><code>GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &amp;value, minValue, maxValue)</code></td><td>Draws a progress bar control.<br/><code>rg.GuiProgressBar(bounds, &quot;&quot;, &quot;&quot;, &amp;mut progress, 0.0, 1.0)</code></td></tr>
+          <tr><td><code>fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &amp;mut i32) -&gt; i32</code></td><td><code>GuiComboBox(bounds, cfire::c_arg(text), &amp;active)</code></td><td>Draws a semicolon-delimited combo box control and updates `active` index.<br/><code>rg.GuiComboBox(bounds, &quot;Low;Medium;High&quot;, &amp;mut quality)</code></td></tr>
+          <tr><td><code>fn GuiTextBox(bounds: rl.Rectangle, text: &amp;mut str, textSize: i32, editMode: bool) -&gt; i32</code></td><td><code>GuiTextBox(bounds, &amp;text, textSize, editMode)</code></td><td>Draws an editable text box control safely backed by a `cfire` `mut str`.<br/><code>if rg.GuiTextBox(bounds, &amp;mut name, 64, editing) != 0 { editing = !editing }</code></td></tr>
         </tbody>
       </table></div>
       <h2 class="section-title">Compiler Semantic Diagnostics</h2>

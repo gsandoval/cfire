@@ -1,0 +1,184 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+import "core:str"
+
+fn get_spanish_accent_variants(base_key: str, uppercase: bool) -> []str {
+    mut res: []str = []
+    if base_key == "a" || base_key == "A" {
+        if uppercase {
+            res.push("Á")
+            res.push("À")
+            res.push("Ä")
+            res.push("Â")
+        } else {
+            res.push("á")
+            res.push("à")
+            res.push("ä")
+            res.push("â")
+        }
+    } else if base_key == "e" || base_key == "E" {
+        if uppercase {
+            res.push("É")
+            res.push("È")
+            res.push("Ë")
+            res.push("Ê")
+        } else {
+            res.push("é")
+            res.push("è")
+            res.push("ë")
+            res.push("ê")
+        }
+    } else if base_key == "i" || base_key == "I" {
+        if uppercase {
+            res.push("Í")
+            res.push("Ì")
+            res.push("Ï")
+            res.push("Î")
+        } else {
+            res.push("í")
+            res.push("ì")
+            res.push("ï")
+            res.push("î")
+        }
+    } else if base_key == "o" || base_key == "O" {
+        if uppercase {
+            res.push("Ó")
+            res.push("Ò")
+            res.push("Ö")
+            res.push("Ô")
+        } else {
+            res.push("ó")
+            res.push("ò")
+            res.push("ö")
+            res.push("ô")
+        }
+    } else if base_key == "u" || base_key == "U" {
+        if uppercase {
+            res.push("Ú")
+            res.push("Ü")
+            res.push("Ù")
+            res.push("Û")
+        } else {
+            res.push("ú")
+            res.push("ü")
+            res.push("ù")
+            res.push("û")
+        }
+    } else if base_key == "n" || base_key == "N" {
+        if uppercase {
+            res.push("Ñ")
+        } else {
+            res.push("ñ")
+        }
+    } else if base_key == "?" || base_key == "/" {
+        res.push("¿")
+    } else if base_key == "!" || base_key == "1" {
+        res.push("¡")
+    }
+    return res
+}
+
+type AccentPopupStyle struct {
+    panel_bg: rl.Color
+    border_color: rl.Color
+    accent_color: rl.Color
+    selected_bg: rl.Color
+    text_color: rl.Color
+}
+
+fn default_accent_popup_style() -> AccentPopupStyle {
+    return AccentPopupStyle{
+        panel_bg: rl.Color{r: 255, g: 255, b: 255, a: 255},
+        border_color: rl.Color{r: 220, g: 220, b: 228, a: 255},
+        accent_color: rl.Color{r: 235, g: 70, b: 70, a: 255},
+        selected_bg: rl.Color{r: 254, g: 242, b: 242, a: 255},
+        text_color: rl.Color{r: 20, g: 20, b: 25, a: 255},
+    }
+}
+
+// GuiAccentPopupOverlay: Immediate-mode popup HUD displaying international accent variants.
+// Returns the 0-based selected index if chosen, -1 if still active, or -2 if dismissed.
+fn GuiAccentPopupOverlay(
+    anchor_bounds: rl.Rectangle,
+    base_key: str,
+    selected_idx: i32,
+    font: rl.Font,
+    style: AccentPopupStyle
+) -> i32 {
+    if !rl.IsWindowReady() || base_key.len() == 0 {
+        return -2
+    }
+
+    mut is_up := false
+    b := u8(base_key[0])
+    if b >= 65 && b <= 90 {
+        is_up = true
+    }
+    vars := get_spanish_accent_variants(base_key, is_up)
+    if vars.len() == 0 {
+        return -2
+    }
+
+    m := rl.GetMousePosition()
+    cell_w: f32 = 58.0
+    pop_w := f32(vars.len()) * cell_w + 16.0
+    pop_h: f32 = 42.0
+
+    ref_x := anchor_bounds.x
+    ref_y := anchor_bounds.y
+    mut ref_h := anchor_bounds.height
+    if ref_h <= 0.0 { ref_h = 24.0 }
+
+    screen_w := f32(rl.GetScreenWidth())
+    screen_h := f32(rl.GetScreenHeight())
+
+    mut pop_x := ref_x - 20.0
+    if pop_x < 10.0 { pop_x = 10.0 }
+    if pop_x > screen_w - pop_w - 12.0 { pop_x = screen_w - pop_w - 12.0 }
+
+    mut pop_y := ref_y - pop_h - 6.0
+    if pop_y < 10.0 { pop_y = ref_y + ref_h + 6.0 }
+    if pop_y + pop_h > screen_h - 30.0 {
+        pop_y = screen_h - pop_h - 32.0
+    }
+
+    pop_rec := rect(pop_x, pop_y, pop_w, pop_h)
+
+    // Shadow and backdrop
+    rl.DrawRectangle(i32(pop_x + 2.0), i32(pop_y + 2.0), i32(pop_w), i32(pop_h), rl.Color{r: 0, g: 0, b: 0, a: 90})
+    rl.DrawRectangleRec(pop_rec, style.panel_bg)
+    rl.DrawRectangleLines(i32(pop_x), i32(pop_y), i32(pop_w), i32(pop_h), style.accent_color)
+    rl.DrawRectangle(i32(pop_x), i32(pop_y), i32(pop_w), 3, style.accent_color)
+
+    mut vi: i32 = 0
+    for v in vars {
+        c_rec := rect(pop_x + 8.0 + f32(vi) * cell_w, pop_y + 6.0, cell_w - 4.0, 30.0)
+        c_hov := rl.CheckCollisionPointRec(m, c_rec)
+        c_sel := (selected_idx == vi) || c_hov
+        if c_sel {
+            rl.DrawRectangleRec(c_rec, style.selected_bg)
+            rl.DrawRectangleLines(i32(c_rec.x), i32(c_rec.y), i32(c_rec.width), i32(c_rec.height), style.accent_color)
+        }
+        badge := str(vi + 1) + ":" + v
+        mut txt_col := style.text_color
+        if c_sel { txt_col = style.accent_color }
+
+        if font.texture.id > 0 {
+            rl.DrawTextEx(font, badge, vec2(c_rec.x + 8.0, c_rec.y + 7.0), 15.0, 0.5, txt_col)
+        } else {
+            rl.DrawText(badge, i32(c_rec.x + 8.0), i32(c_rec.y + 7.0), 15, txt_col)
+        }
+
+        if c_hov && rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) {
+            return vi
+        }
+        vi = vi + 1
+    }
+
+    if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && !rl.CheckCollisionPointRec(m, pop_rec) {
+        return -2
+    }
+    return -1
+}

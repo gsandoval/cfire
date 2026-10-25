@@ -1,0 +1,187 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+import "core:str"
+
+fn is_word_sep(c: u8) -> bool {
+    if c <= 32 || c == 46 || c == 44 || c == 59 || c == 58 || c == 47 || c == 45 || c == 40 || c == 41 || c == 91 || c == 93 || c == 34 || c == 39 {
+        return true
+    }
+    return false
+}
+
+// editor_move_word_left: Jumps backwards across words and punctuation boundaries.
+fn editor_move_word_left(text: str, cur: i32) -> i32 {
+    n := text.len()
+    mut pos := cur
+    if pos < 0 { pos = 0 }
+    if pos > n { pos = n }
+
+    for pos > 0 && is_word_sep(u8(text[pos - 1])) {
+        pos = pos - 1
+    }
+    for pos > 0 && !is_word_sep(u8(text[pos - 1])) {
+        pos = pos - 1
+    }
+    for pos > 0 && (u8(text[pos]) & 0xC0) == 0x80 {
+        pos = pos - 1
+    }
+    return pos
+}
+
+// editor_move_word_right: Jumps forwards across words and punctuation boundaries.
+fn editor_move_word_right(text: str, cur: i32) -> i32 {
+    n := text.len()
+    mut pos := cur
+    if pos < 0 { pos = 0 }
+    if pos > n { pos = n }
+
+    for pos < n && !is_word_sep(u8(text[pos])) {
+        pos = pos + 1
+    }
+    for pos < n && is_word_sep(u8(text[pos])) {
+        pos = pos + 1
+    }
+    for pos < n && (u8(text[pos]) & 0xC0) == 0x80 {
+        pos = pos + 1
+    }
+    return pos
+}
+
+// editor_move_line_start: Returns byte offset of the start of the current line.
+fn editor_move_line_start(text: str, cur: i32) -> i32 {
+    if cur <= 0 { return 0 }
+    mut lim := cur
+    if lim > text.len() { lim = text.len() }
+    idx := str.rfind(text[0..lim], "\n")
+    if idx >= 0 {
+        return i32(idx + 1)
+    }
+    return 0
+}
+
+// editor_move_line_end: Returns byte offset of the end of the current line (before \n or at EOF).
+fn editor_move_line_end(text: str, cur: i32) -> i32 {
+    len := text.len()
+    if cur >= len { return len }
+    mut start_pos := cur
+    if start_pos < 0 { start_pos = 0 }
+    idx := str.index_of(text, "\n", usize(start_pos))
+    if idx >= 0 {
+        return i32(idx)
+    }
+    return len
+}
+
+// byte_offset_from_x: Given horizontal offset rel_x, returns exact byte offset within text.
+fn byte_offset_from_x(font: rl.Font, text: str, rel_x: f32, font_size: f32, spacing: f32) -> i32 {
+    if rel_x <= 0.0 || text.len() == 0 {
+        return 0
+    }
+    n := text.len()
+    mut i: i32 = 0
+    mut prev_x: f32 = 0.0
+    for i < n {
+        mut nb: i32 = 0
+        _ = rl.GetCodepointNext(text[i..].data(), &mut nb)
+        if nb <= 0 { nb = 1 }
+        mut next_i := i + nb
+        if next_i > n { next_i = n }
+        cur_x := GuiMeasureTextAdvance(font, text, next_i, font_size, spacing)
+        if rel_x < (prev_x + cur_x) * 0.5 {
+            return i
+        }
+        prev_x = cur_x
+        i = next_i
+    }
+    return n
+}
+
+// text_insert_at: Replaces selection (if any) and inserts snippet at cursor position.
+fn text_insert_at(mut text: str, mut cursor: i32, mut sel_anchor: i32, snippet: str) {
+    len := text.len()
+    mut cur := cursor
+    if cur < 0 { cur = 0 }
+    if cur > len { cur = len }
+
+    if sel_anchor >= 0 && sel_anchor != cur {
+        mut s0 := sel_anchor
+        mut s1 := cur
+        if s0 > s1 {
+            s0 = cur
+            s1 = sel_anchor
+        }
+        if s0 < 0 { s0 = 0 }
+        if s1 > len { s1 = len }
+        text = text[0..s0] + text[s1..]
+        cur = s0
+        sel_anchor = -1
+    }
+
+    text = text[0..cur] + snippet + text[cur..]
+    cursor = cur + snippet.len()
+}
+
+// text_delete_selection_or_backspace: Deletes selection range, or one UTF-8 codepoint before cursor.
+fn text_delete_selection_or_backspace(mut text: str, mut cursor: i32, mut sel_anchor: i32) -> bool {
+    len := text.len()
+    if sel_anchor >= 0 && sel_anchor != cursor {
+        mut s0 := sel_anchor
+        mut s1 := cursor
+        if s0 > s1 {
+            s0 = cursor
+            s1 = sel_anchor
+        }
+        if s0 < 0 { s0 = 0 }
+        if s1 > len { s1 = len }
+        text = text[0..s0] + text[s1..]
+        cursor = s0
+        sel_anchor = -1
+        return true
+    }
+
+    if cursor <= 0 {
+        return false
+    }
+
+    mut s0 := cursor - 1
+    for s0 > 0 && (u8(text[s0]) & 0xC0) == 0x80 {
+        s0 = s0 - 1
+    }
+    text = text[0..s0] + text[cursor..]
+    cursor = s0
+    sel_anchor = -1
+    return true
+}
+
+// text_delete_selection_or_delete: Deletes selection range, or one UTF-8 codepoint after cursor.
+fn text_delete_selection_or_delete(mut text: str, mut cursor: i32, mut sel_anchor: i32) -> bool {
+    len := text.len()
+    if sel_anchor >= 0 && sel_anchor != cursor {
+        mut s0 := sel_anchor
+        mut s1 := cursor
+        if s0 > s1 {
+            s0 = cursor
+            s1 = sel_anchor
+        }
+        if s0 < 0 { s0 = 0 }
+        if s1 > len { s1 = len }
+        text = text[0..s0] + text[s1..]
+        cursor = s0
+        sel_anchor = -1
+        return true
+    }
+
+    if cursor >= len {
+        return false
+    }
+
+    mut s1 := cursor + 1
+    for s1 < len && (u8(text[s1]) & 0xC0) == 0x80 {
+        s1 = s1 + 1
+    }
+    text = text[0..cursor] + text[s1..]
+    sel_anchor = -1
+    return true
+}

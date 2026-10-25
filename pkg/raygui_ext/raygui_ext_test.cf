@@ -1,0 +1,131 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+
+test "raygui_ext extended codepoints builder" {
+    cps := build_extended_codepoints()
+    assert(cps.len() > 500)
+    
+    // Check ASCII range (e.g. 65 is 'A')
+    assert(cps[33] == 65)
+
+    // Check Spanish accents and symbols are populated
+    mut has_spanish_accent := false
+    mut has_arrow := false
+    for cp in cps {
+        if cp == 0x00E9 { // 'é'
+            has_spanish_accent = true
+        }
+        if cp == 0x2192 { // '→'
+            has_arrow = true
+        }
+    }
+    assert(has_spanish_accent)
+    assert(has_arrow)
+}
+
+test "raygui_ext splitter style and headless safety" {
+    style := default_splitter_style()
+    assert(style.hit_width == 10.0)
+    assert(style.bar_width == 2.0)
+
+    // Headless invocation when window is not ready should safely return false without crashing
+    mut split_x: f32 = 250.0
+    mut dragging: bool = false
+    changed_v := GuiSplitterV(0.0, 600.0, 100.0, 500.0, mut split_x, mut dragging, style)
+    assert(!changed_v)
+    assert(split_x == 250.0)
+
+    mut split_y: f32 = 180.0
+    mut dragging_h: bool = false
+    changed_h := GuiSplitterH(0.0, 800.0, 50.0, 400.0, mut split_y, mut dragging_h, style)
+    assert(!changed_h)
+    assert(split_y == 180.0)
+}
+
+test "raygui_ext text buffer word and line navigation" {
+    sample := "Primera línea con acentos\nSegunda línea: diseño mecánico"
+    w1 := editor_move_word_right(sample, 0)
+    assert(w1 == 8) // Start of "línea"
+    w0 := editor_move_word_left(sample, w1)
+    assert(w0 == 0) // Back to start of "Primera"
+
+    le := editor_move_line_end(sample, 3)
+    assert(le == 26) // Before \n
+    ls := editor_move_line_start(sample, 30)
+    assert(ls == 27) // After \n
+}
+
+test "raygui_ext text insert and delete operations" {
+    mut t1 := "hello "
+    mut cur1: i32 = 6
+    mut anc1: i32 = -1
+    text_insert_at(mut t1, mut cur1, mut anc1, "world")
+    assert(t1 == "hello world")
+    assert(cur1 == 11)
+
+    // Selection replacement
+    mut t2 := "123abc456"
+    mut cur2: i32 = 6
+    mut anc2: i32 = 3
+    text_insert_at(mut t2, mut cur2, mut anc2, "XYZ")
+    assert(t2 == "123XYZ456")
+    assert(cur2 == 6)
+
+    // Backspace single UTF-8 codepoint ('í' is 2 bytes: offsets 1..3)
+    mut t3 := "línea"
+    mut cur3: i32 = 3 // after 'í'
+    mut anc3: i32 = -1
+    del_ok := text_delete_selection_or_backspace(mut t3, mut cur3, mut anc3)
+    assert(del_ok)
+    assert(t3 == "lnea")
+    assert(cur3 == 1)
+}
+
+test "raygui_ext spanish and international accent variants" {
+    vars_e := get_spanish_accent_variants("e", false)
+    assert(vars_e.len() == 4)
+    assert(vars_e[0] == "é")
+
+    vars_n := get_spanish_accent_variants("N", true)
+    assert(vars_n.len() == 1)
+    assert(vars_n[0] == "Ñ")
+
+    vars_q := get_spanish_accent_variants("?", false)
+    assert(vars_q.len() == 1)
+    assert(vars_q[0] == "¿")
+
+    vars_ex := get_spanish_accent_variants("!", false)
+    assert(vars_ex.len() == 1)
+    assert(vars_ex[0] == "¡")
+}
+
+test "raygui_ext visual row wrapping and multi-line navigation" {
+    text := "First line of text\nSecond line with some additional content"
+    vrows := compute_visual_rows(rl.Font{}, text, 800.0, 15.0)
+    assert(vrows.len() >= 2)
+    assert(vrows[0].logical_line == 1)
+    assert(vrows[1].logical_line == 2)
+
+    // UTF-8 indices for "línea"
+    sample := "línea"
+    next_idx := next_utf8_index(sample, 1) // after 'l'
+    assert(next_idx == 3) // after 'í' (2 bytes)
+    prev_idx := prev_utf8_index(sample, 3)
+    assert(prev_idx == 1) // back to 'l'
+
+    // Up and down line navigation
+    doc := "12345\n67890"
+    down_c := move_down_one_line(doc, 2)
+    assert(down_c == 8) // '8' in line 2
+    up_c := move_up_one_line(doc, down_c)
+    assert(up_c == 2) // back to '3' in line 1
+
+    // UTF-8 rune encoder
+    r_a := utf8_encode_rune(65)
+    assert(r_a == "A")
+    r_e := utf8_encode_rune(0x00E9)
+    assert(r_e == "é")
+}
+

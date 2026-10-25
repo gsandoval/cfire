@@ -1,0 +1,95 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+
+fn build_extended_codepoints() -> []i32 {
+    mut cps: []i32 = []
+    mut cp: i32 = 32
+    // ASCII and Latin Extended-A / Latin-1 Supplement (covers all Spanish accents, ñ, ¿, ¡, umlauts, cedillas)
+    for cp <= 512 {
+        cps.push(cp)
+        cp = cp + 1
+    }
+    // General Punctuation & Quotes (en-dash, em-dash, curly quotes, bullets)
+    cp = 0x2010
+    for cp <= 0x203A {
+        cps.push(cp)
+        cp = cp + 1
+    }
+    // Arrows & UI Symbols (←, ↑, →, ↓, ↔, etc.)
+    cp = 0x2190
+    for cp <= 0x21FF {
+        cps.push(cp)
+        cp = cp + 1
+    }
+    return cps
+}
+
+// GuiLoadSystemFontExtended: Tries each font path in order, loading the first found font
+// with full Latin/accent/symbol codepoints and bilinear texture filtering.
+fn GuiLoadSystemFontExtended(paths: []str, font_size: i32) -> rl.Font {
+    if !rl.IsWindowReady() || paths.len() == 0 {
+        return rl.Font{}
+    }
+    codepoints := build_extended_codepoints()
+    mut loaded_font: rl.Font = rl.Font{}
+    for p in paths {
+        if rl.FileExists(p) {
+            loaded_font = rl.LoadFontEx(p, font_size, codepoints.data(), codepoints.len())
+            if loaded_font.texture.id > 0 {
+                rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_BILINEAR)
+                return loaded_font
+            }
+        }
+    }
+    return loaded_font
+}
+
+// GuiDefaultSystemFontPaths: Returns standard macOS/Linux system fonts suitable for UI and code.
+fn GuiDefaultSystemFontPaths() -> []str {
+    return [
+        "/System/Library/Fonts/Supplemental/DIN Alternate Bold.ttf",
+        "/System/Library/Fonts/SFNSMono.ttf",
+        "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
+    ]
+}
+
+// GuiMeasureTextAdvance: Measures the exact horizontal pixel advance of `text` up to `byte_count` bytes,
+// handling UTF-8 multi-byte codepoint sequences accurately.
+fn GuiMeasureTextAdvance(font: rl.Font, text: str, byte_count: i32, font_size: f32, spacing: f32) -> f32 {
+    if byte_count <= 0 || text.len() == 0 {
+        return 0.0
+    }
+    mut limit: i32 = byte_count
+    if limit > text.len() {
+        limit = text.len()
+    }
+    if font.texture.id == 0 || font.baseSize <= 0 {
+        return f32(limit) * (font_size * 0.58)
+    }
+
+    scale: f32 = font_size / f32(font.baseSize)
+    mut x: f32 = 0.0
+    mut i: i32 = 0
+    for i < limit {
+        mut next_bytes: i32 = 0
+        cp := rl.GetCodepointNext(text[i..].data(), &mut next_bytes)
+        if next_bytes <= 0 {
+            next_bytes = 1
+        }
+        g_idx := rl.GetGlyphIndex(font, cp)
+        mut adv: f32 = 0.0
+        if font.glyphs[g_idx].advanceX == 0 {
+            adv = f32(font.recs[g_idx].width) * scale + spacing
+        } else {
+            adv = f32(font.glyphs[g_idx].advanceX) * scale + spacing
+        }
+        x += adv
+        i += next_bytes
+    }
+    return x
+}

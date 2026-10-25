@@ -1,0 +1,164 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+
+fn rect(x: f32, y: f32, w: f32, h: f32) -> rl.Rectangle {
+    return rl.Rectangle{x: x, y: y, width: w, height: h}
+}
+
+fn vec2(x: f32, y: f32) -> rl.Vector2 {
+    return rl.Vector2{x: x, y: y}
+}
+
+type SplitterStyle struct {
+    bar_width: f32
+    hit_width: f32
+    bar_color: rl.Color
+    active_color: rl.Color
+    grip_bg: rl.Color
+    grip_dot_color: rl.Color
+}
+
+fn default_splitter_style() -> SplitterStyle {
+    return SplitterStyle{
+        bar_width: 2.0,
+        hit_width: 10.0,
+        bar_color: rl.Color{r: 50, g: 50, b: 58, a: 255},
+        active_color: rl.Color{r: 235, g: 70, b: 70, a: 255},
+        grip_bg: rl.Color{r: 30, g: 30, b: 36, a: 255},
+        grip_dot_color: rl.Color{r: 160, g: 160, b: 170, a: 255},
+    }
+}
+
+fn draw_splitter_grip_v(x: f32, y: f32, height: f32, active: bool, style: SplitterStyle) {
+    mut bar_col := style.bar_color
+    if active { bar_col = style.active_color }
+    if active {
+        rl.DrawRectangle(i32(x - 2.0), i32(y), 4, i32(height), bar_col)
+    }
+    cy := y + height * 0.5
+    mut grip_bg := style.grip_bg
+    mut dot_col := style.grip_dot_color
+    if active {
+        grip_bg = style.active_color
+        dot_col = rl.Color{r: 255, g: 255, b: 255, a: 255}
+    }
+    rl.DrawRectangle(i32(x - 3.0), i32(cy - 18.0), 6, 36, grip_bg)
+    rl.DrawRectangleLines(i32(x - 3.0), i32(cy - 18.0), 6, 36, bar_col)
+    rl.DrawRectangle(i32(x - 1.0), i32(cy - 8.0), 2, 2, dot_col)
+    rl.DrawRectangle(i32(x - 1.0), i32(cy - 1.0), 2, 2, dot_col)
+    rl.DrawRectangle(i32(x - 1.0), i32(cy + 6.0), 2, 2, dot_col)
+}
+
+fn draw_splitter_grip_h(x: f32, y: f32, width: f32, active: bool, style: SplitterStyle) {
+    mut bar_col := style.bar_color
+    if active { bar_col = style.active_color }
+    if active {
+        rl.DrawRectangle(i32(x), i32(y - 2.0), i32(width), 4, bar_col)
+    }
+    cx := x + width * 0.5
+    mut grip_bg := style.grip_bg
+    mut dot_col := style.grip_dot_color
+    if active {
+        grip_bg = style.active_color
+        dot_col = rl.Color{r: 255, g: 255, b: 255, a: 255}
+    }
+    rl.DrawRectangle(i32(cx - 18.0), i32(y - 3.0), 36, 6, grip_bg)
+    rl.DrawRectangleLines(i32(cx - 18.0), i32(y - 3.0), 36, 6, bar_col)
+    rl.DrawRectangle(i32(cx - 8.0), i32(y - 1.0), 2, 2, dot_col)
+    rl.DrawRectangle(i32(cx - 1.0), i32(y - 1.0), 2, 2, dot_col)
+    rl.DrawRectangle(i32(cx + 6.0), i32(y - 1.0), 2, 2, dot_col)
+}
+
+// GuiSplitterV: Immediate-mode vertical resizable splitter bar.
+// Returns true if the splitter position changed during this frame.
+fn GuiSplitterV(
+    y: f32,
+    height: f32,
+    min_x: f32,
+    max_x: f32,
+    mut split_x: f32,
+    mut is_dragging: bool,
+    style: SplitterStyle
+) -> bool {
+    if !rl.IsWindowReady() {
+        return false
+    }
+
+    m := rl.GetMousePosition()
+    hit_w := style.hit_width
+    hit_x := split_x - hit_w * 0.5
+    hit_rect := rl.Rectangle{x: f32(hit_x), y: y, width: hit_w, height: height}
+    is_hovered := rl.CheckCollisionPointRec(m, hit_rect)
+
+    if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && is_hovered {
+        is_dragging = true
+    }
+    if rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) {
+        is_dragging = false
+    }
+
+    mut changed := false
+    if is_dragging {
+        mut new_x := m.x
+        if new_x < min_x { new_x = min_x }
+        if new_x > max_x { new_x = max_x }
+        if new_x != split_x {
+            split_x = new_x
+            changed = true
+        }
+        rl.SetMouseCursor(rl.MOUSE_CURSOR_RESIZE_EW)
+    } else if is_hovered {
+        rl.SetMouseCursor(rl.MOUSE_CURSOR_RESIZE_EW)
+    }
+
+    draw_splitter_grip_v(split_x, y, height, is_hovered || is_dragging, style)
+    return changed
+}
+
+// GuiSplitterH: Immediate-mode horizontal resizable splitter bar.
+// Returns true if the splitter position changed during this frame.
+fn GuiSplitterH(
+    x: f32,
+    width: f32,
+    min_y: f32,
+    max_y: f32,
+    mut split_y: f32,
+    mut is_dragging: bool,
+    style: SplitterStyle
+) -> bool {
+    if !rl.IsWindowReady() {
+        return false
+    }
+
+    m := rl.GetMousePosition()
+    hit_h := style.hit_width
+    hit_y := split_y - hit_h * 0.5
+    hit_rect := rl.Rectangle{x: x, y: f32(hit_y), width: width, height: hit_h}
+    is_hovered := rl.CheckCollisionPointRec(m, hit_rect)
+
+    if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && is_hovered {
+        is_dragging = true
+    }
+    if rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) {
+        is_dragging = false
+    }
+
+    mut changed := false
+    if is_dragging {
+        mut new_y := m.y
+        if new_y < min_y { new_y = min_y }
+        if new_y > max_y { new_y = max_y }
+        if new_y != split_y {
+            split_y = new_y
+            changed = true
+        }
+        rl.SetMouseCursor(rl.MOUSE_CURSOR_RESIZE_NS)
+    } else if is_hovered {
+        rl.SetMouseCursor(rl.MOUSE_CURSOR_RESIZE_NS)
+    }
+
+    draw_splitter_grip_h(x, split_y, width, is_hovered || is_dragging, style)
+    return changed
+}

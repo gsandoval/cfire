@@ -287,7 +287,16 @@ struct DiagnosticDoc {
                 {"contains", "fn contains(s: str, needle: str) -> bool", "cfire::str::contains(s, needle)", "Returns `true` if `s` contains `needle`.", "if str.contains(s, \"fire\") { ... }"},
                 {"replace", "fn replace(s: str, from: str, to: str) -> str", "cfire::str::replace(s, from, to)", "Replaces all occurrences of `from` in `s` with `to`.", "r := str.replace(s, \"old\", \"new\")"},
                 {"to_upper", "fn to_upper(s: str) -> str", "cfire::str::to_upper(s)", "Converts ASCII characters to uppercase.", "u := str.to_upper(\"cfire\")"},
-                {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"}
+                {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"},
+                {"index_of", "fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64", "cfire::str::index_of(s, substr, start_pos)", "Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.", "idx := str.index_of(path, \".\")"},
+                {"last_index_of", "fn last_index_of(s: str, substr: str) -> i64", "cfire::str::last_index_of(s, substr)", "Finds last occurrence of `substr` in `s`; returns index or -1.", "idx := str.last_index_of(path, \"/\")"},
+                {"rfind", "fn rfind(s: str, substr: str, start_pos: usize = npos) -> i64", "cfire::str::rfind(s, substr, start_pos)", "Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.", "pos := str.rfind(s, \"#\")"},
+                {"byte_ptr", "fn byte_ptr(s: str) -> *c_char", "cfire::str::byte_ptr(s)", "Returns a raw pointer to the underlying buffer of `s` for C FFI interop.", "ptr := s.byte_ptr()"},
+                {"byte_ptr_at", "fn byte_ptr_at(s: str, offset: i64) -> *c_char", "cfire::str::byte_ptr_at(s, offset)", "Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.", "ptr := s.byte_ptr_at(4)"},
+                {"str.data", "fn (s: str) data() -> *const c_char", "(s).data()", "Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.", "ptr := s.data()"},
+                {"str.bytes", "fn (s: str) bytes() -> []byte", "cfire::to_bytes(s)", "Returns a safe byte slice view (`std::span<const std::byte>`) over the UTF-8 bytes of `s`.", "b := s.bytes()"},
+                {"slice.data", "fn (s: []T) data() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.", "ptr := s.data()"},
+                {"slice.data_ptr", "fn (s: []T) data_ptr() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).", "ptr := s.data_ptr()"}
             }
         },
         {
@@ -388,6 +397,52 @@ struct DiagnosticDoc {
                 {"encode_rune", "fn encode_rune(r: u32) -> str", "cfire::unicode::encode_rune(r)", "Encodes a 32-bit Unicode codepoint into its UTF-8 string representation.", "char := unicode.encode_rune(0x1F525)"},
                 {"to_lower", "fn to_lower(s: str) -> str", "cfire::unicode::to_lower(s)", "Converts Latin, Greek, and Cyrillic Unicode characters to lowercase.", "lower := unicode.to_lower(\"HELLO, СВЕТ!\")"},
                 {"to_upper", "fn to_upper(s: str) -> str", "cfire::unicode::to_upper(s)", "Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.", "upper := unicode.to_upper(\"hello, свет!\")"}
+            }
+        },
+        {
+            "vendor:raylib", "rl", "Raylib 5.0 2D/3D Graphics, Audio, Input & Raymath (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`)", "-lraylib",
+            "Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion.",
+            {
+                {"InitWindow", "fn InitWindow(width: i32, height: i32, title: str)", "InitWindow(width, height, cfire::c_arg(title))", "Initializes window and OpenGL context.", "rl.InitWindow(800, 450, \"cfire + raylib\")"},
+                {"WindowShouldClose", "fn WindowShouldClose() -> bool", "WindowShouldClose()", "Checks if KEY_ESCAPE or window close icon was pressed.", "for !rl.WindowShouldClose() { ... }"},
+                {"CloseWindow", "fn CloseWindow()", "CloseWindow()", "Closes window and unloads OpenGL context.", "defer rl.CloseWindow()"},
+                {"SetTargetFPS", "fn SetTargetFPS(fps: i32)", "SetTargetFPS(fps)", "Sets target framerate (maximum) for the render loop.", "rl.SetTargetFPS(60)"},
+                {"GetFrameTime", "fn GetFrameTime() -> f32", "GetFrameTime()", "Returns time in seconds for the last frame drawn (delta time).", "dt := rl.GetFrameTime()"},
+                {"BeginDrawing", "fn BeginDrawing()", "BeginDrawing()", "Sets up canvas (framebuffer) to start drawing.", "rl.BeginDrawing()"},
+                {"EndDrawing", "fn EndDrawing()", "EndDrawing()", "Ends canvas drawing and swaps buffers (double buffering).", "defer rl.EndDrawing()"},
+                {"ClearBackground", "fn ClearBackground(color: rl.Color)", "ClearBackground(color)", "Sets background color (framebuffer clear color).", "rl.ClearBackground(rl.RAYWHITE)"},
+                {"BeginMode2D", "fn BeginMode2D(camera: rl.Camera2D)", "BeginMode2D(camera)", "Begins 2D mode with custom `rl.Camera2D`.", "rl.BeginMode2D(cam)"},
+                {"EndMode2D", "fn EndMode2D()", "EndMode2D()", "Ends 2D mode with custom camera.", "rl.EndMode2D()"},
+                {"DrawText", "fn DrawText(text: str, posX: i32, posY: i32, fontSize: i32, color: rl.Color)", "DrawText(cfire::c_arg(text), posX, posY, fontSize, color)", "Draws text (using default font) with automatic `str` interpolation support.", "rl.DrawText(\"Score: {score}\", 20, 20, 24, rl.DARKGRAY)"},
+                {"DrawCircleV", "fn DrawCircleV(center: rl.Vector2, radius: f32, color: rl.Color)", "DrawCircleV(center, radius, color)", "Draws a color-filled circle (Vector version).", "rl.DrawCircleV(pos, 16.0, rl.MAROON)"},
+                {"DrawRectangleRec", "fn DrawRectangleRec(rec: rl.Rectangle, color: rl.Color)", "DrawRectangleRec(rec, color)", "Draws a color-filled rectangle from an `rl.Rectangle` struct.", "rl.DrawRectangleRec(box, rl.SKYBLUE)"},
+                {"IsKeyDown", "fn IsKeyDown(key: i32) -> bool", "IsKeyDown(key)", "Checks if a key is currently being pressed.", "if rl.IsKeyDown(rl.KEY_RIGHT) { ... }"},
+                {"GetMousePosition", "fn GetMousePosition() -> rl.Vector2", "GetMousePosition()", "Returns current mouse position XY as `rl.Vector2`.", "mouse := rl.GetMousePosition()"},
+                {"CheckCollisionRecs", "fn CheckCollisionRecs(rec1: rl.Rectangle, rec2: rl.Rectangle) -> bool", "CheckCollisionRecs(rec1, rec2)", "Checks collision between two rectangles.", "hit := rl.CheckCollisionRecs(player_box, wall_box)"},
+                {"Vector2Add", "fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -> rl.Vector2", "Vector2Add(v1, v2)", "Adds two vectors (`<raymath.h>`).", "pos = rl.Vector2Add(pos, vel)"},
+                {"Vector2Scale", "fn Vector2Scale(v: rl.Vector2, scale: f32) -> rl.Vector2", "Vector2Scale(v, scale)", "Scales vector by float value (`<raymath.h>`).", "step := rl.Vector2Scale(dir, speed * dt)"},
+                {"Clamp", "fn Clamp(value: f32, min: f32, max: f32) -> f32", "Clamp(value, min, max)", "Clamps float value between `[min, max]` (`<raymath.h>`).", "x := rl.Clamp(pos.x, 0.0, 800.0)"}
+            }
+        },
+        {
+            "vendor:raygui", "rg", "Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`<raygui.h>`)", "-lraylib",
+            "Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing.",
+            {
+                {"GuiEnable", "fn GuiEnable()", "GuiEnable()", "Enables gui controls (global state).", "rg.GuiEnable()"},
+                {"GuiDisable", "fn GuiDisable()", "GuiDisable()", "Disables gui controls (global state).", "rg.GuiDisable()"},
+                {"GuiLock", "fn GuiLock()", "GuiLock()", "Locks gui controls (global state).", "rg.GuiLock()"},
+                {"GuiUnlock", "fn GuiUnlock()", "GuiUnlock()", "Unlocks gui controls (global state).", "rg.GuiUnlock()"},
+                {"GuiSetStyle", "fn GuiSetStyle(control: i32, property: i32, value: i32)", "GuiSetStyle(control, property, value)", "Sets one style property value for a control.", "rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)"},
+                {"GuiGetStyle", "fn GuiGetStyle(control: i32, property: i32) -> i32", "GuiGetStyle(control, property)", "Gets one style property value for a control.", "sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)"},
+                {"GuiWindowBox", "fn GuiWindowBox(bounds: rl.Rectangle, title: str) -> i32", "GuiWindowBox(bounds, cfire::c_arg(title))", "Draws a window box control with a title bar and close button (returns 1 when close clicked).", "closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, \"Settings\")"},
+                {"GuiGroupBox", "fn GuiGroupBox(bounds: rl.Rectangle, text: str) -> i32", "GuiGroupBox(bounds, cfire::c_arg(text))", "Draws a group box control with text name.", "rg.GuiGroupBox(bounds, \"Audio\")"},
+                {"GuiLabel", "fn GuiLabel(bounds: rl.Rectangle, text: str) -> i32", "GuiLabel(bounds, cfire::c_arg(text))", "Draws a text label control.", "rg.GuiLabel(bounds, \"Volume\")"},
+                {"GuiButton", "fn GuiButton(bounds: rl.Rectangle, text: str) -> i32", "GuiButton(bounds, cfire::c_arg(text))", "Draws a clickable button control (returns 1 when clicked).", "if rg.GuiButton(bounds, \"Apply\") != 0 { ... }"},
+                {"GuiCheckBox", "fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &mut bool) -> i32", "GuiCheckBox(bounds, cfire::c_arg(text), &checked)", "Draws a check box control and mutates `checked` in-place.", "rg.GuiCheckBox(bounds, \"VSync\", &mut vsync)"},
+                {"GuiSliderBar", "fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.", "rg.GuiSliderBar(bounds, \"0%\", \"100%\", &mut volume, 0.0, 100.0)"},
+                {"GuiProgressBar", "fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a progress bar control.", "rg.GuiProgressBar(bounds, \"\", \"\", &mut progress, 0.0, 1.0)"},
+                {"GuiComboBox", "fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &mut i32) -> i32", "GuiComboBox(bounds, cfire::c_arg(text), &active)", "Draws a semicolon-delimited combo box control and updates `active` index.", "rg.GuiComboBox(bounds, \"Low;Medium;High\", &mut quality)"},
+                {"GuiTextBox", "fn GuiTextBox(bounds: rl.Rectangle, text: &mut str, textSize: i32, editMode: bool) -> i32", "GuiTextBox(bounds, &text, textSize, editMode)", "Draws an editable text box control safely backed by a `cfire` `mut str`.", "if rg.GuiTextBox(bounds, &mut name, 64, editing) != 0 { editing = !editing }"}
             }
         }
     };
@@ -989,6 +1044,62 @@ fn main() {
     runes := unicode.runes(text)
     for r in runes {
         println("Rune: U+{:04X}", r)
+    }
+})CF";
+    }
+    if (mod == "vendor:raylib") {
+        return R"CF(package main
+
+import "vendor:raylib" as rl
+
+fn main() {
+    rl.InitWindow(800, 450, "cfire + vendor:raylib")
+    defer rl.CloseWindow()
+
+    mut pos := rl.Vector2{x: 400.0, y: 225.0}
+    mut score := 0
+    rl.SetTargetFPS(60)
+
+    for !rl.WindowShouldClose() {
+        dt := rl.GetFrameTime()
+        if rl.IsKeyDown(rl.KEY_RIGHT) {
+            pos = rl.Vector2Add(pos, rl.Vector2{x: 200.0 * dt, y: 0.0})
+        }
+
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+        rl.ClearBackground(rl.RAYWHITE)
+        rl.DrawCircleV(pos, 24.0, rl.MAROON)
+        rl.DrawText("Score: {score}", 20, 20, 20, rl.DARKGRAY)
+    }
+})CF";
+    }
+    if (mod == "vendor:raygui") {
+        return R"CF(package main
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+
+fn main() {
+    rl.InitWindow(640, 360, "cfire + vendor:raygui")
+    defer rl.CloseWindow()
+
+    mut volume: f32 = 75.0
+    mut vsync := true
+    mut name := "Player1"
+    mut edit_name := false
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+        rl.ClearBackground(rl.RAYWHITE)
+
+        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 320.0, height: 220.0}, "Settings")
+        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 70.0, width: 20.0, height: 20.0}, "Enable VSync", &mut vsync)
+        rg.GuiSliderBar(rl.Rectangle{x: 100.0, y: 110.0, width: 180.0, height: 20.0}, "Vol", "{volume}", &mut volume, 0.0, 100.0)
+        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 150.0, width: 220.0, height: 28.0}, &mut name, 64, edit_name) != 0 {
+            edit_name = !edit_name
+        }
     }
 })CF";
     }
