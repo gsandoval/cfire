@@ -99,6 +99,10 @@ fn main() {
 | `run` | `cfire run main.cf` | Compiles and executes the program. Auto-links required `core:*` and C/C++ libraries. |
 | `run --sanitize` | `cfire run --sanitize main.cf` | Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (`-fsanitize=address,undefined`). |
 | `build` | `cfire build main.cf -o app` | Produces an optimized native executable (`-O3`) in the current directory. |
+| `build --subsystem gui` | `cfire build --subsystem gui main.cf -o app` | Packages a native GUI desktop app (signed `.app` bundle on macOS; `-mwindows` on Windows). |
+| `build --target wasm` | `cfire build --target wasm main.cf -o app.html` | Cross-compiles to WebAssembly (`.html`, `.js`, `.wasm`) with responsive WebGL canvas or CLI profile. |
+| `serve` | `cfire serve [--port 8080] [path]` | Built-in zero-dependency static HTTP/1.1 server with `application/wasm` MIME and COOP/COEP isolation headers. |
+| `wasm` | `cfire wasm serve|build|run [args...]` | First-class WebAssembly command toolchain for building, running, and serving browser apps. |
 | `test` | `cfire test main.cf` | Discovers and executes all embedded `test "..." { ... }` suites in parallel. |
 | `test --sanitize` | `cfire test --sanitize main.cf` | Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors. |
 | `fmt` | `cfire fmt src/` | Canonically formats `.cf` files in-place according to strict formatting rules. |
@@ -143,6 +147,32 @@ Run tests with a single command:
 ```zsh
 ./cfire test math_util.cf
 ```
+
+### 2.3 WebAssembly & Built-In HTTP Development Server
+
+WebAssembly applications built for browsers require execution over HTTP with strict security and MIME configurations. Browsers reject `.wasm` compilation over the `file://` protocol, and modern WebAssembly threads and WebGL backends require Cross-Origin Isolation headers.
+
+`cfire` solves this out of the box with zero external dependencies:
+
+```zsh
+# 1. Build your desktop or graphics app for WebAssembly:
+cfire build --target=wasm app/main.cf -o app/app-web.html
+# Or equivalently:
+cfire wasm build app/main.cf -o app/app-web.html
+
+# 2. Serve the directory and launch your default browser:
+cfire serve app/app-web.html
+# Or equivalently:
+cfire wasm serve app/app-web.html
+```
+
+The built-in server automatically:
+- Serves `.wasm` files with `Content-Type: application/wasm`
+- Serves `.js` files with `Content-Type: application/javascript; charset=utf-8`
+- Enforces `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`
+- Resolves port collisions automatically by incrementing (+1..+25) if port 8080 is in use
+- Prevents directory traversal attacks (`..` resolution)
+- Launches your platform default browser (`open`, `xdg-open`, `start`) unless `--no-open` is passed
 
 ---
 
@@ -761,6 +791,45 @@ cd standalone_project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
+
+### 9.3 Cross-Compilation & Target Triples (`--target`)
+`cfire` supports targeting alternative architectures and operating systems via standard target triples:
+- `--target wasm` or `--target wasm32-unknown-emscripten`: Lowers C++23 to WebAssembly via Emscripten (`em++`).
+- `--target x86_64-pc-windows-msvc` / `x86_64-w64-mingw32`: Targets Windows PE/COFF binaries.
+- `--target aarch64-apple-darwin` / `x86_64-apple-darwin`: Targets macOS Universal or native ARM/Intel binaries.
+- `--target x86_64-unknown-linux-gnu` / `aarch64-unknown-linux-gnu`: Targets standard Linux ELF binaries.
+
+### 9.4 Native WebAssembly Export & Web Profiles (`--web-profile`)
+When compiling with `--target wasm`, `cfire` auto-detects the application type or accepts an explicit `--web-profile`:
+1. **`canvas` (Interactive WebGL / Canvas Shell)**: Generates a responsive viewport with full keyboard, mouse, and touch event forwarding for 2D/3D graphics and games (`vendor:raylib`).
+2. **`cli` (Node.js / Terminal)**: Emits a WebAssembly module accompanied by a thin JS launcher designed to execute in headless serverless or Node.js environments (`node app.js`).
+3. **`auto`**: Scans imported modules. If `vendor:raylib` or UI libraries are ingested, `cfire` automatically selects `canvas`; otherwise, it defaults to standard web execution.
+
+Dependency resolution for WebAssembly is completely automated: when importing `vendor:raylib` under `--target wasm`, `cfire` transparently fetches and extracts prebuilt WebAssembly archives into `~/.cache/cfire/pkg/vendor_raylib_wasm`, flattening archives and linking `libraylib.a` without host dynamic library pollution. Structs with `json:"..."` metadata compile cleanly with web-friendly reflection fallbacks.
+
+### 9.5 Native Desktop GUI Packaging & macOS `.app` Bundles (`--subsystem`)
+When building native desktop applications, `cfire` provides the `--subsystem` flag:
+- `--subsystem gui`: Configures the binary as a windowed application.
+  - **macOS**: Automatically creates a structured macOS Application Bundle (`<app>.app/Contents/MacOS/<app>`, `Contents/Info.plist`, `Contents/Resources`). To prevent macOS Gatekeeper and LaunchServices error `-54`, `cfire` performs automatic ad-hoc code signing (`codesign --force --deep --sign -`).
+  - **Windows**: Links with `-mwindows` to suppress the background console window.
+  - **Linux**: Links standard X11/Wayland backends.
+- `--subsystem console`: Emits standard command-line executable binaries.
+- `--subsystem auto`: Inspects whether windowing or graphics libraries (`vendor:raylib`, OpenGL, Cocoa) are imported.
+
+`cfire` also automatically identifies static versions of core C++ libraries (such as `libsimdjson_static.a`) to link them statically into native bundles, eliminating dynamic linking runtime failures caused by system package manager upgrades.
+
+### 9.6 Built-in WebAssembly & Static HTTP Development Server (`cfire serve`)
+To test WebAssembly applications locally without third-party dependencies, `cfire` includes a built-in multi-threaded HTTP/1.1 static server:
+
+```zsh
+cfire serve [path] [--port 8080] [--no-open]
+cfire wasm serve [path] [--port 8080] [--no-open]
+```
+
+Key features:
+- **Instant Launch**: Binds to `0.0.0.0` or `127.0.0.1`, auto-discovering the primary `.html` entry point if a folder or file is passed.
+- **WASM Isolation**: Emits `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` headers, enabling `SharedArrayBuffer` and high-performance WebAssembly multithreading.
+- **Zero-Dependency**: Implemented purely in C++23 using native POSIX / BSD socket APIs with zero external packages.
 
 ---
 
