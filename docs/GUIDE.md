@@ -97,12 +97,12 @@ fn main() {
 | Subcommand | Usage | Purpose & Details |
 |---|---|---|
 | `run` | `cfire run main.cf` | Compiles and executes the program. Auto-links required `core:*` and C/C++ libraries. |
+| `run --web` | `cfire run --web [build.cf]` | Builds and serves the WebAssembly app via the built-in development HTTP server. |
 | `run --sanitize` | `cfire run --sanitize main.cf` | Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (`-fsanitize=address,undefined`). |
 | `build` | `cfire build main.cf -o app` | Produces an optimized native executable (`-O3`) in the current directory. |
 | `build --subsystem gui` | `cfire build --subsystem gui main.cf -o app` | Packages a native GUI desktop app (signed `.app` bundle on macOS; `-mwindows` on Windows). |
 | `build --target wasm` | `cfire build --target wasm main.cf -o app.html` | Cross-compiles to WebAssembly (`.html`, `.js`, `.wasm`) with responsive WebGL canvas or CLI profile. |
 | `serve` | `cfire serve [--port 8080] [path]` | Built-in zero-dependency static HTTP/1.1 server with `application/wasm` MIME and COOP/COEP isolation headers. |
-| `wasm` | `cfire wasm serve|build|run [args...]` | First-class WebAssembly command toolchain for building, running, and serving browser apps. |
 | `test` | `cfire test main.cf` | Discovers and executes all embedded `test "..." { ... }` suites in parallel. |
 | `test --sanitize` | `cfire test --sanitize main.cf` | Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors. |
 | `fmt` | `cfire fmt src/` | Canonically formats `.cf` files in-place according to strict formatting rules. |
@@ -157,13 +157,12 @@ WebAssembly applications built for browsers require execution over HTTP with str
 ```zsh
 # 1. Build your desktop or graphics app for WebAssembly:
 cfire build --target=wasm app/main.cf -o app/app-web.html
-# Or equivalently:
-cfire wasm build app/main.cf -o app/app-web.html
 
-# 2. Serve the directory and launch your default browser:
+# 2. Serve the directory or build.cf and launch your default browser:
 cfire serve app/app-web.html
-# Or equivalently:
-cfire wasm serve app/app-web.html
+
+# Or build and launch in one command:
+cfire run --web
 ```
 
 The built-in server automatically:
@@ -823,7 +822,6 @@ To test WebAssembly applications locally without third-party dependencies, `cfir
 
 ```zsh
 cfire serve [path] [--port 8080] [--no-open]
-cfire wasm serve [path] [--port 8080] [--no-open]
 ```
 
 Key features:
