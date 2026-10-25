@@ -2,6 +2,7 @@
 /cfire
 /.cfire_test_runner
 /cfire_cross_*
+/cfire_wasm_gui_*
 *.o
 *.d
 *.a
