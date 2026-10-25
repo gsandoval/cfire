@@ -879,6 +879,12 @@ public:
             if (sym.name == "len") {
                 return "### Property `.len`\n```cf\nlen: usize\n```\n**Lowered C++23:** `.size()` (`std::size_t`)";
             }
+            if (sym.name == "data" || sym.name == "data_ptr") {
+                return "### Method `." + sym.name + "()`\n```cf\nfn (s: []T | str) " + sym.name + "() -> *T\n```\n**Lowered C++23:** `({}).data()`\n\nReturns a raw pointer to the underlying contiguous element buffer (`*const c_char` for `str`, `*const T` for immutable slices) for C FFI interop.";
+            }
+            if (sym.name == "bytes") {
+                return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::byte>`) over the string's UTF-8 bytes.";
+            }
             std::string recv_type = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env);
             // Check stdlib handle methods (`TcpListener.accept`, `TcpConn.read_str`, `Conn.query`, `Channel.send`)
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
@@ -1595,9 +1601,13 @@ public:
                 if (rtype == "str") {
                     append_item("len", 10, "usize", "Length in bytes (lowers to .size())");
                     append_item("empty", 2, "fn empty() -> bool", "Returns true if empty");
+                    append_item("data", 2, "fn data() -> *const c_char", "Returns raw pointer to null-terminated UTF-8 C string (lowers to .data())");
+                    append_item("bytes", 2, "fn bytes() -> []byte", "Returns safe byte slice view over UTF-8 bytes (lowers to cfire::to_bytes())");
                 }
                 if (rtype.starts_with("[")) {
                     append_item("len", 10, "usize", "Length in elements (lowers to .size())");
+                    append_item("data", 2, "fn data() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())");
+                    append_item("data_ptr", 2, "fn data_ptr() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())");
                     append_item("empty", 2, "fn empty() -> bool", "Returns true if empty (lowers to .empty())");
                     append_item("push", 2, "fn push(elem: T) -> void", "Appends element to vector (lowers to .push_back())");
                     append_item("pop", 2, "fn pop() -> void", "Removes last element from vector (lowers to .pop_back())");

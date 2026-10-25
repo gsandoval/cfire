@@ -207,3 +207,4 @@ void test_performance_benchmarks(const std::filesystem::path& rt_dir);
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);
 void test_raylib_vendor_codegen_and_eject(const std::filesystem::path& rt_dir);
 void test_cfire_cross_compile(const std::filesystem::path& rt_dir);
+void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir);

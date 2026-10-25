@@ -78,7 +78,7 @@ void print_usage() {
     std::println("Commands:");
     std::println("  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run");
     std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
-    std::println("  build    [--target <triple>] [-o <path>] <file.cf> Compile optimized binary for host or target triple");
+    std::println("  build    [--target wasm|<triple>] [--web-profile auto|cli|canvas] [--subsystem auto|gui|console] [-o <path>] <file.cf>");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
     std::println("  check    [--json] [--fix] <file.cf> Type-check, verify parameter intents, and inspect C++ headers");
@@ -721,6 +721,9 @@ auto main(int argc, char** argv) -> int {
     std::string custom_output_path;
     std::string target_triple;
     std::string sysroot;
+    std::string web_profile = "auto";
+    std::string subsystem = "auto";
+    int web_port = 8080;
     std::vector<std::string> extra_link_libs;
     std::vector<std::string> extra_includes;
     std::filesystem::path target;
@@ -776,16 +779,49 @@ auto main(int argc, char** argv) -> int {
             custom_output_path = arg.substr(3);
             continue;
         }
+        if (arg == "--target=wasm" || arg == "-target=wasm" || arg == "--target=web" || arg == "-target=web") {
+            target_triple = "wasm32-unknown-emscripten";
+            continue;
+        }
+        if (arg.starts_with("--web-profile=")) {
+            web_profile = arg.substr(14);
+            continue;
+        }
+        if (arg.starts_with("-web-profile=")) {
+            web_profile = arg.substr(13);
+            continue;
+        }
+        if (arg.starts_with("--subsystem=")) {
+            subsystem = arg.substr(12);
+            continue;
+        }
+        if (arg.starts_with("-subsystem=")) {
+            subsystem = arg.substr(11);
+            continue;
+        }
+        if (arg.starts_with("--port=")) {
+            try { web_port = std::stoi(std::string(arg.substr(7))); } catch (...) {}
+            continue;
+        }
         if ((arg == "--target" || arg == "-target") && i + 1 < argc) {
             target_triple = argv[++i];
+            if (target_triple == "wasm" || target_triple == "web") {
+                target_triple = "wasm32-unknown-emscripten";
+            }
             continue;
         }
         if (arg.starts_with("--target=")) {
             target_triple = arg.substr(9);
+            if (target_triple == "wasm" || target_triple == "web") {
+                target_triple = "wasm32-unknown-emscripten";
+            }
             continue;
         }
         if (arg.starts_with("-target=")) {
             target_triple = arg.substr(8);
+            if (target_triple == "wasm" || target_triple == "web") {
+                target_triple = "wasm32-unknown-emscripten";
+            }
             continue;
         }
         if (arg == "--sysroot" && i + 1 < argc) {
@@ -1171,7 +1207,7 @@ auto main(int argc, char** argv) -> int {
             return has_errors ? 1 : 0;
         }
 
-        auto res = cfire::build::analyze_and_emit(target, runtime_dir, true, false, target_triple, sysroot);
+        auto res = cfire::build::analyze_and_emit(target, runtime_dir, true, false, target_triple, sysroot, web_profile, subsystem);
         if (!res) {
             std::println(stderr, "{}", res.error());
             return 1;
@@ -1197,7 +1233,12 @@ auto main(int argc, char** argv) -> int {
         if (!target_triple.empty() && (target_triple.find("windows") != std::string::npos || target_triple.find("win32") != std::string::npos || target_triple.find("msvc") != std::string::npos)) {
             if (!out_bin.ends_with(".exe")) out_bin += ".exe";
         }
-        auto plan = cfire::build::build_native(target, runtime_dir, out_bin, false, sanitize, target_triple, sysroot, extra_link_libs, extra_includes);
+        if (target_triple.starts_with("wasm")) {
+            if (!out_bin.ends_with(".html") && !out_bin.ends_with(".js")) {
+                out_bin += ".html";
+            }
+        }
+        auto plan = cfire::build::build_native(target, runtime_dir, out_bin, false, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;
@@ -1205,6 +1246,9 @@ auto main(int argc, char** argv) -> int {
         std::string target_info = plan->target_triple.empty() ? "" : std::format(", target={}", plan->target_triple);
         std::println("✓ Built {} (generated {}, pch={}, sanitize={}{})",
             out_bin, plan->generated_cpp, plan->used_pch, plan->sanitized, target_info);
+        if (!plan->macos_app_bundle.empty()) {
+            std::println("✓ Created macOS App Bundle: {}", plan->macos_app_bundle);
+        }
         return 0;
     }
 
@@ -1218,8 +1262,46 @@ auto main(int argc, char** argv) -> int {
                 run_args.emplace_back(std::format("--cfire-test-filter={}", filter_pattern));
             }
         }
+
+        if (target_triple.starts_with("wasm")) {
+            auto tmp_html = std::filesystem::temp_directory_path() / std::format("cfire-wasm-{}.html", ::getpid());
+            auto plan = cfire::build::build_native(target, runtime_dir, tmp_html, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
+            if (!plan) {
+                std::println(stderr, "{}", plan.error());
+                return 1;
+            }
+            if (plan->web_profile == "cli") {
+                auto js_file = tmp_html;
+                js_file.replace_extension(".js");
+                int has_node = 0;
+                (void)cfire::bridge::run_command_capture("which node 2>/dev/null", has_node);
+                if (has_node == 0) {
+                    std::string cmd = "node " + cfire::bridge::shell_quote(js_file.string());
+                    for (const auto& arg : run_args) {
+                        cmd += " " + cfire::bridge::shell_quote(arg);
+                    }
+                    int rc = std::system(cmd.c_str());
+                    return rc == 0 ? 0 : 1;
+                }
+            }
+            std::string url = std::format("http://localhost:{}/{}", web_port, tmp_html.filename().string());
+            std::println("==> Serving cfire WebAssembly application at {}", url);
+            std::string open_cmd;
+#if defined(__APPLE__)
+            open_cmd = "open " + url;
+#elif defined(_WIN32)
+            open_cmd = "start " + url;
+#else
+            open_cmd = "xdg-open " + url;
+#endif
+            (void)std::system(open_cmd.c_str());
+            std::string srv_cmd = std::format("python3 -m http.server {} --directory \"{}\"", web_port, tmp_html.parent_path().string());
+            int rc = std::system(srv_cmd.c_str());
+            return rc == 0 ? 0 : 1;
+        }
+
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());
-        auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes);
+        auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;

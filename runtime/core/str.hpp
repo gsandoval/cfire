@@ -88,5 +88,97 @@ namespace cfire::str {
     return replace_all(sv, from, to);
 }
 
+// --- Substring Search & Index Primitives (STDLIB-P1-04) ---
+[[nodiscard]] inline auto index_of(std::string_view sv, std::string_view substr, std::size_t start_pos = 0) noexcept -> std::int64_t {
+    auto pos = sv.find(substr, start_pos);
+    return (pos == std::string_view::npos) ? -1 : static_cast<std::int64_t>(pos);
+}
+
+[[nodiscard]] inline auto last_index_of(std::string_view sv, std::string_view substr) noexcept -> std::int64_t {
+    auto pos = sv.rfind(substr);
+    return (pos == std::string_view::npos) ? -1 : static_cast<std::int64_t>(pos);
+}
+
+[[nodiscard]] inline auto rfind(std::string_view sv, std::string_view substr, std::size_t start_pos = std::string_view::npos) noexcept -> std::int64_t {
+    auto pos = sv.rfind(substr, start_pos);
+    return (pos == std::string_view::npos) ? -1 : static_cast<std::int64_t>(pos);
+}
+
+// --- String & Slice Raw Pointer Interop for C FFI (LANG-P1-02) ---
+[[nodiscard]] inline auto bytes(std::string_view sv) noexcept -> std::span<const std::byte> {
+    return cfire::to_bytes(sv);
+}
+
+[[nodiscard]] inline auto byte_ptr(const std::string& s) noexcept -> const char* {
+    return s.data();
+}
+[[nodiscard]] inline auto byte_ptr(std::string& s) noexcept -> char* {
+    return s.data();
+}
+[[nodiscard]] inline auto byte_ptr(std::string_view sv) noexcept -> const char* {
+    return sv.data();
+}
+[[nodiscard]] inline auto byte_ptr(const char* s) noexcept -> const char* {
+    return s;
+}
+
+[[nodiscard]] inline auto byte_ptr_at(const std::string& s, std::int64_t offset) noexcept -> const char* {
+    if (offset < 0) return s.data();
+    if (static_cast<std::size_t>(offset) >= s.size()) return s.data() + s.size();
+    return s.data() + offset;
+}
+[[nodiscard]] inline auto byte_ptr_at(std::string& s, std::int64_t offset) noexcept -> char* {
+    if (offset < 0) return s.data();
+    if (static_cast<std::size_t>(offset) >= s.size()) return s.data() + s.size();
+    return s.data() + offset;
+}
+[[nodiscard]] inline auto byte_ptr_at(std::string_view sv, std::int64_t offset) noexcept -> const char* {
+    if (offset < 0) return sv.data();
+    if (static_cast<std::size_t>(offset) >= sv.size()) return sv.data() + sv.size();
+    return sv.data() + offset;
+}
+
+template <typename T>
+[[nodiscard]] inline auto byte_ptr(const std::vector<T>& vec) noexcept -> const T* {
+    return vec.data();
+}
+template <typename T>
+[[nodiscard]] inline auto byte_ptr(std::vector<T>& vec) noexcept -> T* {
+    return vec.data();
+}
+template <typename T>
+[[nodiscard]] inline auto byte_ptr(std::span<T> sp) noexcept -> T* {
+    return sp.data();
+}
+template <typename T>
+[[nodiscard]] inline auto byte_ptr(std::span<const T> sp) noexcept -> const T* {
+    return sp.data();
+}
+
+template <typename T>
+[[nodiscard]] inline auto byte_ptr_at(const std::vector<T>& vec, std::int64_t offset) noexcept -> const T* {
+    if (offset < 0) return vec.data();
+    if (static_cast<std::size_t>(offset) >= vec.size()) return vec.data() + vec.size();
+    return vec.data() + offset;
+}
+template <typename T>
+[[nodiscard]] inline auto byte_ptr_at(std::vector<T>& vec, std::int64_t offset) noexcept -> T* {
+    if (offset < 0) return vec.data();
+    if (static_cast<std::size_t>(offset) >= vec.size()) return vec.data() + vec.size();
+    return vec.data() + offset;
+}
+template <typename T>
+[[nodiscard]] inline auto byte_ptr_at(std::span<T> sp, std::int64_t offset) noexcept -> T* {
+    if (offset < 0) return sp.data();
+    if (static_cast<std::size_t>(offset) >= sp.size()) return sp.data() + sp.size();
+    return sp.data() + offset;
+}
+template <typename T>
+[[nodiscard]] inline auto byte_ptr_at(std::span<const T> sp, std::int64_t offset) noexcept -> const T* {
+    if (offset < 0) return sp.data();
+    if (static_cast<std::size_t>(offset) >= sp.size()) return sp.data() + sp.size();
+    return sp.data() + offset;
+}
+
 } // namespace cfire::str
 

@@ -1,0 +1,363 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+import "core:str"
+
+type VisualRow struct {
+    logical_line: i32
+    is_continuation: bool
+    start_byte: i32
+    end_byte: i32
+    text: str
+}
+
+type CodeEditorStyle struct {
+    bg_color: rl.Color
+    gutter_bg: rl.Color
+    border_color: rl.Color
+    text_color: rl.Color
+    gutter_text_color: rl.Color
+    cursor_color: rl.Color
+    selection_color: rl.Color
+    active_line_bg: rl.Color
+    line_height: f32
+    font_size: f32
+}
+
+fn default_code_editor_style() -> CodeEditorStyle {
+    return CodeEditorStyle{
+        bg_color: rl.Color{r: 255, g: 255, b: 255, a: 255},
+        gutter_bg: rl.Color{r: 248, g: 250, b: 252, a: 255},
+        border_color: rl.Color{r: 226, g: 232, b: 240, a: 255},
+        text_color: rl.Color{r: 30, g: 41, b: 59, a: 255},
+        gutter_text_color: rl.Color{r: 148, g: 163, b: 184, a: 255},
+        cursor_color: rl.Color{r: 235, g: 70, b: 70, a: 255},
+        selection_color: rl.Color{r: 186, g: 230, b: 253, a: 180},
+        active_line_bg: rl.Color{r: 241, g: 245, b: 249, a: 160},
+        line_height: 25.0,
+        font_size: 15.0,
+    }
+}
+
+type CodeEditorState struct {
+    cursor_pos: i32
+    sel_anchor: i32
+    scroll_y: f32
+    mouse_selecting: bool
+    last_click_time: f32
+    last_click_pos: i32
+    active_cursor_bounds: rl.Rectangle
+}
+
+fn compute_visual_rows(font: rl.Font, body: str, max_row_w: f32, font_size: f32) -> []VisualRow {
+    mut vrows: []VisualRow = []
+    bsize := body.len()
+    mut ls: i32 = 0
+    mut log_line: i32 = 1
+    mut i: i32 = 0
+    for i <= bsize {
+        if i == bsize || u8(body[i]) == 10 {
+            le := i
+            if le == ls {
+                vrows.push(VisualRow{logical_line: log_line, is_continuation: false, start_byte: ls, end_byte: le, text: ""})
+            } else {
+                mut seg_start := ls
+                mut cont := false
+                for seg_start < le {
+                    mut seg_end := seg_start
+                    mut last_space_byte: i32 = -1
+                    for seg_end < le {
+                        mut next_b: i32 = 0
+                        _ = rl.GetCodepointNext(body[seg_end..].data(), &mut next_b)
+                        if next_b <= 0 { next_b = 1 }
+                        mut cand_end := seg_end + next_b
+                        if cand_end > le { cand_end = le }
+                        if u8(body[seg_end]) == 32 {
+                            last_space_byte = cand_end
+                        }
+                        cand_sub := str(body[seg_start..cand_end])
+                        w_px := GuiMeasureTextAdvance(font, cand_sub, cand_sub.len(), font_size, 0.5)
+                        if w_px > max_row_w && seg_end > seg_start {
+                            break
+                        }
+                        seg_end = cand_end
+                    }
+                    if seg_end < le && last_space_byte > seg_start {
+                        seg_end = last_space_byte
+                    }
+                    if seg_end <= seg_start {
+                        seg_end = seg_start + 1
+                        if seg_end > le { seg_end = le }
+                    }
+                    vrows.push(VisualRow{
+                        logical_line: log_line,
+                        is_continuation: cont,
+                        start_byte: seg_start,
+                        end_byte: seg_end,
+                        text: str(body[seg_start..seg_end])
+                    })
+                    seg_start = seg_end
+                    cont = true
+                }
+            }
+            ls = i + 1
+            log_line = log_line + 1
+        }
+        i = i + 1
+    }
+    if vrows.len() == 0 {
+        vrows.push(VisualRow{logical_line: 1, is_continuation: false, start_byte: 0, end_byte: 0, text: ""})
+    }
+    return vrows
+}
+
+fn byte_from_visual_row(font: rl.Font, vr: VisualRow, rel_x: f32, font_size: f32) -> i32 {
+    return vr.start_byte + byte_offset_from_x(font, vr.text, rel_x, font_size, 0.5)
+}
+
+// GuiCodeEditor: Immediate-mode multi-line code/markdown editor with line-number gutter,
+// visual row wrapping, selection highlighting, and scroll tracking.
+fn GuiCodeEditor(
+    bounds: rl.Rectangle,
+    body: str,
+    mut ed: CodeEditorState,
+    is_focused: bool,
+    font: rl.Font,
+    style: CodeEditorStyle
+) -> bool {
+    if !rl.IsWindowReady() { return false }
+
+    gutter_w: f32 = 48.0
+    gutter_rec := rect(bounds.x, bounds.y, gutter_w, bounds.height)
+    ed_rec := rect(bounds.x + gutter_w, bounds.y, bounds.width - gutter_w, bounds.height)
+
+    rl.DrawRectangleRec(gutter_rec, style.gutter_bg)
+    rl.DrawRectangleRec(ed_rec, style.bg_color)
+    rl.DrawRectangle(i32(bounds.x + gutter_w - 1.0), i32(bounds.y), 1, i32(bounds.height), style.border_color)
+
+    m := rl.GetMousePosition()
+    line_h := style.line_height
+    pad_x: f32 = 12.0
+    pad_y: f32 = 12.0
+    text_x := ed_rec.x + pad_x
+    mut max_row_w := ed_rec.width - pad_x - 18.0
+    if max_row_w < 120.0 { max_row_w = 120.0 }
+
+    bsize := body.len()
+    vrows := compute_visual_rows(font, body, max_row_w, style.font_size)
+
+    mut cur := ed.cursor_pos
+    if cur < 0 { cur = 0 }
+    if cur > bsize { cur = bsize }
+
+    mut cur_vrow: i32 = 0
+    mut vi: i32 = 0
+    for vi < vrows.len() {
+        is_last_seg := (vi + 1 == vrows.len()) || (vrows[vi + 1].logical_line != vrows[vi].logical_line)
+        if cur >= vrows[vi].start_byte && (cur < vrows[vi].end_byte || (is_last_seg && cur == vrows[vi].end_byte)) {
+            cur_vrow = vi
+            break
+        }
+        vi = vi + 1
+    }
+
+    mut rows_cnt := vrows.len() + 3
+    if rows_cnt < 14 { rows_cnt = 14 }
+    total_content_h := f32(rows_cnt) * line_h + pad_y * 2.0
+    mut max_scroll := total_content_h - bounds.height
+    if max_scroll < 0.0 { max_scroll = 0.0 }
+
+    if rl.CheckCollisionPointRec(m, bounds) {
+        wheel := rl.GetMouseWheelMove()
+        if wheel > 0.01 || wheel < -0.01 {
+            ed.scroll_y -= wheel * 42.0
+        }
+    }
+
+    if is_focused {
+        cursor_top := f32(cur_vrow) * line_h
+        cursor_bot := cursor_top + line_h + 24.0
+        if cursor_top < ed.scroll_y {
+            ed.scroll_y = cursor_top
+        } else if cursor_bot > ed.scroll_y + bounds.height - pad_y {
+            ed.scroll_y = cursor_bot - (bounds.height - pad_y)
+        }
+    }
+    if ed.scroll_y < 0.0 { ed.scroll_y = 0.0 }
+    if ed.scroll_y > max_scroll { ed.scroll_y = max_scroll }
+
+    text_y := ed_rec.y + pad_y - ed.scroll_y
+    mut changed := false
+
+    if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && rl.CheckCollisionPointRec(m, bounds) {
+        mut clicked_vrow := i32((m.y - text_y) / line_h)
+        if clicked_vrow < 0 { clicked_vrow = 0 }
+        if clicked_vrow >= vrows.len() { clicked_vrow = vrows.len() - 1 }
+        mut rel_x := m.x - text_x
+        if rel_x < 0.0 { rel_x = 0.0 }
+        clicked_byte := byte_from_visual_row(font, vrows[clicked_vrow], rel_x, style.font_size)
+
+        now_t := f32(rl.GetTime())
+        shift_down := rl.IsKeyDown(rl.KEY_LEFT_SHIFT) || rl.IsKeyDown(rl.KEY_RIGHT_SHIFT)
+        mut diff_clk := clicked_byte - ed.last_click_pos
+        if diff_clk < 0 { diff_clk = -diff_clk }
+        if now_t - ed.last_click_time < 0.32 && diff_clk <= 2 {
+            ed.sel_anchor = editor_move_word_left(body, clicked_byte)
+            ed.cursor_pos = editor_move_word_right(body, clicked_byte)
+            ed.mouse_selecting = false
+        } else if shift_down {
+            if ed.sel_anchor < 0 { ed.sel_anchor = cur }
+            ed.cursor_pos = clicked_byte
+            ed.mouse_selecting = true
+        } else {
+            ed.cursor_pos = clicked_byte
+            ed.sel_anchor = clicked_byte
+            ed.mouse_selecting = true
+        }
+        ed.last_click_time = now_t
+        ed.last_click_pos = clicked_byte
+        cur = ed.cursor_pos
+        changed = true
+    }
+
+    if ed.mouse_selecting {
+        if rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) {
+            mut drag_vrow := i32((m.y - text_y) / line_h)
+            if drag_vrow < 0 { drag_vrow = 0 }
+            if drag_vrow >= vrows.len() { drag_vrow = vrows.len() - 1 }
+            mut rel_x := m.x - text_x
+            if rel_x < 0.0 { rel_x = 0.0 }
+            ed.cursor_pos = byte_from_visual_row(font, vrows[drag_vrow], rel_x, style.font_size)
+            cur = ed.cursor_pos
+            changed = true
+        } else {
+            ed.mouse_selecting = false
+            if ed.sel_anchor == ed.cursor_pos {
+                ed.sel_anchor = -1
+            }
+        }
+    }
+
+    mut sel_min: i32 = -1
+    mut sel_max: i32 = -1
+    if ed.sel_anchor >= 0 && ed.sel_anchor != cur {
+        if ed.sel_anchor < cur {
+            sel_min = ed.sel_anchor
+            sel_max = cur
+        } else {
+            sel_min = cur
+            sel_max = ed.sel_anchor
+        }
+    }
+
+    rl.BeginScissorMode(i32(bounds.x), i32(bounds.y), i32(bounds.width), i32(bounds.height))
+
+    mut total_vrows := vrows.len()
+    if total_vrows < 16 { total_vrows = 16 }
+    vi = 0
+    for vi < total_vrows {
+        ly := text_y + f32(vi) * line_h
+        if ly + line_h >= bounds.y && ly <= bounds.y + bounds.height {
+            if is_focused && vi == cur_vrow {
+                rl.DrawRectangleRec(rect(ed_rec.x + 2.0, ly - 2.0, ed_rec.width - 12.0, line_h), style.active_line_bg)
+                rl.DrawRectangle(i32(bounds.x + gutter_w - 3.0), i32(ly - 2.0), 3, i32(line_h), style.cursor_color)
+            }
+
+            if vi < vrows.len() {
+                vr := vrows[vi]
+                if is_focused && sel_min >= 0 && sel_max > vr.start_byte && sel_min < vr.end_byte {
+                    mut hl_s := sel_min - vr.start_byte
+                    if hl_s < 0 { hl_s = 0 }
+                    if hl_s > vr.text.len() { hl_s = vr.text.len() }
+
+                    mut hl_e := sel_max - vr.start_byte
+                    if hl_e < 0 { hl_e = 0 }
+                    if hl_e > vr.text.len() { hl_e = vr.text.len() }
+
+                    sx0 := text_x + GuiMeasureTextAdvance(font, vr.text, hl_s, style.font_size, 0.5)
+                    sx1 := text_x + GuiMeasureTextAdvance(font, vr.text, hl_e, style.font_size, 0.5)
+                    mut sel_w := sx1 - sx0
+                    if sel_w < 4.0 { sel_w = 4.0 }
+                    rl.DrawRectangleRec(rect(sx0, ly - 1.0, sel_w, line_h - 2.0), style.selection_color)
+                }
+
+                mut num_col := style.gutter_text_color
+                if is_focused && vi == cur_vrow {
+                    num_col = style.cursor_color
+                }
+                if !vr.is_continuation {
+                    mut num_buf := str(vr.logical_line)
+                    if vr.logical_line < 10 {
+                        num_buf = "0" + num_buf
+                    }
+                    if font.texture.id > 0 {
+                        rl.DrawTextEx(font, num_buf, vec2(bounds.x + 12.0, ly), 14.0, 0.5, num_col)
+                    } else {
+                        rl.DrawText(num_buf, i32(bounds.x + 12.0), i32(ly), 14, num_col)
+                    }
+                } else {
+                    if font.texture.id > 0 {
+                        rl.DrawTextEx(font, "·", vec2(bounds.x + 22.0, ly), 14.0, 0.5, style.border_color)
+                    } else {
+                        rl.DrawText("·", i32(bounds.x + 22.0), i32(ly), 14, style.border_color)
+                    }
+                }
+
+                mut txt_col := style.text_color
+                if str.starts_with(vr.text, "##") || str.starts_with(vr.text, "# ") {
+                    txt_col = style.cursor_color
+                } else if str.starts_with(vr.text, "![") {
+                    txt_col = rl.Color{r: 59, g: 130, b: 246, a: 255}
+                }
+                if font.texture.id > 0 {
+                    rl.DrawTextEx(font, vr.text, vec2(text_x, ly), style.font_size, 0.5, txt_col)
+                } else {
+                    rl.DrawText(vr.text, i32(text_x), i32(ly), i32(style.font_size), txt_col)
+                }
+            } else {
+                if font.texture.id > 0 {
+                    rl.DrawTextEx(font, "~", vec2(bounds.x + 16.0, ly), 14.0, 0.5, style.border_color)
+                } else {
+                    rl.DrawText("~", i32(bounds.x + 16.0), i32(ly), 14, style.border_color)
+                }
+            }
+        }
+        vi = vi + 1
+    }
+
+    active_vr := vrows[cur_vrow]
+    mut rel_cur_bytes := cur - active_vr.start_byte
+    if rel_cur_bytes < 0 { rel_cur_bytes = 0 }
+    if rel_cur_bytes > active_vr.text.len() { rel_cur_bytes = active_vr.text.len() }
+    cx := text_x + GuiMeasureTextAdvance(font, active_vr.text, rel_cur_bytes, style.font_size, 0.5)
+    cy := text_y + f32(cur_vrow) * line_h
+
+    if is_focused {
+        ed.active_cursor_bounds = rect(cx, cy, 2.0, line_h)
+        t := f32(rl.GetTime())
+        blink_cycle := t - f32(i32(t))
+        if blink_cycle < 0.65 {
+            rl.DrawRectangle(i32(cx), i32(cy - 1.0), 2, 20, style.cursor_color)
+        }
+    }
+
+    if max_scroll > 0.0 {
+        sb_x := bounds.x + bounds.width - 8.0
+        rl.DrawRectangle(i32(sb_x), i32(bounds.y + 2.0), 6, i32(bounds.height - 4.0), style.gutter_bg)
+        ratio := bounds.height / total_content_h
+        mut thumb_h := (bounds.height - 4.0) * ratio
+        if thumb_h < 28.0 { thumb_h = 28.0 }
+        thumb_y := bounds.y + 2.0 + (ed.scroll_y / max_scroll) * (bounds.height - 4.0 - thumb_h)
+        rl.DrawRectangle(i32(sb_x), i32(thumb_y), 6, i32(thumb_h), style.cursor_color)
+    }
+
+    rl.EndScissorMode()
+
+    if is_focused {
+        rl.DrawRectangleLines(i32(bounds.x), i32(bounds.y), i32(bounds.width), i32(bounds.height), style.cursor_color)
+    } else {
+        rl.DrawRectangleLines(i32(bounds.x), i32(bounds.y), i32(bounds.width), i32(bounds.height), style.border_color)
+    }
+    return changed
+}

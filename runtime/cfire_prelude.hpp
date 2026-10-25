@@ -16,7 +16,10 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#if __has_include(<print>)
 #include <print>
+#endif
+#include <cstdio>
 #include <span>
 #include <string>
 #include <string_view>
@@ -25,6 +28,33 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+#if !defined(__cpp_lib_print)
+namespace std {
+    template <typename... Args>
+    inline void print(std::format_string<Args...> fmt, Args&&... args) {
+        std::printf("%s", std::format(fmt, std::forward<Args>(args)...).c_str());
+    }
+    template <typename... Args>
+    inline void print(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args) {
+        std::fprintf(stream, "%s", std::format(fmt, std::forward<Args>(args)...).c_str());
+    }
+    template <typename... Args>
+    inline void println(std::format_string<Args...> fmt, Args&&... args) {
+        std::printf("%s\n", std::format(fmt, std::forward<Args>(args)...).c_str());
+    }
+    template <typename... Args>
+    inline void println(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args) {
+        std::fprintf(stream, "%s\n", std::format(fmt, std::forward<Args>(args)...).c_str());
+    }
+    inline void println() {
+        std::printf("\n");
+    }
+    inline void println(std::FILE* stream) {
+        std::fprintf(stream, "\n");
+    }
+}
+#endif
 
 #if defined(__clang__)
 #define CFIRE_LIFETIMEBOUND [[clang::lifetimebound]]
@@ -376,6 +406,22 @@ private:
 [[nodiscard]] inline auto c_str(std::string_view sv) noexcept -> CStrViewHolder {
     return CStrViewHolder(sv);
 }
+[[nodiscard]] inline auto c_arg(const std::string& s CFIRE_LIFETIMEBOUND) noexcept -> const char* {
+    return s.c_str();
+}
+[[nodiscard]] inline auto c_arg(const std::filesystem::path& p CFIRE_LIFETIMEBOUND) noexcept -> const char* {
+    return p.c_str();
+}
+[[nodiscard]] inline auto c_arg(std::string_view sv) noexcept -> CStrViewHolder {
+    return CStrViewHolder(sv);
+}
+template <typename T>
+    requires (!std::is_same_v<std::remove_cvref_t<T>, std::string> &&
+              !std::is_same_v<std::remove_cvref_t<T>, std::string_view> &&
+              !std::is_same_v<std::remove_cvref_t<T>, std::filesystem::path>)
+[[nodiscard]] constexpr auto c_arg(T&& v) noexcept -> T&& {
+    return std::forward<T>(v);
+}
 [[nodiscard]] inline auto path_with_ext(std::filesystem::path p, std::string_view ext) -> std::filesystem::path {
     p.replace_extension(ext);
     return p;
@@ -474,9 +520,169 @@ struct reflect_struct {
     static constexpr std::size_t field_count = 0;
 };
 
+// --- Built-in Numeric & Primitive Type Conversion Constructors (LANG-P0-01) ---
+template <typename T>
+[[nodiscard]] constexpr auto i8(T val) noexcept -> std::int8_t {
+    return static_cast<std::int8_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto i16(T val) noexcept -> std::int16_t {
+    return static_cast<std::int16_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto i32(T val) noexcept -> std::int32_t {
+    return static_cast<std::int32_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto i64(T val) noexcept -> std::int64_t {
+    return static_cast<std::int64_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto u8(T val) noexcept -> std::uint8_t {
+    return static_cast<std::uint8_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto byte(T val) noexcept -> std::uint8_t {
+    return static_cast<std::uint8_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto u16(T val) noexcept -> std::uint16_t {
+    return static_cast<std::uint16_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto u32(T val) noexcept -> std::uint32_t {
+    return static_cast<std::uint32_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto u64(T val) noexcept -> std::uint64_t {
+    return static_cast<std::uint64_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto usize(T val) noexcept -> std::size_t {
+    return static_cast<std::size_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto isize(T val) noexcept -> std::ptrdiff_t {
+    return static_cast<std::ptrdiff_t>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto f32(T val) noexcept -> float {
+    return static_cast<float>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto f64(T val) noexcept -> double {
+    return static_cast<double>(val);
+}
+template <typename T>
+[[nodiscard]] constexpr auto bool_(T val) noexcept -> bool {
+    return static_cast<bool>(val);
+}
+
+// --- Bitwise Operator Overloads for Imported Vendor/C Enums (LANG-P1-03) ---
+namespace enum_operators {
+
+template <typename E>
+concept CfireIsEnum = std::is_enum_v<E>;
+
+template <CfireIsEnum E>
+[[nodiscard]] constexpr auto operator|(E a, E b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) | static_cast<U>(b));
+}
+template <CfireIsEnum E>
+[[nodiscard]] constexpr auto operator&(E a, E b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) & static_cast<U>(b));
+}
+template <CfireIsEnum E>
+[[nodiscard]] constexpr auto operator^(E a, E b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) ^ static_cast<U>(b));
+}
+template <CfireIsEnum E>
+[[nodiscard]] constexpr auto operator~(E a) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(~static_cast<U>(a));
+}
+template <CfireIsEnum E>
+constexpr auto operator|=(E& a, E b) noexcept -> E& {
+    a = a | b;
+    return a;
+}
+template <CfireIsEnum E>
+constexpr auto operator&=(E& a, E b) noexcept -> E& {
+    a = a & b;
+    return a;
+}
+template <CfireIsEnum E>
+constexpr auto operator^=(E& a, E b) noexcept -> E& {
+    a = a ^ b;
+    return a;
+}
+
+// Mixed Enum & Integral Bitwise Operations
+template <CfireIsEnum E, std::integral I>
+[[nodiscard]] constexpr auto operator|(E a, I b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) | static_cast<U>(b));
+}
+template <CfireIsEnum E, std::integral I>
+[[nodiscard]] constexpr auto operator|(I a, E b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) | static_cast<U>(b));
+}
+template <CfireIsEnum E, std::integral I>
+[[nodiscard]] constexpr auto operator&(E a, I b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) & static_cast<U>(b));
+}
+template <CfireIsEnum E, std::integral I>
+[[nodiscard]] constexpr auto operator&(I a, E b) noexcept -> E {
+    using U = std::underlying_type_t<E>;
+    return static_cast<E>(static_cast<U>(a) & static_cast<U>(b));
+}
+template <CfireIsEnum E, std::integral I>
+constexpr auto operator|=(E& a, I b) noexcept -> E& {
+    using U = std::underlying_type_t<E>;
+    a = static_cast<E>(static_cast<U>(a) | static_cast<U>(b));
+    return a;
+}
+template <CfireIsEnum E, std::integral I>
+constexpr auto operator&=(E& a, I b) noexcept -> E& {
+    using U = std::underlying_type_t<E>;
+    a = static_cast<E>(static_cast<U>(a) & static_cast<U>(b));
+    return a;
+}
+
+} // namespace enum_operators
+
 } // namespace cfire
 
 using cfire::str;
+using cfire::i8;
+using cfire::i16;
+using cfire::i32;
+using cfire::i64;
+using cfire::u8;
+using cfire::byte;
+using cfire::u16;
+using cfire::u32;
+using cfire::u64;
+using cfire::usize;
+using cfire::isize;
+using cfire::f32;
+using cfire::f64;
+using cfire::bool_;
+
+using namespace cfire::enum_operators;
+
+// --- Formatter specialization for Enums (enables std::print / std::println) ---
+template <cfire::enum_operators::CfireIsEnum E>
+struct std::formatter<E> : std::formatter<std::underlying_type_t<E>> {
+    auto format(E e, std::format_context& ctx) const {
+        return std::formatter<std::underlying_type_t<E>>::format(static_cast<std::underlying_type_t<E>>(e), ctx);
+    }
+};
 
 // --- Monadic `try` Propagation Macros (Statement-Expression / Early Return) ---
 #define CFIRE_CONCAT_INNER(a, b) a##b

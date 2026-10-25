@@ -1,0 +1,616 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+import "core:str"
+
+type KeyModifiers struct {
+    super_down: bool
+    ctrl_down: bool
+    alt_down: bool
+    shift_down: bool
+    cmd_or_ctrl: bool
+    word_mod: bool
+}
+
+fn get_key_modifiers() -> KeyModifiers {
+    super_down := rl.IsKeyDown(rl.KEY_LEFT_SUPER) || rl.IsKeyDown(rl.KEY_RIGHT_SUPER)
+    ctrl_down := rl.IsKeyDown(rl.KEY_LEFT_CONTROL) || rl.IsKeyDown(rl.KEY_RIGHT_CONTROL)
+    alt_down := rl.IsKeyDown(rl.KEY_LEFT_ALT) || rl.IsKeyDown(rl.KEY_RIGHT_ALT)
+    shift_down := rl.IsKeyDown(rl.KEY_LEFT_SHIFT) || rl.IsKeyDown(rl.KEY_RIGHT_SHIFT)
+    return KeyModifiers{
+        super_down: super_down,
+        ctrl_down: ctrl_down,
+        alt_down: alt_down,
+        shift_down: shift_down,
+        cmd_or_ctrl: super_down || ctrl_down,
+        word_mod: alt_down || ctrl_down,
+    }
+}
+
+fn prev_utf8_index(s: str, cur: i32) -> i32 {
+    if cur <= 0 { return 0 }
+    mut idx := cur - 1
+    for idx > 0 && (u8(s[idx]) & 0xC0) == 0x80 {
+        idx = idx - 1
+    }
+    return idx
+}
+
+fn next_utf8_index(s: str, cur: i32) -> i32 {
+    n := s.len()
+    if cur >= n { return n }
+    mut idx := cur + 1
+    for idx < n && (u8(s[idx]) & 0xC0) == 0x80 {
+        idx = idx + 1
+    }
+    return idx
+}
+
+fn move_up_one_line(text: str, from_c: i32) -> i32 {
+    line_start := editor_move_line_start(text, from_c)
+    col := from_c - line_start
+    if line_start > 0 {
+        prev_end := line_start - 1
+        prev_start := editor_move_line_start(text, prev_end)
+        prev_len := prev_end - prev_start
+        mut dest := prev_start + col
+        if dest > prev_end { dest = prev_end }
+        for dest > prev_start && (u8(text[dest]) & 0xC0) == 0x80 {
+            dest = dest - 1
+        }
+        return dest
+    }
+    return 0
+}
+
+fn move_down_one_line(text: str, from_c: i32) -> i32 {
+    line_start := editor_move_line_start(text, from_c)
+    col := from_c - line_start
+    line_end := editor_move_line_end(text, from_c)
+    tsize := text.len()
+    if line_end < tsize {
+        next_start := line_end + 1
+        next_end := editor_move_line_end(text, next_start)
+        next_len := next_end - next_start
+        mut dest := next_start + col
+        if dest > next_end { dest = next_end }
+        for dest > next_start && (u8(text[dest]) & 0xC0) == 0x80 {
+            dest = dest - 1
+        }
+        return dest
+    }
+    return tsize
+}
+
+fn utf8_encode_rune(cp: i32) -> str {
+    mut sz: i32 = 0
+    ptr := rl.CodepointToUTF8(cp, &mut sz)
+    if sz > 0 {
+        return str(ptr)
+    }
+    return ""
+}
+
+type EditorBuffer struct {
+    cursor_pos: i32
+    sel_anchor: i32
+    held_key: i32
+    held_time: f32
+    accent_popup_open: bool
+    accent_popup_base: str
+    accent_selected_idx: i32
+    dead_key_accent: i32
+    status_message: str
+    allow_newlines: bool
+    max_len: i32
+}
+
+// GuiProcessEditorKeys: Full cross-platform native keyboard and modifier engine.
+// Returns:
+// 0: no action / handled internally
+// 1: text modified
+// 2: save requested (Cmd+S)
+// 3: tab navigation requested (Tab)
+fn GuiProcessEditorKeys(
+    mut text: str,
+    mut buf: EditorBuffer,
+    mut undo_stack: []str,
+    mut redo_stack: []str
+) -> i32 {
+    if !rl.IsWindowReady() {
+        return 0
+    }
+
+    len := text.len()
+    mut cur := buf.cursor_pos
+    if cur < 0 { cur = 0 }
+    if cur > len { cur = len }
+    mut modified := false
+
+    mods := get_key_modifiers()
+    super_down := mods.super_down
+    ctrl_down := mods.ctrl_down
+    alt_down := mods.alt_down
+    shift_down := mods.shift_down
+    cmd_or_ctrl := mods.cmd_or_ctrl
+    word_mod := mods.word_mod
+
+    has_sel := (buf.sel_anchor >= 0 && buf.sel_anchor != cur)
+
+    // 1. Save (Cmd+S)
+    if cmd_or_ctrl && rl.IsKeyPressed(rl.KEY_S) {
+        return 2
+    }
+
+    // Select All (Cmd+A)
+    if super_down && rl.IsKeyPressed(rl.KEY_A) {
+        buf.sel_anchor = 0
+        buf.cursor_pos = text.len()
+        buf.status_message = "SELECTED ALL (" + str(text.len()) + " bytes)"
+        return 0
+    }
+
+    // Copy (Cmd+C)
+    if cmd_or_ctrl && rl.IsKeyPressed(rl.KEY_C) {
+        if has_sel {
+            mut s0 := buf.sel_anchor
+            mut s1 := cur
+            if s0 > s1 { s0 = cur; s1 = buf.sel_anchor }
+            if s0 < 0 { s0 = 0 }
+            if s1 > len { s1 = len }
+            sub := str(text[s0..s1])
+            rl.SetClipboardText(sub)
+            buf.status_message = "COPIED selection (" + str(sub.len()) + " chars)"
+        } else {
+            ls := editor_move_line_start(text, cur)
+            le := editor_move_line_end(text, cur)
+            sub := str(text[ls..le])
+            rl.SetClipboardText(sub)
+            buf.status_message = "COPIED current line"
+        }
+        return 0
+    }
+
+    // Cut (Cmd+X)
+    if cmd_or_ctrl && rl.IsKeyPressed(rl.KEY_X) {
+        if has_sel {
+            mut s0 := buf.sel_anchor
+            mut s1 := cur
+            if s0 > s1 { s0 = cur; s1 = buf.sel_anchor }
+            if s0 < 0 { s0 = 0 }
+            if s1 > len { s1 = len }
+            sub := str(text[s0..s1])
+            rl.SetClipboardText(sub)
+            undo_stack.push(text)
+            redo_stack.clear()
+            text_delete_selection_or_backspace(mut text, mut buf.cursor_pos, mut buf.sel_anchor)
+            buf.status_message = "CUT selection (" + str(sub.len()) + " chars)"
+            return 1
+        }
+        return 0
+    }
+
+    // Paste (Cmd+V)
+    if cmd_or_ctrl && rl.IsKeyPressed(rl.KEY_V) {
+        clip_ptr := rl.GetClipboardText()
+        if clip_ptr != nullptr {
+            clip := str(clip_ptr)
+            if clip.len() > 0 {
+                undo_stack.push(text)
+                redo_stack.clear()
+                mut ins := clip
+                if !buf.allow_newlines {
+                    ins = str.replace(ins, "\n", " ")
+                    ins = str.replace(ins, "\r", " ")
+                }
+                text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, ins)
+                buf.status_message = "PASTED from clipboard"
+                for rl.GetCharPressed() > 0 {}
+                return 1
+            }
+        }
+        for rl.GetCharPressed() > 0 {}
+        return 0
+    }
+
+    // Undo / Redo (Cmd+Z / Shift+Cmd+Z)
+    if cmd_or_ctrl && rl.IsKeyPressed(rl.KEY_Z) {
+        if shift_down {
+            if redo_stack.len() > 0 {
+                undo_stack.push(text)
+                text = redo_stack[redo_stack.len() - 1]
+                redo_stack.pop()
+                if buf.cursor_pos > text.len() { buf.cursor_pos = text.len() }
+                buf.sel_anchor = -1
+                buf.status_message = "REDO applied"
+                return 1
+            }
+        } else {
+            if undo_stack.len() > 0 {
+                redo_stack.push(text)
+                text = undo_stack[undo_stack.len() - 1]
+                undo_stack.pop()
+                if buf.cursor_pos > text.len() { buf.cursor_pos = text.len() }
+                buf.sel_anchor = -1
+                buf.status_message = "UNDO applied"
+                return 1
+            }
+        }
+        return 0
+    }
+
+    // Emacs / macOS Ctrl keys
+    if ctrl_down && !super_down {
+        if rl.IsKeyPressed(rl.KEY_A) {
+            if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+            else if !shift_down { buf.sel_anchor = -1 }
+            buf.cursor_pos = editor_move_line_start(text, cur)
+            return 0
+        }
+        if rl.IsKeyPressed(rl.KEY_E) {
+            if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+            else if !shift_down { buf.sel_anchor = -1 }
+            buf.cursor_pos = editor_move_line_end(text, cur)
+            return 0
+        }
+        if rl.IsKeyPressed(rl.KEY_U) {
+            ls := editor_move_line_start(text, cur)
+            if ls < cur {
+                undo_stack.push(text)
+                redo_stack.clear()
+                text = text[0..ls] + text[cur..]
+                buf.cursor_pos = ls
+                buf.sel_anchor = -1
+                return 1
+            }
+        }
+        if rl.IsKeyPressed(rl.KEY_K) {
+            le := editor_move_line_end(text, cur)
+            if le > cur {
+                undo_stack.push(text)
+                redo_stack.clear()
+                text = text[0..cur] + text[le..]
+                buf.sel_anchor = -1
+                return 1
+            }
+        }
+        if rl.IsKeyPressed(rl.KEY_W) {
+            wl := editor_move_word_left(text, cur)
+            if wl < cur {
+                undo_stack.push(text)
+                redo_stack.clear()
+                text = text[0..wl] + text[cur..]
+                buf.cursor_pos = wl
+                buf.sel_anchor = -1
+                return 1
+            }
+        }
+    }
+
+    // Tab key
+    if rl.IsKeyPressed(rl.KEY_TAB) {
+        buf.accent_popup_open = false
+        buf.sel_anchor = -1
+        return 3
+    }
+
+    // Long-press hold keys detection
+    mut currently_down_hold_key: i32 = 0
+    mut down_base_str := ""
+    if !cmd_or_ctrl && !alt_down {
+        if rl.IsKeyDown(rl.KEY_A) { currently_down_hold_key = rl.KEY_A; down_base_str = "a"; if shift_down { down_base_str = "A" } }
+        else if rl.IsKeyDown(rl.KEY_E) { currently_down_hold_key = rl.KEY_E; down_base_str = "e"; if shift_down { down_base_str = "E" } }
+        else if rl.IsKeyDown(rl.KEY_I) { currently_down_hold_key = rl.KEY_I; down_base_str = "i"; if shift_down { down_base_str = "I" } }
+        else if rl.IsKeyDown(rl.KEY_O) { currently_down_hold_key = rl.KEY_O; down_base_str = "o"; if shift_down { down_base_str = "O" } }
+        else if rl.IsKeyDown(rl.KEY_U) { currently_down_hold_key = rl.KEY_U; down_base_str = "u"; if shift_down { down_base_str = "U" } }
+        else if rl.IsKeyDown(rl.KEY_N) { currently_down_hold_key = rl.KEY_N; down_base_str = "n"; if shift_down { down_base_str = "N" } }
+        else if shift_down && rl.IsKeyDown(rl.KEY_SLASH) { currently_down_hold_key = rl.KEY_SLASH; down_base_str = "?" }
+        else if shift_down && rl.IsKeyDown(rl.KEY_ONE) { currently_down_hold_key = rl.KEY_ONE; down_base_str = "!" }
+    }
+    if currently_down_hold_key != 0 {
+        if buf.held_key == currently_down_hold_key {
+            buf.held_time += rl.GetFrameTime()
+            if buf.held_time >= 0.30 && !buf.accent_popup_open {
+                buf.accent_popup_open = true
+                buf.accent_popup_base = down_base_str
+                buf.accent_selected_idx = 0
+                buf.status_message = "ACCENT HUD: Press 1..4 (or Left/Right + Enter) to select Spanish accent for '" + down_base_str + "'"
+            }
+        } else {
+            buf.held_key = currently_down_hold_key
+            buf.held_time = 0.0
+        }
+    } else {
+        buf.held_key = 0
+        buf.held_time = 0.0
+    }
+
+    // Accent HUD key selection
+    mut is_upper_popup := false
+    if buf.accent_popup_base.len() > 0 {
+        b := u8(buf.accent_popup_base[0])
+        if b >= 65 && b <= 90 { is_upper_popup = true }
+    }
+    variants := get_spanish_accent_variants(buf.accent_popup_base, is_upper_popup)
+    if buf.accent_popup_open && variants.len() > 0 {
+        mut choice_idx := -1
+        if rl.IsKeyPressed(rl.KEY_ONE) { choice_idx = 0 }
+        else if rl.IsKeyPressed(rl.KEY_TWO) { choice_idx = 1 }
+        else if rl.IsKeyPressed(rl.KEY_THREE) { choice_idx = 2 }
+        else if rl.IsKeyPressed(rl.KEY_FOUR) { choice_idx = 3 }
+        else if rl.IsKeyPressed(rl.KEY_ENTER) || rl.IsKeyPressed(rl.KEY_SPACE) { choice_idx = buf.accent_selected_idx }
+        else if rl.IsKeyPressed(rl.KEY_LEFT) {
+            buf.accent_selected_idx = (buf.accent_selected_idx - 1 + variants.len()) % variants.len()
+            return 0
+        } else if rl.IsKeyPressed(rl.KEY_RIGHT) {
+            buf.accent_selected_idx = (buf.accent_selected_idx + 1) % variants.len()
+            return 0
+        } else if rl.IsKeyPressed(rl.KEY_ESCAPE) {
+            buf.accent_popup_open = false
+            return 0
+        }
+
+        if choice_idx >= 0 && choice_idx < variants.len() {
+            undo_stack.push(text)
+            redo_stack.clear()
+            chosen := variants[choice_idx]
+            // Remove previous base character if typed
+            if cur > 0 {
+                ppos := prev_utf8_index(text, cur)
+                prev_ch := text[ppos..cur]
+                if prev_ch == buf.accent_popup_base || (buf.accent_popup_base == "?" && prev_ch == "?") || (buf.accent_popup_base == "!" && prev_ch == "!") {
+                    text = text[0..ppos] + text[cur..]
+                    cur = ppos
+                    buf.cursor_pos = cur
+                }
+            }
+            text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, chosen)
+            buf.accent_popup_open = false
+            buf.status_message = "SPANISH ACCENT: Inserted '" + chosen + "'"
+            for rl.GetCharPressed() > 0 {}
+            return 1
+        }
+    }
+
+    // Dead-Keys: Option+E, Option+N, Option+U, Option+/, Option+1
+    if alt_down && !cmd_or_ctrl {
+        if rl.IsKeyPressed(rl.KEY_E) {
+            buf.dead_key_accent = 1
+            buf.status_message = "DEAD KEY (´): Press a, e, i, o, u to insert acute Spanish accent"
+            for rl.GetCharPressed() > 0 {}
+            return 0
+        }
+        if rl.IsKeyPressed(rl.KEY_N) {
+            buf.dead_key_accent = 2
+            buf.status_message = "DEAD KEY (~): Press n to insert ñ / Ñ"
+            for rl.GetCharPressed() > 0 {}
+            return 0
+        }
+        if rl.IsKeyPressed(rl.KEY_U) {
+            buf.dead_key_accent = 3
+            buf.status_message = "DEAD KEY (¨): Press u to insert ü / Ü"
+            for rl.GetCharPressed() > 0 {}
+            return 0
+        }
+        if rl.IsKeyPressed(rl.KEY_SLASH) {
+            undo_stack.push(text)
+            redo_stack.clear()
+            text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, "¿")
+            for rl.GetCharPressed() > 0 {}
+            return 1
+        }
+        if rl.IsKeyPressed(rl.KEY_ONE) {
+            undo_stack.push(text)
+            redo_stack.clear()
+            text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, "¡")
+            for rl.GetCharPressed() > 0 {}
+            return 1
+        }
+    }
+
+    // Printable Characters
+    mut ch := rl.GetCharPressed()
+    for ch > 0 {
+        is_held_repeat := (buf.held_key != 0 && buf.held_time > 0.05)
+        if !cmd_or_ctrl && !is_held_repeat && ch >= 32 && text.len() < buf.max_len {
+            buf.accent_popup_open = false
+            mut ins := ""
+            if buf.dead_key_accent == 1 {
+                if ch == 97 { ins = "á" }
+                else if ch == 101 { ins = "é" }
+                else if ch == 105 { ins = "í" }
+                else if ch == 111 { ins = "ó" }
+                else if ch == 117 { ins = "ú" }
+                else if ch == 65 { ins = "Á" }
+                else if ch == 69 { ins = "É" }
+                else if ch == 73 { ins = "Í" }
+                else if ch == 79 { ins = "Ó" }
+                else if ch == 85 { ins = "Ú" }
+                buf.dead_key_accent = 0
+            } else if buf.dead_key_accent == 2 {
+                if ch == 110 { ins = "ñ" }
+                else if ch == 78 { ins = "Ñ" }
+                buf.dead_key_accent = 0
+            } else if buf.dead_key_accent == 3 {
+                if ch == 117 { ins = "ü" }
+                else if ch == 85 { ins = "Ü" }
+                buf.dead_key_accent = 0
+            }
+            if ins.len() == 0 && !alt_down {
+                ins = utf8_encode_rune(ch)
+            }
+            if ins.len() > 0 {
+                undo_stack.push(text)
+                redo_stack.clear()
+                text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, ins)
+                cur = buf.cursor_pos
+                modified = true
+            }
+        }
+        ch = rl.GetCharPressed()
+    }
+
+    // Enter / Return
+    if rl.IsKeyPressed(rl.KEY_ENTER) || rl.IsKeyPressed(rl.KEY_KP_ENTER) {
+        buf.accent_popup_open = false
+        if buf.allow_newlines && text.len() < buf.max_len {
+            undo_stack.push(text)
+            redo_stack.clear()
+            text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, "\n")
+            cur = buf.cursor_pos
+            modified = true
+        } else if !buf.allow_newlines {
+            buf.sel_anchor = -1
+        }
+    }
+
+    // Backspace
+    if rl.IsKeyPressed(rl.KEY_BACKSPACE) || rl.IsKeyPressedRepeat(rl.KEY_BACKSPACE) {
+        buf.accent_popup_open = false
+        if buf.sel_anchor >= 0 && buf.sel_anchor != cur {
+            undo_stack.push(text)
+            redo_stack.clear()
+            text_delete_selection_or_backspace(mut text, mut buf.cursor_pos, mut buf.sel_anchor)
+            cur = buf.cursor_pos
+            modified = true
+        } else if cur > 0 {
+            undo_stack.push(text)
+            redo_stack.clear()
+            mut del_to := prev_utf8_index(text, cur)
+            if super_down {
+                del_to = editor_move_line_start(text, cur)
+            } else if word_mod {
+                del_to = editor_move_word_left(text, cur)
+            }
+            if del_to < cur {
+                text = text[0..del_to] + text[cur..]
+                cur = del_to
+                buf.cursor_pos = cur
+                modified = true
+            }
+        }
+    }
+
+    // Delete
+    if rl.IsKeyPressed(rl.KEY_DELETE) || rl.IsKeyPressedRepeat(rl.KEY_DELETE) {
+        buf.accent_popup_open = false
+        if buf.sel_anchor >= 0 && buf.sel_anchor != cur {
+            undo_stack.push(text)
+            redo_stack.clear()
+            text_delete_selection_or_delete(mut text, mut buf.cursor_pos, mut buf.sel_anchor)
+            cur = buf.cursor_pos
+            modified = true
+        } else if cur < text.len() {
+            undo_stack.push(text)
+            redo_stack.clear()
+            mut del_end := next_utf8_index(text, cur)
+            if super_down {
+                del_end = editor_move_line_end(text, cur)
+            } else if word_mod {
+                del_end = editor_move_word_right(text, cur)
+            }
+            if del_end > cur {
+                text = text[0..cur] + text[del_end..]
+                modified = true
+            }
+        }
+    }
+
+    // Home / End
+    if rl.IsKeyPressed(rl.KEY_HOME) {
+        if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+        else if !shift_down { buf.sel_anchor = -1 }
+        cur = editor_move_line_start(text, cur)
+    }
+    if rl.IsKeyPressed(rl.KEY_END) {
+        if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+        else if !shift_down { buf.sel_anchor = -1 }
+        cur = editor_move_line_end(text, cur)
+    }
+
+    // Left Arrow
+    if rl.IsKeyPressed(rl.KEY_LEFT) || rl.IsKeyPressedRepeat(rl.KEY_LEFT) {
+        buf.accent_popup_open = false
+        if !shift_down && buf.sel_anchor >= 0 && buf.sel_anchor != cur && !super_down && !word_mod {
+            if buf.sel_anchor < cur { cur = buf.sel_anchor }
+            buf.sel_anchor = -1
+        } else {
+            mut next_c := cur
+            if super_down { next_c = editor_move_line_start(text, cur) }
+            else if word_mod { next_c = editor_move_word_left(text, cur) }
+            else { next_c = prev_utf8_index(text, cur) }
+            if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+            else if !shift_down { buf.sel_anchor = -1 }
+            cur = next_c
+        }
+    }
+
+    // Right Arrow
+    if rl.IsKeyPressed(rl.KEY_RIGHT) || rl.IsKeyPressedRepeat(rl.KEY_RIGHT) {
+        buf.accent_popup_open = false
+        if !shift_down && buf.sel_anchor >= 0 && buf.sel_anchor != cur && !super_down && !word_mod {
+            if buf.sel_anchor > cur { cur = buf.sel_anchor }
+            buf.sel_anchor = -1
+        } else {
+            mut next_c := cur
+            if super_down { next_c = editor_move_line_end(text, cur) }
+            else if word_mod { next_c = editor_move_word_right(text, cur) }
+            else { next_c = next_utf8_index(text, cur) }
+            if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+            else if !shift_down { buf.sel_anchor = -1 }
+            cur = next_c
+        }
+    }
+
+    // Up Arrow
+    if rl.IsKeyPressed(rl.KEY_UP) || rl.IsKeyPressedRepeat(rl.KEY_UP) || rl.IsKeyPressed(rl.KEY_PAGE_UP) {
+        buf.accent_popup_open = false
+        mut next_c := cur
+        if super_down {
+            next_c = 0
+        } else if buf.allow_newlines {
+            mut steps := 1
+            if alt_down || rl.IsKeyPressed(rl.KEY_PAGE_UP) { steps = 10 }
+            mut s := 0
+            for s < steps {
+                next_c = move_up_one_line(text, next_c)
+                s = s + 1
+            }
+        } else {
+            next_c = 0
+        }
+        if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+        else if !shift_down { buf.sel_anchor = -1 }
+        cur = next_c
+    }
+
+    // Down Arrow
+    if rl.IsKeyPressed(rl.KEY_DOWN) || rl.IsKeyPressedRepeat(rl.KEY_DOWN) || rl.IsKeyPressed(rl.KEY_PAGE_DOWN) {
+        buf.accent_popup_open = false
+        mut next_c := cur
+        tsize := text.len()
+        if super_down {
+            next_c = tsize
+        } else if buf.allow_newlines {
+            mut steps := 1
+            if alt_down || rl.IsKeyPressed(rl.KEY_PAGE_DOWN) { steps = 10 }
+            mut s := 0
+            for s < steps {
+                next_c = move_down_one_line(text, next_c)
+                s = s + 1
+            }
+        } else {
+            next_c = tsize
+        }
+        if shift_down && buf.sel_anchor < 0 { buf.sel_anchor = cur }
+        else if !shift_down { buf.sel_anchor = -1 }
+        cur = next_c
+    }
+
+    buf.cursor_pos = cur
+    if modified {
+        return 1
+    }
+    return 0
+}
