@@ -598,9 +598,9 @@ namespace detail {
   - `val := fallible() or err { return -1 }` (block must definitely diverge or panic)
 - Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp::some_c_func()`
 - CLI Tooling:
-  - `cfire build [--target wasm] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] <file>`: Compile native binary, signed macOS `.app` bundle, or WebAssembly
-  - `cfire serve [--port <n>] [--no-open] [path]`: Built-in zero-dependency static server with WASM MIME and COOP/COEP isolation headers
-  - `cfire wasm <serve|build|run> [args...]`: First-class WebAssembly command toolchain
+  - `cfire run [--web] [target]`: Run native app, execute binary, or serve web app (--web)
+  - `cfire build [--target wasm] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, signed macOS `.app` bundle, or WebAssembly
+  - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in zero-dependency static server with WASM MIME and COOP/COEP isolation headers
   - `cfire check --json <file>`: Multi-error structured diagnostics with 1-based coordinates and fixits
   - `cfire outline --json <file|dir>`: AST symbol outline with exact types, intents, receivers
   - `cfire doc --llm`: Dump this LLM context reference sheet
