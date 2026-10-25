@@ -138,6 +138,12 @@ test "raygui_ext embedded font fallback loading" {
     assert(f.texture.id > 0)
     assert(f.baseSize == 24)
     assert(f.glyphCount > 400)
+
+    // Test embedded Source Code Pro mono font fallback
+    f_mono := GuiLoadSystemMonoFontExtended([], 24)
+    assert(f_mono.texture.id > 0)
+    assert(f_mono.baseSize == 24)
+    assert(f_mono.glyphCount > 400)
 }
 
 
