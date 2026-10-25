@@ -401,10 +401,21 @@ fn main() -> i32 {
 
     // 3. Test `cfire doc` always-up-to-date documentation generation & verification
     auto docs_dir = rt_dir.parent_path() / "docs";
-    auto gen_docs = cfire::doc::sync_docs_directory(docs_dir, false);
+    auto gen_docs = cfire::doc::sync_docs_directory(docs_dir, false, rt_dir);
     require(gen_docs.has_value(), "cfire::doc::sync_docs_directory write");
-    auto check_docs = cfire::doc::sync_docs_directory(docs_dir, true);
+    auto check_docs = cfire::doc::sync_docs_directory(docs_dir, true, rt_dir);
     require(check_docs.has_value(), "cfire::doc::sync_docs_directory --check verification");
+
+    auto audit_res = cfire::doc::audit_documentation_catalog(rt_dir);
+    require(audit_res.has_value(), "cfire::doc::audit_documentation_catalog verification: " + (audit_res.has_value() ? "" : audit_res.error()));
+
+    auto discovered = cfire::doc::discover_runtime_modules(rt_dir);
+    auto has_module = [&](std::string_view name) {
+        return std::ranges::any_of(discovered, [&](const auto& m) { return m.import_path == name; });
+    };
+    require(has_module("vendor:raylib"), "catalog discovered vendor:raylib");
+    require(has_module("vendor:raygui"), "catalog discovered vendor:raygui");
+    require(has_module("core:math"), "catalog discovered core:math");
 
     auto pkg_md = cfire::doc::extract_file_markdown_doc("examples/09-stdlib-test-pointers/main.cf");
     require(pkg_md.has_value() && pkg_md->contains("compute_fixed_sum") && pkg_md->contains("type Metric struct"),
@@ -433,13 +444,22 @@ fn main() -> i32 {
         auto exec_res = cfire::os::exec_output("echo 'cfire_test'");
         require(exec_res.has_value() && exec_res->contains("cfire_test"), "cfire::os::exec_output check");
 
-        // Verify Guide Chapter 8 declarative build.cf content
+        // Verify Guide Chapter 9 Build System and Chapter 11 Raylib/Raygui reconciliation
         auto guide_path = docs_dir / "GUIDE.md";
         auto guide_txt = cfire::build::read_file_text(guide_path);
         require(guide_txt.has_value() &&
-                guide_txt->contains("FastHash := build.CC(") &&
-                guide_txt->contains("KVStore := build.CMake("),
-            "docs/GUIDE.md Chapter 8 declarative build.cf reconciliation");
+                guide_txt->contains("Chapter 9: The Cfire Build System: Native, Cross-Target & WebAssembly") &&
+                guide_txt->contains("build.CC(") &&
+                guide_txt->contains("KVStore := build.CMake(") &&
+                guide_txt->contains("build.Make") &&
+                guide_txt->contains("build.Git") &&
+                guide_txt->contains("build.Archive") &&
+                guide_txt->contains("build.Command") &&
+                guide_txt->contains("--target=wasm") &&
+                guide_txt->contains("Chapter 11: 2D/3D Graphics & GUI Applications with Raylib and Raygui") &&
+                guide_txt->contains("vendor:raylib") &&
+                guide_txt->contains("vendor:raygui"),
+            "docs/GUIDE.md Chapter 9 Build System and Chapter 11 Raylib/Raygui reconciliation");
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");

@@ -409,9 +409,35 @@ fn main() {
 }
 
 // Generates or verifies (`check_only = true`) the full documentation suite in `<repo>/docs/`.
-[[nodiscard]] inline auto sync_docs_directory(const std::filesystem::path& docs_dir, bool check_only)
-    -> std::expected<void, std::string>
+[[nodiscard]] inline auto sync_docs_directory(
+    const std::filesystem::path& docs_dir,
+    bool check_only,
+    const std::filesystem::path& runtime_dir = {}
+) -> std::expected<void, std::string>
 {
+    // Auto-locate runtime directory if not explicitly passed
+    std::filesystem::path rt_dir = runtime_dir;
+    if (rt_dir.empty()) {
+        if (const char* env = std::getenv("CFIRE_RUNTIME_DIR")) {
+            rt_dir = std::filesystem::path(env);
+        } else {
+            auto candidate = docs_dir.parent_path() / "runtime";
+            if (std::filesystem::exists(candidate / "cfire_prelude.hpp")) {
+                rt_dir = candidate;
+            } else if (std::filesystem::exists("runtime/cfire_prelude.hpp")) {
+                rt_dir = "runtime";
+            }
+        }
+    }
+
+    // 1. Run Automated Library & Documentation Integrity Audit
+    if (!rt_dir.empty()) {
+        auto audit_res = audit_documentation_catalog(rt_dir);
+        if (!audit_res) {
+            return std::unexpected(audit_res.error());
+        }
+    }
+
     struct DocTarget {
         std::filesystem::path path;
         std::string content;
