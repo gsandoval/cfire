@@ -422,7 +422,13 @@ inline void stringify_value_to(const Value& val, std::string& out, int indent, i
 } // namespace cfire::json
 
 #ifdef CFIRE_USE_SIMDJSON
+#if defined(PLATFORM_WEB)
+namespace simdjson::ondemand {
+    struct object {};
+}
+#else
 #include <simdjson.h>
+#endif
 namespace cfire::json {
 
 template <typename T>
@@ -444,6 +450,9 @@ struct is_std_vector<std::vector<U, A>> : std::true_type {};
 
 template <typename T>
 [[nodiscard]] auto parse(std::string_view payload) -> std::expected<T, cfire::Error> {
+#if defined(PLATFORM_WEB)
+    return T{};
+#else
     if constexpr (std::is_same_v<T, std::string>) {
         if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
             auto dyn = parse_dynamic(payload);
@@ -491,6 +500,7 @@ template <typename T>
         }
         return parse_struct<T>(obj.value());
     }
+#endif
 }
 
 template <typename T>
@@ -515,6 +525,7 @@ template <typename T>
     }
 }
 
+#if !defined(PLATFORM_WEB)
 [[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::string, cfire::Error>
 {
@@ -574,6 +585,20 @@ template <typename T>
     }
     return res.value();
 }
+#else
+[[nodiscard]] inline auto get_str(simdjson::ondemand::object&, std::string_view)
+    -> std::expected<std::string, cfire::Error> { return ""; }
+[[nodiscard]] inline auto get_u64(simdjson::ondemand::object&, std::string_view)
+    -> std::expected<std::uint64_t, cfire::Error> { return 0; }
+[[nodiscard]] inline auto get_i64(simdjson::ondemand::object&, std::string_view)
+    -> std::expected<std::int64_t, cfire::Error> { return 0; }
+[[nodiscard]] inline auto get_i32(simdjson::ondemand::object&, std::string_view)
+    -> std::expected<std::int32_t, cfire::Error> { return 0; }
+[[nodiscard]] inline auto get_f64(simdjson::ondemand::object&, std::string_view)
+    -> std::expected<double, cfire::Error> { return 0.0; }
+[[nodiscard]] inline auto get_bool(simdjson::ondemand::object&, std::string_view)
+    -> std::expected<bool, cfire::Error> { return false; }
+#endif
 
 } // namespace cfire::json
 #endif
