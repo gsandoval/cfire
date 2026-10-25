@@ -326,12 +326,21 @@ private:
     [[nodiscard]] auto is_trailing_closure_lookahead() const -> bool {
         if (cur().kind != TokenKind::Pipe) return false;
         std::size_t offset = 1;
-        if (peek(offset).kind != TokenKind::Ident) return false;
-        while (peek(offset).kind == TokenKind::Ident) {
+        while (true) {
+            if (peek(offset).kind == TokenKind::KwMut || peek(offset).kind == TokenKind::KwIn ||
+                peek(offset).kind == TokenKind::KwMove || peek(offset).kind == TokenKind::KwOut) {
+                ++offset;
+            }
+            if (peek(offset).kind != TokenKind::Ident) return false;
             ++offset;
+            if (peek(offset).kind == TokenKind::Colon) {
+                ++offset;
+                while (peek(offset).kind != TokenKind::Comma && peek(offset).kind != TokenKind::Pipe && peek(offset).kind != TokenKind::Eof) {
+                    ++offset;
+                }
+            }
             if (peek(offset).kind == TokenKind::Comma) {
                 ++offset;
-                if (peek(offset).kind != TokenKind::Ident) return false;
             } else {
                 break;
             }
@@ -1039,7 +1048,9 @@ private:
     [[nodiscard]] auto parse_if_stmt() -> std::expected<StmtPtr, std::string> {
         Token start = advance(); // 'if'
         ExprPtr cond = nullptr;
-        {
+        if (cur().kind == TokenKind::LBrace) {
+            cond = make_expr(LiteralExpr{TokenKind::KwTrue, "true"}, start.line, start.col);
+        } else {
             StructLitScope scope(*this, false);
             auto c = parse_expr();
             if (!c) return std::unexpected(c.error());
@@ -1090,7 +1101,9 @@ private:
             return make_stmt(ForStmt{std::move(idx_var), std::move(item_var), std::move(iter_ex), std::move(*body), start.line}, start.line);
         }
         ExprPtr cond = nullptr;
-        {
+        if (cur().kind == TokenKind::LBrace) {
+            cond = make_expr(LiteralExpr{TokenKind::KwTrue, "true"}, start.line, start.col);
+        } else {
             StructLitScope scope(*this, false);
             auto c = parse_expr();
             if (!c) return std::unexpected(c.error());

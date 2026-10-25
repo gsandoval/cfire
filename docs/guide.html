@@ -543,8 +543,9 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#chapter-6">6. Fearless Error Handling &amp; Cleanup</a></li>
             <li><a href="#chapter-7">7. Structured Concurrency &amp; Contexts</a></li>
             <li><a href="#chapter-8">8. Zero-Friction C &amp; C++ Interop</a></li>
-            <li><a href="#chapter-9">9. The Unified Build System &amp; CMake Ejection</a></li>
+            <li><a href="#chapter-9">9. The Cfire Build System: Native, Cross-Target &amp; WebAssembly</a></li>
             <li><a href="#chapter-10">10. Building Web Services, HTTP Servers &amp; Independent Routers (`core:net/http`)</a></li>
+            <li><a href="#chapter-11">11. 2D/3D Graphics &amp; GUI Applications with Raylib and Raygui</a></li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
@@ -1226,92 +1227,144 @@ fn main() {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-9"><a id="ch9"></a>9. The Unified Build System &amp; CMake Ejection</h2>
-<h3 id="91-declarative-buildcf">9.1 Declarative <code>build.cf</code></h3>
-<p>Projects with complex C/C++ static dependencies or CMake subprojects include a declarative <code>build.cf</code> file in the root directory:</p>
+<h2 id="chapter-9"><a id="ch9"></a>9. The Cfire Build System: Native, Cross-Target &amp; WebAssembly</h2>
+<p>A great systems language must solve the compilation, dependency, and packaging problem without dragging developers into build configuration nightmare. <code>cfire</code> features a unified build system that ranges from <strong>instant zero-config single-command builds</strong> to <strong>declarative multi-language dependency manifests (<code>build.cf</code>)</strong>, <strong>WebAssembly compilation</strong>, and <strong>native desktop application bundling</strong>.</p>
+<h3 id="91-zero-config-core-incremental-pch-caching">9.1 Zero-Config Core &amp; Incremental PCH Caching</h3>
+<p>For the majority of applications, <code>cfire</code> requires no project files, Makefiles, or build scripts. Point <code>cfire</code> at an entry file:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code>cfire run main.cf          # Transpile to C++23, compile, and execute immediately
+cfire build main.cf        # Compile an optimized native binary (-O2)
+cfire build -o my_app main.cf
+</code></pre>
+<p>Under the hood:</p>
+<ol>
+  <li><strong>Semantic Analysis &amp; Codegen</strong>: <code>cfire</code> analyzes types, checks borrow invariants, and lowers <code>.cf</code> code to clean, human-readable ISO C++23.</li>
+  <li><strong>Automated Header &amp; Library Discovery</strong>: Any standard library (<code>core:*</code>) or vendor library (<code>vendor:*</code>) imported is automatically discovered and mapped to its appropriate compiler include paths and linker flags.</li>
+  <li><strong>Precompiled Header (PCH) Cache</strong>: The runtime prelude (<code>cfire_prelude.hpp</code>) is automatically compiled into an optimized precompiled header (<code>.pch</code>) stored in your system temporary cache. When rebuilding, compilation completes in tens of milliseconds because Clang skips reparsing standard library headers.</li>
+  <li><strong>Memory Sanitizers (<code>--sanitize</code>)</strong>: Add <code>--sanitize</code> to compile with LLVM AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan), catching memory errors, buffer overflows, and null pointer dereferences at runtime.</li>
+</ol>
+<h3 id="92-declarative-buildcf-manifest">9.2 Declarative <code>build.cf</code> Manifest</h3>
+<p>When your project integrates external C or C++ vendor libraries, legacy Makefiles, CMake sub-projects, or remote archives, place a <code>build.cf</code> file in your project root. <code>cfire</code> automatically detects <code>build.cf</code> whenever building or running any sibling <code>.cf</code> file.</p>
 <div class="code-header"><span class="tag-cf">cfire</span></div>
 <pre><code>package build
 
 import &quot;core:build&quot;
 
-// 1. Build a local C static library dependency
-FastHash := build.CC(&quot;./native/fast_hash&quot;, {
-    Sources:  [&quot;fast_hash.c&quot;],
-    Includes: [&quot;.&quot;],
+// 1. Compile raw local C/C++ source trees
+FastCRC := build.CC(&quot;./native/crc32&quot;, {
+    Sources:  [&quot;crc32.c&quot;, &quot;table.c&quot;],
+    Includes: [&quot;include&quot;, &quot;.&quot;],
+    Defines:  {&quot;CRC_TABLE_SIZE&quot;: 256, &quot;CRC_SEED&quot;: 42},
     CFlags:   [&quot;-O3&quot;, &quot;-march=native&quot;],
 })
 
-// 2. Build a CMake-based vendor subproject
+// 2. Build a CMake-based vendor subproject into a static archive
 KVStore := build.CMake(&quot;./vendor/libkv_cmake&quot;, {
     Target:   &quot;kvstore&quot;,
     Includes: [&quot;include&quot;],
-    Defines:  {&quot;KV_SALT&quot;: 42},
+    Defines:  {&quot;KV_SALT&quot;: 99},
 })
 
-// 3. Link a system package via pkg-config
-Sqlite3 := build.SystemLib(&quot;sqlite3&quot;)
+// 3. Build a legacy Makefile or Autotools library
+LegacyCodec := build.Make(&quot;./vendor/legacy_codec&quot;, {
+    Target:   &quot;libcodec.a&quot;,
+    Includes: [&quot;include&quot;],
+})
+
+// 4. Fetch and compile a remote Git dependency pinned to a tag or commit
+TreeSitter := build.Git(&quot;https://github.com/tree-sitter/tree-sitter.git&quot;, {
+    Tag:      &quot;v0.22.6&quot;,
+    Sources:  [&quot;lib/src/lib.c&quot;],
+    Includes: [&quot;lib/include&quot;, &quot;lib/src&quot;],
+})
+
+// 5. Download and extract a remote source archive with SHA-256 integrity verification
+LibUV := build.Archive(&quot;https://dist.libuv.org/dist/v1.48.0/libuv-v1.48.0.tar.gz&quot;, {
+    Sha256:   &quot;3a34f46ff36a2b8...221&quot;,
+    Driver:   &quot;CMake&quot;,
+    Includes: [&quot;include&quot;],
+})
+
+// 6. Link system-installed pkg-config dependencies
+Zstd := build.SystemLib(&quot;libzstd&quot;)
 </code></pre>
-<p>When you run <code>./cfire build main.cf</code>:</p>
+<p>When you invoke <code>cfire build main.cf</code>:</p>
 <ol>
-  <li><code>cfire</code> discovers <code>build.cf</code>.</li>
-  <li>It compiles <code>FastHash</code> and <code>LibZstd</code> into static archives in <code>.cfire/cache/lib/*.a</code>.</li>
-  <li>It links all libraries together into a single, high-performance binary.</li>
+  <li><code>cfire</code> scans <code>build.cf</code> and resolves all dependencies.</li>
+  <li>Local and remote C/C++ sources are compiled into static <code>.a</code> archives located in <code>.cfire/cache/lib/</code>.</li>
+  <li>Build artifacts are tracked incrementally: unchanged dependencies are never recompiled.</li>
+  <li>All include paths and static archives are linked into your executable in a single pass.</li>
 </ol>
-<h3 id="92-zero-lock-in-cmake-ejection-cfire-eject">9.2 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
-<p>One of the most important architectural design decisions in <code>cfire</code> is that <strong>you are never locked in</strong>. At any point in your project lifecycle, you can eject to standard ISO C++23:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>./cfire eject src/main.cf ./standalone_project
+<h3 id="93-pre-build-command-hooks-code-generators">9.3 Pre-Build Command Hooks &amp; Code Generators</h3>
+<p>Modern systems often require code generators (protobuf, flatbuffers, sqlc) or asset packaging steps before compiling language sources. <code>build.cf</code> supports arbitrary pre-build commands:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package build
+
+import &quot;core:build&quot;
+
+// Run code generation before building .cf sources
+GenProtobuf := build.Command(&quot;protoc&quot;, {
+    Args:    [&quot;--cpp_out=.cfire/gen&quot;, &quot;messages.proto&quot;],
+    Inputs:  [&quot;messages.proto&quot;],
+    Outputs: [&quot;.cfire/gen/messages.pb.h&quot;, &quot;.cfire/gen/messages.pb.cc&quot;],
+})
 </code></pre>
-<p>This exports:</p>
-<ul>
-  <li><code>standalone_project/src/main.cpp</code>: Clean, human-readable ISO C++23 source code corresponding to your <code>.cf</code> files.</li>
-  <li><code>standalone_project/include/cfire_prelude.hpp</code>: The lightweight, header-only runtime prelude.</li>
-  <li><code>standalone_project/CMakeLists.txt</code>: A standard, production-ready CMake build file configuring all include directories, dependencies, and compilation flags.</li>
-</ul>
-<p>Anyone on your team can now build your software using standard CMake and Clang without needing <code>cfire</code> installed:</p>
+<p><code>cfire</code> evaluates file timestamps: if <code>messages.proto</code> has not been modified since the outputs were produced, the command is skipped.</p>
+<h3 id="94-cross-compilation-target-triples-target">9.4 Cross-Compilation &amp; Target Triples (<code>--target</code>)</h3>
+<p><code>cfire</code> supports cross-compiling to alternative CPU architectures and operating systems using Clang target triples and sysroots:</p>
 <div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>cd standalone_project
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+<pre><code># Compile for macOS Apple Silicon from Intel (or vice-versa)
+cfire build --target arm64-apple-darwin main.cf
+cfire build --target x86_64-apple-darwin main.cf
+
+# Cross-compile for Linux x86_64 or AArch64
+cfire build --target x86_64-unknown-linux-gnu --sysroot /opt/linux-sysroot main.cf
+cfire build --target aarch64-unknown-linux-gnu --sysroot /opt/linux-arm64-sysroot main.cf
+
+# Cross-compile for Windows
+cfire build --target x86_64-w64-mingw32 main.cf
 </code></pre>
-<h3 id="93-cross-compilation-target-triples-target">9.3 Cross-Compilation &amp; Target Triples (<code>--target</code>)</h3>
-<p><code>cfire</code> supports targeting alternative architectures and operating systems via standard target triples:</p>
-<ul>
-  <li><code>--target wasm</code> or <code>--target wasm32-unknown-emscripten</code>: Lowers C++23 to WebAssembly via Emscripten (<code>em++</code>).</li>
-  <li><code>--target x86_64-pc-windows-msvc</code> / <code>x86_64-w64-mingw32</code>: Targets Windows PE/COFF binaries.</li>
-  <li><code>--target aarch64-apple-darwin</code> / <code>x86_64-apple-darwin</code>: Targets macOS Universal or native ARM/Intel binaries.</li>
-  <li><code>--target x86_64-unknown-linux-gnu</code> / <code>aarch64-unknown-linux-gnu</code>: Targets standard Linux ELF binaries.</li>
-</ul>
-<h3 id="94-native-webassembly-export-web-profiles-web-profile">9.4 Native WebAssembly Export &amp; Web Profiles (<code>--web-profile</code>)</h3>
-<p>When compiling with <code>--target wasm</code>, <code>cfire</code> auto-detects the application type or accepts an explicit <code>--web-profile</code>:</p>
+<h3 id="95-webassembly-target-web-profiles-targetwasm">9.5 WebAssembly Target &amp; Web Profiles (<code>--target=wasm</code>)</h3>
+<p><code>cfire</code> features first-class WebAssembly support by wrapping the Emscripten (<code>em++</code>) toolchain behind standard Cfire CLI flags:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code># Compile to WebAssembly (.wasm + .js + .html)
+cfire build --target=wasm main.cf
+
+# Compile, launch local HTTP server, and open default browser automatically
+cfire run --target=wasm main.cf
+</code></pre>
+<h4 id="compilation-profiles-web-profile">Compilation Profiles (<code>--web-profile</code>)</h4>
 <ol>
-  <li><strong><code>canvas</code> (Interactive WebGL / Canvas Shell)</strong>: Generates a responsive viewport with full keyboard, mouse, and touch event forwarding for 2D/3D graphics and games (<code>vendor:raylib</code>).</li>
-  <li><strong><code>cli</code> (Node.js / Terminal)</strong>: Emits a WebAssembly module accompanied by a thin JS launcher designed to execute in headless serverless or Node.js environments (<code>node app.js</code>).</li>
-  <li><strong><code>auto</code></strong>: Scans imported modules. If <code>vendor:raylib</code> or UI libraries are ingested, <code>cfire</code> automatically selects <code>canvas</code>; otherwise, it defaults to standard web execution.</li>
+  <li><strong><code>cli</code> Profile</strong> (Default for pure Cfire): Generates lean WebAssembly without canvas overhead. Can be executed directly with Node.js (<code>node app.js</code>) or embedded in serverless workers.</li>
+  <li><strong><code>canvas</code> Profile</strong> (Auto-detected if <code>vendor:raylib</code> or <code>vendor:raygui</code> is imported):</li>
+ - Injects <code>-DPLATFORM_WEB</code> and links against the WebAssembly build of Raylib. - Enables WebGL 2.0 and GLFW3 emulation (<code>-sUSE_GLFW=3</code>). - Automatically enables <code>-sASYNCIFY=1</code> so that synchronous desktop blocking loops (<code>while (!WindowShouldClose())</code>) yield control transparently to the browser's <code>requestAnimationFrame</code> without tab freezes. - Generates an interactive HTML5 harness with automatic high-DPI canvas scaling and audio context unlock.  <li><strong>Manual Override</strong>: Pass <code>--web-profile=cli</code> or <code>--web-profile=canvas</code> to explicitly force a profile.</li>
 </ol>
-<p>Dependency resolution for WebAssembly is completely automated: when importing <code>vendor:raylib</code> under <code>--target wasm</code>, <code>cfire</code> transparently fetches and extracts prebuilt WebAssembly archives into <code>~/.cache/cfire/pkg/vendor_raylib_wasm</code>, flattening archives and linking <code>libraylib.a</code> without host dynamic library pollution. Structs with <code>json:&quot;...&quot;</code> metadata compile cleanly with web-friendly reflection fallbacks.</p>
-<h3 id="95-native-desktop-gui-packaging-macos-app-bundles-subsystem">9.5 Native Desktop GUI Packaging &amp; macOS <code>.app</code> Bundles (<code>--subsystem</code>)</h3>
-<p>When building native desktop applications, <code>cfire</code> provides the <code>--subsystem</code> flag:</p>
+<h3 id="96-native-desktop-gui-packaging-no-terminal-execution-subsystem">9.6 Native Desktop GUI Packaging &amp; No-Terminal Execution (<code>--subsystem</code>)</h3>
+<p>When compiling graphical desktop applications (such as Raylib or Raygui tools), double-clicking a binary should not spawn an unwanted background terminal window:</p>
 <ul>
-  <li><code>--subsystem gui</code>: Configures the binary as a windowed application.</li>
-  <li><strong>macOS</strong>: Automatically creates a structured macOS Application Bundle (<code>&lt;app&gt;.app/Contents/MacOS/&lt;app&gt;</code>, <code>Contents/Info.plist</code>, <code>Contents/Resources</code>). To prevent macOS Gatekeeper and LaunchServices error <code>-54</code>, <code>cfire</code> performs automatic ad-hoc code signing (<code>codesign --force --deep --sign -</code>).</li>
-  <li><strong>Windows</strong>: Links with <code>-mwindows</code> to suppress the background console window.</li>
-  <li><strong>Linux</strong>: Links standard X11/Wayland backends.</li>
-  <li><code>--subsystem console</code>: Emits standard command-line executable binaries.</li>
-  <li><code>--subsystem auto</code>: Inspects whether windowing or graphics libraries (<code>vendor:raylib</code>, OpenGL, Cocoa) are imported.</li>
+  <li><strong>Windows (<code>-mwindows</code>)</strong>: When <code>cfire</code> detects <code>vendor:raylib</code> or <code>vendor:raygui</code>, it automatically links with <code>-mwindows</code> (or <code>-Wl,/subsystem:windows</code>). Double-clicking the <code>.exe</code> launches the Raylib window directly without spawning a <code>cmd.exe</code> console window.</li>
+  <li><strong>macOS (<code>.app</code> Bundle Packaging)</strong>: On macOS, <code>cfire build</code> automatically structures the binary into a native Application Bundle:</li>
+ <code></code>`text MyApp.app/ └── Contents/ ├── Info.plist   (CFBundlePackageType: APPL, CFBundleExecutable: MyApp) └── MacOS/ └── MyApp   (Mach-O binary) <code></code>` Double-clicking <code>MyApp.app</code> in Finder executes the application without launching <code>Terminal.app</code>.  <li><strong>Console Debugging Override (<code>--subsystem=console</code>)</strong>: When debugging with <code>println()</code>, pass <code>--subsystem=console</code> to keep the console window active so stdout logs remain visible in the terminal.</li>
 </ul>
-<p><code>cfire</code> also automatically identifies static versions of core C++ libraries (such as <code>libsimdjson_static.a</code>) to link them statically into native bundles, eliminating dynamic linking runtime failures caused by system package manager upgrades.</p>
-<h3 id="96-built-in-webassembly-static-http-development-server-cfire-serve">9.6 Built-in WebAssembly &amp; Static HTTP Development Server (<code>cfire serve</code>)</h3>
-<p>To test WebAssembly applications locally without third-party dependencies, <code>cfire</code> includes a built-in multi-threaded HTTP/1.1 static server:</p>
+<h3 id="97-package-caching-lockfiles-offline-vendoring">9.7 Package Caching, Lockfiles &amp; Offline Vendoring</h3>
+<p>To guarantee reproducible, hermetic builds across development machines and CI/CD runners:</p>
+<ul>
+  <li><strong>Global Package Cache (<code>~/.cfire/cache/pkg</code>)</strong>: Remote repositories and archives are fetched once and cached globally by cryptographic content hash.</li>
+  <li><strong>Lockfile Pinning (<code>build.lock</code>)</strong>: When dependencies are fetched, <code>cfire</code> records exact Git commit SHAs and archive checksums in <code>build.lock</code>. Subsequent builds verify that local archives match the recorded checksum.</li>
+  <li><strong>Air-Gapped Offline Vendoring (<code>cfire vendor</code>)</strong>: Run <code>cfire vendor [dest_dir]</code> to download and vendor all external C/C++ dependencies into a local <code>vendor/</code> directory. Your project can then be built completely offline without network access.</li>
+</ul>
+<h3 id="98-zero-lock-in-cmake-ejection-cfire-eject">9.8 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
+<p><code>cfire</code> guarantees <strong>zero framework lock-in</strong>. You can export your entire project to standard ISO C++23 with a production CMake build file at any time:</p>
 <div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>cfire serve [path] [--port 8080] [--no-open]
+<pre><code>cfire eject main.cf ./standalone_cpp_project
 </code></pre>
-<p>Key features:</p>
+<p>This generates:</p>
 <ul>
-  <li><strong>Instant Launch</strong>: Binds to <code>0.0.0.0</code> or <code>127.0.0.1</code>, auto-discovering the primary <code>.html</code> entry point if a folder or file is passed.</li>
-  <li><strong>WASM Isolation</strong>: Emits <code>Cross-Origin-Opener-Policy: same-origin</code> and <code>Cross-Origin-Embedder-Policy: require-corp</code> headers, enabling <code>SharedArrayBuffer</code> and high-performance WebAssembly multithreading.</li>
-  <li><strong>Zero-Dependency</strong>: Implemented purely in C++23 using native POSIX / BSD socket APIs with zero external packages.</li>
+  <li>Standalone C++23 translation units.</li>
+  <li>The zero-overhead <code>cfire_prelude.hpp</code> runtime header.</li>
+  <li>A clean <code>CMakeLists.txt</code> configuring all include directories, dependencies, and compile options.</li>
 </ul>
+<p>Any developer can immediately clone and build the ejected project using standard CMake and Clang without installing <code>cfire</code>.</p>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
 <h2 id="chapter-10"><a id="ch10"></a>10. Building Web Services, HTTP Servers &amp; Independent Routers (<code>core:net/http</code>)</h2>
 <p>Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Unlike traditional frameworks that force heavy external dependencies or invasive event-loop architectures, <code>cfire</code> provides a zero-dependency, native HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.</p>
@@ -1422,6 +1475,153 @@ fn main() {
     server.stop()
 }
 </code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-11"><a id="ch11"></a>11. 2D/3D Graphics &amp; GUI Applications with Raylib and Raygui</h2>
+<p>Modern systems software often requires interactive visualization, hardware-accelerated 2D/3D graphics, or desktop UI controls for internal tooling, game engines, and scientific visualization. <code>cfire</code> provides first-class, zero-friction integration with <strong>Raylib 5.0</strong> (<code>vendor:raylib</code>) and <strong>Raygui 4.0</strong> (<code>vendor:raygui</code>).</p>
+<h3 id="111-zero-setup-import-linking">11.1 Zero-Setup Import &amp; Linking</h3>
+<p>Simply importing <code>vendor:raylib</code> or <code>vendor:raygui</code> triggers automatic header ingestion, include path resolution, struct lowering, and linking across macOS (<code>Cocoa</code>, <code>IOKit</code>, <code>OpenGL</code>), Linux (<code>X11</code>, <code>GL</code>), Windows, and WebAssembly:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;vendor:raylib&quot; as rl
+import &quot;vendor:raygui&quot; as rg
+</code></pre>
+<h3 id="112-windowing-the-render-loop">11.2 Windowing &amp; The Render Loop</h3>
+<p>Raylib follows a simple, deterministic frame-by-frame polling loop:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;vendor:raylib&quot; as rl
+
+fn main() {
+    // 1. Initialize window and OpenGL context (width, height, title)
+    rl.InitWindow(800, 450, &quot;cfire + Raylib&quot;)
+    defer rl.CloseWindow() // Closes window when main returns
+
+    // 2. Lock framerate to display refresh rate
+    rl.SetTargetFPS(60)
+
+    // 3. Main render loop
+    for !rl.WindowShouldClose() {
+        dt := rl.GetFrameTime() // Delta time in seconds
+
+        // Frame rendering with double buffering
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.RAYWHITE)
+        rl.DrawText(&quot;Hello from Native cfire Raylib!&quot;, 180, 200, 28, rl.DARKGRAY)
+    }
+}
+</code></pre>
+<h3 id="113-2d-shapes-vectors-camera-systems">11.3 2D Shapes, Vectors &amp; Camera Systems</h3>
+<p><code>cfire</code> automatically lowers struct literals (<code>rl.Vector2</code>, <code>rl.Rectangle</code>, <code>rl.Color</code>, <code>rl.Camera2D</code>) to their native C99 Raylib types with zero memory overhead:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;vendor:raylib&quot; as rl
+
+fn main() {
+    rl.InitWindow(800, 450, &quot;Shapes &amp; Camera&quot;)
+    defer rl.CloseWindow()
+
+    mut player_pos := rl.Vector2{x: 400.0, y: 225.0}
+    speed := 250.0
+
+    cam := rl.Camera2D{
+        offset: rl.Vector2{x: 400.0, y: 225.0},
+        target: player_pos,
+        rotation: 0.0,
+        zoom: 1.0,
+    }
+
+    rl.SetTargetFPS(60)
+    for !rl.WindowShouldClose() {
+        dt := rl.GetFrameTime()
+
+        // Input polling
+        if rl.IsKeyDown(rl.KEY_RIGHT) { player_pos.x += speed * dt }
+        if rl.IsKeyDown(rl.KEY_LEFT)  { player_pos.x -= speed * dt }
+        if rl.IsKeyDown(rl.KEY_UP)    { player_pos.y -= speed * dt }
+        if rl.IsKeyDown(rl.KEY_DOWN)  { player_pos.y += speed * dt }
+
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.RAYWHITE)
+
+        // Draw within 2D camera view
+        rl.BeginMode2D(cam)
+        rl.DrawRectangleRec(rl.Rectangle{x: 100.0, y: 100.0, width: 80.0, height: 80.0}, rl.SKYBLUE)
+        rl.DrawCircleV(player_pos, 20.0, rl.MAROON)
+        rl.EndMode2D()
+
+        rl.DrawText(&quot;Use Arrow Keys to Move&quot;, 20, 20, 20, rl.DARKGRAY)
+    }
+}
+</code></pre>
+<h3 id="114-raymath-linear-algebra-primitives">11.4 Raymath Linear Algebra Primitives</h3>
+<p>Raymath functions (<code>Vector2Add</code>, <code>Vector2Scale</code>, <code>Vector2Distance</code>, <code>Clamp</code>) are included out of the box under the <code>rl</code> namespace:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>mut velocity := rl.Vector2{x: 10.0, y: 5.0}
+step := rl.Vector2Scale(velocity, dt)
+player_pos = rl.Vector2Add(player_pos, step)
+player_pos.x = rl.Clamp(player_pos.x, 0.0, 800.0)
+</code></pre>
+<h3 id="115-immediate-mode-gui-controls-vendorraygui">11.5 Immediate-Mode GUI Controls (<code>vendor:raygui</code>)</h3>
+<p><code>vendor:raygui</code> provides clean, high-performance immediate-mode UI widgets designed for tools, debug overlays, and game menus:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;vendor:raylib&quot; as rl
+import &quot;vendor:raygui&quot; as rg
+
+fn main() {
+    rl.InitWindow(640, 480, &quot;Raygui Desktop Controls&quot;)
+    defer rl.CloseWindow()
+
+    mut vsync := true
+    mut volume: f32 = 70.0
+    mut user_name := &quot;PlayerOne&quot;
+    mut text_edit_mode := false
+    mut clicks := 0
+
+    rl.SetTargetFPS(60)
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.RAYWHITE)
+
+        // Window Box Container
+        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 340.0, height: 320.0}, &quot;Audio &amp; Display Settings&quot;)
+
+        // Interactive CheckBox (mutates `vsync` in-place)
+        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 80.0, width: 20.0, height: 20.0}, &quot;Enable VSync&quot;, &amp;mut vsync)
+
+        // Slider Bar (mutates `volume` within [0.0, 100.0])
+        rg.GuiSliderBar(rl.Rectangle{x: 120.0, y: 120.0, width: 160.0, height: 20.0}, &quot;Volume&quot;, &quot;{volume}&quot;, &amp;mut volume, 0.0, 100.0)
+
+        // Editable Text Box safely backed by a `mut str`
+        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 160.0, width: 220.0, height: 28.0}, &amp;mut user_name, 32, text_edit_mode) != 0 {
+            text_edit_mode = !text_edit_mode
+        }
+
+        // Action Button
+        if rg.GuiButton(rl.Rectangle{x: 60.0, y: 210.0, width: 120.0, height: 32.0}, &quot;Save Settings&quot;) != 0 {
+            clicks += 1
+        }
+
+        rl.DrawText(&quot;Saved {clicks} times&quot;, 200, 218, 16, rl.DARKGRAY)
+    }
+}
+</code></pre>
+<h3 id="116-multi-platform-deployment-desktop-webassembly">11.6 Multi-Platform Deployment: Desktop &amp; WebAssembly</h3>
+<p>The same <code>.cf</code> application runs natively across desktop operating systems and modern web browsers without modifying a single line of code:</p>
+<ul>
+  <li><strong>Run on Desktop</strong>:</li>
+ <code></code>`zsh cfire run app.cf cfire build app.cf   # macOS: produces MyApp.app; Windows: produces windowless .exe (-mwindows) <code></code>`  <li><strong>Run in the Web Browser</strong>:</li>
+ <code></code>`zsh cfire run --target=wasm app.cf <code></code>` <code>cfire</code> compiles to WebAssembly using Emscripten, activates WebGL 2.0 and <code>-sASYNCIFY=1</code>, starts a local HTTP server, and opens your browser directly to the interactive Canvas viewport.</ul>
     </main>
   </div>
 </div>

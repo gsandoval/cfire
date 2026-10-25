@@ -566,7 +566,7 @@ auto main(int argc, char** argv) -> int {
             return 0;
         }
         auto docs_dir = runtime_dir.parent_path() / "docs";
-        auto res = cfire::doc::sync_docs_directory(docs_dir, check_only);
+        auto res = cfire::doc::sync_docs_directory(docs_dir, check_only, runtime_dir);
         if (!res) {
             std::println(stderr, "{}", res.error());
             return 1;
