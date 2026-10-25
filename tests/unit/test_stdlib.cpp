@@ -108,6 +108,37 @@ void test_buildsys_incremental_caching([[maybe_unused]] const std::filesystem::p
     require(res2.has_value(), "second build_local_dep");
     auto ar_time2 = std::filesystem::last_write_time(dep.built_archive);
     require(ar_time1 == ar_time2, "unmodified build.CC dependency skips re-compilation and re-archiving");
+
+    // Test parsing build.Executable in build.cf
+    auto build_cf_path = test_dir.path / "build.cf";
+    {
+        std::ofstream bcf(build_cf_path);
+        bcf << R"(package build
+
+import "core:build"
+
+var DemoApp = build.Executable("demo-desktop", {
+    Entry: "src/main.cf",
+    Subsystem: "gui",
+    Name: "Demo App",
+    BundleId: "com.example.demo",
+    Icon: "assets/icon.png",
+    Targets: ["native", "wasm"],
+})
+)";
+    }
+    auto parsed_bcf = cfire::build::parse_build_cf(build_cf_path);
+    require(parsed_bcf.has_value(), "parse_build_cf succeeded");
+    require(parsed_bcf->executables.size() == 1, "found 1 executable");
+    const auto& exe = parsed_bcf->executables[0];
+    require(exe.name == "demo-desktop", "executable name matches");
+    require(exe.entry == "src/main.cf", "executable entry matches");
+    require(exe.subsystem == "gui", "executable subsystem matches");
+    require(exe.app_name == "Demo App", "executable app_name matches");
+    require(exe.bundle_id == "com.example.demo", "executable bundle_id matches");
+    require(exe.icon == "assets/icon.png", "executable icon matches");
+    require(exe.targets.size() == 2 && exe.targets[0] == "native" && exe.targets[1] == "wasm", "executable targets match");
+
     std::println("--- PASS: test_buildsys_incremental_caching");
 }
 

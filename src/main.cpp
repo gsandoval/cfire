@@ -79,7 +79,7 @@ void print_usage() {
     std::println("Commands:");
     std::println("  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run");
     std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
-    std::println("  build    [--target wasm|<triple>] [--web-profile auto|cli|canvas] [--subsystem auto|gui|console] [-o <path>] <file.cf>");
+    std::println("  build    [--target wasm|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
     std::println("  serve    [--port <n>] [--no-open] [path] Serve static assets & WebAssembly with MIME and COOP/COEP headers");
     std::println("  wasm     serve|build|run [args...] Native WebAssembly tools and development server");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
@@ -793,8 +793,10 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (argc < 3) {
-        print_usage();
-        return 1;
+        if (sub != "build") {
+            print_usage();
+            return 1;
+        }
     }
     bool sanitize = false;
     bool json_mode = false;
@@ -806,6 +808,10 @@ auto main(int argc, char** argv) -> int {
     std::string sysroot;
     std::string web_profile = "auto";
     std::string subsystem = "auto";
+    std::string app_name_override;
+    std::string bundle_id_override;
+    std::string icon_path_override;
+    std::string build_target_filter;
     int web_port = 8080;
     std::vector<std::string> extra_link_libs;
     std::vector<std::string> extra_includes;
@@ -860,6 +866,34 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg.starts_with("-o=")) {
             custom_output_path = arg.substr(3);
+            continue;
+        }
+        if ((arg == "--icon" || arg == "-icon") && i + 1 < argc) {
+            icon_path_override = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--icon=")) {
+            icon_path_override = arg.substr(7);
+            continue;
+        }
+        if ((arg == "--name" || arg == "--app-name") && i + 1 < argc) {
+            app_name_override = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--name=")) {
+            app_name_override = arg.substr(7);
+            continue;
+        }
+        if (arg.starts_with("--app-name=")) {
+            app_name_override = arg.substr(11);
+            continue;
+        }
+        if ((arg == "--bundle-id" || arg == "-bundle-id") && i + 1 < argc) {
+            bundle_id_override = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--bundle-id=")) {
+            bundle_id_override = arg.substr(12);
             continue;
         }
         if (arg == "--target=wasm" || arg == "-target=wasm" || arg == "--target=web" || arg == "-target=web") {
@@ -937,6 +971,21 @@ auto main(int argc, char** argv) -> int {
             run_args.emplace_back(arg);
         }
     }
+
+    if (sub == "build") {
+        auto build_cf_cur = std::filesystem::current_path() / "build.cf";
+        if (target.empty() || target == "." || target == "all") {
+            if (std::filesystem::exists(build_cf_cur)) {
+                target = build_cf_cur;
+            }
+        } else if (target != "build.cf" && target.extension() != ".cf") {
+            if (std::filesystem::exists(build_cf_cur)) {
+                build_target_filter = target.string();
+                target = build_cf_cur;
+            }
+        }
+    }
+
     if (target.empty()) {
         print_usage();
         return 1;
@@ -1306,12 +1355,117 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "build") {
+        if (target.filename() == "build.cf") {
+            auto parsed = cfire::build::parse_build_cf(target);
+            if (!parsed) {
+                std::println(stderr, "error parsing build.cf: {}", parsed.error());
+                return 1;
+            }
+            if (parsed->executables.empty()) {
+                std::println(stderr, "error: no executables declared in {}", target.string());
+                return 1;
+            }
+
+            bool build_all = build_target_filter.empty() || build_target_filter == "all";
+            bool matched_any = false;
+
+            for (const auto& exe : parsed->executables) {
+                if (!build_all && exe.name != build_target_filter && exe.var_name != build_target_filter) {
+                    continue;
+                }
+                matched_any = true;
+
+                std::vector<std::string> active_targets = exe.targets;
+                if (!target_triple.empty()) {
+                    active_targets = { target_triple };
+                }
+
+                std::filesystem::path entry_file = exe.entry;
+                if (entry_file.is_relative()) {
+                    entry_file = target.parent_path() / entry_file;
+                }
+
+                for (const auto& tgt : active_targets) {
+                    bool is_wasm_target = (tgt == "wasm" || tgt == "web" || tgt.starts_with("wasm32"));
+                    std::string effective_triple = is_wasm_target ? "wasm32-unknown-emscripten" : (tgt == "native" ? "" : tgt);
+                    std::string effective_profile = is_wasm_target ? (!web_profile.empty() && web_profile != "auto" ? web_profile : (exe.web_profile.empty() ? (exe.subsystem == "gui" ? "canvas" : "auto") : exe.web_profile)) : web_profile;
+                    std::string effective_subsystem = !subsystem.empty() && subsystem != "auto" ? subsystem : (exe.subsystem.empty() ? "auto" : exe.subsystem);
+                    std::string effective_app_name = !app_name_override.empty() ? app_name_override : exe.app_name;
+                    std::string effective_bundle_id = !bundle_id_override.empty() ? bundle_id_override : exe.bundle_id;
+                    std::string effective_icon = !icon_path_override.empty() ? icon_path_override : exe.icon;
+
+                    std::filesystem::path out_bin_path;
+                    if (!custom_output_path.empty()) {
+                        out_bin_path = custom_output_path;
+                    } else {
+                        std::filesystem::path base_out_dir = exe.out_dir.empty() ? target.parent_path() : (target.parent_path() / exe.out_dir);
+                        if (is_wasm_target) {
+                            out_bin_path = base_out_dir / (exe.name + ".html");
+                        } else {
+                            std::error_code ec;
+                            auto candidate = base_out_dir / exe.name;
+                            if (std::filesystem::is_directory(candidate, ec)) {
+                                out_bin_path = candidate / exe.name;
+                            } else {
+                                out_bin_path = candidate;
+                            }
+                        }
+                    }
+
+                    std::error_code ec;
+                    std::filesystem::create_directories(out_bin_path.parent_path(), ec);
+
+                    auto plan = cfire::build::build_native(
+                        entry_file,
+                        runtime_dir,
+                        out_bin_path,
+                        false,
+                        sanitize,
+                        effective_triple,
+                        sysroot,
+                        extra_link_libs,
+                        extra_includes,
+                        effective_profile,
+                        effective_subsystem,
+                        effective_app_name,
+                        effective_bundle_id,
+                        effective_icon
+                    );
+                    if (!plan) {
+                        std::println(stderr, "error building target '{}' for executable '{}':\n{}",
+                            tgt, exe.name, plan.error());
+                        return 1;
+                    }
+
+                    if (is_wasm_target) {
+                        std::println("✓ Built WebAssembly: {} (profile={})", out_bin_path.string(), plan->web_profile);
+                    } else {
+                        std::string bundle_info = plan->macos_app_bundle.empty() ? "" : std::format(" -> {}", plan->macos_app_bundle);
+                        std::println("✓ Built Native {}: {}{}",
+                            plan->subsystem == "gui" ? "App" : "Binary",
+                            out_bin_path.string(),
+                            bundle_info);
+                    }
+                }
+            }
+
+            if (!matched_any) {
+                std::println(stderr, "error: executable '{}' not found in {}", build_target_filter, target.string());
+                return 1;
+            }
+            return 0;
+        }
+
         std::string out_bin;
         if (!custom_output_path.empty()) {
             out_bin = custom_output_path;
         } else {
             out_bin = target.parent_path().filename().string();
             if (out_bin.empty() || out_bin == ".") out_bin = "cfire_app";
+            std::error_code ec;
+            if (std::filesystem::is_directory(out_bin, ec)) {
+                out_bin = (std::filesystem::path(out_bin) / target.stem().string()).string();
+            }
         }
         if (!target_triple.empty() && (target_triple.find("windows") != std::string::npos || target_triple.find("win32") != std::string::npos || target_triple.find("msvc") != std::string::npos)) {
             if (!out_bin.ends_with(".exe")) out_bin += ".exe";
@@ -1321,7 +1475,22 @@ auto main(int argc, char** argv) -> int {
                 out_bin += ".html";
             }
         }
-        auto plan = cfire::build::build_native(target, runtime_dir, out_bin, false, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
+        auto plan = cfire::build::build_native(
+            target,
+            runtime_dir,
+            out_bin,
+            false,
+            sanitize,
+            target_triple,
+            sysroot,
+            extra_link_libs,
+            extra_includes,
+            web_profile,
+            subsystem,
+            app_name_override,
+            bundle_id_override,
+            icon_path_override
+        );
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;
