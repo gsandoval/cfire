@@ -1,0 +1,60 @@
+package main
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+
+fn main() {
+    // 1. Initialize Window & Hardware Acceleration
+    rl.InitWindow(720, 480, "cfire + vendor:raygui Interactive Controls")
+    defer rl.CloseWindow()
+
+    rl.SetTargetFPS(60)
+
+    // GUI State Variables
+    mut vsync := true
+    mut master_volume: f32 = 75.0
+    mut player_name := "CfirePilot"
+    mut name_edit_mode := false
+    mut clicks := 0
+    mut selected_theme := 0
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.RAYWHITE)
+
+        // 2. Draw Raygui Window Box Container
+        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 420.0, height: 380.0}, "Application & Audio Preferences")
+
+        // 3. Interactive Checkbox (In-place boolean mutation)
+        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 80.0, width: 20.0, height: 20.0}, "Enable VSync (Lock 60 FPS)", &mut vsync)
+
+        // 4. Interactive Slider Bar (In-place float mutation within [0.0, 100.0])
+        rg.GuiSliderBar(rl.Rectangle{x: 140.0, y: 120.0, width: 180.0, height: 20.0}, "Master Volume", "{master_volume}", &mut master_volume, 0.0, 100.0)
+
+        // 5. Interactive Combo Box
+        rg.GuiComboBox(rl.Rectangle{x: 140.0, y: 160.0, width: 180.0, height: 24.0}, "Dark Theme;Light Theme;High Contrast", &mut selected_theme)
+        rl.DrawText("Color Theme:", 60, 164, 14, rl.DARKGRAY)
+
+        // 6. Safe Mutable String Text Box
+        rl.DrawText("Pilot Name:", 60, 204, 14, rl.DARKGRAY)
+        if rg.GuiTextBox(rl.Rectangle{x: 140.0, y: 200.0, width: 220.0, height: 28.0}, &mut player_name, 32, name_edit_mode) != 0 {
+            name_edit_mode = !name_edit_mode
+        }
+
+        // 7. Interactive Action Button
+        if rg.GuiButton(rl.Rectangle{x: 140.0, y: 250.0, width: 140.0, height: 32.0}, "Apply Settings") != 0 {
+            clicks += 1
+        }
+
+        // 8. Dynamic Status Display with Native String Interpolation
+        rl.DrawText("Applied {clicks} times | Active pilot: {player_name}", 60, 310, 14, rl.GRAY)
+
+        // 9. Visual Audio Level Indicator
+        level_bar_width := master_volume * 3.0
+        rl.DrawRectangle(60, 340, i32(level_bar_width), 16, rl.SKYBLUE)
+        rl.DrawRectangleLines(60, 340, 300, 16, rl.DARKGRAY)
+        rl.DrawText("Volume Level: {master_volume}%", 60, 362, 12, rl.DARKGRAY)
+    }
+}

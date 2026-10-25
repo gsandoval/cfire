@@ -1138,7 +1138,8 @@ fn main() {
 
         // Consumer task
         scope.spawn || {
-            for item := ch.recv() or break {
+            for {
+                item := ch.recv() or break
                 println(&quot;Channel consumer received: {}&quot;, item)
             }
         }
@@ -1417,7 +1418,8 @@ fn main() {
     println(&quot;Sorted numbers: {:?}&quot;, numbers)
 
     // Logarithmic binary search
-    if idx := sort.binary_search(numbers, 48) {
+    idx := sort.binary_search(numbers, 48)
+    if idx != none {
         println(&quot;Found element 48 at index: {}&quot;, idx)
     }
 }</code></pre>
