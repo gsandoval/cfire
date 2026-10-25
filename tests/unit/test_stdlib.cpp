@@ -139,6 +139,13 @@ var DemoApp = build.Executable("demo-desktop", {
     require(exe.icon == "assets/icon.png", "executable icon matches");
     require(exe.targets.size() == 2 && exe.targets[0] == "native" && exe.targets[1] == "wasm", "executable targets match");
 
+    auto res_target = cfire::build::resolve_build_target(test_dir.path, "", true);
+    require(res_target.has_value(), "resolve_build_target succeeded");
+    require(res_target->has_wasm_target, "resolve_build_target identified wasm target");
+    require(res_target->has_native_target, "resolve_build_target identified native target");
+    require(res_target->wasm_html.filename() == "demo-desktop.html", "resolve_build_target wasm html filename matches");
+    require(res_target->exe.name == "demo-desktop", "resolve_build_target exe matches");
+
     std::println("--- PASS: test_buildsys_incremental_caching");
 }
 

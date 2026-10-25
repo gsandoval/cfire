@@ -1,6 +1,7 @@
 // src/server.hpp — Native zero-dependency HTTP/1.1 server for WebAssembly and static web assets
 #pragma once
 
+#include "buildsys.hpp"
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -281,7 +282,12 @@ inline void handle_client(int client_fd, const std::filesystem::path& root_dir, 
 #endif
 }
 
-inline auto run_server(std::filesystem::path target, int requested_port = 8080, bool open_browser = true) -> int {
+inline auto run_server(
+    std::filesystem::path target,
+    int requested_port = 8080,
+    bool open_browser = true,
+    std::string explicit_entry = ""
+) -> int {
 #if defined(_WIN32)
     WSADATA wsa_data;
     if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
@@ -293,7 +299,7 @@ inline auto run_server(std::filesystem::path target, int requested_port = 8080, 
 #endif
 
     std::filesystem::path root_dir;
-    std::string default_entry;
+    std::string default_entry = explicit_entry;
 
     if (target.empty() || target == ".") {
         root_dir = std::filesystem::current_path();
@@ -301,15 +307,19 @@ inline auto run_server(std::filesystem::path target, int requested_port = 8080, 
         root_dir = std::filesystem::canonical(target);
     } else if (std::filesystem::is_regular_file(target)) {
         root_dir = std::filesystem::canonical(target.parent_path());
-        default_entry = target.filename().string();
+        if (default_entry.empty()) {
+            default_entry = target.filename().string();
+        }
     } else {
-        // Maybe relative path
-        if (std::filesystem::exists(target)) {
-            if (std::filesystem::is_directory(target)) {
-                root_dir = std::filesystem::canonical(target);
+        std::error_code ec;
+        if (std::filesystem::exists(target, ec)) {
+            if (std::filesystem::is_directory(target, ec)) {
+                root_dir = std::filesystem::canonical(target, ec);
             } else {
-                root_dir = std::filesystem::canonical(target.parent_path());
-                default_entry = target.filename().string();
+                root_dir = std::filesystem::canonical(target.parent_path(), ec);
+                if (default_entry.empty()) {
+                    default_entry = target.filename().string();
+                }
             }
         } else {
             root_dir = std::filesystem::current_path();
@@ -320,14 +330,25 @@ inline auto run_server(std::filesystem::path target, int requested_port = 8080, 
     if (default_entry.empty()) {
         if (std::filesystem::exists(root_dir / "index.html")) {
             default_entry = "index.html";
-        } else if (std::filesystem::exists(root_dir / "flautas-web.html")) {
-            default_entry = "flautas-web.html";
         } else {
-            std::error_code ec;
-            for (const auto& entry : std::filesystem::directory_iterator(root_dir, ec)) {
-                if (entry.is_regular_file() && entry.path().extension() == ".html") {
-                    default_entry = entry.path().filename().string();
-                    break;
+            // Check if build.cf exists in root_dir or parent
+            auto bcf_res = cfire::build::resolve_build_target(root_dir, "", true);
+            if (!bcf_res && root_dir.has_parent_path()) {
+                bcf_res = cfire::build::resolve_build_target(root_dir.parent_path(), "", true);
+            }
+            if (bcf_res && bcf_res->has_wasm_target) {
+                if (std::filesystem::exists(bcf_res->wasm_html)) {
+                    root_dir = bcf_res->wasm_html.parent_path();
+                    default_entry = bcf_res->wasm_html.filename().string();
+                }
+            }
+            if (default_entry.empty()) {
+                std::error_code ec;
+                for (const auto& entry : std::filesystem::directory_iterator(root_dir, ec)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".html") {
+                        default_entry = entry.path().filename().string();
+                        break;
+                    }
                 }
             }
         }

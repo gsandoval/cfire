@@ -367,6 +367,108 @@ inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& c
     return parsed;
 }
 
+struct TargetResolution {
+    bool found = false;
+    ExecutableSpec exe{};
+    std::filesystem::path build_cf_path{};
+    std::filesystem::path entry_file{};
+    std::filesystem::path base_out_dir{};
+    std::filesystem::path native_bin{};
+    std::filesystem::path macos_app_bundle{};
+    std::filesystem::path wasm_html{};
+    std::filesystem::path wasm_js{};
+    std::filesystem::path wasm_wasm{};
+    bool has_native_target = false;
+    bool has_wasm_target = false;
+};
+
+[[nodiscard]] inline auto resolve_build_target(
+    const std::filesystem::path& base_dir_or_build_cf,
+    std::string_view target_name = "",
+    bool prefer_wasm = false
+) -> std::optional<TargetResolution> {
+    std::filesystem::path bcf = base_dir_or_build_cf;
+    std::error_code ec;
+    if (std::filesystem::is_directory(bcf, ec)) {
+        bcf = bcf / "build.cf";
+    }
+    if (!std::filesystem::exists(bcf, ec)) {
+        return std::nullopt;
+    }
+    auto parsed = parse_build_cf(bcf);
+    if (!parsed || parsed->executables.empty()) {
+        return std::nullopt;
+    }
+
+    const ExecutableSpec* chosen = nullptr;
+    if (!target_name.empty() && target_name != "all" && target_name != ".") {
+        for (const auto& exe : parsed->executables) {
+            if (exe.name == target_name || exe.var_name == target_name) {
+                chosen = &exe;
+                break;
+            }
+        }
+    } else {
+        if (prefer_wasm) {
+            for (const auto& exe : parsed->executables) {
+                for (const auto& t : exe.targets) {
+                    if (t == "wasm" || t == "web" || t.starts_with("wasm32")) {
+                        chosen = &exe;
+                        break;
+                    }
+                }
+                if (chosen) break;
+            }
+        }
+        if (!chosen && !parsed->executables.empty()) {
+            chosen = &parsed->executables.front();
+        }
+    }
+
+    if (!chosen) return std::nullopt;
+
+    TargetResolution res;
+    res.found = true;
+    res.exe = *chosen;
+    res.build_cf_path = std::filesystem::canonical(bcf, ec);
+    auto proj_root = res.build_cf_path.parent_path();
+
+    res.entry_file = chosen->entry;
+    if (res.entry_file.is_relative()) {
+        res.entry_file = proj_root / res.entry_file;
+    }
+
+    res.base_out_dir = chosen->out_dir.empty() ? proj_root : (proj_root / chosen->out_dir);
+
+    for (const auto& t : chosen->targets) {
+        if (t == "wasm" || t == "web" || t.starts_with("wasm32")) {
+            res.has_wasm_target = true;
+        }
+        if (t == "native" || (!t.starts_with("wasm") && t != "web")) {
+            res.has_native_target = true;
+        }
+    }
+
+    // WASM paths
+    res.wasm_html = res.base_out_dir / (chosen->name + ".html");
+    res.wasm_js = res.base_out_dir / (chosen->name + ".js");
+    res.wasm_wasm = res.base_out_dir / (chosen->name + ".wasm");
+
+    // Native paths
+    auto candidate = res.base_out_dir / chosen->name;
+    if (std::filesystem::is_directory(candidate, ec)) {
+        res.native_bin = candidate / chosen->name;
+    } else {
+        res.native_bin = candidate;
+    }
+
+    if (chosen->subsystem == "gui" || chosen->subsystem == "auto") {
+        res.macos_app_bundle = res.native_bin.parent_path() / (chosen->name + ".app");
+    }
+
+    return res;
+}
+
 // Extracts tokens inside a CMake command like `add_library(kvstore STATIC src/kvstore.c)`
 inline void parse_cmake_manifest(
     const std::filesystem::path& cmake_lists,

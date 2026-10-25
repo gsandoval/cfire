@@ -77,11 +77,11 @@ auto locate_runtime_dir() -> std::filesystem::path {
 void print_usage() {
     std::println("Usage: cfire <command> [args...]");
     std::println("Commands:");
-    std::println("  run      <file.cf>            Transpile to C++23, auto-link core/vendor/cpp deps, and run");
+    std::println("  run      [--web] [target|file.cf] Run native app, execute binary, or serve web app (--web)");
     std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
     std::println("  build    [--target wasm|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
-    std::println("  serve    [--port <n>] [--no-open] [path] Serve static assets & WebAssembly with MIME and COOP/COEP headers");
-    std::println("  wasm     serve|build|run [args...] Native WebAssembly tools and development server");
+    std::println("  serve    [--port <n>] [--no-open] [target|path] Build & serve WebAssembly / static web app with zero config");
+    std::println("  wasm     serve|build|run [args...] Convenient WebAssembly aliases for serve, build, and run --web");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
     std::println("  check    [--json] [--fix] <file.cf> Type-check, verify parameter intents, and inspect C++ headers");
@@ -268,43 +268,75 @@ auto main(int argc, char** argv) -> int {
             }
             target_path = arg;
         }
-        return cfire::serve::run_server(target_path, port, open_browser);
+
+        std::string explicit_entry;
+        auto cur_dir = std::filesystem::current_path();
+        std::string target_name;
+        if (target_path != "." && !std::filesystem::exists(target_path)) {
+            target_name = target_path.string();
+            target_path = ".";
+        }
+
+        auto bcf_res = cfire::build::resolve_build_target(cur_dir, target_name, true);
+        if (bcf_res && bcf_res->has_wasm_target) {
+            if (!std::filesystem::exists(bcf_res->wasm_html)) {
+                std::println("==> Building {} (WebAssembly target from build.cf)...", bcf_res->exe.name);
+                std::error_code ec;
+                std::filesystem::create_directories(bcf_res->wasm_html.parent_path(), ec);
+                auto plan = cfire::build::build_native(
+                    bcf_res->entry_file,
+                    runtime_dir,
+                    bcf_res->wasm_html,
+                    false,
+                    false,
+                    "wasm32-unknown-emscripten",
+                    "",
+                    {},
+                    {},
+                    bcf_res->exe.web_profile.empty() ? (bcf_res->exe.subsystem == "gui" ? "canvas" : "auto") : bcf_res->exe.web_profile,
+                    bcf_res->exe.subsystem.empty() ? "auto" : bcf_res->exe.subsystem,
+                    bcf_res->exe.app_name,
+                    bcf_res->exe.bundle_id,
+                    bcf_res->exe.icon
+                );
+                if (!plan) {
+                    std::println(stderr, "error auto-building wasm target: {}", plan.error());
+                    return 1;
+                }
+                std::println("✓ Built WebAssembly: {} (profile={})", bcf_res->wasm_html.string(), plan->web_profile);
+            }
+            target_path = bcf_res->wasm_html.parent_path();
+            explicit_entry = bcf_res->wasm_html.filename().string();
+        }
+
+        return cfire::serve::run_server(target_path, port, open_browser, explicit_entry);
     }
 
     if (sub == "wasm") {
-        if (argc < 3) {
-            return cfire::serve::run_server(".", 8080, true);
+        if (argc < 3 || std::string_view(argv[2]) == "serve" || std::string_view(argv[2]) == "server") {
+            std::vector<std::string> new_args;
+            new_args.push_back(argv[0]);
+            new_args.push_back("serve");
+            int start_idx = (argc >= 3 && (std::string_view(argv[2]) == "serve" || std::string_view(argv[2]) == "server")) ? 3 : 2;
+            for (int i = start_idx; i < argc; ++i) {
+                new_args.push_back(argv[i]);
+            }
+            std::vector<char*> c_args;
+            for (auto& s : new_args) c_args.push_back(s.data());
+            return main(static_cast<int>(c_args.size()), c_args.data());
         }
         std::string wasm_cmd = argv[2];
-        if (wasm_cmd == "serve" || wasm_cmd == "server") {
-            int port = 8080;
-            bool open_browser = true;
-            std::filesystem::path target_path = ".";
+        if (wasm_cmd == "run") {
+            std::vector<std::string> new_args;
+            new_args.push_back(argv[0]);
+            new_args.push_back("run");
+            new_args.push_back("--web");
             for (int i = 3; i < argc; ++i) {
-                std::string_view arg = argv[i];
-                if (arg == "--no-open") {
-                    open_browser = false;
-                    continue;
-                }
-                if (arg == "--open") {
-                    open_browser = true;
-                    continue;
-                }
-                if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
-                    try { port = std::stoi(argv[++i]); } catch (...) {}
-                    continue;
-                }
-                if (arg.starts_with("--port=")) {
-                    try { port = std::stoi(std::string(arg.substr(7))); } catch (...) {}
-                    continue;
-                }
-                if (arg.starts_with("-p=")) {
-                    try { port = std::stoi(std::string(arg.substr(3))); } catch (...) {}
-                    continue;
-                }
-                target_path = arg;
+                new_args.push_back(argv[i]);
             }
-            return cfire::serve::run_server(target_path, port, open_browser);
+            std::vector<char*> c_args;
+            for (auto& s : new_args) c_args.push_back(s.data());
+            return main(static_cast<int>(c_args.size()), c_args.data());
         }
         std::vector<std::string> new_args;
         new_args.push_back(argv[0]);
@@ -793,7 +825,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (argc < 3) {
-        if (sub != "build") {
+        if (sub != "build" && sub != "run") {
             print_usage();
             return 1;
         }
@@ -813,6 +845,7 @@ auto main(int argc, char** argv) -> int {
     std::string icon_path_override;
     std::string build_target_filter;
     int web_port = 8080;
+    bool open_browser = true;
     std::vector<std::string> extra_link_libs;
     std::vector<std::string> extra_includes;
     std::filesystem::path target;
@@ -896,7 +929,7 @@ auto main(int argc, char** argv) -> int {
             bundle_id_override = arg.substr(12);
             continue;
         }
-        if (arg == "--target=wasm" || arg == "-target=wasm" || arg == "--target=web" || arg == "-target=web") {
+        if (arg == "--target=wasm" || arg == "-target=wasm" || arg == "--target=web" || arg == "-target=web" || arg == "--web" || arg == "-web") {
             target_triple = "wasm32-unknown-emscripten";
             continue;
         }
@@ -916,8 +949,24 @@ auto main(int argc, char** argv) -> int {
             subsystem = arg.substr(11);
             continue;
         }
+        if (arg == "--no-open") {
+            open_browser = false;
+            continue;
+        }
+        if (arg == "--open") {
+            open_browser = true;
+            continue;
+        }
+        if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
+            try { web_port = std::stoi(argv[++i]); } catch (...) {}
+            continue;
+        }
         if (arg.starts_with("--port=")) {
             try { web_port = std::stoi(std::string(arg.substr(7))); } catch (...) {}
+            continue;
+        }
+        if (arg.starts_with("-p=")) {
+            try { web_port = std::stoi(std::string(arg.substr(3))); } catch (...) {}
             continue;
         }
         if ((arg == "--target" || arg == "-target") && i + 1 < argc) {
@@ -972,7 +1021,7 @@ auto main(int argc, char** argv) -> int {
         }
     }
 
-    if (sub == "build") {
+    if (sub == "build" || sub == "run") {
         auto build_cf_cur = std::filesystem::current_path() / "build.cf";
         if (target.empty() || target == "." || target == "all") {
             if (std::filesystem::exists(build_cf_cur)) {
@@ -1515,6 +1564,110 @@ auto main(int argc, char** argv) -> int {
             }
         }
 
+        if (!is_test && target.filename() == "build.cf") {
+            bool is_wasm_run = target_triple.starts_with("wasm");
+            auto bcf_res = cfire::build::resolve_build_target(target, build_target_filter, is_wasm_run);
+            if (!bcf_res) {
+                std::println(stderr, "error: no matching executable found in {}", target.string());
+                return 1;
+            }
+
+            if (is_wasm_run) {
+                if (!std::filesystem::exists(bcf_res->wasm_html)) {
+                    std::println("==> Building {} (WebAssembly target from build.cf)...", bcf_res->exe.name);
+                    std::error_code ec;
+                    std::filesystem::create_directories(bcf_res->wasm_html.parent_path(), ec);
+                    auto plan = cfire::build::build_native(
+                        bcf_res->entry_file,
+                        runtime_dir,
+                        bcf_res->wasm_html,
+                        false,
+                        false,
+                        "wasm32-unknown-emscripten",
+                        "",
+                        {},
+                        {},
+                        bcf_res->exe.web_profile.empty() ? (bcf_res->exe.subsystem == "gui" ? "canvas" : "auto") : bcf_res->exe.web_profile,
+                        bcf_res->exe.subsystem.empty() ? "auto" : bcf_res->exe.subsystem,
+                        bcf_res->exe.app_name,
+                        bcf_res->exe.bundle_id,
+                        bcf_res->exe.icon
+                    );
+                    if (!plan) {
+                        std::println(stderr, "error auto-building wasm target: {}", plan.error());
+                        return 1;
+                    }
+                    std::println("✓ Built WebAssembly: {} (profile={})", bcf_res->wasm_html.string(), plan->web_profile);
+                }
+                return cfire::serve::run_server(bcf_res->wasm_html.parent_path(), web_port, open_browser, bcf_res->wasm_html.filename().string());
+            }
+
+            // Native run
+            bool is_gui = (bcf_res->exe.subsystem == "gui");
+            bool needs_build = false;
+#if defined(__APPLE__)
+            if (is_gui) {
+                if (!std::filesystem::exists(bcf_res->macos_app_bundle)) {
+                    needs_build = true;
+                }
+            } else {
+                if (!std::filesystem::exists(bcf_res->native_bin)) {
+                    needs_build = true;
+                }
+            }
+#else
+            if (!std::filesystem::exists(bcf_res->native_bin)) {
+                needs_build = true;
+            }
+#endif
+
+            if (needs_build) {
+                std::println("==> Building {} (Native target from build.cf)...", bcf_res->exe.name);
+                std::error_code ec;
+                std::filesystem::create_directories(bcf_res->native_bin.parent_path(), ec);
+                auto plan = cfire::build::build_native(
+                    bcf_res->entry_file,
+                    runtime_dir,
+                    bcf_res->native_bin,
+                    false,
+                    sanitize,
+                    target_triple,
+                    sysroot,
+                    extra_link_libs,
+                    extra_includes,
+                    bcf_res->exe.web_profile,
+                    bcf_res->exe.subsystem,
+                    bcf_res->exe.app_name,
+                    bcf_res->exe.bundle_id,
+                    bcf_res->exe.icon
+                );
+                if (!plan) {
+                    std::println(stderr, "error building native target: {}", plan.error());
+                    return 1;
+                }
+                std::string bundle_info = plan->macos_app_bundle.empty() ? "" : std::format(" -> {}", plan->macos_app_bundle);
+                std::println("✓ Built Native {}: {}{}",
+                    plan->subsystem == "gui" ? "App" : "Binary",
+                    bcf_res->native_bin.string(),
+                    bundle_info);
+            }
+
+#if defined(__APPLE__)
+            if (is_gui && !bcf_res->macos_app_bundle.empty() && std::filesystem::exists(bcf_res->macos_app_bundle)) {
+                std::println("==> Launching macOS App: {}", bcf_res->macos_app_bundle.string());
+                std::string open_cmd = "open " + cfire::bridge::shell_quote(bcf_res->macos_app_bundle.string());
+                int rc = std::system(open_cmd.c_str());
+                return rc == 0 ? 0 : 1;
+            }
+#endif
+            std::string cmd = cfire::bridge::shell_quote(bcf_res->native_bin.string());
+            for (const auto& arg : run_args) {
+                cmd += " " + cfire::bridge::shell_quote(arg);
+            }
+            int rc = std::system(cmd.c_str());
+            return rc == 0 ? 0 : 1;
+        }
+
         if (target_triple.starts_with("wasm")) {
             auto tmp_html = std::filesystem::temp_directory_path() / std::format("cfire-wasm-{}.html", ::getpid());
             auto plan = cfire::build::build_native(target, runtime_dir, tmp_html, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
@@ -1536,7 +1689,7 @@ auto main(int argc, char** argv) -> int {
                     return rc == 0 ? 0 : 1;
                 }
             }
-            return cfire::serve::run_server(tmp_html, web_port, true);
+            return cfire::serve::run_server(tmp_html, web_port, open_browser);
         }
 
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());
