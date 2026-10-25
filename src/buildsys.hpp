@@ -58,9 +58,23 @@ struct PreBuildCommandSpec {
     std::string work_dir{};
 };
 
+struct ExecutableSpec {
+    std::string var_name{};
+    std::string name{};
+    std::string entry{};
+    std::string subsystem{"auto"};
+    std::string app_name{};
+    std::string bundle_id{};
+    std::string icon{};
+    std::vector<std::string> targets{"native"};
+    std::string out_dir{};
+    std::string web_profile{"auto"};
+};
+
 struct ParsedBuildCf {
     std::vector<ExternalDepSpec> external_deps{};
     std::vector<PreBuildCommandSpec> pre_build_commands{};
+    std::vector<ExecutableSpec> executables{};
 };
 
 struct BuildPlan {
@@ -83,6 +97,9 @@ struct BuildPlan {
     bool is_gui{false};
     std::string web_profile{"auto"};
     std::string subsystem{"auto"};
+    std::string app_name{};
+    std::string bundle_id{};
+    std::string icon_path{};
     std::string macos_app_bundle{};
     std::string emscripten_compiler{};
 };
@@ -132,7 +149,78 @@ inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& c
         const auto* call = std::get_if<frontend::CallExpr>(&gv.value->node);
         if (!call || !call->callee) continue;
         const auto* mem = std::get_if<frontend::MemberExpr>(&call->callee->node);
-        if (!mem || mem->field == "Executable") continue;
+        if (!mem) continue;
+
+        if (mem->field == "Executable" || mem->field == "App") {
+            ExecutableSpec exe_spec;
+            exe_spec.var_name = gv.name;
+            if (!call->args.empty() && call->args[0].value) {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&call->args[0].value->node)) {
+                    exe_spec.name = lit->value;
+                }
+            }
+            if (exe_spec.name.empty()) {
+                exe_spec.name = gv.name;
+            }
+            if (call->args.size() > 1 && call->args[1].value) {
+                if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&call->args[1].value->node)) {
+                    for (const auto& fld : st_lit->fields) {
+                        if (!fld.value) continue;
+                        if (fld.name == "Entry") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.entry = lit->value;
+                            }
+                        } else if (fld.name == "Subsystem") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.subsystem = lit->value;
+                            }
+                        } else if (fld.name == "Name") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.app_name = lit->value;
+                            }
+                        } else if (fld.name == "BundleId" || fld.name == "BundleID" || fld.name == "Identifier") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.bundle_id = lit->value;
+                            }
+                        } else if (fld.name == "Icon") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.icon = lit->value;
+                            }
+                        } else if (fld.name == "Targets") {
+                            if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
+                                exe_spec.targets.clear();
+                                for (const auto& el : arr->elements) {
+                                    if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                                        exe_spec.targets.push_back(lit->value);
+                                    }
+                                }
+                            } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.targets = {lit->value};
+                            }
+                        } else if (fld.name == "OutDir") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.out_dir = lit->value;
+                            }
+                        } else if (fld.name == "WebProfile") {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                                exe_spec.web_profile = lit->value;
+                            }
+                        }
+                    }
+                }
+            }
+            if (exe_spec.targets.empty()) {
+                exe_spec.targets.push_back("native");
+            }
+            if (exe_spec.app_name.empty()) {
+                exe_spec.app_name = exe_spec.name;
+            }
+            if (exe_spec.bundle_id.empty()) {
+                exe_spec.bundle_id = "com.cfire." + exe_spec.name;
+            }
+            parsed.executables.push_back(std::move(exe_spec));
+            continue;
+        }
 
         if (mem->field == "Command") {
             PreBuildCommandSpec cmd_spec;
@@ -1703,6 +1791,77 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     return {};
 }
 
+[[nodiscard]] inline auto ensure_macos_icns(
+    const std::filesystem::path& icon_src,
+    const std::filesystem::path& cache_dir
+) -> std::expected<std::filesystem::path, std::string> {
+    std::error_code ec;
+    if (!std::filesystem::exists(icon_src, ec)) {
+        return std::unexpected(std::format("icon file not found: {}", icon_src.string()));
+    }
+    if (icon_src.extension() == ".icns") {
+        return icon_src;
+    }
+    if (icon_src.extension() != ".png") {
+        return std::unexpected(std::format("unsupported icon format '{}'; expected .png or .icns", icon_src.extension().string()));
+    }
+
+#if defined(__APPLE__)
+    std::filesystem::create_directories(cache_dir, ec);
+    auto stem = icon_src.stem().string();
+    auto cached_icns = cache_dir / (stem + ".icns");
+
+    if (std::filesystem::exists(cached_icns, ec)) {
+        auto src_time = std::filesystem::last_write_time(icon_src, ec);
+        auto icns_time = std::filesystem::last_write_time(cached_icns, ec);
+        if (!ec && icns_time >= src_time) {
+            return cached_icns;
+        }
+    }
+
+    auto iconset_dir = cache_dir / (stem + ".iconset");
+    std::filesystem::create_directories(iconset_dir, ec);
+
+    struct ScaleEntry { int size; const char* filename; };
+    const ScaleEntry scales[] = {
+        {16, "icon_16x16.png"},
+        {32, "icon_16x16@2x.png"},
+        {32, "icon_32x32.png"},
+        {64, "icon_32x32@2x.png"},
+        {128, "icon_128x128.png"},
+        {256, "icon_128x128@2x.png"},
+        {256, "icon_256x256.png"},
+        {512, "icon_256x256@2x.png"},
+        {512, "icon_512x512.png"},
+        {1024, "icon_512x512@2x.png"},
+    };
+
+    std::string q_src = bridge::shell_quote(icon_src.string());
+    for (const auto& sc : scales) {
+        auto out_p = iconset_dir / sc.filename;
+        std::string q_out = bridge::shell_quote(out_p.string());
+        int rc = 0;
+        std::string sips_cmd = std::format("/usr/bin/sips -z {} {} {} --out {} >/dev/null 2>&1", sc.size, sc.size, q_src, q_out);
+        (void)bridge::run_command_capture(sips_cmd, rc);
+    }
+
+    int iu_rc = 0;
+    std::string iu_cmd = std::format("/usr/bin/iconutil -c icns {} -o {} >/dev/null 2>&1",
+        bridge::shell_quote(iconset_dir.string()),
+        bridge::shell_quote(cached_icns.string()));
+    (void)bridge::run_command_capture(iu_cmd, iu_rc);
+
+    std::filesystem::remove_all(iconset_dir, ec);
+
+    if (iu_rc == 0 && std::filesystem::exists(cached_icns, ec)) {
+        return cached_icns;
+    }
+    return std::unexpected(std::format("failed to generate .icns from '{}' using iconutil", icon_src.string()));
+#else
+    return std::unexpected("automatic .png to .icns conversion is only supported on macOS");
+#endif
+}
+
 [[nodiscard]] inline auto build_native(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
@@ -1714,7 +1873,10 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     const std::vector<std::string>& extra_link_libs = {},
     const std::vector<std::string>& extra_includes = {},
     const std::string& web_profile = "auto",
-    const std::string& subsystem = "auto"
+    const std::string& subsystem = "auto",
+    const std::string& app_name = "",
+    const std::string& bundle_id = "",
+    const std::string& icon_path = ""
 ) -> std::expected<BuildPlan, std::string> {
     auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem);
     if (!res) return std::unexpected(res.error());
@@ -1724,6 +1886,9 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     plan.extra_includes = extra_includes;
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
+    plan.app_name = app_name;
+    plan.bundle_id = bundle_id;
+    plan.icon_path = icon_path;
 
     bool is_wasm = target_triple.starts_with("wasm");
     if (is_wasm) {
@@ -1738,9 +1903,34 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
         std::filesystem::create_directories(gen_dir);
         auto shell_path = gen_dir / (effective_profile == "canvas" ? "cfire_canvas_shell.html" : "cfire_console_shell.html");
+        std::string shell_content = std::string(effective_profile == "canvas" ? kCanvasShellHtml : kConsoleShellHtml);
+        if (!plan.app_name.empty()) {
+            auto title_pos = shell_content.find("<title>cfire Web Application</title>");
+            if (title_pos != std::string::npos) {
+                shell_content.replace(title_pos, 36, std::format("<title>{}</title>", plan.app_name));
+            }
+        }
+        if (!plan.icon_path.empty()) {
+            std::filesystem::path icon_src = plan.icon_path;
+            if (icon_src.is_relative() && !std::filesystem::exists(icon_src)) {
+                if (std::filesystem::exists(cf_file.parent_path() / icon_src)) {
+                    icon_src = cf_file.parent_path() / icon_src;
+                }
+            }
+            std::error_code ec;
+            if (std::filesystem::exists(icon_src, ec)) {
+                auto out_dir = out_bin.parent_path();
+                auto favicon_dest = out_dir / "favicon.png";
+                std::filesystem::copy_file(icon_src, favicon_dest, std::filesystem::copy_options::overwrite_existing, ec);
+                auto head_pos = shell_content.find("</head>");
+                if (head_pos != std::string::npos) {
+                    shell_content.insert(head_pos, "    <link rel=\"icon\" type=\"image/png\" href=\"favicon.png\">\n  ");
+                }
+            }
+        }
         {
             std::ofstream sf(shell_path);
-            sf << (effective_profile == "canvas" ? kCanvasShellHtml : kConsoleShellHtml);
+            sf << shell_content;
         }
 
         plan.cflags.push_back("-sWASM=1");
@@ -1764,8 +1954,8 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
             } else {
 #if defined(__APPLE__)
                 if ((target_triple.empty() || target_triple.find("apple") != std::string::npos) && !test_mode) {
-                    std::string bin_name = out_bin.filename().string();
-                    auto app_bundle = out_bin.parent_path() / (bin_name + ".app");
+                    std::string bin_stem = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
+                    auto app_bundle = out_bin.extension() == ".app" ? out_bin : (out_bin.parent_path() / (bin_stem + ".app"));
                     plan.macos_app_bundle = app_bundle.string();
                 }
 #endif
@@ -1859,12 +2049,35 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         auto app_bundle = std::filesystem::path(plan.macos_app_bundle);
         auto macos_dir = app_bundle / "Contents" / "MacOS";
         std::filesystem::create_directories(macos_dir, ec);
-        std::string bin_name = out_bin.filename().string();
+        std::string bin_name = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
         auto bundle_bin = macos_dir / bin_name;
         std::filesystem::copy_file(out_bin, bundle_bin, std::filesystem::copy_options::overwrite_existing, ec);
         std::filesystem::permissions(bundle_bin,
             std::filesystem::perms::owner_all | std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
             std::filesystem::perms::others_read | std::filesystem::perms::others_exec, ec);
+
+        std::string effective_name = plan.app_name.empty() ? bin_name : plan.app_name;
+        std::string effective_bundle_id = plan.bundle_id.empty() ? ("com.cfire." + bin_name) : plan.bundle_id;
+        bool has_icon = false;
+
+        if (!plan.icon_path.empty()) {
+            std::filesystem::path icon_p = plan.icon_path;
+            if (icon_p.is_relative() && !std::filesystem::exists(icon_p)) {
+                if (std::filesystem::exists(cf_file.parent_path() / icon_p)) {
+                    icon_p = cf_file.parent_path() / icon_p;
+                }
+            }
+            auto resources_dir = app_bundle / "Contents" / "Resources";
+            std::filesystem::create_directories(resources_dir, ec);
+            auto icns_res = ensure_macos_icns(icon_p, app_bundle.parent_path() / ".cfire" / "cache" / "icons");
+            if (icns_res) {
+                auto dest_icns = resources_dir / "AppIcon.icns";
+                std::filesystem::copy_file(*icns_res, dest_icns, std::filesystem::copy_options::overwrite_existing, ec);
+                if (!ec) {
+                    has_icon = true;
+                }
+            }
+        }
 
         auto plist_path = app_bundle / "Contents" / "Info.plist";
         std::ofstream plist(plist_path);
@@ -1875,7 +2088,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     <key>CFBundleExecutable</key>
     <string>{}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.cfire.{}</string>
+    <string>{}</string>
     <key>CFBundleName</key>
     <string>{}</string>
     <key>CFBundlePackageType</key>
@@ -1886,9 +2099,12 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-</dict>
-</plist>
-)", bin_name, bin_name, bin_name);
+)", bin_name, effective_bundle_id, effective_name);
+
+        if (has_icon) {
+            plist << "    <key>CFBundleIconFile</key>\n    <string>AppIcon</string>\n";
+        }
+        plist << "</dict>\n</plist>\n";
         plist.close();
 
 #if defined(__APPLE__)
