@@ -22,6 +22,7 @@ auto main(int argc, char** argv) -> int {
         test_end_to_end_canonical_examples(rt_dir);
         test_raylib_vendor_codegen_and_eject(rt_dir);
         test_cfire_cross_compile(rt_dir);
+        test_wasm_and_gui_subsystem(rt_dir);
     }
     if (should_run("stdlib")) {
         test_crypto_sha256_and_csprng(rt_dir);

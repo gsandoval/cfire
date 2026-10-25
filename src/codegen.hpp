@@ -43,6 +43,7 @@ public:
     std::unordered_map<std::string, std::string> used_vendor_{};
     std::vector<std::string> active_async_scopes_{};
     std::unordered_set<std::string> local_vars_{};
+    std::unordered_set<std::string> ptr_vars_{};
 
     [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
         std::string out;
@@ -103,6 +104,12 @@ public:
             } else if (imp.path == "vendor:raylib") {
                 std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
                 used_vendor_["raylib"] = alias;
+            } else if (imp.path == "vendor:raygui") {
+                std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
+                used_vendor_["raygui"] = alias;
+                if (!used_vendor_.contains("raylib")) {
+                    used_vendor_["raylib"] = "raylib";
+                }
             }
         }
     }
@@ -190,6 +197,15 @@ public:
                 std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
                 used_vendor_["raylib"] = alias;
                 link_tags.push_back("-lraylib");
+            } else if (imp.path == "vendor:raygui") {
+                std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
+                used_vendor_["raygui"] = alias;
+                if (!used_vendor_.contains("raylib")) {
+                    used_vendor_["raylib"] = "raylib";
+                }
+                if (std::find(link_tags.begin(), link_tags.end(), "-lraylib") == link_tags.end()) {
+                    link_tags.push_back("-lraylib");
+                }
             }
         }
 
@@ -251,8 +267,25 @@ public:
             while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
             writeln(std::format("#include <{}>", clean));
         }
-        if (used_vendor_.contains("raylib")) {
+        if (used_vendor_.contains("raylib") || used_vendor_.contains("raygui")) {
             writeln("#include <raylib.h>");
+            writeln("#if __has_include(<raymath.h>)");
+            writeln("#include <raymath.h>");
+            writeln("#endif");
+            writeln("#if __has_include(<rlgl.h>)");
+            writeln("#include <rlgl.h>");
+            writeln("#endif");
+        }
+        if (used_vendor_.contains("raygui")) {
+            writeln("#pragma clang diagnostic push");
+            writeln("#pragma clang diagnostic ignored \"-Weverything\"");
+            writeln("#define RAYGUI_IMPLEMENTATION");
+            writeln("#if __has_include(<raygui.h>)");
+            writeln("#include <raygui.h>");
+            writeln("#else");
+            writeln("#include \"vendor/raygui.h\"");
+            writeln("#endif");
+            writeln("#pragma clang diagnostic pop");
         }
         writeln();
 
@@ -814,6 +847,9 @@ public:
                         }
                     }
                 }
+                if (st.type && (st.type->is_ptr || st.type->is_mut_ptr)) {
+                    ptr_vars_.insert(st.name);
+                }
                 std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
                 if (!st.type && st.init) {
                     if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && lit->kind == TokenKind::String) {
@@ -821,7 +857,11 @@ public:
                     }
                 }
                 if (st.init) {
-                    writeln(std::format("{} {} = {};", cpp_type, st.name, emit_expr(st.init)));
+                    std::string init_val = emit_expr(st.init);
+                    if (st.type && (st.type->is_ptr || st.type->is_mut_ptr) && init_val == "std::nullopt") {
+                        init_val = "nullptr";
+                    }
+                    writeln(std::format("{} {} = {};", cpp_type, st.name, init_val));
                 } else {
                     writeln(std::format("{} {}{{}};", cpp_type, st.name));
                 }
@@ -835,7 +875,13 @@ public:
                     writeln(std::format("(void){};", emit_expr(st.value)));
                     return;
                 }
-                writeln(std::format("{} {} {};", lhs, st.op, emit_expr(st.value)));
+                std::string rhs = emit_expr(st.value);
+                if (rhs == "std::nullopt") {
+                    if (const auto* id = std::get_if<IdentExpr>(&st.target->node); id && ptr_vars_.contains(id->name)) {
+                        rhs = "nullptr";
+                    }
+                }
+                writeln(std::format("{} {} {};", lhs, st.op, rhs));
             } else if constexpr (std::is_same_v<T, DeferStmt>) {
                 if (!active_async_scopes_.empty()) {
                     writeln(std::format("{}.defer([&] {{ {}; }});", active_async_scopes_.back(), emit_expr(st.call)));
@@ -1439,9 +1485,10 @@ public:
                 } else if (name.starts_with("url::")) {
                     name = "cfire::url::" + name.substr(5);
                 }
-                if (auto it = used_vendor_.find("raylib"); it != used_vendor_.end()) {
-                    std::string pref = it->second + "::";
-                    if (name.starts_with(pref)) name.erase(0, pref.size());
+                if (auto col_pos = name.find("::"); col_pos != std::string::npos) {
+                    if (is_vendor_alias(name.substr(0, col_pos))) {
+                        name.erase(0, col_pos + 2);
+                    }
                 }
                 // Check if this is an Enum Variant e.g. `Shape::Empty` (0-arg) or `Shape::Circle` (constructor)
                 if (auto pos = name.find("::"); pos != std::string::npos) {
@@ -1494,7 +1541,7 @@ public:
                     if (cf_.enums.contains(id->name)) {
                         return std::format("{}::{}()", id->name, ex.field);
                     }
-                    if (auto it = used_vendor_.find("raylib"); it != used_vendor_.end() && id->name == it->second) {
+                    if (is_vendor_alias(id->name)) {
                         return ex.field;
                     }
                     if (id->name == "fs" || id->name == "zstd" || id->name == "json" ||
@@ -1544,7 +1591,7 @@ public:
                     std::string rest = tname.substr(dot_pos + 1);
                     if (used_core_.contains(mod)) {
                         tname = std::format("cfire::{}::{}", mod, rest);
-                    } else if (is_local_type(rest)) {
+                    } else if (is_local_type(rest) || is_vendor_alias(mod)) {
                         tname = rest;
                     } else {
                         tname = std::format("{}::{}", mod, rest);
@@ -1554,7 +1601,7 @@ public:
                     std::string rest = tname.substr(col_pos + 2);
                     if (used_core_.contains(mod)) {
                         tname = std::format("cfire::{}::{}", mod, rest);
-                    } else if (is_local_type(rest)) {
+                    } else if (is_local_type(rest) || is_vendor_alias(mod)) {
                         tname = rest;
                     }
                 }
@@ -1726,6 +1773,17 @@ public:
             if (mem->field == "len" && call.args.empty()) {
                 return std::format("{}.size()", emit_expr(mem->object));
             }
+            if (mem->field == "byte_ptr" && call.args.empty()) {
+                used_core_.insert("str");
+                return std::format("cfire::str::byte_ptr({})", emit_expr(mem->object));
+            }
+            if (mem->field == "byte_ptr_at" && call.args.size() == 1) {
+                used_core_.insert("str");
+                return std::format("cfire::str::byte_ptr_at({}, {})", emit_expr(mem->object), emit_call_arg(call.args[0]));
+            }
+            if ((mem->field == "data" || mem->field == "data_ptr") && call.args.empty()) {
+                return std::format("({}).data()", emit_expr(mem->object));
+            }
             // Check if this is an Enum Variant constructor e.g. `Shape.Circle(2.0)`
             if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && cf_.enums.contains(id->name)) {
                 std::string args;
@@ -1766,6 +1824,9 @@ public:
             std::string obj = emit_expr(mem->object);
             if (mem->field == "push" && call.args.size() == 1) {
                 return std::format("{}.push_back({})", obj, emit_call_arg(call.args[0]));
+            }
+            if (mem->field == "pop" && call.args.empty()) {
+                return std::format("{}.pop_back()", obj);
             }
             if (mem->field == "with_ext" && call.args.size() == 1) {
                 return std::format("cfire::path_with_ext({}, {})", obj, emit_call_arg(call.args[0]));
@@ -1823,6 +1884,19 @@ public:
             }
         }
 
+        bool is_vendor_call = false;
+        if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
+            if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && is_vendor_alias(id->name)) {
+                is_vendor_call = true;
+            }
+        } else if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
+            if (auto col_pos = id->name.find("::"); col_pos != std::string::npos) {
+                if (is_vendor_alias(id->name.substr(0, col_pos))) {
+                    is_vendor_call = true;
+                }
+            }
+        }
+
         std::string callee = emit_expr(call.callee);
         std::string lookup_name = callee;
         if (auto colon_pos = lookup_name.rfind("::"); colon_pos != std::string::npos) {
@@ -1853,6 +1927,22 @@ public:
                 } else if ((ptype.contains("basic_string<char>") || ptype.contains("std::string")) &&
                            !ptype.contains("string_view") && !arg_val.starts_with("std::string(")) {
                     arg_val = std::format("std::string({})", arg_val);
+                }
+            } else if (is_vendor_call) {
+                bool is_plain_lit_or_const = false;
+                if (call.args[i].value) {
+                    if (const auto* lit = std::get_if<LiteralExpr>(&call.args[i].value->node)) {
+                        if (lit->kind != TokenKind::String || !arg_val.starts_with("std::format(")) {
+                            is_plain_lit_or_const = true;
+                        }
+                    } else if (const auto* mem = std::get_if<MemberExpr>(&call.args[i].value->node)) {
+                        if (const auto* mid = std::get_if<IdentExpr>(&mem->object->node); mid && is_vendor_alias(mid->name)) {
+                            is_plain_lit_or_const = true;
+                        }
+                    }
+                }
+                if (!is_plain_lit_or_const && !arg_val.starts_with("&")) {
+                    arg_val = std::format("cfire::c_arg({})", arg_val);
                 }
             }
             args += arg_val;
@@ -1998,6 +2088,7 @@ public:
         if (tr.name == "i32") return "std::int32_t";
         if (tr.name == "i64") return "std::int64_t";
         if (tr.name == "u8" || tr.name == "byte") return "std::uint8_t";
+        if (tr.name == "c_char" || tr.name == "char") return "char";
         if (tr.name == "u16") return "std::uint16_t";
         if (tr.name == "u32") return "std::uint32_t";
         if (tr.name == "u64") return "std::uint64_t";
@@ -2031,11 +2122,18 @@ public:
             if (used_core_.contains(mod)) {
                 return std::format("cfire::{}::{}", mod, rest);
             }
-            if (is_local_type(rest)) {
+            if (is_local_type(rest) || is_vendor_alias(mod)) {
                 return rest;
             }
         }
         return clean;
+    }
+
+    [[nodiscard]] auto is_vendor_alias(std::string_view mod) const -> bool {
+        for (const auto& [_, alias] : used_vendor_) {
+            if (alias == mod) return true;
+        }
+        return false;
     }
 
     [[nodiscard]] auto lower_owning_type(const TypeRef& tr) const -> std::string {

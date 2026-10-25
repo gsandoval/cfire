@@ -1,0 +1,116 @@
+package raygui_ext
+
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+import "core:str"
+
+type SinglelineInputStyle struct {
+    bg_color: rl.Color
+    border_color: rl.Color
+    focus_border_color: rl.Color
+    text_color: rl.Color
+    cursor_color: rl.Color
+    selection_color: rl.Color
+    font_size: f32
+}
+
+fn default_singleline_style() -> SinglelineInputStyle {
+    return SinglelineInputStyle{
+        bg_color: rl.Color{r: 255, g: 255, b: 255, a: 255},
+        border_color: rl.Color{r: 220, g: 220, b: 228, a: 255},
+        focus_border_color: rl.Color{r: 235, g: 70, b: 70, a: 255},
+        text_color: rl.Color{r: 20, g: 20, b: 25, a: 255},
+        cursor_color: rl.Color{r: 235, g: 70, b: 70, a: 255},
+        selection_color: rl.Color{r: 186, g: 230, b: 253, a: 180},
+        font_size: 15.0,
+    }
+}
+
+// GuiSinglelineInput: Immediate-mode robust single-line text input with click-to-cursor,
+// text selection highlight, and blinking cursor.
+// Returns true if a mouse click changed focus or cursor position.
+fn GuiSinglelineInput(
+    bounds: rl.Rectangle,
+    val: str,
+    mut cursor_pos: i32,
+    mut sel_anchor: i32,
+    is_focused: bool,
+    font: rl.Font,
+    style: SinglelineInputStyle
+) -> bool {
+    if !rl.IsWindowReady() {
+        return false
+    }
+
+    m := rl.GetMousePosition()
+    is_hovered := rl.CheckCollisionPointRec(m, bounds)
+    mut changed := false
+
+    pad_x: f32 = 8.0
+    text_x := bounds.x + pad_x
+    vsize := val.len()
+
+    if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && is_hovered {
+        sel_anchor = -1
+        mut rel_x := m.x - text_x
+        if rel_x < 0.0 { rel_x = 0.0 }
+        cursor_pos = byte_offset_from_x(font, val, rel_x, style.font_size, 0.6)
+        changed = true
+    }
+
+    // Render input frame
+    rl.DrawRectangleRec(bounds, style.bg_color)
+    mut border_col := style.border_color
+    if is_focused { border_col = style.focus_border_color }
+    rl.DrawRectangleLines(i32(bounds.x), i32(bounds.y), i32(bounds.width), i32(bounds.height), border_col)
+
+    rl.BeginScissorMode(
+        i32(bounds.x + 1.0),
+        i32(bounds.y + 1.0),
+        i32(bounds.width - 2.0),
+        i32(bounds.height - 2.0)
+    )
+
+    mut cpos := cursor_pos
+    if cpos < 0 { cpos = 0 }
+    if cpos > vsize { cpos = vsize }
+
+    // Render selection
+    if is_focused && sel_anchor >= 0 && sel_anchor != cpos {
+        mut s0 := sel_anchor
+        if cpos < s0 { s0 = cpos }
+        if s0 < 0 { s0 = 0 }
+        if s0 > vsize { s0 = vsize }
+
+        mut s1 := sel_anchor
+        if cpos > s1 { s1 = cpos }
+        if s1 < 0 { s1 = 0 }
+        if s1 > vsize { s1 = vsize }
+
+        sx0 := text_x + GuiMeasureTextAdvance(font, val, s0, style.font_size, 0.6)
+        sx1 := text_x + GuiMeasureTextAdvance(font, val, s1, style.font_size, 0.6)
+        mut sel_w := sx1 - sx0
+        if sel_w < 3.0 { sel_w = 3.0 }
+        rl.DrawRectangleRec(rect(sx0, bounds.y + 4.0, sel_w, bounds.height - 8.0), style.selection_color)
+    }
+
+    // Render text
+    if font.texture.id > 0 {
+        rl.DrawTextEx(font, val, vec2(text_x, bounds.y + 6.0), style.font_size, 0.6, style.text_color)
+    } else {
+        rl.DrawText(val, i32(text_x), i32(bounds.y + 6.0), i32(style.font_size), style.text_color)
+    }
+
+    // Render blinking cursor
+    if is_focused {
+        w := GuiMeasureTextAdvance(font, val, cpos, style.font_size, 0.6)
+        t := f32(rl.GetTime())
+        blink_cycle := t - f32(i32(t))
+        if blink_cycle < 0.65 {
+            rl.DrawRectangle(i32(text_x + w), i32(bounds.y + 5.0), 2, i32(bounds.height - 10.0), style.cursor_color)
+        }
+    }
+
+    rl.EndScissorMode()
+    return changed
+}

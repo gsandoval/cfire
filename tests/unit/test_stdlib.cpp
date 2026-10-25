@@ -563,6 +563,88 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
     std::string serialized = cfire::csv::stringify(table);
     auto table2 = cfire::csv::parse(serialized);
     require(table2 == table, "csv stringify and re-parse roundtrip");
+
+    // 4. Substring Search Primitives in core:str (STDLIB-P1-04)
+    std::string_view sample_path = "/usr/local/include/raylib/raylib.h";
+    require(cfire::str::index_of(sample_path, "/") == 0, "index_of first slash");
+    require(cfire::str::index_of(sample_path, "local") == 5, "index_of 'local'");
+    require(cfire::str::index_of(sample_path, "nonexistent") == -1, "index_of not found returns -1");
+    require(cfire::str::index_of(sample_path, "raylib", 20) == 26, "index_of with start_pos offset");
+    require(cfire::str::last_index_of(sample_path, "/") == 25, "last_index_of slash");
+    require(cfire::str::last_index_of(sample_path, ".h") == 32, "last_index_of '.h'");
+    require(cfire::str::last_index_of(sample_path, "missing") == -1, "last_index_of not found returns -1");
+    require(cfire::str::rfind(sample_path, "/") == 25, "rfind default start_pos");
+    require(cfire::str::rfind(sample_path, "/", 24) == 18, "rfind with backward start_pos constraint");
+
+    // 5. Numeric Prelude Conversion Constructors (LANG-P0-01)
+    double pi_dbl = 3.141592653589793;
+    float pi_flt = 3.14159f;
+    require(cfire::i32(pi_dbl) == 3, "i32(double)");
+    require(cfire::i64(pi_dbl) == 3, "i64(double)");
+    require(cfire::u32(100.9) == 100, "u32(double)");
+    require(cfire::u64(pi_flt) == 3, "u64(float)");
+    require(cfire::f32(42) == 42.0f, "f32(int)");
+    require(cfire::f64(42) == 42.0, "f64(int)");
+    require(cfire::i8(300) == 44, "i8 overflow wrapping");
+    require(cfire::u8(-1) == 255, "u8 underflow wrapping");
+    require(cfire::byte(0xFE) == 0xFE, "byte(int)");
+    require(cfire::usize(12345) == 12345, "usize(int)");
+    require(cfire::isize(-54321) == -54321, "isize(int)");
+
+    // 6. Bitwise Operator Overloads on Imported C / Vendor Enums (LANG-P1-03)
+    enum TestBitmask {
+        MASK_NONE = 0,
+        MASK_READ = 1,
+        MASK_WRITE = 2,
+        MASK_EXEC = 4
+    };
+    TestBitmask perms = MASK_READ | MASK_WRITE;
+    require((perms & MASK_READ) == MASK_READ, "enum bitwise & check");
+    require((perms & MASK_WRITE) == MASK_WRITE, "enum bitwise & check 2");
+    require((perms & MASK_EXEC) == 0, "enum bitwise & check missing");
+    perms |= MASK_EXEC;
+    require((perms & MASK_EXEC) == MASK_EXEC, "enum bitwise |= check");
+    perms &= ~MASK_WRITE;
+    require((perms & MASK_WRITE) == 0, "enum bitwise &= with ~ check");
+    require((perms ^ MASK_READ) == MASK_EXEC, "enum bitwise ^ check");
+    // Test mixed enum & integral operations
+    TestBitmask mixed = MASK_READ | 4;
+    require((mixed & MASK_EXEC) == MASK_EXEC, "enum mixed bitwise | check");
+    mixed &= ~1;
+    require((mixed & MASK_READ) == 0, "enum mixed bitwise &= check");
+    // Test std::formatter for enums
+    std::string fmt_str = std::format("perms={}", perms);
+    require(fmt_str == "perms=5", "enum std::formatter specialization check");
+
+    // 7. String & Slice Pointer Offsets and C FFI Interop (LANG-P1-02)
+    std::string msg = "Hello, Cfire!";
+    const char* p_start = cfire::str::byte_ptr(msg);
+    require(p_start != nullptr && *p_start == 'H', "byte_ptr on std::string");
+    char* p_mut = cfire::str::byte_ptr(msg);
+    *p_mut = 'h';
+    require(msg[0] == 'h', "byte_ptr mutable char* mutation");
+    msg[0] = 'H'; // revert
+
+    const char* p_off = cfire::str::byte_ptr_at(msg, 7);
+    require(std::string_view(p_off) == "Cfire!", "byte_ptr_at valid offset");
+    const char* p_neg = cfire::str::byte_ptr_at(msg, -5);
+    require(p_neg == msg.data(), "byte_ptr_at negative offset clamps to 0");
+    const char* p_past = cfire::str::byte_ptr_at(msg, 100);
+    require(p_past == msg.data() + msg.size(), "byte_ptr_at past end clamps to end");
+
+    std::vector<int> nums = {10, 20, 30, 40};
+    int* p_num = cfire::str::byte_ptr(nums);
+    require(p_num != nullptr && *p_num == 10, "byte_ptr on std::vector");
+    int* p_num_off = cfire::str::byte_ptr_at(nums, 2);
+    require(p_num_off != nullptr && *p_num_off == 30, "byte_ptr_at on std::vector");
+
+    // Slice / Vector .data() / .data_ptr() C FFI buffer pointer access (LANG-P1-06)
+    int* p_vec_data = nums.data();
+    require(p_vec_data != nullptr && *p_vec_data == 10, "nums.data() returns valid element pointer");
+    std::span<int> nums_span = nums;
+    int* p_span_data = nums_span.data();
+    require(p_span_data != nullptr && *p_span_data == 10, "nums_span.data() returns valid element pointer");
+
     std::println("--- PASS: test_data_encodings_base64_hex_csv");
 }
 

@@ -125,7 +125,7 @@ public:
             return PathInfo{inner->root, inner->path + "[*]"};
         }
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
-            if (un->op == "&" || un->op == "*") {
+            if (un->op == "&" || un->op == "&mut" || un->op == "*") {
                 return extract_path_info(un->operand);
             }
         }

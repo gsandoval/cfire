@@ -236,6 +236,53 @@ flowchart TD
 
 ---
 
+# Active Backlog: Systems & GUI Application Ergonomics (`LANG-*`, `STDLIB-*`)
+*(Detailed RFC and empirical evidence: [`docs/planning/desktop-app-feedback-and-proposals.md`](./desktop-app-feedback-and-proposals.md))*
+
+### `LANG-P0-01`: Built-in Numeric Conversion / Typecast Operators & Prelude Constructors `[Completed]`
+- **Status**: Completed
+- **Priority**: P0
+- **Category**: Compiler & Prelude (`cfire_prelude.hpp`, `src/codegen.hpp`, `src/sema.hpp`)
+- **Target Files**:
+  - `runtime/cfire_prelude.hpp`
+  - `src/codegen.hpp`
+- **Scope**: Enable `i32(x)`, `f32(x)`, `u64(x)`, etc. natively without requiring custom conversion functions or `cpp { static_cast<int>(x); }`.
+
+### `STDLIB-P1-04`: Reverse Find & Substring Index Primitives in `core:str` `[Completed]`
+- **Status**: Completed
+- **Priority**: P1
+- **Category**: Standard Library (`runtime/core/str.hpp`)
+- **Target Files**:
+  - `runtime/core/str.hpp`
+  - `tests/unit/test_stdlib.cpp`
+- **Scope**: Implement `str.index_of(s, sub)`, `str.last_index_of(s, sub)`, and `str.rfind(s, sub)`.
+
+### `LANG-P1-03`: Bitwise Operator Support on Imported Vendor / C Enums `[Completed]`
+- **Status**: Completed
+- **Priority**: P1
+- **Category**: Compiler & Clang Bridge (`src/clang_bridge.hpp`, `src/codegen.hpp`)
+- **Scope**: Emit bitwise `|`, `&`, `^`, `~` operator overloads for imported vendor C enums so flag combinations like `rl.FLAG_WINDOW_HIGHDPI | rl.FLAG_WINDOW_RESIZABLE` work directly in `.cf`.
+
+### `LANG-P1-02`: Pointer Offsets, Decays, and C FFI Interop for `str` & Slices `[Completed]`
+- **Status**: Completed
+- **Priority**: P1
+- **Category**: Standard Library & FFI (`runtime/core/str.hpp`, `src/codegen.hpp`, `src/sema.hpp`)
+- **Scope**: Provide `str.byte_ptr()`, `str.byte_ptr_at(offset)`, `s.byte_ptr()`, `s.byte_ptr_at(offset)`, mutable pointer passing for C FFI bindings, and `*c_char` / `*mut c_char` lowering without inline C++.
+
+### `LANG-P2-05`: Rebindable Pointer / Reference Aliases (`*mut T` or `ref mut`) `[Completed]`
+- **Status**: Completed
+- **Priority**: P2
+- **Category**: Language Design & SEMA (`src/parser.hpp`, `src/ast.hpp`, `src/sema.hpp`, `src/codegen.hpp`)
+- **Scope**: Support rebindable pointers/references (`mut target: *mut str = &mut state.field`), newline-safe unary dereference parsing (`*target = ...`, `*target += ...`), and null checking (`p == none`, `p = none`) to eliminate code duplication across multi-field editors.
+
+### `LANG-P1-06`: Slice and Vector `.data()` Buffer Pointer Access for C FFI Interop `[Completed]`
+- **Status**: Completed
+- **Priority**: P1
+- **Category**: Language Design & Codegen (`src/codegen.hpp`, `src/sema.hpp`, `docs/reference.html`)
+- **Scope**: Complement string `byte_ptr()` / `bytes_str()` by adding built-in `.data()` / `.data_ptr()` method on slice and vector types (`[]T`, `std::vector<T>`, `std::span<T>`) lowering to `({}).data()`. Enables passing raw slice buffer pointers directly to C FFI functions (e.g., `LoadFontEx(..., codepoints.data(), codepoints.len())`) without `cpp {}` blocks.
+
+---
+
 # Completed Milestones Archive (Summary)
 
 | Initiative Series | IDs | Scope | Status |

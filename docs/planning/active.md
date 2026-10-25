@@ -4,10 +4,20 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
-## Up Next: WebSocket Server, Socket Transport Fixes & TLS/WSS Support (`NET-P0-01` – `NET-P0-04`)
+## Active Milestone: Systems & GUI Application Ergonomics (`LANG-*`, `STDLIB-*`)
 
-> **Instructions for the Implementing Agent**:
-> Before writing any code for a `NET-*` task below, read its full specification, **Critical Details, Edge Cases & Pitfalls (Do Not Miss)**, and **Section Success Instructions & Sign-Off Gate** in [`docs/planning/backlog.md`](./backlog.md).
+| Task ID | Priority | Component | Summary | Status | Section Gate |
+| :--- | :---: | :--- | :--- | :---: | :---: |
+| `LANG-P0-01` | P0 | `runtime/cfire_prelude.hpp` | **Built-in numeric conversion constructors**: Provide `i8`, `i16`, `i32`, `i64`, `u8`, `byte`, `u16`, `u32`, `u64`, `usize`, `isize`, `f32`, `f64`, `bool_` constructor functions in prelude | `[DONE]` | Passed (`make review-check`) |
+| `STDLIB-P1-04` | P1 | `runtime/core/str.hpp`, `src/docgen/catalog.hpp`, `tests/unit/test_stdlib.cpp` | **Substring search primitives in `core:str`**: Implement `index_of`, `last_index_of`, and `rfind` returning `i64` (-1 if not found) with unit & doc tests | `[DONE]` | Passed (`make review-check`) |
+| `LANG-P1-03` | P1 | `runtime/cfire_prelude.hpp` | **Bitwise operator overloads for imported vendor/C enums**: Provide generic C++20 concept-constrained bitwise operators (`\|`, `&`, `^`, `~`, `\|=`, `&=`, `^=`) and `std::formatter` for enums | `[DONE]` | Passed (`make review-check`) |
+| `LANG-P1-02` | P1 | `runtime/core/str.hpp`, `src/codegen.hpp`, `src/sema.hpp`, `src/docgen/catalog.hpp` | **Pointer offsets, decays, and C FFI interop for `str` & slices**: `str.byte_ptr()`, `str.byte_ptr_at(offset)`, `s.byte_ptr()`, `s.byte_ptr_at(offset)`, raw pointer arithmetic/decay, and `*c_char` / `*mut c_char` type mapping | `[DONE]` | Passed (`make review-check`) |
+| `LANG-P2-05` | P2 | `src/parser.hpp`, `src/codegen.hpp`, `src/sema.hpp` | **Rebindable pointer / reference aliases (`*mut T`)**: Disambiguate binary operators from newline-prefixed unary dereference statements (`*ptr = ...`), allow re-assigning pointer variables (`target = &mut ...`), and support dereferenced read/write (`*target += ...`) | `[DONE]` | Passed (`make review-check`) |
+| `LANG-P1-06` | P1 | `src/codegen.hpp`, `src/docgen/catalog.hpp`, `tests/e2e/test_canonical.cpp` | **Slice and Vector `.data()` / `.data_ptr()` buffer pointer access**: Support `.data()` and `.data_ptr()` on slices and vectors lowering to `({}).data()`, eliminating `cpp {}` escapes in C FFI calls | `[DONE]` | Passed (`make review-check`) |
+
+---
+
+## Completed Milestones Summary
 
 | Task ID | Section / Priority | Component | Summary | Status | Section Gate |
 | :--- | :---: | :--- | :--- | :---: | :---: |
@@ -18,16 +28,6 @@ This document tracks items currently under active design, scoping, or implementa
 | `SEC-P0-01` | Section 2 (P0) | `runtime/core/net/*`, `runtime/core/json.hpp`, `runtime/core/compress.hpp`, `src/parser.hpp` | **Untrusted Input Parser Security Hardening**: WebSocket frame size cap + chunked read, HTTP CRLF stripping + header/query caps, `%XX` hex validation, JSON/AST recursion depth limits, and Zstd decompression bomb limit | `[DONE]` | Passed (`make fuzz`) |
 | `SEC-P0-02` | Section 2 (P0) | `tests/unit/test_stdlib.cpp`, `tests/test_main.cpp`, `Makefile` | **Deterministic Mutation Fuzzer & Adversarial Security Suite (`make fuzz`)**: 10,000+ mutated/adversarial inputs across WebSocket, HTTP, URL, JSON, Base64/Hex/CSV, UTF-8, and `.cf` Lexer/Parser/LSP | `[DONE]` | Passed (`make fuzz`) |
 | `SEC-P0-03` | Section 2 (P0) | `tests/unit/test_stdlib.cpp`, `tests/test_main.cpp`, `Makefile` | **Built-In Performance Benchmark Suite (`make bench`)**: Latency (`ns/op`) and throughput (`ops/sec`, `MB/s`) benchmarks for HTTP, WebSocket, TLS, JSON, Crypto, and Compiler Frontend | `[DONE]` | Passed (`make bench`) |
-
----
-
-## Completed Milestones Summary
-
-| Milestone | Task Range | Summary | Status | Gate |
-| :--- | :--- | :--- | :---: | :---: |
-| **Agent-Friendliness & Language Ergonomics** | `AGENT-P0-01` – `AGENT-P2-05` (13 items) | Multi-error `--json` with fix-its, `#line` source mapping + `-fsyntax-only` check, `cfire outline` type fidelity, catalog-generated `cfire doc --llm`, `println` interpolation flattening, struct-lit disambiguation, expression `match`, compound/bitwise ops, `-o` flag, `cfire fix`, `cfire test --json`/`--filter`, `cfire inspect`, and tokenizer-backed `cfire eval` | `[DONE]` | Passed (`make review-check`) |
-| **C++20 Lowering & Google C++ Hardening** | `ARCH-CPP-01` – `ARCH-CPP-05` (5 items) | Receiver method name disambiguation, interface `concept` lowering, `scope.spawn` capture mode, `<charconv>` zero-exception migration, and `[[clang::lifetimebound]]` annotations | `[DONE]` | Passed (`make review-check`) |
-| **Modular Runtime & Tooling Decomposition** | `CPP-QA-01` – `CPP-QA-06` (6 items) | DRY consolidation, `shell_quote` hardening, JSON-RPC field extraction, and modularization of `runtime/core/net/*`, `src/docgen/*`, and `src/lsp/*` | `[DONE]` | Passed (`make review-check`) |
 
 ---
 

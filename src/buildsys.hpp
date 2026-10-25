@@ -80,6 +80,11 @@ struct BuildPlan {
     std::string sysroot{};
     std::vector<std::string> extra_link_libs{};
     std::vector<std::string> extra_includes{};
+    bool is_gui{false};
+    std::string web_profile{"auto"};
+    std::string subsystem{"auto"};
+    std::string macos_app_bundle{};
+    std::string emscripten_compiler{};
 };
 
 [[nodiscard]] inline auto read_file_text(const std::filesystem::path& p) -> std::expected<std::string, std::string> {
@@ -1075,21 +1080,31 @@ inline auto resolve_external_dep_source(
     bool inspect_clang_ast,
     bool test_mode = false,
     const std::string& target_triple = "",
-    const std::string& sysroot = ""
+    const std::string& sysroot = "",
+    const std::string& web_profile = "auto",
+    const std::string& subsystem = "auto"
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     auto dir = cf_file.parent_path();
     BuildPlan plan;
     plan.entry_file = cf_file.string();
     plan.target_triple = target_triple;
     plan.sysroot = sysroot;
+    plan.web_profile = web_profile;
+    plan.subsystem = subsystem;
     plan.cflags = {"-std=c++2b", "-I" + runtime_dir.string()};
+    bool is_wasm = target_triple.starts_with("wasm");
     if (!target_triple.empty()) {
-        plan.cflags.push_back("--target=" + target_triple);
-        plan.ldflags.push_back("--target=" + target_triple);
+        if (!is_wasm) {
+            plan.cflags.push_back("--target=" + target_triple);
+            plan.ldflags.push_back("--target=" + target_triple);
+        }
     }
     if (!sysroot.empty()) {
         plan.cflags.push_back("--sysroot=" + sysroot);
         plan.ldflags.push_back("--sysroot=" + sysroot);
+    }
+    if (is_wasm) {
+        plan.cflags.push_back("-DPLATFORM_WEB");
     }
 
     // 1. Parse & execute any pre-build commands declared in root sibling `build.cf` (BS-08)
@@ -1184,7 +1199,72 @@ inline auto resolve_external_dep_source(
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
                 add_pc(it->second);
             }
-            if (imp.path == "vendor:raylib") {
+            if (imp.path == "vendor:raylib" || imp.path == "vendor:raygui") {
+                plan.is_gui = true;
+                if (imp.path == "vendor:raygui") {
+                    for (auto cur = std::filesystem::absolute(dir); !cur.empty() && cur != cur.parent_path(); cur = cur.parent_path()) {
+                        auto vg_dir = cur / "vendor" / "raygui";
+                        if (std::filesystem::exists(vg_dir / "raygui.h")) {
+                            plan.cflags.push_back("-I" + vg_dir.string());
+                            break;
+                        } else if (std::filesystem::exists(vg_dir / "src" / "raygui.h")) {
+                            plan.cflags.push_back("-I" + (vg_dir / "src").string());
+                            break;
+                        }
+                    }
+                }
+
+                if (is_wasm) {
+                    bool found_raylib_wasm = false;
+                    auto cache_raylib_wasm = get_package_cache_root() / "vendor_raylib_wasm";
+                    if (std::filesystem::exists(cache_raylib_wasm / "include" / "raylib.h")) {
+                        plan.cflags.push_back("-I" + (cache_raylib_wasm / "include").string());
+                        if (std::filesystem::exists(cache_raylib_wasm / "lib" / "libraylib.a")) {
+                            plan.ldflags.push_back((cache_raylib_wasm / "lib" / "libraylib.a").string());
+                        }
+                        found_raylib_wasm = true;
+                    }
+                    if (!found_raylib_wasm) {
+                        for (auto cur = std::filesystem::absolute(dir); !cur.empty() && cur != cur.parent_path(); cur = cur.parent_path()) {
+                            auto v_web = cur / "vendor" / "raylib" / "web";
+                            if (std::filesystem::exists(v_web / "libraylib.a")) {
+                                plan.ldflags.push_back((v_web / "libraylib.a").string());
+                                found_raylib_wasm = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found_raylib_wasm) {
+                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+                            if (std::filesystem::exists(std::filesystem::path(inc_dir) / "raylib.h")) {
+                                plan.cflags.push_back("-I" + std::string(inc_dir));
+                                break;
+                            }
+                        }
+                        for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib",
+                                                         std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib")}) {
+                            if (std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
+                                plan.cflags.push_back("-I" + (cache_raylib / "include").string());
+                                break;
+                            }
+                        }
+                        std::string raylib_web_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_web.zip";
+                        std::cout << "==> Auto-resolving missing vendor:raylib WebAssembly build from " << raylib_web_url << "..." << std::endl;
+                        std::string actual_sha;
+                        auto fetch_res = fetch_archive(raylib_web_url, "", cache_raylib_wasm, actual_sha);
+                        if (fetch_res && std::filesystem::exists(cache_raylib_wasm / "include" / "raylib.h")) {
+                            plan.cflags.push_back("-I" + (cache_raylib_wasm / "include").string());
+                            if (std::filesystem::exists(cache_raylib_wasm / "lib" / "libraylib.a")) {
+                                plan.ldflags.push_back((cache_raylib_wasm / "lib" / "libraylib.a").string());
+                            }
+                            found_raylib_wasm = true;
+                        }
+                    }
+                    plan.cflags.push_back("-DPLATFORM_WEB");
+                    plan.ldflags.push_back("-sUSE_GLFW=3");
+                    plan.ldflags.push_back("-sASYNCIFY=1");
+                    plan.ldflags.push_back("-sALLOW_MEMORY_GROWTH=1");
+                } else {
                 bool found_raylib = false;
 
                 // 1. Try system pkg-config
@@ -1259,13 +1339,16 @@ inline auto resolve_external_dep_source(
                     }
                 }
                 if (!found_raylib) {
-                    auto cache_raylib = get_package_cache_root() / "vendor_raylib";
-                    if (std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
-                        plan.cflags.push_back("-I" + (cache_raylib / "include").string());
-                        if (std::filesystem::exists(cache_raylib / "lib" / "libraylib.a")) {
-                            plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
+                    for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib",
+                                                     std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib")}) {
+                        if (std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
+                            plan.cflags.push_back("-I" + (cache_raylib / "include").string());
+                            if (std::filesystem::exists(cache_raylib / "lib" / "libraylib.a")) {
+                                plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
+                            }
+                            found_raylib = true;
+                            break;
                         }
-                        found_raylib = true;
                     }
                 }
 
@@ -1297,6 +1380,7 @@ inline auto resolve_external_dep_source(
 #elif defined(__linux__)
                 plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
 #endif
+                } // !is_wasm
             }
             continue;
         }
@@ -1321,6 +1405,167 @@ inline auto resolve_external_dep_source(
     std::string cpp_code = frontend::emit_cpp(*checked, test_mode);
 
     return std::make_pair(std::move(cpp_code), std::move(plan));
+}
+
+// --- WebAssembly & HTML Shell Templates ---
+
+inline constexpr std::string_view kCanvasShellHtml = R"HTML(<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cfire Web Application</title>
+    <style>
+      body {
+        margin: 0;
+        background-color: #121214;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #e0e0e0;
+      }
+      #canvas {
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        border-radius: 8px;
+        background-color: #000;
+        display: block;
+        outline: none;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 14px;
+        color: #888;
+      }
+      .spinner {
+        height: 24px;
+        width: 24px;
+        margin: 10px auto;
+        border: 3px solid rgba(255,255,255,0.1);
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <div id="status"><div class="spinner"></div>Loading WebAssembly...</div>
+    <script type="text/javascript">
+      var statusElement = document.getElementById('status');
+      var canvas = document.getElementById('canvas');
+      var Module = {
+        preRun: [],
+        postRun: [function() {
+          if (statusElement) statusElement.style.display = 'none';
+        }],
+        print: function(text) {
+          console.log(text);
+        },
+        printErr: function(text) {
+          console.error(text);
+        },
+        canvas: canvas,
+        setStatus: function(text) {
+          if (!text) {
+            if (statusElement) statusElement.style.display = 'none';
+          } else {
+            if (statusElement) statusElement.innerText = text;
+          }
+        },
+        totalDependencies: 0,
+        monitorRunDependencies: function(left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+        }
+      };
+      window.onerror = function() {
+        Module.setStatus('Exception thrown, see JavaScript console');
+      };
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>
+)HTML";
+
+inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>cfire WebAssembly Console</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        background-color: #1e1e24;
+        color: #f0f0f0;
+        font-family: ui-monospace, Menlo, Monaco, "Cascadia Mono", monospace;
+      }
+      #output {
+        width: 100%;
+        height: 80vh;
+        background: #111;
+        color: #0f0;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 12px;
+        box-sizing: border-box;
+        font-family: inherit;
+        font-size: 14px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>cfire WebAssembly Console</h3>
+    <pre id="output"></pre>
+    <script type="text/javascript">
+      var out = document.getElementById('output');
+      var Module = {
+        print: function(text) {
+          if (out) { out.textContent += text + "\n"; out.scrollTop = out.scrollHeight; }
+          console.log(text);
+        },
+        printErr: function(text) {
+          if (out) { out.textContent += "[err] " + text + "\n"; out.scrollTop = out.scrollHeight; }
+          console.error(text);
+        }
+      };
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>
+)HTML";
+
+[[nodiscard]] inline auto resolve_emscripten_compiler() -> std::expected<std::string, std::string> {
+    int rc = 0;
+    auto which_out = bridge::run_command_capture("which em++ 2>/dev/null", rc);
+    if (rc == 0 && !which_out.empty()) {
+        while (!which_out.empty() && (which_out.back() == '\n' || which_out.back() == '\r' || which_out.back() == ' ')) {
+            which_out.pop_back();
+        }
+        if (!which_out.empty()) return which_out;
+    }
+    if (const char* emsdk = std::getenv("EMSDK")) {
+        auto empp = std::filesystem::path(emsdk) / "upstream" / "emscripten" / "em++";
+        if (std::filesystem::exists(empp)) return empp.string();
+    }
+    if (const char* home = std::getenv("HOME")) {
+        auto empp = std::filesystem::path(home) / ".emsdk" / "upstream" / "emscripten" / "em++";
+        if (std::filesystem::exists(empp)) return empp.string();
+    }
+    return std::unexpected(
+        "em++ (Emscripten compiler) not found in PATH or EMSDK.\n"
+        "To compile for WebAssembly (--target=wasm), please install the Emscripten SDK:\n"
+        "  git clone https://github.com/emscripten-core/emsdk.git ~/.emsdk\n"
+        "  ~/.emsdk/emsdk install latest && ~/.emsdk/emsdk activate latest\n"
+        "  source ~/.emsdk/emsdk_env.sh"
+    );
 }
 
 [[nodiscard]] inline auto ensure_prelude_pch(
@@ -1409,16 +1654,71 @@ inline auto resolve_external_dep_source(
     const std::string& target_triple = "",
     const std::string& sysroot = "",
     const std::vector<std::string>& extra_link_libs = {},
-    const std::vector<std::string>& extra_includes = {}
+    const std::vector<std::string>& extra_includes = {},
+    const std::string& web_profile = "auto",
+    const std::string& subsystem = "auto"
 ) -> std::expected<BuildPlan, std::string> {
-    auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot);
+    auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem);
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
     plan.sanitized = sanitize;
     plan.extra_link_libs = extra_link_libs;
     plan.extra_includes = extra_includes;
+    plan.web_profile = web_profile;
+    plan.subsystem = subsystem;
+
+    bool is_wasm = target_triple.starts_with("wasm");
+    if (is_wasm) {
+        auto empp_res = resolve_emscripten_compiler();
+        if (!empp_res) {
+            return std::unexpected(empp_res.error());
+        }
+        plan.emscripten_compiler = *empp_res;
+        std::string effective_profile = (plan.web_profile == "auto") ? (plan.is_gui ? "canvas" : "cli") : plan.web_profile;
+        plan.web_profile = effective_profile;
+
+        auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
+        std::filesystem::create_directories(gen_dir);
+        auto shell_path = gen_dir / (effective_profile == "canvas" ? "cfire_canvas_shell.html" : "cfire_console_shell.html");
+        {
+            std::ofstream sf(shell_path);
+            sf << (effective_profile == "canvas" ? kCanvasShellHtml : kConsoleShellHtml);
+        }
+
+        plan.cflags.push_back("-sWASM=1");
+        plan.cflags.push_back("-sALLOW_MEMORY_GROWTH=1");
+        plan.ldflags.push_back(std::format("--shell-file \"{}\"", shell_path.string()));
+        if (effective_profile == "canvas") {
+            plan.cflags.push_back("-sUSE_GLFW=3");
+            plan.cflags.push_back("-sASYNCIFY=1");
+        }
+    } else {
+        bool gui_subsystem = (plan.subsystem == "gui") || (plan.subsystem == "auto" && plan.is_gui);
+        if (gui_subsystem) {
+            bool is_windows = target_triple.find("windows") != std::string::npos ||
+                              target_triple.find("win32") != std::string::npos ||
+                              target_triple.find("mingw") != std::string::npos;
+#if defined(_WIN32)
+            is_windows = true;
+#endif
+            if (is_windows) {
+                plan.ldflags.push_back("-mwindows");
+            } else {
+#if defined(__APPLE__)
+                if ((target_triple.empty() || target_triple.find("apple") != std::string::npos) && !test_mode) {
+                    std::string bin_name = out_bin.filename().string();
+                    auto app_bundle = out_bin.parent_path() / (bin_name + ".app");
+                    plan.macos_app_bundle = app_bundle.string();
+                }
+#endif
+            }
+        }
+    }
 
     for (const auto& lib : extra_link_libs) {
+        if (lib.find("libtako") != std::string::npos) {
+            plan.cflags.push_back("-DCFIRE_HAS_LIBTAKO=1");
+        }
         plan.ldflags.push_back(lib);
         plan.ldflags.push_back("-lpthread");
         plan.ldflags.push_back("-ldl");
@@ -1458,7 +1758,8 @@ inline auto resolve_external_dep_source(
         pch_path = ensure_prelude_pch(runtime_dir, sanitize);
     }
 
-    std::string cmd = "clang++";
+    std::string compiler = is_wasm ? plan.emscripten_compiler : "clang++";
+    std::string cmd = compiler;
     for (const auto& f : plan.cflags) cmd += " " + f;
     if (!pch_path.empty()) {
         cmd += std::format(" -include-pch \"{}\"", pch_path);
@@ -1470,8 +1771,46 @@ inline auto resolve_external_dep_source(
     int exit_code = 0;
     std::string output = bridge::run_command_capture(cmd, exit_code);
     if (exit_code != 0) {
-        return std::unexpected(std::format("clang++ compilation failed:\n{}\nCommand: {}", output, cmd));
+        return std::unexpected(std::format("{} compilation failed:\n{}\nCommand: {}", compiler, output, cmd));
     }
+
+    if (!plan.macos_app_bundle.empty()) {
+        std::error_code ec;
+        auto app_bundle = std::filesystem::path(plan.macos_app_bundle);
+        auto macos_dir = app_bundle / "Contents" / "MacOS";
+        std::filesystem::create_directories(macos_dir, ec);
+        std::string bin_name = out_bin.filename().string();
+        auto bundle_bin = macos_dir / bin_name;
+        std::filesystem::copy_file(out_bin, bundle_bin, std::filesystem::copy_options::overwrite_existing, ec);
+        std::filesystem::permissions(bundle_bin,
+            std::filesystem::perms::owner_all | std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
+            std::filesystem::perms::others_read | std::filesystem::perms::others_exec, ec);
+
+        auto plist_path = app_bundle / "Contents" / "Info.plist";
+        std::ofstream plist(plist_path);
+        plist << std::format(R"(<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>{}</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.cfire.{}</string>
+    <key>CFBundleName</key>
+    <string>{}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+)", bin_name, bin_name, bin_name);
+    }
+
     return plan;
 }
 
@@ -1524,7 +1863,7 @@ inline auto resolve_external_dep_source(
         cmake << std::format("target_link_libraries(app PRIVATE \"{}\")\n", flag);
     }
     for (const auto& al : plan.auto_linked) {
-        if (al.starts_with("vendor:raylib")) {
+        if (al.starts_with("vendor:raylib") || al.starts_with("vendor:raygui")) {
             cmake << "target_link_libraries(app PRIVATE raylib)\n";
         }
     }
@@ -1553,6 +1892,11 @@ inline auto resolve_external_dep_source(
     if (std::filesystem::exists(runtime_dir / "core")) {
         std::error_code ec;
         std::filesystem::copy(runtime_dir / "core", out_dir / "core",
+            std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+    }
+    if (std::filesystem::exists(runtime_dir / "vendor")) {
+        std::error_code ec;
+        std::filesystem::copy(runtime_dir / "vendor", out_dir / "vendor",
             std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
     }
 
