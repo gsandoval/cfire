@@ -656,12 +656,12 @@ fn main() {
     </thead>
     <tbody>
       <tr><td><code>run</code></td><td><code>cfire run main.cf</code></td><td>Compiles and executes the program. Auto-links required <code>core:*</code> and C/C++ libraries.</td></tr>
+      <tr><td><code>run --web</code></td><td><code>cfire run --web [build.cf]</code></td><td>Builds and serves the WebAssembly app via the built-in development HTTP server.</td></tr>
       <tr><td><code>run --sanitize</code></td><td><code>cfire run --sanitize main.cf</code></td><td>Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (<code>-fsanitize=address,undefined</code>).</td></tr>
       <tr><td><code>build</code></td><td><code>cfire build main.cf -o app</code></td><td>Produces an optimized native executable (<code>-O3</code>) in the current directory.</td></tr>
       <tr><td><code>build --subsystem gui</code></td><td><code>cfire build --subsystem gui main.cf -o app</code></td><td>Packages a native GUI desktop app (signed <code>.app</code> bundle on macOS; <code>-mwindows</code> on Windows).</td></tr>
       <tr><td><code>build --target wasm</code></td><td><code>cfire build --target wasm main.cf -o app.html</code></td><td>Cross-compiles to WebAssembly (<code>.html</code>, <code>.js</code>, <code>.wasm</code>) with responsive WebGL canvas or CLI profile.</td></tr>
       <tr><td><code>serve</code></td><td><code>cfire serve [--port 8080] [path]</code></td><td>Built-in zero-dependency static HTTP/1.1 server with <code>application/wasm</code> MIME and COOP/COEP isolation headers.</td></tr>
-      <tr><td><code>wasm</code></td><td>`cfire wasm serve</td><td>build</td><td>run [args...]`</td><td>First-class WebAssembly command toolchain for building, running, and serving browser apps.</td></tr>
       <tr><td><code>test</code></td><td><code>cfire test main.cf</code></td><td>Discovers and executes all embedded <code>test &quot;...&quot; { ... }</code> suites in parallel.</td></tr>
       <tr><td><code>test --sanitize</code></td><td><code>cfire test --sanitize main.cf</code></td><td>Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors.</td></tr>
       <tr><td><code>fmt</code></td><td><code>cfire fmt src/</code></td><td>Canonically formats <code>.cf</code> files in-place according to strict formatting rules.</td></tr>
@@ -711,13 +711,12 @@ test &quot;floating-point clamp bounds&quot; {
 <div class="code-header"><span class="tag-cf">zsh</span></div>
 <pre><code># 1. Build your desktop or graphics app for WebAssembly:
 cfire build --target=wasm app/main.cf -o app/app-web.html
-# Or equivalently:
-cfire wasm build app/main.cf -o app/app-web.html
 
-# 2. Serve the directory and launch your default browser:
+# 2. Serve the directory or build.cf and launch your default browser:
 cfire serve app/app-web.html
-# Or equivalently:
-cfire wasm serve app/app-web.html
+
+# Or build and launch in one command:
+cfire run --web
 </code></pre>
 <p>The built-in server automatically:</p>
 <ul>
@@ -1306,7 +1305,6 @@ cmake --build build
 <p>To test WebAssembly applications locally without third-party dependencies, <code>cfire</code> includes a built-in multi-threaded HTTP/1.1 static server:</p>
 <div class="code-header"><span class="tag-cf">zsh</span></div>
 <pre><code>cfire serve [path] [--port 8080] [--no-open]
-cfire wasm serve [path] [--port 8080] [--no-open]
 </code></pre>
 <p>Key features:</p>
 <ul>

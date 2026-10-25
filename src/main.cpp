@@ -81,7 +81,6 @@ void print_usage() {
     std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
     std::println("  build    [--target wasm|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
     std::println("  serve    [--port <n>] [--no-open] [target|path] Build & serve WebAssembly / static web app with zero config");
-    std::println("  wasm     serve|build|run [args...] Convenient WebAssembly aliases for serve, build, and run --web");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
     std::println("  check    [--json] [--fix] <file.cf> Type-check, verify parameter intents, and inspect C++ headers");
@@ -240,7 +239,7 @@ auto main(int argc, char** argv) -> int {
     std::string sub = argv[1];
     auto runtime_dir = locate_runtime_dir();
 
-    if (sub == "serve" || sub == "server" || sub == "wasm-server") {
+    if (sub == "serve" || sub == "server") {
         int port = 8080;
         bool open_browser = true;
         std::filesystem::path target_path = ".";
@@ -310,46 +309,6 @@ auto main(int argc, char** argv) -> int {
         }
 
         return cfire::serve::run_server(target_path, port, open_browser, explicit_entry);
-    }
-
-    if (sub == "wasm") {
-        if (argc < 3 || std::string_view(argv[2]) == "serve" || std::string_view(argv[2]) == "server") {
-            std::vector<std::string> new_args;
-            new_args.push_back(argv[0]);
-            new_args.push_back("serve");
-            int start_idx = (argc >= 3 && (std::string_view(argv[2]) == "serve" || std::string_view(argv[2]) == "server")) ? 3 : 2;
-            for (int i = start_idx; i < argc; ++i) {
-                new_args.push_back(argv[i]);
-            }
-            std::vector<char*> c_args;
-            for (auto& s : new_args) c_args.push_back(s.data());
-            return main(static_cast<int>(c_args.size()), c_args.data());
-        }
-        std::string wasm_cmd = argv[2];
-        if (wasm_cmd == "run") {
-            std::vector<std::string> new_args;
-            new_args.push_back(argv[0]);
-            new_args.push_back("run");
-            new_args.push_back("--web");
-            for (int i = 3; i < argc; ++i) {
-                new_args.push_back(argv[i]);
-            }
-            std::vector<char*> c_args;
-            for (auto& s : new_args) c_args.push_back(s.data());
-            return main(static_cast<int>(c_args.size()), c_args.data());
-        }
-        std::vector<std::string> new_args;
-        new_args.push_back(argv[0]);
-        new_args.push_back(wasm_cmd);
-        new_args.push_back("--target=wasm");
-        for (int i = 3; i < argc; ++i) {
-            new_args.push_back(argv[i]);
-        }
-        std::vector<char*> c_args;
-        for (auto& s : new_args) {
-            c_args.push_back(s.data());
-        }
-        return main(static_cast<int>(c_args.size()), c_args.data());
     }
 
     if (sub == "lsp") {
