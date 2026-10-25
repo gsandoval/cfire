@@ -1443,32 +1443,36 @@ inline constexpr std::string_view kCanvasShellHtml = R"HTML(<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cfire Web Application</title>
     <style>
-      body {
+      html, body {
+        width: 100%;
+        height: 100%;
         margin: 0;
+        padding: 0;
+        overflow: hidden;
         background-color: #121214;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         color: #e0e0e0;
       }
       #canvas {
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        border-radius: 8px;
-        background-color: #000;
+        width: 100vw;
+        height: 100vh;
         display: block;
         outline: none;
+        background-color: #121214;
       }
       #status {
-        margin-top: 12px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         font-size: 14px;
         color: #888;
+        text-align: center;
+        pointer-events: none;
       }
       .spinner {
-        height: 24px;
-        width: 24px;
+        height: 28px;
+        width: 28px;
         margin: 10px auto;
         border: 3px solid rgba(255,255,255,0.1);
         border-top-color: #6366f1;
@@ -1484,10 +1488,27 @@ inline constexpr std::string_view kCanvasShellHtml = R"HTML(<!DOCTYPE html>
     <script type="text/javascript">
       var statusElement = document.getElementById('status');
       var canvas = document.getElementById('canvas');
+
+      function syncGlfwState() {
+        if (typeof GLFW !== 'undefined' && GLFW.active && canvas) {
+          GLFW.active.width = canvas.width;
+          GLFW.active.height = canvas.height;
+        }
+      }
+
       var Module = {
         preRun: [],
         postRun: [function() {
           if (statusElement) statusElement.style.display = 'none';
+          syncGlfwState();
+          if (typeof GLFW !== 'undefined' && GLFW.calculateMouseCoords) {
+            var origCalc = GLFW.calculateMouseCoords;
+            GLFW.calculateMouseCoords = function(pageX, pageY) {
+              syncGlfwState();
+              return origCalc.call(this, pageX, pageY);
+            };
+          }
+          window.addEventListener('resize', syncGlfwState);
         }],
         print: function(text) {
           console.log(text);

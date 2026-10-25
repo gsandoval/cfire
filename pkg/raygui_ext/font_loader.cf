@@ -2,6 +2,8 @@ package raygui_ext
 
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
+import "core:encoding/base64"
+import "./embedded_font.cf"
 
 fn build_extended_codepoints() -> []i32 {
     mut cps: []i32 = []
@@ -28,8 +30,9 @@ fn build_extended_codepoints() -> []i32 {
 
 // GuiLoadSystemFontExtended: Tries each font path in order, loading the first found font
 // with full Latin/accent/symbol codepoints and bilinear texture filtering.
+// If no filesystem path exists (e.g. WebAssembly virtual MEMFS), falls back to the embedded TrueType font.
 fn GuiLoadSystemFontExtended(paths: []str, font_size: i32) -> rl.Font {
-    if !rl.IsWindowReady() || paths.len() == 0 {
+    if !rl.IsWindowReady() {
         return rl.Font{}
     }
     codepoints := build_extended_codepoints()
@@ -41,6 +44,16 @@ fn GuiLoadSystemFontExtended(paths: []str, font_size: i32) -> rl.Font {
                 rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_BILINEAR)
                 return loaded_font
             }
+        }
+    }
+    // WebAssembly & container fallback: load embedded high-resolution TrueType vector font
+    b64 := get_embedded_lato_ttf_b64()
+    font_bytes := base64.decode(b64) or []
+    if font_bytes.len() > 0 {
+        loaded_font = rl.LoadFontFromMemory(".ttf", font_bytes.data(), font_bytes.len(), font_size, codepoints.data(), codepoints.len())
+        if loaded_font.texture.id > 0 {
+            rl.SetTextureFilter(loaded_font.texture, rl.TEXTURE_FILTER_BILINEAR)
+            return loaded_font
         }
     }
     return loaded_font
