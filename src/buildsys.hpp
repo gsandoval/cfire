@@ -545,6 +545,19 @@ inline auto fetch_archive(
     if (url.ends_with(".zip")) {
         std::string unz_cmd = std::format("unzip -q -o \"{}\" -d \"{}\"", tmp_archive.string(), dest_dir.string());
         out = bridge::run_command_capture(unz_cmd, ext_rc);
+        if (ext_rc == 0) {
+            std::vector<std::filesystem::directory_entry> entries;
+            for (const auto& e : std::filesystem::directory_iterator(dest_dir, ec)) {
+                entries.push_back(e);
+            }
+            if (entries.size() == 1 && entries[0].is_directory()) {
+                auto single_dir = entries[0].path();
+                for (const auto& inner : std::filesystem::directory_iterator(single_dir, ec)) {
+                    std::filesystem::rename(inner.path(), dest_dir / inner.path().filename(), ec);
+                }
+                std::filesystem::remove(single_dir, ec);
+            }
+        }
     } else {
         std::string tar_cmd = std::format("tar -xf \"{}\" -C \"{}\" --strip-components=1 2>/dev/null || tar -xf \"{}\" -C \"{}\"",
             tmp_archive.string(), dest_dir.string(), tmp_archive.string(), dest_dir.string());
@@ -1176,6 +1189,7 @@ inline auto resolve_external_dep_source(
 
     std::unordered_set<std::string> seen_pc;
     auto add_pc = [&](const std::string& pc) {
+        if (is_wasm) return;
         if (seen_pc.contains(pc)) return;
         seen_pc.insert(pc);
         plan.pkg_config_deps.push_back(pc);
@@ -1248,7 +1262,7 @@ inline auto resolve_external_dep_source(
                                 break;
                             }
                         }
-                        std::string raylib_web_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_web.zip";
+                        std::string raylib_web_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_webassembly.zip";
                         std::cout << "==> Auto-resolving missing vendor:raylib WebAssembly build from " << raylib_web_url << "..." << std::endl;
                         std::string actual_sha;
                         auto fetch_res = fetch_archive(raylib_web_url, "", cache_raylib_wasm, actual_sha);
@@ -1543,6 +1557,17 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 )HTML";
 
 [[nodiscard]] inline auto resolve_emscripten_compiler() -> std::expected<std::string, std::string> {
+    if (std::getenv("EM_CACHE") == nullptr) {
+        std::error_code ec;
+        auto tmp_cache = std::filesystem::path("/tmp/cfire_emscripten_cache");
+        std::filesystem::create_directories(tmp_cache, ec);
+        if (!ec) {
+            ::setenv("EM_CACHE", tmp_cache.c_str(), 1);
+        } else if (const char* home = std::getenv("HOME")) {
+            auto cache_dir = std::filesystem::path(home) / ".emscripten_cache";
+            ::setenv("EM_CACHE", cache_dir.c_str(), 1);
+        }
+    }
     int rc = 0;
     auto which_out = bridge::run_command_capture("which em++ 2>/dev/null", rc);
     if (rc == 0 && !which_out.empty()) {
@@ -1760,13 +1785,21 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 
     std::string compiler = is_wasm ? plan.emscripten_compiler : "clang++";
     std::string cmd = compiler;
-    for (const auto& f : plan.cflags) cmd += " " + f;
+    for (const auto& f : plan.cflags) {
+        if (is_wasm && f.find("simdjson") != std::string::npos) continue;
+        cmd += " " + f;
+    }
     if (!pch_path.empty()) {
         cmd += std::format(" -include-pch \"{}\"", pch_path);
         plan.used_pch = true;
     }
     cmd += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
-    for (const auto& l : plan.ldflags) cmd += " " + l;
+    for (const auto& l : plan.ldflags) {
+        if (is_wasm && (l.find(".dylib") != std::string::npos || l.find(".so") != std::string::npos || l == "-lsimdjson" || l == "-lsqlite3" || l == "-lzstd")) {
+            continue;
+        }
+        cmd += " " + l;
+    }
 
     int exit_code = 0;
     std::string output = bridge::run_command_capture(cmd, exit_code);

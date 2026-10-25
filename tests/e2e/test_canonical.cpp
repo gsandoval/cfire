@@ -455,11 +455,17 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         require(has_asyncify, "wasm canvas profile links with -sASYNCIFY=1");
     }
 
-    // 3. Toolchain detection & friendly diagnostics when em++ is absent
+    // 3. Toolchain detection & wasm build verification
     auto build_cli_out = run_cfire(std::format("build --target=wasm \"{}\"", cli_cf.string()));
-    require(build_cli_out.exit_code != 0, "build --target=wasm exits non-zero when em++ is not in PATH");
-    require(build_cli_out.output.contains("em++ (Emscripten compiler) not found"),
-        "helpful error diagnostic when em++ is missing");
+    int has_empp = 0;
+    (void)cfire::bridge::run_command_capture("which em++ 2>/dev/null", has_empp);
+    if (has_empp == 0) {
+        require(build_cli_out.exit_code == 0, "build --target=wasm succeeds when em++ is in PATH");
+    } else {
+        require(build_cli_out.exit_code != 0, "build --target=wasm exits non-zero when em++ is not in PATH");
+        require(build_cli_out.output.contains("em++ (Emscripten compiler) not found"),
+            "helpful error diagnostic when em++ is missing");
+    }
 
     // 4. Native GUI Subsystem: Windows -mwindows flag
     auto win_gui_res = cfire::build::analyze_and_emit(gui_cf, rt_dir, false, false, "x86_64-w64-mingw32");

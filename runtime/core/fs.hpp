@@ -36,6 +36,24 @@ namespace cfire::fs {
     return {};
 }
 
+[[nodiscard]] inline auto rename(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, cfire::Error> {
+    std::error_code ec;
+    std::filesystem::rename(from, to, ec);
+    if (ec) {
+        return cfire::make_error(std::format("rename failed from {} to {}: {}", from.string(), to.string(), ec.message()));
+    }
+    return {};
+}
+
+[[nodiscard]] inline auto copy_file(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, cfire::Error> {
+    std::error_code ec;
+    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        return cfire::make_error(std::format("copy_file failed from {} to {}: {}", from.string(), to.string(), ec.message()));
+    }
+    return {};
+}
+
 [[nodiscard]] inline auto file_size(const std::filesystem::path& p) -> std::expected<std::uint64_t, cfire::Error> {
     std::error_code ec;
     auto sz = std::filesystem::file_size(p, ec);
