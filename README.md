@@ -82,6 +82,18 @@ make test
 ./cfire run examples/10-cmake-and-make-deps/main.cf
 ./cfire run examples/11-http-server-router/main.cf
 
+# Build optimized native binaries or packaged desktop apps:
+./cfire build examples/01-hello-core/main.cf -o hello
+./cfire build --subsystem=gui apps/desktop/main.cf -o myapp  # Auto-creates signed .app bundle on macOS
+
+# Cross-compile to WebAssembly (HTML5 + WebGL Canvas or CLI):
+./cfire build --target=wasm apps/desktop/main.cf -o web/app.html
+./cfire wasm build apps/desktop/main.cf -o web/app.html
+
+# Serve WebAssembly applications locally with zero dependencies (application/wasm MIME + COOP/COEP isolation):
+./cfire serve web/app.html
+./cfire wasm serve web/app.html
+
 # Evaluate one-shot expressions or statements:
 ./cfire eval -e "1 + 2 * 3"
 ./cfire eval "println(\"Hello from cfire eval!\")"
