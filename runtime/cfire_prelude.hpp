@@ -29,7 +29,7 @@
 #include <variant>
 #include <vector>
 
-#if !defined(__cpp_lib_print)
+#if !__has_include(<print>)
 namespace std {
     template <typename... Args>
     inline void print(std::format_string<Args...> fmt, Args&&... args) {
