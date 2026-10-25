@@ -415,10 +415,18 @@ private:
 [[nodiscard]] inline auto c_arg(std::string_view sv) noexcept -> CStrViewHolder {
     return CStrViewHolder(sv);
 }
+[[nodiscard]] inline auto c_arg(std::byte* p) noexcept -> unsigned char* {
+    return reinterpret_cast<unsigned char*>(p);
+}
+[[nodiscard]] inline auto c_arg(const std::byte* p) noexcept -> const unsigned char* {
+    return reinterpret_cast<const unsigned char*>(p);
+}
 template <typename T>
     requires (!std::is_same_v<std::remove_cvref_t<T>, std::string> &&
               !std::is_same_v<std::remove_cvref_t<T>, std::string_view> &&
-              !std::is_same_v<std::remove_cvref_t<T>, std::filesystem::path>)
+              !std::is_same_v<std::remove_cvref_t<T>, std::filesystem::path> &&
+              !std::is_same_v<std::remove_cvref_t<T>, std::byte*> &&
+              !std::is_same_v<std::remove_cvref_t<T>, const std::byte*>)
 [[nodiscard]] constexpr auto c_arg(T&& v) noexcept -> T&& {
     return std::forward<T>(v);
 }

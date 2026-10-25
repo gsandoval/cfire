@@ -129,3 +129,15 @@ test "raygui_ext visual row wrapping and multi-line navigation" {
     assert(r_e == "é")
 }
 
+test "raygui_ext embedded font fallback loading" {
+    rl.SetConfigFlags(rl.FLAG_WINDOW_HIDDEN)
+    rl.InitWindow(100, 100, "Font Fallback Test")
+    defer rl.CloseWindow()
+
+    f := GuiLoadSystemFontExtended([], 24)
+    assert(f.texture.id > 0)
+    assert(f.baseSize == 24)
+    assert(f.glyphCount > 400)
+}
+
+
