@@ -121,6 +121,7 @@ typedef struct Camera2D { Vector2 offset; Vector2 target; float rotation; float 
 typedef struct Shader { unsigned int id; int *locs; } Shader;
 typedef struct rAudioBuffer rAudioBuffer;
 typedef struct rAudioProcessor rAudioProcessor;
+typedef struct Wave { unsigned int frameCount; unsigned int sampleRate; unsigned int sampleSize; unsigned int channels; void *data; } Wave;
 typedef struct AudioStream { rAudioBuffer *buffer; rAudioProcessor *processor; unsigned int sampleRate; unsigned int sampleSize; unsigned int channels; } AudioStream;
 typedef struct Sound { AudioStream stream; unsigned int frameCount; } Sound;
 typedef struct Music { AudioStream stream; unsigned int frameCount; bool looping; int ctxType; void *ctxData; } Music;
@@ -202,6 +203,7 @@ struct TouchPoint {
 struct State {
     bool window_ready = false;
     bool should_close = false;
+    bool edge_to_edge = false;
     int virtual_width = 800;
     int virtual_height = 450;
     int screen_points_w = 393;
@@ -257,6 +259,9 @@ struct State {
     int u_mvp_loc = -1;
     std::vector<Vertex> batch{};
     Font default_font{};
+    bool has_sf_atlas = false;
+    float glyph_adv_px[95]{};
+    float glyph_line_h_px = 52.0f;
 
 #if defined(__OBJC__)
     UIWindow* window = nil;
@@ -267,6 +272,15 @@ struct State {
 #endif
 
     void update_viewport_mapping() noexcept {
+        if (edge_to_edge) {
+            virtual_width = screen_points_w;
+            virtual_height = screen_points_h;
+            vp_x = 0.0f;
+            vp_y = 0.0f;
+            vp_w = static_cast<float>(screen_points_w);
+            vp_h = static_cast<float>(screen_points_h);
+            return;
+        }
         float avail_x = safe_left;
         float avail_y = safe_top;
         float avail_w = std::max(1.0f, static_cast<float>(screen_points_w) - safe_left - safe_right);
@@ -724,33 +738,71 @@ inline void init_gles_resources() noexcept {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white_px);
 
-    // 128x64 font atlas for ASCII 32..126 (16 cols x 6 rows of 8x8 glyphs)
-    std::vector<uint8_t> atlas(128 * 64 * 4, 0);
-    for (int ch = 32; ch <= 126; ++ch) {
-        int idx = ch - 32;
-        int gx = (idx % 16) * 8;
-        int gy = (idx / 16) * 8;
-        for (int r = 0; r < 8; ++r) {
-            uint8_t bits = glyph_row_bits(ch, r);
-            for (int c = 0; c < 8; ++c) {
-                if ((bits >> c) & 1) {
-                    int px_idx = ((gy + r) * 128 + (gx + c)) * 4;
-                    atlas[static_cast<std::size_t>(px_idx + 0)] = 255;
-                    atlas[static_cast<std::size_t>(px_idx + 1)] = 255;
-                    atlas[static_cast<std::size_t>(px_idx + 2)] = 255;
-                    atlas[static_cast<std::size_t>(px_idx + 3)] = 255;
-                }
+    // High-DPI Native Apple San Francisco (SF Pro) Font Atlas (1024x512 RGBA8, 16 cols x 6 rows of 64x84 cells)
+    constexpr int kAtlasW = 1024;
+    constexpr int kAtlasH = 512;
+    constexpr int kCellW = 64;
+    constexpr int kCellH = 84;
+    std::vector<uint8_t> atlas(static_cast<std::size_t>(kAtlasW * kAtlasH * 4), 0);
+
+    UIFont *sfFont = [UIFont systemFontOfSize:44.0 weight:UIFontWeightMedium];
+    if (!sfFont) {
+        sfFont = [UIFont systemFontOfSize:44.0];
+    }
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef cgCtx = CGBitmapContextCreate(
+        atlas.data(), kAtlasW, kAtlasH, 8, kAtlasW * 4, colorSpace,
+        static_cast<uint32_t>(kCGImageAlphaPremultipliedLast) | static_cast<uint32_t>(kCGBitmapByteOrder32Big));
+
+    if (cgCtx && sfFont) {
+        CGContextTranslateCTM(cgCtx, 0.0, static_cast<CGFloat>(kAtlasH));
+        CGContextScaleCTM(cgCtx, 1.0, -1.0);
+        CGContextSetAllowsAntialiasing(cgCtx, true);
+        CGContextSetShouldAntialias(cgCtx, true);
+        CGContextSetAllowsFontSmoothing(cgCtx, true);
+        CGContextSetShouldSmoothFonts(cgCtx, true);
+
+        UIGraphicsPushContext(cgCtx);
+        NSDictionary *attrs = @{
+            NSFontAttributeName: sfFont,
+            NSForegroundColorAttributeName: [UIColor whiteColor]
+        };
+        s.glyph_line_h_px = static_cast<float>(sfFont.lineHeight);
+        for (int ch = 32; ch <= 126; ++ch) {
+            int idx = ch - 32;
+            int gx = (idx % 16) * kCellW;
+            int gy = (idx / 16) * kCellH;
+            NSString *str = [NSString stringWithFormat:@"%c", ch];
+            CGSize sz = [str sizeWithAttributes:attrs];
+            s.glyph_adv_px[idx] = std::max(8.0f, static_cast<float>(sz.width));
+            [str drawAtPoint:CGPointMake(static_cast<CGFloat>(gx + 4), static_cast<CGFloat>(gy + 4)) withAttributes:attrs];
+        }
+        UIGraphicsPopContext();
+
+        // Un-premultiply RGB to pure white (255, 255, 255, alpha) for clean vertex color tinting
+        for (std::size_t i = 0; i < atlas.size(); i += 4) {
+            uint8_t a = atlas[i + 3];
+            if (a > 0) {
+                atlas[i + 0] = 255;
+                atlas[i + 1] = 255;
+                atlas[i + 2] = 255;
             }
         }
+        s.has_sf_atlas = true;
     }
+    if (cgCtx) CGContextRelease(cgCtx);
+    if (colorSpace) CGColorSpaceRelease(colorSpace);
+
     glGenTextures(1, &s.font_tex);
     glBindTexture(GL_TEXTURE_2D, s.font_tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 128, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlas.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kAtlasW, kAtlasH, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlas.data());
 
-    s.default_font.baseSize = 8;
-    s.default_font.texture = Texture2D{s.font_tex, 128, 64, 1, 7};
+    s.default_font.baseSize = 44;
+    s.default_font.texture = Texture2D{s.font_tex, kAtlasW, kAtlasH, 1, 7};
     s.cur_tex = s.white_tex;
 
     glEnable(GL_BLEND);
@@ -783,10 +835,12 @@ RLAPI void InitWindow(int width, int height, const char *title) {
     s.screen_points_w = static_cast<int>(screenBounds.size.width);
     s.screen_points_h = static_cast<int>(screenBounds.size.height);
 
-    if (width <= 0 || height <= 0) {
+    if (width <= 0 || height <= 0 || (width == s.screen_points_w && height == s.screen_points_h)) {
+        s.edge_to_edge = true;
         s.virtual_width = s.screen_points_w;
         s.virtual_height = s.screen_points_h;
     } else {
+        s.edge_to_edge = false;
         s.virtual_width = width;
         s.virtual_height = height;
     }
@@ -856,8 +910,15 @@ RLAPI void InitWindow(int width, int height, const char *title) {
 
     cfire::ios_rl::init_gles_resources();
 #else
-    s.virtual_width = width > 0 ? width : 800;
-    s.virtual_height = height > 0 ? height : 450;
+    if (width <= 0 || height <= 0) {
+        s.edge_to_edge = true;
+        s.virtual_width = 393;
+        s.virtual_height = 852;
+    } else {
+        s.edge_to_edge = false;
+        s.virtual_width = width;
+        s.virtual_height = height;
+    }
 #endif
     s.window_ready = true;
     s.should_close = false;
@@ -875,6 +936,16 @@ RLAPI int GetScreenWidth(void) { return cfire::ios_rl::state().virtual_width; }
 RLAPI int GetScreenHeight(void) { return cfire::ios_rl::state().virtual_height; }
 RLAPI int GetRenderWidth(void) { return cfire::ios_rl::state().fb_pixels_w; }
 RLAPI int GetRenderHeight(void) { return cfire::ios_rl::state().fb_pixels_h; }
+RLAPI Rectangle GetSafeAreaRect(void) {
+    const auto& s = cfire::ios_rl::state();
+    float top = s.safe_top > 0.0f ? s.safe_top : (s.edge_to_edge ? 54.0f : 0.0f);
+    float bot = s.safe_bottom > 0.0f ? s.safe_bottom : (s.edge_to_edge ? 34.0f : 0.0f);
+    float left = s.safe_left;
+    float right = s.safe_right;
+    float w = std::max(1.0f, static_cast<float>(s.virtual_width) - left - right);
+    float h = std::max(1.0f, static_cast<float>(s.virtual_height) - top - bot);
+    return Rectangle{left, top, w, h};
+}
 RLAPI Vector2 GetWindowScaleDPI(void) {
     float sc = cfire::ios_rl::state().dpi_scale;
     return Vector2{sc, sc};
@@ -1004,6 +1075,56 @@ RLAPI void EndBlendMode(void) {
 #endif
 }
 
+RLAPI void BeginScissorMode(int x, int y, int width, int height) {
+    cfire::ios_rl::flush_batch();
+#if defined(__OBJC__)
+    const auto& s = cfire::ios_rl::state();
+    float scale_x = s.vp_w / static_cast<float>(std::max(1, s.virtual_width));
+    float scale_y = s.vp_h / static_cast<float>(std::max(1, s.virtual_height));
+    float sx = s.vp_x + static_cast<float>(x) * scale_x;
+    float sy = s.vp_y + static_cast<float>(y) * scale_y;
+    float sw = static_cast<float>(std::max(1, width)) * scale_x;
+    float sh = static_cast<float>(std::max(1, height)) * scale_y;
+    int px = static_cast<int>(sx * s.dpi_scale);
+    int py = static_cast<int>((static_cast<float>(s.screen_points_h) - (sy + sh)) * s.dpi_scale);
+    int pw = std::max(1, static_cast<int>(sw * s.dpi_scale));
+    int ph = std::max(1, static_cast<int>(sh * s.dpi_scale));
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(px, py, pw, ph);
+#else
+    (void)x; (void)y; (void)width; (void)height;
+#endif
+}
+
+RLAPI void EndScissorMode(void) {
+    cfire::ios_rl::flush_batch();
+#if defined(__OBJC__)
+    const auto& s = cfire::ios_rl::state();
+    int vx = static_cast<int>(s.vp_x * s.dpi_scale);
+    int vy = static_cast<int>((static_cast<float>(s.screen_points_h) - (s.vp_y + s.vp_h)) * s.dpi_scale);
+    int vw = std::max(1, static_cast<int>(s.vp_w * s.dpi_scale));
+    int vh = std::max(1, static_cast<int>(s.vp_h * s.dpi_scale));
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(vx, vy, vw, vh);
+#endif
+}
+
+RLAPI void RequestKeyboard(void) {
+    cfire::ios_rl::request_keyboard_active();
+}
+
+RLAPI void TriggerHaptic(int style) {
+#if defined(__OBJC__)
+    UIImpactFeedbackStyle fb_style = UIImpactFeedbackStyleLight;
+    if (style == 1) fb_style = UIImpactFeedbackStyleMedium;
+    else if (style >= 2) fb_style = UIImpactFeedbackStyleHeavy;
+    UIImpactFeedbackGenerator* gen = [[UIImpactFeedbackGenerator alloc] initWithStyle:fb_style];
+    [gen impactOccurred];
+#else
+    (void)style;
+#endif
+}
+
 //----------------------------------------------------------------------------------
 // Input Handling (Keyboard, Mouse & Multi-Touch)
 //----------------------------------------------------------------------------------
@@ -1111,8 +1232,41 @@ RLAPI void DrawRectanglePro(Rectangle rec, Vector2 origin, float rotation, Color
 }
 
 RLAPI void DrawRectangleRounded(Rectangle rec, float roundness, int segments, Color color) {
-    (void)roundness; (void)segments;
-    DrawRectangleRec(rec, color);
+    if (roundness <= 0.0f || rec.width <= 2.0f || rec.height <= 2.0f) {
+        DrawRectangleRec(rec, color);
+        return;
+    }
+    float r = std::min(rec.width, rec.height) * 0.5f * std::clamp(roundness, 0.0f, 1.0f);
+    if (r < 1.0f) {
+        DrawRectangleRec(rec, color);
+        return;
+    }
+    auto& s = cfire::ios_rl::state();
+    cfire::ios_rl::set_batch_tex(s.white_tex);
+
+    // Center vertical strip + left/right side strips
+    DrawRectangleRec(Rectangle{rec.x + r, rec.y, std::max(0.0f, rec.width - 2.0f * r), rec.height}, color);
+    if (rec.height > 2.0f * r) {
+        DrawRectangleRec(Rectangle{rec.x, rec.y + r, r, rec.height - 2.0f * r}, color);
+        DrawRectangleRec(Rectangle{rec.x + rec.width - r, rec.y + r, r, rec.height - 2.0f * r}, color);
+    }
+
+    int segs = std::clamp(segments > 0 ? segments : 8, 4, 16);
+    auto draw_corner = [&](float cx, float cy, float start_ang) {
+        for (int i = 0; i < segs; ++i) {
+            float a0 = start_ang + static_cast<float>(i) * (0.5f * PI / static_cast<float>(segs));
+            float a1 = start_ang + static_cast<float>(i + 1) * (0.5f * PI / static_cast<float>(segs));
+            float x0 = cx + std::cos(a0) * r;
+            float y0 = cy + std::sin(a0) * r;
+            float x1 = cx + std::cos(a1) * r;
+            float y1 = cy + std::sin(a1) * r;
+            cfire::ios_rl::push_quad(cx, cy, 0, 0, x0, y0, 1, 0, x1, y1, 1, 1, cx, cy, 0, 1, color);
+        }
+    };
+    draw_corner(rec.x + r,             rec.y + r,              PI);
+    draw_corner(rec.x + rec.width - r, rec.y + r,              1.5f * PI);
+    draw_corner(rec.x + rec.width - r, rec.y + rec.height - r, 0.0f);
+    draw_corner(rec.x + r,             rec.y + rec.height - r, 0.5f * PI);
 }
 
 RLAPI void DrawRectangleLinesEx(Rectangle rec, float lineThick, Color color) {
@@ -1142,6 +1296,35 @@ RLAPI void DrawLineEx(Vector2 startPos, Vector2 endPos, float thick, Color color
         endPos.x - nx,   endPos.y - ny,   1, 1,
         startPos.x - nx, startPos.y - ny, 0, 1,
         color);
+}
+
+RLAPI void DrawRectangleRoundedLines(Rectangle rec, float roundness, int segments, float lineThick, Color color) {
+    float t = std::max(1.0f, lineThick);
+    float r = std::min(rec.width, rec.height) * 0.5f * std::clamp(roundness, 0.0f, 1.0f);
+    if (r < 1.0f) {
+        DrawRectangleLinesEx(rec, t, color);
+        return;
+    }
+    DrawLineEx(Vector2{rec.x + r, rec.y}, Vector2{rec.x + rec.width - r, rec.y}, t, color);
+    DrawLineEx(Vector2{rec.x + r, rec.y + rec.height}, Vector2{rec.x + rec.width - r, rec.y + rec.height}, t, color);
+    DrawLineEx(Vector2{rec.x, rec.y + r}, Vector2{rec.x, rec.y + rec.height - r}, t, color);
+    DrawLineEx(Vector2{rec.x + rec.width, rec.y + r}, Vector2{rec.x + rec.width, rec.y + rec.height - r}, t, color);
+
+    int segs = std::clamp(segments > 0 ? segments : 8, 4, 16);
+    auto draw_arc = [&](float cx, float cy, float start_ang) {
+        for (int i = 0; i < segs; ++i) {
+            float a0 = start_ang + static_cast<float>(i) * (0.5f * PI / static_cast<float>(segs));
+            float a1 = start_ang + static_cast<float>(i + 1) * (0.5f * PI / static_cast<float>(segs));
+            DrawLineEx(
+                Vector2{cx + std::cos(a0) * r, cy + std::sin(a0) * r},
+                Vector2{cx + std::cos(a1) * r, cy + std::sin(a1) * r},
+                t, color);
+        }
+    };
+    draw_arc(rec.x + r,             rec.y + r,              PI);
+    draw_arc(rec.x + rec.width - r, rec.y + r,              1.5f * PI);
+    draw_arc(rec.x + rec.width - r, rec.y + rec.height - r, 0.0f);
+    draw_arc(rec.x + r,             rec.y + rec.height - r, 0.5f * PI);
 }
 
 RLAPI void DrawLine(int startPosX, int startPosY, int endPosX, int endPosY, Color color) {
@@ -1204,12 +1387,36 @@ RLAPI Font GetFontDefault(void) { return cfire::ios_rl::state().default_font; }
 
 RLAPI int MeasureText(const char *text, int fontSize) {
     if (!text) return 0;
+    const auto& s = cfire::ios_rl::state();
+    if (s.has_sf_atlas) {
+        float scale = static_cast<float>(std::max(1, fontSize)) / 44.0f;
+        float max_w = 0.0f, cur_w = 0.0f;
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
+            unsigned char ch = *p;
+            if (ch == '\n') {
+                max_w = std::max(max_w, cur_w);
+                cur_w = 0.0f;
+                continue;
+            }
+            if (ch == 0xE2 && p[1] == 0x80 && p[2] != 0) {
+                unsigned char b2 = p[2];
+                p += 2;
+                ch = (b2 == 0xA2) ? '|' : '-';
+            } else if ((ch & 0xC0) == 0x80) {
+                continue;
+            }
+            if (ch < 32 || ch > 126) ch = '?';
+            cur_w += s.glyph_adv_px[ch - 32] * scale;
+        }
+        max_w = std::max(max_w, cur_w);
+        return static_cast<int>(max_w + 0.5f);
+    }
     float scale = static_cast<float>(std::max(1, fontSize)) / 10.0f;
     float char_w = 5.3f * scale;
     int max_len = 0, cur_len = 0;
-    for (const char* p = text; *p; ++p) {
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
         if (*p == '\n') { max_len = std::max(max_len, cur_len); cur_len = 0; }
-        else ++cur_len;
+        else if ((*p & 0xC0) != 0x80) ++cur_len;
     }
     max_len = std::max(max_len, cur_len);
     return static_cast<int>(static_cast<float>(max_len) * char_w);
@@ -1225,6 +1432,55 @@ RLAPI void DrawText(const char *text, int posX, int posY, int fontSize, Color co
     auto& s = cfire::ios_rl::state();
     cfire::ios_rl::set_batch_tex(s.font_tex);
 
+    if (s.has_sf_atlas) {
+        float scale = static_cast<float>(std::max(1, fontSize)) / 44.0f;
+        float x = static_cast<float>(posX);
+        float y = static_cast<float>(posY);
+        float start_x = x;
+
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
+            unsigned char ch = *p;
+            if (ch == '\n') {
+                x = start_x;
+                y += static_cast<float>(fontSize) + 3.0f;
+                continue;
+            }
+            if (ch == 0xE2 && p[1] == 0x80 && p[2] != 0) {
+                unsigned char b2 = p[2];
+                p += 2;
+                ch = (b2 == 0xA2) ? '|' : '-';
+            } else if ((ch & 0xC0) == 0x80) {
+                continue;
+            }
+            if (ch < 32 || ch > 126) ch = '?';
+            int idx = static_cast<int>(ch) - 32;
+            float gx = static_cast<float>((idx % 16) * 64);
+            float gy = static_cast<float>((idx / 16) * 84);
+            float adv_px = s.glyph_adv_px[idx];
+            float sample_w = std::min(60.0f, adv_px + 4.0f);
+            float sample_h = std::min(78.0f, s.glyph_line_h_px + 4.0f);
+
+            float u0 = (gx + 2.0f) / 1024.0f;
+            float v0 = (gy + 4.0f) / 512.0f;
+            float u1 = (gx + 2.0f + sample_w) / 1024.0f;
+            float v1 = (gy + 4.0f + sample_h) / 512.0f;
+
+            float qw = sample_w * scale;
+            float qh = sample_h * scale;
+            float qx = x - 2.0f * scale;
+            float qy = y - (qh - static_cast<float>(fontSize)) * 0.45f;
+
+            cfire::ios_rl::push_quad(
+                qx,      qy,      u0, v0,
+                qx + qw, qy,      u1, v0,
+                qx + qw, qy + qh, u1, v1,
+                qx,      qy + qh, u0, v1,
+                color);
+            x += adv_px * scale;
+        }
+        return;
+    }
+
     float scale = static_cast<float>(std::max(1, fontSize)) / 10.0f;
     float gw = 5.5f * scale;
     float gh = 8.0f * scale;
@@ -1238,6 +1494,13 @@ RLAPI void DrawText(const char *text, int posX, int posY, int fontSize, Color co
         if (ch == '\n') {
             x = start_x;
             y += static_cast<float>(fontSize) + 2.0f;
+            continue;
+        }
+        if (ch == 0xE2 && p[1] == 0x80 && p[2] != 0) {
+            unsigned char b2 = p[2];
+            p += 2;
+            ch = (b2 == 0xA2) ? '|' : '-';
+        } else if ((ch & 0xC0) == 0x80) {
             continue;
         }
         if (ch < 32 || ch > 126) ch = '?';
@@ -1324,8 +1587,9 @@ RLAPI Color ColorFromHSV(float hue, float saturation, float value) {
 }
 
 //----------------------------------------------------------------------------------
-// Audio Device & AudioStream Functions (`OPP-04` Pocket Studio Ready)
+// Audio Device, Wave, Sound & AudioStream Functions (`OPP-04` Pocket Studio Ready)
 //----------------------------------------------------------------------------------
+#include "audio.hpp"
 
 namespace cfire::ios_rl {
 struct IosAudioStreamCtx {
@@ -1354,10 +1618,133 @@ inline void audio_queue_cb(void* user_data, AudioQueueRef q, AudioQueueBufferRef
 #endif
 } // namespace cfire::ios_rl
 
-RLAPI void InitAudioDevice(void) {}
-RLAPI void CloseAudioDevice(void) {}
-RLAPI bool IsAudioDeviceReady(void) { return true; }
-RLAPI void SetMasterVolume(float volume) { (void)volume; }
+RLAPI void InitAudioDevice(void) { (void)cfire::audio::init(); }
+RLAPI void CloseAudioDevice(void) { cfire::audio::close(); }
+RLAPI bool IsAudioDeviceReady(void) { return cfire::audio::is_ready(); }
+RLAPI void SetMasterVolume(float volume) { cfire::audio::set_master_volume(volume); }
+RLAPI float GetMasterVolume(void) { return cfire::audio::master_volume(); }
+
+RLAPI Wave LoadWave(const char *fileName) {
+    if (!fileName) return Wave{};
+    auto res = cfire::audio::load_wav(fileName);
+    if (!res) return Wave{};
+    auto* buf = static_cast<float*>(std::malloc(res->samples.size() * sizeof(float)));
+    if (buf && !res->samples.empty()) {
+        std::memcpy(buf, res->samples.data(), res->samples.size() * sizeof(float));
+    }
+    return Wave{
+        static_cast<unsigned int>(res->frame_count()),
+        static_cast<unsigned int>(res->sample_rate),
+        32u,
+        static_cast<unsigned int>(res->channels),
+        buf
+    };
+}
+
+RLAPI Wave LoadWaveFromMemory(const char *fileType, const unsigned char *fileData, int dataSize) {
+    (void)fileType;
+    if (!fileData || dataSize <= 0) return Wave{};
+    std::span<const std::byte> span(reinterpret_cast<const std::byte*>(fileData), static_cast<std::size_t>(dataSize));
+    auto res = cfire::audio::decode_wav(span);
+    if (!res) return Wave{};
+    auto* buf = static_cast<float*>(std::malloc(res->samples.size() * sizeof(float)));
+    if (buf && !res->samples.empty()) {
+        std::memcpy(buf, res->samples.data(), res->samples.size() * sizeof(float));
+    }
+    return Wave{
+        static_cast<unsigned int>(res->frame_count()),
+        static_cast<unsigned int>(res->sample_rate),
+        32u,
+        static_cast<unsigned int>(res->channels),
+        buf
+    };
+}
+
+RLAPI void UnloadWave(Wave wave) {
+    if (wave.data) std::free(wave.data);
+}
+
+RLAPI bool ExportWave(Wave wave, const char *fileName) {
+    if (!fileName || !wave.data || wave.frameCount == 0 || wave.channels == 0) return false;
+    cfire::audio::Wave cw;
+    cw.sample_rate = static_cast<std::int32_t>(wave.sampleRate);
+    cw.channels = static_cast<std::int32_t>(wave.channels);
+    std::size_t count = static_cast<std::size_t>(wave.frameCount) * static_cast<std::size_t>(wave.channels);
+    cw.samples.resize(count);
+    if (wave.sampleSize == 32) {
+        std::memcpy(cw.samples.data(), wave.data, count * sizeof(float));
+    } else if (wave.sampleSize == 16) {
+        const auto* p16 = static_cast<const std::int16_t*>(wave.data);
+        for (std::size_t i = 0; i < count; ++i) cw.samples[i] = static_cast<float>(p16[i]) / 32768.0f;
+    }
+    return cfire::audio::save_wav(cw, fileName).has_value();
+}
+
+RLAPI Sound LoadSoundFromWave(Wave wave) {
+    cfire::audio::Wave cw;
+    cw.sample_rate = static_cast<std::int32_t>(wave.sampleRate > 0 ? wave.sampleRate : 48000);
+    cw.channels = static_cast<std::int32_t>(wave.channels > 0 ? wave.channels : 2);
+    std::size_t count = static_cast<std::size_t>(wave.frameCount) * static_cast<std::size_t>(cw.channels);
+    if (wave.data && count > 0) {
+        cw.samples.resize(count);
+        if (wave.sampleSize == 32) {
+            std::memcpy(cw.samples.data(), wave.data, count * sizeof(float));
+        } else if (wave.sampleSize == 16) {
+            const auto* p16 = static_cast<const std::int16_t*>(wave.data);
+            for (std::size_t i = 0; i < count; ++i) cw.samples[i] = static_cast<float>(p16[i]) / 32768.0f;
+        }
+    }
+    auto* s_handle = new cfire::audio::Sound(cfire::audio::load_sound_from_wave(cw));
+    return Sound{
+        AudioStream{reinterpret_cast<rAudioBuffer*>(s_handle), nullptr, wave.sampleRate, 32u, wave.channels},
+        wave.frameCount
+    };
+}
+
+RLAPI Sound LoadSound(const char *fileName) {
+    Wave w = LoadWave(fileName);
+    Sound s = LoadSoundFromWave(w);
+    UnloadWave(w);
+    return s;
+}
+
+RLAPI void UnloadSound(Sound sound) {
+    auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer);
+    delete s_handle;
+}
+
+RLAPI void PlaySound(Sound sound) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->play();
+}
+
+RLAPI void StopSound(Sound sound) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->stop();
+}
+
+RLAPI void PauseSound(Sound sound) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->pause();
+}
+
+RLAPI void ResumeSound(Sound sound) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->resume();
+}
+
+RLAPI bool IsSoundPlaying(Sound sound) {
+    if (const auto* s_handle = reinterpret_cast<const cfire::audio::Sound*>(sound.stream.buffer)) return s_handle->is_playing();
+    return false;
+}
+
+RLAPI void SetSoundVolume(Sound sound, float volume) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->set_volume(volume);
+}
+
+RLAPI void SetSoundPitch(Sound sound, float pitch) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->set_pitch(pitch);
+}
+
+RLAPI void SetSoundPan(Sound sound, float pan) {
+    if (auto* s_handle = reinterpret_cast<cfire::audio::Sound*>(sound.stream.buffer)) s_handle->set_pan(pan);
+}
 
 RLAPI AudioStream LoadAudioStream(unsigned int sampleRate, unsigned int sampleSize, unsigned int channels) {
     auto* ctx = new cfire::ios_rl::IosAudioStreamCtx();

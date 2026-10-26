@@ -33,6 +33,16 @@ using namespace cfire::frontend;
             base += format_type_ref(t.tuple_types[i]);
         }
         base += ")";
+    } else if (t.is_fn) {
+        base = "fn(";
+        for (std::size_t i = 0; i < t.fn_params.size(); ++i) {
+            if (i > 0) base += ", ";
+            base += format_type_ref(t.fn_params[i]);
+        }
+        base += ")";
+        if (t.fn_ret && (t.fn_ret->name != "void" || t.fn_ret->is_fallible || t.fn_ret->is_optional)) {
+            base += " -> " + format_type_ref(*t.fn_ret);
+        }
     } else if (!t.smart_wrap.empty() && t.elem_type) {
         base = std::format("{}[{}]", t.smart_wrap, format_type_ref(*t.elem_type));
     } else if (t.is_slice && t.elem_type) {

@@ -1027,6 +1027,67 @@ fn main() {
 | `fn to_lower(s: str) -> str` | `cfire::unicode::to_lower(s)` | Converts Latin, Greek, and Cyrillic Unicode characters to lowercase. | `lower := unicode.to_lower("HELLO, СВЕТ!")` |
 | `fn to_upper(s: str) -> str` | `cfire::unicode::to_upper(s)` | Converts Latin, Greek, and Cyrillic Unicode characters to uppercase. | `upper := unicode.to_upper("hello, свет!")` |
 
+### `core:audio` (`audio`) — Cross-Target Audio Engine, Polyphonic Mixer, Synth & WAV Codec
+
+- **Auto-Link Flags:** `(AudioToolbox / WebAudio / ALSA)`
+- **Overview:** Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.
+
+**Practical Example:**
+```cf
+package main
+
+import "core:audio"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Zero-asset procedural sound effect playback
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    coin_sfx := audio.load_sound_from_wave(coin_wave)
+    coin_sfx.play()
+
+    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+    try audio.save_wav(tone, "a440.wav")
+
+    stream := try audio.open_stream(48000, 2)
+    if stream.needs_data(2048) {
+        stream.push_samples(tone.samples)
+    }
+    println("Audio RMS: {}, Peak: {}", audio.rms_level(), audio.peak_level())
+}
+```
+
+| `.cf` Signature | Lowered C++23 | Description | Example |
+|---|---|---|---|
+| `fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!` | `cfire::audio::init(sample_rate, channels)` | Initializes the hardware audio output queue (or headless software mixer in CI). | `try audio.init(48000, 2)` |
+| `fn close()` | `cfire::audio::close()` | Stops all active sounds and streams and releases audio hardware resources. | `defer audio.close()` |
+| `fn is_ready() -> bool` | `cfire::audio::is_ready()` | Returns `true` if the audio subsystem is initialized. | `if audio.is_ready() { ... }` |
+| `fn set_master_volume(vol: f32)` | `cfire::audio::set_master_volume(vol)` | Sets the master output volume multiplier (`0.0` to `1.0`). | `audio.set_master_volume(0.8)` |
+| `fn master_volume() -> f32` | `cfire::audio::master_volume()` | Returns the current master output volume multiplier. | `v := audio.master_volume()` |
+| `fn rms_level() -> f32` | `cfire::audio::rms_level()` | Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters. | `rms := audio.rms_level()` |
+| `fn peak_level() -> f32` | `cfire::audio::peak_level()` | Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers. | `pk := audio.peak_level()` |
+| `fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave` | `cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)` | Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope. | `w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)` |
+| `fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave` | `cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)` | Synthesizes a frequency-swept tone from `start_hz` to `end_hz`. | `sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)` |
+| `fn gen_sfx(preset: SfxPreset) -> Wave` | `cfire::audio::gen_sfx(preset)` | Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`). | `coin := audio.gen_sfx(audio.SfxPreset::Coin)` |
+| `fn encode_wav(wave: Wave) -> []byte` | `cfire::audio::encode_wav(wave)` | Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice. | `wav_bytes := audio.encode_wav(w)` |
+| `fn decode_wav(data: []byte) -> Wave!` | `cfire::audio::decode_wav(data)` | Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`. | `w := try audio.decode_wav(wav_bytes)` |
+| `fn save_wav(wave: Wave, path: str) -> void!` | `cfire::audio::save_wav(wave, path)` | Writes a `Wave` to disk as a standard `.wav` file. | `try audio.save_wav(w, "tone.wav")` |
+| `fn load_wav(path: str) -> Wave!` | `cfire::audio::load_wav(path)` | Loads and decodes a `.wav` file from disk or app bundle. | `w := try audio.load_wav("tone.wav")` |
+| `fn load_sound_from_wave(wave: Wave) -> Sound` | `cfire::audio::load_sound_from_wave(wave)` | Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle. | `sfx := audio.load_sound_from_wave(coin)` |
+| `fn load_sound(path: str) -> Sound!` | `cfire::audio::load_sound(path)` | Loads a `.wav` file from disk into a playable polyphonic `Sound` handle. | `sfx := try audio.load_sound("click.wav")` |
+| `fn (s: Sound) play()` | `s.play()` | Triggers polyphonic playback of the sound. | `sfx.play()` |
+| `fn (s: Sound) stop()` | `s.stop()` | Stops active voices playing this sound. | `sfx.stop()` |
+| `fn (s: Sound) set_volume(vol: f32)` | `s.set_volume(vol)` | Sets playback gain (`0.0` to `2.0`) for this sound. | `sfx.set_volume(0.75)` |
+| `fn (s: Sound) set_pitch(pitch: f32)` | `s.set_pitch(pitch)` | Sets playback pitch/rate multiplier (`1.0` = original pitch). | `sfx.set_pitch(1.25)` |
+| `fn (s: Sound) set_pan(pan: f32)` | `s.set_pan(pan)` | Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right). | `sfx.set_pan(-0.5)` |
+| `fn (s: Sound) set_looping(loop: bool)` | `s.set_looping(loop)` | Enables or disables seamless loop playback. | `sfx.set_looping(true)` |
+| `fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!` | `cfire::audio::open_stream(sample_rate, channels)` | Opens a real-time push `Stream` for custom DSP synthesis. | `stream := try audio.open_stream(48000, 2)` |
+| `fn (st: Stream) push_samples(samples: []f32)` | `st.push_samples(samples)` | Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer. | `stream.push_samples(pcm_chunk)` |
+| `fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool` | `st.needs_data(target_frames)` | Returns `true` when buffered frames fall below `target_frames`. | `if stream.needs_data(1024) { ... }` |
+
 ### `vendor:raylib` (`rl`) — Raylib 5.0 2D/3D Graphics, Audio, Input & Raymath (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`)
 
 - **Auto-Link Flags:** `-lraylib`
@@ -1079,6 +1140,11 @@ fn main() {
 | `fn IsKeyDown(key: i32) -> bool` | `IsKeyDown(key)` | Checks if a key is currently being pressed. | `if rl.IsKeyDown(rl.KEY_RIGHT) { ... }` |
 | `fn GetMousePosition() -> rl.Vector2` | `GetMousePosition()` | Returns current mouse position XY as `rl.Vector2`. | `mouse := rl.GetMousePosition()` |
 | `fn CheckCollisionRecs(rec1: rl.Rectangle, rec2: rl.Rectangle) -> bool` | `CheckCollisionRecs(rec1, rec2)` | Checks collision between two rectangles. | `hit := rl.CheckCollisionRecs(player_box, wall_box)` |
+| `fn GetSafeAreaRect() -> rl.Rectangle` | `GetSafeAreaRect()` | Returns the usable safe-area rectangle inset past the iOS Dynamic Island and Home Indicator. | `safe := rl.GetSafeAreaRect()` |
+| `fn BeginScissorMode(x: i32, y: i32, width: i32, height: i32)` | `BeginScissorMode(x, y, width, height)` | Begins scissor clipping mode for scrollable views and clipped cards. | `rl.BeginScissorMode(0, 100, 393, 600)` |
+| `fn EndScissorMode()` | `EndScissorMode()` | Ends scissor clipping mode and restores the full viewport. | `rl.EndScissorMode()` |
+| `fn RequestKeyboard()` | `RequestKeyboard()` | Requests the native iOS `<UIKeyInput>` software keyboard for the active frame. | `rl.RequestKeyboard()` |
+| `fn TriggerHaptic(style: i32)` | `TriggerHaptic(style)` | Triggers native iOS Taptic Engine impact feedback (0=Light, 1=Medium, 2=Heavy). | `rl.TriggerHaptic(0)` |
 | `fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -> rl.Vector2` | `Vector2Add(v1, v2)` | Adds two vectors (`<raymath.h>`). | `pos = rl.Vector2Add(pos, vel)` |
 | `fn Vector2Scale(v: rl.Vector2, scale: f32) -> rl.Vector2` | `Vector2Scale(v, scale)` | Scales vector by float value (`<raymath.h>`). | `step := rl.Vector2Scale(dir, speed * dt)` |
 | `fn Clamp(value: f32, min: f32, max: f32) -> f32` | `Clamp(value, min, max)` | Clamps float value between `[min, max]` (`<raymath.h>`). | `x := rl.Clamp(pos.x, 0.0, 800.0)` |
