@@ -503,6 +503,77 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         require(console_build->macos_app_bundle.empty(), "--subsystem=console suppresses macOS .app bundle creation");
         require(!std::filesystem::exists(rl_dir / "my_console_app.app"), "no .app bundle created when console subsystem is forced");
     }
+
+    // 7. Native iOS & Simulator Target (`OPP-01`: `ios-sim` & `ios` target triples, UIKit/OpenGLES3 backend, flat .app bundle)
+    require(cfire::build::is_ios_target("ios") && cfire::build::is_ios_target("ios-sim"), "is_ios_target detects ios and ios-sim");
+    require(cfire::build::is_ios_simulator_target("ios-sim") && !cfire::build::is_ios_simulator_target("ios"),
+        "is_ios_simulator_target distinguishes simulator from physical device");
+    require(cfire::build::normalize_ios_triple("ios-sim") == "arm64-apple-ios17.0-simulator",
+        "normalize_ios_triple(ios-sim) returns arm64-apple-ios17.0-simulator");
+    require(cfire::build::normalize_ios_triple("ios") == "arm64-apple-ios17.0",
+        "normalize_ios_triple(ios) returns arm64-apple-ios17.0");
+
+    auto ios_dir = tmp.path / "ios_bundle_test";
+    std::filesystem::create_directories(ios_dir);
+    auto ios_cf = ios_dir / "main.cf";
+    {
+        std::ofstream ofs(ios_cf);
+        ofs << R"(package main
+import "core:fs"
+import "core:json"
+import "core:db/sqlite"
+import "core:compress/zstd"
+import "vendor:raylib" as rl
+import "vendor:raygui" as rg
+
+type SaveState struct {
+    Pilot: str `json:"pilot"`
+    Score: i64 `json:"score"`
+}
+
+fn main() {
+    rl.InitWindow(720, 480, "iOS Test")
+    defer rl.CloseWindow()
+    mut pilot := "Memo"
+    rg.GuiTextBox(rl.Rectangle{x: 10.0, y: 10.0, width: 120.0, height: 28.0}, &mut pilot, 32, true)
+    s := SaveState{Pilot: pilot, Score: 42}
+    raw := json.stringify(s)
+    r1 := fs.write_all("save.json", raw)
+    r2 := zstd.compress("hello ios")
+    r3 := sqlite.open("game.db")
+}
+)";
+    }
+    auto ios_emit = cfire::build::analyze_and_emit(ios_cf, rt_dir, false, false, "ios-sim");
+    require(ios_emit.has_value(), "analyze_and_emit for ios-sim with raylib, raygui, fs, json, sqlite, zstd");
+    if (ios_emit) {
+        require(ios_emit->first.contains("#include \"core/ios_raylib.hpp\""), "ios-sim codegen includes core/ios_raylib.hpp");
+        require(ios_emit->first.contains("cfire::ios_rl::run_ios_app"), "ios-sim codegen wraps main with run_ios_app");
+        bool has_platform_ios = false;
+        bool has_objc_arc = false;
+        for (const auto& cf : ios_emit->second.cflags) {
+            if (cf == "-DPLATFORM_IOS=1") has_platform_ios = true;
+            if (cf == "-fobjc-arc") has_objc_arc = true;
+        }
+        require(has_platform_ios && has_objc_arc, "ios-sim cflags include -DPLATFORM_IOS=1 and -fobjc-arc");
+    }
+
+    if (cfire::build::resolve_ios_sdk_path(true).has_value()) {
+        auto ios_bin = ios_dir / "ios_game";
+        auto ios_build = cfire::build::build_native(ios_cf, rt_dir, ios_bin, false, false, "ios-sim");
+        require(ios_build.has_value(), std::format("build_native for ios-sim succeeded: {}", ios_build ? "" : ios_build.error()));
+        if (ios_build) {
+            auto ios_bundle = std::filesystem::path(ios_build->ios_app_bundle);
+            require(std::filesystem::exists(ios_bundle / "ios_game"), "flat iOS .app bundle contains executable at root");
+            require(std::filesystem::exists(ios_bundle / "Info.plist"), "flat iOS .app bundle contains Info.plist at root");
+            auto ios_plist = cfire::build::read_file_text(ios_bundle / "Info.plist");
+            require(ios_plist.has_value() &&
+                    ios_plist->contains("UIDeviceFamily") &&
+                    ios_plist->contains("MinimumOSVersion") &&
+                    ios_plist->contains("UIInterfaceOrientationLandscapeLeft"),
+                "iOS Info.plist contains UIDeviceFamily, MinimumOSVersion, and Landscape orientation for 720x480 window");
+        }
+    }
 #endif
 
     std::println("--- PASS: test_wasm_and_gui_subsystem");

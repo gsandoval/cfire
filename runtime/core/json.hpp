@@ -422,9 +422,11 @@ inline void stringify_value_to(const Value& val, std::string& out, int indent, i
 } // namespace cfire::json
 
 #ifdef CFIRE_USE_SIMDJSON
-#if defined(PLATFORM_WEB)
+#if defined(PLATFORM_WEB) || defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 namespace simdjson::ondemand {
-    struct object {};
+    struct object {
+        const cfire::json::Value* val = nullptr;
+    };
 }
 #else
 #include <simdjson.h>
@@ -450,8 +452,40 @@ struct is_std_vector<std::vector<U, A>> : std::true_type {};
 
 template <typename T>
 [[nodiscard]] auto parse(std::string_view payload) -> std::expected<T, cfire::Error> {
-#if defined(PLATFORM_WEB)
-    return T{};
+#if defined(PLATFORM_WEB) || defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
+            auto dyn = parse_dynamic(payload);
+            if (dyn && dyn->is_string()) return std::string(dyn->as_str());
+            return std::string(payload.substr(1, payload.size() - 2));
+        }
+        return std::string(payload);
+    } else if constexpr (detail::is_std_vector<T>::value) {
+        using Elem = typename T::value_type;
+        auto dyn = parse_dynamic(payload);
+        if (!dyn) return std::unexpected(dyn.error());
+        if (!dyn->is_array()) return cfire::make_error("expected json array");
+        T out;
+        for (const auto& elem : dyn->as_array()) {
+            if constexpr (std::is_same_v<Elem, std::string>) {
+                if (!elem.is_string()) return cfire::make_error("invalid string in json array");
+                out.emplace_back(elem.as_str());
+            } else {
+                if (!elem.is_object()) return cfire::make_error("invalid object in json array");
+                simdjson::ondemand::object obj{&elem};
+                auto parsed = parse_struct<Elem>(obj);
+                if (!parsed) return std::unexpected(parsed.error());
+                out.push_back(std::move(*parsed));
+            }
+        }
+        return out;
+    } else {
+        auto dyn = parse_dynamic(payload);
+        if (!dyn) return std::unexpected(dyn.error());
+        if (!dyn->is_object()) return cfire::make_error("expected json object");
+        simdjson::ondemand::object obj{&(*dyn)};
+        return parse_struct<T>(obj);
+    }
 #else
     if constexpr (std::is_same_v<T, std::string>) {
         if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
@@ -525,7 +559,7 @@ template <typename T>
     }
 }
 
-#if !defined(PLATFORM_WEB)
+#if !defined(PLATFORM_WEB) && !defined(PLATFORM_IOS) && !(defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 [[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::string, cfire::Error>
 {
@@ -586,18 +620,48 @@ template <typename T>
     return res.value();
 }
 #else
-[[nodiscard]] inline auto get_str(simdjson::ondemand::object&, std::string_view)
-    -> std::expected<std::string, cfire::Error> { return ""; }
-[[nodiscard]] inline auto get_u64(simdjson::ondemand::object&, std::string_view)
-    -> std::expected<std::uint64_t, cfire::Error> { return 0; }
-[[nodiscard]] inline auto get_i64(simdjson::ondemand::object&, std::string_view)
-    -> std::expected<std::int64_t, cfire::Error> { return 0; }
-[[nodiscard]] inline auto get_i32(simdjson::ondemand::object&, std::string_view)
-    -> std::expected<std::int32_t, cfire::Error> { return 0; }
-[[nodiscard]] inline auto get_f64(simdjson::ondemand::object&, std::string_view)
-    -> std::expected<double, cfire::Error> { return 0.0; }
-[[nodiscard]] inline auto get_bool(simdjson::ondemand::object&, std::string_view)
-    -> std::expected<bool, cfire::Error> { return false; }
+[[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::string, cfire::Error> {
+    if (!obj.val) return cfire::make_error(std::format("missing string field '{}'", key));
+    auto v = obj.val->get(key);
+    if (!v || !v->is_string()) return cfire::make_error(std::format("missing or invalid string field '{}'", key));
+    return std::string(v->as_str());
+}
+[[nodiscard]] inline auto get_u64(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::uint64_t, cfire::Error> {
+    if (!obj.val) return cfire::make_error(std::format("missing u64 field '{}'", key));
+    auto v = obj.val->get(key);
+    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid u64 field '{}'", key));
+    return static_cast<std::uint64_t>(v->as_int());
+}
+[[nodiscard]] inline auto get_i64(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::int64_t, cfire::Error> {
+    if (!obj.val) return cfire::make_error(std::format("missing i64 field '{}'", key));
+    auto v = obj.val->get(key);
+    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid i64 field '{}'", key));
+    return v->as_int();
+}
+[[nodiscard]] inline auto get_i32(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::int32_t, cfire::Error> {
+    if (!obj.val) return cfire::make_error(std::format("missing i32 field '{}'", key));
+    auto v = obj.val->get(key);
+    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid i32 field '{}'", key));
+    return static_cast<std::int32_t>(v->as_int());
+}
+[[nodiscard]] inline auto get_f64(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<double, cfire::Error> {
+    if (!obj.val) return cfire::make_error(std::format("missing f64 field '{}'", key));
+    auto v = obj.val->get(key);
+    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid f64 field '{}'", key));
+    return v->as_float();
+}
+[[nodiscard]] inline auto get_bool(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<bool, cfire::Error> {
+    if (!obj.val) return cfire::make_error(std::format("missing bool field '{}'", key));
+    auto v = obj.val->get(key);
+    if (!v || !v->is_bool()) return cfire::make_error(std::format("missing or invalid bool field '{}'", key));
+    return v->as_bool();
+}
 #endif
 
 } // namespace cfire::json

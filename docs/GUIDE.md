@@ -880,13 +880,37 @@ When compiling graphical desktop applications (such as Raylib or Raygui tools), 
   Double-clicking `MyApp.app` in Finder executes the application without launching `Terminal.app`.
 - **Console Debugging Override (`--subsystem=console`)**: When debugging with `println()`, pass `--subsystem=console` to keep the console window active so stdout logs remain visible in the terminal.
 
-### 9.7 Package Caching, Lockfiles & Offline Vendoring
+### 9.7 Native iOS & Simulator Target (`--target ios-sim | ios` & `cfire run --ios`)
+`cfire` supports compiling desktop `vendor:raylib` and `vendor:raygui` applications directly into native iOS apps and Simulator bundles—with **zero external SDL2 or CMake dependencies**:
+
+```zsh
+# Build a flat iOS Simulator .app bundle (arm64-apple-ios17.0-simulator)
+cfire build --target ios-sim main.cf
+
+# Build a physical iPhone/iPad .app bundle (arm64-apple-ios17.0)
+cfire build --target ios main.cf
+
+# One-command build, auto-boot Simulator, install .app, and stream stdout live
+cfire run --ios main.cf
+cfire run --ios --device "iPhone 17 Pro" main.cf
+```
+
+How `cfire` bridges desktop code to iOS natively:
+1. **Built-In Objective-C++ `UIKit` + `OpenGLES3` + `CoreAudio` Backend**: When targeting `ios` or `ios-sim`, `cfire` compiles the generated `.mm` translation unit with `-fobjc-arc` against its self-contained `runtime/core/ios_raylib.hpp` backend.
+2. **Synchronous Game Loop Preservation**: Your standard `for !rl.WindowShouldClose() { rl.BeginDrawing() ... rl.EndDrawing() }` loop runs unmodified by initializing `UIApplicationMain` and pumping `CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.002, false)` per frame inside `EndDrawing()`.
+3. **Smart Adaptive Safe-Area Viewport & Touch Remapping**:
+   - Calling `rl.InitWindow(0, 0, "Title")` adopts the iPhone's native screen point dimensions.
+   - Calling a fixed resolution such as `rl.InitWindow(720, 480, "Title")` automatically scales and letterboxes the canvas inside the iPhone's `safeAreaInsets` (avoiding the Dynamic Island and Home Indicator), sets preferred Landscape/Portrait orientation in `Info.plist`, and remaps `UITouch` coordinates into `720x480` virtual canvas coordinates so `GetMousePosition()`, `IsMouseButtonPressed()`, and `raygui` controls work out-of-the-box by finger touch.
+4. **Automatic `<UIKeyInput>` Software Keyboard**: Tapping a `raygui` `GuiTextBox` automatically triggers `[view becomeFirstResponder]` to slide up the iOS native software keyboard and feed keystrokes into `GetCharPressed()` and `IsKeyPressed(KEY_BACKSPACE | KEY_ENTER)`.
+5. **iOS App Sandbox Stdlib Mapping**: Relative writable file paths in `core:fs` and `core:db/sqlite` automatically resolve to the iOS app's writable `~/Documents/` container, while `core:compress/zstd` uses Apple's native `-lcompression` and `core:json` uses zero-dependency C++23 reflection.
+
+### 9.8 Package Caching, Lockfiles & Offline Vendoring
 To guarantee reproducible, hermetic builds across development machines and CI/CD runners:
 - **Global Package Cache (`~/.cfire/cache/pkg`)**: Remote repositories and archives are fetched once and cached globally by cryptographic content hash.
 - **Lockfile Pinning (`build.lock`)**: When dependencies are fetched, `cfire` records exact Git commit SHAs and archive checksums in `build.lock`. Subsequent builds verify that local archives match the recorded checksum.
 - **Air-Gapped Offline Vendoring (`cfire vendor`)**: Run `cfire vendor [dest_dir]` to download and vendor all external C/C++ dependencies into a local `vendor/` directory. Your project can then be built completely offline without network access.
 
-### 9.8 Zero-Lock-In CMake Ejection (`cfire eject`)
+### 9.9 Zero-Lock-In CMake Ejection (`cfire eject`)
 `cfire` guarantees **zero framework lock-in**. You can export your entire project to standard ISO C++23 with a production CMake build file at any time:
 
 ```zsh

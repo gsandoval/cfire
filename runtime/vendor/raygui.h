@@ -16,7 +16,14 @@
 #define RAYGUI_VERSION_PATCH 0
 #define RAYGUI_VERSION  "4.0"
 
+#if defined(PLATFORM_IOS) || defined(CFIRE_RAYLIB_FALLBACK)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#include "../core/ios_raylib.hpp"
+#pragma clang diagnostic pop
+#else
 #include <raylib.h>
+#endif
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -550,6 +557,9 @@ RAYGUIAPI int GuiTextBox(Rectangle bounds, char* text, int textSize, bool editMo
     int st = cfire::raygui_detail::eval_hover_state(bounds, clicked);
     int result = clicked ? 1 : 0;
     if (editMode) {
+#if defined(PLATFORM_IOS)
+        cfire::ios_rl::request_keyboard_active();
+#endif
         st = STATE_PRESSED;
         if (IsWindowReady() && text && textSize > 1) {
             int len = static_cast<int>(std::strlen(text));

@@ -17,7 +17,10 @@
 #include <unistd.h>
 
 #ifdef __APPLE__
+#include <TargetConditionals.h>
+#if !TARGET_OS_IPHONE
 #include <crt_externs.h>
+#endif
 #endif
 
 namespace cfire::os {
@@ -100,7 +103,7 @@ struct ExecResult {
     argv_ptrs.push_back(nullptr);
 
     pid_t pid = 0;
-#ifdef __APPLE__
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
     char** env = *_NSGetEnviron();
 #else
     extern char** environ;
