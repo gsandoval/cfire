@@ -1270,3 +1270,85 @@ The same `.cf` application runs natively across desktop operating systems, moder
   cfire run --ios app.cf
   ```
 
+---
+
+## Chapter 12: Multi-Target Audio, Synthesis, WAV Codec & Real-Time DSP (`core:audio`)
+
+Real-time audio synthesis, game sound effects, and digital signal processing (DSP) demand zero garbage-collection pauses and deterministic frame delivery. `cfire` includes a built-in, zero-external-dependency sound library (`import "core:audio"`) that runs identically across **macOS**, **iOS Simulator & Devices (`--ios`)**, **WebAssembly (`--wasm`)**, **Linux**, and **Headless CI**.
+
+### 12.1 Multi-Target Hardware Backends
+`core:audio` combines a portable C++23 64-voice polyphonic float32 mixer and RIFF/WAV codec with thin native OS hardware outputs:
+- **macOS Native**: Apple `AudioToolbox.framework` (`AudioQueue` float32 hardware output).
+- **iOS Simulator & Devices (`--target ios-sim` / `ios`)**: `AudioToolbox.framework` + automatic `AVAudioSessionCategoryPlayback` activation so audio plays cleanly even when the hardware Ring/Silent switch is on silent.
+- **WebAssembly (`--target wasm`)**: Browser **Web Audio API** (`AudioContext`) with automatic user-gesture unlock (`pointerdown`, `touchstart`, `keydown`).
+- **Linux & Headless CI (`CFIRE_HEADLESS_TEST=1`)**: Dynamic `dlopen("libasound.so.2")` ALSA hardware output on Linux desktops and a deterministic software null-sink mixer in headless test/container environments.
+
+### 12.2 Zero-Asset Procedural Waveforms & Sound Effects
+Games and interactive iOS/desktop UIs can synthesize waveforms (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`), frequency-swept chirps, and retro/UI sound effects (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`) in memory with zero external `.wav` files:
+
+```cf
+package main
+
+import "core:audio"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Play zero-asset procedural UI / game sound effects
+    tap_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Tap))
+    coin_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+
+    coin_sfx.set_volume(0.9)
+    coin_sfx.set_pitch(1.15)
+    coin_sfx.set_pan(-0.2) // Slight left stereo pan
+    coin_sfx.play()
+    tap_sfx.play()
+}
+```
+
+### 12.3 Pure C++23 RIFF/WAV Encoding, Decoding & File I/O
+`audio.Wave` exposes its interleaved stereo `samples: []f32` directly to `.cf` code and supports encoding and decoding 8-bit, 16-bit, 24-bit PCM, and 32-bit IEEE float `.wav` files or byte slices:
+
+```cf
+package main
+
+import "core:audio"
+
+fn main() {
+    // Synthesize a 440 Hz A4 sine wave with smooth ADSR envelope
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+
+    // Save to disk (or ~/Documents on iOS) and reload
+    try audio.save_wav(tone, "a440.wav")
+    loaded := try audio.load_wav("a440.wav")
+    println("Loaded WAV: {} frames ({} sec) @ {} Hz",
+        loaded.frame_count(), loaded.duration_sec(), loaded.sample_rate)
+}
+```
+
+### 12.4 Real-Time DSP Audio Streaming & Live UI Metering (`audio.Stream`)
+For custom synthesizers, drum machines, and real-time visualizers (such as `examples/13-ios-native-ui`), `audio.open_stream` provides a lock-free float32 ring buffer alongside real-time RMS and peak amplitude meters (`audio.rms_level()` and `audio.peak_level()`):
+
+```cf
+package main
+
+import "core:audio"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+
+    stream := try audio.open_stream(48000, 2)
+    chunk := audio.gen_tone(audio.Waveform::Saw, 220.0, 0.05, 0.35)
+
+    if stream.needs_data(2048) {
+        stream.push_samples(chunk.samples)
+    }
+
+    println("Live Master RMS: {}, Peak: {}", audio.rms_level(), audio.peak_level())
+}
+```
+
+
