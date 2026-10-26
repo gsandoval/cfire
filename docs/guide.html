@@ -1346,14 +1346,35 @@ cfire run --target=wasm main.cf
   <li><strong>macOS (<code>.app</code> Bundle Packaging)</strong>: On macOS, <code>cfire build</code> automatically structures the binary into a native Application Bundle:</li>
  <code></code>`text MyApp.app/ └── Contents/ ├── Info.plist   (CFBundlePackageType: APPL, CFBundleExecutable: MyApp) └── MacOS/ └── MyApp   (Mach-O binary) <code></code>` Double-clicking <code>MyApp.app</code> in Finder executes the application without launching <code>Terminal.app</code>.  <li><strong>Console Debugging Override (<code>--subsystem=console</code>)</strong>: When debugging with <code>println()</code>, pass <code>--subsystem=console</code> to keep the console window active so stdout logs remain visible in the terminal.</li>
 </ul>
-<h3 id="97-package-caching-lockfiles-offline-vendoring">9.7 Package Caching, Lockfiles &amp; Offline Vendoring</h3>
+<h3 id="97-native-ios-simulator-target-target-ios-sim-ios-cfire-run-ios">9.7 Native iOS &amp; Simulator Target (<code>--target ios-sim | ios</code> &amp; <code>cfire run --ios</code>)</h3>
+<p><code>cfire</code> supports compiling desktop <code>vendor:raylib</code> and <code>vendor:raygui</code> applications directly into native iOS apps and Simulator bundles—with <strong>zero external SDL2 or CMake dependencies</strong>:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code># Build a flat iOS Simulator .app bundle (arm64-apple-ios17.0-simulator)
+cfire build --target ios-sim main.cf
+
+# Build a physical iPhone/iPad .app bundle (arm64-apple-ios17.0)
+cfire build --target ios main.cf
+
+# One-command build, auto-boot Simulator, install .app, and stream stdout live
+cfire run --ios main.cf
+cfire run --ios --device &quot;iPhone 17 Pro&quot; main.cf
+</code></pre>
+<p>How <code>cfire</code> bridges desktop code to iOS natively:</p>
+<ol>
+  <li><strong>Built-In Objective-C++ <code>UIKit</code> + <code>OpenGLES3</code> + <code>CoreAudio</code> Backend</strong>: When targeting <code>ios</code> or <code>ios-sim</code>, <code>cfire</code> compiles the generated <code>.mm</code> translation unit with <code>-fobjc-arc</code> against its self-contained <code>runtime/core/ios_raylib.hpp</code> backend.</li>
+  <li><strong>Synchronous Game Loop Preservation</strong>: Your standard <code>for !rl.WindowShouldClose() { rl.BeginDrawing() ... rl.EndDrawing() }</code> loop runs unmodified by initializing <code>UIApplicationMain</code> and pumping <code>CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.002, false)</code> per frame inside <code>EndDrawing()</code>.</li>
+  <li><strong>Smart Adaptive Safe-Area Viewport &amp; Touch Remapping</strong>:</li>
+ - Calling <code>rl.InitWindow(0, 0, &quot;Title&quot;)</code> adopts the iPhone's native screen point dimensions. - Calling a fixed resolution such as <code>rl.InitWindow(720, 480, &quot;Title&quot;)</code> automatically scales and letterboxes the canvas inside the iPhone's <code>safeAreaInsets</code> (avoiding the Dynamic Island and Home Indicator), sets preferred Landscape/Portrait orientation in <code>Info.plist</code>, and remaps <code>UITouch</code> coordinates into <code>720x480</code> virtual canvas coordinates so <code>GetMousePosition()</code>, <code>IsMouseButtonPressed()</code>, and <code>raygui</code> controls work out-of-the-box by finger touch.  <li><strong>Automatic <code>&lt;UIKeyInput&gt;</code> Software Keyboard</strong>: Tapping a <code>raygui</code> <code>GuiTextBox</code> automatically triggers <code>[view becomeFirstResponder]</code> to slide up the iOS native software keyboard and feed keystrokes into <code>GetCharPressed()</code> and <code>IsKeyPressed(KEY_BACKSPACE | KEY_ENTER)</code>.</li>
+  <li><strong>iOS App Sandbox Stdlib Mapping</strong>: Relative writable file paths in <code>core:fs</code> and <code>core:db/sqlite</code> automatically resolve to the iOS app's writable <code>~/Documents/</code> container, while <code>core:compress/zstd</code> uses Apple's native <code>-lcompression</code> and <code>core:json</code> uses zero-dependency C++23 reflection.</li>
+</ol>
+<h3 id="98-package-caching-lockfiles-offline-vendoring">9.8 Package Caching, Lockfiles &amp; Offline Vendoring</h3>
 <p>To guarantee reproducible, hermetic builds across development machines and CI/CD runners:</p>
 <ul>
   <li><strong>Global Package Cache (<code>~/.cfire/cache/pkg</code>)</strong>: Remote repositories and archives are fetched once and cached globally by cryptographic content hash.</li>
   <li><strong>Lockfile Pinning (<code>build.lock</code>)</strong>: When dependencies are fetched, <code>cfire</code> records exact Git commit SHAs and archive checksums in <code>build.lock</code>. Subsequent builds verify that local archives match the recorded checksum.</li>
   <li><strong>Air-Gapped Offline Vendoring (<code>cfire vendor</code>)</strong>: Run <code>cfire vendor [dest_dir]</code> to download and vendor all external C/C++ dependencies into a local <code>vendor/</code> directory. Your project can then be built completely offline without network access.</li>
 </ul>
-<h3 id="98-zero-lock-in-cmake-ejection-cfire-eject">9.8 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
+<h3 id="99-zero-lock-in-cmake-ejection-cfire-eject">9.9 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
 <p><code>cfire</code> guarantees <strong>zero framework lock-in</strong>. You can export your entire project to standard ISO C++23 with a production CMake build file at any time:</p>
 <div class="code-header"><span class="tag-cf">zsh</span></div>
 <pre><code>cfire eject main.cf ./standalone_cpp_project

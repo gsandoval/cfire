@@ -1134,6 +1134,7 @@ struct DiscoveredModule {
             if (!entry.is_regular_file() || entry.path().extension() != ".hpp") continue;
             auto rel = std::filesystem::relative(entry.path(), core_dir).string();
             if (rel == "cli.hpp") discovered.push_back({"core:cli", "core/" + rel, false});
+            else if (rel == "ios_raylib.hpp") continue; // Built-in iOS platform backend for vendor:raylib
             else if (rel == "compress.hpp") discovered.push_back({"core:compress/zstd", "core/" + rel, false});
             else if (rel == "fs.hpp") discovered.push_back({"core:fs", "core/" + rel, false});
             else if (rel == "json.hpp") discovered.push_back({"core:json", "core/" + rel, false});

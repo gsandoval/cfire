@@ -1,10 +1,35 @@
 # Active Workbench: In-Flight Implementation Tasks
 
-This document tracks items currently under active design, scoping, or implementation from [`docs/planning/backlog.md`](./backlog.md) and [`docs/planning/architectural-backlog.md`](./architectural-backlog.md).
+This document tracks items currently under active design, scoping, or implementation from [`docs/planning/backlog.md`](./backlog.md), [`docs/planning/architectural-backlog.md`](./architectural-backlog.md), and [`docs/planning/opportunity-tracker.md`](./opportunity-tracker.md).
 
 ---
 
-## Active Milestone: Systems & GUI Application Ergonomics (`LANG-*`, `STDLIB-*`)
+## Completed Milestone: `OPP-01` — Native iOS & Simulator Target (`--target ios-sim` / `ios` & `cfire run --ios`)
+
+| Task ID | Priority | Component | Summary | Status | Section Gate |
+| :--- | :---: | :--- | :--- | :---: | :---: |
+| `IOS-P0-01` | P0 | `src/buildsys.hpp`, `src/main.cpp` | **iOS Toolchain, Flat `.app` Bundle Packager & `cfire run --ios` Runner**: Support `--target ios-sim` (`arm64-apple-ios17.0-simulator`) and `--target ios` (`arm64-apple-ios17.0`), dynamic `xcrun --sdk` sysroot resolution, flat iOS `.app/Info.plist` generation + `codesign`, and `cfire run --ios` (`xcrun simctl boot/install/launch --console-pty`) | `[DONE]` | Passed (`make review-check`) |
+| `IOS-P0-02` | P0 | `runtime/core/ios_raylib.hpp`, `runtime/vendor/raygui.h`, `src/codegen.hpp` | **Built-In Objective-C++ `UIKit` + `OpenGLES3` + `CoreAudio` Backend for `vendor:raylib` & `vendor:raygui`**: Self-contained iOS Raylib/Raygui engine with blocking `for !rl.WindowShouldClose()` `CFRunLoop` pump, Smart Adaptive Viewport inside Safe Area, touch-to-mouse remapping, and `<UIKeyInput>` software keyboard trigger on `GuiTextBox` | `[DONE]` | Passed (`make review-check`) |
+| `IOS-P0-03` | P0 | `runtime/core/fs.hpp`, `runtime/core/sqlite.hpp`, `runtime/core/json.hpp`, `runtime/core/compress.hpp`, `src/codegen.hpp` | **Transparent iOS Sandbox File/Database Path Resolution & Header-Only JSON/Compression Fallbacks**: Auto-map relative writable paths (`core:fs`, `core:db/sqlite`) to iOS `~/Documents/`, check `.app` bundle first for relative reads, link iOS SDK `-lsqlite3` and `-lcompression`, and support header-only C++23 `json::parse<T>` on iOS | `[DONE]` | Passed (`make review-check`) |
+| `IOS-P0-04` | P0 | `tests/e2e/test_canonical.cpp`, `docs/GUIDE.md` | **Unit/Integration Verification, Live Simulator Validation & Documentation Sync**: Verify `cfire build --target ios-sim` and `cfire run --ios` on `examples/06-raylib-viz` and `examples/12-raygui-controls`, add unit tests for iOS build plan generation, and sync `docs/` | `[DONE]` | Passed (`make review-check`) |
+
+### Pre-Implementation Quality Gate (`OPP-01`)
+1. **Scope & Problem Statement**:
+   - Enable `cfire` to compile and run `.cf` applications (both standard library CLI/database apps and graphical `vendor:raylib` / `vendor:raygui` apps) natively on the iOS Simulator (`--target ios-sim`, `cfire run --ios`) and physical iOS devices (`--target ios`) with zero Xcode project creation or external SDL2 dependencies.
+2. **Resolved User Decisions (`/grill-me`)**:
+   - **Backend**: Built-in Objective-C++ `UIKit` + `OpenGLES3` + `CoreAudio` backend (`runtime/vendor/raylib_ios.hpp`) compiled with `-x objective-c++ -fobjc-arc`.
+   - **Viewport & Orientation**: Smart Adaptive Viewport (`InitWindow(0, 0)` uses native iPhone points; fixed `InitWindow(w, h)` scales/letterboxes inside the iOS Safe Area, remaps touch coordinates into `w x h`, and sets preferred Landscape/Portrait orientation in `Info.plist`).
+   - **CLI**: `cfire build --target ios-sim | ios` and `cfire run --ios` (or `--ios-sim`, plus optional `--device <name>`).
+   - **Keyboard**: `UIView<UIKeyInput>` automatically shows/hides the iOS software keyboard when `GuiTextBox` enters/exits `editMode`.
+   - **iOS Sandbox & Stdlib**: Relative writable paths in `core:fs` and `core:db/sqlite` map to `~/Documents/`; relative reads check the `.app` bundle first then `~/Documents/`; iOS builds link the iOS SDK's `-lsqlite3` and use header-only C++23 JSON struct reflection.
+3. **Testing & Verification Matrix**:
+   - **Unit/Integration Tests**: Verify `analyze_and_emit` and `build_native` for `ios-sim` target triple, flat `.app/Info.plist` generation, and `core:fs` / `core:json` compilation against `iphonesimulator` SDK.
+   - **Live Simulator Validation**: Compile and launch `examples/06-raylib-viz/main.cf` and `examples/12-raygui-controls/main.cf` on the booted iPhone Simulator via `./cfire run --ios`.
+   - **Regression Suite**: `make review-check` must pass 100% with 0 compiler warnings.
+
+---
+
+## Completed Milestones: Systems & GUI Application Ergonomics (`LANG-*`, `STDLIB-*`)
 
 | Task ID | Priority | Component | Summary | Status | Section Gate |
 | :--- | :---: | :--- | :--- | :---: | :---: |
