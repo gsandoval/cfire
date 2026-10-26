@@ -101,6 +101,11 @@ struct BuildPlan {
     std::string bundle_id{};
     std::string icon_path{};
     std::string macos_app_bundle{};
+    std::string ios_app_bundle{};
+    bool is_ios{false};
+    bool is_ios_sim{false};
+    int window_init_width{0};
+    int window_init_height{0};
     std::string emscripten_compiler{};
 };
 
@@ -1281,6 +1286,45 @@ inline auto resolve_external_dep_source(
     return {};
 }
 
+[[nodiscard]] inline auto is_ios_target(std::string_view target) noexcept -> bool {
+    return target == "ios" || target == "ios-sim" || target == "ios-simulator" ||
+           target.find("-apple-ios") != std::string_view::npos;
+}
+
+[[nodiscard]] inline auto is_ios_simulator_target(std::string_view target) noexcept -> bool {
+    return target == "ios-sim" || target == "ios-simulator" ||
+           (target.find("-apple-ios") != std::string_view::npos && target.find("simulator") != std::string_view::npos);
+}
+
+[[nodiscard]] inline auto normalize_ios_triple(std::string_view target) -> std::string {
+    if (target == "ios-sim" || target == "ios-simulator") {
+        return "arm64-apple-ios17.0-simulator";
+    }
+    if (target == "ios") {
+        return "arm64-apple-ios17.0";
+    }
+    return std::string(target);
+}
+
+[[nodiscard]] inline auto resolve_ios_sdk_path(bool simulator) -> std::expected<std::string, std::string> {
+#if defined(__APPLE__)
+    std::string sdk_name = simulator ? "iphonesimulator" : "iphoneos";
+    int rc = 0;
+    std::string out = bridge::run_command_capture(std::format("xcrun --sdk {} --show-sdk-path 2>/dev/null", sdk_name), rc);
+    out = trim_whitespace(out);
+    if (rc == 0 && !out.empty() && std::filesystem::exists(out)) {
+        return out;
+    }
+    return std::unexpected(std::format(
+        "Xcode iOS SDK '{}' not found via xcrun.\n"
+        "Ensure Xcode and the iOS platform SDK are installed (`xcode-select --install` or Xcode -> Settings -> Components).",
+        sdk_name));
+#else
+    (void)simulator;
+    return std::unexpected("iOS targets (--target ios-sim / ios) require macOS with Xcode installed.");
+#endif
+}
+
 [[nodiscard]] inline auto analyze_and_emit(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
@@ -1294,24 +1338,36 @@ inline auto resolve_external_dep_source(
     auto dir = cf_file.parent_path();
     BuildPlan plan;
     plan.entry_file = cf_file.string();
-    plan.target_triple = target_triple;
+    plan.is_ios = is_ios_target(target_triple);
+    plan.is_ios_sim = is_ios_simulator_target(target_triple);
+    plan.target_triple = plan.is_ios ? normalize_ios_triple(target_triple) : target_triple;
     plan.sysroot = sysroot;
+    if (plan.is_ios && plan.sysroot.empty()) {
+        auto sdk_res = resolve_ios_sdk_path(plan.is_ios_sim);
+        if (!sdk_res) return std::unexpected(sdk_res.error());
+        plan.sysroot = *sdk_res;
+    }
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
     plan.cflags = {"-std=c++2b", "-I" + runtime_dir.string()};
-    bool is_wasm = target_triple.starts_with("wasm");
-    if (!target_triple.empty()) {
+    bool is_wasm = plan.target_triple.starts_with("wasm");
+    if (!plan.target_triple.empty()) {
         if (!is_wasm) {
-            plan.cflags.push_back("--target=" + target_triple);
-            plan.ldflags.push_back("--target=" + target_triple);
+            plan.cflags.push_back("--target=" + plan.target_triple);
+            plan.ldflags.push_back("--target=" + plan.target_triple);
         }
     }
-    if (!sysroot.empty()) {
-        plan.cflags.push_back("--sysroot=" + sysroot);
-        plan.ldflags.push_back("--sysroot=" + sysroot);
+    if (!plan.sysroot.empty()) {
+        plan.cflags.push_back("-isysroot");
+        plan.cflags.push_back("\"" + plan.sysroot + "\"");
+        plan.ldflags.push_back("-isysroot");
+        plan.ldflags.push_back("\"" + plan.sysroot + "\"");
     }
     if (is_wasm) {
         plan.cflags.push_back("-DPLATFORM_WEB");
+    }
+    if (plan.is_ios) {
+        plan.cflags.push_back("-DPLATFORM_IOS=1");
     }
 
     // 1. Parse & execute any pre-build commands declared in root sibling `build.cf` (BS-08)
@@ -1384,6 +1440,20 @@ inline auto resolve_external_dep_source(
     std::unordered_set<std::string> seen_pc;
     auto add_pc = [&](const std::string& pc) {
         if (is_wasm) return;
+        if (plan.is_ios) {
+            if (pc == "sqlite3") {
+                if (!seen_pc.contains(pc)) {
+                    seen_pc.insert(pc);
+                    plan.ldflags.push_back("-lsqlite3");
+                }
+            } else if (pc == "libzstd") {
+                if (!seen_pc.contains(pc)) {
+                    seen_pc.insert(pc);
+                    plan.ldflags.push_back("-lcompression");
+                }
+            }
+            return;
+        }
         if (seen_pc.contains(pc)) return;
         seen_pc.insert(pc);
         plan.pkg_config_deps.push_back(pc);
@@ -1480,7 +1550,27 @@ inline auto resolve_external_dep_source(
                     plan.ldflags.push_back("-sUSE_GLFW=3");
                     plan.ldflags.push_back("-sASYNCIFY=1");
                     plan.ldflags.push_back("-sALLOW_MEMORY_GROWTH=1");
+                } else if (plan.is_ios) {
+                    bool already_has_objc_arc = false;
+                    for (const auto& cf : plan.cflags) {
+                        if (cf == "-fobjc-arc") already_has_objc_arc = true;
+                    }
+                    if (!already_has_objc_arc) {
+                        plan.cflags.push_back("-fobjc-arc");
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "UIKit",
+                            "-framework", "Foundation",
+                            "-framework", "OpenGLES",
+                            "-framework", "QuartzCore",
+                            "-framework", "CoreGraphics",
+                            "-framework", "AudioToolbox"
+                        });
+                    }
                 } else {
+                auto is_readable = [](const std::filesystem::path& p) -> bool {
+                    std::ifstream ifs(p, std::ios::binary);
+                    return ifs.good();
+                };
                 bool found_raylib = false;
 
                 // 1. Try system pkg-config
@@ -1494,11 +1584,11 @@ inline auto resolve_external_dep_source(
                 // 2. Try standard system directories
                 if (!found_raylib) {
                     for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
-                        if (std::filesystem::exists(std::filesystem::path(inc_dir) / "raylib.h")) {
+                        if (is_readable(std::filesystem::path(inc_dir) / "raylib.h")) {
                             plan.cflags.push_back("-I" + std::string(inc_dir));
                             std::string lib_dir = (inc_dir == std::string("/opt/homebrew/include")) ? "/opt/homebrew/lib" :
                                                   (inc_dir == std::string("/usr/local/include")) ? "/usr/local/lib" : "/usr/lib";
-                            if (std::filesystem::exists(std::filesystem::path(lib_dir) / "libraylib.a")) {
+                            if (is_readable(std::filesystem::path(lib_dir) / "libraylib.a")) {
                                 plan.ldflags.push_back((std::filesystem::path(lib_dir) / "libraylib.a").string());
                             } else {
                                 plan.ldflags.push_back("-L" + lib_dir);
@@ -1515,28 +1605,19 @@ inline auto resolve_external_dep_source(
                     for (auto cur = std::filesystem::absolute(dir); !cur.empty() && cur != cur.parent_path(); cur = cur.parent_path()) {
                         auto v_dir = cur / "vendor" / "raylib";
                         auto c_dir = cur / ".cfire" / "cache" / "vendor_raylib";
-                        if (std::filesystem::exists(v_dir / "include" / "raylib.h")) {
+                        if (is_readable(v_dir / "include" / "raylib.h") && is_readable(v_dir / "lib" / "libraylib.a")) {
                             plan.cflags.push_back("-I" + (v_dir / "include").string());
-                            if (std::filesystem::exists(v_dir / "lib" / "libraylib.a")) {
-                                plan.ldflags.push_back((v_dir / "lib" / "libraylib.a").string());
-                            } else {
-                                plan.ldflags.push_back("-L" + (v_dir / "lib").string());
-                                plan.ldflags.push_back("-lraylib");
-                            }
+                            plan.ldflags.push_back((v_dir / "lib" / "libraylib.a").string());
                             found_raylib = true;
                             break;
-                        } else if (std::filesystem::exists(c_dir / "include" / "raylib.h")) {
+                        } else if (is_readable(c_dir / "include" / "raylib.h") && is_readable(c_dir / "lib" / "libraylib.a")) {
                             plan.cflags.push_back("-I" + (c_dir / "include").string());
-                            if (std::filesystem::exists(c_dir / "lib" / "libraylib.a")) {
-                                plan.ldflags.push_back((c_dir / "lib" / "libraylib.a").string());
-                            }
+                            plan.ldflags.push_back((c_dir / "lib" / "libraylib.a").string());
                             found_raylib = true;
                             break;
-                        } else if (std::filesystem::exists(v_dir / "raylib.h")) {
+                        } else if (is_readable(v_dir / "raylib.h") && is_readable(v_dir / "libraylib.a")) {
                             plan.cflags.push_back("-I" + v_dir.string());
-                            if (std::filesystem::exists(v_dir / "libraylib.a")) {
-                                plan.ldflags.push_back((v_dir / "libraylib.a").string());
-                            }
+                            plan.ldflags.push_back((v_dir / "libraylib.a").string());
                             found_raylib = true;
                             break;
                         }
@@ -1546,22 +1627,20 @@ inline auto resolve_external_dep_source(
                 // 4. Try current working directory cache and global/local package cache
                 if (!found_raylib) {
                     auto cwd_cache = std::filesystem::current_path() / ".cfire" / "cache" / "vendor_raylib";
-                    if (std::filesystem::exists(cwd_cache / "include" / "raylib.h")) {
+                    if (is_readable(cwd_cache / "include" / "raylib.h") && is_readable(cwd_cache / "lib" / "libraylib.a")) {
                         plan.cflags.push_back("-I" + (cwd_cache / "include").string());
-                        if (std::filesystem::exists(cwd_cache / "lib" / "libraylib.a")) {
-                            plan.ldflags.push_back((cwd_cache / "lib" / "libraylib.a").string());
-                        }
+                        plan.ldflags.push_back((cwd_cache / "lib" / "libraylib.a").string());
                         found_raylib = true;
                     }
                 }
                 if (!found_raylib) {
                     for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib",
                                                      std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib")}) {
-                        if (std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
+                        if (is_readable(cache_raylib / "include" / "raylib.h") &&
+                            is_readable(cache_raylib / "include" / "raymath.h") &&
+                            is_readable(cache_raylib / "lib" / "libraylib.a")) {
                             plan.cflags.push_back("-I" + (cache_raylib / "include").string());
-                            if (std::filesystem::exists(cache_raylib / "lib" / "libraylib.a")) {
-                                plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
-                            }
+                            plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
                             found_raylib = true;
                             break;
                         }
@@ -1581,21 +1660,23 @@ inline auto resolve_external_dep_source(
                         std::cout << "==> Auto-resolving missing vendor:raylib from " << raylib_url << "..." << std::endl;
                         std::string actual_sha;
                         auto fetch_res = fetch_archive(raylib_url, "", cache_raylib, actual_sha);
-                        if (fetch_res && std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
+                        if (fetch_res && is_readable(cache_raylib / "include" / "raylib.h") && is_readable(cache_raylib / "lib" / "libraylib.a")) {
                             plan.cflags.push_back("-I" + (cache_raylib / "include").string());
-                            if (std::filesystem::exists(cache_raylib / "lib" / "libraylib.a")) {
-                                plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
-                            }
+                            plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
                             found_raylib = true;
                         }
                     }
                 }
 
+                if (found_raylib) {
 #if defined(__APPLE__)
-                plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL"});
+                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL"});
 #elif defined(__linux__)
-                plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
+                    plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
 #endif
+                } else {
+                    plan.cflags.push_back("-DCFIRE_RAYLIB_FALLBACK=1");
+                }
                 } // !is_wasm
             }
             continue;
@@ -1619,6 +1700,21 @@ inline auto resolve_external_dep_source(
 
     // 4. C++23 Code Generation (with Clang AST boundary coercions)
     std::string cpp_code = frontend::emit_cpp(*checked, test_mode);
+
+    if (auto pos = cpp_code.find("InitWindow("); pos != std::string::npos) {
+        auto rp = cpp_code.find(')', pos + 11);
+        if (rp != std::string::npos) {
+            std::string args = cpp_code.substr(pos + 11, rp - (pos + 11));
+            auto c1 = args.find(',');
+            if (c1 != std::string::npos) {
+                auto c2 = args.find(',', c1 + 1);
+                std::string w_str = trim_whitespace(args.substr(0, c1));
+                std::string h_str = trim_whitespace(c2 != std::string::npos ? args.substr(c1 + 1, c2 - (c1 + 1)) : args.substr(c1 + 1));
+                if (auto w = cfire::detail::parse_int<int>(w_str)) plan.window_init_width = *w;
+                if (auto h = cfire::detail::parse_int<int>(h_str)) plan.window_init_height = *h;
+            }
+        }
+    }
 
     return std::make_pair(std::move(cpp_code), std::move(plan));
 }
@@ -2042,6 +2138,12 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
             plan.cflags.push_back("-sUSE_GLFW=3");
             plan.cflags.push_back("-sASYNCIFY=1");
         }
+    } else if (plan.is_ios) {
+        if (!test_mode) {
+            std::string bin_stem = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
+            auto app_bundle = out_bin.extension() == ".app" ? out_bin : (out_bin.parent_path() / (bin_stem + ".app"));
+            plan.ios_app_bundle = app_bundle.string();
+        }
     } else {
         bool gui_subsystem = (plan.subsystem == "gui") || (plan.subsystem == "auto" && plan.is_gui);
         if (gui_subsystem) {
@@ -2091,7 +2193,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
     std::filesystem::create_directories(gen_dir);
     auto stem = test_mode ? (cf_file.stem().string() + "_test") : cf_file.stem().string();
-    auto cpp_path = gen_dir / (stem + ".cpp");
+    auto cpp_path = gen_dir / (stem + (plan.is_ios && plan.is_gui ? ".mm" : ".cpp"));
     plan.generated_cpp = cpp_path.string();
 
     {
@@ -2104,12 +2206,15 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         : "-O2";
     // Only use host PCH if compiling natively for the host (empty target_triple)
     std::string pch_path;
-    if (target_triple.empty()) {
+    if (plan.target_triple.empty()) {
         pch_path = ensure_prelude_pch(runtime_dir, sanitize);
     }
 
     std::string compiler = is_wasm ? plan.emscripten_compiler : "clang++";
     std::string cmd = compiler;
+    if (plan.is_ios && plan.is_gui) {
+        cmd += " -fobjc-arc";
+    }
     for (const auto& f : plan.cflags) {
         if (is_wasm && f.find("simdjson") != std::string::npos) continue;
         cmd += " " + f;
@@ -2216,7 +2321,192 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 #endif
     }
 
+    if (!plan.ios_app_bundle.empty()) {
+        std::error_code ec;
+        auto app_bundle = std::filesystem::path(plan.ios_app_bundle);
+        std::filesystem::create_directories(app_bundle, ec);
+        std::string bin_name = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
+        auto bundle_bin = app_bundle / bin_name;
+        if (out_bin != bundle_bin) {
+            std::filesystem::copy_file(out_bin, bundle_bin, std::filesystem::copy_options::overwrite_existing, ec);
+        }
+        std::filesystem::permissions(bundle_bin,
+            std::filesystem::perms::owner_all | std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
+            std::filesystem::perms::others_read | std::filesystem::perms::others_exec, ec);
+
+        std::string effective_name = plan.app_name.empty() ? bin_name : plan.app_name;
+        std::string effective_bundle_id = plan.bundle_id.empty() ? ("com.cfire." + bin_name) : plan.bundle_id;
+        std::string platform_str = plan.is_ios_sim ? "iPhoneSimulator" : "iPhoneOS";
+        bool prefer_landscape = plan.window_init_width > plan.window_init_height && plan.window_init_height > 0;
+
+        bool has_icon = false;
+        if (!plan.icon_path.empty()) {
+            std::filesystem::path icon_p = plan.icon_path;
+            if (icon_p.is_relative() && !std::filesystem::exists(icon_p)) {
+                if (std::filesystem::exists(cf_file.parent_path() / icon_p)) {
+                    icon_p = cf_file.parent_path() / icon_p;
+                }
+            }
+            if (std::filesystem::exists(icon_p, ec)) {
+                auto dest_icon = app_bundle / "AppIcon60x60@2x.png";
+                int sips_rc = 0;
+                std::string sips_cmd = std::format("/usr/bin/sips -z 120 120 {} --out {} >/dev/null 2>&1",
+                    bridge::shell_quote(icon_p.string()),
+                    bridge::shell_quote(dest_icon.string()));
+                (void)bridge::run_command_capture(sips_cmd, sips_rc);
+                if (sips_rc == 0 && std::filesystem::exists(dest_icon, ec)) {
+                    has_icon = true;
+                }
+            }
+        }
+
+        std::string orientations = prefer_landscape
+            ? "        <string>UIInterfaceOrientationLandscapeLeft</string>\n"
+              "        <string>UIInterfaceOrientationLandscapeRight</string>\n"
+              "        <string>UIInterfaceOrientationPortrait</string>\n"
+            : "        <string>UIInterfaceOrientationPortrait</string>\n"
+              "        <string>UIInterfaceOrientationLandscapeLeft</string>\n"
+              "        <string>UIInterfaceOrientationLandscapeRight</string>\n";
+
+        auto plist_path = app_bundle / "Info.plist";
+        std::ofstream plist(plist_path);
+        plist << std::format(R"(<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>{}</string>
+    <key>CFBundleIdentifier</key>
+    <string>{}</string>
+    <key>CFBundleName</key>
+    <string>{}</string>
+    <key>CFBundleDisplayName</key>
+    <string>{}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>{}</string>
+    </array>
+    <key>MinimumOSVersion</key>
+    <string>17.0</string>
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+{}    </array>
+)", bin_name, effective_bundle_id, effective_name, effective_name, platform_str, orientations);
+
+        if (has_icon) {
+            plist << "    <key>CFBundleIconFiles</key>\n    <array>\n        <string>AppIcon60x60</string>\n    </array>\n";
+        }
+        plist << "</dict>\n</plist>\n";
+        plist.close();
+
+#if defined(__APPLE__)
+        int cs_rc = 0;
+        std::string cs_cmd = std::format("codesign --force --sign - \"{}\" 2>/dev/null", app_bundle.string());
+        (void)bridge::run_command_capture(cs_cmd, cs_rc);
+#endif
+    }
+
     return plan;
+}
+
+[[nodiscard]] inline auto launch_ios_simulator(
+    const std::filesystem::path& app_bundle,
+    const std::string& bundle_id,
+    const std::string& preferred_device = "",
+    const std::vector<std::string>& run_args = {}
+) -> std::expected<int, std::string> {
+#if defined(__APPLE__)
+    if (!std::filesystem::exists(app_bundle)) {
+        return std::unexpected(std::format("iOS app bundle not found: {}", app_bundle.string()));
+    }
+    int rc = 0;
+    std::string booted_list = bridge::run_command_capture("xcrun simctl list devices booted 2>/dev/null", rc);
+    bool has_booted = (booted_list.find("(Booted)") != std::string::npos);
+
+    if (!has_booted || !preferred_device.empty()) {
+        std::string avail = bridge::run_command_capture("xcrun simctl list devices available 2>/dev/null", rc);
+        std::istringstream iss(avail);
+        std::string line;
+        std::string chosen_udid;
+        std::string chosen_name;
+        while (std::getline(iss, line)) {
+            if (!preferred_device.empty()) {
+                if (line.find(preferred_device) == std::string::npos) continue;
+            } else {
+                if (line.find("iPhone") == std::string::npos && line.find("iPad") == std::string::npos) continue;
+            }
+            auto lp = line.find('(');
+            auto rp = line.find(')', lp != std::string::npos ? lp : 0);
+            if (lp != std::string::npos && rp != std::string::npos && (rp - lp - 1) >= 32) {
+                chosen_udid = line.substr(lp + 1, rp - lp - 1);
+                chosen_name = trim_whitespace(line.substr(0, lp));
+                break;
+            }
+        }
+        if (!chosen_udid.empty()) {
+            std::println("==> Booting iOS Simulator: {} ({})...", chosen_name, chosen_udid);
+            (void)bridge::run_command_capture(std::format("xcrun simctl boot \"{}\" 2>/dev/null", chosen_udid), rc);
+        } else if (!has_booted) {
+            return std::unexpected("no available iOS Simulator devices found via `xcrun simctl list devices available`");
+        }
+    }
+
+    // Bring Simulator.app to front
+    (void)bridge::run_command_capture("open -a Simulator 2>/dev/null", rc);
+
+    // Wait until booted device finishes boot sequence
+    (void)bridge::run_command_capture("xcrun simctl bootstatus booted -b 2>/dev/null", rc);
+
+    std::string inst_out = bridge::run_command_capture(
+        std::format("xcrun simctl install booted {} 2>&1", bridge::shell_quote(app_bundle.string())), rc);
+    if (rc != 0) {
+        return std::unexpected(std::format("failed to install '{}' on iOS Simulator:\n{}", app_bundle.string(), inst_out));
+    }
+
+    // Terminate any previous running instance of the same bundle_id cleanly
+    (void)bridge::run_command_capture(
+        std::format("xcrun simctl terminate booted {} 2>/dev/null", bridge::shell_quote(bundle_id)), rc);
+
+    std::println("==> Launching {} ({}) on iOS Simulator...", app_bundle.filename().string(), bundle_id);
+    std::string args_suffix;
+    for (const auto& a : run_args) {
+        args_suffix += " " + bridge::shell_quote(a);
+    }
+    int status = 1;
+    if (::isatty(STDIN_FILENO)) {
+        std::string pty_cmd = std::format("xcrun simctl launch --console-pty booted {}{} 2>/dev/null",
+            bridge::shell_quote(bundle_id), args_suffix);
+        int launch_rc = std::system(pty_cmd.c_str());
+        status = WIFEXITED(launch_rc) ? WEXITSTATUS(launch_rc) : launch_rc;
+    }
+    if (status != 0) {
+        std::string plain_cmd = std::format("xcrun simctl launch booted {}{}",
+            bridge::shell_quote(bundle_id), args_suffix);
+        int launch_rc = std::system(plain_cmd.c_str());
+        status = WIFEXITED(launch_rc) ? WEXITSTATUS(launch_rc) : launch_rc;
+    }
+    return status;
+#else
+    (void)app_bundle; (void)bundle_id; (void)preferred_device; (void)run_args;
+    return std::unexpected("running iOS Simulator requires macOS with Xcode installed.");
+#endif
 }
 
 [[nodiscard]] inline auto generate_cmake_content(const BuildPlan& plan) -> std::string {

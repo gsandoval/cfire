@@ -4,23 +4,57 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <expected>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 namespace cfire::fs {
 
+namespace detail {
+[[nodiscard]] inline auto resolve_path(const std::filesystem::path& p, bool for_write) noexcept -> std::filesystem::path {
+#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    if (p.is_relative() && !p.empty() && p.string() != ":memory:") {
+        std::error_code ec;
+        if (!for_write && std::filesystem::exists(p, ec)) {
+            return p;
+        }
+        if (const char* home = std::getenv("HOME")) {
+            auto docs = std::filesystem::path(home) / "Documents";
+            std::filesystem::create_directories(docs, ec);
+            auto candidate = docs / p;
+            if (for_write) {
+                if (candidate.has_parent_path()) {
+                    std::filesystem::create_directories(candidate.parent_path(), ec);
+                }
+                return candidate;
+            }
+            if (std::filesystem::exists(candidate, ec)) {
+                return candidate;
+            }
+        }
+    }
+#else
+    (void)for_write;
+#endif
+    return p;
+}
+} // namespace detail
+
 [[nodiscard]] inline auto exists(const std::filesystem::path& p) noexcept -> bool {
     std::error_code ec;
-    return std::filesystem::exists(p, ec);
+    return std::filesystem::exists(detail::resolve_path(p, false), ec);
 }
 
 [[nodiscard]] inline auto mkdir_all(const std::filesystem::path& p) -> std::expected<void, cfire::Error> {
     std::error_code ec;
-    std::filesystem::create_directories(p, ec);
+    std::filesystem::create_directories(detail::resolve_path(p, true), ec);
     if (ec) {
         return cfire::make_error(std::format("mkdir_all failed for {}: {}", p.string(), ec.message()));
     }
@@ -29,7 +63,7 @@ namespace cfire::fs {
 
 [[nodiscard]] inline auto remove(const std::filesystem::path& p) -> std::expected<void, cfire::Error> {
     std::error_code ec;
-    std::filesystem::remove_all(p, ec);
+    std::filesystem::remove_all(detail::resolve_path(p, true), ec);
     if (ec) {
         return cfire::make_error(std::format("remove failed for {}: {}", p.string(), ec.message()));
     }
@@ -38,7 +72,7 @@ namespace cfire::fs {
 
 [[nodiscard]] inline auto rename(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, cfire::Error> {
     std::error_code ec;
-    std::filesystem::rename(from, to, ec);
+    std::filesystem::rename(detail::resolve_path(from, false), detail::resolve_path(to, true), ec);
     if (ec) {
         return cfire::make_error(std::format("rename failed from {} to {}: {}", from.string(), to.string(), ec.message()));
     }
@@ -47,7 +81,7 @@ namespace cfire::fs {
 
 [[nodiscard]] inline auto copy_file(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, cfire::Error> {
     std::error_code ec;
-    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    std::filesystem::copy_file(detail::resolve_path(from, false), detail::resolve_path(to, true), std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {
         return cfire::make_error(std::format("copy_file failed from {} to {}: {}", from.string(), to.string(), ec.message()));
     }
@@ -56,7 +90,7 @@ namespace cfire::fs {
 
 [[nodiscard]] inline auto file_size(const std::filesystem::path& p) -> std::expected<std::uint64_t, cfire::Error> {
     std::error_code ec;
-    auto sz = std::filesystem::file_size(p, ec);
+    auto sz = std::filesystem::file_size(detail::resolve_path(p, false), ec);
     if (ec) {
         return cfire::make_error(std::format("file_size failed for {}: {}", p.string(), ec.message()));
     }
@@ -66,7 +100,7 @@ namespace cfire::fs {
 [[nodiscard]] inline auto list_dir(const std::filesystem::path& p) -> std::expected<std::vector<std::string>, cfire::Error> {
     std::error_code ec;
     std::vector<std::string> names;
-    for (const auto& entry : std::filesystem::directory_iterator(p, ec)) {
+    for (const auto& entry : std::filesystem::directory_iterator(detail::resolve_path(p, false), ec)) {
         names.push_back(entry.path().filename().string());
     }
     if (ec) {
@@ -79,7 +113,8 @@ namespace cfire::fs {
 [[nodiscard]] inline auto read_bytes(const std::filesystem::path& p)
     -> std::expected<std::vector<std::byte>, cfire::Error>
 {
-    std::ifstream f(p, std::ios::binary | std::ios::ate);
+    auto rp = detail::resolve_path(p, false);
+    std::ifstream f(rp, std::ios::binary | std::ios::ate);
     if (!f.is_open()) {
         return cfire::make_error(std::format("failed to open file: {}", p.string()));
     }
@@ -95,7 +130,8 @@ namespace cfire::fs {
 [[nodiscard]] inline auto read_text(const std::filesystem::path& p)
     -> std::expected<std::string, cfire::Error>
 {
-    std::ifstream f(p, std::ios::in | std::ios::binary);
+    auto rp = detail::resolve_path(p, false);
+    std::ifstream f(rp, std::ios::in | std::ios::binary);
     if (!f.is_open()) {
         return cfire::make_error(std::format("failed to open file: {}", p.string()));
     }
@@ -108,7 +144,8 @@ namespace cfire::fs {
     const std::filesystem::path& p,
     std::span<const std::byte> data
 ) -> std::expected<void, cfire::Error> {
-    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    auto rp = detail::resolve_path(p, true);
+    std::ofstream f(rp, std::ios::binary | std::ios::trunc);
     if (!f.is_open()) {
         return cfire::make_error(std::format("failed to open file for write: {}", p.string()));
     }
@@ -132,6 +169,13 @@ namespace cfire::fs {
     std::span<const std::byte> data
 ) -> std::expected<void, cfire::Error> {
     return write_bytes(p, data);
+}
+
+[[nodiscard]] inline auto write_all(
+    const std::filesystem::path& p,
+    std::string_view text
+) -> std::expected<void, cfire::Error> {
+    return write_bytes(p, to_bytes(text));
 }
 
 [[nodiscard]] inline auto write_text(
@@ -265,6 +309,7 @@ private:
 [[nodiscard]] inline auto open(const std::filesystem::path& p, OpenMode mode = OpenMode::Read)
     -> std::expected<File, cfire::Error>
 {
+    auto rp = detail::resolve_path(p, mode != OpenMode::Read);
     const char* m = "rb";
     switch (mode) {
         case OpenMode::Read: m = "rb"; break;
@@ -272,9 +317,9 @@ private:
         case OpenMode::Append: m = "ab+"; break;
         case OpenMode::ReadWrite: m = "r+b"; break;
     }
-    std::FILE* fp = std::fopen(p.string().c_str(), m);
+    std::FILE* fp = std::fopen(rp.string().c_str(), m);
     if (!fp && mode == OpenMode::ReadWrite) {
-        fp = std::fopen(p.string().c_str(), "w+b");
+        fp = std::fopen(rp.string().c_str(), "w+b");
     }
     if (!fp) {
         return cfire::make_error(std::format("failed to open file {}: {}", p.string(), std::strerror(errno)));

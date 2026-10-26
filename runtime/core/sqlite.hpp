@@ -6,6 +6,10 @@
 #include <vector>
 #include <expected>
 #include <cstdint>
+#include <cstdlib>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #ifdef CFIRE_USE_SQLITE
 #include <sqlite3.h>
@@ -97,8 +101,22 @@ private:
 };
 
 [[nodiscard]] inline auto open(const std::filesystem::path& p) -> std::expected<Conn, cfire::Error> {
+    std::filesystem::path resolved = p;
+#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    if (resolved.is_relative() && !resolved.empty() && resolved.string() != ":memory:") {
+        if (const char* home = std::getenv("HOME")) {
+            std::error_code ec;
+            auto docs = std::filesystem::path(home) / "Documents";
+            std::filesystem::create_directories(docs, ec);
+            resolved = docs / resolved;
+            if (resolved.has_parent_path()) {
+                std::filesystem::create_directories(resolved.parent_path(), ec);
+            }
+        }
+    }
+#endif
     sqlite3* raw = nullptr;
-    if (sqlite3_open(p.c_str(), &raw) != SQLITE_OK) {
+    if (sqlite3_open(resolved.c_str(), &raw) != SQLITE_OK) {
         std::string err = raw ? sqlite3_errmsg(raw) : "unknown sqlite open error";
         if (raw) sqlite3_close(raw);
         return cfire::make_error(err);

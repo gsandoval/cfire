@@ -77,9 +77,9 @@ auto locate_runtime_dir() -> std::filesystem::path {
 void print_usage() {
     std::println("Usage: cfire <command> [args...]");
     std::println("Commands:");
-    std::println("  run      [--web] [target|file.cf] Run native app, execute binary, or serve web app (--web)");
+    std::println("  run      [--web|--ios] [target|file.cf] Run native app, web app (--web), or iOS Simulator app (--ios)");
     std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
-    std::println("  build    [--target wasm|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
+    std::println("  build    [--target wasm|ios-sim|ios|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
     std::println("  serve    [--port <n>] [--no-open] [target|path] Build & serve WebAssembly / static web app with zero config");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
@@ -802,6 +802,7 @@ auto main(int argc, char** argv) -> int {
     std::string app_name_override;
     std::string bundle_id_override;
     std::string icon_path_override;
+    std::string ios_device_override;
     std::string build_target_filter;
     int web_port = 8080;
     bool open_browser = true;
@@ -890,6 +891,23 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg == "--target=wasm" || arg == "-target=wasm" || arg == "--target=web" || arg == "-target=web" || arg == "--web" || arg == "-web") {
             target_triple = "wasm32-unknown-emscripten";
+            continue;
+        }
+        if (arg == "--ios" || arg == "-ios" || arg == "--ios-sim" || arg == "-ios-sim" ||
+            arg == "--target=ios-sim" || arg == "-target=ios-sim") {
+            target_triple = "ios-sim";
+            continue;
+        }
+        if (arg == "--target=ios" || arg == "-target=ios") {
+            target_triple = "ios";
+            continue;
+        }
+        if ((arg == "--device" || arg == "-device") && i + 1 < argc) {
+            ios_device_override = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--device=")) {
+            ios_device_override = arg.substr(9);
             continue;
         }
         if (arg.starts_with("--web-profile=")) {
@@ -1447,6 +1465,8 @@ auto main(int argc, char** argv) -> int {
 
                     if (is_wasm_target) {
                         std::println("✓ Built WebAssembly: {} (profile={})", out_bin_path.string(), plan->web_profile);
+                    } else if (plan->is_ios) {
+                        std::println("✓ Built iOS App Bundle: {} (target={})", plan->ios_app_bundle, plan->target_triple);
                     } else {
                         std::string bundle_info = plan->macos_app_bundle.empty() ? "" : std::format(" -> {}", plan->macos_app_bundle);
                         std::println("✓ Built Native {}: {}{}",
@@ -1509,6 +1529,9 @@ auto main(int argc, char** argv) -> int {
         if (!plan->macos_app_bundle.empty()) {
             std::println("✓ Created macOS App Bundle: {}", plan->macos_app_bundle);
         }
+        if (!plan->ios_app_bundle.empty()) {
+            std::println("✓ Created iOS App Bundle: {}", plan->ios_app_bundle);
+        }
         return 0;
     }
 
@@ -1525,10 +1548,47 @@ auto main(int argc, char** argv) -> int {
 
         if (!is_test && target.filename() == "build.cf") {
             bool is_wasm_run = target_triple.starts_with("wasm");
+            bool is_ios_run = cfire::build::is_ios_target(target_triple);
             auto bcf_res = cfire::build::resolve_build_target(target, build_target_filter, is_wasm_run);
             if (!bcf_res) {
                 std::println(stderr, "error: no matching executable found in {}", target.string());
                 return 1;
+            }
+
+            if (is_ios_run) {
+                std::string run_triple = (target_triple == "ios" || target_triple == "ios-sim") ? "ios-sim" : target_triple;
+                auto ios_bin = bcf_res->base_out_dir / "ios-sim" / bcf_res->exe.name;
+                std::error_code ec;
+                std::filesystem::create_directories(ios_bin.parent_path(), ec);
+                std::println("==> Building {} (iOS Simulator target from build.cf)...", bcf_res->exe.name);
+                auto plan = cfire::build::build_native(
+                    bcf_res->entry_file,
+                    runtime_dir,
+                    ios_bin,
+                    false,
+                    false,
+                    run_triple,
+                    sysroot,
+                    extra_link_libs,
+                    extra_includes,
+                    bcf_res->exe.web_profile,
+                    bcf_res->exe.subsystem,
+                    !app_name_override.empty() ? app_name_override : bcf_res->exe.app_name,
+                    !bundle_id_override.empty() ? bundle_id_override : bcf_res->exe.bundle_id,
+                    !icon_path_override.empty() ? icon_path_override : bcf_res->exe.icon
+                );
+                if (!plan) {
+                    std::println(stderr, "error building iOS target: {}", plan.error());
+                    return 1;
+                }
+                std::string bid = !bundle_id_override.empty() ? bundle_id_override
+                    : (!bcf_res->exe.bundle_id.empty() ? bcf_res->exe.bundle_id : ("com.cfire." + bcf_res->exe.name));
+                auto sim_res = cfire::build::launch_ios_simulator(plan->ios_app_bundle, bid, ios_device_override, run_args);
+                if (!sim_res) {
+                    std::println(stderr, "{}", sim_res.error());
+                    return 1;
+                }
+                return *sim_res;
             }
 
             if (is_wasm_run) {
@@ -1649,6 +1709,45 @@ auto main(int argc, char** argv) -> int {
                 }
             }
             return cfire::serve::run_server(tmp_html, web_port, open_browser);
+        }
+
+        if (cfire::build::is_ios_target(target_triple)) {
+            std::string run_triple = (target_triple == "ios" || target_triple == "ios-sim") ? "ios-sim" : target_triple;
+            std::string app_stem = target.parent_path().filename().string();
+            if (app_stem.empty() || app_stem == ".") app_stem = target.stem().string();
+            if (app_stem == "main") app_stem = "cfire_ios_app";
+            auto tmp_ios_dir = std::filesystem::temp_directory_path() / std::format("cfire-ios-{}", ::getpid());
+            std::error_code ec;
+            std::filesystem::create_directories(tmp_ios_dir, ec);
+            auto tmp_ios_bin = tmp_ios_dir / app_stem;
+            auto plan = cfire::build::build_native(
+                target,
+                runtime_dir,
+                tmp_ios_bin,
+                is_test,
+                false,
+                run_triple,
+                sysroot,
+                extra_link_libs,
+                extra_includes,
+                web_profile,
+                subsystem,
+                app_name_override,
+                bundle_id_override,
+                icon_path_override
+            );
+            if (!plan) {
+                std::println(stderr, "{}", plan.error());
+                return 1;
+            }
+            std::string bid = !bundle_id_override.empty() ? bundle_id_override : ("com.cfire." + app_stem);
+            auto sim_res = cfire::build::launch_ios_simulator(plan->ios_app_bundle, bid, ios_device_override, run_args);
+            std::filesystem::remove_all(tmp_ios_dir, ec);
+            if (!sim_res) {
+                std::println(stderr, "{}", sim_res.error());
+                return 1;
+            }
+            return *sim_res;
         }
 
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());

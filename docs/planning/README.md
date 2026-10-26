@@ -12,7 +12,8 @@ This directory maintains the project backlog, active development tasks, and arch
 6. [`architectural-backlog.md`](./architectural-backlog.md): Prioritized C++23 technical debt, header decomposition initiatives (`CPP-ARCH-01` through `CPP-ARCH-03`), and completed architectural milestones (`ARCH-*`, `CPP-01`–`CPP-06`).
 7. [`active.md`](./active.md): The live in-flight workbench. Tasks currently being designed or coded live here with detailed scoping and verification criteria.
 8. [`post-backlog-ideas.md`](./post-backlog-ideas.md): Archive of strategic explorations (`cfire vendor`, `cfire check --json`, `cfire outline`, `cfire doc --llm`, `cfire refactor`, `cfire eval`, `cfire ide`) that have since been promoted and implemented.
-9. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
+9. [`opportunity-tracker.md`](./opportunity-tracker.md): Strategic Opportunity Tracker covering flagship compilation targets (`--target ios-sim` / `ios`), Cloud Run data engines (`FlareTS` time-series DB + edge cache), cross-platform multiplayer Web/Desktop/iOS games, and creative/AI showcases.
+10. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
 
 ---
 
