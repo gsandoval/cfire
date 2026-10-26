@@ -542,7 +542,7 @@ tr:hover td { background: #FAFAF9; }
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html">Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html">Explore 28 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html">Explore 32 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -688,6 +688,7 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (`core:audio`)</button>
   </div>
 
   <!-- Tab 1: Intents -->
@@ -1093,6 +1094,78 @@ auto main(int argc, char** argv) -&gt; int {
     </div>
   </div>
 
+  <!-- Tab 6: Audio DSP -->
+  <div id="tab-audio" class="tab-panel">
+    <div class="rosetta-mobile-toggle">
+      <button class="active" onclick="toggleRosettaMobile(this, 'cf')">cfire (.cf)</button>
+      <button onclick="toggleRosettaMobile(this, 'cpp')">Emitted ISO C++23</button>
+    </div>
+    <div class="grid-2">
+      <div class="rosetta-pane-cf">
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Multi-Target Synth, SFX &amp; Stream</span></div>
+        <pre><code>package main
+
+import &quot;core:audio&quot;
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+
+    // Zero-asset procedural SFX + 64-voice polyphonic mixer
+    sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+    sfx.play()
+
+    // Real-time float32 DSP stream across macOS, iOS, WASM &amp; Linux
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.05, 0.4)
+    stream := try audio.open_stream(48000, 2)
+    stream.push_samples(tone.samples)
+    println(&quot;rms={:.2f} peak={:.2f}&quot;, audio.rms_level(), audio.peak_level())
+}</code></pre>
+      </div>
+      <div class="rosetta-pane-cpp">
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>AudioToolbox / WebAudio / ALSA</span></div>
+        <pre><code>#include &quot;cfire_prelude.hpp&quot;
+#include &quot;core/audio.hpp&quot;
+
+
+#line 5 &quot;snippet_audio.cf&quot;
+auto main(int argc, char** argv) -&gt; int {
+    #line 6 &quot;snippet_audio.cf&quot;
+    auto _try_v_1 = cfire::audio::init(48000, 2);
+    if (!_try_v_1.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_v_1.error().message());
+        return 1;
+    }
+    #line 7 &quot;snippet_audio.cf&quot;
+    auto _defer_1 = cfire::scope_exit([&amp;] { cfire::audio::close(); });
+    #line 10 &quot;snippet_audio.cf&quot;
+    auto sfx = cfire::audio::load_sound_from_wave(cfire::audio::gen_sfx(cfire::audio::SfxPreset::Coin));
+    #line 11 &quot;snippet_audio.cf&quot;
+    (void)(sfx.play());
+    #line 14 &quot;snippet_audio.cf&quot;
+    auto tone = cfire::audio::gen_tone(cfire::audio::Waveform::Sine, 440.0, 0.05, 0.4);
+    #line 15 &quot;snippet_audio.cf&quot;
+    auto _try_2 = cfire::audio::open_stream(48000, 2);
+    if (!_try_2.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
+        return 1;
+    }
+    auto stream = std::move(*_try_2);
+    #line 16 &quot;snippet_audio.cf&quot;
+    (void)(stream.push_samples(tone.samples));
+    #line 17 &quot;snippet_audio.cf&quot;
+    (void)(std::println(&quot;rms={:.2f} peak={:.2f}&quot;, cfire::audio::rms_level(), cfire::audio::peak_level()));
+    return 0;
+}
+</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />rms=0.24 peak=0.40</div>
+    </div>
+  </div>
+
   <!-- Architectural Guarantee: Eject to CMake -->
   <h2 class="section-title">Zero Lock-In: Eject to Standalone CMake Anytime</h2>
   <p class="section-subtitle">Adopt cfire risk-free with a permanent guarantee of full C++ portability.</p>
@@ -1161,7 +1234,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>STL provided; networking, JSON, SQLite require 3rd party libs.</td>
           <td>Minimal stdlib; relies on external crates.</td>
           <td>Rich built-in stdlib (HTTP, crypto, json).</td>
-          <td><strong>28 built-in <code>core:*</code> modules</strong> (WebSockets, HTTP, SQLite, Zstd, AES, SIMD JSON).</td>
+          <td><strong>32 built-in <code>core:*</code> modules</strong> (Audio DSP, WebSockets, HTTP, SQLite, Zstd, AES, SIMD JSON).</td>
         </tr>
         <tr>
           <td><strong>Project Ejection</strong></td>
@@ -1257,8 +1330,8 @@ fn main() {
     </a>
     <a class="roadmap-card" href="guide.html#chapter-9">
       <div class="roadmap-num">Chapter 9</div>
-      <h4>Build System, WebAssembly &amp; CMake Ejection</h4>
-      <p>Declarative <code>build.cf</code>, external C/C++ drivers, WebAssembly (<code>--target=wasm</code>), native GUI packaging, and zero-lock-in CMake export.</p>
+      <h4>Build System, iOS, WebAssembly &amp; CMake</h4>
+      <p>Declarative <code>build.cf</code>, native iOS Simulator &amp; Device apps (<code>--ios</code>), WebAssembly (<code>--wasm</code>), and zero-lock-in CMake export.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-10">
       <div class="roadmap-num">Chapter 10</div>
@@ -1267,14 +1340,19 @@ fn main() {
     </a>
     <a class="roadmap-card" href="guide.html#chapter-11">
       <div class="roadmap-num">Chapter 11</div>
-      <h4>2D/3D Graphics &amp; GUI (Raylib &amp; Raygui)</h4>
-      <p>Hardware-accelerated windowing, render loops, vector math, immediate-mode GUI controls (<code>vendor:raygui</code>), and desktop/web packaging.</p>
+      <h4>2D/3D Graphics, Raygui &amp; Pure-`.cf` iOS UI</h4>
+      <p>Hardware-accelerated windowing, vector math, immediate-mode GUI (<code>vendor:raygui</code>), and composable pure-<code>.cf</code> iOS interfaces.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-12">
+      <div class="roadmap-num">Chapter 12</div>
+      <h4>Multi-Target Audio &amp; DSP (`core:audio`)</h4>
+      <p>Zero-dependency waveform synthesis, procedural SFX, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams across macOS, iOS, WASM &amp; Linux.</p>
     </a>
   </div>
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore `core:*` Library Catalog (28 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore `core:*` Library Catalog (32 Modules) &rarr;</a>
   </div>
 </div>
 
