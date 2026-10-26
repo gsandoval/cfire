@@ -617,6 +617,40 @@ private:
                 tr.name += tr.tuple_types[i].name;
             }
             tr.name += ")";
+        } else if (cur().kind == TokenKind::KwFn) {
+            advance(); // 'fn'
+            if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
+            std::vector<TypeRef> ptypes;
+            while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                    advance(); // optional param name
+                    advance(); // ':'
+                }
+                auto pt = parse_type_ref();
+                if (!pt) return std::unexpected(pt.error());
+                ptypes.push_back(std::move(*pt));
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+            TypeRef rtype{"void"};
+            if (cur().kind == TokenKind::Arrow) {
+                advance();
+                auto rt = parse_type_ref();
+                if (!rt) return std::unexpected(rt.error());
+                rtype = std::move(*rt);
+            }
+            tr.is_fn = true;
+            tr.fn_params = std::move(ptypes);
+            tr.fn_ret = std::make_shared<TypeRef>(std::move(rtype));
+            tr.name = "fn(";
+            for (std::size_t i = 0; i < tr.fn_params.size(); ++i) {
+                if (i > 0) tr.name += ", ";
+                tr.name += tr.fn_params[i].name;
+            }
+            tr.name += ")";
+            if (tr.fn_ret && tr.fn_ret->name != "void") {
+                tr.name += " -> " + tr.fn_ret->name;
+            }
         } else {
             if (cur().kind == TokenKind::Ident || cur().kind == TokenKind::KwCpp) {
                 tr.name = advance().lexeme;
@@ -1436,9 +1470,13 @@ private:
                     if (is_trailing_closure_lookahead()) {
                         auto cl = parse_closure_expr();
                         if (!cl) return std::unexpected(cl.error());
-                        int ln = (*expr)->line;
-                        int cln = (*expr)->col;
-                        expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        if (auto* existing_call = std::get_if<CallExpr>(&(*expr)->node); existing_call && !existing_call->block_arg) {
+                            existing_call->block_arg = std::move(*cl);
+                        } else {
+                            int ln = (*expr)->line;
+                            int cln = (*expr)->col;
+                            expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        }
                         break;
                     }
                     return expr;
@@ -1447,9 +1485,13 @@ private:
                     if (peek(1).kind == TokenKind::LBrace) {
                         auto cl = parse_closure_expr();
                         if (!cl) return std::unexpected(cl.error());
-                        int ln = (*expr)->line;
-                        int cln = (*expr)->col;
-                        expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        if (auto* existing_call = std::get_if<CallExpr>(&(*expr)->node); existing_call && !existing_call->block_arg) {
+                            existing_call->block_arg = std::move(*cl);
+                        } else {
+                            int ln = (*expr)->line;
+                            int cln = (*expr)->col;
+                            expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        }
                         break;
                     }
                     return expr;

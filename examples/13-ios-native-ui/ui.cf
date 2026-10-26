@@ -1,0 +1,533 @@
+package main
+
+import "core:math"
+import "core:str"
+import "core:unicode"
+import "vendor:raylib" as rl
+
+type Theme struct {
+    dark_mode: bool     = true
+    bg: rl.Color = rl.Color{r: 0, g: 0, b: 0, a: 255}
+    card: rl.Color = rl.Color{r: 28, g: 28, b: 30, a: 255}
+    card_pressed: rl.Color = rl.Color{r: 44, g: 44, b: 46, a: 255}
+    tertiary: rl.Color = rl.Color{r: 44, g: 44, b: 46, a: 255}
+    text_primary: rl.Color = rl.Color{r: 255, g: 255, b: 255, a: 255}
+    text_secondary: rl.Color = rl.Color{r: 142, g: 142, b: 147, a: 255}
+    separator: rl.Color = rl.Color{r: 56, g: 56, b: 58, a: 255}
+    chrome: rl.Color = rl.Color{r: 18, g: 18, b: 20, a: 255}
+    blue: rl.Color = rl.Color{r: 0, g: 122, b: 255, a: 255}
+    green: rl.Color = rl.Color{r: 52, g: 199, b: 89, a: 255}
+    red: rl.Color = rl.Color{r: 255, g: 59, b: 48, a: 255}
+    orange: rl.Color = rl.Color{r: 255, g: 149, b: 0, a: 255}
+    purple: rl.Color = rl.Color{r: 175, g: 82, b: 222, a: 255}
+    white: rl.Color = rl.Color{r: 255, g: 255, b: 255, a: 255}
+}
+
+fn make_theme(dark: bool) -> Theme {
+    if dark {
+        return Theme{
+            dark_mode:      true,
+            bg:             rl.Color{r: 0, g: 0, b: 0, a: 255},
+            card:           rl.Color{r: 28, g: 28, b: 30, a: 255},
+            card_pressed:   rl.Color{r: 44, g: 44, b: 46, a: 255},
+            tertiary:       rl.Color{r: 44, g: 44, b: 46, a: 255},
+            text_primary:   rl.Color{r: 255, g: 255, b: 255, a: 255},
+            text_secondary: rl.Color{r: 142, g: 142, b: 147, a: 255},
+            separator:      rl.Color{r: 56, g: 56, b: 58, a: 255},
+            chrome:         rl.Color{r: 18, g: 18, b: 20, a: 255},
+        }
+    }
+    return Theme{
+        dark_mode:      false,
+        bg:             rl.Color{r: 242, g: 242, b: 247, a: 255},
+        card:           rl.Color{r: 255, g: 255, b: 255, a: 255},
+        card_pressed:   rl.Color{r: 229, g: 229, b: 234, a: 255},
+        tertiary:       rl.Color{r: 229, g: 229, b: 234, a: 255},
+        text_primary:   rl.Color{r: 18, g: 18, b: 20, a: 255},
+        text_secondary: rl.Color{r: 108, g: 108, b: 112, a: 255},
+        separator:      rl.Color{r: 206, g: 206, b: 210, a: 255},
+        chrome:         rl.Color{r: 248, g: 248, b: 250, a: 255},
+    }
+}
+
+type Context struct {
+    theme: Theme = Theme{}
+    screen_w: f32   = 393.0
+    screen_h: f32   = 852.0
+    safe_top: f32   = 54.0
+    safe_bottom: f32   = 34.0
+    margin_x: f32   = 16.0
+    content_w: f32   = 361.0
+    cursor_y: f32   = 128.0
+    scroll_y: f32   = 0.0
+    in_section: bool  = false
+    section_row_idx: i32   = 0
+    widget_counter: i32   = 0
+    focused_text_id: i32   = 0
+    mouse_clicked_this_frame: bool  = false
+    click_consumed_by_textfield: bool  = false
+}
+
+fn make_context() -> Context {
+    return Context{}
+}
+
+fn (mut c: Context) set_dark_mode(dark: bool) {
+    if c.theme.dark_mode != dark {
+        c.theme = make_theme(dark)
+    }
+}
+
+fn (mut c: Context) begin_screen(title: str, subtitle: str) {
+    ready := rl.IsWindowReady()
+    mut sw: i32 = 393
+    mut sh: i32 = 852
+    if ready {
+        sw = rl.GetScreenWidth()
+        sh = rl.GetScreenHeight()
+    }
+    if sw <= 0 {
+        sw = 393
+    }
+    if sh <= 0 {
+        sh = 852
+    }
+    c.screen_w = f32(sw)
+    c.screen_h = f32(sh)
+
+    safe := rl.GetSafeAreaRect()
+    c.safe_top = 54.0
+    if safe.y > 0.0 {
+        c.safe_top = safe.y
+    }
+    bot_inset := c.screen_h - (safe.y + safe.height)
+    c.safe_bottom = 28.0
+    if bot_inset > 28.0 {
+        c.safe_bottom = bot_inset
+    }
+
+    c.margin_x = 16.0
+    c.content_w = c.screen_w - 2.0 * c.margin_x
+    c.in_section = false
+    c.section_row_idx = 0
+    c.widget_counter = 0
+    c.mouse_clicked_this_frame = ready && rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)
+    c.click_consumed_by_textfield = false
+
+    nav_h := c.safe_top + 60.0
+    c.cursor_y = nav_h + 14.0 + c.scroll_y
+
+    if !ready {
+        return
+    }
+
+    rl.ClearBackground(c.theme.bg)
+
+    // Top Navigation Bar chrome
+    rl.DrawRectangleRec(rl.Rectangle{x: 0.0, y: 0.0, width: c.screen_w, height: nav_h}, c.theme.chrome)
+    rl.DrawRectangleRec(rl.Rectangle{x: 0.0, y: nav_h - 1.0, width: c.screen_w, height: 1.0}, c.theme.separator)
+
+    if subtitle.len() > 0 {
+        rl.DrawCircle(i32(c.margin_x + 5.0), i32(c.safe_top + 12.0), 4.0, c.theme.green)
+        rl.DrawText(subtitle, i32(c.margin_x + 15.0), i32(c.safe_top + 6.0), 11, c.theme.text_secondary)
+    }
+    if title.len() > 0 {
+        rl.DrawText(title, i32(c.margin_x), i32(c.safe_top + 22.0), 24, c.theme.text_primary)
+    }
+}
+
+// Reserves a full-width layout rectangle at the current cursor and advances cursor_y.
+fn (mut c: Context) allocate(height: f32) -> rl.Rectangle {
+    r := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: height}
+    mut gap: f32 = 12.0
+    if c.in_section {
+        gap = 2.0
+    }
+    c.cursor_y += height + gap
+    return r
+}
+
+// Splits any rectangle into N equal-width columns separated by `gap`.
+fn (c: Context) columns(row_rect: rl.Rectangle, count: i32, gap: f32) -> []rl.Rectangle {
+    mut rects: []rl.Rectangle = []
+    mut n := count
+    if n < 1 {
+        n = 1
+    }
+    total_gap := gap * f32(n - 1)
+    col_w := (row_rect.width - total_gap) / f32(n)
+    mut i: i32 = 0
+    for i < n {
+        cx := row_rect.x + f32(i) * (col_w + gap)
+        rects.push(rl.Rectangle{x: cx, y: row_rect.y, width: col_w, height: row_rect.height})
+        i += 1
+    }
+    return rects
+}
+
+// Draws a rounded iOS card and passes its bounding rectangle to a trailing closure for custom content.
+fn (mut c: Context) with_card(height: f32, draw: fn(rl.Rectangle)) {
+    r := c.allocate(height)
+    if rl.IsWindowReady() {
+        rl.DrawRectangleRounded(r, 0.24, 8, c.theme.card)
+        draw(r)
+    }
+    c.widget_counter += 1
+}
+
+// Renders a single metric/stat card inside any target rectangle (e.g. from `c.columns(...)`).
+fn (c: Context) stat_card(r: rl.Rectangle, label: str, val: str, accent: rl.Color) {
+    if rl.IsWindowReady() {
+        rl.DrawRectangleRounded(r, 0.28, 8, c.theme.card)
+        rl.DrawText(label, i32(r.x + 12.0), i32(r.y + 10.0), 11, c.theme.text_secondary)
+        rl.DrawText(val, i32(r.x + 12.0), i32(r.y + 27.0), 20, accent)
+    }
+}
+
+fn (mut c: Context) begin_section(header: str) {
+    if header.len() > 0 {
+        if rl.IsWindowReady() {
+            rl.DrawText(header, i32(c.margin_x + 6.0), i32(c.cursor_y), 11, c.theme.text_secondary)
+        }
+        c.cursor_y += 18.0
+    }
+    c.in_section = true
+    c.section_row_idx = 0
+}
+
+fn (mut c: Context) end_section() {
+    c.in_section = false
+    c.section_row_idx = 0
+    c.cursor_y += 12.0
+}
+
+// Declarative section container taking a trailing closure `c.section("HEADER") || { ... }`.
+fn (mut c: Context) section(header: str, body: fn()) {
+    c.begin_section(header)
+    body()
+    c.end_section()
+}
+
+fn (mut c: Context) toggle_row(label: str, subtitle: str, mut active: bool) -> bool {
+    has_sub := subtitle.len() > 0
+    mut row_h: f32 = 44.0
+    if has_sub {
+        row_h = 52.0
+    }
+    row := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: row_h}
+    mut toggled := false
+
+    if rl.IsWindowReady() {
+        mp := rl.GetMousePosition()
+        hovered := rl.CheckCollisionPointRec(mp, row)
+        if hovered && rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON) {
+            active = !active
+            toggled = true
+            rl.TriggerHaptic(0)
+        }
+        mut bg := c.theme.card
+        if hovered && rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON) {
+            bg = c.theme.card_pressed
+        }
+        rl.DrawRectangleRounded(row, 0.22, 6, bg)
+        if c.in_section && c.section_row_idx > 0 {
+            rl.DrawRectangleRec(rl.Rectangle{x: row.x + 14.0, y: row.y, width: row.width - 28.0, height: 1.0}, c.theme.separator)
+        }
+
+        mut ty := row.y + (row_h - 15.0) * 0.5
+        if has_sub {
+            ty = row.y + 9.0
+        }
+        rl.DrawText(label, i32(row.x + 14.0), i32(ty), 15, c.theme.text_primary)
+        if has_sub {
+            rl.DrawText(subtitle, i32(row.x + 14.0), i32(row.y + 29.0), 12, c.theme.text_secondary)
+        }
+
+        // iOS Pill Switch (46x26)
+        sw_rect := rl.Rectangle{x: row.x + row.width - 60.0, y: row.y + (row_h - 26.0) * 0.5, width: 46.0, height: 26.0}
+        mut track_col := c.theme.tertiary
+        mut knob_x := sw_rect.x + 13.0
+        if active {
+            track_col = c.theme.green
+            knob_x = sw_rect.x + sw_rect.width - 13.0
+        }
+        rl.DrawRectangleRounded(sw_rect, 1.0, 8, track_col)
+        knob_y := sw_rect.y + 13.0
+        rl.DrawCircle(i32(knob_x), i32(knob_y), 10.5, c.theme.white)
+    }
+
+    mut gap: f32 = 10.0
+    if c.in_section {
+        gap = 2.0
+    }
+    c.cursor_y += row_h + gap
+    c.section_row_idx += 1
+    c.widget_counter += 1
+    return toggled
+}
+
+fn (mut c: Context) slider_row(label: str, mut value: f32, min_val: f32, max_val: f32, unit: str) -> bool {
+    row_h := 56.0
+    row := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: row_h}
+    mut changed := false
+
+    value = f32(math.clamp_f64(f64(value), f64(min_val), f64(max_val)))
+    track := rl.Rectangle{x: row.x + 14.0, y: row.y + 38.0, width: row.width - 28.0, height: 6.0}
+    touch_zone := rl.Rectangle{x: row.x + 8.0, y: row.y + 24.0, width: row.width - 16.0, height: 30.0}
+
+    if rl.IsWindowReady() {
+        mp := rl.GetMousePosition()
+        if max_val > min_val && rl.CheckCollisionPointRec(mp, touch_zone) &&
+        (rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON) || rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
+            mut tw_safe := track.width
+            if tw_safe < 1.0 {
+                tw_safe = 1.0
+            }
+            raw_ratio := f64(mp.x - track.x) / f64(tw_safe)
+            ratio := f32(math.clamp_f64(raw_ratio, 0.0, 1.0))
+            value = min_val + ratio * (max_val - min_val)
+            changed = true
+        }
+
+        rl.DrawRectangleRounded(row, 0.22, 6, c.theme.card)
+        if c.in_section && c.section_row_idx > 0 {
+            rl.DrawRectangleRec(rl.Rectangle{x: row.x + 14.0, y: row.y, width: row.width - 28.0, height: 1.0}, c.theme.separator)
+        }
+
+        rl.DrawText(label, i32(row.x + 14.0), i32(row.y + 10.0), 15, c.theme.text_primary)
+
+        val_num := i32(value + 0.5)
+        val_str := "{val_num}{unit}"
+        vw := rl.MeasureText(val_str, 14)
+        rl.DrawText(val_str, i32(row.x + row.width - 14.0 - f32(vw)), i32(row.y + 10.0), 14, c.theme.blue)
+
+        rl.DrawRectangleRounded(track, 1.0, 6, c.theme.tertiary)
+        mut pct: f32 = 0.0
+        if max_val > min_val {
+            pct = f32(math.clamp_f64(f64(value - min_val) / f64(max_val - min_val), 0.0, 1.0))
+        }
+        fill_w := track.width * pct
+        if fill_w > 2.0 {
+            rl.DrawRectangleRounded(rl.Rectangle{x: track.x, y: track.y, width: fill_w, height: track.height}, 1.0, 6, c.theme.blue)
+        }
+        rl.DrawCircle(i32(track.x + fill_w), i32(track.y + 3.0), 9.0, c.theme.white)
+    }
+
+    mut gap: f32 = 10.0
+    if c.in_section {
+        gap = 2.0
+    }
+    c.cursor_y += row_h + gap
+    c.section_row_idx += 1
+    c.widget_counter += 1
+    return changed
+}
+
+fn (mut c: Context) segmented_row(label: str, options: str, mut active: i32) -> i32 {
+    items := str.split(options, ";")
+    n := i32(items.len())
+    has_label := label.len() > 0
+    mut row_h: f32 = 44.0
+    if has_label {
+        row_h = 66.0
+    }
+    row := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: row_h}
+
+    if n > 0 {
+        active = i32(math.clamp_i64(i64(active), 0, i64(n - 1)))
+    }
+
+    if rl.IsWindowReady() && n > 0 {
+        rl.DrawRectangleRounded(row, 0.22, 6, c.theme.card)
+        if c.in_section && c.section_row_idx > 0 {
+            rl.DrawRectangleRec(rl.Rectangle{x: row.x + 14.0, y: row.y, width: row.width - 28.0, height: 1.0}, c.theme.separator)
+        }
+        mut seg_y := row.y + 7.0
+        if has_label {
+            rl.DrawText(label, i32(row.x + 14.0), i32(row.y + 8.0), 12, c.theme.text_secondary)
+            seg_y = row.y + 28.0
+        }
+        pill_bg := rl.Rectangle{x: row.x + 12.0, y: seg_y, width: row.width - 24.0, height: 30.0}
+        rl.DrawRectangleRounded(pill_bg, 0.35, 6, c.theme.tertiary)
+
+        seg_w := (pill_bg.width - 4.0) / f32(n)
+        mp := rl.GetMousePosition()
+
+        mut i: i32 = 0
+        for i < n {
+            seg_r := rl.Rectangle{x: pill_bg.x + 2.0 + f32(i) * seg_w, y: pill_bg.y + 2.0, width: seg_w, height: pill_bg.height - 4.0}
+            if rl.CheckCollisionPointRec(mp, seg_r) && rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON) {
+                active = i
+                rl.TriggerHaptic(0)
+            }
+            is_sel := i == active
+            mut tc := c.theme.text_primary
+            if is_sel {
+                rl.DrawRectangleRounded(seg_r, 0.35, 6, c.theme.blue)
+                tc = c.theme.white
+            }
+            item_txt := items[usize(i)]
+            tw := rl.MeasureText(item_txt, 12)
+            tx := i32(seg_r.x + (seg_r.width - f32(tw)) * 0.5)
+            ty := i32(seg_r.y + (seg_r.height - 13.0) * 0.5)
+            rl.DrawText(item_txt, tx, ty, 12, tc)
+            i += 1
+        }
+    }
+
+    mut gap: f32 = 10.0
+    if c.in_section {
+        gap = 2.0
+    }
+    c.cursor_y += row_h + gap
+    c.section_row_idx += 1
+    c.widget_counter += 1
+    return active
+}
+
+fn (mut c: Context) text_field_row(label: str, mut text: str, max_len: i32) -> bool {
+    my_id := 1000 + c.widget_counter
+    row_h := 46.0
+    row := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: row_h}
+    mut submitted := false
+
+    if rl.IsWindowReady() {
+        mp := rl.GetMousePosition()
+        if c.mouse_clicked_this_frame {
+            if rl.CheckCollisionPointRec(mp, row) {
+                c.focused_text_id = my_id
+                c.click_consumed_by_textfield = true
+                rl.TriggerHaptic(0)
+            } else if !c.click_consumed_by_textfield && c.focused_text_id == my_id {
+                c.focused_text_id = -1
+            }
+        }
+
+        is_focused := c.focused_text_id == my_id
+        rl.DrawRectangleRounded(row, 0.22, 6, c.theme.card)
+        if c.in_section && c.section_row_idx > 0 {
+            rl.DrawRectangleRec(rl.Rectangle{x: row.x + 14.0, y: row.y, width: row.width - 28.0, height: 1.0}, c.theme.separator)
+        }
+
+        rl.DrawText(label, i32(row.x + 14.0), i32(row.y + 15.0), 15, c.theme.text_primary)
+
+        box := rl.Rectangle{x: row.x + row.width * 0.42, y: row.y + 8.0, width: row.width * 0.54, height: row_h - 16.0}
+        rl.DrawRectangleRounded(box, 0.3, 6, c.theme.tertiary)
+        mut disp := text
+        if is_focused {
+            rl.DrawRectangleRoundedLines(box, 0.3, 6, 1.5, c.theme.blue)
+            rl.RequestKeyboard()
+
+            mut key := rl.GetCharPressed()
+            for key > 0 {
+                if key >= 32 && key <= 125 && i32(text.len()) < max_len {
+                    text += unicode.encode_rune(u32(key))
+                }
+                key = rl.GetCharPressed()
+            }
+            if rl.IsKeyPressed(rl.KEY_BACKSPACE) && text.len() > 0 {
+                text.pop()
+            }
+            if rl.IsKeyPressed(rl.KEY_ENTER) {
+                c.focused_text_id = -1
+                submitted = true
+            }
+            disp = "{text}|"
+        }
+
+        rl.DrawText(disp, i32(box.x + 8.0), i32(box.y + 7.0), 14, c.theme.text_primary)
+    }
+
+    mut gap: f32 = 10.0
+    if c.in_section {
+        gap = 2.0
+    }
+    c.cursor_y += row_h + gap
+    c.section_row_idx += 1
+    c.widget_counter += 1
+    return submitted
+}
+
+fn (mut c: Context) button(label: str, destructive: bool) -> bool {
+    btn_h := 46.0
+    btn := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: btn_h}
+    mut clicked := false
+
+    if rl.IsWindowReady() {
+        mp := rl.GetMousePosition()
+        hovered := rl.CheckCollisionPointRec(mp, btn)
+        if hovered && rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON) {
+            clicked = true
+            rl.TriggerHaptic(1)
+        }
+        mut base_col := c.theme.blue
+        if destructive {
+            base_col = c.theme.red
+        }
+        if hovered && rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON) {
+            base_col = rl.Color{
+                r: u8(i32(base_col.r) * 4 / 5),
+                g: u8(i32(base_col.g) * 4 / 5),
+                b: u8(i32(base_col.b) * 4 / 5),
+                a: 255,
+            }
+        }
+        rl.DrawRectangleRounded(btn, 0.32, 8, base_col)
+        tw := rl.MeasureText(label, 15)
+        tx := i32(btn.x + (btn.width - f32(tw)) * 0.5)
+        ty := i32(btn.y + (btn.height - 15.0) * 0.5)
+        rl.DrawText(label, tx, ty, 15, c.theme.white)
+    }
+
+    c.cursor_y += btn_h + 12.0
+    c.widget_counter += 1
+    return clicked
+}
+
+fn (mut c: Context) tab_bar(tabs: str, mut active: i32) -> i32 {
+    items := str.split(tabs, ";")
+    n := i32(items.len())
+    if n > 0 {
+        active = i32(math.clamp_i64(i64(active), 0, i64(n - 1)))
+    }
+    if !rl.IsWindowReady() || n <= 0 {
+        return active
+    }
+
+    bar_h := 52.0 + c.safe_bottom
+    bar_y := c.screen_h - bar_h
+    rl.DrawRectangleRec(rl.Rectangle{x: 0.0, y: bar_y, width: c.screen_w, height: bar_h}, c.theme.chrome)
+    rl.DrawRectangleRec(rl.Rectangle{x: 0.0, y: bar_y, width: c.screen_w, height: 1.0}, c.theme.separator)
+
+    tab_w := c.screen_w / f32(n)
+    mp := rl.GetMousePosition()
+
+    mut i: i32 = 0
+    for i < n {
+        tr := rl.Rectangle{x: f32(i) * tab_w, y: bar_y, width: tab_w, height: 50.0}
+        if rl.CheckCollisionPointRec(mp, tr) && rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON) {
+            active = i
+            rl.TriggerHaptic(0)
+        }
+        is_sel := i == active
+        mut col := c.theme.text_secondary
+        if is_sel {
+            col = c.theme.blue
+        }
+
+        icon_pill := rl.Rectangle{x: tr.x + (tab_w - 28.0) * 0.5, y: bar_y + 7.0, width: 28.0, height: 16.0}
+        if is_sel {
+            rl.DrawRectangleRounded(icon_pill, 1.0, 6, c.theme.blue)
+            rl.DrawCircle(i32(tr.x + tab_w * 0.5), i32(bar_y + 15.0), 3.5, c.theme.white)
+        } else {
+            rl.DrawRectangleRounded(icon_pill, 1.0, 6, c.theme.tertiary)
+        }
+
+        item_txt := items[usize(i)]
+        tw := rl.MeasureText(item_txt, 12)
+        tx := i32(tr.x + (tab_w - f32(tw)) * 0.5)
+        rl.DrawText(item_txt, tx, i32(bar_y + 28.0), 12, col)
+        i += 1
+    }
+    return active
+}

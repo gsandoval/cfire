@@ -251,10 +251,11 @@ public:
             }
 
             if (target_sig) {
-                if (call->args.size() != target_sig->params.size()) {
+                std::size_t actual_args = call->args.size() + (call->block_arg ? 1 : 0);
+                if (actual_args != target_sig->params.size()) {
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: call to '{}' expects {} argument(s), got {} (cfire/ARITY-MISMATCH)",
-                        path_, e->line, e->col, target_sig->name, target_sig->params.size(), call->args.size())); !r) return r;
+                        path_, e->line, e->col, target_sig->name, target_sig->params.size(), actual_args)); !r) return r;
                 }
             }
 

@@ -128,6 +128,9 @@ struct TypeRef {
     bool is_mut_borrow = false; // &mut T
     bool is_tuple = false;    // (T1, T2, ...)
     std::vector<TypeRef> tuple_types{};
+    bool is_fn = false;       // fn(T1, T2) -> R
+    std::vector<TypeRef> fn_params{};
+    std::shared_ptr<TypeRef> fn_ret = nullptr;
     std::string smart_wrap{}; // "own" or "shared"
 };
 
