@@ -563,6 +563,7 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#mod-sort"><code>core:sort</code></a></li>
             <li><a href="#mod-log"><code>core:log</code></a></li>
             <li><a href="#mod-unicode"><code>core:unicode</code></a></li>
+            <li><a href="#mod-audio"><code>core:audio</code></a></li>
             <li><a href="#mod-rl"><code>vendor:raylib</code></a></li>
             <li><a href="#mod-rg"><code>vendor:raygui</code></a></li>
           </ul>
@@ -1489,6 +1490,63 @@ fn main() {
           <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::unicode::to_upper(s)</code></td><td>Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.<br/><code>upper := unicode.to_upper(&quot;hello, свет!&quot;)</code></td></tr>
         </tbody>
       </table></div>
+      <h2 id="mod-audio"><code>import "core:audio"</code> &mdash; Cross-Target Audio Engine, Polyphonic Mixer, Synth &amp; WAV Codec</h2>
+      <p>Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(AudioToolbox / WebAudio / ALSA)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:audio&quot;
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Zero-asset procedural sound effect playback
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    coin_sfx := audio.load_sound_from_wave(coin_wave)
+    coin_sfx.play()
+
+    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+    try audio.save_wav(tone, &quot;a440.wav&quot;)
+
+    stream := try audio.open_stream(48000, 2)
+    if stream.needs_data(2048) {
+        stream.push_samples(tone.samples)
+    }
+    println(&quot;Audio RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn init(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; void!</code></td><td><code>cfire::audio::init(sample_rate, channels)</code></td><td>Initializes the hardware audio output queue (or headless software mixer in CI).<br/><code>try audio.init(48000, 2)</code></td></tr>
+          <tr><td><code>fn close()</code></td><td><code>cfire::audio::close()</code></td><td>Stops all active sounds and streams and releases audio hardware resources.<br/><code>defer audio.close()</code></td></tr>
+          <tr><td><code>fn is_ready() -&gt; bool</code></td><td><code>cfire::audio::is_ready()</code></td><td>Returns `true` if the audio subsystem is initialized.<br/><code>if audio.is_ready() { ... }</code></td></tr>
+          <tr><td><code>fn set_master_volume(vol: f32)</code></td><td><code>cfire::audio::set_master_volume(vol)</code></td><td>Sets the master output volume multiplier (`0.0` to `1.0`).<br/><code>audio.set_master_volume(0.8)</code></td></tr>
+          <tr><td><code>fn master_volume() -&gt; f32</code></td><td><code>cfire::audio::master_volume()</code></td><td>Returns the current master output volume multiplier.<br/><code>v := audio.master_volume()</code></td></tr>
+          <tr><td><code>fn rms_level() -&gt; f32</code></td><td><code>cfire::audio::rms_level()</code></td><td>Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.<br/><code>rms := audio.rms_level()</code></td></tr>
+          <tr><td><code>fn peak_level() -&gt; f32</code></td><td><code>cfire::audio::peak_level()</code></td><td>Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.<br/><code>pk := audio.peak_level()</code></td></tr>
+          <tr><td><code>fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)</code></td><td>Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.<br/><code>w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)</code></td></tr>
+          <tr><td><code>fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)</code></td><td>Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.<br/><code>sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)</code></td></tr>
+          <tr><td><code>fn gen_sfx(preset: SfxPreset) -&gt; Wave</code></td><td><code>cfire::audio::gen_sfx(preset)</code></td><td>Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).<br/><code>coin := audio.gen_sfx(audio.SfxPreset::Coin)</code></td></tr>
+          <tr><td><code>fn encode_wav(wave: Wave) -&gt; []byte</code></td><td><code>cfire::audio::encode_wav(wave)</code></td><td>Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.<br/><code>wav_bytes := audio.encode_wav(w)</code></td></tr>
+          <tr><td><code>fn decode_wav(data: []byte) -&gt; Wave!</code></td><td><code>cfire::audio::decode_wav(data)</code></td><td>Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.<br/><code>w := try audio.decode_wav(wav_bytes)</code></td></tr>
+          <tr><td><code>fn save_wav(wave: Wave, path: str) -&gt; void!</code></td><td><code>cfire::audio::save_wav(wave, path)</code></td><td>Writes a `Wave` to disk as a standard `.wav` file.<br/><code>try audio.save_wav(w, &quot;tone.wav&quot;)</code></td></tr>
+          <tr><td><code>fn load_wav(path: str) -&gt; Wave!</code></td><td><code>cfire::audio::load_wav(path)</code></td><td>Loads and decodes a `.wav` file from disk or app bundle.<br/><code>w := try audio.load_wav(&quot;tone.wav&quot;)</code></td></tr>
+          <tr><td><code>fn load_sound_from_wave(wave: Wave) -&gt; Sound</code></td><td><code>cfire::audio::load_sound_from_wave(wave)</code></td><td>Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.<br/><code>sfx := audio.load_sound_from_wave(coin)</code></td></tr>
+          <tr><td><code>fn load_sound(path: str) -&gt; Sound!</code></td><td><code>cfire::audio::load_sound(path)</code></td><td>Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.<br/><code>sfx := try audio.load_sound(&quot;click.wav&quot;)</code></td></tr>
+          <tr><td><code>fn (s: Sound) play()</code></td><td><code>s.play()</code></td><td>Triggers polyphonic playback of the sound.<br/><code>sfx.play()</code></td></tr>
+          <tr><td><code>fn (s: Sound) stop()</code></td><td><code>s.stop()</code></td><td>Stops active voices playing this sound.<br/><code>sfx.stop()</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_volume(vol: f32)</code></td><td><code>s.set_volume(vol)</code></td><td>Sets playback gain (`0.0` to `2.0`) for this sound.<br/><code>sfx.set_volume(0.75)</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_pitch(pitch: f32)</code></td><td><code>s.set_pitch(pitch)</code></td><td>Sets playback pitch/rate multiplier (`1.0` = original pitch).<br/><code>sfx.set_pitch(1.25)</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_pan(pan: f32)</code></td><td><code>s.set_pan(pan)</code></td><td>Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).<br/><code>sfx.set_pan(-0.5)</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_looping(loop: bool)</code></td><td><code>s.set_looping(loop)</code></td><td>Enables or disables seamless loop playback.<br/><code>sfx.set_looping(true)</code></td></tr>
+          <tr><td><code>fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; Stream!</code></td><td><code>cfire::audio::open_stream(sample_rate, channels)</code></td><td>Opens a real-time push `Stream` for custom DSP synthesis.<br/><code>stream := try audio.open_stream(48000, 2)</code></td></tr>
+          <tr><td><code>fn (st: Stream) push_samples(samples: []f32)</code></td><td><code>st.push_samples(samples)</code></td><td>Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.<br/><code>stream.push_samples(pcm_chunk)</code></td></tr>
+          <tr><td><code>fn (st: Stream) needs_data(target_frames: i32 = 2048) -&gt; bool</code></td><td><code>st.needs_data(target_frames)</code></td><td>Returns `true` when buffered frames fall below `target_frames`.<br/><code>if stream.needs_data(1024) { ... }</code></td></tr>
+        </tbody>
+      </table></div>
       <h2 id="mod-rl"><code>import "vendor:raylib"</code> &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Raymath (`&lt;raylib.h&gt;`, `&lt;raymath.h&gt;`, `&lt;rlgl.h&gt;`)</h2>
       <p>Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
@@ -1536,6 +1594,11 @@ fn main() {
           <tr><td><code>fn IsKeyDown(key: i32) -&gt; bool</code></td><td><code>IsKeyDown(key)</code></td><td>Checks if a key is currently being pressed.<br/><code>if rl.IsKeyDown(rl.KEY_RIGHT) { ... }</code></td></tr>
           <tr><td><code>fn GetMousePosition() -&gt; rl.Vector2</code></td><td><code>GetMousePosition()</code></td><td>Returns current mouse position XY as `rl.Vector2`.<br/><code>mouse := rl.GetMousePosition()</code></td></tr>
           <tr><td><code>fn CheckCollisionRecs(rec1: rl.Rectangle, rec2: rl.Rectangle) -&gt; bool</code></td><td><code>CheckCollisionRecs(rec1, rec2)</code></td><td>Checks collision between two rectangles.<br/><code>hit := rl.CheckCollisionRecs(player_box, wall_box)</code></td></tr>
+          <tr><td><code>fn GetSafeAreaRect() -&gt; rl.Rectangle</code></td><td><code>GetSafeAreaRect()</code></td><td>Returns the usable safe-area rectangle inset past the iOS Dynamic Island and Home Indicator.<br/><code>safe := rl.GetSafeAreaRect()</code></td></tr>
+          <tr><td><code>fn BeginScissorMode(x: i32, y: i32, width: i32, height: i32)</code></td><td><code>BeginScissorMode(x, y, width, height)</code></td><td>Begins scissor clipping mode for scrollable views and clipped cards.<br/><code>rl.BeginScissorMode(0, 100, 393, 600)</code></td></tr>
+          <tr><td><code>fn EndScissorMode()</code></td><td><code>EndScissorMode()</code></td><td>Ends scissor clipping mode and restores the full viewport.<br/><code>rl.EndScissorMode()</code></td></tr>
+          <tr><td><code>fn RequestKeyboard()</code></td><td><code>RequestKeyboard()</code></td><td>Requests the native iOS `&lt;UIKeyInput&gt;` software keyboard for the active frame.<br/><code>rl.RequestKeyboard()</code></td></tr>
+          <tr><td><code>fn TriggerHaptic(style: i32)</code></td><td><code>TriggerHaptic(style)</code></td><td>Triggers native iOS Taptic Engine impact feedback (0=Light, 1=Medium, 2=Heavy).<br/><code>rl.TriggerHaptic(0)</code></td></tr>
           <tr><td><code>fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -&gt; rl.Vector2</code></td><td><code>Vector2Add(v1, v2)</code></td><td>Adds two vectors (`&lt;raymath.h&gt;`).<br/><code>pos = rl.Vector2Add(pos, vel)</code></td></tr>
           <tr><td><code>fn Vector2Scale(v: rl.Vector2, scale: f32) -&gt; rl.Vector2</code></td><td><code>Vector2Scale(v, scale)</code></td><td>Scales vector by float value (`&lt;raymath.h&gt;`).<br/><code>step := rl.Vector2Scale(dir, speed * dt)</code></td></tr>
           <tr><td><code>fn Clamp(value: f32, min: f32, max: f32) -&gt; f32</code></td><td><code>Clamp(value, min, max)</code></td><td>Clamps float value between `[min, max]` (`&lt;raymath.h&gt;`).<br/><code>x := rl.Clamp(pos.x, 0.0, 800.0)</code></td></tr>

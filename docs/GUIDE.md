@@ -1193,8 +1193,67 @@ fn main() {
 }
 ```
 
-### 11.6 Multi-Platform Deployment: Desktop & WebAssembly
-The same `.cf` application runs natively across desktop operating systems and modern web browsers without modifying a single line of code:
+### 11.6 Composable Pure-`cfire` iOS Native UI (`examples/13-ios-native-ui`)
+When building native iOS applications (`cfire run --ios`), `vendor:raylib` (`rl.*`) exposes only the low-level OS and GPU primitives (`rl.InitWindow(0, 0, title)` for edge-to-edge native resolution, `rl.GetSafeAreaRect()`, `rl.BeginScissorMode()`, `rl.RequestKeyboard()`, `rl.TriggerHaptic()`, and high-DPI Apple `SF Pro` text rendering). You can build arbitrary layouts and custom components **100% in pure `.cf`** using `cfire` structs, receiver methods, slices, and trailing closures—without ever modifying the language or C++ runtime:
+
+```cf
+package main
+
+import "./ui"
+import "vendor:raylib" as rl
+
+fn main() {
+    rl.InitWindow(0, 0, "Pocket Studio")
+    defer rl.CloseWindow()
+    rl.SetTargetFPS(60)
+
+    mut ctx := ui.make_context()
+    mut tab: i32 = 0
+    mut dark_mode := true
+    mut profile_idx: i32 = 1
+    mut target_temp: f32 = 72.0
+    mut device_name := "Memo's iPhone"
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        ctx.set_dark_mode(dark_mode)
+        ctx.begin_screen("Pocket Studio", "ONLINE | {device_name}")
+
+        // Arbitrary N-column grid layout in pure .cf
+        cols := ctx.columns(ctx.allocate(62.0), 3, 10.0)
+        ctx.stat_card(cols[0], "LATENCY", "1.4 ms", ctx.theme.blue)
+        ctx.stat_card(cols[1], "NODES", "12/12", ctx.theme.green)
+        ctx.stat_card(cols[2], "BATTERY", "96%", ctx.theme.green)
+
+        // Declarative section block using a trailing closure
+        ctx.section("APPEARANCE & PROFILE") || {
+            _ := ctx.toggle_row("Dark Appearance", "OLED pure black iOS palette", mut dark_mode)
+            _ := ctx.segmented_row("Performance Profile", "Eco;Balanced;Turbo", mut profile_idx)
+        }
+
+        // Custom widget drawn on the fly inside a themed card closure
+        ctx.with_card(68.0) |rect| {
+            rl.DrawText("CUSTOM TELEMETRY SPARKLINE", i32(rect.x + 14.0), i32(rect.y + 10.0), 11, ctx.theme.text_secondary)
+            rl.DrawRectangleRounded(rl.Rectangle{x: rect.x + 14.0, y: rect.y + 34.0, width: rect.width - 28.0, height: 18.0}, 0.5, 6, ctx.theme.blue)
+        }
+
+        _ := ctx.slider_row("Target Temp", mut target_temp, 60.0, 85.0, " F")
+        _ := ctx.text_field_row("Device Name", mut device_name, 28)
+        _ := ctx.button("Sync Telemetry", false)
+        _ := ctx.tab_bar("Dashboard;Diagnostics;About", mut tab)
+    }
+}
+```
+
+See the complete pure-`.cf` layout engine in `examples/13-ios-native-ui/ui.cf` and showcase app in `examples/13-ios-native-ui/main.cf`, and launch it directly on the iPhone Simulator with:
+```zsh
+cfire run --ios examples/13-ios-native-ui/main.cf
+```
+
+### 11.7 Multi-Platform Deployment: Desktop, WebAssembly & iOS
+The same `.cf` application runs natively across desktop operating systems, modern web browsers, and iOS without modifying a single line of code:
 
 - **Run on Desktop**:
   ```zsh
@@ -1206,4 +1265,8 @@ The same `.cf` application runs natively across desktop operating systems and mo
   cfire run --target=wasm app.cf
   ```
   `cfire` compiles to WebAssembly using Emscripten, activates WebGL 2.0 and `-sASYNCIFY=1`, starts a local HTTP server, and opens your browser directly to the interactive Canvas viewport.
+- **Run on iPhone / iPad Simulator**:
+  ```zsh
+  cfire run --ios app.cf
+  ```
 

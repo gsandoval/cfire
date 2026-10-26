@@ -573,6 +573,17 @@ fn main() {
                     ios_plist->contains("UIInterfaceOrientationLandscapeLeft"),
                 "iOS Info.plist contains UIDeviceFamily, MinimumOSVersion, and Landscape orientation for 720x480 window");
         }
+
+        // 8. Canonical 13-ios-native-ui Example (Zero-Coordinate GuiIos* Auto-Layout & Component Kit)
+        auto ios_ui_bin = ios_dir / "ios_native_ui";
+        auto ios_ui_build = cfire::build::build_native("examples/13-ios-native-ui/main.cf", rt_dir, ios_ui_bin, false, false, "ios-sim");
+        require(ios_ui_build.has_value(),
+            std::format("build_native(examples/13-ios-native-ui/main.cf, ios-sim) succeeded: {}", ios_ui_build ? "" : ios_ui_build.error()));
+        if (ios_ui_build) {
+            auto ui_bundle = std::filesystem::path(ios_ui_build->ios_app_bundle);
+            require(std::filesystem::exists(ui_bundle / "ios_native_ui"), "13-ios-native-ui flat .app bundle binary exists");
+            require(std::filesystem::exists(ui_bundle / "Info.plist"), "13-ios-native-ui flat .app bundle Info.plist exists");
+        }
     }
 #endif
 

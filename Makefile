@@ -1,5 +1,6 @@
 CXX      := clang++
 CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc
+LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation,-ldl -lpthread)
 
 TEST_SRCS := tests/unit/test_frontend.cpp \
              tests/unit/test_sema.cpp \
@@ -22,7 +23,7 @@ build: $(HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 .cfire_test_runner: $(TEST_OBJS)
-	$(CXX) $(CXXFLAGS) $(TEST_OBJS) -o $@
+	$(CXX) $(CXXFLAGS) $(TEST_OBJS) $(LDFLAGS) -o $@
 
 review-check: build
 	@echo "=== [1/3] Checking Canonical Code Formatting ==="

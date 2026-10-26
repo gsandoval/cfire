@@ -1,0 +1,145 @@
+package main
+
+import "./ui"
+import "core:audio"
+import "core:os"
+import "vendor:raylib" as rl
+
+fn main() {
+    headless := os.getenv("CFIRE_HEADLESS_TEST", "") == "1"
+    if !headless {
+        rl.InitWindow(0, 0, "Pocket Studio")
+        rl.SetTargetFPS(60)
+    }
+    defer rl.CloseWindow()
+
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.65)
+
+    tap_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Tap))
+    sync_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+    dsp_stream := try audio.open_stream(48000, 2)
+    pad_wave := audio.gen_tone(audio.Waveform::Sine, 220.0, 0.04, 0.25)
+
+    mut ctx := ui.make_context()
+    mut active_tab: i32 = 0
+    mut dark_mode := true
+    mut notifications := true
+    mut auto_sync := false
+    mut perf_profile: i32 = 1
+    mut target_temp: f32 = 72.0
+    mut buffer_ms: f32 = 16.0
+    mut device_name := "Memo's iPhone"
+    mut sync_count: i32 = 0
+
+    mut frame := 0
+    for headless || !rl.WindowShouldClose() {
+        if dsp_stream.needs_data(2048) {
+            dsp_stream.push_samples(pad_wave.samples)
+        }
+        live_rms := audio.rms_level()
+
+        if !headless {
+            rl.BeginDrawing()
+        }
+
+        ctx.set_dark_mode(dark_mode)
+        ctx.begin_screen("Pocket Studio", "ONLINE | {device_name}")
+
+        if active_tab == 0 {
+            // 1. Arbitrary 3-Column Grid built from pure .cf layout primitives
+            cols := ctx.columns(ctx.allocate(60.0), 3, 10.0)
+            ctx.stat_card(cols[0], "LATENCY", "1.4 ms", ctx.theme.blue)
+            ctx.stat_card(cols[1], "NODES", "12/12", ctx.theme.green)
+            ctx.stat_card(cols[2], "BATTERY", "96%", ctx.theme.green)
+
+            // 2. Arbitrary Custom Component: Live Telemetry Sparkline Card built inline in main.cf
+            ctx.with_card(74.0) |r| {
+                rl.DrawText("LIVE AUDIO DSP THROUGHPUT", i32(r.x + 14.0), i32(r.y + 10.0), 11, ctx.theme.text_secondary)
+                rl.DrawText("48.0 kHz", i32(r.x + r.width - 74.0), i32(r.y + 10.0), 12, ctx.theme.blue)
+                bars := [18, 26, 22, 32, 28, 36, 30, 24, 34, 29, 38, 31, 25, 33, 27, 35]
+                bar_gap: f32 = 5.0
+                avail_w := r.width - 28.0
+                bar_w := (avail_w - bar_gap * 15.0) / 16.0
+                boost := live_rms * 10.0
+                mut bi: i32 = 0
+                for h in bars {
+                    bx := r.x + 14.0 + f32(bi) * (bar_w + bar_gap)
+                    bh := rl.Clamp(f32(h) + boost, 8.0, 40.0)
+                    by := r.y + 62.0 - bh
+                    mut bcol := ctx.theme.blue
+                    if bh >= 34.0 {
+                        bcol = ctx.theme.green
+                    }
+                    rl.DrawRectangleRounded(rl.Rectangle{x: bx, y: by, width: bar_w, height: bh}, 0.45, 4, bcol)
+                    bi += 1
+                }
+            }
+
+            // 3. Declarative Section Containers using Trailing Closures
+            ctx.section("APPEARANCE & ALERTS") || {
+                if ctx.toggle_row("Dark Appearance", "OLED pure black iOS palette", mut dark_mode) {
+                    tap_sfx.play()
+                }
+                if ctx.toggle_row("Push Alerts", "Notify on threshold breach", mut notifications) {
+                    tap_sfx.play()
+                }
+                if ctx.segmented_row("Performance Profile", "Eco;Balanced;Turbo", mut perf_profile) {
+                    tap_sfx.play()
+                }
+            }
+
+            ctx.section("THERMAL & IDENTITY") || {
+                _ := ctx.slider_row("Target Temp", mut target_temp, 60.0, 85.0, " F")
+                _ := ctx.text_field_row("Device Name", mut device_name, 28)
+            }
+
+            if ctx.button("Sync Telemetry ({sync_count})", false) {
+                sync_count += 1
+                sync_sfx.play()
+            }
+        } else if active_tab == 1 {
+            cols := ctx.columns(ctx.allocate(60.0), 2, 12.0)
+            ctx.stat_card(cols[0], "AUDIO DSP", "48 kHz", ctx.theme.blue)
+            ctx.stat_card(cols[1], "DROPOUTS", "0", ctx.theme.green)
+
+            ctx.section("REALTIME ENGINE") || {
+                if ctx.toggle_row("Background Cloud Sync", "Upload snapshots every 60s", mut auto_sync) {
+                    tap_sfx.play()
+                }
+                _ := ctx.slider_row("DSP Buffer", mut buffer_ms, 4.0, 64.0, " ms")
+            }
+
+            if ctx.button("Reset Counters", true) {
+                sync_count = 0
+                tap_sfx.play()
+            }
+        } else {
+            cols := ctx.columns(ctx.allocate(60.0), 2, 12.0)
+            ctx.stat_card(cols[0], "RUNTIME", "Pure .cf", ctx.theme.blue)
+            ctx.stat_card(cols[1], "FONT", "SF Pro", ctx.theme.green)
+
+            ctx.section("ABOUT POCKET STUDIO") || {
+                if ctx.toggle_row("Dark Appearance", "Switch system theme live", mut dark_mode) {
+                    tap_sfx.play()
+                }
+            }
+        }
+
+        if ctx.tab_bar("Dashboard;Diagnostics;About", mut active_tab) {
+            tap_sfx.play()
+        }
+
+        if !headless {
+            rl.EndDrawing()
+        }
+
+        frame += 1
+        if headless && frame >= 2 {
+            break
+        }
+    }
+
+    println("Pure-cfire iOS Native UI ready: device='{}', temp={} F, sync_count={}", device_name, i32(target_temp), sync_count)
+}

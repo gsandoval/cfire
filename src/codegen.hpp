@@ -99,6 +99,8 @@ public:
                 used_core_.insert("log");
             } else if (imp.path == "core:unicode") {
                 used_core_.insert("unicode");
+            } else if (imp.path == "core:audio") {
+                used_core_.insert("audio");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -191,6 +193,8 @@ public:
                 used_core_.insert("log");
             } else if (imp.path == "core:unicode") {
                 used_core_.insert("unicode");
+            } else if (imp.path == "core:audio") {
+                used_core_.insert("audio");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -252,6 +256,7 @@ public:
                 else if (mod == "sync" || mod == "context") core_headers.insert("core/sync.hpp");
                 else if (mod == "time") core_headers.insert("core/time.hpp");
                 else if (mod == "unicode") core_headers.insert("core/unicode.hpp");
+                else if (mod == "audio") core_headers.insert("core/audio.hpp");
                 else core_headers.insert(std::format("core/{}.hpp", mod));
             }
             for (const auto& hdr : core_headers) {
@@ -281,6 +286,11 @@ public:
             writeln("#if __has_include(<rlgl.h>)");
             writeln("#include <rlgl.h>");
             writeln("#endif");
+            writeln("inline void __cfire_InitWindow(int width, int height, const char* title) { InitWindow(width <= 0 ? 393 : width, height <= 0 ? 852 : height, title); }");
+            writeln("#define InitWindow __cfire_InitWindow");
+            writeln("inline Rectangle GetSafeAreaRect(void) { return Rectangle{0.0f, 0.0f, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())}; }");
+            writeln("inline void RequestKeyboard(void) {}");
+            writeln("inline void TriggerHaptic(int style) { (void)style; }");
             writeln("#endif");
         }
         if (used_vendor_.contains("raygui")) {
@@ -886,7 +896,11 @@ public:
                     if (st.type && (st.type->is_ptr || st.type->is_mut_ptr) && init_val == "std::nullopt") {
                         init_val = "nullptr";
                     }
-                    writeln(std::format("{} {} = {};", cpp_type, st.name, init_val));
+                    if (st.name == "_") {
+                        writeln(std::format("(void)({});", init_val));
+                    } else {
+                        writeln(std::format("{} {} = {};", cpp_type, st.name, init_val));
+                    }
                 } else {
                     writeln(std::format("{} {}{{}};", cpp_type, st.name));
                 }
@@ -1577,6 +1591,7 @@ public:
                         id->name == "base64" || id->name == "hex" || id->name == "csv" ||
                         id->name == "aes" || id->name == "hmac" || id->name == "sha256" ||
                         id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url" || id->name == "tls" ||
+                        id->name == "audio" ||
                         used_core_.contains(id->name)) {
                         return std::format("cfire::{}::{}", id->name, ex.field);
                     }
@@ -1589,8 +1604,9 @@ public:
                 std::string obj = emit_expr(ex.object);
                 if (ex.is_namespace) return obj + "::" + ex.field;
                 if (obj.ends_with("::Response") || obj.ends_with("::Request") || obj.ends_with("::Router") || obj.ends_with("::HttpServer") ||
-                    obj.ends_with("::ServerContext") ||
-                    obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer" || obj == "ServerContext") {
+                    obj.ends_with("::ServerContext") || obj.ends_with("::Waveform") || obj.ends_with("::SfxPreset") ||
+                    obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer" || obj == "ServerContext" ||
+                    obj == "Waveform" || obj == "SfxPreset") {
                     return obj + "::" + ex.field;
                 }
                 if (ex.field == "len") return obj + ".size()";
@@ -1826,12 +1842,18 @@ public:
                 for (const auto& a : call.args) {
                     args += ", " + emit_call_arg(a);
                 }
+                if (call.block_arg) {
+                    args += ", " + emit_closure(*call.block_arg);
+                }
                 return std::format("cfire_method_{}({})", mem->field, args);
             }
             if (auto owner_it = cf_.method_owner.find(mem->field); owner_it != cf_.method_owner.end()) {
                 std::string args = emit_expr(mem->object);
                 for (const auto& a : call.args) {
                     args += ", " + emit_call_arg(a);
+                }
+                if (call.block_arg) {
+                    args += ", " + emit_closure(*call.block_arg);
                 }
                 return std::format("cfire_method_{}({})", mem->field, args);
             }
@@ -1842,6 +1864,10 @@ public:
                 for (std::size_t i = 0; i < call.args.size(); ++i) {
                     if (i > 0) args += ", ";
                     args += emit_call_arg(call.args[i]);
+                }
+                if (call.block_arg) {
+                    if (!args.empty()) args += ", ";
+                    args += emit_closure(*call.block_arg);
                 }
                 return std::format("{}({})", mem->field, args);
             }
@@ -2094,6 +2120,15 @@ public:
             s += ">";
             return s;
         }
+        if (tr.is_fn) {
+            std::string ret_s = tr.fn_ret ? lower_return_type(*tr.fn_ret) : "void";
+            std::string params_s;
+            for (std::size_t i = 0; i < tr.fn_params.size(); ++i) {
+                if (i > 0) params_s += ", ";
+                params_s += lower_param_type("in", tr.fn_params[i]);
+            }
+            return std::format("std::function<{}({})>", ret_s, params_s);
+        }
         if (tr.is_mut_ptr && tr.elem_type) return lower_owning_type(*tr.elem_type) + "*";
         if (tr.is_ptr && tr.elem_type) return "const " + lower_owning_type(*tr.elem_type) + "*";
         if (tr.is_map && tr.key_type && tr.elem_type) {
@@ -2123,19 +2158,26 @@ public:
         if (tr.name == "f64") return "double";
         if (tr.name == "bool") return "bool";
         if (tr.name == "void") return "void";
-        if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
-        if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
-        if (tr.name == "websocket::Conn" || tr.name == "Conn") return "cfire::websocket::Conn";
-        if (tr.name == "websocket::Server") return "cfire::websocket::Server";
-        if (tr.name == "http::Request" || tr.name == "Request") return "cfire::http::Request";
-        if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
-        if (tr.name == "http::Router" || tr.name == "Router") return "cfire::http::Router";
-        if (tr.name == "http::HttpServer" || tr.name == "HttpServer") return "cfire::http::HttpServer";
-        if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
-        if (tr.name == "tls::ServerContext" || tr.name == "ServerContext") return "cfire::tls::ServerContext";
-        if (tr.name == "tls::CertKeyPair" || tr.name == "CertKeyPair") return "cfire::tls::CertKeyPair";
-        if (tr.name == "net::TcpConn" || tr.name == "TcpConn") return "cfire::net::TcpConn";
-        if (tr.name == "net::TcpListener" || tr.name == "TcpListener") return "cfire::net::TcpListener";
+        if (!is_local_type(tr.name)) {
+            if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
+            if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
+            if (tr.name == "websocket::Conn" || tr.name == "Conn") return "cfire::websocket::Conn";
+            if (tr.name == "websocket::Server") return "cfire::websocket::Server";
+            if (tr.name == "http::Request" || tr.name == "Request") return "cfire::http::Request";
+            if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
+            if (tr.name == "http::Router" || tr.name == "Router") return "cfire::http::Router";
+            if (tr.name == "http::HttpServer" || tr.name == "HttpServer") return "cfire::http::HttpServer";
+            if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
+            if (tr.name == "tls::ServerContext" || tr.name == "ServerContext") return "cfire::tls::ServerContext";
+            if (tr.name == "tls::CertKeyPair" || tr.name == "CertKeyPair") return "cfire::tls::CertKeyPair";
+            if (tr.name == "net::TcpConn" || tr.name == "TcpConn") return "cfire::net::TcpConn";
+            if (tr.name == "net::TcpListener" || tr.name == "TcpListener") return "cfire::net::TcpListener";
+            if (tr.name == "audio::Wave") return "cfire::audio::Wave";
+            if (tr.name == "audio::Sound") return "cfire::audio::Sound";
+            if (tr.name == "audio::Stream") return "cfire::audio::Stream";
+            if (tr.name == "audio::Waveform") return "cfire::audio::Waveform";
+            if (tr.name == "audio::SfxPreset") return "cfire::audio::SfxPreset";
+        }
         if (tr.name == "sync::Channel" && tr.elem_type) {
             return std::format("cfire::sync::Channel<{}>", lower_owning_type(*tr.elem_type));
         }

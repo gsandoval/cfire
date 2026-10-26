@@ -1349,7 +1349,7 @@ inline auto resolve_external_dep_source(
     }
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
-    plan.cflags = {"-std=c++2b", "-I" + runtime_dir.string()};
+    plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
     bool is_wasm = plan.target_triple.starts_with("wasm");
     if (!plan.target_triple.empty()) {
         if (!is_wasm) {
@@ -1476,6 +1476,27 @@ inline auto resolve_external_dep_source(
             plan.auto_linked.push_back(imp.path);
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
                 add_pc(it->second);
+            }
+            if (imp.path == "core:audio") {
+                if (!is_wasm) {
+                    if (plan.is_ios) {
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "AudioToolbox",
+                            "-framework", "AVFAudio",
+                            "-framework", "Foundation",
+                            "-lobjc"
+                        });
+                    } else {
+#if defined(__APPLE__)
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "AudioToolbox",
+                            "-framework", "CoreFoundation"
+                        });
+#elif defined(__linux__)
+                        plan.ldflags.insert(plan.ldflags.end(), {"-ldl", "-lpthread"});
+#endif
+                    }
+                }
             }
             if (imp.path == "vendor:raylib" || imp.path == "vendor:raygui") {
                 plan.is_gui = true;
@@ -1670,12 +1691,15 @@ inline auto resolve_external_dep_source(
 
                 if (found_raylib) {
 #if defined(__APPLE__)
-                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL"});
+                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL", "-framework", "AudioToolbox", "-framework", "CoreFoundation"});
 #elif defined(__linux__)
                     plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
 #endif
                 } else {
                     plan.cflags.push_back("-DCFIRE_RAYLIB_FALLBACK=1");
+#if defined(__APPLE__)
+                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "AudioToolbox", "-framework", "CoreFoundation"});
+#endif
                 }
                 } // !is_wasm
             }
@@ -1939,7 +1963,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
             ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
             : "-O2";
         std::string cmd = std::format(
-            "clang++ -std=c++2b {} -x c++-header \"{}\" -o \"{}\"",
+            "clang++ -std=c++2b -Wno-c++11-narrowing {} -x c++-header \"{}\" -o \"{}\"",
             opt_flags, prelude_hdr.string(), pch_path.string());
         int rc = 0;
         (void)bridge::run_command_capture(cmd, rc);

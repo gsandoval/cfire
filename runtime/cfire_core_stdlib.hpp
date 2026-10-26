@@ -20,3 +20,4 @@
 #include "core/regex.hpp"
 #include "core/collections.hpp"
 #include "core/unicode.hpp"
+#include "core/audio.hpp"

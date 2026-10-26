@@ -1637,12 +1637,69 @@ fn main() {
     }
 }
 </code></pre>
-<h3 id="116-multi-platform-deployment-desktop-webassembly">11.6 Multi-Platform Deployment: Desktop &amp; WebAssembly</h3>
-<p>The same <code>.cf</code> application runs natively across desktop operating systems and modern web browsers without modifying a single line of code:</p>
+<h3 id="116-composable-pure-cfire-ios-native-ui-examples13-ios-native-ui">11.6 Composable Pure-<code>cfire</code> iOS Native UI (<code>examples/13-ios-native-ui</code>)</h3>
+<p>When building native iOS applications (<code>cfire run --ios</code>), <code>vendor:raylib</code> (<code>rl.*</code>) exposes only the low-level OS and GPU primitives (<code>rl.InitWindow(0, 0, title)</code> for edge-to-edge native resolution, <code>rl.GetSafeAreaRect()</code>, <code>rl.BeginScissorMode()</code>, <code>rl.RequestKeyboard()</code>, <code>rl.TriggerHaptic()</code>, and high-DPI Apple <code>SF Pro</code> text rendering). You can build arbitrary layouts and custom components <strong>100% in pure <code>.cf</code></strong> using <code>cfire</code> structs, receiver methods, slices, and trailing closures—without ever modifying the language or C++ runtime:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;./ui&quot;
+import &quot;vendor:raylib&quot; as rl
+
+fn main() {
+    rl.InitWindow(0, 0, &quot;Pocket Studio&quot;)
+    defer rl.CloseWindow()
+    rl.SetTargetFPS(60)
+
+    mut ctx := ui.make_context()
+    mut tab: i32 = 0
+    mut dark_mode := true
+    mut profile_idx: i32 = 1
+    mut target_temp: f32 = 72.0
+    mut device_name := &quot;Memo's iPhone&quot;
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        ctx.set_dark_mode(dark_mode)
+        ctx.begin_screen(&quot;Pocket Studio&quot;, &quot;ONLINE | {device_name}&quot;)
+
+        // Arbitrary N-column grid layout in pure .cf
+        cols := ctx.columns(ctx.allocate(62.0), 3, 10.0)
+        ctx.stat_card(cols[0], &quot;LATENCY&quot;, &quot;1.4 ms&quot;, ctx.theme.blue)
+        ctx.stat_card(cols[1], &quot;NODES&quot;, &quot;12/12&quot;, ctx.theme.green)
+        ctx.stat_card(cols[2], &quot;BATTERY&quot;, &quot;96%&quot;, ctx.theme.green)
+
+        // Declarative section block using a trailing closure
+        ctx.section(&quot;APPEARANCE &amp; PROFILE&quot;) || {
+            _ := ctx.toggle_row(&quot;Dark Appearance&quot;, &quot;OLED pure black iOS palette&quot;, mut dark_mode)
+            _ := ctx.segmented_row(&quot;Performance Profile&quot;, &quot;Eco;Balanced;Turbo&quot;, mut profile_idx)
+        }
+
+        // Custom widget drawn on the fly inside a themed card closure
+        ctx.with_card(68.0) |rect| {
+            rl.DrawText(&quot;CUSTOM TELEMETRY SPARKLINE&quot;, i32(rect.x + 14.0), i32(rect.y + 10.0), 11, ctx.theme.text_secondary)
+            rl.DrawRectangleRounded(rl.Rectangle{x: rect.x + 14.0, y: rect.y + 34.0, width: rect.width - 28.0, height: 18.0}, 0.5, 6, ctx.theme.blue)
+        }
+
+        _ := ctx.slider_row(&quot;Target Temp&quot;, mut target_temp, 60.0, 85.0, &quot; F&quot;)
+        _ := ctx.text_field_row(&quot;Device Name&quot;, mut device_name, 28)
+        _ := ctx.button(&quot;Sync Telemetry&quot;, false)
+        _ := ctx.tab_bar(&quot;Dashboard;Diagnostics;About&quot;, mut tab)
+    }
+}
+</code></pre>
+<p>See the complete pure-<code>.cf</code> layout engine in <code>examples/13-ios-native-ui/ui.cf</code> and showcase app in <code>examples/13-ios-native-ui/main.cf</code>, and launch it directly on the iPhone Simulator with:</p>
+<div class="code-header"><span class="tag-cf">zsh</span></div>
+<pre><code>cfire run --ios examples/13-ios-native-ui/main.cf
+</code></pre>
+<h3 id="117-multi-platform-deployment-desktop-webassembly-ios">11.7 Multi-Platform Deployment: Desktop, WebAssembly &amp; iOS</h3>
+<p>The same <code>.cf</code> application runs natively across desktop operating systems, modern web browsers, and iOS without modifying a single line of code:</p>
 <ul>
   <li><strong>Run on Desktop</strong>:</li>
  <code></code>`zsh cfire run app.cf cfire build app.cf   # macOS: produces MyApp.app; Windows: produces windowless .exe (-mwindows) <code></code>`  <li><strong>Run in the Web Browser</strong>:</li>
- <code></code>`zsh cfire run --target=wasm app.cf <code></code>` <code>cfire</code> compiles to WebAssembly using Emscripten, activates WebGL 2.0 and <code>-sASYNCIFY=1</code>, starts a local HTTP server, and opens your browser directly to the interactive Canvas viewport.</ul>
+ <code></code>`zsh cfire run --target=wasm app.cf <code></code>` <code>cfire</code> compiles to WebAssembly using Emscripten, activates WebGL 2.0 and <code>-sASYNCIFY=1</code>, starts a local HTTP server, and opens your browser directly to the interactive Canvas viewport.  <li><strong>Run on iPhone / iPad Simulator</strong>:</li>
+ <code></code>`zsh cfire run --ios app.cf <code></code>`</ul>
     </main>
   </div>
 </div>

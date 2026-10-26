@@ -407,6 +407,37 @@ struct DiagnosticDoc {
             }
         },
         {
+            "core:audio", "audio", "Cross-Target Audio Engine, Polyphonic Mixer, Synth & WAV Codec", "(AudioToolbox / WebAudio / ALSA)",
+            "Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.",
+            {
+                {"init", "fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!", "cfire::audio::init(sample_rate, channels)", "Initializes the hardware audio output queue (or headless software mixer in CI).", "try audio.init(48000, 2)"},
+                {"close", "fn close()", "cfire::audio::close()", "Stops all active sounds and streams and releases audio hardware resources.", "defer audio.close()"},
+                {"is_ready", "fn is_ready() -> bool", "cfire::audio::is_ready()", "Returns `true` if the audio subsystem is initialized.", "if audio.is_ready() { ... }"},
+                {"set_master_volume", "fn set_master_volume(vol: f32)", "cfire::audio::set_master_volume(vol)", "Sets the master output volume multiplier (`0.0` to `1.0`).", "audio.set_master_volume(0.8)"},
+                {"master_volume", "fn master_volume() -> f32", "cfire::audio::master_volume()", "Returns the current master output volume multiplier.", "v := audio.master_volume()"},
+                {"rms_level", "fn rms_level() -> f32", "cfire::audio::rms_level()", "Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.", "rms := audio.rms_level()"},
+                {"peak_level", "fn peak_level() -> f32", "cfire::audio::peak_level()", "Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.", "pk := audio.peak_level()"},
+                {"gen_tone", "fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave", "cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)", "Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.", "w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)"},
+                {"gen_chirp", "fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave", "cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)", "Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.", "sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)"},
+                {"gen_sfx", "fn gen_sfx(preset: SfxPreset) -> Wave", "cfire::audio::gen_sfx(preset)", "Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).", "coin := audio.gen_sfx(audio.SfxPreset::Coin)"},
+                {"encode_wav", "fn encode_wav(wave: Wave) -> []byte", "cfire::audio::encode_wav(wave)", "Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.", "wav_bytes := audio.encode_wav(w)"},
+                {"decode_wav", "fn decode_wav(data: []byte) -> Wave!", "cfire::audio::decode_wav(data)", "Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.", "w := try audio.decode_wav(wav_bytes)"},
+                {"save_wav", "fn save_wav(wave: Wave, path: str) -> void!", "cfire::audio::save_wav(wave, path)", "Writes a `Wave` to disk as a standard `.wav` file.", "try audio.save_wav(w, \"tone.wav\")"},
+                {"load_wav", "fn load_wav(path: str) -> Wave!", "cfire::audio::load_wav(path)", "Loads and decodes a `.wav` file from disk or app bundle.", "w := try audio.load_wav(\"tone.wav\")"},
+                {"load_sound_from_wave", "fn load_sound_from_wave(wave: Wave) -> Sound", "cfire::audio::load_sound_from_wave(wave)", "Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.", "sfx := audio.load_sound_from_wave(coin)"},
+                {"load_sound", "fn load_sound(path: str) -> Sound!", "cfire::audio::load_sound(path)", "Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.", "sfx := try audio.load_sound(\"click.wav\")"},
+                {"Sound.play", "fn (s: Sound) play()", "s.play()", "Triggers polyphonic playback of the sound.", "sfx.play()"},
+                {"Sound.stop", "fn (s: Sound) stop()", "s.stop()", "Stops active voices playing this sound.", "sfx.stop()"},
+                {"Sound.set_volume", "fn (s: Sound) set_volume(vol: f32)", "s.set_volume(vol)", "Sets playback gain (`0.0` to `2.0`) for this sound.", "sfx.set_volume(0.75)"},
+                {"Sound.set_pitch", "fn (s: Sound) set_pitch(pitch: f32)", "s.set_pitch(pitch)", "Sets playback pitch/rate multiplier (`1.0` = original pitch).", "sfx.set_pitch(1.25)"},
+                {"Sound.set_pan", "fn (s: Sound) set_pan(pan: f32)", "s.set_pan(pan)", "Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).", "sfx.set_pan(-0.5)"},
+                {"Sound.set_looping", "fn (s: Sound) set_looping(loop: bool)", "s.set_looping(loop)", "Enables or disables seamless loop playback.", "sfx.set_looping(true)"},
+                {"open_stream", "fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!", "cfire::audio::open_stream(sample_rate, channels)", "Opens a real-time push `Stream` for custom DSP synthesis.", "stream := try audio.open_stream(48000, 2)"},
+                {"Stream.push_samples", "fn (st: Stream) push_samples(samples: []f32)", "st.push_samples(samples)", "Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.", "stream.push_samples(pcm_chunk)"},
+                {"Stream.needs_data", "fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool", "st.needs_data(target_frames)", "Returns `true` when buffered frames fall below `target_frames`.", "if stream.needs_data(1024) { ... }"}
+            }
+        },
+        {
             "vendor:raylib", "rl", "Raylib 5.0 2D/3D Graphics, Audio, Input & Raymath (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`)", "-lraylib",
             "Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion.",
             {
@@ -426,6 +457,11 @@ struct DiagnosticDoc {
                 {"IsKeyDown", "fn IsKeyDown(key: i32) -> bool", "IsKeyDown(key)", "Checks if a key is currently being pressed.", "if rl.IsKeyDown(rl.KEY_RIGHT) { ... }"},
                 {"GetMousePosition", "fn GetMousePosition() -> rl.Vector2", "GetMousePosition()", "Returns current mouse position XY as `rl.Vector2`.", "mouse := rl.GetMousePosition()"},
                 {"CheckCollisionRecs", "fn CheckCollisionRecs(rec1: rl.Rectangle, rec2: rl.Rectangle) -> bool", "CheckCollisionRecs(rec1, rec2)", "Checks collision between two rectangles.", "hit := rl.CheckCollisionRecs(player_box, wall_box)"},
+                {"GetSafeAreaRect", "fn GetSafeAreaRect() -> rl.Rectangle", "GetSafeAreaRect()", "Returns the usable safe-area rectangle inset past the iOS Dynamic Island and Home Indicator.", "safe := rl.GetSafeAreaRect()"},
+                {"BeginScissorMode", "fn BeginScissorMode(x: i32, y: i32, width: i32, height: i32)", "BeginScissorMode(x, y, width, height)", "Begins scissor clipping mode for scrollable views and clipped cards.", "rl.BeginScissorMode(0, 100, 393, 600)"},
+                {"EndScissorMode", "fn EndScissorMode()", "EndScissorMode()", "Ends scissor clipping mode and restores the full viewport.", "rl.EndScissorMode()"},
+                {"RequestKeyboard", "fn RequestKeyboard()", "RequestKeyboard()", "Requests the native iOS `<UIKeyInput>` software keyboard for the active frame.", "rl.RequestKeyboard()"},
+                {"TriggerHaptic", "fn TriggerHaptic(style: i32)", "TriggerHaptic(style)", "Triggers native iOS Taptic Engine impact feedback (0=Light, 1=Medium, 2=Heavy).", "rl.TriggerHaptic(0)"},
                 {"Vector2Add", "fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -> rl.Vector2", "Vector2Add(v1, v2)", "Adds two vectors (`<raymath.h>`).", "pos = rl.Vector2Add(pos, vel)"},
                 {"Vector2Scale", "fn Vector2Scale(v: rl.Vector2, scale: f32) -> rl.Vector2", "Vector2Scale(v, scale)", "Scales vector by float value (`<raymath.h>`).", "step := rl.Vector2Scale(dir, speed * dt)"},
                 {"Clamp", "fn Clamp(value: f32, min: f32, max: f32) -> f32", "Clamp(value, min, max)", "Clamps float value between `[min, max]` (`<raymath.h>`).", "x := rl.Clamp(pos.x, 0.0, 800.0)"}
@@ -1083,6 +1119,32 @@ fn main() {
     }
 })CF";
     }
+    if (mod == "core:audio") {
+        return R"CF(package main
+
+import "core:audio"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Zero-asset procedural sound effect playback
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    coin_sfx := audio.load_sound_from_wave(coin_wave)
+    coin_sfx.play()
+
+    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+    try audio.save_wav(tone, "a440.wav")
+
+    stream := try audio.open_stream(48000, 2)
+    if stream.needs_data(2048) {
+        stream.push_samples(tone.samples)
+    }
+    println("Audio RMS: {}, Peak: {}", audio.rms_level(), audio.peak_level())
+})CF";
+    }
     if (mod == "vendor:raygui") {
         return R"CF(package main
 
@@ -1150,6 +1212,7 @@ struct DiscoveredModule {
             else if (rel == "str.hpp") discovered.push_back({"core:str", "core/" + rel, false});
             else if (rel == "time.hpp") discovered.push_back({"core:time", "core/" + rel, false});
             else if (rel == "unicode.hpp") discovered.push_back({"core:unicode", "core/" + rel, false});
+            else if (rel == "audio.hpp") discovered.push_back({"core:audio", "core/" + rel, false});
             else if (rel == "crypto.hpp") {
                 discovered.push_back({"core:crypto/sha256", "core/" + rel, false});
                 discovered.push_back({"core:crypto/hmac", "core/" + rel, false});

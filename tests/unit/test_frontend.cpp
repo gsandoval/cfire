@@ -857,6 +857,106 @@ fn test_fn() {
 )", "cfire/ASSIGN-IMMUTABLE", "imm_compound.cf");
     }
 
+    // 5. Trailing closures and fn(...) -> R parameter types on user-defined methods
+    {
+        ScopedTempDir tmp("cfire_trailing_closure");
+        auto cf_path = tmp.file("trailing_closure.cf", R"(package main
+
+type Layout struct {
+    y: i32
+}
+
+fn (mut l: Layout) section(title: str, body: fn()) {
+    println("begin:{}", title)
+    body()
+    l.y += 10
+    println("end:{}:{}", title, l.y)
+}
+
+fn (mut l: Layout) with_card(h: i32, draw: fn(i32)) {
+    draw(l.y)
+    l.y += h
+}
+
+fn main() {
+    mut lay := Layout{y: 5}
+    lay.section("Header") || {
+        lay.with_card(20) |top_y| {
+            println("card_at={}", top_y)
+        }
+    }
+    println("final_y={}", lay.y)
+}
+)");
+
+        auto out_bin = tmp.path / "trailing_closure_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(trailing_closure.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("trailing_closure exited with code {}", rc));
+            require(out.contains("begin:Header"), "contains 'begin:Header'");
+            require(out.contains("card_at=5"), "contains 'card_at=5'");
+            require(out.contains("end:Header:35"), "contains 'card_at=35'");
+            require(out.contains("final_y=35"), "contains 'final_y=35'");
+        }
+    }
+
+    // 6. Multi-target core:audio synthesis, WAV codec, polyphonic Sound & Stream DSP
+    {
+        ScopedTempDir tmp("cfire_core_audio");
+        auto wav_path = (tmp.path / "test_tone.wav").string();
+        auto cf_path = tmp.file("audio_test.cf", std::format(R"CF(package main
+
+import "core:audio"
+import "core:os"
+
+fn main() {{
+    os.setenv("CFIRE_HEADLESS_TEST", "1")
+    try audio.init(48000, 2)
+    defer audio.close()
+
+    assert(audio.is_ready(), "audio engine should be ready")
+    audio.set_master_volume(0.8)
+
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.1, 0.5)
+    assert_eq(tone.frame_count(), 4800, "48kHz * 0.1s == 4800 frames")
+    assert_eq(tone.channels, 2, "stereo channels")
+
+    try audio.save_wav(tone, "{}")
+    loaded := try audio.load_wav("{}")
+    assert_eq(loaded.frame_count(), 4800, "decoded WAV frame count matches")
+    assert_eq(loaded.sample_rate, 48000, "decoded WAV sample rate matches")
+
+    sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+    sfx.set_volume(0.9)
+    sfx.set_pitch(1.2)
+    sfx.set_pan(-0.25)
+    sfx.play()
+    assert(sfx.is_playing(), "sound voice should be active")
+
+    stream := try audio.open_stream(48000, 2)
+    assert(stream.needs_data(2048), "fresh stream needs data")
+    stream.push_samples(tone.samples)
+    assert(audio.peak_level() > 0.05, "mixer peak level should be > 0.05")
+    assert(audio.rms_level() > 0.01, "mixer rms level should be > 0.01")
+
+    println("audio_ok:frames={{}}:ready={{}}", loaded.frame_count(), audio.is_ready())
+}}
+)CF", wav_path, wav_path));
+
+        auto out_bin = tmp.path / "audio_test_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(audio_test.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("audio_test exited with code {}:\n{}", rc, out));
+            require(out.contains("audio_ok:frames=4800:ready=true"), "audio_test output verified");
+        }
+    }
+
     std::println("--- PASS: test_section2_language_ergonomics");
 }
 
