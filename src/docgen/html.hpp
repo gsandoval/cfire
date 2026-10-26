@@ -147,6 +147,27 @@ fn main() {
 })";
     std::string snip5_cpp = compile_snippet_to_cpp("snippet_interop.cf", snip5_cf);
 
+    // 6. Multi-Target Audio DSP & Trailing Closures Snippet
+    std::string_view snip6_cf = R"(package main
+
+import "core:audio"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+
+    // Zero-asset procedural SFX + 64-voice polyphonic mixer
+    sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+    sfx.play()
+
+    // Real-time float32 DSP stream across macOS, iOS, WASM & Linux
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.05, 0.4)
+    stream := try audio.open_stream(48000, 2)
+    stream.push_samples(tone.samples)
+    println("rms={:.2f} peak={:.2f}", audio.rms_level(), audio.peak_level())
+})";
+    std::string snip6_cpp = compile_snippet_to_cpp("snippet_audio.cf", snip6_cf);
+
     std::string out;
     out += R"HTML(  <!-- Interactive Live Rosetta Showcase -->
   <h2 class="section-title">See the Lowering: Live `.cf` &rarr; ISO C++23</h2>
@@ -158,6 +179,7 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (`core:audio`)</button>
   </div>
 
   <!-- Tab 1: Intents -->
@@ -287,6 +309,32 @@ fn main() {
     <div class="console-preview">
       <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
       <div>$ cfire run main.cf<br />fnv1a hash: 0x811c9dc5</div>
+    </div>
+  </div>
+
+  <!-- Tab 6: Audio DSP -->
+  <div id="tab-audio" class="tab-panel">
+    <div class="rosetta-mobile-toggle">
+      <button class="active" onclick="toggleRosettaMobile(this, 'cf')">cfire (.cf)</button>
+      <button onclick="toggleRosettaMobile(this, 'cpp')">Emitted ISO C++23</button>
+    </div>
+    <div class="grid-2">
+      <div class="rosetta-pane-cf">
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Multi-Target Synth, SFX &amp; Stream</span></div>
+        <pre><code>)HTML";
+    out += html_escape(snip6_cf);
+    out += R"HTML(</code></pre>
+      </div>
+      <div class="rosetta-pane-cpp">
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>AudioToolbox / WebAudio / ALSA</span></div>
+        <pre><code>)HTML";
+    out += html_escape(snip6_cpp);
+    out += R"HTML(</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />rms=0.24 peak=0.40</div>
     </div>
   </div>)HTML";
 
@@ -442,6 +490,44 @@ fn main() {
         std::filesystem::path path;
         std::string content;
     };
+    if ( std::filesystem::exists(docs_dir / "GUIDE.md") && std::filesystem::exists(docs_dir / "index.template.html") ) {
+        std::ifstream g_ifs(docs_dir / "GUIDE.md");
+        std::stringstream g_ss;
+        g_ss << g_ifs.rdbuf();
+        std::string guide_txt = g_ss.str();
+
+        std::ifstream t_ifs(docs_dir / "index.template.html");
+        std::stringstream t_ss;
+        t_ss << t_ifs.rdbuf();
+        std::string tmpl_txt = t_ss.str();
+
+        std::string expected_btn = std::format("Explore {} Stdlib Modules", stdlib_catalog().size());
+        if (!tmpl_txt.contains(expected_btn)) {
+            return std::unexpected(std::format(
+                "Documentation audit failure: docs/index.template.html has stale stdlib module count (expected '{}').",
+                expected_btn));
+        }
+
+        // Verify every `## Chapter N:` in GUIDE.md has a corresponding `guide.html#chapter-N` roadmap card in index.template.html
+        std::istringstream g_lines(guide_txt);
+        std::string g_line;
+        while (std::getline(g_lines, g_line)) {
+            if (g_line.starts_with("## Chapter ")) {
+                auto rest = g_line.substr(11);
+                auto colon = rest.find(':');
+                if (colon != std::string::npos) {
+                    std::string ch_num = detail::trim_md(rest.substr(0, colon));
+                    std::string expected_href = "guide.html#chapter-" + ch_num;
+                    if (!tmpl_txt.contains(expected_href)) {
+                        return std::unexpected(std::format(
+                            "Documentation audit failure: docs/GUIDE.md defines 'Chapter {}', but docs/index.template.html is missing roadmap card link '{}'.",
+                            ch_num, expected_href));
+                    }
+                }
+            }
+        }
+    }
+
     if (check_only) {
         if (!std::filesystem::exists(docs_dir / "GUIDE.md")) {
             return std::unexpected(std::format("missing documentation file: {} (authoritative guide source required)", (docs_dir / "GUIDE.md").string()));

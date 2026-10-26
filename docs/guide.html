@@ -546,6 +546,7 @@ tr:hover td { background: #FAFAF9; }
             <li><a href="#chapter-9">9. The Cfire Build System: Native, Cross-Target &amp; WebAssembly</a></li>
             <li><a href="#chapter-10">10. Building Web Services, HTTP Servers &amp; Independent Routers (`core:net/http`)</a></li>
             <li><a href="#chapter-11">11. 2D/3D Graphics &amp; GUI Applications with Raylib and Raygui</a></li>
+            <li><a href="#chapter-12">12. Multi-Target Audio, Synthesis, WAV Codec &amp; Real-Time DSP (`core:audio`)</a></li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
@@ -1700,6 +1701,79 @@ fn main() {
  <code></code>`zsh cfire run app.cf cfire build app.cf   # macOS: produces MyApp.app; Windows: produces windowless .exe (-mwindows) <code></code>`  <li><strong>Run in the Web Browser</strong>:</li>
  <code></code>`zsh cfire run --target=wasm app.cf <code></code>` <code>cfire</code> compiles to WebAssembly using Emscripten, activates WebGL 2.0 and <code>-sASYNCIFY=1</code>, starts a local HTTP server, and opens your browser directly to the interactive Canvas viewport.  <li><strong>Run on iPhone / iPad Simulator</strong>:</li>
  <code></code>`zsh cfire run --ios app.cf <code></code>`</ul>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-12"><a id="ch12"></a>12. Multi-Target Audio, Synthesis, WAV Codec &amp; Real-Time DSP (<code>core:audio</code>)</h2>
+<p>Real-time audio synthesis, game sound effects, and digital signal processing (DSP) demand zero garbage-collection pauses and deterministic frame delivery. <code>cfire</code> includes a built-in, zero-external-dependency sound library (<code>import &quot;core:audio&quot;</code>) that runs identically across <strong>macOS</strong>, <strong>iOS Simulator &amp; Devices (<code>--ios</code>)</strong>, <strong>WebAssembly (<code>--wasm</code>)</strong>, <strong>Linux</strong>, and <strong>Headless CI</strong>.</p>
+<h3 id="121-multi-target-hardware-backends">12.1 Multi-Target Hardware Backends</h3>
+<p><code>core:audio</code> combines a portable C++23 64-voice polyphonic float32 mixer and RIFF/WAV codec with thin native OS hardware outputs:</p>
+<ul>
+  <li><strong>macOS Native</strong>: Apple <code>AudioToolbox.framework</code> (<code>AudioQueue</code> float32 hardware output).</li>
+  <li><strong>iOS Simulator &amp; Devices (<code>--target ios-sim</code> / <code>ios</code>)</strong>: <code>AudioToolbox.framework</code> + automatic <code>AVAudioSessionCategoryPlayback</code> activation so audio plays cleanly even when the hardware Ring/Silent switch is on silent.</li>
+  <li><strong>WebAssembly (<code>--target wasm</code>)</strong>: Browser <strong>Web Audio API</strong> (<code>AudioContext</code>) with automatic user-gesture unlock (<code>pointerdown</code>, <code>touchstart</code>, <code>keydown</code>).</li>
+  <li><strong>Linux &amp; Headless CI (<code>CFIRE_HEADLESS_TEST=1</code>)</strong>: Dynamic <code>dlopen(&quot;libasound.so.2&quot;)</code> ALSA hardware output on Linux desktops and a deterministic software null-sink mixer in headless test/container environments.</li>
+</ul>
+<h3 id="122-zero-asset-procedural-waveforms-sound-effects">12.2 Zero-Asset Procedural Waveforms &amp; Sound Effects</h3>
+<p>Games and interactive iOS/desktop UIs can synthesize waveforms (<code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code>), frequency-swept chirps, and retro/UI sound effects (<code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code>) in memory with zero external <code>.wav</code> files:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;core:audio&quot;
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Play zero-asset procedural UI / game sound effects
+    tap_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Tap))
+    coin_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+
+    coin_sfx.set_volume(0.9)
+    coin_sfx.set_pitch(1.15)
+    coin_sfx.set_pan(-0.2) // Slight left stereo pan
+    coin_sfx.play()
+    tap_sfx.play()
+}
+</code></pre>
+<h3 id="123-pure-c23-riffwav-encoding-decoding-file-io">12.3 Pure C++23 RIFF/WAV Encoding, Decoding &amp; File I/O</h3>
+<p><code>audio.Wave</code> exposes its interleaved stereo <code>samples: []f32</code> directly to <code>.cf</code> code and supports encoding and decoding 8-bit, 16-bit, 24-bit PCM, and 32-bit IEEE float <code>.wav</code> files or byte slices:</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;core:audio&quot;
+
+fn main() {
+    // Synthesize a 440 Hz A4 sine wave with smooth ADSR envelope
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+
+    // Save to disk (or ~/Documents on iOS) and reload
+    try audio.save_wav(tone, &quot;a440.wav&quot;)
+    loaded := try audio.load_wav(&quot;a440.wav&quot;)
+    println(&quot;Loaded WAV: {} frames ({} sec) @ {} Hz&quot;,
+        loaded.frame_count(), loaded.duration_sec(), loaded.sample_rate)
+}
+</code></pre>
+<h3 id="124-real-time-dsp-audio-streaming-live-ui-metering-audiostream">12.4 Real-Time DSP Audio Streaming &amp; Live UI Metering (<code>audio.Stream</code>)</h3>
+<p>For custom synthesizers, drum machines, and real-time visualizers (such as <code>examples/13-ios-native-ui</code>), <code>audio.open_stream</code> provides a lock-free float32 ring buffer alongside real-time RMS and peak amplitude meters (<code>audio.rms_level()</code> and <code>audio.peak_level()</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire</span></div>
+<pre><code>package main
+
+import &quot;core:audio&quot;
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+
+    stream := try audio.open_stream(48000, 2)
+    chunk := audio.gen_tone(audio.Waveform::Saw, 220.0, 0.05, 0.35)
+
+    if stream.needs_data(2048) {
+        stream.push_samples(chunk.samples)
+    }
+
+    println(&quot;Live Master RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
+}
+</code></pre>
     </main>
   </div>
 </div>
