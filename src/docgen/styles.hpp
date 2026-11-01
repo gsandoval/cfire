@@ -23,6 +23,12 @@ namespace detail {
     return out;
 }
 
+[[nodiscard]] inline auto icon_font_head_links() -> std::string {
+    return "  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n"
+           "  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n"
+           "  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=swap\" />\n";
+}
+
 [[nodiscard]] inline auto shared_css() -> std::string {
     return R"CSS(
 :root {
@@ -46,6 +52,29 @@ namespace detail {
     --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 1.25rem;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+    user-select: none;
+}
+.bento-icon {
+    font-size: 1.4rem;
+    color: var(--accent);
+}
 html, body {
     width: 100%;
     max-width: 100%;
@@ -271,12 +300,17 @@ pre::-webkit-scrollbar-thumb:hover {
     padding-bottom: 1.25rem;
     margin-bottom: 2rem;
     border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 .reader-breadcrumbs {
     font-family: var(--font-mono);
     font-size: 0.78rem;
     color: var(--muted);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .reader-breadcrumbs a {
     color: var(--muted);
@@ -295,6 +329,7 @@ pre::-webkit-scrollbar-thumb:hover {
 }
 .reader-mode-toggle {
     display: flex;
+    flex-shrink: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;

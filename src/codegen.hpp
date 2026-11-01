@@ -66,50 +66,51 @@ public:
     void init_imports() {
         for (const auto& imp : cf_.ast.imports) {
             if (imp.is_cpp) continue;
-            if (imp.path == "core:fs") {
+            std::string path = imp.path.starts_with("ext:") ? ("core:" + imp.path.substr(4)) : imp.path;
+            if (path == "core:fs") {
                 used_core_.insert("fs");
-            } else if (imp.path == "core:cli") {
+            } else if (path == "core:cli") {
                 used_core_.insert("cli");
-            } else if (imp.path.starts_with("core:compress/") || imp.path == "core:compress" || imp.path == "core:zstd") {
+            } else if (path.starts_with("core:compress/") || path == "core:compress" || path == "core:zstd") {
                 used_core_.insert("compress");
-            } else if (imp.path == "core:json") {
+            } else if (path == "core:json") {
                 used_core_.insert("json");
-            } else if (imp.path == "core:db/sqlite" || imp.path == "core:sqlite") {
+            } else if (path == "core:db/sqlite" || path == "core:sqlite") {
                 used_core_.insert("sqlite");
-            } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
+            } else if (path.starts_with("core:crypto/") || path == "core:crypto") {
                 used_core_.insert("crypto");
-            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket" || imp.path == "core:tls") {
+            } else if (path.starts_with("core:net/") || path == "core:net" || path == "core:http" || path == "core:websocket" || path == "core:tls") {
                 used_core_.insert("net");
-            } else if (imp.path == "core:time") {
+            } else if (path == "core:time") {
                 used_core_.insert("time");
-            } else if (imp.path == "core:os") {
+            } else if (path == "core:os") {
                 used_core_.insert("os");
-            } else if (imp.path.starts_with("core:sync/") || imp.path == "core:sync" || imp.path == "core:context") {
+            } else if (path.starts_with("core:sync/") || path == "core:sync" || path == "core:context") {
                 used_core_.insert("sync");
-            } else if (imp.path == "core:str") {
+            } else if (path == "core:str") {
                 used_core_.insert("str");
-            } else if (imp.path == "core:math" || imp.path == "core:rand") {
+            } else if (path == "core:math" || path == "core:rand") {
                 used_core_.insert("math");
-            } else if (imp.path.starts_with("core:encoding/") || imp.path == "core:encoding" || imp.path == "core:base64" || imp.path == "core:hex" || imp.path == "core:csv") {
+            } else if (path.starts_with("core:encoding/") || path == "core:encoding" || path == "core:base64" || path == "core:hex" || path == "core:csv") {
                 used_core_.insert("encoding");
-            } else if (imp.path == "core:regex") {
+            } else if (path == "core:regex") {
                 used_core_.insert("regex");
-            } else if (imp.path == "core:collections" || imp.path == "core:sort") {
+            } else if (path == "core:collections" || path == "core:sort") {
                 used_core_.insert("collections");
-            } else if (imp.path == "core:log") {
+            } else if (path == "core:log") {
                 used_core_.insert("log");
-            } else if (imp.path == "core:unicode") {
+            } else if (path == "core:unicode") {
                 used_core_.insert("unicode");
-            } else if (imp.path == "core:audio") {
+            } else if (path == "core:audio") {
                 used_core_.insert("audio");
-            } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
+            } else if (path == "core:ai" || path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
-            } else if (imp.path.starts_with("core:")) {
-                used_core_.insert(imp.path.substr(5));
-            } else if (imp.path == "vendor:raylib") {
+            } else if (path.starts_with("core:")) {
+                used_core_.insert(path.substr(5));
+            } else if (path == "vendor:raylib") {
                 std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
                 used_vendor_["raylib"] = alias;
-            } else if (imp.path == "vendor:raygui") {
+            } else if (path == "vendor:raygui") {
                 std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
                 used_vendor_["raygui"] = alias;
                 if (!used_vendor_.contains("raylib")) {
@@ -162,59 +163,60 @@ public:
                 cpp_headers.push_back(std::move(header));
                 continue;
             }
-            if (imp.path == "core:fs") {
+            std::string path = imp.path.starts_with("ext:") ? ("core:" + imp.path.substr(4)) : imp.path;
+            if (path == "core:fs") {
                 used_core_.insert("fs");
-            } else if (imp.path == "core:cli") {
+            } else if (path == "core:cli") {
                 used_core_.insert("cli");
-            } else if (imp.path.starts_with("core:compress/") || imp.path == "core:compress" || imp.path == "core:zstd") {
+            } else if (path.starts_with("core:compress/") || path == "core:compress" || path == "core:zstd") {
                 used_core_.insert("compress");
                 add_unique(defines, "#define CFIRE_USE_ZSTD 1");
                 add_unique(link_tags, "-lzstd");
-            } else if (imp.path == "core:json") {
+            } else if (path == "core:json") {
                 used_core_.insert("json");
                 add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
                 add_unique(link_tags, "-lsimdjson");
-            } else if (imp.path == "core:db/sqlite" || imp.path == "core:sqlite") {
+            } else if (path == "core:db/sqlite" || path == "core:sqlite") {
                 used_core_.insert("sqlite");
                 add_unique(defines, "#define CFIRE_USE_SQLITE 1");
                 add_unique(link_tags, "-lsqlite3");
-            } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
+            } else if (path.starts_with("core:crypto/") || path == "core:crypto") {
                 used_core_.insert("crypto");
-            } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket" || imp.path == "core:tls") {
+            } else if (path.starts_with("core:net/") || path == "core:net" || path == "core:http" || path == "core:websocket" || path == "core:tls") {
                 used_core_.insert("net");
-            } else if (imp.path == "core:time") {
+            } else if (path == "core:time") {
                 used_core_.insert("time");
-            } else if (imp.path == "core:os") {
+            } else if (path == "core:os") {
                 used_core_.insert("os");
-            } else if (imp.path.starts_with("core:sync/") || imp.path == "core:sync" || imp.path == "core:context") {
+            } else if (path.starts_with("core:sync/") || path == "core:sync" || path == "core:context") {
                 used_core_.insert("sync");
-            } else if (imp.path == "core:str") {
+            } else if (path == "core:str") {
                 used_core_.insert("str");
-            } else if (imp.path == "core:math" || imp.path == "core:rand") {
+            } else if (path == "core:math" || path == "core:rand") {
                 used_core_.insert("math");
-            } else if (imp.path.starts_with("core:encoding/") || imp.path == "core:encoding" || imp.path == "core:base64" || imp.path == "core:hex" || imp.path == "core:csv") {
+            } else if (path.starts_with("core:encoding/") || path == "core:encoding" || path == "core:base64" || path == "core:hex" || path == "core:csv") {
                 used_core_.insert("encoding");
-            } else if (imp.path == "core:regex") {
+            } else if (path == "core:regex") {
                 used_core_.insert("regex");
-            } else if (imp.path == "core:collections" || imp.path == "core:sort") {
+            } else if (path == "core:collections" || path == "core:sort") {
                 used_core_.insert("collections");
-            } else if (imp.path == "core:log") {
+            } else if (path == "core:log") {
                 used_core_.insert("log");
-            } else if (imp.path == "core:unicode") {
+            } else if (path == "core:unicode") {
                 used_core_.insert("unicode");
-            } else if (imp.path == "core:audio") {
+            } else if (path == "core:audio") {
                 used_core_.insert("audio");
-            } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
+            } else if (path == "core:ai" || path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
                 add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
                 add_unique(link_tags, "-lsimdjson");
-            } else if (imp.path.starts_with("core:")) {
-                used_core_.insert(imp.path.substr(5));
-            } else if (imp.path == "vendor:raylib") {
+            } else if (path.starts_with("core:")) {
+                used_core_.insert(path.substr(5));
+            } else if (path == "vendor:raylib") {
                 std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
                 used_vendor_["raylib"] = alias;
                 add_unique(link_tags, "-lraylib");
-            } else if (imp.path == "vendor:raygui") {
+            } else if (path == "vendor:raygui") {
                 std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
                 used_vendor_["raygui"] = alias;
                 if (!used_vendor_.contains("raylib")) {

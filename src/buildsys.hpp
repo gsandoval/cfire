@@ -1469,9 +1469,13 @@ inline auto resolve_external_dep_source(
 
     static const std::unordered_map<std::string, std::string> core_to_pc = {
         {"core:compress/zstd", "libzstd"},
+        {"ext:compress/zstd", "libzstd"},
         {"core:json", "simdjson"},
+        {"ext:json", "simdjson"},
         {"core:ai", "simdjson"},
+        {"ext:ai", "simdjson"},
         {"core:db/sqlite", "sqlite3"},
+        {"ext:db/sqlite", "sqlite3"},
     };
 
     std::unordered_set<std::string> seen_pc;
@@ -1514,7 +1518,7 @@ inline auto resolve_external_dep_source(
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
                 add_pc(it->second);
             }
-            if (imp.path == "core:ai") {
+            if (imp.path == "core:ai" || imp.path == "ext:ai") {
                 if (!is_wasm && plan.is_ios) {
                     plan.ldflags.insert(plan.ldflags.end(), {
                         "-framework", "Foundation",
@@ -1526,7 +1530,7 @@ inline auto resolve_external_dep_source(
                     });
                 }
             }
-            if (imp.path == "core:audio") {
+            if (imp.path == "core:audio" || imp.path == "ext:audio") {
                 if (!is_wasm) {
                     if (plan.is_ios) {
                         plan.ldflags.insert(plan.ldflags.end(), {

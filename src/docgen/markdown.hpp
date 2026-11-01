@@ -86,6 +86,26 @@ namespace detail {
     return out;
 }
 
+[[nodiscard]] inline auto clean_nav_title(std::string_view text) -> std::string {
+    std::string cleaned;
+    cleaned.reserve(text.size());
+    size_t i = 0;
+    while (i < text.size()) {
+        if (text[i] == '`') {
+            ++i;
+            continue;
+        }
+        if (text.substr(i).starts_with("$\\leftrightarrow$")) {
+            cleaned += "\xE2\x86\x94";
+            i += 17;
+            continue;
+        }
+        cleaned.push_back(text[i]);
+        ++i;
+    }
+    return html_escape(cleaned);
+}
+
 [[nodiscard]] inline auto slugify_heading(std::string_view text) -> std::string {
     std::string slug;
     for (char c : text) {
@@ -113,16 +133,27 @@ namespace detail {
     std::vector<std::string> cells;
     if (line.starts_with('|')) line.remove_prefix(1);
     if (line.ends_with('|')) line.remove_suffix(1);
-    size_t start = 0;
-    while (start < line.size()) {
-        size_t next = line.find('|', start);
-        if (next == std::string_view::npos) {
-            cells.push_back(trim_md(line.substr(start)));
-            break;
+    std::string current;
+    bool in_code = false;
+    for (size_t i = 0; i < line.size(); ++i) {
+        if (line[i] == '\\' && i + 1 < line.size() && line[i + 1] == '|') {
+            current.push_back('|');
+            ++i;
+            continue;
         }
-        cells.push_back(trim_md(line.substr(start, next - start)));
-        start = next + 1;
+        if (line[i] == '`') {
+            in_code = !in_code;
+            current.push_back('`');
+            continue;
+        }
+        if (line[i] == '|' && !in_code) {
+            cells.push_back(trim_md(current));
+            current.clear();
+            continue;
+        }
+        current.push_back(line[i]);
     }
+    cells.push_back(trim_md(current));
     return cells;
 }
 
@@ -232,7 +263,7 @@ namespace detail {
                     clean_out = clean_out.substr(10);
                 }
                 std::string tray = "<div class=\"terminal-tray\">\n"
-                                   "  <div class=\"terminal-tray-header\">&#10003; Expected Terminal Output</div>\n"
+                                   "  <div class=\"terminal-tray-header\" style=\"display:inline-flex;align-items:center;gap:0.35rem;\"><span class=\"material-symbols-outlined\" style=\"font-size:0.95rem;\" aria-hidden=\"true\">check_circle</span> Expected Terminal Output</div>\n"
                                    "  <pre><code>" + detail::html_escape(clean_out) + "</code></pre>\n"
                                    "</div>\n";
                 append_content(tray);
@@ -242,7 +273,7 @@ namespace detail {
             if ((lang == "cpp" || lang == "c++") && next_cpp_is_lowering) {
                 next_cpp_is_lowering = false;
                 std::string drawer = "<details class=\"lowering-drawer\" open>\n"
-                                     "  <summary><span>&#9881; " + detail::render_inline_md(pending_lowering_title) + "</span><span>ISO C++23</span></summary>\n"
+                                     "  <summary><span style=\"display:inline-flex;align-items:center;gap:0.35rem;\"><span class=\"material-symbols-outlined\" style=\"font-size:1rem;\" aria-hidden=\"true\">code_blocks</span> " + detail::render_inline_md(pending_lowering_title) + "</span><span>ISO C++23</span></summary>\n"
                                      "  <div class=\"lowering-body\">\n"
                                      "    <div class=\"code-header\"><span class=\"tag-cpp\">Emitted ISO C++23</span><button class=\"code-copy-btn\" onclick=\"copyCode(this)\">Copy</button></div>\n"
                                      "    <pre><code>" + detail::html_escape(code) + "</code></pre>\n"
@@ -681,7 +712,7 @@ namespace detail {
         auto& ch = chapters[i];
         std::string active_cls = (i == 0) ? " active" : "";
         panes_html += std::format("<article class=\"chapter-pane{}\" id=\"chapter-pane-{}\" data-chapter=\"{}\" data-part=\"{}\" data-title=\"{}\">\n",
-            active_cls, ch.num_str, ch.num_str, detail::html_escape(ch.part), detail::html_escape(ch.title));
+            active_cls, ch.num_str, ch.num_str, detail::clean_nav_title(ch.part), detail::clean_nav_title(ch.title));
         panes_html += "  <div class=\"chapter-intro\">\n" + ch.html + "  </div>\n";
 
         // Render Bite-Sized Topic Pill Bar if chapter has subheads
@@ -693,7 +724,7 @@ namespace detail {
                 std::string pill_active = (s == 0) ? " active" : "";
                 panes_html += std::format(
                     "    <a href=\"#{}\" class=\"topic-pill{}\" data-topic-pill=\"{}\" onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}.{}: {}</a>\n",
-                    sid, pill_active, sid, ch.num_str, sid, ch.num_str, s + 1, detail::html_escape(ch.subheads[s].title));
+                    sid, pill_active, sid, ch.num_str, sid, ch.num_str, s + 1, detail::clean_nav_title(ch.subheads[s].title));
             }
             panes_html += "  </div>\n";
 
@@ -702,7 +733,7 @@ namespace detail {
                 std::string sid = ch.subheads[s].id.substr(1);
                 std::string topic_active = (s == 0) ? " active-topic" : "";
                 panes_html += std::format("  <section class=\"guide-topic{}\" id=\"topic-{}\" data-topic-id=\"{}\" data-topic-title=\"{}\">\n",
-                    topic_active, sid, sid, detail::html_escape(ch.subheads[s].title));
+                    topic_active, sid, sid, detail::clean_nav_title(ch.subheads[s].title));
                 panes_html += ch.subheads[s].html;
 
                 // Bite-Sized Topic Pager (Prev Bite / Next Bite across chapters)
@@ -719,7 +750,7 @@ namespace detail {
                         "        <span class=\"pager-label\">&larr; PREVIOUS TOPIC (CH {}.{})</span>\n"
                         "        <strong class=\"pager-title\">{}</strong>\n"
                         "      </a>\n",
-                        prev_t.sub_id, prev_t.ch_num, prev_t.sub_id, prev_t.ch_num, prev_t.sub_idx + 1, detail::html_escape(prev_t.sub_title));
+                        prev_t.sub_id, prev_t.ch_num, prev_t.sub_id, prev_t.ch_num, prev_t.sub_idx + 1, detail::clean_nav_title(prev_t.sub_title));
                 }
 
                 if (flat_cursor + 1 < flat_topics.size()) {
@@ -729,7 +760,7 @@ namespace detail {
                         "        <span class=\"pager-label\">NEXT TOPIC (CH {}.{}) &rarr;</span>\n"
                         "        <strong class=\"pager-title\">{}</strong>\n"
                         "      </a>\n",
-                        next_t.sub_id, next_t.ch_num, next_t.sub_id, next_t.ch_num, next_t.sub_idx + 1, detail::html_escape(next_t.sub_title));
+                        next_t.sub_id, next_t.ch_num, next_t.sub_id, next_t.ch_num, next_t.sub_idx + 1, detail::clean_nav_title(next_t.sub_title));
                 } else {
                     panes_html += std::format(
                         "      <a href=\"reference.html\" class=\"pager-card pager-next\">\n"
@@ -756,7 +787,7 @@ namespace detail {
             panes_html += std::format("    <a href=\"#{}\" class=\"pager-card pager-prev\" onclick=\"navigateToChapter('{}'); return false;\">\n",
                 prev.id, prev.num_str);
             panes_html += "      <span class=\"pager-label\">&larr; PREVIOUS CHAPTER</span>\n";
-            panes_html += std::format("      <strong class=\"pager-title\">Ch {}: {}</strong>\n", prev.num_str, detail::html_escape(prev.title));
+            panes_html += std::format("      <strong class=\"pager-title\">Ch {}: {}</strong>\n", prev.num_str, detail::clean_nav_title(prev.title));
             panes_html += "    </a>\n";
         }
 
@@ -765,7 +796,7 @@ namespace detail {
             panes_html += std::format("    <a href=\"#{}\" class=\"pager-card pager-next\" onclick=\"navigateToChapter('{}'); return false;\">\n",
                 next.id, next.num_str);
             panes_html += "      <span class=\"pager-label\">NEXT CHAPTER &rarr;</span>\n";
-            panes_html += std::format("      <strong class=\"pager-title\">Ch {}: {}</strong>\n", next.num_str, detail::html_escape(next.title));
+            panes_html += std::format("      <strong class=\"pager-title\">Ch {}: {}</strong>\n", next.num_str, detail::clean_nav_title(next.title));
             panes_html += "    </a>\n";
         } else {
             panes_html += "    <a href=\"reference.html\" class=\"pager-card pager-next\">\n";
@@ -792,7 +823,7 @@ namespace detail {
                 const auto& sh = ch.subheads[s];
                 std::string active_toc = (i == 0 && s == 0) ? " class=\"active-toc-item\"" : "";
                 toc_rail_html += std::format("        <li><a href=\"{}\"{} onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}.{}: {}</a></li>\n",
-                    sh.id, active_toc, ch.num_str, sh.id.substr(1), ch.num_str, s + 1, detail::html_escape(sh.title));
+                    sh.id, active_toc, ch.num_str, sh.id.substr(1), ch.num_str, s + 1, detail::clean_nav_title(sh.title));
             }
             toc_rail_html += "      </ul>\n";
         } else {
@@ -854,6 +885,7 @@ namespace detail {
     out += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n";
     out += "  <title>Language Guide — cfire (pronounced sapphire)</title>\n";
     out += "  <link rel=\"icon\" type=\"image/png\" href=\"assets/cfire_logo_emblem.png\" />\n";
+    out += detail::icon_font_head_links();
     out += "  <style>" + detail::shared_css() + "</style>\n";
     out += "</head>\n<body>\n";
     out += detail::navbar_html("guide");
@@ -873,7 +905,7 @@ namespace detail {
                 out += "      </ul>\n";
             }
             current_rendered_part = entry.part;
-            out += "      <h4 class=\"sidebar-part-title\">" + detail::html_escape(current_rendered_part) + "</h4>\n";
+            out += "      <h4 class=\"sidebar-part-title\">" + detail::clean_nav_title(current_rendered_part) + "</h4>\n";
             out += "      <ul class=\"sidebar-chapter-list\">\n";
         }
         std::string is_active_cls = (entry.num == 1) ? " is-active" : "";
@@ -886,13 +918,13 @@ namespace detail {
                            "          </a>",
             is_active_cls, entry.num_str,
             entry.id, active_cls, entry.num_str, entry.num_str,
-            entry.num_str, detail::html_escape(entry.title),
+            entry.num_str, detail::clean_nav_title(entry.title),
             badge_html);
         if (!entry.subheads.empty()) {
             out += "\n          <ul class=\"subhead-list\">\n";
             for (const auto& sub : entry.subheads) {
                 out += std::format("            <li><a href=\"{}\" onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}</a></li>\n",
-                    sub.id, entry.num_str, sub.id.substr(1), detail::html_escape(sub.title));
+                    sub.id, entry.num_str, sub.id.substr(1), detail::clean_nav_title(sub.title));
             }
             out += "          </ul>\n        ";
         }
@@ -932,7 +964,7 @@ namespace detail {
 
     out += panes_html;
     out += R"HTML(      <footer class="footer" style="margin-top: 3.5rem; padding: 2rem 0; border-top: 1px solid var(--border);">
-        Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
+        Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the <code>core:*</code> Stdlib &amp; Diagnostics Reference &rarr;</a>
       </footer>
     </main>
 )HTML";
@@ -1359,7 +1391,9 @@ window.addEventListener('hashchange', updateChapterFromHash);
 ## Grammar & Syntax Rules
 - Package: `package <name>` (canonical entry: `package main`)
 - Imports:
-  - Stdlib: `import "core:<module>"` (e.g. `import "core:fs"`)
+  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`)
+  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:db/sqlite"`, `import "ext:ai"`)
+  - Bundled Vendor: `import "vendor:<module>"` (e.g. `import "vendor:raylib"`, `import "vendor:raygui"`)
   - Local package: `import "./path/to/pkg"`
   - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")`
 - Variable Declarations:
@@ -1406,7 +1440,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `cfire test`: Run tests with assertion location reporting
   - `cfire eval 'expr'`: Immediate evaluation of expressions
 
-## Standard Library Modules (`core:*`)
+## Standard Library Modules (`core:*`, `ext:*`, `vendor:*`)
 )";
 
     for (const auto& mod : stdlib_catalog()) {

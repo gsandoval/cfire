@@ -1,6 +1,6 @@
 package main
 
-import "core:ai" as ai
+import "ext:ai" as ai
 
 type CalculateArgs struct {
     Expression: str `json:"expression" desc:"Mathematical expression to evaluate"`

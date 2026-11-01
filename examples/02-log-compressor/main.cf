@@ -2,7 +2,7 @@ package main
 
 import "core:cli"
 import "core:fs"
-import "core:compress/zstd"
+import "ext:compress/zstd"
 
 type Options struct {
     Input: path    `cli:"--input, -i" help:"Input file to compress"`

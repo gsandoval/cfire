@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
   <title>cfire — Ergonomic Systems Language Lowering 1-to-1 to ISO C++23</title>
   <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=swap" />
   <style>
 :root {
     --bg: #0D1117;
@@ -27,6 +30,29 @@
     --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 1.25rem;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+    user-select: none;
+}
+.bento-icon {
+    font-size: 1.4rem;
+    color: var(--accent);
+}
 html, body {
     width: 100%;
     max-width: 100%;
@@ -861,15 +887,15 @@ tr:hover td { background: #1F242C; }
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
-      <a class="btn btn-secondary" href="guide.html">Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html">Explore 33 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 33 Stdlib Modules</a>
     </div>
 
     <div id="install">
       <div class="install-bar">
         <span class="prompt">$</span>
         <span id="cmd-install">curl -fsSL https://cfire.memo.engineer/install.sh | sh</span>
-        <button class="copy-btn" onclick="copyInstallCmd()">Copy</button>
+        <button class="copy-btn" onclick="copyInstallCmd()" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">content_copy</span><span id="copy-install-label">Copy</span></button>
       </div>
       <div style="margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); font-family: var(--font-mono);">
         Prefer building from source or containers? <code>git clone https://github.com/gsandoval/cfire &amp;&amp; cd cfire &amp;&amp; make &amp;&amp; sudo make install</code> &bull; <code>docker build -t cfire .</code> &bull; Verify with <code>cfire doctor</code>
@@ -896,7 +922,7 @@ tr:hover td { background: #1F242C; }
       <div class="card-num">02. THE C++23 PRODUCTION REALITY</div>
       <h3>Why Target Standard C++23</h3>
       <p>
-        In game engines, audio DSP, robotics, and LLM runtimes, C++ remains the native ABI. Yet raw C++ imposes daily friction: implicit copies, unannotated call-site mutations, verbose sum types (`std::variant`), and complex build files.
+        In game engines, audio DSP, robotics, and LLM runtimes, C++ remains the native ABI. Yet raw C++ imposes daily friction: implicit copies, unannotated call-site mutations, verbose sum types (<code>std::variant</code>), and complex build files.
       </p>
     </div>
 
@@ -918,7 +944,7 @@ tr:hover td { background: #1F242C; }
     <div class="bento-card">
       <div>
         <div class="bento-card-header">
-          <span style="font-size: 1.25rem; color: #F97316;">&#128737;</span>
+          <span class="material-symbols-outlined bento-icon" aria-hidden="true">shield</span>
           <span class="bento-tag">STATIC INTENT &amp; MATCH CHECKS</span>
         </div>
         <h3>Call-Site Intent &amp; Pattern Hygiene</h3>
@@ -935,7 +961,7 @@ tr:hover td { background: #1F242C; }
     <div class="bento-card">
       <div>
         <div class="bento-card-header">
-          <span style="font-size: 1.25rem; color: #F97316;">&#9201;</span>
+          <span class="material-symbols-outlined bento-icon" aria-hidden="true">timer_off</span>
           <span class="bento-tag">DETERMINISM</span>
         </div>
         <h3>Scoped RAII &amp; Defer Cleanup</h3>
@@ -952,16 +978,16 @@ tr:hover td { background: #1F242C; }
     <div class="bento-card">
       <div>
         <div class="bento-card-header">
-          <span style="font-size: 1.25rem; color: #F97316;">&#129513;</span>
-          <span class="bento-tag">TIERED STDLIB</span>
+          <span class="material-symbols-outlined bento-icon" aria-hidden="true">widgets</span>
+          <span class="bento-tag">3-NAMESPACE STDLIB</span>
         </div>
-        <h3>Foundational Core + Domain Extensions</h3>
+        <h3>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Tiers</h3>
         <p>
-          <strong>Tier 1 (Foundational Core)</strong> provides small, zero-dependency language primitives (<code>fs</code>, <code>time</code>, <code>sync</code>, <code>str</code>, <code>mem</code>, <code>cli</code>). <strong>Tier 2 (Extensions)</strong> provides opt-in domain headers (<code>ai</code>, <code>audio</code>, <code>db/sqlite</code>, <code>net/http</code>, <code>vendor:raylib</code>) that are only included and linked when imported.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 21 zero-dependency C++23 primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:cli</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 10 opt-in domain packages (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
         </p>
       </div>
       <div class="bento-footer">
-        <code>Tier 1: zero external deps &bull; Tier 2: opt-in domain &amp; platform packages</code>
+        <code>core:* (zero deps) &bull; ext:* (opt-in domain) &bull; vendor:* (C/C++ engines)</code>
       </div>
     </div>
 
@@ -969,16 +995,16 @@ tr:hover td { background: #1F242C; }
     <div class="bento-card span-2">
       <div>
         <div class="bento-card-header">
-          <span style="font-size: 1.25rem; color: #F97316;">&#129504;</span>
-          <span class="bento-tag">TIER 2 EXTENSION: CORE:AI &amp; SQLITE</span>
+          <span class="material-symbols-outlined bento-icon" aria-hidden="true">neurology</span>
+          <span class="bento-tag">DOMAIN EXTENSIONS: EXT:AI &amp; EXT:DB/SQLITE</span>
         </div>
         <h3>Opt-In AI Clients, Local Vectors &amp; MCP Tool Servers</h3>
         <p>
-          When imported, <code>core:ai</code> and <code>core:db/sqlite</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
+          When imported, <code>ext:ai</code>, <code>ext:db/sqlite</code>, and <code>ext:json</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
         </p>
       </div>
       <div class="bento-footer">
-        <code>core:ai &bull; ai.embed("local", ...) &bull; sqlite vec_cosine_similarity() &bull; json.schema[T]()</code>
+        <code>ext:ai &bull; ext:db/sqlite &bull; ext:json &bull; json.schema[T]()</code>
       </div>
     </div>
 
@@ -986,7 +1012,7 @@ tr:hover td { background: #1F242C; }
     <div class="bento-card">
       <div>
         <div class="bento-card-header">
-          <span style="font-size: 1.25rem; color: #F97316;">&#128187;</span>
+          <span class="material-symbols-outlined bento-icon" aria-hidden="true">devices</span>
           <span class="bento-tag">COMPILER TARGETS</span>
         </div>
         <h3>Pedantic-Clean ISO C++23</h3>
@@ -1042,47 +1068,47 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
         <tr>
           <td><strong>Compilation Model</strong></td>
           <td>Direct native compilation (Clang/GCC/MSVC).</td>
-          <td>Syntax-level transpiler to C++20/23 (`cppfront`).</td>
+          <td>Syntax-level transpiler to C++20/23 (<code>cppfront</code>).</td>
           <td>Transpiles to C/C++ (Nim) or C++ (Jakt).</td>
           <td>Direct LLVM/Cranelift compilation via Cargo.</td>
           <td>Direct native compilation (Odin LLVM; Go runtime).</td>
-          <td><strong>1-to-1 lowering to ISO C++23</strong> (`#line`-mapped, pedantic-clean).</td>
+          <td><strong>1-to-1 lowering to ISO C++23</strong> (<code>#line</code>-mapped, pedantic-clean).</td>
         </tr>
         <tr>
           <td><strong>Memory &amp; Safety Model</strong></td>
           <td>Manual RAII; implicit copies and unannotated mutable refs.</td>
-          <td>Parameter intents (`in`, `inout`, `out`, `move`) + bounds checks.</td>
+          <td>Parameter intents (<code>in</code>, <code>inout</code>, <code>out</code>, <code>move</code>) + bounds checks.</td>
           <td>ORC ref-counting (Nim) or ref-counted/RAII C++ (Jakt).</td>
           <td>Full compile-time borrow &amp; lifetime checker.</td>
           <td>Manual allocators (Odin) or tracing GC (Go).</td>
-          <td><strong>C++23 RAII + 8 static checks</strong> (call-site `mut`/`move`, alias exclusivity, local use-after-move, `match` reachability; no borrow checker).</td>
+          <td><strong>C++23 RAII + 8 static checks</strong> (call-site <code>mut</code>/<code>move</code>, alias exclusivity, local use-after-move, <code>match</code> reachability; no borrow checker).</td>
         </tr>
         <tr>
           <td><strong>C &amp; C++ Interop</strong></td>
           <td>Native by definition, verbose build wiring.</td>
           <td>Seamless mixed Cpp1/Cpp2 in the same file.</td>
-          <td>Pragmas/wrappers (`{.importcpp.}` in Nim; `extern` in Jakt).</td>
-          <td>Requires `unsafe` C FFI or `cxx`/`bindgen` bridges.</td>
-          <td>`foreign` C blocks (Odin) or `cgo` overhead (Go).</td>
-          <td><strong>Direct Clang AST header ingestion</strong> (`import cpp`) + inline `cpp { ... }`.</td>
+          <td>Pragmas/wrappers (<code>{.importcpp.}</code> in Nim; <code>extern</code> in Jakt).</td>
+          <td>Requires <code>unsafe</code> C FFI or <code>cxx</code>/<code>bindgen</code> bridges.</td>
+          <td><code>foreign</code> C blocks (Odin) or <code>cgo</code> overhead (Go).</td>
+          <td><strong>Direct Clang AST header ingestion</strong> (<code>import cpp</code>) + inline <code>cpp { ... }</code>.</td>
         </tr>
         <tr>
           <td><strong>Standard Library Scope</strong></td>
           <td>STL only; JSON, HTTP, SQLite require external deps.</td>
           <td>Uses standard C++ STL directly.</td>
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
-          <td>Minimal `std`; relies on Cargo ecosystem.</td>
-          <td>Batteries-included `core:` / `vendor:` (Odin) and `net/http` (Go).</td>
-          <td><strong>Tiered `core:*` &amp; `vendor:*`</strong>: Tier 1 foundational core + Tier 2 opt-in extensions (JSON, HTTP, SQLite, Audio, AI/MCP).</td>
+          <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
+          <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
+          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 21 zero-dep core modules + 10 opt-in domain extensions (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>) + 2 vendor engines.</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
           <td>None (already standard C++).</td>
-          <td>Emits `.cpp`, coupled to `cpp2util.h`.</td>
+          <td>Emits <code>.cpp</code>, coupled to <code>cpp2util.h</code>.</td>
           <td>Generated C/C++ is compiler-internal and not meant for hand maintenance.</td>
           <td>Committed to Rust/Cargo toolchain.</td>
           <td>Committed to Odin or Go toolchain.</td>
-          <td><strong>`cfire eject`</strong> outputs human-readable ISO C++23 + self-contained `CMakeLists.txt`.</td>
+          <td><strong><code>cfire eject</code></strong> outputs human-readable ISO C++23 + self-contained <code>CMakeLists.txt</code>.</td>
         </tr>
       </tbody>
     </table>
@@ -1102,7 +1128,7 @@ cd cfire &amp;&amp; make &amp;&amp; ./cfire doctor</code></pre>
     </div>
     <div class="step-card">
       <span class="step-badge">STEP 2</span>
-      <h4>Write `main.cf`</h4>
+      <h4>Write <code>main.cf</code></h4>
       <p>Create a clean, idiomatic service file with built-in stdlib:</p>
       <pre><code>package main
 
@@ -1110,7 +1136,7 @@ import "core:time"
 
 fn main() {
     now := time.now()
-    println("Hello from cfire! &#128640;")
+    println("Hello from cfire!")
     println("Time: {}", now.format_rfc3339())
 }</code></pre>
     </div>
@@ -1136,32 +1162,32 @@ fn main() {
     </a>
     <a class="roadmap-card" href="guide.html#chapter-2">
       <div class="roadmap-num">Chapter 2</div>
-      <h4>5-Minute Quickstart &amp; Toolchain</h4>
+      <h4>Quickstart &amp; Toolchain Tour</h4>
       <p>One-shot <code>eval</code>, single-file scripts, native binaries, sanitizer verification, and clean C++23 ejection.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-3">
       <div class="roadmap-num">Chapter 3</div>
-      <h4>Project Layout &amp; Build System</h4>
+      <h4>Workspaces, CLI &amp; Build System</h4>
       <p>Declarative <code>build.cf</code>, target matrices (Native, Web, iOS), PCH acceleration, and CLI command reference.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-4">
       <div class="roadmap-num">Chapter 4</div>
-      <h4>Syntax, Primitives &amp; Pointers</h4>
+      <h4>Primitives, Collections &amp; Control Flow</h4>
       <p>Immutability by default, slices (<code>[]T</code>), fixed arrays (<code>[N]T</code>), maps, and RAII smart pointers (<code>*T</code>, <code>^T</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-5">
       <div class="roadmap-num">Chapter 5</div>
-      <h4>Functions &amp; Intent Safety</h4>
+      <h4>Functions &amp; Call-Site Intent Safety</h4>
       <p>Explicit <code>in</code>, <code>mut</code>, <code>move</code> intents, mandatory call-site <code>mut</code> markers, and escape analysis.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-6">
       <div class="roadmap-num">Chapter 6</div>
-      <h4>Structs, Tags &amp; Algebraic Enums</h4>
+      <h4>Structs, Tags, Enums &amp; Interfaces</h4>
       <p>Compile-time struct tags (<code>json</code>, <code>sql</code>, <code>cli</code>, <code>desc</code>), algebraic enums, and pattern matching.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-7">
       <div class="roadmap-num">Chapter 7</div>
-      <h4>Fearless Error Handling &amp; Defer</h4>
+      <h4>Error Handling, Optionals &amp; Defer</h4>
       <p>Value-based fallible returns (<code>T!</code>), early propagation (<code>try</code>), fallback values, and deterministic <code>defer</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-8">
@@ -1176,54 +1202,54 @@ fn main() {
     </a>
     <a class="roadmap-card" href="guide.html#chapter-10">
       <div class="roadmap-num">Chapter 10</div>
-      <h4>Structured Concurrency &amp; Sync</h4>
+      <h4>Structured Concurrency &amp; Channels</h4>
       <p>Lexically bounded <code>async.scope</code> pools, typed channels (<code>core:sync</code>), and cooperative Context cancellation.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-11">
       <div class="roadmap-num">Chapter 11</div>
-      <h4>Zero-Friction C &amp; C++ Interop</h4>
+      <h4>C/C++ Interop &amp; Native Dependencies</h4>
       <p>Clang JSON AST header ingestion (<code>import cpp</code>), automatic string boundary coercion, and inline <code>cpp { ... }</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-12">
       <div class="roadmap-num">Chapter 12</div>
-      <h4>Integrated Testing &amp; Diagnostics</h4>
+      <h4>Testing, Sanitizers &amp; Diagnostics</h4>
       <p>Built-in <code>test "..."</code> runner, ASan/UBSan sanitizers (<code>--sanitize</code>), and <code>CF1xxx</code>-<code>CF5xxx</code> compiler error codes.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-13">
       <div class="roadmap-num">Chapter 13</div>
       <h4>HTTP, SSE, WebSockets &amp; TLS</h4>
-      <p>High-performance HTTP/1.1 client, SSE streaming, fluent routers, RFC 6455 WebSockets, and TLS 1.3 encryption.</p>
+      <p>High-performance HTTP/1.1 client (<code>ext:net/http</code>), SSE streaming, routers, RFC 6455 WebSockets (<code>ext:net/websocket</code>), and TLS 1.3 (<code>ext:net/tls</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-14">
       <div class="roadmap-num">Chapter 14</div>
-      <h4>Serialization, SQLite &amp; Zstandard</h4>
-      <p>Compile-time SIMD JSON, embedded SQLite WAL with vector similarity, CSV parsing, and native Zstandard compression.</p>
+      <h4>JSON, SQLite, Zstd &amp; Cryptography</h4>
+      <p>Compile-time SIMD JSON (<code>ext:json</code>), embedded SQLite WAL with vector similarity (<code>ext:db/sqlite</code>), Zstandard (<code>ext:compress/zstd</code>), and <code>core:crypto/*</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-15">
       <div class="roadmap-num">Chapter 15</div>
-      <h4>2D/3D Graphics &amp; Native iOS UI</h4>
-      <p>Hardware-accelerated windowing via Raylib, Raygui controls, macOS .app bundles, WebAssembly, and native iOS UIKit.</p>
+      <h4>2D/3D Graphics &amp; Native UI</h4>
+      <p>Hardware-accelerated windowing via <code>vendor:raylib</code>, <code>vendor:raygui</code> controls, macOS .app bundles, WebAssembly, and native iOS UIKit.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-16">
       <div class="roadmap-num">Chapter 16</div>
-      <h4>Multi-Target Audio DSP &amp; Synthesis</h4>
-      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams.</p>
+      <h4>Audio Synthesis &amp; Real-Time DSP</h4>
+      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>ext:audio</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-17">
       <div class="roadmap-num">Chapter 17</div>
-      <h4>AI-First LLMs, Vectors &amp; MCP</h4>
-      <p>Unified OpenAI/Anthropic/Gemini/Ollama client, local embeddings, SQLite vector RAG, and typed MCP tool servers.</p>
+      <h4>LLMs, Multimodal RAG &amp; MCP</h4>
+      <p>Unified OpenAI/Anthropic/Gemini/Ollama client (<code>ext:ai</code>), local embeddings, SQLite vector RAG, and typed MCP tool servers.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-18">
       <div class="roadmap-num">Chapter 18</div>
-      <h4>Full-Stack Production Patterns</h4>
+      <h4>Production Patterns &amp; Examples</h4>
       <p>End-to-end architectures, canonical projects index (01-hello-core through 16-audio-synth), and best practices.</p>
     </a>
   </div>
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore `core:*` Library Catalog (33 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Catalog (33 Modules) &rarr;</a>
   </div>
 </div>
 
@@ -1270,9 +1296,11 @@ function toggleRosettaMobile(btn, pane) {
 function copyInstallCmd() {
   const text = document.getElementById('cmd-install').innerText;
   navigator.clipboard.writeText(text).then(() => {
-    const btn = document.querySelector('.copy-btn');
-    btn.innerText = 'COPIED';
-    setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
+    const lbl = document.getElementById('copy-install-label') || document.querySelector('.copy-btn');
+    if (lbl) {
+      lbl.innerText = 'COPIED';
+      setTimeout(() => { lbl.innerText = 'Copy'; }, 2000);
+    }
   });
 }
 

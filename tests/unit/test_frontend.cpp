@@ -416,6 +416,8 @@ fn main() -> i32 {
     require(has_module("vendor:raylib"), "catalog discovered vendor:raylib");
     require(has_module("vendor:raygui"), "catalog discovered vendor:raygui");
     require(has_module("core:math"), "catalog discovered core:math");
+    require(has_module("ext:ai"), "catalog discovered ext:ai");
+    require(has_module("ext:db/sqlite"), "catalog discovered ext:db/sqlite");
 
     auto pkg_md = cfire::doc::extract_file_markdown_doc("examples/09-stdlib-test-pointers/main.cf");
     require(pkg_md.has_value() && pkg_md->contains("compute_fixed_sum") && pkg_md->contains("type Metric struct"),

@@ -135,7 +135,7 @@ fn main() {
     // 3. WebSockets & Concurrency Snippet
     std::string_view snip3_cf = R"(package main
 
-import "core:net/websocket"
+import "ext:net/websocket"
 import "core:sync/context"
 import "core:time"
 
@@ -154,7 +154,7 @@ fn main() {
     // 4. JSON Struct Tags Snippet
     std::string_view snip4_cf = R"(package main
 
-import "core:json"
+import "ext:json"
 
 type Metric struct {
     service: str  `json:"service"`
@@ -186,7 +186,7 @@ fn main() {
     // 6. Multi-Target Audio DSP & Trailing Closures Snippet
     std::string_view snip6_cf = R"(package main
 
-import "core:audio"
+import "ext:audio"
 
 fn main() {
     try audio.init(48000, 2)
@@ -207,9 +207,9 @@ fn main() {
     // 7. AI-First Multimodal Documents, Local Embeddings, Vector SQLite & MCP Tooling Snippet
     std::string_view snip7_cf = R"CF(package main
 
-import "core:ai" as ai
-import "core:db/sqlite" as sqlite
-import "core:json" as json
+import "ext:ai" as ai
+import "ext:db/sqlite" as sqlite
+import "ext:json" as json
 
 type QueryPlan struct {
     Target: str `json:"target" desc:"Search target concept"`
@@ -251,7 +251,7 @@ fn main() {
 
     std::string out;
     out += R"HTML(  <!-- Interactive Live Rosetta Showcase -->
-  <h2 class="section-title">See the Lowering: Live `.cf` &rarr; ISO C++23</h2>
+  <h2 class="section-title">See the Lowering: Live <code>.cf</code> &rarr; ISO C++23</h2>
   <p class="section-subtitle">Select any systems pattern below to inspect the clean, idiomatic ISO C++23 code emitted by the compiler.</p>
 
   <div class="tabs">
@@ -260,8 +260,8 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
-    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (`core:audio`)</button>
-    <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (`core:ai`)</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>ext:audio</code>)</button>
+    <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (<code>ext:ai</code>)</button>
   </div>
 
   <!-- Tab 1: Intents -->
@@ -286,8 +286,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -320,8 +320,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -354,8 +354,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -388,8 +388,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -422,8 +422,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -456,8 +456,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -490,8 +490,8 @@ fn main() {
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-header">
-        <span>Terminal Execution Telemetry</span>
-        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
@@ -517,7 +517,7 @@ fn main() {
 
     if (tmpl.empty()) {
         tmpl = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n"
-               "  <title>cfire — Systems Language (pronounced sapphire)</title>\n  <style>" + detail::shared_css() + "</style>\n"
+               "  <title>cfire — Systems Language (pronounced sapphire)</title>\n" + detail::icon_font_head_links() + "  <style>" + detail::shared_css() + "</style>\n"
                "</head>\n<body>\n" + detail::navbar_html("index") +
                "<div class=\"container\">\n  <!-- REPRODUCIBLE_METRICS -->\n  <!-- REPRODUCIBLE_ROSETTA_SHOWCASE -->\n</div>\n"
                "</body>\n</html>\n";
@@ -560,6 +560,7 @@ fn main() {
     out += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n";
     out += "  <title>Stdlib &amp; Diagnostics Reference — cfire</title>\n";
     out += "  <link rel=\"icon\" type=\"image/png\" href=\"assets/cfire_logo_emblem.png\" />\n";
+    out += detail::icon_font_head_links();
     out += "  <style>" + detail::shared_css() + "</style>\n";
     out += "</head>\n<body>\n";
     out += detail::navbar_html("reference");
@@ -568,7 +569,7 @@ fn main() {
     out += "    <details class=\"sidebar-details\" open>\n";
     out += "      <summary class=\"sidebar-summary\">\n";
     out += "        <span>Modules &amp; Diagnostics</span>\n";
-    out += "        <span class=\"sidebar-chevron\">&#9662;</span>\n";
+    out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
     out += "      </summary>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
     out += "        <div style=\"position:relative; margin-bottom: 0.75rem;\">\n";
@@ -578,8 +579,27 @@ fn main() {
     out += "        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0; margin-bottom: 0.75rem;\">\n";
     out += std::format("          <li class=\"nav-item\"><a href=\"#overview\" id=\"nav-pane-overview\" class=\"active\" onclick=\"navigateToRefPane('overview'); return false;\"><strong>Overview (All {} Modules)</strong></a></li>\n", mods.size());
     out += "        </ul>\n";
-    out += std::format("        <h4>`core:*` &amp; `vendor:*` Modules ({})</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n", mods.size());
+    std::size_t core_count = 0, ext_count = 0, vendor_count = 0;
     for (const auto& mod : mods) {
+        if (mod.import_path.starts_with("core:")) ++core_count;
+        else if (mod.import_path.starts_with("ext:")) ++ext_count;
+        else if (mod.import_path.starts_with("vendor:")) ++vendor_count;
+    }
+    out += std::format("        <h4>Foundational Core ({})</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n", core_count);
+    for (const auto& mod : mods) {
+        if (!mod.import_path.starts_with("core:")) continue;
+        out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
+            mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.import_path, mod.functions.size());
+    }
+    out += std::format("        </ul>\n        <h4 style=\"margin-top:1rem;\">Domain Extensions ({})</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n", ext_count);
+    for (const auto& mod : mods) {
+        if (!mod.import_path.starts_with("ext:")) continue;
+        out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
+            mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.import_path, mod.functions.size());
+    }
+    out += std::format("        </ul>\n        <h4 style=\"margin-top:1rem;\">Vendor Libraries ({})</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n", vendor_count);
+    for (const auto& mod : mods) {
+        if (!mod.import_path.starts_with("vendor:")) continue;
         out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
             mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.import_path, mod.functions.size());
     }
@@ -619,18 +639,19 @@ fn main() {
 
     // Pane 0: Categorized Overview Dashboard
     out += std::format("      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All {} Modules)\">\n", mods.size());
-    out += "        <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>\n";
-    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} zero-overhead <code>core:*</code> and <code>vendor:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and {} semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>\n", mods.size(), diags.size());
+    out += "        <h1>Standard Library &amp; Diagnostics Reference</h1>\n";
+    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> ({} zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> ({} opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> ({} bundled C/C++ engines) — plus {} semantic diagnostics, verified by <code>cfire doc --check</code>.</p>\n", mods.size(), core_count, ext_count, vendor_count, diags.size());
 
     struct CategoryGroup {
         std::string_view title;
         std::vector<std::string_view> aliases;
     };
     const std::vector<CategoryGroup> categories = {
-        {"Tier 1A — Foundational Core: Strings, UTF-8, Regex & Generic Containers (Zero External Deps)", {"str", "unicode", "regex", "collections", "sort"}},
-        {"Tier 1B — Foundational Core: Filesystem, OS, Time, Math, CSPRNG, Sync, CLI & Logging", {"fs", "os", "time", "math", "rand", "sync", "context", "cli", "log"}},
-        {"Tier 1C — Foundational Core: Cryptography & Data Encodings", {"aes", "blake3", "hmac", "sha256", "base64", "csv", "hex"}},
-        {"Tier 2 — Domain & Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite, Graphics, Audio & Multimodal AI", {"json", "zstd", "net", "http", "tls", "url", "websocket", "sqlite", "rl", "rg", "audio", "ai"}},
+        {"core:* — Strings, Unicode, Regex & Containers", {"str", "unicode", "regex", "collections", "sort"}},
+        {"core:* — Filesystem, OS, Time, Sync, CLI & Logging", {"fs", "os", "time", "math", "rand", "sync", "context", "cli", "log"}},
+        {"core:* — Cryptography & Data Encodings", {"aes", "blake3", "hmac", "sha256", "base64", "csv", "hex"}},
+        {"ext:* — JSON, Compression, Networking, SQLite, Audio & AI", {"json", "zstd", "net", "http", "tls", "url", "websocket", "sqlite", "audio", "ai"}},
+        {"vendor:* — Graphics & Immediate-Mode GUI", {"rl", "rg"}},
     };
 
     for (const auto& cat : categories) {
@@ -651,7 +672,7 @@ fn main() {
                         mod.ns_alias, mod.ns_alias,
                         mod.import_path, mod.functions.size(),
                         detail::html_escape(mod.title),
-                        mod.overview);
+                        detail::render_inline_md(mod.overview));
                     break;
                 }
             }
@@ -659,7 +680,7 @@ fn main() {
         out += "        </div>\n";
     }
 
-    out += "        <div class=\"ref-category-title\">Compiler Semantic Diagnostics (8 Static Verification Rules)</div>\n";
+    out += "        <div class=\"ref-category-title\">Compiler Semantic Diagnostics (8 Rules)</div>\n";
     out += "        <div class=\"ref-category-grid\">\n";
     out += std::format(
         "          <a href=\"#diagnostics\" class=\"ref-mod-card\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
@@ -696,7 +717,7 @@ fn main() {
         out += std::format("        <h2 id=\"mod-{}\" style=\"margin-top:0.25rem;\"><code>import \"{}\"</code> &mdash; {}</h2>\n",
             mod.ns_alias, mod.import_path, detail::html_escape(mod.title));
         out += std::format("        <p>{} <br/><small style=\"color:var(--muted)\">Auto-linked flags: <code>{}</code> &bull; Namespace: <code>{}.*</code> &bull; {} exported functions</small></p>\n",
-            mod.overview, detail::html_escape(mod.link_flags), mod.ns_alias, mod.functions.size());
+            detail::render_inline_md(mod.overview), detail::html_escape(mod.link_flags), mod.ns_alias, mod.functions.size());
 
         auto ex = detail::module_practical_example(mod.import_path);
         if (!ex.empty()) {
@@ -704,12 +725,12 @@ fn main() {
             out += "        <pre><code>" + detail::html_escape(ex) + "</code></pre>\n";
         }
 
-        out += "        <div class=\"table-wrap api-table-wrap\"><table>\n          <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>\n          <tbody>\n";
+        out += "        <div class=\"table-wrap api-table-wrap\"><table>\n          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>\n          <tbody>\n";
         for (const auto& fn : mod.functions) {
             out += std::format("            <tr><td><code>{}</code></td><td><code>{}</code></td><td>{}<br/><code>{}</code></td></tr>\n",
                 detail::html_escape(fn.cf_sig),
                 detail::html_escape(fn.cpp_lowering),
-                detail::html_escape(fn.summary),
+                detail::render_inline_md(fn.summary),
                 detail::html_escape(fn.example));
         }
         out += "          </tbody>\n        </table></div>\n";
@@ -757,8 +778,8 @@ fn main() {
     out += "        <p style=\"color:var(--muted); margin-bottom:1.25rem;\">Deterministic compile-time diagnostics emitted by the single-pass type and effect checker (<code>src/sema.hpp</code>).</p>\n";
     for (const auto& d : diags) {
         out += std::format("        <div class=\"card\" id=\"diag-{}\" style=\"margin-bottom:1.25rem;\">\n", d.code);
-        out += std::format("          <h3><code>[{}]</code> &mdash; {}</h3>\n", d.code, detail::html_escape(d.title));
-        out += std::format("          <p style=\"margin-bottom:0.85rem;\">{}</p>\n", detail::html_escape(d.rule));
+        out += std::format("          <h3><code>[{}]</code> &mdash; {}</h3>\n", d.code, detail::render_inline_md(d.title));
+        out += std::format("          <p style=\"margin-bottom:0.85rem;\">{}</p>\n", detail::render_inline_md(d.rule));
         out += "          <div class=\"grid-2\">\n";
         out += std::format("            <div><div class=\"code-header\"><span style=\"color:var(--err);font-weight:700;\">Rejected (.cf)</span></div><pre><code>{}</code></pre></div>\n",
             detail::html_escape(d.bad_example));
