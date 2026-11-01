@@ -42,8 +42,37 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 ::selection { background: #F97316; color: #0D1117; }
-a { color: var(--accent-sapphire); text-decoration: none; transition: color 0.15s ease; }
-a:hover { color: #7DD3FC; text-decoration: underline; }
+a {
+    color: var(--accent-sapphire);
+    text-decoration: none;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+a:hover {
+    color: #7DD3FC;
+}
+
+/* Crisp Technical Prose Links */
+main a:not(.pager-card):not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand),
+.chapter-pane a:not(.pager-card):not(.btn):not(.code-copy-btn),
+.callout a {
+    color: var(--accent-sapphire);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+    font-weight: 500;
+    transition: color 0.15s ease, border-bottom-color 0.15s ease;
+}
+main a:not(.pager-card):not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand):hover,
+.chapter-pane a:not(.pager-card):not(.btn):not(.code-copy-btn):hover,
+.callout a:hover {
+    color: #7DD3FC;
+    border-bottom-color: #38BDF8;
+    text-decoration: none;
+}
+main a code, .chapter-pane a code {
+    color: inherit;
+    border-color: rgba(56, 189, 248, 0.4);
+    background: #161B22;
+}
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
@@ -88,10 +117,32 @@ a:hover { color: #7DD3FC; text-decoration: underline; }
 }
 .nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
 .nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
+.btn-nav-github {
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted) !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    padding: 0.35rem 0.65rem !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--bg-card) !important;
+    transition: all 0.15s ease !important;
+    text-decoration: none !important;
+    border-bottom: none !important;
+}
+.btn-nav-github:hover {
+    color: var(--text-bright) !important;
+    background: var(--bg-card-hover) !important;
+    border-color: var(--border-dark) !important;
+    text-decoration: none !important;
+}
 .btn-nav-primary {
     background: #F97316 !important; color: #0D1117 !important;
     padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
+    text-decoration: none !important;
+    border-bottom: none !important;
 }
 .btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
 
@@ -282,39 +333,44 @@ pre::-webkit-scrollbar-thumb:hover {
     border-top: 1px solid var(--border);
     flex-wrap: wrap;
 }
-.pager-btn {
+.pager-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border) !important;
+    border-radius: 8px;
+    padding: 1.15rem 1.4rem;
+    text-decoration: none !important;
+    transition: all 0.15s ease;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.85rem 1.25rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    text-decoration: none;
+    gap: 0.35rem;
+    flex: 1;
     min-width: 200px;
-    transition: all 0.15s ease;
 }
-.pager-btn:hover {
+.pager-card:hover {
     background: var(--bg-card-hover);
-    border-color: var(--border-dark);
-    text-decoration: none;
+    border-color: var(--accent) !important;
+    text-decoration: none !important;
 }
-.pager-btn.pager-next {
-    margin-left: auto;
-    text-align: right;
+.pager-card:hover .pager-title {
+    color: var(--accent);
 }
-.pager-dir {
+.pager-label {
     font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #F97316;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+}
+.pager-card.pager-next {
+    text-align: right;
+    margin-left: auto;
 }
 .pager-title {
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 1rem;
+    font-weight: 750;
     color: var(--text-bright);
+    transition: color 0.15s ease;
 }
 
 /* Right-Rail TOC */
@@ -330,7 +386,7 @@ pre::-webkit-scrollbar-thumb:hover {
 .toc-list {
     list-style: none;
     padding: 0;
-    margin: 0 0 1.5rem 0;
+    margin: 0 0 1rem 0;
 }
 .toc-list li {
     margin-bottom: 0.35rem;
@@ -341,11 +397,73 @@ pre::-webkit-scrollbar-thumb:hover {
     color: var(--muted);
     padding: 0.2rem 0;
     text-decoration: none;
+    border-bottom: none !important;
     line-height: 1.4;
     transition: color 0.15s ease;
 }
 .toc-list a:hover {
     color: var(--text-bright);
+}
+.toc-list a.active-toc-item {
+    color: var(--accent) !important;
+    font-weight: 600;
+}
+.rail-action-list {
+    list-style: none;
+    padding: 0;
+    margin: 1.25rem 0;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+}
+.rail-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.35rem 0;
+    text-decoration: none;
+    border-bottom: none !important;
+    transition: color 0.15s ease;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+}
+.rail-action-btn:hover {
+    color: var(--text-bright);
+    text-decoration: none;
+}
+.rail-telemetry-box {
+    margin-top: 1.25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+}
+.rail-telemetry-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+}
+.rail-telemetry-row:last-child {
+    border-bottom: none;
+}
+.rail-telemetry-label {
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.rail-telemetry-val {
+    color: var(--text-bright);
+    font-weight: 700;
+}
+.rail-telemetry-val.val-amber {
+    color: var(--accent);
 }
 .toc-quick-links {
     margin-top: 1.5rem;
@@ -461,25 +579,213 @@ pre::-webkit-scrollbar-thumb:hover {
     font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem;
 }
+
+.nav-search-wrapper {
+    position: relative;
+    margin-bottom: 0.85rem;
+}
+.nav-search-wrapper .search-input {
+    width: 100%;
+    padding: 0.45rem 2.6rem 0.45rem 0.65rem;
+    font-size: 0.82rem;
+    font-family: var(--font-sans);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-code);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+.nav-search-wrapper .search-input:focus {
+    border-color: #F97316;
+}
+.nav-search-kbd {
+    position: absolute;
+    right: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--muted);
+    background: #21262D;
+    border: 1px solid var(--border);
+    padding: 0.08rem 0.35rem;
+    border-radius: 3px;
+    pointer-events: none;
+    line-height: 1.2;
+}
+
 .sidebar-part-title {
     font-size: 0.72rem; font-weight: 850; text-transform: uppercase;
     letter-spacing: 0.08em; color: #F97316; margin: 1.25rem 0 0.4rem;
     padding-left: 0.4rem;
 }
 .sidebar-chapter-list { list-style: none; margin-bottom: 0.75rem; }
+.sidebar-chapter-list .nav-item { margin-bottom: 0.2rem; }
+
+.sidebar-ch-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.42rem 0.6rem;
+    border-radius: 5px;
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 500;
+    text-decoration: none !important;
+    border-bottom: none !important;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease;
+}
+.sidebar-ch-link:hover {
+    color: var(--text-bright);
+    background: var(--bg-card-hover);
+    text-decoration: none !important;
+}
+.sidebar-ch-link.active {
+    color: var(--text-bright);
+    background: #21262D;
+    font-weight: 600;
+    border-left-color: var(--accent);
+}
+.sidebar-ch-link .ch-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.active-badge {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: var(--accent);
+    background: #27140B;
+    border: 1px solid #7C2D12;
+    padding: 0.08rem 0.35rem;
+    border-radius: 3px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
 .subhead-list {
+    display: none;
     list-style: none;
-    margin: 0.2rem 0 0.4rem 0.85rem;
-    padding-left: 0.5rem;
+    margin: 0.2rem 0 0.45rem 0.85rem;
+    padding-left: 0.65rem;
     border-left: 1px solid var(--border);
+}
+.nav-item.is-active .subhead-list {
+    display: block;
+    animation: fadeIn 0.15s ease-in;
 }
 .subhead-list li { margin-bottom: 0.15rem; }
 .subhead-list a {
-    font-size: 0.8rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    font-size: 0.78rem;
     color: var(--muted);
-    padding: 0.2rem 0.4rem;
+    padding: 0.18rem 0.35rem;
+    border-radius: 3px;
+    text-decoration: none !important;
+    border-bottom: none !important;
+    transition: color 0.15s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.subhead-list a:hover { color: var(--text-bright); }
+.subhead-list a::before {
+    content: "•";
+    color: var(--border-dark);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+.subhead-list a:hover {
+    color: var(--text-bright);
+    text-decoration: none !important;
+}
+.subhead-list a.active-subhead {
+    color: var(--accent);
+    font-weight: 600;
+}
+.subhead-list a.active-subhead::before {
+    color: var(--accent);
+}
+
+.sidebar-footer-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 1.5rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-decoration: none !important;
+    border-bottom: none !important;
+    transition: all 0.15s ease;
+}
+.sidebar-footer-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    text-decoration: none !important;
+}
+.sfc-title {
+    font-size: 0.8rem;
+    font-weight: 650;
+    color: var(--text-bright);
+}
+.sfc-badge {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 750;
+    color: var(--accent-sapphire);
+    background: #0B1622;
+    border: 1px solid #1E3A5F;
+    padding: 0.12rem 0.4rem;
+    border-radius: 4px;
+}
+
+.guide-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    margin: 2.25rem 0 0.85rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+}
+.guide-heading .heading-hash {
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-weight: 700;
+    margin-right: 0.45rem;
+    opacity: 0.9;
+    user-select: none;
+}
+.guide-heading .heading-text {
+    flex: 1;
+    color: var(--text-bright);
+    font-size: 1.25rem;
+    font-weight: 750;
+}
+.guide-heading .heading-badge {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--muted);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+
 .search-input {
     width: 100%;
     padding: 0.45rem 0.65rem;
@@ -606,45 +912,6 @@ main li { margin-bottom: 0.4rem; }
     background: #1E1606;
 }
 .callout-warning .callout-title { color: #F59E0B; }
-
-/* Guide Pager */
-.guide-pager {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1rem;
-    margin: 3.5rem 0 1.5rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--border);
-}
-.pager-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.25rem 1.5rem;
-    text-decoration: none;
-    transition: border-color 0.15s ease, background 0.15s ease;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-}
-.pager-card:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--border-dark);
-    text-decoration: none;
-}
-.pager-card span {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #F97316;
-}
-.pager-card strong {
-    font-size: 1.05rem;
-    color: var(--text-bright);
-    font-weight: 750;
-}
 
 /* Hero section */
 .hero { text-align: center; padding: 3rem 0.5rem 3.5rem; }
@@ -1042,8 +1309,11 @@ tr:hover td { background: #1F242C; }
       <a href="index.html" class="">Overview</a>
       <a href="guide.html" class="">Guide</a>
       <a href="reference.html" class="active">Stdlib</a>
-      <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub &rarr;</a>
-      <a href="index.html#install" class="btn-nav-primary">Install</a>
+      <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub 4.2k ★
+      </a>
+      <a href="index.html#install" class="btn-nav-primary">Install v0.9.4</a>
     </div>
   </div>
 </nav>
