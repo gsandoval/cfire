@@ -576,9 +576,9 @@ fn main() {
     out += "          <div id=\"ref-search-results\" class=\"search-results-dropdown\"></div>\n";
     out += "        </div>\n";
     out += "        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0; margin-bottom: 0.75rem;\">\n";
-    out += "          <li class=\"nav-item\"><a href=\"#overview\" id=\"nav-pane-overview\" class=\"active\" onclick=\"navigateToRefPane('overview'); return false;\"><strong>Overview (All 21 Modules)</strong></a></li>\n";
+    out += std::format("          <li class=\"nav-item\"><a href=\"#overview\" id=\"nav-pane-overview\" class=\"active\" onclick=\"navigateToRefPane('overview'); return false;\"><strong>Overview (All {} Modules)</strong></a></li>\n", mods.size());
     out += "        </ul>\n";
-    out += "        <h4>`core:*` Modules (21)</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n";
+    out += std::format("        <h4>`core:*` &amp; `vendor:*` Modules ({})</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n", mods.size());
     for (const auto& mod : mods) {
         out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
             mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.import_path, mod.functions.size());
@@ -588,11 +588,11 @@ fn main() {
         out += std::format("          <li class=\"nav-item\"><a href=\"#diag-{}\" id=\"nav-diag-{}\" onclick=\"navigateToRefDiag('diag-{}'); return false;\"><code>{}</code></a></li>\n",
             d.code, d.code, d.code, d.code);
     }
-    out += R"HTML(        </ul>
+    out += std::format(R"HTML(        </ul>
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
           <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (16 Chapters) &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (18 Chapters) &rarr;</a></li>
             <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
             <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
           </ul>
@@ -601,26 +601,26 @@ fn main() {
     </details>
   </aside>
   <div class="guide-viewport" id="ref-viewport">
-    <div class="guide-content-inner" style="max-width: 960px;">
+    <main class="guide-content-inner" style="max-width: 960px;">
       <div class="reader-toolbar">
         <div class="reader-breadcrumbs">
           <a href="index.html">cfire Docs</a>
           <span>/</span>
           <a href="#overview" onclick="navigateToRefPane('overview'); return false;">Stdlib Reference</a>
           <span>/</span>
-          <span class="crumb-current" id="ref-active-crumb">Overview (All 21 Modules)</span>
+          <span class="crumb-current" id="ref-active-crumb">Overview (All {0} Modules)</span>
         </div>
         <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
           <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
-          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (21)</button>
+          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All ({0})</button>
         </div>
       </div>
-)HTML";
+)HTML", mods.size());
 
     // Pane 0: Categorized Overview Dashboard
-    out += "      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All 21 Modules)\">\n";
+    out += std::format("      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All {} Modules)\">\n", mods.size());
     out += "        <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>\n";
-    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} zero-overhead <code>core:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and {} semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>\n", mods.size(), diags.size());
+    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} zero-overhead <code>core:*</code> and <code>vendor:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and {} semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>\n", mods.size(), diags.size());
 
     struct CategoryGroup {
         std::string_view title;
@@ -628,8 +628,9 @@ fn main() {
     };
     const std::vector<CategoryGroup> categories = {
         {"Tier 1A — Foundational Core: Strings, UTF-8, Regex & Generic Containers (Zero External Deps)", {"str", "unicode", "regex", "collections", "sort"}},
-        {"Tier 1B — Foundational Core: Memory Arenas, Math, CSPRNG, Crypto, Filesystem, OS, Time, Sync & CLI", {"mem", "math", "rand", "crypto", "fs", "os", "time", "sync", "cli", "log", "toml"}},
-        {"Tier 2 — Domain & Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite & Multimodal AI", {"json", "compress", "net", "db", "ai"}},
+        {"Tier 1B — Foundational Core: Filesystem, OS, Time, Math, CSPRNG, Sync, CLI & Logging", {"fs", "os", "time", "math", "rand", "sync", "context", "cli", "log"}},
+        {"Tier 1C — Foundational Core: Cryptography & Data Encodings", {"aes", "blake3", "hmac", "sha256", "base64", "csv", "hex"}},
+        {"Tier 2 — Domain & Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite, Graphics, Audio & Multimodal AI", {"json", "zstd", "net", "http", "tls", "url", "websocket", "sqlite", "rl", "rg", "audio", "ai"}},
     };
 
     for (const auto& cat : categories) {
@@ -686,7 +687,7 @@ fn main() {
     }
     out += "      </article>\n";
 
-    // Individual Module Panes (1..21)
+    // Individual Module Panes (1..33)
     for (std::size_t i = 0; i < mods.size(); ++i) {
         const auto& mod = mods[i];
         out += std::format(
@@ -716,10 +717,12 @@ fn main() {
         // Module Pager
         out += "        <nav class=\"chapter-pager\" aria-label=\"Module Pagination\">\n";
         if (i == 0) {
-            out += "          <a href=\"#overview\" class=\"pager-card prev\" onclick=\"navigateToRefPane('overview'); return false;\">\n"
+            out += std::format(
+                   "          <a href=\"#overview\" class=\"pager-card prev\" onclick=\"navigateToRefPane('overview'); return false;\">\n"
                    "            <span class=\"pager-dir\">&larr; Overview</span>\n"
-                   "            <span class=\"pager-title\">All 21 Standard Library Modules</span>\n"
-                   "          </a>\n";
+                   "            <span class=\"pager-title\">All {} Standard Library Modules</span>\n"
+                   "          </a>\n",
+                   mods.size());
         } else {
             const auto& prev = mods[i - 1];
             out += std::format(
@@ -773,17 +776,17 @@ fn main() {
             "          </a>\n"
             "          <a href=\"#overview\" class=\"pager-card next\" onclick=\"navigateToRefPane('overview'); return false;\">\n"
             "            <span class=\"pager-dir\">Back to Overview &rarr;</span>\n"
-            "            <span class=\"pager-title\">All 21 Standard Library Modules</span>\n"
+            "            <span class=\"pager-title\">All {} Standard Library Modules</span>\n"
             "          </a>\n"
             "        </nav>\n",
-            last_mod.ns_alias, last_mod.ns_alias, last_mod.import_path, detail::html_escape(last_mod.title));
+            last_mod.ns_alias, last_mod.ns_alias, last_mod.import_path, detail::html_escape(last_mod.title), mods.size());
     }
     out += "      </article>\n";
 
     out += R"HTML(      <footer class="footer" style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--border);">
         Generated by <code>cfire doc</code> &bull; Always kept in sync with <code>src/docgen.hpp</code>.
       </footer>
-    </div>
+    </main>
   </div>
 </div>
 <script>
