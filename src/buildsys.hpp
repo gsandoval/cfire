@@ -1377,6 +1377,9 @@ inline auto resolve_external_dep_source(
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
     plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
+    if (std::filesystem::is_directory(runtime_dir / "vendor")) {
+        plan.cflags.push_back("-I" + (runtime_dir / "vendor").string());
+    }
     bool is_wasm = plan.target_triple.starts_with("wasm");
 #if defined(__linux__)
     if (!is_wasm) {

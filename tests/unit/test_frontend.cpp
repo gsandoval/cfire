@@ -513,6 +513,114 @@ ok
             .assert_ok("cfire doctor --json exits 0")
             .assert_contains("\"healthy\": true", "cfire doctor --json reports healthy")
             .assert_contains("\"runtime_dir\":", "cfire doctor --json reports runtime_dir");
+
+        // Verify review remediation invariants:
+        // 1. No GNU statement expressions `({` or `std::exit(1)` in emitted showcase C++23
+        auto idx_html_res = cfire::build::read_file_text(docs_dir / "index.html");
+        require(idx_html_res.has_value(), "read docs/index.html");
+        if (idx_html_res) {
+            const std::string& idx_html = *idx_html_res;
+            require(!idx_html.contains("= ({") && !idx_html.contains("std::exit(1)"),
+                "docs/index.html contains no GNU statement expressions or std::exit(1)");
+            require(idx_html.contains("fh_fnv1a(cfire::c_str(msg), msg.size())"),
+                "docs/index.html Tab 5 emits cfire::c_str(msg) coercion via Clang AST bridge");
+            require(idx_html.contains("fnv1a hash: 0x268ccafd"),
+                "docs/index.html Tab 5 displays verified FNV-1a digest 0x268ccafd");
+            require(idx_html.contains("Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead."),
+                "docs/index.html Tab 7 displays matching [Transpiler] title and section text");
+            require(!idx_html.contains("4.2k"),
+                "docs/index.html does not contain hardcoded 4.2k star count");
+        }
+
+        // 2. Verify codegen hygiene for AI + JSON + SQLite snippet (deduplicated defines/links, no unused headers)
+        std::string ai_snip_cpp = cfire::doc::compile_snippet_to_cpp("test_ai_hygiene.cf", R"CF(package main
+import "core:ai" as ai
+import "core:db/sqlite" as sqlite
+import "core:json" as json
+fn main() {
+    doc := try ai.parse_document("# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.", "arch.md")
+    println("{}", doc.sections[0].title)
+}
+)CF");
+        auto count_substr = [](std::string_view hay, std::string_view needle) {
+            std::size_t count = 0, pos = 0;
+            while ((pos = hay.find(needle, pos)) != std::string_view::npos) {
+                ++count;
+                pos += needle.size();
+            }
+            return count;
+        };
+        require(count_substr(ai_snip_cpp, "#define CFIRE_USE_SIMDJSON 1") == 1,
+            "codegen emits #define CFIRE_USE_SIMDJSON 1 exactly once");
+        require(count_substr(ai_snip_cpp, "-lsimdjson") == 1,
+            "codegen emits -lsimdjson link tag exactly once");
+        require(!ai_snip_cpp.contains("#include \"core/fs.hpp\"") &&
+                !ai_snip_cpp.contains("#include \"core/net.hpp\"") &&
+                !ai_snip_cpp.contains("#include \"core/os.hpp\"") &&
+                !ai_snip_cpp.contains("#include \"core/encoding.hpp\""),
+            "codegen does not emit unused transitive core headers when importing core:ai");
+
+        // 3. Execute showcase snippets 2, 3, 5, and 7 end-to-end and verify exact stdout match
+        run_cfire_source(R"(package main
+type Token enum { Ident(name: str), Number(val: i64), Eof }
+fn classify(s: []str) -> str {
+    match s {
+        []                   => { return "empty" }
+        [only]               => { return "single=" + only }
+        [first, ..mid, last] => { return first + "..(" + str(mid.len()) + ").." + last }
+    }
+    return "other"
+}
+fn main() {
+    items: []str = ["alpha", "beta", "gamma"]
+    println("result: {}", classify(items))
+})", "showcase_tab2")
+            .assert_ok("Showcase Tab 2 runs cleanly")
+            .assert_contains("result: alpha..(1)..gamma", "Showcase Tab 2 output matches telemetry");
+
+        run_cfire_source(R"(package main
+import cpp "fast_hash.h"
+fn main() {
+    msg := "cfire systems programming"
+    hash := cpp::fh_fnv1a(msg, msg.len())
+    println("fnv1a hash: 0x{:x}", hash)
+})", "showcase_tab5")
+            .assert_ok("Showcase Tab 5 runs cleanly")
+            .assert_contains("fnv1a hash: 0x268ccafd", "Showcase Tab 5 output matches telemetry");
+
+        run_cfire_source(R"CF(package main
+import "core:ai" as ai
+import "core:db/sqlite" as sqlite
+import "core:json" as json
+type QueryPlan struct {
+    Target: str `json:"target" desc:"Search target concept"`
+    TopK: i64   `json:"top_k" desc:"Number of top results"`
+}
+type DocEntry struct {
+    Id: i64      `sql:"id"`
+    Title: str   `sql:"title"`
+    Snippet: str `sql:"snippet"`
+}
+fn main() {
+    schema := json.schema[QueryPlan]()
+    doc := try ai.parse_document("# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.", "arch.md")
+    chunks := ai.chunk_document(doc, 512, 64)
+    mut db := try sqlite.open(":memory:")
+    try db.exec("CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)")
+    for ch in chunks {
+        vec := try ai.embed("local", ch.text)
+        try db.exec("INSERT INTO docs VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, vec)
+    }
+    qvec := try ai.embed("local", "modern C++23 compiler")
+    hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
+    if hits.len() > 0 {
+        println("Match [{}]: {}", hits[0].Title, hits[0].Snippet)
+    }
+}
+)CF", "showcase_tab7")
+            .assert_ok("Showcase Tab 7 runs cleanly")
+            .assert_contains("Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.",
+                "Showcase Tab 7 output matches telemetry");
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");

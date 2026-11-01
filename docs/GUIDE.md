@@ -859,8 +859,8 @@ fn main() {
 i=100 f=1.00
 ```
 
-### Level 4 — Compile-Time Borrow, Move & Exclusivity Diagnostics
-The semantic analyzer (`sema`) rejects memory and mutability violations at compile time before C++ codegen runs:
+### Level 4 — Compile-Time Intent, Move, Exclusivity & Pattern Diagnostics
+The semantic analyzer (`sema`) enforces 8 static intent, move, and pattern-matching rules at compile time before C++23 codegen runs (note: `cfire` lowers to standard C++23 references and smart pointers rather than a full Rust-style lifetime borrow checker):
 
 | Diagnostic Code | Violation Condition | Rejected Code Example | Remediation |
 | :--- | :--- | :--- | :--- |
@@ -869,6 +869,9 @@ The semantic analyzer (`sema`) rejects memory and mutability violations at compi
 | `cfire/MUT-RECEIVER` | Calling a `fn (mut s: T)` method on an immutable struct instance. | `s := Scene{}; s.register(...)` | Declare `mut s := Scene{}`. |
 | `cfire/MUT-ALIAS` | Passing the same variable more than once when at least one argument is `mut`/`out`. | `transfer(mut a, mut a)` | Pass distinct variables to each parameter. |
 | `cfire/USE-AFTER-MOVE` | Reading or passing a variable after `move x` has transferred ownership on an earlier path. | `consume(move buf); println("{}", buf.len)` | Read `buf.len` before `consume(move buf)` or pass by `in`/`mut` borrow instead. |
+| `cfire/NON-EXHAUSTIVE-MATCH` | A `match` over an `enum` omits one or more variants without a `_ =>` wildcard arm. | `match tok { Ident(s) => {} }` | Handle all variants or add `_ => { ... }`. |
+| `cfire/NON-DIVERGING-OR-BLOCK` | An `x := fallible() or err { ... }` block does not exit via `return`/`break`/`panic`. | `x := f() or err { println("{}", err) }` | Add `return` or `panic(...)` inside the recovery block. |
+| `cfire/UNREACHABLE-MATCH-ARM` | A `match` arm is shadowed by an earlier wildcard, duplicate variant/literal, or broader slice pattern. | `[h, ..t] => {}, [a, ..m, b] => {}` | Order more specific slice patterns (`[a]`, `[a, ..m, b]`) before general prefix patterns, or remove dead arms. |
 | `CF3002` | Returning a borrow (`&T`) pointing to a stack-allocated local variable. | `fn bad() -> &i32 { x := 1; return &x }` | Return `i32` by value or allocate with `make(own[T], ...)`. |
 
 ---
@@ -1005,9 +1008,10 @@ fn main() {
 event=resize:1920x1080 route=api->..(2)..->profile
 ```
 
-**Exhaustiveness Rules (`cfire/NON-EXHAUSTIVE-MATCH`):**
+**Exhaustiveness & Reachability Rules (`cfire/NON-EXHAUSTIVE-MATCH` & `cfire/UNREACHABLE-MATCH-ARM`):**
 1. Matching over an `enum` must either list every variant of the enum or provide a fallback `_ => ...` wildcard arm. Adding a new variant to `Event` immediately flags every unhandled `match` site at compile time.
 2. Matching over primitives (`i64`, `str`) must always include a wildcard `_ => ...` arm when used as a value expression.
+3. Every `match` arm must be reachable (`cfire/UNREACHABLE-MATCH-ARM`): duplicate enum/literal arms, arms appearing after `_ => ...`, or slice patterns already subsumed by an earlier rest pattern (such as `[first, ..mid, last]` placed after `[head, ..tail]`) are rejected at compile time. Unused slice pattern bindings are elided from the emitted C++23 code.
 
 ### Level 4 — Structural Interfaces & C++20 Concepts (`interface`)
 An `interface` defines a structural contract of method signatures. Any `struct` that implements matching methods satisfies the interface automatically without an explicit `implements` keyword, and generic functions constrained by `[T: InterfaceName]` lower directly to C++20 `concept` constraints:
