@@ -1543,7 +1543,7 @@ tr:hover td { background: #1F242C; }
       <a href="reference.html" class="active">Stdlib</a>
       <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-        GitHub 4.2k ★
+        GitHub
       </a>
       <a href="index.html#install" class="btn-nav-primary">Install v0.9.4</a>
     </div>
@@ -1600,7 +1600,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-rg" id="nav-pane-mod-rg" onclick="navigateToRefPane('mod-rg'); return false;"><code>vendor:raygui</code> <span style="color:var(--muted);font-size:0.75rem;">(15)</span></a></li>
           <li class="nav-item"><a href="#mod-rl" id="nav-pane-mod-rl" onclick="navigateToRefPane('mod-rl'); return false;"><code>vendor:raylib</code> <span style="color:var(--muted);font-size:0.75rem;">(24)</span></a></li>
         </ul>
-        <h4 style="margin-top:1.25rem;">Diagnostics (7)</h4>
+        <h4 style="margin-top:1.25rem;">Diagnostics (8)</h4>
         <ul class="sidebar-diag-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#diag-cfire/MUT-CALLSITE" id="nav-diag-cfire/MUT-CALLSITE" onclick="navigateToRefDiag('diag-cfire/MUT-CALLSITE'); return false;"><code>cfire/MUT-CALLSITE</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/IMMUTABLE-MUT-ARG" id="nav-diag-cfire/IMMUTABLE-MUT-ARG" onclick="navigateToRefDiag('diag-cfire/IMMUTABLE-MUT-ARG'); return false;"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
@@ -1609,6 +1609,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#diag-cfire/USE-AFTER-MOVE" id="nav-diag-cfire/USE-AFTER-MOVE" onclick="navigateToRefDiag('diag-cfire/USE-AFTER-MOVE'); return false;"><code>cfire/USE-AFTER-MOVE</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/NON-EXHAUSTIVE-MATCH" id="nav-diag-cfire/NON-EXHAUSTIVE-MATCH" onclick="navigateToRefDiag('diag-cfire/NON-EXHAUSTIVE-MATCH'); return false;"><code>cfire/NON-EXHAUSTIVE-MATCH</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/NON-DIVERGING-OR-BLOCK" id="nav-diag-cfire/NON-DIVERGING-OR-BLOCK" onclick="navigateToRefDiag('diag-cfire/NON-DIVERGING-OR-BLOCK'); return false;"><code>cfire/NON-DIVERGING-OR-BLOCK</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/UNREACHABLE-MATCH-ARM" id="nav-diag-cfire/UNREACHABLE-MATCH-ARM" onclick="navigateToRefDiag('diag-cfire/UNREACHABLE-MATCH-ARM'); return false;"><code>cfire/UNREACHABLE-MATCH-ARM</code></a></li>
         </ul>
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
@@ -1638,8 +1639,8 @@ tr:hover td { background: #1F242C; }
       </div>
       <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 21 Modules)">
         <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">21 zero-overhead <code>core:*</code> modules and 7 semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>
-        <div class="ref-category-title">1. Strings, UTF-8, Regex &amp; Generic Containers</div>
+        <p class="subtitle" style="margin:0 0 1.5rem;">33 zero-overhead <code>core:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and 8 semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>
+        <div class="ref-category-title">Tier 1A — Foundational Core: Strings, UTF-8, Regex &amp; Generic Containers (Zero External Deps)</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
             <div class="ref-mod-card-head">
@@ -1682,7 +1683,7 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-desc">In-place sorting algorithms and binary search on slices.</div>
           </a>
         </div>
-        <div class="ref-category-title">2. Memory Arenas, Math, CSPRNG, Crypto &amp; Compression</div>
+        <div class="ref-category-title">Tier 1B — Foundational Core: Memory Arenas, Math, CSPRNG, Crypto, Filesystem, OS, Time, Sync &amp; CLI</div>
         <div class="ref-category-grid">
           <a href="#mod-math" class="ref-mod-card" onclick="navigateToRefPane('mod-math'); return false;">
             <div class="ref-mod-card-head">
@@ -1700,9 +1701,6 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-title">Thread-Local MT19937_64 &amp; CSPRNG Generator</div>
             <div class="ref-mod-card-desc">Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.</div>
           </a>
-        </div>
-        <div class="ref-category-title">3. Filesystem, OS Subprocesses, Time, CLI, Logging &amp; Config Formats</div>
-        <div class="ref-category-grid">
           <a href="#mod-fs" class="ref-mod-card" onclick="navigateToRefPane('mod-fs'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:fs</span>
@@ -1727,6 +1725,14 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-title">Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</div>
             <div class="ref-mod-card-desc">High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.</div>
           </a>
+          <a href="#mod-sync" class="ref-mod-card" onclick="navigateToRefPane('mod-sync'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:sync</span>
+              <span class="ref-mod-card-count">5 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Thread-Safe Typed Channels</div>
+            <div class="ref-mod-card-desc">Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.</div>
+          </a>
           <a href="#mod-cli" class="ref-mod-card" onclick="navigateToRefPane('mod-cli'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:cli</span>
@@ -1743,6 +1749,9 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-title">Structured Leveled Logging</div>
             <div class="ref-mod-card-desc">Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.</div>
           </a>
+        </div>
+        <div class="ref-category-title">Tier 2 — Domain &amp; Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite &amp; Multimodal AI</div>
+        <div class="ref-category-grid">
           <a href="#mod-json" class="ref-mod-card" onclick="navigateToRefPane('mod-json'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:json</span>
@@ -1750,17 +1759,6 @@ tr:hover td { background: #1F242C; }
             </div>
             <div class="ref-mod-card-title">Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</div>
             <div class="ref-mod-card-desc">Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.</div>
-          </a>
-        </div>
-        <div class="ref-category-title">4. Concurrency, Networking, Storage Engines &amp; Multimodal AI</div>
-        <div class="ref-category-grid">
-          <a href="#mod-sync" class="ref-mod-card" onclick="navigateToRefPane('mod-sync'); return false;">
-            <div class="ref-mod-card-head">
-              <span class="ref-mod-card-code">core:sync</span>
-              <span class="ref-mod-card-count">5 fns</span>
-            </div>
-            <div class="ref-mod-card-title">Thread-Safe Typed Channels</div>
-            <div class="ref-mod-card-desc">Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.</div>
           </a>
           <a href="#mod-net" class="ref-mod-card" onclick="navigateToRefPane('mod-net'); return false;">
             <div class="ref-mod-card-head">
@@ -1779,12 +1777,12 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-desc">Unified AI SDK supporting OpenAI, Anthropic Claude, Google Gemini, Ollama, vLLM/llama.cpp (`openai_compatible`), and Cross-Platform On-Device Intelligence (`NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/WASM), with compile-time structured outputs (`generate_struct[T]`, `generate_struct_from_file[T]`), multimodal file attachments (`user_with_file`, `ask_with_file`), zero-dependency document and slide extraction (`load_document`, `chunk_document` for `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.md`, `.csv`, images), on-device OCR (`ocr`), text and image embeddings (`embed`, `embed_image`), and a Model Context Protocol server (`McpServer`).</div>
           </a>
         </div>
-        <div class="ref-category-title">5. Compiler Semantic Diagnostics (CF-E001 – CF-E007)</div>
+        <div class="ref-category-title">Compiler Semantic Diagnostics (8 Static Verification Rules)</div>
         <div class="ref-category-grid">
           <a href="#diagnostics" class="ref-mod-card" onclick="navigateToRefPane('diagnostics'); return false;">
             <div class="ref-mod-card-head">
-              <span class="ref-mod-card-code">CF-E001 .. CF-E007</span>
-              <span class="ref-mod-card-count">7 rules</span>
+              <span class="ref-mod-card-code">cfire/* Rules</span>
+              <span class="ref-mod-card-count">8 rules</span>
             </div>
             <div class="ref-mod-card-title">Compiler Semantic Diagnostics Catalog</div>
             <div class="ref-mod-card-desc">Rejected vs. Accepted <code>.cf</code> side-by-side verification rules enforced by the semantic checker.</div>
@@ -3351,7 +3349,7 @@ fn main() {
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
             <span class="pager-dir">Diagnostics Reference &rarr;</span>
-            <span class="pager-title">CF-E001 .. CF-E007 Semantic Rules</span>
+            <span class="pager-title">8 Semantic Verification Rules</span>
           </a>
         </nav>
       </article>
@@ -3458,6 +3456,22 @@ consume(move buf) // OK: moved on last use</code></pre></div>
         return 0
     }
     return x
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/UNREACHABLE-MATCH-ARM" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/UNREACHABLE-MATCH-ARM]</code> &mdash; Unreachable `match` Arm Shadowed by Earlier Pattern</h3>
+          <p style="margin-bottom:0.85rem;">Every arm in a `match` statement or expression must be reachable. Arms appearing after a wildcard `_`, duplicate enum/literal patterns, or slice patterns already subsumed by a broader prefix/suffix pattern (e.g., `[first, ..mid, last]` after `[head, ..tail]`) are rejected at compile time.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>match items {
+    [head, ..tail] =&gt; { return head }
+    [first, ..mid, last] =&gt; { return last } // ERROR [cfire/UNREACHABLE-MATCH-ARM]
+    _ =&gt; { return &quot;&quot; }
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>match items {
+    [] =&gt; { return &quot;empty&quot; }
+    [only] =&gt; { return only }
+    [first, ..mid, last] =&gt; { return first + last } // OK: size &gt;= 2 is reachable
 }</code></pre></div>
           </div>
         </div>

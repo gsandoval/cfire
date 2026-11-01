@@ -4,6 +4,7 @@
 #include "catalog.hpp"
 #include "styles.hpp"
 #include "markdown.hpp"
+#include "clang_bridge.hpp"
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -15,11 +16,46 @@
 
 namespace cfire::doc {
 
-[[nodiscard]] inline auto compile_snippet_to_cpp(std::string_view filename, std::string_view cf_source) -> std::string {
+[[nodiscard]] inline auto compile_snippet_to_cpp(
+    std::string_view filename,
+    std::string_view cf_source,
+    const std::filesystem::path& hint_rt_dir = {}
+) -> std::string {
     auto ast = cfire::frontend::parse_source(std::string(filename), cf_source);
     if (!ast) return std::format("// Parse error: {}\n", ast.error());
     auto checked = cfire::frontend::analyze(std::move(*ast));
     if (!checked) return std::format("// Sema error: {}\n", checked.error());
+
+    std::filesystem::path rt_dir = hint_rt_dir;
+    if (rt_dir.empty() || !std::filesystem::exists(rt_dir / "cfire_prelude.hpp")) {
+        if (const char* env = std::getenv("CFIRE_RUNTIME_DIR")) {
+            rt_dir = std::filesystem::path(env);
+        } else if (std::filesystem::exists("runtime/cfire_prelude.hpp")) {
+            rt_dir = "runtime";
+        } else if (std::filesystem::exists("cfire/runtime/cfire_prelude.hpp")) {
+            rt_dir = "cfire/runtime";
+        } else if (std::filesystem::exists("../runtime/cfire_prelude.hpp")) {
+            rt_dir = "../runtime";
+        }
+    }
+    std::vector<std::string> cflags = {"-std=c++2b"};
+    if (!rt_dir.empty()) {
+        cflags.push_back("-I" + std::filesystem::absolute(rt_dir).string());
+        if (std::filesystem::is_directory(rt_dir / "vendor")) {
+            cflags.push_back("-I" + std::filesystem::absolute(rt_dir / "vendor").string());
+        }
+    }
+    auto cache_dir = std::filesystem::temp_directory_path() / "cfire_doc_cache";
+    for (const auto& imp : checked->ast.imports) {
+        if (!imp.is_cpp) continue;
+        if (auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir)) {
+            for (const auto& [sym_name, sym] : idx->symbols) {
+                if (sym.kind == "FunctionDecl") {
+                    checked->cpp_fn_params[sym_name] = sym.param_types;
+                }
+            }
+        }
+    }
     return cfire::frontend::emit_cpp(*checked);
 }
 
@@ -27,26 +63,26 @@ namespace cfire::doc {
     return std::format(R"HTML(  <!-- Metrics Ribbon -->
   <div class="stats-ribbon">
     <div class="stat-pill">
-      <div class="stat-val">0 ms</div>
-      <div class="stat-lbl">GC Pauses (Pure RAII)</div>
+      <div class="stat-val">ISO C++23</div>
+      <div class="stat-lbl">Pedantic-Clean Output</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">1-to-1</div>
-      <div class="stat-lbl">Readable ISO C++23</div>
+      <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">{}</div>
-      <div class="stat-lbl">Built-in `core:*` Modules</div>
+      <div class="stat-val">{} Rules</div>
+      <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">0 &mu;s</div>
-      <div class="stat-lbl">C / C++ Binding Overhead</div>
+      <div class="stat-val">Core + Ext</div>
+      <div class="stat-lbl">{} Tiered Stdlib Modules</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">1-Click</div>
-      <div class="stat-lbl">CMake Project Ejection</div>
+      <div class="stat-val">cfire eject</div>
+      <div class="stat-lbl">Standalone CMake Exit</div>
     </div>
-  </div>)HTML", stdlib_catalog().size());
+  </div>)HTML", diagnostics_catalog().size(), stdlib_catalog().size());
 }
 
 [[nodiscard]] inline auto generate_reproducible_showcase() -> std::string {
@@ -84,8 +120,8 @@ type Token enum {
 fn classify(s: []str) -> str {
     match s {
         []                   => { return "empty" }
-        [head, ..tail]       => { return "head=" + head }
-        [first, ..mid, last] => { return first + ".." + last }
+        [only]               => { return "single=" + only }
+        [first, ..mid, last] => { return first + "..(" + str(mid.len()) + ").." + last }
     }
     return "other"
 }
@@ -256,8 +292,8 @@ fn main() {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -289,9 +325,9 @@ fn main() {
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
-        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: head=alpha</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -324,8 +360,8 @@ fn main() {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -358,8 +394,8 @@ fn main() {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -391,9 +427,9 @@ fn main() {
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
-        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x811c9dc5</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -426,8 +462,8 @@ fn main() {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -459,9 +495,9 @@ fn main() {
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
-        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>)HTML";
@@ -547,7 +583,7 @@ fn main() {
         out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
             mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.import_path, mod.functions.size());
     }
-    out += "        </ul>\n        <h4 style=\"margin-top:1.25rem;\">Diagnostics (7)</h4>\n        <ul class=\"sidebar-diag-list\" style=\"list-style: none; padding: 0;\">\n";
+    out += std::format("        </ul>\n        <h4 style=\"margin-top:1.25rem;\">Diagnostics ({})</h4>\n        <ul class=\"sidebar-diag-list\" style=\"list-style: none; padding: 0;\">\n", diags.size());
     for (const auto& d : diags) {
         out += std::format("          <li class=\"nav-item\"><a href=\"#diag-{}\" id=\"nav-diag-{}\" onclick=\"navigateToRefDiag('diag-{}'); return false;\"><code>{}</code></a></li>\n",
             d.code, d.code, d.code, d.code);
@@ -584,17 +620,16 @@ fn main() {
     // Pane 0: Categorized Overview Dashboard
     out += "      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All 21 Modules)\">\n";
     out += "        <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>\n";
-    out += "        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">21 zero-overhead <code>core:*</code> modules and 7 semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>\n";
+    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} zero-overhead <code>core:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and {} semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>\n", mods.size(), diags.size());
 
     struct CategoryGroup {
         std::string_view title;
         std::vector<std::string_view> aliases;
     };
     const std::vector<CategoryGroup> categories = {
-        {"1. Strings, UTF-8, Regex & Generic Containers", {"str", "unicode", "regex", "collections", "sort"}},
-        {"2. Memory Arenas, Math, CSPRNG, Crypto & Compression", {"mem", "math", "rand", "crypto", "compress"}},
-        {"3. Filesystem, OS Subprocesses, Time, CLI, Logging & Config Formats", {"fs", "os", "time", "cli", "log", "json", "toml"}},
-        {"4. Concurrency, Networking, Storage Engines & Multimodal AI", {"sync", "net", "db", "ai"}},
+        {"Tier 1A — Foundational Core: Strings, UTF-8, Regex & Generic Containers (Zero External Deps)", {"str", "unicode", "regex", "collections", "sort"}},
+        {"Tier 1B — Foundational Core: Memory Arenas, Math, CSPRNG, Crypto, Filesystem, OS, Time, Sync & CLI", {"mem", "math", "rand", "crypto", "fs", "os", "time", "sync", "cli", "log", "toml"}},
+        {"Tier 2 — Domain & Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite & Multimodal AI", {"json", "compress", "net", "db", "ai"}},
     };
 
     for (const auto& cat : categories) {
@@ -623,12 +658,12 @@ fn main() {
         out += "        </div>\n";
     }
 
-    out += "        <div class=\"ref-category-title\">5. Compiler Semantic Diagnostics (CF-E001 – CF-E007)</div>\n";
+    out += "        <div class=\"ref-category-title\">Compiler Semantic Diagnostics (8 Static Verification Rules)</div>\n";
     out += "        <div class=\"ref-category-grid\">\n";
     out += std::format(
         "          <a href=\"#diagnostics\" class=\"ref-mod-card\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
         "            <div class=\"ref-mod-card-head\">\n"
-        "              <span class=\"ref-mod-card-code\">CF-E001 .. CF-E007</span>\n"
+        "              <span class=\"ref-mod-card-code\">cfire/* Rules</span>\n"
         "              <span class=\"ref-mod-card-count\">{} rules</span>\n"
         "            </div>\n"
         "            <div class=\"ref-mod-card-title\">Compiler Semantic Diagnostics Catalog</div>\n"
@@ -706,7 +741,7 @@ fn main() {
         } else {
             out += "          <a href=\"#diagnostics\" class=\"pager-card next\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
                    "            <span class=\"pager-dir\">Diagnostics Reference &rarr;</span>\n"
-                   "            <span class=\"pager-title\">CF-E001 .. CF-E007 Semantic Rules</span>\n"
+                   "            <span class=\"pager-title\">8 Semantic Verification Rules</span>\n"
                    "          </a>\n";
         }
         out += "        </nav>\n";

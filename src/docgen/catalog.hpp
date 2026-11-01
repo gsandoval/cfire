@@ -589,6 +589,13 @@ struct DiagnosticDoc {
             "When initializing or assigning a variable with `val := fallible() or err { ... }`, the error recovery block must definitely diverge with `return`, `panic(...)`, or `exit(...)` to avoid unwrapping an uninitialized value.",
             "fn compute() -> i32 {\n    // ERROR [cfire/NON-DIVERGING-OR-BLOCK]: handler does not diverge\n    x := parse_num() or err {\n        println(\"error: {}\", err.message())\n    }\n    return x\n}",
             "fn compute() -> i32 {\n    x := parse_num() or err {\n        println(\"error: {}\", err.message())\n        return 0\n    }\n    return x\n}"
+        },
+        {
+            "cfire/UNREACHABLE-MATCH-ARM",
+            "Unreachable `match` Arm Shadowed by Earlier Pattern",
+            "Every arm in a `match` statement or expression must be reachable. Arms appearing after a wildcard `_`, duplicate enum/literal patterns, or slice patterns already subsumed by a broader prefix/suffix pattern (e.g., `[first, ..mid, last]` after `[head, ..tail]`) are rejected at compile time.",
+            "match items {\n    [head, ..tail] => { return head }\n    [first, ..mid, last] => { return last } // ERROR [cfire/UNREACHABLE-MATCH-ARM]\n    _ => { return \"\" }\n}",
+            "match items {\n    [] => { return \"empty\" }\n    [only] => { return only }\n    [first, ..mid, last] => { return first + last } // OK: size >= 2 is reachable\n}"
         }
     };
     return diags;

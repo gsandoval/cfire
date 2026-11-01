@@ -27,7 +27,11 @@ The phonetic homophone to **sapphire** captures the visual identity: crystalline
 4. **Clang AST C/C++ Interop + Unified `build.cf` Build System:** Import any C/C++ header (`import cpp "<header.h>"`) or build local/external `build.CC` and `build.CMake` dependencies into cached static archives (`.cfire/cache/lib/*.a`) with automatic `str` $\rightarrow$ `const char*` boundary coercion (`cfire::c_str`).
 5. **Intent Over Ceremony:** Replace `const T&`, `T&&`, `std::move`, `std::string_view`, and pointer hazards with `in` (default), `mut`, `move` (with definite last-use move insertion), multi-return tuples `(T1, T2)`, unified `str`/`path`/`bytes`, `own[T]`/`shared[T]`, `T!`, `defer`, `match`, and `test "..." { ... }` blocks.
 
-## Built-In `core:` & `vendor:` Standard Library Catalog (33 Modules)
+## Tiered `core:` & `vendor:` Standard Library Catalog (33 Modules)
+
+To keep the core language surface small and maintainable while providing batteries-included productivity, the standard library is organized into two tiers:
+- **Tier 1 — Foundational Core (`core:*`, Zero External Deps):** Language-adjacent, header-only modules (`str`, `unicode`, `regex`, `collections`, `sort`, `mem`, `math`, `rand`, `fs`, `os`, `os/exec`, `os/signal`, `time`, `sync`, `sync/context`, `cli`, `log`, `toml`, `encoding/*`, `crypto/*`).
+- **Tier 2 — Domain & Platform Extensions (`core:*` & `vendor:*`):** Opt-in domain engines (`json`, `compress/zstd`, `db/sqlite`, `net`, `net/tls`, `net/url`, `net/http`, `net/websocket`, `audio`, `ai`, `vendor:raylib`, `vendor:raygui`) that are only included and linked when explicitly imported.
 
 | Import Path | Native Engine / C++23 Lowering | Auto-Linked Flags |
 | :--- | :--- | :--- |

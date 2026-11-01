@@ -332,6 +332,7 @@ public:
                     moved_at_line_[pi->root] = me->line;
                 }
             }
+            if (auto r = check_match_arms_reachability(me->arms, me->line, me->col); !r) return r;
             bool is_slice_match = false;
             bool is_primitive_match = false;
             for (const auto& a : me->arms) {
@@ -374,11 +375,121 @@ public:
                     }
                 }
             } else if ((is_slice_match || is_primitive_match || enum_name.empty()) && !has_wildcard) {
-                if (auto r = emit_error(std::format(
-                    "{}:{}:{}: match expression must have a wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
-                    path_, me->line, me->col)); !r) return r;
+                if (!is_slice_match || !is_slice_exhaustively_covered(me->arms)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: match expression must have a wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
+                        path_, me->line, me->col)); !r) return r;
+                }
             }
             return {};
+        }
+        return {};
+    }
+
+    [[nodiscard]] static auto is_slice_exhaustively_covered(const std::vector<MatchArm>& arms) -> bool {
+        std::unordered_set<std::size_t> exact_covered;
+        std::optional<std::size_t> min_variadic_covered;
+        for (const auto& arm : arms) {
+            if (arm.variant_name == "_" && !arm.is_slice_pattern && arm.literal_val.empty()) {
+                return true;
+            }
+            if (arm.is_slice_pattern) {
+                std::size_t min_sz = arm.slice_head.size() + arm.slice_tail.size();
+                if (!arm.slice_has_rest) {
+                    exact_covered.insert(min_sz);
+                } else {
+                    if (!min_variadic_covered || min_sz < *min_variadic_covered) {
+                        min_variadic_covered = min_sz;
+                    }
+                }
+            }
+        }
+        if (!min_variadic_covered) return false;
+        for (std::size_t k = 0; k < *min_variadic_covered; ++k) {
+            if (!exact_covered.contains(k)) return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] auto check_match_arms_reachability(
+        const std::vector<MatchArm>& arms,
+        int match_line,
+        int match_col
+    ) -> std::expected<void, std::string> {
+        bool seen_wildcard = false;
+        std::unordered_set<std::string> seen_variants;
+        std::unordered_set<std::string> seen_literals;
+        std::unordered_set<std::size_t> exact_slice_sizes;
+        std::optional<std::size_t> min_variadic_slice;
+
+        auto is_size_covered = [&](std::size_t n) -> bool {
+            if (exact_slice_sizes.contains(n)) return true;
+            if (min_variadic_slice && n >= *min_variadic_slice) return true;
+            return false;
+        };
+
+        auto all_sizes_from_covered = [&](std::size_t m) -> bool {
+            if (!min_variadic_slice) return false;
+            for (std::size_t k = m; k < *min_variadic_slice; ++k) {
+                if (!exact_slice_sizes.contains(k)) return false;
+            }
+            return true;
+        };
+
+        for (std::size_t idx = 0; idx < arms.size(); ++idx) {
+            const auto& arm = arms[idx];
+            if (seen_wildcard) {
+                return emit_error(std::format(
+                    "{}:{}:{}: unreachable match arm #{}: previous wildcard '_' arm already matches all remaining cases (cfire/UNREACHABLE-MATCH-ARM)",
+                    path_, match_line, match_col, idx + 1));
+            }
+            if (arm.is_slice_pattern) {
+                std::size_t min_sz = arm.slice_head.size() + arm.slice_tail.size();
+                if (!arm.slice_has_rest) {
+                    if (is_size_covered(min_sz)) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: unreachable slice match arm #{} (exact length {} is already matched by an earlier arm) (cfire/UNREACHABLE-MATCH-ARM)",
+                            path_, match_line, match_col, idx + 1, min_sz));
+                    }
+                    exact_slice_sizes.insert(min_sz);
+                } else {
+                    if (all_sizes_from_covered(min_sz)) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: unreachable slice match arm #{} (slices of length >= {} are already matched by earlier arms) (cfire/UNREACHABLE-MATCH-ARM)",
+                            path_, match_line, match_col, idx + 1, min_sz));
+                    }
+                    if (!min_variadic_slice || min_sz < *min_variadic_slice) {
+                        min_variadic_slice = min_sz;
+                    }
+                }
+                continue;
+            }
+            if (arm.variant_name == "_" && arm.literal_val.empty()) {
+                if (min_variadic_slice && all_sizes_from_covered(0)) {
+                    return emit_error(std::format(
+                        "{}:{}:{}: unreachable wildcard '_' match arm #{}: all slice lengths are already covered by earlier arms (cfire/UNREACHABLE-MATCH-ARM)",
+                        path_, match_line, match_col, idx + 1));
+                }
+                seen_wildcard = true;
+                continue;
+            }
+            if (!arm.literal_val.empty()) {
+                if (seen_literals.contains(arm.literal_val)) {
+                    return emit_error(std::format(
+                        "{}:{}:{}: unreachable match arm #{}: duplicate literal pattern '{}' (cfire/UNREACHABLE-MATCH-ARM)",
+                        path_, match_line, match_col, idx + 1, arm.literal_val));
+                }
+                seen_literals.insert(arm.literal_val);
+                continue;
+            }
+            if (!arm.variant_name.empty()) {
+                if (seen_variants.contains(arm.variant_name)) {
+                    return emit_error(std::format(
+                        "{}:{}:{}: unreachable match arm #{}: duplicate variant pattern '{}' (cfire/UNREACHABLE-MATCH-ARM)",
+                        path_, match_line, match_col, idx + 1, arm.variant_name));
+                }
+                seen_variants.insert(arm.variant_name);
+            }
         }
         return {};
     }
@@ -544,6 +655,7 @@ public:
                     moved_at_line_[pi->root] = ms->line;
                 }
             }
+            if (auto r = check_match_arms_reachability(ms->arms, ms->line, ms->col); !r) return r;
             bool is_slice_match = false;
             for (const auto& a : ms->arms) {
                 if (a.is_slice_pattern) {

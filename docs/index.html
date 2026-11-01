@@ -839,7 +839,7 @@ tr:hover td { background: #1F242C; }
       <a href="reference.html">Stdlib</a>
       <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-        GitHub 4.2k ★
+        GitHub
       </a>
       <a href="#install" class="btn-nav-primary">Install v0.9.4</a>
     </div>
@@ -871,66 +871,69 @@ tr:hover td { background: #1F242C; }
         <span id="cmd-install">curl -fsSL https://cfire.memo.engineer/install.sh | sh</span>
         <button class="copy-btn" onclick="copyInstallCmd()">Copy</button>
       </div>
+      <div style="margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); font-family: var(--font-mono);">
+        Prefer building from source or containers? <code>git clone https://github.com/gsandoval/cfire &amp;&amp; cd cfire &amp;&amp; make &amp;&amp; sudo make install</code> &bull; <code>docker build -t cfire .</code> &bull; Verify with <code>cfire doctor</code>
+      </div>
     </div>
   </section>
 
     <!-- Metrics Ribbon -->
   <div class="stats-ribbon">
     <div class="stat-pill">
-      <div class="stat-val">0 ms</div>
-      <div class="stat-lbl">GC Pauses (Pure RAII)</div>
+      <div class="stat-val">ISO C++23</div>
+      <div class="stat-lbl">Pedantic-Clean Output</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">1-to-1</div>
-      <div class="stat-lbl">Readable ISO C++23</div>
+      <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">33</div>
-      <div class="stat-lbl">Built-in `core:*` Modules</div>
+      <div class="stat-val">8 Rules</div>
+      <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">0 &mu;s</div>
-      <div class="stat-lbl">C / C++ Binding Overhead</div>
+      <div class="stat-val">Core + Ext</div>
+      <div class="stat-lbl">33 Tiered Stdlib Modules</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">1-Click</div>
-      <div class="stat-lbl">CMake Project Ejection</div>
+      <div class="stat-val">cfire eject</div>
+      <div class="stat-lbl">Standalone CMake Exit</div>
     </div>
   </div>
 
   <!-- The Modern Systems Landscape -->
   <h2 id="landscape" class="section-title">The Modern Systems Landscape</h2>
-  <p class="section-subtitle">Systems programmers have exceptional tools today. Here is why cfire takes a dedicated, pragmatic path focused on modern C++23.</p>
+  <p class="section-subtitle">Systems programmers have strong alternatives today—from Rust and Odin to C++ transpilers like cppfront, Jakt, and Nim. Here is where cfire fits.</p>
 
   <div class="grid-3">
     <div class="card">
       <div class="card-num">01. THE ECOSYSTEM SPECTRUM</div>
-      <h3>Distinct Strengths for Distinct Needs</h3>
+      <h3>Peers &amp; Precedents</h3>
       <p>
-        <strong>Rust</strong> delivers unmatched compile-time borrow verification. <strong>Zig</strong> offers exquisite manual control over C-level primitives and custom allocators. <strong>Go</strong> provides unmatched velocity for networked services. Each represents a top-tier engineering choice for its domain.
+        <strong>Rust</strong> provides full compile-time borrow checking. <strong>Odin</strong> and <strong>Zig</strong> offer explicit low-level control with clean package systems (<code>core:*</code>). <strong>cppfront (Cpp2)</strong>, <strong>Jakt</strong>, and <strong>Nim</strong> show the value of lowering ergonomic syntax to C++.
       </p>
     </div>
 
     <div class="card">
       <div class="card-num">02. THE C++23 PRODUCTION REALITY</div>
-      <h3>The Enduring Power of C++</h3>
+      <h3>Why Target Standard C++23</h3>
       <p>
-        In game engines, audio DSP, robotics, LLM inference runtimes, and embedded kernels, modern C++ remains an unrivaled standard. Yet writing raw C++ still imposes daily friction: multiple initialization styles, implicit copy hazards, unannotated call-site mutations, and macro-heavy FFI bindings.
+        In game engines, audio DSP, robotics, and LLM runtimes, C++ remains the native ABI. Yet raw C++ imposes daily friction: implicit copies, unannotated call-site mutations, verbose sum types (`std::variant`), and complex build files.
       </p>
     </div>
 
     <div class="card">
-      <div class="card-num">03. THE CFIRE PROPOSITION</div>
-      <h3>C Heritage, Fire Velocity</h3>
+      <div class="card-num">03. THE CFIRE DIFFERENTIATOR</div>
+      <h3>Ejectable C++23 + Tiered Stdlib</h3>
       <p>
-        The name <strong>cfire</strong> (pronounced like <em>sapphire</em>) pairs <strong>C</strong> (direct mechanical sympathy, raw performance, zero-cost abstractions) with modern <strong>fire</strong> (blazing developer velocity without forty years of boilerplate). It lowers 1-to-1 to human-readable standard C++23 with zero GC pauses, pure RAII, and 1-click CMake ejection.
+        <strong>cfire</strong> combines Go/Odin-inspired syntax, 8 static intent and pattern-reachability checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
       </p>
     </div>
   </div>
 
   <!-- Bento Architectural Feature Grid -->
   <h2 class="section-title">Deterministic Architecture: Language Primitives</h2>
-  <p class="section-subtitle">Zero GC, zero trace overhead. Engineered for safety-critical systems, low-latency DSP, and AI agents.</p>
+  <p class="section-subtitle">Standard C++23 RAII, static call-site intent rules, and zero-lock-in CMake ejection.</p>
 
   <div class="bento-grid">
     <!-- Card 1 -->
@@ -938,15 +941,15 @@ tr:hover td { background: #1F242C; }
       <div>
         <div class="bento-card-header">
           <span style="font-size: 1.25rem; color: #F97316;">&#128737;</span>
-          <span class="bento-tag">LIFETIME SOLVER</span>
+          <span class="bento-tag">STATIC INTENT &amp; MATCH CHECKS</span>
         </div>
-        <h3>Strict Intent &amp; Mutability Safety</h3>
+        <h3>Call-Site Intent &amp; Pattern Hygiene</h3>
         <p>
-          Explicit call-site mutation markers (<code>mut</code>, <code>move</code>, <code>in</code>) and escape analysis eradicate use-after-free, double-free, and hidden side-effects prior to ISO C++23 emission (<code>cfire/MUT-CALLSITE</code>).
+          Catches common mutation, aliasing, and pattern mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, single-call mutable alias exclusivity, local use-after-move checks, and exhaustive/reachable <code>match</code> verification (8 <code>cfire/*</code> rules). Does not require borrow lifetimes.
         </p>
       </div>
       <div class="bento-footer">
-        <code>increment(mut b) &bull; cfire/MUT-CALLSITE &bull; pure RAII</code>
+        <code>cfire/MUT-CALLSITE &bull; cfire/MUT-ALIAS &bull; cfire/UNREACHABLE-MATCH-ARM</code>
       </div>
     </div>
 
@@ -957,13 +960,13 @@ tr:hover td { background: #1F242C; }
           <span style="font-size: 1.25rem; color: #F97316;">&#9201;</span>
           <span class="bento-tag">DETERMINISM</span>
         </div>
-        <h3>0ms GC Pauses &amp; Pure RAII</h3>
+        <h3>Scoped RAII &amp; Defer Cleanup</h3>
         <p>
-          Deterministic resource destruction using scoped ownership and <code>defer</code> guarantees microsecond-level latency predictability with zero runtime overhead or garbage collector pauses.
+          Compiles directly to standard C++23 value semantics, <code>std::unique_ptr</code> (<code>own[T]</code>), <code>std::shared_ptr</code> (<code>shared[T]</code>), and RAII scope guards (<code>defer</code>) with no garbage collector or managed runtime.
         </p>
       </div>
       <div class="bento-footer">
-        <code>defer f.close() &bull; 0ms GC pauses &bull; pure C++23 RAII</code>
+        <code>defer f.close() &bull; own[T] / shared[T] &bull; standard C++23 RAII</code>
       </div>
     </div>
 
@@ -971,16 +974,16 @@ tr:hover td { background: #1F242C; }
     <div class="bento-card">
       <div>
         <div class="bento-card-header">
-          <span style="font-size: 1.25rem; color: #F97316;">&#127911;</span>
-          <span class="bento-tag">SIMD-FIRST</span>
+          <span style="font-size: 1.25rem; color: #F97316;">&#129513;</span>
+          <span class="bento-tag">TIERED STDLIB</span>
         </div>
-        <h3>Real-Time Audio DSP &amp; SFX</h3>
+        <h3>Foundational Core + Domain Extensions</h3>
         <p>
-          Procedural SFX generation, 64-voice polyphonic mixer, ADSR tone envelopes, and real-time float32 DSP streams across macOS, iOS, WebAssembly, and Linux.
+          <strong>Tier 1 (Foundational Core)</strong> provides small, zero-dependency language primitives (<code>fs</code>, <code>time</code>, <code>sync</code>, <code>str</code>, <code>mem</code>, <code>cli</code>). <strong>Tier 2 (Extensions)</strong> provides opt-in domain headers (<code>ai</code>, <code>audio</code>, <code>db/sqlite</code>, <code>net/http</code>, <code>vendor:raylib</code>) that are only included and linked when imported.
         </p>
       </div>
       <div class="bento-footer">
-        <code>core:audio &bull; gen_sfx(Coin) &bull; float32 stream</code>
+        <code>Tier 1: zero external deps &bull; Tier 2: opt-in domain &amp; platform packages</code>
       </div>
     </div>
 
@@ -989,11 +992,11 @@ tr:hover td { background: #1F242C; }
       <div>
         <div class="bento-card-header">
           <span style="font-size: 1.25rem; color: #F97316;">&#129504;</span>
-          <span class="bento-tag">EDGE AI STACK</span>
+          <span class="bento-tag">TIER 2 EXTENSION: CORE:AI &amp; SQLITE</span>
         </div>
-        <h3>AI-First LLMs, Local Vectors &amp; MCP Tool Servers</h3>
+        <h3>Opt-In AI Clients, Local Vectors &amp; MCP Tool Servers</h3>
         <p>
-          Unified client for OpenAI, Anthropic, Gemini, and Ollama. Generate local normalized float32 embeddings, perform in-database cosine similarity queries with SQLite WAL, and expose typed Model Context Protocol (MCP) tool servers for AI agents with compile-time JSON schema reflection.
+          When imported, <code>core:ai</code> and <code>core:db/sqlite</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
         </p>
       </div>
       <div class="bento-footer">
@@ -1008,9 +1011,9 @@ tr:hover td { background: #1F242C; }
           <span style="font-size: 1.25rem; color: #F97316;">&#128187;</span>
           <span class="bento-tag">COMPILER TARGETS</span>
         </div>
-        <h3>Universal C++23 Portability</h3>
+        <h3>Pedantic-Clean ISO C++23</h3>
         <p>
-          Lowers 1-to-1 to clean, human-readable standard ISO C++23. Target bare-metal x86_64 servers, Apple Silicon ARM64, WebAssembly runtimes, and iOS with standard Clang 18+ or GCC 14+.
+          Lowers 1-to-1 to standard ISO C++23 without GNU statement expressions or non-standard compiler extensions. Builds cleanly with <code>-std=c++23 -pedantic-errors</code> across macOS, Linux, WebAssembly, and iOS.
         </p>
       </div>
       <div class="bento-footer">
@@ -1115,8 +1118,8 @@ auto main(int argc, char** argv) -&gt; int {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1141,8 +1144,8 @@ type Token enum {
 fn classify(s: []str) -&gt; str {
     match s {
         []                   =&gt; { return &quot;empty&quot; }
-        [head, ..tail]       =&gt; { return &quot;head=&quot; + head }
-        [first, ..mid, last] =&gt; { return first + &quot;..&quot; + last }
+        [only]               =&gt; { return &quot;single=&quot; + only }
+        [first, ..mid, last] =&gt; { return first + &quot;..(&quot; + str(mid.len()) + &quot;)..&quot; + last }
     }
     return &quot;other&quot;
 }
@@ -1184,12 +1187,11 @@ struct Token {
             #line 11 &quot;snippet_patterns.cf&quot;
             return &quot;empty&quot;;
         }
-        if (!_matched &amp;&amp; _target.size() &gt;= 1) {
+        if (!_matched &amp;&amp; _target.size() == 1) {
             _matched = true;
-            const auto&amp; head = _target[0];
-            auto tail = cfire::slice(_target, 1, _target.size());
+            const auto&amp; only = _target[0];
             #line 12 &quot;snippet_patterns.cf&quot;
-            return (&quot;head=&quot; + head);
+            return (&quot;single=&quot; + only);
         }
         if (!_matched &amp;&amp; _target.size() &gt;= 2) {
             _matched = true;
@@ -1197,7 +1199,7 @@ struct Token {
             auto mid = cfire::slice(_target, 1, (_target.size() - 1));
             const auto&amp; last = _target[_target.size() - 1];
             #line 13 &quot;snippet_patterns.cf&quot;
-            return ((first + &quot;..&quot;) + last);
+            return ((((first + &quot;..(&quot;) + str(mid.size())) + &quot;)..&quot;) + last);
         }
     }
     #line 15 &quot;snippet_patterns.cf&quot;
@@ -1222,9 +1224,9 @@ auto main(int argc, char** argv) -&gt; int {
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
-        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: head=alpha</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1272,27 +1274,25 @@ auto main(int argc, char** argv) -&gt; int {
     #line 10 &quot;snippet_net.cf&quot;
     auto _defer_1 = cfire::scope_exit([&amp;] { cancel(&quot;done&quot;); });
     #line 12 &quot;snippet_net.cf&quot;
-    auto [client, server] = ({
-    auto&amp;&amp; _res = (cfire::websocket::pair());
-    if (!_res.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _res.error().message());
-        std::exit(1);
+    auto _try_1 = cfire::websocket::pair();
+    if (!_try_1.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
+        return 1;
     }
-    cfire::unwrap_val(std::forward&lt;decltype(_res)&gt;(_res));
-});
+    auto [client, server] = std::move(*_try_1);
     #line 13 &quot;snippet_net.cf&quot;
-    auto _try_v_1 = client.send_text(&quot;ping-payload&quot;);
-    if (!_try_v_1.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _try_v_1.error().message());
+    auto _try_v_2 = client.send_text(&quot;ping-payload&quot;);
+    if (!_try_v_2.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_v_2.error().message());
         return 1;
     }
     #line 14 &quot;snippet_net.cf&quot;
-    auto _try_2 = server.recv_text();
-    if (!_try_2.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
+    auto _try_3 = server.recv_text();
+    if (!_try_3.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_3.error().message());
         return 1;
     }
-    auto msg = std::move(*_try_2);
+    auto msg = std::move(*_try_3);
     #line 15 &quot;snippet_net.cf&quot;
     (void)(std::println(&quot;received: {}&quot;, msg));
     return 0;
@@ -1308,8 +1308,8 @@ auto main(int argc, char** argv) -&gt; int {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1431,8 +1431,8 @@ auto main(int argc, char** argv) -&gt; int {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1469,7 +1469,7 @@ auto main(int argc, char** argv) -&gt; int {
     #line 7 &quot;snippet_interop.cf&quot;
     std::string msg = &quot;cfire systems programming&quot;;
     #line 9 &quot;snippet_interop.cf&quot;
-    auto hash = fh_fnv1a(msg, msg.size());
+    auto hash = fh_fnv1a(cfire::c_str(msg), msg.size());
     #line 10 &quot;snippet_interop.cf&quot;
     (void)(std::println(&quot;fnv1a hash: 0x{:x}&quot;, hash));
     return 0;
@@ -1484,9 +1484,9 @@ auto main(int argc, char** argv) -&gt; int {
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
-        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x811c9dc5</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1565,8 +1565,8 @@ auto main(int argc, char** argv) -&gt; int {
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1625,17 +1625,12 @@ fn main() {
       </div>
       <div class="rosetta-pane-cpp">
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-        <pre><code>// @cfire-link: -lsimdjson -lsqlite3 -lsimdjson
+        <pre><code>// @cfire-link: -lsimdjson -lsqlite3
 #define CFIRE_USE_SIMDJSON 1
 #define CFIRE_USE_SQLITE 1
-#define CFIRE_USE_SIMDJSON 1
 #include &quot;cfire_prelude.hpp&quot;
 #include &quot;core/ai.hpp&quot;
-#include &quot;core/encoding.hpp&quot;
-#include &quot;core/fs.hpp&quot;
 #include &quot;core/json.hpp&quot;
-#include &quot;core/net.hpp&quot;
-#include &quot;core/os.hpp&quot;
 #include &quot;core/sqlite.hpp&quot;
 
 struct QueryPlan;
@@ -1795,9 +1790,9 @@ auto main(int argc, char** argv) -&gt; int {
       </div>
       <div class="telemetry-body">
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
-        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
-        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
-        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1822,7 +1817,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
 
   <!-- Comparison Matrix -->
   <h2 id="benchmarks" class="section-title">How cfire Compares</h2>
-  <p class="section-subtitle">Where cfire fits in the modern systems programming landscape.</p>
+  <p class="section-subtitle">An honest look at trade-offs across raw C++23, C++ transpilers (cppfront, Nim, Jakt), Rust, Odin, and Go.</p>
 
   <div class="table-wrap">
     <div class="table-scroll-cue">Scroll table &rarr;</div>
@@ -1831,53 +1826,58 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
         <tr>
           <th>Dimension</th>
           <th>C++23 (Raw)</th>
+          <th>cppfront (Cpp2)</th>
+          <th>Nim / Jakt</th>
           <th>Rust</th>
-          <th>Go</th>
+          <th>Odin / Go</th>
           <th>cfire (ISO C++23)</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><strong>Syntax &amp; Ergonomics</strong></td>
-          <td>Complex, verbose, 40 years of legacy baggage.</td>
-          <td>Steep learning curve, explicit lifetime annotations.</td>
-          <td>Clean, rapid 10-minute onboarding.</td>
-          <td><strong>Go-clean syntax</strong> with pattern matching, tuples, and defer.</td>
+          <td><strong>Compilation Model</strong></td>
+          <td>Direct native compilation (Clang/GCC/MSVC).</td>
+          <td>Syntax-level transpiler to C++20/23 (`cppfront`).</td>
+          <td>Transpiles to C/C++ (Nim) or C++ (Jakt).</td>
+          <td>Direct LLVM/Cranelift compilation via Cargo.</td>
+          <td>Direct native compilation (Odin LLVM; Go runtime).</td>
+          <td><strong>1-to-1 lowering to ISO C++23</strong> (`#line`-mapped, pedantic-clean).</td>
         </tr>
         <tr>
-          <td><strong>Runtime &amp; GC</strong></td>
-          <td>Zero GC, manual or RAII memory management.</td>
-          <td>Zero GC, compile-time borrow checker.</td>
-          <td>Mandatory ~20MB garbage-collected runtime.</td>
-          <td><strong>Zero GC, zero wrapper runtime</strong>, pure C++23 RAII.</td>
-        </tr>
-        <tr>
-          <td><strong>Intent &amp; Mutation Safety</strong></td>
-          <td>Default const ref, easy dangling references.</td>
-          <td>Strict borrow checker, exclusive <code>&amp;mut</code>.</td>
-          <td>Pointers allow unrestricted aliased mutations.</td>
-          <td><strong>Call-site intent markers</strong> (<code>mut</code>, <code>move</code>, <code>out</code>) + alias exclusivity.</td>
+          <td><strong>Memory &amp; Safety Model</strong></td>
+          <td>Manual RAII; implicit copies and unannotated mutable refs.</td>
+          <td>Parameter intents (`in`, `inout`, `out`, `move`) + bounds checks.</td>
+          <td>ORC ref-counting (Nim) or ref-counted/RAII C++ (Jakt).</td>
+          <td>Full compile-time borrow &amp; lifetime checker.</td>
+          <td>Manual allocators (Odin) or tracing GC (Go).</td>
+          <td><strong>C++23 RAII + 8 static checks</strong> (call-site `mut`/`move`, alias exclusivity, local use-after-move, `match` reachability; no borrow checker).</td>
         </tr>
         <tr>
           <td><strong>C &amp; C++ Interop</strong></td>
-          <td>Native, but complex build &amp; header dependencies.</td>
-          <td>Requires <code>unsafe</code> C FFI or bindgen/cxx wrappers.</td>
-          <td>Cgo overhead, difficult direct C++ integration.</td>
-          <td><strong>Direct Clang AST ingestion</strong> + 1-to-1 ISO C++23 ABI.</td>
+          <td>Native by definition, verbose build wiring.</td>
+          <td>Seamless mixed Cpp1/Cpp2 in the same file.</td>
+          <td>Pragmas/wrappers (`{.importcpp.}` in Nim; `extern` in Jakt).</td>
+          <td>Requires `unsafe` C FFI or `cxx`/`bindgen` bridges.</td>
+          <td>`foreign` C blocks (Odin) or `cgo` overhead (Go).</td>
+          <td><strong>Direct Clang AST header ingestion</strong> (`import cpp`) + inline `cpp { ... }`.</td>
         </tr>
         <tr>
-          <td><strong>Stdlib Batteries</strong></td>
-          <td>STL provided; networking, JSON, SQLite require 3rd party libs.</td>
-          <td>Minimal stdlib; relies on external crates.</td>
-          <td>Rich built-in stdlib (HTTP, crypto, json).</td>
-          <td><strong>33 built-in <code>core:*</code> modules</strong> (AI/MCP, Audio DSP, WebSockets, HTTP, Vector SQLite, Zstd, AES, SIMD JSON).</td>
+          <td><strong>Standard Library Scope</strong></td>
+          <td>STL only; JSON, HTTP, SQLite require external deps.</td>
+          <td>Uses standard C++ STL directly.</td>
+          <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
+          <td>Minimal `std`; relies on Cargo ecosystem.</td>
+          <td>Batteries-included `core:` / `vendor:` (Odin) and `net/http` (Go).</td>
+          <td><strong>Tiered `core:*` &amp; `vendor:*`</strong>: Tier 1 foundational core + Tier 2 opt-in extensions (JSON, HTTP, SQLite, Audio, AI/MCP).</td>
         </tr>
         <tr>
-          <td><strong>Project Ejection</strong></td>
-          <td>N/A</td>
-          <td>N/A (locked into Cargo toolchain)</td>
-          <td>N/A</td>
-          <td><strong><code>cfire eject</code></strong> exports clean C++23 + standard CMake.</td>
+          <td><strong>Exit Strategy / Lock-In</strong></td>
+          <td>None (already standard C++).</td>
+          <td>Emits `.cpp`, coupled to `cpp2util.h`.</td>
+          <td>Generated C/C++ is compiler-internal and not meant for hand maintenance.</td>
+          <td>Committed to Rust/Cargo toolchain.</td>
+          <td>Committed to Odin or Go toolchain.</td>
+          <td><strong>`cfire eject`</strong> outputs human-readable ISO C++23 + self-contained `CMakeLists.txt`.</td>
         </tr>
       </tbody>
     </table>
@@ -1885,15 +1885,15 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
 
   <!-- Quickstart in 3 Steps -->
   <h2 class="section-title">Get Started in 3 Steps</h2>
-  <p class="section-subtitle">From zero to running your first high-performance systems service in under 60 seconds.</p>
+  <p class="section-subtitle">Build from source, run via Docker, or use the POSIX bootstrap script—then verify your toolchain with <code>cfire doctor</code>.</p>
 
   <div class="step-grid">
     <div class="step-card">
       <span class="step-badge">STEP 1</span>
       <h4>Build or Install</h4>
-      <p>Clone and compile the pure C++23 compiler in seconds with zero external dependencies:</p>
+      <p>Compile the single-binary C++23 toolchain from source (or run in Docker) and verify host dependencies:</p>
       <pre><code>git clone https://github.com/gsandoval/cfire
-cd cfire &amp;&amp; make</code></pre>
+cd cfire &amp;&amp; make &amp;&amp; ./cfire doctor</code></pre>
     </div>
     <div class="step-card">
       <span class="step-badge">STEP 2</span>

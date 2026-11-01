@@ -1444,3 +1444,25 @@ fn compute() -> i32 {
 }
 ```
 
+### `[cfire/UNREACHABLE-MATCH-ARM]` — Unreachable `match` Arm Shadowed by Earlier Pattern
+
+Every arm in a `match` statement or expression must be reachable. Arms appearing after a wildcard `_`, duplicate enum/literal patterns, or slice patterns already subsumed by a broader prefix/suffix pattern (e.g., `[first, ..mid, last]` after `[head, ..tail]`) are rejected at compile time.
+
+**Rejected (`.cf`):**
+```cf
+match items {
+    [head, ..tail] => { return head }
+    [first, ..mid, last] => { return last } // ERROR [cfire/UNREACHABLE-MATCH-ARM]
+    _ => { return "" }
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+match items {
+    [] => { return "empty" }
+    [only] => { return only }
+    [first, ..mid, last] => { return first + last } // OK: size >= 2 is reachable
+}
+```
+
