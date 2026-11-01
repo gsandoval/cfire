@@ -44,6 +44,7 @@ public:
     std::vector<std::string> active_async_scopes_{};
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
+    std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
     [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
         std::string out;
@@ -103,11 +104,6 @@ public:
                 used_core_.insert("audio");
             } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
-                used_core_.insert("encoding");
-                used_core_.insert("fs");
-                used_core_.insert("json");
-                used_core_.insert("net");
-                used_core_.insert("os");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -142,13 +138,19 @@ public:
         };
         std::vector<CppHeader> cpp_headers;
 
+        auto add_unique = [](std::vector<std::string>& vec, std::string val) {
+            if (std::find(vec.begin(), vec.end(), val) == vec.end()) {
+                vec.push_back(std::move(val));
+            }
+        };
+
         for (const auto& imp : ast.imports) {
             if (imp.is_cpp) {
                 CppHeader header;
                 header.path = imp.path;
                 for (const auto& attr : imp.attrs) {
                     if (attr.name == "pkg" && !attr.args.empty()) {
-                        link_tags.push_back("@pkg:" + attr.args[0]);
+                        add_unique(link_tags, "@pkg:" + attr.args[0]);
                     } else if (attr.name == "define" && !attr.args.empty()) {
                         if (attr.args.size() == 1) {
                             header.defines.push_back(std::format("#define {}", attr.args[0]));
@@ -166,16 +168,16 @@ public:
                 used_core_.insert("cli");
             } else if (imp.path.starts_with("core:compress/") || imp.path == "core:compress" || imp.path == "core:zstd") {
                 used_core_.insert("compress");
-                defines.push_back("#define CFIRE_USE_ZSTD 1");
-                link_tags.push_back("-lzstd");
+                add_unique(defines, "#define CFIRE_USE_ZSTD 1");
+                add_unique(link_tags, "-lzstd");
             } else if (imp.path == "core:json") {
                 used_core_.insert("json");
-                defines.push_back("#define CFIRE_USE_SIMDJSON 1");
-                link_tags.push_back("-lsimdjson");
+                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
+                add_unique(link_tags, "-lsimdjson");
             } else if (imp.path == "core:db/sqlite" || imp.path == "core:sqlite") {
                 used_core_.insert("sqlite");
-                defines.push_back("#define CFIRE_USE_SQLITE 1");
-                link_tags.push_back("-lsqlite3");
+                add_unique(defines, "#define CFIRE_USE_SQLITE 1");
+                add_unique(link_tags, "-lsqlite3");
             } else if (imp.path.starts_with("core:crypto/") || imp.path == "core:crypto") {
                 used_core_.insert("crypto");
             } else if (imp.path.starts_with("core:net/") || imp.path == "core:net" || imp.path == "core:http" || imp.path == "core:websocket" || imp.path == "core:tls") {
@@ -204,28 +206,21 @@ public:
                 used_core_.insert("audio");
             } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
-                used_core_.insert("encoding");
-                used_core_.insert("fs");
-                used_core_.insert("json");
-                used_core_.insert("net");
-                used_core_.insert("os");
-                defines.push_back("#define CFIRE_USE_SIMDJSON 1");
-                link_tags.push_back("-lsimdjson");
+                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
+                add_unique(link_tags, "-lsimdjson");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
                 std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
                 used_vendor_["raylib"] = alias;
-                link_tags.push_back("-lraylib");
+                add_unique(link_tags, "-lraylib");
             } else if (imp.path == "vendor:raygui") {
                 std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
                 used_vendor_["raygui"] = alias;
                 if (!used_vendor_.contains("raylib")) {
                     used_vendor_["raylib"] = "raylib";
                 }
-                if (std::find(link_tags.begin(), link_tags.end(), "-lraylib") == link_tags.end()) {
-                    link_tags.push_back("-lraylib");
-                }
+                add_unique(link_tags, "-lraylib");
             }
         }
 
@@ -891,12 +886,184 @@ public:
         }
     }
 
+    [[nodiscard]] static auto expr_references_ident(const ExprPtr& e, std::string_view ident) -> bool {
+        if (!e || ident.empty()) return false;
+        return std::visit([&](const auto& ex) -> bool {
+            using T = std::decay_t<decltype(ex)>;
+            if constexpr (std::is_same_v<T, IdentExpr>) {
+                return ex.name == ident;
+            } else if constexpr (std::is_same_v<T, LiteralExpr>) {
+                if (ex.kind == TokenKind::String && ex.value.contains('{')) {
+                    return ex.value.find(ident) != std::string::npos;
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, UnaryExpr>) {
+                return expr_references_ident(ex.operand, ident);
+            } else if constexpr (std::is_same_v<T, BinaryExpr>) {
+                return expr_references_ident(ex.left, ident) || expr_references_ident(ex.right, ident);
+            } else if constexpr (std::is_same_v<T, MemberExpr>) {
+                return expr_references_ident(ex.object, ident);
+            } else if constexpr (std::is_same_v<T, IndexExpr>) {
+                return expr_references_ident(ex.object, ident) || expr_references_ident(ex.index, ident);
+            } else if constexpr (std::is_same_v<T, SliceExpr>) {
+                return expr_references_ident(ex.object, ident) ||
+                       expr_references_ident(ex.start, ident) ||
+                       expr_references_ident(ex.end, ident);
+            } else if constexpr (std::is_same_v<T, StructLitExpr>) {
+                for (const auto& f : ex.fields) {
+                    if (expr_references_ident(f.value, ident)) return true;
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, ArrayLitExpr> || std::is_same_v<T, TupleExpr>) {
+                for (const auto& el : ex.elements) {
+                    if (expr_references_ident(el, ident)) return true;
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, ClosureExpr>) {
+                return stmts_reference_ident(ex.body, ident);
+            } else if constexpr (std::is_same_v<T, OrExpr>) {
+                return expr_references_ident(ex.inner, ident) ||
+                       expr_references_ident(ex.fallback_val, ident) ||
+                       stmts_reference_ident(ex.handler_body, ident);
+            } else if constexpr (std::is_same_v<T, TryExpr>) {
+                return expr_references_ident(ex.inner, ident);
+            } else if constexpr (std::is_same_v<T, CallExpr>) {
+                if (expr_references_ident(ex.callee, ident)) return true;
+                for (const auto& a : ex.args) {
+                    if (expr_references_ident(a.value, ident)) return true;
+                }
+                if (ex.block_arg && stmts_reference_ident(ex.block_arg->body, ident)) return true;
+                return false;
+            } else if constexpr (std::is_same_v<T, MatchExpr>) {
+                if (expr_references_ident(ex.target, ident)) return true;
+                for (const auto& arm : ex.arms) {
+                    if (stmts_reference_ident(arm.body, ident)) return true;
+                }
+                return false;
+            }
+            return false;
+        }, e->node);
+    }
+
+    [[nodiscard]] static auto stmts_reference_ident(const std::vector<StmtPtr>& stmts, std::string_view ident) -> bool {
+        if (ident.empty()) return false;
+        for (const auto& s : stmts) {
+            if (!s) continue;
+            bool hit = std::visit([&](const auto& st) -> bool {
+                using T = std::decay_t<decltype(st)>;
+                if constexpr (std::is_same_v<T, VarDeclStmt>) {
+                    return expr_references_ident(st.init, ident);
+                } else if constexpr (std::is_same_v<T, DestructureVarDeclStmt>) {
+                    return expr_references_ident(st.init, ident);
+                } else if constexpr (std::is_same_v<T, AssignStmt>) {
+                    return expr_references_ident(st.target, ident) || expr_references_ident(st.value, ident);
+                } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
+                    for (const auto& t : st.targets) {
+                        if (expr_references_ident(t, ident)) return true;
+                    }
+                    return expr_references_ident(st.value, ident);
+                } else if constexpr (std::is_same_v<T, DeferStmt>) {
+                    return expr_references_ident(st.call, ident);
+                } else if constexpr (std::is_same_v<T, ReturnStmt>) {
+                    return expr_references_ident(st.value, ident);
+                } else if constexpr (std::is_same_v<T, IfStmt>) {
+                    return expr_references_ident(st.cond, ident) ||
+                           stmts_reference_ident(st.then_body, ident) ||
+                           stmts_reference_ident(st.else_body, ident);
+                } else if constexpr (std::is_same_v<T, ForStmt>) {
+                    return expr_references_ident(st.iter_expr, ident) ||
+                           stmts_reference_ident(st.body, ident);
+                } else if constexpr (std::is_same_v<T, MatchStmt>) {
+                    if (expr_references_ident(st.target, ident)) return true;
+                    for (const auto& arm : st.arms) {
+                        if (stmts_reference_ident(arm.body, ident)) return true;
+                    }
+                    return false;
+                } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
+                    return expr_references_ident(st.workers, ident) ||
+                           stmts_reference_ident(st.body, ident);
+                } else if constexpr (std::is_same_v<T, CppBlockStmt>) {
+                    return st.raw_code.find(ident) != std::string::npos;
+                } else if constexpr (std::is_same_v<T, ExprStmt>) {
+                    return expr_references_ident(st.expr, ident);
+                }
+                return false;
+            }, s->node);
+            if (hit) return true;
+        }
+        return false;
+    }
+
+    void hoist_subexpr_tries(const ExprPtr& e, bool in_main, int stmt_line, bool is_top_handled = false) {
+        if (!e) return;
+        std::visit([&](const auto& ex) {
+            using T = std::decay_t<decltype(ex)>;
+            if constexpr (std::is_same_v<T, UnaryExpr>) {
+                hoist_subexpr_tries(ex.operand, in_main, stmt_line, false);
+            } else if constexpr (std::is_same_v<T, BinaryExpr>) {
+                hoist_subexpr_tries(ex.left, in_main, stmt_line, false);
+                hoist_subexpr_tries(ex.right, in_main, stmt_line, false);
+            } else if constexpr (std::is_same_v<T, MemberExpr>) {
+                hoist_subexpr_tries(ex.object, in_main, stmt_line, false);
+            } else if constexpr (std::is_same_v<T, IndexExpr>) {
+                hoist_subexpr_tries(ex.object, in_main, stmt_line, false);
+                hoist_subexpr_tries(ex.index, in_main, stmt_line, false);
+            } else if constexpr (std::is_same_v<T, SliceExpr>) {
+                hoist_subexpr_tries(ex.object, in_main, stmt_line, false);
+                hoist_subexpr_tries(ex.start, in_main, stmt_line, false);
+                hoist_subexpr_tries(ex.end, in_main, stmt_line, false);
+            } else if constexpr (std::is_same_v<T, StructLitExpr>) {
+                for (const auto& f : ex.fields) {
+                    hoist_subexpr_tries(f.value, in_main, stmt_line, false);
+                }
+            } else if constexpr (std::is_same_v<T, ArrayLitExpr> || std::is_same_v<T, TupleExpr>) {
+                for (const auto& el : ex.elements) {
+                    hoist_subexpr_tries(el, in_main, stmt_line, false);
+                }
+            } else if constexpr (std::is_same_v<T, OrExpr>) {
+                hoist_subexpr_tries(ex.inner, in_main, stmt_line, false);
+                hoist_subexpr_tries(ex.fallback_val, in_main, stmt_line, false);
+            } else if constexpr (std::is_same_v<T, CallExpr>) {
+                hoist_subexpr_tries(ex.callee, in_main, stmt_line, false);
+                for (const auto& a : ex.args) {
+                    hoist_subexpr_tries(a.value, in_main, stmt_line, false);
+                }
+            } else if constexpr (std::is_same_v<T, TryExpr>) {
+                hoist_subexpr_tries(ex.inner, in_main, stmt_line, false);
+                if (!is_top_handled) {
+                    int id = ++try_count_;
+                    std::string tmp = std::format("_try_{}", id);
+                    writeln(std::format("auto {} = {};", tmp, emit_expr(ex.inner)));
+                    writeln(std::format("if (!{}.has_value()) {{", tmp));
+                    ++indent_;
+                    if (in_main) {
+                        writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
+                        writeln("return 1;");
+                    } else if (in_test_) {
+                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
+                            tmp, escape_line_path(cf_.ast.path), stmt_line));
+                        writeln("return;");
+                    } else {
+                        writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
+                    }
+                    --indent_;
+                    writeln("}");
+                    hoisted_tries_[e] = std::format("cfire::unwrap_val(std::move({}))", tmp);
+                }
+            }
+        }, e->node);
+    }
+
     void emit_stmt(const StmtPtr& s, bool in_main) {
         if (!s) return;
         if (s->line > 0) emit_line_directive(s->line);
         std::visit([&](const auto& st) {
             using T = std::decay_t<decltype(st)>;
             if constexpr (std::is_same_v<T, VarDeclStmt>) {
+                if (st.init) {
+                    bool top_try = std::holds_alternative<TryExpr>(st.init->node);
+                    hoist_subexpr_tries(st.init, in_main, s->line, top_try);
+                }
                 local_vars_.insert(st.name);
                 if (st.init) {
                     if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
@@ -982,14 +1149,24 @@ public:
                     writeln(std::format("{} {}{{}};", cpp_type, st.name));
                 }
             } else if constexpr (std::is_same_v<T, AssignStmt>) {
+                hoist_subexpr_tries(st.target, in_main, s->line, false);
+                bool top_try = st.value && std::holds_alternative<TryExpr>(st.value->node);
+                hoist_subexpr_tries(st.value, in_main, s->line, top_try);
                 std::string lhs = emit_expr(st.target);
                 if (lhs == "_") {
                     if (const auto* try_ex = std::get_if<TryExpr>(&st.value->node)) {
+                        if (in_main || in_test_) {
+                            hoist_subexpr_tries(st.value, in_main, s->line, false);
+                            return;
+                        }
                         writeln(std::format("CFIRE_TRY({});", emit_expr(try_ex->inner)));
                         return;
                     }
                     writeln(std::format("(void){};", emit_expr(st.value)));
                     return;
+                }
+                if (top_try) {
+                    hoist_subexpr_tries(st.value, in_main, s->line, false);
                 }
                 std::string rhs = emit_expr(st.value);
                 if (rhs == "std::nullopt") {
@@ -1006,12 +1183,14 @@ public:
                     writeln(std::format("auto _defer_{} = cfire::scope_exit([&] {{ {}; }});", defer_count_, emit_expr(st.call)));
                 }
             } else if constexpr (std::is_same_v<T, ReturnStmt>) {
+                hoist_subexpr_tries(st.value, in_main, s->line, false);
                 if (!st.value) {
                     writeln(in_main ? "return 0;" : (in_fallible_void_ ? "return {};" : "return;"));
                 } else {
                     writeln(std::format("return {};", emit_expr(st.value)));
                 }
             } else if constexpr (std::is_same_v<T, IfStmt>) {
+                hoist_subexpr_tries(st.cond, in_main, s->line, false);
                 std::string cond = emit_expr(st.cond);
                 if (cond.starts_with('(') && cond.ends_with(')')) {
                     writeln(std::format("if {} {{", cond));
@@ -1030,6 +1209,7 @@ public:
                 writeln("}");
             } else if constexpr (std::is_same_v<T, ForStmt>) {
                 if (!st.item_var.empty()) {
+                    hoist_subexpr_tries(st.iter_expr, in_main, s->line, false);
                     local_vars_.insert(st.item_var);
                     if (!st.index_var.empty()) {
                         local_vars_.insert(st.index_var);
@@ -1060,6 +1240,7 @@ public:
                     writeln("}");
                 }
             } else if constexpr (std::is_same_v<T, MatchStmt>) {
+                hoist_subexpr_tries(st.target, in_main, s->line, false);
                 emit_match_stmt(st, in_main);
             } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
                 writeln("{");
@@ -1093,6 +1274,8 @@ public:
                         return;
                     }
                 }
+                bool top_try = st.expr && std::holds_alternative<TryExpr>(st.expr->node);
+                hoist_subexpr_tries(st.expr, in_main, s->line, top_try);
                 if (const auto* try_ex = std::get_if<TryExpr>(&st.expr->node)) {
                     if (in_main) {
                         int id = ++try_count_;
@@ -1137,14 +1320,41 @@ public:
                 }
                 writeln(std::format("(void)({});", emit_expr(st.expr)));
             } else if constexpr (std::is_same_v<T, DestructureVarDeclStmt>) {
+                bool top_try = st.init && std::holds_alternative<TryExpr>(st.init->node);
+                hoist_subexpr_tries(st.init, in_main, s->line, top_try);
                 std::string names;
                 for (std::size_t i = 0; i < st.bindings.size(); ++i) {
                     if (i > 0) names += ", ";
                     names += st.bindings[i].first;
                     local_vars_.insert(st.bindings[i].first);
                 }
+                if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
+                    int id = ++try_count_;
+                    std::string tmp = std::format("_try_{}", id);
+                    writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
+                    writeln(std::format("if (!{}.has_value()) {{", tmp));
+                    ++indent_;
+                    if (in_main) {
+                        writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
+                        writeln("return 1;");
+                    } else if (in_test_) {
+                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
+                            tmp, escape_line_path(cf_.ast.path), s->line));
+                        writeln("return;");
+                    } else {
+                        writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
+                    }
+                    --indent_;
+                    writeln("}");
+                    writeln(std::format("auto [{}] = std::move(*{});", names, tmp));
+                    return;
+                }
                 writeln(std::format("auto [{}] = {};", names, emit_expr(st.init)));
             } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
+                for (const auto& t : st.targets) {
+                    hoist_subexpr_tries(t, in_main, s->line, false);
+                }
+                hoist_subexpr_tries(st.value, in_main, s->line, false);
                 std::string targs;
                 for (std::size_t i = 0; i < st.targets.size(); ++i) {
                     if (i > 0) targs += ", ";
@@ -1197,14 +1407,15 @@ public:
 
                     // Bind head elements
                     for (std::size_t i = 0; i < head_count; ++i) {
-                        if (arm.slice_head[i] != "_") {
+                        if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
                             local_vars_.insert(arm.slice_head[i]);
                             writeln(std::format("const auto& {} = _target[{}];", arm.slice_head[i], i));
                         }
                     }
 
                     // Bind rest slice
-                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_") {
+                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
+                        stmts_reference_ident(arm.body, arm.slice_rest)) {
                         local_vars_.insert(arm.slice_rest);
                         std::string rest_start = std::to_string(head_count);
                         std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
@@ -1213,7 +1424,7 @@ public:
 
                     // Bind tail elements
                     for (std::size_t i = 0; i < tail_count; ++i) {
-                        if (arm.slice_tail[i] != "_") {
+                        if (arm.slice_tail[i] != "_" && stmts_reference_ident(arm.body, arm.slice_tail[i])) {
                             local_vars_.insert(arm.slice_tail[i]);
                             std::size_t offset_from_end = tail_count - i;
                             writeln(std::format("const auto& {} = _target[_target.size() - {}];", arm.slice_tail[i], offset_from_end));
@@ -1407,19 +1618,20 @@ public:
                     for (int i = 0; i < indent_; ++i) sb << "    ";
                     sb << "_matched = true;\n";
                     for (std::size_t i = 0; i < head_count; ++i) {
-                        if (arm.slice_head[i] != "_") {
+                        if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
                             for (int j = 0; j < indent_; ++j) sb << "    ";
                             sb << "const auto& " << arm.slice_head[i] << " = _target[" << i << "];\n";
                         }
                     }
-                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_") {
+                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
+                        stmts_reference_ident(arm.body, arm.slice_rest)) {
                         std::string rest_start = std::to_string(head_count);
                         std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
                         for (int j = 0; j < indent_; ++j) sb << "    ";
                         sb << "auto " << arm.slice_rest << " = cfire::slice(_target, " << rest_start << ", " << rest_end << ");\n";
                     }
                     for (std::size_t i = 0; i < tail_count; ++i) {
-                        if (arm.slice_tail[i] != "_") {
+                        if (arm.slice_tail[i] != "_" && stmts_reference_ident(arm.body, arm.slice_tail[i])) {
                             std::size_t offset_from_end = tail_count - i;
                             for (int j = 0; j < indent_; ++j) sb << "    ";
                             sb << "const auto& " << arm.slice_tail[i] << " = _target[_target.size() - " << offset_from_end << "];\n";
@@ -1587,6 +1799,9 @@ public:
 
     [[nodiscard]] auto emit_expr(const ExprPtr& e) -> std::string {
         if (!e) return "";
+        if (auto it = hoisted_tries_.find(e); it != hoisted_tries_.end()) {
+            return it->second;
+        }
         return std::visit([&](const auto& ex) -> std::string {
             using T = std::decay_t<decltype(ex)>;
             if constexpr (std::is_same_v<T, IdentExpr>) {
@@ -1746,21 +1961,14 @@ public:
                 return emit_expr(ex.inner);
             } else if constexpr (std::is_same_v<T, TryExpr>) {
                 std::string inner = emit_expr(ex.inner);
-                if (in_main_ || in_test_) {
-                    return std::format("({{\n"
-                                       "    auto&& _res = ({0});\n"
-                                       "    if (!_res.has_value()) {{\n"
-                                       "        std::println(stderr, \"Error: {{}}\", _res.error().message());\n"
-                                       "        std::exit(1);\n"
-                                       "    }}\n"
-                                       "    cfire::unwrap_val(std::forward<decltype(_res)>(_res));\n"
-                                       "}})", inner);
-                }
-                return std::format("({{\n"
+                return std::format("([&]() -> decltype(auto) {{\n"
                                    "    auto&& _res = ({0});\n"
-                                   "    if (!_res.has_value()) return std::unexpected(std::move(_res).error());\n"
-                                   "    cfire::unwrap_val(std::forward<decltype(_res)>(_res));\n"
-                                   "}})", inner);
+                                   "    if (!_res.has_value()) {{\n"
+                                   "        std::println(stderr, \"Error: {{}}\", _res.error().message());\n"
+                                   "        std::abort();\n"
+                                   "    }}\n"
+                                   "    return cfire::unwrap_val(std::forward<decltype(_res)>(_res));\n"
+                                   "}})()", inner);
             } else if constexpr (std::is_same_v<T, CallExpr>) {
                 return emit_call(ex);
             } else if constexpr (std::is_same_v<T, TupleExpr>) {

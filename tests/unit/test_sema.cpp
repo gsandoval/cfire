@@ -45,6 +45,42 @@ fn transfer(mut from: i32, mut to: i32) { from -= 10; to += 10 }
 fn main() { mut acc: i32 = 100; transfer(mut acc, mut acc) }
 )", "cfire/MUT-ALIAS", "mut_alias.cf");
 
+    // Unreachable match arm diagnostics (cfire/UNREACHABLE-MATCH-ARM)
+    require_sema_error(R"(package main
+fn classify(s: []str) -> str {
+    match s {
+        []                   => { return "empty" }
+        [head, ..tail]       => { return "head=" + head }
+        [first, ..mid, last] => { return first + ".." + last }
+    }
+    return "other"
+}
+fn main() {}
+)", "cfire/UNREACHABLE-MATCH-ARM", "unreachable_slice.cf");
+
+    require_sema_error(R"(package main
+type Token enum { Ident(str), Eof }
+fn main() {
+    t := Token.Eof
+    match t {
+        Ident(s) => { println("{}", s) }
+        Ident(s2) => { println("{}", s2) }
+        Eof => {}
+    }
+}
+)", "cfire/UNREACHABLE-MATCH-ARM", "duplicate_enum_arm.cf");
+
+    require_sema_error(R"(package main
+fn main() {
+    x := 10
+    match x {
+        1 => { println("one") }
+        _ => { println("wild") }
+        2 => { println("two") }
+    }
+}
+)", "cfire/UNREACHABLE-MATCH-ARM", "after_wildcard_arm.cf");
+
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");
 }
 
@@ -101,6 +137,8 @@ fn main() {
                 "codegen lowers empty slice pattern condition (LD-EXT-01)");
             require(cpp.contains("_target.size() == 2"),
                 "codegen lowers exact length slice pattern condition (LD-EXT-01)");
+            require(!cpp.contains("auto middle = cfire::slice"),
+                "codegen elides unused slice rest binding 'middle'");
         }
     }
 

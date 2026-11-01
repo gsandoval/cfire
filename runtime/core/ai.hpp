@@ -1811,12 +1811,15 @@ inline void parse_markdown_sections(std::string_view md, Document& doc) {
             std::size_t h = 0;
             while (h < trimmed.size() && trimmed[h] == '#') ++h;
             cur_title = trim_ws(std::string_view(trimmed).substr(h));
+            continue;
         }
         cur_body.append(line.data(), line.size());
         cur_body.push_back('\n');
     }
     if (!trim_ws(cur_body).empty()) {
         doc.sections.push_back(DocumentSection{.index = sec_idx, .title = cur_title, .text = trim_ws(cur_body)});
+    } else if (doc.sections.empty() && !cur_title.empty() && cur_title != "Section 1") {
+        doc.sections.push_back(DocumentSection{.index = sec_idx, .title = cur_title, .text = cur_title});
     }
 }
 

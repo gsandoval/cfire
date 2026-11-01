@@ -1543,7 +1543,7 @@ tr:hover td { background: #1F242C; }
       <a href="reference.html" class="">Stdlib</a>
       <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-        GitHub 4.2k ★
+        GitHub
       </a>
       <a href="index.html#install" class="btn-nav-primary">Install v0.9.4</a>
     </div>
@@ -1627,7 +1627,7 @@ tr:hover td { background: #1F242C; }
             <li><a href="#ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move" onclick="navigateToSubhead('5', 'ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move'); return false;">Level 1 — Function Signatures, Tuples &amp; Parameter Intents (`in`, `mut`, `out`, `move`)</a></li>
             <li><a href="#ch5-level-2-closures-environment-capture-trailing-closure-syntax" onclick="navigateToSubhead('5', 'ch5-level-2-closures-environment-capture-trailing-closure-syntax'); return false;">Level 2 — Closures, Environment Capture &amp; Trailing Closure Syntax</a></li>
             <li><a href="#ch5-level-3-generic-functions-zero-overhead-monomorphization" onclick="navigateToSubhead('5', 'ch5-level-3-generic-functions-zero-overhead-monomorphization'); return false;">Level 3 — Generic Functions &amp; Zero-Overhead Monomorphization</a></li>
-            <li><a href="#ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics'); return false;">Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics</a></li>
+            <li><a href="#ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics'); return false;">Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics</a></li>
           </ul>
         </li>
         <li class="nav-item" id="nav-item-6">
@@ -2915,7 +2915,7 @@ fn main() {
     <a href="#ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move" class="topic-pill" data-topic-pill="ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move" onclick="navigateToSubhead('5', 'ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move'); return false;">5.3: Level 1 — Function Signatures, Tuples &amp; Parameter Intents (`in`, `mut`, `out`, `move`)</a>
     <a href="#ch5-level-2-closures-environment-capture-trailing-closure-syntax" class="topic-pill" data-topic-pill="ch5-level-2-closures-environment-capture-trailing-closure-syntax" onclick="navigateToSubhead('5', 'ch5-level-2-closures-environment-capture-trailing-closure-syntax'); return false;">5.4: Level 2 — Closures, Environment Capture &amp; Trailing Closure Syntax</a>
     <a href="#ch5-level-3-generic-functions-zero-overhead-monomorphization" class="topic-pill" data-topic-pill="ch5-level-3-generic-functions-zero-overhead-monomorphization" onclick="navigateToSubhead('5', 'ch5-level-3-generic-functions-zero-overhead-monomorphization'); return false;">5.5: Level 3 — Generic Functions &amp; Zero-Overhead Monomorphization</a>
-    <a href="#ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" class="topic-pill" data-topic-pill="ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics'); return false;">5.6: Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics</a>
+    <a href="#ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" class="topic-pill" data-topic-pill="ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics'); return false;">5.6: Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch5-architecture-invariants-call-site-exclusivity" data-topic-id="ch5-architecture-invariants-call-site-exclusivity" data-topic-title="Architecture &amp; Invariants: Call-Site Exclusivity">
 <h3 class="guide-heading" id="ch5-architecture-invariants-call-site-exclusivity"><span class="heading-hash">#</span><span class="heading-text">Architecture &amp; Invariants: Call-Site Exclusivity</span></h3>
@@ -3130,15 +3130,15 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 5.4)</span>
         <strong class="pager-title">Level 2 — Closures, Environment Capture &amp; Trailing Closure Syntax</strong>
       </a>
-      <a href="#ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" class="pager-card pager-next" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics'); return false;">
+      <a href="#ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" class="pager-card pager-next" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 5.6) &rarr;</span>
-        <strong class="pager-title">Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics</strong>
+        <strong class="pager-title">Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" data-topic-id="ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" data-topic-title="Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics">
-<h3 class="guide-heading" id="ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics"><span class="heading-hash">#</span><span class="heading-text">Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics</span></h3>
-<p>The semantic analyzer (<code>sema</code>) rejects memory and mutability violations at compile time before C++ codegen runs:</p>
+  <section class="guide-topic" id="topic-ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" data-topic-id="ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" data-topic-title="Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics">
+<h3 class="guide-heading" id="ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics"><span class="heading-hash">#</span><span class="heading-text">Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics</span></h3>
+<p>The semantic analyzer (<code>sema</code>) enforces 8 static intent, move, and pattern-matching rules at compile time before C++23 codegen runs (note: <code>cfire</code> lowers to standard C++23 references and smart pointers rather than a full Rust-style lifetime borrow checker):</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3151,6 +3151,9 @@ fn main() {
       <tr><td><code>cfire/MUT-RECEIVER</code></td><td>Calling a <code>fn (mut s: T)</code> method on an immutable struct instance.</td><td><code>s := Scene{}; s.register(...)</code></td><td>Declare <code>mut s := Scene{}</code>.</td></tr>
       <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable more than once when at least one argument is <code>mut</code>/<code>out</code>.</td><td><code>transfer(mut a, mut a)</code></td><td>Pass distinct variables to each parameter.</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading or passing a variable after <code>move x</code> has transferred ownership on an earlier path.</td><td><code>consume(move buf); println(&quot;{}&quot;, buf.len)</code></td><td>Read <code>buf.len</code> before <code>consume(move buf)</code> or pass by <code>in</code>/<code>mut</code> borrow instead.</td></tr>
+      <tr><td><code>cfire/NON-EXHAUSTIVE-MATCH</code></td><td>A <code>match</code> over an <code>enum</code> omits one or more variants without a <code>_ =&gt;</code> wildcard arm.</td><td><code>match tok { Ident(s) =&gt; {} }</code></td><td>Handle all variants or add <code>_ =&gt; { ... }</code>.</td></tr>
+      <tr><td><code>cfire/NON-DIVERGING-OR-BLOCK</code></td><td>An <code>x := fallible() or err { ... }</code> block does not exit via <code>return</code>/<code>break</code>/<code>panic</code>.</td><td><code>x := f() or err { println(&quot;{}&quot;, err) }</code></td><td>Add <code>return</code> or <code>panic(...)</code> inside the recovery block.</td></tr>
+      <tr><td><code>cfire/UNREACHABLE-MATCH-ARM</code></td><td>A <code>match</code> arm is shadowed by an earlier wildcard, duplicate variant/literal, or broader slice pattern.</td><td><code>[h, ..t] =&gt; {}, [a, ..m, b] =&gt; {}</code></td><td>Order more specific slice patterns (<code>[a]</code>, <code>[a, ..m, b]</code>) before general prefix patterns, or remove dead arms.</td></tr>
       <tr><td><code>CF3002</code></td><td>Returning a borrow (<code>&amp;T</code>) pointing to a stack-allocated local variable.</td><td><code>fn bad() -&gt; &amp;i32 { x := 1; return &amp;x }</code></td><td>Return <code>i32</code> by value or allocate with <code>make(own[T], ...)</code>.</td></tr>
     </tbody>
   </table>
@@ -3200,9 +3203,9 @@ fn main() {
   <li><strong><code>type Name interface</code></strong>: Structural type constraint lowered to a C++20 <code>concept</code> without <code>vtable</code> pointer indirection.</li>
 </ul>
     <div class="chapter-pager topic-pager">
-      <a href="#ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" class="pager-card pager-prev" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics'); return false;">
+      <a href="#ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" class="pager-card pager-prev" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 5.6)</span>
-        <strong class="pager-title">Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics</strong>
+        <strong class="pager-title">Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics</strong>
       </a>
       <a href="#ch6-level-1-structs-default-field-values-receiver-methods" class="pager-card pager-next" onclick="navigateToSubhead('6', 'ch6-level-1-structs-default-field-values-receiver-methods'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 6.2) &rarr;</span>
@@ -3364,10 +3367,11 @@ fn main() {
   <pre><code>event=resize:1920x1080 route=api-&gt;..(2)..-&gt;profile
 </code></pre>
 </div>
-<p><strong>Exhaustiveness Rules (<code>cfire/NON-EXHAUSTIVE-MATCH</code>):</strong></p>
+<p><strong>Exhaustiveness &amp; Reachability Rules (<code>cfire/NON-EXHAUSTIVE-MATCH</code> &amp; <code>cfire/UNREACHABLE-MATCH-ARM</code>):</strong></p>
 <ol>
   <li>Matching over an <code>enum</code> must either list every variant of the enum or provide a fallback <code>_ =&gt; ...</code> wildcard arm. Adding a new variant to <code>Event</code> immediately flags every unhandled <code>match</code> site at compile time.</li>
   <li>Matching over primitives (<code>i64</code>, <code>str</code>) must always include a wildcard <code>_ =&gt; ...</code> arm when used as a value expression.</li>
+  <li>Every <code>match</code> arm must be reachable (<code>cfire/UNREACHABLE-MATCH-ARM</code>): duplicate enum/literal arms, arms appearing after <code>_ =&gt; ...</code>, or slice patterns already subsumed by an earlier rest pattern (such as <code>[first, ..mid, last]</code> placed after <code>[head, ..tail]</code>) are rejected at compile time. Unused slice pattern bindings are elided from the emitted C++23 code.</li>
 </ol>
     <div class="chapter-pager topic-pager">
       <a href="#ch6-level-2-complete-compile-time-struct-reflection-tags-reference" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-level-2-complete-compile-time-struct-reflection-tags-reference'); return false;">
@@ -5699,7 +5703,7 @@ fn main() -&gt; void! {
         <li><a href="#ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move" onclick="navigateToSubhead('5', 'ch5-level-1-function-signatures-tuples-parameter-intents-in-mut-out-move'); return false;">5.3: Level 1 — Function Signatures, Tuples &amp; Parameter Intents (`in`, `mut`, `out`, `move`)</a></li>
         <li><a href="#ch5-level-2-closures-environment-capture-trailing-closure-syntax" onclick="navigateToSubhead('5', 'ch5-level-2-closures-environment-capture-trailing-closure-syntax'); return false;">5.4: Level 2 — Closures, Environment Capture &amp; Trailing Closure Syntax</a></li>
         <li><a href="#ch5-level-3-generic-functions-zero-overhead-monomorphization" onclick="navigateToSubhead('5', 'ch5-level-3-generic-functions-zero-overhead-monomorphization'); return false;">5.5: Level 3 — Generic Functions &amp; Zero-Overhead Monomorphization</a></li>
-        <li><a href="#ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-borrow-move-exclusivity-diagnostics'); return false;">5.6: Level 4 — Compile-Time Borrow, Move &amp; Exclusivity Diagnostics</a></li>
+        <li><a href="#ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics" onclick="navigateToSubhead('5', 'ch5-level-4-compile-time-intent-move-exclusivity-pattern-diagnostics'); return false;">5.6: Level 4 — Compile-Time Intent, Move, Exclusivity &amp; Pattern Diagnostics</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-6" style="display: none;">
