@@ -71,8 +71,21 @@ The phonetic homophone to **sapphire** captures the visual identity: crystalline
 ## Quick Start
 
 ```bash
-# Build the cfire compiler and run the full C++23 conformance suite:
+# 1. One-line install on macOS or Linux (installs binary + runtime headers & runs cfire doctor):
+curl -fsSL https://cfire.memo.engineer/install.sh | sh
+
+# 2. Check environment health or auto-install optional native libraries (simdjson, zstd, sqlite3, openssl):
+./cfire doctor
+./cfire setup --yes
+
+# 3. Build the cfire compiler from source and run the full C++23 conformance suite:
 make test
+sudo make install
+
+# 4. Run inside Docker / OrbStack:
+docker build -t cfire:latest .
+docker run --rm cfire:latest doctor
+docker run --rm cfire:latest run examples/01-hello-core/main.cf
 
 # Run canonical examples directly:
 ./cfire run examples/01-hello-core/main.cf

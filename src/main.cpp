@@ -3,6 +3,7 @@
 #include "buildsys.hpp"
 #include "diagnostics.hpp"
 #include "docgen.hpp"
+#include "doctor.hpp"
 #include "formatter.hpp"
 #include "lsp.hpp"
 #include "mcp.hpp"
@@ -13,7 +14,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#if __has_include(<print>)
 #include <print>
+#endif
 #include <set>
 #include <sstream>
 #include <string>
@@ -29,7 +32,8 @@ auto locate_runtime_dir() -> std::filesystem::path {
     if (const char* env = std::getenv("CFIRE_RUNTIME_DIR")) {
         return std::filesystem::path(env);
     }
-    auto cwd = std::filesystem::current_path();
+    std::error_code cwd_ec;
+    auto cwd = std::filesystem::current_path(cwd_ec);
     for (auto d = cwd; !d.empty() && d != d.parent_path(); d = d.parent_path()) {
         if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
             return d / "runtime";
@@ -96,6 +100,9 @@ void print_usage() {
     std::println("  emit-cpp <file.cf>            Print generated human-readable C++23 source");
     std::println("  eject    <file.cf> [out_dir]  Export standalone C++23 source tree + CMakeLists.txt");
     std::println("  vendor   [dest_dir]           Fetch and vendor all build.cf dependencies for offline builds");
+    std::println("  doctor   [--json]             Verify C++23 compiler, runtime headers, and native libraries");
+    std::println("  setup    [--yes] [--wasm]     Install missing host dependencies and warm C++23 PCH cache");
+    std::println("  version  (--version, -v)      Print cfire toolchain version");
 }
 
 auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
@@ -240,6 +247,37 @@ auto main(int argc, char** argv) -> int {
     }
     std::string sub = argv[1];
     auto runtime_dir = locate_runtime_dir();
+
+    if (sub == "--version" || sub == "-v" || sub == "version") {
+        std::println("cfire {} (ISO C++23 systems toolchain)", cfire::doctor::kCfireVersion);
+        return 0;
+    }
+
+    if (sub == "--help" || sub == "-h" || sub == "help") {
+        print_usage();
+        return 0;
+    }
+
+    if (sub == "doctor") {
+        bool json_mode = false;
+        for (int i = 2; i < argc; ++i) {
+            if (std::string_view(argv[i]) == "--json") json_mode = true;
+        }
+        return cfire::doctor::run_doctor(runtime_dir, json_mode);
+    }
+
+    if (sub == "setup") {
+        bool auto_yes = false;
+        bool with_wasm = false;
+        bool with_raylib = false;
+        for (int i = 2; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--yes" || arg == "-y") auto_yes = true;
+            else if (arg == "--wasm" || arg == "--web") with_wasm = true;
+            else if (arg == "--raylib" || arg == "--gui") with_raylib = true;
+        }
+        return cfire::doctor::run_setup(runtime_dir, auto_yes, with_wasm, with_raylib);
+    }
 
     if (sub == "serve" || sub == "server") {
         int port = 8080;
@@ -1628,7 +1666,7 @@ auto main(int argc, char** argv) -> int {
             }
 
             // Native run
-            bool is_gui = (bcf_res->exe.subsystem == "gui");
+            [[maybe_unused]] bool is_gui = (bcf_res->exe.subsystem == "gui");
             bool needs_build = false;
 #if defined(__APPLE__)
             if (is_gui) {
