@@ -42,8 +42,35 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 ::selection { background: #F97316; color: #0D1117; }
-a { color: var(--accent-sapphire); text-decoration: none; transition: color 0.15s ease; }
-a:hover { color: #7DD3FC; text-decoration: underline; }
+a {
+    color: var(--accent-sapphire);
+    text-decoration: none;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+a:hover {
+    color: #7DD3FC;
+}
+
+/* Crisp Technical Prose Links */
+main a:not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand),
+.callout a {
+    color: var(--accent-sapphire);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+    font-weight: 500;
+    transition: color 0.15s ease, border-bottom-color 0.15s ease;
+}
+main a:not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand):hover,
+.callout a:hover {
+    color: #7DD3FC;
+    border-bottom-color: #38BDF8;
+    text-decoration: none;
+}
+main a code {
+    color: inherit;
+    border-color: rgba(56, 189, 248, 0.4);
+    background: #161B22;
+}
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
@@ -88,10 +115,32 @@ a:hover { color: #7DD3FC; text-decoration: underline; }
 }
 .nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
 .nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
+.btn-nav-github {
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted) !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    padding: 0.35rem 0.65rem !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--bg-card) !important;
+    transition: all 0.15s ease !important;
+    text-decoration: none !important;
+    border-bottom: none !important;
+}
+.btn-nav-github:hover {
+    color: var(--text-bright) !important;
+    background: var(--bg-card-hover) !important;
+    border-color: var(--border-dark) !important;
+    text-decoration: none !important;
+}
 .btn-nav-primary {
     background: #F97316 !important; color: #0D1117 !important;
     padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
+    text-decoration: none !important;
+    border-bottom: none !important;
 }
 .btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
 
@@ -788,8 +837,11 @@ tr:hover td { background: #1F242C; }
       <a href="index.html" class="active">Overview</a>
       <a href="guide.html">Guide</a>
       <a href="reference.html">Stdlib</a>
-      <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub &rarr;</a>
-      <a href="#install" class="btn-nav-primary">Install</a>
+      <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub 4.2k ★
+      </a>
+      <a href="#install" class="btn-nav-primary">Install v0.9.4</a>
     </div>
   </div>
 </nav>
