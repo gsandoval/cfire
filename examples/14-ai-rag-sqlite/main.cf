@@ -6,12 +6,12 @@ import "core:json" as json
 
 type QueryPlan struct {
     Target: str `json:"target" desc:"Search target concept"`
-    TopK: i64   `json:"top_k" desc:"Number of top results to retrieve"`
+    TopK:   i64 `json:"top_k" desc:"Number of top results to retrieve"`
 }
 
 type DocEntry struct {
-    Id: i64      `sql:"id"`
-    Title: str   `sql:"title"`
+    Id:      i64 `sql:"id"`
+    Title:   str `sql:"title"`
     Snippet: str `sql:"snippet"`
 }
 
@@ -41,7 +41,7 @@ fn main() {
     for i, doc in docs {
         vec := try ai.embed("local", doc)
         try db.exec("INSERT INTO corpus (id, title, snippet, embedding) VALUES (?1, ?2, ?3, ?4)",
-                    i + 1, titles[i], doc, vec)
+            i + 1, titles[i], doc, vec)
     }
 
     // 4. Query using built-in vec_cosine_similarity SQL function

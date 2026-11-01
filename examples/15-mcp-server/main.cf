@@ -4,7 +4,7 @@ import "core:ai" as ai
 
 type CalculateArgs struct {
     Expression: str `json:"expression" desc:"Mathematical expression to evaluate"`
-    Precision: i64  `json:"precision" desc:"Decimal places for rounding"`
+    Precision:  i64 `json:"precision" desc:"Decimal places for rounding"`
 }
 
 fn main() {
