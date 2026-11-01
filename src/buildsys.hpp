@@ -2164,6 +2164,15 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     plan.app_name = app_name;
     plan.bundle_id = bundle_id;
     plan.icon_path = icon_path;
+    if (!plan.icon_path.empty()) {
+        std::filesystem::path icon_resolved = plan.icon_path;
+        if (icon_resolved.is_relative() && !std::filesystem::exists(icon_resolved)) {
+            if (std::filesystem::exists(cf_file.parent_path() / icon_resolved)) {
+                icon_resolved = std::filesystem::absolute(cf_file.parent_path() / icon_resolved);
+            }
+        }
+        plan.cflags.push_back(std::format("-DCFIRE_APP_ICON_PATH=\\\"{}\\\"", icon_resolved.string()));
+    }
 
     bool is_wasm = target_triple.starts_with("wasm");
     if (is_wasm) {

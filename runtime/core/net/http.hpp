@@ -795,6 +795,22 @@ template <typename Callback>
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
+#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    if (u->scheme == "https") {
+        auto hdrs = extra_headers;
+        hdrs["Accept"] = "text/event-stream";
+        auto res = detail::request_apple_foundation("POST", url_str, body, "application/json", hdrs);
+        if (!res) return res;
+        std::string raw_sse = std::move(res->body);
+        if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
+        res->body.clear();
+        SseEvent cur_ev;
+        bool stop_flag = false;
+        (void)dispatch_sse_text(raw_sse, cur_ev, *res, stop_flag);
+        return res;
+    }
+#endif
+
     auto conn_res = cfire::net::connect_tcp(u->host, u->port);
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
@@ -810,7 +826,23 @@ template <typename Callback>
 
     if (u->scheme == "https") {
         auto tls_res = cfire::tls::wrap_client(conn, u->host, effective_verify, ca_file);
-        if (!tls_res) return std::unexpected(tls_res.error());
+        if (!tls_res) {
+#if defined(__APPLE__)
+            auto hdrs = extra_headers;
+            hdrs["Accept"] = "text/event-stream";
+            auto res = detail::request_apple_foundation("POST", url_str, body, "application/json", hdrs);
+            if (!res) return res;
+            std::string raw_sse = std::move(res->body);
+            if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
+            res->body.clear();
+            SseEvent cur_ev;
+            bool stop_flag = false;
+            (void)dispatch_sse_text(raw_sse, cur_ev, *res, stop_flag);
+            return res;
+#else
+            return std::unexpected(tls_res.error());
+#endif
+        }
     }
 
     std::string full_path = u->path;
