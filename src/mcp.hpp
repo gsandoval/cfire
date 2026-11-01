@@ -36,7 +36,7 @@ inline auto parse_struct<cfire::mcp::EmptyInput>(simdjson::ondemand::object) -> 
 
 template <>
 inline auto schema_struct<cfire::mcp::QueryInput>() -> std::string {
-    return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:ai') or function/type name"}},"required":["query"],"additionalProperties":false})";
+    return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:str', 'ext:ai', 'vendor:raylib') or function/type name"}},"required":["query"],"additionalProperties":false})";
 }
 
 template <>
@@ -83,13 +83,16 @@ namespace cfire::mcp {
 
     srv.register_tool<QueryInput>(
         "cfire_stdlib_lookup",
-        "Look up cfire standard library functions, types, and examples by module path (e.g. 'core:ai') or symbol name.",
+        "Look up cfire standard library functions, types, and examples by module path (e.g. 'core:str', 'ext:ai', 'vendor:raylib') or symbol name.",
         [](QueryInput in) -> std::expected<std::string, cfire::Error> {
             std::ostringstream oss;
             bool found = false;
+            std::string norm_q = in.query;
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
-                bool mod_match = (mod.import_path == in.query || mod.ns_alias == in.query ||
-                                  mod.import_path.find(in.query) != std::string_view::npos);
+                bool mod_match = (mod.import_path == norm_q || mod.ns_alias == norm_q ||
+                                  mod.import_path.find(norm_q) != std::string_view::npos ||
+                                  (norm_q.starts_with("core:") && mod.import_path == ("ext:" + norm_q.substr(5))) ||
+                                  (norm_q.starts_with("ext:") && mod.import_path == ("core:" + norm_q.substr(4))));
                 if (mod_match) {
                     found = true;
                     oss << "## `" << mod.import_path << "` — " << mod.title << "\n" << mod.overview << "\n\n";
@@ -149,7 +152,7 @@ namespace cfire::mcp {
             auto bin_file = tmp_dir / "eval_bin";
             std::string src = in.code;
             if (src.find("package ") == std::string::npos) {
-                src = "package main\nimport \"core:ai\"\nimport \"core:json\"\nimport \"core:str\"\nimport \"core:math\"\n\nfn main() {\n" + src + "\n}\n";
+                src = "package main\nimport \"ext:ai\"\nimport \"ext:json\"\nimport \"core:str\"\nimport \"core:math\"\n\nfn main() {\n" + src + "\n}\n";
             }
             {
                 std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);

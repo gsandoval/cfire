@@ -1,7 +1,7 @@
 package main
 
-import "core:json"
-import "core:db/sqlite"
+import "ext:json"
+import "ext:db/sqlite"
 import "core:crypto/blake3"
 
 type PackageMeta struct {

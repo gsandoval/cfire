@@ -715,7 +715,7 @@ public:
                     std::string desc;
                     if (tag_content.contains("json:")) {
                         desc += "### Struct Tag `` `json:\"<key>\"` ``\n"
-                                "Specifies the JSON object property key for compile-time reflection in `core:json` (`json.parse_struct[T]` / `json.stringify_struct`).\n\n"
+                                "Specifies the JSON object property key for compile-time reflection in `ext:json` (`json.parse_struct[T]` / `json.stringify_struct`).\n\n"
                                 "**Example:**\n```cf\nService: str `json:\"service\"`\n```\n";
                     }
                     if (tag_content.contains("cli:") || tag_content.contains("help:")) {
@@ -728,7 +728,7 @@ public:
                     if (tag_content.contains("db:")) {
                         if (!desc.empty()) desc += "\n---\n\n";
                         desc += "### Struct Tag `` `db:\"<column>\"` ``\n"
-                                "Maps this struct field to an SQLite database column for `core:db/sqlite` (`sqlite.map_row[T]`).\n\n"
+                                "Maps this struct field to an SQLite database column for `ext:db/sqlite` (`sqlite.map_row[T]`).\n\n"
                                 "**Example:**\n```cf\nId: i64 `db:\"id\"`\n```\n";
                     }
                     if (!desc.empty()) return desc;

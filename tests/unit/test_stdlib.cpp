@@ -1561,7 +1561,8 @@ fn main() {
     llm_res.assert_contains("core:unicode", "doc --llm lists core:unicode (TOOL-01)");
     llm_res.assert_contains("core:cli", "doc --llm lists core:cli");
     llm_res.assert_contains("core:log", "doc --llm lists core:log");
-    llm_res.assert_contains("core:db/sqlite", "doc --llm lists core:db/sqlite");
+    llm_res.assert_contains("ext:db/sqlite", "doc --llm lists ext:db/sqlite");
+    llm_res.assert_contains("ext:ai", "doc --llm lists ext:ai");
     llm_res.assert_contains("json.parse", "doc --llm contains exact json.parse API");
     require(!llm_res.output.contains("json.decode"), "doc --llm does not contain hallucinated json.decode");
     require(!llm_res.output.contains("sort.slice_by"), "doc --llm does not contain hallucinated sort.slice_by");
@@ -2442,11 +2443,14 @@ test "passing test assertion" {
             .assert_contains("\"name\": \"cos\"", "inspect cpp contains math function cos");
 
         // Form 3: stdlib module & symbol
-        auto insp3 = run_cfire("inspect core:json --json");
-        insp3.assert_ok("cfire inspect core:json exit 0")
-            .assert_contains("\"name\": \"json\"", "inspect core:json name match")
-            .assert_contains("\"import_path\": \"core:json\"", "inspect core:json import_path match")
-            .assert_contains("stringify", "inspect core:json functions contains stringify");
+        auto insp3 = run_cfire("inspect ext:json --json");
+        insp3.assert_ok("cfire inspect ext:json exit 0")
+            .assert_contains("\"name\": \"json\"", "inspect ext:json name match")
+            .assert_contains("\"import_path\": \"ext:json\"", "inspect ext:json import_path match")
+            .assert_contains("stringify", "inspect ext:json functions contains stringify");
+        auto insp3_alias = run_cfire("inspect core:json --json");
+        insp3_alias.assert_ok("cfire inspect core:json alias exit 0")
+            .assert_contains("\"import_path\": \"ext:json\"", "inspect core:json alias resolves to ext:json");
 
         auto insp4 = run_cfire("inspect json.stringify --json");
         insp4.assert_ok("cfire inspect json.stringify exit 0")

@@ -1,8 +1,8 @@
 package main
 
-import "core:ai" as ai
-import "core:db/sqlite" as sqlite
-import "core:json" as json
+import "ext:ai" as ai
+import "ext:db/sqlite" as sqlite
+import "ext:json" as json
 
 type QueryPlan struct {
     Target: str `json:"target" desc:"Search target concept"`

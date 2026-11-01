@@ -124,7 +124,7 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
     auto_imports.insert("core:math");
     auto_imports.insert("core:time");
     auto_imports.insert("core:unicode");
-    auto_imports.insert("core:json");
+    auto_imports.insert("ext:json");
 
     for (std::size_t i = 0; i + 1 < tokens.size(); ++i) {
         if (tokens[i].kind == cfire::frontend::TokenKind::Ident &&
@@ -1250,16 +1250,25 @@ auto main(int argc, char** argv) -> int {
             }
         }
 
-        // Form 3: `core:<mod>` or `<mod>.<symbol>`
+        // Form 3: `core:<mod>` / `ext:<mod>` / `vendor:<mod>` or `<mod>.<symbol>`
         const auto& catalog = cfire::doc::stdlib_catalog();
+        auto matches_mod_path = [](const cfire::doc::StdModuleDoc& m, std::string_view q) -> bool {
+            if (m.ns_alias == q || m.import_path == q ||
+                ("core:" + m.ns_alias) == q || ("ext:" + m.ns_alias) == q || ("vendor:" + m.ns_alias) == q) {
+                return true;
+            }
+            if (q.starts_with("core:") && m.import_path == ("ext:" + std::string(q.substr(5)))) return true;
+            if (q.starts_with("ext:") && m.import_path == ("core:" + std::string(q.substr(4)))) return true;
+            return false;
+        };
         auto dot_pos = target_str.find('.');
-        if (dot_pos != std::string::npos && !target_str.starts_with("core:")) {
+        if (dot_pos != std::string::npos && !target_str.starts_with("core:") && !target_str.starts_with("ext:") && !target_str.starts_with("vendor:")) {
             std::string mod_part = target_str.substr(0, dot_pos);
             std::string sym_part = target_str.substr(dot_pos + 1);
 
             const cfire::doc::StdModuleDoc* found_mod = nullptr;
             for (const auto& m : catalog) {
-                if (m.ns_alias == mod_part || m.import_path == mod_part || ("core:" + m.ns_alias) == mod_part) {
+                if (matches_mod_path(m, mod_part)) {
                     found_mod = &m;
                     break;
                 }
@@ -1288,8 +1297,7 @@ auto main(int argc, char** argv) -> int {
 
         const cfire::doc::StdModuleDoc* matched_mod = nullptr;
         for (const auto& m : catalog) {
-            if (m.import_path == target_str || m.ns_alias == target_str ||
-                ("core:" + m.ns_alias) == target_str) {
+            if (matches_mod_path(m, target_str)) {
                 matched_mod = &m;
                 break;
             }

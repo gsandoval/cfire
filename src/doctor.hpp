@@ -242,15 +242,15 @@ struct CheckItem {
         }
     }
 
-    // --- 3. Native `core:*` Engine Libraries ---
+    // --- 3. Native `ext:*` & `vendor:*` Engine Libraries ---
     {
         std::string det;
         if (check_pkg_or_header("simdjson", "simdjson.h", det)) {
-            items.push_back({"Native Engine Libraries", "simdjson (`core:json`, `core:ai`)", "ok", det, ""});
+            items.push_back({"Native Engine Libraries", "simdjson (`ext:json`, `ext:ai`)", "ok", det, ""});
         } else {
             items.push_back({
                 "Native Engine Libraries",
-                "simdjson (`core:json`, `core:ai`)",
+                "simdjson (`ext:json`, `ext:ai`)",
                 "warn",
                 "Not installed (using built-in zero-dependency JSON parser fallback; install simdjson for SIMD acceleration)",
                 pm == "brew" ? "brew install simdjson" :
@@ -260,13 +260,13 @@ struct CheckItem {
 
         det.clear();
         if (check_pkg_or_header("libzstd", "zstd.h", det)) {
-            items.push_back({"Native Engine Libraries", "libzstd (`core:compress/zstd`)", "ok", det, ""});
+            items.push_back({"Native Engine Libraries", "libzstd (`ext:compress/zstd`)", "ok", det, ""});
         } else {
             items.push_back({
                 "Native Engine Libraries",
-                "libzstd (`core:compress/zstd`)",
+                "libzstd (`ext:compress/zstd`)",
                 "warn",
-                "Not installed (needed when importing `core:compress/zstd`)",
+                "Not installed (needed when importing `ext:compress/zstd`)",
                 pm == "brew" ? "brew install zstd" :
                 (pm == "apt" ? "sudo apt-get install -y libzstd-dev" : "Run `cfire setup`")
             });
@@ -274,16 +274,16 @@ struct CheckItem {
 
         det.clear();
         if (check_pkg_or_header("sqlite3", "sqlite3.h", det)) {
-            items.push_back({"Native Engine Libraries", "sqlite3 (`core:db/sqlite`)", "ok", det, ""});
+            items.push_back({"Native Engine Libraries", "sqlite3 (`ext:db/sqlite`)", "ok", det, ""});
         } else {
 #if defined(__APPLE__)
-            items.push_back({"Native Engine Libraries", "sqlite3 (`core:db/sqlite`)", "ok", "macOS SDK libsqlite3", ""});
+            items.push_back({"Native Engine Libraries", "sqlite3 (`ext:db/sqlite`)", "ok", "macOS SDK libsqlite3", ""});
 #else
             items.push_back({
                 "Native Engine Libraries",
-                "sqlite3 (`core:db/sqlite`)",
+                "sqlite3 (`ext:db/sqlite`)",
                 "warn",
-                "Not installed (needed when importing `core:db/sqlite`)",
+                "Not installed (needed when importing `ext:db/sqlite`)",
                 pm == "apt" ? "sudo apt-get install -y libsqlite3-dev" : "Run `cfire setup`"
             });
 #endif
@@ -291,19 +291,19 @@ struct CheckItem {
 
         det.clear();
         if (check_pkg_or_header("openssl", "openssl/ssl.h", det)) {
-            items.push_back({"Native Engine Libraries", "OpenSSL (`core:net/tls`, HTTPS)", "ok", det, ""});
+            items.push_back({"Native Engine Libraries", "OpenSSL (`ext:net/tls`, HTTPS)", "ok", det, ""});
         } else {
 #if defined(__APPLE__)
             if (std::filesystem::exists("/opt/homebrew/opt/openssl/include/openssl/ssl.h") ||
                 std::filesystem::exists("/usr/lib/libssl.48.dylib") ||
                 std::filesystem::exists("/opt/homebrew/lib/libssl.dylib")) {
-                items.push_back({"Native Engine Libraries", "OpenSSL (`core:net/tls`, HTTPS)", "ok", "Dynamic libssl/libcrypto detected", ""});
+                items.push_back({"Native Engine Libraries", "OpenSSL (`ext:net/tls`, HTTPS)", "ok", "Dynamic libssl/libcrypto detected", ""});
             } else {
                 items.push_back({
                     "Native Engine Libraries",
-                    "OpenSSL (`core:net/tls`, HTTPS)",
+                    "OpenSSL (`ext:net/tls`, HTTPS)",
                     "warn",
-                    "OpenSSL not found (needed for `core:net/tls` and HTTPS sockets)",
+                    "OpenSSL not found (needed for `ext:net/tls` and HTTPS sockets)",
                     "brew install openssl"
                 });
             }
@@ -312,13 +312,13 @@ struct CheckItem {
                 std::filesystem::exists("/usr/lib/aarch64-linux-gnu/libssl.so.3") ||
                 std::filesystem::exists("/lib/x86_64-linux-gnu/libssl.so.3") ||
                 std::filesystem::exists("/lib/aarch64-linux-gnu/libssl.so.3")) {
-                items.push_back({"Native Engine Libraries", "OpenSSL (`core:net/tls`, HTTPS)", "ok", "Dynamic libssl.so.3 detected", ""});
+                items.push_back({"Native Engine Libraries", "OpenSSL (`ext:net/tls`, HTTPS)", "ok", "Dynamic libssl.so.3 detected", ""});
             } else {
                 items.push_back({
                     "Native Engine Libraries",
-                    "OpenSSL (`core:net/tls`, HTTPS)",
+                    "OpenSSL (`ext:net/tls`, HTTPS)",
                     "warn",
-                    "libssl not found (needed for `core:net/tls` and HTTPS)",
+                    "libssl not found (needed for `ext:net/tls` and HTTPS)",
                     pm == "apt" ? "sudo apt-get install -y libssl-dev" : "Run `cfire setup`"
                 });
             }
@@ -376,11 +376,11 @@ struct CheckItem {
         if (check_pkg_or_header("alsa", "alsa/asoundlib.h", alsa_det) ||
             std::filesystem::exists("/usr/lib/x86_64-linux-gnu/libasound.so.2") ||
             std::filesystem::exists("/usr/lib/aarch64-linux-gnu/libasound.so.2")) {
-            items.push_back({"Cross-Platform Targets", "Linux ALSA Audio (`core:audio`)", "ok", "libasound.so.2 ready", ""});
+            items.push_back({"Cross-Platform Targets", "Linux ALSA Audio (`ext:audio`)", "ok", "libasound.so.2 ready", ""});
         } else {
             items.push_back({
                 "Cross-Platform Targets",
-                "Linux ALSA Audio (`core:audio`)",
+                "Linux ALSA Audio (`ext:audio`)",
                 "warn",
                 "Optional: libasound2 not installed (needed only for live speaker playback; WAV/DSP synthesis works offline)",
                 pm == "apt" ? "sudo apt-get install -y libasound2-dev" : "Install alsa-lib"
