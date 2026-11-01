@@ -1478,6 +1478,18 @@ inline auto resolve_external_dep_source(
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
                 add_pc(it->second);
             }
+            if (imp.path == "core:ai") {
+                if (!is_wasm && plan.is_ios) {
+                    plan.ldflags.insert(plan.ldflags.end(), {
+                        "-framework", "Foundation",
+                        "-framework", "NaturalLanguage",
+                        "-framework", "Vision",
+                        "-framework", "PDFKit",
+                        "-framework", "CFNetwork",
+                        "-lobjc"
+                    });
+                }
+            }
             if (imp.path == "core:audio") {
                 if (!is_wasm) {
                     if (plan.is_ios) {
@@ -1841,6 +1853,25 @@ inline constexpr std::string_view kCanvasShellHtml = R"HTML(<!DOCTYPE html>
           Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
         }
       };
+      window.cfireStageFile = function(name, uint8Array) {
+        if (typeof FS !== 'undefined' && FS.writeFile) {
+          var clean = String(name || 'dropped.bin').replace(/[^a-zA-Z0-9._-]/g, '_');
+          try { FS.mkdir('/tmp'); } catch (e) {}
+          FS.writeFile('/' + clean, uint8Array);
+          FS.writeFile('/tmp/' + clean, uint8Array);
+          window.dispatchEvent(new CustomEvent('cfire-file-staged', { detail: { name: clean, path: '/' + clean } }));
+        }
+      };
+      window.addEventListener('dragover', function(e) { e.preventDefault(); });
+      window.addEventListener('drop', function(e) {
+        e.preventDefault();
+        if (!e.dataTransfer || !e.dataTransfer.files) return;
+        Array.from(e.dataTransfer.files).forEach(function(file) {
+          file.arrayBuffer().then(function(buf) {
+            window.cfireStageFile(file.name, new Uint8Array(buf));
+          });
+        });
+      });
       window.onerror = function() {
         Module.setStatus('Exception thrown, see JavaScript console');
       };
@@ -1894,6 +1925,26 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
           console.error(text);
         }
       };
+      window.cfireStageFile = function(name, uint8Array) {
+        if (typeof FS !== 'undefined' && FS.writeFile) {
+          var clean = String(name || 'dropped.bin').replace(/[^a-zA-Z0-9._-]/g, '_');
+          try { FS.mkdir('/tmp'); } catch (e) {}
+          FS.writeFile('/' + clean, uint8Array);
+          FS.writeFile('/tmp/' + clean, uint8Array);
+          if (out) { out.textContent += "[fs] staged /" + clean + " (" + uint8Array.byteLength + " bytes)\n"; out.scrollTop = out.scrollHeight; }
+          window.dispatchEvent(new CustomEvent('cfire-file-staged', { detail: { name: clean, path: '/' + clean } }));
+        }
+      };
+      window.addEventListener('dragover', function(e) { e.preventDefault(); });
+      window.addEventListener('drop', function(e) {
+        e.preventDefault();
+        if (!e.dataTransfer || !e.dataTransfer.files) return;
+        Array.from(e.dataTransfer.files).forEach(function(file) {
+          file.arrayBuffer().then(function(buf) {
+            window.cfireStageFile(file.name, new Uint8Array(buf));
+          });
+        });
+      });
     </script>
     {{{ SCRIPT }}}
   </body>
@@ -2158,6 +2209,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         }
 
         plan.cflags.push_back("-sWASM=1");
+        plan.cflags.push_back("-msimd128");
         plan.cflags.push_back("-sALLOW_MEMORY_GROWTH=1");
         plan.ldflags.push_back(std::format("--shell-file \"{}\"", shell_path.string()));
         if (effective_profile == "canvas") {

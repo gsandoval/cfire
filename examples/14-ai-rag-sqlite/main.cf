@@ -57,4 +57,9 @@ fn main() {
         top := results[0]
         println("Top RAG Match -> [#{}] {}: {}", top.Id, top.Title, top.Snippet)
     }
+
+    // 5. Structured document parsing & section-preserving chunking (.pdf, .pptx, .docx, .odt, .epub, .md)
+    parsed := try ai.parse_document("# Slide 1\nZero-dependency multimodal ingestion.\n# Slide 2\nCross-platform SIMD vector search.", "deck.md")
+    chunks := ai.chunk_document(parsed, 256, 32)
+    println("Parsed {} document sections ({} RAG chunks)", parsed.sections.len(), chunks.len())
 }

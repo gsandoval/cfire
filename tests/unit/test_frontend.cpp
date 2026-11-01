@@ -962,6 +962,7 @@ fn main() {{
 
 import "core:ai"
 import "core:db/sqlite"
+import "core:fs"
 import "core:json"
 import "core:net/http"
 import "core:str"
@@ -1058,7 +1059,139 @@ fn main() {
     assert_eq(full, "Hello AI", "SSE stream accumulated full text")
     assert_eq(streamed_tokens, "Hello AI", "SSE stream callback received tokens")
 
-    println("ai_ok:top={}:bug={}:{}:stream={}", rows[0].title, bug.component, bug.severity, full)
+    // 6. Multimodal & Document Ingestion (.docx, .pptx, .xlsx, .pdf, .html, PNG OCR & Image Embeddings)
+    docx_bytes := ai.create_zip([
+        ai.ZipEntry{
+            name: "word/document.xml",
+            content: `<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Architecture Overview</w:t></w:r></w:p><w:p><w:r><w:t>Zero-overhead C++23 lowering and memory safety.</w:t></w:r></w:p></w:body></w:document>`
+        }
+    ])
+    try fs.write_bytes("spec.docx", docx_bytes)
+    docx_doc := try ai.load_document("spec.docx")
+    try fs.remove("spec.docx")
+    assert_eq(docx_doc.format, "docx", "detected docx format")
+    assert(str.contains(docx_doc.text, "# Architecture Overview"), "docx heading converted to markdown")
+    assert(str.contains(docx_doc.text, "Zero-overhead C++23 lowering"), "docx paragraph extracted")
+
+    pptx_bytes := ai.create_zip([
+        ai.ZipEntry{
+            name: "ppt/slides/slide1.xml",
+            content: `<p:sld><p:cSld><p:spTree><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>Q3 Performance</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:txBody><a:p><a:r><a:t>Sub-millisecond SIMD vector queries</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`
+        },
+        ai.ZipEntry{
+            name: "ppt/slides/slide2.xml",
+            content: `<p:sld><p:cSld><p:spTree><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>Multimodal Roadmap</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:txBody><a:p><a:r><a:t>Native PDF and slide deck ingestion</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`
+        }
+    ])
+    try fs.write_bytes("deck.pptx", pptx_bytes)
+    pptx_doc := try ai.load_document("deck.pptx")
+    assert_eq(pptx_doc.format, "pptx", "detected pptx format")
+    assert_eq(pptx_doc.sections.len(), 2, "pptx extracted 2 slide sections")
+    assert_eq(pptx_doc.sections[0].index, 1, "slide 1 index")
+    assert_eq(pptx_doc.sections[0].title, "Q3 Performance", "slide 1 title")
+    assert_eq(pptx_doc.sections[1].index, 2, "slide 2 index")
+    assert_eq(pptx_doc.sections[1].title, "Multimodal Roadmap", "slide 2 title")
+
+    slide_chunks := ai.chunk_document(pptx_doc, 120, 16)
+    assert(slide_chunks.len() >= 2, "chunk_document preserves slide sections")
+    assert_eq(slide_chunks[1].index, 2, "chunk_document retains slide 2 provenance index")
+
+    xlsx_bytes := ai.create_zip([
+        ai.ZipEntry{
+            name: "xl/sharedStrings.xml",
+            content: `<sst><si><t>Metric</t></si><si><t>Latency</t></si></sst>`
+        },
+        ai.ZipEntry{
+            name: "xl/worksheets/sheet1.xml",
+            content: `<worksheet><sheetData><row><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row><row><c t="inlineStr"><is><t>P99</t></is></c><c><v>1.2</v></c></row></sheetData></worksheet>`
+        }
+    ])
+    try fs.write_bytes("metrics.xlsx", xlsx_bytes)
+    xlsx_doc := try ai.load_document("metrics.xlsx")
+    try fs.remove("metrics.xlsx")
+    assert_eq(xlsx_doc.format, "xlsx", "detected xlsx format")
+    assert(str.contains(xlsx_doc.text, "Metric"), "xlsx shared string resolved")
+    assert(str.contains(xlsx_doc.text, "1.2"), "xlsx numeric value extracted")
+
+    pdf_raw := "%PDF-1.4\n1 0 obj\n<< /Length 120 >>\nstream\n/CIDInit /ProcSet findresource begin\n2 beginbfchar\n<0001> <004C>\n<0002> <0069>\nendbfchar\n1 beginbfrange\n<0010> <0012> <006E>\nendbfrange\nendstream\nendobj\n2 0 obj\n<< /Length 88 >>\nstream\nBT /F1 12 Tf 72 712 Td [<000100020010> -250 (Quarterly Financial Summary)] TJ ET\nendstream\nendobj\n%%EOF"
+    try fs.write_text("report.pdf", pdf_raw)
+    pdf_doc := try ai.load_document("report.pdf")
+    try fs.remove("report.pdf")
+    assert_eq(pdf_doc.format, "pdf", "detected pdf format")
+    assert(str.contains(pdf_doc.text, "Lin Quarterly Financial Summary"), "pdf CMap + TJ kerning array extracted")
+
+    odt_bytes := ai.create_zip([
+        ai.ZipEntry{name: "mimetype", content: "application/vnd.oasis.opendocument.text"},
+        ai.ZipEntry{
+            name: "content.xml",
+            content: `<office:document-content><office:body><office:text><text:h>Linux Deployment</text:h><text:p>Zero external dev packages required.</text:p></office:text></office:body></office:document-content>`
+        }
+    ])
+    try fs.write_bytes("guide.odt", odt_bytes)
+    odt_doc := try ai.load_document("guide.odt")
+    try fs.remove("guide.odt")
+    assert_eq(odt_doc.format, "odt", "detected LibreOffice odt format")
+    assert(str.contains(odt_doc.text, "Zero external dev packages required."), "odt paragraph extracted")
+
+    epub_bytes := ai.create_zip([
+        ai.ZipEntry{name: "META-INF/container.xml", content: "<container/>"},
+        ai.ZipEntry{name: "OEBPS/ch1.xhtml", content: "<html><body><h1>Chapter One</h1><p>Systems programming on Linux and macOS.</p></body></html>"}
+    ])
+    try fs.write_bytes("book.epub", epub_bytes)
+    epub_doc := try ai.load_document("book.epub")
+    try fs.remove("book.epub")
+    assert_eq(epub_doc.format, "epub", "detected epub format")
+    assert(str.contains(epub_doc.text, "Systems programming on Linux and macOS."), "epub XHTML chapter extracted")
+
+    // Construct a minimal PNG with an embedded tEXt chunk for deterministic cross-platform OCR & image embedding
+    mut png_data: []u8 = [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x91, 0x68, 0x36,
+        0x00, 0x00, 0x00, 0x15, 0x74, 0x45, 0x58, 0x74,
+        0x43, 0x6F, 0x6D, 0x6D, 0x65, 0x6E, 0x74, 0x00,
+        0x49, 0x6E, 0x76, 0x6F, 0x69, 0x63, 0x65, 0x20, 0x23, 0x34, 0x32, 0x30, 0x30,
+        0x00, 0x00, 0x00, 0x00
+    ]
+    try fs.write_bytes("invoice.png", png_data)
+    ocr_txt := try ai.ocr("invoice.png")
+    assert(str.contains(ocr_txt, "Invoice #4200"), "OCR extracted PNG text metadata")
+    img_vec := try ai.embed_image("local", "invoice.png")
+    try fs.remove("invoice.png")
+    assert_eq(img_vec.len(), 384, "embed_image returns 384-dim normalized vector")
+    assert(ai.cosine_similarity(img_vec, img_vec) > 0.99, "embed_image self similarity ~ 1.0")
+
+    // Construct two 2x2 24-bit BMP images (red vs blue) to verify pure C++23 pixel decoding & visual embedding discrimination
+    mut bmp_red: []u8 = [
+        0x42, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00,
+        0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00,
+        0x13, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00,
+        0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00
+    ]
+    mut bmp_blue: []u8 = [
+        0x42, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00,
+        0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00,
+        0x13, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00
+    ]
+    try fs.write_bytes("red.bmp", bmp_red)
+    try fs.write_bytes("blue.bmp", bmp_blue)
+    red_vec := try ai.embed_image("local", "red.bmp")
+    blue_vec := try ai.embed_image("local", "blue.bmp")
+    try fs.remove("red.bmp")
+    try fs.remove("blue.bmp")
+    assert(ai.cosine_similarity(red_vec, blue_vec) < 0.85, "pixel-decoded RGB moments distinguish red vs blue images")
+
+    bug_from_file := try client.generate_struct_from_file[ExtractedBug]("mock-gpt", "Inspect this slide deck", "deck.pptx")
+    try fs.remove("deck.pptx")
+    assert_eq(bug_from_file.component, "audio", "generate_struct_from_file parsed struct")
+
+    println("ai_ok:top={}:bug={}:{}:stream={}:slides={}", rows[0].title, bug.component, bug.severity, full, pptx_doc.sections.len())
 }
 )CF");
 
@@ -1069,7 +1202,7 @@ fn main() {
             int rc = 0;
             std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
             require(rc == 0, std::format("ai_test exited with code {}:\n{}", rc, out));
-            require(out.contains("ai_ok:top=VectorDB:bug=audio:4:stream=Hello AI"),
+            require(out.contains("ai_ok:top=VectorDB:bug=audio:4:stream=Hello AI:slides=2"),
                     std::format("unexpected ai_test output: {}", out));
         }
     }

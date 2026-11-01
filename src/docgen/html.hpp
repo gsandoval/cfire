@@ -168,7 +168,7 @@ fn main() {
 })";
     std::string snip6_cpp = compile_snippet_to_cpp("snippet_audio.cf", snip6_cf);
 
-    // 7. AI-First Local Embeddings, Vector SQLite & MCP Tooling Snippet
+    // 7. AI-First Multimodal Documents, Local Embeddings, Vector SQLite & MCP Tooling Snippet
     std::string_view snip7_cf = R"CF(package main
 
 import "core:ai" as ai
@@ -190,20 +190,24 @@ fn main() {
     // 1. Compile-time JSON Schema extraction for LLMs/MCP
     schema := json.schema[QueryPlan]()
 
-    // 2. Embedded SQLite with built-in vector similarity
+    // 2. Zero-dependency document & slide extraction (.pdf, .pptx, .docx, .odt, .epub, .md)
+    doc := try ai.parse_document("# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.", "arch.md")
+    chunks := ai.chunk_document(doc, 512, 64)
+
+    // 3. Embedded SQLite with AVX2/NEON SIMD vector similarity
     mut db := try sqlite.open(":memory:")
     try db.exec("CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)")
 
-    // 3. Normalized local embeddings + vector indexing
-    doc := "cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead."
-    vec := try ai.embed("local", doc)
-    try db.exec("INSERT INTO docs VALUES (1, 'Transpiler', ?1, ?2)", doc, vec)
+    for ch in chunks {
+        vec := try ai.embed("local", ch.text)
+        try db.exec("INSERT INTO docs VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, vec)
+    }
 
     // 4. In-database semantic search
     qvec := try ai.embed("local", "modern C++23 compiler")
     hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
-    if hits.len > 0 {
-        println("Match: {}", hits[0].Snippet)
+    if hits.len() > 0 {
+        println("Match [{}]: {}", hits[0].Title, hits[0].Snippet)
     }
 }
 )CF";

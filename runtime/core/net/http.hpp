@@ -5,6 +5,8 @@
 
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
 #include <emscripten.h>
+#elif defined(__APPLE__)
+#include <dlfcn.h>
 #endif
 
 #include <functional>
@@ -441,6 +443,112 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     return req;
 }
 
+#if defined(__APPLE__)
+namespace detail {
+[[nodiscard]] inline auto request_apple_foundation(
+    std::string_view method,
+    std::string_view url_str,
+    std::string_view body,
+    std::string_view content_type,
+    const std::unordered_map<std::string, std::string>& extra_headers
+) -> std::expected<Response, cfire::Error> {
+    void* objc_lib = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_GLOBAL);
+    (void)::dlopen("/System/Library/Frameworks/Foundation.framework/Foundation", RTLD_LAZY | RTLD_GLOBAL);
+    (void)::dlopen("/System/Library/Frameworks/CFNetwork.framework/CFNetwork", RTLD_LAZY | RTLD_GLOBAL);
+    void* handle = objc_lib ? objc_lib : RTLD_DEFAULT;
+
+    using ObjcGetClassFn = void*(*)(const char*);
+    using SelRegisterNameFn = void*(*)(const char*);
+    using ObjcMsgSendFn = void(*)();
+
+    auto get_class = reinterpret_cast<ObjcGetClassFn>(::dlsym(handle, "objc_getClass"));
+    auto sel_reg = reinterpret_cast<SelRegisterNameFn>(::dlsym(handle, "sel_registerName"));
+    auto msg_send = reinterpret_cast<ObjcMsgSendFn>(::dlsym(handle, "objc_msgSend"));
+    if (!get_class || !sel_reg || !msg_send) {
+        return cfire::make_error("Objective-C runtime unavailable for HTTPS request");
+    }
+
+    void* nsStrCls = get_class("NSString");
+    void* nsUrlCls = get_class("NSURL");
+    void* nsReqCls = get_class("NSMutableURLRequest");
+    void* nsDataCls = get_class("NSData");
+    void* nsConnCls = get_class("NSURLConnection");
+    if (!nsStrCls || !nsUrlCls || !nsReqCls || !nsDataCls || !nsConnCls) {
+        return cfire::make_error("Foundation networking classes unavailable");
+    }
+
+    using FnStrUTF8 = void*(*)(void*, void*, const char*);
+    using FnObj1 = void*(*)(void*, void*, void*);
+    using FnVoid1 = void(*)(void*, void*, void*);
+    using FnVoid2 = void(*)(void*, void*, void*, void*);
+    using FnDataBytes = void*(*)(void*, void*, const void*, unsigned long);
+    using FnSyncReq = void*(*)(void*, void*, void*, void**, void**);
+    using FnLong = long(*)(void*, void*);
+    using FnBytes = const void*(*)(void*, void*);
+    using FnULong = unsigned long(*)(void*, void*);
+
+    auto fnStr = reinterpret_cast<FnStrUTF8>(msg_send);
+    void* selUTF8 = sel_reg("stringWithUTF8String:");
+
+    std::string u_s(url_str);
+    void* urlNsStr = fnStr(nsStrCls, selUTF8, u_s.c_str());
+    void* nsUrl = urlNsStr ? reinterpret_cast<FnObj1>(msg_send)(nsUrlCls, sel_reg("URLWithString:"), urlNsStr) : nullptr;
+    if (!nsUrl) return cfire::make_error("invalid URL for Foundation HTTPS request");
+
+    void* req = reinterpret_cast<FnObj1>(msg_send)(nsReqCls, sel_reg("requestWithURL:"), nsUrl);
+    if (!req) return cfire::make_error("failed to allocate NSMutableURLRequest");
+
+    std::string m_s(method);
+    void* mNsStr = fnStr(nsStrCls, selUTF8, m_s.c_str());
+    reinterpret_cast<FnVoid1>(msg_send)(req, sel_reg("setHTTPMethod:"), mNsStr);
+
+    void* selSetHdr = sel_reg("setValue:forHTTPHeaderField:");
+    if (!content_type.empty()) {
+        std::string ct_s(content_type);
+        void* kStr = fnStr(nsStrCls, selUTF8, "Content-Type");
+        void* vStr = fnStr(nsStrCls, selUTF8, ct_s.c_str());
+        if (kStr && vStr) reinterpret_cast<FnVoid2>(msg_send)(req, selSetHdr, vStr, kStr);
+    }
+    for (const auto& [k, v] : extra_headers) {
+        if (k == "x-cfire-tls-verify" || k == "x-cfire-tls-ca") continue;
+        void* kStr = fnStr(nsStrCls, selUTF8, k.c_str());
+        void* vStr = fnStr(nsStrCls, selUTF8, v.c_str());
+        if (kStr && vStr) reinterpret_cast<FnVoid2>(msg_send)(req, selSetHdr, vStr, kStr);
+    }
+    if (!body.empty()) {
+        void* bodyData = reinterpret_cast<FnDataBytes>(msg_send)(
+            nsDataCls, sel_reg("dataWithBytes:length:"), body.data(), static_cast<unsigned long>(body.size()));
+        if (bodyData) {
+            reinterpret_cast<FnVoid1>(msg_send)(req, sel_reg("setHTTPBody:"), bodyData);
+        }
+    }
+
+    void* urlResp = nullptr;
+    void* urlErr = nullptr;
+    void* respData = reinterpret_cast<FnSyncReq>(msg_send)(
+        nsConnCls, sel_reg("sendSynchronousRequest:returningResponse:error:"), req, &urlResp, &urlErr);
+    if (!respData && urlErr) {
+        return cfire::make_error("Foundation HTTPS request failed");
+    }
+
+    Response out;
+    if (urlResp) {
+        long code = reinterpret_cast<FnLong>(msg_send)(urlResp, sel_reg("statusCode"));
+        if (code > 0) out.status_code = static_cast<int>(code);
+        out.status_text = status_text_for_code(out.status_code);
+    }
+    if (respData) {
+        const void* ptr = reinterpret_cast<FnBytes>(msg_send)(respData, sel_reg("bytes"));
+        unsigned long len = reinterpret_cast<FnULong>(msg_send)(respData, sel_reg("length"));
+        if (ptr && len > 0) {
+            out.body.assign(reinterpret_cast<const char*>(ptr), len);
+        }
+    }
+    return out;
+}
+} // namespace detail
+#endif
+
 [[nodiscard]] inline auto request(
     std::string_view method,
     std::string_view url_str,
@@ -450,22 +558,38 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     bool verify_peer = true
 ) -> std::expected<Response, cfire::Error> {
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
-    (void)extra_headers;
     (void)verify_peer;
     std::string m_str(method);
     std::string u_str(url_str);
     std::string b_str(body);
     std::string ct_str(content_type);
+    std::string hdrs_packed;
+    for (const auto& [k, v] : extra_headers) {
+        if (k == "x-cfire-tls-verify" || k == "x-cfire-tls-ca") continue;
+        hdrs_packed += detail::strip_crlf(k) + ": " + detail::strip_crlf(v) + "\n";
+    }
     char* raw_ptr = reinterpret_cast<char*>(EM_ASM_PTR({
         try {
             var method = UTF8ToString($0);
             var url = UTF8ToString($1);
             var body = UTF8ToString($2);
             var contentType = UTF8ToString($3);
+            var extraHeaders = UTF8ToString($4);
             var xhr = new XMLHttpRequest();
             xhr.open(method, url, false);
             if (contentType && contentType.length > 0) {
                 xhr.setRequestHeader("Content-Type", contentType);
+            }
+            if (extraHeaders && extraHeaders.length > 0) {
+                var lines = extraHeaders.split("\n");
+                for (var i = 0; i < lines.length; i++) {
+                    var idx = lines[i].indexOf(":");
+                    if (idx > 0) {
+                        var hk = lines[i].substring(0, idx).trim();
+                        var hv = lines[i].substring(idx + 1).trim();
+                        if (hk.length > 0) xhr.setRequestHeader(hk, hv);
+                    }
+                }
             }
             if (body && body.length > 0) {
                 xhr.send(body);
@@ -481,7 +605,7 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
         } catch (e) {
             return 0;
         }
-    }, m_str.c_str(), u_str.c_str(), b_str.c_str(), ct_str.c_str()));
+    }, m_str.c_str(), u_str.c_str(), b_str.c_str(), ct_str.c_str(), hdrs_packed.c_str()));
 
     if (!raw_ptr) {
         return cfire::make_error("WASM XMLHttpRequest failed or server unreachable");
@@ -501,6 +625,12 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
+#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    if (u->scheme == "https") {
+        return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers);
+    }
+#endif
+
     auto conn_res = cfire::net::connect_tcp(u->host, u->port);
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
@@ -519,7 +649,13 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
 
     if (u->scheme == "https") {
         auto tls_res = cfire::tls::wrap_client(conn, u->host, effective_verify, ca_file);
-        if (!tls_res) return std::unexpected(tls_res.error());
+        if (!tls_res) {
+#if defined(__APPLE__)
+            return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers);
+#else
+            return std::unexpected(tls_res.error());
+#endif
+        }
     }
 
     std::string req;

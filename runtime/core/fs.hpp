@@ -13,6 +13,7 @@
 #include <expected>
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
+extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #endif
 
 namespace cfire::fs {
@@ -37,6 +38,24 @@ namespace detail {
             }
             if (std::filesystem::exists(candidate, ec)) {
                 return candidate;
+            }
+        }
+        if (!for_write) {
+            // Check iOS .app bundle directory (where bundled resources/assets reside)
+            char exec_buf[2048];
+            std::uint32_t exec_sz = sizeof(exec_buf);
+            if (::_NSGetExecutablePath(exec_buf, &exec_sz) == 0) {
+                auto bundle_dir = std::filesystem::path(exec_buf).parent_path();
+                if (std::filesystem::exists(bundle_dir / p, ec)) {
+                    return bundle_dir / p;
+                }
+            }
+            // Check iOS sandbox TMPDIR
+            if (const char* tmp_env = std::getenv("TMPDIR")) {
+                auto tmp_cand = std::filesystem::path(tmp_env) / p;
+                if (std::filesystem::exists(tmp_cand, ec)) {
+                    return tmp_cand;
+                }
             }
         }
     }
@@ -156,6 +175,13 @@ namespace detail {
         return cfire::make_error(std::format("failed to write bytes to: {}", p.string()));
     }
     return {};
+}
+
+[[nodiscard]] inline auto write_bytes(
+    const std::filesystem::path& p,
+    std::span<const std::uint8_t> data
+) -> std::expected<void, cfire::Error> {
+    return write_bytes(p, std::as_bytes(data));
 }
 
 [[nodiscard]] inline auto read_all(const std::filesystem::path& p)
