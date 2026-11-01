@@ -2,12 +2,15 @@
 // src/formatter.hpp — Canonical Code Formatter (`cfire fmt`) & AST Pretty-Printer
 
 #include "parser.hpp"
+#include "../runtime/cfire_prelude.hpp"
 #include <algorithm>
 #include <expected>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#if __has_include(<print>)
 #include <print>
+#endif
 #include <sstream>
 #include <string>
 #include <string_view>

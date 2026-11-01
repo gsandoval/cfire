@@ -1,6 +1,8 @@
 CXX      := clang++
-CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc
+LINUX_CXXFLAGS := $(if $(filter Linux,$(shell uname -s)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
+CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality $(LINUX_CXXFLAGS) -Iruntime -Isrc
 LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation,-ldl -lpthread)
+PREFIX   ?= /usr/local
 
 TEST_SRCS := tests/unit/test_frontend.cpp \
              tests/unit/test_sema.cpp \
@@ -10,7 +12,7 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: all build test test-unit test-stdlib test-e2e fuzz bench docs fmt review-check clean
+.PHONY: all build install uninstall doctor setup test test-unit test-stdlib test-e2e fuzz bench docs fmt review-check clean
 
 all: build
 
@@ -18,6 +20,24 @@ HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtim
 
 build: $(HEADERS)
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
+
+install: build
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
+	cp cfire $(DESTDIR)$(PREFIX)/bin/cfire
+	chmod 755 $(DESTDIR)$(PREFIX)/bin/cfire
+	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
+	@echo "✓ Installed cfire to $(DESTDIR)$(PREFIX)/bin/cfire and runtime headers to $(DESTDIR)$(PREFIX)/share/cfire/runtime"
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/cfire
+	rm -rf $(DESTDIR)$(PREFIX)/share/cfire
+
+doctor: build
+	./cfire doctor
+
+setup: build
+	./cfire setup
 
 %.o: %.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@

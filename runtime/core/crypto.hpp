@@ -163,8 +163,8 @@ namespace detail {
     }
     return hex;
 #else
-    std::vector<std::byte> all_data((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    return hash_hex(std::span<const std::byte>(all_data.data(), all_data.size()));
+    std::string all_data((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    return hash_hex(std::as_bytes(std::span<const char>(all_data.data(), all_data.size())));
 #endif
 }
 

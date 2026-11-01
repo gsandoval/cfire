@@ -27,16 +27,38 @@ Every chapter in this manual is structured for both **sequential reading** and *
 > **Backend Compiler Discovery Order**: `cfire` locates a C++23-capable compiler by checking: (1) the `CFIRE_CXX` environment variable, (2) the `CXX` environment variable, (3) `clang++-18` / `clang++` (macOS Xcode Command Line Tools or LLVM 18+), and (4) `g++-14` / `g++`. Executables produced by `cfire build` are standalone native Mach-O, ELF, WASM, or iOS `.app` binaries with no garbage collector or virtual machine.
 
 ### Quick Installation Script (macOS & Linux)
-Install the prebuilt `cfire` binary and standard runtime headers (`~/.cfire/bin` and `~/.cfire/runtime`):
+Install the `cfire` binary and standard `runtime/` headers (`~/.local/bin/cfire` and `~/.cfire/runtime`, or `/usr/local/bin/cfire` and `/usr/local/share/cfire/runtime` when run as root):
 
 ```bash
 curl -fsSL https://cfire.memo.engineer/install.sh | sh
 ```
 
-Verify the active compiler binary and detected host C++23 backend:
+To also bootstrap all optional native acceleration libraries (`simdjson`, `libzstd`, `sqlite3`, `openssl`, `cmake`) and pre-compile the C++23 runtime precompiled header (`.pch`) in one command, pass `--setup`:
+
+```bash
+curl -fsSL https://cfire.memo.engineer/install.sh | sh -s -- --setup
+```
+
+Verify the active compiler binary:
 ```bash
 cfire --version
-# Output: cfire 0.2.0 (backend: Apple clang 17.0.0 / target: arm64-apple-darwin24)
+# Output: cfire 0.9.4 (ISO C++23 systems toolchain)
+```
+
+### Environment Health & Dependency Setup (`cfire doctor` & `cfire setup`)
+Run `cfire doctor` at any time on a new machine to inspect the C++23 compiler, `runtime/` header discovery, `.pch` cache, `pkg-config` tools, native `core:*` engine libraries, and cross-compilation SDKs (`em++`, iOS Simulator):
+
+```bash
+cfire doctor
+cfire doctor --json   # Machine-readable JSON report for CI & coding agents
+```
+
+If any optional native libraries or build tools are missing, run `cfire setup` to install them automatically via the host package manager (`brew` on macOS; `apt-get`, `dnf`, `pacman`, or `apk` on Linux), sync `runtime/` headers to `~/.cfire/runtime`, and warm the C++23 prelude `.pch`:
+
+```bash
+cfire setup --yes             # Install missing native libraries + warm C++23 PCH
+cfire setup --yes --raylib    # Also pre-fetch vendor:raylib into global cache
+cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
 ```
 
 ### Manual Source Build & Platform Toolchains
@@ -46,29 +68,35 @@ cfire --version
    ```bash
    xcode-select --install
    ```
-2. Install optional native acceleration libraries via Homebrew:
-   ```bash
-   brew install simdjson zstd sqlite openssl@3
-   ```
-3. Clone and build `cfire` from source:
+2. Clone, build, and install `cfire` from source:
    ```bash
    git clone https://github.com/gsandoval/cfire.git
-   cd cfire && make -j
-   sudo make install  # Installs binary to /usr/local/bin/cfire and runtime to /usr/local/share/cfire/runtime
+   cd cfire && make -j4
+   sudo make install        # Installs /usr/local/bin/cfire + /usr/local/share/cfire/runtime
+   cfire setup --yes        # Installs simdjson, zstd, sqlite, openssl, cmake via Homebrew
    ```
 
 #### Linux (Ubuntu / Debian / Arch)
 - **Ubuntu 24.04+ / Debian 12+**:
    ```bash
-   sudo apt-get update
-   sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev libasound2-dev
-   cd cfire && make -j
+   sudo apt-get update && sudo apt-get install -y clang make
+   git clone https://github.com/gsandoval/cfire.git
+   cd cfire && sudo make install
+   cfire setup --yes
    ```
 - **Arch Linux**:
    ```bash
-   sudo pacman -S clang pkgconf simdjson zstd sqlite openssl alsa-lib
-   cd cfire && make -j
+   sudo pacman -S clang make pkgconf simdjson zstd sqlite openssl alsa-lib
+   cd cfire && sudo make install
    ```
+
+#### Docker & OrbStack Containers
+Build and run the official Ubuntu 24.04 Linux container image with all `core:*` native engines pre-installed:
+```bash
+docker build -t cfire:latest .
+docker run --rm cfire:latest doctor
+docker run --rm cfire:latest run examples/01-hello-core/main.cf
+```
 
 #### Windows (WSL2)
 Run `cfire` inside WSL2 with an Ubuntu 24.04 distribution:

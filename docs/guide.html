@@ -1567,6 +1567,7 @@ tr:hover td { background: #1F242C; }
           <ul class="subhead-list">
             <li><a href="#ch1-compilation-pipeline-architecture" onclick="navigateToSubhead('1', 'ch1-compilation-pipeline-architecture'); return false;">Compilation Pipeline &amp; Architecture</a></li>
             <li><a href="#ch1-quick-installation-script-macos-linux" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">Quick Installation Script (macOS &amp; Linux)</a></li>
+            <li><a href="#ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" onclick="navigateToSubhead('1', 'ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup'); return false;">Environment Health &amp; Dependency Setup (`cfire doctor` &amp; `cfire setup`)</a></li>
             <li><a href="#ch1-manual-source-build-platform-toolchains" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">Manual Source Build &amp; Platform Toolchains</a></li>
             <li><a href="#ch1-system-library-dependency-fallback-matrix" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">System Library Dependency &amp; Fallback Matrix</a></li>
             <li><a href="#ch1-cross-compilation-target-setup" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">Cross-Compilation Target Setup</a></li>
@@ -1807,13 +1808,14 @@ tr:hover td { background: #1F242C; }
 <h2 id="chapter-1"><a id="ch1"></a>1. Installation &amp; Platform Setup</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 1 Topics (6)</span>
+    <span class="topic-pill-label">Ch 1 Topics (7)</span>
     <a href="#ch1-compilation-pipeline-architecture" class="topic-pill active" data-topic-pill="ch1-compilation-pipeline-architecture" onclick="navigateToSubhead('1', 'ch1-compilation-pipeline-architecture'); return false;">1.1: Compilation Pipeline &amp; Architecture</a>
     <a href="#ch1-quick-installation-script-macos-linux" class="topic-pill" data-topic-pill="ch1-quick-installation-script-macos-linux" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">1.2: Quick Installation Script (macOS &amp; Linux)</a>
-    <a href="#ch1-manual-source-build-platform-toolchains" class="topic-pill" data-topic-pill="ch1-manual-source-build-platform-toolchains" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">1.3: Manual Source Build &amp; Platform Toolchains</a>
-    <a href="#ch1-system-library-dependency-fallback-matrix" class="topic-pill" data-topic-pill="ch1-system-library-dependency-fallback-matrix" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">1.4: System Library Dependency &amp; Fallback Matrix</a>
-    <a href="#ch1-cross-compilation-target-setup" class="topic-pill" data-topic-pill="ch1-cross-compilation-target-setup" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">1.5: Cross-Compilation Target Setup</a>
-    <a href="#ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" class="topic-pill" data-topic-pill="ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" onclick="navigateToSubhead('1', 'ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration'); return false;">1.6: AI Agent (`cfire mcp`) &amp; Editor (`cfire lsp` / `cfire ide`) Configuration</a>
+    <a href="#ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" class="topic-pill" data-topic-pill="ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" onclick="navigateToSubhead('1', 'ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup'); return false;">1.3: Environment Health &amp; Dependency Setup (`cfire doctor` &amp; `cfire setup`)</a>
+    <a href="#ch1-manual-source-build-platform-toolchains" class="topic-pill" data-topic-pill="ch1-manual-source-build-platform-toolchains" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">1.4: Manual Source Build &amp; Platform Toolchains</a>
+    <a href="#ch1-system-library-dependency-fallback-matrix" class="topic-pill" data-topic-pill="ch1-system-library-dependency-fallback-matrix" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">1.5: System Library Dependency &amp; Fallback Matrix</a>
+    <a href="#ch1-cross-compilation-target-setup" class="topic-pill" data-topic-pill="ch1-cross-compilation-target-setup" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">1.6: Cross-Compilation Target Setup</a>
+    <a href="#ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" class="topic-pill" data-topic-pill="ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" onclick="navigateToSubhead('1', 'ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration'); return false;">1.7: AI Agent (`cfire mcp`) &amp; Editor (`cfire lsp` / `cfire ide`) Configuration</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch1-compilation-pipeline-architecture" data-topic-id="ch1-compilation-pipeline-architecture" data-topic-title="Compilation Pipeline &amp; Architecture">
 <h3 class="guide-heading" id="ch1-compilation-pipeline-architecture"><span class="heading-hash">#</span><span class="heading-text">Compilation Pipeline &amp; Architecture</span></h3>
@@ -1842,22 +1844,50 @@ tr:hover td { background: #1F242C; }
   </section>
   <section class="guide-topic" id="topic-ch1-quick-installation-script-macos-linux" data-topic-id="ch1-quick-installation-script-macos-linux" data-topic-title="Quick Installation Script (macOS &amp; Linux)">
 <h3 class="guide-heading" id="ch1-quick-installation-script-macos-linux"><span class="heading-hash">#</span><span class="heading-text">Quick Installation Script (macOS &amp; Linux)</span><span class="heading-badge">Recommended for POSIX</span></h3>
-<p>Install the prebuilt <code>cfire</code> binary and standard runtime headers (<code>~/.cfire/bin</code> and <code>~/.cfire/runtime</code>):</p>
+<p>Install the <code>cfire</code> binary and standard <code>runtime/</code> headers (<code>~/.local/bin/cfire</code> and <code>~/.cfire/runtime</code>, or <code>/usr/local/bin/cfire</code> and <code>/usr/local/share/cfire/runtime</code> when run as root):</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>curl -fsSL https://cfire.memo.engineer/install.sh | sh
 </code></pre>
-<p>Verify the active compiler binary and detected host C++23 backend:</p>
+<p>To also bootstrap all optional native acceleration libraries (<code>simdjson</code>, <code>libzstd</code>, <code>sqlite3</code>, <code>openssl</code>, <code>cmake</code>) and pre-compile the C++23 runtime precompiled header (<code>.pch</code>) in one command, pass <code>--setup</code>:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>curl -fsSL https://cfire.memo.engineer/install.sh | sh -s -- --setup
+</code></pre>
+<p>Verify the active compiler binary:</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>cfire --version
-# Output: cfire 0.2.0 (backend: Apple clang 17.0.0 / target: arm64-apple-darwin24)
+# Output: cfire 0.9.4 (ISO C++23 systems toolchain)
 </code></pre>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-compilation-pipeline-architecture" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-compilation-pipeline-architecture'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.1)</span>
         <strong class="pager-title">Compilation Pipeline &amp; Architecture</strong>
       </a>
-      <a href="#ch1-manual-source-build-platform-toolchains" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">
+      <a href="#ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 1.3) &rarr;</span>
+        <strong class="pager-title">Environment Health &amp; Dependency Setup (`cfire doctor` &amp; `cfire setup`)</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" data-topic-id="ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" data-topic-title="Environment Health &amp; Dependency Setup (`cfire doctor` &amp; `cfire setup`)">
+<h3 class="guide-heading" id="ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup"><span class="heading-hash">#</span><span class="heading-text">Environment Health &amp; Dependency Setup (<code>cfire doctor</code> &amp; <code>cfire setup</code>)</span></h3>
+<p>Run <code>cfire doctor</code> at any time on a new machine to inspect the C++23 compiler, <code>runtime/</code> header discovery, <code>.pch</code> cache, <code>pkg-config</code> tools, native <code>core:*</code> engine libraries, and cross-compilation SDKs (<code>em++</code>, iOS Simulator):</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire doctor
+cfire doctor --json   # Machine-readable JSON report for CI &amp; coding agents
+</code></pre>
+<p>If any optional native libraries or build tools are missing, run <code>cfire setup</code> to install them automatically via the host package manager (<code>brew</code> on macOS; <code>apt-get</code>, <code>dnf</code>, <code>pacman</code>, or <code>apk</code> on Linux), sync <code>runtime/</code> headers to <code>~/.cfire/runtime</code>, and warm the C++23 prelude <code>.pch</code>:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire setup --yes             # Install missing native libraries + warm C++23 PCH
+cfire setup --yes --raylib    # Also pre-fetch vendor:raylib into global cache
+cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
+</code></pre>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch1-quick-installation-script-macos-linux" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.2)</span>
+        <strong class="pager-title">Quick Installation Script (macOS &amp; Linux)</strong>
+      </a>
+      <a href="#ch1-manual-source-build-platform-toolchains" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 1.4) &rarr;</span>
         <strong class="pager-title">Manual Source Build &amp; Platform Toolchains</strong>
       </a>
     </div>
@@ -1872,34 +1902,37 @@ tr:hover td { background: #1F242C; }
 <pre><code>   xcode-select --install
 </code></pre>
 <ol>
-  <li>Install optional native acceleration libraries via Homebrew:</li>
-</ol>
-<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code>   brew install simdjson zstd sqlite openssl@3
-</code></pre>
-<ol>
-  <li>Clone and build <code>cfire</code> from source:</li>
+  <li>Clone, build, and install <code>cfire</code> from source:</li>
 </ol>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>   git clone https://github.com/gsandoval/cfire.git
-   cd cfire &amp;&amp; make -j
-   sudo make install  # Installs binary to /usr/local/bin/cfire and runtime to /usr/local/share/cfire/runtime
+   cd cfire &amp;&amp; make -j4
+   sudo make install        # Installs /usr/local/bin/cfire + /usr/local/share/cfire/runtime
+   cfire setup --yes        # Installs simdjson, zstd, sqlite, openssl, cmake via Homebrew
 </code></pre>
 <h4 id="ch1-linux-ubuntu-debian-arch" style="margin: 1.4rem 0 0.6rem; color: var(--text-bright);">Linux (Ubuntu / Debian / Arch)</h4>
 <ul>
   <li><strong>Ubuntu 24.04+ / Debian 12+</strong>:</li>
 </ul>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code>   sudo apt-get update
-   sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev libasound2-dev
-   cd cfire &amp;&amp; make -j
+<pre><code>   sudo apt-get update &amp;&amp; sudo apt-get install -y clang make
+   git clone https://github.com/gsandoval/cfire.git
+   cd cfire &amp;&amp; sudo make install
+   cfire setup --yes
 </code></pre>
 <ul>
   <li><strong>Arch Linux</strong>:</li>
 </ul>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code>   sudo pacman -S clang pkgconf simdjson zstd sqlite openssl alsa-lib
-   cd cfire &amp;&amp; make -j
+<pre><code>   sudo pacman -S clang make pkgconf simdjson zstd sqlite openssl alsa-lib
+   cd cfire &amp;&amp; sudo make install
+</code></pre>
+<h4 id="ch1-docker-orbstack-containers" style="margin: 1.4rem 0 0.6rem; color: var(--text-bright);">Docker &amp; OrbStack Containers</h4>
+<p>Build and run the official Ubuntu 24.04 Linux container image with all <code>core:*</code> native engines pre-installed:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>docker build -t cfire:latest .
+docker run --rm cfire:latest doctor
+docker run --rm cfire:latest run examples/01-hello-core/main.cf
 </code></pre>
 <h4 id="ch1-windows-wsl2" style="margin: 1.4rem 0 0.6rem; color: var(--text-bright);">Windows (WSL2)</h4>
 <p>Run <code>cfire</code> inside WSL2 with an Ubuntu 24.04 distribution:</p>
@@ -1909,12 +1942,12 @@ wsl
 sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev
 </code></pre>
     <div class="chapter-pager topic-pager">
-      <a href="#ch1-quick-installation-script-macos-linux" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.2)</span>
-        <strong class="pager-title">Quick Installation Script (macOS &amp; Linux)</strong>
+      <a href="#ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.3)</span>
+        <strong class="pager-title">Environment Health &amp; Dependency Setup (`cfire doctor` &amp; `cfire setup`)</strong>
       </a>
       <a href="#ch1-system-library-dependency-fallback-matrix" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">
-        <span class="pager-label">NEXT TOPIC (CH 1.4) &rarr;</span>
+        <span class="pager-label">NEXT TOPIC (CH 1.5) &rarr;</span>
         <strong class="pager-title">System Library Dependency &amp; Fallback Matrix</strong>
       </a>
     </div>
@@ -1941,11 +1974,11 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
 </div>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-manual-source-build-platform-toolchains" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.3)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.4)</span>
         <strong class="pager-title">Manual Source Build &amp; Platform Toolchains</strong>
       </a>
       <a href="#ch1-cross-compilation-target-setup" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">
-        <span class="pager-label">NEXT TOPIC (CH 1.5) &rarr;</span>
+        <span class="pager-label">NEXT TOPIC (CH 1.6) &rarr;</span>
         <strong class="pager-title">Cross-Compilation Target Setup</strong>
       </a>
     </div>
@@ -1975,11 +2008,11 @@ xcrun --sdk iphonesimulator --show-sdk-path
 </ul>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-system-library-dependency-fallback-matrix" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.4)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.5)</span>
         <strong class="pager-title">System Library Dependency &amp; Fallback Matrix</strong>
       </a>
       <a href="#ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration'); return false;">
-        <span class="pager-label">NEXT TOPIC (CH 1.6) &rarr;</span>
+        <span class="pager-label">NEXT TOPIC (CH 1.7) &rarr;</span>
         <strong class="pager-title">AI Agent (`cfire mcp`) &amp; Editor (`cfire lsp` / `cfire ide`) Configuration</strong>
       </a>
     </div>
@@ -2023,7 +2056,7 @@ cfire lsp             # Starts the JSON-RPC 2.0 Language Server on stdio
 <p>The built-in <code>cfire lsp</code> daemon supports debounced background diagnostics (<code>textDocument/publishDiagnostics</code>), type/memory-layout hover (<code>textDocument/hover</code>), auto-import completion (<code>textDocument/completion</code>), signature help, inlay type/parameter hints, go-to-definition (<code>textDocument/definition</code>), cross-package find-references and rename (<code>textDocument/rename</code>), quick-fix code actions (<code>cfire/MUT-CALLSITE</code> and exhaustive <code>match</code> arm generation), and range formatting.</p>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-cross-compilation-target-setup" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.5)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.6)</span>
         <strong class="pager-title">Cross-Compilation Target Setup</strong>
       </a>
       <a href="#ch2-level-1-one-shot-evaluation-cfire-eval" class="pager-card pager-next" onclick="navigateToSubhead('2', 'ch2-level-1-one-shot-evaluation-cfire-eval'); return false;">
@@ -2074,7 +2107,7 @@ cfire eval 'nums := [10, 20, 30]; println(&quot;count={} first={}&quot;, nums.le
 </ol>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.6)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.7)</span>
         <strong class="pager-title">AI Agent (`cfire mcp`) &amp; Editor (`cfire lsp` / `cfire ide`) Configuration</strong>
       </a>
       <a href="#ch2-level-2-anatomy-of-a-cf-program-hellocf" class="pager-card pager-next" onclick="navigateToSubhead('2', 'ch2-level-2-anatomy-of-a-cf-program-hellocf'); return false;">
@@ -5625,10 +5658,11 @@ fn main() -&gt; void! {
       <ul class="toc-list">
         <li><a href="#ch1-compilation-pipeline-architecture" class="active-toc-item" onclick="navigateToSubhead('1', 'ch1-compilation-pipeline-architecture'); return false;">1.1: Compilation Pipeline &amp; Architecture</a></li>
         <li><a href="#ch1-quick-installation-script-macos-linux" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">1.2: Quick Installation Script (macOS &amp; Linux)</a></li>
-        <li><a href="#ch1-manual-source-build-platform-toolchains" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">1.3: Manual Source Build &amp; Platform Toolchains</a></li>
-        <li><a href="#ch1-system-library-dependency-fallback-matrix" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">1.4: System Library Dependency &amp; Fallback Matrix</a></li>
-        <li><a href="#ch1-cross-compilation-target-setup" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">1.5: Cross-Compilation Target Setup</a></li>
-        <li><a href="#ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" onclick="navigateToSubhead('1', 'ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration'); return false;">1.6: AI Agent (`cfire mcp`) &amp; Editor (`cfire lsp` / `cfire ide`) Configuration</a></li>
+        <li><a href="#ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup" onclick="navigateToSubhead('1', 'ch1-environment-health-dependency-setup-cfire-doctor-cfire-setup'); return false;">1.3: Environment Health &amp; Dependency Setup (`cfire doctor` &amp; `cfire setup`)</a></li>
+        <li><a href="#ch1-manual-source-build-platform-toolchains" onclick="navigateToSubhead('1', 'ch1-manual-source-build-platform-toolchains'); return false;">1.4: Manual Source Build &amp; Platform Toolchains</a></li>
+        <li><a href="#ch1-system-library-dependency-fallback-matrix" onclick="navigateToSubhead('1', 'ch1-system-library-dependency-fallback-matrix'); return false;">1.5: System Library Dependency &amp; Fallback Matrix</a></li>
+        <li><a href="#ch1-cross-compilation-target-setup" onclick="navigateToSubhead('1', 'ch1-cross-compilation-target-setup'); return false;">1.6: Cross-Compilation Target Setup</a></li>
+        <li><a href="#ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration" onclick="navigateToSubhead('1', 'ch1-ai-agent-cfire-mcp-editor-cfire-lsp-cfire-ide-configuration'); return false;">1.7: AI Agent (`cfire mcp`) &amp; Editor (`cfire lsp` / `cfire ide`) Configuration</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-2" style="display: none;">

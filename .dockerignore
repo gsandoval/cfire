@@ -1,0 +1,10 @@
+.git
+.cfire
+.cfire_test_runner
+cfire
+*.o
+docs
+tests/*.o
+tests/*/*.o
+cfire_wasm_*
+cfire_cross_*

@@ -9,7 +9,9 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#if __has_include(<print>)
 #include <print>
+#endif
 #include <sstream>
 #include <string>
 #include <string_view>
