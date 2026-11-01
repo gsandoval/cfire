@@ -23,6 +23,8 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreText/CoreText.h>
+#elif defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+#include <emscripten.h>
 #endif
 
 namespace cfire::desktop_rl {
@@ -296,6 +298,25 @@ inline void __cfire_InitWindow(int width, int height, const char* title) {
     unsigned int flags = cfire::desktop_rl::user_config_flags() | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT;
     ::SetConfigFlags(flags);
     ::InitWindow(width <= 0 ? 393 : width, height <= 0 ? 852 : height, title);
+#if defined(__linux__)
+    const char* icon_candidates[] = {
+#ifdef CFIRE_APP_ICON_PATH
+        CFIRE_APP_ICON_PATH,
+#endif
+        "icon.png",
+        "assets/icon.png"
+    };
+    for (const char* ic : icon_candidates) {
+        if (ic && *ic && ::FileExists(ic)) {
+            Image img = ::LoadImage(ic);
+            if (img.data != nullptr) {
+                ::SetWindowIcon(img);
+                ::UnloadImage(img);
+                break;
+            }
+        }
+    }
+#endif
 }
 
 inline void __cfire_CloseWindow(void) {
@@ -387,4 +408,15 @@ inline Rectangle GetSafeAreaRect(void) {
     return Rectangle{0.0f, 0.0f, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())};
 }
 inline void RequestKeyboard(void) {}
-inline void TriggerHaptic(int style) { (void)style; }
+inline void TriggerHaptic(int style) {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    int ms = (style <= 0) ? 10 : (style == 1 ? 20 : 35);
+    EM_ASM({
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate($0);
+        }
+    }, ms);
+#else
+    (void)style;
+#endif
+}

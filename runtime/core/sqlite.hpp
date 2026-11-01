@@ -1,5 +1,6 @@
 #pragma once
 #include "../cfire_prelude.hpp"
+#include "fs.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -334,15 +335,16 @@ private:
 [[nodiscard]] inline auto open(const std::filesystem::path& p) -> std::expected<Conn, cfire::Error> {
     std::filesystem::path resolved = p;
 #if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
-    if (resolved.is_relative() && !resolved.empty() && resolved.string() != ":memory:") {
-        if (const char* home = std::getenv("HOME")) {
-            std::error_code ec;
-            auto docs = std::filesystem::path(home) / "Documents";
-            std::filesystem::create_directories(docs, ec);
-            resolved = docs / resolved;
-            if (resolved.has_parent_path()) {
-                std::filesystem::create_directories(resolved.parent_path(), ec);
-            }
+    if (resolved.string() != ":memory:" && resolved.is_relative()) {
+        std::error_code ec;
+        auto read_cand = cfire::fs::detail::resolve_path(resolved, false);
+        if (std::filesystem::exists(read_cand, ec)) {
+            resolved = read_cand;
+        } else {
+            resolved = cfire::fs::detail::resolve_path(resolved, true);
+        }
+        if (resolved.has_parent_path()) {
+            std::filesystem::create_directories(resolved.parent_path(), ec);
         }
     }
 #endif

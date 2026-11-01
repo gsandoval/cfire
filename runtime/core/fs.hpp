@@ -19,7 +19,7 @@ extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 namespace cfire::fs {
 
 namespace detail {
-[[nodiscard]] inline auto resolve_path(const std::filesystem::path& p, bool for_write) noexcept -> std::filesystem::path {
+[[nodiscard]] inline auto resolve_path(const std::filesystem::path& p, bool for_write = false) noexcept -> std::filesystem::path {
 #if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
     if (p.is_relative() && !p.empty() && p.string() != ":memory:") {
         std::error_code ec;

@@ -320,7 +320,7 @@ pre::-webkit-scrollbar-thumb:hover {
     font-weight: 700;
 }
 
-/* Chapter Panes */
+/* Chapter Panes & Bite-Sized Topic Units */
 .chapter-pane {
     display: none;
 }
@@ -338,8 +338,235 @@ pre::-webkit-scrollbar-thumb:hover {
     padding-bottom: 3.5rem;
     border-bottom: 1px solid var(--border);
 }
-.view-all-mode .chapter-pager {
+.view-all-mode .chapter-pager,
+.view-all-mode .topic-pager,
+.view-all-mode .topic-pill-bar {
+    display: none !important;
+}
+
+/* Topic View Mode (Bite-Sized Default) vs Chapter View Mode */
+.topic-pill-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 1rem 0 1.5rem;
+    padding: 0.65rem 0.85rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.topic-pill-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-right: 0.35rem;
+}
+.topic-pill {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.28rem 0.65rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-decoration: none !important;
+    border-bottom: 1px solid var(--border) !important;
+}
+.topic-pill:hover {
+    color: var(--text-bright);
+    border-color: var(--border-dark) !important;
+    background: var(--bg-card-hover);
+}
+.topic-pill.active {
+    background: #27140B;
+    color: var(--accent);
+    border-color: var(--accent) !important;
+    font-weight: 700;
+}
+.topic-View-mode .guide-topic {
     display: none;
+}
+.topic-View-mode .guide-topic.active-topic {
+    display: block;
+    animation: fadeIn 0.15s ease-in;
+}
+.topic-View-mode .chapter-pager {
+    display: none;
+}
+.chapter-View-mode .guide-topic {
+    display: block !important;
+    padding-bottom: 1.5rem;
+    margin-bottom: 1.75rem;
+    border-bottom: 1px dashed rgba(48, 54, 61, 0.65);
+}
+.chapter-View-mode .guide-topic:last-of-type {
+    border-bottom: none;
+}
+.chapter-View-mode .topic-pager {
+    display: none !important;
+}
+
+/* Collapsible C++23 Lowering Drawer & Terminal Output Tray */
+details.lowering-drawer {
+    margin: 1.15rem 0 1.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid #F59E0B;
+    border-radius: 7px;
+    overflow: hidden;
+}
+details.lowering-drawer > summary {
+    padding: 0.55rem 0.95rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    font-weight: 750;
+    color: #F59E0B;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(245, 158, 11, 0.06);
+}
+details.lowering-drawer > summary:hover {
+    background: rgba(245, 158, 11, 0.12);
+}
+details.lowering-drawer > .lowering-body {
+    padding: 0.75rem 0.95rem 0.95rem;
+    border-top: 1px solid var(--border);
+}
+.terminal-tray {
+    margin: -0.5rem 0 1.5rem;
+    background: #070A0E;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--ok);
+    border-radius: 0 0 7px 7px;
+    padding: 0.6rem 0.95rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+.terminal-tray-header {
+    font-size: 0.66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ok);
+    margin-bottom: 0.25rem;
+}
+.terminal-tray pre {
+    margin: 0;
+    padding: 0.25rem 0 0;
+    border: none;
+    background: transparent;
+    font-size: 0.8rem;
+    color: #D2F4DC;
+}
+
+/* Search Results Instant Dropdown */
+.search-results-dropdown {
+    display: none;
+    margin-top: 0.35rem;
+    margin-bottom: 0.85rem;
+    background: var(--bg-code);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 0.35rem;
+}
+.search-results-dropdown.active {
+    display: block;
+}
+.search-hit-item {
+    display: block;
+    padding: 0.4rem 0.55rem;
+    border-radius: 4px;
+    text-decoration: none !important;
+    border-bottom: none !important;
+    margin-bottom: 0.15rem;
+}
+.search-hit-item:hover {
+    background: var(--bg-card-hover);
+}
+.search-hit-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    display: block;
+}
+.search-hit-meta {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--accent-sapphire);
+    display: block;
+}
+
+/* Paginated Reference Panes (reference.html) */
+.ref-pane {
+    display: none;
+}
+.ref-pane.active {
+    display: block;
+    animation: fadeIn 0.15s ease-in;
+}
+.view-all-mode .ref-pane {
+    display: block !important;
+    margin-bottom: 3.5rem;
+    padding-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.view-all-mode #ref-pane-overview {
+    display: none !important;
+}
+.view-all-mode .ref-pane .chapter-pager {
+    display: none !important;
+}
+.ref-category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.85rem;
+    margin: 0.75rem 0 2rem;
+}
+.ref-mod-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.15rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    text-decoration: none !important;
+}
+.ref-mod-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent) !important;
+}
+.ref-mod-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.45rem;
+}
+.ref-mod-card-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 0.35rem;
+}
+.ref-mod-card-desc {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.45;
 }
 
 /* Chapter Pager Buttons */
@@ -931,6 +1158,11 @@ main li { margin-bottom: 0.4rem; }
     background: #1E1606;
 }
 .callout-warning .callout-title { color: #F59E0B; }
+.callout-caution {
+    border-left-color: #F85149;
+    background: #220B0E;
+}
+.callout-caution .callout-title { color: #F85149; }
 
 /* Hero section */
 .hero { text-align: center; padding: 3rem 0.5rem 3.5rem; }

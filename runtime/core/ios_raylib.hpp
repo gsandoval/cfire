@@ -1385,6 +1385,39 @@ RLAPI void DrawTriangle(Vector2 v1, Vector2 v2, Vector2 v3, Color color) {
 
 RLAPI Font GetFontDefault(void) { return cfire::ios_rl::state().default_font; }
 
+namespace cfire::ios_rl {
+inline auto fold_utf8_char(const unsigned char*& p) noexcept -> unsigned char {
+    unsigned char ch = *p;
+    if (ch < 0x80) return ch;
+    if (ch == 0xC3 && p[1] >= 0x80 && p[1] <= 0xBF) {
+        // Latin-1 Supplement (U+00C0..U+00FF): fold accented letters to base ASCII
+        static constexpr const char kLatin1Fold[65] =
+            "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty";
+        unsigned char folded = static_cast<unsigned char>(kLatin1Fold[p[1] - 0x80]);
+        ++p;
+        return folded;
+    }
+    if (ch == 0xC2 && p[1] != 0) {
+        unsigned char b1 = p[1];
+        ++p;
+        if (b1 == 0xA0) return ' ';
+        if (b1 == 0xB7) return '.';
+        return '?';
+    }
+    if (ch == 0xE2 && p[1] == 0x80 && p[2] != 0) {
+        unsigned char b2 = p[2];
+        p += 2;
+        if (b2 == 0xA2) return '|';
+        if (b2 == 0x98 || b2 == 0x99) return '\'';
+        if (b2 == 0x9C || b2 == 0x9D) return '"';
+        if (b2 == 0xA6) return '.';
+        return '-';
+    }
+    while (p[1] && (p[1] & 0xC0) == 0x80) ++p;
+    return '?';
+}
+} // namespace cfire::ios_rl
+
 RLAPI int MeasureText(const char *text, int fontSize) {
     if (!text) return 0;
     const auto& s = cfire::ios_rl::state();
@@ -1392,19 +1425,12 @@ RLAPI int MeasureText(const char *text, int fontSize) {
         float scale = static_cast<float>(std::max(1, fontSize)) / 44.0f;
         float max_w = 0.0f, cur_w = 0.0f;
         for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
-            unsigned char ch = *p;
-            if (ch == '\n') {
+            if (*p == '\n') {
                 max_w = std::max(max_w, cur_w);
                 cur_w = 0.0f;
                 continue;
             }
-            if (ch == 0xE2 && p[1] == 0x80 && p[2] != 0) {
-                unsigned char b2 = p[2];
-                p += 2;
-                ch = (b2 == 0xA2) ? '|' : '-';
-            } else if ((ch & 0xC0) == 0x80) {
-                continue;
-            }
+            unsigned char ch = cfire::ios_rl::fold_utf8_char(p);
             if (ch < 32 || ch > 126) ch = '?';
             cur_w += s.glyph_adv_px[ch - 32] * scale;
         }
@@ -1439,19 +1465,12 @@ RLAPI void DrawText(const char *text, int posX, int posY, int fontSize, Color co
         float start_x = x;
 
         for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
-            unsigned char ch = *p;
-            if (ch == '\n') {
+            if (*p == '\n') {
                 x = start_x;
                 y += static_cast<float>(fontSize) + 3.0f;
                 continue;
             }
-            if (ch == 0xE2 && p[1] == 0x80 && p[2] != 0) {
-                unsigned char b2 = p[2];
-                p += 2;
-                ch = (b2 == 0xA2) ? '|' : '-';
-            } else if ((ch & 0xC0) == 0x80) {
-                continue;
-            }
+            unsigned char ch = cfire::ios_rl::fold_utf8_char(p);
             if (ch < 32 || ch > 126) ch = '?';
             int idx = static_cast<int>(ch) - 32;
             float gx = static_cast<float>((idx % 16) * 64);

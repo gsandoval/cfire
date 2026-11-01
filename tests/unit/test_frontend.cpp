@@ -458,6 +458,48 @@ fn main() -> i32 {
                 guide_txt->contains("vendor:raylib") &&
                 guide_txt->contains("vendor:raygui"),
             "docs/GUIDE.md Build System and Raylib/Raygui reconciliation");
+
+        // DOC-004: Verify chapter-scoped subheading IDs, nested lists, [!CAUTION] callout rendering, and bite-sized topic chunks
+        std::string sample_md = R"MD(# Guide Title
+## Chapter 1: First Chapter
+### C++23 Lowering
+- Top item
+  - Sub item A
+  - Sub item B
+> [!CAUTION]
+> High risk action.
+#### Under the Hood (C++23 Lowering)
+```cpp
+int x = 42;
+```
+**Expected Output:**
+```text
+ok
+```
+## Chapter 2: Second Chapter
+### C++23 Lowering
+)MD";
+        std::string rendered_html = cfire::doc::render_guide_markdown(sample_md);
+        require(rendered_html.contains("id=\"ch1-c23-lowering\"") &&
+                rendered_html.contains("id=\"ch2-c23-lowering\""),
+            "render_guide_markdown generates chapter-scoped h3 anchor IDs (DOC-001)");
+        require(rendered_html.contains("<li>Top item\n    <ul>\n      <li>Sub item A</li>"),
+            "render_guide_markdown nests indented sub-bullets inside parent <li> (DOC-002)");
+        require(rendered_html.contains("callout-caution") && rendered_html.contains("<div class=\"callout-title\">Caution</div>"),
+            "render_guide_markdown renders [!CAUTION] callout blocks (DOC-003)");
+        require(rendered_html.contains("topic-pill-bar") &&
+                rendered_html.contains("guide-topic") &&
+                rendered_html.contains("topic-pager") &&
+                rendered_html.contains("lowering-drawer") &&
+                rendered_html.contains("terminal-tray"),
+            "render_guide_markdown emits bite-sized topic units, topic-pill-bar, lowering-drawer, and terminal-tray");
+
+        std::string ref_html = cfire::doc::generate_reference_html();
+        require(ref_html.contains("ref-pane-overview") &&
+                ref_html.contains("ref-pane-mod-str") &&
+                ref_html.contains("ref-pane-mod-ai") &&
+                ref_html.contains("ref-pane-diagnostics"),
+            "generate_reference_html emits overview dashboard, per-module panes, and diagnostics pane");
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");
@@ -1186,6 +1228,30 @@ fn main() {
     try fs.remove("red.bmp")
     try fs.remove("blue.bmp")
     assert(ai.cosine_similarity(red_vec, blue_vec) < 0.85, "pixel-decoded RGB moments distinguish red vs blue images")
+
+    // Verify P6 PPM pixel decoding & multi-language detection across all platforms
+    mut ppm_green: []u8 = [
+        0x50, 0x36, 0x0A, 0x32, 0x20, 0x32, 0x0A, 0x32, 0x35, 0x35, 0x0A,
+        0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00,
+        0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00
+    ]
+    try fs.write_bytes("green.ppm", ppm_green)
+    green_vec := try ai.embed_image("local", "green.ppm")
+    try fs.remove("green.ppm")
+    assert_eq(green_vec.len(), 384, "PPM image embedded into 384-dim vector")
+
+    assert_eq(ai.detect_language("Hello world, the quick brown fox jumps with the dog"), "en", "detect_language English")
+    assert_eq(ai.detect_language("Hola mundo, el perro corre con la niña por el parque"), "es", "detect_language Spanish")
+    assert_eq(ai.detect_language("こんにちは世界"), "ja", "detect_language Japanese")
+
+    // Verify multimodal client.stream with file attachment
+    att_msg := try ai.user_with_file("Stream summary of slides", "deck.pptx")
+    mut stream_att_out := ""
+    stream_att_full := try client.stream("mock-gpt", [att_msg], |tok| {
+        stream_att_out = stream_att_out + tok
+    })
+    assert_eq(stream_att_full, "Hello AI", "multimodal stream with attachment succeeded")
+    assert_eq(stream_att_out, "Hello AI", "multimodal stream callback accumulated tokens")
 
     bug_from_file := try client.generate_struct_from_file[ExtractedBug]("mock-gpt", "Inspect this slide deck", "deck.pptx")
     try fs.remove("deck.pptx")

@@ -2321,6 +2321,155 @@ struct DecodedImage {
             }
         }
     }
+
+    // 3. Netpbm P6 (RGB) / P5 (Grayscale) binary decoder (also used by Linux djpeg bridge)
+    auto decode_ppm_pgm = [](std::span<const std::byte> b) -> DecodedImage {
+        DecodedImage out;
+        if (b.size() < 11 || static_cast<char>(b[0]) != 'P') return out;
+        char magic = static_cast<char>(b[1]);
+        if (magic != '6' && magic != '5') return out;
+        std::size_t idx = 2;
+        auto skip_ws_and_comments = [&]() {
+            while (idx < b.size()) {
+                char c = static_cast<char>(b[idx]);
+                if (c == '#') {
+                    while (idx < b.size() && static_cast<char>(b[idx]) != '\n') ++idx;
+                } else if (std::isspace(static_cast<unsigned char>(c))) {
+                    ++idx;
+                } else {
+                    break;
+                }
+            }
+        };
+        auto read_int = [&]() -> int {
+            skip_ws_and_comments();
+            int val = 0;
+            bool found = false;
+            while (idx < b.size() && std::isdigit(static_cast<unsigned char>(b[idx]))) {
+                val = val * 10 + (static_cast<char>(b[idx]) - '0');
+                found = true;
+                ++idx;
+            }
+            return found ? val : -1;
+        };
+        int w = read_int();
+        int h = read_int();
+        int maxv = read_int();
+        if (w <= 0 || h <= 0 || w > 8192 || h > 8192 || maxv <= 0 || maxv > 255 || idx >= b.size()) return out;
+        ++idx; // single whitespace byte after maxval
+        std::size_t ch = (magic == '6') ? 3u : 1u;
+        std::size_t needed = static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * ch;
+        if (idx + needed > b.size()) return out;
+        out.width = static_cast<std::uint32_t>(w);
+        out.height = static_cast<std::uint32_t>(h);
+        out.rgba.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
+        for (std::size_t p = 0; p < static_cast<std::size_t>(w) * static_cast<std::size_t>(h); ++p) {
+            if (ch == 3) {
+                out.rgba[p * 4 + 0] = static_cast<std::uint8_t>(b[idx + p * 3 + 0]);
+                out.rgba[p * 4 + 1] = static_cast<std::uint8_t>(b[idx + p * 3 + 1]);
+                out.rgba[p * 4 + 2] = static_cast<std::uint8_t>(b[idx + p * 3 + 2]);
+            } else {
+                std::uint8_t g = static_cast<std::uint8_t>(b[idx + p]);
+                out.rgba[p * 4 + 0] = g;
+                out.rgba[p * 4 + 1] = g;
+                out.rgba[p * 4 + 2] = g;
+            }
+            out.rgba[p * 4 + 3] = 255;
+        }
+        return out;
+    };
+
+    if (auto ppm = decode_ppm_pgm(bytes); ppm.width > 0) {
+        return ppm;
+    }
+
+#if defined(__APPLE__)
+    // 4. Apple ImageIO + CoreGraphics hardware-accelerated decoder (JPEG, WebP, HEIC, TIFF, GIF)
+    {
+        (void)::dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", RTLD_LAZY | RTLD_GLOBAL);
+        (void)::dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY | RTLD_GLOBAL);
+        (void)::dlopen("/System/Library/Frameworks/ImageIO.framework/ImageIO", RTLD_LAZY | RTLD_GLOBAL);
+
+        using CFDataCreateFn = void*(*)(void*, const std::uint8_t*, long);
+        using CFReleaseFn = void(*)(void*);
+        using CGImgSrcCreateFn = void*(*)(void*, void*);
+        using CGImgSrcCreateImgFn = void*(*)(void*, std::size_t, void*);
+        using CGImgGetDimFn = std::size_t(*)(void*);
+        using CGColorSpaceCreateFn = void*(*)();
+        using CGBitmapCtxCreateFn = void*(*)(void*, std::size_t, std::size_t, std::size_t, std::size_t, void*, std::uint32_t);
+        using CGContextDrawImgFn = void(*)(void*, struct CGRect_cfire, void*);
+
+        struct CGRect_cfire { double x; double y; double w; double h; };
+
+        auto fn_data = reinterpret_cast<CFDataCreateFn>(::dlsym(RTLD_DEFAULT, "CFDataCreate"));
+        auto fn_rel = reinterpret_cast<CFReleaseFn>(::dlsym(RTLD_DEFAULT, "CFRelease"));
+        auto fn_src = reinterpret_cast<CGImgSrcCreateFn>(::dlsym(RTLD_DEFAULT, "CGImageSourceCreateWithData"));
+        auto fn_img = reinterpret_cast<CGImgSrcCreateImgFn>(::dlsym(RTLD_DEFAULT, "CGImageSourceCreateImageAtIndex"));
+        auto fn_w = reinterpret_cast<CGImgGetDimFn>(::dlsym(RTLD_DEFAULT, "CGImageGetWidth"));
+        auto fn_h = reinterpret_cast<CGImgGetDimFn>(::dlsym(RTLD_DEFAULT, "CGImageGetHeight"));
+        auto fn_cs = reinterpret_cast<CGColorSpaceCreateFn>(::dlsym(RTLD_DEFAULT, "CGColorSpaceCreateDeviceRGB"));
+        auto fn_ctx = reinterpret_cast<CGBitmapCtxCreateFn>(::dlsym(RTLD_DEFAULT, "CGBitmapContextCreate"));
+        auto fn_draw = reinterpret_cast<CGContextDrawImgFn>(::dlsym(RTLD_DEFAULT, "CGContextDrawImage"));
+
+        if (fn_data && fn_rel && fn_src && fn_img && fn_w && fn_h && fn_cs && fn_ctx && fn_draw) {
+            void* cf_data = fn_data(nullptr, reinterpret_cast<const std::uint8_t*>(bytes.data()), static_cast<long>(bytes.size()));
+            if (cf_data) {
+                void* img_src = fn_src(cf_data, nullptr);
+                if (img_src) {
+                    void* cg_img = fn_img(img_src, 0, nullptr);
+                    if (cg_img) {
+                        std::size_t w = fn_w(cg_img);
+                        std::size_t h = fn_h(cg_img);
+                        if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
+                            img.width = static_cast<std::uint32_t>(w);
+                            img.height = static_cast<std::uint32_t>(h);
+                            img.rgba.assign(w * h * 4, 0);
+                            void* cs = fn_cs();
+                            // kCGImageAlphaPremultipliedLast (1) | kCGBitmapByteOrder32Big (1 << 12 = 4096) -> 16385
+                            void* ctx = fn_ctx(img.rgba.data(), w, h, 8, w * 4, cs, 16385u);
+                            if (ctx) {
+                                fn_draw(ctx, CGRect_cfire{0.0, 0.0, static_cast<double>(w), static_cast<double>(h)}, cg_img);
+                                fn_rel(ctx);
+                            }
+                            if (cs) fn_rel(cs);
+                        }
+                        fn_rel(cg_img);
+                    }
+                    fn_rel(img_src);
+                }
+                fn_rel(cf_data);
+                if (img.width > 0 && img.height > 0) return img;
+            }
+        }
+    }
+#elif defined(__linux__)
+    // 4. Linux JPEG decoder bridge via djpeg if installed
+    if (bytes.size() > 4 && static_cast<std::uint8_t>(bytes[0]) == 0xFF && static_cast<std::uint8_t>(bytes[1]) == 0xD8) {
+        static int has_djpeg = -1;
+        if (has_djpeg < 0) {
+            has_djpeg = (std::system("which djpeg >/dev/null 2>&1") == 0) ? 1 : 0;
+        }
+        if (has_djpeg == 1) {
+            static std::uint64_t seq = 0;
+            std::string tmp_jpg = std::format("/tmp/cfire_jpg_{}_{}.jpg", static_cast<long>(::getpid()), ++seq);
+            if (cfire::fs::write_bytes(tmp_jpg, bytes)) {
+                std::string cmd = std::format("djpeg -pnm '{}' 2>/dev/null", tmp_jpg);
+                std::vector<std::byte> pnm_bytes;
+                if (FILE* pipe = ::popen(cmd.c_str(), "r")) {
+                    std::byte buf[4096];
+                    while (std::size_t n = std::fread(buf, 1, sizeof(buf), pipe)) {
+                        pnm_bytes.insert(pnm_bytes.end(), buf, buf + n);
+                    }
+                    ::pclose(pipe);
+                }
+                (void)cfire::fs::remove(tmp_jpg);
+                if (auto ppm = decode_ppm_pgm(pnm_bytes); ppm.width > 0) {
+                    return ppm;
+                }
+            }
+        }
+    }
+#endif
     return img;
 }
 
@@ -2943,7 +3092,72 @@ struct DecodedImage {
         }
     }
 #endif
-    return "en";
+    // Portable UTF-8 script & stopword language classifier for Linux & WebAssembly
+    std::size_t kana = 0, hangul = 0, cjk = 0, cyrillic = 0, arabic = 0, devanagari = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        auto b0 = static_cast<unsigned char>(text[i]);
+        std::uint32_t cp = 0;
+        std::size_t step = 1;
+        if (b0 < 0x80) {
+            cp = b0;
+        } else if ((b0 & 0xE0) == 0xC0 && i + 1 < text.size()) {
+            cp = ((b0 & 0x1Fu) << 6) | (static_cast<unsigned char>(text[i + 1]) & 0x3Fu);
+            step = 2;
+        } else if ((b0 & 0xF0) == 0xE0 && i + 2 < text.size()) {
+            cp = ((b0 & 0x0Fu) << 12) | ((static_cast<unsigned char>(text[i + 1]) & 0x3Fu) << 6) |
+                 (static_cast<unsigned char>(text[i + 2]) & 0x3Fu);
+            step = 3;
+        } else if ((b0 & 0xF8) == 0xF0 && i + 3 < text.size()) {
+            cp = ((b0 & 0x07u) << 18) | ((static_cast<unsigned char>(text[i + 1]) & 0x3Fu) << 12) |
+                 ((static_cast<unsigned char>(text[i + 2]) & 0x3Fu) << 6) |
+                 (static_cast<unsigned char>(text[i + 3]) & 0x3Fu);
+            step = 4;
+        }
+        i += step;
+        if ((cp >= 0x3040 && cp <= 0x309F) || (cp >= 0x30A0 && cp <= 0x30FF)) ++kana;
+        else if ((cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0x1100 && cp <= 0x11FF)) ++hangul;
+        else if (cp >= 0x4E00 && cp <= 0x9FFF) ++cjk;
+        else if (cp >= 0x0400 && cp <= 0x04FF) ++cyrillic;
+        else if (cp >= 0x0600 && cp <= 0x06FF) ++arabic;
+        else if (cp >= 0x0900 && cp <= 0x097F) ++devanagari;
+    }
+    if (kana > 0) return "ja";
+    if (hangul > 0) return "ko";
+    if (cjk > 0) return "zh-Hans";
+    if (cyrillic > 0) return "ru";
+    if (arabic > 0) return "ar";
+    if (devanagari > 0) return "hi";
+
+    std::string padded = " ";
+    for (unsigned char c : text) {
+        if (std::isalpha(c)) padded.push_back(static_cast<char>(std::tolower(c)));
+        else if (c >= 0x80) padded.push_back(static_cast<char>(c));
+        else padded.push_back(' ');
+    }
+    padded.push_back(' ');
+
+    auto score_words = [&](std::initializer_list<std::string_view> words) -> int {
+        int s = 0;
+        for (auto w : words) {
+            if (padded.find(w) != std::string::npos) ++s;
+        }
+        return s;
+    };
+    int es = score_words({" el ", " la ", " los ", " las ", " una ", " con ", " para ", " por ", " que ", " del ", " hola ", " mundo "});
+    int fr = score_words({" le ", " la ", " les ", " des ", " une ", " avec ", " dans ", " pour ", " est ", " pas ", " bonjour ", " monde "});
+    int de = score_words({" der ", " die ", " das ", " und ", " ist ", " nicht ", " mit ", " auf ", " ein ", " eine ", " hallo ", " welt "});
+    int pt = score_words({" os ", " as ", " uma ", " com ", " para ", " nao ", " por ", " dos ", " das ", " ola "});
+    int it = score_words({" il ", " lo ", " gli ", " una ", " con ", " per ", " che ", " non ", " del ", " ciao ", " mondo "});
+    int en = score_words({" the ", " and ", " is ", " in ", " to ", " of ", " for ", " with ", " on ", " that ", " hello ", " world "});
+
+    int best = en;
+    std::string lang = "en";
+    if (es > best) { best = es; lang = "es"; }
+    if (fr > best) { best = fr; lang = "fr"; }
+    if (de > best) { best = de; lang = "de"; }
+    if (pt > best) { best = pt; lang = "pt"; }
+    if (it > best) { best = it; lang = "it"; }
+    return lang;
 }
 
 // --- Unified AI Client (`OpenAI`, `Anthropic`, `Gemini`, `Ollama`, `OpenAICompatible`, `Apple`) ---
@@ -3047,11 +3261,11 @@ public:
     template <typename OnToken>
     [[nodiscard]] auto stream(
         std::string_view model,
-        const std::vector<Message>& messages,
+        std::string_view prompt,
         OnToken&& on_token
     ) const -> std::expected<std::string, cfire::Error> {
-        std::string prompt = messages.empty() ? "" : messages.back().content;
-        return stream(model, std::string_view(prompt), std::forward<OnToken>(on_token));
+        std::vector<Message> vec = { Message{.role = "user", .content = std::string(prompt)} };
+        return stream(model, vec, std::forward<OnToken>(on_token));
     }
 
     template <typename OnToken>
@@ -3067,11 +3281,12 @@ public:
     template <typename OnToken>
     [[nodiscard]] auto stream(
         std::string_view model,
-        std::string_view prompt,
+        const std::vector<Message>& messages,
         OnToken&& on_token
     ) const -> std::expected<std::string, cfire::Error> {
+        std::string last_prompt = messages.empty() ? "" : messages.back().content;
         if (provider == Provider::Apple) {
-            std::string reply = std::format("[Apple On-Device AI ({})] {}", detect_language(prompt), prompt);
+            std::string reply = std::format("[Apple On-Device AI ({})] {}", detect_language(last_prompt), last_prompt);
             on_token(reply);
             return reply;
         }
@@ -3088,26 +3303,151 @@ public:
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
             headers["anthropic-dangerous-direct-browser-access"] = "true";
 #endif
-            body = std::format(
-                R"({{"model":"{}","max_tokens":2048,"stream":true,"messages":[{{"role":"user","content":"{}"}}]}})",
-                cfire::json::escape_string(model),
-                cfire::json::escape_string(prompt));
+            std::string sys_str;
+            std::string msgs_json = "[";
+            bool first_m = true;
+            for (const auto& m : messages) {
+                if (m.role == "system") {
+                    if (!sys_str.empty()) sys_str += "\n";
+                    sys_str += m.content;
+                    continue;
+                }
+                if (!first_m) msgs_json += ",";
+                first_m = false;
+                if (m.attachments.empty()) {
+                    msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
+                        cfire::json::escape_string(m.role),
+                        cfire::json::escape_string(m.content));
+                } else {
+                    std::string blocks = "[";
+                    bool first_b = true;
+                    for (const auto& att : m.attachments) {
+                        if (!first_b) blocks += ",";
+                        first_b = false;
+                        if (att.mime_type.starts_with("image/")) {
+                            blocks += std::format(
+                                R"({{"type":"image","source":{{"type":"base64","media_type":"{}","data":"{}"}}}})",
+                                cfire::json::escape_string(att.mime_type),
+                                cfire::base64::encode(att.data));
+                        } else if (att.mime_type == "application/pdf") {
+                            blocks += std::format(
+                                R"({{"type":"document","source":{{"type":"base64","media_type":"application/pdf","data":"{}"}}}})",
+                                cfire::base64::encode(att.data));
+                        } else {
+                            std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
+                            blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
+                        }
+                    }
+                    if (!m.content.empty()) {
+                        if (!first_b) blocks += ",";
+                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
+                    }
+                    blocks += "]";
+                    msgs_json += std::format(R"({{"role":"{}","content":{}}})",
+                        cfire::json::escape_string(m.role), blocks);
+                }
+            }
+            msgs_json += "]";
+            body = std::format(R"({{"model":"{}","max_tokens":2048,"stream":true)", cfire::json::escape_string(model));
+            if (!sys_str.empty()) {
+                body += std::format(R"(,"system":"{}")", cfire::json::escape_string(sys_str));
+            }
+            body += std::format(R"(,"messages":{}}})", msgs_json);
         } else if (provider == Provider::Gemini) {
             url = std::format("{}/v1beta/models/{}:streamGenerateContent?alt=sse", base_url, model);
             headers["x-goog-api-key"] = api_key;
-            body = std::format(
-                R"({{"contents":[{{"role":"user","parts":[{{"text":"{}"}}]}}]}})",
-                cfire::json::escape_string(prompt));
+            std::string sys_str;
+            std::string contents_json = "[";
+            bool first_c = true;
+            for (const auto& m : messages) {
+                if (m.role == "system") {
+                    if (!sys_str.empty()) sys_str += "\n";
+                    sys_str += m.content;
+                    continue;
+                }
+                if (!first_c) contents_json += ",";
+                first_c = false;
+                std::string g_role = (m.role == "assistant") ? "model" : "user";
+                std::string parts = "[";
+                bool first_p = true;
+                for (const auto& att : m.attachments) {
+                    if (!first_p) parts += ",";
+                    first_p = false;
+                    if (att.mime_type.starts_with("image/") || att.mime_type == "application/pdf" || att.mime_type.starts_with("audio/")) {
+                        parts += std::format(
+                            R"({{"inlineData":{{"mimeType":"{}","data":"{}"}}}})",
+                            cfire::json::escape_string(att.mime_type),
+                            cfire::base64::encode(att.data));
+                    } else {
+                        std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
+                        parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(doc_txt));
+                    }
+                }
+                if (!m.content.empty() || m.attachments.empty()) {
+                    if (!first_p) parts += ",";
+                    parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(m.content));
+                }
+                parts += "]";
+                contents_json += std::format(R"({{"role":"{}","parts":{}}})", g_role, parts);
+            }
+            contents_json += "]";
+            body = std::format(R"({{"contents":{})", contents_json);
+            if (!sys_str.empty()) {
+                body += std::format(R"(,"systemInstruction":{{"parts":[{{"text":"{}"}}]}})",
+                    cfire::json::escape_string(sys_str));
+            }
+            body += "}";
         } else {
             // OpenAI, Ollama (/v1/chat/completions), OpenAICompatible
             url = base_url + "/v1/chat/completions";
             if (!api_key.empty()) {
                 headers["Authorization"] = "Bearer " + api_key;
             }
+            std::string msgs_json = "[";
+            bool first_m = true;
+            for (const auto& m : messages) {
+                if (!first_m) msgs_json += ",";
+                first_m = false;
+                if (m.attachments.empty()) {
+                    msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
+                        cfire::json::escape_string(m.role),
+                        cfire::json::escape_string(m.content));
+                } else {
+                    std::string blocks = "[";
+                    bool first_b = true;
+                    if (!m.content.empty()) {
+                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
+                        first_b = false;
+                    }
+                    for (const auto& att : m.attachments) {
+                        if (!first_b) blocks += ",";
+                        first_b = false;
+                        if (att.mime_type.starts_with("image/")) {
+                            blocks += std::format(
+                                R"({{"type":"image_url","image_url":{{"url":"data:{};base64,{}"}}}})",
+                                cfire::json::escape_string(att.mime_type),
+                                cfire::base64::encode(att.data));
+                        } else if (!att.extracted_text.empty()) {
+                            std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
+                            blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
+                        } else {
+                            blocks += std::format(
+                                R"({{"type":"file","file":{{"filename":"{}","file_data":"data:{};base64,{}"}}}})",
+                                cfire::json::escape_string(att.filename),
+                                cfire::json::escape_string(att.mime_type),
+                                cfire::base64::encode(att.data));
+                        }
+                    }
+                    blocks += "]";
+                    msgs_json += std::format(R"({{"role":"{}","content":{}}})",
+                        cfire::json::escape_string(m.role), blocks);
+                }
+            }
+            msgs_json += "]";
             body = std::format(
-                R"({{"model":"{}","stream":true,"messages":[{{"role":"user","content":"{}"}}]}})",
+                R"({{"model":"{}","stream":true,"messages":{}}})",
                 cfire::json::escape_string(model),
-                cfire::json::escape_string(prompt));
+                msgs_json);
         }
 
         auto res = cfire::http::post_sse(url, body, headers, [&](const cfire::http::SseEvent& ev) {

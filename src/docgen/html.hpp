@@ -515,6 +515,9 @@ fn main() {
 }
 
 [[nodiscard]] inline auto generate_reference_html() -> std::string {
+    const auto& mods = stdlib_catalog();
+    const auto& diags = diagnostics_catalog();
+
     std::string out;
     out += "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n";
     out += "  <meta charset=\"UTF-8\" />\n";
@@ -532,16 +535,24 @@ fn main() {
     out += "        <span class=\"sidebar-chevron\">&#9662;</span>\n";
     out += "      </summary>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
-    out += "        <input type=\"text\" id=\"ref-filter\" class=\"search-input\" placeholder=\"Filter modules &amp; errors...\" oninput=\"filterRefNav(this.value)\" style=\"margin-bottom: 0.75rem;\" />\n";
-    out += "        <h4>`core:*` Modules</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n";
-    for (const auto& mod : stdlib_catalog()) {
-        out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\"><code>{}</code></a></li>\n", mod.ns_alias, mod.import_path);
+    out += "        <div style=\"position:relative; margin-bottom: 0.75rem;\">\n";
+    out += "          <input type=\"text\" id=\"ref-filter\" class=\"search-input\" placeholder=\"Search APIs &amp; errors (⌘K)...\" oninput=\"filterRefNav(this.value)\" autocomplete=\"off\" />\n";
+    out += "          <div id=\"ref-search-results\" class=\"search-results-dropdown\"></div>\n";
+    out += "        </div>\n";
+    out += "        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0; margin-bottom: 0.75rem;\">\n";
+    out += "          <li class=\"nav-item\"><a href=\"#overview\" id=\"nav-pane-overview\" class=\"active\" onclick=\"navigateToRefPane('overview'); return false;\"><strong>Overview (All 21 Modules)</strong></a></li>\n";
+    out += "        </ul>\n";
+    out += "        <h4>`core:*` Modules (21)</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n";
+    for (const auto& mod : mods) {
+        out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
+            mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.import_path, mod.functions.size());
     }
-    out += "        </ul>\n        <h4 style=\"margin-top:1.25rem;\">Diagnostics</h4>\n        <ul class=\"sidebar-diag-list\" style=\"list-style: none; padding: 0;\">\n";
-    for (const auto& d : diagnostics_catalog()) {
-        out += std::format("          <li class=\"nav-item\"><a href=\"#diag-{}\"><code>{}</code></a></li>\n", d.code, d.code);
+    out += "        </ul>\n        <h4 style=\"margin-top:1.25rem;\">Diagnostics (7)</h4>\n        <ul class=\"sidebar-diag-list\" style=\"list-style: none; padding: 0;\">\n";
+    for (const auto& d : diags) {
+        out += std::format("          <li class=\"nav-item\"><a href=\"#diag-{}\" id=\"nav-diag-{}\" onclick=\"navigateToRefDiag('diag-{}'); return false;\"><code>{}</code></a></li>\n",
+            d.code, d.code, d.code, d.code);
     }
-    out += std::format(R"HTML(        </ul>
+    out += R"HTML(        </ul>
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
           <ul style="list-style: none; padding: 0; margin: 0;">
@@ -555,43 +566,184 @@ fn main() {
   </aside>
   <div class="guide-viewport" id="ref-viewport">
     <div class="guide-content-inner" style="max-width: 960px;">
-      <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
-      <p class="subtitle" style="margin:0 0 2rem;">Automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>.</p>
-)HTML");
+      <div class="reader-toolbar">
+        <div class="reader-breadcrumbs">
+          <a href="index.html">cfire Docs</a>
+          <span>/</span>
+          <a href="#overview" onclick="navigateToRefPane('overview'); return false;">Stdlib Reference</a>
+          <span>/</span>
+          <span class="crumb-current" id="ref-active-crumb">Overview (All 21 Modules)</span>
+        </div>
+        <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
+          <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
+          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (21)</button>
+        </div>
+      </div>
+)HTML";
 
-    for (const auto& mod : stdlib_catalog()) {
-        out += std::format("      <h2 id=\"mod-{}\"><code>import \"{}\"</code> &mdash; {}</h2>\n",
+    // Pane 0: Categorized Overview Dashboard
+    out += "      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All 21 Modules)\">\n";
+    out += "        <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>\n";
+    out += "        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">21 zero-overhead <code>core:*</code> modules and 7 semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>\n";
+
+    struct CategoryGroup {
+        std::string_view title;
+        std::vector<std::string_view> aliases;
+    };
+    const std::vector<CategoryGroup> categories = {
+        {"1. Strings, UTF-8, Regex & Generic Containers", {"str", "unicode", "regex", "collections", "sort"}},
+        {"2. Memory Arenas, Math, CSPRNG, Crypto & Compression", {"mem", "math", "rand", "crypto", "compress"}},
+        {"3. Filesystem, OS Subprocesses, Time, CLI, Logging & Config Formats", {"fs", "os", "time", "cli", "log", "json", "toml"}},
+        {"4. Concurrency, Networking, Storage Engines & Multimodal AI", {"sync", "net", "db", "ai"}},
+    };
+
+    for (const auto& cat : categories) {
+        out += std::format("        <div class=\"ref-category-title\">{}</div>\n", detail::html_escape(cat.title));
+        out += "        <div class=\"ref-category-grid\">\n";
+        for (auto alias : cat.aliases) {
+            for (const auto& mod : mods) {
+                if (mod.ns_alias == alias) {
+                    out += std::format(
+                        "          <a href=\"#mod-{}\" class=\"ref-mod-card\" onclick=\"navigateToRefPane('mod-{}'); return false;\">\n"
+                        "            <div class=\"ref-mod-card-head\">\n"
+                        "              <span class=\"ref-mod-card-code\">{}</span>\n"
+                        "              <span class=\"ref-mod-card-count\">{} fns</span>\n"
+                        "            </div>\n"
+                        "            <div class=\"ref-mod-card-title\">{}</div>\n"
+                        "            <div class=\"ref-mod-card-desc\">{}</div>\n"
+                        "          </a>\n",
+                        mod.ns_alias, mod.ns_alias,
+                        mod.import_path, mod.functions.size(),
+                        detail::html_escape(mod.title),
+                        mod.overview);
+                    break;
+                }
+            }
+        }
+        out += "        </div>\n";
+    }
+
+    out += "        <div class=\"ref-category-title\">5. Compiler Semantic Diagnostics (CF-E001 – CF-E007)</div>\n";
+    out += "        <div class=\"ref-category-grid\">\n";
+    out += std::format(
+        "          <a href=\"#diagnostics\" class=\"ref-mod-card\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
+        "            <div class=\"ref-mod-card-head\">\n"
+        "              <span class=\"ref-mod-card-code\">CF-E001 .. CF-E007</span>\n"
+        "              <span class=\"ref-mod-card-count\">{} rules</span>\n"
+        "            </div>\n"
+        "            <div class=\"ref-mod-card-title\">Compiler Semantic Diagnostics Catalog</div>\n"
+        "            <div class=\"ref-mod-card-desc\">Rejected vs. Accepted <code>.cf</code> side-by-side verification rules enforced by the semantic checker.</div>\n"
+        "          </a>\n",
+        diags.size());
+    out += "        </div>\n";
+
+    if (!mods.empty()) {
+        out += std::format(
+            "        <nav class=\"chapter-pager\" aria-label=\"Module Pagination\">\n"
+            "          <div class=\"pager-card empty\"></div>\n"
+            "          <a href=\"#mod-{}\" class=\"pager-card next\" onclick=\"navigateToRefPane('mod-{}'); return false;\">\n"
+            "            <span class=\"pager-dir\">First Module &rarr;</span>\n"
+            "            <span class=\"pager-title\">{} &mdash; {}</span>\n"
+            "          </a>\n"
+            "        </nav>\n",
+            mods.front().ns_alias, mods.front().ns_alias,
+            mods.front().import_path, detail::html_escape(mods.front().title));
+    }
+    out += "      </article>\n";
+
+    // Individual Module Panes (1..21)
+    for (std::size_t i = 0; i < mods.size(); ++i) {
+        const auto& mod = mods[i];
+        out += std::format(
+            "      <article class=\"ref-pane\" id=\"ref-pane-mod-{}\" data-pane-id=\"mod-{}\" data-pane-title=\"{} — {}\">\n",
+            mod.ns_alias, mod.ns_alias, mod.import_path, detail::html_escape(mod.title));
+        out += std::format("        <h2 id=\"mod-{}\" style=\"margin-top:0.25rem;\"><code>import \"{}\"</code> &mdash; {}</h2>\n",
             mod.ns_alias, mod.import_path, detail::html_escape(mod.title));
-        out += std::format("      <p>{} <br/><small style=\"color:var(--muted)\">Auto-linked flags: <code>{}</code></small></p>\n",
-            mod.overview, detail::html_escape(mod.link_flags));
+        out += std::format("        <p>{} <br/><small style=\"color:var(--muted)\">Auto-linked flags: <code>{}</code> &bull; Namespace: <code>{}.*</code> &bull; {} exported functions</small></p>\n",
+            mod.overview, detail::html_escape(mod.link_flags), mod.ns_alias, mod.functions.size());
+
         auto ex = detail::module_practical_example(mod.import_path);
         if (!ex.empty()) {
-            out += "      <div class=\"code-header\"><span class=\"tag-cf\">Practical Workflow Example</span></div>\n";
-            out += "      <pre><code>" + detail::html_escape(ex) + "</code></pre>\n";
+            out += "        <div class=\"code-header\"><span class=\"tag-cf\">Practical Workflow Example (.cf)</span></div>\n";
+            out += "        <pre><code>" + detail::html_escape(ex) + "</code></pre>\n";
         }
-        out += "      <div class=\"table-wrap api-table-wrap\"><table>\n        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>\n        <tbody>\n";
+
+        out += "        <div class=\"table-wrap api-table-wrap\"><table>\n          <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>\n          <tbody>\n";
         for (const auto& fn : mod.functions) {
-            out += std::format("          <tr><td><code>{}</code></td><td><code>{}</code></td><td>{}<br/><code>{}</code></td></tr>\n",
+            out += std::format("            <tr><td><code>{}</code></td><td><code>{}</code></td><td>{}<br/><code>{}</code></td></tr>\n",
                 detail::html_escape(fn.cf_sig),
                 detail::html_escape(fn.cpp_lowering),
                 detail::html_escape(fn.summary),
                 detail::html_escape(fn.example));
         }
-        out += "        </tbody>\n      </table></div>\n";
+        out += "          </tbody>\n        </table></div>\n";
+
+        // Module Pager
+        out += "        <nav class=\"chapter-pager\" aria-label=\"Module Pagination\">\n";
+        if (i == 0) {
+            out += "          <a href=\"#overview\" class=\"pager-card prev\" onclick=\"navigateToRefPane('overview'); return false;\">\n"
+                   "            <span class=\"pager-dir\">&larr; Overview</span>\n"
+                   "            <span class=\"pager-title\">All 21 Standard Library Modules</span>\n"
+                   "          </a>\n";
+        } else {
+            const auto& prev = mods[i - 1];
+            out += std::format(
+                "          <a href=\"#mod-{}\" class=\"pager-card prev\" onclick=\"navigateToRefPane('mod-{}'); return false;\">\n"
+                "            <span class=\"pager-dir\">&larr; Previous Module ({}/{})</span>\n"
+                "            <span class=\"pager-title\">{} &mdash; {}</span>\n"
+                "          </a>\n",
+                prev.ns_alias, prev.ns_alias, i, mods.size(), prev.import_path, detail::html_escape(prev.title));
+        }
+
+        if (i + 1 < mods.size()) {
+            const auto& next = mods[i + 1];
+            out += std::format(
+                "          <a href=\"#mod-{}\" class=\"pager-card next\" onclick=\"navigateToRefPane('mod-{}'); return false;\">\n"
+                "            <span class=\"pager-dir\">Next Module ({}/{}) &rarr;</span>\n"
+                "            <span class=\"pager-title\">{} &mdash; {}</span>\n"
+                "          </a>\n",
+                next.ns_alias, next.ns_alias, i + 2, mods.size(), next.import_path, detail::html_escape(next.title));
+        } else {
+            out += "          <a href=\"#diagnostics\" class=\"pager-card next\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
+                   "            <span class=\"pager-dir\">Diagnostics Reference &rarr;</span>\n"
+                   "            <span class=\"pager-title\">CF-E001 .. CF-E007 Semantic Rules</span>\n"
+                   "          </a>\n";
+        }
+        out += "        </nav>\n";
+        out += "      </article>\n";
     }
 
-    out += "      <h2 class=\"section-title\">Compiler Semantic Diagnostics</h2>\n";
-    for (const auto& d : diagnostics_catalog()) {
-        out += std::format("      <div class=\"card\" id=\"diag-{}\" style=\"margin-bottom:1.25rem;\">\n", d.code);
-        out += std::format("        <h3><code>[{}]</code> &mdash; {}</h3>\n", d.code, detail::html_escape(d.title));
-        out += std::format("        <p style=\"margin-bottom:0.85rem;\">{}</p>\n", detail::html_escape(d.rule));
-        out += "        <div class=\"grid-2\">\n";
-        out += std::format("          <div><div class=\"code-header\"><span style=\"color:var(--err);font-weight:700;\">Rejected (.cf)</span></div><pre><code>{}</code></pre></div>\n",
+    // Diagnostics Pane
+    out += "      <article class=\"ref-pane\" id=\"ref-pane-diagnostics\" data-pane-id=\"diagnostics\" data-pane-title=\"Compiler Semantic Diagnostics\">\n";
+    out += "        <h2 class=\"section-title\" id=\"diagnostics\" style=\"margin-top:0.25rem;\">Compiler Semantic Diagnostics</h2>\n";
+    out += "        <p style=\"color:var(--muted); margin-bottom:1.25rem;\">Deterministic compile-time diagnostics emitted by the single-pass type and effect checker (<code>src/sema.hpp</code>).</p>\n";
+    for (const auto& d : diags) {
+        out += std::format("        <div class=\"card\" id=\"diag-{}\" style=\"margin-bottom:1.25rem;\">\n", d.code);
+        out += std::format("          <h3><code>[{}]</code> &mdash; {}</h3>\n", d.code, detail::html_escape(d.title));
+        out += std::format("          <p style=\"margin-bottom:0.85rem;\">{}</p>\n", detail::html_escape(d.rule));
+        out += "          <div class=\"grid-2\">\n";
+        out += std::format("            <div><div class=\"code-header\"><span style=\"color:var(--err);font-weight:700;\">Rejected (.cf)</span></div><pre><code>{}</code></pre></div>\n",
             detail::html_escape(d.bad_example));
-        out += std::format("          <div><div class=\"code-header\"><span style=\"color:var(--ok);font-weight:700;\">Accepted (.cf)</span></div><pre><code>{}</code></pre></div>\n",
+        out += std::format("            <div><div class=\"code-header\"><span style=\"color:var(--ok);font-weight:700;\">Accepted (.cf)</span></div><pre><code>{}</code></pre></div>\n",
             detail::html_escape(d.good_example));
-        out += "        </div>\n      </div>\n";
+        out += "          </div>\n        </div>\n";
     }
+    if (!mods.empty()) {
+        const auto& last_mod = mods.back();
+        out += std::format(
+            "        <nav class=\"chapter-pager\" aria-label=\"Module Pagination\">\n"
+            "          <a href=\"#mod-{}\" class=\"pager-card prev\" onclick=\"navigateToRefPane('mod-{}'); return false;\">\n"
+            "            <span class=\"pager-dir\">&larr; Previous Module</span>\n"
+            "            <span class=\"pager-title\">{} &mdash; {}</span>\n"
+            "          </a>\n"
+            "          <a href=\"#overview\" class=\"pager-card next\" onclick=\"navigateToRefPane('overview'); return false;\">\n"
+            "            <span class=\"pager-dir\">Back to Overview &rarr;</span>\n"
+            "            <span class=\"pager-title\">All 21 Standard Library Modules</span>\n"
+            "          </a>\n"
+            "        </nav>\n",
+            last_mod.ns_alias, last_mod.ns_alias, last_mod.import_path, detail::html_escape(last_mod.title));
+    }
+    out += "      </article>\n";
 
     out += R"HTML(      <footer class="footer" style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--border);">
         Generated by <code>cfire doc</code> &bull; Always kept in sync with <code>src/docgen.hpp</code>.
@@ -600,18 +752,160 @@ fn main() {
   </div>
 </div>
 <script>
+let currentRefMode = 'module';
+let activeRefPane = 'overview';
+
+function setRefMode(mode) {
+  currentRefMode = (mode === 'all') ? 'all' : 'module';
+  const vp = document.getElementById('ref-viewport');
+  const btnMod = document.getElementById('btn-ref-module');
+  const btnAll = document.getElementById('btn-ref-all');
+  if (currentRefMode === 'all') {
+    if (vp) vp.classList.add('view-all-mode');
+    if (btnAll) btnAll.classList.add('active');
+    if (btnMod) btnMod.classList.remove('active');
+  } else {
+    if (vp) vp.classList.remove('view-all-mode');
+    if (btnMod) btnMod.classList.add('active');
+    if (btnAll) btnAll.classList.remove('active');
+    navigateToRefPane(activeRefPane, false);
+  }
+}
+
+function navigateToRefPane(paneId, pushHash = true) {
+  const target = document.getElementById('ref-pane-' + paneId);
+  if (!target) return;
+  activeRefPane = paneId;
+
+  document.querySelectorAll('.ref-pane').forEach(p => {
+    p.classList.toggle('active', p.id === 'ref-pane-' + paneId);
+  });
+
+  document.querySelectorAll('#sidebar-nav a').forEach(a => a.classList.remove('active'));
+  const navLink = document.getElementById('nav-pane-' + paneId);
+  if (navLink) navLink.classList.add('active');
+
+  const crumb = document.getElementById('ref-active-crumb');
+  if (crumb) {
+    crumb.textContent = target.getAttribute('data-pane-title') || paneId;
+  }
+
+  if (pushHash) {
+    const hash = (paneId === 'overview') ? '#overview' : ('#' + paneId);
+    if (location.hash !== hash) {
+      history.replaceState(null, '', hash);
+    }
+  }
+
+  const vp = document.getElementById('ref-viewport');
+  if (currentRefMode === 'all') {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    if (vp) vp.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
+}
+
+function navigateToRefDiag(diagId) {
+  navigateToRefPane('diagnostics', false);
+  document.querySelectorAll('#sidebar-nav a').forEach(a => a.classList.remove('active'));
+  const navDiag = document.getElementById('nav-' + diagId);
+  if (navDiag) navDiag.classList.add('active');
+  history.replaceState(null, '', '#' + diagId);
+  const el = document.getElementById(diagId);
+  if (el) {
+    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
+  }
+}
+
+function handleRefHash() {
+  const raw = (location.hash || '').replace(/^#/, '');
+  if (!raw || raw === 'overview') {
+    navigateToRefPane('overview', false);
+    return;
+  }
+  if (raw.startsWith('mod-')) {
+    navigateToRefPane(raw, false);
+    return;
+  }
+  if (raw.startsWith('diag-')) {
+    navigateToRefDiag(raw);
+    return;
+  }
+  if (raw === 'diagnostics') {
+    navigateToRefPane('diagnostics', false);
+    return;
+  }
+}
+
 function filterRefNav(query) {
   const q = query.toLowerCase().trim();
   const items = document.querySelectorAll('#sidebar-nav .nav-item');
   items.forEach(li => {
     const text = li.innerText.toLowerCase();
-    if (!q || text.includes(q)) {
-      li.style.display = '';
-    } else {
-      li.style.display = 'none';
+    li.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+
+  const dropdown = document.getElementById('ref-search-results');
+  if (!dropdown) return;
+  if (!q) {
+    dropdown.classList.remove('open');
+    dropdown.innerHTML = '';
+    return;
+  }
+
+  const hits = [];
+  document.querySelectorAll('.ref-pane[data-pane-id^="mod-"]').forEach(pane => {
+    const paneId = pane.getAttribute('data-pane-id');
+    const modTitle = pane.getAttribute('data-pane-title') || paneId;
+    pane.querySelectorAll('tbody tr').forEach(row => {
+      const text = row.innerText || '';
+      if (text.toLowerCase().includes(q)) {
+        const sigCell = row.querySelector('td code');
+        const sig = sigCell ? sigCell.textContent : modTitle;
+        hits.push({ paneId: paneId, title: sig, path: modTitle, diagId: null });
+      }
+    });
+  });
+
+  document.querySelectorAll('#ref-pane-diagnostics .card').forEach(card => {
+    const text = card.innerText || '';
+    if (text.toLowerCase().includes(q)) {
+      const h3 = card.querySelector('h3');
+      hits.push({ paneId: 'diagnostics', title: h3 ? h3.textContent : card.id, path: 'Semantic Diagnostic', diagId: card.id });
     }
   });
+
+  if (hits.length === 0) {
+    dropdown.innerHTML = '<div class="search-result-item"><span class="search-result-path">No matching API signatures or diagnostics</span></div>';
+    dropdown.classList.add('open');
+    return;
+  }
+
+  dropdown.innerHTML = hits.slice(0, 12).map(h => {
+    const action = h.diagId
+      ? `navigateToRefDiag('${h.diagId}')`
+      : `navigateToRefPane('${h.paneId}')`;
+    return `<a class="search-result-item" href="#${h.diagId || h.paneId}" onclick="${action}; document.getElementById('ref-search-results').classList.remove('open'); return false;">` +
+           `<span class="search-result-title">${h.title.replace(/</g, '&lt;')}</span>` +
+           `<span class="search-result-path">${h.path.replace(/</g, '&lt;')}</span></a>`;
+  }).join('');
+  dropdown.classList.add('open');
 }
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    const input = document.getElementById('ref-filter');
+    if (input) { input.focus(); input.select(); }
+  } else if (e.key === 'Escape') {
+    const dropdown = document.getElementById('ref-search-results');
+    if (dropdown) dropdown.classList.remove('open');
+  }
+});
+
+window.addEventListener('hashchange', handleRefHash);
+window.addEventListener('DOMContentLoaded', handleRefHash);
 </script>
 </body>
 </html>
