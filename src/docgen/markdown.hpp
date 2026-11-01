@@ -350,7 +350,7 @@ namespace detail {
             }
             std::string base_sid = detail::slugify_heading(rest);
             std::string sid = chapters.empty() ? base_sid : ("ch" + chapters.back().num_str + "-" + base_sid);
-            auto h4_tag = "<h4 id=\"" + sid + "\" style=\"margin: 1.4rem 0 0.6rem; color: var(--text-bright);\">" + detail::render_inline_md(rest) + "</h4>\n";
+            auto h4_tag = "<h4 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h4>\n";
             append_content(h4_tag);
             ++idx;
             continue;
@@ -366,7 +366,7 @@ namespace detail {
             }
             std::string base_sid = detail::slugify_heading(rest);
             std::string sid = chapters.empty() ? base_sid : ("ch" + chapters.back().num_str + "-" + base_sid);
-            auto h_tag = "<h4 id=\"" + sid + "\" style=\"margin: 1.25rem 0 0.5rem; font-size: 0.95rem; color: var(--accent-sapphire);\">" + detail::render_inline_md(rest) + "</h4>\n";
+            auto h_tag = "<h4 id=\"" + sid + "\" class=\"guide-subhead5\">" + detail::render_inline_md(rest) + "</h4>\n";
             append_content(h_tag);
             ++idx;
             continue;
@@ -463,6 +463,98 @@ namespace detail {
             return n;
         };
 
+        auto parse_indented_code_block = [&](size_t fence_indent) -> std::string {
+            std::string fence_tl = detail::trim_md(lines[idx]);
+            std::string lang = detail::trim_md(fence_tl.substr(3));
+            ++idx;
+            std::string code;
+            while (idx < lines.size() && !detail::trim_md(lines[idx]).starts_with("```")) {
+                std::string_view raw_cl = lines[idx];
+                size_t stripped = 0;
+                while (stripped < fence_indent && !raw_cl.empty() && raw_cl.front() == ' ') {
+                    raw_cl.remove_prefix(1);
+                    ++stripped;
+                }
+                code += raw_cl;
+                code += '\n';
+                ++idx;
+            }
+            if (idx < lines.size()) ++idx;
+            std::string tag_cls = "tag-cf";
+            std::string tag_name = lang;
+            if (lang == "cf" || lang == "cfire") {
+                tag_cls = "tag-cf";
+                tag_name = "cfire (.cf)";
+            } else if (lang == "cpp" || lang == "c++") {
+                tag_cls = "tag-cpp";
+                tag_name = "ISO C++23";
+            } else if (lang == "bash" || lang == "sh") {
+                tag_cls = "tag-cf";
+                tag_name = "terminal";
+            } else if (lang.empty() || lang == "text") {
+                tag_name = "text";
+            }
+            std::string block = "\n    <div class=\"code-header\"><span class=\"" + tag_cls + "\">" + detail::html_escape(tag_name) + "</span><button class=\"code-copy-btn\" onclick=\"copyCode(this)\">Copy</button></div>\n";
+            block += "    <pre><code>" + detail::html_escape(code) + "</code></pre>\n  ";
+            return block;
+        };
+
+        auto parse_list_item_children = [&](size_t base_indent, std::string& li_body) {
+            std::string sub_list;
+            std::string sub_tag;
+            auto flush_sub_list = [&]() {
+                if (!sub_list.empty()) {
+                    li_body += sub_list + "    </" + sub_tag + ">\n  ";
+                    sub_list.clear();
+                    sub_tag.clear();
+                }
+            };
+            while (idx < lines.size()) {
+                std::string next_raw = lines[idx];
+                std::string next_tl = detail::trim_md(next_raw);
+                if (next_tl.empty()) {
+                    size_t look = idx + 1;
+                    while (look < lines.size() && detail::trim_md(lines[look]).empty()) ++look;
+                    if (look < lines.size() && count_indent(lines[look]) > base_indent) {
+                        idx = look;
+                        continue;
+                    }
+                    break;
+                }
+                size_t next_indent = count_indent(next_raw);
+                if (next_indent > base_indent) {
+                    size_t sub_p = 0;
+                    if (next_tl.starts_with("```")) {
+                        flush_sub_list();
+                        li_body += parse_indented_code_block(next_indent);
+                    } else if (next_tl.starts_with("- ") || next_tl.starts_with("* ")) {
+                        if (sub_tag != "ul") {
+                            flush_sub_list();
+                            sub_list = "\n    <ul>\n";
+                            sub_tag = "ul";
+                        }
+                        sub_list += "      <li>" + detail::render_inline_md(detail::trim_md(next_tl.substr(2))) + "</li>\n";
+                        ++idx;
+                    } else if (detail::is_md_ordered_list(next_tl, sub_p)) {
+                        if (sub_tag != "ol") {
+                            flush_sub_list();
+                            sub_list = "\n    <ol>\n";
+                            sub_tag = "ol";
+                        }
+                        sub_list += "      <li>" + detail::render_inline_md(detail::trim_md(next_tl.substr(sub_p))) + "</li>\n";
+                        ++idx;
+                    } else {
+                        flush_sub_list();
+                        li_body += " " + detail::render_inline_md(next_tl);
+                        ++idx;
+                    }
+                } else {
+                    break;
+                }
+            }
+            flush_sub_list();
+        };
+
         // Unordered lists
         if (trimmed.starts_with("- ") || trimmed.starts_with("* ")) {
             size_t base_indent = count_indent(line);
@@ -470,29 +562,24 @@ namespace detail {
             while (idx < lines.size()) {
                 std::string raw_line = lines[idx];
                 std::string tl = detail::trim_md(raw_line);
+                if (tl.empty()) {
+                    size_t look = idx + 1;
+                    while (look < lines.size() && detail::trim_md(lines[look]).empty()) ++look;
+                    if (look < lines.size()) {
+                        std::string ltl = detail::trim_md(lines[look]);
+                        if (count_indent(lines[look]) <= base_indent && (ltl.starts_with("- ") || ltl.starts_with("* "))) {
+                            idx = look;
+                            continue;
+                        }
+                    }
+                    break;
+                }
                 size_t cur_indent = count_indent(raw_line);
                 if (cur_indent <= base_indent && (tl.starts_with("- ") || tl.starts_with("* "))) {
                     std::string li_body = detail::render_inline_md(detail::trim_md(tl.substr(2)));
                     ++idx;
-                    std::string sub_ul;
-                    while (idx < lines.size()) {
-                        std::string next_raw = lines[idx];
-                        std::string next_tl = detail::trim_md(next_raw);
-                        size_t next_indent = count_indent(next_raw);
-                        if (!next_tl.empty() && !next_tl.starts_with("```") && next_indent > base_indent) {
-                            if (next_tl.starts_with("- ") || next_tl.starts_with("* ")) {
-                                if (sub_ul.empty()) sub_ul = "\n    <ul>\n";
-                                sub_ul += "      <li>" + detail::render_inline_md(detail::trim_md(next_tl.substr(2))) + "</li>\n";
-                            } else {
-                                li_body += " " + detail::render_inline_md(next_tl);
-                            }
-                            ++idx;
-                        } else {
-                            break;
-                        }
-                    }
-                    if (!sub_ul.empty()) sub_ul += "    </ul>\n  ";
-                    ul += "  <li>" + li_body + sub_ul + "</li>\n";
+                    parse_list_item_children(base_indent, li_body);
+                    ul += "  <li>" + li_body + "</li>\n";
                 } else {
                     break;
                 }
@@ -510,30 +597,26 @@ namespace detail {
             while (idx < lines.size()) {
                 std::string raw_line = lines[idx];
                 std::string tl = detail::trim_md(raw_line);
+                if (tl.empty()) {
+                    size_t look = idx + 1;
+                    while (look < lines.size() && detail::trim_md(lines[look]).empty()) ++look;
+                    size_t lp = 0;
+                    if (look < lines.size()) {
+                        std::string ltl = detail::trim_md(lines[look]);
+                        if (count_indent(lines[look]) <= base_indent && detail::is_md_ordered_list(ltl, lp)) {
+                            idx = look;
+                            continue;
+                        }
+                    }
+                    break;
+                }
                 size_t cur_indent = count_indent(raw_line);
                 size_t p = 0;
                 if (cur_indent <= base_indent && detail::is_md_ordered_list(tl, p)) {
                     std::string li_body = detail::render_inline_md(detail::trim_md(tl.substr(p)));
                     ++idx;
-                    std::string sub_ul;
-                    while (idx < lines.size()) {
-                        std::string next_raw = lines[idx];
-                        std::string next_tl = detail::trim_md(next_raw);
-                        size_t next_indent = count_indent(next_raw);
-                        if (!next_tl.empty() && !next_tl.starts_with("```") && next_indent > base_indent) {
-                            if (next_tl.starts_with("- ") || next_tl.starts_with("* ")) {
-                                if (sub_ul.empty()) sub_ul = "\n    <ul>\n";
-                                sub_ul += "      <li>" + detail::render_inline_md(detail::trim_md(next_tl.substr(2))) + "</li>\n";
-                            } else {
-                                li_body += " " + detail::render_inline_md(next_tl);
-                            }
-                            ++idx;
-                        } else {
-                            break;
-                        }
-                    }
-                    if (!sub_ul.empty()) sub_ul += "    </ul>\n  ";
-                    ol += "  <li>" + li_body + sub_ul + "</li>\n";
+                    parse_list_item_children(base_indent, li_body);
+                    ol += "  <li>" + li_body + "</li>\n";
                 } else {
                     break;
                 }
@@ -829,7 +912,7 @@ namespace detail {
 
     out += R"HTML(
   <div class="guide-viewport topic-View-mode" id="guide-viewport">
-    <div class="guide-content-inner">
+    <main class="guide-content-inner">
       <div class="reader-toolbar">
         <div class="reader-breadcrumbs" id="reader-breadcrumbs">
           <a href="index.html">cfire Docs</a>
@@ -851,7 +934,7 @@ namespace detail {
     out += R"HTML(      <footer class="footer" style="margin-top: 3.5rem; padding: 2rem 0; border-top: 1px solid var(--border);">
         Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
       </footer>
-    </div>
+    </main>
 )HTML";
 
     out += toc_rail_html;

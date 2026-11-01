@@ -394,7 +394,7 @@ var App = build.Executable("service-app", {
 
 #### `build.cf` Specification Tables
 
-##### 1. `build.Executable(name, config)` / `build.App(name, config)` Fields
+#### 1. `build.Executable(name, config)` / `build.App(name, config)` Fields
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `Entry` | `str` | `"main.cf"` | Path to the entry `.cf` file containing `fn main()`. |
@@ -406,7 +406,7 @@ var App = build.Executable("service-app", {
 | `OutDir` | `str` | `"build"` | Output directory root for compiled artifacts (`build/native/`, `build/wasm/`, `build/ios-sim/`). |
 | `WebProfile` | `str` | `"auto"` | `"canvas"` (HTML5 WebGL + Audio shell) or `"cli"` (console output runner) when compiling for `--target=wasm`. |
 
-##### 2. External Dependency Builders (`build.CC`, `build.CMake`, `build.Make`, `build.Git`, `build.Archive`)
+#### 2. External Dependency Builders (`build.CC`, `build.CMake`, `build.Make`, `build.Git`, `build.Archive`)
 | Builder Function | First Argument | Supported Config Fields | Behavior |
 | :--- | :--- | :--- | :--- |
 | `build.CC(dir, cfg)` | Local directory path | `Sources`, `Includes`, `Defines` | Compiles listed C/C++ files into a cached static library (`lib<name>.a`) and adds `Includes` to the Clang AST bridge. |
@@ -624,85 +624,6 @@ fn main() {
 ```text
 # Output:
 seq1=1 seq2=2 payload2=ACK
-```
-
-### Level 5 — Strings, UTF-8 Runes & Regular Expressions (`core:str`, `core:unicode`, `core:regex`)
-`cfire` strings (`str`) are UTF-8 encoded buffers backed by `std::string`. Standard text processing, RFC 3629 Unicode codepoint decoding, and ECMAScript regular expressions are provided by `core:str`, `core:unicode`, and `core:regex`:
-
-| Module | Function / Method | Signature | Description |
-| :--- | :--- | :--- | :--- |
-| `core:str` | `str.split` / `str.join` | `fn(s: str, sep: str) -> []str` / `fn(items: []str, sep: str) -> str` | Splits `s` on `sep` or joins a slice of strings with `sep`. |
-| `core:str` | `str.trim` / `replace` | `fn(s: str) -> str` / `fn(s: str, from: str, to: str) -> str` | Strips leading/trailing whitespace or replaces all occurrences of `from` with `to`. |
-| `core:str` | `str.starts_with` / `ends_with` / `contains` | `fn(s: str, pat: str) -> bool` | Prefix, suffix, and substring predicates. |
-| `core:str` | `str.index_of` / `last_index_of` | `fn(s: str, sub: str) -> i64` | Returns the byte offset of `sub` in `s`, or `-1` if not found. |
-| `core:unicode` | `unicode.is_valid_utf8` / `rune_count` | `fn(s: str) -> bool` / `fn(s: str) -> usize` | Validates RFC 3629 UTF-8 sequences and counts Unicode scalar values (codepoints). |
-| `core:unicode` | `unicode.runes` / `encode_rune` | `fn(s: str) -> []u32` / `fn(r: u32) -> str` | Decodes a UTF-8 string into 32-bit codepoints or encodes a codepoint to UTF-8. |
-| `core:unicode` | `unicode.to_lower` / `to_upper` | `fn(s: str) -> str` | Full Latin, Greek, and Cyrillic Unicode case folding. |
-| `core:regex` | `regex.compile` / `is_match` / `replace_all` | `fn(pat: str) -> Regex!` / `fn(pat: str, text: str) -> bool!` / `fn(pat: str, text: str, repl: str) -> str!` | Compiles and executes ECMAScript regular expressions. |
-
-```cfire
-package main
-
-import "core:regex"
-import "core:str"
-import "core:unicode"
-
-fn main() -> void! {
-    raw := "  node_01, node_02, node_03  "
-    parts := str.split(str.trim(raw), ", ")
-    joined := str.join(parts, "|")
-
-    banner := "cfire 🔥"
-    runes := unicode.runes(banner)
-
-    cleaned := try regex.replace_all(`[0-9]+`, joined, "#")
-    println("joined={} runes={} bytes={} regex={}",
-        joined, unicode.rune_count(banner), banner.len(), cleaned)
-    println("last_rune=U+{:X}", runes[runes.len() - 1])
-}
-```
-```text
-# Output:
-joined=node_01|node_02|node_03 runes=7 bytes=10 regex=node_#|node_#|node_#
-last_rune=U+1F525
-```
-
-### Level 6 — Generic Containers & In-Place Sorting (`core:collections`, `core:sort`)
-Beyond built-in slices (`[]T`) and maps (`map[K]V`), `core:collections` and `core:sort` provide generic hash sets, max-heap priority queues, double-ended queues, in-place sorting, and logarithmic binary search:
-
-| Module | Type / Function | Operations / Signature | C++23 Backing |
-| :--- | :--- | :--- | :--- |
-| `core:collections` | `collections.Set[T]` | `.insert(v)`, `.contains(v) -> bool`, `.remove(v)`, `.len() -> usize` | `std::unordered_set<T>` |
-| `core:collections` | `collections.PriorityQueue[T]` | `.push(v)`, `.top() -> T`, `.pop() -> T`, `.empty() -> bool`, `.len()` | `std::priority_queue<T>` (max-heap) |
-| `core:collections` | `collections.Deque[T]` | `.push_front(v)`, `.push_back(v)`, `.pop_front() -> T`, `.pop_back() -> T` | `std::deque<T>` |
-| `core:sort` | `sort.slice(mut s)` | `fn[T](mut s: []T)` — sorts `s` in ascending order in place | `std::sort(s.begin(), s.end())` |
-| `core:sort` | `sort.binary_search(s, val)` | `fn[T](s: []T, val: T) -> i64?` — returns matching index or `nil` | `std::lower_bound` |
-
-```cfire
-package main
-
-import "core:collections"
-import "core:sort"
-
-fn main() {
-    mut latencies: []i64 = [42, 7, 19, 88, 12]
-    sort.slice(mut latencies)
-    idx := sort.binary_search(latencies, 19) or -1
-
-    mut pq := collections.PriorityQueue[i64]{}
-    for v in latencies { pq.push(v) }
-
-    mut seen := collections.Set[str]{}
-    seen.insert("us-east")
-    seen.insert("eu-west")
-
-    println("min={} idx_of_19={} max_pq={} regions={}",
-        latencies[0], idx, pq.top(), seen.len())
-}
-```
-```text
-# Output:
-min=7 idx_of_19=2 max_pq=88 regions=2
 ```
 
 ---
@@ -1224,9 +1145,194 @@ auto export_snapshot(std::string db_path, std::string log_path) -> std::expected
 
 ---
 
-# Part III: Concurrency, C++ Interop & Systems
+# Part III: Foundational Core Library, Concurrency & Interop
 
-## Chapter 8: Structured Concurrency, Channels & Contexts
+## Chapter 8: Strings, UTF-8 Unicode, Regex & Generic Containers
+
+### Architecture & Invariants
+`cfire` strings (`str`) are UTF-8 encoded buffers backed by `std::string`, and borrowed string views (`&str`) lower to `std::string_view`. Text manipulation, RFC 3629 Unicode scalar decoding, ECMAScript regular expressions, and specialized generic data structures (`Set[T]`, `PriorityQueue[T]`, `Deque[T]`, and in-place sorting) are provided by five Tier 1A foundational modules: `core:str`, `core:unicode`, `core:regex`, `core:collections`, and `core:sort`.
+
+### Complete Text, Unicode & Regex Specification (`core:str`, `core:unicode`, `core:regex`)
+| Module | Function / Method | Signature | Description |
+| :--- | :--- | :--- | :--- |
+| `core:str` | `str.split` / `str.join` | `fn(s: str, sep: str) -> []str` / `fn(items: []str, sep: str) -> str` | Splits `s` on delimiter `sep` or joins a slice of strings with `sep`. |
+| `core:str` | `str.trim` / `trim_left` / `trim_right` | `fn(s: str) -> str` | Strips leading and/or trailing ASCII whitespace (`' '`, `'\t'`, `'\n'`, `'\r'`). |
+| `core:str` | `str.replace` | `fn(s: str, from: str, to: str) -> str` | Replaces all occurrences of `from` in `s` with `to`. |
+| `core:str` | `str.starts_with` / `ends_with` / `contains` | `fn(s: str, pat: str) -> bool` | Prefix, suffix, and substring containment checks. |
+| `core:str` | `str.index_of` / `last_index_of` | `fn(s: str, sub: str) -> i64` | Returns the 0-based byte offset of `sub` in `s`, or `-1` if absent. |
+| `core:str` | `str.to_upper` / `to_lower` / `repeat` | `fn(s: str) -> str` / `fn(s: str, count: usize) -> str` | ASCII case conversion and `count`-fold string repetition. |
+| `core:unicode` | `unicode.is_valid_utf8` / `rune_count` | `fn(s: str) -> bool` / `fn(s: str) -> usize` | Validates RFC 3629 UTF-8 byte sequences and counts Unicode codepoints (scalar values). |
+| `core:unicode` | `unicode.runes` / `encode_rune` | `fn(s: str) -> []u32` / `fn(r: u32) -> str` | Decodes a UTF-8 string into 32-bit Unicode scalar values (`u32`) or encodes a codepoint to UTF-8. |
+| `core:unicode` | `unicode.to_lower` / `to_upper` | `fn(s: str) -> str` | Full Unicode case folding across Latin, Greek, and Cyrillic scripts. |
+| `core:unicode` | `unicode.is_letter` / `is_digit` / `is_space` | `fn(r: u32) -> bool` | Unicode general category classification predicates on a 32-bit rune. |
+| `core:regex` | `regex.compile` | `fn(pattern: str) -> Regex!` | Compiles an ECMAScript regular expression (`std::regex`), returning an error on invalid syntax. |
+| `core:regex` | `regex.is_match` / `find` / `find_all` | `fn(pat: str, text: str) -> bool!` / `Match?!` / `[]str!` | Tests pattern matches or extracts the first (`Match { text, index }`) or all non-overlapping matches. |
+| `core:regex` | `regex.replace_all` | `fn(pat: str, text: str, replacement: str) -> str!` | Replaces every match of `pat` in `text` with `replacement`. |
+
+### Level 1 — UTF-8 String Processing, Unicode Runes & Regular Expressions
+```cfire
+package main
+
+import "core:regex"
+import "core:str"
+import "core:unicode"
+
+fn main() -> void! {
+    raw := "  node_01, node_02, node_03  "
+    parts := str.split(str.trim(raw), ", ")
+    joined := str.join(parts, "|")
+
+    banner := "cfire 🔥"
+    runes := unicode.runes(banner)
+
+    cleaned := try regex.replace_all(`[0-9]+`, joined, "#")
+    println("joined={} runes={} bytes={} regex={}",
+        joined, unicode.rune_count(banner), banner.len(), cleaned)
+    println("last_rune=U+{:X} valid_utf8={}",
+        runes[runes.len() - 1], unicode.is_valid_utf8(banner))
+}
+```
+```text
+# Output:
+joined=node_01|node_02|node_03 runes=7 bytes=10 regex=node_#|node_#|node_#
+last_rune=U+1F525 valid_utf8=true
+```
+
+**Line-by-Line Mechanics:**
+1. **`str.split(str.trim(raw), ", ")` (Line 9)**: Strips outer whitespace and splits `raw` into a 3-element `[]str` slice (`["node_01", "node_02", "node_03"]`).
+2. **`unicode.runes(banner)` & `unicode.rune_count(banner)` (Lines 13 & 17)**: While `banner.len()` returns the UTF-8 byte length (`10`, because `🔥` `U+1F525` is 4 UTF-8 bytes), `unicode.rune_count(banner)` returns `7` scalar codepoints.
+3. **`try regex.replace_all(...)` (Line 15)**: Compiles the raw string pattern `` `[0-9]+` `` and replaces digit runs with `"#"`.
+
+### Level 2 — Generic Containers & In-Place Sorting (`core:collections`, `core:sort`)
+Beyond built-in slices (`[]T`) and maps (`map[K]V`), `core:collections` and `core:sort` provide generic hash sets, max-heap priority queues, double-ended queues, in-place sorting, and logarithmic binary search:
+
+| Module | Type / Function | Operations / Signature | C++23 Backing |
+| :--- | :--- | :--- | :--- |
+| `core:collections` | `collections.Set[T]` | `.insert(v)`, `.contains(v) -> bool`, `.remove(v)`, `.len() -> usize`, `.clear()` | `std::unordered_set<T>` |
+| `core:collections` | `collections.PriorityQueue[T]` | `.push(v)`, `.top() -> T`, `.pop() -> T`, `.empty() -> bool`, `.len() -> usize` | `std::priority_queue<T>` (max-heap) |
+| `core:collections` | `collections.Deque[T]` | `.push_front(v)`, `.push_back(v)`, `.pop_front() -> T`, `.pop_back() -> T`, `.len() -> usize` | `std::deque<T>` |
+| `core:sort` | `sort.slice(mut s)` / `sort.reverse(mut s)` | `fn[T](mut s: []T)` — sorts `s` ascending or reverses `s` in place | `std::sort` / `std::reverse` |
+| `core:sort` | `sort.slice_by(mut s, less)` | `fn[T](mut s: []T, less: fn(T, T) -> bool)` — custom comparator sort | `std::sort(s.begin(), s.end(), less)` |
+| `core:sort` | `sort.is_sorted(s)` / `binary_search(s, val)` | `fn[T](s: []T) -> bool` / `fn[T](s: []T, val: T) -> i64?` | `std::is_sorted` / `std::lower_bound` |
+
+```cfire
+package main
+
+import "core:collections"
+import "core:sort"
+
+fn main() {
+    mut latencies: []i64 = [42, 7, 19, 88, 12]
+    sort.slice(mut latencies)
+    idx := sort.binary_search(latencies, 19) or -1
+
+    mut pq := collections.PriorityQueue[i64]{}
+    for v in latencies { pq.push(v) }
+
+    mut dq := collections.Deque[str]{}
+    dq.push_back("worker-1")
+    dq.push_front("leader-0")
+
+    mut seen := collections.Set[str]{}
+    seen.insert("us-east")
+    seen.insert("eu-west")
+
+    println("min={} idx_of_19={} max_pq={} front={} regions={}",
+        latencies[0], idx, pq.top(), dq.pop_front(), seen.len())
+}
+```
+```text
+# Output:
+min=7 idx_of_19=2 max_pq=88 front=leader-0 regions=2
+```
+
+---
+
+## Chapter 9: Filesystem, OS Subprocesses, Time, Math, CSPRNG, CLI & Logging
+
+### Architecture & Invariants
+`cfire`'s Tier 1B system modules provide cross-platform filesystem streaming (`core:fs`), zero-shell-injection subprocess execution (`core:os`), monotonic and RFC 3339 clocks (`core:time`), IEEE-754 math (`core:math`), OS-entropy CSPRNG (`core:rand`), compile-time struct-tag CLI flag parsing (`core:cli`), and structured JSON/Text logging (`core:log`).
+
+### Complete System, Clock, Math & CSPRNG Specification (`core:fs`, `core:os`, `core:time`, `core:rand`, `core:math`)
+| Module | Function / Method | Signature | Description |
+| :--- | :--- | :--- | :--- |
+| `core:fs` | `fs.read_text` / `write_text` / `append_text` | `fn(path: str) -> str!` / `fn(path: str, data: str) -> void!` | One-shot file read/write (automatically resolves iOS `Documents/` sandbox & bundle resources). |
+| `core:fs` | `fs.open(path, mode)` | `fn(path: str, mode: OpenMode) -> File!` | Opens a streaming `File` handle (`OpenMode::Read`, `Write`, `Append`, `ReadWrite`) supporting `.read_line()`, `.write_str()`, `.seek()`, `.tell()`, `.flush()`, `.close()`. |
+| `core:fs` | `fs.exists` / `is_dir` / `mkdir_all` / `remove` / `list_dir` | `fn(path: str) -> ...` | Path inspection, recursive directory creation, removal, and directory listing. |
+| `core:os` | `os.getenv` / `os.setenv` / `os.cwd` | `fn(key: str, fallback: str = "") -> str` | Reads or sets process environment variables and queries the working directory. |
+| `core:os` | `os.command(binary, args)` | `fn(bin: str, args: []str) -> ExecResult!` | Spawns `bin` directly via `posix_spawnp` (zero shell injection) and returns `ExecResult { exit_code, stdout, stderr }`. |
+| `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.format_rfc3339()`, and thread sleep. |
+| `core:rand` | `rand.u64` / `range_i64` / `f64_unit` / `bytes` | `fn(n: usize) -> []byte` | Thread-local `MT19937_64` draws and OS-entropy CSPRNG byte slices (`rand.bytes`). |
+| `core:math` | `math.sqrt` / `sin` / `cos` / `pow` / `clamp_f64` | `fn(f64) -> f64` | IEEE-754 transcendental functions and numeric clamping. |
+
+### Level 1 — Streaming File I/O, Environment Variables, Clocks & CSPRNG
+```cfire
+package main
+
+import "core:fs"
+import "core:math"
+import "core:os"
+import "core:rand"
+import "core:time"
+
+fn main() -> void! {
+    t0 := time.now_ms()
+    tmp := "/tmp/cfire_sys_demo.txt"
+    defer { _ = fs.remove(tmp) }
+
+    // 1. Streaming file write and read-back
+    mut f := try fs.open(tmp, fs.OpenMode::Write)
+    try f.write_str("host=" + os.getenv("USER", "ci") + "\n")
+    try f.close()
+
+    content := try fs.read_text(tmp)
+    token := rand.bytes(16)
+    elapsed := time.now_ms() - t0
+    println("has_host={} token_bytes={} hypot={:.1f} elapsed>={}",
+        content.contains("host="), token.len(), math.sqrt(9.0 + 16.0), elapsed >= 0)
+}
+```
+```text
+# Output:
+has_host=true token_bytes=16 hypot=5.0 elapsed>=true
+```
+
+### Level 2 — Declarative CLI Parsing & Structured Logging (`core:cli`, `core:log`)
+`core:cli` synthesizes command-line parsers and `--help` screens from struct field tags at compile time, while `core:log` emits leveled structured logs in either human-readable text or machine-parsable JSON:
+
+| Module | Function / Method | Signature | Description |
+| :--- | :--- | :--- | :--- |
+| `core:cli` | `cli.parse[T](args)` | `fn[T](args: []str? = nil) -> T!` | Parses `argc`/`argv` (or an explicit `[]str` slice) into struct `T` using `` `cli:"--flag,-f" env:"VAR" default:"..." desc:"..."` `` tags. |
+| `core:cli` | `cli.help[T](prog_name)` | `fn[T](prog_name: str = "") -> str` | Generates a formatted `--help` usage screen from struct `T`'s compile-time reflection tags. |
+| `core:log` | `log.set_level(lvl)` / `set_format(fmt)` | `fn(Level)` / `fn(Format)` | Configures minimum severity (`Level::Debug`, `Info`, `Warn`, `Error`) and output format (`Format::Text` or `Format::Json`). |
+| `core:log` | `log.debug` / `info` / `warn` / `error` | `fn(msg: str, ...kv_pairs)` | Emits a timestamped log record with variadic `"key", "value"` structured attributes. |
+
+```cfire
+package main
+
+import "core:cli"
+import "core:log"
+
+type ServerFlags struct {
+    Host:    str  `cli:"--host,-h" default:"127.0.0.1" desc:"Bind address"`
+    Port:    u16  `cli:"--port,-p" default:"9090"      desc:"Listen port"`
+    Workers: i32  `cli:"--workers" default:"4"         desc:"Worker thread count"`
+}
+
+fn main() -> void! {
+    flags := try cli.parse[ServerFlags](["--port", "8088", "--workers", "8"])
+    log.set_format(log.Format::Json)
+    log.info("server configured", "host", flags.Host, "port", f"{flags.Port}", "workers", f"{flags.Workers}")
+}
+```
+```text
+# Output:
+{"time":"2026-11-01T12:00:00Z","level":"INFO","msg":"server configured","host":"127.0.0.1","port":"8088","workers":"8"}
+```
+
+---
+
+## Chapter 10: Structured Concurrency, Channels & Contexts
 
 ### Architecture & Invariants: Lexical Task Lifetimes
 Unstructured concurrency (`std::thread::detach` or fire-and-forget goroutines) permits background threads to outlive the stack frame whose local variables they reference, causing use-after-free races. `cfire` enforces **Lexical Structured Concurrency**:
@@ -1365,7 +1471,7 @@ cancelled=true result= aborted:timeout
 
 ---
 
-## Chapter 9: Zero-Friction C & C++ Interop & CMake Orchestration
+## Chapter 11: Zero-Friction C & C++ Interop & CMake Orchestration
 
 ### Architecture & Invariants: Direct AST Ingestion vs Manual FFI
 Because `cfire` lowers to ISO C++23, calling C or C++ libraries requires **zero dynamic FFI marshaling, zero wrapper generators (SWIG/bindgen), and zero ABI thunks**:
@@ -1504,7 +1610,7 @@ fn main() {
 
 ---
 
-## Chapter 10: Integrated Testing, Sanitizers & Diagnostics
+## Chapter 12: Integrated Testing, Sanitizers & Diagnostics
 
 ### Architecture & Invariants
 `cfire` integrates unit testing, hardware memory sanitizers, and structured machine-readable diagnostics directly into the compiler binary:
@@ -1597,92 +1703,15 @@ cfire fix --dry-run src/main.cf
 cfire fix src/main.cf
 ```
 
-### Level 4 — Filesystem, OS Subprocesses, Time & CSPRNG (`core:fs`, `core:os`, `core:time`, `core:rand`, `core:math`)
-`cfire` provides cross-platform system modules for file I/O, environment variables, zero-shell-injection subprocess execution, monotonic/RFC 3339 clocks, and cryptographically secure random number generation:
-
-| Module | Function / Method | Signature | Description |
-| :--- | :--- | :--- | :--- |
-| `core:fs` | `fs.read_text` / `write_text` / `append_text` | `fn(path: str) -> str!` / `fn(path: str, data: str) -> void!` | One-shot file read/write (automatically resolves iOS `Documents/` sandbox & bundle resources). |
-| `core:fs` | `fs.open(path, mode)` | `fn(path: str, mode: OpenMode) -> File!` | Opens a streaming `File` handle (`OpenMode::Read`, `Write`, `Append`, `ReadWrite`) supporting `.read_line()`, `.write_str()`, `.seek()`, `.tell()`, `.flush()`, `.close()`. |
-| `core:fs` | `fs.exists` / `is_dir` / `mkdir_all` / `remove` / `list_dir` | `fn(path: str) -> ...` | Path inspection, recursive directory creation, removal, and directory listing. |
-| `core:os` | `os.getenv` / `os.setenv` / `os.cwd` | `fn(key: str, fallback: str = "") -> str` | Reads or sets process environment variables and queries the working directory. |
-| `core:os` | `os.command(binary, args)` | `fn(bin: str, args: []str) -> ExecResult!` | Spawns `bin` directly via `posix_spawnp` (zero shell injection) and returns `ExecResult { exit_code, stdout, stderr }`. |
-| `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.format_rfc3339()`, and thread sleep. |
-| `core:rand` | `rand.u64` / `range_i64` / `f64_unit` / `bytes` | `fn(n: usize) -> []byte` | Thread-local `MT19937_64` draws and OS-entropy CSPRNG byte slices (`rand.bytes`). |
-| `core:math` | `math.sqrt` / `sin` / `cos` / `pow` / `clamp_f64` | `fn(f64) -> f64` | IEEE-754 transcendental functions and numeric clamping. |
-
-```cfire
-package main
-
-import "core:fs"
-import "core:math"
-import "core:os"
-import "core:rand"
-import "core:time"
-
-fn main() -> void! {
-    t0 := time.now_ms()
-    tmp := "/tmp/cfire_sys_demo.txt"
-    defer { _ = fs.remove(tmp) }
-
-    // 1. Streaming file write and read-back
-    mut f := try fs.open(tmp, fs.OpenMode::Write)
-    try f.write_str("host=" + os.getenv("USER", "ci") + "\n")
-    try f.close()
-
-    content := try fs.read_text(tmp)
-    token := rand.bytes(16)
-    elapsed := time.now_ms() - t0
-    println("has_host={} token_bytes={} hypot={:.1f} elapsed>={}",
-        content.contains("host="), token.len(), math.sqrt(9.0 + 16.0), elapsed >= 0)
-}
-```
-```text
-# Output:
-has_host=true token_bytes=16 hypot=5.0 elapsed>=true
-```
-
-### Level 5 — Declarative CLI Parsing & Structured Logging (`core:cli`, `core:log`)
-`core:cli` synthesizes command-line parsers and `--help` screens from struct field tags at compile time, while `core:log` emits leveled structured logs in either human-readable text or machine-parsable JSON:
-
-| Module | Function / Method | Signature | Description |
-| :--- | :--- | :--- | :--- |
-| `core:cli` | `cli.parse[T](args)` | `fn[T](args: []str? = nil) -> T!` | Parses `argc`/`argv` (or an explicit `[]str` slice) into struct `T` using `` `cli:"--flag,-f" env:"VAR" default:"..." desc:"..."` `` tags. |
-| `core:log` | `log.set_level(lvl)` / `set_format(fmt)` | `fn(Level)` / `fn(Format)` | Configures minimum severity (`Level::Debug`, `Info`, `Warn`, `Error`) and output format (`Format::Text` or `Format::Json`). |
-| `core:log` | `log.debug` / `info` / `warn` / `error` | `fn(msg: str, ...kv_pairs)` | Emits a timestamped log record with variadic `"key", "value"` structured attributes. |
-
-```cfire
-package main
-
-import "core:cli"
-import "core:log"
-
-type ServerFlags struct {
-    Host:    str  `cli:"--host,-h" default:"127.0.0.1" desc:"Bind address"`
-    Port:    u16  `cli:"--port,-p" default:"9090"      desc:"Listen port"`
-    Workers: i32  `cli:"--workers" default:"4"         desc:"Worker thread count"`
-}
-
-fn main() -> void! {
-    flags := try cli.parse[ServerFlags](["--port", "8088", "--workers", "8"])
-    log.set_format(log.Format::Json)
-    log.info("server configured", "host", flags.Host, "port", f"{flags.Port}", "workers", f"{flags.Workers}")
-}
-```
-```text
-# Output:
-{"time":"2026-11-01T12:00:00Z","level":"INFO","msg":"server configured","host":"127.0.0.1","port":"8088","workers":"8"}
-```
-
 ---
 
 # Part IV: Batteries-Included AI, Data, Networking & Multi-Target
 
-## Chapter 11: Web Services, HTTP/SSE, WebSockets & TLS Networking
+## Chapter 13: Web Services, HTTP/SSE, WebSockets & TLS Networking
 
 The `core:net` family provides a unified networking stack spanning raw TCP sockets, RFC 3986 URL parsing, OpenSSL TLS 1.3 transport, full HTTP/1.1 client/server routing with Server-Sent Events (SSE), and RFC 6455 WebSockets. Every layer automatically negotiates its transport backend across Desktop (macOS/Linux), iOS (`Foundation` `NSURLSession`), WebAssembly (`emscripten_fetch`), and restricted container/sandbox environments where kernel socket binding is disabled.
 
-### 11.1 Networking Stack & Cross-Platform Transport Matrix
+### Networking Stack & Cross-Platform Transport Matrix
 
 | Module | Primary Types | Desktop (macOS / Linux) | iOS (`--ios`) | Web (`--web`) | Restricted Sandbox Fallback |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -1692,7 +1721,7 @@ The `core:net` family provides a unified networking stack spanning raw TCP socke
 | `core:net/http` | `Client`, `Server`, `Router`, `Request`, `Response`, `SseEvent` | Native `core:net` + `core:net/tls` (with `curl` fallback for external HTTPS if OpenSSL is absent) | Native `NSURLSession` synchronous bridge for external HTTPS; native `core:net` for local loopback | Browser `emscripten_fetch` synchronous XHR bridge | In-process router registry for `127.0.0.1` / `localhost` servers |
 | `core:net/websocket` | `WebSocket`, `WsPair`, `WsServer`, `Frame` | RFC 6455 frame engine over `TcpStream` / `TlsStream` | RFC 6455 frame engine | RFC 6455 frame engine | In-memory `websocket.pair()` full-duplex channel |
 
-### 11.2 Raw TCP Sockets (`core:net`) & URL Parsing (`core:net/url`)
+### Raw TCP Sockets (`core:net`) & URL Parsing (`core:net/url`)
 
 | Signature | Return Type | Semantics |
 | :--- | :--- | :--- |
@@ -1706,7 +1735,7 @@ The `core:net` family provides a unified networking stack spanning raw TCP socke
 | `url.parse(raw: str)` | `Url!` | Parses `scheme://host:port/path?query#fragment` into `Url { scheme, host, port, path, query, fragment }`. |
 | `url.encode(raw: str)` / `url.decode(raw: str)` | `str` / `str!` | Applies or decodes RFC 3986 percent-encoding (`%XX` and `+` space decoding). |
 
-### 11.3 HTTP Client, Server-Sent Events (SSE) & Router (`core:net/http`)
+### HTTP Client, Server-Sent Events (SSE) & Router (`core:net/http`)
 
 #### HTTP Client Specification
 
@@ -1734,7 +1763,7 @@ The `core:net` family provides a unified networking stack spanning raw TCP socke
 | `server.serve_in_background` | `fn(router: Router) -> void` | Spawns the background accept loop dispatching incoming connections through `router`. |
 | `server.stop` | `fn() -> void` | Signals the accept loop to terminate and joins worker threads. |
 
-#### Level 1 — In-Memory Route Dispatch & Live Loopback HTTP/SSE
+### Level 1 — In-Memory Route Dispatch & Live Loopback HTTP/SSE
 
 ```cfire
 import "core:net/http"
@@ -1785,7 +1814,7 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `router.use(...)` attaches a pre-dispatch middleware closure. Returning `0` allows execution to proceed to the matched route handler; returning an HTTP status code (`403`) halts dispatch immediately.
 2. `router.get("/users/:id", ...)` extracts `:id` via `req.param("id")` and query string parameters (`?format=...`) via `req.query("format")`.
@@ -1793,7 +1822,7 @@ fn main() -> void! {
 4. `http.make_server(0)` binds to `127.0.0.1` on an OS-assigned ephemeral port (`server.port()`). `defer server.stop()` guarantees clean socket teardown on scope exit.
 5. `http.post_sse(...)` parses `event:` and `data:` lines from a `text/event-stream` response, invoking the callback for each completed SSE frame until the callback returns `false`.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 In-memory status=200, body={"id":"42","format":"full"}
@@ -1801,7 +1830,7 @@ Live GET status=200, body={"id":"99","format":"compact"}
 SSE events (2): token:{"chunk":"hello"}
 ```
 
-### 11.4 TLS 1.3 (`core:net/tls`) & RFC 6455 WebSockets (`core:net/websocket`)
+### TLS 1.3 (`core:net/tls`) & RFC 6455 WebSockets (`core:net/websocket`)
 
 #### WebSocket & TLS Specification
 
@@ -1816,7 +1845,7 @@ SSE events (2): token:{"chunk":"hello"}
 | `ws.send_binary(bytes)` / `ws.recv_binary()` | `fn([]byte) -> void!` / `fn() -> []byte!` | Sends or receives a binary WebSocket frame (opcode `0x2`). |
 | `ws.ping(payload)` / `ws.close()` | `fn(str) -> void!` / `fn() -> void!` | Sends a control Ping frame (`0x9` — `recv_text()` automatically replies with Pong `0xA`) or initiates the Close handshake (`0x8`). |
 
-#### Level 2 — Self-Signed TLS 1.3 HTTPS & WebSocket Upgrade on a Shared Router
+### Level 2 — Self-Signed TLS 1.3 HTTPS & WebSocket Upgrade on a Shared Router
 
 ```cfire
 import "core:net/http"
@@ -1860,14 +1889,14 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `router.ws("/ws/echo", ...)` registers a WebSocket endpoint on the standard HTTP router. When a client sends `Upgrade: websocket`, the server validates `Sec-WebSocket-Key`, replies with `HTTP/1.1 101 Switching Protocols`, and transfers the underlying stream to the handler's `mut ws: websocket.WebSocket`.
 2. `websocket.connect("ws://...")` performs the client handshake, masks outbound frames with a random 32-bit key, and unmasks inbound server frames.
 3. `tls.generate_self_signed_pem("localhost")` synthesizes an X.509 certificate and private key in memory without touching disk or shelling out to the `openssl` CLI.
 4. `http.make_tls_server_pem(...)` wraps the accept loop in a TLS 1.3 context, and `http.get_insecure(...)` verifies the encrypted round-trip against the self-signed certificate.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 WS reply: echo:cfire-frame
@@ -1876,13 +1905,13 @@ HTTPS status=200, body=TLS-1.3-OK
 
 ---
 
-## Chapter 12: Serialization, SQLite WAL, Vector Search & Zstandard Compression
+## Chapter 14: Serialization, SQLite WAL, Vector Search & Zstandard Compression
 
 `cfire` ships zero-boilerplate compile-time JSON serialization (`core:json`), an embedded SQLite 3 engine with hardware-accelerated SIMD vector similarity functions (`core:db/sqlite`), RFC 8878 Zstandard compression (`core:compress/zstd`), and NIST/RFC cryptographic primitives (`core:crypto/*`, `core:encoding/*`).
 
-### 12.1 Compile-Time Reflection JSON & Schema Generation (`core:json`)
+### Compile-Time Reflection JSON & Schema Generation (`core:json`)
 
-`core:json` uses the compiler's `cfire::reflect<T>` metadata tables (Chapter 6.2) to parse and serialize native `cfire` structs, slices, maps, and `Option` fields without runtime type reflection overhead, plus provides a dynamic DOM (`json.Value`) for unstructured payloads.
+`core:json` uses the compiler's `cfire::reflect<T>` metadata tables (Chapter 6) to parse and serialize native `cfire` structs, slices, maps, and `Option` fields without runtime type reflection overhead, plus provides a dynamic DOM (`json.Value`) for unstructured payloads.
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
@@ -1892,7 +1921,7 @@ HTTPS status=200, body=TLS-1.3-OK
 | `json.parse_dynamic` | `fn(raw: str) -> json.Value!` | Parses arbitrary untyped JSON into a navigable `json.Value` DOM tree. |
 | `json.stringify_dynamic` | `fn(val: json.Value, pretty: bool = false) -> str` | Serializes a `json.Value` DOM node back to a JSON string. |
 
-#### Level 1 — Typed Struct Serialization, JSON Schema & Dynamic DOM Navigation
+### Level 1 — Typed Struct Serialization, JSON Schema & Dynamic DOM Navigation
 
 ```cfire
 import "core:json"
@@ -1921,14 +1950,14 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `json.parse[Metric](raw)` maps JSON keys to struct fields using the compile-time `` `json:"..."` `` tags. A JSON `null` (or omitted key) targeting an `Option[T]` field deserializes cleanly to `None`.
 2. `json.stringify(m)` emits compact JSON without intermediate DOM allocation.
-3. `json.schema[Metric]()` inspects `cfire::reflect<Metric>` at compile time to emit the JSON Schema Draft 2020-12 specification used by `ai.generate_struct[T]` (Chapter 15).
+3. `json.schema[Metric]()` inspects `cfire::reflect<Metric>` at compile time to emit the JSON Schema Draft 2020-12 specification used by `ai.generate_struct[T]` (Chapter 17).
 4. `json.parse_dynamic(raw)` constructs a `json.Value` tree supporting `.get(key)`, `.at(index)`, `.as_str()`, `.as_f64()`, `.as_i64()`, and `.as_bool()`.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 Parsed: cpu.load = 92.5 (tags=2, has_note=false)
@@ -1937,7 +1966,7 @@ Schema has properties: true
 Dynamic lookup: name=cpu.load, tag[0]=prod
 ```
 
-### 12.2 Embedded SQLite 3, WAL Mode & SIMD Vector Search (`core:db/sqlite`)
+### Embedded SQLite 3, WAL Mode & SIMD Vector Search (`core:db/sqlite`)
 
 `core:db/sqlite` embeds SQLite 3 with Write-Ahead Logging (`PRAGMA journal_mode=WAL;`), positional parameter binding (`?1`, `?2`, ...), compile-time row-to-struct mapping (`db.query[T]`), RAII transaction scopes (`db.tx`), and custom SQL scalar functions for hardware-accelerated vector similarity search (`vec_cosine_similarity` and `vec_l2_distance`).
 
@@ -1954,7 +1983,7 @@ Dynamic lookup: name=cpu.load, tag[0]=prod
 | `db.last_insert_rowid()` | `fn() -> i64` | Returns the `ROWID` of the most recent successful `INSERT` on the connection. |
 | `sqlite.vec_to_blob(vec)` / `sqlite.blob_to_vec(b)` | `fn([]f32) -> []byte` / `fn([]byte) -> []f32` | Packs or unpacks an `[]f32` embedding slice into a contiguous little-endian IEEE-754 `BLOB` (note: `db.exec` and `db.query` also bind `[]f32` slices directly). |
 
-#### Level 2 — Atomic Transactions & Hardware SIMD Vector Search in SQL
+### Level 2 — Atomic Transactions & Hardware SIMD Vector Search in SQL
 
 ```cfire
 import "core:db/sqlite"
@@ -1991,20 +2020,20 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `sqlite.open(":memory:")` initializes an in-memory SQLite instance and registers `vec_cosine_similarity(blob_a, blob_b)` and `vec_l2_distance(blob_a, blob_b)` using ARM NEON (`float32x4_t`) on Apple Silicon/iOS and AVX2/SSE on x86_64.
 2. `db.tx(|| -> void! { ... })` executes all three `INSERT` statements inside a single atomic transaction. Passing `[]f32{...}` to `?2` automatically binds the slice as a raw `sizeof(float) * N` SQLite `BLOB`.
 3. `db.query[DocHit](...)` binds `query_vec` to `?1`, computes cosine similarity in C++ across every row, sorts in descending order, and maps columns `id`, `title`, and `score` directly into `DocHit` structs via the `` `db:"..."` `` tags.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 #1 Kernel Scheduler (cosine=0.9986)
 #3 SQLite WAL Engine (cosine=0.9848)
 ```
 
-### 12.3 Zstandard Compression (`core:compress/zstd`), Cryptography (`core:crypto/*`) & Encodings (`core:encoding/*`)
+### Zstandard Compression (`core:compress/zstd`), Cryptography (`core:crypto/*`) & Encodings (`core:encoding/*`)
 
 | Module | Function | Signature | Description |
 | :--- | :--- | :--- | :--- |
@@ -2018,7 +2047,7 @@ fn main() -> void! {
 | `core:encoding/hex` | `hex.encode_str` / `decode_str` | `fn(str) -> str` / `fn(str) -> str!` | Lowercase hexadecimal encoding and decoding. |
 | `core:encoding/csv` | `csv.parse` / `csv.parse_Stream[T]` / `csv.stringify` | `fn(raw: str) -> [][]str!` / `[]T!` | RFC 4180 CSV parser (supporting quoted fields and escaped quotes) and struct slice mapper. |
 
-#### Level 3 — Zstandard Frame Compression & AES-256-GCM Authenticated Encryption
+### Level 3 — Zstandard Frame Compression & AES-256-GCM Authenticated Encryption
 
 ```cfire
 import "core:compress/zstd"
@@ -2051,14 +2080,14 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `zstd.compress_str(payload, 3)` compresses the log line into an RFC 8878 frame, and `zstd.decompress_str(compressed)` verifies the magic number and checksum before returning the original `str`.
 2. `aes.encrypt_gcm(key, nonce, compressed, aad)` encrypts the compressed frame using a 256-bit key (`32` bytes), a 96-bit nonce (`12` bytes), and Additional Authenticated Data (`aad`), appending the 128-bit (`16`-byte) authentication tag to `ciphertext`.
 3. Modifying a single byte of `ciphertext` or `aad` causes `aes.decrypt_gcm` to return an `Err("aes.decrypt_gcm: authentication tag mismatch")` before any plaintext is released.
 4. `hmac.verify` compares the expected and computed HMAC digests in constant time via bitwise XOR accumulation.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 Zstd round-trip match: true (frame=77 bytes)
@@ -2067,11 +2096,11 @@ AES-GCM + Zstd verified: true, HMAC valid: true
 
 ---
 
-## Chapter 13: 2D/3D Graphics & Native GUI Applications
+## Chapter 15: 2D/3D Graphics & Native GUI Applications
 
 `cfire` integrates `vendor:raylib` (Raylib 5.0 2D/3D graphics, input, and `<raymath.h>`) and `vendor:raygui` (immediate-mode UI controls) with zero external build configuration. A single `.cf` source file compiles to native macOS Metal/OpenGL `.app` bundles, Linux X11/Wayland executables, HTML5 WebGL2/Canvas WebAssembly pages (`--web`), and native iOS `UIKit`/`OpenGLES` applications (`--ios`).
 
-### 13.1 Cross-Platform Graphics, Typography & Window Pipeline
+### Cross-Platform Graphics, Typography & Window Pipeline
 
 | Subsystem | macOS (`darwin`) | Linux (`linux`) | iOS (`--ios`) | WebAssembly (`--web`) |
 | :--- | :--- | :--- | :--- | :--- |
@@ -2080,7 +2109,7 @@ AES-GCM + Zstd verified: true, HMAC valid: true
 | **Safe Area & Keyboard** | Full window viewport + hardware keyboard | Full window viewport + hardware keyboard | `GetSafeAreaRect()` insets past Dynamic Island & Home Indicator; `RequestKeyboard()` invokes `<UIKeyInput>` | Full canvas viewport + DOM keyboard events |
 | **Haptic Feedback** | No-op on desktop | No-op on desktop | `TriggerHaptic(style)` invokes `UIImpactFeedbackGenerator` (Taptic Engine) | `TriggerHaptic(style)` invokes `navigator.vibrate([12..35])` |
 
-### 13.2 `vendor:raylib` & `vendor:raygui` Core Specification
+### `vendor:raylib` & `vendor:raygui` Core Specification
 
 | Module | Function | Signature | Description |
 | :--- | :--- | :--- | :--- |
@@ -2099,7 +2128,7 @@ AES-GCM + Zstd verified: true, HMAC valid: true
 | `vendor:raygui` | `GuiComboBox` | `fn(bounds: rl.Rectangle, text: str, active: &mut i32) -> i32` | Renders a semicolon-delimited (`"Low;Medium;High"`) dropdown selector updating `active`. |
 | `vendor:raygui` | `GuiTextBox` | `fn(bounds: rl.Rectangle, text: &mut str, textSize: i32, editMode: bool) -> i32` | Renders an interactive text input field backed directly by a mutable `cfire` `str`. |
 
-#### Level 1 — 2D Camera, Immediate-Mode `vendor:raygui` Controls & Safe `mut str` Text Editing
+### Level 1 — 2D Camera, Immediate-Mode `vendor:raygui` Controls & Safe `mut str` Text Editing
 
 ```cfire
 import "vendor:raylib" as rl
@@ -2139,13 +2168,13 @@ fn main() {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `rl.InitWindow(800, 480, ...)` creates a high-DPI window and binds `CoreText` (macOS) or Fontconfig TrueType (Linux) so `rl.DrawText` and `rg.Gui*` controls render at native Retina resolution.
 2. `rg.GuiTextBox(..., &mut hostname, 64, editing)` passes a mutable reference to a native `cfire` `str` (`std::string`), syncing edits back into `hostname` without manual `char[]` scratch buffers.
 3. `f"{gain_db:.1f} dB"` formats a string inline and lowers automatically to `const char*` via `cfire::c_arg(...)`.
 
-### 13.3 Mobile Safe-Area Layout & Multi-Target Packaging (`macos`, `linux`, `wasm`, `ios`)
+### Mobile Safe-Area Layout & Multi-Target Packaging (`macos`, `linux`, `wasm`, `ios`)
 
 When targeting mobile (`--ios`) or responsive web (`--web`), combine `rl.GetSafeAreaRect()`, `rl.BeginScissorMode(...)`, `rl.RequestKeyboard()`, and `rl.TriggerHaptic(...)` (or the zero-coordinate layout kit in [`examples/13-ios-native-ui/ui/kit.cf`](file:///Users/memo/Programming/cfire/examples/13-ios-native-ui/ui/kit.cf) using `GuiIos*` patterns) to adapt to any viewport:
 
@@ -2163,11 +2192,11 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 
 ---
 
-## Chapter 14: Multi-Target Audio, Polyphonic Synthesis & Real-Time DSP (`core:audio`)
+## Chapter 16: Multi-Target Audio, Polyphonic Synthesis & Real-Time DSP (`core:audio`)
 
 `core:audio` provides a zero-dependency, 64-voice lock-free stereo `f32` audio engine, procedural waveform/SFX generators, ADSR envelope shaping, real-time push ring buffers (`Stream`), master RMS/peak metering, and a pure-C++23 RIFF/WAV encoder/decoder.
 
-### 14.1 Audio Subsystem Architecture & Backend Matrix
+### Audio Subsystem Architecture & Backend Matrix
 
 | Target Platform | Hardware Backend | Mixer Architecture | Headless / CI Fallback |
 | :--- | :--- | :--- | :--- |
@@ -2175,7 +2204,7 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 | **Linux (`__linux__`)** | Runtime `dlopen("libasound.so.2")` (ALSA PCM non-blocking thread) | Identical 64-voice lock-free `f32` stereo mixer | Automatic fallback if `libasound.so.2` or `/dev/snd` is unavailable |
 | **WebAssembly (`__EMSCRIPTEN__`)** | Browser `AudioContext` + `ScriptProcessorNode` (auto-resumed on pointer/key gesture) | Identical 64-voice `f32` stereo mixer | Software buffer advancement in headless Node/WASM |
 
-### 14.2 Complete `core:audio` Specification
+### Complete `core:audio` Specification
 
 | Category | Function / Method | Signature | Description |
 | :--- | :--- | :--- | :--- |
@@ -2193,7 +2222,7 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 | **Real-Time `Stream`** | `audio.open_stream` | `fn(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!` | Allocates a lock-free SPSC ring buffer stream mixed into the master output. |
 | **Real-Time `Stream`** | `stream.needs_data` / `push_samples` | `fn(target_frames: i32 = 2048) -> bool` / `fn(samples: []f32)` | Checks if queued frames dropped below `target_frames` and pushes interleaved stereo `f32` samples. |
 
-#### Level 1 — Procedural SFX, Polyphonic Pitch/Pan Control, Real-Time DSP Stream & WAV Round-Trip
+### Level 1 — Procedural SFX, Polyphonic Pitch/Pan Control, Real-Time DSP Stream & WAV Round-Trip
 
 ```cfire
 import "core:audio"
@@ -2231,14 +2260,14 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `audio.init(48000, 2)` starts the 48 kHz stereo mixer. In headless test environments without audio hardware, `core:audio` initializes the software mixer transparently so `rms_level()`, `peak_level()`, and stream buffers remain testable.
 2. `coin_sfx.set_pitch(1.15)` and `coin_sfx.set_pan(-0.25)` configure linear-interpolated resampling and constant-power stereo panning before `coin_sfx.play()` triggers a voice in the 64-voice pool.
 3. `stream.needs_data(2048)` queries the lock-free ring buffer fill level, and `stream.push_samples(chirp.samples)` enqueues interleaved `f32` frames without blocking the audio callback thread.
 4. `audio.save_wav` and `audio.load_wav` serialize and parse standard 44-byte RIFF/WAV headers and 16-bit little-endian PCM frames.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
@@ -2246,11 +2275,11 @@ WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 
 ---
 
-## Chapter 15: AI-First LLMs, Multimodal Documents, Local Vectors, RAG & MCP (`core:ai`)
+## Chapter 17: AI-First LLMs, Multimodal Documents, Local Vectors, RAG & MCP (`core:ai`)
 
 `core:ai` provides a unified, zero-dependency SDK for cloud and local LLM inference, compile-time JSON Schema structured extraction (`generate_struct[T]`), multimodal image/audio/document attachments, offline document and slide deck ingestion (`load_document`, `chunk_document`), on-device OCR (`ocr`), local text and visual embeddings (`embed`, `embed_image`), language identification (`detect_language`), and a JSON-RPC 2.0 Model Context Protocol server (`McpServer`).
 
-### 15.1 Provider Client Matrix & Environment Configuration
+### Provider Client Matrix & Environment Configuration
 
 | Constructor | Default Base URL | Default Auth Environment Variable | Wire Protocol & Capabilities |
 | :--- | :--- | :--- | :--- |
@@ -2261,7 +2290,7 @@ WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 | `ai.openai_compatible(base_url, api_key = "")` | User-specified URL | Optional `api_key` | Any OpenAI-compatible server (`vLLM`, `llama-server`, `LM Studio`, `Groq`, `Together`, `DeepSeek`) |
 | `ai.apple()` | On-device (`NaturalLanguage` / `Vision`) | None (100% offline) | Apple `NLEmbedding`, `NLLanguageRecognizer`, `VNRecognizeTextRequest`, plus deterministic local synthesis |
 
-### 15.2 Complete `core:ai` API Specification
+### Complete `core:ai` API Specification
 
 | Category | Function / Method | Signature | Description |
 | :--- | :--- | :--- | :--- |
@@ -2281,7 +2310,7 @@ WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 | **Vector Math & MCP** | `ai.cosine_similarity` / `l2_distance` / `dot_product` / `normalize` | `fn([]f32, []f32) -> f32` / `fn([]f32) -> []f32` | Hardware SIMD-accelerated (`ARM NEON`, `AVX2`, `WASM SIMD128`) vector operations. |
 | **Vector Math & MCP** | `ai.make_mcp_server` / `register_tool[T]` / `handle_jsonrpc` / `serve_stdio` | `McpServer` methods | Exposes `cfire` functions as schema-validated Model Context Protocol tools over JSON-RPC 2.0. |
 
-### 15.3 Cross-Platform On-Device & Cloud Parity Matrix
+### Cross-Platform On-Device & Cloud Parity Matrix
 
 | Capability | macOS & iOS (`__APPLE__`) | Linux (`__linux__`) | WebAssembly (`__EMSCRIPTEN__`) |
 | :--- | :--- | :--- | :--- |
@@ -2292,7 +2321,7 @@ WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 | **Language Detection (`ai.detect_language`)** | Apple `NLLanguageRecognizer` + Unicode script & stopword profile fallback | Unicode script block scanner (CJK, Hiragana/Katakana, Hangul, Cyrillic, Arabic, Devanagari) + Latin stopword/diacritic scorer | Unicode script block scanner + Latin stopword/diacritic scorer |
 | **Cloud AI HTTPS Transport** | `libssl` (macOS) / `Foundation` `NSURLSession` native HTTPS (iOS & fallback) | `libssl` (`OpenSSL`) + `curl` fallback | Browser `emscripten_fetch` XHR with custom auth & Anthropic browser CORS headers |
 
-#### Level 1 — Multi-Turn Streaming, Tool Calling & Compile-Time `generate_struct[T]`
+### Level 1 — Multi-Turn Streaming, Tool Calling & Compile-Time `generate_struct[T]`
 
 ```cfire
 import "core:ai" as ai
@@ -2325,13 +2354,13 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `ai.tool_def[WeatherLookup](...)` inspects `WeatherLookup`'s `json` and `desc` field tags at compile time to build the exact JSON Schema required by OpenAI `tools`, Anthropic `input_schema`, and Gemini `functionDeclarations`.
 2. `client.generate_struct[IncidentTicket](...)` attaches `json.schema[IncidentTicket]()` to the request and parses the returned JSON payload directly into an `IncidentTicket` struct.
 3. `ai.detect_language(...)` returns the BCP-47 language code (`"fr"`, `"ja"`) on macOS, Linux, iOS, and WebAssembly alike.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 Tool 'get_weather' schema has city: true
@@ -2339,7 +2368,7 @@ Structured ticket: service=auth-gateway, severity=2
 Lang(FR)=fr, Lang(JA)=ja
 ```
 
-#### Level 2 — Zero-Dependency Document Ingestion, Visual Embeddings & SQLite Vector RAG
+### Level 2 — Zero-Dependency Document Ingestion, Visual Embeddings & SQLite Vector RAG
 
 ```cfire
 import "core:ai" as ai
@@ -2377,19 +2406,19 @@ fn main() -> void! {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `ai.parse_document(...)` (and `ai.load_document(path)` for `.pdf`, `.pptx`, `.docx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`) parses the file into a `Document` with 1-based `sections` (`DocumentSection { index, kind, title, text }`).
 2. `ai.chunk_document(doc, 256, 32)` splits long sections into 256-character windows with 32-character overlap while preserving each chunk's `index` and `title` provenance.
 3. `ai.embed("local", ...)` generates a 384-dimensional L2-normalized `[]f32` embedding vector that binds directly to SQLite's `?4` `BLOB` parameter and is ranked via `vec_cosine_similarity(vec, ?1)`.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 Top RAG hit: section #1 'Storage Engine' (score > 0.2: true)
 ```
 
-#### Level 3 — Authoring Native Model Context Protocol (`McpServer`) Servers
+### Level 3 — Authoring Native Model Context Protocol (`McpServer`) Servers
 
 ```cfire
 import "core:ai" as ai
@@ -2413,13 +2442,13 @@ fn main() {
 }
 ```
 
-##### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `ai.make_mcp_server("cfire-kb-server", "1.0.0")` initializes a JSON-RPC 2.0 server implementing the Model Context Protocol (`initialize`, `tools/list`, `tools/call`, and `ping`).
 2. `mcp.register_tool[SearchArgs](...)` derives the tool's JSON Schema from `SearchArgs` at compile time and automatically deserializes incoming `params.arguments` JSON into `args: SearchArgs` before invoking the handler closure.
 3. Calling `mcp.serve_stdio()` runs the blocking `stdin`/`stdout` JSON-RPC loop ready for registration in Claude Desktop, Cursor, or any MCP host.
 
-##### Expected Output
+#### Expected Output
 
 ```text
 MCP JSON-RPC response contains SIMD: true
@@ -2427,11 +2456,11 @@ MCP JSON-RPC response contains SIMD: true
 
 ---
 
-## Chapter 16: Full-Stack Production Patterns & Canonical Projects Index
+## Chapter 18: Full-Stack Production Patterns & Canonical Projects Index
 
 This chapter demonstrates how `cfire`'s standard library modules compose into a single, zero-dependency binary and provides a complete engineering guide to the 16 canonical projects in [`examples/`](file:///Users/memo/Programming/cfire/examples).
 
-### 16.1 End-to-End Reference Blueprint: Concurrent RAG + HTTP/JSON Microservice
+### End-to-End Reference Blueprint: Concurrent RAG + HTTP/JSON Microservice
 
 The following self-contained service combines `core:db/sqlite` (WAL mode + SIMD vector search), `core:ai` (document chunking + local embeddings), `core:json` (compile-time struct serialization), and `core:net/http` (pattern-matched HTTP router) into a single executable:
 
@@ -2491,7 +2520,7 @@ fn main() -> void! {
 }
 ```
 
-#### Code Walkthrough
+**Line-by-Line Mechanics:**
 
 1. `SearchResult` uses dual reflection tags (`` `db:"title" json:"title"` ``) so the exact same struct maps out of SQLite (`db.query[SearchResult]`) and serializes directly to the HTTP response body (`json.stringify(hits)`).
 2. Inside the `router.post("/v1/search", ...)` closure, `or return http.Response.json(...)` converts any JSON parse, embedding, or SQLite error into a structured HTTP status response without throwing exceptions.
@@ -2503,7 +2532,7 @@ fn main() -> void! {
 HTTP 200 -> top hit: 'Lock-Free Audio'
 ```
 
-### 16.2 Canonical Projects Reference Guide (`examples/01` – `examples/16`)
+### Canonical Projects Reference Guide (`examples/01` – `examples/16`)
 
 Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is continuously verified by `make -C cfire test-examples` and can be run directly from the repository root:
 
@@ -2526,7 +2555,7 @@ Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is
 | [`examples/15-mcp-server`](file:///Users/memo/Programming/cfire/examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`ai.make_mcp_server`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
 | [`examples/16-audio-synth`](file:///Users/memo/Programming/cfire/examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`core:audio`) | `cfire run examples/16-audio-synth/main.cf` |
 
-### 16.3 Further Reference & Module Index
+### Further Reference & Module Index
 
 - **Standard Library API Reference**: Browse [`reference.html`](file:///Users/memo/Programming/cfire/docs/reference.html) (or [`STDLIB_REFERENCE.md`](file:///Users/memo/Programming/cfire/docs/STDLIB_REFERENCE.md)) for every function signature, C++23 lowering expression, and diagnostic code in the compiler catalog.
 - **LLM Context Snapshot**: Feed [`LLMS.txt`](file:///Users/memo/Programming/cfire/docs/LLMS.txt) or start `cfire mcp` to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.

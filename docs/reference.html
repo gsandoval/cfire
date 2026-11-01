@@ -1045,29 +1045,76 @@ details.lowering-drawer > .lowering-body {
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
-main {
+main, .guide-content-inner {
     min-width: 0;
     max-width: 100%;
     width: 100%;
     overflow-wrap: break-word;
     word-break: break-word;
 }
-main h1 {
-    font-size: clamp(1.85rem, 4vw, 2.5rem); font-weight: 800;
+main h1, .guide-content-inner h1 {
+    font-size: clamp(1.75rem, 3.5vw, 2.25rem); font-weight: 800;
     color: var(--text-bright); letter-spacing: -0.03em; margin-bottom: 0.75rem;
 }
-main h2 {
-    font-size: 1.5rem; font-weight: 800; color: var(--text-bright);
-    letter-spacing: -0.02em; margin: 2.5rem 0 0.85rem; padding-bottom: 0.4rem;
+main h2, .chapter-intro > h2, .ref-pane > h2 {
+    font-size: 1.45rem; font-weight: 800; color: var(--text-bright);
+    letter-spacing: -0.02em; margin: 1.5rem 0 0.85rem; padding-bottom: 0.45rem;
     border-bottom: 1px solid var(--border);
 }
-main h3 {
+main h3, .guide-content-inner h3:not(.guide-heading) {
     font-size: 1.2rem; font-weight: 700; color: var(--text-bright);
     margin: 1.75rem 0 0.5rem;
 }
-main p { color: var(--text); font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
-main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: var(--text); font-size: 0.98rem; line-height: 1.7; }
-main li { margin-bottom: 0.4rem; }
+main h4, .guide-content-inner h4 {
+    font-size: 1.02rem; font-weight: 700; color: var(--text-bright);
+    margin: 1.35rem 0 0.55rem; line-height: 1.45;
+}
+.guide-subhead5 {
+    font-size: 0.98rem; font-weight: 700; color: var(--accent-sapphire);
+    margin: 1.2rem 0 0.5rem; line-height: 1.45;
+}
+main p, .guide-content-inner p:not(.subtitle):not(.ref-mod-card-desc) {
+    color: var(--text); font-size: 0.96rem; line-height: 1.7; margin-bottom: 1rem;
+}
+main ul, main ol,
+.guide-content-inner ul:not(.toc-list):not(.rail-action-list):not(.sidebar-chapter-list):not(.subhead-list):not(.sidebar-module-list):not(.sidebar-diag-list),
+.guide-content-inner ol {
+    margin: 0.25rem 0 1.25rem 0;
+    padding-left: 1.65rem;
+    color: var(--text);
+    font-size: 0.96rem;
+    line-height: 1.7;
+    list-style-position: outside;
+}
+main li,
+.guide-content-inner ul:not(.toc-list):not(.rail-action-list):not(.sidebar-chapter-list):not(.subhead-list):not(.sidebar-module-list):not(.sidebar-diag-list) > li,
+.guide-content-inner ol > li {
+    margin-bottom: 0.45rem;
+    padding-left: 0.2rem;
+    font-size: 0.96rem;
+    line-height: 1.7;
+}
+main li::marker,
+.guide-content-inner ul:not(.toc-list):not(.rail-action-list) > li::marker,
+.guide-content-inner ol > li::marker {
+    color: var(--muted);
+    font-size: 0.95em;
+    font-weight: 600;
+}
+main li > ul, main li > ol,
+.guide-content-inner li > ul, .guide-content-inner li > ol {
+    margin: 0.4rem 0 0.5rem 0 !important;
+    padding-left: 1.5rem !important;
+    font-size: 0.95rem;
+}
+main li > .code-header,
+.guide-content-inner li > .code-header {
+    margin-top: 0.55rem;
+}
+main li > pre,
+.guide-content-inner li > pre {
+    margin-bottom: 0.65rem;
+}
 
 /* Part banner & Callouts */
 .part-banner {
@@ -1562,9 +1609,9 @@ tr:hover td { background: #1F242C; }
           <div id="ref-search-results" class="search-results-dropdown"></div>
         </div>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0; margin-bottom: 0.75rem;">
-          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 21 Modules)</strong></a></li>
+          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 33 Modules)</strong></a></li>
         </ul>
-        <h4>`core:*` Modules (21)</h4>
+        <h4>`core:*` &amp; `vendor:*` Modules (33)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#mod-ai" id="nav-pane-mod-ai" onclick="navigateToRefPane('mod-ai'); return false;"><code>core:ai</code> <span style="color:var(--muted);font-size:0.75rem;">(38)</span></a></li>
           <li class="nav-item"><a href="#mod-audio" id="nav-pane-mod-audio" onclick="navigateToRefPane('mod-audio'); return false;"><code>core:audio</code> <span style="color:var(--muted);font-size:0.75rem;">(25)</span></a></li>
@@ -1614,7 +1661,7 @@ tr:hover td { background: #1F242C; }
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
           <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (16 Chapters) &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (18 Chapters) &rarr;</a></li>
             <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
             <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
           </ul>
@@ -1623,23 +1670,23 @@ tr:hover td { background: #1F242C; }
     </details>
   </aside>
   <div class="guide-viewport" id="ref-viewport">
-    <div class="guide-content-inner" style="max-width: 960px;">
+    <main class="guide-content-inner" style="max-width: 960px;">
       <div class="reader-toolbar">
         <div class="reader-breadcrumbs">
           <a href="index.html">cfire Docs</a>
           <span>/</span>
           <a href="#overview" onclick="navigateToRefPane('overview'); return false;">Stdlib Reference</a>
           <span>/</span>
-          <span class="crumb-current" id="ref-active-crumb">Overview (All 21 Modules)</span>
+          <span class="crumb-current" id="ref-active-crumb">Overview (All 33 Modules)</span>
         </div>
         <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
           <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
-          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (21)</button>
+          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (33)</button>
         </div>
       </div>
-      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 21 Modules)">
+      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 33 Modules)">
         <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">33 zero-overhead <code>core:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and 8 semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">33 zero-overhead <code>core:*</code> and <code>vendor:*</code> modules organized into two stability tiers (<strong>Tier 1: Foundational Core</strong> and <strong>Tier 2: Domain &amp; Platform Extensions</strong>) and 8 semantic diagnostics — automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>. Select any module card below or press <kbd>⌘K</kbd> to search signatures.</p>
         <div class="ref-category-title">Tier 1A — Foundational Core: Strings, UTF-8, Regex &amp; Generic Containers (Zero External Deps)</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
@@ -1683,24 +1730,8 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-desc">In-place sorting algorithms and binary search on slices.</div>
           </a>
         </div>
-        <div class="ref-category-title">Tier 1B — Foundational Core: Memory Arenas, Math, CSPRNG, Crypto, Filesystem, OS, Time, Sync &amp; CLI</div>
+        <div class="ref-category-title">Tier 1B — Foundational Core: Filesystem, OS, Time, Math, CSPRNG, Sync, CLI &amp; Logging</div>
         <div class="ref-category-grid">
-          <a href="#mod-math" class="ref-mod-card" onclick="navigateToRefPane('mod-math'); return false;">
-            <div class="ref-mod-card-head">
-              <span class="ref-mod-card-code">core:math</span>
-              <span class="ref-mod-card-count">4 fns</span>
-            </div>
-            <div class="ref-mod-card-title">Numeric &amp; Floating-Point Utilities</div>
-            <div class="ref-mod-card-desc">Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.</div>
-          </a>
-          <a href="#mod-rand" class="ref-mod-card" onclick="navigateToRefPane('mod-rand'); return false;">
-            <div class="ref-mod-card-head">
-              <span class="ref-mod-card-code">core:rand</span>
-              <span class="ref-mod-card-count">4 fns</span>
-            </div>
-            <div class="ref-mod-card-title">Thread-Local MT19937_64 &amp; CSPRNG Generator</div>
-            <div class="ref-mod-card-desc">Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.</div>
-          </a>
           <a href="#mod-fs" class="ref-mod-card" onclick="navigateToRefPane('mod-fs'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:fs</span>
@@ -1725,6 +1756,22 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-title">Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</div>
             <div class="ref-mod-card-desc">High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.</div>
           </a>
+          <a href="#mod-math" class="ref-mod-card" onclick="navigateToRefPane('mod-math'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:math</span>
+              <span class="ref-mod-card-count">4 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Numeric &amp; Floating-Point Utilities</div>
+            <div class="ref-mod-card-desc">Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.</div>
+          </a>
+          <a href="#mod-rand" class="ref-mod-card" onclick="navigateToRefPane('mod-rand'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:rand</span>
+              <span class="ref-mod-card-count">4 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Thread-Local MT19937_64 &amp; CSPRNG Generator</div>
+            <div class="ref-mod-card-desc">Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.</div>
+          </a>
           <a href="#mod-sync" class="ref-mod-card" onclick="navigateToRefPane('mod-sync'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:sync</span>
@@ -1732,6 +1779,14 @@ tr:hover td { background: #1F242C; }
             </div>
             <div class="ref-mod-card-title">Thread-Safe Typed Channels</div>
             <div class="ref-mod-card-desc">Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.</div>
+          </a>
+          <a href="#mod-context" class="ref-mod-card" onclick="navigateToRefPane('mod-context'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:sync/context</span>
+              <span class="ref-mod-card-count">8 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Cancellation Tokens &amp; Deadline Contexts</div>
+            <div class="ref-mod-card-desc">Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`).</div>
           </a>
           <a href="#mod-cli" class="ref-mod-card" onclick="navigateToRefPane('mod-cli'); return false;">
             <div class="ref-mod-card-head">
@@ -1750,7 +1805,66 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-desc">Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.</div>
           </a>
         </div>
-        <div class="ref-category-title">Tier 2 — Domain &amp; Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite &amp; Multimodal AI</div>
+        <div class="ref-category-title">Tier 1C — Foundational Core: Cryptography &amp; Data Encodings</div>
+        <div class="ref-category-grid">
+          <a href="#mod-aes" class="ref-mod-card" onclick="navigateToRefPane('mod-aes'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:crypto/aes</span>
+              <span class="ref-mod-card-count">4 fns</span>
+            </div>
+            <div class="ref-mod-card-title">NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</div>
+            <div class="ref-mod-card-desc">Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).</div>
+          </a>
+          <a href="#mod-blake3" class="ref-mod-card" onclick="navigateToRefPane('mod-blake3'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:crypto/blake3</span>
+              <span class="ref-mod-card-count">1 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Cryptographic 256-Bit Digest (Alias)</div>
+            <div class="ref-mod-card-desc">Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`).</div>
+          </a>
+          <a href="#mod-hmac" class="ref-mod-card" onclick="navigateToRefPane('mod-hmac'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:crypto/hmac</span>
+              <span class="ref-mod-card-count">2 fns</span>
+            </div>
+            <div class="ref-mod-card-title">RFC 2104 HMAC-SHA256 Message Authentication</div>
+            <div class="ref-mod-card-desc">Computes RFC 2104 keyed HMAC-SHA256 authentication digests.</div>
+          </a>
+          <a href="#mod-sha256" class="ref-mod-card" onclick="navigateToRefPane('mod-sha256'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:crypto/sha256</span>
+              <span class="ref-mod-card-count">2 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Standard FIPS 180-4 SHA-256 Digest</div>
+            <div class="ref-mod-card-desc">Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings.</div>
+          </a>
+          <a href="#mod-base64" class="ref-mod-card" onclick="navigateToRefPane('mod-base64'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:encoding/base64</span>
+              <span class="ref-mod-card-count">4 fns</span>
+            </div>
+            <div class="ref-mod-card-title">RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</div>
+            <div class="ref-mod-card-desc">High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder.</div>
+          </a>
+          <a href="#mod-csv" class="ref-mod-card" onclick="navigateToRefPane('mod-csv'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:encoding/csv</span>
+              <span class="ref-mod-card-count">4 fns</span>
+            </div>
+            <div class="ref-mod-card-title">RFC 4180 CSV Parsing &amp; Stringification</div>
+            <div class="ref-mod-card-desc">RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping.</div>
+          </a>
+          <a href="#mod-hex" class="ref-mod-card" onclick="navigateToRefPane('mod-hex'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:encoding/hex</span>
+              <span class="ref-mod-card-count">4 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Hexadecimal Encoding &amp; Decoding</div>
+            <div class="ref-mod-card-desc">Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers.</div>
+          </a>
+        </div>
+        <div class="ref-category-title">Tier 2 — Domain &amp; Platform Extensions: SIMD JSON, Zstd, Networking, Vector SQLite, Graphics, Audio &amp; Multimodal AI</div>
         <div class="ref-category-grid">
           <a href="#mod-json" class="ref-mod-card" onclick="navigateToRefPane('mod-json'); return false;">
             <div class="ref-mod-card-head">
@@ -1760,6 +1874,14 @@ tr:hover td { background: #1F242C; }
             <div class="ref-mod-card-title">Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</div>
             <div class="ref-mod-card-desc">Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.</div>
           </a>
+          <a href="#mod-zstd" class="ref-mod-card" onclick="navigateToRefPane('mod-zstd'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:compress/zstd</span>
+              <span class="ref-mod-card-count">2 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Native Zstandard Frame Compression</div>
+            <div class="ref-mod-card-desc">Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.</div>
+          </a>
           <a href="#mod-net" class="ref-mod-card" onclick="navigateToRefPane('mod-net'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:net</span>
@@ -1767,6 +1889,70 @@ tr:hover td { background: #1F242C; }
             </div>
             <div class="ref-mod-card-title">POSIX BSD TCP Sockets &amp; Loopback Networking</div>
             <div class="ref-mod-card-desc">RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes.</div>
+          </a>
+          <a href="#mod-http" class="ref-mod-card" onclick="navigateToRefPane('mod-http'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:net/http</span>
+              <span class="ref-mod-card-count">27 fns</span>
+            </div>
+            <div class="ref-mod-card-title">HTTP/1.1 &amp; HTTPS Client, Wire Protocol Engine, Server &amp; Router</div>
+            <div class="ref-mod-card-desc">RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).</div>
+          </a>
+          <a href="#mod-tls" class="ref-mod-card" onclick="navigateToRefPane('mod-tls'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:net/tls</span>
+              <span class="ref-mod-card-count">7 fns</span>
+            </div>
+            <div class="ref-mod-card-title">TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</div>
+            <div class="ref-mod-card-desc">Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation.</div>
+          </a>
+          <a href="#mod-url" class="ref-mod-card" onclick="navigateToRefPane('mod-url'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:net/url</span>
+              <span class="ref-mod-card-count">3 fns</span>
+            </div>
+            <div class="ref-mod-card-title">RFC 3986 URL Parsing &amp; URL Encoding</div>
+            <div class="ref-mod-card-desc">RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding.</div>
+          </a>
+          <a href="#mod-websocket" class="ref-mod-card" onclick="navigateToRefPane('mod-websocket'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:net/websocket</span>
+              <span class="ref-mod-card-count">20 fns</span>
+            </div>
+            <div class="ref-mod-card-title">RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</div>
+            <div class="ref-mod-card-desc">RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.</div>
+          </a>
+          <a href="#mod-sqlite" class="ref-mod-card" onclick="navigateToRefPane('mod-sqlite'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:db/sqlite</span>
+              <span class="ref-mod-card-count">5 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Embedded SQLite3 with WAL, Vector Search &amp; Row Mapping</div>
+            <div class="ref-mod-card-desc">RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, `[]f32` embedding BLOB binding, built-in SQL vector similarity functions (`vec_cosine_similarity`, `vec_l2_distance`, `vec_dot`), dynamic extension loading (`sqlite-vec`), atomic transactions, and compile-time `sql:"..."` struct row mapping.</div>
+          </a>
+          <a href="#mod-rl" class="ref-mod-card" onclick="navigateToRefPane('mod-rl'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">vendor:raylib</span>
+              <span class="ref-mod-card-count">24 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Raymath (`&lt;raylib.h&gt;`, `&lt;raymath.h&gt;`, `&lt;rlgl.h&gt;`)</div>
+            <div class="ref-mod-card-desc">Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion.</div>
+          </a>
+          <a href="#mod-rg" class="ref-mod-card" onclick="navigateToRefPane('mod-rg'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">vendor:raygui</span>
+              <span class="ref-mod-card-count">15 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`&lt;raygui.h&gt;`)</div>
+            <div class="ref-mod-card-desc">Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing.</div>
+          </a>
+          <a href="#mod-audio" class="ref-mod-card" onclick="navigateToRefPane('mod-audio'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">core:audio</span>
+              <span class="ref-mod-card-count">25 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Cross-Target Audio Engine, Polyphonic Mixer, Synth &amp; WAV Codec</div>
+            <div class="ref-mod-card-desc">Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.</div>
           </a>
           <a href="#mod-ai" class="ref-mod-card" onclick="navigateToRefPane('mod-ai'); return false;">
             <div class="ref-mod-card-head">
@@ -1887,7 +2073,7 @@ fn main() {
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#overview" class="pager-card prev" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">&larr; Overview</span>
-            <span class="pager-title">All 21 Standard Library Modules</span>
+            <span class="pager-title">All 33 Standard Library Modules</span>
           </a>
           <a href="#mod-audio" class="pager-card next" onclick="navigateToRefPane('mod-audio'); return false;">
             <span class="pager-dir">Next Module (2/33) &rarr;</span>
@@ -3482,14 +3668,14 @@ consume(move buf) // OK: moved on last use</code></pre></div>
           </a>
           <a href="#overview" class="pager-card next" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">Back to Overview &rarr;</span>
-            <span class="pager-title">All 21 Standard Library Modules</span>
+            <span class="pager-title">All 33 Standard Library Modules</span>
           </a>
         </nav>
       </article>
       <footer class="footer" style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--border);">
         Generated by <code>cfire doc</code> &bull; Always kept in sync with <code>src/docgen.hpp</code>.
       </footer>
-    </div>
+    </main>
   </div>
 </div>
 <script>
