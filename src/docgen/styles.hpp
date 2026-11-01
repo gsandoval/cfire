@@ -1064,29 +1064,76 @@ details.lowering-drawer > .lowering-body {
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
-main {
+main, .guide-content-inner {
     min-width: 0;
     max-width: 100%;
     width: 100%;
     overflow-wrap: break-word;
     word-break: break-word;
 }
-main h1 {
-    font-size: clamp(1.85rem, 4vw, 2.5rem); font-weight: 800;
+main h1, .guide-content-inner h1 {
+    font-size: clamp(1.75rem, 3.5vw, 2.25rem); font-weight: 800;
     color: var(--text-bright); letter-spacing: -0.03em; margin-bottom: 0.75rem;
 }
-main h2 {
-    font-size: 1.5rem; font-weight: 800; color: var(--text-bright);
-    letter-spacing: -0.02em; margin: 2.5rem 0 0.85rem; padding-bottom: 0.4rem;
+main h2, .chapter-intro > h2, .ref-pane > h2 {
+    font-size: 1.45rem; font-weight: 800; color: var(--text-bright);
+    letter-spacing: -0.02em; margin: 1.5rem 0 0.85rem; padding-bottom: 0.45rem;
     border-bottom: 1px solid var(--border);
 }
-main h3 {
+main h3, .guide-content-inner h3:not(.guide-heading) {
     font-size: 1.2rem; font-weight: 700; color: var(--text-bright);
     margin: 1.75rem 0 0.5rem;
 }
-main p { color: var(--text); font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
-main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: var(--text); font-size: 0.98rem; line-height: 1.7; }
-main li { margin-bottom: 0.4rem; }
+main h4, .guide-content-inner h4 {
+    font-size: 1.02rem; font-weight: 700; color: var(--text-bright);
+    margin: 1.35rem 0 0.55rem; line-height: 1.45;
+}
+.guide-subhead5 {
+    font-size: 0.98rem; font-weight: 700; color: var(--accent-sapphire);
+    margin: 1.2rem 0 0.5rem; line-height: 1.45;
+}
+main p, .guide-content-inner p:not(.subtitle):not(.ref-mod-card-desc) {
+    color: var(--text); font-size: 0.96rem; line-height: 1.7; margin-bottom: 1rem;
+}
+main ul, main ol,
+.guide-content-inner ul:not(.toc-list):not(.rail-action-list):not(.sidebar-chapter-list):not(.subhead-list):not(.sidebar-module-list):not(.sidebar-diag-list),
+.guide-content-inner ol {
+    margin: 0.25rem 0 1.25rem 0;
+    padding-left: 1.65rem;
+    color: var(--text);
+    font-size: 0.96rem;
+    line-height: 1.7;
+    list-style-position: outside;
+}
+main li,
+.guide-content-inner ul:not(.toc-list):not(.rail-action-list):not(.sidebar-chapter-list):not(.subhead-list):not(.sidebar-module-list):not(.sidebar-diag-list) > li,
+.guide-content-inner ol > li {
+    margin-bottom: 0.45rem;
+    padding-left: 0.2rem;
+    font-size: 0.96rem;
+    line-height: 1.7;
+}
+main li::marker,
+.guide-content-inner ul:not(.toc-list):not(.rail-action-list) > li::marker,
+.guide-content-inner ol > li::marker {
+    color: var(--muted);
+    font-size: 0.95em;
+    font-weight: 600;
+}
+main li > ul, main li > ol,
+.guide-content-inner li > ul, .guide-content-inner li > ol {
+    margin: 0.4rem 0 0.5rem 0 !important;
+    padding-left: 1.5rem !important;
+    font-size: 0.95rem;
+}
+main li > .code-header,
+.guide-content-inner li > .code-header {
+    margin-top: 0.55rem;
+}
+main li > pre,
+.guide-content-inner li > pre {
+    margin-bottom: 0.65rem;
+}
 
 /* Part banner & Callouts */
 .part-banner {
