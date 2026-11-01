@@ -1,0 +1,30 @@
+package main
+
+import "core:audio"
+import "core:fs"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.85)
+
+    // 1. Synthesize procedural SFX and musical tone
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    synth_wave := audio.gen_tone(audio.Waveform::Triangle, 440.0, 0.25, 0.6)
+
+    // 2. Play procedural sound effect via polyphonic voice mixer
+    coin_sound := audio.load_sound_from_wave(coin_wave)
+    coin_sound.play()
+
+    // 3. Encode synthesized waveform to in-memory RIFF/WAV byte buffer
+    wav_bytes := audio.encode_wav(synth_wave)
+    println("Synthesized WAV image: {} bytes, duration: {}s", wav_bytes.len, synth_wave.duration_sec())
+
+    // 4. Verify roundtrip file persistence and decode
+    wav_path := "synth_output.wav"
+    defer fs.remove(wav_path)
+    try audio.save_wav(synth_wave, wav_path)
+
+    loaded_wave := try audio.load_wav(wav_path)
+    println("Loaded WAV: rate={} channels={} frames={}", loaded_wave.sample_rate, loaded_wave.channels, loaded_wave.frame_count())
+}

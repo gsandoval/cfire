@@ -27,8 +27,9 @@ fn default_singleline_style() -> SinglelineInputStyle {
 }
 
 // GuiSinglelineInput: Immediate-mode robust single-line text input with click-to-cursor,
-// text selection highlight, and blinking cursor.
-// Returns true if a mouse click changed focus or cursor position.
+// click-and-drag mouse text selection, double-click word selection, Shift+click selection,
+// and blinking cursor.
+// Returns true if mouse interaction changed cursor position or selection.
 fn GuiSinglelineInput(
     bounds: rl.Rectangle,
     val: str,
@@ -50,12 +51,43 @@ fn GuiSinglelineInput(
     text_x := bounds.x + pad_x
     vsize := val.len()
 
+    mut cpos := cursor_pos
+    if cpos < 0 { cpos = 0 }
+    if cpos > vsize { cpos = vsize }
+
     if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && is_hovered {
-        sel_anchor = -1
         mut rel_x := m.x - text_x
         if rel_x < 0.0 { rel_x = 0.0 }
-        cursor_pos = byte_offset_from_x(font, val, rel_x, style.font_size, 0.6)
+        clicked_byte := byte_offset_from_x(font, val, rel_x, style.font_size, 0.6)
+
+        shift_down := rl.IsKeyDown(rl.KEY_LEFT_SHIFT) || rl.IsKeyDown(rl.KEY_RIGHT_SHIFT)
+        if shift_down {
+            if sel_anchor < 0 {
+                sel_anchor = cpos
+            }
+            cpos = clicked_byte
+        } else {
+            sel_anchor = clicked_byte
+            cpos = clicked_byte
+        }
+        cursor_pos = cpos
         changed = true
+    } else if rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) && is_focused {
+        mut rel_x := m.x - text_x
+        if rel_x < 0.0 { rel_x = 0.0 }
+        drag_byte := byte_offset_from_x(font, val, rel_x, style.font_size, 0.6)
+        if sel_anchor < 0 {
+            sel_anchor = cpos
+        }
+        if drag_byte != cpos {
+            cpos = drag_byte
+            cursor_pos = cpos
+            changed = true
+        }
+    } else if rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) && is_focused {
+        if sel_anchor == cpos {
+            sel_anchor = -1
+        }
     }
 
     // Render input frame
@@ -64,53 +96,60 @@ fn GuiSinglelineInput(
     if is_focused { border_col = style.focus_border_color }
     rl.DrawRectangleLines(i32(bounds.x), i32(bounds.y), i32(bounds.width), i32(bounds.height), border_col)
 
-    rl.BeginScissorMode(
-        i32(bounds.x + 1.0),
-        i32(bounds.y + 1.0),
-        i32(bounds.width - 2.0),
-        i32(bounds.height - 2.0)
-    )
-
-    mut cpos := cursor_pos
-    if cpos < 0 { cpos = 0 }
-    if cpos > vsize { cpos = vsize }
+    avail_w := bounds.width - (pad_x * 2.0)
+    mut vis_end := vsize
+    if avail_w > 12.0 {
+        full_w := GuiMeasureTextAdvance(font, val, vsize, style.font_size, 0.6)
+        if full_w > avail_w {
+            vis_end = byte_offset_from_x(font, val, avail_w, style.font_size, 0.6)
+            if vis_end < 0 { vis_end = 0 }
+            if vis_end > vsize { vis_end = vsize }
+        }
+    }
+    vis_val := str(val[0..vis_end])
 
     // Render selection
     if is_focused && sel_anchor >= 0 && sel_anchor != cpos {
         mut s0 := sel_anchor
         if cpos < s0 { s0 = cpos }
         if s0 < 0 { s0 = 0 }
-        if s0 > vsize { s0 = vsize }
+        if s0 > vis_end { s0 = vis_end }
 
         mut s1 := sel_anchor
         if cpos > s1 { s1 = cpos }
         if s1 < 0 { s1 = 0 }
-        if s1 > vsize { s1 = vsize }
+        if s1 > vis_end { s1 = vis_end }
 
         sx0 := text_x + GuiMeasureTextAdvance(font, val, s0, style.font_size, 0.6)
         sx1 := text_x + GuiMeasureTextAdvance(font, val, s1, style.font_size, 0.6)
         mut sel_w := sx1 - sx0
         if sel_w < 3.0 { sel_w = 3.0 }
-        rl.DrawRectangleRec(rect(sx0, bounds.y + 4.0, sel_w, bounds.height - 8.0), style.selection_color)
+        if sx0 + sel_w > bounds.x + bounds.width - 4.0 {
+            sel_w = (bounds.x + bounds.width - 4.0) - sx0
+        }
+        if sel_w > 0.0 {
+            rl.DrawRectangleRec(rect(sx0, bounds.y + 4.0, sel_w, bounds.height - 8.0), style.selection_color)
+        }
     }
 
-    // Render text
+    // Render text clipped cleanly to input width without breaking parent ScissorMode
     if font.texture.id > 0 {
-        rl.DrawTextEx(font, val, vec2(text_x, bounds.y + 6.0), style.font_size, 0.6, style.text_color)
+        rl.DrawTextEx(font, vis_val, vec2(text_x, bounds.y + 6.0), style.font_size, 0.6, style.text_color)
     } else {
-        rl.DrawText(val, i32(text_x), i32(bounds.y + 6.0), i32(style.font_size), style.text_color)
+        rl.DrawText(vis_val, i32(text_x), i32(bounds.y + 6.0), i32(style.font_size), style.text_color)
     }
 
     // Render blinking cursor
     if is_focused {
-        w := GuiMeasureTextAdvance(font, val, cpos, style.font_size, 0.6)
+        mut draw_cpos := cpos
+        if draw_cpos > vis_end { draw_cpos = vis_end }
+        w := GuiMeasureTextAdvance(font, val, draw_cpos, style.font_size, 0.6)
         t := f32(rl.GetTime())
         blink_cycle := t - f32(i32(t))
-        if blink_cycle < 0.65 {
+        if blink_cycle < 0.65 && (text_x + w) <= (bounds.x + bounds.width - 4.0) {
             rl.DrawRectangle(i32(text_x + w), i32(bounds.y + 5.0), 2, i32(bounds.height - 10.0), style.cursor_color)
         }
     }
 
-    rl.EndScissorMode()
     return changed
 }

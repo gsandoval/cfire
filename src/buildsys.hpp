@@ -1434,6 +1434,7 @@ inline auto resolve_external_dep_source(
     static const std::unordered_map<std::string, std::string> core_to_pc = {
         {"core:compress/zstd", "libzstd"},
         {"core:json", "simdjson"},
+        {"core:ai", "simdjson"},
         {"core:db/sqlite", "sqlite3"},
     };
 
@@ -1691,7 +1692,7 @@ inline auto resolve_external_dep_source(
 
                 if (found_raylib) {
 #if defined(__APPLE__)
-                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL", "-framework", "AudioToolbox", "-framework", "CoreFoundation"});
+                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL", "-framework", "AudioToolbox", "-framework", "CoreFoundation", "-framework", "ApplicationServices"});
 #elif defined(__linux__)
                     plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
 #endif
@@ -1905,7 +1906,8 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         auto tmp_cache = std::filesystem::path("/tmp/cfire_emscripten_cache");
         std::filesystem::create_directories(tmp_cache, ec);
         if (!ec) {
-            ::setenv("EM_CACHE", tmp_cache.c_str(), 1);
+            auto canon_cache = std::filesystem::canonical(tmp_cache, ec);
+            ::setenv("EM_CACHE", (!ec ? canon_cache : tmp_cache).c_str(), 1);
         } else if (const char* home = std::getenv("HOME")) {
             auto cache_dir = std::filesystem::path(home) / ".emscripten_cache";
             ::setenv("EM_CACHE", cache_dir.c_str(), 1);
@@ -2492,8 +2494,10 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         }
     }
 
-    // Bring Simulator.app to front
-    (void)bridge::run_command_capture("open -a Simulator 2>/dev/null", rc);
+    // Bring Simulator.app (or Xcode 27+ DeviceHub.app) to front
+    (void)bridge::run_command_capture(
+        "open -a Simulator 2>/dev/null || open -a DeviceHub 2>/dev/null || open \"/Applications/Xcode.app/Contents/Applications/DeviceHub.app\" 2>/dev/null",
+        rc);
 
     // Wait until booted device finishes boot sequence
     (void)bridge::run_command_capture("xcrun simctl bootstatus booted -b 2>/dev/null", rc);

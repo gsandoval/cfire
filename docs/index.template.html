@@ -7,20 +7,22 @@
   <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
   <style>
 :root {
-    --bg: #FAFAF9;
-    --bg-card: #FFFFFF;
-    --bg-card-hover: #F5F5F4;
-    --bg-code: #18181B;
-    --border: #E7E5E4;
-    --border-dark: #D6D3D1;
-    --text: #1C1917;
-    --text-bright: #0C0A09;
-    --muted: #57534E;
-    --accent: #1D4ED8;
-    --accent-hover: #1E40AF;
-    --ok: #047857;
-    --warn: #B45309;
-    --err: #B91C1C;
+    --bg: #0D1117;
+    --bg-card: #161B22;
+    --bg-card-hover: #21262D;
+    --bg-code: #090D12;
+    --bg-subtle: #21262D;
+    --border: #30363D;
+    --border-dark: #484F58;
+    --text: #F0F6FC;
+    --text-bright: #FFFFFF;
+    --muted: #8B949E;
+    --accent: #F97316;
+    --accent-hover: #FB923C;
+    --accent-sapphire: #38BDF8;
+    --ok: #3FB950;
+    --warn: #D29922;
+    --err: #F85149;
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -40,17 +42,15 @@ body {
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
-::selection { background: #1C1917; color: #FFFFFF; }
-a { color: var(--accent); text-decoration: none; transition: color 0.15s ease; }
-a:hover { color: var(--accent-hover); text-decoration: underline; }
+::selection { background: #F97316; color: #0D1117; }
+a { color: var(--accent-sapphire); text-decoration: none; transition: color 0.15s ease; }
+a:hover { color: #7DD3FC; text-decoration: underline; }
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     width: 100%;
-    background: rgba(255, 255, 255, 0.96);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: #0D1117;
     border-bottom: 1px solid var(--border);
 }
 .navbar-inner {
@@ -66,7 +66,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 .brand {
     display: flex; align-items: center; gap: 0.65rem;
-    font-weight: 800; font-size: 1.25rem; color: var(--text);
+    font-weight: 800; font-size: 1.25rem; color: var(--text-bright);
     text-decoration: none; flex-shrink: 0;
 }
 .brand:hover { text-decoration: none; }
@@ -74,12 +74,12 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     width: 30px; height: 30px; object-fit: contain;
 }
 .brand span.brand-text {
-    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text);
+    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text-bright);
 }
-.brand span.fire { color: #EA580C; font-weight: 850; }
+.brand span.fire { color: #F97316; font-weight: 850; }
 .brand-badge {
     font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
-    background: #F5F5F4; border: 1px solid var(--border); color: #57534E;
+    background: #21262D; border: 1px solid var(--border); color: #8B949E;
     padding: 0.12rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
 }
 .nav-links { display: flex; align-items: center; gap: 1.25rem; font-size: 0.92rem; font-weight: 600; }
@@ -87,14 +87,14 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     color: var(--muted); transition: all 0.15s ease;
     padding: 0.25rem 0.4rem; border-radius: 5px;
 }
-.nav-links a:hover { color: var(--text); text-decoration: none; background: #F5F5F4; }
-.nav-links a.active { color: var(--text); text-decoration: none; font-weight: 750; background: #F5F5F4; }
+.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
+.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
 .btn-nav-primary {
-    background: #1C1917 !important; color: #FFFFFF !important;
-    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 600 !important;
+    background: #F97316 !important; color: #0D1117 !important;
+    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
 }
-.btn-nav-primary:hover { background: #292524 !important; text-decoration: none !important; }
+.btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
 
 /* Page container with robust bounds */
 .container {
@@ -120,16 +120,50 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     top: 4.5rem;
     max-height: calc(100vh - 5.5rem);
     overflow-y: auto;
-    background: #FFFFFF;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
 .sidebar-summary { display: none; }
 .sidebar h4 {
     font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem;
+}
+.sidebar-part-title {
+    font-size: 0.72rem; font-weight: 850; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #F97316; margin: 1.25rem 0 0.4rem;
+    padding-left: 0.4rem;
+}
+.sidebar-chapter-list { list-style: none; margin-bottom: 0.75rem; }
+.subhead-list {
+    list-style: none;
+    margin: 0.2rem 0 0.4rem 0.85rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--border);
+}
+.subhead-list li { margin-bottom: 0.15rem; }
+.subhead-list a {
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.2rem 0.4rem;
+}
+.subhead-list a:hover { color: var(--text-bright); }
+.search-input {
+    width: 100%;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.82rem;
+    font-family: var(--font-sans);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-code);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+.search-input:focus {
+    border-color: #F97316;
 }
 .sidebar ul { list-style: none; margin-bottom: 1.25rem; }
 .sidebar li { margin-bottom: 0.25rem; }
@@ -140,10 +174,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar a:hover {
-    background: #F5F5F4; color: var(--text); text-decoration: none;
+    background: var(--bg-card-hover); color: var(--text-bright); text-decoration: none;
 }
 .sidebar a.active {
-    background: #F5F5F4; color: var(--accent); font-weight: 700;
+    background: var(--bg-card-hover); color: #F97316; font-weight: 700;
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
@@ -156,20 +190,130 @@ main {
 }
 main h1 {
     font-size: clamp(1.85rem, 4vw, 2.5rem); font-weight: 800;
-    color: var(--text); letter-spacing: -0.03em; margin-bottom: 0.75rem;
+    color: var(--text-bright); letter-spacing: -0.03em; margin-bottom: 0.75rem;
 }
 main h2 {
-    font-size: 1.5rem; font-weight: 800; color: var(--text);
+    font-size: 1.5rem; font-weight: 800; color: var(--text-bright);
     letter-spacing: -0.02em; margin: 2.5rem 0 0.85rem; padding-bottom: 0.4rem;
     border-bottom: 1px solid var(--border);
 }
 main h3 {
-    font-size: 1.2rem; font-weight: 700; color: var(--text);
+    font-size: 1.2rem; font-weight: 700; color: var(--text-bright);
     margin: 1.75rem 0 0.5rem;
 }
-main p { color: #44403C; font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
-main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: #44403C; font-size: 0.98rem; line-height: 1.7; }
+main p { color: var(--text); font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
+main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: var(--text); font-size: 0.98rem; line-height: 1.7; }
 main li { margin-bottom: 0.4rem; }
+
+/* Part banner & Callouts */
+.part-banner {
+    margin: 3.5rem 0 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border);
+}
+.part-banner:first-of-type { margin-top: 1rem; }
+.part-pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #F97316;
+    background: #27140B;
+    border: 1px solid #7C2D12;
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+}
+.part-banner h2 {
+    font-size: 1.85rem;
+    font-weight: 850;
+    color: var(--text-bright);
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+.callout {
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    background: var(--bg-card);
+}
+.callout-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.4rem;
+}
+.callout p {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--text);
+    line-height: 1.6;
+}
+.callout-note {
+    border-left-color: #38BDF8;
+    background: #0B1622;
+}
+.callout-note .callout-title { color: #38BDF8; }
+.callout-tip {
+    border-left-color: #3FB950;
+    background: #0A1C14;
+}
+.callout-tip .callout-title { color: #3FB950; }
+.callout-important {
+    border-left-color: #A78BFA;
+    background: #171124;
+}
+.callout-important .callout-title { color: #A78BFA; }
+.callout-warning {
+    border-left-color: #F59E0B;
+    background: #1E1606;
+}
+.callout-warning .callout-title { color: #F59E0B; }
+
+/* Guide Pager */
+.guide-pager {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+    margin: 3.5rem 0 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+}
+.pager-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.pager-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    text-decoration: none;
+}
+.pager-card span {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #F97316;
+}
+.pager-card strong {
+    font-size: 1.05rem;
+    color: var(--text-bright);
+    font-weight: 750;
+}
 
 /* Hero section */
 .hero { text-align: center; padding: 3rem 0.5rem 3.5rem; }
@@ -177,12 +321,12 @@ main li { margin-bottom: 0.4rem; }
     display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px;
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase;
-    background: #FFFFFF; border: 1px solid var(--border); color: var(--accent);
+    background: var(--bg-card); border: 1px solid var(--border); color: #F97316;
     margin-bottom: 1.5rem;
 }
 h1.hero-title {
     font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 850;
-    letter-spacing: -0.03em; color: var(--text); margin-bottom: 1.25rem;
+    letter-spacing: -0.03em; color: var(--text-bright); margin-bottom: 1.25rem;
     line-height: 1.15;
 }
 .subtitle {
@@ -196,25 +340,25 @@ h1.hero-title {
     align-items: center; gap: 0.5rem; text-decoration: none; cursor: pointer;
 }
 .btn:hover { text-decoration: none; }
-.btn-primary { background: #1C1917; color: #FFFFFF; border-color: #1C1917; }
-.btn-primary:hover { background: #292524; border-color: #292524; }
-.btn-secondary { background: #FFFFFF; color: var(--text); border-color: var(--border); }
-.btn-secondary:hover { background: #F5F5F4; border-color: var(--border-dark); }
+.btn-primary { background: #F97316; color: #0D1117; border-color: #F97316; font-weight: 700; }
+.btn-primary:hover { background: #FB923C; border-color: #FB923C; }
+.btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Install Box */
 .install-bar {
     display: inline-flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 8px;
     padding: 0.65rem 1rem; font-family: var(--font-mono); font-size: 0.88rem;
-    color: #292524; max-width: 100%; overflow-x: auto;
+    color: var(--text); max-width: 100%; overflow-x: auto;
 }
 .install-bar .prompt { color: var(--muted); font-weight: 700; user-select: none; }
 .copy-btn {
-    background: #1C1917; color: #FFFFFF; border: none;
+    background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
     padding: 0.35rem 0.75rem; border-radius: 5px; font-size: 0.75rem; font-weight: 700;
-    font-family: var(--font-mono); cursor: pointer; transition: background 0.15s; shrink-0;
+    font-family: var(--font-mono); cursor: pointer; transition: all 0.15s; shrink-0;
 }
-.copy-btn:hover { background: #292524; }
+.copy-btn:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Stats ribbon */
 .stats-ribbon {
@@ -222,11 +366,11 @@ h1.hero-title {
     margin: 3rem 0 2rem;
 }
 .stat-pill {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.25rem 1rem; text-align: center;
 }
 .stat-val {
-    font-size: 1.85rem; font-weight: 850; color: var(--text); font-family: var(--font-mono);
+    font-size: 1.85rem; font-weight: 850; color: var(--text-bright); font-family: var(--font-mono);
 }
 .stat-lbl {
     font-size: 0.76rem; color: var(--muted); font-weight: 700; text-transform: uppercase;
@@ -237,29 +381,29 @@ h1.hero-title {
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
 .card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; transition: border-color 0.15s ease;
 }
 .card:hover { border-color: var(--border-dark); }
 .card-num {
     font-family: var(--font-mono); font-size: 0.78rem; font-weight: 800;
-    color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase;
+    color: #F97316; margin-bottom: 0.5rem; text-transform: uppercase;
 }
-.card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text); }
+.card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text-bright); }
 .card p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin: 0; }
 
 /* Code Blocks: Strict Horizontal Scroll Containment */
 pre {
-    background: var(--bg-code); border: 1px solid #27272A;
+    background: var(--bg-code); border: 1px solid var(--border);
     border-radius: 8px; padding: 1.1rem 1.25rem; overflow-x: auto;
     max-width: 100%; min-width: 0; box-sizing: border-box;
     font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.65;
-    color: #F4F4F5; -webkit-overflow-scrolling: touch;
+    color: #F0F6FC; -webkit-overflow-scrolling: touch;
 }
 code {
     font-family: var(--font-mono); font-size: 0.88em;
-    background: #F5F5F4; border: 1px solid var(--border);
-    padding: 0.12rem 0.35rem; border-radius: 4px; color: #1C1917;
+    background: #1C2128; border: 1px solid var(--border);
+    padding: 0.12rem 0.35rem; border-radius: 4px; color: #F97316;
     word-break: break-word;
 }
 pre code { background: none; border: none; padding: 0; color: inherit; word-break: normal; }
@@ -267,13 +411,30 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
     margin-bottom: 0.45rem; display: flex; justify-content: space-between;
+    align-items: center;
 }
-.code-header span.tag-cf { color: #60A5FA; }
+.code-header span.tag-cf { color: #38BDF8; }
 .code-header span.tag-cpp { color: #F59E0B; }
+.code-copy-btn {
+    background: var(--bg-card);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.code-copy-btn:hover {
+    color: var(--text-bright);
+    border-color: var(--border-dark);
+    background: var(--bg-card-hover);
+}
 
 .section-title {
     font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 800; margin: 4rem 0 0.75rem;
-    text-align: center; letter-spacing: -0.02em; color: var(--text);
+    text-align: center; letter-spacing: -0.02em; color: var(--text-bright);
 }
 .section-subtitle {
     text-align: center; color: var(--muted); font-size: 1.05rem; max-width: 640px; margin: 0 auto 2.5rem;
@@ -281,21 +442,21 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
 
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center; flex-wrap: wrap; }
 .tab-btn {
-    background: #FFFFFF; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--muted); border: 1px solid var(--border);
     padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;
     font-size: 0.88rem; font-family: var(--font-mono); transition: all 0.15s;
 }
-.tab-btn:hover { color: var(--text); border-color: var(--border-dark); }
+.tab-btn:hover { color: var(--text-bright); border-color: var(--border-dark); }
 .tab-btn.active {
-    background: #1C1917; color: #FFFFFF; border-color: #1C1917;
+    background: var(--bg-card-hover); color: var(--text-bright); border-color: #F97316;
 }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 /* Rosetta Mobile Toggle */
 .rosetta-mobile-toggle {
-    display: none; margin-bottom: 0.75rem; gap: 0.35rem; background: #E7E5E4;
-    padding: 0.25rem; border-radius: 6px;
+    display: none; margin-bottom: 0.75rem; gap: 0.35rem; background: var(--bg-card);
+    padding: 0.25rem; border-radius: 6px; border: 1px solid var(--border);
 }
 .rosetta-mobile-toggle button {
     flex: 1; padding: 0.45rem 0.5rem; border: none; background: transparent;
@@ -303,20 +464,20 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     color: var(--muted); border-radius: 4px; cursor: pointer;
 }
 .rosetta-mobile-toggle button.active {
-    background: #FFFFFF; color: var(--text);
+    background: var(--bg-card-hover); color: var(--text-bright);
 }
 
 /* Console preview */
 .console-preview {
-    background: #F5F5F4; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px;
     padding: 0.75rem 1rem; margin-top: 0.85rem; font-family: var(--font-mono);
-    font-size: 0.82rem; color: #1C1917;
+    font-size: 0.82rem; color: var(--text);
 }
 .console-header {
     font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.05em; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.35rem;
 }
-.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #059669; }
+.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #3FB950; }
 
 /* Robust Table System: Isolated Scrolling & Polished Mobile Experience */
 .table-wrap {
@@ -327,10 +488,9 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     margin: 1.5rem 0 2.25rem;
-    background: #FFFFFF;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 .table-wrap table {
     width: 100%;
@@ -345,11 +505,11 @@ th, td {
     font-size: 0.9rem; vertical-align: top;
 }
 th {
-    background: #F5F5F4; color: var(--text); font-weight: 750; font-size: 0.82rem;
+    background: #1C2128; color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #FAFAF9; }
+tr:hover td { background: #1F242C; }
 
 /* Subtle mobile scroll hint banner */
 .table-scroll-cue {
@@ -360,7 +520,7 @@ tr:hover td { background: #FAFAF9; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.4rem 0.85rem;
-    background: #F5F5F4;
+    background: #1C2128;
     border-bottom: 1px solid var(--border);
     text-align: right;
 }
@@ -370,16 +530,16 @@ tr:hover td { background: #FAFAF9; }
     display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin: 2rem 0;
 }
 .step-card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; position: relative;
 }
 .step-badge {
     display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
     font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
-    background: #1C1917; color: #FFFFFF; padding: 0.2rem 0.6rem; border-radius: 4px;
-    margin-bottom: 0.75rem;
+    background: #21262D; color: #F97316; padding: 0.2rem 0.6rem; border-radius: 4px;
+    border: 1px solid var(--border); margin-bottom: 0.75rem;
 }
-.step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text); }
+.step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text-bright); }
 .step-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 0.85rem; }
 
 /* Roadmap */
@@ -387,27 +547,27 @@ tr:hover td { background: #FAFAF9; }
     display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 2rem 0;
 }
 .roadmap-card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
-    padding: 1.25rem; transition: border-color 0.15s ease; text-decoration: none; display: block;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1.25rem; transition: border-color 0.15s ease, background 0.15s ease; text-decoration: none; display: block;
 }
 .roadmap-card:hover {
-    border-color: var(--border-dark); text-decoration: none;
+    background: var(--bg-card-hover); border-color: var(--border-dark); text-decoration: none;
 }
 .roadmap-num {
     font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.35rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #F97316; margin-bottom: 0.35rem;
 }
-.roadmap-card h4 { font-size: 1.05rem; color: var(--text); margin-bottom: 0.35rem; font-weight: 700; }
+.roadmap-card h4 { font-size: 1.05rem; color: var(--text-bright); margin-bottom: 0.35rem; font-weight: 700; }
 .roadmap-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; margin: 0; }
 
 .footer {
     text-align: center; padding: 3rem 1rem 2.5rem; border-top: 1px solid var(--border);
-    background: #FFFFFF; color: var(--muted); font-size: 0.88rem; margin-top: 4.5rem;
+    background: var(--bg); color: var(--muted); font-size: 0.88rem; margin-top: 4.5rem;
 }
 .footer-logo { max-width: 120px; margin-bottom: 1rem; }
 .footer-links { display: flex; justify-content: center; gap: 1.5rem; margin: 1rem 0; flex-wrap: wrap; }
 .footer-links a { color: var(--muted); font-weight: 600; font-size: 0.88rem; }
-.footer-links a:hover { color: var(--text); }
+.footer-links a:hover { color: var(--text-bright); }
 
 /* Responsive adjustments for mobile & tablet */
 @media (max-width: 840px) {
@@ -419,7 +579,7 @@ tr:hover td { background: #FAFAF9; }
     }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
-        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text);
+        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
     }
     .sidebar-summary::-webkit-details-marker { display: none; }
@@ -450,9 +610,9 @@ tr:hover td { background: #FAFAF9; }
     .nav-links::-webkit-scrollbar { display: none; }
     .nav-links a {
         white-space: nowrap; padding: 0.35rem 0.65rem; border-radius: 6px;
-        background: #F5F5F4; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
+        background: #161B22; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
     }
-    .nav-links a.active { background: #1C1917; color: #FFFFFF !important; }
+    .nav-links a.active { background: #21262D; color: var(--text-bright) !important; }
     .btn-nav-primary {
         margin-left: auto; padding: 0.35rem 0.75rem !important;
         font-size: 0.8rem !important; flex-shrink: 0;
@@ -475,16 +635,16 @@ tr:hover td { background: #FAFAF9; }
     }
     .api-table-wrap thead { display: none; }
     .api-table-wrap tr {
-        background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
-        margin-bottom: 0.85rem; padding: 0.95rem 1rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+        margin-bottom: 0.85rem; padding: 0.95rem 1rem;
     }
     .api-table-wrap td { padding: 0.25rem 0; border: none; font-size: 0.88rem; }
     .api-table-wrap td:first-child {
         padding-bottom: 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.45rem;
     }
     .api-table-wrap td:first-child code {
-        font-weight: 700; font-size: 0.88rem; color: var(--accent);
-        background: #EFF6FF; border-color: #DBEAFE; word-break: break-all;
+        font-weight: 700; font-size: 0.88rem; color: #F97316;
+        background: #21262D; border-color: var(--border); word-break: break-all;
         display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
     }
     .api-table-wrap td:nth-child(2)::before {
@@ -492,11 +652,11 @@ tr:hover td { background: #FAFAF9; }
         letter-spacing: 0.05em; color: var(--muted); display: inline-block; margin-right: 0.35rem;
     }
     .api-table-wrap td:nth-child(2) {
-        font-size: 0.82rem; color: #57534E; padding-bottom: 0.35rem; word-break: break-all;
+        font-size: 0.82rem; color: var(--muted); padding-bottom: 0.35rem; word-break: break-all;
     }
-    .api-table-wrap td:last-child { color: #1C1917; line-height: 1.55; }
+    .api-table-wrap td:last-child { color: var(--text); line-height: 1.55; }
     .api-table-wrap td:last-child code {
-        display: block; margin-top: 0.35rem; word-break: break-all; background: #F5F5F4;
+        display: block; margin-top: 0.35rem; word-break: break-all; background: var(--bg-code);
     }
 }
 
@@ -530,19 +690,19 @@ tr:hover td { background: #FAFAF9; }
 
   <!-- Editorial Hero Section -->
   <section class="hero">
-    <div><span class="badge">A SYSTEMS LANGUAGE SPECIFICATION &bull; ZERO RUNTIME OVERHEAD</span></div>
+    <div><span class="badge">MODERN SYSTEMS, AI &bull; CROSS-PLATFORM ENGINEERING &bull; ISO C++23</span></div>
 
     <h1 class="hero-title">
-      C++ performance without the 40-year headache.
+      Expressive systems programming built for native, web, mobile, and AI.
     </h1>
     <p class="subtitle">
-      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) brings together <strong>C</strong> systems heritage with modern <strong>fire</strong> velocity. Write Go-like clarity with Odin-rich batteries and explicit call-site intent safety, lowering 1-to-1 to zero-overhead standard <strong>ISO C++23</strong>. Zero garbage collection. Zero foreign runtime. Zero lock-in.
+      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 33-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, WebAssembly, and iOS with zero lock-in.
     </p>
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html">Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html">Explore 32 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html">Explore 33 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -726,7 +886,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>STL provided; networking, JSON, SQLite require 3rd party libs.</td>
           <td>Minimal stdlib; relies on external crates.</td>
           <td>Rich built-in stdlib (HTTP, crypto, json).</td>
-          <td><strong>32 built-in <code>core:*</code> modules</strong> (Audio DSP, WebSockets, HTTP, SQLite, Zstd, AES, SIMD JSON).</td>
+          <td><strong>33 built-in <code>core:*</code> modules</strong> (AI/MCP, Audio DSP, WebSockets, HTTP, Vector SQLite, Zstd, AES, SIMD JSON).</td>
         </tr>
         <tr>
           <td><strong>Project Ejection</strong></td>
@@ -782,69 +942,89 @@ fn main() {
   <div class="roadmap-grid">
     <a class="roadmap-card" href="guide.html#chapter-1">
       <div class="roadmap-num">Chapter 1</div>
-      <h4>Philosophy &amp; Architecture</h4>
-      <p>1-to-1 ISO C++23 lowering pipeline, zero runtime, mechanical sympathy, and lowering reference table.</p>
+      <h4>Installation &amp; Platform Setup</h4>
+      <p>macOS, Ubuntu/Debian, Fedora/Arch, Windows WSL2, WebAssembly em++, iOS Simulator, and AI Agent MCP setup.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-2">
       <div class="roadmap-num">Chapter 2</div>
-      <h4>Tour of the Toolchain</h4>
-      <p>The unified single binary: <code>run</code>, <code>run --sanitize</code>, <code>build</code>, <code>test</code>, <code>fmt</code>, <code>lsp</code>, <code>check</code>, <code>doc</code>, and <code>eject</code>.</p>
+      <h4>5-Minute Quickstart &amp; Toolchain</h4>
+      <p>One-shot <code>eval</code>, single-file scripts, native binaries, sanitizer verification, and clean C++23 ejection.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-3">
       <div class="roadmap-num">Chapter 3</div>
-      <h4>Syntax, Primitives &amp; Control Flow</h4>
-      <p>Immutability by default, slices (<code>[]T</code>) vs fixed arrays (<code>[N]T</code>), maps, tuples, optionals, and smart pointers.</p>
+      <h4>Project Layout &amp; Build System</h4>
+      <p>Declarative <code>build.cf</code>, target matrices (Native, Web, iOS), PCH acceleration, and CLI command reference.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-4">
       <div class="roadmap-num">Chapter 4</div>
-      <h4>Functions &amp; Intent Safety</h4>
-      <p>Explicit <code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code> intents, call-site exclusivity (<code>cfire/MUT-ALIAS</code>), and closures.</p>
+      <h4>Syntax, Primitives &amp; Pointers</h4>
+      <p>Immutability by default, slices (<code>[]T</code>), fixed arrays (<code>[N]T</code>), maps, and RAII smart pointers (<code>*T</code>, <code>^T</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-5">
       <div class="roadmap-num">Chapter 5</div>
-      <h4>Structs, Tags &amp; Enums</h4>
-      <p>Compile-time struct tags (<code>json</code>, <code>sql</code>, <code>cli</code>), algebraic enums, and exhaustive <code>match</code> checking.</p>
+      <h4>Functions &amp; Intent Safety</h4>
+      <p>Explicit <code>in</code>, <code>mut</code>, <code>move</code> intents, mandatory call-site <code>mut</code> markers, and escape analysis.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-6">
       <div class="roadmap-num">Chapter 6</div>
-      <h4>Error Handling &amp; Defer</h4>
-      <p>Value-based fallible returns (<code>T!</code>), early propagation (<code>try</code>), fallback divergence, and deterministic <code>defer</code>.</p>
+      <h4>Structs, Tags &amp; Algebraic Enums</h4>
+      <p>Compile-time struct tags (<code>json</code>, <code>sql</code>, <code>cli</code>, <code>desc</code>), algebraic enums, and pattern matching.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-7">
       <div class="roadmap-num">Chapter 7</div>
-      <h4>Structured Concurrency</h4>
-      <p>Lexically bounded <code>async.scope</code> task pools, typed channels (<code>core:sync</code>), and cancellation Contexts.</p>
+      <h4>Fearless Error Handling &amp; Defer</h4>
+      <p>Value-based fallible returns (<code>T!</code>), early propagation (<code>try</code>), fallback values, and deterministic <code>defer</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-8">
       <div class="roadmap-num">Chapter 8</div>
-      <h4>Zero-Friction C &amp; C++ Interop</h4>
-      <p>Direct Clang JSON AST header ingestion, automatic string boundary coercion, and inline <code>cpp { ... }</code> escape hatch.</p>
+      <h4>Structured Concurrency &amp; Sync</h4>
+      <p>Lexically bounded <code>async.scope</code> pools, typed channels (<code>core:sync</code>), and cooperative Context cancellation.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-9">
       <div class="roadmap-num">Chapter 9</div>
-      <h4>Build System, iOS, WebAssembly &amp; CMake</h4>
-      <p>Declarative <code>build.cf</code>, native iOS Simulator &amp; Device apps (<code>--ios</code>), WebAssembly (<code>--wasm</code>), and zero-lock-in CMake export.</p>
+      <h4>Zero-Friction C &amp; C++ Interop</h4>
+      <p>Clang JSON AST header ingestion (<code>import cpp</code>), automatic string boundary coercion, and inline <code>cpp { ... }</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-10">
       <div class="roadmap-num">Chapter 10</div>
-      <h4>HTTP Servers &amp; Routers</h4>
-      <p>Native HTTP/1.1 wire parser, fluent response builder, path parameters (<code>:id</code>), and independent routing.</p>
+      <h4>Integrated Testing &amp; Diagnostics</h4>
+      <p>Built-in <code>test "..."</code> runner, ASan/UBSan sanitizers (<code>--sanitize</code>), and <code>CF1xxx</code>-<code>CF5xxx</code> compiler error codes.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-11">
       <div class="roadmap-num">Chapter 11</div>
-      <h4>2D/3D Graphics, Raygui &amp; Pure-`.cf` iOS UI</h4>
-      <p>Hardware-accelerated windowing, vector math, immediate-mode GUI (<code>vendor:raygui</code>), and composable pure-<code>.cf</code> iOS interfaces.</p>
+      <h4>HTTP, SSE, WebSockets &amp; TLS</h4>
+      <p>High-performance HTTP/1.1 client, SSE streaming, fluent routers, RFC 6455 WebSockets, and TLS 1.3 encryption.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-12">
       <div class="roadmap-num">Chapter 12</div>
-      <h4>Multi-Target Audio &amp; DSP (`core:audio`)</h4>
-      <p>Zero-dependency waveform synthesis, procedural SFX, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams across macOS, iOS, WASM &amp; Linux.</p>
+      <h4>Serialization, SQLite &amp; Zstandard</h4>
+      <p>Compile-time SIMD JSON, embedded SQLite WAL with vector similarity, CSV parsing, and native Zstandard compression.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-13">
+      <div class="roadmap-num">Chapter 13</div>
+      <h4>2D/3D Graphics &amp; Native iOS UI</h4>
+      <p>Hardware-accelerated windowing via Raylib, Raygui controls, macOS .app bundles, WebAssembly, and native iOS UIKit.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-14">
+      <div class="roadmap-num">Chapter 14</div>
+      <h4>Multi-Target Audio DSP &amp; Synthesis</h4>
+      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-15">
+      <div class="roadmap-num">Chapter 15</div>
+      <h4>AI-First LLMs, Vectors &amp; MCP</h4>
+      <p>Unified OpenAI/Anthropic/Gemini/Ollama client, local embeddings, SQLite vector RAG, and typed MCP tool servers.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-16">
+      <div class="roadmap-num">Chapter 16</div>
+      <h4>Full-Stack Production Patterns</h4>
+      <p>End-to-end architectures, canonical projects index (01-hello-core through 16-audio-synth), and best practices.</p>
     </a>
   </div>
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore `core:*` Library Catalog (32 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore `core:*` Library Catalog (33 Modules) &rarr;</a>
   </div>
 </div>
 

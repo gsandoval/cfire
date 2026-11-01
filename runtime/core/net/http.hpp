@@ -3,6 +3,10 @@
 #include "tls.hpp"
 #include "url.hpp"
 
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+#include <emscripten.h>
+#endif
+
 #include <functional>
 #include <optional>
 #include <vector>
@@ -187,6 +191,52 @@ struct Request {
     }
 };
 
+struct SseEvent {
+    std::string event{};
+    std::string data{};
+    std::string id{};
+};
+
+[[nodiscard]] inline auto decode_chunked_body(std::string_view raw) -> std::string {
+    std::string out;
+    std::size_t pos = 0;
+    while (pos < raw.size()) {
+        std::size_t crlf = raw.find("\r\n", pos);
+        std::size_t delim_len = 2;
+        if (crlf == std::string_view::npos) {
+            crlf = raw.find('\n', pos);
+            delim_len = 1;
+        }
+        if (crlf == std::string_view::npos) break;
+        std::string_view hex_sv = raw.substr(pos, crlf - pos);
+        if (auto semi = hex_sv.find(';'); semi != std::string_view::npos) {
+            hex_sv = hex_sv.substr(0, semi);
+        }
+        while (!hex_sv.empty() && (hex_sv.front() == ' ' || hex_sv.front() == '\t')) hex_sv.remove_prefix(1);
+        while (!hex_sv.empty() && (hex_sv.back() == ' ' || hex_sv.back() == '\t')) hex_sv.remove_suffix(1);
+        if (hex_sv.empty()) {
+            pos = crlf + delim_len;
+            continue;
+        }
+        std::size_t chunk_len = 0;
+        for (char c : hex_sv) {
+            chunk_len <<= 4;
+            if (c >= '0' && c <= '9') chunk_len |= static_cast<std::size_t>(c - '0');
+            else if (c >= 'a' && c <= 'f') chunk_len |= static_cast<std::size_t>(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') chunk_len |= static_cast<std::size_t>(c - 'A' + 10);
+            else return std::string(raw);
+        }
+        pos = crlf + delim_len;
+        if (chunk_len == 0) break;
+        std::size_t avail = std::min(chunk_len, raw.size() - pos);
+        out.append(raw.substr(pos, avail));
+        pos += avail;
+        if (pos + 2 <= raw.size() && raw[pos] == '\r' && raw[pos + 1] == '\n') pos += 2;
+        else if (pos < raw.size() && raw[pos] == '\n') pos += 1;
+    }
+    return out;
+}
+
 inline auto parse_response(std::string_view raw) -> std::expected<Response, cfire::Error> {
     Response res;
     std::size_t header_end = raw.find("\r\n\r\n");
@@ -240,6 +290,9 @@ inline auto parse_response(std::string_view raw) -> std::expected<Response, cfir
             }
         }
         line_start = line_end + 1;
+    }
+    if (auto it = res.headers.find("transfer-encoding"); it != res.headers.end() && it->second.contains("chunked")) {
+        res.body = decode_chunked_body(res.body);
     }
     return res;
 }
@@ -396,6 +449,55 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     const std::unordered_map<std::string, std::string>& extra_headers = {},
     bool verify_peer = true
 ) -> std::expected<Response, cfire::Error> {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    (void)extra_headers;
+    (void)verify_peer;
+    std::string m_str(method);
+    std::string u_str(url_str);
+    std::string b_str(body);
+    std::string ct_str(content_type);
+    char* raw_ptr = reinterpret_cast<char*>(EM_ASM_PTR({
+        try {
+            var method = UTF8ToString($0);
+            var url = UTF8ToString($1);
+            var body = UTF8ToString($2);
+            var contentType = UTF8ToString($3);
+            var xhr = new XMLHttpRequest();
+            xhr.open(method, url, false);
+            if (contentType && contentType.length > 0) {
+                xhr.setRequestHeader("Content-Type", contentType);
+            }
+            if (body && body.length > 0) {
+                xhr.send(body);
+            } else {
+                xhr.send(null);
+            }
+            if (xhr.status === 0) return 0;
+            var combined = String(xhr.status) + "\n" + (xhr.responseText || "");
+            var len = lengthBytesUTF8(combined) + 1;
+            var buf = _malloc(len);
+            stringToUTF8(combined, buf, len);
+            return buf;
+        } catch (e) {
+            return 0;
+        }
+    }, m_str.c_str(), u_str.c_str(), b_str.c_str(), ct_str.c_str()));
+
+    if (!raw_ptr) {
+        return cfire::make_error("WASM XMLHttpRequest failed or server unreachable");
+    }
+    std::string combined(raw_ptr);
+    std::free(raw_ptr);
+    auto nl = combined.find('\n');
+    int status_code = (nl != std::string::npos)
+        ? cfire::detail::parse_int<int>(combined.substr(0, nl)).value_or(200)
+        : 200;
+    Response res;
+    res.status_code = status_code;
+    res.status_text = status_text_for_code(status_code);
+    res.body = (nl != std::string::npos) ? combined.substr(nl + 1) : std::move(combined);
+    return res;
+#else
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
@@ -456,6 +558,7 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     }
 
     return parse_response(full_response);
+#endif
 }
 
 [[nodiscard]] inline auto get(
@@ -490,6 +593,225 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     const std::unordered_map<std::string, std::string>& headers = {}
 ) -> std::expected<Response, cfire::Error> {
     return request("POST", url_str, body, content_type, headers, false);
+}
+
+template <typename Callback>
+[[nodiscard]] inline auto post_sse(
+    std::string_view url_str,
+    std::string_view body,
+    const std::unordered_map<std::string, std::string>& extra_headers,
+    Callback&& on_event,
+    bool verify_peer = true
+) -> std::expected<Response, cfire::Error> {
+    auto dispatch_sse_text = [&](std::string_view text, SseEvent& cur_ev, Response& res_acc, bool& stop_flag) {
+        std::size_t pos = 0;
+        while (pos < text.size() && !stop_flag) {
+            std::size_t nl = text.find('\n', pos);
+            if (nl == std::string_view::npos) break;
+            std::string_view line = text.substr(pos, nl - pos);
+            if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+            pos = nl + 1;
+
+            if (line.empty()) {
+                if (!cur_ev.data.empty() || !cur_ev.event.empty()) {
+                    res_acc.body += cur_ev.data + "\n";
+                    if constexpr (std::is_same_v<std::invoke_result_t<Callback&, const SseEvent&>, bool>) {
+                        if (!on_event(cur_ev)) stop_flag = true;
+                    } else {
+                        on_event(cur_ev);
+                    }
+                    cur_ev = SseEvent{};
+                }
+                continue;
+            }
+            if (line.starts_with(':')) continue;
+            if (line.starts_with("event:")) {
+                std::string_view v = line.substr(6);
+                while (!v.empty() && v.front() == ' ') v.remove_prefix(1);
+                cur_ev.event = std::string(v);
+            } else if (line.starts_with("id:")) {
+                std::string_view v = line.substr(3);
+                while (!v.empty() && v.front() == ' ') v.remove_prefix(1);
+                cur_ev.id = std::string(v);
+            } else if (line.starts_with("data:")) {
+                std::string_view v = line.substr(5);
+                if (!v.empty() && v.front() == ' ') v.remove_prefix(1);
+                if (!cur_ev.data.empty()) cur_ev.data += "\n";
+                cur_ev.data.append(v);
+            }
+        }
+        return pos;
+    };
+
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    auto hdrs = extra_headers;
+    hdrs["Accept"] = "text/event-stream";
+    auto res = request("POST", url_str, body, "application/json", hdrs, verify_peer);
+    if (!res) return res;
+    std::string raw_sse = std::move(res->body);
+    if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
+    res->body.clear();
+    SseEvent cur_ev;
+    bool stop_flag = false;
+    (void)dispatch_sse_text(raw_sse, cur_ev, *res, stop_flag);
+    return res;
+#else
+    auto u = cfire::url::parse(url_str);
+    if (!u) return std::unexpected(u.error());
+
+    auto conn_res = cfire::net::connect_tcp(u->host, u->port);
+    if (!conn_res) return std::unexpected(conn_res.error());
+    auto& conn = *conn_res;
+
+    bool effective_verify = verify_peer;
+    std::string ca_file;
+    for (const auto& [k, v] : extra_headers) {
+        std::string lk;
+        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (lk == "x-cfire-tls-verify" && (v == "false" || v == "0")) effective_verify = false;
+        else if (lk == "x-cfire-tls-ca") ca_file = v;
+    }
+
+    if (u->scheme == "https") {
+        auto tls_res = cfire::tls::wrap_client(conn, u->host, effective_verify, ca_file);
+        if (!tls_res) return std::unexpected(tls_res.error());
+    }
+
+    std::string full_path = u->path;
+    if (!u->query.empty()) full_path += "?" + u->query;
+
+    std::string req;
+    req += std::format("POST {} HTTP/1.1\r\n", detail::strip_crlf(full_path));
+    req += std::format("Host: {}\r\n", detail::strip_crlf(u->host));
+    req += "Connection: close\r\n";
+    req += "Accept: text/event-stream\r\n";
+    req += "Content-Type: application/json\r\n";
+    req += std::format("Content-Length: {}\r\n", body.size());
+    for (const auto& [k, v] : extra_headers) {
+        std::string lk;
+        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (lk == "x-cfire-tls-verify" || lk == "x-cfire-tls-ca" || lk == "accept" || lk == "content-type") continue;
+        req += std::format("{}: {}\r\n", detail::strip_crlf(k), detail::strip_crlf(v));
+    }
+    req += "\r\n";
+    req += body;
+
+    if (auto wr = conn.write(req); !wr) return std::unexpected(wr.error());
+
+    std::string raw_buf;
+    std::size_t hdr_end = std::string::npos;
+    std::size_t body_offset = 0;
+    for (;;) {
+        auto chunk = conn.read_str(4096);
+        if (!chunk || chunk->empty()) break;
+        raw_buf.append(*chunk);
+        hdr_end = raw_buf.find("\r\n\r\n");
+        if (hdr_end != std::string::npos) {
+            body_offset = hdr_end + 4;
+            break;
+        }
+        hdr_end = raw_buf.find("\n\n");
+        if (hdr_end != std::string::npos) {
+            body_offset = hdr_end + 2;
+            break;
+        }
+    }
+    if (hdr_end == std::string::npos) {
+        return cfire::make_error("SSE response missing HTTP header delimiter");
+    }
+
+    auto parsed_hdr = parse_response(raw_buf.substr(0, body_offset));
+    if (!parsed_hdr) return parsed_hdr;
+    Response res = std::move(*parsed_hdr);
+    std::string stream_buf = raw_buf.substr(body_offset);
+
+    if (res.status_code >= 400) {
+        for (;;) {
+            auto chunk = conn.read_str(4096);
+            if (!chunk || chunk->empty()) break;
+            stream_buf.append(*chunk);
+        }
+        if (auto it = res.headers.find("transfer-encoding"); it != res.headers.end() && it->second.contains("chunked")) {
+            res.body = decode_chunked_body(stream_buf);
+        } else {
+            res.body = std::move(stream_buf);
+        }
+        return res;
+    }
+
+    bool is_chunked = false;
+    if (auto it = res.headers.find("transfer-encoding"); it != res.headers.end() && it->second.contains("chunked")) {
+        is_chunked = true;
+    }
+
+    SseEvent cur_ev;
+    bool stop_flag = false;
+    std::string sse_pending;
+
+    auto process_raw = [&]() {
+        if (is_chunked) {
+            // Decode complete HTTP chunks from stream_buf into sse_pending
+            std::size_t pos = 0;
+            while (pos < stream_buf.size()) {
+                std::size_t crlf = stream_buf.find("\r\n", pos);
+                std::size_t dlen = 2;
+                if (crlf == std::string::npos) {
+                    crlf = stream_buf.find('\n', pos);
+                    dlen = 1;
+                }
+                if (crlf == std::string::npos) break;
+                std::string_view hex_sv(stream_buf.data() + pos, crlf - pos);
+                if (auto semi = hex_sv.find(';'); semi != std::string_view::npos) hex_sv = hex_sv.substr(0, semi);
+                while (!hex_sv.empty() && (hex_sv.front() == ' ' || hex_sv.front() == '\t')) hex_sv.remove_prefix(1);
+                while (!hex_sv.empty() && (hex_sv.back() == ' ' || hex_sv.back() == '\t')) hex_sv.remove_suffix(1);
+                if (hex_sv.empty()) { pos = crlf + dlen; continue; }
+                std::size_t clen = 0;
+                bool ok_hex = true;
+                for (char c : hex_sv) {
+                    clen <<= 4;
+                    if (c >= '0' && c <= '9') clen |= static_cast<std::size_t>(c - '0');
+                    else if (c >= 'a' && c <= 'f') clen |= static_cast<std::size_t>(c - 'a' + 10);
+                    else if (c >= 'A' && c <= 'F') clen |= static_cast<std::size_t>(c - 'A' + 10);
+                    else { ok_hex = false; break; }
+                }
+                if (!ok_hex) {
+                    sse_pending.append(stream_buf.substr(pos));
+                    pos = stream_buf.size();
+                    break;
+                }
+                if (clen == 0) {
+                    pos = stream_buf.size();
+                    break;
+                }
+                std::size_t data_start = crlf + dlen;
+                if (data_start + clen + dlen > stream_buf.size()) break; // Wait for more bytes
+                sse_pending.append(stream_buf.data() + data_start, clen);
+                pos = data_start + clen;
+                if (pos + 2 <= stream_buf.size() && stream_buf[pos] == '\r' && stream_buf[pos + 1] == '\n') pos += 2;
+                else if (pos < stream_buf.size() && stream_buf[pos] == '\n') pos += 1;
+            }
+            if (pos > 0) stream_buf.erase(0, pos);
+        } else {
+            sse_pending.append(stream_buf);
+            stream_buf.clear();
+        }
+        std::size_t consumed = dispatch_sse_text(sse_pending, cur_ev, res, stop_flag);
+        if (consumed > 0) sse_pending.erase(0, consumed);
+    };
+
+    process_raw();
+    while (!stop_flag) {
+        auto chunk = conn.read_str(4096);
+        if (!chunk || chunk->empty()) break;
+        stream_buf.append(*chunk);
+        process_raw();
+    }
+    if (!stop_flag && (!sse_pending.empty() || !cur_ev.data.empty())) {
+        sse_pending += "\n\n";
+        (void)dispatch_sse_text(sse_pending, cur_ev, res, stop_flag);
+    }
+    return res;
+#endif
 }
 
 class Router {

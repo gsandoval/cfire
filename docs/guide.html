@@ -7,20 +7,22 @@
   <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
   <style>
 :root {
-    --bg: #FAFAF9;
-    --bg-card: #FFFFFF;
-    --bg-card-hover: #F5F5F4;
-    --bg-code: #18181B;
-    --border: #E7E5E4;
-    --border-dark: #D6D3D1;
-    --text: #1C1917;
-    --text-bright: #0C0A09;
-    --muted: #57534E;
-    --accent: #1D4ED8;
-    --accent-hover: #1E40AF;
-    --ok: #047857;
-    --warn: #B45309;
-    --err: #B91C1C;
+    --bg: #0D1117;
+    --bg-card: #161B22;
+    --bg-card-hover: #21262D;
+    --bg-code: #090D12;
+    --bg-subtle: #21262D;
+    --border: #30363D;
+    --border-dark: #484F58;
+    --text: #F0F6FC;
+    --text-bright: #FFFFFF;
+    --muted: #8B949E;
+    --accent: #F97316;
+    --accent-hover: #FB923C;
+    --accent-sapphire: #38BDF8;
+    --ok: #3FB950;
+    --warn: #D29922;
+    --err: #F85149;
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -40,17 +42,15 @@ body {
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
-::selection { background: #1C1917; color: #FFFFFF; }
-a { color: var(--accent); text-decoration: none; transition: color 0.15s ease; }
-a:hover { color: var(--accent-hover); text-decoration: underline; }
+::selection { background: #F97316; color: #0D1117; }
+a { color: var(--accent-sapphire); text-decoration: none; transition: color 0.15s ease; }
+a:hover { color: #7DD3FC; text-decoration: underline; }
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     width: 100%;
-    background: rgba(255, 255, 255, 0.96);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: #0D1117;
     border-bottom: 1px solid var(--border);
 }
 .navbar-inner {
@@ -66,7 +66,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 .brand {
     display: flex; align-items: center; gap: 0.65rem;
-    font-weight: 800; font-size: 1.25rem; color: var(--text);
+    font-weight: 800; font-size: 1.25rem; color: var(--text-bright);
     text-decoration: none; flex-shrink: 0;
 }
 .brand:hover { text-decoration: none; }
@@ -74,12 +74,12 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     width: 30px; height: 30px; object-fit: contain;
 }
 .brand span.brand-text {
-    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text);
+    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text-bright);
 }
-.brand span.fire { color: #EA580C; font-weight: 850; }
+.brand span.fire { color: #F97316; font-weight: 850; }
 .brand-badge {
     font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
-    background: #F5F5F4; border: 1px solid var(--border); color: #57534E;
+    background: #21262D; border: 1px solid var(--border); color: #8B949E;
     padding: 0.12rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
 }
 .nav-links { display: flex; align-items: center; gap: 1.25rem; font-size: 0.92rem; font-weight: 600; }
@@ -87,14 +87,14 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     color: var(--muted); transition: all 0.15s ease;
     padding: 0.25rem 0.4rem; border-radius: 5px;
 }
-.nav-links a:hover { color: var(--text); text-decoration: none; background: #F5F5F4; }
-.nav-links a.active { color: var(--text); text-decoration: none; font-weight: 750; background: #F5F5F4; }
+.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
+.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
 .btn-nav-primary {
-    background: #1C1917 !important; color: #FFFFFF !important;
-    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 600 !important;
+    background: #F97316 !important; color: #0D1117 !important;
+    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
 }
-.btn-nav-primary:hover { background: #292524 !important; text-decoration: none !important; }
+.btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
 
 /* Page container with robust bounds */
 .container {
@@ -120,16 +120,50 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     top: 4.5rem;
     max-height: calc(100vh - 5.5rem);
     overflow-y: auto;
-    background: #FFFFFF;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
 .sidebar-summary { display: none; }
 .sidebar h4 {
     font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem;
+}
+.sidebar-part-title {
+    font-size: 0.72rem; font-weight: 850; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #F97316; margin: 1.25rem 0 0.4rem;
+    padding-left: 0.4rem;
+}
+.sidebar-chapter-list { list-style: none; margin-bottom: 0.75rem; }
+.subhead-list {
+    list-style: none;
+    margin: 0.2rem 0 0.4rem 0.85rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--border);
+}
+.subhead-list li { margin-bottom: 0.15rem; }
+.subhead-list a {
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.2rem 0.4rem;
+}
+.subhead-list a:hover { color: var(--text-bright); }
+.search-input {
+    width: 100%;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.82rem;
+    font-family: var(--font-sans);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-code);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+.search-input:focus {
+    border-color: #F97316;
 }
 .sidebar ul { list-style: none; margin-bottom: 1.25rem; }
 .sidebar li { margin-bottom: 0.25rem; }
@@ -140,10 +174,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar a:hover {
-    background: #F5F5F4; color: var(--text); text-decoration: none;
+    background: var(--bg-card-hover); color: var(--text-bright); text-decoration: none;
 }
 .sidebar a.active {
-    background: #F5F5F4; color: var(--accent); font-weight: 700;
+    background: var(--bg-card-hover); color: #F97316; font-weight: 700;
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
@@ -156,20 +190,130 @@ main {
 }
 main h1 {
     font-size: clamp(1.85rem, 4vw, 2.5rem); font-weight: 800;
-    color: var(--text); letter-spacing: -0.03em; margin-bottom: 0.75rem;
+    color: var(--text-bright); letter-spacing: -0.03em; margin-bottom: 0.75rem;
 }
 main h2 {
-    font-size: 1.5rem; font-weight: 800; color: var(--text);
+    font-size: 1.5rem; font-weight: 800; color: var(--text-bright);
     letter-spacing: -0.02em; margin: 2.5rem 0 0.85rem; padding-bottom: 0.4rem;
     border-bottom: 1px solid var(--border);
 }
 main h3 {
-    font-size: 1.2rem; font-weight: 700; color: var(--text);
+    font-size: 1.2rem; font-weight: 700; color: var(--text-bright);
     margin: 1.75rem 0 0.5rem;
 }
-main p { color: #44403C; font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
-main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: #44403C; font-size: 0.98rem; line-height: 1.7; }
+main p { color: var(--text); font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
+main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: var(--text); font-size: 0.98rem; line-height: 1.7; }
 main li { margin-bottom: 0.4rem; }
+
+/* Part banner & Callouts */
+.part-banner {
+    margin: 3.5rem 0 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border);
+}
+.part-banner:first-of-type { margin-top: 1rem; }
+.part-pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #F97316;
+    background: #27140B;
+    border: 1px solid #7C2D12;
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+}
+.part-banner h2 {
+    font-size: 1.85rem;
+    font-weight: 850;
+    color: var(--text-bright);
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+.callout {
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    background: var(--bg-card);
+}
+.callout-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.4rem;
+}
+.callout p {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--text);
+    line-height: 1.6;
+}
+.callout-note {
+    border-left-color: #38BDF8;
+    background: #0B1622;
+}
+.callout-note .callout-title { color: #38BDF8; }
+.callout-tip {
+    border-left-color: #3FB950;
+    background: #0A1C14;
+}
+.callout-tip .callout-title { color: #3FB950; }
+.callout-important {
+    border-left-color: #A78BFA;
+    background: #171124;
+}
+.callout-important .callout-title { color: #A78BFA; }
+.callout-warning {
+    border-left-color: #F59E0B;
+    background: #1E1606;
+}
+.callout-warning .callout-title { color: #F59E0B; }
+
+/* Guide Pager */
+.guide-pager {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+    margin: 3.5rem 0 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+}
+.pager-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.pager-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    text-decoration: none;
+}
+.pager-card span {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #F97316;
+}
+.pager-card strong {
+    font-size: 1.05rem;
+    color: var(--text-bright);
+    font-weight: 750;
+}
 
 /* Hero section */
 .hero { text-align: center; padding: 3rem 0.5rem 3.5rem; }
@@ -177,12 +321,12 @@ main li { margin-bottom: 0.4rem; }
     display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px;
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase;
-    background: #FFFFFF; border: 1px solid var(--border); color: var(--accent);
+    background: var(--bg-card); border: 1px solid var(--border); color: #F97316;
     margin-bottom: 1.5rem;
 }
 h1.hero-title {
     font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 850;
-    letter-spacing: -0.03em; color: var(--text); margin-bottom: 1.25rem;
+    letter-spacing: -0.03em; color: var(--text-bright); margin-bottom: 1.25rem;
     line-height: 1.15;
 }
 .subtitle {
@@ -196,25 +340,25 @@ h1.hero-title {
     align-items: center; gap: 0.5rem; text-decoration: none; cursor: pointer;
 }
 .btn:hover { text-decoration: none; }
-.btn-primary { background: #1C1917; color: #FFFFFF; border-color: #1C1917; }
-.btn-primary:hover { background: #292524; border-color: #292524; }
-.btn-secondary { background: #FFFFFF; color: var(--text); border-color: var(--border); }
-.btn-secondary:hover { background: #F5F5F4; border-color: var(--border-dark); }
+.btn-primary { background: #F97316; color: #0D1117; border-color: #F97316; font-weight: 700; }
+.btn-primary:hover { background: #FB923C; border-color: #FB923C; }
+.btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Install Box */
 .install-bar {
     display: inline-flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 8px;
     padding: 0.65rem 1rem; font-family: var(--font-mono); font-size: 0.88rem;
-    color: #292524; max-width: 100%; overflow-x: auto;
+    color: var(--text); max-width: 100%; overflow-x: auto;
 }
 .install-bar .prompt { color: var(--muted); font-weight: 700; user-select: none; }
 .copy-btn {
-    background: #1C1917; color: #FFFFFF; border: none;
+    background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
     padding: 0.35rem 0.75rem; border-radius: 5px; font-size: 0.75rem; font-weight: 700;
-    font-family: var(--font-mono); cursor: pointer; transition: background 0.15s; shrink-0;
+    font-family: var(--font-mono); cursor: pointer; transition: all 0.15s; shrink-0;
 }
-.copy-btn:hover { background: #292524; }
+.copy-btn:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Stats ribbon */
 .stats-ribbon {
@@ -222,11 +366,11 @@ h1.hero-title {
     margin: 3rem 0 2rem;
 }
 .stat-pill {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.25rem 1rem; text-align: center;
 }
 .stat-val {
-    font-size: 1.85rem; font-weight: 850; color: var(--text); font-family: var(--font-mono);
+    font-size: 1.85rem; font-weight: 850; color: var(--text-bright); font-family: var(--font-mono);
 }
 .stat-lbl {
     font-size: 0.76rem; color: var(--muted); font-weight: 700; text-transform: uppercase;
@@ -237,29 +381,29 @@ h1.hero-title {
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
 .card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; transition: border-color 0.15s ease;
 }
 .card:hover { border-color: var(--border-dark); }
 .card-num {
     font-family: var(--font-mono); font-size: 0.78rem; font-weight: 800;
-    color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase;
+    color: #F97316; margin-bottom: 0.5rem; text-transform: uppercase;
 }
-.card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text); }
+.card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text-bright); }
 .card p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin: 0; }
 
 /* Code Blocks: Strict Horizontal Scroll Containment */
 pre {
-    background: var(--bg-code); border: 1px solid #27272A;
+    background: var(--bg-code); border: 1px solid var(--border);
     border-radius: 8px; padding: 1.1rem 1.25rem; overflow-x: auto;
     max-width: 100%; min-width: 0; box-sizing: border-box;
     font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.65;
-    color: #F4F4F5; -webkit-overflow-scrolling: touch;
+    color: #F0F6FC; -webkit-overflow-scrolling: touch;
 }
 code {
     font-family: var(--font-mono); font-size: 0.88em;
-    background: #F5F5F4; border: 1px solid var(--border);
-    padding: 0.12rem 0.35rem; border-radius: 4px; color: #1C1917;
+    background: #1C2128; border: 1px solid var(--border);
+    padding: 0.12rem 0.35rem; border-radius: 4px; color: #F97316;
     word-break: break-word;
 }
 pre code { background: none; border: none; padding: 0; color: inherit; word-break: normal; }
@@ -267,13 +411,30 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
     margin-bottom: 0.45rem; display: flex; justify-content: space-between;
+    align-items: center;
 }
-.code-header span.tag-cf { color: #60A5FA; }
+.code-header span.tag-cf { color: #38BDF8; }
 .code-header span.tag-cpp { color: #F59E0B; }
+.code-copy-btn {
+    background: var(--bg-card);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.code-copy-btn:hover {
+    color: var(--text-bright);
+    border-color: var(--border-dark);
+    background: var(--bg-card-hover);
+}
 
 .section-title {
     font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 800; margin: 4rem 0 0.75rem;
-    text-align: center; letter-spacing: -0.02em; color: var(--text);
+    text-align: center; letter-spacing: -0.02em; color: var(--text-bright);
 }
 .section-subtitle {
     text-align: center; color: var(--muted); font-size: 1.05rem; max-width: 640px; margin: 0 auto 2.5rem;
@@ -281,21 +442,21 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
 
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center; flex-wrap: wrap; }
 .tab-btn {
-    background: #FFFFFF; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--muted); border: 1px solid var(--border);
     padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;
     font-size: 0.88rem; font-family: var(--font-mono); transition: all 0.15s;
 }
-.tab-btn:hover { color: var(--text); border-color: var(--border-dark); }
+.tab-btn:hover { color: var(--text-bright); border-color: var(--border-dark); }
 .tab-btn.active {
-    background: #1C1917; color: #FFFFFF; border-color: #1C1917;
+    background: var(--bg-card-hover); color: var(--text-bright); border-color: #F97316;
 }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 /* Rosetta Mobile Toggle */
 .rosetta-mobile-toggle {
-    display: none; margin-bottom: 0.75rem; gap: 0.35rem; background: #E7E5E4;
-    padding: 0.25rem; border-radius: 6px;
+    display: none; margin-bottom: 0.75rem; gap: 0.35rem; background: var(--bg-card);
+    padding: 0.25rem; border-radius: 6px; border: 1px solid var(--border);
 }
 .rosetta-mobile-toggle button {
     flex: 1; padding: 0.45rem 0.5rem; border: none; background: transparent;
@@ -303,20 +464,20 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     color: var(--muted); border-radius: 4px; cursor: pointer;
 }
 .rosetta-mobile-toggle button.active {
-    background: #FFFFFF; color: var(--text);
+    background: var(--bg-card-hover); color: var(--text-bright);
 }
 
 /* Console preview */
 .console-preview {
-    background: #F5F5F4; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px;
     padding: 0.75rem 1rem; margin-top: 0.85rem; font-family: var(--font-mono);
-    font-size: 0.82rem; color: #1C1917;
+    font-size: 0.82rem; color: var(--text);
 }
 .console-header {
     font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.05em; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.35rem;
 }
-.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #059669; }
+.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #3FB950; }
 
 /* Robust Table System: Isolated Scrolling & Polished Mobile Experience */
 .table-wrap {
@@ -327,10 +488,9 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     margin: 1.5rem 0 2.25rem;
-    background: #FFFFFF;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 .table-wrap table {
     width: 100%;
@@ -345,11 +505,11 @@ th, td {
     font-size: 0.9rem; vertical-align: top;
 }
 th {
-    background: #F5F5F4; color: var(--text); font-weight: 750; font-size: 0.82rem;
+    background: #1C2128; color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #FAFAF9; }
+tr:hover td { background: #1F242C; }
 
 /* Subtle mobile scroll hint banner */
 .table-scroll-cue {
@@ -360,7 +520,7 @@ tr:hover td { background: #FAFAF9; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.4rem 0.85rem;
-    background: #F5F5F4;
+    background: #1C2128;
     border-bottom: 1px solid var(--border);
     text-align: right;
 }
@@ -370,16 +530,16 @@ tr:hover td { background: #FAFAF9; }
     display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin: 2rem 0;
 }
 .step-card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; position: relative;
 }
 .step-badge {
     display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
     font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
-    background: #1C1917; color: #FFFFFF; padding: 0.2rem 0.6rem; border-radius: 4px;
-    margin-bottom: 0.75rem;
+    background: #21262D; color: #F97316; padding: 0.2rem 0.6rem; border-radius: 4px;
+    border: 1px solid var(--border); margin-bottom: 0.75rem;
 }
-.step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text); }
+.step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text-bright); }
 .step-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 0.85rem; }
 
 /* Roadmap */
@@ -387,27 +547,27 @@ tr:hover td { background: #FAFAF9; }
     display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 2rem 0;
 }
 .roadmap-card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
-    padding: 1.25rem; transition: border-color 0.15s ease; text-decoration: none; display: block;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1.25rem; transition: border-color 0.15s ease, background 0.15s ease; text-decoration: none; display: block;
 }
 .roadmap-card:hover {
-    border-color: var(--border-dark); text-decoration: none;
+    background: var(--bg-card-hover); border-color: var(--border-dark); text-decoration: none;
 }
 .roadmap-num {
     font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.35rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #F97316; margin-bottom: 0.35rem;
 }
-.roadmap-card h4 { font-size: 1.05rem; color: var(--text); margin-bottom: 0.35rem; font-weight: 700; }
+.roadmap-card h4 { font-size: 1.05rem; color: var(--text-bright); margin-bottom: 0.35rem; font-weight: 700; }
 .roadmap-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; margin: 0; }
 
 .footer {
     text-align: center; padding: 3rem 1rem 2.5rem; border-top: 1px solid var(--border);
-    background: #FFFFFF; color: var(--muted); font-size: 0.88rem; margin-top: 4.5rem;
+    background: var(--bg); color: var(--muted); font-size: 0.88rem; margin-top: 4.5rem;
 }
 .footer-logo { max-width: 120px; margin-bottom: 1rem; }
 .footer-links { display: flex; justify-content: center; gap: 1.5rem; margin: 1rem 0; flex-wrap: wrap; }
 .footer-links a { color: var(--muted); font-weight: 600; font-size: 0.88rem; }
-.footer-links a:hover { color: var(--text); }
+.footer-links a:hover { color: var(--text-bright); }
 
 /* Responsive adjustments for mobile & tablet */
 @media (max-width: 840px) {
@@ -419,7 +579,7 @@ tr:hover td { background: #FAFAF9; }
     }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
-        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text);
+        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
     }
     .sidebar-summary::-webkit-details-marker { display: none; }
@@ -450,9 +610,9 @@ tr:hover td { background: #FAFAF9; }
     .nav-links::-webkit-scrollbar { display: none; }
     .nav-links a {
         white-space: nowrap; padding: 0.35rem 0.65rem; border-radius: 6px;
-        background: #F5F5F4; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
+        background: #161B22; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
     }
-    .nav-links a.active { background: #1C1917; color: #FFFFFF !important; }
+    .nav-links a.active { background: #21262D; color: var(--text-bright) !important; }
     .btn-nav-primary {
         margin-left: auto; padding: 0.35rem 0.75rem !important;
         font-size: 0.8rem !important; flex-shrink: 0;
@@ -475,16 +635,16 @@ tr:hover td { background: #FAFAF9; }
     }
     .api-table-wrap thead { display: none; }
     .api-table-wrap tr {
-        background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
-        margin-bottom: 0.85rem; padding: 0.95rem 1rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+        margin-bottom: 0.85rem; padding: 0.95rem 1rem;
     }
     .api-table-wrap td { padding: 0.25rem 0; border: none; font-size: 0.88rem; }
     .api-table-wrap td:first-child {
         padding-bottom: 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.45rem;
     }
     .api-table-wrap td:first-child code {
-        font-weight: 700; font-size: 0.88rem; color: var(--accent);
-        background: #EFF6FF; border-color: #DBEAFE; word-break: break-all;
+        font-weight: 700; font-size: 0.88rem; color: #F97316;
+        background: #21262D; border-color: var(--border); word-break: break-all;
         display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
     }
     .api-table-wrap td:nth-child(2)::before {
@@ -492,11 +652,11 @@ tr:hover td { background: #FAFAF9; }
         letter-spacing: 0.05em; color: var(--muted); display: inline-block; margin-right: 0.35rem;
     }
     .api-table-wrap td:nth-child(2) {
-        font-size: 0.82rem; color: #57534E; padding-bottom: 0.35rem; word-break: break-all;
+        font-size: 0.82rem; color: var(--muted); padding-bottom: 0.35rem; word-break: break-all;
     }
-    .api-table-wrap td:last-child { color: #1C1917; line-height: 1.55; }
+    .api-table-wrap td:last-child { color: var(--text); line-height: 1.55; }
     .api-table-wrap td:last-child code {
-        display: block; margin-top: 0.35rem; word-break: break-all; background: #F5F5F4;
+        display: block; margin-top: 0.35rem; word-break: break-all; background: var(--bg-code);
     }
 }
 
@@ -532,25 +692,138 @@ tr:hover td { background: #FAFAF9; }
           <span>Chapters &amp; Navigation</span>
           <span class="sidebar-chevron">&#9662;</span>
         </summary>
-        <div class="sidebar-content">
-          <h4>Guide Chapters</h4>
-          <ul>
-            <li><a href="#chapter-1">1. Philosophy &amp; Architecture</a></li>
-            <li><a href="#chapter-2">2. Tour of the Toolchain</a></li>
-            <li><a href="#chapter-3">3. Syntax, Primitives, Variables &amp; Control Flow</a></li>
-            <li><a href="#chapter-4">4. Functions &amp; Call-Site Intent Safety</a></li>
-            <li><a href="#chapter-5">5. Structs, Compile-Time Tags &amp; Algebraic Enums</a></li>
-            <li><a href="#chapter-6">6. Fearless Error Handling &amp; Cleanup</a></li>
-            <li><a href="#chapter-7">7. Structured Concurrency &amp; Contexts</a></li>
-            <li><a href="#chapter-8">8. Zero-Friction C &amp; C++ Interop</a></li>
-            <li><a href="#chapter-9">9. The Cfire Build System: Native, Cross-Target &amp; WebAssembly</a></li>
-            <li><a href="#chapter-10">10. Building Web Services, HTTP Servers &amp; Independent Routers (`core:net/http`)</a></li>
-            <li><a href="#chapter-11">11. 2D/3D Graphics &amp; GUI Applications with Raylib and Raygui</a></li>
-            <li><a href="#chapter-12">12. Multi-Target Audio, Synthesis, WAV Codec &amp; Real-Time DSP (`core:audio`)</a></li>
+        <div class="sidebar-content" id="sidebar-nav">
+          <input type="text" id="guide-filter" class="search-input" placeholder="Filter chapters &amp; topics..." oninput="filterGuideNav(this.value)" style="margin-bottom: 0.75rem;" />
+          <h4 class="sidebar-part-title">Part I: Getting Started &amp; Tooling</h4>
+          <ul class="sidebar-chapter-list">
+            <li class="nav-item"><a href="#chapter-1">1. Installation &amp; Platform Setup</a>
+              <ul class="subhead-list">
+                <li><a href="#overview-system-requirements">Overview &amp; System Requirements</a></li>
+                <li><a href="#quick-installation-script-macos-linux">Quick Installation Script (macOS &amp; Linux)</a></li>
+                <li><a href="#manual-installation-platform-toolchains">Manual Installation &amp; Platform Toolchains</a></li>
+                <li><a href="#cross-compilation-target-setup">Cross-Compilation Target Setup</a></li>
+                <li><a href="#ai-agent-ide-configuration">AI Agent &amp; IDE Configuration</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-2">2. 5-Minute Quickstart &amp; Tour of the Toolchain</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-instant-evaluation-with-cfire-eval">Level 1 — Instant Evaluation with `cfire eval`</a></li>
+                <li><a href="#level-2-your-first-script-hellocf">Level 2 — Your First Script (`hello.cf`)</a></li>
+                <li><a href="#level-3-production-build-sanitizers-c23-ejection">Level 3 — Production Build, Sanitizers &amp; C++23 Ejection</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-3">3. Project Layout, CLI &amp; Build System (`build.cf`)</a>
+              <ul class="subhead-list">
+                <li><a href="#complete-cli-command-reference">Complete CLI Command Reference</a></li>
+                <li><a href="#declarative-project-configuration-buildcf">Declarative Project Configuration (`build.cf`)</a></li>
+                <li><a href="#precompiled-header-pch-acceleration">Precompiled Header (PCH) Acceleration</a></li>
+              </ul>
+            </li>
+          </ul>
+          <h4 class="sidebar-part-title">Part II: Core Language &amp; Intent Safety</h4>
+          <ul class="sidebar-chapter-list">
+            <li class="nav-item"><a href="#chapter-4">4. Syntax, Primitives, Variables &amp; Control Flow</a>
+              <ul class="subhead-list">
+                <li><a href="#overview-modern-ergonomics-lowered-to-c23">Overview: Modern Ergonomics Lowered to C++23</a></li>
+                <li><a href="#level-1-variables-primitive-types">Level 1 — Variables &amp; Primitive Types</a></li>
+                <li><a href="#level-2-composite-data-structures">Level 2 — Composite Data Structures</a></li>
+                <li><a href="#level-3-pointer-semantics-lowering">Level 3 — Pointer Semantics &amp; Lowering</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-5">5. Functions, Call-Site Intent Safety &amp; Memory Semantics</a>
+              <ul class="subhead-list">
+                <li><a href="#overview-call-site-exclusivity">Overview: Call-Site Exclusivity</a></li>
+                <li><a href="#level-1-function-signatures-multiple-returns">Level 1 — Function Signatures &amp; Multiple Returns</a></li>
+                <li><a href="#level-2-parameter-intent-in-mut-move">Level 2 — Parameter Intent (`in`, `mut`, `move`)</a></li>
+                <li><a href="#level-3-compile-time-borrow-escape-analysis">Level 3 — Compile-Time Borrow &amp; Escape Analysis</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-6">6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-structs-with-default-field-values">Level 1 — Structs with Default Field Values</a></li>
+                <li><a href="#level-2-compile-time-struct-reflection-tags">Level 2 — Compile-Time Struct Reflection Tags</a></li>
+                <li><a href="#level-3-algebraic-enums-exhaustive-pattern-matching">Level 3 — Algebraic Enums &amp; Exhaustive Pattern Matching</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-7">7. Fearless Error Handling, Optionals &amp; RAII Cleanup</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-fallible-return-types-t-and-try">Level 1 — Fallible Return Types (`T!`) and `try`</a></li>
+                <li><a href="#level-2-fallback-divergence-optional-unwrapping">Level 2 — Fallback Divergence &amp; Optional Unwrapping</a></li>
+                <li><a href="#level-3-deterministic-raii-cleanup-defer">Level 3 — Deterministic RAII Cleanup (`defer`)</a></li>
+              </ul>
+            </li>
+          </ul>
+          <h4 class="sidebar-part-title">Part III: Concurrency, C++ Interop &amp; Systems</h4>
+          <ul class="sidebar-chapter-list">
+            <li class="nav-item"><a href="#chapter-8">8. Structured Concurrency, Channels &amp; Contexts</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-scoped-concurrency">Level 1 — Scoped Concurrency</a></li>
+                <li><a href="#level-2-bounded-mpmc-channels-coresync">Level 2 — Bounded MPMC Channels (`core:sync`)</a></li>
+                <li><a href="#level-3-cancellation-tokens-deadlines-coresynccontext">Level 3 — Cancellation Tokens &amp; Deadlines (`core:sync/context`)</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-9">9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-inline-c-escape-blocks">Level 1 — Inline C++ Escape Blocks</a></li>
+                <li><a href="#level-2-direct-clang-json-ast-header-ingestion">Level 2 — Direct Clang JSON AST Header Ingestion</a></li>
+                <li><a href="#level-3-multi-build-orchestration-in-buildcf">Level 3 — Multi-Build Orchestration in `build.cf`</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-10">10. Integrated Testing, Sanitizers &amp; Diagnostics</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-built-in-unit-tests">Level 1 — Built-In Unit Tests</a></li>
+                <li><a href="#level-2-memory-verification-under-sanitizers">Level 2 — Memory Verification under Sanitizers</a></li>
+                <li><a href="#level-3-diagnostic-error-codes">Level 3 — Diagnostic Error Codes</a></li>
+              </ul>
+            </li>
+          </ul>
+          <h4 class="sidebar-part-title">Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target</h4>
+          <ul class="sidebar-chapter-list">
+            <li class="nav-item"><a href="#chapter-11">11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-http-client-requests">Level 1 — HTTP Client Requests</a></li>
+                <li><a href="#level-2-http-server-with-server-sent-events-sse">Level 2 — HTTP Server with Server-Sent Events (SSE)</a></li>
+                <li><a href="#level-3-rfc-6455-websockets-tls-13">Level 3 — RFC 6455 WebSockets &amp; TLS 1.3</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-12">12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-compile-time-simd-json">Level 1 — Compile-Time SIMD JSON</a></li>
+                <li><a href="#level-2-embedded-sqlite-with-vector-search">Level 2 — Embedded SQLite with Vector Search</a></li>
+                <li><a href="#level-3-zstandard-frame-compression-corecompresszstd">Level 3 — Zstandard Frame Compression (`core:compress/zstd`)</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-13">13. 2D/3D Graphics &amp; Native GUI Applications</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-hardware-accelerated-2d-rendering">Level 1 — Hardware-Accelerated 2D Rendering</a></li>
+                <li><a href="#level-2-immediate-mode-controls-vendorraygui">Level 2 — Immediate-Mode Controls (`vendor:raygui`)</a></li>
+                <li><a href="#level-3-multi-platform-macos-app-webassembly-ios-uikit">Level 3 — Multi-Platform: macOS App, WebAssembly &amp; iOS UIKit</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-14">14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (`core:audio`)</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-zero-asset-procedural-sound-effects">Level 1 — Zero-Asset Procedural Sound Effects</a></li>
+                <li><a href="#level-2-adsr-envelope-synthesis-riffwav-encoding">Level 2 — ADSR Envelope Synthesis &amp; RIFF/WAV Encoding</a></li>
+                <li><a href="#level-3-real-time-64-voice-mixer-float32-audio-stream">Level 3 — Real-Time 64-Voice Mixer &amp; Float32 Audio Stream</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-15">15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</a>
+              <ul class="subhead-list">
+                <li><a href="#level-1-unified-llm-streaming-chat">Level 1 — Unified LLM Streaming Chat</a></li>
+                <li><a href="#level-2-local-normalized-embeddings-vector-rag">Level 2 — Local Normalized Embeddings &amp; Vector RAG</a></li>
+                <li><a href="#level-3-authoring-native-model-context-protocol-mcp-servers">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a href="#chapter-16">16. Full-Stack Production Patterns &amp; Canonical Projects Index</a>
+              <ul class="subhead-list">
+                <li><a href="#architectural-tour-composing-the-standard-library">Architectural Tour: Composing the Standard Library</a></li>
+                <li><a href="#canonical-projects-index-examples">Canonical Projects Index (`examples/`)</a></li>
+              </ul>
+            </li>
           </ul>
           <h4 style="margin-top: 1.25rem;">Quick Links</h4>
           <ul>
-            <li><a href="reference.html">Stdlib Catalog (28 Modules) &rarr;</a></li>
+            <li><a href="reference.html">Stdlib Catalog (33 Modules) &rarr;</a></li>
             <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
             <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
           </ul>
@@ -559,1226 +832,841 @@ tr:hover td { background: #FAFAF9; }
     </aside>
     <main>
 <h1>The <code>cfire</code> Language &amp; Systems Programming Guide</h1>
-<p class="subtitle" style="margin: 0 0 2rem;"><strong><code>cfire</code></strong> (pronounced like <strong>&quot;sapphire&quot;</strong> <code>/ˈsæf.aɪ.ər/</code>, or <strong>&quot;C-fire&quot;</strong>) is an ergonomic, memory-safe systems programming language that lowers 1-to-1 into modern <strong>ISO C++23</strong>. The name pairs <strong>&quot;C&quot;</strong> (the bedrock of systems engineering) with <strong>&quot;fire&quot;</strong> (blazing modern velocity, or developer slang for <em>top-tier</em>). It combines the clean syntax and rapid onboarding of Go, the batteries-included <code>core:*</code> catalog of Odin, and the explicit mutation and move safety of Rust—with zero garbage collection, zero runtime lock-in, and full mechanical sympathy.</p>
+<p>Welcome to <strong>cfire</strong> (pronounced <em>sapphire</em> • <code>/ˈsæf.aɪ.ər/</code>). This comprehensive engineering guide takes you from platform installation and toolchain setup to authoring high-performance systems services, hardware-accelerated 2D/3D graphics, real-time audio DSP, native iOS applications, and AI-native agent workflows.</p>
+<p>Every section follows a <strong>Progressive Disclosure</strong> philosophy:</p>
+<ul>
+  <li><strong>Level 1 — Fundamentals</strong>: A concise, runnable 5–10 line example introducing syntax and primitives.</li>
+  <li><strong>Level 2 — Idiomatic Safety &amp; Composition</strong>: Combining error handling, resource cleanup (<code>defer</code>), and type safety.</li>
+  <li><strong>Level 3 — Production Architecture &amp; Lowering</strong>: Real-world services alongside the exact, human-readable ISO C++23 emitted by the compiler with zero hidden runtime overhead.</li>
+</ul>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-1"><a id="ch1"></a>1. Philosophy &amp; Architecture</h2>
-<h3 id="11-the-systems-programming-landscape-the-cfire-name">1.1 The Systems Programming Landscape &amp; The <code>cfire</code> Name</h3>
-<p>Where does the name <strong><code>cfire</code></strong> come from?</p>
-<ul>
-  <li><strong><code>C</code></strong>: The programming language heritage of systems software—deterministic memory control, zero-overhead abstractions, and mechanical sympathy.</li>
-  <li><strong><code>fire</code></strong>: In modern engineering slang, <em>&quot;it's fire&quot;</em>—blazing fast, lightweight, and genuinely exciting to work with.</li>
-  <li><strong>Pronounced like &quot;sapphire&quot;</strong>: The name rolls off the tongue as <em>sapphire</em> (<code>/ˈsæf.aɪ.ər/</code>), matching its visual identity—the crystalline structure and precision of a sapphire gem ignited by the speed and focus of fire.</li>
-</ul>
-<p>Modern systems software demands both high developer velocity and uncompromising runtime performance. For decades, engineers have navigated difficult compromises:</p>
-<ul>
-  <li><strong>C++</strong> offers unmatched performance, vast ecosystem reach, and zero-cost abstractions, but suffers from forty years of accumulated syntactic complexity, implicit mutable references, and silent use-after-move bugs.</li>
-  <li><strong>Rust</strong> provides ironclad memory safety guarantees via compile-time lifetime analysis (<code>'a</code>), but introduces steep cognitive overhead and challenging FFI barriers when integrating with existing C++ codebases.</li>
-  <li><strong>Go</strong> offers outstanding developer ergonomics and networking libraries, but mandates a garbage collector and non-deterministic pause times unsuitable for real-time, game engine, or embedded kernels.</li>
-  <li><strong>Zig and Odin</strong> provide brilliant C replacements with manual allocators, but cannot directly consume C++ templates, classes, or standard library types without brittle C ABI wrappers.</li>
-</ul>
-<p><code>cfire</code> takes a pragmatic path designed specifically for teams whose target environment is <strong>ISO C++23</strong>:</p>
-<ol>
-  <li><strong>Ergonomic, Modern Frontend</strong>: Clean syntax, immutability by default, explicit parameter intents (<code>in</code>, <code>mut</code>, <code>move</code>), multi-return tuples, algebraic enums, and monadic error handling (<code>T!</code>).</li>
-  <li><strong>1-to-1 ISO C++23 Lowering</strong>: Every <code>cfire</code> type, function, and expression lowers directly to standard C++23 concepts (<code>std::string_view</code>, <code>std::span</code>, <code>std::variant</code>, <code>std::expected</code>, <code>std::unique_ptr</code>).</li>
-  <li><strong>Zero FFI Marshaling</strong>: Call any C or C++ header directly without writing manual wrappers.</li>
-  <li><strong>Zero Lock-In</strong>: Run <code>cfire eject</code> at any time to export your entire project as standard C++23 source code with a standard <code>CMakeLists.txt</code>.</li>
-</ol>
-<h3 id="12-predictable-11-lowering-table">1.2 Predictable 1:1 Lowering Table</h3>
-<p>The following table summarizes how core <code>cfire</code> types lower into standard ISO C++23:</p>
-<div class="table-wrap">
-  <div class="table-scroll-cue">Scroll table &rarr;</div>
-  <table>
-    <thead>
-      <tr><th><code>cfire</code> Type</th><th>ISO C++23 Lowering</th><th>Ownership &amp; Semantics</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code></td><td><code>int8_t</code>, <code>int16_t</code>, <code>int32_t</code>, <code>int64_t</code></td><td>Signed fixed-width integers</td></tr>
-      <tr><td><code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code></td><td><code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code>, <code>uint64_t</code></td><td>Unsigned fixed-width integers</td></tr>
-      <tr><td><code>f32</code>, <code>f64</code></td><td><code>float</code>, <code>double</code></td><td>IEEE 754 floating point</td></tr>
-      <tr><td><code>bool</code>, <code>char</code></td><td><code>bool</code>, <code>char</code></td><td>Boolean flag, ASCII/UTF-8 byte</td></tr>
-      <tr><td><code>str</code> (value)</td><td><code>std::string</code></td><td>Owned, heap-backed UTF-8 string</td></tr>
-      <tr><td><code>str</code> (<code>in</code> param)</td><td><code>std::string_view</code></td><td>Non-allocating read-only string view</td></tr>
-      <tr><td><code>path</code></td><td><code>std::filesystem::path</code></td><td>Platform-native filesystem path</td></tr>
-      <tr><td><code>[N]T</code></td><td><code>std::array&lt;T, N&gt;</code></td><td>Contiguous stack array, zero overhead</td></tr>
-      <tr><td><code>[]T</code> (value)</td><td><code>std::vector&lt;T&gt;</code></td><td>Owned, dynamic contiguous buffer</td></tr>
-      <tr><td><code>[]T</code> (<code>in</code> param)</td><td><code>std::span&lt;const T&gt;</code></td><td>Non-allocating contiguous slice borrow</td></tr>
-      <tr><td><code>map[K]V</code></td><td><code>std::unordered_map&lt;K, V&gt;</code></td><td>Hash table with O(1) average lookup</td></tr>
-      <tr><td><code>(T1, T2)</code></td><td><code>std::tuple&lt;T1, T2&gt;</code></td><td>Heterogeneous value tuple</td></tr>
-      <tr><td><code>T?</code></td><td><code>std::optional&lt;T&gt;</code></td><td>Nullable value container</td></tr>
-      <tr><td><code>T!</code></td><td><code>std::expected&lt;T, cfire::Error&gt;</code></td><td>Value-or-error monadic result</td></tr>
-      <tr><td><code>own[T]</code></td><td><code>std::unique_ptr&lt;T&gt;</code></td><td>Single heap ownership with RAII cleanup</td></tr>
-      <tr><td><code>shared[T]</code></td><td><code>std::shared_ptr&lt;T&gt;</code></td><td>Atomic reference-counted shared ownership</td></tr>
-      <tr><td><code>type S struct</code></td><td><code>struct S { ... }</code></td><td>Standard C++ aggregate struct</td></tr>
-      <tr><td><code>type E enum</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Tagged union with exhaustive <code>match</code></td></tr>
-    </tbody>
-  </table>
+<div class="part-banner"><span class="part-pill">SECTION</span><h2>Part I: Getting Started &amp; Tooling</h2></div>
+<h2 id="chapter-1"><a id="ch1"></a>1. Installation &amp; Platform Setup</h2>
+<h3 id="overview-system-requirements">Overview &amp; System Requirements</h3>
+<p>cfire is a single self-contained binary written in modern C++23. It transpiles <code>.cf</code> code directly into clean standard ISO C++23 and invokes an underlying C++23-capable backend compiler (LLVM Clang 18+ or GCC 14+).</p>
+<div class="callout callout-note">
+  <div class="callout-title">Note</div>
+  <p><strong>Zero Runtime Dependencies</strong>: Executables produced by <code>cfire build</code> are native ELF, Mach-O, or PE binaries. They do not depend on a garbage collector, virtual machine, or external runtime libraries.</p>
 </div>
-<h3 id="13-hello-systems-a-first-look">1.3 Hello, Systems! (A First Look)</h3>
-<p>Here is a complete, working <code>cfire</code> program showing basic syntax, imports, error handling, and deterministic deferral:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
+<h3 id="quick-installation-script-macos-linux">Quick Installation Script (macOS &amp; Linux)</h3>
+<p>To install the latest stable <code>cfire</code> release and toolchain into <code>~/.cfire/bin</code>:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>curl -fsSL https://cfire.memo.engineer/install.sh | sh
+</code></pre>
+<p>Verify your installation:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire version
+# Output: cfire 0.9.4 (clang-18 target x86_64-apple-darwin23 / arm64)
+</code></pre>
+<h3 id="manual-installation-platform-toolchains">Manual Installation &amp; Platform Toolchains</h3>
+<h4 id="macos-apple-silicon-intel">macOS (Apple Silicon &amp; Intel)</h4>
+<ol>
+  <li>Install Xcode Command Line Tools (provides Apple Clang and macOS SDKs):</li>
+ <code></code>`bash xcode-select --install <code></code>`  <li>Install dependencies via Homebrew:</li>
+ <code></code>`bash brew install llvm simdjson zstd sqlite3 <code></code>`  <li>Build <code>cfire</code> from source:</li>
+ <code></code>`bash git clone https://github.com/gsandoval/cfire.git cd cfire &amp;&amp; make -j sudo make install  # Installs to /usr/local/bin/cfire <code></code>`</ol>
+<h4 id="linux-ubuntu-debian-fedora-arch">Linux (Ubuntu / Debian / Fedora / Arch)</h4>
+<ul>
+  <li><strong>Ubuntu 24.04+ / Debian 12+</strong>:</li>
+ <code></code>`bash sudo apt-get update sudo apt-get install -y clang-18 libclang-18-dev libsimdjson-dev libzstd-dev libsqlite3-dev libasound2-dev cd cfire &amp;&amp; make -j <code></code>`  <li><strong>Arch Linux</strong>:</li>
+ <code></code>`bash sudo pacman -S clang llvm simdjson zstd sqlite alsa-lib cd cfire &amp;&amp; make -j <code></code>`</ul>
+<h4 id="windows-wsl2">Windows (WSL2)</h4>
+<p>cfire supports Windows through WSL2 (Windows Subsystem for Linux) with Ubuntu:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>wsl --install -d Ubuntu-24.04
+wsl
+# Inside WSL Ubuntu shell:
+sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 libsimdjson-dev libzstd-dev libsqlite3-dev
+</code></pre>
+<h3 id="cross-compilation-target-setup">Cross-Compilation Target Setup</h3>
+<h4 id="webassembly-web-targetwasm">WebAssembly (<code>--web</code> / <code>--target=wasm</code>)</h4>
+<p>cfire compiles any project (including Raylib graphics and audio) directly to WebAssembly and WebGL canvas using Emscripten:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code># Install Emscripten SDK:
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk &amp;&amp; ./emsdk install latest &amp;&amp; ./emsdk activate latest
+source ./emsdk_env.sh
+</code></pre>
+<h4 id="native-ios-simulator-device-ios">Native iOS Simulator &amp; Device (<code>--ios</code>)</h4>
+<p>cfire builds native iOS applications (<code>UIKit</code> + <code>OpenGLES3</code> + <code>Metal</code>) without Xcode projects or Storyboards. All that is required is macOS with Xcode installed:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>xcode-select -p  # Verifies Developer directory is active
+xcrun --sdk iphonesimulator --show-sdk-path
+</code></pre>
+<h3 id="ai-agent-ide-configuration">AI Agent &amp; IDE Configuration</h3>
+<h4 id="model-context-protocol-cfire-mcp">Model Context Protocol (<code>cfire mcp</code>)</h4>
+<p>For AI coding assistants (Claude Code, Cursor, Antigravity), cfire includes a native Model Context Protocol server that exposes AST inspection, semantic validation, and documentation tools:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire mcp
+# Or configure in ~/.cursor/mcp.json or Claude Desktop config:
+# { &quot;command&quot;: &quot;cfire&quot;, &quot;args&quot;: [&quot;mcp&quot;] }
+</code></pre>
+<h4 id="editor-syntax-lsp-setup-cfire-ide">Editor Syntax &amp; LSP Setup (<code>cfire ide</code>)</h4>
+<p>Configure auto-completion, hover docs, and diagnostics across your preferred editor:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire ide --all      # Configures VS Code, Cursor, Zed, and Neovim
+cfire lsp            # Starts standard Language Server Protocol daemon on stdio
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-2"><a id="ch2"></a>2. 5-Minute Quickstart &amp; Tour of the Toolchain</h2>
+<h3 id="level-1-instant-evaluation-with-cfire-eval">Level 1 — Instant Evaluation with <code>cfire eval</code></h3>
+<p>Test arithmetic expressions or small statements without creating files:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire eval -e &quot;2.0 * math.pi * 10.0&quot;
+# Output: 62.83185307179586
+
+cfire eval &quot;println(\&quot;Hello, deterministic C++23!\&quot;)&quot;
+# Output: Hello, deterministic C++23!
+</code></pre>
+<h3 id="level-2-your-first-script-hellocf">Level 2 — Your First Script (<code>hello.cf</code>)</h3>
+<p>Create a single-file program with standard imports:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;core:fs&quot;
-import &quot;core:time&quot;
 import &quot;core:str&quot;
+import &quot;core:time&quot;
 
 fn main() {
-    t0 := time.now_ms()
-
-    // Immutability by default: 'msg' cannot be reassigned
-    msg := &quot;Hello from cfire (pronounced sapphire)!&quot;
-    println(&quot;{}&quot;, msg)
-
-    // Fallible file operation with early-exit 'try'
-    try fs.write_text(&quot;build_info.txt&quot;, &quot;runtime=cfire\nstandard=c++23\n&quot;)
-    
-    // Deterministic scope cleanup: runs when main exits
-    defer {
-        println(&quot;Cleanup: execution finished in {} ms&quot;, time.now_ms() - t0)
-    }
-
-    content := try fs.read_text(&quot;build_info.txt&quot;)
-    lines := str.split(content, &quot;\n&quot;)
-    for idx, line in lines {
-        if line.len() &gt; 0 {
-            println(&quot;  [{}] {}&quot;, idx + 1, line)
-        }
-    }
+    now := time.now()
+    greeting := str.format(&quot;Welcome to cfire at {}&quot;, now.unix_sec)
+    println(greeting)
 }
 </code></pre>
+<p>Run directly with JIT-like turnaround via precompiled headers:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire run hello.cf
+</code></pre>
+<h3 id="level-3-production-build-sanitizers-c23-ejection">Level 3 — Production Build, Sanitizers &amp; C++23 Ejection</h3>
+<p>Compile an optimized standalone native binary:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire build hello.cf -o hello
+./hello
+</code></pre>
+<p>Run with AddressSanitizer and UndefinedBehaviorSanitizer enabled:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire run --sanitize hello.cf
+</code></pre>
+<p>Inspect the exact ISO C++23 code generated by the compiler:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire emit-cpp hello.cf
+</code></pre>
+<p>Eject a self-contained, standalone CMake project with zero cfire dependencies:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire eject hello.cf --out-dir dist/
+# Emits dist/CMakeLists.txt, dist/main.cpp, and runtime headers
+</code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-2"><a id="ch2"></a>2. Tour of the Toolchain</h2>
-<p><code>cfire</code> ships as a single, self-contained binary. There are no secondary package managers, formatters, or test runners to install.</p>
-<h3 id="21-toolchain-subcommands-reference">2.1 Toolchain Subcommands Reference</h3>
+<h2 id="chapter-3"><a id="ch3"></a>3. Project Layout, CLI &amp; Build System (<code>build.cf</code>)</h2>
+<h3 id="complete-cli-command-reference">Complete CLI Command Reference</h3>
+<p>The unified <code>cfire</code> executable provides all engineering tooling:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
     <thead>
-      <tr><th>Subcommand</th><th>Usage</th><th>Purpose &amp; Details</th></tr>
+      <tr><th>Command</th><th>Purpose</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>run</code></td><td><code>cfire run main.cf</code></td><td>Compiles and executes the program. Auto-links required <code>core:*</code> and C/C++ libraries.</td></tr>
-      <tr><td><code>run --web</code></td><td><code>cfire run --web [build.cf]</code></td><td>Builds and serves the WebAssembly app via the built-in development HTTP server.</td></tr>
-      <tr><td><code>run --sanitize</code></td><td><code>cfire run --sanitize main.cf</code></td><td>Enables Clang AddressSanitizer and UndefinedBehaviorSanitizer (<code>-fsanitize=address,undefined</code>).</td></tr>
-      <tr><td><code>build</code></td><td><code>cfire build main.cf -o app</code></td><td>Produces an optimized native executable (<code>-O3</code>) in the current directory.</td></tr>
-      <tr><td><code>build --subsystem gui</code></td><td><code>cfire build --subsystem gui main.cf -o app</code></td><td>Packages a native GUI desktop app (signed <code>.app</code> bundle on macOS; <code>-mwindows</code> on Windows).</td></tr>
-      <tr><td><code>build --target wasm</code></td><td><code>cfire build --target wasm main.cf -o app.html</code></td><td>Cross-compiles to WebAssembly (<code>.html</code>, <code>.js</code>, <code>.wasm</code>) with responsive WebGL canvas or CLI profile.</td></tr>
-      <tr><td><code>serve</code></td><td><code>cfire serve [--port 8080] [path]</code></td><td>Built-in zero-dependency static HTTP/1.1 server with <code>application/wasm</code> MIME and COOP/COEP isolation headers.</td></tr>
-      <tr><td><code>test</code></td><td><code>cfire test main.cf</code></td><td>Discovers and executes all embedded <code>test &quot;...&quot; { ... }</code> suites in parallel.</td></tr>
-      <tr><td><code>test --sanitize</code></td><td><code>cfire test --sanitize main.cf</code></td><td>Executes all unit tests with ASan and UBSan active to catch memory leaks and bounds errors.</td></tr>
-      <tr><td><code>fmt</code></td><td><code>cfire fmt src/</code></td><td>Canonically formats <code>.cf</code> files in-place according to strict formatting rules.</td></tr>
-      <tr><td><code>fmt --check</code></td><td><code>cfire fmt --check src/</code></td><td>CI validation mode. Exits with non-zero status if any file is unformatted.</td></tr>
-      <tr><td><code>check</code></td><td><code>cfire check main.cf</code></td><td>Fast frontend validation: parses and runs semantic analysis without invoking the C++ backend.</td></tr>
-      <tr><td><code>eval</code></td><td><code>cfire eval '2 + 2'</code></td><td>Evaluates a single <code>cfire</code> expression or statement directly from the command line.</td></tr>
-      <tr><td><code>lsp</code></td><td><code>cfire lsp</code></td><td>Starts the standard Language Server Protocol daemon for VSCode, Neovim, and Helix.</td></tr>
-      <tr><td><code>doc</code></td><td><code>cfire doc</code></td><td>Generates verified HTML and Markdown documentation from the compiler catalog.</td></tr>
-      <tr><td><code>doc --check</code></td><td><code>cfire doc --check</code></td><td>Verifies that documentation files match the compiler catalog character-for-character.</td></tr>
-      <tr><td><code>eject</code></td><td><code>cfire eject main.cf ./export</code></td><td>Exports the program and all dependencies into standalone ISO C++23 files + <code>CMakeLists.txt</code>.</td></tr>
+      <tr><td><code>cfire run &lt;file.cf&gt; [args...]</code></td><td>Compiles and executes in temporary cache directory</td></tr>
+      <tr><td><code>cfire run --sanitize &lt;file.cf&gt;</code></td><td>Executes with ASan and UBSan instrumentation</td></tr>
+      <tr><td><code>cfire build &lt;file.cf&gt; -o &lt;bin&gt;</code></td><td>Compiles an optimized native binary</td></tr>
+      <tr><td><code>cfire build --web &lt;file.cf&gt; -o &lt;app.html&gt;</code></td><td>Compiles to WebAssembly + WebGL Canvas</td></tr>
+      <tr><td><code>cfire run --ios &lt;file.cf&gt;</code></td><td>Compiles and launches in the iOS Simulator</td></tr>
+      <tr><td><code>cfire eval -e &quot;&lt;expr&gt;&quot;</code></td><td>Evaluates one-shot expression</td></tr>
+      <tr><td><code>cfire check &lt;file.cf&gt;</code></td><td>Performs syntax and semantic type verification</td></tr>
+      <tr><td><code>cfire test [path]</code></td><td>Discovers and executes all <code>test &quot;...&quot;</code> blocks</td></tr>
+      <tr><td><code>cfire test --sanitize [path]</code></td><td>Executes tests under ASan/UBSan memory checks</td></tr>
+      <tr><td><code>cfire fmt [--check] [path]</code></td><td>Formats source files according to language rules</td></tr>
+      <tr><td><code>cfire doc [--check]</code></td><td>Generates or audits documentation HTML &amp; markdown</td></tr>
+      <tr><td><code>cfire lsp</code></td><td>Starts the Language Server Protocol daemon</td></tr>
+      <tr><td><code>cfire mcp</code></td><td>Starts the Model Context Protocol server for AI agents</td></tr>
+      <tr><td><code>cfire ide --all</code></td><td>Installs syntax &amp; LSP settings for VS Code, Zed, Neovim</td></tr>
+      <tr><td><code>cfire clean</code></td><td>Cleans <code>.cfire/</code> build and PCH cache</td></tr>
     </tbody>
   </table>
 </div>
-<h3 id="22-embedded-unit-testing">2.2 Embedded Unit Testing</h3>
-<p><code>cfire</code> includes testing as a core language primitive. You can write isolated test suites directly inside any <code>.cf</code> file:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package math_util
+<h3 id="declarative-project-configuration-buildcf">Declarative Project Configuration (<code>build.cf</code>)</h3>
+<p>In multi-file projects, <code>build.cf</code> coordinates executables, static libraries, and external build systems:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package build
 
-fn add(a: i64, b: i64) -&gt; i64 {
-    return a + b
-}
+fn configure(mut b: Build) {
+    // 1. Native CLI executable with C/C++ compilation and archive steps
+    CSupport := build.CC(&quot;vendor/fast_hash.c&quot;, flags: [&quot;-O3&quot;])
+    ArchiveLib := build.Archive([CSupport], output: &quot;lib/libfast_hash.a&quot;)
+    KVStore := build.CMake(&quot;third_party/kvstore&quot;, options: [&quot;-DBUILD_SHARED_LIBS=OFF&quot;])
+    LegacyMake := build.Make(&quot;third_party/legacy_math&quot;, target: &quot;libmath.a&quot;)
+    GitDep := build.Git(&quot;https://github.com/example/engine&quot;, tag: &quot;v1.2.0&quot;)
+    CustomGen := build.Command(&quot;python3&quot;, args: [&quot;scripts/gen_tables.py&quot;])
 
-fn clamp(val: f64, low: f64, high: f64) -&gt; f64 {
-    if val &lt; low { return low }
-    if val &gt; high { return high }
-    return val
-}
+    exe := b.add_executable(&quot;service&quot;, &quot;src/main.cf&quot;)
+    exe.link_system(&quot;zstd&quot;)
+    exe.link_system(&quot;sqlite3&quot;)
+    exe.link_library(ArchiveLib)
+    exe.link_library(KVStore)
 
-test &quot;integer arithmetic addition&quot; {
-    assert(add(10, 20) == 30)
-    assert(add(-5, 5) == 0)
-}
+    // 2. WebAssembly deployment (--target=wasm)
+    web_app := b.add_executable(&quot;web_viewer&quot;, &quot;apps/viewer/main.cf&quot;)
+    web_app.set_target(&quot;wasm&quot;)
+    web_app.set_output(&quot;web/viewer.html&quot;)
 
-test &quot;floating-point clamp bounds&quot; {
-    assert(clamp(5.0, 0.0, 10.0) == 5.0)
-    assert(clamp(-2.0, 0.0, 10.0) == 0.0)
-    assert(clamp(15.0, 0.0, 10.0) == 10.0)
+    // 3. Native iOS application
+    ios_app := b.add_executable(&quot;mobile_app&quot;, &quot;apps/mobile/main.cf&quot;)
+    ios_app.set_target(&quot;ios-sim&quot;)
 }
 </code></pre>
-<p>Run tests with a single command:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>./cfire test math_util.cf
-</code></pre>
-<h3 id="23-webassembly-built-in-http-development-server">2.3 WebAssembly &amp; Built-In HTTP Development Server</h3>
-<p>WebAssembly applications built for browsers require execution over HTTP with strict security and MIME configurations. Browsers reject <code>.wasm</code> compilation over the <code>file://</code> protocol, and modern WebAssembly threads and WebGL backends require Cross-Origin Isolation headers.</p>
-<p><code>cfire</code> solves this out of the box with zero external dependencies:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code># 1. Build your desktop or graphics app for WebAssembly:
-cfire build --target=wasm app/main.cf -o app/app-web.html
-
-# 2. Serve the directory or build.cf and launch your default browser:
-cfire serve app/app-web.html
-
-# Or build and launch in one command:
-cfire run --web
-</code></pre>
-<p>The built-in server automatically:</p>
-<ul>
-  <li>Serves <code>.wasm</code> files with <code>Content-Type: application/wasm</code></li>
-  <li>Serves <code>.js</code> files with <code>Content-Type: application/javascript; charset=utf-8</code></li>
-  <li>Enforces <code>Cross-Origin-Opener-Policy: same-origin</code> and <code>Cross-Origin-Embedder-Policy: require-corp</code></li>
-  <li>Resolves port collisions automatically by incrementing (+1..+25) if port 8080 is in use</li>
-  <li>Prevents directory traversal attacks (<code>..</code> resolution)</li>
-  <li>Launches your platform default browser (<code>open</code>, <code>xdg-open</code>, <code>start</code>) unless <code>--no-open</code> is passed</li>
-</ul>
+<h3 id="precompiled-header-pch-acceleration">Precompiled Header (PCH) Acceleration</h3>
+<p>cfire maintains an automated precompiled header cache in <code>.cfire/cache/pch/</code>. Standard library headers (<code>&lt;vector&gt;</code>, <code>&lt;string&gt;</code>, <code>&lt;expected&gt;</code>, <code>&lt;variant&gt;</code>, <code>&lt;format&gt;</code>, <code>&lt;chrono&gt;</code>, <code>&lt;simdjson.h&gt;</code>) are compiled once per toolchain update. Incremental rebuilds complete in under 15 milliseconds.</p>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-3"><a id="ch3"></a>3. Syntax, Primitives, Variables &amp; Control Flow</h2>
-<h3 id="31-immutability-by-default">3.1 Immutability by Default</h3>
-<p>In <code>cfire</code>, bindings declared with <code>:=</code> or explicit type annotations without <code>mut</code> are strictly <strong>immutable (<code>const</code>)</strong>. Attempting to reassign an immutable binding triggers a compiler error:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>limit := 100
-// limit = 200 // ERROR: cannot assign to immutable binding 'limit'
-
-mut counter := 0 // Mutable binding
-counter += 1     // OK
-</code></pre>
-<p>Explicit type declarations follow the <code>name: Type = value</code> syntax:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>max_payload: u64 = 1048576
-mut buffer_size: i32 = 4096
-</code></pre>
-<h3 id="32-slices-t-vs-fixed-arrays-nt">3.2 Slices (<code>[]T</code>) vs Fixed Arrays (<code>[N]T</code>)</h3>
-<p><code>cfire</code> makes a sharp distinction between stack-allocated fixed arrays and dynamically sized slices:</p>
+<div class="part-banner"><span class="part-pill">SECTION</span><h2>Part II: Core Language &amp; Intent Safety</h2></div>
+<h2 id="chapter-4"><a id="ch4"></a>4. Syntax, Primitives, Variables &amp; Control Flow</h2>
+<h3 id="overview-modern-ergonomics-lowered-to-c23">Overview: Modern Ergonomics Lowered to C++23</h3>
+<p>cfire pairs clean syntax with deterministic systems semantics:</p>
 <ul>
-  <li><strong>Fixed Arrays (<code>[N]T</code>)</strong>: Size is known at compile time, memory is allocated on the stack with zero overhead, lowering to <code>std::array&lt;T, N&gt;</code>.</li>
-  <li><strong>Dynamic Slices (<code>[]T</code>)</strong>: Growable dynamic buffers backed by the heap, lowering to <code>std::vector&lt;T&gt;</code> when owned, or <code>std::span&lt;const T&gt;</code> when borrowed as an <code>in</code> parameter.</li>
+  <li>Variables are <strong>immutable by default</strong>. Mutable state requires explicit <code>mut</code>.</li>
+  <li>Memory is managed via RAII and value semantics. There is no garbage collector.</li>
+  <li>Primitive types have fixed, deterministic bit widths.</li>
 </ul>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>// Fixed array (std::array&lt;int32_t, 4&gt;)
-fixed: [4]i32 = [10, 20, 30, 40]
-println(&quot;fixed length: {}&quot;, fixed.len())
+<h3 id="level-1-variables-primitive-types">Level 1 — Variables &amp; Primitive Types</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>fn main() {
+    // Immutable variable bindings
+    count := 42
+    ratio := 3.14159
+    enabled := true
+    label := &quot;cfire systems&quot;
 
-// Dynamic slice (std::vector&lt;int32_t&gt;)
-mut dynamic: []i32 = [1, 2, 3]
-dynamic.push(4)
-dynamic.push(5)
-println(&quot;dynamic length: {}&quot;, dynamic.len())
-
-// Slicing views (std::span)
-sub := dynamic[1:3] // View of elements at index 1 and 2
-</code></pre>
-<h3 id="33-hash-maps-mapkv">3.3 Hash Maps (<code>map[K]V</code>)</h3>
-<p>Hash maps provide $O(1)$ key-value lookups backed by <code>std::unordered_map</code>:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>mut scores: map[str]i64 = {}
-scores[&quot;Alice&quot;] = 95
-scores[&quot;Bob&quot;] = 88
-
-// Safe retrieval with 'or' fallback
-alice_score := scores[&quot;Alice&quot;] or 0
-charlie_score := scores[&quot;Charlie&quot;] or -1
-
-println(&quot;Alice: {}, Charlie: {}&quot;, alice_score, charlie_score)
-
-// Check existence
-if scores.contains(&quot;Alice&quot;) {
-    println(&quot;Alice is enrolled&quot;)
+    // Explicit mutable variable
+    mut accumulator := 0
+    accumulator += count
+    println(&quot;Total: {}&quot;, accumulator)
 }
 </code></pre>
-<h3 id="34-tuples-destructuring">3.4 Tuples &amp; Destructuring</h3>
-<p>Tuples group multiple values together without declaring a formal struct:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>// Constructing a tuple
-coord := (12.5, 45.8, &quot;GPS-Locked&quot;)
+<p>Primitive bit-width types:</p>
+<ul>
+  <li>Integers: <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>, <code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>usize</code></li>
+  <li>Floats: <code>f32</code>, <code>f64</code></li>
+  <li>Booleans: <code>bool</code> (<code>true</code>, <code>false</code>)</li>
+  <li>Bytes and Text: <code>byte</code>, <code>str</code> (UTF-8 immutable view)</li>
+</ul>
+<h3 id="level-2-composite-data-structures">Level 2 — Composite Data Structures</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:collections&quot;
 
-// Destructuring into individual bindings
-(lat, lon, status) := coord
-println(&quot;Lat: {}, Lon: {}, Status: {}&quot;, lat, lon, status)
-</code></pre>
-<h3 id="35-optionals-t">3.5 Optionals (<code>T?</code>)</h3>
-<p>Values that may be absent are wrapped in <code>T?</code>, lowering directly to <code>std::optional&lt;T&gt;</code>:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn find_user(id: i64) -&gt; str? {
-    if id == 42 {
-        return &quot;Alice&quot;
+fn main() {
+    // Slices ([]T) - Dynamic views backed by std::vector
+    mut scores: []i32
+    scores.push(98)
+    scores.push(84)
+    scores.push(91)
+
+    // Fixed arrays ([N]T) - Stack-allocated std::array
+    weights := [3]f64{ 1.0, 2.5, 0.75 }
+
+    // Slicing operations
+    sub := scores[0..2]
+    println(&quot;Sub-scores len: {}&quot;, sub.len)
+
+    // Hash Maps - cfire::Map[K, V]
+    mut env: Map[str, str]
+    env.set(&quot;PORT&quot;, &quot;8080&quot;)
+    env.set(&quot;HOST&quot;, &quot;127.0.0.1&quot;)
+    if env.contains(&quot;PORT&quot;) {
+        println(&quot;Listening on port {}&quot;, env.get(&quot;PORT&quot;))
     }
-    return null
 }
-
-user := find_user(42) or &quot;Guest&quot;
-println(&quot;User: {}&quot;, user)
 </code></pre>
-<h3 id="36-smart-pointers-ownt-and-sharedt">3.6 Smart Pointers (<code>own[T]</code> and <code>shared[T]</code>)</h3>
-<p>Value semantics and slices cover most systems programming needs. For recursive data structures or explicit heap allocations, <code>cfire</code> provides <code>own[T]</code> (<code>std::unique_ptr&lt;T&gt;</code>) and <code>shared[T]</code> (<code>std::shared_ptr&lt;T&gt;</code>):</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
+<h3 id="level-3-pointer-semantics-lowering">Level 3 — Pointer Semantics &amp; Lowering</h3>
+<p>cfire provides clear pointer types:</p>
+<ul>
+  <li><code>&amp;T</code>: Immutable borrow (<code>const T&amp;</code>)</li>
+  <li><code>&amp;mut T</code>: Mutable borrow (<code>T&amp;</code>)</li>
+  <li><code>*T</code>: Optional raw pointer (<code>const T*</code>)</li>
+  <li><code>^T</code>: Owned heap handle (<code>std::unique_ptr&lt;T&gt;</code>)</li>
+</ul>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>type Node struct {
-    Value: i64,
-    Next:  own[Node]?,
+    id: i64
+    next: ^Node? // Unique ownership
 }
 
-// Allocate an owned heap box
-first := make(own[Node], Node{Value: 10, Next: null})
-println(&quot;Node value: {}&quot;, (*first).Value)
-</code></pre>
-<h3 id="37-control-flow-if-for-match">3.7 Control Flow (<code>if</code>, <code>for</code>, <code>match</code>)</h3>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>// 1. Conditional branching
-if score &gt;= 90 {
-    println(&quot;Grade: A&quot;)
-} else if score &gt;= 80 {
-    println(&quot;Grade: B&quot;)
-} else {
-    println(&quot;Grade: C&quot;)
-}
-
-// 2. Iterating elements
-items := [&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;]
-for item in items {
-    println(&quot;Item: {}&quot;, item)
-}
-
-// 3. Iterating with index
-for idx, item in items {
-    println(&quot;[{}] = {}&quot;, idx, item)
-}
-
-// 4. Iterating map key-value pairs
-for key, val in scores {
-    println(&quot;{} =&gt; {}&quot;, key, val)
-}
-
-// 5. C-style numeric loop
-for mut i := 0; i &lt; 5; i += 1 {
-    if i == 2 { continue }
-    println(&quot;i = {}&quot;, i)
+fn append_child(mut parent: Node, child_id: i64) {
+    parent.next = make_own(Node{ id: child_id, next: nil })
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-4"><a id="ch4"></a>4. Functions &amp; Call-Site Intent Safety</h2>
-<h3 id="41-function-declarations-and-methods">4.1 Function Declarations and Methods</h3>
-<p>Functions are declared with <code>fn</code>. Associated methods specify a receiver before the function name:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>type Account struct {
-    Owner:   str,
-    Balance: i64,
+<h2 id="chapter-5"><a id="ch5"></a>5. Functions, Call-Site Intent Safety &amp; Memory Semantics</h2>
+<h3 id="overview-call-site-exclusivity">Overview: Call-Site Exclusivity</h3>
+<p>In traditional C and C++, reviewing call sites like <code>update(record)</code> obscures whether <code>record</code> is read-only or mutated in-place. cfire enforces <strong>Call-Site Mutability Visibility</strong>: if a parameter is declared <code>mut</code>, callers must explicitly write <code>mut</code> at the call site.</p>
+<h3 id="level-1-function-signatures-multiple-returns">Level 1 — Function Signatures &amp; Multiple Returns</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>fn compute_bounds(width: f64, height: f64) -&gt; (f64, f64) {
+    area := width * height
+    perimeter := 2.0 * (width + height)
+    return (area, perimeter)
 }
-
-// Function with regular parameters
-fn calculate_fee(amount: i64) -&gt; i64 {
-    return amount / 100
-}
-
-// Read-only receiver method
-fn (self: Account) display() {
-    println(&quot;Account {}: ${}&quot;, self.Owner, self.Balance)
-}
-
-// Mutable receiver method: requires 'mut self'
-fn (mut self: Account) deposit(amount: i64) {
-    self.Balance += amount
-}
-</code></pre>
-<h3 id="42-explicit-parameter-intents-in-mut-move">4.2 Explicit Parameter Intents (<code>in</code>, <code>mut</code>, <code>move</code>)</h3>
-<p>In raw C++, calling <code>process(data)</code> hides whether <code>data</code> is read-only, modified in-place, or moved from. <code>cfire</code> enforces visibility at <strong>both</strong> declaration and call site:</p>
-<div class="table-wrap">
-  <div class="table-scroll-cue">Scroll table &rarr;</div>
-  <table>
-    <thead>
-      <tr><th>Intent</th><th>Declaration</th><th>Call Site</th><th>C++23 Lowering</th><th>Guarantee</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><strong><code>in</code> (default)</strong></td><td><code>x: T</code></td><td><code>f(x)</code></td><td><code>const T&amp;</code> / <code>std::string_view</code> / <code>std::span</code></td><td>Read-only borrow; zero copy overhead.</td></tr>
-      <tr><td><strong><code>mut</code></strong></td><td><code>mut x: T</code></td><td><code>f(mut x)</code></td><td><code>T&amp;</code></td><td>In-place mutation; requires <code>mut</code> at call site.</td></tr>
-      <tr><td><strong><code>move</code></strong></td><td><code>move x: T</code></td><td><code>f(move x)</code></td><td><code>T&amp;&amp;</code> + <code>std::move(x)</code></td><td>Ownership transfer; callee consumes value.</td></tr>
-    </tbody>
-  </table>
-</div>
-<p>To return multiple values, <code>cfire</code> uses first-class tuples rather than mutable output parameters:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn parse_coords(raw: str) -&gt; (f64, f64)! {
-    return (12.5, 45.2)
-}
-
-(lat, lon) := try parse_coords(&quot;12.5,45.2&quot;)
-</code></pre>
-<h3 id="43-semantic-safety-invariants">4.3 Semantic Safety Invariants</h3>
-<p>The <code>cfire</code> semantic analyzer verifies parameter intents at compile time:</p>
-<h4 id="1-cfiremut-callsite">1. <code>cfire/MUT-CALLSITE</code></h4>
-<p>Passing a variable to a <code>mut</code> parameter without the <code>mut</code> marker at the call site is rejected:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn increment(mut val: i32) { val += 1 }
-
-mut count := 0
-// increment(count)     // ERROR: [cfire/MUT-CALLSITE] missing 'mut' keyword
-increment(mut count)    // OK
-</code></pre>
-<h4 id="2-cfireimmutable-mut-arg">2. <code>cfire/IMMUTABLE-MUT-ARG</code></h4>
-<p>Passing an immutable binding to a <code>mut</code> parameter is rejected:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>val := 42
-// increment(mut val)   // ERROR: [cfire/IMMUTABLE-MUT-ARG] 'val' is immutable
-</code></pre>
-<h4 id="3-cfiremut-alias-the-law-of-exclusivity">3. <code>cfire/MUT-ALIAS</code> (The Law of Exclusivity)</h4>
-<p>A variable cannot be passed as a mutable argument while simultaneously aliased as another argument in the same call:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn transfer(mut from: i64, mut to: i64, amount: i64) {
-    from -= amount
-    to += amount
-}
-
-mut account_a := 1000
-// transfer(mut account_a, mut account_a, 100) // ERROR: [cfire/MUT-ALIAS]
-mut account_b := 500
-transfer(mut account_a, mut account_b, 100)    // OK: distinct bindings
-</code></pre>
-<h4 id="4-cfireuse-after-move">4. <code>cfire/USE-AFTER-MOVE</code></h4>
-<p>Referencing a variable after it has been transferred via <code>move</code> is rejected:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn sink(move data: []byte) { /* takes ownership */ }
-
-mut payload: []byte = [1, 2, 3]
-sink(move payload)
-// println(&quot;len = {}&quot;, payload.len()) // ERROR: [cfire/USE-AFTER-MOVE]
-</code></pre>
-<h3 id="44-closures-lambdas">4.4 Closures &amp; Lambdas</h3>
-<p>Closures use pipe syntax <code>|params| -&gt; ReturnType { ... }</code>:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>items := [1, 2, 3, 4, 5]
-
-// Inline closure passed to higher-order transform
-multiplier := 10
-transform := |x: i32| -&gt; i32 {
-    return x * multiplier
-}
-
-for item in items {
-    println(&quot;transformed: {}&quot;, transform(item))
-}
-</code></pre>
-<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-5"><a id="ch5"></a>5. Structs, Compile-Time Tags &amp; Algebraic Enums</h2>
-<h3 id="51-structs-compile-time-field-metadata">5.1 Structs &amp; Compile-Time Field Metadata</h3>
-<p>Structs define composite data records. Field tags (enclosed in backticks) provide zero-cost metadata inspected by the compiler during code generation:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>type DatabaseConfig struct {
-    Host:     str  `json:&quot;host&quot;     cli:&quot;--host,-h&quot;    sql:&quot;host&quot;`
-    Port:     u16  `json:&quot;port&quot;     cli:&quot;--port,-p&quot;    sql:&quot;port&quot;`
-    MaxConns: i32  `json:&quot;max_conns&quot; cli:&quot;--max-conns&quot; sql:&quot;max_connections&quot;`
-    SSL:      bool `json:&quot;ssl&quot;      cli:&quot;--ssl&quot;        sql:&quot;use_ssl&quot;`
-}
-</code></pre>
-<p>Because these tags are processed at compile time, <code>core:json</code>, <code>core:cli</code>, and <code>core:db/sqlite</code> generate direct C++ assignments without runtime reflection overhead:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>import &quot;core:json&quot;
-import &quot;core:cli&quot;
 
 fn main() {
-    // 1. Automatic CLI flag parsing directly into typed struct
-    cfg := try cli.parse[DatabaseConfig]()
-    println(&quot;Config loaded: host={}, port={}&quot;, cfg.Host, cfg.Port)
+    (a, p) := compute_bounds(10.0, 5.0)
+    println(&quot;Area: {}, Perimeter: {}&quot;, a, p)
+}
+</code></pre>
+<h3 id="level-2-parameter-intent-in-mut-move">Level 2 — Parameter Intent (<code>in</code>, <code>mut</code>, <code>move</code>)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>type Config struct {
+    timeout_ms: i32
+    retries: i32
+}
 
-    // 2. Automatic JSON serialization
-    json_str := try json.stringify(cfg)
-    println(&quot;Serialized: {}&quot;, json_str)
+// 'in' intent: read-only borrow (const T&amp;)
+fn validate(in cfg: Config) -&gt; bool {
+    return cfg.timeout_ms &gt; 0 &amp;&amp; cfg.retries &gt;= 0
+}
+
+// 'mut' intent: in-place modification (T&amp;)
+fn apply_defaults(mut cfg: Config) {
+    if cfg.timeout_ms &lt;= 0 { cfg.timeout_ms = 5000 }
+}
+
+fn main() {
+    mut c := Config{ timeout_ms: 0, retries: 3 }
+    apply_defaults(mut c) // Mandatory 'mut' marker at call site!
+    println(&quot;Timeout: {}&quot;, c.timeout_ms)
 }
 </code></pre>
-<h3 id="52-algebraic-enums-tagged-unions">5.2 Algebraic Enums (Tagged Unions)</h3>
-<p>Algebraic enums represent data that can take one of several distinct variants, each carrying its own typed payload:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>type NetworkEvent enum {
-    Connected(peer_ip: str, port: u16),
-    DataReceived(payload: []byte),
-    Disconnected(reason: str),
-    Heartbeat,
+<h3 id="level-3-compile-time-borrow-escape-analysis">Level 3 — Compile-Time Borrow &amp; Escape Analysis</h3>
+<p>cfire's semantic analyzer checks for dangling stack references:</p>
+<ul>
+  <li>Returning references to local variables triggers diagnostic <code>CF3002</code>.</li>
+  <li>Passing the same mutable variable twice (<code>update(mut x, mut x)</code>) triggers <code>cfire/MUT-ALIAS</code>.</li>
+</ul>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-6"><a id="ch6"></a>6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</h2>
+<h3 id="level-1-structs-with-default-field-values">Level 1 — Structs with Default Field Values</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>type Endpoint struct {
+    host: str = &quot;127.0.0.1&quot;
+    port: u16 = 8080
+    ssl: bool = false
+}
+
+fn main() {
+    ep1 := Endpoint{}
+    ep2 := Endpoint{ host: &quot;api.example.com&quot;, port: 443, ssl: true }
+    println(&quot;Connect to {}:{}&quot;, ep2.host, ep2.port)
 }
 </code></pre>
-<p>This lowers to <code>std::variant&lt;Connected, DataReceived, Disconnected, Heartbeat&gt;</code> in ISO C++23.</p>
-<h3 id="53-exhaustive-pattern-matching-match">5.3 Exhaustive Pattern Matching (<code>match</code>)</h3>
-<p>Pattern matching inspects algebraic enums and binds variant payloads. The compiler enforces exhaustiveness (<code>cfire/NON-EXHAUSTIVE-MATCH</code>):</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn handle_event(event: NetworkEvent) {
-    match event {
-        Connected(ip, port) =&gt; {
-            println(&quot;Peer connected: {}:{}&quot;, ip, port)
-        }
-        DataReceived(data) =&gt; {
-            println(&quot;Received payload of {} bytes&quot;, data.len())
-        }
-        Disconnected(reason) =&gt; {
-            println(&quot;Connection closed: {}&quot;, reason)
-        }
-        Heartbeat =&gt; {
-            // Keep-alive ack
-        }
-    }
+<h3 id="level-2-compile-time-struct-reflection-tags">Level 2 — Compile-Time Struct Reflection Tags</h3>
+<p>Tags inform standard library modules (JSON, SQLite, CLI) with zero runtime reflection:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>type UserRecord struct {
+    Id: i64    `json:&quot;id&quot;    sql:&quot;id&quot;    desc:&quot;Unique user identifier&quot;`
+    Email: str `json:&quot;email&quot; sql:&quot;email&quot; desc:&quot;Verified email address&quot;`
+    Active: bool `json:&quot;active&quot; sql:&quot;active&quot; desc:&quot;Account status&quot;`
 }
 </code></pre>
-<p>If a new variant is added to <code>NetworkEvent</code>, every <code>match</code> statement across your codebase that lacks a wildcard <code>_ =&gt;</code> arm will fail compilation at build time.</p>
-<h3 id="54-slice-destructuring-matching">5.4 Slice Destructuring Matching</h3>
-<p><code>match</code> can also destructure slices into head and tail elements:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn summarize_tokens(tokens: []str) {
-    match tokens {
-        [] =&gt; {
-            println(&quot;No tokens found&quot;)
+<h3 id="level-3-algebraic-enums-exhaustive-pattern-matching">Level 3 — Algebraic Enums &amp; Exhaustive Pattern Matching</h3>
+<p>Enums can hold data payloads, lowering directly to <code>std::variant</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>enum Event {
+    Connected(str)
+    Data([]byte)
+    Disconnected(i32)
+}
+
+fn handle_event(e: Event) {
+    match e {
+        Event::Connected(addr) =&gt; {
+            println(&quot;Peer connected from {}&quot;, addr)
         }
-        [command] =&gt; {
-            println(&quot;Single command: {}&quot;, command)
+        Event::Data(payload) =&gt; {
+            println(&quot;Received {} bytes&quot;, payload.len)
         }
-        [cmd, ..args] =&gt; {
-            println(&quot;Command: {}, Argument count: {}&quot;, cmd, args.len())
+        Event::Disconnected(code) =&gt; {
+            println(&quot;Connection closed with code {}&quot;, code)
         }
     }
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-6"><a id="ch6"></a>6. Fearless Error Handling &amp; Cleanup</h2>
-<h3 id="61-the-fallible-return-type-t">6.1 The Fallible Return Type <code>T!</code></h3>
-<p><code>cfire</code> rejects hidden C++ exceptions. Functions that can fail return <code>T!</code>, which lowers directly to <code>std::expected&lt;T, cfire::Error&gt;</code>. Errors are concrete value objects carrying a code, an error message, and source context:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
+<h2 id="chapter-7"><a id="ch7"></a>7. Fearless Error Handling, Optionals &amp; RAII Cleanup</h2>
+<h3 id="level-1-fallible-return-types-t-and-try">Level 1 — Fallible Return Types (<code>T!</code>) and <code>try</code></h3>
+<p>Functions returning <code>T!</code> produce a value or propagate an error without exceptions:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:fs&quot;
 
-fn load_api_key(path: str) -&gt; str! {
-    if !fs.exists(path) {
-        return cfire.error(&quot;API key file not found: {}&quot;, path)
+fn read_version_number(path: str) -&gt; i32! {
+    content := try fs.read_text(path)
+    return 1
+}
+</code></pre>
+<h3 id="level-2-fallback-divergence-optional-unwrapping">Level 2 — Fallback Divergence &amp; Optional Unwrapping</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:os&quot;
+
+fn main() {
+    // Provide inline fallback default with 'or'
+    port := os.getenv(&quot;PORT&quot;) or &quot;3000&quot;
+
+    // Optional types (T?)
+    mut user_id: i64? = nil
+    if user_id != nil {
+        println(&quot;User: {}&quot;, user_id?)
     }
-    raw := try fs.read_text(path)
-    return str.trim(raw)
 }
 </code></pre>
-<h3 id="62-the-three-ways-to-handle-errors">6.2 The Three Ways to Handle Errors</h3>
-<h4 id="1-early-return-propagation-try">1. Early Return Propagation (<code>try</code>)</h4>
-<p>The <code>try</code> operator unwraps the success value or immediately returns the error from the enclosing function:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn setup_system() -&gt; void! {
-    cfg := try load_api_key(&quot;api.key&quot;)
-    println(&quot;Key loaded: {} chars&quot;, cfg.len())
-}
-</code></pre>
-<p>If used inside <code>fn main()</code>, an unhandled error printed via <code>try</code> outputs a formatted diagnostic and exits the process with status code <code>1</code>.</p>
-<h4 id="2-default-fallbacks-or-value">2. Default Fallbacks (<code>or value</code>)</h4>
-<p>When a reasonable default exists, use <code>or fallback</code> (lowers to <code>std::expected::value_or</code>):</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>port := try parse_port(os.getenv(&quot;PORT&quot;)) or 8080
-println(&quot;Binding to port {}&quot;, port)
-</code></pre>
-<h4 id="3-inline-recovery-blocks-or-err">3. Inline Recovery Blocks (<code>or err { ... }</code>)</h4>
-<p>When you need to log an error, clean up local state, or alter control flow, use an <code>or err { ... }</code> block. To prevent unwrapping an uninitialized value, the compiler enforces that value-binding recovery blocks must definitely diverge (<code>cfire/NON-DIVERGING-OR-BLOCK</code>):</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>token := load_api_key(&quot;secret.key&quot;) or err {
-    println(&quot;[WARN] Failed to load key: {}. Falling back to sandbox mode.&quot;, err.message())
-    return // Diverges cleanly
-}
-</code></pre>
-<h3 id="63-deterministic-scope-cleanup-defer">6.3 Deterministic Scope Cleanup (<code>defer</code>)</h3>
-<p>The <code>defer</code> statement registers an action to be executed in Last-In, First-Out (LIFO) order when the surrounding scope exits. It is implemented via RAII scope guards, guaranteeing execution regardless of whether the scope exits via normal return, <code>try</code> error propagation, or a <code>break</code> statement:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
+<h3 id="level-3-deterministic-raii-cleanup-defer">Level 3 — Deterministic RAII Cleanup (<code>defer</code>)</h3>
+<p><code>defer</code> statements execute in reverse order (LIFO) whenever a scope exits, whether by normal return or error propagation:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:fs&quot;
-import &quot;core:sync&quot;
+import &quot;core:db/sqlite&quot;
 
-mut mtx: sync.Mutex = {}
+fn export_dataset(db_path: str, out_path: str) -&gt; void! {
+    mut db := try sqlite.open(db_path)
+    defer db.close()
 
-fn process_transaction() -&gt; void! {
-    mtx.lock()
-    defer mtx.unlock() // Guaranteed to unlock even on error return
+    mut out := try fs.open(out_path, fs.OpenMode::Write)
+    defer out.close()
 
-    mut file := try fs.open(&quot;audit.log&quot;, fs.OpenMode::Append)
-    defer file.close() // File descriptor closed cleanly
-
-    try file.write_str(&quot;Transaction started\n&quot;)
-    // If an error happens below, both file.close() and mtx.unlock() execute deterministically
-    try execute_db_write()
-    try file.write_str(&quot;Transaction committed\n&quot;)
+    // Both handles are guaranteed to close on return or error!
+    try out.write_str(&quot;Export completed successfully.\n&quot;)
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-7"><a id="ch7"></a>7. Structured Concurrency &amp; Contexts</h2>
-<h3 id="71-structured-concurrency-with-asyncscope">7.1 Structured Concurrency with <code>async.scope</code></h3>
-<p>Unlike raw threads or Go's unconstrained <code>go func()</code>, <code>cfire</code> uses structured task pools. An <code>async.scope</code> block defines a lexical boundary: the scope <strong>cannot exit</strong> until every spawned child task has completed:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>import &quot;core:time&quot;
-
-fn process_batch(items: []str) {
-    // Spawns a pool of 4 worker threads
+<div class="part-banner"><span class="part-pill">SECTION</span><h2>Part III: Concurrency, C++ Interop &amp; Systems</h2></div>
+<h2 id="chapter-8"><a id="ch8"></a>8. Structured Concurrency, Channels &amp; Contexts</h2>
+<h3 id="level-1-scoped-concurrency">Level 1 — Scoped Concurrency</h3>
+<p><code>async.scope</code> creates a lexically bounded thread pool. The scope cannot exit until all spawned tasks complete:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>fn main() {
     async.scope(workers: 4) |scope| {
-        for idx, item in items {
-            scope.spawn || {
-                println(&quot;Worker processing item [{}]: {}&quot;, idx, item)
-                time.sleep_ms(50)
-            }
+        scope.spawn || {
+            println(&quot;Task A executing&quot;)
+        }
+        scope.spawn || {
+            println(&quot;Task B executing&quot;)
         }
     }
-    // All 4 worker tasks are 100% joined before this line executes!
-    println(&quot;All batch items successfully processed.&quot;)
+    println(&quot;All tasks completed.&quot;)
 }
 </code></pre>
-<p>Structured concurrency eliminates orphaned background threads, use-after-free references to stack frames, and race conditions during application shutdown.</p>
-<h3 id="72-message-passing-via-typed-channels-coresync">7.2 Message Passing via Typed Channels (<code>core:sync</code>)</h3>
-<p>For decoupled producer-consumer pipelines, <code>core:sync</code> provides Go-style typed channels:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
+<h3 id="level-2-bounded-mpmc-channels-coresync">Level 2 — Bounded MPMC Channels (<code>core:sync</code>)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:sync&quot;
 
 fn main() {
     ch := sync.make_channel[i64](capacity: 10)
 
     async.scope(workers: 2) |scope| {
-        // Producer task
+        // Producer
         scope.spawn || {
-            for mut i := 1; i &lt;= 5; i += 1 {
-                ch.send(i * 10)
+            for i in 1..=5 {
+                ch.send(i)
             }
             ch.close()
         }
 
-        // Consumer task
+        // Consumer
         scope.spawn || {
-            for {
-                val := ch.recv() or break // Exits loop when channel is closed and empty
-                println(&quot;Received: {}&quot;, val)
+            for val in ch {
+                println(&quot;Received item: {}&quot;, val)
             }
         }
     }
 }
 </code></pre>
-<h3 id="73-cancellation-contexts-deadlines-coresynccontext">7.3 Cancellation Contexts &amp; Deadlines (<code>core:sync/context</code>)</h3>
-<p>Long-running background operations support cooperative cancellation via <code>Context</code>:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
+<h3 id="level-3-cancellation-tokens-deadlines-coresynccontext">Level 3 — Cancellation Tokens &amp; Deadlines (<code>core:sync/context</code>)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:sync/context&quot;
 import &quot;core:time&quot;
 
-fn worker(ctx: context.Context, id: i32) {
-    for {
-        if ctx.is_cancelled() {
-            println(&quot;Worker [{}] received cancellation notice&quot;, id)
-            return
-        }
-        time.sleep_ms(100)
+fn worker(ctx: context.Context) {
+    for !ctx.is_cancelled() {
+        time.sleep_ms(50)
     }
-}
-
-fn main() {
-    // Derive a context that cancels automatically after 250 milliseconds
-    (ctx, cancel) := context.with_timeout(context.background(), 250)
-    defer cancel()
-
-    async.scope(workers: 2) |scope| {
-        scope.spawn || { worker(ctx, 1) }
-        scope.spawn || { worker(ctx, 2) }
-    }
-    println(&quot;Workers shut down cleanly.&quot;)
+    println(&quot;Worker cleanly cancelled.&quot;)
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-8"><a id="ch8"></a>8. Zero-Friction C &amp; C++ Interop</h2>
-<h3 id="81-direct-c-header-ingestion">8.1 Direct C Header Ingestion</h3>
-<p><code>cfire</code> compiles natively to C++23, which means communicating with C libraries requires no manual binding generation. When you import a C header with <code>import &quot;c:...&quot;</code>, the compiler automatically invokes Clang to extract type definitions and function prototypes, caching the result in <code>.cfire/cache/ast/</code>:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-// Directly imports the system zlib header
-import &quot;c:zlib.h&quot; as zlib
-
-fn main() {
-    version_str := zlib.zlibVersion()
-    println(&quot;Zlib library version: {}&quot;, version_str)
-}
-</code></pre>
-<h3 id="82-automatic-string-boundary-coercion">8.2 Automatic String Boundary Coercion</h3>
-<p>When calling a C function expecting a null-terminated <code>const char*</code>, <code>cfire</code> automatically inserts <code>cfire::c_str(arg)</code> at compile time. You can pass a native <code>cfire</code> <code>str</code> directly without handwritten conversion:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>import &quot;c:stdio.h&quot; as c_io
-
-fn main() {
-    filename := &quot;output.txt&quot;
-    mode := &quot;w&quot;
-    
-    // Automatically coerces 'filename' and 'mode' to const char*
-    mut f := c_io.fopen(filename, mode)
-    if f != null {
-        c_io.fputs(&quot;Written via direct C interop\n&quot;, f)
-        c_io.fclose(f)
-    }
-}
-</code></pre>
-<h3 id="83-direct-c-header-imports">8.3 Direct C++ Header Imports</h3>
-<p>You can import modern C++ standard and third-party headers directly:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>import &quot;cpp:vector&quot;
-import &quot;cpp:algorithm&quot;
-
-fn main() {
-    // Direct access to C++ standard library algorithms
-    mut values: []i32 = [5, 2, 8, 1, 9]
-    // Under the hood, values is std::vector&lt;int32_t&gt;
-    println(&quot;Sorted elements:&quot;)
-    // ...
-}
-</code></pre>
-<h3 id="84-inline-c-escape-hatch-cpp">8.4 Inline C++ Escape Hatch (<code>cpp { ... }</code>)</h3>
-<p>For platform intrinsics, inline assembly, or specialized template metaprogramming, <code>cfire</code> allows raw C++ statements inside any function:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>fn get_cpu_cycle_count() -&gt; u64 {
-    mut cycles: u64 = 0
+<h2 id="chapter-9"><a id="ch9"></a>9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</h2>
+<h3 id="level-1-inline-c-escape-blocks">Level 1 — Inline C++ Escape Blocks</h3>
+<p>Embed inline C++23 directly within <code>.cf</code> source:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>fn get_system_arch() -&gt; str {
     cpp {
-        #if defined(__x86_64__)
-        cycles = __rdtsc();
-        #elif defined(__aarch64__)
-        asm volatile(&quot;mrs %0, cntvct_el0&quot; : &quot;=r&quot;(cycles));
+        #if defined(__aarch64__)
+            return &quot;arm64&quot;;
+        #else
+            return &quot;x86_64&quot;;
         #endif
     }
-    return cycles
+}
+</code></pre>
+<h3 id="level-2-direct-clang-json-ast-header-ingestion">Level 2 — Direct Clang JSON AST Header Ingestion</h3>
+<p>Import existing C and C++ library headers with automatic type conversion:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import cpp &quot;zstd.h&quot;
+
+fn get_zstd_version() -&gt; u32 {
+    return cpp.ZSTD_versionNumber()
+}
+</code></pre>
+<h3 id="level-3-multi-build-orchestration-in-buildcf">Level 3 — Multi-Build Orchestration in <code>build.cf</code></h3>
+<p>Orchestrate legacy CMake, Make, and C archives without shell scripts:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package build
+
+fn configure(mut b: Build) {
+    // Ingest existing CMake dependency
+    cmake_lib := b.add_cmake(&quot;vendor/sqlite&quot;, &quot;libsqlite3.a&quot;)
+    
+    app := b.add_executable(&quot;server&quot;, &quot;src/main.cf&quot;)
+    app.link_artifact(cmake_lib)
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-9"><a id="ch9"></a>9. The Cfire Build System: Native, Cross-Target &amp; WebAssembly</h2>
-<p>A great systems language must solve the compilation, dependency, and packaging problem without dragging developers into build configuration nightmare. <code>cfire</code> features a unified build system that ranges from <strong>instant zero-config single-command builds</strong> to <strong>declarative multi-language dependency manifests (<code>build.cf</code>)</strong>, <strong>WebAssembly compilation</strong>, and <strong>native desktop application bundling</strong>.</p>
-<h3 id="91-zero-config-core-incremental-pch-caching">9.1 Zero-Config Core &amp; Incremental PCH Caching</h3>
-<p>For the majority of applications, <code>cfire</code> requires no project files, Makefiles, or build scripts. Point <code>cfire</code> at an entry file:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>cfire run main.cf          # Transpile to C++23, compile, and execute immediately
-cfire build main.cf        # Compile an optimized native binary (-O2)
-cfire build -o my_app main.cf
+<h2 id="chapter-10"><a id="ch10"></a>10. Integrated Testing, Sanitizers &amp; Diagnostics</h2>
+<h3 id="level-1-built-in-unit-tests">Level 1 — Built-In Unit Tests</h3>
+<p>Write <code>test &quot;...&quot;</code> blocks directly alongside implementation code:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>fn add(a: i32, b: i32) -&gt; i32 { return a + b }
+
+test &quot;addition properties&quot; {
+    assert(add(2, 2) == 4, &quot;2 + 2 must equal 4&quot;)
+    assert(add(-1, 1) == 0, &quot;Inverse sum must equal 0&quot;)
+}
 </code></pre>
-<p>Under the hood:</p>
-<ol>
-  <li><strong>Semantic Analysis &amp; Codegen</strong>: <code>cfire</code> analyzes types, checks borrow invariants, and lowers <code>.cf</code> code to clean, human-readable ISO C++23.</li>
-  <li><strong>Automated Header &amp; Library Discovery</strong>: Any standard library (<code>core:*</code>) or vendor library (<code>vendor:*</code>) imported is automatically discovered and mapped to its appropriate compiler include paths and linker flags.</li>
-  <li><strong>Precompiled Header (PCH) Cache</strong>: The runtime prelude (<code>cfire_prelude.hpp</code>) is automatically compiled into an optimized precompiled header (<code>.pch</code>) stored in your system temporary cache. When rebuilding, compilation completes in tens of milliseconds because Clang skips reparsing standard library headers.</li>
-  <li><strong>Memory Sanitizers (<code>--sanitize</code>)</strong>: Add <code>--sanitize</code> to compile with LLVM AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan), catching memory errors, buffer overflows, and null pointer dereferences at runtime.</li>
-</ol>
-<h3 id="92-declarative-buildcf-manifest">9.2 Declarative <code>build.cf</code> Manifest</h3>
-<p>When your project integrates external C or C++ vendor libraries, legacy Makefiles, CMake sub-projects, or remote archives, place a <code>build.cf</code> file in your project root. <code>cfire</code> automatically detects <code>build.cf</code> whenever building or running any sibling <code>.cf</code> file.</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package build
-
-import &quot;core:build&quot;
-
-// 1. Compile raw local C/C++ source trees
-FastCRC := build.CC(&quot;./native/crc32&quot;, {
-    Sources:  [&quot;crc32.c&quot;, &quot;table.c&quot;],
-    Includes: [&quot;include&quot;, &quot;.&quot;],
-    Defines:  {&quot;CRC_TABLE_SIZE&quot;: 256, &quot;CRC_SEED&quot;: 42},
-    CFlags:   [&quot;-O3&quot;, &quot;-march=native&quot;],
-})
-
-// 2. Build a CMake-based vendor subproject into a static archive
-KVStore := build.CMake(&quot;./vendor/libkv_cmake&quot;, {
-    Target:   &quot;kvstore&quot;,
-    Includes: [&quot;include&quot;],
-    Defines:  {&quot;KV_SALT&quot;: 99},
-})
-
-// 3. Build a legacy Makefile or Autotools library
-LegacyCodec := build.Make(&quot;./vendor/legacy_codec&quot;, {
-    Target:   &quot;libcodec.a&quot;,
-    Includes: [&quot;include&quot;],
-})
-
-// 4. Fetch and compile a remote Git dependency pinned to a tag or commit
-TreeSitter := build.Git(&quot;https://github.com/tree-sitter/tree-sitter.git&quot;, {
-    Tag:      &quot;v0.22.6&quot;,
-    Sources:  [&quot;lib/src/lib.c&quot;],
-    Includes: [&quot;lib/include&quot;, &quot;lib/src&quot;],
-})
-
-// 5. Download and extract a remote source archive with SHA-256 integrity verification
-LibUV := build.Archive(&quot;https://dist.libuv.org/dist/v1.48.0/libuv-v1.48.0.tar.gz&quot;, {
-    Sha256:   &quot;3a34f46ff36a2b8...221&quot;,
-    Driver:   &quot;CMake&quot;,
-    Includes: [&quot;include&quot;],
-})
-
-// 6. Link system-installed pkg-config dependencies
-Zstd := build.SystemLib(&quot;libzstd&quot;)
+<p>Run tests with <code>cfire test</code>.</p>
+<h3 id="level-2-memory-verification-under-sanitizers">Level 2 — Memory Verification under Sanitizers</h3>
+<p>Run test suites with hardware memory safety checks:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire test --sanitize
+# Runs AddressSanitizer (ASan) + UndefinedBehaviorSanitizer (UBSan)
 </code></pre>
-<p>When you invoke <code>cfire build main.cf</code>:</p>
-<ol>
-  <li><code>cfire</code> scans <code>build.cf</code> and resolves all dependencies.</li>
-  <li>Local and remote C/C++ sources are compiled into static <code>.a</code> archives located in <code>.cfire/cache/lib/</code>.</li>
-  <li>Build artifacts are tracked incrementally: unchanged dependencies are never recompiled.</li>
-  <li>All include paths and static archives are linked into your executable in a single pass.</li>
-</ol>
-<h3 id="93-pre-build-command-hooks-code-generators">9.3 Pre-Build Command Hooks &amp; Code Generators</h3>
-<p>Modern systems often require code generators (protobuf, flatbuffers, sqlc) or asset packaging steps before compiling language sources. <code>build.cf</code> supports arbitrary pre-build commands:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package build
-
-import &quot;core:build&quot;
-
-// Run code generation before building .cf sources
-GenProtobuf := build.Command(&quot;protoc&quot;, {
-    Args:    [&quot;--cpp_out=.cfire/gen&quot;, &quot;messages.proto&quot;],
-    Inputs:  [&quot;messages.proto&quot;],
-    Outputs: [&quot;.cfire/gen/messages.pb.h&quot;, &quot;.cfire/gen/messages.pb.cc&quot;],
-})
-</code></pre>
-<p><code>cfire</code> evaluates file timestamps: if <code>messages.proto</code> has not been modified since the outputs were produced, the command is skipped.</p>
-<h3 id="94-cross-compilation-target-triples-target">9.4 Cross-Compilation &amp; Target Triples (<code>--target</code>)</h3>
-<p><code>cfire</code> supports cross-compiling to alternative CPU architectures and operating systems using Clang target triples and sysroots:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code># Compile for macOS Apple Silicon from Intel (or vice-versa)
-cfire build --target arm64-apple-darwin main.cf
-cfire build --target x86_64-apple-darwin main.cf
-
-# Cross-compile for Linux x86_64 or AArch64
-cfire build --target x86_64-unknown-linux-gnu --sysroot /opt/linux-sysroot main.cf
-cfire build --target aarch64-unknown-linux-gnu --sysroot /opt/linux-arm64-sysroot main.cf
-
-# Cross-compile for Windows
-cfire build --target x86_64-w64-mingw32 main.cf
-</code></pre>
-<h3 id="95-webassembly-target-web-profiles-targetwasm">9.5 WebAssembly Target &amp; Web Profiles (<code>--target=wasm</code>)</h3>
-<p><code>cfire</code> features first-class WebAssembly support by wrapping the Emscripten (<code>em++</code>) toolchain behind standard Cfire CLI flags:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code># Compile to WebAssembly (.wasm + .js + .html)
-cfire build --target=wasm main.cf
-
-# Compile, launch local HTTP server, and open default browser automatically
-cfire run --target=wasm main.cf
-</code></pre>
-<h4 id="compilation-profiles-web-profile">Compilation Profiles (<code>--web-profile</code>)</h4>
-<ol>
-  <li><strong><code>cli</code> Profile</strong> (Default for pure Cfire): Generates lean WebAssembly without canvas overhead. Can be executed directly with Node.js (<code>node app.js</code>) or embedded in serverless workers.</li>
-  <li><strong><code>canvas</code> Profile</strong> (Auto-detected if <code>vendor:raylib</code> or <code>vendor:raygui</code> is imported):</li>
- - Injects <code>-DPLATFORM_WEB</code> and links against the WebAssembly build of Raylib. - Enables WebGL 2.0 and GLFW3 emulation (<code>-sUSE_GLFW=3</code>). - Automatically enables <code>-sASYNCIFY=1</code> so that synchronous desktop blocking loops (<code>while (!WindowShouldClose())</code>) yield control transparently to the browser's <code>requestAnimationFrame</code> without tab freezes. - Generates an interactive HTML5 harness with automatic high-DPI canvas scaling and audio context unlock.  <li><strong>Manual Override</strong>: Pass <code>--web-profile=cli</code> or <code>--web-profile=canvas</code> to explicitly force a profile.</li>
-</ol>
-<h3 id="96-native-desktop-gui-packaging-no-terminal-execution-subsystem">9.6 Native Desktop GUI Packaging &amp; No-Terminal Execution (<code>--subsystem</code>)</h3>
-<p>When compiling graphical desktop applications (such as Raylib or Raygui tools), double-clicking a binary should not spawn an unwanted background terminal window:</p>
+<h3 id="level-3-diagnostic-error-codes">Level 3 — Diagnostic Error Codes</h3>
+<p>Every semantic compiler check carries an actionable code:</p>
 <ul>
-  <li><strong>Windows (<code>-mwindows</code>)</strong>: When <code>cfire</code> detects <code>vendor:raylib</code> or <code>vendor:raygui</code>, it automatically links with <code>-mwindows</code> (or <code>-Wl,/subsystem:windows</code>). Double-clicking the <code>.exe</code> launches the Raylib window directly without spawning a <code>cmd.exe</code> console window.</li>
-  <li><strong>macOS (<code>.app</code> Bundle Packaging)</strong>: On macOS, <code>cfire build</code> automatically structures the binary into a native Application Bundle:</li>
- <code></code>`text MyApp.app/ └── Contents/ ├── Info.plist   (CFBundlePackageType: APPL, CFBundleExecutable: MyApp) └── MacOS/ └── MyApp   (Mach-O binary) <code></code>` Double-clicking <code>MyApp.app</code> in Finder executes the application without launching <code>Terminal.app</code>.  <li><strong>Console Debugging Override (<code>--subsystem=console</code>)</strong>: When debugging with <code>println()</code>, pass <code>--subsystem=console</code> to keep the console window active so stdout logs remain visible in the terminal.</li>
+  <li><code>CF1xxx</code>: Lexical tokenization errors</li>
+  <li><code>CF2xxx</code>: Grammar parsing and syntax errors</li>
+  <li><code>CF3xxx</code>: Semantic types, borrow analysis, and call-site intent checks</li>
+  <li><code>CF4xxx</code>: Code generation and C++23 lowering diagnostics</li>
+  <li><code>CF5xxx</code>: Build system and linker errors</li>
 </ul>
-<h3 id="97-native-ios-simulator-target-target-ios-sim-ios-cfire-run-ios">9.7 Native iOS &amp; Simulator Target (<code>--target ios-sim | ios</code> &amp; <code>cfire run --ios</code>)</h3>
-<p><code>cfire</code> supports compiling desktop <code>vendor:raylib</code> and <code>vendor:raygui</code> applications directly into native iOS apps and Simulator bundles—with <strong>zero external SDL2 or CMake dependencies</strong>:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code># Build a flat iOS Simulator .app bundle (arm64-apple-ios17.0-simulator)
-cfire build --target ios-sim main.cf
-
-# Build a physical iPhone/iPad .app bundle (arm64-apple-ios17.0)
-cfire build --target ios main.cf
-
-# One-command build, auto-boot Simulator, install .app, and stream stdout live
-cfire run --ios main.cf
-cfire run --ios --device &quot;iPhone 17 Pro&quot; main.cf
-</code></pre>
-<p>How <code>cfire</code> bridges desktop code to iOS natively:</p>
-<ol>
-  <li><strong>Built-In Objective-C++ <code>UIKit</code> + <code>OpenGLES3</code> + <code>CoreAudio</code> Backend</strong>: When targeting <code>ios</code> or <code>ios-sim</code>, <code>cfire</code> compiles the generated <code>.mm</code> translation unit with <code>-fobjc-arc</code> against its self-contained <code>runtime/core/ios_raylib.hpp</code> backend.</li>
-  <li><strong>Synchronous Game Loop Preservation</strong>: Your standard <code>for !rl.WindowShouldClose() { rl.BeginDrawing() ... rl.EndDrawing() }</code> loop runs unmodified by initializing <code>UIApplicationMain</code> and pumping <code>CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.002, false)</code> per frame inside <code>EndDrawing()</code>.</li>
-  <li><strong>Smart Adaptive Safe-Area Viewport &amp; Touch Remapping</strong>:</li>
- - Calling <code>rl.InitWindow(0, 0, &quot;Title&quot;)</code> adopts the iPhone's native screen point dimensions. - Calling a fixed resolution such as <code>rl.InitWindow(720, 480, &quot;Title&quot;)</code> automatically scales and letterboxes the canvas inside the iPhone's <code>safeAreaInsets</code> (avoiding the Dynamic Island and Home Indicator), sets preferred Landscape/Portrait orientation in <code>Info.plist</code>, and remaps <code>UITouch</code> coordinates into <code>720x480</code> virtual canvas coordinates so <code>GetMousePosition()</code>, <code>IsMouseButtonPressed()</code>, and <code>raygui</code> controls work out-of-the-box by finger touch.  <li><strong>Automatic <code>&lt;UIKeyInput&gt;</code> Software Keyboard</strong>: Tapping a <code>raygui</code> <code>GuiTextBox</code> automatically triggers <code>[view becomeFirstResponder]</code> to slide up the iOS native software keyboard and feed keystrokes into <code>GetCharPressed()</code> and <code>IsKeyPressed(KEY_BACKSPACE | KEY_ENTER)</code>.</li>
-  <li><strong>iOS App Sandbox Stdlib Mapping</strong>: Relative writable file paths in <code>core:fs</code> and <code>core:db/sqlite</code> automatically resolve to the iOS app's writable <code>~/Documents/</code> container, while <code>core:compress/zstd</code> uses Apple's native <code>-lcompression</code> and <code>core:json</code> uses zero-dependency C++23 reflection.</li>
-</ol>
-<h3 id="98-package-caching-lockfiles-offline-vendoring">9.8 Package Caching, Lockfiles &amp; Offline Vendoring</h3>
-<p>To guarantee reproducible, hermetic builds across development machines and CI/CD runners:</p>
-<ul>
-  <li><strong>Global Package Cache (<code>~/.cfire/cache/pkg</code>)</strong>: Remote repositories and archives are fetched once and cached globally by cryptographic content hash.</li>
-  <li><strong>Lockfile Pinning (<code>build.lock</code>)</strong>: When dependencies are fetched, <code>cfire</code> records exact Git commit SHAs and archive checksums in <code>build.lock</code>. Subsequent builds verify that local archives match the recorded checksum.</li>
-  <li><strong>Air-Gapped Offline Vendoring (<code>cfire vendor</code>)</strong>: Run <code>cfire vendor [dest_dir]</code> to download and vendor all external C/C++ dependencies into a local <code>vendor/</code> directory. Your project can then be built completely offline without network access.</li>
-</ul>
-<h3 id="99-zero-lock-in-cmake-ejection-cfire-eject">9.9 Zero-Lock-In CMake Ejection (<code>cfire eject</code>)</h3>
-<p><code>cfire</code> guarantees <strong>zero framework lock-in</strong>. You can export your entire project to standard ISO C++23 with a production CMake build file at any time:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>cfire eject main.cf ./standalone_cpp_project
-</code></pre>
-<p>This generates:</p>
-<ul>
-  <li>Standalone C++23 translation units.</li>
-  <li>The zero-overhead <code>cfire_prelude.hpp</code> runtime header.</li>
-  <li>A clean <code>CMakeLists.txt</code> configuring all include directories, dependencies, and compile options.</li>
-</ul>
-<p>Any developer can immediately clone and build the ejected project using standard CMake and Clang without installing <code>cfire</code>.</p>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-10"><a id="ch10"></a>10. Building Web Services, HTTP Servers &amp; Independent Routers (<code>core:net/http</code>)</h2>
-<p>Modern systems software frequently needs to expose telemetry endpoints, REST APIs, or lightweight RPC microservices. Unlike traditional frameworks that force heavy external dependencies or invasive event-loop architectures, <code>cfire</code> provides a zero-dependency, native HTTP/1.1 protocol engine and independent router built directly on top of POSIX TCP sockets and ISO C++23.</p>
-<h3 id="101-philosophy-zero-external-dependencies">10.1 Philosophy &amp; Zero External Dependencies</h3>
-<p>The <code>core:net/http</code> module is designed with two fundamental principles:</p>
-<ol>
-  <li><strong>Zero Third-Party Libraries:</strong> The HTTP wire parser, response serializer, server accept loop, and route matcher are implemented in standard ISO C++23 without requiring <code>libmicrohttpd</code>, <code>boost::beast</code>, or external C libraries.</li>
-  <li><strong>Decoupled &amp; Independent Features:</strong> Routing and dispatch are strictly decoupled from network sockets. You can create an independent <code>Router</code>, register parameterized routes, and unit-test request dispatching purely in memory without opening sockets or listening on network ports.</li>
-</ol>
-<h3 id="102-request-parsing-response-writing">10.2 Request Parsing &amp; Response Writing</h3>
-<p>The <code>http.Request</code> struct represents an incoming HTTP/1.1 request:</p>
-<ul>
-  <li><code>req.method</code>: Normalized uppercase HTTP verb (<code>&quot;GET&quot;</code>, <code>&quot;POST&quot;</code>, <code>&quot;PUT&quot;</code>, <code>&quot;DELETE&quot;</code>, etc.).</li>
-  <li><code>req.path</code>: Clean decoded URI path (e.g. <code>&quot;/api/users/42&quot;</code>).</li>
-  <li><code>req.query(key, fallback)</code>: Decoded query parameters (e.g. <code>req.query(&quot;limit&quot;, &quot;10&quot;)</code>).</li>
-  <li><code>req.header(name, fallback)</code>: Case-insensitive header lookup (e.g. <code>req.header(&quot;Authorization&quot;)</code>).</li>
-  <li><code>req.param(name, fallback)</code>: Named path parameters extracted by the router (e.g. <code>req.param(&quot;id&quot;)</code>).</li>
-  <li><code>req.body</code>: Complete payload body.</li>
-</ul>
-<p>The <code>http.Response</code> struct provides fluent static constructors for standard HTTP responses:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>// 200 OK with plain text
-res1 := http.Response.text(200, &quot;operation successful&quot;)
+<div class="part-banner"><span class="part-pill">SECTION</span><h2>Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target</h2></div>
+<h2 id="chapter-11"><a id="ch11"></a>11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</h2>
+<h3 id="level-1-http-client-requests">Level 1 — HTTP Client Requests</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:net/http&quot;
 
-// 200 OK with JSON payload
-res2 := http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)
-
-// 201 Created with JSON
-res3 := http.Response.json(201, &quot;{\&quot;id\&quot;:42}&quot;)
-
-// 302 Found redirect
-res4 := http.Response.redirect(&quot;/login&quot;)
-
-// Standard error responses
-res5 := http.Response.not_found(&quot;user not found&quot;)
-res6 := http.Response.bad_request(&quot;invalid payload&quot;)
+fn main() {
+    res := try http.get(&quot;https://api.github.com/zen&quot;)
+    println(&quot;Status: {}, Body: {}&quot;, res.status_code, res.text)
+}
 </code></pre>
-<h3 id="103-the-independent-http-request-router">10.3 The Independent HTTP Request Router</h3>
-<p>The router matches incoming requests based on path patterns and HTTP verbs:</p>
-<ul>
-  <li><strong>Exact Path Matching:</strong> <code>/health</code>, <code>/api/v1/metrics</code></li>
-  <li><strong>Named Path Parameters (<code>:param</code>):</strong> <code>/users/:id</code> matches <code>/users/42</code> with <code>req.param(&quot;id&quot;) == &quot;42&quot;</code>.</li>
-  <li><strong>Greedy Suffix Wildcards (<code>*filepath</code>):</strong> <code>/static/*filepath</code> matches <code>/static/css/theme.css</code> with <code>req.param(&quot;filepath&quot;) == &quot;css/theme.css&quot;</code>.</li>
-  <li><strong>Method Filtering:</strong> <code>router.get</code>, <code>router.post</code>, <code>router.put</code>, <code>router.delete_</code>, <code>router.patch</code>, <code>router.all</code>.</li>
-  <li><strong>RFC-Compliant Status Handlers:</strong> Automatically returns <code>405 Method Not Allowed</code> with an <code>Allow</code> header if the path matches a route registered for different verbs, or <code>404 Not Found</code> if unmatched.</li>
-  <li><strong>Middleware Pipeline:</strong> <code>router.use(middleware)</code> allows adding pre-routing authentication, audit logging, or header validation.</li>
-</ul>
-<h3 id="104-in-memory-standalone-unit-testing">10.4 In-Memory Standalone Unit Testing</h3>
-<p>Because the <code>Router</code> is completely independent of network sockets, request handlers can be tested in-memory in pure unit tests without flakiness or port collisions:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;core:net/http&quot;
+<h3 id="level-2-http-server-with-server-sent-events-sse">Level 2 — HTTP Server with Server-Sent Events (SSE)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:net/http&quot;
 
 fn main() {
     mut router := http.make_router()
-    router.get(&quot;/users/:id&quot;, |req| {
-        return http.Response.text(200, &quot;User ID: &quot; + req.param(&quot;id&quot;))
-    })
-
-    // Pure in-memory unit test — NO network sockets opened!
-    req := http.Request{ method: &quot;GET&quot;, path: &quot;/users/100&quot; }
-    res := router.dispatch(req)
-    assert(res.status_code == 200)
-    assert(res.body == &quot;User ID: 100&quot;)
+    router.get(&quot;/health&quot;) |req| {
+        return http.Response.ok(&quot;OK\n&quot;)
+    }
+    router.get(&quot;/stream&quot;) |req| {
+        return http.post_sse(req, |mut sse| {
+            sse.send_event(&quot;ping&quot;, &quot;{}&quot;)
+        })
+    }
+    server := try http.make_server(&quot;0.0.0.0&quot;, 8080, router)
+    println(&quot;Server running on http://127.0.0.1:8080&quot;)
+    server.listen()
 }
 </code></pre>
-<h3 id="105-running-the-live-http-server">10.5 Running the Live HTTP Server</h3>
-<p>When you are ready to serve live network traffic, instantiate <code>http.make_server</code> and pass the router directly to <code>server.serve_in_background(router)</code> or <code>server.listen_and_serve(router)</code>:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;core:net/http&quot;
-import &quot;core:json&quot;
-
-type Item struct {
-    id: i64 `json:&quot;id&quot;`
-    name: str `json:&quot;name&quot;`
-}
+<h3 id="level-3-rfc-6455-websockets-tls-13">Level 3 — RFC 6455 WebSockets &amp; TLS 1.3</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:net/websocket&quot;
 
 fn main() {
-    mut router := http.make_router()
-
-    router.get(&quot;/health&quot;, |req| {
-        return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;}&quot;)
-    })
-
-    router.get(&quot;/items/:id&quot;, |req| {
-        return http.Response.text(200, &quot;Lookup id=&quot; + req.param(&quot;id&quot;))
-    })
-
-    router.post(&quot;/items&quot;, |req| {
-        return http.Response.json(201, &quot;{\&quot;created\&quot;:true,\&quot;data\&quot;:&quot; + req.body + &quot;}&quot;)
-    })
-
-    // Start server on port 8080 (or 0 for an ephemeral port)
-    mut server := try http.make_server(port: 8080)
-    println(&quot;Server listening on http://127.0.0.1:{}&quot;, server.port())
-
-    // Run non-blocking background event loop
-    server.serve_in_background(router)
-
-    // Execute client requests
-    resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;)
-    println(&quot;GET /health -&gt; status: {}, body: {}&quot;, resp.status_code, resp.body)
-
-    // Gracefully stop the server when done
-    server.stop()
+    mut ws := try websocket.connect(&quot;wss://echo.websocket.org&quot;)
+    defer ws.close()
+    try ws.send_text(&quot;Hello over TLS 1.3 WebSocket!&quot;)
+    msg := try ws.read_text()
+    println(&quot;Echo received: {}&quot;, msg)
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-11"><a id="ch11"></a>11. 2D/3D Graphics &amp; GUI Applications with Raylib and Raygui</h2>
-<p>Modern systems software often requires interactive visualization, hardware-accelerated 2D/3D graphics, or desktop UI controls for internal tooling, game engines, and scientific visualization. <code>cfire</code> provides first-class, zero-friction integration with <strong>Raylib 5.0</strong> (<code>vendor:raylib</code>) and <strong>Raygui 4.0</strong> (<code>vendor:raygui</code>).</p>
-<h3 id="111-zero-setup-import-linking">11.1 Zero-Setup Import &amp; Linking</h3>
-<p>Simply importing <code>vendor:raylib</code> or <code>vendor:raygui</code> triggers automatic header ingestion, include path resolution, struct lowering, and linking across macOS (<code>Cocoa</code>, <code>IOKit</code>, <code>OpenGL</code>), Linux (<code>X11</code>, <code>GL</code>), Windows, and WebAssembly:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
+<h2 id="chapter-12"><a id="ch12"></a>12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</h2>
+<h3 id="level-1-compile-time-simd-json">Level 1 — Compile-Time SIMD JSON</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:json&quot;
 
-import &quot;vendor:raylib&quot; as rl
-import &quot;vendor:raygui&quot; as rg
-</code></pre>
-<h3 id="112-windowing-the-render-loop">11.2 Windowing &amp; The Render Loop</h3>
-<p>Raylib follows a simple, deterministic frame-by-frame polling loop:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;vendor:raylib&quot; as rl
+type Metric struct {
+    Name: str `json:&quot;name&quot;`
+    Value: f64 `json:&quot;value&quot;`
+}
 
 fn main() {
-    // 1. Initialize window and OpenGL context (width, height, title)
-    rl.InitWindow(800, 450, &quot;cfire + Raylib&quot;)
-    defer rl.CloseWindow() // Closes window when main returns
-
-    // 2. Lock framerate to display refresh rate
-    rl.SetTargetFPS(60)
-
-    // 3. Main render loop
-    for !rl.WindowShouldClose() {
-        dt := rl.GetFrameTime() // Delta time in seconds
-
-        // Frame rendering with double buffering
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-
-        rl.ClearBackground(rl.RAYWHITE)
-        rl.DrawText(&quot;Hello from Native cfire Raylib!&quot;, 180, 200, 28, rl.DARKGRAY)
-    }
+    raw := &quot;{\&quot;name\&quot;: \&quot;cpu\&quot;, \&quot;value\&quot;: 92.5}&quot;
+    m := try json.parse[Metric](raw)
+    println(&quot;Metric: {} = {:.1f}&quot;, m.Name, m.Value)
 }
 </code></pre>
-<h3 id="113-2d-shapes-vectors-camera-systems">11.3 2D Shapes, Vectors &amp; Camera Systems</h3>
-<p><code>cfire</code> automatically lowers struct literals (<code>rl.Vector2</code>, <code>rl.Rectangle</code>, <code>rl.Color</code>, <code>rl.Camera2D</code>) to their native C99 Raylib types with zero memory overhead:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;vendor:raylib&quot; as rl
+<h3 id="level-2-embedded-sqlite-with-vector-search">Level 2 — Embedded SQLite with Vector Search</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:db/sqlite&quot;
+import &quot;core:ai&quot;
 
 fn main() {
-    rl.InitWindow(800, 450, &quot;Shapes &amp; Camera&quot;)
-    defer rl.CloseWindow()
+    mut db := try sqlite.open(&quot;:memory:&quot;)
+    try db.exec(&quot;CREATE TABLE docs (id INT, text TEXT, vec BLOB)&quot;)
 
-    mut player_pos := rl.Vector2{x: 400.0, y: 225.0}
-    speed := 250.0
-
-    cam := rl.Camera2D{
-        offset: rl.Vector2{x: 400.0, y: 225.0},
-        target: player_pos,
-        rotation: 0.0,
-        zoom: 1.0,
-    }
-
-    rl.SetTargetFPS(60)
-    for !rl.WindowShouldClose() {
-        dt := rl.GetFrameTime()
-
-        // Input polling
-        if rl.IsKeyDown(rl.KEY_RIGHT) { player_pos.x += speed * dt }
-        if rl.IsKeyDown(rl.KEY_LEFT)  { player_pos.x -= speed * dt }
-        if rl.IsKeyDown(rl.KEY_UP)    { player_pos.y -= speed * dt }
-        if rl.IsKeyDown(rl.KEY_DOWN)  { player_pos.y += speed * dt }
-
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-
-        rl.ClearBackground(rl.RAYWHITE)
-
-        // Draw within 2D camera view
-        rl.BeginMode2D(cam)
-        rl.DrawRectangleRec(rl.Rectangle{x: 100.0, y: 100.0, width: 80.0, height: 80.0}, rl.SKYBLUE)
-        rl.DrawCircleV(player_pos, 20.0, rl.MAROON)
-        rl.EndMode2D()
-
-        rl.DrawText(&quot;Use Arrow Keys to Move&quot;, 20, 20, 20, rl.DARKGRAY)
-    }
+    v := try ai.embed(&quot;local&quot;, &quot;Systems programming with cfire&quot;)
+    try db.exec(&quot;INSERT INTO docs VALUES (1, 'cfire intro', ?1)&quot;, v)
 }
 </code></pre>
-<h3 id="114-raymath-linear-algebra-primitives">11.4 Raymath Linear Algebra Primitives</h3>
-<p>Raymath functions (<code>Vector2Add</code>, <code>Vector2Scale</code>, <code>Vector2Distance</code>, <code>Clamp</code>) are included out of the box under the <code>rl</code> namespace:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>mut velocity := rl.Vector2{x: 10.0, y: 5.0}
-step := rl.Vector2Scale(velocity, dt)
-player_pos = rl.Vector2Add(player_pos, step)
-player_pos.x = rl.Clamp(player_pos.x, 0.0, 800.0)
-</code></pre>
-<h3 id="115-immediate-mode-gui-controls-vendorraygui">11.5 Immediate-Mode GUI Controls (<code>vendor:raygui</code>)</h3>
-<p><code>vendor:raygui</code> provides clean, high-performance immediate-mode UI widgets designed for tools, debug overlays, and game menus:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;vendor:raylib&quot; as rl
-import &quot;vendor:raygui&quot; as rg
+<h3 id="level-3-zstandard-frame-compression-corecompresszstd">Level 3 — Zstandard Frame Compression (<code>core:compress/zstd</code>)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:compress/zstd&quot;
 
 fn main() {
-    rl.InitWindow(640, 480, &quot;Raygui Desktop Controls&quot;)
-    defer rl.CloseWindow()
-
-    mut vsync := true
-    mut volume: f32 = 70.0
-    mut user_name := &quot;PlayerOne&quot;
-    mut text_edit_mode := false
-    mut clicks := 0
-
-    rl.SetTargetFPS(60)
-    for !rl.WindowShouldClose() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-
-        rl.ClearBackground(rl.RAYWHITE)
-
-        // Window Box Container
-        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 340.0, height: 320.0}, &quot;Audio &amp; Display Settings&quot;)
-
-        // Interactive CheckBox (mutates `vsync` in-place)
-        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 80.0, width: 20.0, height: 20.0}, &quot;Enable VSync&quot;, &amp;mut vsync)
-
-        // Slider Bar (mutates `volume` within [0.0, 100.0])
-        rg.GuiSliderBar(rl.Rectangle{x: 120.0, y: 120.0, width: 160.0, height: 20.0}, &quot;Volume&quot;, &quot;{volume}&quot;, &amp;mut volume, 0.0, 100.0)
-
-        // Editable Text Box safely backed by a `mut str`
-        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 160.0, width: 220.0, height: 28.0}, &amp;mut user_name, 32, text_edit_mode) != 0 {
-            text_edit_mode = !text_edit_mode
-        }
-
-        // Action Button
-        if rg.GuiButton(rl.Rectangle{x: 60.0, y: 210.0, width: 120.0, height: 32.0}, &quot;Save Settings&quot;) != 0 {
-            clicks += 1
-        }
-
-        rl.DrawText(&quot;Saved {clicks} times&quot;, 200, 218, 16, rl.DARKGRAY)
-    }
+    data := &quot;Highly repetitive systems log payload data...&quot;
+    compressed := try zstd.compress(data, level: 3)
+    decompressed := try zstd.decompress(compressed)
+    println(&quot;Ratio: {} -&gt; {} bytes&quot;, data.len, compressed.len)
 }
 </code></pre>
-<h3 id="116-composable-pure-cfire-ios-native-ui-examples13-ios-native-ui">11.6 Composable Pure-<code>cfire</code> iOS Native UI (<code>examples/13-ios-native-ui</code>)</h3>
-<p>When building native iOS applications (<code>cfire run --ios</code>), <code>vendor:raylib</code> (<code>rl.*</code>) exposes only the low-level OS and GPU primitives (<code>rl.InitWindow(0, 0, title)</code> for edge-to-edge native resolution, <code>rl.GetSafeAreaRect()</code>, <code>rl.BeginScissorMode()</code>, <code>rl.RequestKeyboard()</code>, <code>rl.TriggerHaptic()</code>, and high-DPI Apple <code>SF Pro</code> text rendering). You can build arbitrary layouts and custom components <strong>100% in pure <code>.cf</code></strong> using <code>cfire</code> structs, receiver methods, slices, and trailing closures—without ever modifying the language or C++ runtime:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;./ui&quot;
-import &quot;vendor:raylib&quot; as rl
-
-fn main() {
-    rl.InitWindow(0, 0, &quot;Pocket Studio&quot;)
-    defer rl.CloseWindow()
-    rl.SetTargetFPS(60)
-
-    mut ctx := ui.make_context()
-    mut tab: i32 = 0
-    mut dark_mode := true
-    mut profile_idx: i32 = 1
-    mut target_temp: f32 = 72.0
-    mut device_name := &quot;Memo's iPhone&quot;
-
-    for !rl.WindowShouldClose() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-
-        ctx.set_dark_mode(dark_mode)
-        ctx.begin_screen(&quot;Pocket Studio&quot;, &quot;ONLINE | {device_name}&quot;)
-
-        // Arbitrary N-column grid layout in pure .cf
-        cols := ctx.columns(ctx.allocate(62.0), 3, 10.0)
-        ctx.stat_card(cols[0], &quot;LATENCY&quot;, &quot;1.4 ms&quot;, ctx.theme.blue)
-        ctx.stat_card(cols[1], &quot;NODES&quot;, &quot;12/12&quot;, ctx.theme.green)
-        ctx.stat_card(cols[2], &quot;BATTERY&quot;, &quot;96%&quot;, ctx.theme.green)
-
-        // Declarative section block using a trailing closure
-        ctx.section(&quot;APPEARANCE &amp; PROFILE&quot;) || {
-            _ := ctx.toggle_row(&quot;Dark Appearance&quot;, &quot;OLED pure black iOS palette&quot;, mut dark_mode)
-            _ := ctx.segmented_row(&quot;Performance Profile&quot;, &quot;Eco;Balanced;Turbo&quot;, mut profile_idx)
-        }
-
-        // Custom widget drawn on the fly inside a themed card closure
-        ctx.with_card(68.0) |rect| {
-            rl.DrawText(&quot;CUSTOM TELEMETRY SPARKLINE&quot;, i32(rect.x + 14.0), i32(rect.y + 10.0), 11, ctx.theme.text_secondary)
-            rl.DrawRectangleRounded(rl.Rectangle{x: rect.x + 14.0, y: rect.y + 34.0, width: rect.width - 28.0, height: 18.0}, 0.5, 6, ctx.theme.blue)
-        }
-
-        _ := ctx.slider_row(&quot;Target Temp&quot;, mut target_temp, 60.0, 85.0, &quot; F&quot;)
-        _ := ctx.text_field_row(&quot;Device Name&quot;, mut device_name, 28)
-        _ := ctx.button(&quot;Sync Telemetry&quot;, false)
-        _ := ctx.tab_bar(&quot;Dashboard;Diagnostics;About&quot;, mut tab)
-    }
-}
-</code></pre>
-<p>See the complete pure-<code>.cf</code> layout engine in <code>examples/13-ios-native-ui/ui.cf</code> and showcase app in <code>examples/13-ios-native-ui/main.cf</code>, and launch it directly on the iPhone Simulator with:</p>
-<div class="code-header"><span class="tag-cf">zsh</span></div>
-<pre><code>cfire run --ios examples/13-ios-native-ui/main.cf
-</code></pre>
-<h3 id="117-multi-platform-deployment-desktop-webassembly-ios">11.7 Multi-Platform Deployment: Desktop, WebAssembly &amp; iOS</h3>
-<p>The same <code>.cf</code> application runs natively across desktop operating systems, modern web browsers, and iOS without modifying a single line of code:</p>
-<ul>
-  <li><strong>Run on Desktop</strong>:</li>
- <code></code>`zsh cfire run app.cf cfire build app.cf   # macOS: produces MyApp.app; Windows: produces windowless .exe (-mwindows) <code></code>`  <li><strong>Run in the Web Browser</strong>:</li>
- <code></code>`zsh cfire run --target=wasm app.cf <code></code>` <code>cfire</code> compiles to WebAssembly using Emscripten, activates WebGL 2.0 and <code>-sASYNCIFY=1</code>, starts a local HTTP server, and opens your browser directly to the interactive Canvas viewport.  <li><strong>Run on iPhone / iPad Simulator</strong>:</li>
- <code></code>`zsh cfire run --ios app.cf <code></code>`</ul>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
-<h2 id="chapter-12"><a id="ch12"></a>12. Multi-Target Audio, Synthesis, WAV Codec &amp; Real-Time DSP (<code>core:audio</code>)</h2>
-<p>Real-time audio synthesis, game sound effects, and digital signal processing (DSP) demand zero garbage-collection pauses and deterministic frame delivery. <code>cfire</code> includes a built-in, zero-external-dependency sound library (<code>import &quot;core:audio&quot;</code>) that runs identically across <strong>macOS</strong>, <strong>iOS Simulator &amp; Devices (<code>--ios</code>)</strong>, <strong>WebAssembly (<code>--wasm</code>)</strong>, <strong>Linux</strong>, and <strong>Headless CI</strong>.</p>
-<h3 id="121-multi-target-hardware-backends">12.1 Multi-Target Hardware Backends</h3>
-<p><code>core:audio</code> combines a portable C++23 64-voice polyphonic float32 mixer and RIFF/WAV codec with thin native OS hardware outputs:</p>
+<h2 id="chapter-13"><a id="ch13"></a>13. 2D/3D Graphics &amp; Native GUI Applications</h2>
+<h3 id="level-1-hardware-accelerated-2d-rendering">Level 1 — Hardware-Accelerated 2D Rendering</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;vendor:raylib&quot; as rl
+
+fn main() {
+    rl.InitWindow(800, 450, &quot;cfire graphics&quot;)
+    defer rl.CloseWindow()
+    rl.SetTargetFPS(60)
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        rl.ClearBackground(rl.DARKGRAY)
+        rl.DrawCircle(400, 225, 50.0, rl.GOLD)
+        rl.DrawText(&quot;Hardware 60 FPS&quot;, 20, 20, 20, rl.RAYWHITE)
+        rl.EndDrawing()
+    }
+}
+</code></pre>
+<h3 id="level-2-immediate-mode-controls-vendorraygui">Level 2 — Immediate-Mode Controls (<code>vendor:raygui</code>)</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;vendor:raylib&quot; as rl
+import &quot;vendor:raygui&quot; as rg
+
+fn main() {
+    rl.InitWindow(640, 360, &quot;GUI Controls&quot;)
+    defer rl.CloseWindow()
+    mut toggle := false
+
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        rl.ClearBackground(rl.GetColor(0x18181b))
+        rg.GuiCheckBox(rl.Rectangle{x: 50.0, y: 50.0, width: 24.0, height: 24.0}, &quot;Enable Feature&quot;, &amp;mut toggle)
+        rl.EndDrawing()
+    }
+}
+</code></pre>
+<h3 id="level-3-multi-platform-macos-app-webassembly-ios-uikit">Level 3 — Multi-Platform: macOS App, WebAssembly &amp; iOS UIKit</h3>
 <ul>
-  <li><strong>macOS Native</strong>: Apple <code>AudioToolbox.framework</code> (<code>AudioQueue</code> float32 hardware output).</li>
-  <li><strong>iOS Simulator &amp; Devices (<code>--target ios-sim</code> / <code>ios</code>)</strong>: <code>AudioToolbox.framework</code> + automatic <code>AVAudioSessionCategoryPlayback</code> activation so audio plays cleanly even when the hardware Ring/Silent switch is on silent.</li>
-  <li><strong>WebAssembly (<code>--target wasm</code>)</strong>: Browser <strong>Web Audio API</strong> (<code>AudioContext</code>) with automatic user-gesture unlock (<code>pointerdown</code>, <code>touchstart</code>, <code>keydown</code>).</li>
-  <li><strong>Linux &amp; Headless CI (<code>CFIRE_HEADLESS_TEST=1</code>)</strong>: Dynamic <code>dlopen(&quot;libasound.so.2&quot;)</code> ALSA hardware output on Linux desktops and a deterministic software null-sink mixer in headless test/container environments.</li>
+  <li><strong>macOS Native .app</strong>: <code>cfire build --subsystem=gui app.cf -o myapp</code> (creates signed bundle)</li>
+  <li><strong>WebAssembly HTML5</strong>: <code>cfire build --target=wasm app.cf -o app.html</code></li>
+  <li><strong>Native iOS Simulator</strong>: <code>cfire run --ios app.cf</code> (native auto-layout with <code>GuiIos*</code>)</li>
 </ul>
-<h3 id="122-zero-asset-procedural-waveforms-sound-effects">12.2 Zero-Asset Procedural Waveforms &amp; Sound Effects</h3>
-<p>Games and interactive iOS/desktop UIs can synthesize waveforms (<code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code>), frequency-swept chirps, and retro/UI sound effects (<code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code>) in memory with zero external <code>.wav</code> files:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;core:audio&quot;
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-14"><a id="ch14"></a>14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (<code>core:audio</code>)</h2>
+<h3 id="level-1-zero-asset-procedural-sound-effects">Level 1 — Zero-Asset Procedural Sound Effects</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:audio&quot;
 
 fn main() {
     try audio.init(48000, 2)
     defer audio.close()
-    audio.set_master_volume(0.8)
 
-    // 1. Play zero-asset procedural UI / game sound effects
-    tap_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Tap))
-    coin_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
-
-    coin_sfx.set_volume(0.9)
-    coin_sfx.set_pitch(1.15)
-    coin_sfx.set_pan(-0.2) // Slight left stereo pan
-    coin_sfx.play()
-    tap_sfx.play()
+    coin := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+    coin.play()
 }
 </code></pre>
-<h3 id="123-pure-c23-riffwav-encoding-decoding-file-io">12.3 Pure C++23 RIFF/WAV Encoding, Decoding &amp; File I/O</h3>
-<p><code>audio.Wave</code> exposes its interleaved stereo <code>samples: []f32</code> directly to <code>.cf</code> code and supports encoding and decoding 8-bit, 16-bit, 24-bit PCM, and 32-bit IEEE float <code>.wav</code> files or byte slices:</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;core:audio&quot;
+<h3 id="level-2-adsr-envelope-synthesis-riffwav-encoding">Level 2 — ADSR Envelope Synthesis &amp; RIFF/WAV Encoding</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:audio&quot;
 
 fn main() {
-    // Synthesize a 440 Hz A4 sine wave with smooth ADSR envelope
-    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
-
-    // Save to disk (or ~/Documents on iOS) and reload
-    try audio.save_wav(tone, &quot;a440.wav&quot;)
-    loaded := try audio.load_wav(&quot;a440.wav&quot;)
-    println(&quot;Loaded WAV: {} frames ({} sec) @ {} Hz&quot;,
-        loaded.frame_count(), loaded.duration_sec(), loaded.sample_rate)
+    tone := audio.gen_tone(audio.Waveform::Triangle, 440.0, 0.5, 0.7)
+    try audio.save_wav(tone, &quot;output_a440.wav&quot;)
+    println(&quot;WAV saved successfully.&quot;)
 }
 </code></pre>
-<h3 id="124-real-time-dsp-audio-streaming-live-ui-metering-audiostream">12.4 Real-Time DSP Audio Streaming &amp; Live UI Metering (<code>audio.Stream</code>)</h3>
-<p>For custom synthesizers, drum machines, and real-time visualizers (such as <code>examples/13-ios-native-ui</code>), <code>audio.open_stream</code> provides a lock-free float32 ring buffer alongside real-time RMS and peak amplitude meters (<code>audio.rms_level()</code> and <code>audio.peak_level()</code>):</p>
-<div class="code-header"><span class="tag-cf">cfire</span></div>
-<pre><code>package main
-
-import &quot;core:audio&quot;
+<h3 id="level-3-real-time-64-voice-mixer-float32-audio-stream">Level 3 — Real-Time 64-Voice Mixer &amp; Float32 Audio Stream</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:audio&quot;
 
 fn main() {
     try audio.init(48000, 2)
     defer audio.close()
 
     stream := try audio.open_stream(48000, 2)
-    chunk := audio.gen_tone(audio.Waveform::Saw, 220.0, 0.05, 0.35)
-
+    tone := audio.gen_tone(audio.Waveform::Sine, 523.25, 0.1, 0.5) // C5
     if stream.needs_data(2048) {
-        stream.push_samples(chunk.samples)
+        stream.push_samples(tone.samples)
     }
-
-    println(&quot;Live Master RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
+    println(&quot;Active audio master RMS: {:.2f}&quot;, audio.rms_level())
 }
 </code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-15"><a id="ch15"></a>15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (<code>core:ai</code>)</h2>
+<h3 id="level-1-unified-llm-streaming-chat">Level 1 — Unified LLM Streaming Chat</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:ai&quot; as ai
+
+fn main() {
+    client := ai.openai() // Or ai.anthropic(), ai.gemini(), ai.ollama()
+    req := ai.ChatRequest{
+        model: &quot;gpt-4o-mini&quot;,
+        messages: [ai.Message{ role: &quot;user&quot;, content: &quot;Explain zero-cost abstractions.&quot; }]
+    }
+    try client.stream(req) |delta| {
+        print(delta)
+    }
+}
+</code></pre>
+<h3 id="level-2-local-normalized-embeddings-vector-rag">Level 2 — Local Normalized Embeddings &amp; Vector RAG</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:ai&quot; as ai
+import &quot;core:db/sqlite&quot; as sqlite
+
+type Doc struct {
+    Title: str   `sql:&quot;title&quot;`
+    Snippet: str `sql:&quot;snippet&quot;`
+}
+
+fn main() {
+    mut db := try sqlite.open(&quot;:memory:&quot;)
+    try db.exec(&quot;CREATE TABLE docs (title TEXT, snippet TEXT, embedding BLOB)&quot;)
+
+    text := &quot;cfire compiles directly to human-readable C++23.&quot;
+    vec := try ai.embed(&quot;local&quot;, text)
+    try db.exec(&quot;INSERT INTO docs VALUES ('Architecture', ?1, ?2)&quot;, text, vec)
+
+    qvec := try ai.embed(&quot;local&quot;, &quot;C++23 transpilation&quot;)
+    hits := try db.query[Doc](&quot;SELECT title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec)
+    if hits.len &gt; 0 {
+        println(&quot;RAG Hit: {}&quot;, hits[0].Snippet)
+    }
+}
+</code></pre>
+<h3 id="level-3-authoring-native-model-context-protocol-mcp-servers">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:ai&quot; as ai
+
+type SearchParams struct {
+    Query: str `json:&quot;query&quot; desc:&quot;Search query phrase&quot;`
+    Limit: i64 `json:&quot;limit&quot; desc:&quot;Maximum matches&quot;`
+}
+
+fn main() {
+    mut server := ai.make_mcp_server(&quot;docs-mcp&quot;, &quot;1.0.0&quot;)
+    server.register_tool[SearchParams](&quot;search_docs&quot;, &quot;Searches standard library&quot;) |params| {
+        println(&quot;Query received: {}&quot;, params.Query)
+        return &quot;[{\&quot;title\&quot;: \&quot;core:ai\&quot;}]&quot;
+    }
+    
+    // Process JSON-RPC request from AI coding agent
+    req := &quot;{\&quot;jsonrpc\&quot;:\&quot;2.0\&quot;,\&quot;id\&quot;:1,\&quot;method\&quot;:\&quot;tools/list\&quot;}&quot;
+    res := server.handle_jsonrpc(req)
+    println(&quot;MCP Response: {}&quot;, res)
+}
+</code></pre>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+<h2 id="chapter-16"><a id="ch16"></a>16. Full-Stack Production Patterns &amp; Canonical Projects Index</h2>
+<h3 id="architectural-tour-composing-the-standard-library">Architectural Tour: Composing the Standard Library</h3>
+<p>Every module in cfire is designed to interoperate without glue code:</p>
+<ul>
+  <li>Networking (<code>core:net/http</code>, <code>core:net/websocket</code>, <code>core:net/tls</code>) seamlessly streams JSON (<code>core:json</code>)</li>
+  <li>Data records map directly to SQLite tables (<code>core:db/sqlite</code>) with SIMD vector similarity (<code>core:ai</code>)</li>
+  <li>Graphical user interfaces (<code>vendor:raylib</code>, <code>vendor:raygui</code>) render smoothly alongside real-time audio threads (<code>core:audio</code>)</li>
+  <li>All code lowers 1-to-1 to clean, auditable ISO C++23.</li>
+</ul>
+<h3 id="canonical-projects-index-examples">Canonical Projects Index (<code>examples/</code>)</h3>
+<p>The <code>examples/</code> directory contains verified, production-grade applications:</p>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th>Directory</th><th>Title</th><th>Core Technologies Demonstrated</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>examples/01-hello-core</code></td><td>Hello Core &amp; Defer</td><td>Mutability, parameter intent, scope exit, format</td></tr>
+      <tr><td><code>examples/02-log-compressor</code></td><td>Log Compressor</td><td>Command-line parsing (<code>core:cli</code>), Zstandard (<code>core:compress/zstd</code>)</td></tr>
+      <tr><td><code>examples/03-pkg-cache</code></td><td>Package Cache</td><td>SQLite3 WAL transactions, SIMD JSON struct mapping</td></tr>
+      <tr><td><code>examples/04-async-workers</code></td><td>Async Workers</td><td>Scoped thread pool concurrency (<code>async.scope</code>), cluster health checks</td></tr>
+      <tr><td><code>examples/05-cmake-interop</code></td><td>CMake Interop</td><td>Clang JSON AST ingestion of native <code>&lt;zstd.h&gt;</code></td></tr>
+      <tr><td><code>examples/06-raylib-viz</code></td><td>Raylib Visualization</td><td>Hardware 2D graphics loop, windowing, color rendering</td></tr>
+      <tr><td><code>examples/07-types-match-map</code></td><td>Types &amp; Match</td><td>Algebraic data types, map collections, concept constraints</td></tr>
+      <tr><td><code>examples/08-multi-pkg-cc-build</code></td><td>Multi-Package Build</td><td><code>build.cf</code> multi-package static archive linking (<code>build.CC</code>)</td></tr>
+      <tr><td><code>examples/09-stdlib-test-pointers</code></td><td>Stdlib &amp; Tests</td><td>Smart pointers (<code>*T</code>, <code>^T</code>), <code>test &quot;...&quot;</code> runner</td></tr>
+      <tr><td><code>examples/10-cmake-and-make-deps</code></td><td>Multi-Build Deps</td><td>Simultaneous CMake and Make external dependency orchestration</td></tr>
+      <tr><td><code>examples/11-http-server-router</code></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server, fluent request router, path parameters</td></tr>
+      <tr><td><code>examples/12-raygui-controls</code></td><td>Raygui GUI Kit</td><td>Checkboxes, sliders, progress bars, text input controls</td></tr>
+      <tr><td><code>examples/13-ios-native-ui</code></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit, UIKit integration</td></tr>
+      <tr><td><code>examples/14-ai-rag-sqlite</code></td><td>AI Vector RAG</td><td>Local normalized embeddings, SQLite <code>vec_cosine_similarity</code>, schema</td></tr>
+      <tr><td><code>examples/15-mcp-server</code></td><td>MCP Agent Server</td><td>Model Context Protocol server, JSON-RPC 2.0 tool registration</td></tr>
+      <tr><td><code>examples/16-audio-synth</code></td><td>Audio Synthesis</td><td>Procedural SFX, polyphonic ADSR synthesizer, RIFF/WAV codec</td></tr>
+    </tbody>
+  </table>
+</div>
+<p>Each example can be executed immediately:</p>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>cfire run examples/14-ai-rag-sqlite/main.cf
+cfire run examples/15-mcp-server/main.cf
+cfire run examples/16-audio-synth/main.cf
+</code></pre>
+      <div class="guide-pager">
+        <a href="index.html" class="pager-card">
+          <span>&larr; Overview</span>
+          <strong>Language Overview &amp; Architecture</strong>
+        </a>
+        <a href="reference.html" class="pager-card" style="text-align: right;">
+          <span>Next: Stdlib &amp; Diagnostics &rarr;</span>
+          <strong>33 Built-in Modules &amp; Full Diagnostics</strong>
+        </a>
+      </div>
     </main>
   </div>
 </div>
 <footer class="footer">
   Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
 </footer>
+
+<script>
+function copyCode(btn) {
+  const pre = btn.closest('.code-header').nextElementSibling;
+  const code = pre ? pre.querySelector('code') : null;
+  if (!code) return;
+  navigator.clipboard.writeText(code.innerText).then(() => {
+    const orig = btn.innerText;
+    btn.innerText = 'Copied!';
+    setTimeout(() => { btn.innerText = orig; }, 2000);
+  });
+}
+function filterGuideNav(query) {
+  const q = query.toLowerCase().trim();
+  const items = document.querySelectorAll('#sidebar-nav .nav-item');
+  items.forEach(li => {
+    const text = li.innerText.toLowerCase();
+    if (!q || text.includes(q)) {
+      li.style.display = '';
+    } else {
+      li.style.display = 'none';
+    }
+  });
+}
+</script>
 </body>
 </html>

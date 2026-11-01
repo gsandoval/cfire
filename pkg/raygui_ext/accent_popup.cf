@@ -144,7 +144,7 @@ fn GuiAccentPopupOverlay(
         pop_y = screen_h - pop_h - 32.0
     }
 
-    pop_rec := rect(pop_x, pop_y, pop_w, pop_h)
+    pop_rec := rl.Rectangle{x: pop_x, y: pop_y, width: pop_w, height: pop_h}
 
     // Shadow and backdrop
     rl.DrawRectangle(i32(pop_x + 2.0), i32(pop_y + 2.0), i32(pop_w), i32(pop_h), rl.Color{r: 0, g: 0, b: 0, a: 90})
@@ -154,7 +154,7 @@ fn GuiAccentPopupOverlay(
 
     mut vi: i32 = 0
     for v in vars {
-        c_rec := rect(pop_x + 8.0 + f32(vi) * cell_w, pop_y + 6.0, cell_w - 4.0, 30.0)
+        c_rec := rl.Rectangle{x: pop_x + 8.0 + f32(vi) * cell_w, y: pop_y + 6.0, width: cell_w - 4.0, height: 30.0}
         c_hov := rl.CheckCollisionPointRec(m, c_rec)
         c_sel := (selected_idx == vi) || c_hov
         if c_sel {
@@ -166,7 +166,7 @@ fn GuiAccentPopupOverlay(
         if c_sel { txt_col = style.accent_color }
 
         if font.texture.id > 0 {
-            rl.DrawTextEx(font, badge, vec2(c_rec.x + 8.0, c_rec.y + 7.0), 15.0, 0.5, txt_col)
+            rl.DrawTextEx(font, badge, rl.Vector2{x: c_rec.x + 8.0, y: c_rec.y + 7.0}, 15.0, 0.5, txt_col)
         } else {
             rl.DrawText(badge, i32(c_rec.x + 8.0), i32(c_rec.y + 7.0), 15, txt_col)
         }

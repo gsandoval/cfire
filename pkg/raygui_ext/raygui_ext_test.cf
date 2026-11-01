@@ -2,6 +2,13 @@ package raygui_ext
 
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
+import "./font_loader.cf"
+import "./splitter.cf"
+import "./text_buffer.cf"
+import "./accent_popup.cf"
+import "./code_editor.cf"
+import "./singleline.cf"
+import "./keyboard.cf"
 
 test "raygui_ext extended codepoints builder" {
     cps := build_extended_codepoints()
