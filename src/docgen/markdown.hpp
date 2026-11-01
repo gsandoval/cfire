@@ -274,12 +274,30 @@ namespace detail {
         }
         if (trimmed.starts_with("### ")) {
             auto rest = detail::trim_md(trimmed.substr(4));
+            std::string badge;
+            size_t bracket = rest.rfind('[');
+            if (bracket != std::string_view::npos && rest.ends_with(']')) {
+                badge = detail::trim_md(rest.substr(bracket + 1, rest.size() - bracket - 2));
+                rest = detail::trim_md(rest.substr(0, bracket));
+            } else {
+                if (rest.find("Quick Installation Script") != std::string_view::npos) {
+                    badge = "Recommended for POSIX";
+                } else if (rest.find("Overview & System Requirements") != std::string_view::npos) {
+                    badge = "1-to-1 C++23 LOWERING";
+                } else if (rest.find("WebAssembly") != std::string_view::npos) {
+                    badge = "wasm32-emscripten";
+                } else if (rest.find("iOS Native") != std::string_view::npos) {
+                    badge = "arm64-apple-ios";
+                }
+            }
             std::string sid = detail::slugify_heading(rest);
+            std::string badge_html = badge.empty() ? "" : "<span class=\"heading-badge\">" + detail::html_escape(badge) + "</span>";
+            std::string heading_html = "<h3 class=\"guide-heading\" id=\"" + sid + "\"><span class=\"heading-hash\">#</span><span class=\"heading-text\">" + detail::render_inline_md(rest) + "</span>" + badge_html + "</h3>\n";
             if (!chapters.empty()) {
                 chapters.back().subheads.push_back({.id = "#" + sid, .title = std::string(rest)});
-                chapters.back().html += "<h3 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h3>\n";
+                chapters.back().html += heading_html;
             } else {
-                intro_html += "<h3 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h3>\n";
+                intro_html += heading_html;
             }
             ++idx;
             continue;
@@ -448,30 +466,30 @@ namespace detail {
         // Pager Controls
         panes_html += "  <div class=\"chapter-pager\">\n";
         if (i == 0) {
-            panes_html += "    <a href=\"index.html\" class=\"pager-btn pager-prev\">\n";
-            panes_html += "      <span class=\"pager-dir\">&larr; Overview</span>\n";
-            panes_html += "      <span class=\"pager-title\">Language Architecture</span>\n";
+            panes_html += "    <a href=\"index.html\" class=\"pager-card pager-prev\">\n";
+            panes_html += "      <span class=\"pager-label\">&larr; PREVIOUS</span>\n";
+            panes_html += "      <strong class=\"pager-title\">Overview: Language Architecture</strong>\n";
             panes_html += "    </a>\n";
         } else {
             const auto& prev = chapters[i - 1];
-            panes_html += std::format("    <a href=\"#{}\" class=\"pager-btn pager-prev\" onclick=\"navigateToChapter('{}')\">\n",
+            panes_html += std::format("    <a href=\"#{}\" class=\"pager-card pager-prev\" onclick=\"navigateToChapter('{}')\">\n",
                 prev.id, prev.num_str);
-            panes_html += "      <span class=\"pager-dir\">&larr; Previous Chapter</span>\n";
-            panes_html += std::format("      <span class=\"pager-title\">{}. {}</span>\n", prev.num_str, detail::html_escape(prev.title));
+            panes_html += "      <span class=\"pager-label\">&larr; PREVIOUS</span>\n";
+            panes_html += std::format("      <strong class=\"pager-title\">Ch {}: {}</strong>\n", prev.num_str, detail::html_escape(prev.title));
             panes_html += "    </a>\n";
         }
 
         if (i + 1 < chapters.size()) {
             const auto& next = chapters[i + 1];
-            panes_html += std::format("    <a href=\"#{}\" class=\"pager-btn pager-next\" onclick=\"navigateToChapter('{}')\">\n",
+            panes_html += std::format("    <a href=\"#{}\" class=\"pager-card pager-next\" onclick=\"navigateToChapter('{}')\">\n",
                 next.id, next.num_str);
-            panes_html += "      <span class=\"pager-dir\">Next Chapter &rarr;</span>\n";
-            panes_html += std::format("      <span class=\"pager-title\">{}. {}</span>\n", next.num_str, detail::html_escape(next.title));
+            panes_html += "      <span class=\"pager-label\">NEXT CHAPTER &rarr;</span>\n";
+            panes_html += std::format("      <strong class=\"pager-title\">Ch {}: {}</strong>\n", next.num_str, detail::html_escape(next.title));
             panes_html += "    </a>\n";
         } else {
-            panes_html += "    <a href=\"reference.html\" class=\"pager-btn pager-next\">\n";
-            panes_html += "      <span class=\"pager-dir\">Stdlib Reference &rarr;</span>\n";
-            panes_html += std::format("      <span class=\"pager-title\">Explore {} Built-in Modules</span>\n", stdlib_catalog().size());
+            panes_html += "    <a href=\"reference.html\" class=\"pager-card pager-next\">\n";
+            panes_html += "      <span class=\"pager-label\">NEXT &rarr;</span>\n";
+            panes_html += std::format("      <strong class=\"pager-title\">Stdlib Reference ({} Modules)</strong>\n", stdlib_catalog().size());
             panes_html += "    </a>\n";
         }
         panes_html += "  </div>\n";
@@ -500,6 +518,41 @@ namespace detail {
         toc_rail_html += "    </div>\n";
     }
     toc_rail_html += "  </div>\n";
+    toc_rail_html += R"HTML(  <ul class="rail-action-list">
+    <li>
+      <a href="https://github.com/gsandoval/cfire/edit/main/docs/GUIDE.md" target="_blank" rel="noopener" class="rail-action-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        <span>Edit on GitHub</span>
+      </a>
+    </li>
+    <li>
+      <button class="rail-action-btn" onclick="askAiAgent()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        <span id="ai-agent-label">Ask AI Agent</span>
+      </button>
+    </li>
+    <li>
+      <button class="rail-action-btn" onclick="sharePageUrl()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+        <span id="share-label">Share page</span>
+      </button>
+    </li>
+  </ul>
+  <div class="rail-telemetry-box">
+    <div class="rail-telemetry-row">
+      <span class="rail-telemetry-label">Toolchain</span>
+      <span class="rail-telemetry-val">Clang 18.1.8</span>
+    </div>
+    <div class="rail-telemetry-row">
+      <span class="rail-telemetry-label">Target Emit</span>
+      <span class="rail-telemetry-val val-amber">ISO C++23</span>
+    </div>
+    <div class="rail-telemetry-row">
+      <span class="rail-telemetry-label">Zero GC</span>
+      <span class="rail-telemetry-val">Deterministic</span>
+    </div>
+  </div>
+)HTML";
     toc_rail_html += std::format(R"HTML(  <div class="toc-quick-links">
     <div class="toc-header">QUICK LINKS</div>
     <ul class="toc-list">
@@ -523,53 +576,57 @@ namespace detail {
     out += detail::navbar_html("guide");
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
-    out += "    <details class=\"sidebar-details\" open>\n";
-    out += "      <summary class=\"sidebar-summary\">\n";
-    out += "        <span>Chapters &amp; Navigation</span>\n";
-    out += "        <span class=\"sidebar-chevron\">&#9662;</span>\n";
-    out += "      </summary>\n";
-    out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
-    out += "        <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Filter chapters &amp; topics...\" oninput=\"filterGuideNav(this.value)\" style=\"margin-bottom: 0.75rem;\" />\n";
+    out += "    <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
+    out += "      <div class=\"nav-search-wrapper\">\n";
+    out += "        <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Filter chapters &amp; topics...\" oninput=\"filterGuideNav(this.value)\" />\n";
+    out += "        <kbd class=\"nav-search-kbd\">⌘K</kbd>\n";
+    out += "      </div>\n";
 
     std::string current_rendered_part;
     for (const auto& entry : chapters) {
         if (entry.part != current_rendered_part) {
             if (!current_rendered_part.empty()) {
-                out += "        </ul>\n";
+                out += "      </ul>\n";
             }
             current_rendered_part = entry.part;
-            out += "        <h4 class=\"sidebar-part-title\">" + detail::html_escape(current_rendered_part) + "</h4>\n";
-            out += "        <ul class=\"sidebar-chapter-list\">\n";
+            out += "      <h4 class=\"sidebar-part-title\">" + detail::html_escape(current_rendered_part) + "</h4>\n";
+            out += "      <ul class=\"sidebar-chapter-list\">\n";
         }
+        std::string is_active_cls = (entry.num == 1) ? " is-active" : "";
         std::string active_cls = (entry.num == 1) ? " active" : "";
-        out += std::format("          <li class=\"nav-item\"><a href=\"#{}\" class=\"sidebar-ch-link{}\" data-chapter=\"{}\" onclick=\"navigateToChapter('{}')\">{}. {}</a>",
-            entry.id, active_cls, entry.num_str, entry.num_str, entry.num_str, detail::html_escape(entry.title));
+        std::string badge_html = (entry.num == 1) ? "<span class=\"active-badge\">ACTIVE</span>" : "";
+        out += std::format("        <li class=\"nav-item{}\" id=\"nav-item-{}\">\n"
+                           "          <a href=\"#{}\" class=\"sidebar-ch-link{}\" data-chapter=\"{}\" onclick=\"navigateToChapter('{}')\">\n"
+                           "            <span class=\"ch-text\">Ch {}: {}</span>\n"
+                           "            {}\n"
+                           "          </a>",
+            is_active_cls, entry.num_str,
+            entry.id, active_cls, entry.num_str, entry.num_str,
+            entry.num_str, detail::html_escape(entry.title),
+            badge_html);
         if (!entry.subheads.empty()) {
-            out += "\n            <ul class=\"subhead-list\">\n";
+            out += "\n          <ul class=\"subhead-list\">\n";
             for (const auto& sub : entry.subheads) {
-                out += std::format("              <li><a href=\"{}\" onclick=\"navigateToSubhead('{}', '{}')\">{}</a></li>\n",
+                out += std::format("            <li><a href=\"{}\" onclick=\"navigateToSubhead('{}', '{}')\">{}</a></li>\n",
                     sub.id, entry.num_str, sub.id.substr(1), detail::html_escape(sub.title));
             }
-            out += "            </ul>\n          ";
+            out += "          </ul>\n        ";
         }
         out += "</li>\n";
     }
     if (!current_rendered_part.empty()) {
-        out += "        </ul>\n";
+        out += "      </ul>\n";
     }
 
-    out += std::format(R"HTML(        <div class="toc-quick-links" style="margin-top: 1.25rem;">
-          <h4 style="margin-bottom: 0.5rem;">Quick Links</h4>
-          <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="margin-bottom: 0.35rem;"><a href="reference.html">Stdlib Catalog ({} Modules) &rarr;</a></li>
-            <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
-            <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
-          </ul>
-        </div>
-      </div>
-    </details>
+    out += std::format(R"HTML(      <a href="reference.html" class="sidebar-footer-card">
+        <span class="sfc-title">Stdlib Reference</span>
+        <span class="sfc-badge">{} MODULES</span>
+      </a>
+    </div>
   </aside>
+)HTML", stdlib_catalog().size());
 
+    out += R"HTML(
   <div class="guide-viewport" id="guide-viewport">
     <div class="guide-content-inner">
       <div class="reader-toolbar">
@@ -586,7 +643,7 @@ namespace detail {
         </div>
       </div>
 
-)HTML", stdlib_catalog().size());
+)HTML";
 
     out += panes_html;
     out += R"HTML(      <footer class="footer" style="margin-top: 3.5rem; padding: 2rem 0; border-top: 1px solid var(--border);">
@@ -611,13 +668,46 @@ function copyCode(btn) {
   });
 }
 
+function askAiAgent() {
+  const prompt = 'I am studying the cfire language guide at ' + window.location.href + ' — help me understand this concept with practical examples.';
+  navigator.clipboard.writeText(prompt).then(() => {
+    const label = document.getElementById('ai-agent-label');
+    if (label) {
+      const orig = label.innerText;
+      label.innerText = 'Prompt Copied!';
+      setTimeout(() => { label.innerText = orig; }, 2000);
+    }
+  });
+}
+
+function sharePageUrl() {
+  navigator.clipboard.writeText(window.location.href).then(() => {
+    const label = document.getElementById('share-label');
+    if (label) {
+      const orig = label.innerText;
+      label.innerText = 'Link Copied!';
+      setTimeout(() => { label.innerText = orig; }, 2000);
+    }
+  });
+}
+
 function filterGuideNav(query) {
   const q = query.toLowerCase().trim();
   const items = document.querySelectorAll('#sidebar-nav .nav-item');
+  if (!q) {
+    items.forEach(li => {
+      li.style.display = '';
+      const sub = li.querySelector('.subhead-list');
+      if (sub) sub.style.display = '';
+    });
+    return;
+  }
   items.forEach(li => {
     const text = li.innerText.toLowerCase();
-    if (!q || text.includes(q)) {
+    if (text.includes(q)) {
       li.style.display = '';
+      const sub = li.querySelector('.subhead-list');
+      if (sub) sub.style.display = 'block';
     } else {
       li.style.display = 'none';
     }
@@ -640,13 +730,26 @@ function navigateToChapter(num, updateHash) {
     if (bPart) bPart.innerText = part;
     if (bChap) bChap.innerText = title;
   }
+
+  // Update dynamic sidebar active disclosure
+  document.querySelectorAll('#sidebar-nav .nav-item').forEach(li => li.classList.remove('is-active'));
+  const activeLi = document.getElementById('nav-item-' + num);
+  if (activeLi) activeLi.classList.add('is-active');
+
   document.querySelectorAll('.sidebar-ch-link').forEach(a => {
+    const existingBadge = a.querySelector('.active-badge');
+    if (existingBadge) existingBadge.remove();
     if (a.getAttribute('data-chapter') == num) {
       a.classList.add('active');
+      const badge = document.createElement('span');
+      badge.className = 'active-badge';
+      badge.innerText = 'ACTIVE';
+      a.appendChild(badge);
     } else {
       a.classList.remove('active');
     }
   });
+
   document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'none');
   const targetToc = document.getElementById('toc-group-' + num);
   if (targetToc) {
@@ -659,6 +762,13 @@ function navigateToChapter(num, updateHash) {
 function navigateToSubhead(num, sid) {
   navigateToChapter(num, false);
   history.pushState(null, '', '#' + sid);
+  document.querySelectorAll('.toc-list a, .subhead-list a').forEach(a => {
+    a.classList.remove('active-toc-item', 'active-subhead');
+  });
+  const tocLink = document.querySelector('.toc-chapter-group a[href="#' + sid + '"]');
+  if (tocLink) tocLink.classList.add('active-toc-item');
+  const subLink = document.querySelector('.subhead-list a[href="#' + sid + '"]');
+  if (subLink) subLink.classList.add('active-subhead');
   setTimeout(() => {
     const el = document.getElementById(sid);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -711,6 +821,14 @@ function updateChapterFromHash() {
   }
   navigateToChapter(1, false);
 }
+
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    const filter = document.getElementById('guide-filter');
+    if (filter) { filter.focus(); filter.select(); }
+  }
+});
 
 window.addEventListener('DOMContentLoaded', updateChapterFromHash);
 window.addEventListener('hashchange', updateChapterFromHash);
