@@ -168,6 +168,47 @@ fn main() {
 })";
     std::string snip6_cpp = compile_snippet_to_cpp("snippet_audio.cf", snip6_cf);
 
+    // 7. AI-First Local Embeddings, Vector SQLite & MCP Tooling Snippet
+    std::string_view snip7_cf = R"CF(package main
+
+import "core:ai" as ai
+import "core:db/sqlite" as sqlite
+import "core:json" as json
+
+type QueryPlan struct {
+    Target: str `json:"target" desc:"Search target concept"`
+    TopK: i64   `json:"top_k" desc:"Number of top results"`
+}
+
+type DocEntry struct {
+    Id: i64      `sql:"id"`
+    Title: str   `sql:"title"`
+    Snippet: str `sql:"snippet"`
+}
+
+fn main() {
+    // 1. Compile-time JSON Schema extraction for LLMs/MCP
+    schema := json.schema[QueryPlan]()
+
+    // 2. Embedded SQLite with built-in vector similarity
+    mut db := try sqlite.open(":memory:")
+    try db.exec("CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)")
+
+    // 3. Normalized local embeddings + vector indexing
+    doc := "cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead."
+    vec := try ai.embed("local", doc)
+    try db.exec("INSERT INTO docs VALUES (1, 'Transpiler', ?1, ?2)", doc, vec)
+
+    // 4. In-database semantic search
+    qvec := try ai.embed("local", "modern C++23 compiler")
+    hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
+    if hits.len > 0 {
+        println("Match: {}", hits[0].Snippet)
+    }
+}
+)CF";
+    std::string snip7_cpp = compile_snippet_to_cpp("snippet_ai.cf", snip7_cf);
+
     std::string out;
     out += R"HTML(  <!-- Interactive Live Rosetta Showcase -->
   <h2 class="section-title">See the Lowering: Live `.cf` &rarr; ISO C++23</h2>
@@ -180,6 +221,7 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
     <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (`core:audio`)</button>
+    <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (`core:ai`)</button>
   </div>
 
   <!-- Tab 1: Intents -->
@@ -335,6 +377,32 @@ fn main() {
     <div class="console-preview">
       <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
       <div>$ cfire run main.cf<br />rms=0.24 peak=0.40</div>
+    </div>
+  </div>
+
+  <!-- Tab 7: AI, Vector SQLite & MCP -->
+  <div id="tab-ai" class="tab-panel">
+    <div class="rosetta-mobile-toggle">
+      <button class="active" onclick="toggleRosettaMobile(this, 'cf')">cfire (.cf)</button>
+      <button onclick="toggleRosettaMobile(this, 'cpp')">Emitted ISO C++23</button>
+    </div>
+    <div class="grid-2">
+      <div class="rosetta-pane-cf">
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Local Embeddings, SQLite &amp; MCP</span></div>
+        <pre><code>)HTML";
+    out += html_escape(snip7_cf);
+    out += R"HTML(</code></pre>
+      </div>
+      <div class="rosetta-pane-cpp">
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>Native SIMD Vectors &amp; sqlite-vec</span></div>
+        <pre><code>)HTML";
+    out += html_escape(snip7_cpp);
+    out += R"HTML(</code></pre>
+      </div>
+    </div>
+    <div class="console-preview">
+      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
+      <div>$ cfire run main.cf<br />Match: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</div>
     </div>
   </div>)HTML";
 

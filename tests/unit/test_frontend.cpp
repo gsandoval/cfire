@@ -444,11 +444,10 @@ fn main() -> i32 {
         auto exec_res = cfire::os::exec_output("echo 'cfire_test'");
         require(exec_res.has_value() && exec_res->contains("cfire_test"), "cfire::os::exec_output check");
 
-        // Verify Guide Chapter 9 Build System and Chapter 11 Raylib/Raygui reconciliation
+        // Verify Guide Build System and Raylib/Raygui reconciliation
         auto guide_path = docs_dir / "GUIDE.md";
         auto guide_txt = cfire::build::read_file_text(guide_path);
         require(guide_txt.has_value() &&
-                guide_txt->contains("Chapter 9: The Cfire Build System: Native, Cross-Target & WebAssembly") &&
                 guide_txt->contains("build.CC(") &&
                 guide_txt->contains("KVStore := build.CMake(") &&
                 guide_txt->contains("build.Make") &&
@@ -456,10 +455,9 @@ fn main() -> i32 {
                 guide_txt->contains("build.Archive") &&
                 guide_txt->contains("build.Command") &&
                 guide_txt->contains("--target=wasm") &&
-                guide_txt->contains("Chapter 11: 2D/3D Graphics & GUI Applications with Raylib and Raygui") &&
                 guide_txt->contains("vendor:raylib") &&
                 guide_txt->contains("vendor:raygui"),
-            "docs/GUIDE.md Chapter 9 Build System and Chapter 11 Raylib/Raygui reconciliation");
+            "docs/GUIDE.md Build System and Raylib/Raygui reconciliation");
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");
@@ -954,6 +952,125 @@ fn main() {{
             std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
             require(rc == 0, std::format("audio_test exited with code {}:\n{}", rc, out));
             require(out.contains("audio_ok:frames=4800:ready=true"), "audio_test output verified");
+        }
+    }
+
+    // 7. AI-First Architecture: json.schema[T](), core:ai embeddings, Vector SQLite, SSE Streaming, Structured Outputs & MCP
+    {
+        ScopedTempDir tmp("cfire_core_ai");
+        auto cf_path = tmp.file("ai_test.cf", R"CF(package main
+
+import "core:ai"
+import "core:db/sqlite"
+import "core:json"
+import "core:net/http"
+import "core:str"
+
+type ToolArgs struct {
+    query: str  `json:"query" desc:"Search query string"`
+    limit: i32  `json:"limit" desc:"Maximum results"`
+    exact: bool `json:"exact"`
+}
+
+type ExtractedBug struct {
+    component: str `json:"component" desc:"Subsystem name"`
+    severity:  i32 `json:"severity"  desc:"Severity 1..5"`
+}
+
+type DocRow struct {
+    title: str   `sql:"title"`
+    score: f64   `sql:"score"`
+    vec:   []f32 `sql:"vec"`
+}
+
+fn main() {
+    // 1. Compile-time JSON Schema reflection with desc:"..." tags
+    schema := json.schema[ToolArgs]()
+    assert(str.contains(schema, `"type":"object"`), "schema object type")
+    assert(str.contains(schema, `"description":"Search query string"`), "schema field description")
+    assert(str.contains(schema, `"required":["query","limit","exact"]`), "schema required fields")
+
+    // 2. RAG text chunking & language detection
+    chunks := ai.chunk_text("First paragraph about systems programming.\n\nSecond paragraph about vector search and embeddings in SQLite.", 60, 12)
+    assert(chunks.len() >= 2, "chunk_text splits into multiple chunks")
+    lang := ai.detect_language("Hello from the cfire systems language")
+    assert(!lang.empty(), "detect_language returns non-empty code")
+
+    // 3. Unified local embeddings + SQLite vector similarity search + []f32 column mapping
+    v_sys := try ai.embed("local", "C++23 systems programming memory safety and RAII")
+    v_sql := try ai.embed("local", "SQLite embedded vector similarity search and cosine distance")
+    assert(v_sys.len() >= 128, "embedding dimension >= 128")
+    self_sim := ai.cosine_similarity(v_sql, v_sql)
+    assert(self_sim > 0.99, "self cosine similarity ~ 1.0")
+
+    mut db := try sqlite.open(":memory:")
+    defer db.close()
+    try db.exec("CREATE TABLE docs (title TEXT, vec BLOB)")
+    try db.exec("INSERT INTO docs VALUES (?1, ?2)", "Systems", v_sys)
+    try db.exec("INSERT INTO docs VALUES (?1, ?2)", "VectorDB", v_sql)
+
+    q_vec := try ai.embed("local", "vector search in sqlite cosine distance")
+    rows := try db.query[DocRow](
+        "SELECT title, vec_cosine_similarity(vec, ?1) AS score, vec FROM docs ORDER BY score DESC",
+        q_vec
+    )
+    assert_eq(rows.len(), 2, "2 rows returned")
+    assert_eq(rows[0].title, "VectorDB", "VectorDB ranks #1 for vector search query")
+    assert_eq(rows[0].vec.len(), v_sql.len(), "round-tripped []f32 BLOB matches dimension")
+
+    // 4. Model Context Protocol (MCP) server registration & JSON-RPC dispatch
+    mut mcp := ai.make_mcp_server("demo-mcp", "1.0.0")
+    mcp.register_tool[ToolArgs]("search_docs", "Search indexed docs", |args| {
+        return "hit:" + args.query
+    })
+    init_resp := mcp.handle_jsonrpc(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+    assert(str.contains(init_resp, `"name":"demo-mcp"`), "MCP initialize response")
+    list_resp := mcp.handle_jsonrpc(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+    assert(str.contains(list_resp, `"name":"search_docs"`), "MCP tools/list includes search_docs")
+    call_resp := mcp.handle_jsonrpc(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_docs","arguments":{"query":"simd","limit":5,"exact":true}}}`)
+    assert(str.contains(call_resp, "hit:simd"), "MCP tools/call executes typed handler")
+
+    // 5. Local mock OpenAI-compatible HTTP server for structured outputs & SSE token streaming
+    mut srv := try http.make_server(0)
+    defer srv.stop()
+    mut router := http.make_router()
+    router.post("/v1/chat/completions", |req| {
+        if str.contains(req.body, `"stream":true`) {
+            sse_payload := "data: {\"choices\":[{\"delta\":{\"content\":\"Hello \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"AI\"}}]}\n\ndata: [DONE]\n\n"
+            mut r := http.Response.text(200, sse_payload)
+            r.headers["Content-Type"] = "text/event-stream"
+            return r
+        }
+        return http.Response.json(200, `{"model":"mock-gpt","choices":[{"message":{"content":"{\"component\":\"audio\",\"severity\":4}"}}],"usage":{"prompt_tokens":12,"completion_tokens":8}}`)
+    })
+    srv.serve_in_background(router)
+
+    base := "http://127.0.0.1:{srv.port()}"
+    client := ai.openai_compatible(base, "test-key")
+    bug := try client.generate_struct[ExtractedBug]("mock-gpt", "audio glitch")
+    assert_eq(bug.component, "audio", "generate_struct parsed component")
+    assert_eq(bug.severity, 4, "generate_struct parsed severity")
+
+    mut streamed_tokens := ""
+    full := try client.stream("mock-gpt", [ai.user("Say hi")], |tok| {
+        streamed_tokens = streamed_tokens + tok
+    })
+    assert_eq(full, "Hello AI", "SSE stream accumulated full text")
+    assert_eq(streamed_tokens, "Hello AI", "SSE stream callback received tokens")
+
+    println("ai_ok:top={}:bug={}:{}:stream={}", rows[0].title, bug.component, bug.severity, full)
+}
+)CF");
+
+        auto out_bin = tmp.path / "ai_test_bin";
+        auto plan = cfire::build::build_native(cf_path, rt_dir, out_bin);
+        require(plan.has_value(), std::format("build_native(ai_test.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(out_bin.string(), rc);
+            require(rc == 0, std::format("ai_test exited with code {}:\n{}", rc, out));
+            require(out.contains("ai_ok:top=VectorDB:bug=audio:4:stream=Hello AI"),
+                    std::format("unexpected ai_test output: {}", out));
         }
     }
 

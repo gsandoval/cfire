@@ -47,6 +47,7 @@ type CodeEditorState struct {
     mouse_selecting: bool
     last_click_time: f32
     last_click_pos: i32
+    last_cursor_pos: i32
     active_cursor_bounds: rl.Rectangle
 }
 
@@ -175,7 +176,7 @@ fn GuiCodeEditor(
         }
     }
 
-    if is_focused {
+    if is_focused && ed.cursor_pos != ed.last_cursor_pos {
         cursor_top := f32(cur_vrow) * line_h
         cursor_bot := cursor_top + line_h + 24.0
         if cursor_top < ed.scroll_y {
@@ -184,6 +185,7 @@ fn GuiCodeEditor(
             ed.scroll_y = cursor_bot - (bounds.height - pad_y)
         }
     }
+    ed.last_cursor_pos = ed.cursor_pos
     if ed.scroll_y < 0.0 { ed.scroll_y = 0.0 }
     if ed.scroll_y > max_scroll { ed.scroll_y = max_scroll }
 

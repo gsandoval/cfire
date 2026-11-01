@@ -101,6 +101,11 @@ public:
                 used_core_.insert("unicode");
             } else if (imp.path == "core:audio") {
                 used_core_.insert("audio");
+            } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
+                used_core_.insert("ai");
+                used_core_.insert("json");
+                used_core_.insert("net");
+                used_core_.insert("os");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -195,6 +200,13 @@ public:
                 used_core_.insert("unicode");
             } else if (imp.path == "core:audio") {
                 used_core_.insert("audio");
+            } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
+                used_core_.insert("ai");
+                used_core_.insert("json");
+                used_core_.insert("net");
+                used_core_.insert("os");
+                defines.push_back("#define CFIRE_USE_SIMDJSON 1");
+                link_tags.push_back("-lsimdjson");
             } else if (imp.path.starts_with("core:")) {
                 used_core_.insert(imp.path.substr(5));
             } else if (imp.path == "vendor:raylib") {
@@ -216,14 +228,20 @@ public:
         bool any_json_tag = false;
         for (const auto& [sname, tags] : cf_.struct_tags) {
             for (const auto& t : tags) {
-                if (!t.json_key.empty()) { any_json_tag = true; break; }
+                if (!t.json_key.empty() || t.custom_tags.contains("desc")) { any_json_tag = true; break; }
             }
             if (any_json_tag) break;
         }
         if (any_json_tag && !used_core_.contains("json")) {
             used_core_.insert("json");
-            defines.push_back("#define CFIRE_USE_SIMDJSON 1");
-            link_tags.push_back("-lsimdjson");
+        }
+        if (used_core_.contains("json")) {
+            if (std::find(defines.begin(), defines.end(), "#define CFIRE_USE_SIMDJSON 1") == defines.end()) {
+                defines.push_back("#define CFIRE_USE_SIMDJSON 1");
+            }
+            if (std::find(link_tags.begin(), link_tags.end(), "-lsimdjson") == link_tags.end()) {
+                link_tags.push_back("-lsimdjson");
+            }
         }
 
         if (!link_tags.empty()) {
@@ -286,11 +304,7 @@ public:
             writeln("#if __has_include(<rlgl.h>)");
             writeln("#include <rlgl.h>");
             writeln("#endif");
-            writeln("inline void __cfire_InitWindow(int width, int height, const char* title) { InitWindow(width <= 0 ? 393 : width, height <= 0 ? 852 : height, title); }");
-            writeln("#define InitWindow __cfire_InitWindow");
-            writeln("inline Rectangle GetSafeAreaRect(void) { return Rectangle{0.0f, 0.0f, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())}; }");
-            writeln("inline void RequestKeyboard(void) {}");
-            writeln("inline void TriggerHaptic(int style) { (void)style; }");
+            writeln("#include \"core/desktop_raylib.hpp\"");
             writeln("#endif");
         }
         if (used_vendor_.contains("raygui")) {
@@ -556,10 +570,11 @@ public:
         if (it == cf_.struct_tags.end()) return;
         const auto& tags = it->second;
 
-        bool has_cli = false, has_json = false, has_db = false;
+        bool has_cli = false, has_json = false, has_desc = false, has_db = false;
         for (const auto& t : tags) {
             if (!t.cli_long.empty()) has_cli = true;
             if (!t.json_key.empty()) has_json = true;
+            if (t.custom_tags.contains("desc")) has_desc = true;
             if (!t.db_column.empty()) has_db = true;
         }
 
@@ -580,21 +595,35 @@ public:
             writeln("}");
         }
 
-        if (has_json && used_core_.contains("json")) {
+        if ((has_json || has_desc) && used_core_.contains("json")) {
             writeln();
             writeln("template <>");
             writeln(std::format("inline auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
             ++indent_;
             writeln(std::format("{} out{{}};", st.name));
             for (const auto& t : tags) {
-                if (!t.json_key.empty()) {
-                    std::string getter = "get_str";
-                    if (t.field_type.name == "u64" || t.field_type.name == "usize") getter = "get_u64";
-                    else if (t.field_type.name == "i64" || t.field_type.name == "isize") getter = "get_i64";
-                    else if (t.field_type.name == "i32") getter = "get_i32";
-                    else if (t.field_type.name == "f64" || t.field_type.name == "f32") getter = "get_f64";
-                    else if (t.field_type.name == "bool") getter = "get_bool";
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::{}(obj, \"{}\"));", t.field_name, getter, t.json_key));
+                std::string jkey = has_json ? t.json_key : t.field_name;
+                if (!jkey.empty()) {
+                    if (t.field_type.is_slice && t.field_type.elem_type) {
+                        std::string elem_cpp = lower_owning_type(*t.field_type.elem_type);
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_vec<{}>(obj, \"{}\"));", t.field_name, elem_cpp, jkey));
+                    } else if (t.field_type.name == "str") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (t.field_type.name == "u64" || t.field_type.name == "usize") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (t.field_type.name == "i64" || t.field_type.name == "isize") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (t.field_type.name == "i32") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (t.field_type.name == "f64") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (t.field_type.name == "f32") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f32(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (t.field_type.name == "bool") {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\"));", t.field_name, jkey));
+                    } else if (is_local_type(t.field_type.name)) {
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", t.field_name, lower_raw_owning_type(t.field_type), jkey));
+                    }
                 }
             }
             writeln("return out;");
@@ -608,20 +637,60 @@ public:
             writeln("std::string out = \"{\";");
             bool first_j = true;
             for (const auto& t : tags) {
-                if (!t.json_key.empty()) {
+                std::string jkey = has_json ? t.json_key : t.field_name;
+                if (!jkey.empty()) {
                     std::string prefix = first_j ? "" : ",";
                     first_j = false;
-                    if (t.field_type.name == "str") {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, t.json_key, t.field_name));
+                    if (t.field_type.is_slice || is_local_type(t.field_type.name)) {
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::stringify(val.{}));", prefix, jkey, t.field_name));
+                    } else if (t.field_type.name == "str") {
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, jkey, t.field_name));
                     } else if (t.field_type.name == "bool") {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{} ? \"true\" : \"false\");", prefix, t.json_key, t.field_name));
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{} ? \"true\" : \"false\");", prefix, jkey, t.field_name));
                     } else {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{});", prefix, t.json_key, t.field_name));
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{});", prefix, jkey, t.field_name));
                     }
                 }
             }
             writeln("out += \"}\";");
             writeln("return out;");
+            --indent_;
+            writeln("}");
+
+            writeln();
+            writeln("template <>");
+            writeln(std::format("inline auto cfire::json::schema_struct<{}>() -> std::string {{", st.name));
+            ++indent_;
+            writeln("std::string props = \"{\";");
+            writeln("std::string req = \"[\";");
+            bool first_p = true;
+            bool first_r = true;
+            for (const auto& t : tags) {
+                std::string jkey = has_json ? t.json_key : t.field_name;
+                if (jkey.empty()) continue;
+                std::string p_prefix = first_p ? "" : ",";
+                first_p = false;
+                std::string f_cpp = lower_raw_owning_type(t.field_type);
+                std::string desc_str;
+                if (auto dit = t.custom_tags.find("desc"); dit != t.custom_tags.end()) {
+                    desc_str = dit->second;
+                }
+                if (!desc_str.empty()) {
+                    writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::with_description(cfire::json::schema<{}>(), R\"desc({})desc\"));",
+                        p_prefix, jkey, f_cpp, desc_str));
+                } else {
+                    writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::schema<{}>());",
+                        p_prefix, jkey, f_cpp));
+                }
+                if (!t.field_type.is_optional) {
+                    std::string r_prefix = first_r ? "" : ",";
+                    first_r = false;
+                    writeln(std::format("req += \"{}\\\"{}\\\"\";", r_prefix, jkey));
+                }
+            }
+            writeln("props += \"}\";");
+            writeln("req += \"]\";");
+            writeln("return std::format(R\"({{\"type\":\"object\",\"properties\":{},\"required\":{},\"additionalProperties\":false}})\", props, req);");
             --indent_;
             writeln("}");
         }
@@ -637,10 +706,14 @@ public:
             for (const auto& t : tags) {
                 if (!t.db_column.empty()) {
                     std::string col_fn = "col_str";
-                    if (t.field_type.name == "u64" || t.field_type.name == "usize") col_fn = "col_u64";
+                    if (t.field_type.is_slice && t.field_type.elem_type) {
+                        if (t.field_type.elem_type->name == "f32") col_fn = "col_f32_vec";
+                        else if (t.field_type.elem_type->name == "byte" || t.field_type.elem_type->name == "u8") col_fn = "col_bytes";
+                    } else if (t.field_type.name == "u64" || t.field_type.name == "usize") col_fn = "col_u64";
                     else if (t.field_type.name == "i64" || t.field_type.name == "isize") col_fn = "col_i64";
                     else if (t.field_type.name == "i32") col_fn = "col_i32";
-                    else if (t.field_type.name == "f64" || t.field_type.name == "f32") col_fn = "col_f64";
+                    else if (t.field_type.name == "f64") col_fn = "col_f64";
+                    else if (t.field_type.name == "f32") col_fn = "col_f32";
                     else if (t.field_type.name == "bool") col_fn = "col_bool";
                     writeln(std::format(".{} = cfire::sqlite::{}(stmt, {}),", t.field_name, col_fn, col_idx++));
                 }
@@ -1591,7 +1664,7 @@ public:
                         id->name == "base64" || id->name == "hex" || id->name == "csv" ||
                         id->name == "aes" || id->name == "hmac" || id->name == "sha256" ||
                         id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url" || id->name == "tls" ||
-                        id->name == "audio" ||
+                        id->name == "audio" || id->name == "ai" ||
                         used_core_.contains(id->name)) {
                         return std::format("cfire::{}::{}", id->name, ex.field);
                     }
@@ -1604,9 +1677,9 @@ public:
                 std::string obj = emit_expr(ex.object);
                 if (ex.is_namespace) return obj + "::" + ex.field;
                 if (obj.ends_with("::Response") || obj.ends_with("::Request") || obj.ends_with("::Router") || obj.ends_with("::HttpServer") ||
-                    obj.ends_with("::ServerContext") || obj.ends_with("::Waveform") || obj.ends_with("::SfxPreset") ||
+                    obj.ends_with("::ServerContext") || obj.ends_with("::Waveform") || obj.ends_with("::SfxPreset") || obj.ends_with("::Provider") ||
                     obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer" || obj == "ServerContext" ||
-                    obj == "Waveform" || obj == "SfxPreset") {
+                    obj == "Waveform" || obj == "SfxPreset" || obj == "Provider") {
                     return obj + "::" + ex.field;
                 }
                 if (ex.field == "len") return obj + ".size()";
@@ -2177,6 +2250,14 @@ public:
             if (tr.name == "audio::Stream") return "cfire::audio::Stream";
             if (tr.name == "audio::Waveform") return "cfire::audio::Waveform";
             if (tr.name == "audio::SfxPreset") return "cfire::audio::SfxPreset";
+            if (tr.name == "http::SseEvent" || tr.name == "SseEvent") return "cfire::http::SseEvent";
+            if (tr.name == "ai::Provider") return "cfire::ai::Provider";
+            if (tr.name == "ai::Client") return "cfire::ai::Client";
+            if (tr.name == "ai::Message") return "cfire::ai::Message";
+            if (tr.name == "ai::Tool") return "cfire::ai::Tool";
+            if (tr.name == "ai::ToolCall") return "cfire::ai::ToolCall";
+            if (tr.name == "ai::ChatResponse") return "cfire::ai::ChatResponse";
+            if (tr.name == "ai::McpServer") return "cfire::ai::McpServer";
         }
         if (tr.name == "sync::Channel" && tr.elem_type) {
             return std::format("cfire::sync::Channel<{}>", lower_owning_type(*tr.elem_type));

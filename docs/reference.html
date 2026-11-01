@@ -6,20 +6,22 @@
   <title>Stdlib &amp; Diagnostics Reference — cfire</title>
   <style>
 :root {
-    --bg: #FAFAF9;
-    --bg-card: #FFFFFF;
-    --bg-card-hover: #F5F5F4;
-    --bg-code: #18181B;
-    --border: #E7E5E4;
-    --border-dark: #D6D3D1;
-    --text: #1C1917;
-    --text-bright: #0C0A09;
-    --muted: #57534E;
-    --accent: #1D4ED8;
-    --accent-hover: #1E40AF;
-    --ok: #047857;
-    --warn: #B45309;
-    --err: #B91C1C;
+    --bg: #0D1117;
+    --bg-card: #161B22;
+    --bg-card-hover: #21262D;
+    --bg-code: #090D12;
+    --bg-subtle: #21262D;
+    --border: #30363D;
+    --border-dark: #484F58;
+    --text: #F0F6FC;
+    --text-bright: #FFFFFF;
+    --muted: #8B949E;
+    --accent: #F97316;
+    --accent-hover: #FB923C;
+    --accent-sapphire: #38BDF8;
+    --ok: #3FB950;
+    --warn: #D29922;
+    --err: #F85149;
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -39,17 +41,15 @@ body {
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
-::selection { background: #1C1917; color: #FFFFFF; }
-a { color: var(--accent); text-decoration: none; transition: color 0.15s ease; }
-a:hover { color: var(--accent-hover); text-decoration: underline; }
+::selection { background: #F97316; color: #0D1117; }
+a { color: var(--accent-sapphire); text-decoration: none; transition: color 0.15s ease; }
+a:hover { color: #7DD3FC; text-decoration: underline; }
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     width: 100%;
-    background: rgba(255, 255, 255, 0.96);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: #0D1117;
     border-bottom: 1px solid var(--border);
 }
 .navbar-inner {
@@ -65,7 +65,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 .brand {
     display: flex; align-items: center; gap: 0.65rem;
-    font-weight: 800; font-size: 1.25rem; color: var(--text);
+    font-weight: 800; font-size: 1.25rem; color: var(--text-bright);
     text-decoration: none; flex-shrink: 0;
 }
 .brand:hover { text-decoration: none; }
@@ -73,12 +73,12 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     width: 30px; height: 30px; object-fit: contain;
 }
 .brand span.brand-text {
-    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text);
+    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text-bright);
 }
-.brand span.fire { color: #EA580C; font-weight: 850; }
+.brand span.fire { color: #F97316; font-weight: 850; }
 .brand-badge {
     font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
-    background: #F5F5F4; border: 1px solid var(--border); color: #57534E;
+    background: #21262D; border: 1px solid var(--border); color: #8B949E;
     padding: 0.12rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
 }
 .nav-links { display: flex; align-items: center; gap: 1.25rem; font-size: 0.92rem; font-weight: 600; }
@@ -86,14 +86,14 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     color: var(--muted); transition: all 0.15s ease;
     padding: 0.25rem 0.4rem; border-radius: 5px;
 }
-.nav-links a:hover { color: var(--text); text-decoration: none; background: #F5F5F4; }
-.nav-links a.active { color: var(--text); text-decoration: none; font-weight: 750; background: #F5F5F4; }
+.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
+.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
 .btn-nav-primary {
-    background: #1C1917 !important; color: #FFFFFF !important;
-    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 600 !important;
+    background: #F97316 !important; color: #0D1117 !important;
+    padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
 }
-.btn-nav-primary:hover { background: #292524 !important; text-decoration: none !important; }
+.btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
 
 /* Page container with robust bounds */
 .container {
@@ -119,16 +119,50 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     top: 4.5rem;
     max-height: calc(100vh - 5.5rem);
     overflow-y: auto;
-    background: #FFFFFF;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
 .sidebar-summary { display: none; }
 .sidebar h4 {
     font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem;
+}
+.sidebar-part-title {
+    font-size: 0.72rem; font-weight: 850; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #F97316; margin: 1.25rem 0 0.4rem;
+    padding-left: 0.4rem;
+}
+.sidebar-chapter-list { list-style: none; margin-bottom: 0.75rem; }
+.subhead-list {
+    list-style: none;
+    margin: 0.2rem 0 0.4rem 0.85rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--border);
+}
+.subhead-list li { margin-bottom: 0.15rem; }
+.subhead-list a {
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.2rem 0.4rem;
+}
+.subhead-list a:hover { color: var(--text-bright); }
+.search-input {
+    width: 100%;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.82rem;
+    font-family: var(--font-sans);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-code);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+.search-input:focus {
+    border-color: #F97316;
 }
 .sidebar ul { list-style: none; margin-bottom: 1.25rem; }
 .sidebar li { margin-bottom: 0.25rem; }
@@ -139,10 +173,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar a:hover {
-    background: #F5F5F4; color: var(--text); text-decoration: none;
+    background: var(--bg-card-hover); color: var(--text-bright); text-decoration: none;
 }
 .sidebar a.active {
-    background: #F5F5F4; color: var(--accent); font-weight: 700;
+    background: var(--bg-card-hover); color: #F97316; font-weight: 700;
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
@@ -155,20 +189,130 @@ main {
 }
 main h1 {
     font-size: clamp(1.85rem, 4vw, 2.5rem); font-weight: 800;
-    color: var(--text); letter-spacing: -0.03em; margin-bottom: 0.75rem;
+    color: var(--text-bright); letter-spacing: -0.03em; margin-bottom: 0.75rem;
 }
 main h2 {
-    font-size: 1.5rem; font-weight: 800; color: var(--text);
+    font-size: 1.5rem; font-weight: 800; color: var(--text-bright);
     letter-spacing: -0.02em; margin: 2.5rem 0 0.85rem; padding-bottom: 0.4rem;
     border-bottom: 1px solid var(--border);
 }
 main h3 {
-    font-size: 1.2rem; font-weight: 700; color: var(--text);
+    font-size: 1.2rem; font-weight: 700; color: var(--text-bright);
     margin: 1.75rem 0 0.5rem;
 }
-main p { color: #44403C; font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
-main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: #44403C; font-size: 0.98rem; line-height: 1.7; }
+main p { color: var(--text); font-size: 0.98rem; line-height: 1.7; margin-bottom: 1rem; }
+main ul, main ol { margin: 0 0 1.25rem 1.5rem; color: var(--text); font-size: 0.98rem; line-height: 1.7; }
 main li { margin-bottom: 0.4rem; }
+
+/* Part banner & Callouts */
+.part-banner {
+    margin: 3.5rem 0 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border);
+}
+.part-banner:first-of-type { margin-top: 1rem; }
+.part-pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #F97316;
+    background: #27140B;
+    border: 1px solid #7C2D12;
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+}
+.part-banner h2 {
+    font-size: 1.85rem;
+    font-weight: 850;
+    color: var(--text-bright);
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+.callout {
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    background: var(--bg-card);
+}
+.callout-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.4rem;
+}
+.callout p {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--text);
+    line-height: 1.6;
+}
+.callout-note {
+    border-left-color: #38BDF8;
+    background: #0B1622;
+}
+.callout-note .callout-title { color: #38BDF8; }
+.callout-tip {
+    border-left-color: #3FB950;
+    background: #0A1C14;
+}
+.callout-tip .callout-title { color: #3FB950; }
+.callout-important {
+    border-left-color: #A78BFA;
+    background: #171124;
+}
+.callout-important .callout-title { color: #A78BFA; }
+.callout-warning {
+    border-left-color: #F59E0B;
+    background: #1E1606;
+}
+.callout-warning .callout-title { color: #F59E0B; }
+
+/* Guide Pager */
+.guide-pager {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+    margin: 3.5rem 0 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+}
+.pager-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.pager-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    text-decoration: none;
+}
+.pager-card span {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #F97316;
+}
+.pager-card strong {
+    font-size: 1.05rem;
+    color: var(--text-bright);
+    font-weight: 750;
+}
 
 /* Hero section */
 .hero { text-align: center; padding: 3rem 0.5rem 3.5rem; }
@@ -176,12 +320,12 @@ main li { margin-bottom: 0.4rem; }
     display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px;
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase;
-    background: #FFFFFF; border: 1px solid var(--border); color: var(--accent);
+    background: var(--bg-card); border: 1px solid var(--border); color: #F97316;
     margin-bottom: 1.5rem;
 }
 h1.hero-title {
     font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 850;
-    letter-spacing: -0.03em; color: var(--text); margin-bottom: 1.25rem;
+    letter-spacing: -0.03em; color: var(--text-bright); margin-bottom: 1.25rem;
     line-height: 1.15;
 }
 .subtitle {
@@ -195,25 +339,25 @@ h1.hero-title {
     align-items: center; gap: 0.5rem; text-decoration: none; cursor: pointer;
 }
 .btn:hover { text-decoration: none; }
-.btn-primary { background: #1C1917; color: #FFFFFF; border-color: #1C1917; }
-.btn-primary:hover { background: #292524; border-color: #292524; }
-.btn-secondary { background: #FFFFFF; color: var(--text); border-color: var(--border); }
-.btn-secondary:hover { background: #F5F5F4; border-color: var(--border-dark); }
+.btn-primary { background: #F97316; color: #0D1117; border-color: #F97316; font-weight: 700; }
+.btn-primary:hover { background: #FB923C; border-color: #FB923C; }
+.btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Install Box */
 .install-bar {
     display: inline-flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 8px;
     padding: 0.65rem 1rem; font-family: var(--font-mono); font-size: 0.88rem;
-    color: #292524; max-width: 100%; overflow-x: auto;
+    color: var(--text); max-width: 100%; overflow-x: auto;
 }
 .install-bar .prompt { color: var(--muted); font-weight: 700; user-select: none; }
 .copy-btn {
-    background: #1C1917; color: #FFFFFF; border: none;
+    background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
     padding: 0.35rem 0.75rem; border-radius: 5px; font-size: 0.75rem; font-weight: 700;
-    font-family: var(--font-mono); cursor: pointer; transition: background 0.15s; shrink-0;
+    font-family: var(--font-mono); cursor: pointer; transition: all 0.15s; shrink-0;
 }
-.copy-btn:hover { background: #292524; }
+.copy-btn:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Stats ribbon */
 .stats-ribbon {
@@ -221,11 +365,11 @@ h1.hero-title {
     margin: 3rem 0 2rem;
 }
 .stat-pill {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.25rem 1rem; text-align: center;
 }
 .stat-val {
-    font-size: 1.85rem; font-weight: 850; color: var(--text); font-family: var(--font-mono);
+    font-size: 1.85rem; font-weight: 850; color: var(--text-bright); font-family: var(--font-mono);
 }
 .stat-lbl {
     font-size: 0.76rem; color: var(--muted); font-weight: 700; text-transform: uppercase;
@@ -236,29 +380,29 @@ h1.hero-title {
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
 .card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; transition: border-color 0.15s ease;
 }
 .card:hover { border-color: var(--border-dark); }
 .card-num {
     font-family: var(--font-mono); font-size: 0.78rem; font-weight: 800;
-    color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase;
+    color: #F97316; margin-bottom: 0.5rem; text-transform: uppercase;
 }
-.card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text); }
+.card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text-bright); }
 .card p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin: 0; }
 
 /* Code Blocks: Strict Horizontal Scroll Containment */
 pre {
-    background: var(--bg-code); border: 1px solid #27272A;
+    background: var(--bg-code); border: 1px solid var(--border);
     border-radius: 8px; padding: 1.1rem 1.25rem; overflow-x: auto;
     max-width: 100%; min-width: 0; box-sizing: border-box;
     font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.65;
-    color: #F4F4F5; -webkit-overflow-scrolling: touch;
+    color: #F0F6FC; -webkit-overflow-scrolling: touch;
 }
 code {
     font-family: var(--font-mono); font-size: 0.88em;
-    background: #F5F5F4; border: 1px solid var(--border);
-    padding: 0.12rem 0.35rem; border-radius: 4px; color: #1C1917;
+    background: #1C2128; border: 1px solid var(--border);
+    padding: 0.12rem 0.35rem; border-radius: 4px; color: #F97316;
     word-break: break-word;
 }
 pre code { background: none; border: none; padding: 0; color: inherit; word-break: normal; }
@@ -266,13 +410,30 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
     margin-bottom: 0.45rem; display: flex; justify-content: space-between;
+    align-items: center;
 }
-.code-header span.tag-cf { color: #60A5FA; }
+.code-header span.tag-cf { color: #38BDF8; }
 .code-header span.tag-cpp { color: #F59E0B; }
+.code-copy-btn {
+    background: var(--bg-card);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.code-copy-btn:hover {
+    color: var(--text-bright);
+    border-color: var(--border-dark);
+    background: var(--bg-card-hover);
+}
 
 .section-title {
     font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 800; margin: 4rem 0 0.75rem;
-    text-align: center; letter-spacing: -0.02em; color: var(--text);
+    text-align: center; letter-spacing: -0.02em; color: var(--text-bright);
 }
 .section-subtitle {
     text-align: center; color: var(--muted); font-size: 1.05rem; max-width: 640px; margin: 0 auto 2.5rem;
@@ -280,21 +441,21 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
 
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center; flex-wrap: wrap; }
 .tab-btn {
-    background: #FFFFFF; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--muted); border: 1px solid var(--border);
     padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;
     font-size: 0.88rem; font-family: var(--font-mono); transition: all 0.15s;
 }
-.tab-btn:hover { color: var(--text); border-color: var(--border-dark); }
+.tab-btn:hover { color: var(--text-bright); border-color: var(--border-dark); }
 .tab-btn.active {
-    background: #1C1917; color: #FFFFFF; border-color: #1C1917;
+    background: var(--bg-card-hover); color: var(--text-bright); border-color: #F97316;
 }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 /* Rosetta Mobile Toggle */
 .rosetta-mobile-toggle {
-    display: none; margin-bottom: 0.75rem; gap: 0.35rem; background: #E7E5E4;
-    padding: 0.25rem; border-radius: 6px;
+    display: none; margin-bottom: 0.75rem; gap: 0.35rem; background: var(--bg-card);
+    padding: 0.25rem; border-radius: 6px; border: 1px solid var(--border);
 }
 .rosetta-mobile-toggle button {
     flex: 1; padding: 0.45rem 0.5rem; border: none; background: transparent;
@@ -302,20 +463,20 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     color: var(--muted); border-radius: 4px; cursor: pointer;
 }
 .rosetta-mobile-toggle button.active {
-    background: #FFFFFF; color: var(--text);
+    background: var(--bg-card-hover); color: var(--text-bright);
 }
 
 /* Console preview */
 .console-preview {
-    background: #F5F5F4; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px;
     padding: 0.75rem 1rem; margin-top: 0.85rem; font-family: var(--font-mono);
-    font-size: 0.82rem; color: #1C1917;
+    font-size: 0.82rem; color: var(--text);
 }
 .console-header {
     font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.05em; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.35rem;
 }
-.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #059669; }
+.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #3FB950; }
 
 /* Robust Table System: Isolated Scrolling & Polished Mobile Experience */
 .table-wrap {
@@ -326,10 +487,9 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     margin: 1.5rem 0 2.25rem;
-    background: #FFFFFF;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 .table-wrap table {
     width: 100%;
@@ -344,11 +504,11 @@ th, td {
     font-size: 0.9rem; vertical-align: top;
 }
 th {
-    background: #F5F5F4; color: var(--text); font-weight: 750; font-size: 0.82rem;
+    background: #1C2128; color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #FAFAF9; }
+tr:hover td { background: #1F242C; }
 
 /* Subtle mobile scroll hint banner */
 .table-scroll-cue {
@@ -359,7 +519,7 @@ tr:hover td { background: #FAFAF9; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.4rem 0.85rem;
-    background: #F5F5F4;
+    background: #1C2128;
     border-bottom: 1px solid var(--border);
     text-align: right;
 }
@@ -369,16 +529,16 @@ tr:hover td { background: #FAFAF9; }
     display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin: 2rem 0;
 }
 .step-card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 1.5rem; position: relative;
 }
 .step-badge {
     display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
     font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
-    background: #1C1917; color: #FFFFFF; padding: 0.2rem 0.6rem; border-radius: 4px;
-    margin-bottom: 0.75rem;
+    background: #21262D; color: #F97316; padding: 0.2rem 0.6rem; border-radius: 4px;
+    border: 1px solid var(--border); margin-bottom: 0.75rem;
 }
-.step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text); }
+.step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text-bright); }
 .step-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 0.85rem; }
 
 /* Roadmap */
@@ -386,27 +546,27 @@ tr:hover td { background: #FAFAF9; }
     display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 2rem 0;
 }
 .roadmap-card {
-    background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
-    padding: 1.25rem; transition: border-color 0.15s ease; text-decoration: none; display: block;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1.25rem; transition: border-color 0.15s ease, background 0.15s ease; text-decoration: none; display: block;
 }
 .roadmap-card:hover {
-    border-color: var(--border-dark); text-decoration: none;
+    background: var(--bg-card-hover); border-color: var(--border-dark); text-decoration: none;
 }
 .roadmap-num {
     font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.35rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #F97316; margin-bottom: 0.35rem;
 }
-.roadmap-card h4 { font-size: 1.05rem; color: var(--text); margin-bottom: 0.35rem; font-weight: 700; }
+.roadmap-card h4 { font-size: 1.05rem; color: var(--text-bright); margin-bottom: 0.35rem; font-weight: 700; }
 .roadmap-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; margin: 0; }
 
 .footer {
     text-align: center; padding: 3rem 1rem 2.5rem; border-top: 1px solid var(--border);
-    background: #FFFFFF; color: var(--muted); font-size: 0.88rem; margin-top: 4.5rem;
+    background: var(--bg); color: var(--muted); font-size: 0.88rem; margin-top: 4.5rem;
 }
 .footer-logo { max-width: 120px; margin-bottom: 1rem; }
 .footer-links { display: flex; justify-content: center; gap: 1.5rem; margin: 1rem 0; flex-wrap: wrap; }
 .footer-links a { color: var(--muted); font-weight: 600; font-size: 0.88rem; }
-.footer-links a:hover { color: var(--text); }
+.footer-links a:hover { color: var(--text-bright); }
 
 /* Responsive adjustments for mobile & tablet */
 @media (max-width: 840px) {
@@ -418,7 +578,7 @@ tr:hover td { background: #FAFAF9; }
     }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
-        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text);
+        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
     }
     .sidebar-summary::-webkit-details-marker { display: none; }
@@ -449,9 +609,9 @@ tr:hover td { background: #FAFAF9; }
     .nav-links::-webkit-scrollbar { display: none; }
     .nav-links a {
         white-space: nowrap; padding: 0.35rem 0.65rem; border-radius: 6px;
-        background: #F5F5F4; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
+        background: #161B22; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
     }
-    .nav-links a.active { background: #1C1917; color: #FFFFFF !important; }
+    .nav-links a.active { background: #21262D; color: var(--text-bright) !important; }
     .btn-nav-primary {
         margin-left: auto; padding: 0.35rem 0.75rem !important;
         font-size: 0.8rem !important; flex-shrink: 0;
@@ -474,16 +634,16 @@ tr:hover td { background: #FAFAF9; }
     }
     .api-table-wrap thead { display: none; }
     .api-table-wrap tr {
-        background: #FFFFFF; border: 1px solid var(--border); border-radius: 8px;
-        margin-bottom: 0.85rem; padding: 0.95rem 1rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+        margin-bottom: 0.85rem; padding: 0.95rem 1rem;
     }
     .api-table-wrap td { padding: 0.25rem 0; border: none; font-size: 0.88rem; }
     .api-table-wrap td:first-child {
         padding-bottom: 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.45rem;
     }
     .api-table-wrap td:first-child code {
-        font-weight: 700; font-size: 0.88rem; color: var(--accent);
-        background: #EFF6FF; border-color: #DBEAFE; word-break: break-all;
+        font-weight: 700; font-size: 0.88rem; color: #F97316;
+        background: #21262D; border-color: var(--border); word-break: break-all;
         display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
     }
     .api-table-wrap td:nth-child(2)::before {
@@ -491,11 +651,11 @@ tr:hover td { background: #FAFAF9; }
         letter-spacing: 0.05em; color: var(--muted); display: inline-block; margin-right: 0.35rem;
     }
     .api-table-wrap td:nth-child(2) {
-        font-size: 0.82rem; color: #57534E; padding-bottom: 0.35rem; word-break: break-all;
+        font-size: 0.82rem; color: var(--muted); padding-bottom: 0.35rem; word-break: break-all;
     }
-    .api-table-wrap td:last-child { color: #1C1917; line-height: 1.55; }
+    .api-table-wrap td:last-child { color: var(--text); line-height: 1.55; }
     .api-table-wrap td:last-child code {
-        display: block; margin-top: 0.35rem; word-break: break-all; background: #F5F5F4;
+        display: block; margin-top: 0.35rem; word-break: break-all; background: var(--bg-code);
     }
 }
 
@@ -534,38 +694,39 @@ tr:hover td { background: #FAFAF9; }
         <div class="sidebar-content">
           <h4>`core:*` Modules</h4>
           <ul>
-            <li><a href="#mod-fs"><code>core:fs</code></a></li>
+            <li><a href="#mod-ai"><code>core:ai</code></a></li>
+            <li><a href="#mod-audio"><code>core:audio</code></a></li>
             <li><a href="#mod-cli"><code>core:cli</code></a></li>
+            <li><a href="#mod-collections"><code>core:collections</code></a></li>
             <li><a href="#mod-zstd"><code>core:compress/zstd</code></a></li>
-            <li><a href="#mod-json"><code>core:json</code></a></li>
-            <li><a href="#mod-sqlite"><code>core:db/sqlite</code></a></li>
-            <li><a href="#mod-sha256"><code>core:crypto/sha256</code></a></li>
-            <li><a href="#mod-hmac"><code>core:crypto/hmac</code></a></li>
             <li><a href="#mod-aes"><code>core:crypto/aes</code></a></li>
             <li><a href="#mod-blake3"><code>core:crypto/blake3</code></a></li>
+            <li><a href="#mod-hmac"><code>core:crypto/hmac</code></a></li>
+            <li><a href="#mod-sha256"><code>core:crypto/sha256</code></a></li>
+            <li><a href="#mod-sqlite"><code>core:db/sqlite</code></a></li>
+            <li><a href="#mod-base64"><code>core:encoding/base64</code></a></li>
+            <li><a href="#mod-csv"><code>core:encoding/csv</code></a></li>
+            <li><a href="#mod-hex"><code>core:encoding/hex</code></a></li>
+            <li><a href="#mod-fs"><code>core:fs</code></a></li>
+            <li><a href="#mod-json"><code>core:json</code></a></li>
+            <li><a href="#mod-log"><code>core:log</code></a></li>
+            <li><a href="#mod-math"><code>core:math</code></a></li>
             <li><a href="#mod-net"><code>core:net</code></a></li>
+            <li><a href="#mod-http"><code>core:net/http</code></a></li>
             <li><a href="#mod-tls"><code>core:net/tls</code></a></li>
             <li><a href="#mod-url"><code>core:net/url</code></a></li>
-            <li><a href="#mod-http"><code>core:net/http</code></a></li>
             <li><a href="#mod-websocket"><code>core:net/websocket</code></a></li>
-            <li><a href="#mod-time"><code>core:time</code></a></li>
             <li><a href="#mod-os"><code>core:os</code></a></li>
+            <li><a href="#mod-rand"><code>core:rand</code></a></li>
+            <li><a href="#mod-regex"><code>core:regex</code></a></li>
+            <li><a href="#mod-sort"><code>core:sort</code></a></li>
+            <li><a href="#mod-str"><code>core:str</code></a></li>
             <li><a href="#mod-sync"><code>core:sync</code></a></li>
             <li><a href="#mod-context"><code>core:sync/context</code></a></li>
-            <li><a href="#mod-str"><code>core:str</code></a></li>
-            <li><a href="#mod-math"><code>core:math</code></a></li>
-            <li><a href="#mod-rand"><code>core:rand</code></a></li>
-            <li><a href="#mod-base64"><code>core:encoding/base64</code></a></li>
-            <li><a href="#mod-hex"><code>core:encoding/hex</code></a></li>
-            <li><a href="#mod-csv"><code>core:encoding/csv</code></a></li>
-            <li><a href="#mod-regex"><code>core:regex</code></a></li>
-            <li><a href="#mod-collections"><code>core:collections</code></a></li>
-            <li><a href="#mod-sort"><code>core:sort</code></a></li>
-            <li><a href="#mod-log"><code>core:log</code></a></li>
+            <li><a href="#mod-time"><code>core:time</code></a></li>
             <li><a href="#mod-unicode"><code>core:unicode</code></a></li>
-            <li><a href="#mod-audio"><code>core:audio</code></a></li>
-            <li><a href="#mod-rl"><code>vendor:raylib</code></a></li>
             <li><a href="#mod-rg"><code>vendor:raygui</code></a></li>
+            <li><a href="#mod-rl"><code>vendor:raylib</code></a></li>
           </ul>
           <h4 style="margin-top:1.25rem;">Diagnostics</h4>
           <ul>
@@ -583,51 +744,133 @@ tr:hover td { background: #FAFAF9; }
     <main>
       <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
       <p class="subtitle" style="margin:0 0 2rem;">Automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>.</p>
-      <h2 id="mod-fs"><code>import "core:fs"</code> &mdash; Filesystem &amp; Zero-Copy Byte I/O</h2>
-      <p>Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <h2 id="mod-ai"><code>import "core:ai"</code> &mdash; Multi-Provider Cloud, Open-Source, Apple On-Device AI, Embeddings &amp; MCP Server</h2>
+      <p>Unified AI SDK supporting OpenAI, Anthropic Claude, Google Gemini, Ollama, vLLM/llama.cpp (`openai_compatible`), and Apple On-Device Intelligence (`NaturalLanguage.framework`), with compile-time structured outputs (`generate_struct[T]`), tool calling (`tool_def[T]`), SSE token streaming (`stream`), unified embeddings (`ai.embed("local", text)`), RAG chunking (`chunk_text`), vector math (`cosine_similarity`), and a Model Context Protocol server (`McpServer`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS + NaturalLanguage.framework)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
-import &quot;core:fs&quot;
+import &quot;core:ai&quot;
+import &quot;core:db/sqlite&quot;
+import &quot;core:json&quot;
+
+type SearchArgs struct {
+    query: str `json:&quot;query&quot; desc:&quot;Semantic search query&quot;`
+    limit: i32 `json:&quot;limit&quot; desc:&quot;Maximum results to return&quot;`
+}
+
+type DocHit struct {
+    title: str `sql:&quot;title&quot;`
+    score: f64 `sql:&quot;score&quot;`
+}
 
 fn main() {
-    // 1. High-level one-shot file read and write
-    try fs.write_text(&quot;config.ini&quot;, &quot;workers=8\nport=9000\n&quot;)
-    content := try fs.read_text(&quot;config.ini&quot;)
-    println(&quot;Read configuration: {}&quot;, content)
+    // 1. Compile-time JSON Schema reflection for LLM tools &amp; structured outputs
+    println(&quot;Tool schema: {}&quot;, json.schema[SearchArgs]())
 
-    // 2. Streaming file operations with deterministic RAII defer
-    mut file := try fs.open(&quot;service.log&quot;, fs.OpenMode::Append)
-    defer file.close() // Closed deterministically on return
+    // 2. Unified local on-device embeddings + SQLite vector similarity search
+    mut db := try sqlite.open(&quot;:memory:&quot;)
+    defer db.close()
+    try db.exec(&quot;CREATE TABLE docs (title TEXT, vec BLOB)&quot;)
 
-    try file.write_str(&quot;[INFO] Worker subsystem initialized\n&quot;)
-    try file.flush()
-    offset := try file.tell()
-    println(&quot;Log stream offset: {} bytes&quot;, offset)
+    v1 := try ai.embed(&quot;local&quot;, &quot;Zero-overhead C++23 systems programming and memory safety&quot;)
+    v2 := try ai.embed(&quot;local&quot;, &quot;SQLite embedded vector similarity search and RAG&quot;)
+    try db.exec(&quot;INSERT INTO docs VALUES (?1, ?2)&quot;, &quot;Systems Guide&quot;, v1)
+    try db.exec(&quot;INSERT INTO docs VALUES (?1, ?2)&quot;, &quot;Vector SQLite&quot;, v2)
+
+    qvec := try ai.embed(&quot;local&quot;, &quot;vector search in sqlite&quot;)
+    hits := try db.query[DocHit](
+        &quot;SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM docs ORDER BY score DESC LIMIT 1&quot;,
+        qvec
+    )
+    println(&quot;Top match: {} (score={})&quot;, hits[0].title, hits[0].score)
 }</code></pre>
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn read_all(path: str) -&gt; []byte!</code></td><td><code>cfire::fs::read_all(path)</code></td><td>Reads an entire binary file into a byte buffer.<br/><code>raw := try fs.read_all(&quot;input.bin&quot;)</code></td></tr>
-          <tr><td><code>fn write_all(path: str, data: []byte) -&gt; void!</code></td><td><code>cfire::fs::write_all(path, data)</code></td><td>Writes a byte slice atomically to disk, creating parent directories if needed.<br/><code>try fs.write_all(&quot;out.bin&quot;, raw)</code></td></tr>
-          <tr><td><code>fn read_text(path: str) -&gt; str!</code></td><td><code>cfire::fs::read_text(path)</code></td><td>Reads an entire UTF-8 text file into a `str`.<br/><code>txt := try fs.read_text(&quot;config.json&quot;)</code></td></tr>
-          <tr><td><code>fn write_text(path: str, text: str) -&gt; void!</code></td><td><code>cfire::fs::write_text(path, text)</code></td><td>Writes a UTF-8 string to disk.<br/><code>try fs.write_text(&quot;hello.txt&quot;, &quot;sapphire&quot;)</code></td></tr>
-          <tr><td><code>fn open(path: str, mode: OpenMode = OpenMode::Read) -&gt; File!</code></td><td><code>cfire::fs::open(path, mode)</code></td><td>Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.<br/><code>mut f := try fs.open(&quot;log.txt&quot;, OpenMode::Append)</code></td></tr>
-          <tr><td><code>fn (mut f: File) read(mut buf: []byte) -&gt; usize!</code></td><td><code>f.read(buf)</code></td><td>Reads up to `buf.len` bytes from the streaming file handle.<br/><code>n := try f.read(mut buf)</code></td></tr>
-          <tr><td><code>fn (mut f: File) read_all() -&gt; []byte!</code></td><td><code>f.read_all()</code></td><td>Reads all remaining bytes from current file position to EOF.<br/><code>bytes := try f.read_all()</code></td></tr>
-          <tr><td><code>fn (mut f: File) write(data: []byte) -&gt; usize!</code></td><td><code>f.write(data)</code></td><td>Writes byte slice to file stream.<br/><code>n := try f.write(buf)</code></td></tr>
-          <tr><td><code>fn (mut f: File) write_str(s: str) -&gt; usize!</code></td><td><code>f.write_str(s)</code></td><td>Writes UTF-8 string to file stream.<br/><code>try f.write_str(&quot;header\n&quot;)</code></td></tr>
-          <tr><td><code>fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -&gt; i64!</code></td><td><code>f.seek(offset, whence)</code></td><td>Seeks within file to offset from Start, Current, or End.<br/><code>pos := try f.seek(0, SeekWhence::Start)</code></td></tr>
-          <tr><td><code>fn (mut f: File) tell() -&gt; i64!</code></td><td><code>f.tell()</code></td><td>Returns current byte offset within file stream.<br/><code>pos := try f.tell()</code></td></tr>
-          <tr><td><code>fn (mut f: File) flush() -&gt; void!</code></td><td><code>f.flush()</code></td><td>Flushes buffered stream data to disk.<br/><code>try f.flush()</code></td></tr>
-          <tr><td><code>fn (mut f: File) close() -&gt; void</code></td><td><code>f.close()</code></td><td>Closes open file handle.<br/><code>f.close()</code></td></tr>
-          <tr><td><code>fn dirname(path: str) -&gt; str</code></td><td><code>cfire::fs::dirname(path)</code></td><td>Returns directory portion of a filesystem path.<br/><code>dir := fs.dirname(&quot;/a/b/c.txt&quot;)</code></td></tr>
-          <tr><td><code>fn basename(path: str) -&gt; str</code></td><td><code>cfire::fs::basename(path)</code></td><td>Returns file name portion of a filesystem path.<br/><code>name := fs.basename(&quot;/a/b/c.txt&quot;)</code></td></tr>
-          <tr><td><code>fn extension(path: str) -&gt; str</code></td><td><code>cfire::fs::extension(path)</code></td><td>Returns file extension including leading dot.<br/><code>ext := fs.extension(&quot;main.cf&quot;)</code></td></tr>
-          <tr><td><code>fn exists(path: str) -&gt; bool</code></td><td><code>cfire::fs::exists(path)</code></td><td>Returns `true` if the path exists on disk.<br/><code>if fs.exists(&quot;build.cf&quot;) { ... }</code></td></tr>
-          <tr><td><code>fn mkdir_all(path: str) -&gt; void!</code></td><td><code>cfire::fs::mkdir_all(path)</code></td><td>Recursively creates a directory and all parent directories.<br/><code>try fs.mkdir_all(&quot;.cfire/cache&quot;)</code></td></tr>
-          <tr><td><code>fn remove(path: str) -&gt; void!</code></td><td><code>cfire::fs::remove(path)</code></td><td>Removes a file or directory tree recursively.<br/><code>try fs.remove(&quot;tmp_dir&quot;)</code></td></tr>
-          <tr><td><code>fn list_dir(path: str) -&gt; []str!</code></td><td><code>cfire::fs::list_dir(path)</code></td><td>Lists sorted filenames inside a directory.<br/><code>entries := try fs.list_dir(&quot;examples&quot;)</code></td></tr>
+          <tr><td><code>fn openai(api_key: str = &quot;&quot;, base_url: str = &quot;https://api.openai.com/v1&quot;) -&gt; Client</code></td><td><code>cfire::ai::openai(api_key, base_url)</code></td><td>Creates an OpenAI client (reads `OPENAI_API_KEY` if `api_key` is empty).<br/><code>client := ai.openai()</code></td></tr>
+          <tr><td><code>fn anthropic(api_key: str = &quot;&quot;, base_url: str = &quot;https://api.anthropic.com/v1&quot;) -&gt; Client</code></td><td><code>cfire::ai::anthropic(api_key, base_url)</code></td><td>Creates an Anthropic Claude client (reads `ANTHROPIC_API_KEY` if `api_key` is empty).<br/><code>client := ai.anthropic()</code></td></tr>
+          <tr><td><code>fn gemini(api_key: str = &quot;&quot;, base_url: str = &quot;https://generativelanguage.googleapis.com/v1beta&quot;) -&gt; Client</code></td><td><code>cfire::ai::gemini(api_key, base_url)</code></td><td>Creates a Google Gemini client (reads `GEMINI_API_KEY` or `GOOGLE_API_KEY` if `api_key` is empty).<br/><code>client := ai.gemini()</code></td></tr>
+          <tr><td><code>fn ollama(host: str = &quot;http://127.0.0.1:11434&quot;) -&gt; Client</code></td><td><code>cfire::ai::ollama(host)</code></td><td>Creates a local Ollama client (uses `OLLAMA_HOST` if set).<br/><code>client := ai.ollama()</code></td></tr>
+          <tr><td><code>fn openai_compatible(base_url: str, api_key: str = &quot;&quot;) -&gt; Client</code></td><td><code>cfire::ai::openai_compatible(base_url, api_key)</code></td><td>Creates a client for any OpenAI-compatible server (`vLLM`, `llama-server`, `LM Studio`, `Groq`, `Together`, `DeepSeek`).<br/><code>client := ai.openai_compatible(&quot;http://127.0.0.1:8080/v1&quot;)</code></td></tr>
+          <tr><td><code>fn apple() -&gt; Client</code></td><td><code>cfire::ai::apple()</code></td><td>Creates an Apple on-device client backed by `NaturalLanguage.framework` (`NLEmbedding`, `NLLanguageRecognizer`).<br/><code>client := ai.apple()</code></td></tr>
+          <tr><td><code>fn user(content: str) -&gt; Message</code></td><td><code>cfire::ai::user(content)</code></td><td>Constructs a user role `Message`.<br/><code>m := ai.user(&quot;Summarize this file.&quot;)</code></td></tr>
+          <tr><td><code>fn system(content: str) -&gt; Message</code></td><td><code>cfire::ai::system(content)</code></td><td>Constructs a system instruction `Message`.<br/><code>m := ai.system(&quot;You are a concise coding assistant.&quot;)</code></td></tr>
+          <tr><td><code>fn assistant(content: str) -&gt; Message</code></td><td><code>cfire::ai::assistant(content)</code></td><td>Constructs an assistant role `Message`.<br/><code>m := ai.assistant(&quot;Here is the summary:&quot;)</code></td></tr>
+          <tr><td><code>fn tool_def[T](name: str, description: str) -&gt; Tool</code></td><td><code>cfire::ai::tool_def&lt;T&gt;(name, description)</code></td><td>Constructs a typed LLM `Tool` definition whose JSON Schema is derived at compile time from struct `T`.<br/><code>t := ai.tool_def[WeatherArgs](&quot;get_weather&quot;, &quot;Look up current weather&quot;)</code></td></tr>
+          <tr><td><code>fn embed(model: str, text: str) -&gt; []f32!</code></td><td><code>cfire::ai::embed(model, text)</code></td><td>Computes a normalized `[]f32` embedding vector (`model: &quot;local&quot;` runs offline on-device via Apple `NLEmbedding` or deterministic trigram feature hashing; other models query the configured cloud/Ollama provider).<br/><code>vec := try ai.embed(&quot;local&quot;, &quot;compile-time memory safety&quot;)</code></td></tr>
+          <tr><td><code>fn (c: Client) ask(model: str, prompt: str, system_prompt: str = &quot;&quot;) -&gt; str!</code></td><td><code>c.ask(model, prompt, system_prompt)</code></td><td>Executes a single-turn prompt and returns the assistant text response.<br/><code>reply := try client.ask(&quot;gpt-4o-mini&quot;, &quot;Hello!&quot;)</code></td></tr>
+          <tr><td><code>fn (c: Client) chat(model: str, messages: []Message) -&gt; ChatResponse!</code></td><td><code>c.chat(model, messages)</code></td><td>Executes a multi-turn chat completion returning text, tool calls, and token usage.<br/><code>res := try client.chat(&quot;claude-3-5-sonnet-latest&quot;, msgs)</code></td></tr>
+          <tr><td><code>fn (c: Client) chat_with_tools(model: str, messages: []Message, tools: []Tool) -&gt; ChatResponse!</code></td><td><code>c.chat_with_tools(model, messages, tools)</code></td><td>Executes a chat completion with compile-time schema-typed `tools` and returns any requested `ToolCall` invocations.<br/><code>res := try client.chat_with_tools(&quot;gpt-4o&quot;, msgs, [weather_tool])</code></td></tr>
+          <tr><td><code>fn (c: Client) stream(model: str, messages: []Message, on_delta: fn(str)) -&gt; str!</code></td><td><code>c.stream(model, messages, on_delta)</code></td><td>Streams tokens in real time via SSE across OpenAI, Anthropic, Gemini, or Ollama, invoking `on_delta` for each token chunk.<br/><code>full := try client.stream(&quot;llama3.2&quot;, msgs, |tok| { print(&quot;{}&quot;, tok) })</code></td></tr>
+          <tr><td><code>fn (c: Client) generate_struct[T](model: str, prompt: str, system_prompt: str = &quot;&quot;) -&gt; T!</code></td><td><code>c.generate_struct&lt;T&gt;(model, prompt, system_prompt)</code></td><td>Enforces `json.schema[T]()` on the model response and parses the result directly into a strongly-typed `cfire` struct `T`.<br/><code>inv := try client.generate_struct[Invoice](&quot;gpt-4o-mini&quot;, raw_text)</code></td></tr>
+          <tr><td><code>fn (c: Client) embed(model: str, text: str) -&gt; []f32!</code></td><td><code>c.embed(model, text)</code></td><td>Generates an embedding vector using `c`'s provider (or offline on-device when `model == &quot;local&quot;`).<br/><code>vec := try client.embed(&quot;text-embedding-3-small&quot;, doc)</code></td></tr>
+          <tr><td><code>fn cosine_similarity(a: []f32, b: []f32) -&gt; f32</code></td><td><code>cfire::ai::cosine_similarity(a, b)</code></td><td>Computes the cosine similarity in `[-1.0, 1.0]` between two `[]f32` embedding vectors.<br/><code>sim := ai.cosine_similarity(v1, v2)</code></td></tr>
+          <tr><td><code>fn l2_distance(a: []f32, b: []f32) -&gt; f32</code></td><td><code>cfire::ai::l2_distance(a, b)</code></td><td>Computes the Euclidean (L2) distance between two `[]f32` vectors.<br/><code>dist := ai.l2_distance(v1, v2)</code></td></tr>
+          <tr><td><code>fn dot_product(a: []f32, b: []f32) -&gt; f32</code></td><td><code>cfire::ai::dot_product(a, b)</code></td><td>Computes the inner product of two `[]f32` vectors.<br/><code>dot := ai.dot_product(v1, v2)</code></td></tr>
+          <tr><td><code>fn normalize(v: []f32) -&gt; []f32</code></td><td><code>cfire::ai::normalize(v)</code></td><td>Returns an L2-normalized unit vector copy of `v`.<br/><code>unit := ai.normalize(raw_vec)</code></td></tr>
+          <tr><td><code>fn chunk_text(text: str, max_chars: i32 = 512, overlap: i32 = 64) -&gt; []str</code></td><td><code>cfire::ai::chunk_text(text, max_chars, overlap)</code></td><td>Splits a document into overlapping paragraph/sentence-aware chunks for RAG indexing.<br/><code>chunks := ai.chunk_text(markdown, 512, 64)</code></td></tr>
+          <tr><td><code>fn detect_language(text: str) -&gt; str</code></td><td><code>cfire::ai::detect_language(text)</code></td><td>Detects the dominant BCP-47 language code (e.g. `&quot;en&quot;`) using Apple `NLLanguageRecognizer` on macOS/iOS.<br/><code>lang := ai.detect_language(&quot;Bonjour tout le monde&quot;)</code></td></tr>
+          <tr><td><code>fn make_mcp_server(name: str, version: str = &quot;1.0.0&quot;) -&gt; McpServer</code></td><td><code>cfire::ai::make_mcp_server(name, version)</code></td><td>Creates a Model Context Protocol (MCP) server capable of serving compile-time schema-typed tools over JSON-RPC 2.0.<br/><code>mut mcp := ai.make_mcp_server(&quot;my-tools&quot;, &quot;1.0.0&quot;)</code></td></tr>
+          <tr><td><code>fn (mut s: McpServer) register_tool[T](name: str, description: str, handler: fn(T) -&gt; str!)</code></td><td><code>s.register_tool&lt;T&gt;(name, description, handler)</code></td><td>Registers an MCP tool whose input schema is derived from `T` (`json.schema[T]()`) and whose arguments are automatically parsed into `T`.<br/><code>mcp.register_tool[Query](&quot;search&quot;, &quot;Search docs&quot;, |q| { return &quot;ok&quot; })</code></td></tr>
+          <tr><td><code>fn (mut s: McpServer) handle_jsonrpc(req_json: str) -&gt; str</code></td><td><code>s.handle_jsonrpc(req_json)</code></td><td>Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.<br/><code>resp := mcp.handle_jsonrpc(line)</code></td></tr>
+          <tr><td><code>fn (mut s: McpServer) serve_stdio() -&gt; i32</code></td><td><code>s.serve_stdio()</code></td><td>Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.<br/><code>mcp.serve_stdio()</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-audio"><code>import "core:audio"</code> &mdash; Cross-Target Audio Engine, Polyphonic Mixer, Synth &amp; WAV Codec</h2>
+      <p>Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(AudioToolbox / WebAudio / ALSA)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:audio&quot;
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Zero-asset procedural sound effect playback
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    coin_sfx := audio.load_sound_from_wave(coin_wave)
+    coin_sfx.play()
+
+    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+    try audio.save_wav(tone, &quot;a440.wav&quot;)
+
+    stream := try audio.open_stream(48000, 2)
+    if stream.needs_data(2048) {
+        stream.push_samples(tone.samples)
+    }
+    println(&quot;Audio RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn init(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; void!</code></td><td><code>cfire::audio::init(sample_rate, channels)</code></td><td>Initializes the hardware audio output queue (or headless software mixer in CI).<br/><code>try audio.init(48000, 2)</code></td></tr>
+          <tr><td><code>fn close()</code></td><td><code>cfire::audio::close()</code></td><td>Stops all active sounds and streams and releases audio hardware resources.<br/><code>defer audio.close()</code></td></tr>
+          <tr><td><code>fn is_ready() -&gt; bool</code></td><td><code>cfire::audio::is_ready()</code></td><td>Returns `true` if the audio subsystem is initialized.<br/><code>if audio.is_ready() { ... }</code></td></tr>
+          <tr><td><code>fn set_master_volume(vol: f32)</code></td><td><code>cfire::audio::set_master_volume(vol)</code></td><td>Sets the master output volume multiplier (`0.0` to `1.0`).<br/><code>audio.set_master_volume(0.8)</code></td></tr>
+          <tr><td><code>fn master_volume() -&gt; f32</code></td><td><code>cfire::audio::master_volume()</code></td><td>Returns the current master output volume multiplier.<br/><code>v := audio.master_volume()</code></td></tr>
+          <tr><td><code>fn rms_level() -&gt; f32</code></td><td><code>cfire::audio::rms_level()</code></td><td>Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.<br/><code>rms := audio.rms_level()</code></td></tr>
+          <tr><td><code>fn peak_level() -&gt; f32</code></td><td><code>cfire::audio::peak_level()</code></td><td>Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.<br/><code>pk := audio.peak_level()</code></td></tr>
+          <tr><td><code>fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)</code></td><td>Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.<br/><code>w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)</code></td></tr>
+          <tr><td><code>fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)</code></td><td>Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.<br/><code>sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)</code></td></tr>
+          <tr><td><code>fn gen_sfx(preset: SfxPreset) -&gt; Wave</code></td><td><code>cfire::audio::gen_sfx(preset)</code></td><td>Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).<br/><code>coin := audio.gen_sfx(audio.SfxPreset::Coin)</code></td></tr>
+          <tr><td><code>fn encode_wav(wave: Wave) -&gt; []byte</code></td><td><code>cfire::audio::encode_wav(wave)</code></td><td>Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.<br/><code>wav_bytes := audio.encode_wav(w)</code></td></tr>
+          <tr><td><code>fn decode_wav(data: []byte) -&gt; Wave!</code></td><td><code>cfire::audio::decode_wav(data)</code></td><td>Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.<br/><code>w := try audio.decode_wav(wav_bytes)</code></td></tr>
+          <tr><td><code>fn save_wav(wave: Wave, path: str) -&gt; void!</code></td><td><code>cfire::audio::save_wav(wave, path)</code></td><td>Writes a `Wave` to disk as a standard `.wav` file.<br/><code>try audio.save_wav(w, &quot;tone.wav&quot;)</code></td></tr>
+          <tr><td><code>fn load_wav(path: str) -&gt; Wave!</code></td><td><code>cfire::audio::load_wav(path)</code></td><td>Loads and decodes a `.wav` file from disk or app bundle.<br/><code>w := try audio.load_wav(&quot;tone.wav&quot;)</code></td></tr>
+          <tr><td><code>fn load_sound_from_wave(wave: Wave) -&gt; Sound</code></td><td><code>cfire::audio::load_sound_from_wave(wave)</code></td><td>Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.<br/><code>sfx := audio.load_sound_from_wave(coin)</code></td></tr>
+          <tr><td><code>fn load_sound(path: str) -&gt; Sound!</code></td><td><code>cfire::audio::load_sound(path)</code></td><td>Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.<br/><code>sfx := try audio.load_sound(&quot;click.wav&quot;)</code></td></tr>
+          <tr><td><code>fn (s: Sound) play()</code></td><td><code>s.play()</code></td><td>Triggers polyphonic playback of the sound.<br/><code>sfx.play()</code></td></tr>
+          <tr><td><code>fn (s: Sound) stop()</code></td><td><code>s.stop()</code></td><td>Stops active voices playing this sound.<br/><code>sfx.stop()</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_volume(vol: f32)</code></td><td><code>s.set_volume(vol)</code></td><td>Sets playback gain (`0.0` to `2.0`) for this sound.<br/><code>sfx.set_volume(0.75)</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_pitch(pitch: f32)</code></td><td><code>s.set_pitch(pitch)</code></td><td>Sets playback pitch/rate multiplier (`1.0` = original pitch).<br/><code>sfx.set_pitch(1.25)</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_pan(pan: f32)</code></td><td><code>s.set_pan(pan)</code></td><td>Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).<br/><code>sfx.set_pan(-0.5)</code></td></tr>
+          <tr><td><code>fn (s: Sound) set_looping(loop: bool)</code></td><td><code>s.set_looping(loop)</code></td><td>Enables or disables seamless loop playback.<br/><code>sfx.set_looping(true)</code></td></tr>
+          <tr><td><code>fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; Stream!</code></td><td><code>cfire::audio::open_stream(sample_rate, channels)</code></td><td>Opens a real-time push `Stream` for custom DSP synthesis.<br/><code>stream := try audio.open_stream(48000, 2)</code></td></tr>
+          <tr><td><code>fn (st: Stream) push_samples(samples: []f32)</code></td><td><code>st.push_samples(samples)</code></td><td>Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.<br/><code>stream.push_samples(pcm_chunk)</code></td></tr>
+          <tr><td><code>fn (st: Stream) needs_data(target_frames: i32 = 2048) -&gt; bool</code></td><td><code>st.needs_data(target_frames)</code></td><td>Returns `true` when buffered frames fall below `target_frames`.<br/><code>if stream.needs_data(1024) { ... }</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-cli"><code>import "core:cli"</code> &mdash; Struct-Tag Command-Line Parser</h2>
@@ -656,6 +899,41 @@ fn main() {
           <tr><td><code>fn parse[T](args: []str?) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.<br/><code>args := try cli.parse[Args]()</code></td></tr>
         </tbody>
       </table></div>
+      <h2 id="mod-collections"><code>import "core:collections"</code> &mdash; Generic Containers (Set, PriorityQueue, Deque)</h2>
+      <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:collections&quot;
+
+fn main() {
+    // 1. Generic Hash Set
+    mut set := collections.Set[str]{}
+    set.insert(&quot;alpha&quot;)
+    set.insert(&quot;beta&quot;)
+    println(&quot;Set contains 'alpha': {}&quot;, set.contains(&quot;alpha&quot;))
+
+    // 2. Generic Max-Heap Priority Queue
+    mut pq := collections.PriorityQueue[i64]{}
+    pq.push(10)
+    pq.push(95)
+    pq.push(42)
+    println(&quot;Highest priority element: {}&quot;, pq.top()) // 95
+
+    // 3. Double-Ended Queue (Deque)
+    mut dq := collections.Deque[str]{}
+    dq.push_back(&quot;item_2&quot;)
+    dq.push_front(&quot;item_1&quot;)
+    println(&quot;Front: {}, Back: {}&quot;, dq.pop_front(), dq.pop_back())
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>type Set[T] struct</code></td><td><code>cfire::collections::Set&lt;T&gt;</code></td><td>Generic hash set container.<br/><code>mut s := collections.Set[str]{}</code></td></tr>
+          <tr><td><code>type PriorityQueue[T] struct</code></td><td><code>cfire::collections::PriorityQueue&lt;T&gt;</code></td><td>Generic max-heap priority queue.<br/><code>mut pq := collections.PriorityQueue[i32]{}</code></td></tr>
+          <tr><td><code>type Deque[T] struct</code></td><td><code>cfire::collections::Deque&lt;T&gt;</code></td><td>Generic double-ended queue.<br/><code>mut dq := collections.Deque[i32]{}</code></td></tr>
+        </tbody>
+      </table></div>
       <h2 id="mod-zstd"><code>import "core:compress/zstd"</code> &mdash; Native Zstandard Frame Compression</h2>
       <p>Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lzstd</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
@@ -679,128 +957,6 @@ fn main() {
         <tbody>
           <tr><td><code>fn compress(input: []byte, level: i32 = 3) -&gt; []byte!</code></td><td><code>cfire::zstd::compress(input, level)</code></td><td>Compresses a byte slice into a Zstandard frame.<br/><code>blob := try zstd.compress(raw, level: 3)</code></td></tr>
           <tr><td><code>fn decompress(frame: []byte) -&gt; []byte!</code></td><td><code>cfire::zstd::decompress(frame)</code></td><td>Decompresses a Zstandard frame using the embedded frame content size.<br/><code>orig := try zstd.decompress(blob)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-json"><code>import "core:json"</code> &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</h2>
-      <p>Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsimdjson (or header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:json&quot;
-
-type ServiceMetric struct {
-    service: str  `json:&quot;service&quot;`
-    latency: f64  `json:&quot;latency_ms&quot;`
-    healthy: bool `json:&quot;healthy&quot;`
-}
-
-fn main() {
-    // 1. Zero-overhead SIMD deserialization using compile-time struct tags
-    payload := `{&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true}`
-    m := try json.parse[ServiceMetric](payload)
-    println(&quot;Service={}, Latency={}ms, Healthy={}&quot;, m.service, m.latency, m.healthy)
-
-    // 2. High-speed JSON serialization
-    serialized := json.stringify(m)
-    println(&quot;Serialized output: {}&quot;, serialized)
-
-    // 3. Dynamic DOM for arbitrary or schemaless JSON
-    mut doc := try json.parse_dynamic(`{&quot;tags&quot;:[&quot;systems&quot;,&quot;c++23&quot;],&quot;cluster&quot;:{&quot;nodes&quot;:3}}`)
-    println(&quot;Cluster nodes: {}&quot;, doc.get(&quot;cluster&quot;).get(&quot;nodes&quot;).as_int())
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn parse[T](payload: []byte | str) -&gt; T!</code></td><td><code>cfire::json::parse&lt;T&gt;(payload)</code></td><td>Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.<br/><code>cfg := try json.parse[Config](raw)</code></td></tr>
-          <tr><td><code>fn stringify[T](val: T) -&gt; str</code></td><td><code>cfire::json::stringify&lt;T&gt;(val)</code></td><td>Serializes a tagged struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`) into a JSON string.<br/><code>payload := json.stringify(metric)</code></td></tr>
-          <tr><td><code>fn escape_string(s: str) -&gt; str</code></td><td><code>cfire::json::escape_string(s)</code></td><td>Escapes quotes, backslashes, and control characters for JSON strings.<br/><code>esc := json.escape_string(raw_txt)</code></td></tr>
-          <tr><td><code>fn parse_dynamic(payload: str) -&gt; Value!</code></td><td><code>cfire::json::parse_dynamic(payload)</code></td><td>Parses arbitrary JSON into a recursive dynamic DOM `Value`.<br/><code>v := try json.parse_dynamic(raw)</code></td></tr>
-          <tr><td><code>fn stringify_dynamic(val: Value, indent: i32 = 0) -&gt; str</code></td><td><code>cfire::json::stringify_dynamic(val, indent)</code></td><td>Serializes a dynamic DOM `Value` into compact or indented JSON.<br/><code>s := json.stringify_dynamic(v, 2)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-sqlite"><code>import "core:db/sqlite"</code> &mdash; Embedded SQLite3 with WAL &amp; Row Mapping</h2>
-      <p>RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, atomic transactions, and compile-time `sql:"..."` struct row mapping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsqlite3</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:db/sqlite&quot;
-
-type UserRecord struct {
-    id:    i64 `sql:&quot;id&quot;`
-    name:  str `sql:&quot;name&quot;`
-    email: str `sql:&quot;email&quot;`
-}
-
-fn main() {
-    // Opens SQLite connection and enables WAL mode automatically
-    mut db := try sqlite.open(&quot;app.db&quot;)
-    defer db.close()
-
-    try db.exec(&quot;CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)&quot;)
-
-    // Atomic transaction with auto-rollback on error
-    try db.tx |mut tx| {
-        try tx.exec(&quot;INSERT INTO users (name, email) VALUES (?1, ?2)&quot;, &quot;alice&quot;, &quot;alice@systems.dev&quot;)
-        try tx.exec(&quot;INSERT INTO users (name, email) VALUES (?1, ?2)&quot;, &quot;bob&quot;, &quot;bob@systems.dev&quot;)
-    }
-
-    // Direct struct row mapping via sql:&quot;...&quot; tags
-    users := try db.query[UserRecord](&quot;SELECT id, name, email FROM users WHERE id &gt;= ?1&quot;, 1)
-    for u in users {
-        println(&quot;User [{}]: {} &lt;{}&gt;&quot;, u.id, u.name, u.email)
-    }
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn open(path: str) -&gt; Conn!</code></td><td><code>cfire::sqlite::open(path)</code></td><td>Opens an SQLite3 database connection and enables WAL mode.<br/><code>mut db := try sqlite.open(&quot;app.db&quot;)</code></td></tr>
-          <tr><td><code>fn (mut db: Conn) exec(sql: str, ...args) -&gt; void!</code></td><td><code>db.exec(sql, args...)</code></td><td>Executes a parameterized SQL statement (`?1`, `?2`, ...).<br/><code>try db.exec(&quot;INSERT INTO pkg VALUES (?1, ?2)&quot;, name, ver)</code></td></tr>
-          <tr><td><code>fn (mut db: Conn) query[T](sql: str, ...args) -&gt; []T!</code></td><td><code>db.query&lt;T&gt;(sql, args...)</code></td><td>Executes a `SELECT` query and maps rows directly into struct `T` via `sql:&quot;...&quot;` tags.<br/><code>rows := try db.query[Row](&quot;SELECT name, ver FROM pkg&quot;)</code></td></tr>
-          <tr><td><code>fn (mut db: Conn) tx(block: fn(mut tx: Conn) -&gt; void!) -&gt; void!</code></td><td><code>db.tx([&amp;](Conn&amp; tx) { ... })</code></td><td>Runs a closure inside an atomic `BEGIN IMMEDIATE ... COMMIT` transaction with automatic rollback on error.<br/><code>try db.tx |mut tx| { ... }</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-sha256"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest</h2>
-      <p>Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:crypto/sha256&quot;
-
-fn main() {
-    payload := &quot;system_audit_transaction_event_2026&quot;
-    digest := sha256.hash_hex(payload)
-    println(&quot;FIPS 180-4 SHA-256 Digest: {}&quot;, digest)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::sha256::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := sha256.hash_hex(raw)</code></td></tr>
-          <tr><td><code>fn hash_bytes(data: []byte) -&gt; []byte</code></td><td><code>cfire::sha256::hash_bytes(data)</code></td><td>Returns 32-byte binary SHA-256 digest of `data`.<br/><code>b := sha256.hash_bytes(raw)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-hmac"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256 Message Authentication</h2>
-      <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:crypto/hmac&quot;
-
-fn main() {
-    secret_key := &quot;super-secure-signing-secret&quot;
-    data := &quot;tenant_id:42;session:8849&quot;
-
-    signature := hmac.sha256_hex(secret_key, data)
-    println(&quot;HMAC-SHA256 signature: {}&quot;, signature)
-
-    // Constant-time validation check prevents timing side-channel attacks
-    is_valid := hmac.equal(signature, signature)
-    println(&quot;Signature verified: {}&quot;, is_valid)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn sha256_hex(key: str, data: str) -&gt; str</code></td><td><code>cfire::hmac::sha256_hex(key, data)</code></td><td>Returns a 64-character lowercase hex HMAC-SHA256 digest.<br/><code>sig := hmac.sha256_hex(secret, payload)</code></td></tr>
-          <tr><td><code>fn equal(a: str, b: str) -&gt; bool</code></td><td><code>cfire::hmac::equal(a, b)</code></td><td>Performs a constant-time equality check on two MAC digests to prevent timing attacks.<br/><code>ok := hmac.equal(sig1, sig2)</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-aes"><code>import "core:crypto/aes"</code> &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</h2>
@@ -852,6 +1008,300 @@ fn main() {
           <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::blake3::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := blake3.hash_hex(raw)</code></td></tr>
         </tbody>
       </table></div>
+      <h2 id="mod-hmac"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256 Message Authentication</h2>
+      <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:crypto/hmac&quot;
+
+fn main() {
+    secret_key := &quot;super-secure-signing-secret&quot;
+    data := &quot;tenant_id:42;session:8849&quot;
+
+    signature := hmac.sha256_hex(secret_key, data)
+    println(&quot;HMAC-SHA256 signature: {}&quot;, signature)
+
+    // Constant-time validation check prevents timing side-channel attacks
+    is_valid := hmac.equal(signature, signature)
+    println(&quot;Signature verified: {}&quot;, is_valid)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn sha256_hex(key: str, data: str) -&gt; str</code></td><td><code>cfire::hmac::sha256_hex(key, data)</code></td><td>Returns a 64-character lowercase hex HMAC-SHA256 digest.<br/><code>sig := hmac.sha256_hex(secret, payload)</code></td></tr>
+          <tr><td><code>fn equal(a: str, b: str) -&gt; bool</code></td><td><code>cfire::hmac::equal(a, b)</code></td><td>Performs a constant-time equality check on two MAC digests to prevent timing attacks.<br/><code>ok := hmac.equal(sig1, sig2)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-sha256"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest</h2>
+      <p>Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:crypto/sha256&quot;
+
+fn main() {
+    payload := &quot;system_audit_transaction_event_2026&quot;
+    digest := sha256.hash_hex(payload)
+    println(&quot;FIPS 180-4 SHA-256 Digest: {}&quot;, digest)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::sha256::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of `data`.<br/><code>digest := sha256.hash_hex(raw)</code></td></tr>
+          <tr><td><code>fn hash_bytes(data: []byte) -&gt; []byte</code></td><td><code>cfire::sha256::hash_bytes(data)</code></td><td>Returns 32-byte binary SHA-256 digest of `data`.<br/><code>b := sha256.hash_bytes(raw)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-sqlite"><code>import "core:db/sqlite"</code> &mdash; Embedded SQLite3 with WAL, Vector Search &amp; Row Mapping</h2>
+      <p>RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, `[]f32` embedding BLOB binding, built-in SQL vector similarity functions (`vec_cosine_similarity`, `vec_l2_distance`, `vec_dot`), dynamic extension loading (`sqlite-vec`), atomic transactions, and compile-time `sql:"..."` struct row mapping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsqlite3</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:db/sqlite&quot;
+
+type UserRecord struct {
+    id:    i64 `sql:&quot;id&quot;`
+    name:  str `sql:&quot;name&quot;`
+    email: str `sql:&quot;email&quot;`
+}
+
+fn main() {
+    // Opens SQLite connection and enables WAL mode automatically
+    mut db := try sqlite.open(&quot;app.db&quot;)
+    defer db.close()
+
+    try db.exec(&quot;CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)&quot;)
+
+    // Atomic transaction with auto-rollback on error
+    try db.tx |mut tx| {
+        try tx.exec(&quot;INSERT INTO users (name, email) VALUES (?1, ?2)&quot;, &quot;alice&quot;, &quot;alice@systems.dev&quot;)
+        try tx.exec(&quot;INSERT INTO users (name, email) VALUES (?1, ?2)&quot;, &quot;bob&quot;, &quot;bob@systems.dev&quot;)
+    }
+
+    // Direct struct row mapping via sql:&quot;...&quot; tags
+    users := try db.query[UserRecord](&quot;SELECT id, name, email FROM users WHERE id &gt;= ?1&quot;, 1)
+    for u in users {
+        println(&quot;User [{}]: {} &lt;{}&gt;&quot;, u.id, u.name, u.email)
+    }
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn open(path: str) -&gt; Conn!</code></td><td><code>cfire::sqlite::open(path)</code></td><td>Opens an SQLite3 database connection, enables WAL mode, and registers vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`, `vec_dot`, `vec_dims`).<br/><code>mut db := try sqlite.open(&quot;app.db&quot;)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) exec(sql: str, ...args) -&gt; void!</code></td><td><code>db.exec(sql, args...)</code></td><td>Executes a parameterized SQL statement (`?1`, `?2`, ...), including `[]f32` vector and `[]byte` BLOB parameters.<br/><code>try db.exec(&quot;INSERT INTO docs VALUES (?1, ?2)&quot;, id, vec)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) query[T](sql: str, ...args) -&gt; []T!</code></td><td><code>db.query&lt;T&gt;(sql, args...)</code></td><td>Executes a `SELECT` query and maps rows directly into struct `T` via `sql:&quot;...&quot;` tags (supporting `str`, `i64`, `f64`, `[]f32`, `[]byte`).<br/><code>rows := try db.query[Doc](&quot;SELECT id, text FROM docs ORDER BY vec_cosine_similarity(vec, ?1) DESC&quot;, qvec)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) load_extension(path: str, entry_point: str = &quot;&quot;) -&gt; void!</code></td><td><code>db.load_extension(path, entry_point)</code></td><td>Dynamically loads a native SQLite extension shared library (e.g. `sqlite-vec` `vec0` or `sqlite-vss`).<br/><code>try db.load_extension(&quot;./vec0&quot;)</code></td></tr>
+          <tr><td><code>fn (mut db: Conn) tx(block: fn(mut tx: Conn) -&gt; void!) -&gt; void!</code></td><td><code>db.tx([&amp;](Conn&amp; tx) { ... })</code></td><td>Runs a closure inside an atomic `BEGIN IMMEDIATE ... COMMIT` transaction with automatic rollback on error.<br/><code>try db.tx |mut tx| { ... }</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-base64"><code>import "core:encoding/base64"</code> &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</h2>
+      <p>High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:encoding/base64&quot;
+
+fn main() {
+    credentials := &quot;service_account:token_xyz_9988&quot;
+    encoded := base64.encode_str(credentials)
+    println(&quot;Base64 encoded: {}&quot;, encoded)
+
+    decoded := try base64.decode_str(encoded)
+    println(&quot;Decoded text: {}&quot;, decoded)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn encode(data: []byte, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode(data, url_safe)</code></td><td>Encodes binary byte slice into standard or URL-safe Base64 string.<br/><code>s := base64.encode(raw)</code></td></tr>
+          <tr><td><code>fn encode_str(s: str, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode_str(s, url_safe)</code></td><td>Encodes a UTF-8 text string into standard or URL-safe Base64.<br/><code>token := base64.encode_str(&quot;user:pass&quot;)</code></td></tr>
+          <tr><td><code>fn decode(s: str) -&gt; []byte!</code></td><td><code>cfire::base64::decode(s)</code></td><td>Decodes a Base64 string into binary bytes.<br/><code>bytes := try base64.decode(token)</code></td></tr>
+          <tr><td><code>fn decode_str(s: str) -&gt; str!</code></td><td><code>cfire::base64::decode_str(s)</code></td><td>Decodes a Base64 string into a UTF-8 text string.<br/><code>plain := try base64.decode_str(token)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-csv"><code>import "core:encoding/csv"</code> &mdash; RFC 4180 CSV Parsing &amp; Stringification</h2>
+      <p>RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:encoding/csv&quot;
+
+fn main() {
+    csv_data := &quot;service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n&quot;
+    table := csv.parse(csv_data)
+    for row in table {
+        println(&quot;Service: {}, Region: {}, QPS: {}&quot;, row[0], row[1], row[2])
+    }
+
+    // Serialize 2D slice back into RFC 4180 CSV
+    rendered := csv.stringify(table)
+    println(&quot;Output:\n{}&quot;, rendered)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn parse(s: str) -&gt; [][]str</code></td><td><code>cfire::csv::parse(s)</code></td><td>Parses a CSV string into a 2D table of rows and columns.<br/><code>rows := csv.parse(content)</code></td></tr>
+          <tr><td><code>fn stringify(rows: [][]str) -&gt; str</code></td><td><code>cfire::csv::stringify(rows)</code></td><td>Serializes a 2D table of strings into an RFC 4180 formatted CSV string.<br/><code>out := csv.stringify(rows)</code></td></tr>
+          <tr><td><code>fn read_all(path: str) -&gt; [][]str!</code></td><td><code>cfire::csv::read_all(path)</code></td><td>Reads an entire CSV file from disk and parses it into rows.<br/><code>table := try csv.read_all(&quot;data.csv&quot;)</code></td></tr>
+          <tr><td><code>fn write_all(path: str, rows: [][]str) -&gt; void!</code></td><td><code>cfire::csv::write_all(path, rows)</code></td><td>Serializes rows to CSV and writes to disk.<br/><code>try csv.write_all(&quot;report.csv&quot;, table)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-hex"><code>import "core:encoding/hex"</code> &mdash; Hexadecimal Encoding &amp; Decoding</h2>
+      <p>Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:encoding/hex&quot;
+
+fn main() {
+    binary_bytes := []byte{0xCA, 0xFE, 0xBA, 0xBE}
+    hex_str := hex.encode(binary_bytes)
+    println(&quot;Hexadecimal string: 0x{}&quot;, hex_str)
+
+    restored := try hex.decode(hex_str)
+    println(&quot;Restored byte length: {}&quot;, restored.len())
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn encode(data: []byte) -&gt; str</code></td><td><code>cfire::hex::encode(data)</code></td><td>Encodes binary bytes to lowercase hexadecimal string.<br/><code>h := hex.encode(digest)</code></td></tr>
+          <tr><td><code>fn encode_str(s: str) -&gt; str</code></td><td><code>cfire::hex::encode_str(s)</code></td><td>Encodes text characters to hexadecimal string.<br/><code>h := hex.encode_str(&quot;abc&quot;)</code></td></tr>
+          <tr><td><code>fn decode(s: str) -&gt; []byte!</code></td><td><code>cfire::hex::decode(s)</code></td><td>Decodes a hexadecimal string to binary bytes.<br/><code>buf := try hex.decode(h)</code></td></tr>
+          <tr><td><code>fn decode_str(s: str) -&gt; str!</code></td><td><code>cfire::hex::decode_str(s)</code></td><td>Decodes a hexadecimal string to a UTF-8 string.<br/><code>txt := try hex.decode_str(h)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-fs"><code>import "core:fs"</code> &mdash; Filesystem &amp; Zero-Copy Byte I/O</h2>
+      <p>Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:fs&quot;
+
+fn main() {
+    // 1. High-level one-shot file read and write
+    try fs.write_text(&quot;config.ini&quot;, &quot;workers=8\nport=9000\n&quot;)
+    content := try fs.read_text(&quot;config.ini&quot;)
+    println(&quot;Read configuration: {}&quot;, content)
+
+    // 2. Streaming file operations with deterministic RAII defer
+    mut file := try fs.open(&quot;service.log&quot;, fs.OpenMode::Append)
+    defer file.close() // Closed deterministically on return
+
+    try file.write_str(&quot;[INFO] Worker subsystem initialized\n&quot;)
+    try file.flush()
+    offset := try file.tell()
+    println(&quot;Log stream offset: {} bytes&quot;, offset)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn read_all(path: str) -&gt; []byte!</code></td><td><code>cfire::fs::read_all(path)</code></td><td>Reads an entire binary file into a byte buffer.<br/><code>raw := try fs.read_all(&quot;input.bin&quot;)</code></td></tr>
+          <tr><td><code>fn write_all(path: str, data: []byte) -&gt; void!</code></td><td><code>cfire::fs::write_all(path, data)</code></td><td>Writes a byte slice atomically to disk, creating parent directories if needed.<br/><code>try fs.write_all(&quot;out.bin&quot;, raw)</code></td></tr>
+          <tr><td><code>fn read_text(path: str) -&gt; str!</code></td><td><code>cfire::fs::read_text(path)</code></td><td>Reads an entire UTF-8 text file into a `str`.<br/><code>txt := try fs.read_text(&quot;config.json&quot;)</code></td></tr>
+          <tr><td><code>fn write_text(path: str, text: str) -&gt; void!</code></td><td><code>cfire::fs::write_text(path, text)</code></td><td>Writes a UTF-8 string to disk.<br/><code>try fs.write_text(&quot;hello.txt&quot;, &quot;sapphire&quot;)</code></td></tr>
+          <tr><td><code>fn open(path: str, mode: OpenMode = OpenMode::Read) -&gt; File!</code></td><td><code>cfire::fs::open(path, mode)</code></td><td>Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.<br/><code>mut f := try fs.open(&quot;log.txt&quot;, OpenMode::Append)</code></td></tr>
+          <tr><td><code>fn (mut f: File) read(mut buf: []byte) -&gt; usize!</code></td><td><code>f.read(buf)</code></td><td>Reads up to `buf.len` bytes from the streaming file handle.<br/><code>n := try f.read(mut buf)</code></td></tr>
+          <tr><td><code>fn (mut f: File) read_all() -&gt; []byte!</code></td><td><code>f.read_all()</code></td><td>Reads all remaining bytes from current file position to EOF.<br/><code>bytes := try f.read_all()</code></td></tr>
+          <tr><td><code>fn (mut f: File) write(data: []byte) -&gt; usize!</code></td><td><code>f.write(data)</code></td><td>Writes byte slice to file stream.<br/><code>n := try f.write(buf)</code></td></tr>
+          <tr><td><code>fn (mut f: File) write_str(s: str) -&gt; usize!</code></td><td><code>f.write_str(s)</code></td><td>Writes UTF-8 string to file stream.<br/><code>try f.write_str(&quot;header\n&quot;)</code></td></tr>
+          <tr><td><code>fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -&gt; i64!</code></td><td><code>f.seek(offset, whence)</code></td><td>Seeks within file to offset from Start, Current, or End.<br/><code>pos := try f.seek(0, SeekWhence::Start)</code></td></tr>
+          <tr><td><code>fn (mut f: File) tell() -&gt; i64!</code></td><td><code>f.tell()</code></td><td>Returns current byte offset within file stream.<br/><code>pos := try f.tell()</code></td></tr>
+          <tr><td><code>fn (mut f: File) flush() -&gt; void!</code></td><td><code>f.flush()</code></td><td>Flushes buffered stream data to disk.<br/><code>try f.flush()</code></td></tr>
+          <tr><td><code>fn (mut f: File) close() -&gt; void</code></td><td><code>f.close()</code></td><td>Closes open file handle.<br/><code>f.close()</code></td></tr>
+          <tr><td><code>fn dirname(path: str) -&gt; str</code></td><td><code>cfire::fs::dirname(path)</code></td><td>Returns directory portion of a filesystem path.<br/><code>dir := fs.dirname(&quot;/a/b/c.txt&quot;)</code></td></tr>
+          <tr><td><code>fn basename(path: str) -&gt; str</code></td><td><code>cfire::fs::basename(path)</code></td><td>Returns file name portion of a filesystem path.<br/><code>name := fs.basename(&quot;/a/b/c.txt&quot;)</code></td></tr>
+          <tr><td><code>fn extension(path: str) -&gt; str</code></td><td><code>cfire::fs::extension(path)</code></td><td>Returns file extension including leading dot.<br/><code>ext := fs.extension(&quot;main.cf&quot;)</code></td></tr>
+          <tr><td><code>fn exists(path: str) -&gt; bool</code></td><td><code>cfire::fs::exists(path)</code></td><td>Returns `true` if the path exists on disk.<br/><code>if fs.exists(&quot;build.cf&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn mkdir_all(path: str) -&gt; void!</code></td><td><code>cfire::fs::mkdir_all(path)</code></td><td>Recursively creates a directory and all parent directories.<br/><code>try fs.mkdir_all(&quot;.cfire/cache&quot;)</code></td></tr>
+          <tr><td><code>fn remove(path: str) -&gt; void!</code></td><td><code>cfire::fs::remove(path)</code></td><td>Removes a file or directory tree recursively.<br/><code>try fs.remove(&quot;tmp_dir&quot;)</code></td></tr>
+          <tr><td><code>fn list_dir(path: str) -&gt; []str!</code></td><td><code>cfire::fs::list_dir(path)</code></td><td>Lists sorted filenames inside a directory.<br/><code>entries := try fs.list_dir(&quot;examples&quot;)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-json"><code>import "core:json"</code> &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</h2>
+      <p>Uses `json:"..."` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsimdjson (or header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:json&quot;
+
+type ServiceMetric struct {
+    service: str  `json:&quot;service&quot;`
+    latency: f64  `json:&quot;latency_ms&quot;`
+    healthy: bool `json:&quot;healthy&quot;`
+}
+
+fn main() {
+    // 1. Zero-overhead SIMD deserialization using compile-time struct tags
+    payload := `{&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true}`
+    m := try json.parse[ServiceMetric](payload)
+    println(&quot;Service={}, Latency={}ms, Healthy={}&quot;, m.service, m.latency, m.healthy)
+
+    // 2. High-speed JSON serialization
+    serialized := json.stringify(m)
+    println(&quot;Serialized output: {}&quot;, serialized)
+
+    // 3. Dynamic DOM for arbitrary or schemaless JSON
+    mut doc := try json.parse_dynamic(`{&quot;tags&quot;:[&quot;systems&quot;,&quot;c++23&quot;],&quot;cluster&quot;:{&quot;nodes&quot;:3}}`)
+    println(&quot;Cluster nodes: {}&quot;, doc.get(&quot;cluster&quot;).get(&quot;nodes&quot;).as_int())
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn parse[T](payload: []byte | str) -&gt; T!</code></td><td><code>cfire::json::parse&lt;T&gt;(payload)</code></td><td>Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.<br/><code>cfg := try json.parse[Config](raw)</code></td></tr>
+          <tr><td><code>fn stringify[T](val: T) -&gt; str</code></td><td><code>cfire::json::stringify&lt;T&gt;(val)</code></td><td>Serializes a tagged struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`) into a JSON string.<br/><code>payload := json.stringify(metric)</code></td></tr>
+          <tr><td><code>fn schema[T]() -&gt; str</code></td><td><code>cfire::json::schema&lt;T&gt;()</code></td><td>Generates a Draft 2020-12 / OpenAI Strict Mode / MCP JSON Schema string for struct `T` using `json:&quot;...&quot;` and `desc:&quot;...&quot;` tags.<br/><code>s := json.schema[SearchTool]()</code></td></tr>
+          <tr><td><code>fn escape_string(s: str) -&gt; str</code></td><td><code>cfire::json::escape_string(s)</code></td><td>Escapes quotes, backslashes, and control characters for JSON strings.<br/><code>esc := json.escape_string(raw_txt)</code></td></tr>
+          <tr><td><code>fn parse_dynamic(payload: str) -&gt; Value!</code></td><td><code>cfire::json::parse_dynamic(payload)</code></td><td>Parses arbitrary JSON into a recursive dynamic DOM `Value`.<br/><code>v := try json.parse_dynamic(raw)</code></td></tr>
+          <tr><td><code>fn stringify_dynamic(val: Value, indent: i32 = 0) -&gt; str</code></td><td><code>cfire::json::stringify_dynamic(val, indent)</code></td><td>Serializes a dynamic DOM `Value` into compact or indented JSON.<br/><code>s := json.stringify_dynamic(v, 2)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-log"><code>import "core:log"</code> &mdash; Structured Leveled Logging</h2>
+      <p>Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:log&quot;
+
+fn main() {
+    log.set_level(log.Level::Debug)
+    log.set_format(log.Format::Json) // Output format: Text or Json
+
+    // Leveled structured logging with key-value attributes
+    log.info(&quot;service worker started&quot;, &quot;port&quot;, &quot;8080&quot;, &quot;cluster&quot;, &quot;prod-us-east&quot;)
+    log.warn(&quot;memory threshold reached&quot;, &quot;usage_pct&quot;, &quot;84&quot;, &quot;threshold&quot;, &quot;80&quot;)
+    log.error(&quot;database pool exhausted&quot;, &quot;active_conns&quot;, &quot;100&quot;, &quot;pool_size&quot;, &quot;100&quot;)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn set_level(l: Level)</code></td><td><code>cfire::log::set_level(l)</code></td><td>Sets the minimum logging severity threshold.<br/><code>log.set_level(log.Level::Debug)</code></td></tr>
+          <tr><td><code>fn set_format(f: Format)</code></td><td><code>cfire::log::set_format(f)</code></td><td>Sets the log output format (Text or Json).<br/><code>log.set_format(log.Format::Json)</code></td></tr>
+          <tr><td><code>fn debug(msg: str, ...attrs: str)</code></td><td><code>cfire::log::debug(msg, ...)</code></td><td>Logs a debug message with optional key-value attribute pairs.<br/><code>log.debug(&quot;cache miss&quot;, &quot;key&quot;, &quot;user:1&quot;)</code></td></tr>
+          <tr><td><code>fn info(msg: str, ...attrs: str)</code></td><td><code>cfire::log::info(msg, ...)</code></td><td>Logs an informational message with optional key-value attribute pairs.<br/><code>log.info(&quot;server listening&quot;, &quot;port&quot;, &quot;8080&quot;)</code></td></tr>
+          <tr><td><code>fn warn(msg: str, ...attrs: str)</code></td><td><code>cfire::log::warn(msg, ...)</code></td><td>Logs a warning message with optional key-value attribute pairs.<br/><code>log.warn(&quot;rate limit reached&quot;, &quot;client&quot;, ip)</code></td></tr>
+          <tr><td><code>fn error(msg: str, ...attrs: str)</code></td><td><code>cfire::log::error(msg, ...)</code></td><td>Logs an error message with optional key-value attribute pairs.<br/><code>log.error(&quot;database connection failed&quot;, &quot;db&quot;, name)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-math"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
+      <p>Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:math&quot;
+
+fn main() {
+    bounded := math.clamp_f64(3.14159, 0.0, 1.0)
+    hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
+    println(&quot;Clamped: {}, Hypot: {}&quot;, bounded, hypot)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn clamp_i64(val: i64, lo: i64, hi: i64) -&gt; i64</code></td><td><code>cfire::math::clamp_i64(val, lo, hi)</code></td><td>Clamps a 64-bit integer to `[lo, hi]`.<br/><code>c := math.clamp_i64(x, 0, 100)</code></td></tr>
+          <tr><td><code>fn clamp_f64(val: f64, lo: f64, hi: f64) -&gt; f64</code></td><td><code>cfire::math::clamp_f64(val, lo, hi)</code></td><td>Clamps a 64-bit float to `[lo, hi]`.<br/><code>c := math.clamp_f64(v, 0.0, 1.0)</code></td></tr>
+          <tr><td><code>fn sqrt(x: f64) -&gt; f64</code></td><td><code>cfire::math::sqrt(x)</code></td><td>Computes square root.<br/><code>r := math.sqrt(16.0)</code></td></tr>
+          <tr><td><code>fn abs_f64(x: f64) -&gt; f64</code></td><td><code>cfire::math::abs_f64(x)</code></td><td>Computes absolute value of a `f64`.<br/><code>a := math.abs_f64(-3.5)</code></td></tr>
+        </tbody>
+      </table></div>
       <h2 id="mod-net"><code>import "core:net"</code> &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</h2>
       <p>RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
@@ -885,6 +1335,73 @@ fn main() {
           <tr><td><code>fn (mut c: TcpConn) write(payload: str) -&gt; usize!</code></td><td><code>c.write(payload)</code></td><td>Writes bytes to an open TCP connection.<br/><code>_ := try c.write(&quot;PING&quot;)</code></td></tr>
           <tr><td><code>fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -&gt; str!</code></td><td><code>c.read_str(max_bytes)</code></td><td>Reads up to `max_bytes` from the socket as a string.<br/><code>msg := try conn.read_str(64)</code></td></tr>
           <tr><td><code>fn (mut c: TcpConn) set_timeout_ms(ms: i32) -&gt; void</code></td><td><code>c.set_timeout_ms(ms)</code></td><td>Sets socket read/write timeout in milliseconds (`0` for blocking).<br/><code>conn.set_timeout_ms(5000)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 &amp; HTTPS Client, Wire Protocol Engine, Server &amp; Router</h2>
+      <p>RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:net/http&quot;
+import &quot;core:json&quot;
+
+type HealthStatus struct {
+    status: str `json:&quot;status&quot;`
+    uptime: i64 `json:&quot;uptime_sec&quot;`
+}
+
+fn main() {
+    // 1. HTTP GET client request with custom headers
+    headers := { &quot;User-Agent&quot;: &quot;cfire-service/1.0&quot;, &quot;Accept&quot;: &quot;application/json&quot; }
+    resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;, headers: headers)
+    if resp.status_code == 200 {
+        h := try json.parse[HealthStatus](resp.body)
+        println(&quot;Service status: {}, uptime: {}s&quot;, h.status, h.uptime)
+    }
+
+    // 2. Build independent HTTP router with path parameters
+    mut router := http.make_router()
+    router.get(&quot;/health&quot;, |req| {
+        return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;,\&quot;uptime_sec\&quot;:120}&quot;)
+    })
+    router.get(&quot;/users/:id&quot;, |req| {
+        return http.Response.text(200, &quot;User: &quot; + req.param(&quot;id&quot;))
+    })
+
+    // 3. Serve requests using the router
+    mut server := try http.make_server(port: 8080)
+    server.serve_in_background(router)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS GET request against a target URL.<br/><code>resp := try http.get(&quot;https://127.0.0.1:8443/health&quot;, {}, false)</code></td></tr>
+          <tr><td><code>fn get_insecure(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get_insecure(url, headers)</code></td><td>Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs).<br/><code>resp := try http.get_insecure(&quot;https://127.0.0.1:8443/health&quot;)</code></td></tr>
+          <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS POST request with payload body.<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
+          <tr><td><code>fn post_insecure(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::post_insecure(url, body, content_type, headers)</code></td><td>Executes an HTTPS POST request skipping peer certificate verification.<br/><code>resp := try http.post_insecure(&quot;https://127.0.0.1:8443/items&quot;, &quot;{}&quot;)</code></td></tr>
+          <tr><td><code>fn request(method: str, url: str, body: str = &quot;&quot;, content_type: str = &quot;&quot;, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::request(method, url, body, content_type, headers, verify_peer)</code></td><td>Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).<br/><code>resp := try http.request(&quot;DELETE&quot;, &quot;http://127.0.0.1:8080/items/1&quot;)</code></td></tr>
+          <tr><td><code>fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -&gt; bool, verify_peer: bool = true) -&gt; void!</code></td><td><code>cfire::http::post_sse(url, body, headers, on_event, verify_peer)</code></td><td>Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.<br/><code>try http.post_sse(url, payload, headers, |ev| { print(&quot;{}&quot;, ev.data); return true })</code></td></tr>
+          <tr><td><code>fn make_server(port: u16 = 0) -&gt; HttpServer!</code></td><td><code>cfire::http::make_server(port)</code></td><td>Creates a lightweight HTTP server listening on `port` (0 for ephemeral).<br/><code>mut srv := try http.make_server(8080)</code></td></tr>
+          <tr><td><code>fn make_tls_server(port: u16, cert_file: str, key_file: str) -&gt; HttpServer!</code></td><td><code>cfire::http::make_tls_server(port, cert_file, key_file)</code></td><td>Creates an HTTPS/WSS server backed by certificate and private key PEM files.<br/><code>mut srv := try http.make_tls_server(8443, &quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
+          <tr><td><code>fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -&gt; HttpServer!</code></td><td><code>cfire::http::make_tls_server_pem(port, cert_pem, key_pem)</code></td><td>Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings.<br/><code>mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)</code></td></tr>
+          <tr><td><code>fn make_router() -&gt; Router</code></td><td><code>cfire::http::make_router()</code></td><td>Creates an independent HTTP &amp; WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).<br/><code>mut r := http.make_router()</code></td></tr>
+          <tr><td><code>fn parse_request(raw: str) -&gt; Request!</code></td><td><code>cfire::http::parse_request(raw)</code></td><td>Parses raw HTTP/1.1 wire text into a structured Request model.<br/><code>req := try http.parse_request(raw_text)</code></td></tr>
+          <tr><td><code>fn Response.text(code: i32, payload: str) -&gt; Response</code></td><td><code>cfire::http::Response::text(code, payload)</code></td><td>Creates an HTTP Response with text/plain content-type and standard status reason.<br/><code>return http.Response.text(200, &quot;OK&quot;)</code></td></tr>
+          <tr><td><code>fn Response.json(code: i32, json_str: str) -&gt; Response</code></td><td><code>cfire::http::Response::json(code, json_str)</code></td><td>Creates an HTTP Response with application/json content-type.<br/><code>return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)</code></td></tr>
+          <tr><td><code>fn Response.html(code: i32, html: str) -&gt; Response</code></td><td><code>cfire::http::Response::html(code, html)</code></td><td>Creates an HTTP Response with text/html content-type.<br/><code>return http.Response.html(200, &quot;&lt;h1&gt;Hello&lt;/h1&gt;&quot;)</code></td></tr>
+          <tr><td><code>fn Response.redirect(location: str, code: i32 = 302) -&gt; Response</code></td><td><code>cfire::http::Response::redirect(location, code)</code></td><td>Creates an HTTP redirect Response setting Location header.<br/><code>return http.Response.redirect(&quot;/login&quot;, 302)</code></td></tr>
+          <tr><td><code>fn (mut r: Router) get(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.get(pattern, handler)</code></td><td>Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).<br/><code>r.get(&quot;/users/:id&quot;, |req| http.Response.text(200, req.param(&quot;id&quot;)))</code></td></tr>
+          <tr><td><code>fn (mut r: Router) post(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.post(pattern, handler)</code></td><td>Registers an HTTP POST route handler.<br/><code>r.post(&quot;/items&quot;, |req| http.Response.json(201, &quot;{}&quot;))</code></td></tr>
+          <tr><td><code>fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -&gt; void) -&gt; Router&amp;</code></td><td><code>r.ws(pattern, handler)</code></td><td>Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.<br/><code>r.ws(&quot;/chat/:room&quot;, |req, mut ws| { ... })</code></td></tr>
+          <tr><td><code>fn (r: Router) dispatch(req: Request) -&gt; Response</code></td><td><code>r.dispatch(req)</code></td><td>Dispatches an HTTP request through the router in-memory without open network sockets.<br/><code>res := router.dispatch(test_req)</code></td></tr>
+          <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router&amp;</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.<br/><code>r.use(|req| { return None })</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -&gt; void!</code></td><td><code>s.enable_tls_files(cert_file, key_file)</code></td><td>Enables TLS on the server using certificate and private key PEM files.<br/><code>try srv.enable_tls_files(&quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -&gt; void!</code></td><td><code>s.enable_tls_pem(cert_pem, key_pem)</code></td><td>Enables TLS on the server using in-memory certificate and private key PEM strings.<br/><code>try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -&gt; Response | Router) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.<br/><code>server.serve_in_background(router)</code></td></tr>
+          <tr><td><code>fn (mut s: HttpServer) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Gracefully closes the listening socket and stops worker threads.<br/><code>server.stop()</code></td></tr>
+          <tr><td><code>fn (req: Request) param(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.param(key, fallback)</code></td><td>Retrieves a named route path parameter extracted by the router.<br/><code>id := req.param(&quot;id&quot;)</code></td></tr>
+          <tr><td><code>fn (req: Request) query(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.query(key, fallback)</code></td><td>Retrieves a decoded URL query parameter.<br/><code>page := req.query(&quot;page&quot;, &quot;1&quot;)</code></td></tr>
+          <tr><td><code>fn (req: Request) header(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.header(key, fallback)</code></td><td>Performs a case-insensitive header lookup.<br/><code>auth := req.header(&quot;Authorization&quot;)</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-tls"><code>import "core:net/tls"</code> &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</h2>
@@ -944,72 +1461,6 @@ fn main() {
           <tr><td><code>fn decode(s: str) -&gt; str</code></td><td><code>cfire::url::decode(s)</code></td><td>Decodes a percent-encoded URL string.<br/><code>dec := url.decode(enc)</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-http"><code>import "core:net/http"</code> &mdash; HTTP/1.1 &amp; HTTPS Client, Wire Protocol Engine, Server &amp; Router</h2>
-      <p>RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:net/http&quot;
-import &quot;core:json&quot;
-
-type HealthStatus struct {
-    status: str `json:&quot;status&quot;`
-    uptime: i64 `json:&quot;uptime_sec&quot;`
-}
-
-fn main() {
-    // 1. HTTP GET client request with custom headers
-    headers := { &quot;User-Agent&quot;: &quot;cfire-service/1.0&quot;, &quot;Accept&quot;: &quot;application/json&quot; }
-    resp := try http.get(&quot;http://127.0.0.1:8080/health&quot;, headers: headers)
-    if resp.status_code == 200 {
-        h := try json.parse[HealthStatus](resp.body)
-        println(&quot;Service status: {}, uptime: {}s&quot;, h.status, h.uptime)
-    }
-
-    // 2. Build independent HTTP router with path parameters
-    mut router := http.make_router()
-    router.get(&quot;/health&quot;, |req| {
-        return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;healthy\&quot;,\&quot;uptime_sec\&quot;:120}&quot;)
-    })
-    router.get(&quot;/users/:id&quot;, |req| {
-        return http.Response.text(200, &quot;User: &quot; + req.param(&quot;id&quot;))
-    })
-
-    // 3. Serve requests using the router
-    mut server := try http.make_server(port: 8080)
-    server.serve_in_background(router)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS GET request against a target URL.<br/><code>resp := try http.get(&quot;https://127.0.0.1:8443/health&quot;, {}, false)</code></td></tr>
-          <tr><td><code>fn get_insecure(url: str, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::get_insecure(url, headers)</code></td><td>Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs).<br/><code>resp := try http.get_insecure(&quot;https://127.0.0.1:8443/health&quot;)</code></td></tr>
-          <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS POST request with payload body.<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
-          <tr><td><code>fn post_insecure(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}) -&gt; Response!</code></td><td><code>cfire::http::post_insecure(url, body, content_type, headers)</code></td><td>Executes an HTTPS POST request skipping peer certificate verification.<br/><code>resp := try http.post_insecure(&quot;https://127.0.0.1:8443/items&quot;, &quot;{}&quot;)</code></td></tr>
-          <tr><td><code>fn request(method: str, url: str, body: str = &quot;&quot;, content_type: str = &quot;&quot;, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::request(method, url, body, content_type, headers, verify_peer)</code></td><td>Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).<br/><code>resp := try http.request(&quot;DELETE&quot;, &quot;http://127.0.0.1:8080/items/1&quot;)</code></td></tr>
-          <tr><td><code>fn make_server(port: u16 = 0) -&gt; HttpServer!</code></td><td><code>cfire::http::make_server(port)</code></td><td>Creates a lightweight HTTP server listening on `port` (0 for ephemeral).<br/><code>mut srv := try http.make_server(8080)</code></td></tr>
-          <tr><td><code>fn make_tls_server(port: u16, cert_file: str, key_file: str) -&gt; HttpServer!</code></td><td><code>cfire::http::make_tls_server(port, cert_file, key_file)</code></td><td>Creates an HTTPS/WSS server backed by certificate and private key PEM files.<br/><code>mut srv := try http.make_tls_server(8443, &quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
-          <tr><td><code>fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -&gt; HttpServer!</code></td><td><code>cfire::http::make_tls_server_pem(port, cert_pem, key_pem)</code></td><td>Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings.<br/><code>mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)</code></td></tr>
-          <tr><td><code>fn make_router() -&gt; Router</code></td><td><code>cfire::http::make_router()</code></td><td>Creates an independent HTTP &amp; WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).<br/><code>mut r := http.make_router()</code></td></tr>
-          <tr><td><code>fn parse_request(raw: str) -&gt; Request!</code></td><td><code>cfire::http::parse_request(raw)</code></td><td>Parses raw HTTP/1.1 wire text into a structured Request model.<br/><code>req := try http.parse_request(raw_text)</code></td></tr>
-          <tr><td><code>fn Response.text(code: i32, payload: str) -&gt; Response</code></td><td><code>cfire::http::Response::text(code, payload)</code></td><td>Creates an HTTP Response with text/plain content-type and standard status reason.<br/><code>return http.Response.text(200, &quot;OK&quot;)</code></td></tr>
-          <tr><td><code>fn Response.json(code: i32, json_str: str) -&gt; Response</code></td><td><code>cfire::http::Response::json(code, json_str)</code></td><td>Creates an HTTP Response with application/json content-type.<br/><code>return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)</code></td></tr>
-          <tr><td><code>fn Response.html(code: i32, html: str) -&gt; Response</code></td><td><code>cfire::http::Response::html(code, html)</code></td><td>Creates an HTTP Response with text/html content-type.<br/><code>return http.Response.html(200, &quot;&lt;h1&gt;Hello&lt;/h1&gt;&quot;)</code></td></tr>
-          <tr><td><code>fn Response.redirect(location: str, code: i32 = 302) -&gt; Response</code></td><td><code>cfire::http::Response::redirect(location, code)</code></td><td>Creates an HTTP redirect Response setting Location header.<br/><code>return http.Response.redirect(&quot;/login&quot;, 302)</code></td></tr>
-          <tr><td><code>fn (mut r: Router) get(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.get(pattern, handler)</code></td><td>Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).<br/><code>r.get(&quot;/users/:id&quot;, |req| http.Response.text(200, req.param(&quot;id&quot;)))</code></td></tr>
-          <tr><td><code>fn (mut r: Router) post(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.post(pattern, handler)</code></td><td>Registers an HTTP POST route handler.<br/><code>r.post(&quot;/items&quot;, |req| http.Response.json(201, &quot;{}&quot;))</code></td></tr>
-          <tr><td><code>fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -&gt; void) -&gt; Router&amp;</code></td><td><code>r.ws(pattern, handler)</code></td><td>Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.<br/><code>r.ws(&quot;/chat/:room&quot;, |req, mut ws| { ... })</code></td></tr>
-          <tr><td><code>fn (r: Router) dispatch(req: Request) -&gt; Response</code></td><td><code>r.dispatch(req)</code></td><td>Dispatches an HTTP request through the router in-memory without open network sockets.<br/><code>res := router.dispatch(test_req)</code></td></tr>
-          <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router&amp;</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.<br/><code>r.use(|req| { return None })</code></td></tr>
-          <tr><td><code>fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -&gt; void!</code></td><td><code>s.enable_tls_files(cert_file, key_file)</code></td><td>Enables TLS on the server using certificate and private key PEM files.<br/><code>try srv.enable_tls_files(&quot;cert.pem&quot;, &quot;key.pem&quot;)</code></td></tr>
-          <tr><td><code>fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -&gt; void!</code></td><td><code>s.enable_tls_pem(cert_pem, key_pem)</code></td><td>Enables TLS on the server using in-memory certificate and private key PEM strings.<br/><code>try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)</code></td></tr>
-          <tr><td><code>fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -&gt; Response | Router) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.<br/><code>server.serve_in_background(router)</code></td></tr>
-          <tr><td><code>fn (mut s: HttpServer) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Gracefully closes the listening socket and stops worker threads.<br/><code>server.stop()</code></td></tr>
-          <tr><td><code>fn (req: Request) param(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.param(key, fallback)</code></td><td>Retrieves a named route path parameter extracted by the router.<br/><code>id := req.param(&quot;id&quot;)</code></td></tr>
-          <tr><td><code>fn (req: Request) query(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.query(key, fallback)</code></td><td>Retrieves a decoded URL query parameter.<br/><code>page := req.query(&quot;page&quot;, &quot;1&quot;)</code></td></tr>
-          <tr><td><code>fn (req: Request) header(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>req.header(key, fallback)</code></td><td>Performs a case-insensitive header lookup.<br/><code>auth := req.header(&quot;Authorization&quot;)</code></td></tr>
-        </tbody>
-      </table></div>
       <h2 id="mod-websocket"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</h2>
       <p>RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
@@ -1059,37 +1510,6 @@ fn main() {
           <tr><td><code>fn (mut s: Server) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Stops the background WebSocket server thread.<br/><code>srv.stop()</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-time"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>
-      <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:time&quot;
-
-fn main() {
-    now := time.now()
-    println(&quot;Current RFC 3339 timestamp: {}&quot;, now.format_rfc3339())
-
-    // High-precision duration measurement
-    time.sleep_ms(30)
-    elapsed := time.since(now)
-    println(&quot;Elapsed duration: {} ms ({} us)&quot;, elapsed.to_millis(), elapsed.to_micros())
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn now_ms() -&gt; i64</code></td><td><code>cfire::time::now_ms()</code></td><td>Returns monotonic milliseconds from `std::chrono::steady_clock`.<br/><code>t0 := time.now_ms()</code></td></tr>
-          <tr><td><code>fn unix_seconds() -&gt; i64</code></td><td><code>cfire::time::unix_seconds()</code></td><td>Returns current UTC Unix timestamp in seconds.<br/><code>ts := time.unix_seconds()</code></td></tr>
-          <tr><td><code>fn sleep_ms(ms: i64)</code></td><td><code>cfire::time::sleep_ms(ms)</code></td><td>Sleeps the current thread for `ms` milliseconds.<br/><code>time.sleep_ms(10)</code></td></tr>
-          <tr><td><code>fn sleep_ctx(ctx: Context, ms: i64) -&gt; bool</code></td><td><code>cfire::time::sleep_ctx(ctx, ms)</code></td><td>Sleeps the current thread for `ms` or until `ctx` is cancelled; returns true if completed without cancellation.<br/><code>ok := time.sleep_ctx(ctx, 50)</code></td></tr>
-          <tr><td><code>fn now() -&gt; Time</code></td><td><code>cfire::time::now()</code></td><td>Returns current wall clock `Time` instant.<br/><code>t := time.now()</code></td></tr>
-          <tr><td><code>fn unix(sec: i64, nsec: i64 = 0) -&gt; Time</code></td><td><code>cfire::time::unix(sec, nsec)</code></td><td>Constructs a `Time` instant from Unix seconds and nanoseconds.<br/><code>t := time.unix(1700000000)</code></td></tr>
-          <tr><td><code>fn parse_rfc3339(s: str) -&gt; Time!</code></td><td><code>cfire::time::parse_rfc3339(s)</code></td><td>Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.<br/><code>t := try time.parse_rfc3339(&quot;2026-10-18T12:00:00Z&quot;)</code></td></tr>
-          <tr><td><code>fn duration_seconds(s: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_seconds(s)</code></td><td>Constructs a typed `Duration` representing `s` seconds.<br/><code>d := time.duration_seconds(5)</code></td></tr>
-          <tr><td><code>fn duration_millis(ms: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_millis(ms)</code></td><td>Constructs a typed `Duration` representing `ms` milliseconds.<br/><code>d := time.duration_millis(250)</code></td></tr>
-          <tr><td><code>fn sleep(d: Duration)</code></td><td><code>cfire::time::sleep(d)</code></td><td>Sleeps the current thread for duration `d`.<br/><code>time.sleep(time.duration_millis(50))</code></td></tr>
-        </tbody>
-      </table></div>
       <h2 id="mod-os"><code>import "core:os"</code> &mdash; Environment, Working Directory &amp; Subprocesses</h2>
       <p>Process environment inspection, working directory queries, and subprocess output capture. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
@@ -1115,6 +1535,119 @@ fn main() {
           <tr><td><code>fn cwd() -&gt; str</code></td><td><code>cfire::os::cwd()</code></td><td>Returns the current working directory path.<br/><code>dir := os.cwd()</code></td></tr>
           <tr><td><code>fn exec_output(cmd: str) -&gt; str!</code></td><td><code>cfire::os::exec_output(cmd)</code></td><td>Executes a shell command via `popen` and returns its captured stdout.<br/><code>out := try os.exec_output(&quot;uname -s&quot;)</code></td></tr>
           <tr><td><code>fn command(binary: str, args: []str) -&gt; ExecResult!</code></td><td><code>cfire::os::command(binary, args)</code></td><td>Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.<br/><code>res := try os.command(&quot;git&quot;, [&quot;status&quot;])</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-rand"><code>import "core:rand"</code> &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</h2>
+      <p>Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:rand&quot;
+
+fn main() {
+    uid := rand.u64()
+    dice_roll := rand.range_i64(1, 6)
+    token_bytes := rand.bytes(16)
+    println(&quot;ID: {}, Roll: {}, Entropy bytes: {}&quot;, uid, dice_roll, token_bytes.len())
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn u64() -&gt; u64</code></td><td><code>cfire::rand::u64()</code></td><td>Generates a random 64-bit unsigned integer.<br/><code>id := rand.u64()</code></td></tr>
+          <tr><td><code>fn range_i64(min_incl: i64, max_incl: i64) -&gt; i64</code></td><td><code>cfire::rand::range_i64(min_incl, max_incl)</code></td><td>Generates a uniform integer in `[min_incl, max_incl]`.<br/><code>n := rand.range_i64(1, 10)</code></td></tr>
+          <tr><td><code>fn f64_unit() -&gt; f64</code></td><td><code>cfire::rand::f64_unit()</code></td><td>Generates a uniform `f64` in `[0.0, 1.0)`.<br/><code>p := rand.f64_unit()</code></td></tr>
+          <tr><td><code>fn bytes(n: usize) -&gt; []byte</code></td><td><code>cfire::rand::bytes(n)</code></td><td>Generates `n` cryptographically secure random bytes from OS entropy.<br/><code>buf := rand.bytes(32)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-regex"><code>import "core:regex"</code> &mdash; ECMAScript Regular Expressions</h2>
+      <p>Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:regex&quot;
+
+fn main() {
+    email_pattern := `^[a-zA-Z0-9_\.-]+@[a-zA-Z0-9\.-]+\.[a-z]{2,6}$`
+    re := try regex.compile(email_pattern)
+
+    email := &quot;architect@cfire.memo.engineer&quot;
+    if try re.is_match(email) {
+        println(&quot;Validated email: {}&quot;, email)
+    }
+
+    // Global text replacement
+    cleaned := try regex.replace_all(`\s+`, &quot;multiple    whitespace     characters&quot;, &quot; &quot;)
+    println(&quot;Cleaned text: {}&quot;, cleaned)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn compile(pattern: str) -&gt; Regex!</code></td><td><code>cfire::regex::compile(pattern)</code></td><td>Compiles an ECMAScript regex pattern into a reusable Regex object.<br/><code>re := try regex.compile(&quot;\\d+&quot;)</code></td></tr>
+          <tr><td><code>fn is_match(pattern: str, text: str) -&gt; bool!</code></td><td><code>cfire::regex::is_match(pattern, text)</code></td><td>Tests whether a regex pattern matches text.<br/><code>ok := try regex.is_match(&quot;^[a-z]+$&quot;, s)</code></td></tr>
+          <tr><td><code>fn replace_all(pattern: str, text: str, repl: str) -&gt; str!</code></td><td><code>cfire::regex::replace_all(pattern, text, repl)</code></td><td>Replaces all occurrences matching pattern with repl.<br/><code>res := try regex.replace_all(&quot;\s+&quot;, s, &quot; &quot;)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-sort"><code>import "core:sort"</code> &mdash; Slice Sorting &amp; Binary Search</h2>
+      <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:sort&quot;
+
+fn main() {
+    mut numbers := [95, 12, 48, 3, 77]
+    // In-place slice sorting
+    sort.slice(mut numbers)
+    println(&quot;Sorted numbers: {:?}&quot;, numbers)
+
+    // Logarithmic binary search
+    idx := sort.binary_search(numbers, 48)
+    if idx != none {
+        println(&quot;Found element 48 at index: {}&quot;, idx)
+    }
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn slice(mut s: []T)</code></td><td><code>cfire::sort::slice(s)</code></td><td>Sorts a slice in ascending order in-place.<br/><code>sort.slice(mut numbers)</code></td></tr>
+          <tr><td><code>fn binary_search(s: []T, val: T) -&gt; i64?</code></td><td><code>cfire::sort::binary_search(s, val)</code></td><td>Performs binary search on a sorted slice.<br/><code>idx := sort.binary_search(numbers, 42)</code></td></tr>
+        </tbody>
+      </table></div>
+      <h2 id="mod-str"><code>import "core:str"</code> &mdash; UTF-8 String Manipulation</h2>
+      <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
+      <pre><code>package main
+
+import &quot;core:str&quot;
+
+fn main() {
+    raw := &quot;  systems, programming, language  &quot;
+    trimmed := str.trim(raw)
+    tokens := str.split(trimmed, &quot;, &quot;)
+    formatted := str.join(tokens, &quot;::&quot;)
+    println(&quot;Processed string: {}&quot;, formatted)
+}</code></pre>
+      <div class="table-wrap api-table-wrap"><table>
+        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>fn split(s: str, sep: str) -&gt; []str</code></td><td><code>cfire::str::split(s, sep)</code></td><td>Splits `s` around every occurrence of `sep`.<br/><code>parts := str.split(&quot;a,b,c&quot;, &quot;,&quot;)</code></td></tr>
+          <tr><td><code>fn join(items: []str, sep: str) -&gt; str</code></td><td><code>cfire::str::join(items, sep)</code></td><td>Joins a slice of strings with `sep`.<br/><code>s := str.join(parts, &quot;-&quot;)</code></td></tr>
+          <tr><td><code>fn trim(s: str) -&gt; str</code></td><td><code>cfire::str::trim(s)</code></td><td>Strips leading and trailing whitespace.<br/><code>clean := str.trim(&quot;  hi  &quot;)</code></td></tr>
+          <tr><td><code>fn starts_with(s: str, prefix: str) -&gt; bool</code></td><td><code>cfire::str::starts_with(s, prefix)</code></td><td>Returns `true` if `s` starts with `prefix`.<br/><code>if str.starts_with(s, &quot;cf&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn ends_with(s: str, suffix: str) -&gt; bool</code></td><td><code>cfire::str::ends_with(s, suffix)</code></td><td>Returns `true` if `s` ends with `suffix`.<br/><code>if str.ends_with(f, &quot;.cf&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn contains(s: str, needle: str) -&gt; bool</code></td><td><code>cfire::str::contains(s, needle)</code></td><td>Returns `true` if `s` contains `needle`.<br/><code>if str.contains(s, &quot;fire&quot;) { ... }</code></td></tr>
+          <tr><td><code>fn replace(s: str, from: str, to: str) -&gt; str</code></td><td><code>cfire::str::replace(s, from, to)</code></td><td>Replaces all occurrences of `from` in `s` with `to`.<br/><code>r := str.replace(s, &quot;old&quot;, &quot;new&quot;)</code></td></tr>
+          <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::str::to_upper(s)</code></td><td>Converts ASCII characters to uppercase.<br/><code>u := str.to_upper(&quot;cfire&quot;)</code></td></tr>
+          <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::str::to_lower(s)</code></td><td>Converts ASCII characters to lowercase.<br/><code>l := str.to_lower(&quot;CFIRE&quot;)</code></td></tr>
+          <tr><td><code>fn index_of(s: str, substr: str, start_pos: usize = 0) -&gt; i64</code></td><td><code>cfire::str::index_of(s, substr, start_pos)</code></td><td>Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.<br/><code>idx := str.index_of(path, &quot;.&quot;)</code></td></tr>
+          <tr><td><code>fn last_index_of(s: str, substr: str) -&gt; i64</code></td><td><code>cfire::str::last_index_of(s, substr)</code></td><td>Finds last occurrence of `substr` in `s`; returns index or -1.<br/><code>idx := str.last_index_of(path, &quot;/&quot;)</code></td></tr>
+          <tr><td><code>fn rfind(s: str, substr: str, start_pos: usize = npos) -&gt; i64</code></td><td><code>cfire::str::rfind(s, substr, start_pos)</code></td><td>Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.<br/><code>pos := str.rfind(s, &quot;#&quot;)</code></td></tr>
+          <tr><td><code>fn byte_ptr(s: str) -&gt; *c_char</code></td><td><code>cfire::str::byte_ptr(s)</code></td><td>Returns a raw pointer to the underlying buffer of `s` for C FFI interop.<br/><code>ptr := s.byte_ptr()</code></td></tr>
+          <tr><td><code>fn byte_ptr_at(s: str, offset: i64) -&gt; *c_char</code></td><td><code>cfire::str::byte_ptr_at(s, offset)</code></td><td>Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.<br/><code>ptr := s.byte_ptr_at(4)</code></td></tr>
+          <tr><td><code>fn (s: str) data() -&gt; *const c_char</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.<br/><code>ptr := s.data()</code></td></tr>
+          <tr><td><code>fn (s: str) bytes() -&gt; []byte</code></td><td><code>cfire::to_bytes(s)</code></td><td>Returns a safe byte slice view (`std::span&lt;const std::byte&gt;`) over the UTF-8 bytes of `s`.<br/><code>b := s.bytes()</code></td></tr>
+          <tr><td><code>fn (s: []T) data() -&gt; *T / *const T</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.<br/><code>ptr := s.data()</code></td></tr>
+          <tr><td><code>fn (s: []T) data_ptr() -&gt; *T / *const T</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).<br/><code>ptr := s.data_ptr()</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-sync"><code>import "core:sync"</code> &mdash; Thread-Safe Typed Channels</h2>
@@ -1187,275 +1720,35 @@ fn main() {
           <tr><td><code>fn (ctx: Context) wait_for(ms: i64) -&gt; bool</code></td><td><code>ctx.wait_for(ms)</code></td><td>Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled.<br/><code>cancelled := ctx.wait_for(100)</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-str"><code>import "core:str"</code> &mdash; UTF-8 String Manipulation</h2>
-      <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
+      <h2 id="mod-time"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>
+      <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
-import &quot;core:str&quot;
+import &quot;core:time&quot;
 
 fn main() {
-    raw := &quot;  systems, programming, language  &quot;
-    trimmed := str.trim(raw)
-    tokens := str.split(trimmed, &quot;, &quot;)
-    formatted := str.join(tokens, &quot;::&quot;)
-    println(&quot;Processed string: {}&quot;, formatted)
+    now := time.now()
+    println(&quot;Current RFC 3339 timestamp: {}&quot;, now.format_rfc3339())
+
+    // High-precision duration measurement
+    time.sleep_ms(30)
+    elapsed := time.since(now)
+    println(&quot;Elapsed duration: {} ms ({} us)&quot;, elapsed.to_millis(), elapsed.to_micros())
 }</code></pre>
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn split(s: str, sep: str) -&gt; []str</code></td><td><code>cfire::str::split(s, sep)</code></td><td>Splits `s` around every occurrence of `sep`.<br/><code>parts := str.split(&quot;a,b,c&quot;, &quot;,&quot;)</code></td></tr>
-          <tr><td><code>fn join(items: []str, sep: str) -&gt; str</code></td><td><code>cfire::str::join(items, sep)</code></td><td>Joins a slice of strings with `sep`.<br/><code>s := str.join(parts, &quot;-&quot;)</code></td></tr>
-          <tr><td><code>fn trim(s: str) -&gt; str</code></td><td><code>cfire::str::trim(s)</code></td><td>Strips leading and trailing whitespace.<br/><code>clean := str.trim(&quot;  hi  &quot;)</code></td></tr>
-          <tr><td><code>fn starts_with(s: str, prefix: str) -&gt; bool</code></td><td><code>cfire::str::starts_with(s, prefix)</code></td><td>Returns `true` if `s` starts with `prefix`.<br/><code>if str.starts_with(s, &quot;cf&quot;) { ... }</code></td></tr>
-          <tr><td><code>fn ends_with(s: str, suffix: str) -&gt; bool</code></td><td><code>cfire::str::ends_with(s, suffix)</code></td><td>Returns `true` if `s` ends with `suffix`.<br/><code>if str.ends_with(f, &quot;.cf&quot;) { ... }</code></td></tr>
-          <tr><td><code>fn contains(s: str, needle: str) -&gt; bool</code></td><td><code>cfire::str::contains(s, needle)</code></td><td>Returns `true` if `s` contains `needle`.<br/><code>if str.contains(s, &quot;fire&quot;) { ... }</code></td></tr>
-          <tr><td><code>fn replace(s: str, from: str, to: str) -&gt; str</code></td><td><code>cfire::str::replace(s, from, to)</code></td><td>Replaces all occurrences of `from` in `s` with `to`.<br/><code>r := str.replace(s, &quot;old&quot;, &quot;new&quot;)</code></td></tr>
-          <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::str::to_upper(s)</code></td><td>Converts ASCII characters to uppercase.<br/><code>u := str.to_upper(&quot;cfire&quot;)</code></td></tr>
-          <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::str::to_lower(s)</code></td><td>Converts ASCII characters to lowercase.<br/><code>l := str.to_lower(&quot;CFIRE&quot;)</code></td></tr>
-          <tr><td><code>fn index_of(s: str, substr: str, start_pos: usize = 0) -&gt; i64</code></td><td><code>cfire::str::index_of(s, substr, start_pos)</code></td><td>Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.<br/><code>idx := str.index_of(path, &quot;.&quot;)</code></td></tr>
-          <tr><td><code>fn last_index_of(s: str, substr: str) -&gt; i64</code></td><td><code>cfire::str::last_index_of(s, substr)</code></td><td>Finds last occurrence of `substr` in `s`; returns index or -1.<br/><code>idx := str.last_index_of(path, &quot;/&quot;)</code></td></tr>
-          <tr><td><code>fn rfind(s: str, substr: str, start_pos: usize = npos) -&gt; i64</code></td><td><code>cfire::str::rfind(s, substr, start_pos)</code></td><td>Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.<br/><code>pos := str.rfind(s, &quot;#&quot;)</code></td></tr>
-          <tr><td><code>fn byte_ptr(s: str) -&gt; *c_char</code></td><td><code>cfire::str::byte_ptr(s)</code></td><td>Returns a raw pointer to the underlying buffer of `s` for C FFI interop.<br/><code>ptr := s.byte_ptr()</code></td></tr>
-          <tr><td><code>fn byte_ptr_at(s: str, offset: i64) -&gt; *c_char</code></td><td><code>cfire::str::byte_ptr_at(s, offset)</code></td><td>Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.<br/><code>ptr := s.byte_ptr_at(4)</code></td></tr>
-          <tr><td><code>fn (s: str) data() -&gt; *const c_char</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.<br/><code>ptr := s.data()</code></td></tr>
-          <tr><td><code>fn (s: str) bytes() -&gt; []byte</code></td><td><code>cfire::to_bytes(s)</code></td><td>Returns a safe byte slice view (`std::span&lt;const std::byte&gt;`) over the UTF-8 bytes of `s`.<br/><code>b := s.bytes()</code></td></tr>
-          <tr><td><code>fn (s: []T) data() -&gt; *T / *const T</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.<br/><code>ptr := s.data()</code></td></tr>
-          <tr><td><code>fn (s: []T) data_ptr() -&gt; *T / *const T</code></td><td><code>(s).data()</code></td><td>Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).<br/><code>ptr := s.data_ptr()</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-math"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
-      <p>Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:math&quot;
-
-fn main() {
-    bounded := math.clamp_f64(3.14159, 0.0, 1.0)
-    hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
-    println(&quot;Clamped: {}, Hypot: {}&quot;, bounded, hypot)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn clamp_i64(val: i64, lo: i64, hi: i64) -&gt; i64</code></td><td><code>cfire::math::clamp_i64(val, lo, hi)</code></td><td>Clamps a 64-bit integer to `[lo, hi]`.<br/><code>c := math.clamp_i64(x, 0, 100)</code></td></tr>
-          <tr><td><code>fn clamp_f64(val: f64, lo: f64, hi: f64) -&gt; f64</code></td><td><code>cfire::math::clamp_f64(val, lo, hi)</code></td><td>Clamps a 64-bit float to `[lo, hi]`.<br/><code>c := math.clamp_f64(v, 0.0, 1.0)</code></td></tr>
-          <tr><td><code>fn sqrt(x: f64) -&gt; f64</code></td><td><code>cfire::math::sqrt(x)</code></td><td>Computes square root.<br/><code>r := math.sqrt(16.0)</code></td></tr>
-          <tr><td><code>fn abs_f64(x: f64) -&gt; f64</code></td><td><code>cfire::math::abs_f64(x)</code></td><td>Computes absolute value of a `f64`.<br/><code>a := math.abs_f64(-3.5)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-rand"><code>import "core:rand"</code> &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</h2>
-      <p>Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:rand&quot;
-
-fn main() {
-    uid := rand.u64()
-    dice_roll := rand.range_i64(1, 6)
-    token_bytes := rand.bytes(16)
-    println(&quot;ID: {}, Roll: {}, Entropy bytes: {}&quot;, uid, dice_roll, token_bytes.len())
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn u64() -&gt; u64</code></td><td><code>cfire::rand::u64()</code></td><td>Generates a random 64-bit unsigned integer.<br/><code>id := rand.u64()</code></td></tr>
-          <tr><td><code>fn range_i64(min_incl: i64, max_incl: i64) -&gt; i64</code></td><td><code>cfire::rand::range_i64(min_incl, max_incl)</code></td><td>Generates a uniform integer in `[min_incl, max_incl]`.<br/><code>n := rand.range_i64(1, 10)</code></td></tr>
-          <tr><td><code>fn f64_unit() -&gt; f64</code></td><td><code>cfire::rand::f64_unit()</code></td><td>Generates a uniform `f64` in `[0.0, 1.0)`.<br/><code>p := rand.f64_unit()</code></td></tr>
-          <tr><td><code>fn bytes(n: usize) -&gt; []byte</code></td><td><code>cfire::rand::bytes(n)</code></td><td>Generates `n` cryptographically secure random bytes from OS entropy.<br/><code>buf := rand.bytes(32)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-base64"><code>import "core:encoding/base64"</code> &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</h2>
-      <p>High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:encoding/base64&quot;
-
-fn main() {
-    credentials := &quot;service_account:token_xyz_9988&quot;
-    encoded := base64.encode_str(credentials)
-    println(&quot;Base64 encoded: {}&quot;, encoded)
-
-    decoded := try base64.decode_str(encoded)
-    println(&quot;Decoded text: {}&quot;, decoded)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn encode(data: []byte, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode(data, url_safe)</code></td><td>Encodes binary byte slice into standard or URL-safe Base64 string.<br/><code>s := base64.encode(raw)</code></td></tr>
-          <tr><td><code>fn encode_str(s: str, url_safe: bool = false) -&gt; str</code></td><td><code>cfire::base64::encode_str(s, url_safe)</code></td><td>Encodes a UTF-8 text string into standard or URL-safe Base64.<br/><code>token := base64.encode_str(&quot;user:pass&quot;)</code></td></tr>
-          <tr><td><code>fn decode(s: str) -&gt; []byte!</code></td><td><code>cfire::base64::decode(s)</code></td><td>Decodes a Base64 string into binary bytes.<br/><code>bytes := try base64.decode(token)</code></td></tr>
-          <tr><td><code>fn decode_str(s: str) -&gt; str!</code></td><td><code>cfire::base64::decode_str(s)</code></td><td>Decodes a Base64 string into a UTF-8 text string.<br/><code>plain := try base64.decode_str(token)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-hex"><code>import "core:encoding/hex"</code> &mdash; Hexadecimal Encoding &amp; Decoding</h2>
-      <p>Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:encoding/hex&quot;
-
-fn main() {
-    binary_bytes := []byte{0xCA, 0xFE, 0xBA, 0xBE}
-    hex_str := hex.encode(binary_bytes)
-    println(&quot;Hexadecimal string: 0x{}&quot;, hex_str)
-
-    restored := try hex.decode(hex_str)
-    println(&quot;Restored byte length: {}&quot;, restored.len())
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn encode(data: []byte) -&gt; str</code></td><td><code>cfire::hex::encode(data)</code></td><td>Encodes binary bytes to lowercase hexadecimal string.<br/><code>h := hex.encode(digest)</code></td></tr>
-          <tr><td><code>fn encode_str(s: str) -&gt; str</code></td><td><code>cfire::hex::encode_str(s)</code></td><td>Encodes text characters to hexadecimal string.<br/><code>h := hex.encode_str(&quot;abc&quot;)</code></td></tr>
-          <tr><td><code>fn decode(s: str) -&gt; []byte!</code></td><td><code>cfire::hex::decode(s)</code></td><td>Decodes a hexadecimal string to binary bytes.<br/><code>buf := try hex.decode(h)</code></td></tr>
-          <tr><td><code>fn decode_str(s: str) -&gt; str!</code></td><td><code>cfire::hex::decode_str(s)</code></td><td>Decodes a hexadecimal string to a UTF-8 string.<br/><code>txt := try hex.decode_str(h)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-csv"><code>import "core:encoding/csv"</code> &mdash; RFC 4180 CSV Parsing &amp; Stringification</h2>
-      <p>RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:encoding/csv&quot;
-
-fn main() {
-    csv_data := &quot;service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n&quot;
-    table := csv.parse(csv_data)
-    for row in table {
-        println(&quot;Service: {}, Region: {}, QPS: {}&quot;, row[0], row[1], row[2])
-    }
-
-    // Serialize 2D slice back into RFC 4180 CSV
-    rendered := csv.stringify(table)
-    println(&quot;Output:\n{}&quot;, rendered)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn parse(s: str) -&gt; [][]str</code></td><td><code>cfire::csv::parse(s)</code></td><td>Parses a CSV string into a 2D table of rows and columns.<br/><code>rows := csv.parse(content)</code></td></tr>
-          <tr><td><code>fn stringify(rows: [][]str) -&gt; str</code></td><td><code>cfire::csv::stringify(rows)</code></td><td>Serializes a 2D table of strings into an RFC 4180 formatted CSV string.<br/><code>out := csv.stringify(rows)</code></td></tr>
-          <tr><td><code>fn read_all(path: str) -&gt; [][]str!</code></td><td><code>cfire::csv::read_all(path)</code></td><td>Reads an entire CSV file from disk and parses it into rows.<br/><code>table := try csv.read_all(&quot;data.csv&quot;)</code></td></tr>
-          <tr><td><code>fn write_all(path: str, rows: [][]str) -&gt; void!</code></td><td><code>cfire::csv::write_all(path, rows)</code></td><td>Serializes rows to CSV and writes to disk.<br/><code>try csv.write_all(&quot;report.csv&quot;, table)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-regex"><code>import "core:regex"</code> &mdash; ECMAScript Regular Expressions</h2>
-      <p>Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:regex&quot;
-
-fn main() {
-    email_pattern := `^[a-zA-Z0-9_\.-]+@[a-zA-Z0-9\.-]+\.[a-z]{2,6}$`
-    re := try regex.compile(email_pattern)
-
-    email := &quot;architect@cfire.memo.engineer&quot;
-    if try re.is_match(email) {
-        println(&quot;Validated email: {}&quot;, email)
-    }
-
-    // Global text replacement
-    cleaned := try regex.replace_all(`\s+`, &quot;multiple    whitespace     characters&quot;, &quot; &quot;)
-    println(&quot;Cleaned text: {}&quot;, cleaned)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn compile(pattern: str) -&gt; Regex!</code></td><td><code>cfire::regex::compile(pattern)</code></td><td>Compiles an ECMAScript regex pattern into a reusable Regex object.<br/><code>re := try regex.compile(&quot;\\d+&quot;)</code></td></tr>
-          <tr><td><code>fn is_match(pattern: str, text: str) -&gt; bool!</code></td><td><code>cfire::regex::is_match(pattern, text)</code></td><td>Tests whether a regex pattern matches text.<br/><code>ok := try regex.is_match(&quot;^[a-z]+$&quot;, s)</code></td></tr>
-          <tr><td><code>fn replace_all(pattern: str, text: str, repl: str) -&gt; str!</code></td><td><code>cfire::regex::replace_all(pattern, text, repl)</code></td><td>Replaces all occurrences matching pattern with repl.<br/><code>res := try regex.replace_all(&quot;\s+&quot;, s, &quot; &quot;)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-collections"><code>import "core:collections"</code> &mdash; Generic Containers (Set, PriorityQueue, Deque)</h2>
-      <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:collections&quot;
-
-fn main() {
-    // 1. Generic Hash Set
-    mut set := collections.Set[str]{}
-    set.insert(&quot;alpha&quot;)
-    set.insert(&quot;beta&quot;)
-    println(&quot;Set contains 'alpha': {}&quot;, set.contains(&quot;alpha&quot;))
-
-    // 2. Generic Max-Heap Priority Queue
-    mut pq := collections.PriorityQueue[i64]{}
-    pq.push(10)
-    pq.push(95)
-    pq.push(42)
-    println(&quot;Highest priority element: {}&quot;, pq.top()) // 95
-
-    // 3. Double-Ended Queue (Deque)
-    mut dq := collections.Deque[str]{}
-    dq.push_back(&quot;item_2&quot;)
-    dq.push_front(&quot;item_1&quot;)
-    println(&quot;Front: {}, Back: {}&quot;, dq.pop_front(), dq.pop_back())
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>type Set[T] struct</code></td><td><code>cfire::collections::Set&lt;T&gt;</code></td><td>Generic hash set container.<br/><code>mut s := collections.Set[str]{}</code></td></tr>
-          <tr><td><code>type PriorityQueue[T] struct</code></td><td><code>cfire::collections::PriorityQueue&lt;T&gt;</code></td><td>Generic max-heap priority queue.<br/><code>mut pq := collections.PriorityQueue[i32]{}</code></td></tr>
-          <tr><td><code>type Deque[T] struct</code></td><td><code>cfire::collections::Deque&lt;T&gt;</code></td><td>Generic double-ended queue.<br/><code>mut dq := collections.Deque[i32]{}</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-sort"><code>import "core:sort"</code> &mdash; Slice Sorting &amp; Binary Search</h2>
-      <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:sort&quot;
-
-fn main() {
-    mut numbers := [95, 12, 48, 3, 77]
-    // In-place slice sorting
-    sort.slice(mut numbers)
-    println(&quot;Sorted numbers: {:?}&quot;, numbers)
-
-    // Logarithmic binary search
-    idx := sort.binary_search(numbers, 48)
-    if idx != none {
-        println(&quot;Found element 48 at index: {}&quot;, idx)
-    }
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn slice(mut s: []T)</code></td><td><code>cfire::sort::slice(s)</code></td><td>Sorts a slice in ascending order in-place.<br/><code>sort.slice(mut numbers)</code></td></tr>
-          <tr><td><code>fn binary_search(s: []T, val: T) -&gt; i64?</code></td><td><code>cfire::sort::binary_search(s, val)</code></td><td>Performs binary search on a sorted slice.<br/><code>idx := sort.binary_search(numbers, 42)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-log"><code>import "core:log"</code> &mdash; Structured Leveled Logging</h2>
-      <p>Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;core:log&quot;
-
-fn main() {
-    log.set_level(log.Level::Debug)
-    log.set_format(log.Format::Json) // Output format: Text or Json
-
-    // Leveled structured logging with key-value attributes
-    log.info(&quot;service worker started&quot;, &quot;port&quot;, &quot;8080&quot;, &quot;cluster&quot;, &quot;prod-us-east&quot;)
-    log.warn(&quot;memory threshold reached&quot;, &quot;usage_pct&quot;, &quot;84&quot;, &quot;threshold&quot;, &quot;80&quot;)
-    log.error(&quot;database pool exhausted&quot;, &quot;active_conns&quot;, &quot;100&quot;, &quot;pool_size&quot;, &quot;100&quot;)
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn set_level(l: Level)</code></td><td><code>cfire::log::set_level(l)</code></td><td>Sets the minimum logging severity threshold.<br/><code>log.set_level(log.Level::Debug)</code></td></tr>
-          <tr><td><code>fn set_format(f: Format)</code></td><td><code>cfire::log::set_format(f)</code></td><td>Sets the log output format (Text or Json).<br/><code>log.set_format(log.Format::Json)</code></td></tr>
-          <tr><td><code>fn debug(msg: str, ...attrs: str)</code></td><td><code>cfire::log::debug(msg, ...)</code></td><td>Logs a debug message with optional key-value attribute pairs.<br/><code>log.debug(&quot;cache miss&quot;, &quot;key&quot;, &quot;user:1&quot;)</code></td></tr>
-          <tr><td><code>fn info(msg: str, ...attrs: str)</code></td><td><code>cfire::log::info(msg, ...)</code></td><td>Logs an informational message with optional key-value attribute pairs.<br/><code>log.info(&quot;server listening&quot;, &quot;port&quot;, &quot;8080&quot;)</code></td></tr>
-          <tr><td><code>fn warn(msg: str, ...attrs: str)</code></td><td><code>cfire::log::warn(msg, ...)</code></td><td>Logs a warning message with optional key-value attribute pairs.<br/><code>log.warn(&quot;rate limit reached&quot;, &quot;client&quot;, ip)</code></td></tr>
-          <tr><td><code>fn error(msg: str, ...attrs: str)</code></td><td><code>cfire::log::error(msg, ...)</code></td><td>Logs an error message with optional key-value attribute pairs.<br/><code>log.error(&quot;database connection failed&quot;, &quot;db&quot;, name)</code></td></tr>
+          <tr><td><code>fn now_ms() -&gt; i64</code></td><td><code>cfire::time::now_ms()</code></td><td>Returns monotonic milliseconds from `std::chrono::steady_clock`.<br/><code>t0 := time.now_ms()</code></td></tr>
+          <tr><td><code>fn unix_seconds() -&gt; i64</code></td><td><code>cfire::time::unix_seconds()</code></td><td>Returns current UTC Unix timestamp in seconds.<br/><code>ts := time.unix_seconds()</code></td></tr>
+          <tr><td><code>fn sleep_ms(ms: i64)</code></td><td><code>cfire::time::sleep_ms(ms)</code></td><td>Sleeps the current thread for `ms` milliseconds.<br/><code>time.sleep_ms(10)</code></td></tr>
+          <tr><td><code>fn sleep_ctx(ctx: Context, ms: i64) -&gt; bool</code></td><td><code>cfire::time::sleep_ctx(ctx, ms)</code></td><td>Sleeps the current thread for `ms` or until `ctx` is cancelled; returns true if completed without cancellation.<br/><code>ok := time.sleep_ctx(ctx, 50)</code></td></tr>
+          <tr><td><code>fn now() -&gt; Time</code></td><td><code>cfire::time::now()</code></td><td>Returns current wall clock `Time` instant.<br/><code>t := time.now()</code></td></tr>
+          <tr><td><code>fn unix(sec: i64, nsec: i64 = 0) -&gt; Time</code></td><td><code>cfire::time::unix(sec, nsec)</code></td><td>Constructs a `Time` instant from Unix seconds and nanoseconds.<br/><code>t := time.unix(1700000000)</code></td></tr>
+          <tr><td><code>fn parse_rfc3339(s: str) -&gt; Time!</code></td><td><code>cfire::time::parse_rfc3339(s)</code></td><td>Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.<br/><code>t := try time.parse_rfc3339(&quot;2026-10-18T12:00:00Z&quot;)</code></td></tr>
+          <tr><td><code>fn duration_seconds(s: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_seconds(s)</code></td><td>Constructs a typed `Duration` representing `s` seconds.<br/><code>d := time.duration_seconds(5)</code></td></tr>
+          <tr><td><code>fn duration_millis(ms: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_millis(ms)</code></td><td>Constructs a typed `Duration` representing `ms` milliseconds.<br/><code>d := time.duration_millis(250)</code></td></tr>
+          <tr><td><code>fn sleep(d: Duration)</code></td><td><code>cfire::time::sleep(d)</code></td><td>Sleeps the current thread for duration `d`.<br/><code>time.sleep(time.duration_millis(50))</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-unicode"><code>import "core:unicode"</code> &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</h2>
@@ -1490,61 +1783,54 @@ fn main() {
           <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::unicode::to_upper(s)</code></td><td>Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.<br/><code>upper := unicode.to_upper(&quot;hello, свет!&quot;)</code></td></tr>
         </tbody>
       </table></div>
-      <h2 id="mod-audio"><code>import "core:audio"</code> &mdash; Cross-Target Audio Engine, Polyphonic Mixer, Synth &amp; WAV Codec</h2>
-      <p>Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(AudioToolbox / WebAudio / ALSA)</code></small></p>
+      <h2 id="mod-rg"><code>import "vendor:raygui"</code> &mdash; Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`&lt;raygui.h&gt;`)</h2>
+      <p>Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code></small></p>
       <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
       <pre><code>package main
 
-import &quot;core:audio&quot;
+import &quot;vendor:raylib&quot; as rl
+import &quot;vendor:raygui&quot; as rg
 
 fn main() {
-    try audio.init(48000, 2)
-    defer audio.close()
-    audio.set_master_volume(0.8)
+    rl.InitWindow(640, 360, &quot;cfire + vendor:raygui&quot;)
+    defer rl.CloseWindow()
 
-    // 1. Zero-asset procedural sound effect playback
-    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
-    coin_sfx := audio.load_sound_from_wave(coin_wave)
-    coin_sfx.play()
+    mut volume: f32 = 75.0
+    mut vsync := true
+    mut name := &quot;Player1&quot;
+    mut edit_name := false
 
-    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
-    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
-    try audio.save_wav(tone, &quot;a440.wav&quot;)
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+        rl.ClearBackground(rl.RAYWHITE)
 
-    stream := try audio.open_stream(48000, 2)
-    if stream.needs_data(2048) {
-        stream.push_samples(tone.samples)
+        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 320.0, height: 220.0}, &quot;Settings&quot;)
+        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 70.0, width: 20.0, height: 20.0}, &quot;Enable VSync&quot;, &amp;mut vsync)
+        rg.GuiSliderBar(rl.Rectangle{x: 100.0, y: 110.0, width: 180.0, height: 20.0}, &quot;Vol&quot;, &quot;{volume}&quot;, &amp;mut volume, 0.0, 100.0)
+        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 150.0, width: 220.0, height: 28.0}, &amp;mut name, 64, edit_name) != 0 {
+            edit_name = !edit_name
+        }
     }
-    println(&quot;Audio RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
 }</code></pre>
       <div class="table-wrap api-table-wrap"><table>
         <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
         <tbody>
-          <tr><td><code>fn init(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; void!</code></td><td><code>cfire::audio::init(sample_rate, channels)</code></td><td>Initializes the hardware audio output queue (or headless software mixer in CI).<br/><code>try audio.init(48000, 2)</code></td></tr>
-          <tr><td><code>fn close()</code></td><td><code>cfire::audio::close()</code></td><td>Stops all active sounds and streams and releases audio hardware resources.<br/><code>defer audio.close()</code></td></tr>
-          <tr><td><code>fn is_ready() -&gt; bool</code></td><td><code>cfire::audio::is_ready()</code></td><td>Returns `true` if the audio subsystem is initialized.<br/><code>if audio.is_ready() { ... }</code></td></tr>
-          <tr><td><code>fn set_master_volume(vol: f32)</code></td><td><code>cfire::audio::set_master_volume(vol)</code></td><td>Sets the master output volume multiplier (`0.0` to `1.0`).<br/><code>audio.set_master_volume(0.8)</code></td></tr>
-          <tr><td><code>fn master_volume() -&gt; f32</code></td><td><code>cfire::audio::master_volume()</code></td><td>Returns the current master output volume multiplier.<br/><code>v := audio.master_volume()</code></td></tr>
-          <tr><td><code>fn rms_level() -&gt; f32</code></td><td><code>cfire::audio::rms_level()</code></td><td>Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.<br/><code>rms := audio.rms_level()</code></td></tr>
-          <tr><td><code>fn peak_level() -&gt; f32</code></td><td><code>cfire::audio::peak_level()</code></td><td>Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.<br/><code>pk := audio.peak_level()</code></td></tr>
-          <tr><td><code>fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)</code></td><td>Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.<br/><code>w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)</code></td></tr>
-          <tr><td><code>fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)</code></td><td>Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.<br/><code>sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)</code></td></tr>
-          <tr><td><code>fn gen_sfx(preset: SfxPreset) -&gt; Wave</code></td><td><code>cfire::audio::gen_sfx(preset)</code></td><td>Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).<br/><code>coin := audio.gen_sfx(audio.SfxPreset::Coin)</code></td></tr>
-          <tr><td><code>fn encode_wav(wave: Wave) -&gt; []byte</code></td><td><code>cfire::audio::encode_wav(wave)</code></td><td>Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.<br/><code>wav_bytes := audio.encode_wav(w)</code></td></tr>
-          <tr><td><code>fn decode_wav(data: []byte) -&gt; Wave!</code></td><td><code>cfire::audio::decode_wav(data)</code></td><td>Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.<br/><code>w := try audio.decode_wav(wav_bytes)</code></td></tr>
-          <tr><td><code>fn save_wav(wave: Wave, path: str) -&gt; void!</code></td><td><code>cfire::audio::save_wav(wave, path)</code></td><td>Writes a `Wave` to disk as a standard `.wav` file.<br/><code>try audio.save_wav(w, &quot;tone.wav&quot;)</code></td></tr>
-          <tr><td><code>fn load_wav(path: str) -&gt; Wave!</code></td><td><code>cfire::audio::load_wav(path)</code></td><td>Loads and decodes a `.wav` file from disk or app bundle.<br/><code>w := try audio.load_wav(&quot;tone.wav&quot;)</code></td></tr>
-          <tr><td><code>fn load_sound_from_wave(wave: Wave) -&gt; Sound</code></td><td><code>cfire::audio::load_sound_from_wave(wave)</code></td><td>Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.<br/><code>sfx := audio.load_sound_from_wave(coin)</code></td></tr>
-          <tr><td><code>fn load_sound(path: str) -&gt; Sound!</code></td><td><code>cfire::audio::load_sound(path)</code></td><td>Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.<br/><code>sfx := try audio.load_sound(&quot;click.wav&quot;)</code></td></tr>
-          <tr><td><code>fn (s: Sound) play()</code></td><td><code>s.play()</code></td><td>Triggers polyphonic playback of the sound.<br/><code>sfx.play()</code></td></tr>
-          <tr><td><code>fn (s: Sound) stop()</code></td><td><code>s.stop()</code></td><td>Stops active voices playing this sound.<br/><code>sfx.stop()</code></td></tr>
-          <tr><td><code>fn (s: Sound) set_volume(vol: f32)</code></td><td><code>s.set_volume(vol)</code></td><td>Sets playback gain (`0.0` to `2.0`) for this sound.<br/><code>sfx.set_volume(0.75)</code></td></tr>
-          <tr><td><code>fn (s: Sound) set_pitch(pitch: f32)</code></td><td><code>s.set_pitch(pitch)</code></td><td>Sets playback pitch/rate multiplier (`1.0` = original pitch).<br/><code>sfx.set_pitch(1.25)</code></td></tr>
-          <tr><td><code>fn (s: Sound) set_pan(pan: f32)</code></td><td><code>s.set_pan(pan)</code></td><td>Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).<br/><code>sfx.set_pan(-0.5)</code></td></tr>
-          <tr><td><code>fn (s: Sound) set_looping(loop: bool)</code></td><td><code>s.set_looping(loop)</code></td><td>Enables or disables seamless loop playback.<br/><code>sfx.set_looping(true)</code></td></tr>
-          <tr><td><code>fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; Stream!</code></td><td><code>cfire::audio::open_stream(sample_rate, channels)</code></td><td>Opens a real-time push `Stream` for custom DSP synthesis.<br/><code>stream := try audio.open_stream(48000, 2)</code></td></tr>
-          <tr><td><code>fn (st: Stream) push_samples(samples: []f32)</code></td><td><code>st.push_samples(samples)</code></td><td>Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.<br/><code>stream.push_samples(pcm_chunk)</code></td></tr>
-          <tr><td><code>fn (st: Stream) needs_data(target_frames: i32 = 2048) -&gt; bool</code></td><td><code>st.needs_data(target_frames)</code></td><td>Returns `true` when buffered frames fall below `target_frames`.<br/><code>if stream.needs_data(1024) { ... }</code></td></tr>
+          <tr><td><code>fn GuiEnable()</code></td><td><code>GuiEnable()</code></td><td>Enables gui controls (global state).<br/><code>rg.GuiEnable()</code></td></tr>
+          <tr><td><code>fn GuiDisable()</code></td><td><code>GuiDisable()</code></td><td>Disables gui controls (global state).<br/><code>rg.GuiDisable()</code></td></tr>
+          <tr><td><code>fn GuiLock()</code></td><td><code>GuiLock()</code></td><td>Locks gui controls (global state).<br/><code>rg.GuiLock()</code></td></tr>
+          <tr><td><code>fn GuiUnlock()</code></td><td><code>GuiUnlock()</code></td><td>Unlocks gui controls (global state).<br/><code>rg.GuiUnlock()</code></td></tr>
+          <tr><td><code>fn GuiSetStyle(control: i32, property: i32, value: i32)</code></td><td><code>GuiSetStyle(control, property, value)</code></td><td>Sets one style property value for a control.<br/><code>rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)</code></td></tr>
+          <tr><td><code>fn GuiGetStyle(control: i32, property: i32) -&gt; i32</code></td><td><code>GuiGetStyle(control, property)</code></td><td>Gets one style property value for a control.<br/><code>sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)</code></td></tr>
+          <tr><td><code>fn GuiWindowBox(bounds: rl.Rectangle, title: str) -&gt; i32</code></td><td><code>GuiWindowBox(bounds, cfire::c_arg(title))</code></td><td>Draws a window box control with a title bar and close button (returns 1 when close clicked).<br/><code>closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, &quot;Settings&quot;)</code></td></tr>
+          <tr><td><code>fn GuiGroupBox(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiGroupBox(bounds, cfire::c_arg(text))</code></td><td>Draws a group box control with text name.<br/><code>rg.GuiGroupBox(bounds, &quot;Audio&quot;)</code></td></tr>
+          <tr><td><code>fn GuiLabel(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiLabel(bounds, cfire::c_arg(text))</code></td><td>Draws a text label control.<br/><code>rg.GuiLabel(bounds, &quot;Volume&quot;)</code></td></tr>
+          <tr><td><code>fn GuiButton(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiButton(bounds, cfire::c_arg(text))</code></td><td>Draws a clickable button control (returns 1 when clicked).<br/><code>if rg.GuiButton(bounds, &quot;Apply&quot;) != 0 { ... }</code></td></tr>
+          <tr><td><code>fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &amp;mut bool) -&gt; i32</code></td><td><code>GuiCheckBox(bounds, cfire::c_arg(text), &amp;checked)</code></td><td>Draws a check box control and mutates `checked` in-place.<br/><code>rg.GuiCheckBox(bounds, &quot;VSync&quot;, &amp;mut vsync)</code></td></tr>
+          <tr><td><code>fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &amp;mut f32, minValue: f32, maxValue: f32) -&gt; i32</code></td><td><code>GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &amp;value, minValue, maxValue)</code></td><td>Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.<br/><code>rg.GuiSliderBar(bounds, &quot;0%&quot;, &quot;100%&quot;, &amp;mut volume, 0.0, 100.0)</code></td></tr>
+          <tr><td><code>fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &amp;mut f32, minValue: f32, maxValue: f32) -&gt; i32</code></td><td><code>GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &amp;value, minValue, maxValue)</code></td><td>Draws a progress bar control.<br/><code>rg.GuiProgressBar(bounds, &quot;&quot;, &quot;&quot;, &amp;mut progress, 0.0, 1.0)</code></td></tr>
+          <tr><td><code>fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &amp;mut i32) -&gt; i32</code></td><td><code>GuiComboBox(bounds, cfire::c_arg(text), &amp;active)</code></td><td>Draws a semicolon-delimited combo box control and updates `active` index.<br/><code>rg.GuiComboBox(bounds, &quot;Low;Medium;High&quot;, &amp;mut quality)</code></td></tr>
+          <tr><td><code>fn GuiTextBox(bounds: rl.Rectangle, text: &amp;mut str, textSize: i32, editMode: bool) -&gt; i32</code></td><td><code>GuiTextBox(bounds, &amp;text, textSize, editMode)</code></td><td>Draws an editable text box control safely backed by a `cfire` `mut str`.<br/><code>if rg.GuiTextBox(bounds, &amp;mut name, 64, editing) != 0 { editing = !editing }</code></td></tr>
         </tbody>
       </table></div>
       <h2 id="mod-rl"><code>import "vendor:raylib"</code> &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Raymath (`&lt;raylib.h&gt;`, `&lt;raymath.h&gt;`, `&lt;rlgl.h&gt;`)</h2>
@@ -1602,56 +1888,6 @@ fn main() {
           <tr><td><code>fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -&gt; rl.Vector2</code></td><td><code>Vector2Add(v1, v2)</code></td><td>Adds two vectors (`&lt;raymath.h&gt;`).<br/><code>pos = rl.Vector2Add(pos, vel)</code></td></tr>
           <tr><td><code>fn Vector2Scale(v: rl.Vector2, scale: f32) -&gt; rl.Vector2</code></td><td><code>Vector2Scale(v, scale)</code></td><td>Scales vector by float value (`&lt;raymath.h&gt;`).<br/><code>step := rl.Vector2Scale(dir, speed * dt)</code></td></tr>
           <tr><td><code>fn Clamp(value: f32, min: f32, max: f32) -&gt; f32</code></td><td><code>Clamp(value, min, max)</code></td><td>Clamps float value between `[min, max]` (`&lt;raymath.h&gt;`).<br/><code>x := rl.Clamp(pos.x, 0.0, 800.0)</code></td></tr>
-        </tbody>
-      </table></div>
-      <h2 id="mod-rg"><code>import "vendor:raygui"</code> &mdash; Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`&lt;raygui.h&gt;`)</h2>
-      <p>Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code></small></p>
-      <div class="code-header"><span class="tag-cf">Practical Workflow Example</span></div>
-      <pre><code>package main
-
-import &quot;vendor:raylib&quot; as rl
-import &quot;vendor:raygui&quot; as rg
-
-fn main() {
-    rl.InitWindow(640, 360, &quot;cfire + vendor:raygui&quot;)
-    defer rl.CloseWindow()
-
-    mut volume: f32 = 75.0
-    mut vsync := true
-    mut name := &quot;Player1&quot;
-    mut edit_name := false
-
-    for !rl.WindowShouldClose() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-        rl.ClearBackground(rl.RAYWHITE)
-
-        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 320.0, height: 220.0}, &quot;Settings&quot;)
-        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 70.0, width: 20.0, height: 20.0}, &quot;Enable VSync&quot;, &amp;mut vsync)
-        rg.GuiSliderBar(rl.Rectangle{x: 100.0, y: 110.0, width: 180.0, height: 20.0}, &quot;Vol&quot;, &quot;{volume}&quot;, &amp;mut volume, 0.0, 100.0)
-        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 150.0, width: 220.0, height: 28.0}, &amp;mut name, 64, edit_name) != 0 {
-            edit_name = !edit_name
-        }
-    }
-}</code></pre>
-      <div class="table-wrap api-table-wrap"><table>
-        <thead><tr><th>`.cf` Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-        <tbody>
-          <tr><td><code>fn GuiEnable()</code></td><td><code>GuiEnable()</code></td><td>Enables gui controls (global state).<br/><code>rg.GuiEnable()</code></td></tr>
-          <tr><td><code>fn GuiDisable()</code></td><td><code>GuiDisable()</code></td><td>Disables gui controls (global state).<br/><code>rg.GuiDisable()</code></td></tr>
-          <tr><td><code>fn GuiLock()</code></td><td><code>GuiLock()</code></td><td>Locks gui controls (global state).<br/><code>rg.GuiLock()</code></td></tr>
-          <tr><td><code>fn GuiUnlock()</code></td><td><code>GuiUnlock()</code></td><td>Unlocks gui controls (global state).<br/><code>rg.GuiUnlock()</code></td></tr>
-          <tr><td><code>fn GuiSetStyle(control: i32, property: i32, value: i32)</code></td><td><code>GuiSetStyle(control, property, value)</code></td><td>Sets one style property value for a control.<br/><code>rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)</code></td></tr>
-          <tr><td><code>fn GuiGetStyle(control: i32, property: i32) -&gt; i32</code></td><td><code>GuiGetStyle(control, property)</code></td><td>Gets one style property value for a control.<br/><code>sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)</code></td></tr>
-          <tr><td><code>fn GuiWindowBox(bounds: rl.Rectangle, title: str) -&gt; i32</code></td><td><code>GuiWindowBox(bounds, cfire::c_arg(title))</code></td><td>Draws a window box control with a title bar and close button (returns 1 when close clicked).<br/><code>closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, &quot;Settings&quot;)</code></td></tr>
-          <tr><td><code>fn GuiGroupBox(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiGroupBox(bounds, cfire::c_arg(text))</code></td><td>Draws a group box control with text name.<br/><code>rg.GuiGroupBox(bounds, &quot;Audio&quot;)</code></td></tr>
-          <tr><td><code>fn GuiLabel(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiLabel(bounds, cfire::c_arg(text))</code></td><td>Draws a text label control.<br/><code>rg.GuiLabel(bounds, &quot;Volume&quot;)</code></td></tr>
-          <tr><td><code>fn GuiButton(bounds: rl.Rectangle, text: str) -&gt; i32</code></td><td><code>GuiButton(bounds, cfire::c_arg(text))</code></td><td>Draws a clickable button control (returns 1 when clicked).<br/><code>if rg.GuiButton(bounds, &quot;Apply&quot;) != 0 { ... }</code></td></tr>
-          <tr><td><code>fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &amp;mut bool) -&gt; i32</code></td><td><code>GuiCheckBox(bounds, cfire::c_arg(text), &amp;checked)</code></td><td>Draws a check box control and mutates `checked` in-place.<br/><code>rg.GuiCheckBox(bounds, &quot;VSync&quot;, &amp;mut vsync)</code></td></tr>
-          <tr><td><code>fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &amp;mut f32, minValue: f32, maxValue: f32) -&gt; i32</code></td><td><code>GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &amp;value, minValue, maxValue)</code></td><td>Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.<br/><code>rg.GuiSliderBar(bounds, &quot;0%&quot;, &quot;100%&quot;, &amp;mut volume, 0.0, 100.0)</code></td></tr>
-          <tr><td><code>fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &amp;mut f32, minValue: f32, maxValue: f32) -&gt; i32</code></td><td><code>GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &amp;value, minValue, maxValue)</code></td><td>Draws a progress bar control.<br/><code>rg.GuiProgressBar(bounds, &quot;&quot;, &quot;&quot;, &amp;mut progress, 0.0, 1.0)</code></td></tr>
-          <tr><td><code>fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &amp;mut i32) -&gt; i32</code></td><td><code>GuiComboBox(bounds, cfire::c_arg(text), &amp;active)</code></td><td>Draws a semicolon-delimited combo box control and updates `active` index.<br/><code>rg.GuiComboBox(bounds, &quot;Low;Medium;High&quot;, &amp;mut quality)</code></td></tr>
-          <tr><td><code>fn GuiTextBox(bounds: rl.Rectangle, text: &amp;mut str, textSize: i32, editMode: bool) -&gt; i32</code></td><td><code>GuiTextBox(bounds, &amp;text, textSize, editMode)</code></td><td>Draws an editable text box control safely backed by a `cfire` `mut str`.<br/><code>if rg.GuiTextBox(bounds, &amp;mut name, 64, editing) != 0 { editing = !editing }</code></td></tr>
         </tbody>
       </table></div>
       <h2 class="section-title">Compiler Semantic Diagnostics</h2>

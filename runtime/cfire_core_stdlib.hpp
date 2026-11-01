@@ -21,3 +21,4 @@
 #include "core/collections.hpp"
 #include "core/unicode.hpp"
 #include "core/audio.hpp"
+#include "core/ai.hpp"

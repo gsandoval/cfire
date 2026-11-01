@@ -421,15 +421,16 @@ inline void stringify_value_to(const Value& val, std::string& out, int indent, i
 
 } // namespace cfire::json
 
-#ifdef CFIRE_USE_SIMDJSON
-#if defined(PLATFORM_WEB) || defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if defined(CFIRE_USE_SIMDJSON) && !defined(PLATFORM_WEB) && !defined(PLATFORM_IOS) && !(defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#define CFIRE_SIMDJSON_ACTIVE 1
+#include <simdjson.h>
+#else
+#define CFIRE_SIMDJSON_ACTIVE 0
 namespace simdjson::ondemand {
     struct object {
         const cfire::json::Value* val = nullptr;
     };
 }
-#else
-#include <simdjson.h>
 #endif
 namespace cfire::json {
 
@@ -443,16 +444,54 @@ auto stringify_struct(const T&) -> std::string {
     return "{}";
 }
 
+template <typename T>
+auto schema_struct() -> std::string {
+    return R"({"type":"object","properties":{},"additionalProperties":false})";
+}
+
 namespace detail {
 template <typename T>
 struct is_std_vector : std::false_type {};
 template <typename U, typename A>
 struct is_std_vector<std::vector<U, A>> : std::true_type {};
+
+template <typename T>
+struct is_std_optional : std::false_type {};
+template <typename U>
+struct is_std_optional<std::optional<U>> : std::true_type {};
 } // namespace detail
 
 template <typename T>
+[[nodiscard]] auto schema() -> std::string {
+    using D = std::decay_t<T>;
+    if constexpr (detail::is_std_optional<D>::value) {
+        return schema<typename D::value_type>();
+    } else if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
+        return R"({"type":"string"})";
+    } else if constexpr (std::is_same_v<D, bool>) {
+        return R"({"type":"boolean"})";
+    } else if constexpr (std::is_integral_v<D>) {
+        return R"({"type":"integer"})";
+    } else if constexpr (std::is_floating_point_v<D>) {
+        return R"({"type":"number"})";
+    } else if constexpr (detail::is_std_vector<D>::value) {
+        using Elem = typename D::value_type;
+        return std::format(R"({{"type":"array","items":{}}})", schema<Elem>());
+    } else {
+        return schema_struct<D>();
+    }
+}
+
+[[nodiscard]] inline auto with_description(std::string s, std::string_view desc) -> std::string {
+    if (desc.empty() || s.size() < 2 || s.back() != '}') return s;
+    s.pop_back();
+    s += std::format(R"(,"description":"{}"}})", escape_string(desc));
+    return s;
+}
+
+template <typename T>
 [[nodiscard]] auto parse(std::string_view payload) -> std::expected<T, cfire::Error> {
-#if defined(PLATFORM_WEB) || defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if !CFIRE_SIMDJSON_ACTIVE
     if constexpr (std::is_same_v<T, std::string>) {
         if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
             auto dyn = parse_dynamic(payload);
@@ -559,11 +598,13 @@ template <typename T>
     }
 }
 
-#if !defined(PLATFORM_WEB) && !defined(PLATFORM_IOS) && !(defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if CFIRE_SIMDJSON_ACTIVE
 [[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::string, cfire::Error>
 {
-    auto res = obj[key].get_string();
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return std::string{};
+    auto res = f.get_string();
     if (res.error()) {
         return cfire::make_error(std::format("missing or invalid string field '{}'", key));
     }
@@ -573,7 +614,9 @@ template <typename T>
 [[nodiscard]] inline auto get_u64(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::uint64_t, cfire::Error>
 {
-    auto res = obj[key].get_uint64();
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return 0ULL;
+    auto res = f.get_uint64();
     if (res.error()) {
         return cfire::make_error(std::format("missing or invalid u64 field '{}'", key));
     }
@@ -583,7 +626,9 @@ template <typename T>
 [[nodiscard]] inline auto get_i64(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::int64_t, cfire::Error>
 {
-    auto res = obj[key].get_int64();
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return 0LL;
+    auto res = f.get_int64();
     if (res.error()) {
         return cfire::make_error(std::format("missing or invalid i64 field '{}'", key));
     }
@@ -593,7 +638,9 @@ template <typename T>
 [[nodiscard]] inline auto get_i32(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::int32_t, cfire::Error>
 {
-    auto res = obj[key].get_int64();
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return 0;
+    auto res = f.get_int64();
     if (res.error()) {
         return cfire::make_error(std::format("missing or invalid i32 field '{}'", key));
     }
@@ -603,67 +650,183 @@ template <typename T>
 [[nodiscard]] inline auto get_f64(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<double, cfire::Error>
 {
-    auto res = obj[key].get_double();
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return 0.0;
+    auto res = f.get_double();
     if (res.error()) {
         return cfire::make_error(std::format("missing or invalid f64 field '{}'", key));
     }
     return res.value();
 }
 
+[[nodiscard]] inline auto get_f32(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<float, cfire::Error>
+{
+    auto res = get_f64(obj, key);
+    if (!res) return std::unexpected(res.error());
+    return static_cast<float>(*res);
+}
+
+template <typename Sub>
+[[nodiscard]] inline auto get_obj(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<Sub, cfire::Error>
+{
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return Sub{};
+    auto sub = f.get_object();
+    if (sub.error()) {
+        return cfire::make_error(std::format("missing or invalid object field '{}'", key));
+    }
+    return parse_struct<Sub>(sub.value());
+}
+
 [[nodiscard]] inline auto get_bool(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<bool, cfire::Error>
 {
-    auto res = obj[key].get_bool();
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return false;
+    auto res = f.get_bool();
     if (res.error()) {
         return cfire::make_error(std::format("missing or invalid bool field '{}'", key));
     }
     return res.value();
 }
+
+template <typename Elem>
+[[nodiscard]] inline auto get_vec(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::vector<Elem>, cfire::Error>
+{
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return std::vector<Elem>{};
+    auto arr = f.get_array();
+    if (arr.error()) {
+        return cfire::make_error(std::format("missing or invalid array field '{}'", key));
+    }
+    std::vector<Elem> out;
+    for (auto elem : arr.value()) {
+        if constexpr (std::is_same_v<Elem, std::string>) {
+            auto sv = elem.get_string();
+            if (sv.error()) return cfire::make_error(std::format("invalid string in array field '{}'", key));
+            out.emplace_back(sv.value());
+        } else if constexpr (std::is_same_v<Elem, bool>) {
+            auto b = elem.get_bool();
+            if (b.error()) return cfire::make_error(std::format("invalid bool in array field '{}'", key));
+            out.push_back(b.value());
+        } else if constexpr (std::is_integral_v<Elem>) {
+            auto iv = elem.get_int64();
+            if (iv.error()) return cfire::make_error(std::format("invalid integer in array field '{}'", key));
+            out.push_back(static_cast<Elem>(iv.value()));
+        } else if constexpr (std::is_floating_point_v<Elem>) {
+            auto dv = elem.get_double();
+            if (dv.error()) return cfire::make_error(std::format("invalid float in array field '{}'", key));
+            out.push_back(static_cast<Elem>(dv.value()));
+        } else {
+            auto sub_obj = elem.get_object();
+            if (sub_obj.error()) return cfire::make_error(std::format("invalid object in array field '{}'", key));
+            auto parsed = parse_struct<Elem>(sub_obj.value());
+            if (!parsed) return std::unexpected(parsed.error());
+            out.push_back(std::move(*parsed));
+        }
+    }
+    return out;
+}
 #else
 [[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::string, cfire::Error> {
-    if (!obj.val) return cfire::make_error(std::format("missing string field '{}'", key));
+    if (!obj.val) return std::string{};
     auto v = obj.val->get(key);
-    if (!v || !v->is_string()) return cfire::make_error(std::format("missing or invalid string field '{}'", key));
+    if (!v || v->is_null()) return std::string{};
+    if (!v->is_string()) return cfire::make_error(std::format("missing or invalid string field '{}'", key));
     return std::string(v->as_str());
 }
 [[nodiscard]] inline auto get_u64(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::uint64_t, cfire::Error> {
-    if (!obj.val) return cfire::make_error(std::format("missing u64 field '{}'", key));
+    if (!obj.val) return 0ULL;
     auto v = obj.val->get(key);
-    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid u64 field '{}'", key));
+    if (!v || v->is_null()) return 0ULL;
+    if (!v->is_number()) return cfire::make_error(std::format("missing or invalid u64 field '{}'", key));
     return static_cast<std::uint64_t>(v->as_int());
 }
 [[nodiscard]] inline auto get_i64(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::int64_t, cfire::Error> {
-    if (!obj.val) return cfire::make_error(std::format("missing i64 field '{}'", key));
+    if (!obj.val) return 0LL;
     auto v = obj.val->get(key);
-    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid i64 field '{}'", key));
+    if (!v || v->is_null()) return 0LL;
+    if (!v->is_number()) return cfire::make_error(std::format("missing or invalid i64 field '{}'", key));
     return v->as_int();
 }
 [[nodiscard]] inline auto get_i32(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::int32_t, cfire::Error> {
-    if (!obj.val) return cfire::make_error(std::format("missing i32 field '{}'", key));
+    if (!obj.val) return 0;
     auto v = obj.val->get(key);
-    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid i32 field '{}'", key));
+    if (!v || v->is_null()) return 0;
+    if (!v->is_number()) return cfire::make_error(std::format("missing or invalid i32 field '{}'", key));
     return static_cast<std::int32_t>(v->as_int());
 }
 [[nodiscard]] inline auto get_f64(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<double, cfire::Error> {
-    if (!obj.val) return cfire::make_error(std::format("missing f64 field '{}'", key));
+    if (!obj.val) return 0.0;
     auto v = obj.val->get(key);
-    if (!v || !v->is_number()) return cfire::make_error(std::format("missing or invalid f64 field '{}'", key));
+    if (!v || v->is_null()) return 0.0;
+    if (!v->is_number()) return cfire::make_error(std::format("missing or invalid f64 field '{}'", key));
     return v->as_float();
+}
+[[nodiscard]] inline auto get_f32(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<float, cfire::Error> {
+    auto res = get_f64(obj, key);
+    if (!res) return std::unexpected(res.error());
+    return static_cast<float>(*res);
+}
+template <typename Sub>
+[[nodiscard]] inline auto get_obj(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<Sub, cfire::Error> {
+    if (!obj.val) return Sub{};
+    auto v = obj.val->get(key);
+    if (!v || v->is_null()) return Sub{};
+    if (!v->is_object()) return cfire::make_error(std::format("missing or invalid object field '{}'", key));
+    simdjson::ondemand::object sub_obj{&(*v)};
+    return parse_struct<Sub>(sub_obj);
 }
 [[nodiscard]] inline auto get_bool(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<bool, cfire::Error> {
-    if (!obj.val) return cfire::make_error(std::format("missing bool field '{}'", key));
+    if (!obj.val) return false;
     auto v = obj.val->get(key);
-    if (!v || !v->is_bool()) return cfire::make_error(std::format("missing or invalid bool field '{}'", key));
+    if (!v || v->is_null()) return false;
+    if (!v->is_bool()) return cfire::make_error(std::format("missing or invalid bool field '{}'", key));
     return v->as_bool();
+}
+template <typename Elem>
+[[nodiscard]] inline auto get_vec(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::vector<Elem>, cfire::Error> {
+    if (!obj.val) return std::vector<Elem>{};
+    auto v = obj.val->get(key);
+    if (!v || v->is_null()) return std::vector<Elem>{};
+    if (!v->is_array()) return cfire::make_error(std::format("missing or invalid array field '{}'", key));
+    std::vector<Elem> out;
+    for (const auto& elem : v->as_array()) {
+        if constexpr (std::is_same_v<Elem, std::string>) {
+            if (!elem.is_string()) return cfire::make_error(std::format("invalid string in array field '{}'", key));
+            out.emplace_back(elem.as_str());
+        } else if constexpr (std::is_same_v<Elem, bool>) {
+            if (!elem.is_bool()) return cfire::make_error(std::format("invalid bool in array field '{}'", key));
+            out.push_back(elem.as_bool());
+        } else if constexpr (std::is_integral_v<Elem>) {
+            if (!elem.is_number()) return cfire::make_error(std::format("invalid integer in array field '{}'", key));
+            out.push_back(static_cast<Elem>(elem.as_int()));
+        } else if constexpr (std::is_floating_point_v<Elem>) {
+            if (!elem.is_number()) return cfire::make_error(std::format("invalid float in array field '{}'", key));
+            out.push_back(static_cast<Elem>(elem.as_float()));
+        } else {
+            if (!elem.is_object()) return cfire::make_error(std::format("invalid object in array field '{}'", key));
+            simdjson::ondemand::object sub_obj{&elem};
+            auto parsed = parse_struct<Elem>(sub_obj);
+            if (!parsed) return std::unexpected(parsed.error());
+            out.push_back(std::move(*parsed));
+        }
+    }
+    return out;
 }
 #endif
 
 } // namespace cfire::json
-#endif
 
