@@ -1,0 +1,60 @@
+package main
+
+import "core:ai" as ai
+import "core:db/sqlite" as sqlite
+import "core:json" as json
+
+type QueryPlan struct {
+    Target: str `json:"target" desc:"Search target concept"`
+    TopK: i64   `json:"top_k" desc:"Number of top results to retrieve"`
+}
+
+type DocEntry struct {
+    Id: i64      `sql:"id"`
+    Title: str   `sql:"title"`
+    Snippet: str `sql:"snippet"`
+}
+
+fn main() {
+    // 1. Compile-time JSON Schema generation for LLM tool calling
+    schema := json.schema[QueryPlan]()
+    if !schema.contains("Search target concept") {
+        println("Schema mismatch")
+        return
+    }
+
+    // 2. Open in-memory SQLite database with built-in vector search functions
+    mut db := try sqlite.open(":memory:")
+    try db.exec("CREATE TABLE corpus (id INTEGER PRIMARY KEY, title TEXT, snippet TEXT, embedding BLOB)")
+
+    // 3. Ingest documents and calculate deterministic local embeddings via ai.embed("local", ...)
+    mut docs: []str
+    docs.push("cfire lowers 1-to-1 to ISO C++23 with zero hidden runtime overhead.")
+    docs.push("Model Context Protocol servers can be authored natively in cfire with typed tools.")
+    docs.push("Deterministic audio DSP synthesis provides polyphonic note generation and WAV export.")
+
+    mut titles: []str
+    titles.push("Transpiler Architecture")
+    titles.push("AI Agent Ecosystem")
+    titles.push("Audio DSP Engine")
+
+    for i, doc in docs {
+        vec := try ai.embed("local", doc)
+        try db.exec("INSERT INTO corpus (id, title, snippet, embedding) VALUES (?1, ?2, ?3, ?4)",
+                    i + 1, titles[i], doc, vec)
+    }
+
+    // 4. Query using built-in vec_cosine_similarity SQL function
+    query := "How does cfire generate modern C++23 code?"
+    qvec := try ai.embed("local", query)
+
+    results := try db.query[DocEntry](
+        "SELECT id, title, snippet FROM corpus ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1",
+        qvec
+    )
+
+    if results.len > 0 {
+        top := results[0]
+        println("Top RAG Match -> [#{}] {}: {}", top.Id, top.Title, top.Snippet)
+    }
+}

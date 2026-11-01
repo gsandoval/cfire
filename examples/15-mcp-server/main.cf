@@ -1,0 +1,41 @@
+package main
+
+import "core:ai" as ai
+
+type CalculateArgs struct {
+    Expression: str `json:"expression" desc:"Mathematical expression to evaluate"`
+    Precision: i64  `json:"precision" desc:"Decimal places for rounding"`
+}
+
+fn main() {
+    // 1. Instantiate an in-process Model Context Protocol (MCP) server
+    mut srv := ai.make_mcp_server("calculator-mcp", "1.0.0")
+
+    // 2. Register typed tool with automatic compile-time JSON Schema extraction
+    srv.register_tool[CalculateArgs]("calculate", "Evaluates a numeric expression with precision") |args| {
+        println("Tool 'calculate' invoked with expr: '{}', precision: {}", args.Expression, args.Precision)
+        return "42.0"
+    }
+
+    // 3. Test MCP JSON-RPC protocol negotiation: initialize
+    init_req := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}"
+    init_res := srv.handle_jsonrpc(init_req)
+    if !init_res.contains("calculator-mcp") {
+        println("Init failed")
+        return
+    }
+
+    // 4. Test MCP tools/list
+    list_req := "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"
+    list_res := srv.handle_jsonrpc(list_req)
+    if !list_res.contains("calculate") {
+        println("Tools list failed")
+        return
+    }
+
+    // 5. Test MCP tools/call
+    call_req := "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"calculate\",\"arguments\":{\"expression\":\"6 * 7\",\"precision\":2}}}"
+    call_res := srv.handle_jsonrpc(call_req)
+
+    println("MCP Server response -> {}", call_res)
+}

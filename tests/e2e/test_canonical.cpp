@@ -130,6 +130,47 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
                 "vec3_scaled_dot(1.0, 2.0, 3.0",
             },
         },
+        {
+            .name = "14-ai-rag-sqlite",
+            .cf_path = "examples/14-ai-rag-sqlite/main.cf",
+            .args = "",
+            .expected_stdout = {
+                "Top RAG Match -> [#1] Transpiler Architecture: cfire lowers 1-to-1 to ISO C++23 with zero hidden runtime overhead.",
+            },
+            .expected_cpp = {
+                "cfire::json::schema<QueryPlan>()",
+                "cfire::ai::embed(\"local\", doc)",
+                "cfire::sqlite::open(\":memory:\")",
+            },
+        },
+        {
+            .name = "15-mcp-server",
+            .cf_path = "examples/15-mcp-server/main.cf",
+            .args = "",
+            .expected_stdout = {
+                "Tool 'calculate' invoked with expr: '6 * 7', precision: 2",
+                "MCP Server response -> {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"42.0\"}],\"isError\":false}}",
+            },
+            .expected_cpp = {
+                "cfire::ai::make_mcp_server(\"calculator-mcp\", \"1.0.0\")",
+                "srv.register_tool<CalculateArgs>(\"calculate\"",
+                "srv.handle_jsonrpc(call_req)",
+            },
+        },
+        {
+            .name = "16-audio-synth",
+            .cf_path = "examples/16-audio-synth/main.cf",
+            .args = "",
+            .expected_stdout = {
+                "Synthesized WAV image: 48044 bytes, duration: 0.25s",
+                "Loaded WAV: rate=48000 channels=2 frames=12000",
+            },
+            .expected_cpp = {
+                "cfire::audio::init(48000, 2)",
+                "cfire::audio::gen_sfx(cfire::audio::SfxPreset::Coin)",
+                "cfire::audio::encode_wav(synth_wave)",
+            },
+        },
     };
 
     auto tmp_dir = std::filesystem::temp_directory_path() / "cfire_conformance_bins";

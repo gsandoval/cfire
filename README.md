@@ -81,6 +81,9 @@ make test
 ./cfire run examples/09-stdlib-test-pointers/main.cf
 ./cfire run examples/10-cmake-and-make-deps/main.cf
 ./cfire run examples/11-http-server-router/main.cf
+./cfire run examples/14-ai-rag-sqlite/main.cf
+./cfire run examples/15-mcp-server/main.cf
+./cfire run examples/16-audio-synth/main.cf
 
 # Build optimized native binaries or packaged desktop apps:
 ./cfire build examples/01-hello-core/main.cf -o hello
@@ -90,6 +93,9 @@ make test
 ./cfire build --target=wasm apps/desktop/main.cf -o web/app.html
 ./cfire wasm build apps/desktop/main.cf -o web/app.html
 
+# Run native iOS apps directly on simulator:
+./cfire run --ios examples/13-ios-native-ui/main.cf
+
 # Serve WebAssembly applications locally with zero dependencies (application/wasm MIME + COOP/COEP isolation):
 ./cfire serve web/app.html
 ./cfire wasm serve web/app.html
@@ -97,6 +103,9 @@ make test
 # Evaluate one-shot expressions or statements:
 ./cfire eval -e "1 + 2 * 3"
 ./cfire eval "println(\"Hello from cfire eval!\")"
+
+# Start the Model Context Protocol (MCP) server for AI coding agents:
+./cfire mcp
 
 # Semantic rename refactoring across workspace:
 ./cfire refactor rename examples/01-hello-core/main.cf:6:5 my_new_symbol --diff

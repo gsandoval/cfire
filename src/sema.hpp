@@ -666,7 +666,7 @@ private:
                 } else if (key == "json") {
                     auto comma = val.find(',');
                     info.json_key = trim_str(comma != std::string::npos ? std::string_view(val).substr(0, comma) : std::string_view(val));
-                } else if (key == "db") {
+                } else if (key == "db" || key == "sql") {
                     info.db_column = trim_str(val);
                 }
                 info.custom_tags[key] = val;

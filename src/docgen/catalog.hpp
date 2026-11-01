@@ -42,368 +42,36 @@ struct DiagnosticDoc {
 [[nodiscard]] inline auto stdlib_catalog() -> const std::vector<StdModuleDoc>& {
     static const std::vector<StdModuleDoc> catalog = {
         {
-            "core:fs", "fs", "Filesystem & Zero-Copy Byte I/O", "(header-only)",
-            "Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`.",
+            "core:ai", "ai", "Multi-Provider Cloud, Open-Source, Apple On-Device AI, Embeddings & MCP Server", "(POSIX sockets + TLS + NaturalLanguage.framework)",
+            "Unified AI SDK supporting OpenAI, Anthropic Claude, Google Gemini, Ollama, vLLM/llama.cpp (`openai_compatible`), and Apple On-Device Intelligence (`NaturalLanguage.framework`), with compile-time structured outputs (`generate_struct[T]`), tool calling (`tool_def[T]`), SSE token streaming (`stream`), unified embeddings (`ai.embed(\"local\", text)`), RAG chunking (`chunk_text`), vector math (`cosine_similarity`), and a Model Context Protocol server (`McpServer`).",
             {
-                {"read_all", "fn read_all(path: str) -> []byte!", "cfire::fs::read_all(path)", "Reads an entire binary file into a byte buffer.", "raw := try fs.read_all(\"input.bin\")"},
-                {"write_all", "fn write_all(path: str, data: []byte) -> void!", "cfire::fs::write_all(path, data)", "Writes a byte slice atomically to disk, creating parent directories if needed.", "try fs.write_all(\"out.bin\", raw)"},
-                {"read_text", "fn read_text(path: str) -> str!", "cfire::fs::read_text(path)", "Reads an entire UTF-8 text file into a `str`.", "txt := try fs.read_text(\"config.json\")"},
-                {"write_text", "fn write_text(path: str, text: str) -> void!", "cfire::fs::write_text(path, text)", "Writes a UTF-8 string to disk.", "try fs.write_text(\"hello.txt\", \"sapphire\")"},
-                {"open", "fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!", "cfire::fs::open(path, mode)", "Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.", "mut f := try fs.open(\"log.txt\", OpenMode::Append)"},
-                {"File.read", "fn (mut f: File) read(mut buf: []byte) -> usize!", "f.read(buf)", "Reads up to `buf.len` bytes from the streaming file handle.", "n := try f.read(mut buf)"},
-                {"File.read_all", "fn (mut f: File) read_all() -> []byte!", "f.read_all()", "Reads all remaining bytes from current file position to EOF.", "bytes := try f.read_all()"},
-                {"File.write", "fn (mut f: File) write(data: []byte) -> usize!", "f.write(data)", "Writes byte slice to file stream.", "n := try f.write(buf)"},
-                {"File.write_str", "fn (mut f: File) write_str(s: str) -> usize!", "f.write_str(s)", "Writes UTF-8 string to file stream.", "try f.write_str(\"header\\n\")"},
-                {"File.seek", "fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!", "f.seek(offset, whence)", "Seeks within file to offset from Start, Current, or End.", "pos := try f.seek(0, SeekWhence::Start)"},
-                {"File.tell", "fn (mut f: File) tell() -> i64!", "f.tell()", "Returns current byte offset within file stream.", "pos := try f.tell()"},
-                {"File.flush", "fn (mut f: File) flush() -> void!", "f.flush()", "Flushes buffered stream data to disk.", "try f.flush()"},
-                {"File.close", "fn (mut f: File) close() -> void", "f.close()", "Closes open file handle.", "f.close()"},
-                {"dirname", "fn dirname(path: str) -> str", "cfire::fs::dirname(path)", "Returns directory portion of a filesystem path.", "dir := fs.dirname(\"/a/b/c.txt\")"},
-                {"basename", "fn basename(path: str) -> str", "cfire::fs::basename(path)", "Returns file name portion of a filesystem path.", "name := fs.basename(\"/a/b/c.txt\")"},
-                {"extension", "fn extension(path: str) -> str", "cfire::fs::extension(path)", "Returns file extension including leading dot.", "ext := fs.extension(\"main.cf\")"},
-                {"exists", "fn exists(path: str) -> bool", "cfire::fs::exists(path)", "Returns `true` if the path exists on disk.", "if fs.exists(\"build.cf\") { ... }"},
-                {"mkdir_all", "fn mkdir_all(path: str) -> void!", "cfire::fs::mkdir_all(path)", "Recursively creates a directory and all parent directories.", "try fs.mkdir_all(\".cfire/cache\")"},
-                {"remove", "fn remove(path: str) -> void!", "cfire::fs::remove(path)", "Removes a file or directory tree recursively.", "try fs.remove(\"tmp_dir\")"},
-                {"list_dir", "fn list_dir(path: str) -> []str!", "cfire::fs::list_dir(path)", "Lists sorted filenames inside a directory.", "entries := try fs.list_dir(\"examples\")"}
-            }
-        },
-        {
-            "core:cli", "cli", "Struct-Tag Command-Line Parser", "(header-only)",
-            "Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:\"--flag,help\"`).",
-            {
-                {"parse", "fn parse[T](args: []str?) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"}
-            }
-        },
-        {
-            "core:compress/zstd", "zstd", "Native Zstandard Frame Compression", "-lzstd",
-            "Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.",
-            {
-                {"compress", "fn compress(input: []byte, level: i32 = 3) -> []byte!", "cfire::zstd::compress(input, level)", "Compresses a byte slice into a Zstandard frame.", "blob := try zstd.compress(raw, level: 3)"},
-                {"decompress", "fn decompress(frame: []byte) -> []byte!", "cfire::zstd::decompress(frame)", "Decompresses a Zstandard frame using the embedded frame content size.", "orig := try zstd.decompress(blob)"}
-            }
-        },
-        {
-            "core:json", "json", "Compile-Time SIMD JSON Reflection & Dynamic DOM", "-lsimdjson (or header-only)",
-            "Uses `json:\"...\"` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.",
-            {
-                {"parse", "fn parse[T](payload: []byte | str) -> T!", "cfire::json::parse<T>(payload)", "Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.", "cfg := try json.parse[Config](raw)"},
-                {"stringify", "fn stringify[T](val: T) -> str", "cfire::json::stringify<T>(val)", "Serializes a tagged struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`) into a JSON string.", "payload := json.stringify(metric)"},
-                {"escape_string", "fn escape_string(s: str) -> str", "cfire::json::escape_string(s)", "Escapes quotes, backslashes, and control characters for JSON strings.", "esc := json.escape_string(raw_txt)"},
-                {"parse_dynamic", "fn parse_dynamic(payload: str) -> Value!", "cfire::json::parse_dynamic(payload)", "Parses arbitrary JSON into a recursive dynamic DOM `Value`.", "v := try json.parse_dynamic(raw)"},
-                {"stringify_dynamic", "fn stringify_dynamic(val: Value, indent: i32 = 0) -> str", "cfire::json::stringify_dynamic(val, indent)", "Serializes a dynamic DOM `Value` into compact or indented JSON.", "s := json.stringify_dynamic(v, 2)"}
-            }
-        },
-        {
-            "core:db/sqlite", "sqlite", "Embedded SQLite3 with WAL & Row Mapping", "-lsqlite3",
-            "RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, atomic transactions, and compile-time `sql:\"...\"` struct row mapping.",
-            {
-                {"open", "fn open(path: str) -> Conn!", "cfire::sqlite::open(path)", "Opens an SQLite3 database connection and enables WAL mode.", "mut db := try sqlite.open(\"app.db\")"},
-                {"Conn.exec", "fn (mut db: Conn) exec(sql: str, ...args) -> void!", "db.exec(sql, args...)", "Executes a parameterized SQL statement (`?1`, `?2`, ...).", "try db.exec(\"INSERT INTO pkg VALUES (?1, ?2)\", name, ver)"},
-                {"Conn.query", "fn (mut db: Conn) query[T](sql: str, ...args) -> []T!", "db.query<T>(sql, args...)", "Executes a `SELECT` query and maps rows directly into struct `T` via `sql:\"...\"` tags.", "rows := try db.query[Row](\"SELECT name, ver FROM pkg\")"},
-                {"Conn.tx", "fn (mut db: Conn) tx(block: fn(mut tx: Conn) -> void!) -> void!", "db.tx([&](Conn& tx) { ... })", "Runs a closure inside an atomic `BEGIN IMMEDIATE ... COMMIT` transaction with automatic rollback on error.", "try db.tx |mut tx| { ... }"}
-            }
-        },
-        {
-            "core:crypto/sha256", "sha256", "Standard FIPS 180-4 SHA-256 Digest", "(CommonCrypto / built-in)",
-            "Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings.",
-            {
-                {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::sha256::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := sha256.hash_hex(raw)"},
-                {"hash_bytes", "fn hash_bytes(data: []byte) -> []byte", "cfire::sha256::hash_bytes(data)", "Returns 32-byte binary SHA-256 digest of `data`.", "b := sha256.hash_bytes(raw)"}
-            }
-        },
-        {
-            "core:crypto/hmac", "hmac", "RFC 2104 HMAC-SHA256 Message Authentication", "(CommonCrypto / built-in)",
-            "Computes RFC 2104 keyed HMAC-SHA256 authentication digests.",
-            {
-                {"sha256_hex", "fn sha256_hex(key: str, data: str) -> str", "cfire::hmac::sha256_hex(key, data)", "Returns a 64-character lowercase hex HMAC-SHA256 digest.", "sig := hmac.sha256_hex(secret, payload)"},
-                {"equal", "fn equal(a: str, b: str) -> bool", "cfire::hmac::equal(a, b)", "Performs a constant-time equality check on two MAC digests to prevent timing attacks.", "ok := hmac.equal(sig1, sig2)"}
-            }
-        },
-        {
-            "core:crypto/aes", "aes", "NIST FIPS 197 AES-256 Symmetric Encryption & GCM AEAD", "(Header-only pure C++23)",
-            "Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).",
-            {
-                {"encrypt_gcm", "fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -> GcmResult!", "cfire::aes::encrypt_gcm(key, nonce, pt, aad)", "Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.", "res := try aes.encrypt_gcm(key, nonce, secret, aad)"},
-                {"decrypt_gcm", "fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -> []byte!", "cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)", "Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.", "pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)"},
-                {"encrypt_ctr", "fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -> []byte!", "cfire::aes::encrypt_ctr(key, iv, pt)", "Encrypts plaintext using AES-256-CTR mode.", "ct := try aes.encrypt_ctr(key, iv, pt)"},
-                {"decrypt_ctr", "fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -> []byte!", "cfire::aes::decrypt_ctr(key, iv, ct)", "Decrypts ciphertext using AES-256-CTR mode.", "pt := try aes.decrypt_ctr(key, iv, ct)"}
-            }
-        },
-        {
-            "core:crypto/blake3", "blake3", "Cryptographic 256-Bit Digest (Alias)", "(CommonCrypto / built-in)",
-            "Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`).",
-            {
-                {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::blake3::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := blake3.hash_hex(raw)"}
-            }
-        },
-        {
-            "core:net", "net", "POSIX BSD TCP Sockets & Loopback Networking", "(POSIX sockets)",
-            "RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes.",
-            {
-                {"listen_tcp", "fn listen_tcp(port: u16 = 0) -> TcpListener!", "cfire::net::listen_tcp(port)", "Binds a TCP listener on `0.0.0.0:port` (`0` selects an ephemeral port).", "mut ln := try net.listen_tcp(0)"},
-                {"listen_tcp_addr", "fn listen_tcp_addr(host: str, port: u16 = 0) -> TcpListener!", "cfire::net::listen_tcp_addr(host, port)", "Binds a TCP listener on a specific interface address (`host:port`).", "mut ln := try net.listen_tcp_addr(\"127.0.0.1\", 8080)"},
-                {"TcpListener.port", "fn (ln: TcpListener) port() -> u16", "ln.port()", "Returns the bound TCP port.", "p := ln.port()"},
-                {"TcpListener.accept", "fn (mut ln: TcpListener) accept() -> TcpConn!", "ln.accept()", "Accepts an incoming TCP connection with a safe poll timeout.", "mut conn := try ln.accept()"},
-                {"connect_tcp", "fn connect_tcp(host: str, port: u16) -> TcpConn!", "cfire::net::connect_tcp(host, port)", "Connects a `TcpConn` to `host:port`.", "mut c := try net.connect_tcp(\"127.0.0.1\", p)"},
-                {"TcpConn.write", "fn (mut c: TcpConn) write(payload: str) -> usize!", "c.write(payload)", "Writes bytes to an open TCP connection.", "_ := try c.write(\"PING\")"},
-                {"TcpConn.read_str", "fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -> str!", "c.read_str(max_bytes)", "Reads up to `max_bytes` from the socket as a string.", "msg := try conn.read_str(64)"},
-                {"TcpConn.set_timeout_ms", "fn (mut c: TcpConn) set_timeout_ms(ms: i32) -> void", "c.set_timeout_ms(ms)", "Sets socket read/write timeout in milliseconds (`0` for blocking).", "conn.set_timeout_ms(5000)"}
-            }
-        },
-        {
-            "core:net/tls", "tls", "TLS 1.2 / 1.3 & X.509 Certificate Engine", "(OpenSSL dynamic bridge)",
-            "Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation.",
-            {
-                {"available", "fn available() -> bool", "cfire::tls::available()", "Returns `true` if the OpenSSL (`libssl` / `libcrypto`) runtime bridge is available.", "if tls.available() { ... }"},
-                {"generate_self_signed_pem", "fn generate_self_signed_pem(common_name: str = \"localhost\", days: i32 = 365) -> CertKeyPair!", "cfire::tls::generate_self_signed_pem(common_name, days)", "Generates an in-memory RSA-2048 X.509v3 self-signed certificate and private key in PEM format.", "pair := try tls.generate_self_signed_pem(\"localhost\")"},
-                {"wrap_client", "fn wrap_client(mut conn: TcpConn, server_name: str = \"\", verify_peer: bool = true, ca_file: str = \"\") -> void!", "cfire::tls::wrap_client(conn, server_name, verify_peer, ca_file)", "Upgrades an open `TcpConn` to a client TLS session with SNI and optional X.509 certificate verification.", "try tls.wrap_client(mut conn, \"example.com\", true)"},
-                {"connect", "fn connect(host: str, port: u16 = 443, verify_peer: bool = true, ca_file: str = \"\") -> TcpConn!", "cfire::tls::connect(host, port, verify_peer, ca_file)", "Connects a TCP socket to `host:port` and completes a TLS client handshake.", "mut c := try tls.connect(\"example.com\", 443)"},
-                {"ServerContext.from_files", "fn ServerContext.from_files(cert_file: str, key_file: str) -> ServerContext!", "cfire::tls::ServerContext::from_files(cert_file, key_file)", "Creates a TLS server context from X.509 certificate chain and private key PEM files on disk.", "ctx := try tls.ServerContext.from_files(\"cert.pem\", \"key.pem\")"},
-                {"ServerContext.from_pem", "fn ServerContext.from_pem(cert_pem: str, key_pem: str) -> ServerContext!", "cfire::tls::ServerContext::from_pem(cert_pem, key_pem)", "Creates a TLS server context directly from in-memory certificate and private key PEM strings.", "ctx := try tls.ServerContext.from_pem(pair.cert_pem, pair.key_pem)"},
-                {"ServerContext.wrap_server", "fn (ctx: ServerContext) wrap_server(mut conn: TcpConn) -> void!", "ctx.wrap_server(conn)", "Performs a server-side TLS handshake (`SSL_accept`) on an accepted `TcpConn`.", "try ctx.wrap_server(mut conn)"}
-            }
-        },
-        {
-            "core:net/url", "url", "RFC 3986 URL Parsing & URL Encoding", "(header-only)",
-            "RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding.",
-            {
-                {"parse", "fn parse(raw: str) -> Url!", "cfire::url::parse(raw)", "Parses an RFC 3986 URL string into component fields and query parameters (`https` and `wss` default to port 443).", "u := try url.parse(\"wss://stream.example.com/ws?q=1\")"},
-                {"encode", "fn encode(s: str) -> str", "cfire::url::encode(s)", "Percent-encodes a string for safe use in URL path or query strings.", "enc := url.encode(\"hello world!\")"},
-                {"decode", "fn decode(s: str) -> str", "cfire::url::decode(s)", "Decodes a percent-encoded URL string.", "dec := url.decode(enc)"}
-            }
-        },
-        {
-            "core:net/http", "http", "HTTP/1.1 & HTTPS Client, Wire Protocol Engine, Server & Router", "(POSIX sockets + TLS)",
-            "RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).",
-            {
-                {"get", "fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::get(url, headers, verify_peer)", "Executes an HTTP or HTTPS GET request against a target URL.", "resp := try http.get(\"https://127.0.0.1:8443/health\", {}, false)"},
-                {"get_insecure", "fn get_insecure(url: str, headers: map[str]str = {}) -> Response!", "cfire::http::get_insecure(url, headers)", "Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs).", "resp := try http.get_insecure(\"https://127.0.0.1:8443/health\")"},
-                {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::post(url, body, content_type, headers, verify_peer)", "Executes an HTTP or HTTPS POST request with payload body.", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
-                {"post_insecure", "fn post_insecure(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}) -> Response!", "cfire::http::post_insecure(url, body, content_type, headers)", "Executes an HTTPS POST request skipping peer certificate verification.", "resp := try http.post_insecure(\"https://127.0.0.1:8443/items\", \"{}\")"},
-                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
-                {"make_server", "fn make_server(port: u16 = 0) -> HttpServer!", "cfire::http::make_server(port)", "Creates a lightweight HTTP server listening on `port` (0 for ephemeral).", "mut srv := try http.make_server(8080)"},
-                {"make_tls_server", "fn make_tls_server(port: u16, cert_file: str, key_file: str) -> HttpServer!", "cfire::http::make_tls_server(port, cert_file, key_file)", "Creates an HTTPS/WSS server backed by certificate and private key PEM files.", "mut srv := try http.make_tls_server(8443, \"cert.pem\", \"key.pem\")"},
-                {"make_tls_server_pem", "fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> HttpServer!", "cfire::http::make_tls_server_pem(port, cert_pem, key_pem)", "Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings.", "mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)"},
-                {"make_router", "fn make_router() -> Router", "cfire::http::make_router()", "Creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).", "mut r := http.make_router()"},
-                {"parse_request", "fn parse_request(raw: str) -> Request!", "cfire::http::parse_request(raw)", "Parses raw HTTP/1.1 wire text into a structured Request model.", "req := try http.parse_request(raw_text)"},
-                {"Response.text", "fn Response.text(code: i32, payload: str) -> Response", "cfire::http::Response::text(code, payload)", "Creates an HTTP Response with text/plain content-type and standard status reason.", "return http.Response.text(200, \"OK\")"},
-                {"Response.json", "fn Response.json(code: i32, json_str: str) -> Response", "cfire::http::Response::json(code, json_str)", "Creates an HTTP Response with application/json content-type.", "return http.Response.json(200, \"{\\\"status\\\":\\\"ok\\\"}\")"},
-                {"Response.html", "fn Response.html(code: i32, html: str) -> Response", "cfire::http::Response::html(code, html)", "Creates an HTTP Response with text/html content-type.", "return http.Response.html(200, \"<h1>Hello</h1>\")"},
-                {"Response.redirect", "fn Response.redirect(location: str, code: i32 = 302) -> Response", "cfire::http::Response::redirect(location, code)", "Creates an HTTP redirect Response setting Location header.", "return http.Response.redirect(\"/login\", 302)"},
-                {"Router.get", "fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.get(pattern, handler)", "Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).", "r.get(\"/users/:id\", |req| http.Response.text(200, req.param(\"id\")))"},
-                {"Router.post", "fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.post(pattern, handler)", "Registers an HTTP POST route handler.", "r.post(\"/items\", |req| http.Response.json(201, \"{}\"))"},
-                {"Router.ws", "fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -> void) -> Router&", "r.ws(pattern, handler)", "Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.", "r.ws(\"/chat/:room\", |req, mut ws| { ... })"},
-                {"Router.dispatch", "fn (r: Router) dispatch(req: Request) -> Response", "r.dispatch(req)", "Dispatches an HTTP request through the router in-memory without open network sockets.", "res := router.dispatch(test_req)"},
-                {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.", "r.use(|req| { return None })"},
-                {"HttpServer.enable_tls_files", "fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!", "s.enable_tls_files(cert_file, key_file)", "Enables TLS on the server using certificate and private key PEM files.", "try srv.enable_tls_files(\"cert.pem\", \"key.pem\")"},
-                {"HttpServer.enable_tls_pem", "fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!", "s.enable_tls_pem(cert_pem, key_pem)", "Enables TLS on the server using in-memory certificate and private key PEM strings.", "try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)"},
-                {"HttpServer.serve_in_background", "fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void", "s.serve_in_background(handler)", "Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.", "server.serve_in_background(router)"},
-                {"HttpServer.stop", "fn (mut s: HttpServer) stop() -> void", "s.stop()", "Gracefully closes the listening socket and stops worker threads.", "server.stop()"},
-                {"Request.param", "fn (req: Request) param(key: str, fallback: str = \"\") -> str", "req.param(key, fallback)", "Retrieves a named route path parameter extracted by the router.", "id := req.param(\"id\")"},
-                {"Request.query", "fn (req: Request) query(key: str, fallback: str = \"\") -> str", "req.query(key, fallback)", "Retrieves a decoded URL query parameter.", "page := req.query(\"page\", \"1\")"},
-                {"Request.header", "fn (req: Request) header(key: str, fallback: str = \"\") -> str", "req.header(key, fallback)", "Performs a case-insensitive header lookup.", "auth := req.header(\"Authorization\")"}
-            }
-        },
-        {
-            "core:net/websocket", "websocket", "RFC 6455 High-Level WebSockets & WSS Client & Server", "(POSIX sockets + TLS)",
-            "RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.",
-            {
-                {"connect", "fn connect(url: str, verify_peer: bool = true) -> Conn!", "cfire::websocket::connect(url, verify_peer)", "Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.", "mut ws := try websocket.connect(\"ws://127.0.0.1:8080/ws\")"},
-                {"connect_insecure", "fn connect_insecure(url: str) -> Conn!", "cfire::websocket::connect_insecure(url)", "Establishes a `wss://` WebSocket connection skipping peer certificate verification (for self-signed certs).", "mut ws := try websocket.connect_insecure(\"wss://127.0.0.1:8443/ws\")"},
-                {"make_server", "fn make_server(port: u16 = 0) -> Server!", "cfire::websocket::make_server(port)", "Creates a standalone WebSocket server listening on `port` (`0` for ephemeral).", "mut srv := try websocket.make_server(0)"},
-                {"make_tls_server", "fn make_tls_server(port: u16, cert_file: str, key_file: str) -> Server!", "cfire::websocket::make_tls_server(port, cert_file, key_file)", "Creates a standalone `wss://` WebSocket server backed by certificate and private key PEM files.", "mut srv := try websocket.make_tls_server(8443, \"cert.pem\", \"key.pem\")"},
-                {"make_tls_server_pem", "fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> Server!", "cfire::websocket::make_tls_server_pem(port, cert_pem, key_pem)", "Creates a standalone `wss://` WebSocket server from in-memory certificate and private key PEM strings.", "mut srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)"},
-                {"upgrade", "fn upgrade(req: Request, mut conn: TcpConn) -> Conn!", "cfire::websocket::upgrade(req, conn)", "Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.", "mut ws := try websocket.upgrade(req, mut conn)"},
-                {"pair", "fn pair() -> (Conn, Conn)!", "cfire::websocket::pair()", "Creates an in-process full-duplex WebSocket client/server loopback pair.", "mut (client, server) := try websocket.pair()"},
-                {"Conn.send_text", "fn (mut ws: Conn) send_text(msg: str) -> void!", "ws.send_text(msg)", "Sends a UTF-8 text frame to the peer (masked if client).", "try ws.send_text(\"hello world\")"},
-                {"Conn.send_binary", "fn (mut ws: Conn) send_binary(data: []byte) -> void!", "ws.send_binary(data)", "Sends a binary data frame to the peer (masked if client).", "try ws.send_binary(payload)"},
-                {"Conn.recv_text", "fn (mut ws: Conn) recv_text() -> str!", "ws.recv_text()", "Receives the next text frame from the peer, automatically responding to Ping frames with Pong.", "msg := try ws.recv_text()"},
-                {"Conn.recv_binary", "fn (mut ws: Conn) recv_binary() -> []byte!", "ws.recv_binary()", "Receives the next binary frame from the peer.", "bytes := try ws.recv_binary()"},
-                {"Conn.ping", "fn (mut ws: Conn) ping(payload: str = \"\") -> void!", "ws.ping(payload)", "Sends a Ping control frame to check peer liveness.", "try ws.ping(\"heartbeat\")"},
-                {"Conn.set_timeout_ms", "fn (mut ws: Conn) set_timeout_ms(ms: i32) -> void", "ws.set_timeout_ms(ms)", "Sets read/write socket timeout in milliseconds (`0` for blocking).", "ws.set_timeout_ms(10000)"},
-                {"Conn.close", "fn (mut ws: Conn) close(code: u16 = 1000, reason: str = \"\")", "ws.close(code, reason)", "Initiates a clean RFC 6455 closure handshake and closes the socket.", "ws.close()"},
-                {"Conn.is_open", "fn (ws: Conn) is_open() -> bool", "ws.is_open()", "Returns true if the WebSocket connection is open.", "if ws.is_open() { ... }"},
-                {"Server.accept", "fn (mut s: Server) accept() -> Conn!", "s.accept()", "Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`.", "mut ws := try srv.accept()"},
-                {"Server.serve_once", "fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void", "s.serve_once(handler)", "Accepts and serves a single WebSocket connection with `handler`.", "srv.serve_once(|mut ws| { ... })"},
-                {"Server.listen_and_serve", "fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void", "s.listen_and_serve(handler)", "Runs a blocking accept loop upgrading and serving WebSocket connections.", "srv.listen_and_serve(|mut ws| { ... })"},
-                {"Server.serve_in_background", "fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void", "s.serve_in_background(handler)", "Starts a background thread accepting and serving WebSocket connections.", "srv.serve_in_background(|mut ws| { ... })"},
-                {"Server.stop", "fn (mut s: Server) stop() -> void", "s.stop()", "Stops the background WebSocket server thread.", "srv.stop()"}
-            }
-        },
-        {
-            "core:time", "time", "Time, Calendar Dates, Durations & RFC 3339 Formatting", "(header-only)",
-            "High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.",
-            {
-                {"now_ms", "fn now_ms() -> i64", "cfire::time::now_ms()", "Returns monotonic milliseconds from `std::chrono::steady_clock`.", "t0 := time.now_ms()"},
-                {"unix_seconds", "fn unix_seconds() -> i64", "cfire::time::unix_seconds()", "Returns current UTC Unix timestamp in seconds.", "ts := time.unix_seconds()"},
-                {"sleep_ms", "fn sleep_ms(ms: i64)", "cfire::time::sleep_ms(ms)", "Sleeps the current thread for `ms` milliseconds.", "time.sleep_ms(10)"},
-                {"sleep_ctx", "fn sleep_ctx(ctx: Context, ms: i64) -> bool", "cfire::time::sleep_ctx(ctx, ms)", "Sleeps the current thread for `ms` or until `ctx` is cancelled; returns true if completed without cancellation.", "ok := time.sleep_ctx(ctx, 50)"},
-                {"now", "fn now() -> Time", "cfire::time::now()", "Returns current wall clock `Time` instant.", "t := time.now()"},
-                {"unix", "fn unix(sec: i64, nsec: i64 = 0) -> Time", "cfire::time::unix(sec, nsec)", "Constructs a `Time` instant from Unix seconds and nanoseconds.", "t := time.unix(1700000000)"},
-                {"parse_rfc3339", "fn parse_rfc3339(s: str) -> Time!", "cfire::time::parse_rfc3339(s)", "Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.", "t := try time.parse_rfc3339(\"2026-10-18T12:00:00Z\")"},
-                {"duration_seconds", "fn duration_seconds(s: i64) -> Duration", "cfire::time::duration_seconds(s)", "Constructs a typed `Duration` representing `s` seconds.", "d := time.duration_seconds(5)"},
-                {"duration_millis", "fn duration_millis(ms: i64) -> Duration", "cfire::time::duration_millis(ms)", "Constructs a typed `Duration` representing `ms` milliseconds.", "d := time.duration_millis(250)"},
-                {"sleep", "fn sleep(d: Duration)", "cfire::time::sleep(d)", "Sleeps the current thread for duration `d`.", "time.sleep(time.duration_millis(50))"}
-            }
-        },
-        {
-            "core:os", "os", "Environment, Working Directory & Subprocesses", "(header-only)",
-            "Process environment inspection, working directory queries, and subprocess output capture.",
-            {
-                {"getenv", "fn getenv(key: str, fallback: str = \"\") -> str", "cfire::os::getenv(key, fallback)", "Reads environment variable `key`, returning `fallback` if unset.", "mode := os.getenv(\"ENV\", \"dev\")"},
-                {"setenv", "fn setenv(key: str, value: str)", "cfire::os::setenv(key, value)", "Sets environment variable `key` to `value` in the current process.", "os.setenv(\"MODE\", \"prod\")"},
-                {"cwd", "fn cwd() -> str", "cfire::os::cwd()", "Returns the current working directory path.", "dir := os.cwd()"},
-                {"exec_output", "fn exec_output(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec_output(\"uname -s\")"},
-                {"command", "fn command(binary: str, args: []str) -> ExecResult!", "cfire::os::command(binary, args)", "Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.", "res := try os.command(\"git\", [\"status\"])"}
-            }
-        },
-        {
-            "core:sync", "sync", "Thread-Safe Typed Channels", "(header-only)",
-            "Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.",
-            {
-                {"make_channel", "fn make_channel[T]() -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
-                {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
-                {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
-                {"Channel.recv_ctx", "fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!", "ch.recv_ctx(ctx)", "Receives from the channel or aborts immediately with an error if `ctx` is cancelled.", "v := try ch.recv_ctx(ctx)"},
-                {"Channel.close", "fn (ch: Channel[T]) close()", "ch.close()", "Closes the channel and wakes all waiting receivers.", "ch.close()"}
-            }
-        },
-        {
-            "core:sync/context", "context", "Cancellation Tokens & Deadline Contexts", "(header-only)",
-            "Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`).",
-            {
-                {"background", "fn background() -> Context", "cfire::context::background()", "Returns an empty, root non-cancellable Context.", "ctx := context.background()"},
-                {"with_cancel", "fn with_cancel(parent: Context) -> (Context, fn(reason: str = \"\"))", "cfire::context::with_cancel(parent)", "Derives a child Context and a cancellation handle function from a parent Context.", "(ctx, cancel) := context.with_cancel(parent)"},
-                {"with_timeout", "fn with_timeout(parent: Context, ms: i64) -> (Context, fn(reason: str = \"\"))", "cfire::context::with_timeout(parent, ms)", "Derives a child Context with an automatic millisecond deadline.", "(ctx, cancel) := context.with_timeout(parent, 250)"},
-                {"Context.is_cancelled", "fn (ctx: Context) is_cancelled() -> bool", "ctx.is_cancelled()", "Returns true if the Context has been cancelled or timed out.", "if ctx.is_cancelled() { return }"},
-                {"Context.done", "fn (ctx: Context) done() -> bool", "ctx.done()", "Synonym for `is_cancelled()`.", "if ctx.done() { return }"},
-                {"Context.reason", "fn (ctx: Context) reason() -> str", "ctx.reason()", "Returns the cancellation reason string.", "msg := ctx.reason()"},
-                {"Context.wait", "fn (ctx: Context) wait()", "ctx.wait()", "Blocks until the Context is cancelled or its deadline expires.", "ctx.wait()"},
-                {"Context.wait_for", "fn (ctx: Context) wait_for(ms: i64) -> bool", "ctx.wait_for(ms)", "Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled.", "cancelled := ctx.wait_for(100)"}
-            }
-        },
-        {
-            "core:str", "str", "UTF-8 String Manipulation", "(header-only)",
-            "Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion.",
-            {
-                {"split", "fn split(s: str, sep: str) -> []str", "cfire::str::split(s, sep)", "Splits `s` around every occurrence of `sep`.", "parts := str.split(\"a,b,c\", \",\")"},
-                {"join", "fn join(items: []str, sep: str) -> str", "cfire::str::join(items, sep)", "Joins a slice of strings with `sep`.", "s := str.join(parts, \"-\")"},
-                {"trim", "fn trim(s: str) -> str", "cfire::str::trim(s)", "Strips leading and trailing whitespace.", "clean := str.trim(\"  hi  \")"},
-                {"starts_with", "fn starts_with(s: str, prefix: str) -> bool", "cfire::str::starts_with(s, prefix)", "Returns `true` if `s` starts with `prefix`.", "if str.starts_with(s, \"cf\") { ... }"},
-                {"ends_with", "fn ends_with(s: str, suffix: str) -> bool", "cfire::str::ends_with(s, suffix)", "Returns `true` if `s` ends with `suffix`.", "if str.ends_with(f, \".cf\") { ... }"},
-                {"contains", "fn contains(s: str, needle: str) -> bool", "cfire::str::contains(s, needle)", "Returns `true` if `s` contains `needle`.", "if str.contains(s, \"fire\") { ... }"},
-                {"replace", "fn replace(s: str, from: str, to: str) -> str", "cfire::str::replace(s, from, to)", "Replaces all occurrences of `from` in `s` with `to`.", "r := str.replace(s, \"old\", \"new\")"},
-                {"to_upper", "fn to_upper(s: str) -> str", "cfire::str::to_upper(s)", "Converts ASCII characters to uppercase.", "u := str.to_upper(\"cfire\")"},
-                {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"},
-                {"index_of", "fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64", "cfire::str::index_of(s, substr, start_pos)", "Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.", "idx := str.index_of(path, \".\")"},
-                {"last_index_of", "fn last_index_of(s: str, substr: str) -> i64", "cfire::str::last_index_of(s, substr)", "Finds last occurrence of `substr` in `s`; returns index or -1.", "idx := str.last_index_of(path, \"/\")"},
-                {"rfind", "fn rfind(s: str, substr: str, start_pos: usize = npos) -> i64", "cfire::str::rfind(s, substr, start_pos)", "Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.", "pos := str.rfind(s, \"#\")"},
-                {"byte_ptr", "fn byte_ptr(s: str) -> *c_char", "cfire::str::byte_ptr(s)", "Returns a raw pointer to the underlying buffer of `s` for C FFI interop.", "ptr := s.byte_ptr()"},
-                {"byte_ptr_at", "fn byte_ptr_at(s: str, offset: i64) -> *c_char", "cfire::str::byte_ptr_at(s, offset)", "Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.", "ptr := s.byte_ptr_at(4)"},
-                {"str.data", "fn (s: str) data() -> *const c_char", "(s).data()", "Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.", "ptr := s.data()"},
-                {"str.bytes", "fn (s: str) bytes() -> []byte", "cfire::to_bytes(s)", "Returns a safe byte slice view (`std::span<const std::byte>`) over the UTF-8 bytes of `s`.", "b := s.bytes()"},
-                {"slice.data", "fn (s: []T) data() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.", "ptr := s.data()"},
-                {"slice.data_ptr", "fn (s: []T) data_ptr() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).", "ptr := s.data_ptr()"}
-            }
-        },
-        {
-            "core:math", "math", "Numeric & Floating-Point Utilities", "(header-only)",
-            "Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.",
-            {
-                {"clamp_i64", "fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64", "cfire::math::clamp_i64(val, lo, hi)", "Clamps a 64-bit integer to `[lo, hi]`.", "c := math.clamp_i64(x, 0, 100)"},
-                {"clamp_f64", "fn clamp_f64(val: f64, lo: f64, hi: f64) -> f64", "cfire::math::clamp_f64(val, lo, hi)", "Clamps a 64-bit float to `[lo, hi]`.", "c := math.clamp_f64(v, 0.0, 1.0)"},
-                {"sqrt", "fn sqrt(x: f64) -> f64", "cfire::math::sqrt(x)", "Computes square root.", "r := math.sqrt(16.0)"},
-                {"abs_f64", "fn abs_f64(x: f64) -> f64", "cfire::math::abs_f64(x)", "Computes absolute value of a `f64`.", "a := math.abs_f64(-3.5)"}
-            }
-        },
-        {
-            "core:rand", "rand", "Thread-Local MT19937_64 & CSPRNG Generator", "(header-only)",
-            "Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.",
-            {
-                {"u64", "fn u64() -> u64", "cfire::rand::u64()", "Generates a random 64-bit unsigned integer.", "id := rand.u64()"},
-                {"range_i64", "fn range_i64(min_incl: i64, max_incl: i64) -> i64", "cfire::rand::range_i64(min_incl, max_incl)", "Generates a uniform integer in `[min_incl, max_incl]`.", "n := rand.range_i64(1, 10)"},
-                {"f64_unit", "fn f64_unit() -> f64", "cfire::rand::f64_unit()", "Generates a uniform `f64` in `[0.0, 1.0)`.", "p := rand.f64_unit()"},
-                {"bytes", "fn bytes(n: usize) -> []byte", "cfire::rand::bytes(n)", "Generates `n` cryptographically secure random bytes from OS entropy.", "buf := rand.bytes(32)"}
-            }
-        },
-        {
-            "core:encoding/base64", "base64", "RFC 4648 Base64 & URL-Safe Encoding/Decoding", "(header-only)",
-            "High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder.",
-            {
-                {"encode", "fn encode(data: []byte, url_safe: bool = false) -> str", "cfire::base64::encode(data, url_safe)", "Encodes binary byte slice into standard or URL-safe Base64 string.", "s := base64.encode(raw)"},
-                {"encode_str", "fn encode_str(s: str, url_safe: bool = false) -> str", "cfire::base64::encode_str(s, url_safe)", "Encodes a UTF-8 text string into standard or URL-safe Base64.", "token := base64.encode_str(\"user:pass\")"},
-                {"decode", "fn decode(s: str) -> []byte!", "cfire::base64::decode(s)", "Decodes a Base64 string into binary bytes.", "bytes := try base64.decode(token)"},
-                {"decode_str", "fn decode_str(s: str) -> str!", "cfire::base64::decode_str(s)", "Decodes a Base64 string into a UTF-8 text string.", "plain := try base64.decode_str(token)"}
-            }
-        },
-        {
-            "core:encoding/hex", "hex", "Hexadecimal Encoding & Decoding", "(header-only)",
-            "Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers.",
-            {
-                {"encode", "fn encode(data: []byte) -> str", "cfire::hex::encode(data)", "Encodes binary bytes to lowercase hexadecimal string.", "h := hex.encode(digest)"},
-                {"encode_str", "fn encode_str(s: str) -> str", "cfire::hex::encode_str(s)", "Encodes text characters to hexadecimal string.", "h := hex.encode_str(\"abc\")"},
-                {"decode", "fn decode(s: str) -> []byte!", "cfire::hex::decode(s)", "Decodes a hexadecimal string to binary bytes.", "buf := try hex.decode(h)"},
-                {"decode_str", "fn decode_str(s: str) -> str!", "cfire::hex::decode_str(s)", "Decodes a hexadecimal string to a UTF-8 string.", "txt := try hex.decode_str(h)"}
-            }
-        },
-        {
-            "core:encoding/csv", "csv", "RFC 4180 CSV Parsing & Stringification", "(header-only)",
-            "RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping.",
-            {
-                {"parse", "fn parse(s: str) -> [][]str", "cfire::csv::parse(s)", "Parses a CSV string into a 2D table of rows and columns.", "rows := csv.parse(content)"},
-                {"stringify", "fn stringify(rows: [][]str) -> str", "cfire::csv::stringify(rows)", "Serializes a 2D table of strings into an RFC 4180 formatted CSV string.", "out := csv.stringify(rows)"},
-                {"read_all", "fn read_all(path: str) -> [][]str!", "cfire::csv::read_all(path)", "Reads an entire CSV file from disk and parses it into rows.", "table := try csv.read_all(\"data.csv\")"},
-                {"write_all", "fn write_all(path: str, rows: [][]str) -> void!", "cfire::csv::write_all(path, rows)", "Serializes rows to CSV and writes to disk.", "try csv.write_all(\"report.csv\", table)"}
-            }
-        },
-        {
-            "core:regex", "regex", "ECMAScript Regular Expressions", "(header-only)",
-            "Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`.",
-            {
-                {"compile", "fn compile(pattern: str) -> Regex!", "cfire::regex::compile(pattern)", "Compiles an ECMAScript regex pattern into a reusable Regex object.", "re := try regex.compile(\"\\\\d+\")"},
-                {"is_match", "fn is_match(pattern: str, text: str) -> bool!", "cfire::regex::is_match(pattern, text)", "Tests whether a regex pattern matches text.", "ok := try regex.is_match(\"^[a-z]+$\", s)"},
-                {"replace_all", "fn replace_all(pattern: str, text: str, repl: str) -> str!", "cfire::regex::replace_all(pattern, text, repl)", "Replaces all occurrences matching pattern with repl.", "res := try regex.replace_all(\"\\s+\", s, \" \")"}
-            }
-        },
-        {
-            "core:collections", "collections", "Generic Containers (Set, PriorityQueue, Deque)", "(header-only)",
-            "Standard generic containers backed by STL unordered_set, priority_queue, and deque.",
-            {
-                {"Set", "type Set[T] struct", "cfire::collections::Set<T>", "Generic hash set container.", "mut s := collections.Set[str]{}"},
-                {"PriorityQueue", "type PriorityQueue[T] struct", "cfire::collections::PriorityQueue<T>", "Generic max-heap priority queue.", "mut pq := collections.PriorityQueue[i32]{}"},
-                {"Deque", "type Deque[T] struct", "cfire::collections::Deque<T>", "Generic double-ended queue.", "mut dq := collections.Deque[i32]{}"}
-            }
-        },
-        {
-            "core:sort", "sort", "Slice Sorting & Binary Search", "(header-only)",
-            "In-place sorting algorithms and binary search on slices.",
-            {
-                {"slice", "fn slice(mut s: []T)", "cfire::sort::slice(s)", "Sorts a slice in ascending order in-place.", "sort.slice(mut numbers)"},
-                {"binary_search", "fn binary_search(s: []T, val: T) -> i64?", "cfire::sort::binary_search(s, val)", "Performs binary search on a sorted slice.", "idx := sort.binary_search(numbers, 42)"}
-            }
-        },
-        {
-            "core:log", "log", "Structured Leveled Logging", "(header-only)",
-            "Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.",
-            {
-                {"set_level", "fn set_level(l: Level)", "cfire::log::set_level(l)", "Sets the minimum logging severity threshold.", "log.set_level(log.Level::Debug)"},
-                {"set_format", "fn set_format(f: Format)", "cfire::log::set_format(f)", "Sets the log output format (Text or Json).", "log.set_format(log.Format::Json)"},
-                {"debug", "fn debug(msg: str, ...attrs: str)", "cfire::log::debug(msg, ...)", "Logs a debug message with optional key-value attribute pairs.", "log.debug(\"cache miss\", \"key\", \"user:1\")"},
-                {"info", "fn info(msg: str, ...attrs: str)", "cfire::log::info(msg, ...)", "Logs an informational message with optional key-value attribute pairs.", "log.info(\"server listening\", \"port\", \"8080\")"},
-                {"warn", "fn warn(msg: str, ...attrs: str)", "cfire::log::warn(msg, ...)", "Logs a warning message with optional key-value attribute pairs.", "log.warn(\"rate limit reached\", \"client\", ip)"},
-                {"error", "fn error(msg: str, ...attrs: str)", "cfire::log::error(msg, ...)", "Logs an error message with optional key-value attribute pairs.", "log.error(\"database connection failed\", \"db\", name)"}
-            }
-        },
-        {
-            "core:unicode", "unicode", "UTF-8 Decoding, Rune Counting & Unicode Manipulation", "(header-only)",
-            "RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation.",
-            {
-                {"rune_count", "fn rune_count(s: str) -> usize", "cfire::unicode::rune_count(s)", "Counts the number of Unicode scalar values (codepoints) in a UTF-8 string.", "count := unicode.rune_count(\"Hello, 世界! 🚀\")"},
-                {"runes", "fn runes(s: str) -> []u32", "cfire::unicode::runes(s)", "Decodes all Unicode codepoints in `s` into a slice of 32-bit scalar values.", "cps := unicode.runes(\"cfire 🔥\")"},
-                {"is_valid_utf8", "fn is_valid_utf8(s: str) -> bool", "cfire::unicode::is_valid_utf8(s)", "Validates whether a string consists of strictly valid RFC 3629 UTF-8 byte sequences.", "ok := unicode.is_valid_utf8(payload)"},
-                {"encode_rune", "fn encode_rune(r: u32) -> str", "cfire::unicode::encode_rune(r)", "Encodes a 32-bit Unicode codepoint into its UTF-8 string representation.", "char := unicode.encode_rune(0x1F525)"},
-                {"to_lower", "fn to_lower(s: str) -> str", "cfire::unicode::to_lower(s)", "Converts Latin, Greek, and Cyrillic Unicode characters to lowercase.", "lower := unicode.to_lower(\"HELLO, СВЕТ!\")"},
-                {"to_upper", "fn to_upper(s: str) -> str", "cfire::unicode::to_upper(s)", "Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.", "upper := unicode.to_upper(\"hello, свет!\")"}
+                {"openai", "fn openai(api_key: str = \"\", base_url: str = \"https://api.openai.com/v1\") -> Client", "cfire::ai::openai(api_key, base_url)", "Creates an OpenAI client (reads `OPENAI_API_KEY` if `api_key` is empty).", "client := ai.openai()"},
+                {"anthropic", "fn anthropic(api_key: str = \"\", base_url: str = \"https://api.anthropic.com/v1\") -> Client", "cfire::ai::anthropic(api_key, base_url)", "Creates an Anthropic Claude client (reads `ANTHROPIC_API_KEY` if `api_key` is empty).", "client := ai.anthropic()"},
+                {"gemini", "fn gemini(api_key: str = \"\", base_url: str = \"https://generativelanguage.googleapis.com/v1beta\") -> Client", "cfire::ai::gemini(api_key, base_url)", "Creates a Google Gemini client (reads `GEMINI_API_KEY` or `GOOGLE_API_KEY` if `api_key` is empty).", "client := ai.gemini()"},
+                {"ollama", "fn ollama(host: str = \"http://127.0.0.1:11434\") -> Client", "cfire::ai::ollama(host)", "Creates a local Ollama client (uses `OLLAMA_HOST` if set).", "client := ai.ollama()"},
+                {"openai_compatible", "fn openai_compatible(base_url: str, api_key: str = \"\") -> Client", "cfire::ai::openai_compatible(base_url, api_key)", "Creates a client for any OpenAI-compatible server (`vLLM`, `llama-server`, `LM Studio`, `Groq`, `Together`, `DeepSeek`).", "client := ai.openai_compatible(\"http://127.0.0.1:8080/v1\")"},
+                {"apple", "fn apple() -> Client", "cfire::ai::apple()", "Creates an Apple on-device client backed by `NaturalLanguage.framework` (`NLEmbedding`, `NLLanguageRecognizer`).", "client := ai.apple()"},
+                {"user", "fn user(content: str) -> Message", "cfire::ai::user(content)", "Constructs a user role `Message`.", "m := ai.user(\"Summarize this file.\")"},
+                {"system", "fn system(content: str) -> Message", "cfire::ai::system(content)", "Constructs a system instruction `Message`.", "m := ai.system(\"You are a concise coding assistant.\")"},
+                {"assistant", "fn assistant(content: str) -> Message", "cfire::ai::assistant(content)", "Constructs an assistant role `Message`.", "m := ai.assistant(\"Here is the summary:\")"},
+                {"tool_def", "fn tool_def[T](name: str, description: str) -> Tool", "cfire::ai::tool_def<T>(name, description)", "Constructs a typed LLM `Tool` definition whose JSON Schema is derived at compile time from struct `T`.", "t := ai.tool_def[WeatherArgs](\"get_weather\", \"Look up current weather\")"},
+                {"embed", "fn embed(model: str, text: str) -> []f32!", "cfire::ai::embed(model, text)", "Computes a normalized `[]f32` embedding vector (`model: \"local\"` runs offline on-device via Apple `NLEmbedding` or deterministic trigram feature hashing; other models query the configured cloud/Ollama provider).", "vec := try ai.embed(\"local\", \"compile-time memory safety\")"},
+                {"Client.ask", "fn (c: Client) ask(model: str, prompt: str, system_prompt: str = \"\") -> str!", "c.ask(model, prompt, system_prompt)", "Executes a single-turn prompt and returns the assistant text response.", "reply := try client.ask(\"gpt-4o-mini\", \"Hello!\")"},
+                {"Client.chat", "fn (c: Client) chat(model: str, messages: []Message) -> ChatResponse!", "c.chat(model, messages)", "Executes a multi-turn chat completion returning text, tool calls, and token usage.", "res := try client.chat(\"claude-3-5-sonnet-latest\", msgs)"},
+                {"Client.chat_with_tools", "fn (c: Client) chat_with_tools(model: str, messages: []Message, tools: []Tool) -> ChatResponse!", "c.chat_with_tools(model, messages, tools)", "Executes a chat completion with compile-time schema-typed `tools` and returns any requested `ToolCall` invocations.", "res := try client.chat_with_tools(\"gpt-4o\", msgs, [weather_tool])"},
+                {"Client.stream", "fn (c: Client) stream(model: str, messages: []Message, on_delta: fn(str)) -> str!", "c.stream(model, messages, on_delta)", "Streams tokens in real time via SSE across OpenAI, Anthropic, Gemini, or Ollama, invoking `on_delta` for each token chunk.", "full := try client.stream(\"llama3.2\", msgs, |tok| { print(\"{}\", tok) })"},
+                {"Client.generate_struct", "fn (c: Client) generate_struct[T](model: str, prompt: str, system_prompt: str = \"\") -> T!", "c.generate_struct<T>(model, prompt, system_prompt)", "Enforces `json.schema[T]()` on the model response and parses the result directly into a strongly-typed `cfire` struct `T`.", "inv := try client.generate_struct[Invoice](\"gpt-4o-mini\", raw_text)"},
+                {"Client.embed", "fn (c: Client) embed(model: str, text: str) -> []f32!", "c.embed(model, text)", "Generates an embedding vector using `c`'s provider (or offline on-device when `model == \"local\"`).", "vec := try client.embed(\"text-embedding-3-small\", doc)"},
+                {"cosine_similarity", "fn cosine_similarity(a: []f32, b: []f32) -> f32", "cfire::ai::cosine_similarity(a, b)", "Computes the cosine similarity in `[-1.0, 1.0]` between two `[]f32` embedding vectors.", "sim := ai.cosine_similarity(v1, v2)"},
+                {"l2_distance", "fn l2_distance(a: []f32, b: []f32) -> f32", "cfire::ai::l2_distance(a, b)", "Computes the Euclidean (L2) distance between two `[]f32` vectors.", "dist := ai.l2_distance(v1, v2)"},
+                {"dot_product", "fn dot_product(a: []f32, b: []f32) -> f32", "cfire::ai::dot_product(a, b)", "Computes the inner product of two `[]f32` vectors.", "dot := ai.dot_product(v1, v2)"},
+                {"normalize", "fn normalize(v: []f32) -> []f32", "cfire::ai::normalize(v)", "Returns an L2-normalized unit vector copy of `v`.", "unit := ai.normalize(raw_vec)"},
+                {"chunk_text", "fn chunk_text(text: str, max_chars: i32 = 512, overlap: i32 = 64) -> []str", "cfire::ai::chunk_text(text, max_chars, overlap)", "Splits a document into overlapping paragraph/sentence-aware chunks for RAG indexing.", "chunks := ai.chunk_text(markdown, 512, 64)"},
+                {"detect_language", "fn detect_language(text: str) -> str", "cfire::ai::detect_language(text)", "Detects the dominant BCP-47 language code (e.g. `\"en\"`) using Apple `NLLanguageRecognizer` on macOS/iOS.", "lang := ai.detect_language(\"Bonjour tout le monde\")"},
+                {"make_mcp_server", "fn make_mcp_server(name: str, version: str = \"1.0.0\") -> McpServer", "cfire::ai::make_mcp_server(name, version)", "Creates a Model Context Protocol (MCP) server capable of serving compile-time schema-typed tools over JSON-RPC 2.0.", "mut mcp := ai.make_mcp_server(\"my-tools\", \"1.0.0\")"},
+                {"McpServer.register_tool", "fn (mut s: McpServer) register_tool[T](name: str, description: str, handler: fn(T) -> str!)", "s.register_tool<T>(name, description, handler)", "Registers an MCP tool whose input schema is derived from `T` (`json.schema[T]()`) and whose arguments are automatically parsed into `T`.", "mcp.register_tool[Query](\"search\", \"Search docs\", |q| { return \"ok\" })"},
+                {"McpServer.handle_jsonrpc", "fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str", "s.handle_jsonrpc(req_json)", "Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.", "resp := mcp.handle_jsonrpc(line)"},
+                {"McpServer.serve_stdio", "fn (mut s: McpServer) serve_stdio() -> i32", "s.serve_stdio()", "Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.", "mcp.serve_stdio()"}
             }
         },
         {
@@ -438,6 +106,395 @@ struct DiagnosticDoc {
             }
         },
         {
+            "core:cli", "cli", "Struct-Tag Command-Line Parser", "(header-only)",
+            "Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:\"--flag,help\"`).",
+            {
+                {"parse", "fn parse[T](args: []str?) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"}
+            }
+        },
+        {
+            "core:collections", "collections", "Generic Containers (Set, PriorityQueue, Deque)", "(header-only)",
+            "Standard generic containers backed by STL unordered_set, priority_queue, and deque.",
+            {
+                {"Set", "type Set[T] struct", "cfire::collections::Set<T>", "Generic hash set container.", "mut s := collections.Set[str]{}"},
+                {"PriorityQueue", "type PriorityQueue[T] struct", "cfire::collections::PriorityQueue<T>", "Generic max-heap priority queue.", "mut pq := collections.PriorityQueue[i32]{}"},
+                {"Deque", "type Deque[T] struct", "cfire::collections::Deque<T>", "Generic double-ended queue.", "mut dq := collections.Deque[i32]{}"}
+            }
+        },
+        {
+            "core:compress/zstd", "zstd", "Native Zstandard Frame Compression", "-lzstd",
+            "Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.",
+            {
+                {"compress", "fn compress(input: []byte, level: i32 = 3) -> []byte!", "cfire::zstd::compress(input, level)", "Compresses a byte slice into a Zstandard frame.", "blob := try zstd.compress(raw, level: 3)"},
+                {"decompress", "fn decompress(frame: []byte) -> []byte!", "cfire::zstd::decompress(frame)", "Decompresses a Zstandard frame using the embedded frame content size.", "orig := try zstd.decompress(blob)"}
+            }
+        },
+        {
+            "core:crypto/aes", "aes", "NIST FIPS 197 AES-256 Symmetric Encryption & GCM AEAD", "(Header-only pure C++23)",
+            "Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).",
+            {
+                {"encrypt_gcm", "fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -> GcmResult!", "cfire::aes::encrypt_gcm(key, nonce, pt, aad)", "Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.", "res := try aes.encrypt_gcm(key, nonce, secret, aad)"},
+                {"decrypt_gcm", "fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -> []byte!", "cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)", "Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.", "pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)"},
+                {"encrypt_ctr", "fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -> []byte!", "cfire::aes::encrypt_ctr(key, iv, pt)", "Encrypts plaintext using AES-256-CTR mode.", "ct := try aes.encrypt_ctr(key, iv, pt)"},
+                {"decrypt_ctr", "fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -> []byte!", "cfire::aes::decrypt_ctr(key, iv, ct)", "Decrypts ciphertext using AES-256-CTR mode.", "pt := try aes.decrypt_ctr(key, iv, ct)"}
+            }
+        },
+        {
+            "core:crypto/blake3", "blake3", "Cryptographic 256-Bit Digest (Alias)", "(CommonCrypto / built-in)",
+            "Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`).",
+            {
+                {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::blake3::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := blake3.hash_hex(raw)"}
+            }
+        },
+        {
+            "core:crypto/hmac", "hmac", "RFC 2104 HMAC-SHA256 Message Authentication", "(CommonCrypto / built-in)",
+            "Computes RFC 2104 keyed HMAC-SHA256 authentication digests.",
+            {
+                {"sha256_hex", "fn sha256_hex(key: str, data: str) -> str", "cfire::hmac::sha256_hex(key, data)", "Returns a 64-character lowercase hex HMAC-SHA256 digest.", "sig := hmac.sha256_hex(secret, payload)"},
+                {"equal", "fn equal(a: str, b: str) -> bool", "cfire::hmac::equal(a, b)", "Performs a constant-time equality check on two MAC digests to prevent timing attacks.", "ok := hmac.equal(sig1, sig2)"}
+            }
+        },
+        {
+            "core:crypto/sha256", "sha256", "Standard FIPS 180-4 SHA-256 Digest", "(CommonCrypto / built-in)",
+            "Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings.",
+            {
+                {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::sha256::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := sha256.hash_hex(raw)"},
+                {"hash_bytes", "fn hash_bytes(data: []byte) -> []byte", "cfire::sha256::hash_bytes(data)", "Returns 32-byte binary SHA-256 digest of `data`.", "b := sha256.hash_bytes(raw)"}
+            }
+        },
+        {
+            "core:db/sqlite", "sqlite", "Embedded SQLite3 with WAL, Vector Search & Row Mapping", "-lsqlite3",
+            "RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, `[]f32` embedding BLOB binding, built-in SQL vector similarity functions (`vec_cosine_similarity`, `vec_l2_distance`, `vec_dot`), dynamic extension loading (`sqlite-vec`), atomic transactions, and compile-time `sql:\"...\"` struct row mapping.",
+            {
+                {"open", "fn open(path: str) -> Conn!", "cfire::sqlite::open(path)", "Opens an SQLite3 database connection, enables WAL mode, and registers vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`, `vec_dot`, `vec_dims`).", "mut db := try sqlite.open(\"app.db\")"},
+                {"Conn.exec", "fn (mut db: Conn) exec(sql: str, ...args) -> void!", "db.exec(sql, args...)", "Executes a parameterized SQL statement (`?1`, `?2`, ...), including `[]f32` vector and `[]byte` BLOB parameters.", "try db.exec(\"INSERT INTO docs VALUES (?1, ?2)\", id, vec)"},
+                {"Conn.query", "fn (mut db: Conn) query[T](sql: str, ...args) -> []T!", "db.query<T>(sql, args...)", "Executes a `SELECT` query and maps rows directly into struct `T` via `sql:\"...\"` tags (supporting `str`, `i64`, `f64`, `[]f32`, `[]byte`).", "rows := try db.query[Doc](\"SELECT id, text FROM docs ORDER BY vec_cosine_similarity(vec, ?1) DESC\", qvec)"},
+                {"Conn.load_extension", "fn (mut db: Conn) load_extension(path: str, entry_point: str = \"\") -> void!", "db.load_extension(path, entry_point)", "Dynamically loads a native SQLite extension shared library (e.g. `sqlite-vec` `vec0` or `sqlite-vss`).", "try db.load_extension(\"./vec0\")"},
+                {"Conn.tx", "fn (mut db: Conn) tx(block: fn(mut tx: Conn) -> void!) -> void!", "db.tx([&](Conn& tx) { ... })", "Runs a closure inside an atomic `BEGIN IMMEDIATE ... COMMIT` transaction with automatic rollback on error.", "try db.tx |mut tx| { ... }"}
+            }
+        },
+        {
+            "core:encoding/base64", "base64", "RFC 4648 Base64 & URL-Safe Encoding/Decoding", "(header-only)",
+            "High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder.",
+            {
+                {"encode", "fn encode(data: []byte, url_safe: bool = false) -> str", "cfire::base64::encode(data, url_safe)", "Encodes binary byte slice into standard or URL-safe Base64 string.", "s := base64.encode(raw)"},
+                {"encode_str", "fn encode_str(s: str, url_safe: bool = false) -> str", "cfire::base64::encode_str(s, url_safe)", "Encodes a UTF-8 text string into standard or URL-safe Base64.", "token := base64.encode_str(\"user:pass\")"},
+                {"decode", "fn decode(s: str) -> []byte!", "cfire::base64::decode(s)", "Decodes a Base64 string into binary bytes.", "bytes := try base64.decode(token)"},
+                {"decode_str", "fn decode_str(s: str) -> str!", "cfire::base64::decode_str(s)", "Decodes a Base64 string into a UTF-8 text string.", "plain := try base64.decode_str(token)"}
+            }
+        },
+        {
+            "core:encoding/csv", "csv", "RFC 4180 CSV Parsing & Stringification", "(header-only)",
+            "RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping.",
+            {
+                {"parse", "fn parse(s: str) -> [][]str", "cfire::csv::parse(s)", "Parses a CSV string into a 2D table of rows and columns.", "rows := csv.parse(content)"},
+                {"stringify", "fn stringify(rows: [][]str) -> str", "cfire::csv::stringify(rows)", "Serializes a 2D table of strings into an RFC 4180 formatted CSV string.", "out := csv.stringify(rows)"},
+                {"read_all", "fn read_all(path: str) -> [][]str!", "cfire::csv::read_all(path)", "Reads an entire CSV file from disk and parses it into rows.", "table := try csv.read_all(\"data.csv\")"},
+                {"write_all", "fn write_all(path: str, rows: [][]str) -> void!", "cfire::csv::write_all(path, rows)", "Serializes rows to CSV and writes to disk.", "try csv.write_all(\"report.csv\", table)"}
+            }
+        },
+        {
+            "core:encoding/hex", "hex", "Hexadecimal Encoding & Decoding", "(header-only)",
+            "Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers.",
+            {
+                {"encode", "fn encode(data: []byte) -> str", "cfire::hex::encode(data)", "Encodes binary bytes to lowercase hexadecimal string.", "h := hex.encode(digest)"},
+                {"encode_str", "fn encode_str(s: str) -> str", "cfire::hex::encode_str(s)", "Encodes text characters to hexadecimal string.", "h := hex.encode_str(\"abc\")"},
+                {"decode", "fn decode(s: str) -> []byte!", "cfire::hex::decode(s)", "Decodes a hexadecimal string to binary bytes.", "buf := try hex.decode(h)"},
+                {"decode_str", "fn decode_str(s: str) -> str!", "cfire::hex::decode_str(s)", "Decodes a hexadecimal string to a UTF-8 string.", "txt := try hex.decode_str(h)"}
+            }
+        },
+        {
+            "core:fs", "fs", "Filesystem & Zero-Copy Byte I/O", "(header-only)",
+            "Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`.",
+            {
+                {"read_all", "fn read_all(path: str) -> []byte!", "cfire::fs::read_all(path)", "Reads an entire binary file into a byte buffer.", "raw := try fs.read_all(\"input.bin\")"},
+                {"write_all", "fn write_all(path: str, data: []byte) -> void!", "cfire::fs::write_all(path, data)", "Writes a byte slice atomically to disk, creating parent directories if needed.", "try fs.write_all(\"out.bin\", raw)"},
+                {"read_text", "fn read_text(path: str) -> str!", "cfire::fs::read_text(path)", "Reads an entire UTF-8 text file into a `str`.", "txt := try fs.read_text(\"config.json\")"},
+                {"write_text", "fn write_text(path: str, text: str) -> void!", "cfire::fs::write_text(path, text)", "Writes a UTF-8 string to disk.", "try fs.write_text(\"hello.txt\", \"sapphire\")"},
+                {"open", "fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!", "cfire::fs::open(path, mode)", "Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.", "mut f := try fs.open(\"log.txt\", OpenMode::Append)"},
+                {"File.read", "fn (mut f: File) read(mut buf: []byte) -> usize!", "f.read(buf)", "Reads up to `buf.len` bytes from the streaming file handle.", "n := try f.read(mut buf)"},
+                {"File.read_all", "fn (mut f: File) read_all() -> []byte!", "f.read_all()", "Reads all remaining bytes from current file position to EOF.", "bytes := try f.read_all()"},
+                {"File.write", "fn (mut f: File) write(data: []byte) -> usize!", "f.write(data)", "Writes byte slice to file stream.", "n := try f.write(buf)"},
+                {"File.write_str", "fn (mut f: File) write_str(s: str) -> usize!", "f.write_str(s)", "Writes UTF-8 string to file stream.", "try f.write_str(\"header\\n\")"},
+                {"File.seek", "fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!", "f.seek(offset, whence)", "Seeks within file to offset from Start, Current, or End.", "pos := try f.seek(0, SeekWhence::Start)"},
+                {"File.tell", "fn (mut f: File) tell() -> i64!", "f.tell()", "Returns current byte offset within file stream.", "pos := try f.tell()"},
+                {"File.flush", "fn (mut f: File) flush() -> void!", "f.flush()", "Flushes buffered stream data to disk.", "try f.flush()"},
+                {"File.close", "fn (mut f: File) close() -> void", "f.close()", "Closes open file handle.", "f.close()"},
+                {"dirname", "fn dirname(path: str) -> str", "cfire::fs::dirname(path)", "Returns directory portion of a filesystem path.", "dir := fs.dirname(\"/a/b/c.txt\")"},
+                {"basename", "fn basename(path: str) -> str", "cfire::fs::basename(path)", "Returns file name portion of a filesystem path.", "name := fs.basename(\"/a/b/c.txt\")"},
+                {"extension", "fn extension(path: str) -> str", "cfire::fs::extension(path)", "Returns file extension including leading dot.", "ext := fs.extension(\"main.cf\")"},
+                {"exists", "fn exists(path: str) -> bool", "cfire::fs::exists(path)", "Returns `true` if the path exists on disk.", "if fs.exists(\"build.cf\") { ... }"},
+                {"mkdir_all", "fn mkdir_all(path: str) -> void!", "cfire::fs::mkdir_all(path)", "Recursively creates a directory and all parent directories.", "try fs.mkdir_all(\".cfire/cache\")"},
+                {"remove", "fn remove(path: str) -> void!", "cfire::fs::remove(path)", "Removes a file or directory tree recursively.", "try fs.remove(\"tmp_dir\")"},
+                {"list_dir", "fn list_dir(path: str) -> []str!", "cfire::fs::list_dir(path)", "Lists sorted filenames inside a directory.", "entries := try fs.list_dir(\"examples\")"}
+            }
+        },
+        {
+            "core:json", "json", "Compile-Time SIMD JSON Reflection & Dynamic DOM", "-lsimdjson (or header-only)",
+            "Uses `json:\"...\"` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.",
+            {
+                {"parse", "fn parse[T](payload: []byte | str) -> T!", "cfire::json::parse<T>(payload)", "Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.", "cfg := try json.parse[Config](raw)"},
+                {"stringify", "fn stringify[T](val: T) -> str", "cfire::json::stringify<T>(val)", "Serializes a tagged struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`) into a JSON string.", "payload := json.stringify(metric)"},
+                {"schema", "fn schema[T]() -> str", "cfire::json::schema<T>()", "Generates a Draft 2020-12 / OpenAI Strict Mode / MCP JSON Schema string for struct `T` using `json:\"...\"` and `desc:\"...\"` tags.", "s := json.schema[SearchTool]()"},
+                {"escape_string", "fn escape_string(s: str) -> str", "cfire::json::escape_string(s)", "Escapes quotes, backslashes, and control characters for JSON strings.", "esc := json.escape_string(raw_txt)"},
+                {"parse_dynamic", "fn parse_dynamic(payload: str) -> Value!", "cfire::json::parse_dynamic(payload)", "Parses arbitrary JSON into a recursive dynamic DOM `Value`.", "v := try json.parse_dynamic(raw)"},
+                {"stringify_dynamic", "fn stringify_dynamic(val: Value, indent: i32 = 0) -> str", "cfire::json::stringify_dynamic(val, indent)", "Serializes a dynamic DOM `Value` into compact or indented JSON.", "s := json.stringify_dynamic(v, 2)"}
+            }
+        },
+        {
+            "core:log", "log", "Structured Leveled Logging", "(header-only)",
+            "Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.",
+            {
+                {"set_level", "fn set_level(l: Level)", "cfire::log::set_level(l)", "Sets the minimum logging severity threshold.", "log.set_level(log.Level::Debug)"},
+                {"set_format", "fn set_format(f: Format)", "cfire::log::set_format(f)", "Sets the log output format (Text or Json).", "log.set_format(log.Format::Json)"},
+                {"debug", "fn debug(msg: str, ...attrs: str)", "cfire::log::debug(msg, ...)", "Logs a debug message with optional key-value attribute pairs.", "log.debug(\"cache miss\", \"key\", \"user:1\")"},
+                {"info", "fn info(msg: str, ...attrs: str)", "cfire::log::info(msg, ...)", "Logs an informational message with optional key-value attribute pairs.", "log.info(\"server listening\", \"port\", \"8080\")"},
+                {"warn", "fn warn(msg: str, ...attrs: str)", "cfire::log::warn(msg, ...)", "Logs a warning message with optional key-value attribute pairs.", "log.warn(\"rate limit reached\", \"client\", ip)"},
+                {"error", "fn error(msg: str, ...attrs: str)", "cfire::log::error(msg, ...)", "Logs an error message with optional key-value attribute pairs.", "log.error(\"database connection failed\", \"db\", name)"}
+            }
+        },
+        {
+            "core:math", "math", "Numeric & Floating-Point Utilities", "(header-only)",
+            "Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.",
+            {
+                {"clamp_i64", "fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64", "cfire::math::clamp_i64(val, lo, hi)", "Clamps a 64-bit integer to `[lo, hi]`.", "c := math.clamp_i64(x, 0, 100)"},
+                {"clamp_f64", "fn clamp_f64(val: f64, lo: f64, hi: f64) -> f64", "cfire::math::clamp_f64(val, lo, hi)", "Clamps a 64-bit float to `[lo, hi]`.", "c := math.clamp_f64(v, 0.0, 1.0)"},
+                {"sqrt", "fn sqrt(x: f64) -> f64", "cfire::math::sqrt(x)", "Computes square root.", "r := math.sqrt(16.0)"},
+                {"abs_f64", "fn abs_f64(x: f64) -> f64", "cfire::math::abs_f64(x)", "Computes absolute value of a `f64`.", "a := math.abs_f64(-3.5)"}
+            }
+        },
+        {
+            "core:net", "net", "POSIX BSD TCP Sockets & Loopback Networking", "(POSIX sockets)",
+            "RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes.",
+            {
+                {"listen_tcp", "fn listen_tcp(port: u16 = 0) -> TcpListener!", "cfire::net::listen_tcp(port)", "Binds a TCP listener on `0.0.0.0:port` (`0` selects an ephemeral port).", "mut ln := try net.listen_tcp(0)"},
+                {"listen_tcp_addr", "fn listen_tcp_addr(host: str, port: u16 = 0) -> TcpListener!", "cfire::net::listen_tcp_addr(host, port)", "Binds a TCP listener on a specific interface address (`host:port`).", "mut ln := try net.listen_tcp_addr(\"127.0.0.1\", 8080)"},
+                {"TcpListener.port", "fn (ln: TcpListener) port() -> u16", "ln.port()", "Returns the bound TCP port.", "p := ln.port()"},
+                {"TcpListener.accept", "fn (mut ln: TcpListener) accept() -> TcpConn!", "ln.accept()", "Accepts an incoming TCP connection with a safe poll timeout.", "mut conn := try ln.accept()"},
+                {"connect_tcp", "fn connect_tcp(host: str, port: u16) -> TcpConn!", "cfire::net::connect_tcp(host, port)", "Connects a `TcpConn` to `host:port`.", "mut c := try net.connect_tcp(\"127.0.0.1\", p)"},
+                {"TcpConn.write", "fn (mut c: TcpConn) write(payload: str) -> usize!", "c.write(payload)", "Writes bytes to an open TCP connection.", "_ := try c.write(\"PING\")"},
+                {"TcpConn.read_str", "fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -> str!", "c.read_str(max_bytes)", "Reads up to `max_bytes` from the socket as a string.", "msg := try conn.read_str(64)"},
+                {"TcpConn.set_timeout_ms", "fn (mut c: TcpConn) set_timeout_ms(ms: i32) -> void", "c.set_timeout_ms(ms)", "Sets socket read/write timeout in milliseconds (`0` for blocking).", "conn.set_timeout_ms(5000)"}
+            }
+        },
+        {
+            "core:net/http", "http", "HTTP/1.1 & HTTPS Client, Wire Protocol Engine, Server & Router", "(POSIX sockets + TLS)",
+            "RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).",
+            {
+                {"get", "fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::get(url, headers, verify_peer)", "Executes an HTTP or HTTPS GET request against a target URL.", "resp := try http.get(\"https://127.0.0.1:8443/health\", {}, false)"},
+                {"get_insecure", "fn get_insecure(url: str, headers: map[str]str = {}) -> Response!", "cfire::http::get_insecure(url, headers)", "Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs).", "resp := try http.get_insecure(\"https://127.0.0.1:8443/health\")"},
+                {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::post(url, body, content_type, headers, verify_peer)", "Executes an HTTP or HTTPS POST request with payload body.", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
+                {"post_insecure", "fn post_insecure(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}) -> Response!", "cfire::http::post_insecure(url, body, content_type, headers)", "Executes an HTTPS POST request skipping peer certificate verification.", "resp := try http.post_insecure(\"https://127.0.0.1:8443/items\", \"{}\")"},
+                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
+                {"post_sse", "fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true) -> void!", "cfire::http::post_sse(url, body, headers, on_event, verify_peer)", "Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.", "try http.post_sse(url, payload, headers, |ev| { print(\"{}\", ev.data); return true })"},
+                {"make_server", "fn make_server(port: u16 = 0) -> HttpServer!", "cfire::http::make_server(port)", "Creates a lightweight HTTP server listening on `port` (0 for ephemeral).", "mut srv := try http.make_server(8080)"},
+                {"make_tls_server", "fn make_tls_server(port: u16, cert_file: str, key_file: str) -> HttpServer!", "cfire::http::make_tls_server(port, cert_file, key_file)", "Creates an HTTPS/WSS server backed by certificate and private key PEM files.", "mut srv := try http.make_tls_server(8443, \"cert.pem\", \"key.pem\")"},
+                {"make_tls_server_pem", "fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> HttpServer!", "cfire::http::make_tls_server_pem(port, cert_pem, key_pem)", "Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings.", "mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)"},
+                {"make_router", "fn make_router() -> Router", "cfire::http::make_router()", "Creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).", "mut r := http.make_router()"},
+                {"parse_request", "fn parse_request(raw: str) -> Request!", "cfire::http::parse_request(raw)", "Parses raw HTTP/1.1 wire text into a structured Request model.", "req := try http.parse_request(raw_text)"},
+                {"Response.text", "fn Response.text(code: i32, payload: str) -> Response", "cfire::http::Response::text(code, payload)", "Creates an HTTP Response with text/plain content-type and standard status reason.", "return http.Response.text(200, \"OK\")"},
+                {"Response.json", "fn Response.json(code: i32, json_str: str) -> Response", "cfire::http::Response::json(code, json_str)", "Creates an HTTP Response with application/json content-type.", "return http.Response.json(200, \"{\\\"status\\\":\\\"ok\\\"}\")"},
+                {"Response.html", "fn Response.html(code: i32, html: str) -> Response", "cfire::http::Response::html(code, html)", "Creates an HTTP Response with text/html content-type.", "return http.Response.html(200, \"<h1>Hello</h1>\")"},
+                {"Response.redirect", "fn Response.redirect(location: str, code: i32 = 302) -> Response", "cfire::http::Response::redirect(location, code)", "Creates an HTTP redirect Response setting Location header.", "return http.Response.redirect(\"/login\", 302)"},
+                {"Router.get", "fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.get(pattern, handler)", "Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).", "r.get(\"/users/:id\", |req| http.Response.text(200, req.param(\"id\")))"},
+                {"Router.post", "fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.post(pattern, handler)", "Registers an HTTP POST route handler.", "r.post(\"/items\", |req| http.Response.json(201, \"{}\"))"},
+                {"Router.ws", "fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -> void) -> Router&", "r.ws(pattern, handler)", "Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.", "r.ws(\"/chat/:room\", |req, mut ws| { ... })"},
+                {"Router.dispatch", "fn (r: Router) dispatch(req: Request) -> Response", "r.dispatch(req)", "Dispatches an HTTP request through the router in-memory without open network sockets.", "res := router.dispatch(test_req)"},
+                {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.", "r.use(|req| { return None })"},
+                {"HttpServer.enable_tls_files", "fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!", "s.enable_tls_files(cert_file, key_file)", "Enables TLS on the server using certificate and private key PEM files.", "try srv.enable_tls_files(\"cert.pem\", \"key.pem\")"},
+                {"HttpServer.enable_tls_pem", "fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!", "s.enable_tls_pem(cert_pem, key_pem)", "Enables TLS on the server using in-memory certificate and private key PEM strings.", "try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)"},
+                {"HttpServer.serve_in_background", "fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void", "s.serve_in_background(handler)", "Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.", "server.serve_in_background(router)"},
+                {"HttpServer.stop", "fn (mut s: HttpServer) stop() -> void", "s.stop()", "Gracefully closes the listening socket and stops worker threads.", "server.stop()"},
+                {"Request.param", "fn (req: Request) param(key: str, fallback: str = \"\") -> str", "req.param(key, fallback)", "Retrieves a named route path parameter extracted by the router.", "id := req.param(\"id\")"},
+                {"Request.query", "fn (req: Request) query(key: str, fallback: str = \"\") -> str", "req.query(key, fallback)", "Retrieves a decoded URL query parameter.", "page := req.query(\"page\", \"1\")"},
+                {"Request.header", "fn (req: Request) header(key: str, fallback: str = \"\") -> str", "req.header(key, fallback)", "Performs a case-insensitive header lookup.", "auth := req.header(\"Authorization\")"}
+            }
+        },
+        {
+            "core:net/tls", "tls", "TLS 1.2 / 1.3 & X.509 Certificate Engine", "(OpenSSL dynamic bridge)",
+            "Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation.",
+            {
+                {"available", "fn available() -> bool", "cfire::tls::available()", "Returns `true` if the OpenSSL (`libssl` / `libcrypto`) runtime bridge is available.", "if tls.available() { ... }"},
+                {"generate_self_signed_pem", "fn generate_self_signed_pem(common_name: str = \"localhost\", days: i32 = 365) -> CertKeyPair!", "cfire::tls::generate_self_signed_pem(common_name, days)", "Generates an in-memory RSA-2048 X.509v3 self-signed certificate and private key in PEM format.", "pair := try tls.generate_self_signed_pem(\"localhost\")"},
+                {"wrap_client", "fn wrap_client(mut conn: TcpConn, server_name: str = \"\", verify_peer: bool = true, ca_file: str = \"\") -> void!", "cfire::tls::wrap_client(conn, server_name, verify_peer, ca_file)", "Upgrades an open `TcpConn` to a client TLS session with SNI and optional X.509 certificate verification.", "try tls.wrap_client(mut conn, \"example.com\", true)"},
+                {"connect", "fn connect(host: str, port: u16 = 443, verify_peer: bool = true, ca_file: str = \"\") -> TcpConn!", "cfire::tls::connect(host, port, verify_peer, ca_file)", "Connects a TCP socket to `host:port` and completes a TLS client handshake.", "mut c := try tls.connect(\"example.com\", 443)"},
+                {"ServerContext.from_files", "fn ServerContext.from_files(cert_file: str, key_file: str) -> ServerContext!", "cfire::tls::ServerContext::from_files(cert_file, key_file)", "Creates a TLS server context from X.509 certificate chain and private key PEM files on disk.", "ctx := try tls.ServerContext.from_files(\"cert.pem\", \"key.pem\")"},
+                {"ServerContext.from_pem", "fn ServerContext.from_pem(cert_pem: str, key_pem: str) -> ServerContext!", "cfire::tls::ServerContext::from_pem(cert_pem, key_pem)", "Creates a TLS server context directly from in-memory certificate and private key PEM strings.", "ctx := try tls.ServerContext.from_pem(pair.cert_pem, pair.key_pem)"},
+                {"ServerContext.wrap_server", "fn (ctx: ServerContext) wrap_server(mut conn: TcpConn) -> void!", "ctx.wrap_server(conn)", "Performs a server-side TLS handshake (`SSL_accept`) on an accepted `TcpConn`.", "try ctx.wrap_server(mut conn)"}
+            }
+        },
+        {
+            "core:net/url", "url", "RFC 3986 URL Parsing & URL Encoding", "(header-only)",
+            "RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding.",
+            {
+                {"parse", "fn parse(raw: str) -> Url!", "cfire::url::parse(raw)", "Parses an RFC 3986 URL string into component fields and query parameters (`https` and `wss` default to port 443).", "u := try url.parse(\"wss://stream.example.com/ws?q=1\")"},
+                {"encode", "fn encode(s: str) -> str", "cfire::url::encode(s)", "Percent-encodes a string for safe use in URL path or query strings.", "enc := url.encode(\"hello world!\")"},
+                {"decode", "fn decode(s: str) -> str", "cfire::url::decode(s)", "Decodes a percent-encoded URL string.", "dec := url.decode(enc)"}
+            }
+        },
+        {
+            "core:net/websocket", "websocket", "RFC 6455 High-Level WebSockets & WSS Client & Server", "(POSIX sockets + TLS)",
+            "RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.",
+            {
+                {"connect", "fn connect(url: str, verify_peer: bool = true) -> Conn!", "cfire::websocket::connect(url, verify_peer)", "Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.", "mut ws := try websocket.connect(\"ws://127.0.0.1:8080/ws\")"},
+                {"connect_insecure", "fn connect_insecure(url: str) -> Conn!", "cfire::websocket::connect_insecure(url)", "Establishes a `wss://` WebSocket connection skipping peer certificate verification (for self-signed certs).", "mut ws := try websocket.connect_insecure(\"wss://127.0.0.1:8443/ws\")"},
+                {"make_server", "fn make_server(port: u16 = 0) -> Server!", "cfire::websocket::make_server(port)", "Creates a standalone WebSocket server listening on `port` (`0` for ephemeral).", "mut srv := try websocket.make_server(0)"},
+                {"make_tls_server", "fn make_tls_server(port: u16, cert_file: str, key_file: str) -> Server!", "cfire::websocket::make_tls_server(port, cert_file, key_file)", "Creates a standalone `wss://` WebSocket server backed by certificate and private key PEM files.", "mut srv := try websocket.make_tls_server(8443, \"cert.pem\", \"key.pem\")"},
+                {"make_tls_server_pem", "fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> Server!", "cfire::websocket::make_tls_server_pem(port, cert_pem, key_pem)", "Creates a standalone `wss://` WebSocket server from in-memory certificate and private key PEM strings.", "mut srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)"},
+                {"upgrade", "fn upgrade(req: Request, mut conn: TcpConn) -> Conn!", "cfire::websocket::upgrade(req, conn)", "Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.", "mut ws := try websocket.upgrade(req, mut conn)"},
+                {"pair", "fn pair() -> (Conn, Conn)!", "cfire::websocket::pair()", "Creates an in-process full-duplex WebSocket client/server loopback pair.", "mut (client, server) := try websocket.pair()"},
+                {"Conn.send_text", "fn (mut ws: Conn) send_text(msg: str) -> void!", "ws.send_text(msg)", "Sends a UTF-8 text frame to the peer (masked if client).", "try ws.send_text(\"hello world\")"},
+                {"Conn.send_binary", "fn (mut ws: Conn) send_binary(data: []byte) -> void!", "ws.send_binary(data)", "Sends a binary data frame to the peer (masked if client).", "try ws.send_binary(payload)"},
+                {"Conn.recv_text", "fn (mut ws: Conn) recv_text() -> str!", "ws.recv_text()", "Receives the next text frame from the peer, automatically responding to Ping frames with Pong.", "msg := try ws.recv_text()"},
+                {"Conn.recv_binary", "fn (mut ws: Conn) recv_binary() -> []byte!", "ws.recv_binary()", "Receives the next binary frame from the peer.", "bytes := try ws.recv_binary()"},
+                {"Conn.ping", "fn (mut ws: Conn) ping(payload: str = \"\") -> void!", "ws.ping(payload)", "Sends a Ping control frame to check peer liveness.", "try ws.ping(\"heartbeat\")"},
+                {"Conn.set_timeout_ms", "fn (mut ws: Conn) set_timeout_ms(ms: i32) -> void", "ws.set_timeout_ms(ms)", "Sets read/write socket timeout in milliseconds (`0` for blocking).", "ws.set_timeout_ms(10000)"},
+                {"Conn.close", "fn (mut ws: Conn) close(code: u16 = 1000, reason: str = \"\")", "ws.close(code, reason)", "Initiates a clean RFC 6455 closure handshake and closes the socket.", "ws.close()"},
+                {"Conn.is_open", "fn (ws: Conn) is_open() -> bool", "ws.is_open()", "Returns true if the WebSocket connection is open.", "if ws.is_open() { ... }"},
+                {"Server.accept", "fn (mut s: Server) accept() -> Conn!", "s.accept()", "Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`.", "mut ws := try srv.accept()"},
+                {"Server.serve_once", "fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void", "s.serve_once(handler)", "Accepts and serves a single WebSocket connection with `handler`.", "srv.serve_once(|mut ws| { ... })"},
+                {"Server.listen_and_serve", "fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void", "s.listen_and_serve(handler)", "Runs a blocking accept loop upgrading and serving WebSocket connections.", "srv.listen_and_serve(|mut ws| { ... })"},
+                {"Server.serve_in_background", "fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void", "s.serve_in_background(handler)", "Starts a background thread accepting and serving WebSocket connections.", "srv.serve_in_background(|mut ws| { ... })"},
+                {"Server.stop", "fn (mut s: Server) stop() -> void", "s.stop()", "Stops the background WebSocket server thread.", "srv.stop()"}
+            }
+        },
+        {
+            "core:os", "os", "Environment, Working Directory & Subprocesses", "(header-only)",
+            "Process environment inspection, working directory queries, and subprocess output capture.",
+            {
+                {"getenv", "fn getenv(key: str, fallback: str = \"\") -> str", "cfire::os::getenv(key, fallback)", "Reads environment variable `key`, returning `fallback` if unset.", "mode := os.getenv(\"ENV\", \"dev\")"},
+                {"setenv", "fn setenv(key: str, value: str)", "cfire::os::setenv(key, value)", "Sets environment variable `key` to `value` in the current process.", "os.setenv(\"MODE\", \"prod\")"},
+                {"cwd", "fn cwd() -> str", "cfire::os::cwd()", "Returns the current working directory path.", "dir := os.cwd()"},
+                {"exec_output", "fn exec_output(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec_output(\"uname -s\")"},
+                {"command", "fn command(binary: str, args: []str) -> ExecResult!", "cfire::os::command(binary, args)", "Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.", "res := try os.command(\"git\", [\"status\"])"}
+            }
+        },
+        {
+            "core:rand", "rand", "Thread-Local MT19937_64 & CSPRNG Generator", "(header-only)",
+            "Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.",
+            {
+                {"u64", "fn u64() -> u64", "cfire::rand::u64()", "Generates a random 64-bit unsigned integer.", "id := rand.u64()"},
+                {"range_i64", "fn range_i64(min_incl: i64, max_incl: i64) -> i64", "cfire::rand::range_i64(min_incl, max_incl)", "Generates a uniform integer in `[min_incl, max_incl]`.", "n := rand.range_i64(1, 10)"},
+                {"f64_unit", "fn f64_unit() -> f64", "cfire::rand::f64_unit()", "Generates a uniform `f64` in `[0.0, 1.0)`.", "p := rand.f64_unit()"},
+                {"bytes", "fn bytes(n: usize) -> []byte", "cfire::rand::bytes(n)", "Generates `n` cryptographically secure random bytes from OS entropy.", "buf := rand.bytes(32)"}
+            }
+        },
+        {
+            "core:regex", "regex", "ECMAScript Regular Expressions", "(header-only)",
+            "Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`.",
+            {
+                {"compile", "fn compile(pattern: str) -> Regex!", "cfire::regex::compile(pattern)", "Compiles an ECMAScript regex pattern into a reusable Regex object.", "re := try regex.compile(\"\\\\d+\")"},
+                {"is_match", "fn is_match(pattern: str, text: str) -> bool!", "cfire::regex::is_match(pattern, text)", "Tests whether a regex pattern matches text.", "ok := try regex.is_match(\"^[a-z]+$\", s)"},
+                {"replace_all", "fn replace_all(pattern: str, text: str, repl: str) -> str!", "cfire::regex::replace_all(pattern, text, repl)", "Replaces all occurrences matching pattern with repl.", "res := try regex.replace_all(\"\\s+\", s, \" \")"}
+            }
+        },
+        {
+            "core:sort", "sort", "Slice Sorting & Binary Search", "(header-only)",
+            "In-place sorting algorithms and binary search on slices.",
+            {
+                {"slice", "fn slice(mut s: []T)", "cfire::sort::slice(s)", "Sorts a slice in ascending order in-place.", "sort.slice(mut numbers)"},
+                {"binary_search", "fn binary_search(s: []T, val: T) -> i64?", "cfire::sort::binary_search(s, val)", "Performs binary search on a sorted slice.", "idx := sort.binary_search(numbers, 42)"}
+            }
+        },
+        {
+            "core:str", "str", "UTF-8 String Manipulation", "(header-only)",
+            "Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion.",
+            {
+                {"split", "fn split(s: str, sep: str) -> []str", "cfire::str::split(s, sep)", "Splits `s` around every occurrence of `sep`.", "parts := str.split(\"a,b,c\", \",\")"},
+                {"join", "fn join(items: []str, sep: str) -> str", "cfire::str::join(items, sep)", "Joins a slice of strings with `sep`.", "s := str.join(parts, \"-\")"},
+                {"trim", "fn trim(s: str) -> str", "cfire::str::trim(s)", "Strips leading and trailing whitespace.", "clean := str.trim(\"  hi  \")"},
+                {"starts_with", "fn starts_with(s: str, prefix: str) -> bool", "cfire::str::starts_with(s, prefix)", "Returns `true` if `s` starts with `prefix`.", "if str.starts_with(s, \"cf\") { ... }"},
+                {"ends_with", "fn ends_with(s: str, suffix: str) -> bool", "cfire::str::ends_with(s, suffix)", "Returns `true` if `s` ends with `suffix`.", "if str.ends_with(f, \".cf\") { ... }"},
+                {"contains", "fn contains(s: str, needle: str) -> bool", "cfire::str::contains(s, needle)", "Returns `true` if `s` contains `needle`.", "if str.contains(s, \"fire\") { ... }"},
+                {"replace", "fn replace(s: str, from: str, to: str) -> str", "cfire::str::replace(s, from, to)", "Replaces all occurrences of `from` in `s` with `to`.", "r := str.replace(s, \"old\", \"new\")"},
+                {"to_upper", "fn to_upper(s: str) -> str", "cfire::str::to_upper(s)", "Converts ASCII characters to uppercase.", "u := str.to_upper(\"cfire\")"},
+                {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"},
+                {"index_of", "fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64", "cfire::str::index_of(s, substr, start_pos)", "Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.", "idx := str.index_of(path, \".\")"},
+                {"last_index_of", "fn last_index_of(s: str, substr: str) -> i64", "cfire::str::last_index_of(s, substr)", "Finds last occurrence of `substr` in `s`; returns index or -1.", "idx := str.last_index_of(path, \"/\")"},
+                {"rfind", "fn rfind(s: str, substr: str, start_pos: usize = npos) -> i64", "cfire::str::rfind(s, substr, start_pos)", "Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.", "pos := str.rfind(s, \"#\")"},
+                {"byte_ptr", "fn byte_ptr(s: str) -> *c_char", "cfire::str::byte_ptr(s)", "Returns a raw pointer to the underlying buffer of `s` for C FFI interop.", "ptr := s.byte_ptr()"},
+                {"byte_ptr_at", "fn byte_ptr_at(s: str, offset: i64) -> *c_char", "cfire::str::byte_ptr_at(s, offset)", "Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.", "ptr := s.byte_ptr_at(4)"},
+                {"str.data", "fn (s: str) data() -> *const c_char", "(s).data()", "Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.", "ptr := s.data()"},
+                {"str.bytes", "fn (s: str) bytes() -> []byte", "cfire::to_bytes(s)", "Returns a safe byte slice view (`std::span<const std::byte>`) over the UTF-8 bytes of `s`.", "b := s.bytes()"},
+                {"slice.data", "fn (s: []T) data() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.", "ptr := s.data()"},
+                {"slice.data_ptr", "fn (s: []T) data_ptr() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).", "ptr := s.data_ptr()"}
+            }
+        },
+        {
+            "core:sync", "sync", "Thread-Safe Typed Channels", "(header-only)",
+            "Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.",
+            {
+                {"make_channel", "fn make_channel[T]() -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
+                {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
+                {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
+                {"Channel.recv_ctx", "fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!", "ch.recv_ctx(ctx)", "Receives from the channel or aborts immediately with an error if `ctx` is cancelled.", "v := try ch.recv_ctx(ctx)"},
+                {"Channel.close", "fn (ch: Channel[T]) close()", "ch.close()", "Closes the channel and wakes all waiting receivers.", "ch.close()"}
+            }
+        },
+        {
+            "core:sync/context", "context", "Cancellation Tokens & Deadline Contexts", "(header-only)",
+            "Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`).",
+            {
+                {"background", "fn background() -> Context", "cfire::context::background()", "Returns an empty, root non-cancellable Context.", "ctx := context.background()"},
+                {"with_cancel", "fn with_cancel(parent: Context) -> (Context, fn(reason: str = \"\"))", "cfire::context::with_cancel(parent)", "Derives a child Context and a cancellation handle function from a parent Context.", "(ctx, cancel) := context.with_cancel(parent)"},
+                {"with_timeout", "fn with_timeout(parent: Context, ms: i64) -> (Context, fn(reason: str = \"\"))", "cfire::context::with_timeout(parent, ms)", "Derives a child Context with an automatic millisecond deadline.", "(ctx, cancel) := context.with_timeout(parent, 250)"},
+                {"Context.is_cancelled", "fn (ctx: Context) is_cancelled() -> bool", "ctx.is_cancelled()", "Returns true if the Context has been cancelled or timed out.", "if ctx.is_cancelled() { return }"},
+                {"Context.done", "fn (ctx: Context) done() -> bool", "ctx.done()", "Synonym for `is_cancelled()`.", "if ctx.done() { return }"},
+                {"Context.reason", "fn (ctx: Context) reason() -> str", "ctx.reason()", "Returns the cancellation reason string.", "msg := ctx.reason()"},
+                {"Context.wait", "fn (ctx: Context) wait()", "ctx.wait()", "Blocks until the Context is cancelled or its deadline expires.", "ctx.wait()"},
+                {"Context.wait_for", "fn (ctx: Context) wait_for(ms: i64) -> bool", "ctx.wait_for(ms)", "Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled.", "cancelled := ctx.wait_for(100)"}
+            }
+        },
+        {
+            "core:time", "time", "Time, Calendar Dates, Durations & RFC 3339 Formatting", "(header-only)",
+            "High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.",
+            {
+                {"now_ms", "fn now_ms() -> i64", "cfire::time::now_ms()", "Returns monotonic milliseconds from `std::chrono::steady_clock`.", "t0 := time.now_ms()"},
+                {"unix_seconds", "fn unix_seconds() -> i64", "cfire::time::unix_seconds()", "Returns current UTC Unix timestamp in seconds.", "ts := time.unix_seconds()"},
+                {"sleep_ms", "fn sleep_ms(ms: i64)", "cfire::time::sleep_ms(ms)", "Sleeps the current thread for `ms` milliseconds.", "time.sleep_ms(10)"},
+                {"sleep_ctx", "fn sleep_ctx(ctx: Context, ms: i64) -> bool", "cfire::time::sleep_ctx(ctx, ms)", "Sleeps the current thread for `ms` or until `ctx` is cancelled; returns true if completed without cancellation.", "ok := time.sleep_ctx(ctx, 50)"},
+                {"now", "fn now() -> Time", "cfire::time::now()", "Returns current wall clock `Time` instant.", "t := time.now()"},
+                {"unix", "fn unix(sec: i64, nsec: i64 = 0) -> Time", "cfire::time::unix(sec, nsec)", "Constructs a `Time` instant from Unix seconds and nanoseconds.", "t := time.unix(1700000000)"},
+                {"parse_rfc3339", "fn parse_rfc3339(s: str) -> Time!", "cfire::time::parse_rfc3339(s)", "Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.", "t := try time.parse_rfc3339(\"2026-10-18T12:00:00Z\")"},
+                {"duration_seconds", "fn duration_seconds(s: i64) -> Duration", "cfire::time::duration_seconds(s)", "Constructs a typed `Duration` representing `s` seconds.", "d := time.duration_seconds(5)"},
+                {"duration_millis", "fn duration_millis(ms: i64) -> Duration", "cfire::time::duration_millis(ms)", "Constructs a typed `Duration` representing `ms` milliseconds.", "d := time.duration_millis(250)"},
+                {"sleep", "fn sleep(d: Duration)", "cfire::time::sleep(d)", "Sleeps the current thread for duration `d`.", "time.sleep(time.duration_millis(50))"}
+            }
+        },
+        {
+            "core:unicode", "unicode", "UTF-8 Decoding, Rune Counting & Unicode Manipulation", "(header-only)",
+            "RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation.",
+            {
+                {"rune_count", "fn rune_count(s: str) -> usize", "cfire::unicode::rune_count(s)", "Counts the number of Unicode scalar values (codepoints) in a UTF-8 string.", "count := unicode.rune_count(\"Hello, 世界! 🚀\")"},
+                {"runes", "fn runes(s: str) -> []u32", "cfire::unicode::runes(s)", "Decodes all Unicode codepoints in `s` into a slice of 32-bit scalar values.", "cps := unicode.runes(\"cfire 🔥\")"},
+                {"is_valid_utf8", "fn is_valid_utf8(s: str) -> bool", "cfire::unicode::is_valid_utf8(s)", "Validates whether a string consists of strictly valid RFC 3629 UTF-8 byte sequences.", "ok := unicode.is_valid_utf8(payload)"},
+                {"encode_rune", "fn encode_rune(r: u32) -> str", "cfire::unicode::encode_rune(r)", "Encodes a 32-bit Unicode codepoint into its UTF-8 string representation.", "char := unicode.encode_rune(0x1F525)"},
+                {"to_lower", "fn to_lower(s: str) -> str", "cfire::unicode::to_lower(s)", "Converts Latin, Greek, and Cyrillic Unicode characters to lowercase.", "lower := unicode.to_lower(\"HELLO, СВЕТ!\")"},
+                {"to_upper", "fn to_upper(s: str) -> str", "cfire::unicode::to_upper(s)", "Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.", "upper := unicode.to_upper(\"hello, свет!\")"}
+            }
+        },
+        {
+            "vendor:raygui", "rg", "Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`<raygui.h>`)", "-lraylib",
+            "Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing.",
+            {
+                {"GuiEnable", "fn GuiEnable()", "GuiEnable()", "Enables gui controls (global state).", "rg.GuiEnable()"},
+                {"GuiDisable", "fn GuiDisable()", "GuiDisable()", "Disables gui controls (global state).", "rg.GuiDisable()"},
+                {"GuiLock", "fn GuiLock()", "GuiLock()", "Locks gui controls (global state).", "rg.GuiLock()"},
+                {"GuiUnlock", "fn GuiUnlock()", "GuiUnlock()", "Unlocks gui controls (global state).", "rg.GuiUnlock()"},
+                {"GuiSetStyle", "fn GuiSetStyle(control: i32, property: i32, value: i32)", "GuiSetStyle(control, property, value)", "Sets one style property value for a control.", "rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)"},
+                {"GuiGetStyle", "fn GuiGetStyle(control: i32, property: i32) -> i32", "GuiGetStyle(control, property)", "Gets one style property value for a control.", "sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)"},
+                {"GuiWindowBox", "fn GuiWindowBox(bounds: rl.Rectangle, title: str) -> i32", "GuiWindowBox(bounds, cfire::c_arg(title))", "Draws a window box control with a title bar and close button (returns 1 when close clicked).", "closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, \"Settings\")"},
+                {"GuiGroupBox", "fn GuiGroupBox(bounds: rl.Rectangle, text: str) -> i32", "GuiGroupBox(bounds, cfire::c_arg(text))", "Draws a group box control with text name.", "rg.GuiGroupBox(bounds, \"Audio\")"},
+                {"GuiLabel", "fn GuiLabel(bounds: rl.Rectangle, text: str) -> i32", "GuiLabel(bounds, cfire::c_arg(text))", "Draws a text label control.", "rg.GuiLabel(bounds, \"Volume\")"},
+                {"GuiButton", "fn GuiButton(bounds: rl.Rectangle, text: str) -> i32", "GuiButton(bounds, cfire::c_arg(text))", "Draws a clickable button control (returns 1 when clicked).", "if rg.GuiButton(bounds, \"Apply\") != 0 { ... }"},
+                {"GuiCheckBox", "fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &mut bool) -> i32", "GuiCheckBox(bounds, cfire::c_arg(text), &checked)", "Draws a check box control and mutates `checked` in-place.", "rg.GuiCheckBox(bounds, \"VSync\", &mut vsync)"},
+                {"GuiSliderBar", "fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.", "rg.GuiSliderBar(bounds, \"0%\", \"100%\", &mut volume, 0.0, 100.0)"},
+                {"GuiProgressBar", "fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a progress bar control.", "rg.GuiProgressBar(bounds, \"\", \"\", &mut progress, 0.0, 1.0)"},
+                {"GuiComboBox", "fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &mut i32) -> i32", "GuiComboBox(bounds, cfire::c_arg(text), &active)", "Draws a semicolon-delimited combo box control and updates `active` index.", "rg.GuiComboBox(bounds, \"Low;Medium;High\", &mut quality)"},
+                {"GuiTextBox", "fn GuiTextBox(bounds: rl.Rectangle, text: &mut str, textSize: i32, editMode: bool) -> i32", "GuiTextBox(bounds, &text, textSize, editMode)", "Draws an editable text box control safely backed by a `cfire` `mut str`.", "if rg.GuiTextBox(bounds, &mut name, 64, editing) != 0 { editing = !editing }"}
+            }
+        },
+        {
             "vendor:raylib", "rl", "Raylib 5.0 2D/3D Graphics, Audio, Input & Raymath (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`)", "-lraylib",
             "Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion.",
             {
@@ -465,27 +522,6 @@ struct DiagnosticDoc {
                 {"Vector2Add", "fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -> rl.Vector2", "Vector2Add(v1, v2)", "Adds two vectors (`<raymath.h>`).", "pos = rl.Vector2Add(pos, vel)"},
                 {"Vector2Scale", "fn Vector2Scale(v: rl.Vector2, scale: f32) -> rl.Vector2", "Vector2Scale(v, scale)", "Scales vector by float value (`<raymath.h>`).", "step := rl.Vector2Scale(dir, speed * dt)"},
                 {"Clamp", "fn Clamp(value: f32, min: f32, max: f32) -> f32", "Clamp(value, min, max)", "Clamps float value between `[min, max]` (`<raymath.h>`).", "x := rl.Clamp(pos.x, 0.0, 800.0)"}
-            }
-        },
-        {
-            "vendor:raygui", "rg", "Raygui 4.0 Immediate-Mode GUI Controls for Raylib (`<raygui.h>`)", "-lraylib",
-            "Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing.",
-            {
-                {"GuiEnable", "fn GuiEnable()", "GuiEnable()", "Enables gui controls (global state).", "rg.GuiEnable()"},
-                {"GuiDisable", "fn GuiDisable()", "GuiDisable()", "Disables gui controls (global state).", "rg.GuiDisable()"},
-                {"GuiLock", "fn GuiLock()", "GuiLock()", "Locks gui controls (global state).", "rg.GuiLock()"},
-                {"GuiUnlock", "fn GuiUnlock()", "GuiUnlock()", "Unlocks gui controls (global state).", "rg.GuiUnlock()"},
-                {"GuiSetStyle", "fn GuiSetStyle(control: i32, property: i32, value: i32)", "GuiSetStyle(control, property, value)", "Sets one style property value for a control.", "rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)"},
-                {"GuiGetStyle", "fn GuiGetStyle(control: i32, property: i32) -> i32", "GuiGetStyle(control, property)", "Gets one style property value for a control.", "sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)"},
-                {"GuiWindowBox", "fn GuiWindowBox(bounds: rl.Rectangle, title: str) -> i32", "GuiWindowBox(bounds, cfire::c_arg(title))", "Draws a window box control with a title bar and close button (returns 1 when close clicked).", "closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, \"Settings\")"},
-                {"GuiGroupBox", "fn GuiGroupBox(bounds: rl.Rectangle, text: str) -> i32", "GuiGroupBox(bounds, cfire::c_arg(text))", "Draws a group box control with text name.", "rg.GuiGroupBox(bounds, \"Audio\")"},
-                {"GuiLabel", "fn GuiLabel(bounds: rl.Rectangle, text: str) -> i32", "GuiLabel(bounds, cfire::c_arg(text))", "Draws a text label control.", "rg.GuiLabel(bounds, \"Volume\")"},
-                {"GuiButton", "fn GuiButton(bounds: rl.Rectangle, text: str) -> i32", "GuiButton(bounds, cfire::c_arg(text))", "Draws a clickable button control (returns 1 when clicked).", "if rg.GuiButton(bounds, \"Apply\") != 0 { ... }"},
-                {"GuiCheckBox", "fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &mut bool) -> i32", "GuiCheckBox(bounds, cfire::c_arg(text), &checked)", "Draws a check box control and mutates `checked` in-place.", "rg.GuiCheckBox(bounds, \"VSync\", &mut vsync)"},
-                {"GuiSliderBar", "fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.", "rg.GuiSliderBar(bounds, \"0%\", \"100%\", &mut volume, 0.0, 100.0)"},
-                {"GuiProgressBar", "fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a progress bar control.", "rg.GuiProgressBar(bounds, \"\", \"\", &mut progress, 0.0, 1.0)"},
-                {"GuiComboBox", "fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &mut i32) -> i32", "GuiComboBox(bounds, cfire::c_arg(text), &active)", "Draws a semicolon-delimited combo box control and updates `active` index.", "rg.GuiComboBox(bounds, \"Low;Medium;High\", &mut quality)"},
-                {"GuiTextBox", "fn GuiTextBox(bounds: rl.Rectangle, text: &mut str, textSize: i32, editMode: bool) -> i32", "GuiTextBox(bounds, &text, textSize, editMode)", "Draws an editable text box control safely backed by a `cfire` `mut str`.", "if rg.GuiTextBox(bounds, &mut name, 64, editing) != 0 { editing = !editing }"}
             }
         }
     };
@@ -1145,6 +1181,45 @@ fn main() {
     println("Audio RMS: {}, Peak: {}", audio.rms_level(), audio.peak_level())
 })CF";
     }
+    if (mod == "core:ai") {
+        return R"CF(package main
+
+import "core:ai"
+import "core:db/sqlite"
+import "core:json"
+
+type SearchArgs struct {
+    query: str `json:"query" desc:"Semantic search query"`
+    limit: i32 `json:"limit" desc:"Maximum results to return"`
+}
+
+type DocHit struct {
+    title: str `sql:"title"`
+    score: f64 `sql:"score"`
+}
+
+fn main() {
+    // 1. Compile-time JSON Schema reflection for LLM tools & structured outputs
+    println("Tool schema: {}", json.schema[SearchArgs]())
+
+    // 2. Unified local on-device embeddings + SQLite vector similarity search
+    mut db := try sqlite.open(":memory:")
+    defer db.close()
+    try db.exec("CREATE TABLE docs (title TEXT, vec BLOB)")
+
+    v1 := try ai.embed("local", "Zero-overhead C++23 systems programming and memory safety")
+    v2 := try ai.embed("local", "SQLite embedded vector similarity search and RAG")
+    try db.exec("INSERT INTO docs VALUES (?1, ?2)", "Systems Guide", v1)
+    try db.exec("INSERT INTO docs VALUES (?1, ?2)", "Vector SQLite", v2)
+
+    qvec := try ai.embed("local", "vector search in sqlite")
+    hits := try db.query[DocHit](
+        "SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM docs ORDER BY score DESC LIMIT 1",
+        qvec
+    )
+    println("Top match: {} (score={})", hits[0].title, hits[0].score)
+})CF";
+    }
     if (mod == "vendor:raygui") {
         return R"CF(package main
 
@@ -1196,7 +1271,7 @@ struct DiscoveredModule {
             if (!entry.is_regular_file() || entry.path().extension() != ".hpp") continue;
             auto rel = std::filesystem::relative(entry.path(), core_dir).string();
             if (rel == "cli.hpp") discovered.push_back({"core:cli", "core/" + rel, false});
-            else if (rel == "ios_raylib.hpp") continue; // Built-in iOS platform backend for vendor:raylib
+            else if (rel == "ios_raylib.hpp" || rel == "desktop_raylib.hpp") continue; // Built-in platform backends for vendor:raylib
             else if (rel == "compress.hpp") discovered.push_back({"core:compress/zstd", "core/" + rel, false});
             else if (rel == "fs.hpp") discovered.push_back({"core:fs", "core/" + rel, false});
             else if (rel == "json.hpp") discovered.push_back({"core:json", "core/" + rel, false});
@@ -1213,6 +1288,7 @@ struct DiscoveredModule {
             else if (rel == "time.hpp") discovered.push_back({"core:time", "core/" + rel, false});
             else if (rel == "unicode.hpp") discovered.push_back({"core:unicode", "core/" + rel, false});
             else if (rel == "audio.hpp") discovered.push_back({"core:audio", "core/" + rel, false});
+            else if (rel == "ai.hpp") discovered.push_back({"core:ai", "core/" + rel, false});
             else if (rel == "crypto.hpp") {
                 discovered.push_back({"core:crypto/sha256", "core/" + rel, false});
                 discovered.push_back({"core:crypto/hmac", "core/" + rel, false});
@@ -1254,6 +1330,16 @@ struct DiscoveredModule {
 [[nodiscard]] inline auto audit_documentation_catalog(const std::filesystem::path& runtime_dir) -> std::expected<void, std::string> {
     auto discovered = discover_runtime_modules(runtime_dir);
     const auto& catalog = stdlib_catalog();
+
+    // 0. Verify stdlib_catalog is strictly sorted alphabetically by import_path
+    for (size_t i = 1; i < catalog.size(); ++i) {
+        if (catalog[i - 1].import_path >= catalog[i].import_path) {
+            return std::unexpected(std::format(
+                "Documentation audit failure: stdlib_catalog() must be strictly sorted alphabetically by import_path.\n"
+                "Found '{}' before '{}'. Please keep entries in src/docgen/catalog.hpp sorted alphabetically.",
+                catalog[i - 1].import_path, catalog[i].import_path));
+        }
+    }
 
     std::unordered_map<std::string, const StdModuleDoc*> cat_map;
     for (const auto& mod : catalog) {

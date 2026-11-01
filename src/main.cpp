@@ -5,6 +5,7 @@
 #include "docgen.hpp"
 #include "formatter.hpp"
 #include "lsp.hpp"
+#include "mcp.hpp"
 #include "refactor.hpp"
 #include "server.hpp"
 #include <chrono>
@@ -89,6 +90,7 @@ void print_usage() {
     std::println("  outline  [--json] [path]      Token-compressed outline of packages, types, and functions");
     std::println("  fmt      [--check] <path>     Canonically format .cf file(s) or directory");
     std::println("  lsp                           Start built-in Language Server Protocol (JSON-RPC 2.0 stdio)");
+    std::println("  mcp                           Start built-in Model Context Protocol (MCP) server over stdio");
     std::println("  ide      [editor|--all]       Configure IDE (VS Code, Cursor, Zed, Neovim, CLion)");
     std::println("  doc      [--check|--llm|<f>]  Generate docs site, guide, or LLM agent reference sheet");
     std::println("  emit-cpp <file.cf>            Print generated human-readable C++23 source");
@@ -315,6 +317,10 @@ auto main(int argc, char** argv) -> int {
         cfire::lsp::Server srv;
         srv.handle_stream(std::cin, std::cout);
         return 0;
+    }
+
+    if (sub == "mcp") {
+        return cfire::mcp::serve_stdio(runtime_dir);
     }
 
     if (sub == "ide") {
