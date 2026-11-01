@@ -130,13 +130,40 @@ struct BuildPlan {
 inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& cflags, std::vector<std::string>& libs) {
     int code = 0;
     std::string qpkg = bridge::shell_quote(pkg);
-    std::string cf_out = bridge::run_command_capture("pkg-config --cflags " + qpkg, code);
+    std::string cf_out = bridge::run_command_capture("pkg-config --cflags " + qpkg + " 2>/dev/null", code);
     if (code == 0) {
         for (auto& f : split_ws(cf_out)) cflags.push_back(std::move(f));
     }
-    std::string lb_out = bridge::run_command_capture("pkg-config --libs " + qpkg, code);
-    if (code == 0) {
+    int lb_code = 0;
+    std::string lb_out = bridge::run_command_capture("pkg-config --libs " + qpkg + " 2>/dev/null", lb_code);
+    if (lb_code == 0 && !lb_out.empty()) {
         for (auto& l : split_ws(lb_out)) libs.push_back(std::move(l));
+        return;
+    }
+    // Fallback probe when pkg-config is unavailable or package has no .pc file
+    std::string hdr;
+    std::string lib_flag;
+    std::string lib_stem;
+    if (pkg == "sqlite3") { hdr = "sqlite3.h"; lib_flag = "-lsqlite3"; lib_stem = "libsqlite3"; }
+    else if (pkg == "libzstd") { hdr = "zstd.h"; lib_flag = "-lzstd"; lib_stem = "libzstd"; }
+    else if (pkg == "simdjson") { hdr = "simdjson.h"; lib_flag = "-lsimdjson"; lib_stem = "libsimdjson"; }
+    if (!hdr.empty()) {
+        for (const auto* prefix : {"/opt/homebrew", "/usr/local", "/usr"}) {
+            std::filesystem::path inc_p = std::filesystem::path(prefix) / "include" / hdr;
+            if (std::filesystem::exists(inc_p)) {
+                if (std::string_view(prefix) != "/usr") {
+                    cflags.push_back(std::string("-I") + prefix + "/include");
+                    libs.push_back(std::string("-L") + prefix + "/lib");
+                }
+                libs.push_back(lib_flag);
+                return;
+            }
+        }
+#if defined(__APPLE__)
+        if (pkg == "sqlite3") {
+            libs.push_back("-lsqlite3");
+        }
+#endif
     }
 }
 
@@ -1351,6 +1378,12 @@ inline auto resolve_external_dep_source(
     plan.subsystem = subsystem;
     plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
     bool is_wasm = plan.target_triple.starts_with("wasm");
+#if defined(__linux__)
+    if (!is_wasm) {
+        plan.cflags.push_back("-Wno-builtin-macro-redefined");
+        plan.cflags.push_back("-D__cpp_concepts=202002L");
+    }
+#endif
     if (!plan.target_triple.empty()) {
         if (!is_wasm) {
             plan.cflags.push_back("--target=" + plan.target_triple);
@@ -2015,6 +2048,9 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         std::string opt_flags = sanitize
             ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
             : "-O2";
+#if defined(__linux__)
+        opt_flags += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L";
+#endif
         std::string cmd = std::format(
             "clang++ -std=c++2b -Wno-c++11-narrowing {} -x c++-header \"{}\" -o \"{}\"",
             opt_flags, prelude_hdr.string(), pch_path.string());
@@ -2068,7 +2104,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 
 [[nodiscard]] inline auto ensure_macos_icns(
     const std::filesystem::path& icon_src,
-    const std::filesystem::path& cache_dir
+    [[maybe_unused]] const std::filesystem::path& cache_dir
 ) -> std::expected<std::filesystem::path, std::string> {
     std::error_code ec;
     if (!std::filesystem::exists(icon_src, ec)) {

@@ -10,7 +10,9 @@
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
+#if __has_include(<print>)
 #include <print>
+#endif
 #include <sstream>
 #include <string>
 #include <vector>

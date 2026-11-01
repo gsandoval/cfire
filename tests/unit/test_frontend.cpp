@@ -500,6 +500,19 @@ ok
                 ref_html.contains("ref-pane-mod-ai") &&
                 ref_html.contains("ref-pane-diagnostics"),
             "generate_reference_html emits overview dashboard, per-module panes, and diagnostics pane");
+
+        // Verify CLI --version, --help, and doctor --json
+        run_cfire("--version")
+            .assert_ok("cfire --version exits 0")
+            .assert_contains("cfire 0.9.4", "cfire --version reports version");
+        run_cfire("--help")
+            .assert_ok("cfire --help exits 0")
+            .assert_contains("doctor", "cfire --help lists doctor command")
+            .assert_contains("setup", "cfire --help lists setup command");
+        run_cfire("doctor --json")
+            .assert_ok("cfire doctor --json exits 0")
+            .assert_contains("\"healthy\": true", "cfire doctor --json reports healthy")
+            .assert_contains("\"runtime_dir\":", "cfire doctor --json reports runtime_dir");
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");
