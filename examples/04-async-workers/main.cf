@@ -1,6 +1,6 @@
 package main
 
-import "core:net"
+import "ext:net"
 
 fn fetch_status(endpoint: str) -> i32! {
     conn := try net.connect_tcp(endpoint, 80)
