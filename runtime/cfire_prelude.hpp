@@ -685,10 +685,12 @@ using cfire::bool_;
 using namespace cfire::enum_operators;
 
 // --- Formatter specialization for Enums (enables std::print / std::println) ---
-template <cfire::enum_operators::CfireIsEnum E>
-struct std::formatter<E> : std::formatter<std::underlying_type_t<E>> {
-    auto format(E e, std::format_context& ctx) const {
-        return std::formatter<std::underlying_type_t<E>>::format(static_cast<std::underlying_type_t<E>>(e), ctx);
+template <cfire::enum_operators::CfireIsEnum E, typename CharT>
+struct std::formatter<E, CharT> : std::formatter<std::underlying_type_t<E>, CharT> {
+    template <typename FormatContext>
+    auto format(E e, FormatContext& ctx) const {
+        return std::formatter<std::underlying_type_t<E>, CharT>::format(
+            static_cast<std::underlying_type_t<E>>(e), ctx);
     }
 };
 
