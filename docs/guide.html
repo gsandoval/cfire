@@ -1495,13 +1495,15 @@ tr:hover td { background: #1F242C; }
         </li>
         <li class="nav-item" id="nav-item-15">
           <a href="#chapter-15" class="sidebar-ch-link" data-chapter="15" onclick="navigateToChapter('15')">
-            <span class="ch-text">Ch 15: AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</span>
+            <span class="ch-text">Ch 15: AI-First LLMs, Multimodal Documents, Local Vectors, RAG &amp; MCP (`core:ai`)</span>
             
           </a>
           <ul class="subhead-list">
-            <li><a href="#level-1-unified-llm-streaming-chat" onclick="navigateToSubhead('15', 'level-1-unified-llm-streaming-chat')">Level 1 — Unified LLM Streaming Chat</a></li>
-            <li><a href="#level-2-local-normalized-embeddings-vector-rag" onclick="navigateToSubhead('15', 'level-2-local-normalized-embeddings-vector-rag')">Level 2 — Local Normalized Embeddings &amp; Vector RAG</a></li>
-            <li><a href="#level-3-authoring-native-model-context-protocol-mcp-servers" onclick="navigateToSubhead('15', 'level-3-authoring-native-model-context-protocol-mcp-servers')">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</a></li>
+            <li><a href="#level-1-multi-provider-chat-streaming-compile-time-structured-outputs" onclick="navigateToSubhead('15', 'level-1-multi-provider-chat-streaming-compile-time-structured-outputs')">Level 1 — Multi-Provider Chat, Streaming &amp; Compile-Time Structured Outputs</a></li>
+            <li><a href="#level-2-multimodal-file-attachments-structured-extraction-from-files" onclick="navigateToSubhead('15', 'level-2-multimodal-file-attachments-structured-extraction-from-files')">Level 2 — Multimodal File Attachments &amp; Structured Extraction from Files</a></li>
+            <li><a href="#level-3-zero-dependency-document-slide-ingestion-for-vector-rag" onclick="navigateToSubhead('15', 'level-3-zero-dependency-document-slide-ingestion-for-vector-rag')">Level 3 — Zero-Dependency Document &amp; Slide Ingestion for Vector RAG</a></li>
+            <li><a href="#level-4-cross-platform-ocr-vision-embeddings-linux-macos-wasm-parity" onclick="navigateToSubhead('15', 'level-4-cross-platform-ocr-vision-embeddings-linux-macos-wasm-parity')">Level 4 — Cross-Platform OCR, Vision Embeddings &amp; Linux / macOS / WASM Parity</a></li>
+            <li><a href="#level-5-authoring-native-model-context-protocol-mcp-servers" onclick="navigateToSubhead('15', 'level-5-authoring-native-model-context-protocol-mcp-servers')">Level 5 — Authoring Native Model Context Protocol (`MCP`) Servers</a></li>
           </ul>
         </li>
         <li class="nav-item" id="nav-item-16">
@@ -2405,54 +2407,135 @@ fn main() {
     </a>
     <a href="#chapter-15" class="pager-card pager-next" onclick="navigateToChapter('15')">
       <span class="pager-label">NEXT CHAPTER &rarr;</span>
-      <strong class="pager-title">Ch 15: AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</strong>
+      <strong class="pager-title">Ch 15: AI-First LLMs, Multimodal Documents, Local Vectors, RAG &amp; MCP (`core:ai`)</strong>
     </a>
   </div>
 </article>
 
-<article class="chapter-pane" id="chapter-pane-15" data-chapter="15" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)">
-<h2 id="chapter-15"><a id="ch15"></a>15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (<code>core:ai</code>)</h2>
-<h3 class="guide-heading" id="level-1-unified-llm-streaming-chat"><span class="heading-hash">#</span><span class="heading-text">Level 1 — Unified LLM Streaming Chat</span></h3>
+<article class="chapter-pane" id="chapter-pane-15" data-chapter="15" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="AI-First LLMs, Multimodal Documents, Local Vectors, RAG &amp; MCP (`core:ai`)">
+<h2 id="chapter-15"><a id="ch15"></a>15. AI-First LLMs, Multimodal Documents, Local Vectors, RAG &amp; MCP (<code>core:ai</code>)</h2>
+<h3 class="guide-heading" id="level-1-multi-provider-chat-streaming-compile-time-structured-outputs"><span class="heading-hash">#</span><span class="heading-text">Level 1 — Multi-Provider Chat, Streaming &amp; Compile-Time Structured Outputs</span></h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:ai&quot; as ai
 
+type BugReport struct {
+    Component: str `json:&quot;component&quot; desc:&quot;Subsystem name&quot;`
+    Severity:  i32 `json:&quot;severity&quot;  desc:&quot;Severity from 1 to 5&quot;`
+}
+
 fn main() {
-    client := ai.openai() // Or ai.anthropic(), ai.gemini(), ai.ollama()
-    req := ai.ChatRequest{
-        model: &quot;gpt-4o-mini&quot;,
-        messages: [ai.Message{ role: &quot;user&quot;, content: &quot;Explain zero-cost abstractions.&quot; }]
-    }
-    try client.stream(req) |delta| {
-        print(delta)
-    }
+    client := ai.openai() // Or ai.anthropic(), ai.gemini(), ai.ollama(), ai.openai_compatible(url)
+
+    // 1. Real-time SSE token streaming
+    _ := try client.stream(&quot;gpt-4o-mini&quot;, [ai.user(&quot;Explain zero-cost abstractions.&quot;)], |delta| {
+        print(&quot;{}&quot;, delta)
+    })
+
+    // 2. Compile-time JSON Schema constrained generation directly into a struct T
+    report := try client.generate_struct[BugReport](
+        &quot;gpt-4o-mini&quot;,
+        &quot;Audio buffer underrun when switching sample rates at 96kHz&quot;
+    )
+    println(&quot;Component: {}, Severity: {}&quot;, report.Component, report.Severity)
 }
 </code></pre>
-<h3 class="guide-heading" id="level-2-local-normalized-embeddings-vector-rag"><span class="heading-hash">#</span><span class="heading-text">Level 2 — Local Normalized Embeddings &amp; Vector RAG</span></h3>
+<h3 class="guide-heading" id="level-2-multimodal-file-attachments-structured-extraction-from-files"><span class="heading-hash">#</span><span class="heading-text">Level 2 — Multimodal File Attachments &amp; Structured Extraction from Files</span></h3>
+<p>Attach images (<code>.png</code>, <code>.jpg</code>, <code>.webp</code>, <code>.bmp</code>), PDFs (<code>.pdf</code>), audio (<code>.wav</code>, <code>.mp3</code>), or Office/OpenDocument files directly to prompts or extract typed structs from any file:</p>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:ai&quot; as ai
+
+type Invoice struct {
+    Vendor: str   `json:&quot;vendor&quot; desc:&quot;Merchant or vendor name&quot;`
+    Total:  f64   `json:&quot;total&quot;  desc:&quot;Total invoice amount&quot;`
+    Items:  []str `json:&quot;items&quot;  desc:&quot;Line item descriptions&quot;`
+}
+
+fn main() {
+    client := ai.gemini()
+
+    // Ask questions about an image, PDF, or slide deck
+    summary := try client.ask_with_file(&quot;gemini-2.5-flash&quot;, &quot;Summarize the architecture diagram&quot;, &quot;arch.png&quot;)
+    println(&quot;Summary: {}&quot;, summary)
+
+    // Extract a strongly-typed struct directly from a receipt image, PDF, or presentation
+    inv := try client.generate_struct_from_file[Invoice](
+        &quot;gemini-2.5-flash&quot;,
+        &quot;Extract all invoice fields&quot;,
+        &quot;receipt.pdf&quot;
+    )
+    println(&quot;Vendor: {} — Total: ${:.2f}&quot;, inv.Vendor, inv.Total)
+}
+</code></pre>
+<h3 class="guide-heading" id="level-3-zero-dependency-document-slide-ingestion-for-vector-rag"><span class="heading-hash">#</span><span class="heading-text">Level 3 — Zero-Dependency Document &amp; Slide Ingestion for Vector RAG</span></h3>
+<p><code>ai.load_document(path)</code> and <code>ai.parse_document(bytes, filename)</code> extract clean Markdown and per-page/per-slide <code>sections</code> (<code>[]ai.DocumentSection</code>) with zero external library dependencies across <strong>PDF (<code>.pdf</code>)</strong>, <strong>PowerPoint (<code>.pptx</code>)</strong>, <strong>Word (<code>.docx</code>)</strong>, <strong>Excel (<code>.xlsx</code>)</strong>, <strong>LibreOffice (<code>.odt</code>, <code>.odp</code>, <code>.ods</code>)</strong>, <strong>EPUB (<code>.epub</code>)</strong>, <strong>HTML (<code>.html</code>)</strong>, <strong>CSV (<code>.csv</code>)</strong>, <strong>Markdown (<code>.md</code>)</strong>, and <strong>Images</strong>:</p>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:ai&quot; as ai
 import &quot;core:db/sqlite&quot; as sqlite
 
-type Doc struct {
-    Title: str   `sql:&quot;title&quot;`
-    Snippet: str `sql:&quot;snippet&quot;`
+type SlideHit struct {
+    SlideNum: i32 `sql:&quot;slide_num&quot;`
+    Title:    str `sql:&quot;title&quot;`
+    Snippet:  str `sql:&quot;snippet&quot;`
 }
 
 fn main() {
+    // 1. Load a multi-slide presentation (.pptx / .odp), PDF (.pdf), or document (.docx / .odt / .epub)
+    deck := try ai.load_document(&quot;quarterly_review.pptx&quot;)
+    chunks := ai.chunk_document(deck, 512, 64)
+
+    // 2. Index chunks into SQLite with 1-based slide/page provenance and normalized local embeddings
     mut db := try sqlite.open(&quot;:memory:&quot;)
-    try db.exec(&quot;CREATE TABLE docs (title TEXT, snippet TEXT, embedding BLOB)&quot;)
+    defer db.close()
+    try db.exec(&quot;CREATE TABLE slides (slide_num INT, title TEXT, snippet TEXT, embedding BLOB)&quot;)
 
-    text := &quot;cfire compiles directly to human-readable C++23.&quot;
-    vec := try ai.embed(&quot;local&quot;, text)
-    try db.exec(&quot;INSERT INTO docs VALUES ('Architecture', ?1, ?2)&quot;, text, vec)
+    for ch in chunks {
+        vec := try ai.embed(&quot;local&quot;, ch.text)
+        try db.exec(&quot;INSERT INTO slides VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec)
+    }
 
-    qvec := try ai.embed(&quot;local&quot;, &quot;C++23 transpilation&quot;)
-    hits := try db.query[Doc](&quot;SELECT title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec)
-    if hits.len &gt; 0 {
-        println(&quot;RAG Hit: {}&quot;, hits[0].Snippet)
+    // 3. Query using SIMD-accelerated vec_cosine_similarity
+    qvec := try ai.embed(&quot;local&quot;, &quot;latency p99 metrics&quot;)
+    hits := try db.query[SlideHit](
+        &quot;SELECT slide_num, title, snippet FROM slides ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;,
+        qvec
+    )
+    if hits.len() &gt; 0 {
+        println(&quot;[Slide {}: {}] {}&quot;, hits[0].SlideNum, hits[0].Title, hits[0].Snippet)
     }
 }
 </code></pre>
-<h3 class="guide-heading" id="level-3-authoring-native-model-context-protocol-mcp-servers"><span class="heading-hash">#</span><span class="heading-text">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</span></h3>
+<h3 class="guide-heading" id="level-4-cross-platform-ocr-vision-embeddings-linux-macos-wasm-parity"><span class="heading-hash">#</span><span class="heading-text">Level 4 — Cross-Platform OCR, Vision Embeddings &amp; Linux / macOS / WASM Parity</span></h3>
+<div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>import &quot;core:ai&quot; as ai
+
+fn main() {
+    // 1. On-device OCR (Apple Vision.framework on macOS/iOS, libtesseract/tesseract on Linux, + PNG/JPEG metadata)
+    text := try ai.ocr(&quot;invoice.png&quot;)
+    println(&quot;OCR text: {}&quot;, text)
+
+    // 2. Normalized 384-dim visual + semantic image embedding (4x4 RGB/Luma moments + Sobel HOG + 8x8 dHash)
+    img_vec := try ai.embed_image(&quot;local&quot;, &quot;invoice.png&quot;)
+    println(&quot;Visual embedding dims: {}&quot;, img_vec.len())
+}
+</code></pre>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th>Capability</th><th>macOS / iOS (<code>__APPLE__</code>)</th><th>Linux (<code>__linux__</code>)</th><th>WebAssembly (<code>__EMSCRIPTEN__</code>)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Office &amp; E-Book (<code>.docx</code>, <code>.pptx</code>, <code>.xlsx</code>, <code>.odt</code>, <code>.odp</code>, <code>.ods</code>, <code>.epub</code>)</strong></td><td>Pure C++23 RFC 1951 <code>DEFLATE</code> + ZIP/XML (iOS <code>.app</code> bundle + <code>Documents/</code> sandbox aware)</td><td>Pure C++23 RFC 1951 <code>DEFLATE</code> + ZIP/XML</td><td>Pure C++23 RFC 1951 <code>DEFLATE</code> + ZIP/XML + browser drag-and-drop <code>MEMFS</code> staging (<code>window.cfireStageFile</code>)</td></tr>
+      <tr><td><strong>PDF (<code>.pdf</code>) Extraction</strong></td><td><code>PDFKit.framework</code> + C++23 <code>/FlateDecode</code> &amp; <code>/ToUnicode</code> CMap</td><td>Auto-detected <code>pdftotext -layout</code> + C++23 <code>/FlateDecode</code>, <code>/ToUnicode</code> CMap &amp; <code>TJ</code> kerning</td><td>Pure C++23 <code>/FlateDecode</code>, <code>/ToUnicode</code> CMap &amp; <code>TJ</code> kerning</td></tr>
+      <tr><td><strong>Image OCR (<code>ai.ocr</code>)</strong></td><td><code>Vision.framework</code> (<code>VNRecognizeTextRequest</code>) + metadata</td><td>Dynamic <code>dlopen(&quot;libtesseract.so.5&quot;)</code> C-API $\rightarrow$ <code>tesseract</code> CLI $\rightarrow$ <code>CFIRE_OCR_MODEL</code> + metadata</td><td>PNG <code>tEXt</code>/<code>iTXt</code> &amp; JPEG <code>COM</code> metadata</td></tr>
+      <tr><td><strong>Local Image Embeddings (<code>ai.embed_image(&quot;local&quot;, ...)</code>)</strong></td><td>Pure C++23 PNG/BMP pixel decoder (4x4 RGB/Luma + Sobel HOG + dHash) + OCR</td><td>Pure C++23 PNG/BMP pixel decoder (4x4 RGB/Luma + Sobel HOG + dHash) + OCR</td><td>Pure C++23 PNG/BMP pixel decoder (4x4 RGB/Luma + Sobel HOG + dHash)</td></tr>
+      <tr><td><strong>Local Text Embeddings (<code>ai.embed(&quot;local&quot;, ...)</code>)</strong></td><td><code>NaturalLanguage.framework</code> (<code>NLEmbedding</code>) + semantic cluster trigram fallback</td><td><code>CFIRE_LOCAL_EMBED_MODEL</code> (Ollama) + semantic concept cluster &amp; trigram projections</td><td>Semantic concept cluster &amp; trigram projections</td></tr>
+      <tr><td><strong>Cloud AI HTTPS &amp; Auth (<code>ai.Client</code>, <code>ai.embed</code>)</strong></td><td><code>libssl</code> (<code>macOS</code>) / Foundation <code>NSURLConnection</code> native TLS (<code>iOS</code> &amp; fallback)</td><td><code>libssl</code> (<code>OpenSSL</code>)</td><td>Browser <code>XMLHttpRequest</code> with custom auth headers + Anthropic direct browser CORS header</td></tr>
+      <tr><td><strong>Vector Search Math (<code>sqlite</code> &amp; <code>core:ai</code>)</strong></td><td><code>ARM NEON</code> / <code>AVX2</code> hardware SIMD</td><td><code>AVX2</code> (<code>_mm256_fmadd_ps</code>) / <code>ARM NEON</code> hardware SIMD</td><td><code>WASM 128-bit SIMD</code> (<code>-msimd128</code>, <code>wasm_f32x4_*</code>)</td></tr>
+    </tbody>
+  </table>
+</div>
+<h3 class="guide-heading" id="level-5-authoring-native-model-context-protocol-mcp-servers"><span class="heading-hash">#</span><span class="heading-text">Level 5 — Authoring Native Model Context Protocol (<code>MCP</code>) Servers</span></h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>import &quot;core:ai&quot; as ai
 
@@ -2468,7 +2551,7 @@ fn main() {
         return &quot;[{\&quot;title\&quot;: \&quot;core:ai\&quot;}]&quot;
     }
     
-    // Process JSON-RPC request from AI coding agent
+    // Process JSON-RPC request from AI coding agent (or call server.serve_stdio())
     req := &quot;{\&quot;jsonrpc\&quot;:\&quot;2.0\&quot;,\&quot;id\&quot;:1,\&quot;method\&quot;:\&quot;tools/list\&quot;}&quot;
     res := server.handle_jsonrpc(req)
     println(&quot;MCP Response: {}&quot;, res)
@@ -2534,7 +2617,7 @@ cfire run examples/16-audio-synth/main.cf
   <div class="chapter-pager">
     <a href="#chapter-15" class="pager-card pager-prev" onclick="navigateToChapter('15')">
       <span class="pager-label">&larr; PREVIOUS</span>
-      <strong class="pager-title">Ch 15: AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</strong>
+      <strong class="pager-title">Ch 15: AI-First LLMs, Multimodal Documents, Local Vectors, RAG &amp; MCP (`core:ai`)</strong>
     </a>
     <a href="reference.html" class="pager-card pager-next">
       <span class="pager-label">NEXT &rarr;</span>
@@ -2654,9 +2737,11 @@ cfire run examples/16-audio-synth/main.cf
     </div>
     <div class="toc-chapter-group" id="toc-group-15" style="display: none;">
       <ul class="toc-list">
-        <li><a href="#level-1-unified-llm-streaming-chat" onclick="navigateToSubhead('15', 'level-1-unified-llm-streaming-chat')">Level 1 — Unified LLM Streaming Chat</a></li>
-        <li><a href="#level-2-local-normalized-embeddings-vector-rag" onclick="navigateToSubhead('15', 'level-2-local-normalized-embeddings-vector-rag')">Level 2 — Local Normalized Embeddings &amp; Vector RAG</a></li>
-        <li><a href="#level-3-authoring-native-model-context-protocol-mcp-servers" onclick="navigateToSubhead('15', 'level-3-authoring-native-model-context-protocol-mcp-servers')">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</a></li>
+        <li><a href="#level-1-multi-provider-chat-streaming-compile-time-structured-outputs" onclick="navigateToSubhead('15', 'level-1-multi-provider-chat-streaming-compile-time-structured-outputs')">Level 1 — Multi-Provider Chat, Streaming &amp; Compile-Time Structured Outputs</a></li>
+        <li><a href="#level-2-multimodal-file-attachments-structured-extraction-from-files" onclick="navigateToSubhead('15', 'level-2-multimodal-file-attachments-structured-extraction-from-files')">Level 2 — Multimodal File Attachments &amp; Structured Extraction from Files</a></li>
+        <li><a href="#level-3-zero-dependency-document-slide-ingestion-for-vector-rag" onclick="navigateToSubhead('15', 'level-3-zero-dependency-document-slide-ingestion-for-vector-rag')">Level 3 — Zero-Dependency Document &amp; Slide Ingestion for Vector RAG</a></li>
+        <li><a href="#level-4-cross-platform-ocr-vision-embeddings-linux-macos-wasm-parity" onclick="navigateToSubhead('15', 'level-4-cross-platform-ocr-vision-embeddings-linux-macos-wasm-parity')">Level 4 — Cross-Platform OCR, Vision Embeddings &amp; Linux / macOS / WASM Parity</a></li>
+        <li><a href="#level-5-authoring-native-model-context-protocol-mcp-servers" onclick="navigateToSubhead('15', 'level-5-authoring-native-model-context-protocol-mcp-servers')">Level 5 — Authoring Native Model Context Protocol (`MCP`) Servers</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-16" style="display: none;">

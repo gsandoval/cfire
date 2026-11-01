@@ -792,51 +792,127 @@ fn main() {
 
 ---
 
-## Chapter 15: AI-First LLMs, Local Vectors, RAG & Model Context Protocol (`core:ai`)
+## Chapter 15: AI-First LLMs, Multimodal Documents, Local Vectors, RAG & MCP (`core:ai`)
 
-### Level 1 — Unified LLM Streaming Chat
+### Level 1 — Multi-Provider Chat, Streaming & Compile-Time Structured Outputs
 ```cfire
 import "core:ai" as ai
 
+type BugReport struct {
+    Component: str `json:"component" desc:"Subsystem name"`
+    Severity:  i32 `json:"severity"  desc:"Severity from 1 to 5"`
+}
+
 fn main() {
-    client := ai.openai() // Or ai.anthropic(), ai.gemini(), ai.ollama()
-    req := ai.ChatRequest{
-        model: "gpt-4o-mini",
-        messages: [ai.Message{ role: "user", content: "Explain zero-cost abstractions." }]
-    }
-    try client.stream(req) |delta| {
-        print(delta)
-    }
+    client := ai.openai() // Or ai.anthropic(), ai.gemini(), ai.ollama(), ai.openai_compatible(url)
+
+    // 1. Real-time SSE token streaming
+    _ := try client.stream("gpt-4o-mini", [ai.user("Explain zero-cost abstractions.")], |delta| {
+        print("{}", delta)
+    })
+
+    // 2. Compile-time JSON Schema constrained generation directly into a struct T
+    report := try client.generate_struct[BugReport](
+        "gpt-4o-mini",
+        "Audio buffer underrun when switching sample rates at 96kHz"
+    )
+    println("Component: {}, Severity: {}", report.Component, report.Severity)
 }
 ```
 
-### Level 2 — Local Normalized Embeddings & Vector RAG
+### Level 2 — Multimodal File Attachments & Structured Extraction from Files
+Attach images (`.png`, `.jpg`, `.webp`, `.bmp`), PDFs (`.pdf`), audio (`.wav`, `.mp3`), or Office/OpenDocument files directly to prompts or extract typed structs from any file:
+```cfire
+import "core:ai" as ai
+
+type Invoice struct {
+    Vendor: str   `json:"vendor" desc:"Merchant or vendor name"`
+    Total:  f64   `json:"total"  desc:"Total invoice amount"`
+    Items:  []str `json:"items"  desc:"Line item descriptions"`
+}
+
+fn main() {
+    client := ai.gemini()
+
+    // Ask questions about an image, PDF, or slide deck
+    summary := try client.ask_with_file("gemini-2.5-flash", "Summarize the architecture diagram", "arch.png")
+    println("Summary: {}", summary)
+
+    // Extract a strongly-typed struct directly from a receipt image, PDF, or presentation
+    inv := try client.generate_struct_from_file[Invoice](
+        "gemini-2.5-flash",
+        "Extract all invoice fields",
+        "receipt.pdf"
+    )
+    println("Vendor: {} — Total: ${:.2f}", inv.Vendor, inv.Total)
+}
+```
+
+### Level 3 — Zero-Dependency Document & Slide Ingestion for Vector RAG
+`ai.load_document(path)` and `ai.parse_document(bytes, filename)` extract clean Markdown and per-page/per-slide `sections` (`[]ai.DocumentSection`) with zero external library dependencies across **PDF (`.pdf`)**, **PowerPoint (`.pptx`)**, **Word (`.docx`)**, **Excel (`.xlsx`)**, **LibreOffice (`.odt`, `.odp`, `.ods`)**, **EPUB (`.epub`)**, **HTML (`.html`)**, **CSV (`.csv`)**, **Markdown (`.md`)**, and **Images**:
 ```cfire
 import "core:ai" as ai
 import "core:db/sqlite" as sqlite
 
-type Doc struct {
-    Title: str   `sql:"title"`
-    Snippet: str `sql:"snippet"`
+type SlideHit struct {
+    SlideNum: i32 `sql:"slide_num"`
+    Title:    str `sql:"title"`
+    Snippet:  str `sql:"snippet"`
 }
 
 fn main() {
+    // 1. Load a multi-slide presentation (.pptx / .odp), PDF (.pdf), or document (.docx / .odt / .epub)
+    deck := try ai.load_document("quarterly_review.pptx")
+    chunks := ai.chunk_document(deck, 512, 64)
+
+    // 2. Index chunks into SQLite with 1-based slide/page provenance and normalized local embeddings
     mut db := try sqlite.open(":memory:")
-    try db.exec("CREATE TABLE docs (title TEXT, snippet TEXT, embedding BLOB)")
+    defer db.close()
+    try db.exec("CREATE TABLE slides (slide_num INT, title TEXT, snippet TEXT, embedding BLOB)")
 
-    text := "cfire compiles directly to human-readable C++23."
-    vec := try ai.embed("local", text)
-    try db.exec("INSERT INTO docs VALUES ('Architecture', ?1, ?2)", text, vec)
+    for ch in chunks {
+        vec := try ai.embed("local", ch.text)
+        try db.exec("INSERT INTO slides VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, vec)
+    }
 
-    qvec := try ai.embed("local", "C++23 transpilation")
-    hits := try db.query[Doc]("SELECT title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
-    if hits.len > 0 {
-        println("RAG Hit: {}", hits[0].Snippet)
+    // 3. Query using SIMD-accelerated vec_cosine_similarity
+    qvec := try ai.embed("local", "latency p99 metrics")
+    hits := try db.query[SlideHit](
+        "SELECT slide_num, title, snippet FROM slides ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1",
+        qvec
+    )
+    if hits.len() > 0 {
+        println("[Slide {}: {}] {}", hits[0].SlideNum, hits[0].Title, hits[0].Snippet)
     }
 }
 ```
 
-### Level 3 — Authoring Native Model Context Protocol (MCP) Servers
+### Level 4 — Cross-Platform OCR, Vision Embeddings & Linux / macOS / WASM Parity
+```cfire
+import "core:ai" as ai
+
+fn main() {
+    // 1. On-device OCR (Apple Vision.framework on macOS/iOS, libtesseract/tesseract on Linux, + PNG/JPEG metadata)
+    text := try ai.ocr("invoice.png")
+    println("OCR text: {}", text)
+
+    // 2. Normalized 384-dim visual + semantic image embedding (4x4 RGB/Luma moments + Sobel HOG + 8x8 dHash)
+    img_vec := try ai.embed_image("local", "invoice.png")
+    println("Visual embedding dims: {}", img_vec.len())
+}
+```
+
+| Capability | macOS / iOS (`__APPLE__`) | Linux (`__linux__`) | WebAssembly (`__EMSCRIPTEN__`) |
+| :--- | :--- | :--- | :--- |
+| **Office & E-Book (`.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`)** | Pure C++23 RFC 1951 `DEFLATE` + ZIP/XML (iOS `.app` bundle + `Documents/` sandbox aware) | Pure C++23 RFC 1951 `DEFLATE` + ZIP/XML | Pure C++23 RFC 1951 `DEFLATE` + ZIP/XML + browser drag-and-drop `MEMFS` staging (`window.cfireStageFile`) |
+| **PDF (`.pdf`) Extraction** | `PDFKit.framework` + C++23 `/FlateDecode` & `/ToUnicode` CMap | Auto-detected `pdftotext -layout` + C++23 `/FlateDecode`, `/ToUnicode` CMap & `TJ` kerning | Pure C++23 `/FlateDecode`, `/ToUnicode` CMap & `TJ` kerning |
+| **Image OCR (`ai.ocr`)** | `Vision.framework` (`VNRecognizeTextRequest`) + metadata | Dynamic `dlopen("libtesseract.so.5")` C-API $\rightarrow$ `tesseract` CLI $\rightarrow$ `CFIRE_OCR_MODEL` + metadata | PNG `tEXt`/`iTXt` & JPEG `COM` metadata |
+| **Local Image Embeddings (`ai.embed_image("local", ...)`)** | Pure C++23 PNG/BMP pixel decoder (4x4 RGB/Luma + Sobel HOG + dHash) + OCR | Pure C++23 PNG/BMP pixel decoder (4x4 RGB/Luma + Sobel HOG + dHash) + OCR | Pure C++23 PNG/BMP pixel decoder (4x4 RGB/Luma + Sobel HOG + dHash) |
+| **Local Text Embeddings (`ai.embed("local", ...)`)** | `NaturalLanguage.framework` (`NLEmbedding`) + semantic cluster trigram fallback | `CFIRE_LOCAL_EMBED_MODEL` (Ollama) + semantic concept cluster & trigram projections | Semantic concept cluster & trigram projections |
+| **Cloud AI HTTPS & Auth (`ai.Client`, `ai.embed`)** | `libssl` (`macOS`) / Foundation `NSURLConnection` native TLS (`iOS` & fallback) | `libssl` (`OpenSSL`) | Browser `XMLHttpRequest` with custom auth headers + Anthropic direct browser CORS header |
+| **Vector Search Math (`sqlite` & `core:ai`)** | `ARM NEON` / `AVX2` hardware SIMD | `AVX2` (`_mm256_fmadd_ps`) / `ARM NEON` hardware SIMD | `WASM 128-bit SIMD` (`-msimd128`, `wasm_f32x4_*`) |
+
+### Level 5 — Authoring Native Model Context Protocol (`MCP`) Servers
 ```cfire
 import "core:ai" as ai
 
@@ -852,7 +928,7 @@ fn main() {
         return "[{\"title\": \"core:ai\"}]"
     }
     
-    // Process JSON-RPC request from AI coding agent
+    // Process JSON-RPC request from AI coding agent (or call server.serve_stdio())
     req := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"
     res := server.handle_jsonrpc(req)
     println("MCP Response: {}", res)
