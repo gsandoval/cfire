@@ -4,10 +4,10 @@
 
 ## 1. Built-In `core:*` Standard Library Modules
 
-### `core:ai` (`ai`) — Multi-Provider Cloud, Open-Source, Apple On-Device AI, Embeddings & MCP Server
+### `core:ai` (`ai`) — Multi-Provider Cloud, Open-Source, Apple/Linux On-Device AI, Multimodal Document Ingestion & MCP Server
 
-- **Auto-Link Flags:** `(POSIX sockets + TLS + NaturalLanguage.framework)`
-- **Overview:** Unified AI SDK supporting OpenAI, Anthropic Claude, Google Gemini, Ollama, vLLM/llama.cpp (`openai_compatible`), and Apple On-Device Intelligence (`NaturalLanguage.framework`), with compile-time structured outputs (`generate_struct[T]`), tool calling (`tool_def[T]`), SSE token streaming (`stream`), unified embeddings (`ai.embed("local", text)`), RAG chunking (`chunk_text`), vector math (`cosine_similarity`), and a Model Context Protocol server (`McpServer`).
+- **Auto-Link Flags:** `(POSIX sockets + TLS + AVX2/NEON SIMD + NaturalLanguage / PDFKit / Vision / Tesseract)`
+- **Overview:** Unified AI SDK supporting OpenAI, Anthropic Claude, Google Gemini, Ollama, vLLM/llama.cpp (`openai_compatible`), and Cross-Platform On-Device Intelligence (`NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/WASM), with compile-time structured outputs (`generate_struct[T]`, `generate_struct_from_file[T]`), multimodal file attachments (`user_with_file`, `ask_with_file`), zero-dependency document and slide extraction (`load_document`, `chunk_document` for `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.md`, `.csv`, images), on-device OCR (`ocr`), text and image embeddings (`embed`, `embed_image`), and a Model Context Protocol server (`McpServer`).
 
 **Practical Example:**
 ```cf
@@ -31,15 +31,19 @@ fn main() {
     // 1. Compile-time JSON Schema reflection for LLM tools & structured outputs
     println("Tool schema: {}", json.schema[SearchArgs]())
 
-    // 2. Unified local on-device embeddings + SQLite vector similarity search
+    // 2. Parse & chunk structured documents (.pdf, .pptx, .docx, .odt, .epub, .md)
+    doc := try ai.parse_document("# Systems Guide\nZero-overhead C++23 memory safety.\n# Vector SQLite\nEmbedded SIMD vector similarity search and RAG.", "guide.md")
+    chunks := ai.chunk_document(doc, 256, 32)
+
+    // 3. Unified local on-device embeddings + SQLite SIMD vector similarity search
     mut db := try sqlite.open(":memory:")
     defer db.close()
     try db.exec("CREATE TABLE docs (title TEXT, vec BLOB)")
 
-    v1 := try ai.embed("local", "Zero-overhead C++23 systems programming and memory safety")
-    v2 := try ai.embed("local", "SQLite embedded vector similarity search and RAG")
-    try db.exec("INSERT INTO docs VALUES (?1, ?2)", "Systems Guide", v1)
-    try db.exec("INSERT INTO docs VALUES (?1, ?2)", "Vector SQLite", v2)
+    for ch in chunks {
+        vec := try ai.embed("local", ch.text)
+        try db.exec("INSERT INTO docs VALUES (?1, ?2)", ch.title, vec)
+    }
 
     qvec := try ai.embed("local", "vector search in sqlite")
     hits := try db.query[DocHit](
@@ -59,16 +63,27 @@ fn main() {
 | `fn openai_compatible(base_url: str, api_key: str = "") -> Client` | `cfire::ai::openai_compatible(base_url, api_key)` | Creates a client for any OpenAI-compatible server (`vLLM`, `llama-server`, `LM Studio`, `Groq`, `Together`, `DeepSeek`). | `client := ai.openai_compatible("http://127.0.0.1:8080/v1")` |
 | `fn apple() -> Client` | `cfire::ai::apple()` | Creates an Apple on-device client backed by `NaturalLanguage.framework` (`NLEmbedding`, `NLLanguageRecognizer`). | `client := ai.apple()` |
 | `fn user(content: str) -> Message` | `cfire::ai::user(content)` | Constructs a user role `Message`. | `m := ai.user("Summarize this file.")` |
+| `fn user_with_file(content: str, file_path: str) -> Message!` | `cfire::ai::user_with_file(content, file_path)` | Constructs a multimodal user `Message` with an attached file (`.png`, `.jpg`, `.webp`, `.bmp`, `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, `.wav`). | `m := try ai.user_with_file("Describe this diagram", "arch.png")` |
+| `fn load_attachment(path: str) -> Attachment!` | `cfire::ai::load_attachment(path)` | Loads a file from disk into a MIME-typed multimodal `Attachment` (populating extracted Markdown automatically for Office/OpenDocument/EPUB/text formats). | `att := try ai.load_attachment("slides.pptx")` |
+| `fn detect_mime_type(path_or_name: str, data: bytes = []) -> str` | `cfire::ai::detect_mime_type(path_or_name, data)` | Detects the MIME type of a file from magic bytes (`%PDF-`, `PNG`, `BMP`, `JPEG`, `WEBP`, `ZIP`/OOXML/ODF/EPUB) and filename extension. | `mime := ai.detect_mime_type("report.pdf")` |
+| `fn load_document(path: str) -> Document!` | `cfire::ai::load_document(path)` | Extracts structured Markdown and per-page/per-slide `sections` (`[]DocumentSection`) from `.pdf` (Apple `PDFKit`, Linux `pdftotext`, or portable C++23 `/FlateDecode` + `/ToUnicode` CMap), `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.md`, `.csv`, or image files. | `doc := try ai.load_document("deck.pptx")` |
+| `fn parse_document(data: bytes, filename: str = "document.txt") -> Document!` | `cfire::ai::parse_document(data, filename)` | Parses an in-memory byte slice or string into a structured `Document` with page/slide `sections`. | `doc := try ai.parse_document(raw_bytes, "spec.docx")` |
+| `fn chunk_document(doc: Document, max_chars: i32 = 512, overlap: i32 = 64) -> []DocumentSection` | `cfire::ai::chunk_document(doc, max_chars, overlap)` | Splits a `Document` into RAG-ready chunks while preserving each chunk's 1-based page/slide `index` and section `title`. | `chunks := ai.chunk_document(doc, 512, 64)` |
+| `fn ocr(path: str) -> str!` | `cfire::ai::ocr(path)` | Extracts text from an image file using Apple `Vision.framework` on macOS/iOS, dynamic `libtesseract.so.5` C-API / `tesseract` CLI / `CFIRE_OCR_MODEL` on Linux, and embedded PNG/JPEG text metadata. | `text := try ai.ocr("receipt.png")` |
+| `fn embed_image(model: str, path: str) -> []f32!` | `cfire::ai::embed_image(model, path)` | Computes a normalized `[]f32` visual/multimodal embedding vector for an image (`model: "local"` decodes PNG/BMP pixels in pure C++23 to compute 4x4 RGB/Luma moments, Sobel HOG edge histograms, 8x8 dHash, and fused OCR semantics). | `ivec := try ai.embed_image("local", "diagram.png")` |
 | `fn system(content: str) -> Message` | `cfire::ai::system(content)` | Constructs a system instruction `Message`. | `m := ai.system("You are a concise coding assistant.")` |
 | `fn assistant(content: str) -> Message` | `cfire::ai::assistant(content)` | Constructs an assistant role `Message`. | `m := ai.assistant("Here is the summary:")` |
 | `fn tool_def[T](name: str, description: str) -> Tool` | `cfire::ai::tool_def<T>(name, description)` | Constructs a typed LLM `Tool` definition whose JSON Schema is derived at compile time from struct `T`. | `t := ai.tool_def[WeatherArgs]("get_weather", "Look up current weather")` |
 | `fn embed(model: str, text: str) -> []f32!` | `cfire::ai::embed(model, text)` | Computes a normalized `[]f32` embedding vector (`model: "local"` runs offline on-device via Apple `NLEmbedding` or deterministic trigram feature hashing; other models query the configured cloud/Ollama provider). | `vec := try ai.embed("local", "compile-time memory safety")` |
 | `fn (c: Client) ask(model: str, prompt: str, system_prompt: str = "") -> str!` | `c.ask(model, prompt, system_prompt)` | Executes a single-turn prompt and returns the assistant text response. | `reply := try client.ask("gpt-4o-mini", "Hello!")` |
+| `fn (c: Client) ask_with_file(model: str, prompt: str, file_path: str, system_prompt: str = "") -> str!` | `c.ask_with_file(model, prompt, file_path, system_prompt)` | Executes a multimodal prompt with an attached image, PDF, slide deck, or document. | `ans := try client.ask_with_file("gemini-2.5-flash", "Summarize this PDF", "paper.pdf")` |
 | `fn (c: Client) chat(model: str, messages: []Message) -> ChatResponse!` | `c.chat(model, messages)` | Executes a multi-turn chat completion returning text, tool calls, and token usage. | `res := try client.chat("claude-3-5-sonnet-latest", msgs)` |
 | `fn (c: Client) chat_with_tools(model: str, messages: []Message, tools: []Tool) -> ChatResponse!` | `c.chat_with_tools(model, messages, tools)` | Executes a chat completion with compile-time schema-typed `tools` and returns any requested `ToolCall` invocations. | `res := try client.chat_with_tools("gpt-4o", msgs, [weather_tool])` |
 | `fn (c: Client) stream(model: str, messages: []Message, on_delta: fn(str)) -> str!` | `c.stream(model, messages, on_delta)` | Streams tokens in real time via SSE across OpenAI, Anthropic, Gemini, or Ollama, invoking `on_delta` for each token chunk. | `full := try client.stream("llama3.2", msgs, |tok| { print("{}", tok) })` |
 | `fn (c: Client) generate_struct[T](model: str, prompt: str, system_prompt: str = "") -> T!` | `c.generate_struct<T>(model, prompt, system_prompt)` | Enforces `json.schema[T]()` on the model response and parses the result directly into a strongly-typed `cfire` struct `T`. | `inv := try client.generate_struct[Invoice]("gpt-4o-mini", raw_text)` |
+| `fn (c: Client) generate_struct_from_file[T](model: str, prompt: str, file_path: str, system_prompt: str = "") -> T!` | `c.generate_struct_from_file<T>(model, prompt, file_path, system_prompt)` | Extracts a strongly-typed `cfire` struct `T` directly from an image, PDF, slide deck, or document using compile-time `json.schema[T]()`. | `inv := try client.generate_struct_from_file[Invoice]("gemini-2.5-flash", "Extract fields", "receipt.png")` |
 | `fn (c: Client) embed(model: str, text: str) -> []f32!` | `c.embed(model, text)` | Generates an embedding vector using `c`'s provider (or offline on-device when `model == "local"`). | `vec := try client.embed("text-embedding-3-small", doc)` |
+| `fn (c: Client) embed_image(model: str, path: str) -> []f32!` | `c.embed_image(model, path)` | Computes a normalized `[]f32` visual embedding vector for an image file. | `ivec := try client.embed_image("local", "chart.png")` |
 | `fn cosine_similarity(a: []f32, b: []f32) -> f32` | `cfire::ai::cosine_similarity(a, b)` | Computes the cosine similarity in `[-1.0, 1.0]` between two `[]f32` embedding vectors. | `sim := ai.cosine_similarity(v1, v2)` |
 | `fn l2_distance(a: []f32, b: []f32) -> f32` | `cfire::ai::l2_distance(a, b)` | Computes the Euclidean (L2) distance between two `[]f32` vectors. | `dist := ai.l2_distance(v1, v2)` |
 | `fn dot_product(a: []f32, b: []f32) -> f32` | `cfire::ai::dot_product(a, b)` | Computes the inner product of two `[]f32` vectors. | `dot := ai.dot_product(v1, v2)` |

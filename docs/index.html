@@ -1601,20 +1601,24 @@ fn main() {
     // 1. Compile-time JSON Schema extraction for LLMs/MCP
     schema := json.schema[QueryPlan]()
 
-    // 2. Embedded SQLite with built-in vector similarity
+    // 2. Zero-dependency document &amp; slide extraction (.pdf, .pptx, .docx, .odt, .epub, .md)
+    doc := try ai.parse_document(&quot;# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;, &quot;arch.md&quot;)
+    chunks := ai.chunk_document(doc, 512, 64)
+
+    // 3. Embedded SQLite with AVX2/NEON SIMD vector similarity
     mut db := try sqlite.open(&quot;:memory:&quot;)
     try db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;)
 
-    // 3. Normalized local embeddings + vector indexing
-    doc := &quot;cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;
-    vec := try ai.embed(&quot;local&quot;, doc)
-    try db.exec(&quot;INSERT INTO docs VALUES (1, 'Transpiler', ?1, ?2)&quot;, doc, vec)
+    for ch in chunks {
+        vec := try ai.embed(&quot;local&quot;, ch.text)
+        try db.exec(&quot;INSERT INTO docs VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec)
+    }
 
     // 4. In-database semantic search
     qvec := try ai.embed(&quot;local&quot;, &quot;modern C++23 compiler&quot;)
     hits := try db.query[DocEntry](&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec)
-    if hits.len &gt; 0 {
-        println(&quot;Match: {}&quot;, hits[0].Snippet)
+    if hits.len() &gt; 0 {
+        println(&quot;Match [{}]: {}&quot;, hits[0].Title, hits[0].Snippet)
     }
 }
 </code></pre>
@@ -1627,6 +1631,8 @@ fn main() {
 #define CFIRE_USE_SIMDJSON 1
 #include &quot;cfire_prelude.hpp&quot;
 #include &quot;core/ai.hpp&quot;
+#include &quot;core/encoding.hpp&quot;
+#include &quot;core/fs.hpp&quot;
 #include &quot;core/json.hpp&quot;
 #include &quot;core/net.hpp&quot;
 #include &quot;core/os.hpp&quot;
@@ -1721,51 +1727,61 @@ auto main(int argc, char** argv) -&gt; int {
     #line 20 &quot;snippet_ai.cf&quot;
     auto schema = cfire::json::schema&lt;QueryPlan&gt;();
     #line 23 &quot;snippet_ai.cf&quot;
-    auto _try_1 = cfire::sqlite::open(&quot;:memory:&quot;);
+    auto _try_1 = cfire::ai::parse_document(&quot;# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;, &quot;arch.md&quot;);
     if (!_try_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
         return 1;
     }
-    auto db = std::move(*_try_1);
+    auto doc = std::move(*_try_1);
     #line 24 &quot;snippet_ai.cf&quot;
-    auto _try_v_2 = db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;);
-    if (!_try_v_2.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _try_v_2.error().message());
-        return 1;
-    }
+    auto chunks = cfire::ai::chunk_document(doc, 512, 64);
     #line 27 &quot;snippet_ai.cf&quot;
-    std::string doc = &quot;cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;;
+    auto _try_2 = cfire::sqlite::open(&quot;:memory:&quot;);
+    if (!_try_2.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
+        return 1;
+    }
+    auto db = std::move(*_try_2);
     #line 28 &quot;snippet_ai.cf&quot;
-    auto _try_3 = cfire::ai::embed(&quot;local&quot;, doc);
-    if (!_try_3.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _try_3.error().message());
+    auto _try_v_3 = db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;);
+    if (!_try_v_3.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_v_3.error().message());
         return 1;
     }
-    auto vec = std::move(*_try_3);
-    #line 29 &quot;snippet_ai.cf&quot;
-    auto _try_v_4 = db.exec(&quot;INSERT INTO docs VALUES (1, 'Transpiler', ?1, ?2)&quot;, doc, vec);
-    if (!_try_v_4.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _try_v_4.error().message());
-        return 1;
+    #line 30 &quot;snippet_ai.cf&quot;
+    for (const auto&amp; ch : chunks) {
+        #line 31 &quot;snippet_ai.cf&quot;
+        auto _try_4 = cfire::ai::embed(&quot;local&quot;, ch.text);
+        if (!_try_4.has_value()) {
+            std::println(stderr, &quot;Error: {}&quot;, _try_4.error().message());
+            return 1;
+        }
+        auto vec = std::move(*_try_4);
+        #line 32 &quot;snippet_ai.cf&quot;
+        auto _try_v_5 = db.exec(&quot;INSERT INTO docs VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec);
+        if (!_try_v_5.has_value()) {
+            std::println(stderr, &quot;Error: {}&quot;, _try_v_5.error().message());
+            return 1;
+        }
     }
-    #line 32 &quot;snippet_ai.cf&quot;
-    auto _try_5 = cfire::ai::embed(&quot;local&quot;, &quot;modern C++23 compiler&quot;);
-    if (!_try_5.has_value()) {
-        std::println(stderr, &quot;Error: {}&quot;, _try_5.error().message());
-        return 1;
-    }
-    auto qvec = std::move(*_try_5);
-    #line 33 &quot;snippet_ai.cf&quot;
-    auto _try_6 = db.query&lt;DocEntry&gt;(&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec);
+    #line 36 &quot;snippet_ai.cf&quot;
+    auto _try_6 = cfire::ai::embed(&quot;local&quot;, &quot;modern C++23 compiler&quot;);
     if (!_try_6.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_6.error().message());
         return 1;
     }
-    auto hits = std::move(*_try_6);
-    #line 34 &quot;snippet_ai.cf&quot;
+    auto qvec = std::move(*_try_6);
+    #line 37 &quot;snippet_ai.cf&quot;
+    auto _try_7 = db.query&lt;DocEntry&gt;(&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec);
+    if (!_try_7.has_value()) {
+        std::println(stderr, &quot;Error: {}&quot;, _try_7.error().message());
+        return 1;
+    }
+    auto hits = std::move(*_try_7);
+    #line 38 &quot;snippet_ai.cf&quot;
     if (hits.size() &gt; 0) {
-        #line 35 &quot;snippet_ai.cf&quot;
-        (void)(std::println(&quot;Match: {}&quot;, hits[0].Snippet));
+        #line 39 &quot;snippet_ai.cf&quot;
+        (void)(std::println(&quot;Match [{}]: {}&quot;, hits[0].Title, hits[0].Snippet));
     }
     return 0;
 }

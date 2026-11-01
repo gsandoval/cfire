@@ -103,6 +103,8 @@ public:
                 used_core_.insert("audio");
             } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
+                used_core_.insert("encoding");
+                used_core_.insert("fs");
                 used_core_.insert("json");
                 used_core_.insert("net");
                 used_core_.insert("os");
@@ -202,6 +204,8 @@ public:
                 used_core_.insert("audio");
             } else if (imp.path == "core:ai" || imp.path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
+                used_core_.insert("encoding");
+                used_core_.insert("fs");
                 used_core_.insert("json");
                 used_core_.insert("net");
                 used_core_.insert("os");

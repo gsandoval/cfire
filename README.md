@@ -27,23 +27,26 @@ The phonetic homophone to **sapphire** captures the visual identity: crystalline
 4. **Clang AST C/C++ Interop + Unified `build.cf` Build System:** Import any C/C++ header (`import cpp "<header.h>"`) or build local/external `build.CC` and `build.CMake` dependencies into cached static archives (`.cfire/cache/lib/*.a`) with automatic `str` $\rightarrow$ `const char*` boundary coercion (`cfire::c_str`).
 5. **Intent Over Ceremony:** Replace `const T&`, `T&&`, `std::move`, `std::string_view`, and pointer hazards with `in` (default), `mut`, `move` (with definite last-use move insertion), multi-return tuples `(T1, T2)`, unified `str`/`path`/`bytes`, `own[T]`/`shared[T]`, `T!`, `defer`, `match`, and `test "..." { ... }` blocks.
 
-## Built-In `core:` (28 Modules) & `vendor:` Catalog
+## Built-In `core:` & `vendor:` Standard Library Catalog (33 Modules)
 
 | Import Path | Native Engine / C++23 Lowering | Auto-Linked Flags |
 | :--- | :--- | :--- |
-| `core:fs` | `<filesystem>` + `<fstream>` (`read_all`, `write_all`, `read_text`, `write_text`, streaming `open`/`File`, `dirname`, `basename`, `extension`, `exists`, `mkdir_all`, `remove`, `list_dir`) | *(header-only)* |
+| `core:ai` | Multi-provider LLMs (`openai`, `anthropic`, `gemini`, `ollama`, `openai_compatible`), compile-time `generate_struct[T]` & `generate_struct_from_file[T]`, multimodal attachments (`user_with_file`, `ask_with_file`), zero-dependency document & slide extraction (`load_document`, `chunk_document` for `.pdf`, `.pptx`, `.docx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, `.md`), on-device & Linux OCR (`ocr`), local/cloud text & image embeddings (`embed`, `embed_image`), and `McpServer` | *(POSIX / TLS / SIMD / Apple Frameworks / Tesseract)* |
+| `core:audio` | Cross-target polyphonic audio mixer, procedural SFX (`gen_sfx`), ADSR synth (`gen_tone`, `gen_chirp`), 16-bit RIFF/WAV codec (`load_wav`, `save_wav`), and real-time `f32` `Stream` DSP | *(AudioToolbox / WebAudio / ALSA)* |
+| `core:fs` | `<filesystem>` + `<fstream>` (`read_all`, `write_all`, `read_text`, `write_text`, `read_bytes`, `write_bytes`, streaming `open`/`File`, `dirname`, `basename`, `extension`, `exists`, `mkdir_all`, `remove`, `list_dir`) | *(header-only)* |
 | `core:cli` | Compile-time `cli:"..."` struct-tag flag parser (`bool`, `i32`, `i64`, `usize`, `f64`, `str`, `path`) | *(header-only)* |
 | `core:compress/zstd` | Facebook `libzstd` (`<zstd.h>`) frame compressor & decompressor (`compress`, `decompress`) | `-lzstd` |
-| `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` via `json:"..."` struct tags, plus dynamic DOM (`parse_dynamic`) | `-lsimdjson` |
-| `core:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection (`open`, `exec`, `query[T]`, `tx`) via `sql:"..."` struct tags | `-lsqlite3` |
+| `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` + compile-time JSON Schema `schema[T]()` via `json:"..."` & `desc:"..."` struct tags, plus dynamic DOM (`parse_dynamic`) | `-lsimdjson` |
+| `core:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection (`open`, `exec`, `query[T]`, `tx`) via `sql:"..."` struct tags + `AVX2`/`ARM NEON` SIMD vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`) | `-lsqlite3` |
 | `core:crypto/sha256` | Standard FIPS 180-4 SHA-256 digest (`hash_hex`, `hash_bytes`) | *(header-only)* |
 | `core:crypto/hmac` | RFC 2104 HMAC-SHA256 message authentication (`sha256_hex`, `sha256_bytes`, constant-time `equal`) | *(header-only)* |
 | `core:crypto/aes` | NIST FIPS 197 AES-256-GCM AEAD & CTR symmetric encryption (`encrypt_gcm`, `decrypt_gcm`, `encrypt_ctr`, `decrypt_ctr`) | *(header-only)* |
 | `core:crypto/rand` | OS-backed CSPRNG entropy (`bytes`) via `arc4random_buf` / `/dev/urandom` | *(header-only)* |
 | `core:crypto/blake3` | Fast cryptographic 256-bit digest (`hash_hex`) | *(CommonCrypto / std)* |
 | `core:net` | Real POSIX BSD TCP sockets (`listen_tcp`, `connect_tcp`, `accept`, `read_str`, `write`) | *(POSIX sockets)* |
+| `core:net/tls` | TLS 1.2/1.3 encrypted client & server streams (`connect`, `accept`, `read_str`, `write_str`) | *(OpenSSL / LibreSSL)* |
 | `core:net/url` | RFC 3986 URL parsing & percent encoding (`parse`, `encode`, `decode`) | *(header-only)* |
-| `core:net/http` | HTTP/1.1 client (`get`, `post`), server (`make_server`, `serve_in_background`), & standalone `Router` (`make_router`, `:param`, `*wildcard`) | *(POSIX / std)* |
+| `core:net/http` | HTTP/1.1 & HTTPS client (`get`, `post`, `post_sse`), server (`make_server`, `serve_in_background`), & standalone `Router` (`make_router`, `:param`, `*wildcard`) | *(POSIX / TLS)* |
 | `core:net/websocket` | RFC 6455 WebSockets client, server & loopback pair (`connect`, `upgrade`, `pair`, `send_text`, `recv_text`, `send_binary`, `recv_binary`, `ping`, `close`) | *(POSIX / std)* |
 | `core:time` | Monotonic clocks, typed `Duration`, calendar breakdown & RFC 3339 timestamps (`now`, `since`, `sleep_ms`, `format_rfc3339`, `parse_rfc3339`) | *(header-only)* |
 | `core:os` | Environment, process args, filesystem navigation (`getenv`, `setenv`, `cwd`, `chdir`, `args`, `pid`, `exit`) | *(POSIX / stdlib)* |
@@ -62,7 +65,8 @@ The phonetic homophone to **sapphire** captures the visual identity: crystalline
 | `core:encoding/csv` | RFC 4180 CSV parser & serializer (`parse`, `stringify`) | *(header-only)* |
 | `core:math` | Numeric & trigonometric utilities (`abs_f64`, `sqrt`, `pow`, `sin`, `cos`, `floor`, `ceil`, `clamp_i64`, `clamp_f64`) | *(header-only)* |
 | `core:rand` | Non-deterministic PRNG & CSPRNG (`u64`, `range_i64`, `f64_unit`, `bytes`) | *(header-only)* |
-| `vendor:raylib` | `raylib` (`<raylib.h>`) 2D/3D hardware-accelerated visualization | `-lraylib` + macOS frameworks |
+| `vendor:raylib` | `raylib` (`<raylib.h>`) 2D/3D hardware-accelerated visualization across macOS, iOS, WASM & Linux | `-lraylib` + platform frameworks |
+| `vendor:raygui` | Immediate-mode GUI controls (`GuiButton`, `GuiSliderBar`, `GuiCheckBox`) & native iOS `GuiIos*` auto-layout kit | *(header-only over `vendor:raylib`)* |
 
 ## Quick Start
 
