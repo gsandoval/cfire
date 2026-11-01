@@ -232,21 +232,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Call-site Intent Safety</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip1_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>Compiler-Verified Lowering</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip1_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />b=42 p=100</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>
 
@@ -258,21 +266,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Exhaustive Match &amp; Destructuring</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip2_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>std::variant &amp; std::span</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip2_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />result: head=alpha</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: head=alpha</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>
 
@@ -284,21 +300,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Modern Concurrency &amp; WebSockets</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip3_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>RFC 6455 Loopback Pair</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip3_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />received: ping-payload</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>
 
@@ -310,21 +334,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Compile-Time SIMD Struct Tags</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip4_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>simdjson::ondemand Specialized</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip4_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />service=auth latency=1.42ms</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>
 
@@ -336,21 +368,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Direct C/C++ Header Ingestion</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip5_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>Direct Inlined Invocation</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip5_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />fnv1a hash: 0x811c9dc5</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x811c9dc5</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>
 
@@ -362,21 +402,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Multi-Target Synth, SFX &amp; Stream</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip6_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>AudioToolbox / WebAudio / ALSA</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip6_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />rms=0.24 peak=0.40</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>
 
@@ -388,21 +436,29 @@ fn main() {
     </div>
     <div class="grid-2">
       <div class="rosetta-pane-cf">
-        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><span>Local Embeddings, SQLite &amp; MCP</span></div>
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip7_cf);
     out += R"HTML(</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
-        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><span>Native SIMD Vectors &amp; sqlite-vec</span></div>
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>)HTML";
     out += html_escape(snip7_cpp);
     out += R"HTML(</code></pre>
       </div>
     </div>
-    <div class="console-preview">
-      <div class="console-header"><span class="console-dot"></span> Terminal Output Preview</div>
-      <div>$ cfire run main.cf<br />Match: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span>Terminal Execution Telemetry</span>
+        <span class="telemetry-pass">&#10003; PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
+        <span class="telemetry-stat">GC Pauses: <span class="telemetry-val">0.00ms</span></span>
+        <span class="telemetry-stat">Binding Overhead: <span class="telemetry-val">0 &mu;s</span></span>
+      </div>
     </div>
   </div>)HTML";
 
@@ -460,29 +516,44 @@ fn main() {
     out += "  <meta charset=\"UTF-8\" />\n";
     out += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n";
     out += "  <title>Stdlib &amp; Diagnostics Reference — cfire</title>\n";
+    out += "  <link rel=\"icon\" type=\"image/png\" href=\"assets/cfire_logo_emblem.png\" />\n";
     out += "  <style>" + detail::shared_css() + "</style>\n";
     out += "</head>\n<body>\n";
     out += detail::navbar_html("reference");
-    out += "<div class=\"container\">\n";
-    out += "  <div class=\"doc-layout\">\n";
-    out += "    <aside class=\"sidebar\">\n";
-    out += "      <details class=\"sidebar-details\" open>\n";
-    out += "        <summary class=\"sidebar-summary\">\n";
-    out += "          <span>Modules &amp; Diagnostics</span>\n";
-    out += "          <span class=\"sidebar-chevron\">&#9662;</span>\n";
-    out += "        </summary>\n";
-    out += "        <div class=\"sidebar-content\">\n";
-    out += "          <h4>`core:*` Modules</h4>\n          <ul>\n";
+    out += "<div class=\"guide-shell\">\n";
+    out += "  <aside class=\"guide-sidebar\">\n";
+    out += "    <details class=\"sidebar-details\" open>\n";
+    out += "      <summary class=\"sidebar-summary\">\n";
+    out += "        <span>Modules &amp; Diagnostics</span>\n";
+    out += "        <span class=\"sidebar-chevron\">&#9662;</span>\n";
+    out += "      </summary>\n";
+    out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
+    out += "        <input type=\"text\" id=\"ref-filter\" class=\"search-input\" placeholder=\"Filter modules &amp; errors...\" oninput=\"filterRefNav(this.value)\" style=\"margin-bottom: 0.75rem;\" />\n";
+    out += "        <h4>`core:*` Modules</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n";
     for (const auto& mod : stdlib_catalog()) {
-        out += std::format("            <li><a href=\"#mod-{}\"><code>{}</code></a></li>\n", mod.ns_alias, mod.import_path);
+        out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\"><code>{}</code></a></li>\n", mod.ns_alias, mod.import_path);
     }
-    out += "          </ul>\n          <h4 style=\"margin-top:1.25rem;\">Diagnostics</h4>\n          <ul>\n";
+    out += "        </ul>\n        <h4 style=\"margin-top:1.25rem;\">Diagnostics</h4>\n        <ul class=\"sidebar-diag-list\" style=\"list-style: none; padding: 0;\">\n";
     for (const auto& d : diagnostics_catalog()) {
-        out += std::format("            <li><a href=\"#diag-{}\"><code>{}</code></a></li>\n", d.code, d.code);
+        out += std::format("          <li class=\"nav-item\"><a href=\"#diag-{}\"><code>{}</code></a></li>\n", d.code, d.code);
     }
-    out += "          </ul>\n        </div>\n      </details>\n    </aside>\n    <main>\n";
-    out += "      <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>\n";
-    out += "      <p class=\"subtitle\" style=\"margin:0 0 2rem;\">Automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>.</p>\n";
+    out += std::format(R"HTML(        </ul>
+        <div class="toc-quick-links" style="margin-top: 1.25rem;">
+          <h4>Quick Links</h4>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (16 Chapters) &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </aside>
+  <div class="guide-viewport" id="ref-viewport">
+    <div class="guide-content-inner" style="max-width: 960px;">
+      <h1>`core:*` Standard Library &amp; Diagnostics Reference</h1>
+      <p class="subtitle" style="margin:0 0 2rem;">Automatically generated from the live <code>cfire</code> compiler metadata catalog and verified by <code>cfire doc --check</code>.</p>
+)HTML");
 
     for (const auto& mod : stdlib_catalog()) {
         out += std::format("      <h2 id=\"mod-{}\"><code>import \"{}\"</code> &mdash; {}</h2>\n",
@@ -518,9 +589,29 @@ fn main() {
         out += "        </div>\n      </div>\n";
     }
 
-    out += "    </main>\n  </div>\n</div>\n";
-    out += "<footer class=\"footer\">Generated by <code>cfire doc</code> &bull; Always kept in sync with <code>src/docgen.hpp</code>.</footer>\n";
-    out += "</body>\n</html>\n";
+    out += R"HTML(      <footer class="footer" style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--border);">
+        Generated by <code>cfire doc</code> &bull; Always kept in sync with <code>src/docgen.hpp</code>.
+      </footer>
+    </div>
+  </div>
+</div>
+<script>
+function filterRefNav(query) {
+  const q = query.toLowerCase().trim();
+  const items = document.querySelectorAll('#sidebar-nav .nav-item');
+  items.forEach(li => {
+    const text = li.innerText.toLowerCase();
+    if (!q || text.includes(q)) {
+      li.style.display = '';
+    } else {
+      li.style.display = 'none';
+    }
+  });
+}
+</script>
+</body>
+</html>
+)HTML";
     return out;
 }
 

@@ -157,40 +157,29 @@ namespace detail {
         std::string id;
         std::string title;
     };
-    struct ChapterEntry {
+    struct ChapterSection {
+        int num = 0;
+        std::string num_str;
         std::string id;
         std::string title;
         std::string part;
+        std::string html;
         std::vector<SubHead> subheads;
     };
 
-    std::vector<ChapterEntry> ch_entries;
+    std::vector<ChapterSection> chapters;
+    std::string intro_html;
+    std::string pending_part_banner;
     std::string current_part = "Part I: Getting Started & Tooling";
 
-    for (const auto& l : lines) {
-        if (l.starts_with("# Part ")) {
-            current_part = detail::trim_md(l.substr(2));
-        } else if (l.starts_with("## Chapter ")) {
-            auto rest = l.substr(11);
-            auto colon = rest.find(':');
-            if (colon != std::string::npos) {
-                auto num = detail::trim_md(rest.substr(0, colon));
-                auto title = detail::trim_md(rest.substr(colon + 1));
-                ch_entries.push_back({
-                    .id = "#chapter-" + num,
-                    .title = num + ". " + std::string(title),
-                    .part = current_part,
-                    .subheads = {}
-                });
-            }
-        } else if (l.starts_with("### ") && !ch_entries.empty()) {
-            auto title = detail::trim_md(l.substr(4));
-            std::string sid = detail::slugify_heading(title);
-            ch_entries.back().subheads.push_back({.id = "#" + sid, .title = std::string(title)});
+    auto append_content = [&](std::string_view chunk) {
+        if (chapters.empty()) {
+            intro_html += chunk;
+        } else {
+            chapters.back().html += chunk;
         }
-    }
+    };
 
-    std::string main_body;
     size_t idx = 0;
     bool had_subtitle = false;
 
@@ -230,19 +219,22 @@ namespace detail {
                 tag_name = "text";
             }
 
-            main_body += "<div class=\"code-header\"><span class=\"" + tag_cls + "\">" + detail::html_escape(tag_name) + "</span><button class=\"code-copy-btn\" onclick=\"copyCode(this)\">Copy</button></div>\n";
-            main_body += "<pre><code>" + detail::html_escape(code) + "</code></pre>\n";
+            std::string block = "<div class=\"code-header\"><span class=\"" + tag_cls + "\">" + detail::html_escape(tag_name) + "</span><button class=\"code-copy-btn\" onclick=\"copyCode(this)\">Copy</button></div>\n";
+            block += "<pre><code>" + detail::html_escape(code) + "</code></pre>\n";
+            append_content(block);
             continue;
         }
 
         // Headings
         if (trimmed.starts_with("# Part ")) {
-            main_body += "<div class=\"part-banner\"><span class=\"part-pill\">SECTION</span><h2>" + detail::render_inline_md(detail::trim_md(trimmed.substr(2))) + "</h2></div>\n";
+            current_part = detail::trim_md(trimmed.substr(2));
+            pending_part_banner = "<div class=\"part-banner\"><span class=\"part-pill\">SECTION</span><h2>" + detail::render_inline_md(current_part) + "</h2></div>\n";
             ++idx;
             continue;
         }
         if (trimmed.starts_with("# ")) {
-            main_body += "<h1>" + detail::render_inline_md(detail::trim_md(trimmed.substr(2))) + "</h1>\n";
+            auto h1_tag = "<h1>" + detail::render_inline_md(detail::trim_md(trimmed.substr(2))) + "</h1>\n";
+            append_content(h1_tag);
             ++idx;
             continue;
         }
@@ -254,34 +246,56 @@ namespace detail {
                 if (colon != std::string_view::npos) {
                     auto num = detail::trim_md(chap_rest.substr(0, colon));
                     auto title = detail::trim_md(chap_rest.substr(colon + 1));
-                    main_body += "<h2 id=\"chapter-" + num + "\"><a id=\"ch" + num + "\"></a>" + num + ". " + detail::render_inline_md(title) + "</h2>\n";
+                    int num_val = 0;
+                    try { num_val = std::stoi(num); } catch (...) {}
+
+                    ChapterSection sec;
+                    sec.num = num_val;
+                    sec.num_str = num;
+                    sec.id = "chapter-" + num;
+                    sec.title = std::string(title);
+                    sec.part = current_part;
+
+                    if (!pending_part_banner.empty()) {
+                        sec.html += pending_part_banner;
+                        pending_part_banner.clear();
+                    }
+                    sec.html += "<h2 id=\"chapter-" + num + "\"><a id=\"ch" + num + "\"></a>" + num + ". " + detail::render_inline_md(title) + "</h2>\n";
+                    chapters.push_back(std::move(sec));
                     ++idx;
                     continue;
                 }
             }
             std::string sid = detail::slugify_heading(rest);
-            main_body += "<h2 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h2>\n";
+            auto h2_tag = "<h2 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h2>\n";
+            append_content(h2_tag);
             ++idx;
             continue;
         }
         if (trimmed.starts_with("### ")) {
             auto rest = detail::trim_md(trimmed.substr(4));
             std::string sid = detail::slugify_heading(rest);
-            main_body += "<h3 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h3>\n";
+            if (!chapters.empty()) {
+                chapters.back().subheads.push_back({.id = "#" + sid, .title = std::string(rest)});
+                chapters.back().html += "<h3 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h3>\n";
+            } else {
+                intro_html += "<h3 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h3>\n";
+            }
             ++idx;
             continue;
         }
         if (trimmed.starts_with("#### ")) {
             auto rest = detail::trim_md(trimmed.substr(5));
             std::string sid = detail::slugify_heading(rest);
-            main_body += "<h4 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h4>\n";
+            auto h4_tag = "<h4 id=\"" + sid + "\">" + detail::render_inline_md(rest) + "</h4>\n";
+            append_content(h4_tag);
             ++idx;
             continue;
         }
 
         // Horizontal rules
         if (trimmed == "---" || trimmed == "***" || trimmed == "___") {
-            main_body += "<hr style=\"margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);\" />\n";
+            append_content("<hr style=\"margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);\" />\n");
             ++idx;
             continue;
         }
@@ -305,15 +319,16 @@ namespace detail {
                 else if (bq_text.starts_with("[!IMPORTANT]")) { kind = "important"; title = "Important"; prefix_len = 12; }
                 else if (bq_text.starts_with("[!WARNING]")) { kind = "warning"; title = "Warning"; prefix_len = 10; }
                 auto body = detail::trim_md(bq_text.substr(prefix_len));
-                main_body += "<div class=\"callout callout-" + kind + "\">\n"
-                             "  <div class=\"callout-title\">" + title + "</div>\n"
-                             "  <p>" + detail::render_inline_md(body) + "</p>\n"
-                             "</div>\n";
+                std::string callout = "<div class=\"callout callout-" + kind + "\">\n"
+                                     "  <div class=\"callout-title\">" + title + "</div>\n"
+                                     "  <p>" + detail::render_inline_md(body) + "</p>\n"
+                                     "</div>\n";
+                append_content(callout);
             } else if (!had_subtitle) {
-                main_body += "<p class=\"subtitle\" style=\"margin: 0 0 2rem;\">" + detail::render_inline_md(bq_text) + "</p>\n";
+                append_content("<p class=\"subtitle\" style=\"margin: 0 0 2rem;\">" + detail::render_inline_md(bq_text) + "</p>\n");
                 had_subtitle = true;
             } else {
-                main_body += "<blockquote><p>" + detail::render_inline_md(bq_text) + "</p></blockquote>\n";
+                append_content("<blockquote><p>" + detail::render_inline_md(bq_text) + "</p></blockquote>\n");
             }
             continue;
         }
@@ -331,66 +346,69 @@ namespace detail {
                 ++idx;
             }
 
-            main_body += "<div class=\"table-wrap\">\n  <div class=\"table-scroll-cue\">Scroll table &rarr;</div>\n  <table>\n";
+            std::string tbl = "<div class=\"table-wrap\">\n  <div class=\"table-scroll-cue\">Scroll table &rarr;</div>\n  <table>\n";
             if (!headers.empty()) {
-                main_body += "    <thead>\n      <tr>";
+                tbl += "    <thead>\n      <tr>";
                 for (const auto& h : headers) {
-                    main_body += "<th>" + detail::render_inline_md(h) + "</th>";
+                    tbl += "<th>" + detail::render_inline_md(h) + "</th>";
                 }
-                main_body += "</tr>\n    </thead>\n";
+                tbl += "</tr>\n    </thead>\n";
             }
             if (!body_rows.empty()) {
-                main_body += "    <tbody>\n";
+                tbl += "    <tbody>\n";
                 for (const auto& row : body_rows) {
-                    main_body += "      <tr>";
+                    tbl += "      <tr>";
                     for (const auto& cell : row) {
-                        main_body += "<td>" + detail::render_inline_md(cell) + "</td>";
+                        tbl += "<td>" + detail::render_inline_md(cell) + "</td>";
                     }
-                    main_body += "</tr>\n";
+                    tbl += "</tr>\n";
                 }
-                main_body += "    </tbody>\n";
+                tbl += "    </tbody>\n";
             }
-            main_body += "  </table>\n</div>\n";
+            tbl += "  </table>\n</div>\n";
+            append_content(tbl);
             continue;
         }
 
         // Unordered lists
         if (trimmed.starts_with("- ") || trimmed.starts_with("* ")) {
-            main_body += "<ul>\n";
+            std::string ul = "<ul>\n";
             while (idx < lines.size()) {
                 std::string tl = detail::trim_md(lines[idx]);
                 if (tl.starts_with("- ") || tl.starts_with("* ")) {
-                    main_body += "  <li>" + detail::render_inline_md(detail::trim_md(tl.substr(2))) + "</li>\n";
+                    ul += "  <li>" + detail::render_inline_md(detail::trim_md(tl.substr(2))) + "</li>\n";
                     ++idx;
                 } else if (!tl.empty() && (lines[idx].starts_with("  ") || lines[idx].starts_with('\t'))) {
-                    main_body += " " + detail::render_inline_md(tl);
+                    ul += " " + detail::render_inline_md(tl);
                     ++idx;
                 } else {
                     break;
                 }
             }
-            main_body += "</ul>\n";
+            ul += "</ul>\n";
+            append_content(ul);
             continue;
         }
 
         // Ordered lists
         size_t cpos = 0;
         if (detail::is_md_ordered_list(trimmed, cpos)) {
-            main_body += "<ol>\n";
+            std::string ol = "<ol>\n";
             while (idx < lines.size()) {
                 std::string tl = detail::trim_md(lines[idx]);
                 size_t p = 0;
                 if (detail::is_md_ordered_list(tl, p)) {
-                    main_body += "  <li>" + detail::render_inline_md(detail::trim_md(tl.substr(p))) + "</li>\n";
+                    ol += "  <li>" + detail::render_inline_md(detail::trim_md(tl.substr(p))) + "</li>\n";
                     ++idx;
                 } else if (!tl.empty() && (lines[idx].starts_with("  ") || lines[idx].starts_with('\t'))) {
-                    main_body += " " + detail::render_inline_md(tl);
+                    ol += " " + detail::render_inline_md(tl);
                     ++idx;
                 } else {
                     break;
                 }
             }
-            main_body += "</ol>\n";
+            ol += "</ol>\n";
+            append_content(ol);
             continue;
         }
 
@@ -408,9 +426,91 @@ namespace detail {
             ++idx;
         }
         if (!p_text.empty()) {
-            main_body += "<p>" + detail::render_inline_md(p_text) + "</p>\n";
+            append_content("<p>" + detail::render_inline_md(p_text) + "</p>\n");
         }
     }
+
+    // Attach intro content to chapter 1
+    if (!chapters.empty() && !intro_html.empty()) {
+        chapters[0].html = intro_html + "<hr style=\"margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);\" />\n" + chapters[0].html;
+        intro_html.clear();
+    }
+
+    // Build Chapter Panes with Pager Cards
+    std::string panes_html;
+    for (size_t i = 0; i < chapters.size(); ++i) {
+        auto& ch = chapters[i];
+        std::string active_cls = (i == 0) ? " active" : "";
+        panes_html += std::format("<article class=\"chapter-pane{}\" id=\"chapter-pane-{}\" data-chapter=\"{}\" data-part=\"{}\" data-title=\"{}\">\n",
+            active_cls, ch.num_str, ch.num_str, detail::html_escape(ch.part), detail::html_escape(ch.title));
+        panes_html += ch.html;
+
+        // Pager Controls
+        panes_html += "  <div class=\"chapter-pager\">\n";
+        if (i == 0) {
+            panes_html += "    <a href=\"index.html\" class=\"pager-btn pager-prev\">\n";
+            panes_html += "      <span class=\"pager-dir\">&larr; Overview</span>\n";
+            panes_html += "      <span class=\"pager-title\">Language Architecture</span>\n";
+            panes_html += "    </a>\n";
+        } else {
+            const auto& prev = chapters[i - 1];
+            panes_html += std::format("    <a href=\"#{}\" class=\"pager-btn pager-prev\" onclick=\"navigateToChapter('{}')\">\n",
+                prev.id, prev.num_str);
+            panes_html += "      <span class=\"pager-dir\">&larr; Previous Chapter</span>\n";
+            panes_html += std::format("      <span class=\"pager-title\">{}. {}</span>\n", prev.num_str, detail::html_escape(prev.title));
+            panes_html += "    </a>\n";
+        }
+
+        if (i + 1 < chapters.size()) {
+            const auto& next = chapters[i + 1];
+            panes_html += std::format("    <a href=\"#{}\" class=\"pager-btn pager-next\" onclick=\"navigateToChapter('{}')\">\n",
+                next.id, next.num_str);
+            panes_html += "      <span class=\"pager-dir\">Next Chapter &rarr;</span>\n";
+            panes_html += std::format("      <span class=\"pager-title\">{}. {}</span>\n", next.num_str, detail::html_escape(next.title));
+            panes_html += "    </a>\n";
+        } else {
+            panes_html += "    <a href=\"reference.html\" class=\"pager-btn pager-next\">\n";
+            panes_html += "      <span class=\"pager-dir\">Stdlib Reference &rarr;</span>\n";
+            panes_html += std::format("      <span class=\"pager-title\">Explore {} Built-in Modules</span>\n", stdlib_catalog().size());
+            panes_html += "    </a>\n";
+        }
+        panes_html += "  </div>\n";
+        panes_html += "</article>\n\n";
+    }
+
+    // Build Right-Rail TOC HTML
+    std::string toc_rail_html;
+    toc_rail_html += "<aside class=\"guide-toc-rail\" id=\"guide-toc-rail\">\n";
+    toc_rail_html += "  <div class=\"toc-header\">ON THIS PAGE</div>\n";
+    toc_rail_html += "  <div id=\"toc-container\">\n";
+    for (size_t i = 0; i < chapters.size(); ++i) {
+        const auto& ch = chapters[i];
+        std::string display_style = (i == 0) ? "block" : "none";
+        toc_rail_html += std::format("    <div class=\"toc-chapter-group\" id=\"toc-group-{}\" style=\"display: {};\">\n", ch.num_str, display_style);
+        if (!ch.subheads.empty()) {
+            toc_rail_html += "      <ul class=\"toc-list\">\n";
+            for (const auto& sh : ch.subheads) {
+                toc_rail_html += std::format("        <li><a href=\"{}\" onclick=\"navigateToSubhead('{}', '{}')\">{}</a></li>\n",
+                    sh.id, ch.num_str, sh.id.substr(1), detail::html_escape(sh.title));
+            }
+            toc_rail_html += "      </ul>\n";
+        } else {
+            toc_rail_html += "      <p style=\"font-size:0.8rem;color:var(--muted);\">Chapter overview</p>\n";
+        }
+        toc_rail_html += "    </div>\n";
+    }
+    toc_rail_html += "  </div>\n";
+    toc_rail_html += std::format(R"HTML(  <div class="toc-quick-links">
+    <div class="toc-header">QUICK LINKS</div>
+    <ul class="toc-list">
+      <li><a href="reference.html">Stdlib Catalog ({} Modules) &rarr;</a></li>
+      <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
+      <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
+      <li><a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub Repository &rarr;</a></li>
+    </ul>
+  </div>
+</aside>
+)HTML", stdlib_catalog().size());
 
     std::string out;
     out += "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n";
@@ -421,65 +521,83 @@ namespace detail {
     out += "  <style>" + detail::shared_css() + "</style>\n";
     out += "</head>\n<body>\n";
     out += detail::navbar_html("guide");
-    out += "<div class=\"container\">\n  <div class=\"doc-layout\">\n";
-    out += "    <aside class=\"sidebar\">\n";
-    out += "      <details class=\"sidebar-details\" open>\n";
-    out += "        <summary class=\"sidebar-summary\">\n";
-    out += "          <span>Chapters &amp; Navigation</span>\n";
-    out += "          <span class=\"sidebar-chevron\">&#9662;</span>\n";
-    out += "        </summary>\n";
-    out += "        <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
-    out += "          <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Filter chapters &amp; topics...\" oninput=\"filterGuideNav(this.value)\" style=\"margin-bottom: 0.75rem;\" />\n";
+    out += "<div class=\"guide-shell\">\n";
+    out += "  <aside class=\"guide-sidebar\">\n";
+    out += "    <details class=\"sidebar-details\" open>\n";
+    out += "      <summary class=\"sidebar-summary\">\n";
+    out += "        <span>Chapters &amp; Navigation</span>\n";
+    out += "        <span class=\"sidebar-chevron\">&#9662;</span>\n";
+    out += "      </summary>\n";
+    out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
+    out += "        <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Filter chapters &amp; topics...\" oninput=\"filterGuideNav(this.value)\" style=\"margin-bottom: 0.75rem;\" />\n";
 
     std::string current_rendered_part;
-    for (const auto& entry : ch_entries) {
+    for (const auto& entry : chapters) {
         if (entry.part != current_rendered_part) {
             if (!current_rendered_part.empty()) {
-                out += "          </ul>\n";
+                out += "        </ul>\n";
             }
             current_rendered_part = entry.part;
-            out += "          <h4 class=\"sidebar-part-title\">" + detail::html_escape(current_rendered_part) + "</h4>\n";
-            out += "          <ul class=\"sidebar-chapter-list\">\n";
+            out += "        <h4 class=\"sidebar-part-title\">" + detail::html_escape(current_rendered_part) + "</h4>\n";
+            out += "        <ul class=\"sidebar-chapter-list\">\n";
         }
-        out += "            <li class=\"nav-item\"><a href=\"" + entry.id + "\">" + detail::html_escape(entry.title) + "</a>";
+        std::string active_cls = (entry.num == 1) ? " active" : "";
+        out += std::format("          <li class=\"nav-item\"><a href=\"#{}\" class=\"sidebar-ch-link{}\" data-chapter=\"{}\" onclick=\"navigateToChapter('{}')\">{}. {}</a>",
+            entry.id, active_cls, entry.num_str, entry.num_str, entry.num_str, detail::html_escape(entry.title));
         if (!entry.subheads.empty()) {
-            out += "\n              <ul class=\"subhead-list\">\n";
+            out += "\n            <ul class=\"subhead-list\">\n";
             for (const auto& sub : entry.subheads) {
-                out += "                <li><a href=\"" + sub.id + "\">" + detail::html_escape(sub.title) + "</a></li>\n";
+                out += std::format("              <li><a href=\"{}\" onclick=\"navigateToSubhead('{}', '{}')\">{}</a></li>\n",
+                    sub.id, entry.num_str, sub.id.substr(1), detail::html_escape(sub.title));
             }
-            out += "              </ul>\n            ";
+            out += "            </ul>\n          ";
         }
         out += "</li>\n";
     }
     if (!current_rendered_part.empty()) {
-        out += "          </ul>\n";
+        out += "        </ul>\n";
     }
 
-    out += "          <h4 style=\"margin-top: 1.25rem;\">Quick Links</h4>\n";
-    out += "          <ul>\n";
-    out += "            <li><a href=\"reference.html\">Stdlib Catalog (" + std::to_string(stdlib_catalog().size()) + " Modules) &rarr;</a></li>\n";
-    out += "            <li><a href=\"index.html#landscape\">Systems Landscape &rarr;</a></li>\n";
-    out += "            <li><a href=\"index.html#benchmarks\">Compiler Benchmarks &rarr;</a></li>\n";
-    out += "          </ul>\n";
-    out += "        </div>\n";
-    out += "      </details>\n";
-    out += "    </aside>\n";
-    out += "    <main>\n";
-    out += main_body;
-    out += "      <div class=\"guide-pager\">\n";
-    out += "        <a href=\"index.html\" class=\"pager-card\">\n";
-    out += "          <span>&larr; Overview</span>\n";
-    out += "          <strong>Language Overview &amp; Architecture</strong>\n";
-    out += "        </a>\n";
-    out += "        <a href=\"reference.html\" class=\"pager-card\" style=\"text-align: right;\">\n";
-    out += "          <span>Next: Stdlib &amp; Diagnostics &rarr;</span>\n";
-    out += "          <strong>" + std::to_string(stdlib_catalog().size()) + " Built-in Modules &amp; Full Diagnostics</strong>\n";
-    out += "        </a>\n";
-    out += "      </div>\n";
-    out += "    </main>\n  </div>\n</div>\n";
-    out += "<footer class=\"footer\">\n";
-    out += "  Generated by <code>cfire doc</code> &bull; <a href=\"reference.html\">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>\n";
-    out += "</footer>\n";
+    out += std::format(R"HTML(        <div class="toc-quick-links" style="margin-top: 1.25rem;">
+          <h4 style="margin-bottom: 0.5rem;">Quick Links</h4>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="margin-bottom: 0.35rem;"><a href="reference.html">Stdlib Catalog ({} Modules) &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </aside>
+
+  <div class="guide-viewport" id="guide-viewport">
+    <div class="guide-content-inner">
+      <div class="reader-toolbar">
+        <div class="reader-breadcrumbs" id="reader-breadcrumbs">
+          <a href="index.html">cfire Docs</a>
+          <span class="sep">/</span>
+          <span id="breadcrumb-part">Part I: Getting Started &amp; Tooling</span>
+          <span class="sep">/</span>
+          <span class="current" id="breadcrumb-chapter">Chapter 1: Installation &amp; Platform Setup</span>
+        </div>
+        <div class="reader-mode-toggle">
+          <button class="mode-btn active" id="btn-chapter-mode" onclick="setReaderMode('chapter')">Chapter View</button>
+          <button class="mode-btn" id="btn-all-mode" onclick="setReaderMode('all')">View All</button>
+        </div>
+      </div>
+
+)HTML", stdlib_catalog().size());
+
+    out += panes_html;
+    out += R"HTML(      <footer class="footer" style="margin-top: 3.5rem; padding: 2rem 0; border-top: 1px solid var(--border);">
+        Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
+      </footer>
+    </div>
+)HTML";
+
+    out += toc_rail_html;
+    out += "  </div>\n</div>\n";
+
     out += R"JS(
 <script>
 function copyCode(btn) {
@@ -492,6 +610,7 @@ function copyCode(btn) {
     setTimeout(() => { btn.innerText = orig; }, 2000);
   });
 }
+
 function filterGuideNav(query) {
   const q = query.toLowerCase().trim();
   const items = document.querySelectorAll('#sidebar-nav .nav-item');
@@ -504,6 +623,97 @@ function filterGuideNav(query) {
     }
   });
 }
+
+function navigateToChapter(num, updateHash) {
+  if (updateHash === undefined) updateHash = true;
+  if (updateHash) {
+    history.pushState(null, '', '#chapter-' + num);
+  }
+  document.querySelectorAll('.chapter-pane').forEach(p => p.classList.remove('active'));
+  const targetPane = document.getElementById('chapter-pane-' + num);
+  if (targetPane) {
+    targetPane.classList.add('active');
+    const part = targetPane.getAttribute('data-part') || '';
+    const title = targetPane.getAttribute('data-title') || '';
+    const bPart = document.getElementById('breadcrumb-part');
+    const bChap = document.getElementById('breadcrumb-chapter');
+    if (bPart) bPart.innerText = part;
+    if (bChap) bChap.innerText = title;
+  }
+  document.querySelectorAll('.sidebar-ch-link').forEach(a => {
+    if (a.getAttribute('data-chapter') == num) {
+      a.classList.add('active');
+    } else {
+      a.classList.remove('active');
+    }
+  });
+  document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'none');
+  const targetToc = document.getElementById('toc-group-' + num);
+  if (targetToc) {
+    targetToc.style.display = 'block';
+  }
+  const vp = document.getElementById('guide-viewport');
+  if (vp) vp.scrollTop = 0;
+}
+
+function navigateToSubhead(num, sid) {
+  navigateToChapter(num, false);
+  history.pushState(null, '', '#' + sid);
+  setTimeout(() => {
+    const el = document.getElementById(sid);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }, 50);
+}
+
+function setReaderMode(mode) {
+  const vp = document.getElementById('guide-viewport');
+  const btnChap = document.getElementById('btn-chapter-mode');
+  const btnAll = document.getElementById('btn-all-mode');
+  const bChap = document.getElementById('breadcrumb-chapter');
+  if (!vp) return;
+  if (mode === 'all') {
+    vp.classList.add('view-all-mode');
+    if (btnAll) btnAll.classList.add('active');
+    if (btnChap) btnChap.classList.remove('active');
+    if (bChap) bChap.innerText = 'All 16 Chapters';
+    document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'block');
+  } else {
+    vp.classList.remove('view-all-mode');
+    if (btnChap) btnChap.classList.add('active');
+    if (btnAll) btnAll.classList.remove('active');
+    updateChapterFromHash();
+  }
+}
+
+function updateChapterFromHash() {
+  const hash = window.location.hash;
+  if (!hash || hash === '#') {
+    navigateToChapter(1, false);
+    return;
+  }
+  if (hash.startsWith('#chapter-')) {
+    const num = hash.replace('#chapter-', '');
+    navigateToChapter(num, false);
+    return;
+  }
+  const targetId = hash.substring(1);
+  const targetEl = document.getElementById(targetId);
+  if (targetEl) {
+    const pane = targetEl.closest('.chapter-pane');
+    if (pane) {
+      const num = pane.getAttribute('data-chapter');
+      navigateToChapter(num, false);
+      setTimeout(() => {
+        targetEl.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+      return;
+    }
+  }
+  navigateToChapter(1, false);
+}
+
+window.addEventListener('DOMContentLoaded', updateChapterFromHash);
+window.addEventListener('hashchange', updateChapterFromHash);
 </script>
 )JS";
     out += "</body>\n</html>\n";

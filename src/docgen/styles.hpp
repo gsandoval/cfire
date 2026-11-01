@@ -49,7 +49,6 @@ namespace detail {
 html, body {
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
     margin: 0;
     padding: 0;
 }
@@ -143,6 +142,338 @@ a:hover { color: #7DD3FC; text-decoration: underline; }
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem;
+}
+
+/* 3-Pane Persistent Reader Shell (Guide & Reference) */
+.guide-shell {
+    display: flex;
+    height: calc(100vh - 3.5rem);
+    overflow: hidden;
+    width: 100%;
+}
+.guide-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    height: 100%;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    padding: 1.25rem 1rem;
+}
+.guide-sidebar::-webkit-scrollbar,
+.guide-viewport::-webkit-scrollbar,
+.guide-toc-rail::-webkit-scrollbar,
+pre::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.guide-sidebar::-webkit-scrollbar-track,
+.guide-viewport::-webkit-scrollbar-track,
+.guide-toc-rail::-webkit-scrollbar-track,
+pre::-webkit-scrollbar-track {
+    background: #090D12;
+}
+.guide-sidebar::-webkit-scrollbar-thumb,
+.guide-viewport::-webkit-scrollbar-thumb,
+.guide-toc-rail::-webkit-scrollbar-thumb,
+pre::-webkit-scrollbar-thumb {
+    background: #30363D;
+    border-radius: 3px;
+}
+.guide-sidebar::-webkit-scrollbar-thumb:hover,
+.guide-viewport::-webkit-scrollbar-thumb:hover,
+.guide-toc-rail::-webkit-scrollbar-thumb:hover,
+pre::-webkit-scrollbar-thumb:hover {
+    background: #484F58;
+}
+.guide-viewport {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    display: flex;
+}
+.guide-content-inner {
+    flex: 1;
+    min-width: 0;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 2rem 2.5rem 6rem;
+}
+.guide-toc-rail {
+    width: 240px;
+    flex-shrink: 0;
+    height: 100%;
+    overflow-y: auto;
+    padding: 2rem 1.25rem;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+}
+
+/* Reader Toolbar & Breadcrumbs */
+.reader-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.reader-breadcrumbs {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+.reader-breadcrumbs a {
+    color: var(--muted);
+    text-decoration: none;
+}
+.reader-breadcrumbs a:hover {
+    color: var(--text-bright);
+}
+.reader-breadcrumbs .sep {
+    margin: 0 0.4rem;
+    color: var(--border-dark);
+}
+.reader-breadcrumbs .current {
+    color: #F97316;
+    font-weight: 700;
+}
+.reader-mode-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-card);
+}
+.mode-btn {
+    background: transparent;
+    border: none;
+    padding: 0.3rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mode-btn:hover {
+    color: var(--text-bright);
+}
+.mode-btn.active {
+    background: #21262D;
+    color: var(--text-bright);
+    font-weight: 700;
+}
+
+/* Chapter Panes */
+.chapter-pane {
+    display: none;
+}
+.chapter-pane.active {
+    display: block;
+    animation: fadeIn 0.15s ease-in;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.view-all-mode .chapter-pane {
+    display: block !important;
+    margin-bottom: 4rem;
+    padding-bottom: 3.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.view-all-mode .chapter-pager {
+    display: none;
+}
+
+/* Chapter Pager Buttons */
+.chapter-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.pager-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.85rem 1.25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-decoration: none;
+    min-width: 200px;
+    transition: all 0.15s ease;
+}
+.pager-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    text-decoration: none;
+}
+.pager-btn.pager-next {
+    margin-left: auto;
+    text-align: right;
+}
+.pager-dir {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #F97316;
+}
+.pager-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+/* Right-Rail TOC */
+.toc-header {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 0.85rem;
+}
+.toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.5rem 0;
+}
+.toc-list li {
+    margin-bottom: 0.35rem;
+}
+.toc-list a {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 0.2rem 0;
+    text-decoration: none;
+    line-height: 1.4;
+    transition: color 0.15s ease;
+}
+.toc-list a:hover {
+    color: var(--text-bright);
+}
+.toc-quick-links {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Telemetry Console Bar */
+.telemetry-bar {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+.telemetry-header {
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+.telemetry-body {
+    padding: 0.75rem 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--muted);
+}
+.telemetry-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.telemetry-val {
+    color: var(--accent-sapphire);
+    font-weight: 700;
+}
+.telemetry-pass {
+    color: var(--ok);
+    font-weight: 700;
+}
+
+/* Bento Architectural Cards */
+.bento-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin: 2rem 0;
+}
+.bento-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color 0.15s ease;
+}
+.bento-card:hover {
+    border-color: var(--border-dark);
+}
+.bento-card.span-2 {
+    grid-column: span 2;
+}
+.bento-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+.bento-tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #F97316;
+    background: #21262D;
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+}
+.bento-card h3 {
+    font-size: 1.15rem;
+    font-weight: 750;
+    color: var(--text-bright);
+    margin-bottom: 0.5rem;
+}
+.bento-card p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+.bento-footer {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent-sapphire);
 }
 .sidebar-summary { display: none; }
 .sidebar h4 {
@@ -589,12 +920,44 @@ tr:hover td { background: #1F242C; }
 .footer-links a:hover { color: var(--text-bright); }
 
 /* Responsive adjustments for mobile & tablet */
+@media (max-width: 1100px) {
+    .guide-toc-rail { display: none; }
+}
+
+@media (max-width: 900px) {
+    .bento-grid { grid-template-columns: 1fr; }
+    .bento-card.span-2 { grid-column: span 1; }
+}
+
 @media (max-width: 840px) {
     .container { padding: 1.5rem 1rem 3.5rem; }
     .doc-layout { display: block; width: 100%; min-width: 0; }
     .sidebar {
         position: static; max-height: none; width: 100%;
         margin-bottom: 2rem; padding: 0.85rem 1rem;
+    }
+    .guide-shell {
+        display: block;
+        height: auto;
+        overflow: visible;
+    }
+    .guide-sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 1.5rem;
+        padding: 0.85rem 1rem;
+    }
+    .guide-viewport {
+        height: auto;
+        overflow: visible;
+        display: block;
+    }
+    .guide-content-inner {
+        padding: 1.5rem 1rem 4rem;
     }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;

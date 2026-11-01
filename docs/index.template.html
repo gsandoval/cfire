@@ -30,7 +30,6 @@
 html, body {
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
     margin: 0;
     padding: 0;
 }
@@ -432,6 +431,115 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     background: var(--bg-card-hover);
 }
 
+/* Telemetry Console Bar */
+.telemetry-bar {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+.telemetry-header {
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+.telemetry-body {
+    padding: 0.75rem 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--muted);
+}
+.telemetry-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.telemetry-val {
+    color: var(--accent-sapphire);
+    font-weight: 700;
+}
+.telemetry-pass {
+    color: var(--ok);
+    font-weight: 700;
+}
+
+/* Bento Architectural Cards */
+.bento-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin: 2rem 0;
+}
+.bento-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color 0.15s ease;
+}
+.bento-card:hover {
+    border-color: var(--border-dark);
+}
+.bento-card.span-2 {
+    grid-column: span 2;
+}
+.bento-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+.bento-tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #F97316;
+    background: #21262D;
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+}
+.bento-card h3 {
+    font-size: 1.15rem;
+    font-weight: 750;
+    color: var(--text-bright);
+    margin-bottom: 0.5rem;
+}
+.bento-card p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+.bento-footer {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent-sapphire);
+}
+
+@media (max-width: 900px) {
+    .bento-grid { grid-template-columns: 1fr; }
+    .bento-card.span-2 { grid-column: span 1; }
+}
+
 .section-title {
     font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 800; margin: 4rem 0 0.75rem;
     text-align: center; letter-spacing: -0.02em; color: var(--text-bright);
@@ -746,73 +854,94 @@ tr:hover td { background: #1F242C; }
     </div>
   </div>
 
-  <!-- Concrete Simplifications: How cfire Simplifies C++ -->
-  <h2 class="section-title">Where cfire Simplifies Daily Systems Code</h2>
-  <p class="section-subtitle">Compare error-prone C++ patterns against clean, self-documenting cfire syntax.</p>
+  <!-- Bento Architectural Feature Grid -->
+  <h2 class="section-title">Deterministic Architecture: Language Primitives</h2>
+  <p class="section-subtitle">Zero GC, zero trace overhead. Engineered for safety-critical systems, low-latency DSP, and AI agents.</p>
 
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-num">01. INTENT &amp; MUTABILITY SAFETY</div>
-      <h3>Call-Site Mutation Visibility</h3>
-      <p style="margin-bottom:0.75rem;">
-        In raw C++, <code>process(data);</code> hides whether <code>data</code> is read-only or secretly modified in-place. In cfire, callers must write <code>process(mut data)</code>, and the compiler rejects hidden side effects at compile time (<code>cfire/MUT-CALLSITE</code>).
-      </p>
-      <pre><code>// cfire: Intent is explicit at definition and call site
-fn increment(mut b: Box, amount: i32) {
-    b.value = b.value + amount
-}
-
-mut my_box := Box{ value: 40 }
-increment(mut my_box, 2) // OK: 'mut' marker mandatory</code></pre>
+  <div class="bento-grid">
+    <!-- Card 1 -->
+    <div class="bento-card">
+      <div>
+        <div class="bento-card-header">
+          <span style="font-size: 1.25rem; color: #F97316;">&#128737;</span>
+          <span class="bento-tag">LIFETIME SOLVER</span>
+        </div>
+        <h3>Strict Intent &amp; Mutability Safety</h3>
+        <p>
+          Explicit call-site mutation markers (<code>mut</code>, <code>move</code>, <code>in</code>) and escape analysis eradicate use-after-free, double-free, and hidden side-effects prior to ISO C++23 emission (<code>cfire/MUT-CALLSITE</code>).
+        </p>
+      </div>
+      <div class="bento-footer">
+        <code>increment(mut b) &bull; cfire/MUT-CALLSITE &bull; pure RAII</code>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="card-num">02. ERROR RECOVERY &amp; DEFER</div>
-      <h3>Fearless Error Propagation</h3>
-      <p style="margin-bottom:0.75rem;">
-        C++ exceptions introduce hidden control flow and binary bloat, while <code>std::expected</code> requires verbose monadic chains. cfire fallible functions return <code>T!</code> with clean <code>try</code>, inline fallback <code>or val</code>, and deterministic <code>defer</code>.
-      </p>
-      <pre><code>// cfire: Fallible operations with deterministic defer
-fn load_config(path: str) -> Config! {
-    mut f := try fs.open(path, "r")
-    defer f.close() // Always runs on return or error
-    payload := try f.read_all()
-    return try json.parse[Config](payload)
-}</code></pre>
+    <!-- Card 2 -->
+    <div class="bento-card">
+      <div>
+        <div class="bento-card-header">
+          <span style="font-size: 1.25rem; color: #F97316;">&#9201;</span>
+          <span class="bento-tag">DETERMINISM</span>
+        </div>
+        <h3>0ms GC Pauses &amp; Pure RAII</h3>
+        <p>
+          Deterministic resource destruction using scoped ownership and <code>defer</code> guarantees microsecond-level latency predictability with zero runtime overhead or garbage collector pauses.
+        </p>
+      </div>
+      <div class="bento-footer">
+        <code>defer f.close() &bull; 0ms GC pauses &bull; pure C++23 RAII</code>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="card-num">03. ALGEBRAIC ENUMS &amp; MATCH</div>
-      <h3>Exhaustive Pattern Matching</h3>
-      <p style="margin-bottom:0.75rem;">
-        In C++23, <code>std::variant</code> requires the cumbersome 6-line <code>template&lt;class... Ts&gt; struct overloaded</code> visitor pattern. cfire features first-class algebraic enums with concise slice and value pattern destructuring.
-      </p>
-      <pre><code>// cfire: Tagged unions with exhaustive compiler checks
-type Shape enum { Circle(f64), Rect(f64, f64) }
-
-fn area(s: Shape) -> f64 {
-    match s {
-        Circle(r)    => { return 3.14159 * r * r }
-        Rect(w, h)   => { return w * h }
-    }
-}</code></pre>
+    <!-- Card 3 -->
+    <div class="bento-card">
+      <div>
+        <div class="bento-card-header">
+          <span style="font-size: 1.25rem; color: #F97316;">&#127911;</span>
+          <span class="bento-tag">SIMD-FIRST</span>
+        </div>
+        <h3>Real-Time Audio DSP &amp; SFX</h3>
+        <p>
+          Procedural SFX generation, 64-voice polyphonic mixer, ADSR tone envelopes, and real-time float32 DSP streams across macOS, iOS, WebAssembly, and Linux.
+        </p>
+      </div>
+      <div class="bento-footer">
+        <code>core:audio &bull; gen_sfx(Coin) &bull; float32 stream</code>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="card-num">04. ZERO-FFI C/C++ INTEROP</div>
-      <h3>Direct Clang AST Ingestion</h3>
-      <p style="margin-bottom:0.75rem;">
-        Forget hand-written <code>extern "C"</code> wrappers, Cgo pointer marshaling, or bindgen scripts. cfire directly dumps Clang's JSON AST at compile time, caches header signatures, and automatically coerces string boundaries.
-      </p>
-      <pre><code>// cfire: Ingest C/C++ headers directly with zero wrappers
-import cpp "fast_hash.h"
+    <!-- Card 4 (span-2) -->
+    <div class="bento-card span-2">
+      <div>
+        <div class="bento-card-header">
+          <span style="font-size: 1.25rem; color: #F97316;">&#129504;</span>
+          <span class="bento-tag">EDGE AI STACK</span>
+        </div>
+        <h3>AI-First LLMs, Local Vectors &amp; MCP Tool Servers</h3>
+        <p>
+          Unified client for OpenAI, Anthropic, Gemini, and Ollama. Generate local normalized float32 embeddings, perform in-database cosine similarity queries with SQLite WAL, and expose typed Model Context Protocol (MCP) tool servers for AI agents with compile-time JSON schema reflection.
+        </p>
+      </div>
+      <div class="bento-footer">
+        <code>core:ai &bull; ai.embed("local", ...) &bull; sqlite vec_cosine_similarity() &bull; json.schema[T]()</code>
+      </div>
+    </div>
 
-fn main() {
-    msg := "cfire systems language"
-    // 'str' passes automatically as 'const char*'
-    hash := cpp::fh_fnv1a(msg, msg.len())
-    println("Hash: 0x{:x}", hash)
-}</code></pre>
+    <!-- Card 5 -->
+    <div class="bento-card">
+      <div>
+        <div class="bento-card-header">
+          <span style="font-size: 1.25rem; color: #F97316;">&#128187;</span>
+          <span class="bento-tag">COMPILER TARGETS</span>
+        </div>
+        <h3>Universal C++23 Portability</h3>
+        <p>
+          Lowers 1-to-1 to clean, human-readable standard ISO C++23. Target bare-metal x86_64 servers, Apple Silicon ARM64, WebAssembly runtimes, and iOS with standard Clang 18+ or GCC 14+.
+        </p>
+      </div>
+      <div class="bento-footer">
+        <code>macOS &bull; Linux &bull; WebAssembly (em++) &bull; iOS &bull; CMake</code>
+      </div>
     </div>
   </div>
 
@@ -1074,6 +1203,17 @@ function copyInstallCmd() {
     const btn = document.querySelector('.copy-btn');
     btn.innerText = 'COPIED';
     setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
+  });
+}
+
+function copyCode(btn) {
+  const pre = btn.closest('.code-header').nextElementSibling;
+  const code = pre ? pre.querySelector('code') : null;
+  if (!code) return;
+  navigator.clipboard.writeText(code.innerText).then(() => {
+    const orig = btn.innerText;
+    btn.innerText = 'Copied!';
+    setTimeout(() => { btn.innerText = orig; }, 2000);
   });
 }
 </script>

@@ -30,7 +30,6 @@
 html, body {
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
     margin: 0;
     padding: 0;
 }
@@ -124,6 +123,338 @@ a:hover { color: #7DD3FC; text-decoration: underline; }
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem;
+}
+
+/* 3-Pane Persistent Reader Shell (Guide & Reference) */
+.guide-shell {
+    display: flex;
+    height: calc(100vh - 3.5rem);
+    overflow: hidden;
+    width: 100%;
+}
+.guide-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    height: 100%;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    padding: 1.25rem 1rem;
+}
+.guide-sidebar::-webkit-scrollbar,
+.guide-viewport::-webkit-scrollbar,
+.guide-toc-rail::-webkit-scrollbar,
+pre::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.guide-sidebar::-webkit-scrollbar-track,
+.guide-viewport::-webkit-scrollbar-track,
+.guide-toc-rail::-webkit-scrollbar-track,
+pre::-webkit-scrollbar-track {
+    background: #090D12;
+}
+.guide-sidebar::-webkit-scrollbar-thumb,
+.guide-viewport::-webkit-scrollbar-thumb,
+.guide-toc-rail::-webkit-scrollbar-thumb,
+pre::-webkit-scrollbar-thumb {
+    background: #30363D;
+    border-radius: 3px;
+}
+.guide-sidebar::-webkit-scrollbar-thumb:hover,
+.guide-viewport::-webkit-scrollbar-thumb:hover,
+.guide-toc-rail::-webkit-scrollbar-thumb:hover,
+pre::-webkit-scrollbar-thumb:hover {
+    background: #484F58;
+}
+.guide-viewport {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    display: flex;
+}
+.guide-content-inner {
+    flex: 1;
+    min-width: 0;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 2rem 2.5rem 6rem;
+}
+.guide-toc-rail {
+    width: 240px;
+    flex-shrink: 0;
+    height: 100%;
+    overflow-y: auto;
+    padding: 2rem 1.25rem;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+}
+
+/* Reader Toolbar & Breadcrumbs */
+.reader-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.reader-breadcrumbs {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+.reader-breadcrumbs a {
+    color: var(--muted);
+    text-decoration: none;
+}
+.reader-breadcrumbs a:hover {
+    color: var(--text-bright);
+}
+.reader-breadcrumbs .sep {
+    margin: 0 0.4rem;
+    color: var(--border-dark);
+}
+.reader-breadcrumbs .current {
+    color: #F97316;
+    font-weight: 700;
+}
+.reader-mode-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-card);
+}
+.mode-btn {
+    background: transparent;
+    border: none;
+    padding: 0.3rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mode-btn:hover {
+    color: var(--text-bright);
+}
+.mode-btn.active {
+    background: #21262D;
+    color: var(--text-bright);
+    font-weight: 700;
+}
+
+/* Chapter Panes */
+.chapter-pane {
+    display: none;
+}
+.chapter-pane.active {
+    display: block;
+    animation: fadeIn 0.15s ease-in;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.view-all-mode .chapter-pane {
+    display: block !important;
+    margin-bottom: 4rem;
+    padding-bottom: 3.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.view-all-mode .chapter-pager {
+    display: none;
+}
+
+/* Chapter Pager Buttons */
+.chapter-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.pager-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.85rem 1.25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-decoration: none;
+    min-width: 200px;
+    transition: all 0.15s ease;
+}
+.pager-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    text-decoration: none;
+}
+.pager-btn.pager-next {
+    margin-left: auto;
+    text-align: right;
+}
+.pager-dir {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #F97316;
+}
+.pager-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+/* Right-Rail TOC */
+.toc-header {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 0.85rem;
+}
+.toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.5rem 0;
+}
+.toc-list li {
+    margin-bottom: 0.35rem;
+}
+.toc-list a {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 0.2rem 0;
+    text-decoration: none;
+    line-height: 1.4;
+    transition: color 0.15s ease;
+}
+.toc-list a:hover {
+    color: var(--text-bright);
+}
+.toc-quick-links {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Telemetry Console Bar */
+.telemetry-bar {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+.telemetry-header {
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+.telemetry-body {
+    padding: 0.75rem 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--muted);
+}
+.telemetry-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.telemetry-val {
+    color: var(--accent-sapphire);
+    font-weight: 700;
+}
+.telemetry-pass {
+    color: var(--ok);
+    font-weight: 700;
+}
+
+/* Bento Architectural Cards */
+.bento-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin: 2rem 0;
+}
+.bento-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color 0.15s ease;
+}
+.bento-card:hover {
+    border-color: var(--border-dark);
+}
+.bento-card.span-2 {
+    grid-column: span 2;
+}
+.bento-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+.bento-tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #F97316;
+    background: #21262D;
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+}
+.bento-card h3 {
+    font-size: 1.15rem;
+    font-weight: 750;
+    color: var(--text-bright);
+    margin-bottom: 0.5rem;
+}
+.bento-card p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+.bento-footer {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent-sapphire);
 }
 .sidebar-summary { display: none; }
 .sidebar h4 {
@@ -570,12 +901,44 @@ tr:hover td { background: #1F242C; }
 .footer-links a:hover { color: var(--text-bright); }
 
 /* Responsive adjustments for mobile & tablet */
+@media (max-width: 1100px) {
+    .guide-toc-rail { display: none; }
+}
+
+@media (max-width: 900px) {
+    .bento-grid { grid-template-columns: 1fr; }
+    .bento-card.span-2 { grid-column: span 1; }
+}
+
 @media (max-width: 840px) {
     .container { padding: 1.5rem 1rem 3.5rem; }
     .doc-layout { display: block; width: 100%; min-width: 0; }
     .sidebar {
         position: static; max-height: none; width: 100%;
         margin-bottom: 2rem; padding: 0.85rem 1rem;
+    }
+    .guide-shell {
+        display: block;
+        height: auto;
+        overflow: visible;
+    }
+    .guide-sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 1.5rem;
+        padding: 0.85rem 1rem;
+    }
+    .guide-viewport {
+        height: auto;
+        overflow: visible;
+        display: block;
+    }
+    .guide-content-inner {
+        padding: 1.5rem 1rem 4rem;
     }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
@@ -684,153 +1047,171 @@ tr:hover td { background: #1F242C; }
     </div>
   </div>
 </nav>
-<div class="container">
-  <div class="doc-layout">
-    <aside class="sidebar">
-      <details class="sidebar-details" open>
-        <summary class="sidebar-summary">
-          <span>Chapters &amp; Navigation</span>
-          <span class="sidebar-chevron">&#9662;</span>
-        </summary>
-        <div class="sidebar-content" id="sidebar-nav">
-          <input type="text" id="guide-filter" class="search-input" placeholder="Filter chapters &amp; topics..." oninput="filterGuideNav(this.value)" style="margin-bottom: 0.75rem;" />
-          <h4 class="sidebar-part-title">Part I: Getting Started &amp; Tooling</h4>
-          <ul class="sidebar-chapter-list">
-            <li class="nav-item"><a href="#chapter-1">1. Installation &amp; Platform Setup</a>
-              <ul class="subhead-list">
-                <li><a href="#overview-system-requirements">Overview &amp; System Requirements</a></li>
-                <li><a href="#quick-installation-script-macos-linux">Quick Installation Script (macOS &amp; Linux)</a></li>
-                <li><a href="#manual-installation-platform-toolchains">Manual Installation &amp; Platform Toolchains</a></li>
-                <li><a href="#cross-compilation-target-setup">Cross-Compilation Target Setup</a></li>
-                <li><a href="#ai-agent-ide-configuration">AI Agent &amp; IDE Configuration</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-2">2. 5-Minute Quickstart &amp; Tour of the Toolchain</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-instant-evaluation-with-cfire-eval">Level 1 — Instant Evaluation with `cfire eval`</a></li>
-                <li><a href="#level-2-your-first-script-hellocf">Level 2 — Your First Script (`hello.cf`)</a></li>
-                <li><a href="#level-3-production-build-sanitizers-c23-ejection">Level 3 — Production Build, Sanitizers &amp; C++23 Ejection</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-3">3. Project Layout, CLI &amp; Build System (`build.cf`)</a>
-              <ul class="subhead-list">
-                <li><a href="#complete-cli-command-reference">Complete CLI Command Reference</a></li>
-                <li><a href="#declarative-project-configuration-buildcf">Declarative Project Configuration (`build.cf`)</a></li>
-                <li><a href="#precompiled-header-pch-acceleration">Precompiled Header (PCH) Acceleration</a></li>
-              </ul>
-            </li>
-          </ul>
-          <h4 class="sidebar-part-title">Part II: Core Language &amp; Intent Safety</h4>
-          <ul class="sidebar-chapter-list">
-            <li class="nav-item"><a href="#chapter-4">4. Syntax, Primitives, Variables &amp; Control Flow</a>
-              <ul class="subhead-list">
-                <li><a href="#overview-modern-ergonomics-lowered-to-c23">Overview: Modern Ergonomics Lowered to C++23</a></li>
-                <li><a href="#level-1-variables-primitive-types">Level 1 — Variables &amp; Primitive Types</a></li>
-                <li><a href="#level-2-composite-data-structures">Level 2 — Composite Data Structures</a></li>
-                <li><a href="#level-3-pointer-semantics-lowering">Level 3 — Pointer Semantics &amp; Lowering</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-5">5. Functions, Call-Site Intent Safety &amp; Memory Semantics</a>
-              <ul class="subhead-list">
-                <li><a href="#overview-call-site-exclusivity">Overview: Call-Site Exclusivity</a></li>
-                <li><a href="#level-1-function-signatures-multiple-returns">Level 1 — Function Signatures &amp; Multiple Returns</a></li>
-                <li><a href="#level-2-parameter-intent-in-mut-move">Level 2 — Parameter Intent (`in`, `mut`, `move`)</a></li>
-                <li><a href="#level-3-compile-time-borrow-escape-analysis">Level 3 — Compile-Time Borrow &amp; Escape Analysis</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-6">6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-structs-with-default-field-values">Level 1 — Structs with Default Field Values</a></li>
-                <li><a href="#level-2-compile-time-struct-reflection-tags">Level 2 — Compile-Time Struct Reflection Tags</a></li>
-                <li><a href="#level-3-algebraic-enums-exhaustive-pattern-matching">Level 3 — Algebraic Enums &amp; Exhaustive Pattern Matching</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-7">7. Fearless Error Handling, Optionals &amp; RAII Cleanup</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-fallible-return-types-t-and-try">Level 1 — Fallible Return Types (`T!`) and `try`</a></li>
-                <li><a href="#level-2-fallback-divergence-optional-unwrapping">Level 2 — Fallback Divergence &amp; Optional Unwrapping</a></li>
-                <li><a href="#level-3-deterministic-raii-cleanup-defer">Level 3 — Deterministic RAII Cleanup (`defer`)</a></li>
-              </ul>
-            </li>
-          </ul>
-          <h4 class="sidebar-part-title">Part III: Concurrency, C++ Interop &amp; Systems</h4>
-          <ul class="sidebar-chapter-list">
-            <li class="nav-item"><a href="#chapter-8">8. Structured Concurrency, Channels &amp; Contexts</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-scoped-concurrency">Level 1 — Scoped Concurrency</a></li>
-                <li><a href="#level-2-bounded-mpmc-channels-coresync">Level 2 — Bounded MPMC Channels (`core:sync`)</a></li>
-                <li><a href="#level-3-cancellation-tokens-deadlines-coresynccontext">Level 3 — Cancellation Tokens &amp; Deadlines (`core:sync/context`)</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-9">9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-inline-c-escape-blocks">Level 1 — Inline C++ Escape Blocks</a></li>
-                <li><a href="#level-2-direct-clang-json-ast-header-ingestion">Level 2 — Direct Clang JSON AST Header Ingestion</a></li>
-                <li><a href="#level-3-multi-build-orchestration-in-buildcf">Level 3 — Multi-Build Orchestration in `build.cf`</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-10">10. Integrated Testing, Sanitizers &amp; Diagnostics</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-built-in-unit-tests">Level 1 — Built-In Unit Tests</a></li>
-                <li><a href="#level-2-memory-verification-under-sanitizers">Level 2 — Memory Verification under Sanitizers</a></li>
-                <li><a href="#level-3-diagnostic-error-codes">Level 3 — Diagnostic Error Codes</a></li>
-              </ul>
-            </li>
-          </ul>
-          <h4 class="sidebar-part-title">Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target</h4>
-          <ul class="sidebar-chapter-list">
-            <li class="nav-item"><a href="#chapter-11">11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-http-client-requests">Level 1 — HTTP Client Requests</a></li>
-                <li><a href="#level-2-http-server-with-server-sent-events-sse">Level 2 — HTTP Server with Server-Sent Events (SSE)</a></li>
-                <li><a href="#level-3-rfc-6455-websockets-tls-13">Level 3 — RFC 6455 WebSockets &amp; TLS 1.3</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-12">12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-compile-time-simd-json">Level 1 — Compile-Time SIMD JSON</a></li>
-                <li><a href="#level-2-embedded-sqlite-with-vector-search">Level 2 — Embedded SQLite with Vector Search</a></li>
-                <li><a href="#level-3-zstandard-frame-compression-corecompresszstd">Level 3 — Zstandard Frame Compression (`core:compress/zstd`)</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-13">13. 2D/3D Graphics &amp; Native GUI Applications</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-hardware-accelerated-2d-rendering">Level 1 — Hardware-Accelerated 2D Rendering</a></li>
-                <li><a href="#level-2-immediate-mode-controls-vendorraygui">Level 2 — Immediate-Mode Controls (`vendor:raygui`)</a></li>
-                <li><a href="#level-3-multi-platform-macos-app-webassembly-ios-uikit">Level 3 — Multi-Platform: macOS App, WebAssembly &amp; iOS UIKit</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-14">14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (`core:audio`)</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-zero-asset-procedural-sound-effects">Level 1 — Zero-Asset Procedural Sound Effects</a></li>
-                <li><a href="#level-2-adsr-envelope-synthesis-riffwav-encoding">Level 2 — ADSR Envelope Synthesis &amp; RIFF/WAV Encoding</a></li>
-                <li><a href="#level-3-real-time-64-voice-mixer-float32-audio-stream">Level 3 — Real-Time 64-Voice Mixer &amp; Float32 Audio Stream</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-15">15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</a>
-              <ul class="subhead-list">
-                <li><a href="#level-1-unified-llm-streaming-chat">Level 1 — Unified LLM Streaming Chat</a></li>
-                <li><a href="#level-2-local-normalized-embeddings-vector-rag">Level 2 — Local Normalized Embeddings &amp; Vector RAG</a></li>
-                <li><a href="#level-3-authoring-native-model-context-protocol-mcp-servers">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</a></li>
-              </ul>
-            </li>
-            <li class="nav-item"><a href="#chapter-16">16. Full-Stack Production Patterns &amp; Canonical Projects Index</a>
-              <ul class="subhead-list">
-                <li><a href="#architectural-tour-composing-the-standard-library">Architectural Tour: Composing the Standard Library</a></li>
-                <li><a href="#canonical-projects-index-examples">Canonical Projects Index (`examples/`)</a></li>
-              </ul>
-            </li>
-          </ul>
-          <h4 style="margin-top: 1.25rem;">Quick Links</h4>
-          <ul>
-            <li><a href="reference.html">Stdlib Catalog (33 Modules) &rarr;</a></li>
-            <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
-            <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
+<div class="guide-shell">
+  <aside class="guide-sidebar">
+    <details class="sidebar-details" open>
+      <summary class="sidebar-summary">
+        <span>Chapters &amp; Navigation</span>
+        <span class="sidebar-chevron">&#9662;</span>
+      </summary>
+      <div class="sidebar-content" id="sidebar-nav">
+        <input type="text" id="guide-filter" class="search-input" placeholder="Filter chapters &amp; topics..." oninput="filterGuideNav(this.value)" style="margin-bottom: 0.75rem;" />
+        <h4 class="sidebar-part-title">Part I: Getting Started &amp; Tooling</h4>
+        <ul class="sidebar-chapter-list">
+          <li class="nav-item"><a href="#chapter-1" class="sidebar-ch-link active" data-chapter="1" onclick="navigateToChapter('1')">1. Installation &amp; Platform Setup</a>
+            <ul class="subhead-list">
+              <li><a href="#overview-system-requirements" onclick="navigateToSubhead('1', 'overview-system-requirements')">Overview &amp; System Requirements</a></li>
+              <li><a href="#quick-installation-script-macos-linux" onclick="navigateToSubhead('1', 'quick-installation-script-macos-linux')">Quick Installation Script (macOS &amp; Linux)</a></li>
+              <li><a href="#manual-installation-platform-toolchains" onclick="navigateToSubhead('1', 'manual-installation-platform-toolchains')">Manual Installation &amp; Platform Toolchains</a></li>
+              <li><a href="#cross-compilation-target-setup" onclick="navigateToSubhead('1', 'cross-compilation-target-setup')">Cross-Compilation Target Setup</a></li>
+              <li><a href="#ai-agent-ide-configuration" onclick="navigateToSubhead('1', 'ai-agent-ide-configuration')">AI Agent &amp; IDE Configuration</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-2" class="sidebar-ch-link" data-chapter="2" onclick="navigateToChapter('2')">2. 5-Minute Quickstart &amp; Tour of the Toolchain</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-instant-evaluation-with-cfire-eval" onclick="navigateToSubhead('2', 'level-1-instant-evaluation-with-cfire-eval')">Level 1 — Instant Evaluation with `cfire eval`</a></li>
+              <li><a href="#level-2-your-first-script-hellocf" onclick="navigateToSubhead('2', 'level-2-your-first-script-hellocf')">Level 2 — Your First Script (`hello.cf`)</a></li>
+              <li><a href="#level-3-production-build-sanitizers-c23-ejection" onclick="navigateToSubhead('2', 'level-3-production-build-sanitizers-c23-ejection')">Level 3 — Production Build, Sanitizers &amp; C++23 Ejection</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-3" class="sidebar-ch-link" data-chapter="3" onclick="navigateToChapter('3')">3. Project Layout, CLI &amp; Build System (`build.cf`)</a>
+            <ul class="subhead-list">
+              <li><a href="#complete-cli-command-reference" onclick="navigateToSubhead('3', 'complete-cli-command-reference')">Complete CLI Command Reference</a></li>
+              <li><a href="#declarative-project-configuration-buildcf" onclick="navigateToSubhead('3', 'declarative-project-configuration-buildcf')">Declarative Project Configuration (`build.cf`)</a></li>
+              <li><a href="#precompiled-header-pch-acceleration" onclick="navigateToSubhead('3', 'precompiled-header-pch-acceleration')">Precompiled Header (PCH) Acceleration</a></li>
+            </ul>
+          </li>
+        </ul>
+        <h4 class="sidebar-part-title">Part II: Core Language &amp; Intent Safety</h4>
+        <ul class="sidebar-chapter-list">
+          <li class="nav-item"><a href="#chapter-4" class="sidebar-ch-link" data-chapter="4" onclick="navigateToChapter('4')">4. Syntax, Primitives, Variables &amp; Control Flow</a>
+            <ul class="subhead-list">
+              <li><a href="#overview-modern-ergonomics-lowered-to-c23" onclick="navigateToSubhead('4', 'overview-modern-ergonomics-lowered-to-c23')">Overview: Modern Ergonomics Lowered to C++23</a></li>
+              <li><a href="#level-1-variables-primitive-types" onclick="navigateToSubhead('4', 'level-1-variables-primitive-types')">Level 1 — Variables &amp; Primitive Types</a></li>
+              <li><a href="#level-2-composite-data-structures" onclick="navigateToSubhead('4', 'level-2-composite-data-structures')">Level 2 — Composite Data Structures</a></li>
+              <li><a href="#level-3-pointer-semantics-lowering" onclick="navigateToSubhead('4', 'level-3-pointer-semantics-lowering')">Level 3 — Pointer Semantics &amp; Lowering</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-5" class="sidebar-ch-link" data-chapter="5" onclick="navigateToChapter('5')">5. Functions, Call-Site Intent Safety &amp; Memory Semantics</a>
+            <ul class="subhead-list">
+              <li><a href="#overview-call-site-exclusivity" onclick="navigateToSubhead('5', 'overview-call-site-exclusivity')">Overview: Call-Site Exclusivity</a></li>
+              <li><a href="#level-1-function-signatures-multiple-returns" onclick="navigateToSubhead('5', 'level-1-function-signatures-multiple-returns')">Level 1 — Function Signatures &amp; Multiple Returns</a></li>
+              <li><a href="#level-2-parameter-intent-in-mut-move" onclick="navigateToSubhead('5', 'level-2-parameter-intent-in-mut-move')">Level 2 — Parameter Intent (`in`, `mut`, `move`)</a></li>
+              <li><a href="#level-3-compile-time-borrow-escape-analysis" onclick="navigateToSubhead('5', 'level-3-compile-time-borrow-escape-analysis')">Level 3 — Compile-Time Borrow &amp; Escape Analysis</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-6" class="sidebar-ch-link" data-chapter="6" onclick="navigateToChapter('6')">6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-structs-with-default-field-values" onclick="navigateToSubhead('6', 'level-1-structs-with-default-field-values')">Level 1 — Structs with Default Field Values</a></li>
+              <li><a href="#level-2-compile-time-struct-reflection-tags" onclick="navigateToSubhead('6', 'level-2-compile-time-struct-reflection-tags')">Level 2 — Compile-Time Struct Reflection Tags</a></li>
+              <li><a href="#level-3-algebraic-enums-exhaustive-pattern-matching" onclick="navigateToSubhead('6', 'level-3-algebraic-enums-exhaustive-pattern-matching')">Level 3 — Algebraic Enums &amp; Exhaustive Pattern Matching</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-7" class="sidebar-ch-link" data-chapter="7" onclick="navigateToChapter('7')">7. Fearless Error Handling, Optionals &amp; RAII Cleanup</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-fallible-return-types-t-and-try" onclick="navigateToSubhead('7', 'level-1-fallible-return-types-t-and-try')">Level 1 — Fallible Return Types (`T!`) and `try`</a></li>
+              <li><a href="#level-2-fallback-divergence-optional-unwrapping" onclick="navigateToSubhead('7', 'level-2-fallback-divergence-optional-unwrapping')">Level 2 — Fallback Divergence &amp; Optional Unwrapping</a></li>
+              <li><a href="#level-3-deterministic-raii-cleanup-defer" onclick="navigateToSubhead('7', 'level-3-deterministic-raii-cleanup-defer')">Level 3 — Deterministic RAII Cleanup (`defer`)</a></li>
+            </ul>
+          </li>
+        </ul>
+        <h4 class="sidebar-part-title">Part III: Concurrency, C++ Interop &amp; Systems</h4>
+        <ul class="sidebar-chapter-list">
+          <li class="nav-item"><a href="#chapter-8" class="sidebar-ch-link" data-chapter="8" onclick="navigateToChapter('8')">8. Structured Concurrency, Channels &amp; Contexts</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-scoped-concurrency" onclick="navigateToSubhead('8', 'level-1-scoped-concurrency')">Level 1 — Scoped Concurrency</a></li>
+              <li><a href="#level-2-bounded-mpmc-channels-coresync" onclick="navigateToSubhead('8', 'level-2-bounded-mpmc-channels-coresync')">Level 2 — Bounded MPMC Channels (`core:sync`)</a></li>
+              <li><a href="#level-3-cancellation-tokens-deadlines-coresynccontext" onclick="navigateToSubhead('8', 'level-3-cancellation-tokens-deadlines-coresynccontext')">Level 3 — Cancellation Tokens &amp; Deadlines (`core:sync/context`)</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-9" class="sidebar-ch-link" data-chapter="9" onclick="navigateToChapter('9')">9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-inline-c-escape-blocks" onclick="navigateToSubhead('9', 'level-1-inline-c-escape-blocks')">Level 1 — Inline C++ Escape Blocks</a></li>
+              <li><a href="#level-2-direct-clang-json-ast-header-ingestion" onclick="navigateToSubhead('9', 'level-2-direct-clang-json-ast-header-ingestion')">Level 2 — Direct Clang JSON AST Header Ingestion</a></li>
+              <li><a href="#level-3-multi-build-orchestration-in-buildcf" onclick="navigateToSubhead('9', 'level-3-multi-build-orchestration-in-buildcf')">Level 3 — Multi-Build Orchestration in `build.cf`</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-10" class="sidebar-ch-link" data-chapter="10" onclick="navigateToChapter('10')">10. Integrated Testing, Sanitizers &amp; Diagnostics</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-built-in-unit-tests" onclick="navigateToSubhead('10', 'level-1-built-in-unit-tests')">Level 1 — Built-In Unit Tests</a></li>
+              <li><a href="#level-2-memory-verification-under-sanitizers" onclick="navigateToSubhead('10', 'level-2-memory-verification-under-sanitizers')">Level 2 — Memory Verification under Sanitizers</a></li>
+              <li><a href="#level-3-diagnostic-error-codes" onclick="navigateToSubhead('10', 'level-3-diagnostic-error-codes')">Level 3 — Diagnostic Error Codes</a></li>
+            </ul>
+          </li>
+        </ul>
+        <h4 class="sidebar-part-title">Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target</h4>
+        <ul class="sidebar-chapter-list">
+          <li class="nav-item"><a href="#chapter-11" class="sidebar-ch-link" data-chapter="11" onclick="navigateToChapter('11')">11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-http-client-requests" onclick="navigateToSubhead('11', 'level-1-http-client-requests')">Level 1 — HTTP Client Requests</a></li>
+              <li><a href="#level-2-http-server-with-server-sent-events-sse" onclick="navigateToSubhead('11', 'level-2-http-server-with-server-sent-events-sse')">Level 2 — HTTP Server with Server-Sent Events (SSE)</a></li>
+              <li><a href="#level-3-rfc-6455-websockets-tls-13" onclick="navigateToSubhead('11', 'level-3-rfc-6455-websockets-tls-13')">Level 3 — RFC 6455 WebSockets &amp; TLS 1.3</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-12" class="sidebar-ch-link" data-chapter="12" onclick="navigateToChapter('12')">12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-compile-time-simd-json" onclick="navigateToSubhead('12', 'level-1-compile-time-simd-json')">Level 1 — Compile-Time SIMD JSON</a></li>
+              <li><a href="#level-2-embedded-sqlite-with-vector-search" onclick="navigateToSubhead('12', 'level-2-embedded-sqlite-with-vector-search')">Level 2 — Embedded SQLite with Vector Search</a></li>
+              <li><a href="#level-3-zstandard-frame-compression-corecompresszstd" onclick="navigateToSubhead('12', 'level-3-zstandard-frame-compression-corecompresszstd')">Level 3 — Zstandard Frame Compression (`core:compress/zstd`)</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-13" class="sidebar-ch-link" data-chapter="13" onclick="navigateToChapter('13')">13. 2D/3D Graphics &amp; Native GUI Applications</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-hardware-accelerated-2d-rendering" onclick="navigateToSubhead('13', 'level-1-hardware-accelerated-2d-rendering')">Level 1 — Hardware-Accelerated 2D Rendering</a></li>
+              <li><a href="#level-2-immediate-mode-controls-vendorraygui" onclick="navigateToSubhead('13', 'level-2-immediate-mode-controls-vendorraygui')">Level 2 — Immediate-Mode Controls (`vendor:raygui`)</a></li>
+              <li><a href="#level-3-multi-platform-macos-app-webassembly-ios-uikit" onclick="navigateToSubhead('13', 'level-3-multi-platform-macos-app-webassembly-ios-uikit')">Level 3 — Multi-Platform: macOS App, WebAssembly &amp; iOS UIKit</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-14" class="sidebar-ch-link" data-chapter="14" onclick="navigateToChapter('14')">14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (`core:audio`)</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-zero-asset-procedural-sound-effects" onclick="navigateToSubhead('14', 'level-1-zero-asset-procedural-sound-effects')">Level 1 — Zero-Asset Procedural Sound Effects</a></li>
+              <li><a href="#level-2-adsr-envelope-synthesis-riffwav-encoding" onclick="navigateToSubhead('14', 'level-2-adsr-envelope-synthesis-riffwav-encoding')">Level 2 — ADSR Envelope Synthesis &amp; RIFF/WAV Encoding</a></li>
+              <li><a href="#level-3-real-time-64-voice-mixer-float32-audio-stream" onclick="navigateToSubhead('14', 'level-3-real-time-64-voice-mixer-float32-audio-stream')">Level 3 — Real-Time 64-Voice Mixer &amp; Float32 Audio Stream</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-15" class="sidebar-ch-link" data-chapter="15" onclick="navigateToChapter('15')">15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</a>
+            <ul class="subhead-list">
+              <li><a href="#level-1-unified-llm-streaming-chat" onclick="navigateToSubhead('15', 'level-1-unified-llm-streaming-chat')">Level 1 — Unified LLM Streaming Chat</a></li>
+              <li><a href="#level-2-local-normalized-embeddings-vector-rag" onclick="navigateToSubhead('15', 'level-2-local-normalized-embeddings-vector-rag')">Level 2 — Local Normalized Embeddings &amp; Vector RAG</a></li>
+              <li><a href="#level-3-authoring-native-model-context-protocol-mcp-servers" onclick="navigateToSubhead('15', 'level-3-authoring-native-model-context-protocol-mcp-servers')">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a href="#chapter-16" class="sidebar-ch-link" data-chapter="16" onclick="navigateToChapter('16')">16. Full-Stack Production Patterns &amp; Canonical Projects Index</a>
+            <ul class="subhead-list">
+              <li><a href="#architectural-tour-composing-the-standard-library" onclick="navigateToSubhead('16', 'architectural-tour-composing-the-standard-library')">Architectural Tour: Composing the Standard Library</a></li>
+              <li><a href="#canonical-projects-index-examples" onclick="navigateToSubhead('16', 'canonical-projects-index-examples')">Canonical Projects Index (`examples/`)</a></li>
+            </ul>
+          </li>
+        </ul>
+        <div class="toc-quick-links" style="margin-top: 1.25rem;">
+          <h4 style="margin-bottom: 0.5rem;">Quick Links</h4>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="margin-bottom: 0.35rem;"><a href="reference.html">Stdlib Catalog (33 Modules) &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
           </ul>
         </div>
-      </details>
-    </aside>
-    <main>
+      </div>
+    </details>
+  </aside>
+
+  <div class="guide-viewport" id="guide-viewport">
+    <div class="guide-content-inner">
+      <div class="reader-toolbar">
+        <div class="reader-breadcrumbs" id="reader-breadcrumbs">
+          <a href="index.html">cfire Docs</a>
+          <span class="sep">/</span>
+          <span id="breadcrumb-part">Part I: Getting Started &amp; Tooling</span>
+          <span class="sep">/</span>
+          <span class="current" id="breadcrumb-chapter">Chapter 1: Installation &amp; Platform Setup</span>
+        </div>
+        <div class="reader-mode-toggle">
+          <button class="mode-btn active" id="btn-chapter-mode" onclick="setReaderMode('chapter')">Chapter View</button>
+          <button class="mode-btn" id="btn-all-mode" onclick="setReaderMode('all')">View All</button>
+        </div>
+      </div>
+
+<article class="chapter-pane active" id="chapter-pane-1" data-chapter="1" data-part="Part I: Getting Started &amp; Tooling" data-title="Installation &amp; Platform Setup">
 <h1>The <code>cfire</code> Language &amp; Systems Programming Guide</h1>
 <p>Welcome to <strong>cfire</strong> (pronounced <em>sapphire</em> • <code>/ˈsæf.aɪ.ər/</code>). This comprehensive engineering guide takes you from platform installation and toolchain setup to authoring high-performance systems services, hardware-accelerated 2D/3D graphics, real-time audio DSP, native iOS applications, and AI-native agent workflows.</p>
 <p>Every section follows a <strong>Progressive Disclosure</strong> philosophy:</p>
@@ -839,6 +1220,7 @@ tr:hover td { background: #1F242C; }
   <li><strong>Level 2 — Idiomatic Safety &amp; Composition</strong>: Combining error handling, resource cleanup (<code>defer</code>), and type safety.</li>
   <li><strong>Level 3 — Production Architecture &amp; Lowering</strong>: Real-world services alongside the exact, human-readable ISO C++23 emitted by the compiler with zero hidden runtime overhead.</li>
 </ul>
+<hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
 <div class="part-banner"><span class="part-pill">SECTION</span><h2>Part I: Getting Started &amp; Tooling</h2></div>
 <h2 id="chapter-1"><a id="ch1"></a>1. Installation &amp; Platform Setup</h2>
@@ -908,6 +1290,19 @@ xcrun --sdk iphonesimulator --show-sdk-path
 cfire lsp            # Starts standard Language Server Protocol daemon on stdio
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="index.html" class="pager-btn pager-prev">
+      <span class="pager-dir">&larr; Overview</span>
+      <span class="pager-title">Language Architecture</span>
+    </a>
+    <a href="#chapter-2" class="pager-btn pager-next" onclick="navigateToChapter('2')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">2. 5-Minute Quickstart &amp; Tour of the Toolchain</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-2" data-chapter="2" data-part="Part I: Getting Started &amp; Tooling" data-title="5-Minute Quickstart &amp; Tour of the Toolchain">
 <h2 id="chapter-2"><a id="ch2"></a>2. 5-Minute Quickstart &amp; Tour of the Toolchain</h2>
 <h3 id="level-1-instant-evaluation-with-cfire-eval">Level 1 — Instant Evaluation with <code>cfire eval</code></h3>
 <p>Test arithmetic expressions or small statements without creating files:</p>
@@ -956,6 +1351,19 @@ fn main() {
 # Emits dist/CMakeLists.txt, dist/main.cpp, and runtime headers
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-1" class="pager-btn pager-prev" onclick="navigateToChapter('1')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">1. Installation &amp; Platform Setup</span>
+    </a>
+    <a href="#chapter-3" class="pager-btn pager-next" onclick="navigateToChapter('3')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">3. Project Layout, CLI &amp; Build System (`build.cf`)</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-3" data-chapter="3" data-part="Part I: Getting Started &amp; Tooling" data-title="Project Layout, CLI &amp; Build System (`build.cf`)">
 <h2 id="chapter-3"><a id="ch3"></a>3. Project Layout, CLI &amp; Build System (<code>build.cf</code>)</h2>
 <h3 id="complete-cli-command-reference">Complete CLI Command Reference</h3>
 <p>The unified <code>cfire</code> executable provides all engineering tooling:</p>
@@ -1017,6 +1425,19 @@ fn configure(mut b: Build) {
 <h3 id="precompiled-header-pch-acceleration">Precompiled Header (PCH) Acceleration</h3>
 <p>cfire maintains an automated precompiled header cache in <code>.cfire/cache/pch/</code>. Standard library headers (<code>&lt;vector&gt;</code>, <code>&lt;string&gt;</code>, <code>&lt;expected&gt;</code>, <code>&lt;variant&gt;</code>, <code>&lt;format&gt;</code>, <code>&lt;chrono&gt;</code>, <code>&lt;simdjson.h&gt;</code>) are compiled once per toolchain update. Incremental rebuilds complete in under 15 milliseconds.</p>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-2" class="pager-btn pager-prev" onclick="navigateToChapter('2')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">2. 5-Minute Quickstart &amp; Tour of the Toolchain</span>
+    </a>
+    <a href="#chapter-4" class="pager-btn pager-next" onclick="navigateToChapter('4')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">4. Syntax, Primitives, Variables &amp; Control Flow</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-4" data-chapter="4" data-part="Part II: Core Language &amp; Intent Safety" data-title="Syntax, Primitives, Variables &amp; Control Flow">
 <div class="part-banner"><span class="part-pill">SECTION</span><h2>Part II: Core Language &amp; Intent Safety</h2></div>
 <h2 id="chapter-4"><a id="ch4"></a>4. Syntax, Primitives, Variables &amp; Control Flow</h2>
 <h3 id="overview-modern-ergonomics-lowered-to-c23">Overview: Modern Ergonomics Lowered to C++23</h3>
@@ -1094,6 +1515,19 @@ fn append_child(mut parent: Node, child_id: i64) {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-3" class="pager-btn pager-prev" onclick="navigateToChapter('3')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">3. Project Layout, CLI &amp; Build System (`build.cf`)</span>
+    </a>
+    <a href="#chapter-5" class="pager-btn pager-next" onclick="navigateToChapter('5')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">5. Functions, Call-Site Intent Safety &amp; Memory Semantics</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-5" data-chapter="5" data-part="Part II: Core Language &amp; Intent Safety" data-title="Functions, Call-Site Intent Safety &amp; Memory Semantics">
 <h2 id="chapter-5"><a id="ch5"></a>5. Functions, Call-Site Intent Safety &amp; Memory Semantics</h2>
 <h3 id="overview-call-site-exclusivity">Overview: Call-Site Exclusivity</h3>
 <p>In traditional C and C++, reviewing call sites like <code>update(record)</code> obscures whether <code>record</code> is read-only or mutated in-place. cfire enforces <strong>Call-Site Mutability Visibility</strong>: if a parameter is declared <code>mut</code>, callers must explicitly write <code>mut</code> at the call site.</p>
@@ -1140,6 +1574,19 @@ fn main() {
   <li>Passing the same mutable variable twice (<code>update(mut x, mut x)</code>) triggers <code>cfire/MUT-ALIAS</code>.</li>
 </ul>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-4" class="pager-btn pager-prev" onclick="navigateToChapter('4')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">4. Syntax, Primitives, Variables &amp; Control Flow</span>
+    </a>
+    <a href="#chapter-6" class="pager-btn pager-next" onclick="navigateToChapter('6')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-6" data-chapter="6" data-part="Part II: Core Language &amp; Intent Safety" data-title="Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts">
 <h2 id="chapter-6"><a id="ch6"></a>6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</h2>
 <h3 id="level-1-structs-with-default-field-values">Level 1 — Structs with Default Field Values</h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -1188,6 +1635,19 @@ fn handle_event(e: Event) {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-5" class="pager-btn pager-prev" onclick="navigateToChapter('5')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">5. Functions, Call-Site Intent Safety &amp; Memory Semantics</span>
+    </a>
+    <a href="#chapter-7" class="pager-btn pager-next" onclick="navigateToChapter('7')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">7. Fearless Error Handling, Optionals &amp; RAII Cleanup</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-7" data-chapter="7" data-part="Part II: Core Language &amp; Intent Safety" data-title="Fearless Error Handling, Optionals &amp; RAII Cleanup">
 <h2 id="chapter-7"><a id="ch7"></a>7. Fearless Error Handling, Optionals &amp; RAII Cleanup</h2>
 <h3 id="level-1-fallible-return-types-t-and-try">Level 1 — Fallible Return Types (<code>T!</code>) and <code>try</code></h3>
 <p>Functions returning <code>T!</code> produce a value or propagate an error without exceptions:</p>
@@ -1232,6 +1692,19 @@ fn export_dataset(db_path: str, out_path: str) -&gt; void! {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-6" class="pager-btn pager-prev" onclick="navigateToChapter('6')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">6. Structs, Compile-Time Tags, Algebraic Enums &amp; Concepts</span>
+    </a>
+    <a href="#chapter-8" class="pager-btn pager-next" onclick="navigateToChapter('8')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">8. Structured Concurrency, Channels &amp; Contexts</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-8" data-chapter="8" data-part="Part III: Concurrency, C++ Interop &amp; Systems" data-title="Structured Concurrency, Channels &amp; Contexts">
 <div class="part-banner"><span class="part-pill">SECTION</span><h2>Part III: Concurrency, C++ Interop &amp; Systems</h2></div>
 <h2 id="chapter-8"><a id="ch8"></a>8. Structured Concurrency, Channels &amp; Contexts</h2>
 <h3 id="level-1-scoped-concurrency">Level 1 — Scoped Concurrency</h3>
@@ -1287,6 +1760,19 @@ fn worker(ctx: context.Context) {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-7" class="pager-btn pager-prev" onclick="navigateToChapter('7')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">7. Fearless Error Handling, Optionals &amp; RAII Cleanup</span>
+    </a>
+    <a href="#chapter-9" class="pager-btn pager-next" onclick="navigateToChapter('9')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-9" data-chapter="9" data-part="Part III: Concurrency, C++ Interop &amp; Systems" data-title="Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration">
 <h2 id="chapter-9"><a id="ch9"></a>9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</h2>
 <h3 id="level-1-inline-c-escape-blocks">Level 1 — Inline C++ Escape Blocks</h3>
 <p>Embed inline C++23 directly within <code>.cf</code> source:</p>
@@ -1324,6 +1810,19 @@ fn configure(mut b: Build) {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-8" class="pager-btn pager-prev" onclick="navigateToChapter('8')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">8. Structured Concurrency, Channels &amp; Contexts</span>
+    </a>
+    <a href="#chapter-10" class="pager-btn pager-next" onclick="navigateToChapter('10')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">10. Integrated Testing, Sanitizers &amp; Diagnostics</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-10" data-chapter="10" data-part="Part III: Concurrency, C++ Interop &amp; Systems" data-title="Integrated Testing, Sanitizers &amp; Diagnostics">
 <h2 id="chapter-10"><a id="ch10"></a>10. Integrated Testing, Sanitizers &amp; Diagnostics</h2>
 <h3 id="level-1-built-in-unit-tests">Level 1 — Built-In Unit Tests</h3>
 <p>Write <code>test &quot;...&quot;</code> blocks directly alongside implementation code:</p>
@@ -1352,6 +1851,19 @@ test &quot;addition properties&quot; {
   <li><code>CF5xxx</code>: Build system and linker errors</li>
 </ul>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-9" class="pager-btn pager-prev" onclick="navigateToChapter('9')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">9. Zero-Friction C &amp; C++ Interop &amp; CMake Orchestration</span>
+    </a>
+    <a href="#chapter-11" class="pager-btn pager-next" onclick="navigateToChapter('11')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-11" data-chapter="11" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="Web Services, HTTP/SSE, WebSockets &amp; TLS Networking">
 <div class="part-banner"><span class="part-pill">SECTION</span><h2>Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target</h2></div>
 <h2 id="chapter-11"><a id="ch11"></a>11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</h2>
 <h3 id="level-1-http-client-requests">Level 1 — HTTP Client Requests</h3>
@@ -1395,6 +1907,19 @@ fn main() {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-10" class="pager-btn pager-prev" onclick="navigateToChapter('10')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">10. Integrated Testing, Sanitizers &amp; Diagnostics</span>
+    </a>
+    <a href="#chapter-12" class="pager-btn pager-next" onclick="navigateToChapter('12')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-12" data-chapter="12" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression">
 <h2 id="chapter-12"><a id="ch12"></a>12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</h2>
 <h3 id="level-1-compile-time-simd-json">Level 1 — Compile-Time SIMD JSON</h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -1436,6 +1961,19 @@ fn main() {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-11" class="pager-btn pager-prev" onclick="navigateToChapter('11')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">11. Web Services, HTTP/SSE, WebSockets &amp; TLS Networking</span>
+    </a>
+    <a href="#chapter-13" class="pager-btn pager-next" onclick="navigateToChapter('13')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">13. 2D/3D Graphics &amp; Native GUI Applications</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-13" data-chapter="13" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="2D/3D Graphics &amp; Native GUI Applications">
 <h2 id="chapter-13"><a id="ch13"></a>13. 2D/3D Graphics &amp; Native GUI Applications</h2>
 <h3 id="level-1-hardware-accelerated-2d-rendering">Level 1 — Hardware-Accelerated 2D Rendering</h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -1480,6 +2018,19 @@ fn main() {
   <li><strong>Native iOS Simulator</strong>: <code>cfire run --ios app.cf</code> (native auto-layout with <code>GuiIos*</code>)</li>
 </ul>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-12" class="pager-btn pager-prev" onclick="navigateToChapter('12')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">12. Serialization, SQLite WAL, Vector Search &amp; Zstandard Compression</span>
+    </a>
+    <a href="#chapter-14" class="pager-btn pager-next" onclick="navigateToChapter('14')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (`core:audio`)</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-14" data-chapter="14" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (`core:audio`)">
 <h2 id="chapter-14"><a id="ch14"></a>14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (<code>core:audio</code>)</h2>
 <h3 id="level-1-zero-asset-procedural-sound-effects">Level 1 — Zero-Asset Procedural Sound Effects</h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -1520,6 +2071,19 @@ fn main() {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-13" class="pager-btn pager-prev" onclick="navigateToChapter('13')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">13. 2D/3D Graphics &amp; Native GUI Applications</span>
+    </a>
+    <a href="#chapter-15" class="pager-btn pager-next" onclick="navigateToChapter('15')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-15" data-chapter="15" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)">
 <h2 id="chapter-15"><a id="ch15"></a>15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (<code>core:ai</code>)</h2>
 <h3 id="level-1-unified-llm-streaming-chat">Level 1 — Unified LLM Streaming Chat</h3>
 <div class="code-header"><span class="tag-cf">cfire</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -1584,6 +2148,19 @@ fn main() {
 }
 </code></pre>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
+  <div class="chapter-pager">
+    <a href="#chapter-14" class="pager-btn pager-prev" onclick="navigateToChapter('14')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">14. Multi-Target Audio, Polyphonic Synthesis &amp; Real-Time DSP (`core:audio`)</span>
+    </a>
+    <a href="#chapter-16" class="pager-btn pager-next" onclick="navigateToChapter('16')">
+      <span class="pager-dir">Next Chapter &rarr;</span>
+      <span class="pager-title">16. Full-Stack Production Patterns &amp; Canonical Projects Index</span>
+    </a>
+  </div>
+</article>
+
+<article class="chapter-pane" id="chapter-pane-16" data-chapter="16" data-part="Part IV: Batteries-Included AI, Data, Networking &amp; Multi-Target" data-title="Full-Stack Production Patterns &amp; Canonical Projects Index">
 <h2 id="chapter-16"><a id="ch16"></a>16. Full-Stack Production Patterns &amp; Canonical Projects Index</h2>
 <h3 id="architectural-tour-composing-the-standard-library">Architectural Tour: Composing the Standard Library</h3>
 <p>Every module in cfire is designed to interoperate without glue code:</p>
@@ -1627,22 +2204,153 @@ fn main() {
 cfire run examples/15-mcp-server/main.cf
 cfire run examples/16-audio-synth/main.cf
 </code></pre>
-      <div class="guide-pager">
-        <a href="index.html" class="pager-card">
-          <span>&larr; Overview</span>
-          <strong>Language Overview &amp; Architecture</strong>
-        </a>
-        <a href="reference.html" class="pager-card" style="text-align: right;">
-          <span>Next: Stdlib &amp; Diagnostics &rarr;</span>
-          <strong>33 Built-in Modules &amp; Full Diagnostics</strong>
-        </a>
-      </div>
-    </main>
+  <div class="chapter-pager">
+    <a href="#chapter-15" class="pager-btn pager-prev" onclick="navigateToChapter('15')">
+      <span class="pager-dir">&larr; Previous Chapter</span>
+      <span class="pager-title">15. AI-First LLMs, Local Vectors, RAG &amp; Model Context Protocol (`core:ai`)</span>
+    </a>
+    <a href="reference.html" class="pager-btn pager-next">
+      <span class="pager-dir">Stdlib Reference &rarr;</span>
+      <span class="pager-title">Explore 33 Built-in Modules</span>
+    </a>
+  </div>
+</article>
+
+      <footer class="footer" style="margin-top: 3.5rem; padding: 2rem 0; border-top: 1px solid var(--border);">
+        Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
+      </footer>
+    </div>
+<aside class="guide-toc-rail" id="guide-toc-rail">
+  <div class="toc-header">ON THIS PAGE</div>
+  <div id="toc-container">
+    <div class="toc-chapter-group" id="toc-group-1" style="display: block;">
+      <ul class="toc-list">
+        <li><a href="#overview-system-requirements" onclick="navigateToSubhead('1', 'overview-system-requirements')">Overview &amp; System Requirements</a></li>
+        <li><a href="#quick-installation-script-macos-linux" onclick="navigateToSubhead('1', 'quick-installation-script-macos-linux')">Quick Installation Script (macOS &amp; Linux)</a></li>
+        <li><a href="#manual-installation-platform-toolchains" onclick="navigateToSubhead('1', 'manual-installation-platform-toolchains')">Manual Installation &amp; Platform Toolchains</a></li>
+        <li><a href="#cross-compilation-target-setup" onclick="navigateToSubhead('1', 'cross-compilation-target-setup')">Cross-Compilation Target Setup</a></li>
+        <li><a href="#ai-agent-ide-configuration" onclick="navigateToSubhead('1', 'ai-agent-ide-configuration')">AI Agent &amp; IDE Configuration</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-2" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-instant-evaluation-with-cfire-eval" onclick="navigateToSubhead('2', 'level-1-instant-evaluation-with-cfire-eval')">Level 1 — Instant Evaluation with `cfire eval`</a></li>
+        <li><a href="#level-2-your-first-script-hellocf" onclick="navigateToSubhead('2', 'level-2-your-first-script-hellocf')">Level 2 — Your First Script (`hello.cf`)</a></li>
+        <li><a href="#level-3-production-build-sanitizers-c23-ejection" onclick="navigateToSubhead('2', 'level-3-production-build-sanitizers-c23-ejection')">Level 3 — Production Build, Sanitizers &amp; C++23 Ejection</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-3" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#complete-cli-command-reference" onclick="navigateToSubhead('3', 'complete-cli-command-reference')">Complete CLI Command Reference</a></li>
+        <li><a href="#declarative-project-configuration-buildcf" onclick="navigateToSubhead('3', 'declarative-project-configuration-buildcf')">Declarative Project Configuration (`build.cf`)</a></li>
+        <li><a href="#precompiled-header-pch-acceleration" onclick="navigateToSubhead('3', 'precompiled-header-pch-acceleration')">Precompiled Header (PCH) Acceleration</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-4" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#overview-modern-ergonomics-lowered-to-c23" onclick="navigateToSubhead('4', 'overview-modern-ergonomics-lowered-to-c23')">Overview: Modern Ergonomics Lowered to C++23</a></li>
+        <li><a href="#level-1-variables-primitive-types" onclick="navigateToSubhead('4', 'level-1-variables-primitive-types')">Level 1 — Variables &amp; Primitive Types</a></li>
+        <li><a href="#level-2-composite-data-structures" onclick="navigateToSubhead('4', 'level-2-composite-data-structures')">Level 2 — Composite Data Structures</a></li>
+        <li><a href="#level-3-pointer-semantics-lowering" onclick="navigateToSubhead('4', 'level-3-pointer-semantics-lowering')">Level 3 — Pointer Semantics &amp; Lowering</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-5" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#overview-call-site-exclusivity" onclick="navigateToSubhead('5', 'overview-call-site-exclusivity')">Overview: Call-Site Exclusivity</a></li>
+        <li><a href="#level-1-function-signatures-multiple-returns" onclick="navigateToSubhead('5', 'level-1-function-signatures-multiple-returns')">Level 1 — Function Signatures &amp; Multiple Returns</a></li>
+        <li><a href="#level-2-parameter-intent-in-mut-move" onclick="navigateToSubhead('5', 'level-2-parameter-intent-in-mut-move')">Level 2 — Parameter Intent (`in`, `mut`, `move`)</a></li>
+        <li><a href="#level-3-compile-time-borrow-escape-analysis" onclick="navigateToSubhead('5', 'level-3-compile-time-borrow-escape-analysis')">Level 3 — Compile-Time Borrow &amp; Escape Analysis</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-6" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-structs-with-default-field-values" onclick="navigateToSubhead('6', 'level-1-structs-with-default-field-values')">Level 1 — Structs with Default Field Values</a></li>
+        <li><a href="#level-2-compile-time-struct-reflection-tags" onclick="navigateToSubhead('6', 'level-2-compile-time-struct-reflection-tags')">Level 2 — Compile-Time Struct Reflection Tags</a></li>
+        <li><a href="#level-3-algebraic-enums-exhaustive-pattern-matching" onclick="navigateToSubhead('6', 'level-3-algebraic-enums-exhaustive-pattern-matching')">Level 3 — Algebraic Enums &amp; Exhaustive Pattern Matching</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-7" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-fallible-return-types-t-and-try" onclick="navigateToSubhead('7', 'level-1-fallible-return-types-t-and-try')">Level 1 — Fallible Return Types (`T!`) and `try`</a></li>
+        <li><a href="#level-2-fallback-divergence-optional-unwrapping" onclick="navigateToSubhead('7', 'level-2-fallback-divergence-optional-unwrapping')">Level 2 — Fallback Divergence &amp; Optional Unwrapping</a></li>
+        <li><a href="#level-3-deterministic-raii-cleanup-defer" onclick="navigateToSubhead('7', 'level-3-deterministic-raii-cleanup-defer')">Level 3 — Deterministic RAII Cleanup (`defer`)</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-8" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-scoped-concurrency" onclick="navigateToSubhead('8', 'level-1-scoped-concurrency')">Level 1 — Scoped Concurrency</a></li>
+        <li><a href="#level-2-bounded-mpmc-channels-coresync" onclick="navigateToSubhead('8', 'level-2-bounded-mpmc-channels-coresync')">Level 2 — Bounded MPMC Channels (`core:sync`)</a></li>
+        <li><a href="#level-3-cancellation-tokens-deadlines-coresynccontext" onclick="navigateToSubhead('8', 'level-3-cancellation-tokens-deadlines-coresynccontext')">Level 3 — Cancellation Tokens &amp; Deadlines (`core:sync/context`)</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-9" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-inline-c-escape-blocks" onclick="navigateToSubhead('9', 'level-1-inline-c-escape-blocks')">Level 1 — Inline C++ Escape Blocks</a></li>
+        <li><a href="#level-2-direct-clang-json-ast-header-ingestion" onclick="navigateToSubhead('9', 'level-2-direct-clang-json-ast-header-ingestion')">Level 2 — Direct Clang JSON AST Header Ingestion</a></li>
+        <li><a href="#level-3-multi-build-orchestration-in-buildcf" onclick="navigateToSubhead('9', 'level-3-multi-build-orchestration-in-buildcf')">Level 3 — Multi-Build Orchestration in `build.cf`</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-10" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-built-in-unit-tests" onclick="navigateToSubhead('10', 'level-1-built-in-unit-tests')">Level 1 — Built-In Unit Tests</a></li>
+        <li><a href="#level-2-memory-verification-under-sanitizers" onclick="navigateToSubhead('10', 'level-2-memory-verification-under-sanitizers')">Level 2 — Memory Verification under Sanitizers</a></li>
+        <li><a href="#level-3-diagnostic-error-codes" onclick="navigateToSubhead('10', 'level-3-diagnostic-error-codes')">Level 3 — Diagnostic Error Codes</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-11" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-http-client-requests" onclick="navigateToSubhead('11', 'level-1-http-client-requests')">Level 1 — HTTP Client Requests</a></li>
+        <li><a href="#level-2-http-server-with-server-sent-events-sse" onclick="navigateToSubhead('11', 'level-2-http-server-with-server-sent-events-sse')">Level 2 — HTTP Server with Server-Sent Events (SSE)</a></li>
+        <li><a href="#level-3-rfc-6455-websockets-tls-13" onclick="navigateToSubhead('11', 'level-3-rfc-6455-websockets-tls-13')">Level 3 — RFC 6455 WebSockets &amp; TLS 1.3</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-12" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-compile-time-simd-json" onclick="navigateToSubhead('12', 'level-1-compile-time-simd-json')">Level 1 — Compile-Time SIMD JSON</a></li>
+        <li><a href="#level-2-embedded-sqlite-with-vector-search" onclick="navigateToSubhead('12', 'level-2-embedded-sqlite-with-vector-search')">Level 2 — Embedded SQLite with Vector Search</a></li>
+        <li><a href="#level-3-zstandard-frame-compression-corecompresszstd" onclick="navigateToSubhead('12', 'level-3-zstandard-frame-compression-corecompresszstd')">Level 3 — Zstandard Frame Compression (`core:compress/zstd`)</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-13" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-hardware-accelerated-2d-rendering" onclick="navigateToSubhead('13', 'level-1-hardware-accelerated-2d-rendering')">Level 1 — Hardware-Accelerated 2D Rendering</a></li>
+        <li><a href="#level-2-immediate-mode-controls-vendorraygui" onclick="navigateToSubhead('13', 'level-2-immediate-mode-controls-vendorraygui')">Level 2 — Immediate-Mode Controls (`vendor:raygui`)</a></li>
+        <li><a href="#level-3-multi-platform-macos-app-webassembly-ios-uikit" onclick="navigateToSubhead('13', 'level-3-multi-platform-macos-app-webassembly-ios-uikit')">Level 3 — Multi-Platform: macOS App, WebAssembly &amp; iOS UIKit</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-14" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-zero-asset-procedural-sound-effects" onclick="navigateToSubhead('14', 'level-1-zero-asset-procedural-sound-effects')">Level 1 — Zero-Asset Procedural Sound Effects</a></li>
+        <li><a href="#level-2-adsr-envelope-synthesis-riffwav-encoding" onclick="navigateToSubhead('14', 'level-2-adsr-envelope-synthesis-riffwav-encoding')">Level 2 — ADSR Envelope Synthesis &amp; RIFF/WAV Encoding</a></li>
+        <li><a href="#level-3-real-time-64-voice-mixer-float32-audio-stream" onclick="navigateToSubhead('14', 'level-3-real-time-64-voice-mixer-float32-audio-stream')">Level 3 — Real-Time 64-Voice Mixer &amp; Float32 Audio Stream</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-15" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#level-1-unified-llm-streaming-chat" onclick="navigateToSubhead('15', 'level-1-unified-llm-streaming-chat')">Level 1 — Unified LLM Streaming Chat</a></li>
+        <li><a href="#level-2-local-normalized-embeddings-vector-rag" onclick="navigateToSubhead('15', 'level-2-local-normalized-embeddings-vector-rag')">Level 2 — Local Normalized Embeddings &amp; Vector RAG</a></li>
+        <li><a href="#level-3-authoring-native-model-context-protocol-mcp-servers" onclick="navigateToSubhead('15', 'level-3-authoring-native-model-context-protocol-mcp-servers')">Level 3 — Authoring Native Model Context Protocol (MCP) Servers</a></li>
+      </ul>
+    </div>
+    <div class="toc-chapter-group" id="toc-group-16" style="display: none;">
+      <ul class="toc-list">
+        <li><a href="#architectural-tour-composing-the-standard-library" onclick="navigateToSubhead('16', 'architectural-tour-composing-the-standard-library')">Architectural Tour: Composing the Standard Library</a></li>
+        <li><a href="#canonical-projects-index-examples" onclick="navigateToSubhead('16', 'canonical-projects-index-examples')">Canonical Projects Index (`examples/`)</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="toc-quick-links">
+    <div class="toc-header">QUICK LINKS</div>
+    <ul class="toc-list">
+      <li><a href="reference.html">Stdlib Catalog (33 Modules) &rarr;</a></li>
+      <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
+      <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
+      <li><a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub Repository &rarr;</a></li>
+    </ul>
+  </div>
+</aside>
   </div>
 </div>
-<footer class="footer">
-  Generated by <code>cfire doc</code> &bull; <a href="reference.html">Explore the `core:*` Stdlib &amp; Diagnostics Reference &rarr;</a>
-</footer>
 
 <script>
 function copyCode(btn) {
@@ -1655,6 +2363,7 @@ function copyCode(btn) {
     setTimeout(() => { btn.innerText = orig; }, 2000);
   });
 }
+
 function filterGuideNav(query) {
   const q = query.toLowerCase().trim();
   const items = document.querySelectorAll('#sidebar-nav .nav-item');
@@ -1667,6 +2376,97 @@ function filterGuideNav(query) {
     }
   });
 }
+
+function navigateToChapter(num, updateHash) {
+  if (updateHash === undefined) updateHash = true;
+  if (updateHash) {
+    history.pushState(null, '', '#chapter-' + num);
+  }
+  document.querySelectorAll('.chapter-pane').forEach(p => p.classList.remove('active'));
+  const targetPane = document.getElementById('chapter-pane-' + num);
+  if (targetPane) {
+    targetPane.classList.add('active');
+    const part = targetPane.getAttribute('data-part') || '';
+    const title = targetPane.getAttribute('data-title') || '';
+    const bPart = document.getElementById('breadcrumb-part');
+    const bChap = document.getElementById('breadcrumb-chapter');
+    if (bPart) bPart.innerText = part;
+    if (bChap) bChap.innerText = title;
+  }
+  document.querySelectorAll('.sidebar-ch-link').forEach(a => {
+    if (a.getAttribute('data-chapter') == num) {
+      a.classList.add('active');
+    } else {
+      a.classList.remove('active');
+    }
+  });
+  document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'none');
+  const targetToc = document.getElementById('toc-group-' + num);
+  if (targetToc) {
+    targetToc.style.display = 'block';
+  }
+  const vp = document.getElementById('guide-viewport');
+  if (vp) vp.scrollTop = 0;
+}
+
+function navigateToSubhead(num, sid) {
+  navigateToChapter(num, false);
+  history.pushState(null, '', '#' + sid);
+  setTimeout(() => {
+    const el = document.getElementById(sid);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }, 50);
+}
+
+function setReaderMode(mode) {
+  const vp = document.getElementById('guide-viewport');
+  const btnChap = document.getElementById('btn-chapter-mode');
+  const btnAll = document.getElementById('btn-all-mode');
+  const bChap = document.getElementById('breadcrumb-chapter');
+  if (!vp) return;
+  if (mode === 'all') {
+    vp.classList.add('view-all-mode');
+    if (btnAll) btnAll.classList.add('active');
+    if (btnChap) btnChap.classList.remove('active');
+    if (bChap) bChap.innerText = 'All 16 Chapters';
+    document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'block');
+  } else {
+    vp.classList.remove('view-all-mode');
+    if (btnChap) btnChap.classList.add('active');
+    if (btnAll) btnAll.classList.remove('active');
+    updateChapterFromHash();
+  }
+}
+
+function updateChapterFromHash() {
+  const hash = window.location.hash;
+  if (!hash || hash === '#') {
+    navigateToChapter(1, false);
+    return;
+  }
+  if (hash.startsWith('#chapter-')) {
+    const num = hash.replace('#chapter-', '');
+    navigateToChapter(num, false);
+    return;
+  }
+  const targetId = hash.substring(1);
+  const targetEl = document.getElementById(targetId);
+  if (targetEl) {
+    const pane = targetEl.closest('.chapter-pane');
+    if (pane) {
+      const num = pane.getAttribute('data-chapter');
+      navigateToChapter(num, false);
+      setTimeout(() => {
+        targetEl.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+      return;
+    }
+  }
+  navigateToChapter(1, false);
+}
+
+window.addEventListener('DOMContentLoaded', updateChapterFromHash);
+window.addEventListener('hashchange', updateChapterFromHash);
 </script>
 </body>
 </html>
