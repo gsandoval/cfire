@@ -81,6 +81,195 @@ fn main() {
 }
 )", "cfire/UNREACHABLE-MATCH-ARM", "after_wildcard_arm.cf");
 
+    // SAFE-P0-01: Origin & Loan Invalidation (cfire/USE-AFTER-FREE)
+    require_sema_error(R"(package main
+fn consume(move s: str) { println("{}", s) }
+fn main() {
+    mut msg := "hello"
+    p := &mut msg
+    consume(move msg)
+    println("{}", *p)
+}
+)", "cfire/USE-AFTER-FREE", "uaf_after_move.cf");
+
+    require_sema_error(R"(package main
+fn main() {
+    mut nums: []i32 = [1, 2, 3]
+    view := nums[0..2]
+    nums.push(4)
+    println("{}", view[0])
+}
+)", "cfire/USE-AFTER-FREE", "uaf_after_push_realloc.cf");
+
+    require_sema_error(R"(package main
+fn main() {
+    mut nums: []i32 = [1, 2, 3]
+    p := nums.data()
+    nums = [10, 20]
+    println("{}", *p)
+}
+)", "cfire/USE-AFTER-FREE", "uaf_after_reassign.cf");
+
+    // SAFE-P0-01: Lexical Scope Escape (cfire/DANGLING-POINTER & cfire/DANGLING-RETURN)
+    require_sema_error(R"(package main
+fn main() {
+    mut p: *mut i32 = none
+    if true {
+        mut inner := 42
+        p = &mut inner
+    }
+}
+)", "cfire/DANGLING-POINTER", "dangling_inner_scope.cf");
+
+    require_sema_error(R"(package main
+fn leak_ptr() -> *mut i32 {
+    mut local := 99
+    return &mut local
+}
+fn main() {}
+)", "cfire/DANGLING-RETURN", "dangling_return_ptr.cf");
+
+    require_sema_error(R"(package main
+fn leak_slice() -> &[]i32 {
+    nums: []i32 = [1, 2, 3]
+    return nums[0..2]
+}
+fn main() {}
+)", "cfire/DANGLING-RETURN", "dangling_return_slice.cf");
+
+    // SAFE-P0-01: Iterator Invalidation (cfire/ITERATOR-INVALIDATION)
+    require_sema_error(R"(package main
+fn main() {
+    mut items: []i32 = [1, 2, 3]
+    for x in items {
+        items.push(x * 2)
+    }
+}
+)", "cfire/ITERATOR-INVALIDATION", "iter_invalidation.cf");
+
+    // SAFE-P0-02: Flow-Sensitive Non-Null Pointer Verification (cfire/NULL-DEREF)
+    require_sema_error(R"(package main
+fn main() {
+    mut p: *mut i32 = none
+    *p = 10
+}
+)", "cfire/NULL-DEREF", "null_deref_none.cf");
+
+    require_sema_error(R"(package main
+fn main() {
+    mut p: *mut i32
+    println("{}", *p)
+}
+)", "cfire/NULL-DEREF", "null_deref_uninit.cf");
+
+    require_sema_error(R"(package main
+fn test_branch(flag: bool) {
+    mut x := 10
+    mut p: *mut i32 = none
+    if flag {
+        p = &mut x
+    }
+    *p = 20
+}
+fn main() {}
+)", "cfire/NULL-DEREF", "null_deref_maybe_null.cf");
+
+    require_sema_error(R"(package main
+fn test_eq_none(p: *mut i32?) {
+    if p == none {
+        *p = 1
+    }
+}
+fn main() {}
+)", "cfire/NULL-DEREF", "null_deref_in_none_branch.cf");
+
+    // Positive verification: flow-sensitive non-null narrowing via != none, early return, and assert
+    {
+        auto valid_ast = cfire::frontend::parse_source("null_narrowing_ok.cf", R"(package main
+fn narrow_if(p: *mut i32?) {
+    if p != none {
+        *p = 42
+    }
+}
+fn narrow_early_return(p: *mut i32?) {
+    if p == none {
+        return
+    }
+    *p = 77
+}
+fn narrow_assert(p: *mut i32?) {
+    assert(p != none)
+    *p = 99
+}
+fn main() {}
+)");
+        require(valid_ast.has_value(), "parse valid non-null narrowing (SAFE-P0-02)");
+        if (valid_ast) {
+            auto checked = cfire::frontend::analyze(std::move(*valid_ast));
+            require(checked.has_value(), "sema accepts narrowed non-null dereferences (SAFE-P0-02)");
+        }
+    }
+
+    // SAFE-P0-03: Compile-Time & Runtime Bounds Verification (cfire/INDEX-OUT-OF-BOUNDS & cfire::index_at)
+    require_sema_error(R"(package main
+fn main() {
+    nums: []i32 = [10, 20, 30]
+    println("{}", nums[-1])
+}
+)", "cfire/INDEX-OUT-OF-BOUNDS", "oob_negative_index.cf");
+
+    require_sema_error(R"(package main
+fn main() {
+    arr: [4]i32 = [1, 2, 3, 4]
+    println("{}", arr[4])
+}
+)", "cfire/INDEX-OUT-OF-BOUNDS", "oob_fixed_array_index.cf");
+
+    {
+        auto bounds_ast = cfire::frontend::parse_source("bounds_codegen.cf", R"(package main
+fn check_codegen(idx: i32) -> i32 {
+    arr: [4]i32 = [10, 20, 30, 40]
+    nums: []i32 = [1, 2, 3]
+    mut m: map[str]i32 = {}
+    m["k"] = 5
+    mut sum := arr[2] + nums[idx] + m["k"]
+    for i, v in nums {
+        sum += nums[i] + v
+    }
+    return sum
+}
+fn main() {}
+)");
+        require(bounds_ast.has_value(), "parse bounds_codegen.cf (SAFE-P0-03)");
+        if (bounds_ast) {
+            auto checked = cfire::frontend::analyze(std::move(*bounds_ast));
+            require(checked.has_value(), "analyze bounds_codegen.cf (SAFE-P0-03)");
+            if (checked) {
+                std::string cpp = cfire::frontend::emit_cpp(*checked);
+                require(cpp.contains("cfire::index_at(nums, idx,"),
+                    "dynamic slice indexing lowers to cfire::index_at (SAFE-P0-03)");
+                require(cpp.contains("arr[2]"),
+                    "proven in-bounds fixed-array constant index emits zero-overhead operator[] (SAFE-P0-03)");
+                require(cpp.contains("nums[i]"),
+                    "proven in-bounds loop index variable emits zero-overhead operator[] (SAFE-P0-03)");
+                require(cpp.contains("m[\"k\"]"),
+                    "map indexing emits direct operator[] (SAFE-P0-03)");
+            }
+        }
+    }
+
+    run_cfire_source(R"(package main
+fn get_elem(nums: &[]i32, idx: i32) -> i32 {
+    return nums[idx]
+}
+fn main() {
+    nums: []i32 = [10, 20, 30]
+    println("{}", get_elem(nums, 99))
+}
+)", "cfire_oob_panic")
+        .assert_fail("dynamic out-of-bounds slice index exits non-zero (SAFE-P0-03)")
+        .assert_contains("index 99 out of bounds for length 3", "dynamic OOB panic message (SAFE-P0-03)");
+
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");
 }
 

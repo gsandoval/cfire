@@ -5,6 +5,14 @@ When selecting an item for implementation, promote it to [`active.md`](./active.
 
 ---
 
+# Active Backlog: Memory Safety, Use-After-Free & Bounds Verification (`SAFE-*`)
+
+- `SAFE-P0-01` `[Completed]`: **Compile-Time Loan/Origin Use-After-Free (`cfire/USE-AFTER-FREE`), Escape (`cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`), and Loop Iterator Invalidation (`cfire/ITERATOR-INVALIDATION`)** (`src/sema.hpp`)
+- `SAFE-P0-02` `[Completed]`: **Zero-Overhead Flow-Sensitive Null-Pointer Verification (`cfire/NULL-DEREF`) & Constant Index Bounds Check (`cfire/INDEX-OUT-OF-BOUNDS`)** (`src/sema.hpp`)
+- `SAFE-P0-03` `[Completed]`: **Inline Dynamic Bounds-Checked Indexing (`cfire::index_at`) & Conformance Suite** (`runtime/cfire_prelude.hpp`, `src/codegen.hpp`, `tests/unit/test_sema.cpp`)
+
+---
+
 # Active Backlog: WebSocket Server, Router Upgrade & Native TLS (`https://` / `wss://`) (`NET-*`)
 
 > **MANDATORY INSTRUCTIONS FOR THE IMPLEMENTING AGENT — READ BEFORE WRITING ANY CODE**

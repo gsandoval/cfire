@@ -44,6 +44,9 @@ public:
     std::vector<std::string> active_async_scopes_{};
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
+    std::unordered_set<std::string> map_vars_{};
+    std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
+    std::unordered_map<std::string, std::string> loop_index_to_col_{};
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
     [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
@@ -475,6 +478,9 @@ public:
         in_test_ = true;
         in_fallible_void_ = false;
         local_vars_.clear();
+        ptr_vars_.clear();
+        map_vars_.clear();
+        fixed_array_vars_.clear();
         writeln(std::format("inline void {}() {{", cur_fn_));
         ++indent_;
         for (const auto& st : td.body) emit_stmt(st, false);
@@ -482,6 +488,9 @@ public:
         writeln("}");
         in_test_ = false;
         local_vars_.clear();
+        ptr_vars_.clear();
+        map_vars_.clear();
+        fixed_array_vars_.clear();
     }
 
     void emit_interface(const InterfaceDecl& iface) {
@@ -767,8 +776,26 @@ public:
         cur_fn_ = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
         defer_count_ = 0;
         local_vars_.clear();
-        if (fn.receiver) local_vars_.insert(fn.receiver->name);
-        for (const auto& p : fn.params) local_vars_.insert(p.name);
+        map_vars_.clear();
+        fixed_array_vars_.clear();
+        if (fn.receiver) {
+            local_vars_.insert(fn.receiver->name);
+            if (fn.receiver->type.is_map) map_vars_.insert(fn.receiver->name);
+            if (fn.receiver->type.is_array && !fn.receiver->type.array_len.empty()) {
+                if (auto n = cfire::detail::parse_int<std::size_t>(fn.receiver->type.array_len)) {
+                    fixed_array_vars_[fn.receiver->name] = *n;
+                }
+            }
+        }
+        for (const auto& p : fn.params) {
+            local_vars_.insert(p.name);
+            if (p.type.is_map) map_vars_.insert(p.name);
+            if (p.type.is_array && !p.type.array_len.empty()) {
+                if (auto n = cfire::detail::parse_int<std::size_t>(p.type.array_len)) {
+                    fixed_array_vars_[p.name] = *n;
+                }
+            }
+        }
 
         if (fn.name == "main" && !fn.receiver) {
             in_main_ = true;
@@ -1131,6 +1158,22 @@ public:
                 if (st.type && (st.type->is_ptr || st.type->is_mut_ptr)) {
                     ptr_vars_.insert(st.name);
                 }
+                if (st.type) {
+                    if (st.type->is_map) map_vars_.insert(st.name);
+                    if (st.type->is_array && !st.type->array_len.empty()) {
+                        if (auto n = cfire::detail::parse_int<std::size_t>(st.type->array_len)) {
+                            fixed_array_vars_[st.name] = *n;
+                        }
+                    }
+                }
+                if (st.init) {
+                    if (const auto* call_ex = std::get_if<CallExpr>(&st.init->node)) {
+                        if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node);
+                            cid && cid->name == "make" && call_ex->type_args.size() == 1 && call_ex->type_args[0].is_map) {
+                            map_vars_.insert(st.name);
+                        }
+                    }
+                }
                 std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
                 if (!st.type && st.init) {
                     if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && lit->kind == TokenKind::String) {
@@ -1216,12 +1259,14 @@ public:
                     if (!st.index_var.empty()) {
                         local_vars_.insert(st.index_var);
                         std::string col = emit_expr(st.iter_expr);
+                        loop_index_to_col_[st.index_var] = col;
                         writeln(std::format("for (std::size_t {0} = 0; {0} < {1}.size(); ++{0}) {{", st.index_var, col));
                         ++indent_;
                         writeln(std::format("const auto& {} = {}[{}];", st.item_var, col, st.index_var));
                         for (const auto& b : st.body) emit_stmt(b, in_main);
                         --indent_;
                         writeln("}");
+                        loop_index_to_col_.erase(st.index_var);
                     } else {
                         writeln(std::format("for (const auto& {} : {}) {{", st.item_var, emit_expr(st.iter_expr)));
                         ++indent_;
@@ -1565,10 +1610,16 @@ public:
             sub.used_core_ = used_core_;
             sub.used_vendor_ = used_vendor_;
             sub.local_vars_ = local_vars_;
+            sub.ptr_vars_ = ptr_vars_;
+            sub.map_vars_ = map_vars_;
+            sub.fixed_array_vars_ = fixed_array_vars_;
             sub.in_main_ = in_main_;
             sub.emit_stmt(body[i], false);
             sb << sub.buf_.str();
             local_vars_ = sub.local_vars_;
+            ptr_vars_ = sub.ptr_vars_;
+            map_vars_ = sub.map_vars_;
+            fixed_array_vars_ = sub.fixed_array_vars_;
         }
     }
 
@@ -1907,7 +1958,35 @@ public:
                 if (ex.field == "empty") return obj + ".empty";
                 return obj + "." + ex.field;
             } else if constexpr (std::is_same_v<T, IndexExpr>) {
-                return std::format("{}[{}]", emit_expr(ex.object), emit_expr(ex.index));
+                bool use_raw_index = false;
+                if (ex.object) {
+                    if (const auto* obj_id = std::get_if<IdentExpr>(&ex.object->node)) {
+                        if (map_vars_.contains(obj_id->name)) {
+                            use_raw_index = true;
+                        } else if (fixed_array_vars_.contains(obj_id->name) && ex.index) {
+                            if (const auto* lit = std::get_if<LiteralExpr>(&ex.index->node); lit && lit->kind == TokenKind::Int) {
+                                use_raw_index = true;
+                            }
+                        }
+                        if (!use_raw_index && ex.index) {
+                            if (const auto* idx_id = std::get_if<IdentExpr>(&ex.index->node)) {
+                                if (auto it = loop_index_to_col_.find(idx_id->name); it != loop_index_to_col_.end() && it->second == obj_id->name) {
+                                    use_raw_index = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (use_raw_index) {
+                    return std::format("{}[{}]", emit_expr(ex.object), emit_expr(ex.index));
+                }
+                return std::format(
+                    "cfire::index_at({}, {}, \"{}\", {})",
+                    emit_expr(ex.object),
+                    emit_expr(ex.index),
+                    escape_line_path(source_path_),
+                    e->line
+                );
             } else if constexpr (std::is_same_v<T, SliceExpr>) {
                 std::string obj = emit_expr(ex.object);
                 std::string start_s = ex.start ? emit_expr(ex.start) : "0";
@@ -2188,6 +2267,9 @@ public:
                 sub.used_core_ = used_core_;
                 sub.used_vendor_ = used_vendor_;
                 sub.local_vars_ = local_vars_;
+                sub.ptr_vars_ = ptr_vars_;
+                sub.map_vars_ = map_vars_;
+                sub.fixed_array_vars_ = fixed_array_vars_;
                 sub.local_vars_.insert(tx_param);
                 sub.in_fallible_void_ = true;
                 for (const auto& st : call.block_arg->body) {
@@ -2211,6 +2293,9 @@ public:
                 sub.used_core_ = used_core_;
                 sub.used_vendor_ = used_vendor_;
                 sub.local_vars_ = local_vars_;
+                sub.ptr_vars_ = ptr_vars_;
+                sub.map_vars_ = map_vars_;
+                sub.fixed_array_vars_ = fixed_array_vars_;
                 for (const auto& st : call.block_arg->body) {
                     sub.emit_stmt(st, false);
                 }
@@ -2346,6 +2431,9 @@ public:
         sub.used_core_ = used_core_;
         sub.used_vendor_ = used_vendor_;
         sub.local_vars_ = local_vars_;
+        sub.ptr_vars_ = ptr_vars_;
+        sub.map_vars_ = map_vars_;
+        sub.fixed_array_vars_ = fixed_array_vars_;
         for (const auto& p : cl.params) sub.local_vars_.insert(p);
         sub.in_main_ = false;
         sub.in_test_ = false;
