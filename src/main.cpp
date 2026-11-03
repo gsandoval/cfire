@@ -94,8 +94,8 @@ void print_usage() {
     std::println("  outline  [--json] [path]      Token-compressed outline of packages, types, and functions");
     std::println("  fmt      [--check] <path>     Canonically format .cf file(s) or directory");
     std::println("  lsp                           Start built-in Language Server Protocol (JSON-RPC 2.0 stdio)");
-    std::println("  mcp                           Start built-in Model Context Protocol (MCP) server over stdio");
-    std::println("  ide      [editor|--all]       Configure IDE (VS Code, Cursor, Zed, Neovim, CLion)");
+    std::println("  mcp      [--setup|--print-config] Start MCP server over stdio, or configure AI agent MCP clients");
+    std::println("  ide      [target|--all|--status] [--global] Configure IDE & AI agents (VS Code, Antigravity, Claude Code, Cursor, Windsurf, Zed, Neovim, CLion)");
     std::println("  doc      [--check|--llm|<f>]  Generate docs site, guide, or LLM agent reference sheet");
     std::println("  emit-cpp <file.cf>            Print generated human-readable C++23 source");
     std::println("  eject    <file.cf> [out_dir]  Export standalone C++23 source tree + CMakeLists.txt");
@@ -358,12 +358,56 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "mcp") {
+        bool setup_mode = false;
+        bool print_cfg = false;
+        bool global_scope = false;
+        std::string target = "auto";
+        std::filesystem::path ws_dir = std::filesystem::current_path();
+        for (int i = 2; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--setup" || arg == "setup" || arg == "--config" || arg == "config") {
+                setup_mode = true;
+            } else if (arg == "--print-config" || arg == "print-config") {
+                print_cfg = true;
+            } else if (arg == "--global" || arg == "-g") {
+                global_scope = true;
+            } else if (arg == "--dir" && i + 1 < argc) {
+                ws_dir = argv[++i];
+            } else if (arg == "--all" || arg == "all" || !arg.starts_with("-")) {
+                target = std::string(arg);
+            }
+        }
+        if (print_cfg) {
+            std::print("{}", cfire::lsp::format_mcp_config_snippet(runtime_dir.parent_path()));
+            return 0;
+        }
+        if (setup_mode) {
+            auto res = cfire::lsp::configure_ide(ws_dir, target, global_scope);
+            if (!res) {
+                std::println(stderr, "{}", res.error());
+                return 1;
+            }
+            std::print("{}", *res);
+            return 0;
+        }
         return cfire::mcp::serve_stdio(runtime_dir);
     }
 
     if (sub == "ide") {
-        std::string editor = (argc >= 3) ? argv[2] : "auto";
-        auto res = cfire::lsp::configure_ide(runtime_dir.parent_path(), editor);
+        std::string editor = "auto";
+        bool global_scope = false;
+        std::filesystem::path ws_dir = std::filesystem::current_path();
+        for (int i = 2; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--global" || arg == "-g") {
+                global_scope = true;
+            } else if (arg == "--dir" && i + 1 < argc) {
+                ws_dir = argv[++i];
+            } else {
+                editor = std::string(arg);
+            }
+        }
+        auto res = cfire::lsp::configure_ide(ws_dir, editor, global_scope);
         if (!res) {
             std::println(stderr, "{}", res.error());
             return 1;

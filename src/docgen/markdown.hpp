@@ -1443,6 +1443,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `cfire check --json <file>`: Multi-error structured diagnostics with 1-based coordinates and fixits
   - `cfire outline --json <file|dir>`: AST symbol outline with exact types, intents, receivers
   - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or compiler diagnostic rule (`cfire inspect cfire/USE-AFTER-FREE`)
+  - `cfire ide [target|--all|--status] [--global]`: Auto-detect & configure LSP, MCP, and agent rules for VS Code, Antigravity (`agy`), Claude Code (`claude`), Cursor, Windsurf, Zed, Neovim, and CLion
+  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio, or generate MCP client configuration
   - `cfire doc --llm`: Dump this LLM context reference sheet
   - `cfire test`: Run tests with assertion location reporting
   - `cfire eval 'expr'`: Immediate evaluation of expressions
