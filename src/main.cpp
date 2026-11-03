@@ -1331,6 +1331,25 @@ auto main(int argc, char** argv) -> int {
             return 0;
         }
 
+        // Form 4: Diagnostic code lookup (`cfire inspect cfire/USE-AFTER-FREE` or `cfire inspect USE-AFTER-FREE`)
+        for (const auto& d : cfire::doc::diagnostics_catalog()) {
+            if (d.code == target_str || d.code == ("cfire/" + target_str)) {
+                if (json_mode) {
+                    std::println(
+                        "{{\"code\": \"{}\", \"title\": \"{}\", \"rule\": \"{}\", \"bad_example\": \"{}\", \"good_example\": \"{}\"}}",
+                        cfire::diag::json_escape(d.code),
+                        cfire::diag::json_escape(d.title),
+                        cfire::diag::json_escape(d.rule),
+                        cfire::diag::json_escape(d.bad_example),
+                        cfire::diag::json_escape(d.good_example));
+                } else {
+                    std::println("# {} — {}\n\n{}\n\n**Rejected Example:**\n```cf\n{}\n```\n\n**Accepted Fix:**\n```cf\n{}\n```",
+                        d.code, d.title, d.rule, d.bad_example, d.good_example);
+                }
+                return 0;
+            }
+        }
+
         std::println(stderr, "error: unknown inspect target '{}'", target_str);
         return 1;
     }

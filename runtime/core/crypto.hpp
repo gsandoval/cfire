@@ -168,6 +168,30 @@ namespace detail {
 #endif
 }
 
+[[nodiscard]] inline auto random_bytes(std::size_t n) -> std::vector<std::byte> {
+    std::vector<std::byte> buf(n);
+    if (n == 0) return buf;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    ::arc4random_buf(buf.data(), n);
+#else
+    std::ifstream urand("/dev/urandom", std::ios::binary);
+    if (urand) {
+        urand.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(n));
+    }
+#endif
+    return buf;
+}
+
+[[nodiscard]] inline auto random_hex(std::size_t n = 32) -> std::string {
+    auto b = random_bytes(n);
+    std::string hex;
+    hex.reserve(n * 2);
+    for (std::byte byte_val : b) {
+        hex += std::format("{:02x}", static_cast<unsigned char>(byte_val));
+    }
+    return hex;
+}
+
 } // namespace cfire::sha256
 
 namespace cfire::hmac {
@@ -241,6 +265,75 @@ namespace cfire::hmac {
         diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
     }
     return diff == 0;
+}
+
+// RFC 5869 HMAC-based Extract-and-Expand Key Derivation Function (HKDF-SHA256)
+[[nodiscard]] inline auto hkdf_sha256(
+    std::span<const std::byte> ikm,
+    std::span<const std::byte> salt = {},
+    std::span<const std::byte> info = {},
+    std::size_t length = 32
+) -> std::vector<std::byte> {
+    if (length == 0) return {};
+    constexpr std::size_t kHashLen = 32;
+    const std::size_t max_len = 255 * kHashLen;
+    if (length > max_len) length = max_len;
+
+    std::vector<std::byte> zero_salt;
+    std::span<const std::byte> actual_salt = salt;
+    if (actual_salt.empty()) {
+        zero_salt.assign(kHashLen, std::byte{0});
+        actual_salt = zero_salt;
+    }
+
+    auto prk = sha256_bytes(actual_salt, ikm);
+    std::size_t n_blocks = (length + kHashLen - 1) / kHashLen;
+
+    std::vector<std::byte> okm;
+    okm.reserve(n_blocks * kHashLen);
+    std::vector<std::byte> prev_t;
+
+    for (std::size_t i = 1; i <= n_blocks; ++i) {
+        std::vector<std::byte> msg;
+        msg.reserve(prev_t.size() + info.size() + 1);
+        msg.insert(msg.end(), prev_t.begin(), prev_t.end());
+        msg.insert(msg.end(), info.begin(), info.end());
+        msg.push_back(static_cast<std::byte>(i & 0xFF));
+
+        prev_t = sha256_bytes(prk, msg);
+        okm.insert(okm.end(), prev_t.begin(), prev_t.end());
+    }
+    okm.resize(length);
+    return okm;
+}
+
+[[nodiscard]] inline auto hkdf_sha256(
+    std::string_view ikm,
+    std::string_view salt = "",
+    std::string_view info = "",
+    std::size_t length = 32
+) -> std::vector<std::byte> {
+    return hkdf_sha256(
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(ikm.data()), ikm.size()),
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(salt.data()), salt.size()),
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(info.data()), info.size()),
+        length
+    );
+}
+
+[[nodiscard]] inline auto hkdf_sha256_hex(
+    std::string_view ikm,
+    std::string_view salt = "",
+    std::string_view info = "",
+    std::size_t length = 32
+) -> std::string {
+    auto okm = hkdf_sha256(ikm, salt, info, length);
+    std::string hex;
+    hex.reserve(okm.size() * 2);
+    for (std::byte b : okm) {
+        hex += std::format("{:02x}", static_cast<unsigned char>(b));
+    }
+    return hex;
 }
 
 } // namespace cfire::hmac
