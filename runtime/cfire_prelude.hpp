@@ -369,6 +369,56 @@ inline void assert_true(bool cond, std::string_view msg = "assertion failed") {
     assert_true_at(cond, msg, "", 0, "");
 }
 
+// --- Zero-Overhead Inline Bounds-Checked Indexing (`arr[i]`, `slice[i]`, `str[i]`) (SAFE-P0-03) ---
+template <typename Container>
+concept CfireIndexableSeq = requires(Container& c, std::size_t i) {
+    c.size();
+    c.data();
+    c[i];
+};
+
+template <CfireIndexableSeq Container, std::integral Idx>
+[[nodiscard]] inline decltype(auto) index_at(
+    Container&& c,
+    Idx idx,
+    std::string_view file = "",
+    int line = 0
+) {
+    if constexpr (std::is_signed_v<Idx>) {
+        if (idx < 0) [[unlikely]] {
+            assert_true_at(
+                false,
+                std::format("negative index {} out of bounds for length {}", idx, c.size()),
+                file,
+                line,
+                "index out of bounds"
+            );
+        }
+    }
+    const auto u_idx = static_cast<std::size_t>(idx);
+    if (u_idx >= c.size()) [[unlikely]] {
+        assert_true_at(
+            false,
+            std::format("index {} out of bounds for length {}", u_idx, c.size()),
+            file,
+            line,
+            "index out of bounds"
+        );
+    }
+    return std::forward<Container>(c)[u_idx];
+}
+
+template <typename Container, typename Key>
+    requires (!CfireIndexableSeq<Container>)
+[[nodiscard]] inline decltype(auto) index_at(
+    Container&& c,
+    Key&& k,
+    std::string_view = "",
+    int = 0
+) {
+    return std::forward<Container>(c)[std::forward<Key>(k)];
+}
+
 // --- String / Path / C-String Boundary Coercions ---
 // Safely converts `std::string_view` (including non-null-terminated slices `s[0..4]`)
 // into a null-terminated `const char*` valid for the duration of the full C call expression.
