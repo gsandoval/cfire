@@ -48,18 +48,35 @@ struct CheckedFile {
 
 class SemaFnChecker {
 public:
+    enum class NullState { NonNull, MaybeNull, Null };
+
+    struct InvalidatedLoan {
+        std::string reason{};
+        int line = 1;
+    };
+
     SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf,
                   std::vector<std::string>& warnings, std::vector<std::string>& errors, bool resilient = false)
         : path_(path), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient)
     {
         if (fn.receiver) {
+            var_scope_depth_[fn.receiver->name] = 0;
             if (fn.receiver->intent == "mut") {
                 mut_vars_.insert(fn.receiver->name);
             } else {
                 imm_vars_.insert(fn.receiver->name);
             }
+            if (fn.receiver->type.is_map) {
+                map_vars_.insert(fn.receiver->name);
+            }
+            if (fn.receiver->type.is_array && !fn.receiver->type.array_len.empty()) {
+                if (auto n = cfire::detail::parse_int<std::size_t>(fn.receiver->type.array_len)) {
+                    fixed_array_lens_[fn.receiver->name] = *n;
+                }
+            }
         }
         for (const auto& p : fn.params) {
+            var_scope_depth_[p.name] = 0;
             if (p.intent == "move") {
                 move_params_.insert(p.name);
             }
@@ -72,6 +89,17 @@ public:
                 mut_vars_.insert(p.name);
             } else {
                 imm_vars_.insert(p.name);
+            }
+            if (p.type.is_map) {
+                map_vars_.insert(p.name);
+            }
+            if (p.type.is_array && !p.type.array_len.empty()) {
+                if (auto n = cfire::detail::parse_int<std::size_t>(p.type.array_len)) {
+                    fixed_array_lens_[p.name] = *n;
+                }
+            }
+            if (p.type.is_ptr || p.type.is_mut_ptr) {
+                ptr_null_state_[p.name] = p.type.is_optional ? NullState::MaybeNull : NullState::NonNull;
             }
         }
     }
@@ -89,6 +117,25 @@ public:
         return std::unexpected(std::move(msg));
     }
 
+    void invalidate_loans_for_owner(const std::string& owner, std::string_view reason, int line) {
+        for (const auto& [borrower, orig] : borrow_origin_) {
+            if (orig == owner) {
+                invalidated_loans_[borrower] = InvalidatedLoan{std::string(reason), line};
+            }
+        }
+    }
+
+    [[nodiscard]] auto check_not_iterated_collection(const std::string& root, int line, int col)
+        -> std::expected<void, std::string>
+    {
+        if (active_loop_collections_.contains(root)) {
+            return emit_error(std::format(
+                "{}:{}:{}: cannot structurally mutate collection '{}' while iterating over it (cfire/ITERATOR-INVALIDATION)",
+                path_, line, col, root));
+        }
+        return {};
+    }
+
     [[nodiscard]] auto record_var_read(const std::string& name, int line, int col)
         -> std::expected<void, std::string>
     {
@@ -96,6 +143,11 @@ public:
             return emit_error(std::format(
                 "{}:{}:{}: use of moved variable '{}' (previously moved at line {}) (cfire/USE-AFTER-MOVE)",
                 path_, line, col, name, it->second));
+        }
+        if (auto it = invalidated_loans_.find(name); it != invalidated_loans_.end()) {
+            return emit_error(std::format(
+                "{}:{}:{}: use of dangling pointer/view '{}' ({}) (cfire/USE-AFTER-FREE)",
+                path_, line, col, name, it->second.reason));
         }
         if (move_params_.contains(name)) {
             last_read_line[name] = line;
@@ -127,6 +179,123 @@ public:
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
             if (un->op == "&" || un->op == "&mut" || un->op == "*") {
                 return extract_path_info(un->operand);
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] auto resolve_root_owner(const std::string& var) const -> std::string {
+        if (auto it = borrow_origin_.find(var); it != borrow_origin_.end()) {
+            return it->second;
+        }
+        return var;
+    }
+
+    [[nodiscard]] auto extract_borrow_source(const ExprPtr& e, bool* is_direct_expr = nullptr) const -> std::optional<std::string> {
+        if (is_direct_expr) *is_direct_expr = false;
+        if (!e) return std::nullopt;
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            if (un->op == "&" || un->op == "&mut") {
+                if (auto pi = extract_path_info(un->operand)) {
+                    if (is_direct_expr) *is_direct_expr = true;
+                    return resolve_root_owner(pi->root);
+                }
+            }
+            return std::nullopt;
+        }
+        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
+            if (auto pi = extract_path_info(sl->object)) {
+                if (is_direct_expr) *is_direct_expr = true;
+                return resolve_root_owner(pi->root);
+            }
+            return std::nullopt;
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if ((mem->field == "data" || mem->field == "data_ptr" || mem->field == "byte_ptr") && call->args.empty()) {
+                    if (auto pi = extract_path_info(mem->object)) {
+                        if (is_direct_expr) *is_direct_expr = true;
+                        return resolve_root_owner(pi->root);
+                    }
+                }
+                if (mem->field == "byte_ptr_at" && call->args.size() == 1) {
+                    if (auto pi = extract_path_info(mem->object)) {
+                        if (is_direct_expr) *is_direct_expr = true;
+                        return resolve_root_owner(pi->root);
+                    }
+                }
+                if (const auto* mod_id = std::get_if<IdentExpr>(&mem->object->node);
+                    mod_id && mod_id->name == "str" && !call->args.empty() &&
+                    (mem->field == "byte_ptr" || mem->field == "byte_ptr_at")) {
+                    if (auto pi = extract_path_info(call->args[0].value)) {
+                        if (is_direct_expr) *is_direct_expr = true;
+                        return resolve_root_owner(pi->root);
+                    }
+                }
+            }
+            return std::nullopt;
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (auto it = borrow_origin_.find(id->name); it != borrow_origin_.end()) {
+                return it->second;
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] auto infer_expr_null_state(const ExprPtr& e) const -> std::optional<NullState> {
+        if (!e) return std::nullopt;
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::KwNone) {
+                return NullState::Null;
+            }
+            return std::nullopt;
+        }
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            if (un->op == "&" || un->op == "&mut") {
+                return NullState::NonNull;
+            }
+            return std::nullopt;
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (id->name == "make" && call->type_args.size() == 1 && !call->type_args[0].smart_wrap.empty()) {
+                    return NullState::NonNull;
+                }
+            }
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (mem->field == "data" || mem->field == "data_ptr" ||
+                    mem->field == "byte_ptr" || mem->field == "byte_ptr_at") {
+                    return NullState::NonNull;
+                }
+            }
+            return std::nullopt;
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
+                return it->second;
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] static auto extract_null_check(const ExprPtr& cond) -> std::optional<std::pair<std::string, bool>> {
+        if (!cond) return std::nullopt;
+        if (const auto* bin = std::get_if<BinaryExpr>(&cond->node)) {
+            if (bin->op == "!=" || bin->op == "==") {
+                bool is_ne = (bin->op == "!=");
+                if (bin->left && bin->right) {
+                    const auto* l_id = std::get_if<IdentExpr>(&bin->left->node);
+                    const auto* r_lit = std::get_if<LiteralExpr>(&bin->right->node);
+                    if (l_id && r_lit && r_lit->kind == TokenKind::KwNone) {
+                        return std::make_pair(l_id->name, is_ne);
+                    }
+                    const auto* r_id = std::get_if<IdentExpr>(&bin->right->node);
+                    const auto* l_lit = std::get_if<LiteralExpr>(&bin->left->node);
+                    if (r_id && l_lit && l_lit->kind == TokenKind::KwNone) {
+                        return std::make_pair(r_id->name, is_ne);
+                    }
+                }
             }
         }
         return std::nullopt;
@@ -165,7 +334,26 @@ public:
             if (auto r = check_expr(un->operand); !r) return r;
             if (un->op == "move") {
                 if (auto pi = extract_path_info(un->operand)) {
+                    if (auto r = check_not_iterated_collection(pi->root, e->line, e->col); !r) return r;
                     moved_at_line_[pi->root] = e->line;
+                    invalidate_loans_for_owner(
+                        pi->root,
+                        std::format("underlying owner '{}' was moved at line {}", pi->root, e->line),
+                        e->line);
+                }
+            } else if (un->op == "*" && un->operand) {
+                if (const auto* id = std::get_if<IdentExpr>(&un->operand->node)) {
+                    if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
+                        if (it->second == NullState::Null) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: dereference of null pointer '{}' (cfire/NULL-DEREF)",
+                                path_, e->line, e->col, id->name)); !r) return r;
+                        } else if (it->second == NullState::MaybeNull) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: dereference of potentially null pointer '{}' without '!= none' guard (cfire/NULL-DEREF)",
+                                path_, e->line, e->col, id->name)); !r) return r;
+                        }
+                    }
                 }
             }
             return {};
@@ -179,7 +367,52 @@ public:
         }
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
             if (auto r = check_expr(idx->object); !r) return r;
-            return check_expr(idx->index);
+            if (auto r = check_expr(idx->index); !r) return r;
+
+            bool is_map_obj = false;
+            const IdentExpr* obj_id = idx->object ? std::get_if<IdentExpr>(&idx->object->node) : nullptr;
+            if (obj_id && map_vars_.contains(obj_id->name)) {
+                is_map_obj = true;
+            }
+            if (!is_map_obj && idx->index) {
+                if (const auto* un_idx = std::get_if<UnaryExpr>(&idx->index->node)) {
+                    if (un_idx->op == "-" && un_idx->operand) {
+                        if (const auto* neg_lit = std::get_if<LiteralExpr>(&un_idx->operand->node);
+                            neg_lit && neg_lit->kind == TokenKind::Int && neg_lit->value != "0") {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: negative index -{} is out of bounds (cfire/INDEX-OUT-OF-BOUNDS)",
+                                path_, e->line, e->col, neg_lit->value)); !r) return r;
+                        }
+                    }
+                } else if (const auto* idx_lit = std::get_if<LiteralExpr>(&idx->index->node)) {
+                    if (idx_lit->kind == TokenKind::Int) {
+                        if (idx_lit->value.starts_with('-') && idx_lit->value != "-0") {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: negative index {} is out of bounds (cfire/INDEX-OUT-OF-BOUNDS)",
+                                path_, e->line, e->col, idx_lit->value)); !r) return r;
+                        } else if (auto k = cfire::detail::parse_int<std::size_t>(idx_lit->value)) {
+                            if (obj_id) {
+                                if (auto fit = fixed_array_lens_.find(obj_id->name); fit != fixed_array_lens_.end()) {
+                                    if (*k >= fit->second) {
+                                        if (auto r = emit_error(std::format(
+                                            "{}:{}:{}: index {} is out of bounds for array '{}' of length {} (cfire/INDEX-OUT-OF-BOUNDS)",
+                                            path_, e->line, e->col, *k, obj_id->name, fit->second)); !r) return r;
+                                    }
+                                }
+                            } else if (idx->object) {
+                                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&idx->object->node)) {
+                                    if (*k >= arr_lit->elements.size()) {
+                                        if (auto r = emit_error(std::format(
+                                            "{}:{}:{}: index {} is out of bounds for array literal of length {} (cfire/INDEX-OUT-OF-BOUNDS)",
+                                            path_, e->line, e->col, *k, arr_lit->elements.size())); !r) return r;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return {};
         }
         if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
             if (auto r = check_expr(sl->object); !r) return r;
@@ -248,6 +481,16 @@ public:
                         }
                     }
                 }
+                if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
+                    mem->field == "erase" || mem->field == "remove") {
+                    if (auto pi = extract_path_info(mem->object)) {
+                        if (auto r = check_not_iterated_collection(pi->root, e->line, e->col); !r) return r;
+                        invalidate_loans_for_owner(
+                            pi->root,
+                            std::format("underlying container '{}' was mutated at line {}", pi->root, e->line),
+                            e->line);
+                    }
+                }
             }
 
             if (target_sig) {
@@ -312,16 +555,36 @@ public:
                                 "{}:{}:{}: cannot pass immutable variable '{}' as '{}' argument (cfire/IMMUTABLE-MUT-ARG)",
                                 path_, arg.line, arg.col, entity, arg.intent)); !r) return r;
                         }
+                        if (pi->path == pi->root) {
+                            if (auto r = check_not_iterated_collection(pi->root, arg.line, arg.col); !r) return r;
+                        }
                     }
                     if (arg.intent == "move") {
+                        if (auto r = check_not_iterated_collection(pi->root, arg.line, arg.col); !r) return r;
                         moved_at_line_[pi->root] = arg.line;
+                        invalidate_loans_for_owner(
+                            pi->root,
+                            std::format("underlying owner '{}' was moved at line {}", pi->root, arg.line),
+                            arg.line);
+                    }
+                }
+            }
+            if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (id->name == "assert" && !call->args.empty()) {
+                    if (auto nc = extract_null_check(call->args[0].value); nc && nc->second) {
+                        ptr_null_state_[nc->first] = NullState::NonNull;
                     }
                 }
             }
             if (call->block_arg) {
+                ++scope_depth_;
                 for (const auto& s : call->block_arg->body) {
-                    if (auto r = check_stmt(s); !r) return r;
+                    if (auto r = check_stmt(s); !r) {
+                        --scope_depth_;
+                        return r;
+                    }
                 }
+                --scope_depth_;
             }
             return {};
         }
@@ -329,7 +592,12 @@ public:
             if (auto r = check_expr(me->target); !r) return r;
             if (me->is_move && me->target) {
                 if (auto pi = extract_path_info(me->target)) {
+                    if (auto r = check_not_iterated_collection(pi->root, me->line, me->col); !r) return r;
                     moved_at_line_[pi->root] = me->line;
+                    invalidate_loans_for_owner(
+                        pi->root,
+                        std::format("underlying owner '{}' was moved at line {}", pi->root, me->line),
+                        me->line);
                 }
             }
             if (auto r = check_match_arms_reachability(me->arms, me->line, me->col); !r) return r;
@@ -359,9 +627,14 @@ public:
                         enum_name = vit->second;
                     }
                 }
+                ++scope_depth_;
                 for (const auto& b : arm.body) {
-                    if (auto r = check_stmt(b); !r) return r;
+                    if (auto r = check_stmt(b); !r) {
+                        --scope_depth_;
+                        return r;
+                    }
                 }
+                --scope_depth_;
             }
 
             if (!has_wildcard && !enum_name.empty()) {
@@ -527,6 +800,12 @@ public:
                     "{}:{}:{}: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
                     path_, vd->line, vd->col));
             }
+            var_scope_depth_[vd->name] = scope_depth_;
+            local_defined_vars_.insert(vd->name);
+            moved_at_line_.erase(vd->name);
+            invalidated_loans_.erase(vd->name);
+            borrow_origin_.erase(vd->name);
+
             if (vd->is_mut) {
                 imm_vars_.erase(vd->name);
                 mut_vars_.insert(vd->name);
@@ -534,7 +813,27 @@ public:
                 mut_vars_.erase(vd->name);
                 imm_vars_.insert(vd->name);
             }
+            if (vd->type) {
+                if (vd->type->is_map) {
+                    map_vars_.insert(vd->name);
+                }
+                if (vd->type->is_array && !vd->type->array_len.empty()) {
+                    if (auto n = cfire::detail::parse_int<std::size_t>(vd->type->array_len)) {
+                        fixed_array_lens_[vd->name] = *n;
+                    }
+                }
+            } else if (!vd->is_mut && vd->init) {
+                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&vd->init->node)) {
+                    fixed_array_lens_[vd->name] = arr_lit->elements.size();
+                }
+            }
             if (vd->init) {
+                if (const auto* call_ex = std::get_if<CallExpr>(&vd->init->node)) {
+                    if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node);
+                        cid && cid->name == "make" && call_ex->type_args.size() == 1 && call_ex->type_args[0].is_map) {
+                        map_vars_.insert(vd->name);
+                    }
+                }
                 if (const auto* or_ex = std::get_if<OrExpr>(&vd->init->node); or_ex && !or_ex->handler_body.empty()) {
                     if (!block_diverges(or_ex->handler_body)) {
                         if (auto r = emit_error(std::format(
@@ -543,10 +842,26 @@ public:
                     }
                 }
             }
-            return check_expr(vd->init);
+            if (auto r = check_expr(vd->init); !r) return r;
+
+            if (auto src = extract_borrow_source(vd->init)) {
+                borrow_origin_[vd->name] = *src;
+            }
+            if (auto ns = infer_expr_null_state(vd->init)) {
+                ptr_null_state_[vd->name] = *ns;
+            } else if (!vd->init && vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr)) {
+                ptr_null_state_[vd->name] = NullState::Null;
+            } else if (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr)) {
+                ptr_null_state_[vd->name] = vd->type->is_optional ? NullState::MaybeNull : NullState::NonNull;
+            } else {
+                ptr_null_state_.erase(vd->name);
+            }
+            return {};
         }
         if (const auto* dvs = std::get_if<DestructureVarDeclStmt>(&s->node)) {
             for (const auto& [name, is_mut] : dvs->bindings) {
+                var_scope_depth_[name] = scope_depth_;
+                local_defined_vars_.insert(name);
                 if (is_mut) {
                     mut_vars_.insert(name);
                 } else {
@@ -575,7 +890,35 @@ public:
                         "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
                         path_, as->line, 1, id->name)); !r) return r;
                 }
+                if (auto r = check_not_iterated_collection(id->name, as->line, 1); !r) return r;
                 moved_at_line_.erase(id->name);
+                if (as->op == "=") {
+                    invalidate_loans_for_owner(
+                        id->name,
+                        std::format("underlying owner '{}' was reassigned at line {}", id->name, as->line),
+                        as->line);
+                    if (auto src = extract_borrow_source(as->value)) {
+                        auto d_target = var_scope_depth_.find(id->name);
+                        auto d_src = var_scope_depth_.find(*src);
+                        if (d_target != var_scope_depth_.end() && d_src != var_scope_depth_.end()) {
+                            if (d_src->second > d_target->second) {
+                                if (auto r = emit_error(std::format(
+                                    "{}:{}:1: pointer/view '{}' cannot borrow '{}' from an inner scope (cfire/DANGLING-POINTER)",
+                                    path_, as->line, id->name, *src)); !r) return r;
+                            }
+                        }
+                        borrow_origin_[id->name] = *src;
+                        invalidated_loans_.erase(id->name);
+                    } else {
+                        borrow_origin_.erase(id->name);
+                        invalidated_loans_.erase(id->name);
+                    }
+                    if (auto ns = infer_expr_null_state(as->value)) {
+                        ptr_null_state_[id->name] = *ns;
+                    } else if (ptr_null_state_.contains(id->name)) {
+                        ptr_null_state_[id->name] = NullState::NonNull;
+                    }
+                }
             } else {
                 if (as->op == "=") {
                     if (auto r = check_expr(as->target); !r) return r;
@@ -603,26 +946,96 @@ public:
             return check_expr(df->call);
         }
         if (const auto* rt = std::get_if<ReturnStmt>(&s->node)) {
-            return check_expr(rt->value);
+            if (auto r = check_expr(rt->value); !r) return r;
+            if (rt->value) {
+                bool is_direct = false;
+                if (auto src = extract_borrow_source(rt->value, &is_direct)) {
+                    if (local_defined_vars_.contains(*src) || move_params_.contains(*src)) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:1: cannot return pointer/view borrowing local variable '{}' (cfire/DANGLING-RETURN)",
+                            path_, rt->line, *src)); !r) return r;
+                    }
+                }
+            }
+            return {};
         }
         if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
             if (auto r = check_expr(ifs->cond); !r) return r;
             auto initial_moves = moved_at_line_;
+            auto initial_loans = invalidated_loans_;
+            auto initial_null = ptr_null_state_;
+            auto nc = extract_null_check(ifs->cond);
 
-            for (const auto& b : ifs->then_body) if (auto r = check_stmt(b); !r) return r;
+            if (nc) {
+                ptr_null_state_[nc->first] = nc->second ? NullState::NonNull : NullState::Null;
+            }
+            ++scope_depth_;
+            for (const auto& b : ifs->then_body) {
+                if (auto r = check_stmt(b); !r) {
+                    --scope_depth_;
+                    return r;
+                }
+            }
+            --scope_depth_;
             auto then_moves = moved_at_line_;
+            auto then_loans = invalidated_loans_;
+            auto then_null = ptr_null_state_;
 
             moved_at_line_ = initial_moves;
-            for (const auto& b : ifs->else_body) if (auto r = check_stmt(b); !r) return r;
+            invalidated_loans_ = initial_loans;
+            ptr_null_state_ = initial_null;
+            if (nc) {
+                ptr_null_state_[nc->first] = nc->second ? NullState::Null : NullState::NonNull;
+            }
+            ++scope_depth_;
+            for (const auto& b : ifs->else_body) {
+                if (auto r = check_stmt(b); !r) {
+                    --scope_depth_;
+                    return r;
+                }
+            }
+            --scope_depth_;
             auto else_moves = moved_at_line_;
+            auto else_loans = invalidated_loans_;
+            auto else_null = ptr_null_state_;
+
+            bool then_div = block_diverges(ifs->then_body);
+            bool else_div = !ifs->else_body.empty() && block_diverges(ifs->else_body);
 
             if (ifs->else_body.empty()) {
                 moved_at_line_ = initial_moves;
+                if (then_div) {
+                    invalidated_loans_ = else_loans;
+                    ptr_null_state_ = else_null;
+                } else {
+                    invalidated_loans_ = then_loans;
+                    for (const auto& [k, v] : initial_loans) {
+                        invalidated_loans_.try_emplace(k, v);
+                    }
+                    std::unordered_map<std::string, NullState> merged_null = initial_null;
+                    for (const auto& [var, st] : then_null) {
+                        if (nc && var == nc->first) {
+                            // Do not leak cond-narrowing out of a non-diverging if-block unless reassigned
+                            continue;
+                        }
+                        auto it = initial_null.find(var);
+                        if (it == initial_null.end() || it->second == st) {
+                            merged_null[var] = st;
+                        } else {
+                            merged_null[var] = NullState::MaybeNull;
+                        }
+                    }
+                    ptr_null_state_ = std::move(merged_null);
+                }
             } else {
-                if (block_diverges(ifs->then_body)) {
+                if (then_div) {
                     moved_at_line_ = else_moves;
-                } else if (block_diverges(ifs->else_body)) {
+                    invalidated_loans_ = else_loans;
+                    ptr_null_state_ = else_null;
+                } else if (else_div) {
                     moved_at_line_ = then_moves;
+                    invalidated_loans_ = then_loans;
+                    ptr_null_state_ = then_null;
                 } else {
                     std::unordered_map<std::string, int> post_moves = initial_moves;
                     for (const auto& [var, line] : then_moves) {
@@ -631,6 +1044,28 @@ public:
                         }
                     }
                     moved_at_line_ = std::move(post_moves);
+
+                    std::unordered_map<std::string, InvalidatedLoan> post_loans = then_loans;
+                    for (const auto& [var, loan] : else_loans) {
+                        post_loans.try_emplace(var, loan);
+                    }
+                    invalidated_loans_ = std::move(post_loans);
+
+                    std::unordered_map<std::string, NullState> merged_null = initial_null;
+                    for (const auto& [var, st_then] : then_null) {
+                        auto it_else = else_null.find(var);
+                        if (it_else != else_null.end() && it_else->second == st_then) {
+                            if (nc && var == nc->first) {
+                                // Only preserve if both branches ended with same state independently of complementary cond
+                                merged_null[var] = st_then;
+                            } else {
+                                merged_null[var] = st_then;
+                            }
+                        } else {
+                            merged_null[var] = NullState::MaybeNull;
+                        }
+                    }
+                    ptr_null_state_ = std::move(merged_null);
                 }
             }
             return {};
@@ -638,12 +1073,37 @@ public:
         if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
             if (auto r = check_expr(fs->iter_expr); !r) return r;
             auto pre_loop_moves = moved_at_line_;
-            for (const auto& b : fs->body) if (auto r = check_stmt(b); !r) return r;
+            auto pre_loop_loans = invalidated_loans_;
+            std::string locked_col;
+            if (!fs->item_var.empty()) {
+                if (auto pi = extract_path_info(fs->iter_expr); pi && pi->path == pi->root) {
+                    if (!active_loop_collections_.contains(pi->root)) {
+                        locked_col = pi->root;
+                        active_loop_collections_.insert(locked_col);
+                    }
+                }
+            }
+            ++scope_depth_;
+            for (const auto& b : fs->body) {
+                if (auto r = check_stmt(b); !r) {
+                    --scope_depth_;
+                    if (!locked_col.empty()) active_loop_collections_.erase(locked_col);
+                    return r;
+                }
+            }
+            --scope_depth_;
+            if (!locked_col.empty()) active_loop_collections_.erase(locked_col);
+
             for (const auto& [var, line] : moved_at_line_) {
                 if (!pre_loop_moves.contains(var)) {
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: variable '{}' moved inside loop body without reassignment before next iteration (cfire/USE-AFTER-MOVE)",
                         path_, line, 1, var)); !r) return r;
+                }
+            }
+            for (const auto& [var, loan] : invalidated_loans_) {
+                if (!pre_loop_loans.contains(var) && var_scope_depth_.contains(var) && var_scope_depth_[var] <= scope_depth_) {
+                    // Loan on outer pointer invalidated inside loop; remains invalidated after loop
                 }
             }
             return {};
@@ -652,7 +1112,12 @@ public:
             if (auto r = check_expr(ms->target); !r) return r;
             if (ms->is_move && ms->target) {
                 if (auto pi = extract_path_info(ms->target)) {
+                    if (auto r = check_not_iterated_collection(pi->root, ms->line, ms->col); !r) return r;
                     moved_at_line_[pi->root] = ms->line;
+                    invalidate_loans_for_owner(
+                        pi->root,
+                        std::format("underlying owner '{}' was moved at line {}", pi->root, ms->line),
+                        ms->line);
                 }
             }
             if (auto r = check_match_arms_reachability(ms->arms, ms->line, ms->col); !r) return r;
@@ -665,9 +1130,14 @@ public:
             }
             if (is_slice_match) {
                 for (const auto& arm : ms->arms) {
+                    ++scope_depth_;
                     for (const auto& b : arm.body) {
-                        if (auto r = check_stmt(b); !r) return r;
+                        if (auto r = check_stmt(b); !r) {
+                            --scope_depth_;
+                            return r;
+                        }
                     }
+                    --scope_depth_;
                 }
                 return {};
             }
@@ -687,9 +1157,14 @@ public:
                         enum_name = vit->second;
                     }
                 }
+                ++scope_depth_;
                 for (const auto& b : arm.body) {
-                    if (auto r = check_stmt(b); !r) return r;
+                    if (auto r = check_stmt(b); !r) {
+                        --scope_depth_;
+                        return r;
+                    }
                 }
+                --scope_depth_;
             }
 
             // Exhaustiveness check against known EnumDecl
@@ -708,7 +1183,14 @@ public:
         }
         if (const auto* sc = std::get_if<AsyncScopeStmt>(&s->node)) {
             if (auto r = check_expr(sc->workers); !r) return r;
-            for (const auto& b : sc->body) if (auto r = check_stmt(b); !r) return r;
+            ++scope_depth_;
+            for (const auto& b : sc->body) {
+                if (auto r = check_stmt(b); !r) {
+                    --scope_depth_;
+                    return r;
+                }
+            }
+            --scope_depth_;
             return {};
         }
         if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
@@ -724,6 +1206,15 @@ private:
     std::vector<std::string>& errors_;
     bool resilient_{false};
     std::vector<std::string> fallback_errors_{};
+    int scope_depth_{1};
+    std::unordered_map<std::string, int> var_scope_depth_{};
+    std::unordered_set<std::string> local_defined_vars_{};
+    std::unordered_map<std::string, std::string> borrow_origin_{};
+    std::unordered_map<std::string, InvalidatedLoan> invalidated_loans_{};
+    std::unordered_set<std::string> active_loop_collections_{};
+    std::unordered_map<std::string, NullState> ptr_null_state_{};
+    std::unordered_map<std::string, std::size_t> fixed_array_lens_{};
+    std::unordered_set<std::string> map_vars_{};
     std::unordered_map<std::string, int> moved_at_line_{};
     std::unordered_set<std::string> move_params_{};
     std::unordered_set<std::string> mut_vars_{};

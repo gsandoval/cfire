@@ -4,6 +4,16 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
+## Completed Milestone: `SAFE-01` — Memory Safety, Use-After-Free & Bounds Verification (`SAFE-P0-01` – `SAFE-P0-03`)
+
+| Task ID | Priority | Component | Summary | Status | Section Gate |
+| :--- | :---: | :--- | :--- | :---: | :---: |
+| `SAFE-P0-01` | P0 | `src/sema.hpp` | **Compile-Time Loan/Origin Use-After-Free (`cfire/USE-AFTER-FREE`), Lexical Scope Escape (`cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`), and Loop Iterator Invalidation (`cfire/ITERATOR-INVALIDATION`)** | `[DONE]` | Passed (`make review-check`) |
+| `SAFE-P0-02` | P0 | `src/sema.hpp` | **Zero-Overhead Flow-Sensitive Null-Pointer Verification (`cfire/NULL-DEREF`) & Constant Index Bounds Check (`cfire/INDEX-OUT-OF-BOUNDS`)** | `[DONE]` | Passed (`make review-check`) |
+| `SAFE-P0-03` | P0 | `runtime/cfire_prelude.hpp`, `src/codegen.hpp`, `tests/` | **Inline Dynamic Bounds-Checked Indexing (`cfire::index_at`) & Conformance Suite** | `[DONE]` | Passed (`make review-check`) |
+
+---
+
 ## Completed Milestone: `OPP-01` — Native iOS & Simulator Target (`--target ios-sim` / `ios` & `cfire run --ios`)
 
 | Task ID | Priority | Component | Summary | Status | Section Gate |
