@@ -561,7 +561,7 @@ public:
         std::string file_path = detail::uri_to_path(uri);
         auto pres = parse_source_resilient(file_path, text);
 
-        auto parse_err = [&](const std::string& err_str, std::string_view fallback_code) -> detail::DiagnosticEntry {
+        auto parse_err = [&](const std::string& err_str, std::string_view fallback_code, int severity = 1) -> detail::DiagnosticEntry {
             int ln = 0;
             int col = 0;
             std::string code{fallback_code};
@@ -580,12 +580,12 @@ public:
                 while (e < err_str.size() && (std::isalnum(static_cast<unsigned char>(err_str[e])) || err_str[e] == '-')) ++e;
                 code = err_str.substr(p, e - p);
             }
-            return detail::DiagnosticEntry{ln, col, code, err_str};
+            return detail::DiagnosticEntry{ln, col, code, err_str, severity};
         };
 
         if (!pres.ok()) {
             for (const auto& err : pres.errors) {
-                entries.push_back(parse_err(err, "cfire/SYNTAX"));
+                entries.push_back(parse_err(err, "cfire/SYNTAX", 1));
             }
         } else {
             // Merge local package declarations before semantic analysis
@@ -602,10 +602,10 @@ public:
             }
             auto checked = analyze_resilient(std::move(merged));
             for (const auto& err : checked.errors) {
-                entries.push_back(parse_err(err, "cfire/SEMA"));
+                entries.push_back(parse_err(err, "cfire/SEMA", 1));
             }
             for (const auto& warn : checked.warnings) {
-                entries.push_back(parse_err(warn, "cfire/WARNING"));
+                entries.push_back(parse_err(warn, "cfire/WARNING", 2));
             }
         }
         {
@@ -622,8 +622,8 @@ public:
             if (i > 0) diags_json += ",";
             const auto& d = entries[i];
             diags_json += std::format(
-                R"({{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"severity":1,"code":"{}","source":"cfire","message":"{}"}})",
-                d.line, d.col, d.line, d.col + 10, detail::json_escape(d.code), detail::json_escape(d.message));
+                R"({{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"severity":{},"code":"{}","source":"cfire","message":"{}"}})",
+                d.line, d.col, d.line, d.col + 10, d.severity, detail::json_escape(d.code), detail::json_escape(d.message));
         }
         diags_json += "]";
 
@@ -640,8 +640,8 @@ public:
             if (i > 0) diags_json += ",";
             const auto& d = entries[i];
             diags_json += std::format(
-                R"({{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"severity":1,"code":"{}","source":"cfire","message":"{}"}})",
-                d.line, d.col, d.line, d.col + 10, detail::json_escape(d.code), detail::json_escape(d.message));
+                R"({{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"severity":{},"code":"{}","source":"cfire","message":"{}"}})",
+                d.line, d.col, d.line, d.col + 10, d.severity, detail::json_escape(d.code), detail::json_escape(d.message));
         }
         diags_json += "]";
 
@@ -1088,6 +1088,28 @@ public:
                 std::string cpp_type = detail::cf_type_string_to_cpp(cf_type);
                 return std::format("### Expression `{}`\n```cf\n{}: {}\n```\n**Lowered ISO C++23:** `{}`",
                     exp_str, exp_str, cf_type, cpp_type);
+            }
+        }
+
+        // 7. Diagnostic hover: if a diagnostic exists on `line`, explain the diagnostic rule from `diagnostics_catalog()`
+        {
+            std::vector<detail::DiagnosticEntry> diags;
+            {
+                std::lock_guard<std::mutex> lock(diag_store_mutex_);
+                if (auto it = last_diagnostics_.find(uri); it != last_diagnostics_.end()) {
+                    diags = it->second;
+                }
+            }
+            for (const auto& d : diags) {
+                if (d.line == line) {
+                    for (const auto& doc : cfire::doc::diagnostics_catalog()) {
+                        if (doc.code == d.code) {
+                            return std::format(
+                                "### Diagnostic `{}` — {}\n{}\n\n**Rejected Example:**\n```cf\n{}\n```\n**Accepted Fix:**\n```cf\n{}\n```",
+                                doc.code, doc.title, doc.rule, doc.bad_example, doc.good_example);
+                        }
+                    }
+                }
             }
         }
 
@@ -2584,6 +2606,27 @@ public:
                 add_action("Insert 'mut ' at call site (cfire/MUT-CALLSITE)", d.code, d.line, d.col, "mut ");
             } else if (d.code == "cfire/OUT-CALLSITE") {
                 add_action("Insert 'out ' at call site (cfire/OUT-CALLSITE)", d.code, d.line, d.col, "out ");
+            } else if (d.code == "cfire/MOVE-CALLSITE") {
+                add_action("Insert 'move ' at call site (cfire/MOVE-CALLSITE)", d.code, d.line, d.col, "move ");
+            } else if (d.code == "cfire/NULL-DEREF") {
+                std::string ptr_name;
+                if (auto p = d.message.find("pointer '"); p != std::string::npos) {
+                    p += 9;
+                    if (auto e = d.message.find('\'', p); e != std::string::npos) {
+                        ptr_name = d.message.substr(p, e - p);
+                    }
+                }
+                if (!ptr_name.empty() && d.line >= 0 && static_cast<std::size_t>(d.line) < lines.size()) {
+                    const std::string& cur_ln = lines[static_cast<std::size_t>(d.line)];
+                    std::string indent;
+                    for (char c : cur_ln) {
+                        if (c == ' ' || c == '\t') indent += c;
+                        else break;
+                    }
+                    add_action(
+                        std::format("Insert 'assert({} != none)' guard before dereference (cfire/NULL-DEREF)", ptr_name),
+                        d.code, d.line, 0, std::format("{}assert({} != none)\n", indent, ptr_name));
+                }
             } else if (d.code == "cfire/IMMUTABLE-MUT-ARG" || d.code == "cfire/MUT-RECEIVER") {
                 // Extract variable name from `immutable variable '<var>'`
                 std::string var_name;

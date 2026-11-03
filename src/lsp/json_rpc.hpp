@@ -1293,6 +1293,7 @@ struct DiagnosticEntry {
     int col = 0;       // 0-based
     std::string code;  // e.g. "cfire/MUT-CALLSITE"
     std::string message;
+    int severity = 1;  // 1 = Error, 2 = Warning
 };
 
 } // namespace detail

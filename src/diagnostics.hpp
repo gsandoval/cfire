@@ -172,6 +172,45 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    if (d.code == "cfire/MOVE-CALLSITE") {
+        FixItEdit edit;
+        edit.title = "Insert 'move ' at call site (cfire/MOVE-CALLSITE)";
+        edit.start_line = d.line;
+        edit.start_col = d.col;
+        edit.end_line = d.line;
+        edit.end_col = d.col;
+        edit.replacement = "move ";
+        d.fixits.push_back(std::move(edit));
+        return;
+    }
+
+    if (d.code == "cfire/NULL-DEREF") {
+        std::string ptr_name;
+        if (auto p = d.message.find("pointer '"); p != std::string::npos) {
+            p += 9;
+            if (auto e = d.message.find('\'', p); e != std::string::npos) {
+                ptr_name = d.message.substr(p, e - p);
+            }
+        }
+        if (!ptr_name.empty() && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            std::string indent;
+            for (char c : cur_ln) {
+                if (c == ' ' || c == '\t') indent += c;
+                else break;
+            }
+            FixItEdit edit;
+            edit.title = std::format("Insert 'assert({} != none)' guard before dereference (cfire/NULL-DEREF)", ptr_name);
+            edit.start_line = d.line;
+            edit.start_col = 1;
+            edit.end_line = d.line;
+            edit.end_col = 1;
+            edit.replacement = std::format("{}assert({} != none)\n", indent, ptr_name);
+            d.fixits.push_back(std::move(edit));
+            return;
+        }
+    }
+
     if (d.code == "cfire/IMMUTABLE-MUT-ARG" || d.code == "cfire/MUT-RECEIVER") {
         std::string var_name;
         if (auto p = d.message.find("immutable variable '"); p != std::string::npos) {

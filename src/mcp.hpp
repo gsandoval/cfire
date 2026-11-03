@@ -3,6 +3,7 @@
 
 #include "../runtime/core/ai.hpp"
 #include "buildsys.hpp"
+#include "diagnostics.hpp"
 #include "docgen.hpp"
 #include <filesystem>
 #include <fstream>
@@ -83,11 +84,22 @@ namespace cfire::mcp {
 
     srv.register_tool<QueryInput>(
         "cfire_stdlib_lookup",
-        "Look up cfire standard library functions, types, and examples by module path (e.g. 'core:str', 'ext:ai', 'vendor:raylib') or symbol name.",
+        "Look up cfire standard library functions, types, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples by module path (e.g. 'core:str', 'ext:ai', 'vendor:raylib') or symbol name.",
         [](QueryInput in) -> std::expected<std::string, cfire::Error> {
             std::ostringstream oss;
             bool found = false;
             std::string norm_q = in.query;
+            for (const auto& d : cfire::doc::diagnostics_catalog()) {
+                if (d.code == norm_q || d.code == ("cfire/" + norm_q) ||
+                    d.code.find(norm_q) != std::string_view::npos ||
+                    d.title.find(norm_q) != std::string_view::npos) {
+                    found = true;
+                    oss << "## `" << d.code << "` — " << d.title << "\n"
+                        << d.rule << "\n\n"
+                        << "**Rejected Example:**\n```cf\n" << d.bad_example << "\n```\n"
+                        << "**Accepted Fix:**\n```cf\n" << d.good_example << "\n```\n\n";
+                }
+            }
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
                 bool mod_match = (mod.import_path == norm_q || mod.ns_alias == norm_q ||
                                   mod.import_path.find(norm_q) != std::string_view::npos ||
@@ -111,7 +123,7 @@ namespace cfire::mcp {
                 }
             }
             if (!found) {
-                return std::format("No stdlib module or symbol matching '{}'", in.query);
+                return std::format("No stdlib module, symbol, or diagnostic matching '{}'", in.query);
             }
             return oss.str();
         }
@@ -119,7 +131,7 @@ namespace cfire::mcp {
 
     srv.register_tool<CodeInput>(
         "cfire_check",
-        "Type-check cfire (.cf) source code and verify parameter intents and C++23 codegen.",
+        "Type-check cfire (.cf) source code, verify memory safety & parameter intents, and validate C++23 codegen with fix-it suggestions.",
         [runtime_dir](CodeInput in) -> std::expected<std::string, cfire::Error> {
             auto tmp_dir = std::filesystem::temp_directory_path() / "cfire_mcp_check";
             std::error_code ec;
@@ -133,9 +145,20 @@ namespace cfire::mcp {
                 std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);
                 out << src;
             }
-            auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, false);
+            auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, false, true);
             if (!res) {
-                return std::format("Diagnostics:\n{}", res.error());
+                auto lines = cfire::diag::split_lines(src);
+                auto sd = cfire::diag::parse_diagnostic_string(res.error(), cf_file.string());
+                cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+                std::string out_msg = std::format("Diagnostics:\n{}", res.error());
+                for (const auto& fx : sd.fixits) {
+                    out_msg += std::format("\n  fix-it (line {}:{}): {}", fx.start_line, fx.start_col, fx.title);
+                }
+                return out_msg;
+            }
+            auto syntax_ok = cfire::build::verify_cpp_syntax_only(cf_file, res->first, res->second, runtime_dir);
+            if (!syntax_ok) {
+                return std::format("Diagnostics:\n{}", syntax_ok.error());
             }
             return "OK (0 errors)";
         }

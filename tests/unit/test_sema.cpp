@@ -270,6 +270,122 @@ fn main() {
         .assert_fail("dynamic out-of-bounds slice index exits non-zero (SAFE-P0-03)")
         .assert_contains("index 99 out of bounds for length 3", "dynamic OOB panic message (SAFE-P0-03)");
 
+    // SAFE-02a: Compile-Time Divide-By-Zero Verification (cfire/DIVIDE-BY-ZERO)
+    require_sema_error(R"(package main
+fn main() {
+    x := 100 / 0
+    println("{}", x)
+}
+)", "cfire/DIVIDE-BY-ZERO", "div_by_zero.cf");
+
+    require_sema_error(R"(package main
+fn main() {
+    mut x := 50
+    x %= 0
+}
+)", "cfire/DIVIDE-BY-ZERO", "mod_assign_by_zero.cf");
+
+    // SAFE-02b: Smart Pointer & Pointer Member-Access Null Verification (cfire/NULL-DEREF)
+    require_sema_error(R"(package main
+type Node struct { Val: i32 }
+fn main() {
+    mut box: own[Node] = none
+    println("{}", box.Val)
+}
+)", "cfire/NULL-DEREF", "null_smart_ptr_member.cf");
+
+    {
+        auto valid_smart_ast = cfire::frontend::parse_source("valid_smart_ptr.cf", R"(package main
+type Node struct { Val: i32 }
+fn main() {
+    box := make[own[Node]](Node{Val: 7})
+    println("{}", box.Val)
+}
+)");
+        require(valid_smart_ast.has_value(), "parse valid make[own[Node]] (SAFE-02b)");
+        if (valid_smart_ast) {
+            auto checked = cfire::frontend::analyze(std::move(*valid_smart_ast));
+            require(checked.has_value(), "sema accepts make[own[Node]] non-null member access (SAFE-02b)");
+        }
+    }
+
+    // SAFE-02c: Missing 'move' Call-Site Intent (cfire/MOVE-CALLSITE)
+    require_sema_error(R"(package main
+fn consume(move s: str) { println("{}", s) }
+fn main() {
+    msg := "token"
+    consume(msg)
+}
+)", "cfire/MOVE-CALLSITE", "missing_move_callsite.cf");
+
+    // SAFE-02d: Static SQL & Shell Injection Risk Warnings (cfire/SQL-INJECTION-RISK & cfire/SHELL-INJECTION-RISK)
+    {
+        auto inj_ast = cfire::frontend::parse_source("injection_warn.cf", R"(package main
+import "ext:db/sqlite"
+import "core:os"
+fn check_warns(db: sqlite.Database, user_input: str) {
+    _ = db.exec("DELETE FROM users WHERE name = '" + user_input + "'")
+    _ = os.exec("rm -rf " + user_input)
+}
+fn main() {}
+)");
+        require(inj_ast.has_value(), "parse injection_warn.cf (SAFE-02d)");
+        if (inj_ast) {
+            auto res = cfire::frontend::analyze_resilient(std::move(*inj_ast));
+            require(res.errors.empty(), "injection warnings do not fail compilation (SAFE-02d)");
+            bool saw_sql = false;
+            bool saw_shell = false;
+            for (const auto& w : res.warnings) {
+                if (w.contains("cfire/SQL-INJECTION-RISK")) saw_sql = true;
+                if (w.contains("cfire/SHELL-INJECTION-RISK")) saw_shell = true;
+            }
+            require(saw_sql, "emits cfire/SQL-INJECTION-RISK on concatenated SQL query (SAFE-02d)");
+            require(saw_shell, "emits cfire/SHELL-INJECTION-RISK on concatenated os.exec command (SAFE-02d)");
+        }
+    }
+
+    // TOOL-SAFE-01: Fix-it synthesis for cfire/MOVE-CALLSITE and cfire/NULL-DEREF + CLI inspect diagnostic code
+    {
+        std::string null_src = "package main\nfn main() {\n    mut p: *mut i32 = none\n    *p = 1\n}\n";
+        auto lines = cfire::diag::split_lines(null_src);
+        auto sd = cfire::diag::parse_diagnostic_string("null.cf:4:5: error: dereference of potentially null pointer 'p' (cfire/NULL-DEREF)", "null.cf");
+        cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+        require(!sd.fixits.empty(), "synthesizes fix-it for cfire/NULL-DEREF (TOOL-SAFE-01)");
+        if (!sd.fixits.empty()) {
+            require(sd.fixits[0].replacement.contains("assert(p != none)"),
+                "cfire/NULL-DEREF fix-it inserts assert(p != none) guard (TOOL-SAFE-01)");
+        }
+
+        run_cfire("inspect cfire/USE-AFTER-FREE")
+            .assert_ok("cfire inspect cfire/USE-AFTER-FREE exit 0 (TOOL-SAFE-01)")
+            .assert_contains("Use of Dangling Pointer or Slice View After Owner Invalidation", "cfire inspect shows diagnostic rule title (TOOL-SAFE-01)");
+    }
+
+    // SEC-02: CSPRNG (sha256::random_bytes / random_hex) & RFC 5869 HKDF-SHA256
+    {
+        auto r1 = cfire::sha256::random_bytes(32);
+        auto r2 = cfire::sha256::random_bytes(32);
+        require(r1.size() == 32, "sha256::random_bytes(32) returns 32 bytes (SEC-02)");
+        require(r1 != r2, "sha256::random_bytes produces distinct CSPRNG output (SEC-02)");
+        auto rhex = cfire::sha256::random_hex(16);
+        require(rhex.size() == 32, "sha256::random_hex(16) returns 32 hex chars (SEC-02)");
+
+        // RFC 5869 Test Case 1 (Basic test case with SHA-256)
+        std::vector<std::byte> ikm(22, std::byte{0x0b});
+        std::vector<std::byte> salt(13);
+        for (std::size_t i = 0; i < 13; ++i) salt[i] = static_cast<std::byte>(i);
+        std::vector<std::byte> info(10);
+        for (std::size_t i = 0; i < 10; ++i) info[i] = static_cast<std::byte>(0xf0 + i);
+        auto okm = cfire::hmac::hkdf_sha256(ikm, salt, info, 42);
+        require(okm.size() == 42, "hkdf_sha256 derives 42-byte OKM (SEC-02)");
+        std::string okm_hex;
+        for (std::byte b : okm) {
+            okm_hex += std::format("{:02x}", static_cast<unsigned char>(b));
+        }
+        require(okm_hex == "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865",
+            "hkdf_sha256 matches RFC 5869 Test Case 1 exact vector (SEC-02)");
+    }
+
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");
 }
 
