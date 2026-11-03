@@ -2,6 +2,7 @@
 // src/doctor.hpp — Environment Diagnostics (`cfire doctor`) & Dependency Bootstrapper (`cfire setup`)
 
 #include "buildsys.hpp"
+#include "lsp/ide_setup.hpp"
 #include "../runtime/cfire_prelude.hpp"
 #include <cstdlib>
 #include <filesystem>
@@ -387,6 +388,33 @@ struct CheckItem {
             });
         }
 #endif
+    }
+
+    // --- 5. IDE & AI Agent Integrations (LSP & MCP) ---
+    {
+        std::error_code ec;
+        auto cwd = std::filesystem::current_path(ec);
+        if (ec) cwd = runtime_dir.parent_path();
+        auto detected = lsp::detect_environments(cwd);
+        if (detected.empty()) {
+            items.push_back({
+                "IDE & AI Agent Integrations",
+                "LSP & MCP Auto-Config",
+                "ok",
+                "Run `cfire ide --all` or `cfire mcp --setup` to configure VS Code, Antigravity, Claude Code, Cursor, or Zed",
+                ""
+            });
+        } else {
+            for (const auto& d : detected) {
+                items.push_back({
+                    "IDE & AI Agent Integrations",
+                    d.label,
+                    "ok",
+                    std::format("{} ({})", d.configured ? "LSP/MCP configured" : "detected — run `cfire ide` to configure", d.reason),
+                    d.configured ? "" : "cfire ide"
+                });
+            }
+        }
     }
 
     return items;

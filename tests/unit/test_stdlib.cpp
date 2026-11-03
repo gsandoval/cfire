@@ -1,4 +1,5 @@
 #include "../test_harness.hpp"
+#include "mcp.hpp"
 
 void test_crypto_sha256_and_csprng([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_crypto_sha256_and_csprng");
@@ -1576,23 +1577,73 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
     std::println("=== RUN   test_ide_configuration_setup");
     ScopedTempDir tmp_ide_ws("cfire_ide");
 
-    // Configure all IDEs
+    // 1. Configure all IDEs & AI Agents (--all)
     auto res_all = cfire::lsp::configure_ide(tmp_ide_ws.path, "--all");
     require(res_all.has_value(), std::format("configure_ide --all (IDE-01): {}", res_all ? "" : res_all.error()));
     require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "settings.json"), "creates .vscode/settings.json (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "extensions.json"), "creates .vscode/extensions.json (IDE-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "mcp.json"), "creates .vscode/mcp.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".cursor" / "mcp.json"), "creates .cursor/mcp.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".cursor" / "rules" / "cfire.mdc"), "creates .cursor/rules/cfire.mdc (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".windsurf" / "mcp_config.json"), "creates .windsurf/mcp_config.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "plugin.json"), "creates Antigravity .agents/plugins/cfire/plugin.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "mcp_config.json"), "creates Antigravity .agents/plugins/cfire/mcp_config.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "rules" / "cfire.md"), "creates Antigravity .agents/rules/cfire.md (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".mcp.json"), "creates Claude Code .mcp.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".claude" / "rules" / "cfire.md"), "creates Claude Code .claude/rules/cfire.md (IDE-MCP-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".zed" / "settings.json"), "creates .zed/settings.json (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".nvim.lua"), "creates .nvim.lua (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "lsp.xml"), "creates .idea/lsp.xml (IDE-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "mcp.json"), "creates .idea/mcp.json (IDE-MCP-01)");
 
-    // Verify contents of .vscode/settings.json
+    // Verify contents of .vscode/settings.json & .zed/settings.json
     auto vs_txt = cfire::fs::read_text(tmp_ide_ws.path / ".vscode" / "settings.json");
     require(vs_txt.has_value() && vs_txt->contains("\"editor.defaultFormatter\": \"cfire\""), "vs settings formatter (IDE-01)");
     require(vs_txt->contains("\"cfire.inlayHints.enable\": true"), "vs settings inlay hints (IDE-01)");
+    auto zed_txt = cfire::fs::read_text(tmp_ide_ws.path / ".zed" / "settings.json");
+    require(zed_txt.has_value() && zed_txt->contains("\"context_servers\""), "zed settings includes context_servers MCP (IDE-MCP-01)");
 
     // Verify contents of .nvim.lua
     auto nvim_txt = cfire::fs::read_text(tmp_ide_ws.path / ".nvim.lua");
     require(nvim_txt.has_value() && nvim_txt->contains("vim.lsp.start"), "nvim lua starts lsp (IDE-01)");
+
+    // 2. Verify environment auto-detection on workspace with markers
+    auto detected = cfire::lsp::detect_environments(tmp_ide_ws.path);
+    bool found_agy = false;
+    bool found_claude = false;
+    bool found_cursor = false;
+    bool found_vscode = false;
+    for (const auto& d : detected) {
+        if (d.id == "antigravity" && d.configured) found_agy = true;
+        if (d.id == "claude" && d.configured) found_claude = true;
+        if (d.id == "cursor" && d.configured) found_cursor = true;
+        if (d.id == "vscode" && d.configured) found_vscode = true;
+    }
+    require(found_agy, "detect_environments detects configured Antigravity (IDE-MCP-01)");
+    require(found_claude, "detect_environments detects configured Claude Code (IDE-MCP-01)");
+    require(found_cursor, "detect_environments detects configured Cursor (IDE-MCP-01)");
+    require(found_vscode, "detect_environments detects configured VS Code (IDE-MCP-01)");
+
+    // 3. Verify CLI `cfire mcp --print-config` & `cfire ide --status`
+    run_cfire("mcp --print-config")
+        .assert_ok("cfire mcp --print-config exit 0 (IDE-MCP-01)")
+        .assert_contains("\"mcpServers\"", "cfire mcp --print-config outputs mcpServers JSON (IDE-MCP-01)");
+
+    run_cfire(std::format("ide --status --dir '{}'", tmp_ide_ws.path.string()))
+        .assert_ok("cfire ide --status exit 0 (IDE-MCP-01)")
+        .assert_contains("Google Antigravity", "cfire ide --status lists Antigravity (IDE-MCP-01)")
+        .assert_contains("Claude Code", "cfire ide --status lists Claude Code (IDE-MCP-01)");
+
+    // 4. Verify new MCP server tools (cfire_outline, cfire_inspect, cfire_doc_llm)
+    {
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir);
+        auto resp_inspect = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cfire_inspect","arguments":{"target":"cfire/USE-AFTER-FREE"}}})");
+        require(resp_inspect.contains("Use of Dangling Pointer"), "MCP cfire_inspect returns diagnostic rule (IDE-MCP-01)");
+
+        auto resp_llm = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cfire_doc_llm","arguments":{}}})");
+        require(resp_llm.contains("Memory Safety, Loan Tracking"), "MCP cfire_doc_llm returns LLM reference sheet (IDE-MCP-01)");
+    }
+
     std::println("--- PASS: test_ide_configuration_setup");
 }
 
