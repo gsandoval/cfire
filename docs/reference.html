@@ -1649,8 +1649,8 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-collections" id="nav-pane-mod-collections" onclick="navigateToRefPane('mod-collections'); return false;"><code>core:collections</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-aes" id="nav-pane-mod-aes" onclick="navigateToRefPane('mod-aes'); return false;"><code>core:crypto/aes</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-blake3" id="nav-pane-mod-blake3" onclick="navigateToRefPane('mod-blake3'); return false;"><code>core:crypto/blake3</code> <span style="color:var(--muted);font-size:0.75rem;">(1)</span></a></li>
-          <li class="nav-item"><a href="#mod-hmac" id="nav-pane-mod-hmac" onclick="navigateToRefPane('mod-hmac'); return false;"><code>core:crypto/hmac</code> <span style="color:var(--muted);font-size:0.75rem;">(2)</span></a></li>
-          <li class="nav-item"><a href="#mod-sha256" id="nav-pane-mod-sha256" onclick="navigateToRefPane('mod-sha256'); return false;"><code>core:crypto/sha256</code> <span style="color:var(--muted);font-size:0.75rem;">(2)</span></a></li>
+          <li class="nav-item"><a href="#mod-hmac" id="nav-pane-mod-hmac" onclick="navigateToRefPane('mod-hmac'); return false;"><code>core:crypto/hmac</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
+          <li class="nav-item"><a href="#mod-sha256" id="nav-pane-mod-sha256" onclick="navigateToRefPane('mod-sha256'); return false;"><code>core:crypto/sha256</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-base64" id="nav-pane-mod-base64" onclick="navigateToRefPane('mod-base64'); return false;"><code>core:encoding/base64</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-csv" id="nav-pane-mod-csv" onclick="navigateToRefPane('mod-csv'); return false;"><code>core:encoding/csv</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-hex" id="nav-pane-mod-hex" onclick="navigateToRefPane('mod-hex'); return false;"><code>core:encoding/hex</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
@@ -1685,7 +1685,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-rg" id="nav-pane-mod-rg" onclick="navigateToRefPane('mod-rg'); return false;"><code>vendor:raygui</code> <span style="color:var(--muted);font-size:0.75rem;">(15)</span></a></li>
           <li class="nav-item"><a href="#mod-rl" id="nav-pane-mod-rl" onclick="navigateToRefPane('mod-rl'); return false;"><code>vendor:raylib</code> <span style="color:var(--muted);font-size:0.75rem;">(24)</span></a></li>
         </ul>
-        <h4 style="margin-top:1.25rem;">Diagnostics (8)</h4>
+        <h4 style="margin-top:1.25rem;">Diagnostics (18)</h4>
         <ul class="sidebar-diag-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#diag-cfire/MUT-CALLSITE" id="nav-diag-cfire/MUT-CALLSITE" onclick="navigateToRefDiag('diag-cfire/MUT-CALLSITE'); return false;"><code>cfire/MUT-CALLSITE</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/IMMUTABLE-MUT-ARG" id="nav-diag-cfire/IMMUTABLE-MUT-ARG" onclick="navigateToRefDiag('diag-cfire/IMMUTABLE-MUT-ARG'); return false;"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
@@ -1695,6 +1695,16 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#diag-cfire/NON-EXHAUSTIVE-MATCH" id="nav-diag-cfire/NON-EXHAUSTIVE-MATCH" onclick="navigateToRefDiag('diag-cfire/NON-EXHAUSTIVE-MATCH'); return false;"><code>cfire/NON-EXHAUSTIVE-MATCH</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/NON-DIVERGING-OR-BLOCK" id="nav-diag-cfire/NON-DIVERGING-OR-BLOCK" onclick="navigateToRefDiag('diag-cfire/NON-DIVERGING-OR-BLOCK'); return false;"><code>cfire/NON-DIVERGING-OR-BLOCK</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/UNREACHABLE-MATCH-ARM" id="nav-diag-cfire/UNREACHABLE-MATCH-ARM" onclick="navigateToRefDiag('diag-cfire/UNREACHABLE-MATCH-ARM'); return false;"><code>cfire/UNREACHABLE-MATCH-ARM</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/MOVE-CALLSITE" id="nav-diag-cfire/MOVE-CALLSITE" onclick="navigateToRefDiag('diag-cfire/MOVE-CALLSITE'); return false;"><code>cfire/MOVE-CALLSITE</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/USE-AFTER-FREE" id="nav-diag-cfire/USE-AFTER-FREE" onclick="navigateToRefDiag('diag-cfire/USE-AFTER-FREE'); return false;"><code>cfire/USE-AFTER-FREE</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/DANGLING-POINTER" id="nav-diag-cfire/DANGLING-POINTER" onclick="navigateToRefDiag('diag-cfire/DANGLING-POINTER'); return false;"><code>cfire/DANGLING-POINTER</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/DANGLING-RETURN" id="nav-diag-cfire/DANGLING-RETURN" onclick="navigateToRefDiag('diag-cfire/DANGLING-RETURN'); return false;"><code>cfire/DANGLING-RETURN</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/ITERATOR-INVALIDATION" id="nav-diag-cfire/ITERATOR-INVALIDATION" onclick="navigateToRefDiag('diag-cfire/ITERATOR-INVALIDATION'); return false;"><code>cfire/ITERATOR-INVALIDATION</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/NULL-DEREF" id="nav-diag-cfire/NULL-DEREF" onclick="navigateToRefDiag('diag-cfire/NULL-DEREF'); return false;"><code>cfire/NULL-DEREF</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/INDEX-OUT-OF-BOUNDS" id="nav-diag-cfire/INDEX-OUT-OF-BOUNDS" onclick="navigateToRefDiag('diag-cfire/INDEX-OUT-OF-BOUNDS'); return false;"><code>cfire/INDEX-OUT-OF-BOUNDS</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/DIVIDE-BY-ZERO" id="nav-diag-cfire/DIVIDE-BY-ZERO" onclick="navigateToRefDiag('diag-cfire/DIVIDE-BY-ZERO'); return false;"><code>cfire/DIVIDE-BY-ZERO</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/SQL-INJECTION-RISK" id="nav-diag-cfire/SQL-INJECTION-RISK" onclick="navigateToRefDiag('diag-cfire/SQL-INJECTION-RISK'); return false;"><code>cfire/SQL-INJECTION-RISK</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/SHELL-INJECTION-RISK" id="nav-diag-cfire/SHELL-INJECTION-RISK" onclick="navigateToRefDiag('diag-cfire/SHELL-INJECTION-RISK'); return false;"><code>cfire/SHELL-INJECTION-RISK</code></a></li>
         </ul>
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
@@ -1724,7 +1734,7 @@ tr:hover td { background: #1F242C; }
       </div>
       <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 33 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">33 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (10 opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 8 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">33 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (10 opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 18 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Strings, Unicode, Regex &amp; Containers</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
@@ -1864,18 +1874,18 @@ tr:hover td { background: #1F242C; }
           <a href="#mod-hmac" class="ref-mod-card" onclick="navigateToRefPane('mod-hmac'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:crypto/hmac</span>
-              <span class="ref-mod-card-count">2 fns</span>
+              <span class="ref-mod-card-count">4 fns</span>
             </div>
-            <div class="ref-mod-card-title">RFC 2104 HMAC-SHA256 Message Authentication</div>
-            <div class="ref-mod-card-desc">Computes RFC 2104 keyed HMAC-SHA256 authentication digests.</div>
+            <div class="ref-mod-card-title">RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256</div>
+            <div class="ref-mod-card-desc">Computes RFC 2104 keyed HMAC-SHA256 authentication digests and RFC 5869 HKDF-SHA256 derived keys.</div>
           </a>
           <a href="#mod-sha256" class="ref-mod-card" onclick="navigateToRefPane('mod-sha256'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:crypto/sha256</span>
-              <span class="ref-mod-card-count">2 fns</span>
+              <span class="ref-mod-card-count">4 fns</span>
             </div>
-            <div class="ref-mod-card-title">Standard FIPS 180-4 SHA-256 Digest</div>
-            <div class="ref-mod-card-desc">Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings.</div>
+            <div class="ref-mod-card-title">Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</div>
+            <div class="ref-mod-card-desc">Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>).</div>
           </a>
           <a href="#mod-base64" class="ref-mod-card" onclick="navigateToRefPane('mod-base64'); return false;">
             <div class="ref-mod-card-head">
@@ -2009,7 +2019,7 @@ tr:hover td { background: #1F242C; }
           <a href="#diagnostics" class="ref-mod-card" onclick="navigateToRefPane('diagnostics'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">cfire/* Rules</span>
-              <span class="ref-mod-card-count">8 rules</span>
+              <span class="ref-mod-card-count">18 rules</span>
             </div>
             <div class="ref-mod-card-title">Compiler Semantic Diagnostics Catalog</div>
             <div class="ref-mod-card-desc">Rejected vs. Accepted <code>.cf</code> side-by-side verification rules enforced by the semantic checker.</div>
@@ -2177,13 +2187,13 @@ fn main() {
           </a>
           <a href="#mod-hmac" class="pager-card next" onclick="navigateToRefPane('mod-hmac'); return false;">
             <span class="pager-dir">Next Module (5/33) &rarr;</span>
-            <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256 Message Authentication</span>
+            <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256</span>
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-hmac" data-pane-id="mod-hmac" data-pane-title="core:crypto/hmac — RFC 2104 HMAC-SHA256 Message Authentication">
-        <h2 id="mod-hmac" style="margin-top:0.25rem;"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256 Message Authentication</h2>
-        <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>hmac.*</code> &bull; 2 exported functions</small></p>
+      <article class="ref-pane" id="ref-pane-mod-hmac" data-pane-id="mod-hmac" data-pane-title="core:crypto/hmac — RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256">
+        <h2 id="mod-hmac" style="margin-top:0.25rem;"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256</h2>
+        <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests and RFC 5869 HKDF-SHA256 derived keys. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>hmac.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2205,6 +2215,8 @@ fn main() {
           <tbody>
             <tr><td><code>fn sha256_hex(key: str, data: str) -&gt; str</code></td><td><code>cfire::hmac::sha256_hex(key, data)</code></td><td>Returns a 64-character lowercase hex HMAC-SHA256 digest.<br/><code>sig := hmac.sha256_hex(secret, payload)</code></td></tr>
             <tr><td><code>fn equal(a: str, b: str) -&gt; bool</code></td><td><code>cfire::hmac::equal(a, b)</code></td><td>Performs a constant-time equality check on two MAC digests to prevent timing attacks.<br/><code>ok := hmac.equal(sig1, sig2)</code></td></tr>
+            <tr><td><code>fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -&gt; []byte</code></td><td><code>cfire::hmac::hkdf_sha256(ikm, salt, info, length)</code></td><td>Derives cryptographic key material of <code>length</code> bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand.<br/><code>key := hmac.hkdf_sha256(ikm, salt, info, 32)</code></td></tr>
+            <tr><td><code>fn hkdf_sha256_hex(ikm: str, salt: str = &quot;&quot;, info: str = &quot;&quot;, length: usize = 32) -&gt; str</code></td><td><code>cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)</code></td><td>Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.<br/><code>khex := hmac.hkdf_sha256_hex(secret, &quot;salt&quot;, &quot;ctx&quot;, 32)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
@@ -2214,13 +2226,13 @@ fn main() {
           </a>
           <a href="#mod-sha256" class="pager-card next" onclick="navigateToRefPane('mod-sha256'); return false;">
             <span class="pager-dir">Next Module (6/33) &rarr;</span>
-            <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest</span>
+            <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-sha256" data-pane-id="mod-sha256" data-pane-title="core:crypto/sha256 — Standard FIPS 180-4 SHA-256 Digest">
-        <h2 id="mod-sha256" style="margin-top:0.25rem;"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest</h2>
-        <p>Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>sha256.*</code> &bull; 2 exported functions</small></p>
+      <article class="ref-pane" id="ref-pane-mod-sha256" data-pane-id="mod-sha256" data-pane-title="core:crypto/sha256 — Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG">
+        <h2 id="mod-sha256" style="margin-top:0.25rem;"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</h2>
+        <p>Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>sha256.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2236,12 +2248,14 @@ fn main() {
           <tbody>
             <tr><td><code>fn hash_hex(data: []byte) -&gt; str</code></td><td><code>cfire::sha256::hash_hex(data)</code></td><td>Returns a 64-character lowercase hex digest of <code>data</code>.<br/><code>digest := sha256.hash_hex(raw)</code></td></tr>
             <tr><td><code>fn hash_bytes(data: []byte) -&gt; []byte</code></td><td><code>cfire::sha256::hash_bytes(data)</code></td><td>Returns 32-byte binary SHA-256 digest of <code>data</code>.<br/><code>b := sha256.hash_bytes(raw)</code></td></tr>
+            <tr><td><code>fn random_bytes(n: usize) -&gt; []byte</code></td><td><code>cfire::sha256::random_bytes(n)</code></td><td>Generates <code>n</code> cryptographically secure random bytes from the OS CSPRNG.<br/><code>nonce := sha256.random_bytes(12)</code></td></tr>
+            <tr><td><code>fn random_hex(n: usize = 32) -&gt; str</code></td><td><code>cfire::sha256::random_hex(n)</code></td><td>Generates <code>n</code> cryptographically secure random bytes encoded as a <code>2*n</code>-character lowercase hex string.<br/><code>token := sha256.random_hex(16)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hmac" class="pager-card prev" onclick="navigateToRefPane('mod-hmac'); return false;">
             <span class="pager-dir">&larr; Previous Module (5/33)</span>
-            <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256 Message Authentication</span>
+            <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256</span>
           </a>
           <a href="#mod-base64" class="pager-card next" onclick="navigateToRefPane('mod-base64'); return false;">
             <span class="pager-dir">Next Module (7/33) &rarr;</span>
@@ -2277,7 +2291,7 @@ fn main() {
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sha256" class="pager-card prev" onclick="navigateToRefPane('mod-sha256'); return false;">
             <span class="pager-dir">&larr; Previous Module (6/33)</span>
-            <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest</span>
+            <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
           <a href="#mod-csv" class="pager-card next" onclick="navigateToRefPane('mod-csv'); return false;">
             <span class="pager-dir">Next Module (8/33) &rarr;</span>
@@ -3700,6 +3714,127 @@ consume(move buf) // OK: moved on last use</code></pre></div>
     [only] =&gt; { return only }
     [first, ..mid, last] =&gt; { return first + last } // OK: size &gt;= 2 is reachable
 }</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/MOVE-CALLSITE" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/MOVE-CALLSITE]</code> &mdash; Missing Call-Site <code>move</code> Marker</h3>
+          <p style="margin-bottom:0.85rem;">Functions declaring <code>move param: T</code> take ownership of the caller's argument (<code>std::move(arg)</code>). Callers must write <code>move arg</code> at the call site so ownership transfer is explicit.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn consume(move buf: []byte) { ... }
+fn main() {
+    data := []byte(&quot;payload&quot;)
+    consume(data) // ERROR [cfire/MOVE-CALLSITE]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn consume(move buf: []byte) { ... }
+fn main() {
+    data := []byte(&quot;payload&quot;)
+    consume(move data) // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/USE-AFTER-FREE" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/USE-AFTER-FREE]</code> &mdash; Use of Dangling Pointer or Slice View After Owner Invalidation</h3>
+          <p style="margin-bottom:0.85rem;">Pointers (<code>&amp;x</code>, <code>&amp;mut x</code>, <code>.data()</code>, <code>.byte_ptr()</code>) and slice views (<code>s[a..b]</code>) track their root owner variable. If the owner is moved (<code>move x</code>), reassigned (<code>x = ...</code>), or structurally mutated by a reallocating container method (<code>.push()</code>, <code>.pop()</code>, <code>.clear()</code>, <code>.erase()</code>, <code>.remove()</code>), any subsequent read or dereference of the borrowed pointer/view is rejected at compile time.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut nums := [10, 20, 30]
+p := nums.data()
+nums.push(40) // invalidates 'p' due to potential vector reallocation
+println(&quot;{}&quot;, *p) // ERROR [cfire/USE-AFTER-FREE]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut nums := [10, 20, 30]
+nums.push(40)
+p := nums.data() // borrow acquired after mutation
+println(&quot;{}&quot;, *p) // OK</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/DANGLING-POINTER" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/DANGLING-POINTER]</code> &mdash; Inner-Scope Borrow Escaping to Outer-Scope Pointer or View</h3>
+          <p style="margin-bottom:0.85rem;">A pointer or slice view declared in an outer lexical scope cannot be assigned the address or slice view of a variable declared in a deeper inner block, preventing stack use-after-scope defects.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut p: *mut i32 = none
+if true {
+    mut inner := 42
+    p = &amp;mut inner // ERROR [cfire/DANGLING-POINTER]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut outer := 42
+mut p: *mut i32 = none
+if true {
+    p = &amp;mut outer // OK: 'outer' outlives 'p'
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/DANGLING-RETURN" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/DANGLING-RETURN]</code> &mdash; Returning Pointer or View Rooted in Function-Local Storage</h3>
+          <p style="margin-bottom:0.85rem;">Functions cannot return a pointer (<code>*T</code>, <code>*mut T</code>) or slice view (<code>&amp;str</code>, <code>&amp;[]T</code>) that borrows a function-local variable or <code>move</code> parameter whose storage is destroyed on function return.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn bad_ptr() -&gt; *i32 {
+    local := 99
+    return &amp;local // ERROR [cfire/DANGLING-RETURN]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn good_ptr(in_ref: &amp;i32) -&gt; *i32 {
+    return &amp;in_ref // OK: rooted in caller-owned parameter
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/ITERATOR-INVALIDATION" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/ITERATOR-INVALIDATION]</code> &mdash; Structural Mutation or Move of Collection During <code>for</code> Iteration</h3>
+          <p style="margin-bottom:0.85rem;">While iterating over a collection in <code>for x in col</code> or <code>for i, x in col</code>, structurally mutating (<code>col.push(...)</code>, <code>col.clear()</code>), reassigning (<code>col = ...</code>), or moving (<code>move col</code>) the collection is rejected at compile time.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut items := [1, 2, 3]
+for x in items {
+    items.push(x * 2) // ERROR [cfire/ITERATOR-INVALIDATION]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>items := [1, 2, 3]
+mut doubled: []i32 = []
+for x in items {
+    doubled.push(x * 2) // OK: mutating separate collection
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/NULL-DEREF" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/NULL-DEREF]</code> &mdash; Dereference or Member Access on Null or Potentially Null Pointer</h3>
+          <p style="margin-bottom:0.85rem;">Raw pointers (<code>*T</code>, <code>*mut T</code>) and smart pointers (<code>own[T]</code>, <code>shared[T]</code>) initialized to <code>none</code>, left uninitialized, or typed optional (<code>*T?</code>, <code>own[T]?</code>) cannot be dereferenced (<code>*p</code>) or member-accessed (<code>p.field</code>) until proven non-null via assignment (<code>p = &amp;mut x</code>), an <code>if p != none</code> branch, an early-returning <code>if p == none { return }</code>, or <code>assert(p != none)</code>.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut p: *mut i32 = none
+*p = 10 // ERROR [cfire/NULL-DEREF]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut p: *mut i32 = none
+if p != none {
+    *p = 10 // OK: flow-narrowed to NonNull
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/INDEX-OUT-OF-BOUNDS" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/INDEX-OUT-OF-BOUNDS]</code> &mdash; Compile-Time Out-of-Bounds or Negative Constant Sequence Index</h3>
+          <p style="margin-bottom:0.85rem;">Negative integer literal indices (<code>arr[-1]</code>) on sequences and non-negative constant indices <code>&gt;= N</code> on fixed-size arrays (<code>[N]T</code>) or array literals are rejected at compile time. Dynamic indices are verified at runtime via <code>cfire::index_at</code>.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>arr: [3]i32 = [10, 20, 30]
+println(&quot;{}&quot;, arr[3]) // ERROR [cfire/INDEX-OUT-OF-BOUNDS]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>arr: [3]i32 = [10, 20, 30]
+println(&quot;{}&quot;, arr[2]) // OK</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/DIVIDE-BY-ZERO" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/DIVIDE-BY-ZERO]</code> &mdash; Compile-Time Division or Modulo by Constant Zero</h3>
+          <p style="margin-bottom:0.85rem;">Dividing or taking modulo by a constant zero literal (<code>x / 0</code>, <code>x % 0</code>, <code>x /= 0</code>, <code>x %= 0</code>) is rejected at compile time.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>x := 100 / 0 // ERROR [cfire/DIVIDE-BY-ZERO]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>denom := 4
+x := 100 / denom // OK</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/SQL-INJECTION-RISK" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/SQL-INJECTION-RISK]</code> &mdash; Dynamic String Concatenation or Interpolation in SQL Query</h3>
+          <p style="margin-bottom:0.85rem;">Passing a dynamically concatenated or interpolated string (<code>&quot;SELECT ... &quot; + input</code>) to <code>db.exec</code> or <code>db.query</code> risks SQL injection. Pass a static SQL string with <code>?1</code>, <code>?2</code> parameter placeholders instead.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>try db.exec(&quot;DELETE FROM users WHERE name = '&quot; + user_name + &quot;'&quot;) // WARNING [cfire/SQL-INJECTION-RISK]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>try db.exec(&quot;DELETE FROM users WHERE name = ?1&quot;, user_name) // OK: parameterized binding</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/SHELL-INJECTION-RISK" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/SHELL-INJECTION-RISK]</code> &mdash; Dynamic String Concatenation or Interpolation in Shell Command</h3>
+          <p style="margin-bottom:0.85rem;">Passing a dynamically concatenated or interpolated string (<code>&quot;ls &quot; + user_arg</code>) to <code>os.exec</code> or <code>os.exec_output</code> invokes <code>/bin/sh -c</code> and risks command injection. Use <code>os.command(binary, args)</code> to spawn subprocesses without shell interpretation.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>out := try os.exec(&quot;cat &quot; + untrusted_path) // WARNING [cfire/SHELL-INJECTION-RISK]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>res := try os.command(&quot;cat&quot;, [untrusted_path]) // OK: direct posix_spawnp argv</code></pre></div>
           </div>
         </div>
         <nav class="chapter-pager" aria-label="Module Pagination">

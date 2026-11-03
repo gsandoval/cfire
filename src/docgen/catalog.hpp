@@ -75,19 +75,23 @@ struct DiagnosticDoc {
             }
         },
         {
-            "core:crypto/hmac", "hmac", "RFC 2104 HMAC-SHA256 Message Authentication", "(CommonCrypto / built-in)",
-            "Computes RFC 2104 keyed HMAC-SHA256 authentication digests.",
+            "core:crypto/hmac", "hmac", "RFC 2104 HMAC-SHA256 & RFC 5869 HKDF-SHA256", "(CommonCrypto / built-in)",
+            "Computes RFC 2104 keyed HMAC-SHA256 authentication digests and RFC 5869 HKDF-SHA256 derived keys.",
             {
                 {"sha256_hex", "fn sha256_hex(key: str, data: str) -> str", "cfire::hmac::sha256_hex(key, data)", "Returns a 64-character lowercase hex HMAC-SHA256 digest.", "sig := hmac.sha256_hex(secret, payload)"},
-                {"equal", "fn equal(a: str, b: str) -> bool", "cfire::hmac::equal(a, b)", "Performs a constant-time equality check on two MAC digests to prevent timing attacks.", "ok := hmac.equal(sig1, sig2)"}
+                {"equal", "fn equal(a: str, b: str) -> bool", "cfire::hmac::equal(a, b)", "Performs a constant-time equality check on two MAC digests to prevent timing attacks.", "ok := hmac.equal(sig1, sig2)"},
+                {"hkdf_sha256", "fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -> []byte", "cfire::hmac::hkdf_sha256(ikm, salt, info, length)", "Derives cryptographic key material of `length` bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand.", "key := hmac.hkdf_sha256(ikm, salt, info, 32)"},
+                {"hkdf_sha256_hex", "fn hkdf_sha256_hex(ikm: str, salt: str = \"\", info: str = \"\", length: usize = 32) -> str", "cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)", "Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.", "khex := hmac.hkdf_sha256_hex(secret, \"salt\", \"ctx\", 32)"}
             }
         },
         {
-            "core:crypto/sha256", "sha256", "Standard FIPS 180-4 SHA-256 Digest", "(CommonCrypto / built-in)",
-            "Computes NIST FIPS 180-4 SHA-256 digests over byte slices or strings.",
+            "core:crypto/sha256", "sha256", "Standard FIPS 180-4 SHA-256 Digest & CSPRNG", "(CommonCrypto / built-in)",
+            "Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (`arc4random_buf` / `/dev/urandom`).",
             {
                 {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::sha256::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := sha256.hash_hex(raw)"},
-                {"hash_bytes", "fn hash_bytes(data: []byte) -> []byte", "cfire::sha256::hash_bytes(data)", "Returns 32-byte binary SHA-256 digest of `data`.", "b := sha256.hash_bytes(raw)"}
+                {"hash_bytes", "fn hash_bytes(data: []byte) -> []byte", "cfire::sha256::hash_bytes(data)", "Returns 32-byte binary SHA-256 digest of `data`.", "b := sha256.hash_bytes(raw)"},
+                {"random_bytes", "fn random_bytes(n: usize) -> []byte", "cfire::sha256::random_bytes(n)", "Generates `n` cryptographically secure random bytes from the OS CSPRNG.", "nonce := sha256.random_bytes(12)"},
+                {"random_hex", "fn random_hex(n: usize = 32) -> str", "cfire::sha256::random_hex(n)", "Generates `n` cryptographically secure random bytes encoded as a `2*n`-character lowercase hex string.", "token := sha256.random_hex(16)"}
             }
         },
         {
@@ -596,6 +600,76 @@ struct DiagnosticDoc {
             "Every arm in a `match` statement or expression must be reachable. Arms appearing after a wildcard `_`, duplicate enum/literal patterns, or slice patterns already subsumed by a broader prefix/suffix pattern (e.g., `[first, ..mid, last]` after `[head, ..tail]`) are rejected at compile time.",
             "match items {\n    [head, ..tail] => { return head }\n    [first, ..mid, last] => { return last } // ERROR [cfire/UNREACHABLE-MATCH-ARM]\n    _ => { return \"\" }\n}",
             "match items {\n    [] => { return \"empty\" }\n    [only] => { return only }\n    [first, ..mid, last] => { return first + last } // OK: size >= 2 is reachable\n}"
+        },
+        {
+            "cfire/MOVE-CALLSITE",
+            "Missing Call-Site `move` Marker",
+            "Functions declaring `move param: T` take ownership of the caller's argument (`std::move(arg)`). Callers must write `move arg` at the call site so ownership transfer is explicit.",
+            "fn consume(move buf: []byte) { ... }\nfn main() {\n    data := []byte(\"payload\")\n    consume(data) // ERROR [cfire/MOVE-CALLSITE]\n}",
+            "fn consume(move buf: []byte) { ... }\nfn main() {\n    data := []byte(\"payload\")\n    consume(move data) // OK\n}"
+        },
+        {
+            "cfire/USE-AFTER-FREE",
+            "Use of Dangling Pointer or Slice View After Owner Invalidation",
+            "Pointers (`&x`, `&mut x`, `.data()`, `.byte_ptr()`) and slice views (`s[a..b]`) track their root owner variable. If the owner is moved (`move x`), reassigned (`x = ...`), or structurally mutated by a reallocating container method (`.push()`, `.pop()`, `.clear()`, `.erase()`, `.remove()`), any subsequent read or dereference of the borrowed pointer/view is rejected at compile time.",
+            "mut nums := [10, 20, 30]\np := nums.data()\nnums.push(40) // invalidates 'p' due to potential vector reallocation\nprintln(\"{}\", *p) // ERROR [cfire/USE-AFTER-FREE]",
+            "mut nums := [10, 20, 30]\nnums.push(40)\np := nums.data() // borrow acquired after mutation\nprintln(\"{}\", *p) // OK"
+        },
+        {
+            "cfire/DANGLING-POINTER",
+            "Inner-Scope Borrow Escaping to Outer-Scope Pointer or View",
+            "A pointer or slice view declared in an outer lexical scope cannot be assigned the address or slice view of a variable declared in a deeper inner block, preventing stack use-after-scope defects.",
+            "mut p: *mut i32 = none\nif true {\n    mut inner := 42\n    p = &mut inner // ERROR [cfire/DANGLING-POINTER]\n}",
+            "mut outer := 42\nmut p: *mut i32 = none\nif true {\n    p = &mut outer // OK: 'outer' outlives 'p'\n}"
+        },
+        {
+            "cfire/DANGLING-RETURN",
+            "Returning Pointer or View Rooted in Function-Local Storage",
+            "Functions cannot return a pointer (`*T`, `*mut T`) or slice view (`&str`, `&[]T`) that borrows a function-local variable or `move` parameter whose storage is destroyed on function return.",
+            "fn bad_ptr() -> *i32 {\n    local := 99\n    return &local // ERROR [cfire/DANGLING-RETURN]\n}",
+            "fn good_ptr(in_ref: &i32) -> *i32 {\n    return &in_ref // OK: rooted in caller-owned parameter\n}"
+        },
+        {
+            "cfire/ITERATOR-INVALIDATION",
+            "Structural Mutation or Move of Collection During `for` Iteration",
+            "While iterating over a collection in `for x in col` or `for i, x in col`, structurally mutating (`col.push(...)`, `col.clear()`), reassigning (`col = ...`), or moving (`move col`) the collection is rejected at compile time.",
+            "mut items := [1, 2, 3]\nfor x in items {\n    items.push(x * 2) // ERROR [cfire/ITERATOR-INVALIDATION]\n}",
+            "items := [1, 2, 3]\nmut doubled: []i32 = []\nfor x in items {\n    doubled.push(x * 2) // OK: mutating separate collection\n}"
+        },
+        {
+            "cfire/NULL-DEREF",
+            "Dereference or Member Access on Null or Potentially Null Pointer",
+            "Raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) initialized to `none`, left uninitialized, or typed optional (`*T?`, `own[T]?`) cannot be dereferenced (`*p`) or member-accessed (`p.field`) until proven non-null via assignment (`p = &mut x`), an `if p != none` branch, an early-returning `if p == none { return }`, or `assert(p != none)`.",
+            "mut p: *mut i32 = none\n*p = 10 // ERROR [cfire/NULL-DEREF]",
+            "mut p: *mut i32 = none\nif p != none {\n    *p = 10 // OK: flow-narrowed to NonNull\n}"
+        },
+        {
+            "cfire/INDEX-OUT-OF-BOUNDS",
+            "Compile-Time Out-of-Bounds or Negative Constant Sequence Index",
+            "Negative integer literal indices (`arr[-1]`) on sequences and non-negative constant indices `>= N` on fixed-size arrays (`[N]T`) or array literals are rejected at compile time. Dynamic indices are verified at runtime via `cfire::index_at`.",
+            "arr: [3]i32 = [10, 20, 30]\nprintln(\"{}\", arr[3]) // ERROR [cfire/INDEX-OUT-OF-BOUNDS]",
+            "arr: [3]i32 = [10, 20, 30]\nprintln(\"{}\", arr[2]) // OK"
+        },
+        {
+            "cfire/DIVIDE-BY-ZERO",
+            "Compile-Time Division or Modulo by Constant Zero",
+            "Dividing or taking modulo by a constant zero literal (`x / 0`, `x % 0`, `x /= 0`, `x %= 0`) is rejected at compile time.",
+            "x := 100 / 0 // ERROR [cfire/DIVIDE-BY-ZERO]",
+            "denom := 4\nx := 100 / denom // OK"
+        },
+        {
+            "cfire/SQL-INJECTION-RISK",
+            "Dynamic String Concatenation or Interpolation in SQL Query",
+            "Passing a dynamically concatenated or interpolated string (`\"SELECT ... \" + input`) to `db.exec` or `db.query` risks SQL injection. Pass a static SQL string with `?1`, `?2` parameter placeholders instead.",
+            "try db.exec(\"DELETE FROM users WHERE name = '\" + user_name + \"'\") // WARNING [cfire/SQL-INJECTION-RISK]",
+            "try db.exec(\"DELETE FROM users WHERE name = ?1\", user_name) // OK: parameterized binding"
+        },
+        {
+            "cfire/SHELL-INJECTION-RISK",
+            "Dynamic String Concatenation or Interpolation in Shell Command",
+            "Passing a dynamically concatenated or interpolated string (`\"ls \" + user_arg`) to `os.exec` or `os.exec_output` invokes `/bin/sh -c` and risks command injection. Use `os.command(binary, args)` to spawn subprocesses without shell interpretation.",
+            "out := try os.exec(\"cat \" + untrusted_path) // WARNING [cfire/SHELL-INJECTION-RISK]",
+            "res := try os.command(\"cat\", [untrusted_path]) // OK: direct posix_spawnp argv"
         }
     };
     return diags;

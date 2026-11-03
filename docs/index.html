@@ -914,7 +914,7 @@ tr:hover td { background: #1F242C; }
       <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">8 Rules</div>
+      <div class="stat-val">18 Rules</div>
       <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
@@ -1802,7 +1802,7 @@ auto main(int argc, char** argv) -&gt; int {
     #line 38 &quot;snippet_ai.cf&quot;
     if (hits.size() &gt; 0) {
         #line 39 &quot;snippet_ai.cf&quot;
-        (void)(std::println(&quot;Match [{}]: {}&quot;, hits[0].Title, hits[0].Snippet));
+        (void)(std::println(&quot;Match [{}]: {}&quot;, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 39).Title, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 39).Snippet));
     }
     return 0;
 }

@@ -1429,6 +1429,12 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `val := try fallible()` (early return error on failure)
   - `val := fallible() or fallback_expr`
   - `val := fallible() or err { return -1 }` (block must definitely diverge or panic)
+- Memory Safety, Loan Tracking & Bounds Rules:
+  - Move Discipline (`cfire/USE-AFTER-FREE`, `cfire/MOVE-CALLSITE`): Passing a non-Copy variable (`own[T]`, `str`, `[]T`, `map[K]V`, or structs containing them) with `move` invalidates the variable unless reassigned on all control-flow paths; `move` parameters require `move` at the call site.
+  - Region & Loan Tracking (`cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`, `cfire/ITERATOR-INVALIDATION`): Taking `&x` or `&mut x` records an active loan on `x`; mutating, moving, or outliving `x` while borrowed, returning `&local`, or calling `.push()`/`.clear()`/`.erase()` on a slice/map while iterating over it is rejected at compile time.
+  - Null-Safety Flow Analysis (`cfire/NULL-DEREF`): Raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) must be initialized non-null or guarded by `if p != none` / `assert(p != none)` before `*p` or `p.field` dereference.
+  - Bounds & Arithmetic Safety (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`): Constant out-of-bounds indexing and division/modulo by constant zero are rejected at compile time; dynamic slice indexing (`arr[i]`) and `slice_from(s, offset, count)` enforce bounds checks at runtime.
+  - Injection Warnings (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Dynamic string concatenation in `db.exec`/`db.query` or `os.exec`/`os.exec_output` emits a warning; use parameterized `?1` queries.
 - Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp::some_c_func()`
 - CLI Tooling:
   - `cfire run [--web] [target]`: Run native app, execute binary, or serve web app (--web)
@@ -1436,6 +1442,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in zero-dependency static server with WASM MIME and COOP/COEP isolation headers
   - `cfire check --json <file>`: Multi-error structured diagnostics with 1-based coordinates and fixits
   - `cfire outline --json <file|dir>`: AST symbol outline with exact types, intents, receivers
+  - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or compiler diagnostic rule (`cfire inspect cfire/USE-AFTER-FREE`)
   - `cfire doc --llm`: Dump this LLM context reference sheet
   - `cfire test`: Run tests with assertion location reporting
   - `cfire eval 'expr'`: Immediate evaluation of expressions

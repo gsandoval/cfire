@@ -98,7 +98,8 @@ public:
                     fixed_array_lens_[p.name] = *n;
                 }
             }
-            if (p.type.is_ptr || p.type.is_mut_ptr) {
+            if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty()) {
+                ptr_or_smart_vars_.insert(p.name);
                 ptr_null_state_[p.name] = p.type.is_optional ? NullState::MaybeNull : NullState::NonNull;
             }
         }
@@ -243,6 +244,73 @@ public:
         return std::nullopt;
     }
 
+    [[nodiscard]] auto is_ptr_or_smart_init(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            return un->op == "&" || un->op == "&mut";
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (id->name == "make" && call->type_args.size() == 1 && !call->type_args[0].smart_wrap.empty()) {
+                    return true;
+                }
+            }
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (mem->field == "data" || mem->field == "data_ptr" ||
+                    mem->field == "byte_ptr" || mem->field == "byte_ptr_at") {
+                    return true;
+                }
+            }
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            return ptr_or_smart_vars_.contains(id->name);
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto is_const_zero_expr(const ExprPtr& e) -> bool {
+        if (!e) return false;
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            if (un->op == "-" || un->op == "+") {
+                return is_const_zero_expr(un->operand);
+            }
+            return false;
+        }
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::Int) {
+                if (auto v = cfire::detail::parse_int<std::int64_t>(lit->value)) {
+                    return *v == 0;
+                }
+            } else if (lit->kind == TokenKind::Float) {
+                bool has_zero = false;
+                for (char c : lit->value) {
+                    if (c == '0') has_zero = true;
+                    else if (c != '.' && c != '_' && c != 'f' && c != 'F') return false;
+                }
+                return has_zero;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto is_dynamic_string_expr(const ExprPtr& e) -> bool {
+        if (!e) return false;
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::String && lit->value.contains('{') && lit->value.contains('}')) {
+                return true;
+            }
+            return false;
+        }
+        if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            if (bin->op == "+") {
+                bool left_static = bin->left && std::holds_alternative<LiteralExpr>(bin->left->node) && !is_dynamic_string_expr(bin->left);
+                bool right_static = bin->right && std::holds_alternative<LiteralExpr>(bin->right->node) && !is_dynamic_string_expr(bin->right);
+                return !(left_static && right_static);
+            }
+        }
+        return false;
+    }
+
     [[nodiscard]] auto infer_expr_null_state(const ExprPtr& e) const -> std::optional<NullState> {
         if (!e) return std::nullopt;
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
@@ -360,10 +428,37 @@ public:
         }
         if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
             if (auto r = check_expr(bin->left); !r) return r;
-            return check_expr(bin->right);
+            if (auto r = check_expr(bin->right); !r) return r;
+            if ((bin->op == "/" || bin->op == "%") && is_const_zero_expr(bin->right)) {
+                return emit_error(std::format(
+                    "{}:{}:{}: division or modulo by constant zero (cfire/DIVIDE-BY-ZERO)",
+                    path_, e->line, e->col));
+            }
+            return {};
         }
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
-            return check_expr(mem->object);
+            if (auto r = check_expr(mem->object); !r) return r;
+            if (!mem->is_namespace && mem->object) {
+                if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
+                    if (ptr_or_smart_vars_.contains(id->name) &&
+                        mem->field != "reset" && mem->field != "get" &&
+                        mem->field != "has_value" && mem->field != "value_or") {
+                        if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
+                            if (it->second == NullState::Null) {
+                                return emit_error(std::format(
+                                    "{}:{}:{}: member access on null pointer '{}' (cfire/NULL-DEREF)",
+                                    path_, e->line, e->col, id->name));
+                            }
+                            if (it->second == NullState::MaybeNull) {
+                                return emit_error(std::format(
+                                    "{}:{}:{}: member access on potentially null pointer '{}' without '!= none' guard (cfire/NULL-DEREF)",
+                                    path_, e->line, e->col, id->name));
+                            }
+                        }
+                    }
+                }
+            }
+            return {};
         }
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
             if (auto r = check_expr(idx->object); !r) return r;
@@ -491,6 +586,18 @@ public:
                             e->line);
                     }
                 }
+                if (!call->args.empty() && is_dynamic_string_expr(call->args[0].value)) {
+                    const auto* recv_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                    if (recv_id && recv_id->name == "os" && (mem->field == "exec" || mem->field == "exec_output")) {
+                        warnings_.push_back(std::format(
+                            "{}:{}:{}: warning: dynamic string interpolation/concatenation in 'os.{}' risks shell command injection; prefer 'os.command(binary, args)' (cfire/SHELL-INJECTION-RISK)",
+                            path_, call->args[0].line, call->args[0].col, mem->field));
+                    } else if ((!recv_id || recv_id->name != "os") && (mem->field == "exec" || mem->field == "query")) {
+                        warnings_.push_back(std::format(
+                            "{}:{}:{}: warning: dynamic string interpolation/concatenation in SQL '{}' risks SQL injection; use parameterized '?1' bindings instead (cfire/SQL-INJECTION-RISK)",
+                            path_, call->args[0].line, call->args[0].col, mem->field));
+                    }
+                }
             }
 
             if (target_sig) {
@@ -526,7 +633,9 @@ public:
                 if (target_sig && i < target_sig->params.size()) {
                     const auto& expected = target_sig->params[i].intent;
                     if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
-                        std::string_view rule = (expected == "out") ? "cfire/OUT-CALLSITE" : "cfire/MUT-CALLSITE";
+                        std::string_view rule = (expected == "out")
+                            ? "cfire/OUT-CALLSITE"
+                            : (expected == "move" ? "cfire/MOVE-CALLSITE" : "cfire/MUT-CALLSITE");
                         if (auto r = emit_error(std::format(
                             "{}:{}:{}: parameter '{}' of {} requires explicit '{}' annotation at call-site ({})",
                             path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule)); !r) return r;
@@ -847,11 +956,18 @@ public:
             if (auto src = extract_borrow_source(vd->init)) {
                 borrow_origin_[vd->name] = *src;
             }
+            bool is_ptr_or_smart = (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr || !vd->type->smart_wrap.empty())) ||
+                                   is_ptr_or_smart_init(vd->init);
+            if (is_ptr_or_smart) {
+                ptr_or_smart_vars_.insert(vd->name);
+            } else {
+                ptr_or_smart_vars_.erase(vd->name);
+            }
             if (auto ns = infer_expr_null_state(vd->init)) {
                 ptr_null_state_[vd->name] = *ns;
-            } else if (!vd->init && vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr)) {
+            } else if (!vd->init && is_ptr_or_smart) {
                 ptr_null_state_[vd->name] = NullState::Null;
-            } else if (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr)) {
+            } else if (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr || !vd->type->smart_wrap.empty())) {
                 ptr_null_state_[vd->name] = vd->type->is_optional ? NullState::MaybeNull : NullState::NonNull;
             } else {
                 ptr_null_state_.erase(vd->name);
@@ -881,6 +997,11 @@ public:
                 }
             }
             if (auto r = check_expr(as->value); !r) return r;
+            if ((as->op == "/=" || as->op == "%=") && is_const_zero_expr(as->value)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:1: division or modulo assignment by constant zero (cfire/DIVIDE-BY-ZERO)",
+                    path_, as->line)); !r) return r;
+            }
             if (as->op != "=") {
                 if (auto r = check_expr(as->target); !r) return r;
             }
@@ -912,6 +1033,9 @@ public:
                     } else {
                         borrow_origin_.erase(id->name);
                         invalidated_loans_.erase(id->name);
+                    }
+                    if (is_ptr_or_smart_init(as->value)) {
+                        ptr_or_smart_vars_.insert(id->name);
                     }
                     if (auto ns = infer_expr_null_state(as->value)) {
                         ptr_null_state_[id->name] = *ns;
@@ -1212,6 +1336,7 @@ private:
     std::unordered_map<std::string, std::string> borrow_origin_{};
     std::unordered_map<std::string, InvalidatedLoan> invalidated_loans_{};
     std::unordered_set<std::string> active_loop_collections_{};
+    std::unordered_set<std::string> ptr_or_smart_vars_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
     std::unordered_map<std::string, std::size_t> fixed_array_lens_{};
     std::unordered_set<std::string> map_vars_{};
