@@ -436,17 +436,27 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
     -> std::expected<int, std::string>
 {
     std::vector<std::filesystem::path> files;
-    if (std::filesystem::is_directory(target)) {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(target)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".cf") {
-                std::string p_str = entry.path().string();
-                if (p_str.find("/.cfire/") == std::string::npos) {
-                    files.push_back(entry.path());
+    std::error_code ec;
+    if (std::filesystem::is_directory(target, ec)) {
+        for (auto it = std::filesystem::recursive_directory_iterator(target, ec);
+             it != std::filesystem::recursive_directory_iterator();
+             it.increment(ec)) {
+            if (ec) break;
+            if (it->is_directory(ec)) {
+                auto dn = it->path().filename().string();
+                if (dn == ".cfire" || dn == ".tako" || dn == ".git" ||
+                    dn == "dist" || dn == "vendor" || dn == "node_modules" ||
+                    dn == "ejected_cpp") {
+                    it.disable_recursion_pending();
                 }
+                continue;
+            }
+            if (it->is_regular_file(ec) && it->path().extension() == ".cf") {
+                files.push_back(it->path());
             }
         }
         std::sort(files.begin(), files.end());
-    } else if (std::filesystem::exists(target)) {
+    } else if (std::filesystem::exists(target, ec)) {
         files.push_back(target);
     } else {
         return std::unexpected(std::format("path not found: {}", target.string()));

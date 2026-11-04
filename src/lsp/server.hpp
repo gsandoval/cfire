@@ -812,9 +812,14 @@ public:
                        "**Example:**\n```cf\npanic(\"unreachable state reached\")\n```";
             }
             if (sym.name == "assert") {
-                return "### Built-in Function `assert(condition, message)`\n```cf\nassert(cond: bool, msg: str = \"\") -> void\n```\n"
-                       "Evaluates `cond` and aborts execution if false.\n\n"
+                return "### Built-in Power-Assertion `assert(condition, message)`\n```cf\nassert(cond: bool, msg: str = \"\") -> void\n```\n"
+                       "Evaluates `cond` once and aborts execution if false. For binary comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`), automatically formats `[left: <val>, right: <val>]` value diffs.\n\n"
                        "**Example:**\n```cf\nassert(capacity >= 1, \"capacity must be positive\")\n```";
+            }
+            if (sym.name == "assert_eq") {
+                return "### Built-in Power-Assertion `assert_eq(left, right, message)`\n```cf\nassert_eq(left: T, right: T, msg: str = \"\") -> void\n```\n"
+                       "Evaluates `left` and `right` once, verifies `left == right`, and formats `[left: <val>, right: <val>]` value diffs on failure.\n\n"
+                       "**Example:**\n```cf\nassert_eq(actual_count, 42, \"count mismatch\")\n```";
             }
             if (sym.name == "make") {
                 return "### Built-in Allocator `make[T](...args)`\n```cf\nmake[own[T]](args...) -> own[T]\nmake[shared[T]](args...) -> shared[T]\nmake[sync.Channel[T]](capacity: usize) -> sync.Channel[T]\n```\n"
@@ -823,9 +828,9 @@ public:
             }
             if (sym.name == "defer") {
                 return "### Keyword `defer`\n"
-                       "Schedules an expression or statement to execute when the enclosing function or block exits (LIFO order).\n\n"
-                       "Lowers 1-to-1 to `cfire::scope_exit` in C++23.\n\n"
-                       "**Example:**\n```cf\ndefer println(\"Cleaned up session\")\n```";
+                       "Schedules a single statement (`defer expr`) or a multi-statement block (`defer { ... }`) to execute when the enclosing function or block exits (LIFO order).\n\n"
+                       "Lowers 1-to-1 to `cfire::scope_exit` in C++23 (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`).\n\n"
+                       "**Example:**\n```cf\ndefer println(\"Cleaned up session\")\ndefer {\n    file.flush()\n    file.close()\n}\n```";
             }
             if (sym.name == "cpp") {
                 return "### Block `cpp { ... }`\n"
@@ -1461,6 +1466,20 @@ public:
                             }
                         }
                         if (param_names.empty()) {
+                            for (const auto& pkg : ws.local_packages) {
+                                for (const auto& fn : pkg.ast.functions) {
+                                    if (fn.receiver && fn.name == mem->field) {
+                                        std::string fn_recv = cfire::fmt::format_type_ref(fn.receiver->type);
+                                        if (fn_recv == recv_type || pkg.alias + "." + fn_recv == recv_type) {
+                                            for (const auto& p : fn.params) param_names.push_back(p.name);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!param_names.empty()) break;
+                            }
+                        }
+                        if (param_names.empty()) {
                             for (const auto& mod : cfire::doc::stdlib_catalog()) {
                                 for (const auto& fn : mod.functions) {
                                     if (auto dot = fn.name.find('.'); dot != std::string::npos) {
@@ -1831,7 +1850,8 @@ public:
         append_item("println", 3, "println(args...)", "Prints formatted arguments followed by a newline to standard output.");
         append_item("print", 3, "print(args...)", "Prints formatted arguments to standard output without trailing newline.");
         append_item("panic", 3, "panic(message: string)", "Terminates the program immediately with an error message.");
-        append_item("assert", 3, "assert(cond: bool, msg: string = \"\")", "Aborts execution if condition evaluates to false.");
+        append_item("assert", 3, "assert(cond: bool, msg: string = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).");
+        append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: string = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.");
         append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.");
         append_item("@pkg", 14, "@pkg(\"libname\")", "Specifies system package / pkg-config dependency for C/C++ header import.");
 
@@ -1847,10 +1867,16 @@ public:
                         "match ${1:expr} {\n\t${2:case} => ${0}\n}", 2);
             append_item("for", 15, "for item in iter { ... }", "For-in iteration loop snippet",
                         "for ${1:item} in ${2:iter} {\n\t${0}\n}", 2);
+            append_item("for ..", 15, "for i in 0..n { ... }", "Numeric range loop snippet",
+                        "for ${1:i} in ${2:0}..${3:n} {\n\t${0}\n}", 2);
             append_item("if", 15, "if condition { ... }", "Conditional statement snippet",
                         "if ${1:condition} {\n\t${0}\n}", 2);
             append_item("defer", 15, "defer <expr>", "Schedules statement to execute when enclosing function returns.",
                         "defer ${0}", 2);
+            append_item("defer {}", 15, "defer { ... }", "Schedules a multi-statement cleanup block on scope exit.",
+                        "defer {\n\t${0}\n}", 2);
+            append_item("test", 15, "test \"name\" { ... }", "Unit test block snippet",
+                        "test \"${1:name}\" {\n\t${0}\n}", 2);
             append_item("cpp", 15, "cpp { ... }", "Direct inline C++23 emission block.",
                         "cpp {\n\t${0}\n}", 2);
         } else {
@@ -1860,7 +1886,8 @@ public:
             append_item("match", 14, "match keyword", "Pattern matching");
             append_item("for", 14, "for keyword", "Loop statement");
             append_item("if", 14, "if keyword", "Conditional statement");
-            append_item("defer", 14, "defer <expr>", "Schedules statement to execute when enclosing function returns.");
+            append_item("defer", 14, "defer <expr> / defer { ... }", "Schedules statement or block to execute when enclosing scope exits.");
+            append_item("test", 14, "test \"name\" { ... }", "Unit test declaration");
             append_item("cpp", 14, "cpp { ... }", "Direct inline C++23 emission block.");
         }
         out += "]";
@@ -1946,6 +1973,36 @@ public:
                     for (const auto& v : en.variants) {
                         if (v.name == sym.name) { target_line = v.line - 1; break; }
                     }
+                }
+            }
+            if (target_line < 0) {
+                for (const auto& pkg : ws.local_packages) {
+                    for (const auto& st : pkg.ast.structs) {
+                        if (st.name == rtype || pkg.alias + "." + st.name == rtype) {
+                            for (const auto& f : st.fields) {
+                                if (f.name == sym.name) { target_uri = pkg.uri; target_line = f.line - 1; break; }
+                            }
+                        }
+                        if (target_line >= 0) break;
+                    }
+                    if (target_line >= 0) break;
+                    for (const auto& fn : pkg.ast.functions) {
+                        if (fn.receiver && (fn.receiver->type.name == rtype || pkg.alias + "." + fn.receiver->type.name == rtype) && fn.name == sym.name) {
+                            target_uri = pkg.uri;
+                            target_line = fn.line - 1;
+                            break;
+                        }
+                    }
+                    if (target_line >= 0) break;
+                    for (const auto& en : pkg.ast.enums) {
+                        if (en.name == rtype || pkg.alias + "." + en.name == rtype) {
+                            for (const auto& v : en.variants) {
+                                if (v.name == sym.name) { target_uri = pkg.uri; target_line = v.line - 1; break; }
+                            }
+                        }
+                        if (target_line >= 0) break;
+                    }
+                    if (target_line >= 0) break;
                 }
             }
         }
@@ -2172,7 +2229,7 @@ public:
             }
         }
 
-        std::unordered_set<std::string> builtins = {"println", "print", "panic", "assert", "make"};
+        std::unordered_set<std::string> builtins = {"println", "print", "panic", "assert", "assert_eq", "make"};
         std::unordered_set<std::string> namespaces = {"cpp"};
         for (const auto& mod : cfire::doc::stdlib_catalog()) {
             namespaces.insert(mod.ns_alias);
@@ -2316,13 +2373,18 @@ public:
 
             // Multi-char & relational operators
             if (t.kind == TokenKind::ColonEq || t.kind == TokenKind::PlusEq ||
-                t.kind == TokenKind::MinusEq || t.kind == TokenKind::Assign ||
+                t.kind == TokenKind::MinusEq || t.kind == TokenKind::StarEq ||
+                t.kind == TokenKind::SlashEq || t.kind == TokenKind::PercentEq ||
+                t.kind == TokenKind::ShlEq || t.kind == TokenKind::ShrEq ||
+                t.kind == TokenKind::AmpEq || t.kind == TokenKind::PipeEq ||
+                t.kind == TokenKind::CaretEq || t.kind == TokenKind::Shl ||
+                t.kind == TokenKind::Shr || t.kind == TokenKind::Assign ||
                 t.kind == TokenKind::Eq || t.kind == TokenKind::Neq ||
                 t.kind == TokenKind::Lt || t.kind == TokenKind::Gt ||
                 t.kind == TokenKind::Le || t.kind == TokenKind::Ge ||
                 t.kind == TokenKind::DoublePipe || t.kind == TokenKind::Arrow ||
                 t.kind == TokenKind::FatArrow || t.kind == TokenKind::DoubleColon ||
-                t.kind == TokenKind::DotDot) {
+                t.kind == TokenKind::DotDot || t.kind == TokenKind::DotDotEq) {
                 raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 14 /* operator */, 0});
                 continue;
             }

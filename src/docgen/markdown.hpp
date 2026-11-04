@@ -1390,15 +1390,20 @@ window.addEventListener('hashchange', updateChapterFromHash);
 
 ## Grammar & Syntax Rules
 - Package: `package <name>` (canonical entry: `package main`)
+  - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
 - Imports:
-  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`)
+  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:tako"`)
   - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:db/sqlite"`, `import "ext:ai"`)
   - Bundled Vendor: `import "vendor:<module>"` (e.g. `import "vendor:raylib"`, `import "vendor:raygui"`)
+  - Toolchain Packages: `import "pkg:<name>"` (e.g. `import "pkg:tako"`, resolved automatically from workspace/toolchain roots alongside `build.Tako()` in `build.cf`)
   - Local package: `import "./path/to/pkg"`
   - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")`
 - Variable Declarations:
   - Immutable binding: `x := 42`, `name: str = "cfire"`
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
+- Strings & Arbitrary Expression Interpolation:
+  - Double-quoted strings interpolate arbitrary expressions and optional format specifiers: `"sum={a + b} first={items[0]} hex={mask:04x}"` (lowers to `std::format("sum={} first={} hex={:04x}", a + b, items[0], mask)`)
+  - Raw multi-line strings: `` `SELECT * FROM users` ``
 - Function Signatures:
   - `fn name(a: i32, mut b: str, move c: []byte) -> Ret! { ... }`
   - Method with receiver: `fn (mut self: Server) start() -> void! { ... }`
@@ -1410,6 +1415,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Default: immutable view / read-only
   - `mut`: must pass mutable variable with `mut` at call site: `update(mut val)`
   - `move`: transfers ownership with `move` at call site: `consume(move item)`
+  - `out`: writes output in-place with `out` at call site: `populate(out dst)`
 - Types:
   - Primitives: `i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`, `bool`, `char`, `void`
   - Strings & Bytes: `str`, `&str`, `bytes`, `[]byte`
@@ -1420,11 +1426,17 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Struct: `type User struct { id: i64, name: str `json:"name"` }`
   - Enum: `type Shape enum { Circle(f64), Rect(f64, f64), None }`
   - Interface: `type Writer interface { write(b: []byte) -> usize! }`
-- Control Flow:
+- Control Flow & RAII Defer:
   - `if cond { ... } else { ... }`
-  - `for item in slice { ... }` / `for i, item in slice { ... }`
-  - `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
-  - `defer resource.close()`
+  - Exclusive numeric range loop: `for i in 0..n { ... }` (iterates `0` to `n - 1`)
+  - Inclusive numeric range loop: `for i in 1..=n { ... }` (iterates `1` to `n`)
+  - Collection loop: `for item in slice { ... }` / `for i, item in slice { ... }`
+  - Conditional / unbounded loop: `for cond { ... }` / `for { ... }`
+  - Exhaustive pattern match: `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
+  - Single-statement or multi-statement RAII scope cleanup: `defer resource.close()` or `defer { f.flush(); f.close() }` (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`)
+- Testing & Power-Assertions:
+  - Unit test blocks: `test "description" { ... }`
+  - Power-assertions (`assert(a == b)`, `assert_eq(a, b)`): evaluate each operand once and automatically print `[left: <val>, right: <val>]` value diffs on failure.
 - Error Handling:
   - `val := try fallible()` (early return error on failure)
   - `val := fallible() or fallback_expr`
@@ -1437,16 +1449,19 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Injection Warnings (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Dynamic string concatenation in `db.exec`/`db.query` or `os.exec`/`os.exec_output` emits a warning; use parameterized `?1` queries.
 - Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp::some_c_func()`
 - CLI Tooling:
-  - `cfire run [--web] [target]`: Run native app, execute binary, or serve web app (--web)
-  - `cfire build [--target wasm] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, signed macOS `.app` bundle, or WebAssembly
+  - `cfire init [--template cli|tako|gui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|gui]`: Scaffold a new `cfire` project (`build.cf`, `src/main.cf`, `tests/main_test.cf`, `.gitignore`)
+  - `cfire run [--web] [--ios] [target]`: Run native app, execute binary, launch iOS Simulator (`--ios`), or serve web app (`--web`)
+  - `cfire build [--target wasm|ios-sim|ios] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, signed macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire check [--json] [--fix] [file|dir]`: Zero-arg workspace-aware type & borrow checker with 1-based coordinates and fixits
+  - `cfire test [--sanitize] [--json] [--filter <pat>] [file|dir]`: Zero-arg workspace test runner discovering all `*_test.cf` and `test "..."` blocks
+  - `cfire fix [--dry-run] [--json] [file|dir]`: Zero-arg workspace auto-fixer for missing `core:*` imports, `mut` call-site markers, and `match` arms
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in zero-dependency static server with WASM MIME and COOP/COEP isolation headers
-  - `cfire check --json <file>`: Multi-error structured diagnostics with 1-based coordinates and fixits
-  - `cfire outline --json <file|dir>`: AST symbol outline with exact types, intents, receivers
+  - `cfire outline [--json] [file|dir]`: AST symbol outline with exact types, intents, receivers, interfaces, and test blocks
   - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or compiler diagnostic rule (`cfire inspect cfire/USE-AFTER-FREE`)
+  - `cfire install [--user|--prefix <dir>|--portable <dir>]`: Install self-relocating `cfire` binary and `runtime/` headers
   - `cfire ide [target|--all|--status] [--global]`: Auto-detect & configure LSP, MCP, and agent rules for VS Code, Antigravity (`agy`), Claude Code (`claude`), Cursor, Windsurf, Zed, Neovim, and CLion
-  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio, or generate MCP client configuration
+  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio (`cfire_stdlib_list`, `cfire_stdlib_lookup`, `cfire_check`, `cfire_eval`, `cfire_outline`, `cfire_inspect`, `cfire_doc_llm`)
   - `cfire doc --llm`: Dump this LLM context reference sheet
-  - `cfire test`: Run tests with assertion location reporting
   - `cfire eval 'expr'`: Immediate evaluation of expressions
 
 ## Standard Library Modules (`core:*`, `ext:*`, `vendor:*`)
