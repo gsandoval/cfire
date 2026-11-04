@@ -384,6 +384,7 @@ struct AssignStmt {
 struct DeferStmt {
     ExprPtr call{};
     int line = 1;
+    std::vector<StmtPtr> body{};
 };
 
 struct ReturnStmt {
@@ -404,6 +405,8 @@ struct ForStmt {
     ExprPtr iter_expr{};
     std::vector<StmtPtr> body{};
     int line = 1;
+    ExprPtr range_end = nullptr;
+    bool range_inclusive = false;
 };
 
 struct MatchStmt {

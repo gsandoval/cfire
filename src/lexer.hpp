@@ -185,6 +185,11 @@ namespace cfire::frontend {
             tokens.push_back(Token{TokenKind::ShrEq, ">>=", start_line, start_col});
             continue;
         }
+        if (c == '.' && c2 == '.' && c3 == '=') {
+            advance(); advance(); advance();
+            tokens.push_back(Token{TokenKind::DotDotEq, "..=", start_line, start_col});
+            continue;
+        }
 
         // Two-character operators
         if (c == '.' && c2 == '.') {

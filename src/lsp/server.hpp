@@ -398,10 +398,13 @@ public:
         std::filesystem::path base_dir = file_path.parent_path();
         if (base_dir.empty()) base_dir = std::filesystem::current_path();
 
+        auto toolchain_pkg_dir = cfire::build::locate_toolchain_layout().pkg_dir;
         auto collect_imports = [&](const cfire::frontend::FileAST& src_ast, const std::filesystem::path& src_dir) {
             for (const auto& imp : src_ast.imports) {
-                if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../"))) {
-                    std::filesystem::path target = src_dir / imp.path;
+                if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../") || imp.path.starts_with("pkg:"))) {
+                    std::filesystem::path target = imp.path.starts_with("pkg:")
+                        ? (toolchain_pkg_dir / imp.path.substr(4))
+                        : (src_dir / imp.path);
                     std::vector<std::filesystem::path> cf_files;
                     std::error_code ec;
                     if (std::filesystem::is_directory(target, ec)) {
@@ -432,7 +435,7 @@ public:
                     std::vector<std::string> cflags = {"-std=c++2b"};
                     // Check sibling or parent `build.cf` for local C/C++ include directories
                     std::filesystem::path search_dir = src_dir;
-                    for (int depth = 0; depth < 3 && !search_dir.empty(); ++depth) {
+                    for (int depth = 0; depth < 4 && !search_dir.empty(); ++depth) {
                         auto bcf = search_dir / "build.cf";
                         std::error_code ec;
                         if (std::filesystem::exists(bcf, ec)) {
@@ -446,6 +449,9 @@ public:
                                                 auto inc_dir = search_dir / lit->value;
                                                 if (std::filesystem::exists(inc_dir, ec)) {
                                                     cflags.push_back("-I" + inc_dir.string());
+                                                    if (std::filesystem::is_directory(inc_dir / "include", ec)) {
+                                                        cflags.push_back("-I" + (inc_dir / "include").string());
+                                                    }
                                                 }
                                             }
                                         }
@@ -493,6 +499,46 @@ public:
         };
 
         collect_imports(ast, base_dir);
+
+        // Also automatically discover same-directory sibling `.cf` files sharing `ast.package_name` (ERG-02c)
+        if (!ast.package_name.empty()) {
+            std::error_code ec;
+            auto canon_dir = std::filesystem::weakly_canonical(base_dir, ec);
+            auto canon_tmp = std::filesystem::weakly_canonical(std::filesystem::temp_directory_path(ec), ec);
+            bool is_shared_tmp = (canon_dir == canon_tmp || base_dir == "/tmp" || base_dir == "/private/tmp");
+            if (!is_shared_tmp) {
+                auto self_canon = std::filesystem::weakly_canonical(file_path, ec).string();
+                for (const auto& entry : std::filesystem::directory_iterator(base_dir, ec)) {
+                    if (!entry.is_regular_file() || entry.path().extension() != ".cf") continue;
+                    auto fname = entry.path().filename().string();
+                    if (fname == "build.cf") continue;
+                    auto sib_canon = std::filesystem::weakly_canonical(entry.path(), ec).string();
+                    if (sib_canon == self_canon) continue;
+                    bool already_added = false;
+                    for (const auto& existing : ws.local_packages) {
+                        if (std::filesystem::weakly_canonical(existing.file_path, ec).string() == sib_canon) {
+                            already_added = true;
+                            break;
+                        }
+                    }
+                    if (already_added) continue;
+                    std::string sub_uri = detail::path_to_uri(entry.path());
+                    std::string sub_text = get_doc_text(sub_uri);
+                    if (auto sub_ast = cfire::frontend::parse_source(entry.path().string(), sub_text)) {
+                        if (sub_ast->package_name == ast.package_name) {
+                            detail::ImportedPkgFile pkg;
+                            pkg.alias = sub_ast->package_name;
+                            pkg.import_path = "./" + fname;
+                            pkg.file_path = entry.path().string();
+                            pkg.uri = sub_uri;
+                            pkg.ast = std::move(*sub_ast);
+                            ws.local_packages.push_back(std::move(pkg));
+                        }
+                    }
+                }
+            }
+        }
+
         // Also collect C/C++ imports inside imported local packages!
         std::size_t pkg_count = ws.local_packages.size();
         for (std::size_t i = 0; i < pkg_count; ++i) {
@@ -598,6 +644,7 @@ public:
                 for (const auto& st : pkg.ast.structs) merged.structs.push_back(st);
                 for (const auto& en : pkg.ast.enums) merged.enums.push_back(en);
                 for (const auto& ifc : pkg.ast.interfaces) merged.interfaces.push_back(ifc);
+                for (const auto& gv : pkg.ast.global_vars) merged.global_vars.push_back(gv);
                 for (const auto& fn : pkg.ast.functions) merged.functions.insert(merged.functions.begin(), fn);
             }
             auto checked = analyze_resilient(std::move(merged));
@@ -1034,6 +1081,26 @@ public:
                 std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
                 return std::format("### Struct `{}`\n```cf\n{}\n```\nLowers 1-to-1 to C++23 aggregate `struct {}` (line {}).{}{}{}",
                     st.name, cfire::fmt::format_struct_signature(st), st.name, st.line, layout_hdr, doc_sec, fields_table);
+            }
+        }
+        // Check unqualified functions/structs/enums from sibling/local packages sharing the package
+        for (const auto& pkg : ws.local_packages) {
+            auto pkg_lines = detail::split_lines(get_doc_text(pkg.uri));
+            for (const auto& fn : pkg.ast.functions) {
+                if (fn.name == sym.name) {
+                    std::string doc = detail::extract_leading_doc_comments(pkg_lines, fn.line);
+                    std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                    return std::format("### Function `{}` (from `{}`)\n```cf\n{}\n```\n**Lowered ISO C++23:**\n```cpp\n{}\n```\nDefined at `{}:{}`{}",
+                        fn.name, pkg.file_path, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn), pkg.file_path, fn.line, doc_sec);
+                }
+            }
+            for (const auto& st : pkg.ast.structs) {
+                if (st.name == sym.name) {
+                    std::string doc = detail::extract_leading_doc_comments(pkg_lines, st.line);
+                    std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                    return std::format("### Struct `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
+                        st.name, pkg.file_path, cfire::fmt::format_struct_signature(st), pkg.file_path, st.line, doc_sec);
+                }
             }
         }
         for (const auto& en : ast.enums) {
@@ -1716,6 +1783,27 @@ public:
                 if (doc.empty()) doc = cfire::fmt::format_enum_signature(en);
                 append_item(en.name, 13, "type " + en.name + " enum", doc);
             }
+            for (const auto& pkg : ws.local_packages) {
+                if (pkg.ast.package_name == ast_res->package_name && !ast_res->package_name.empty()) {
+                    auto pkg_lines = detail::split_lines(get_doc_text(pkg.uri));
+                    for (const auto& fn : pkg.ast.functions) {
+                        if (fn.receiver) continue;
+                        std::string doc = detail::extract_leading_doc_comments(pkg_lines, fn.line);
+                        if (doc.empty()) doc = detail::lower_fn_preview(fn);
+                        append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc);
+                    }
+                    for (const auto& st : pkg.ast.structs) {
+                        std::string doc = detail::extract_leading_doc_comments(pkg_lines, st.line);
+                        if (doc.empty()) doc = cfire::fmt::format_struct_signature(st);
+                        append_item(st.name, 22, "type " + st.name + " struct", doc);
+                    }
+                    for (const auto& en : pkg.ast.enums) {
+                        std::string doc = detail::extract_leading_doc_comments(pkg_lines, en.line);
+                        if (doc.empty()) doc = cfire::fmt::format_enum_signature(en);
+                        append_item(en.name, 13, "type " + en.name + " enum", doc);
+                    }
+                }
+            }
         }
         for (const auto& mod : cfire::doc::stdlib_catalog()) {
             bool imported = is_module_imported(mod.import_path, mod.ns_alias);
@@ -1887,6 +1975,25 @@ public:
         if (target_line < 0) {
             for (const auto& iface : ast_res->interfaces) {
                 if (iface.name == sym.name) { target_line = iface.line - 1; break; }
+            }
+        }
+        if (target_line < 0) {
+            for (const auto& pkg : ws.local_packages) {
+                for (const auto& fn : pkg.ast.functions) {
+                    if (fn.name == sym.name) { target_uri = pkg.uri; target_line = fn.line - 1; break; }
+                }
+                if (target_line >= 0) break;
+                for (const auto& st : pkg.ast.structs) {
+                    if (st.name == sym.name) { target_uri = pkg.uri; target_line = st.line - 1; break; }
+                }
+                if (target_line >= 0) break;
+                for (const auto& en : pkg.ast.enums) {
+                    if (en.name == sym.name) { target_uri = pkg.uri; target_line = en.line - 1; break; }
+                    for (const auto& v : en.variants) {
+                        if (v.name == sym.name) { target_uri = pkg.uri; target_line = v.line - 1; break; }
+                    }
+                }
+                if (target_line >= 0) break;
             }
         }
         if (target_line < 0) return "null";

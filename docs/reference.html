@@ -1685,7 +1685,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-rg" id="nav-pane-mod-rg" onclick="navigateToRefPane('mod-rg'); return false;"><code>vendor:raygui</code> <span style="color:var(--muted);font-size:0.75rem;">(15)</span></a></li>
           <li class="nav-item"><a href="#mod-rl" id="nav-pane-mod-rl" onclick="navigateToRefPane('mod-rl'); return false;"><code>vendor:raylib</code> <span style="color:var(--muted);font-size:0.75rem;">(24)</span></a></li>
         </ul>
-        <h4 style="margin-top:1.25rem;">Diagnostics (18)</h4>
+        <h4 style="margin-top:1.25rem;">Diagnostics (19)</h4>
         <ul class="sidebar-diag-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#diag-cfire/MUT-CALLSITE" id="nav-diag-cfire/MUT-CALLSITE" onclick="navigateToRefDiag('diag-cfire/MUT-CALLSITE'); return false;"><code>cfire/MUT-CALLSITE</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/IMMUTABLE-MUT-ARG" id="nav-diag-cfire/IMMUTABLE-MUT-ARG" onclick="navigateToRefDiag('diag-cfire/IMMUTABLE-MUT-ARG'); return false;"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
@@ -1705,6 +1705,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#diag-cfire/DIVIDE-BY-ZERO" id="nav-diag-cfire/DIVIDE-BY-ZERO" onclick="navigateToRefDiag('diag-cfire/DIVIDE-BY-ZERO'); return false;"><code>cfire/DIVIDE-BY-ZERO</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/SQL-INJECTION-RISK" id="nav-diag-cfire/SQL-INJECTION-RISK" onclick="navigateToRefDiag('diag-cfire/SQL-INJECTION-RISK'); return false;"><code>cfire/SQL-INJECTION-RISK</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/SHELL-INJECTION-RISK" id="nav-diag-cfire/SHELL-INJECTION-RISK" onclick="navigateToRefDiag('diag-cfire/SHELL-INJECTION-RISK'); return false;"><code>cfire/SHELL-INJECTION-RISK</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/RETURN-IN-DEFER" id="nav-diag-cfire/RETURN-IN-DEFER" onclick="navigateToRefDiag('diag-cfire/RETURN-IN-DEFER'); return false;"><code>cfire/RETURN-IN-DEFER</code></a></li>
         </ul>
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
@@ -1734,7 +1735,7 @@ tr:hover td { background: #1F242C; }
       </div>
       <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 33 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">33 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (10 opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 18 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">33 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (10 opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 19 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Strings, Unicode, Regex &amp; Containers</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
@@ -2019,7 +2020,7 @@ tr:hover td { background: #1F242C; }
           <a href="#diagnostics" class="ref-mod-card" onclick="navigateToRefPane('diagnostics'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">cfire/* Rules</span>
-              <span class="ref-mod-card-count">18 rules</span>
+              <span class="ref-mod-card-count">19 rules</span>
             </div>
             <div class="ref-mod-card-title">Compiler Semantic Diagnostics Catalog</div>
             <div class="ref-mod-card-desc">Rejected vs. Accepted <code>.cf</code> side-by-side verification rules enforced by the semantic checker.</div>
@@ -3835,6 +3836,24 @@ x := 100 / denom // OK</code></pre></div>
           <div class="grid-2">
             <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>out := try os.exec(&quot;cat &quot; + untrusted_path) // WARNING [cfire/SHELL-INJECTION-RISK]</code></pre></div>
             <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>res := try os.command(&quot;cat&quot;, [untrusted_path]) // OK: direct posix_spawnp argv</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/RETURN-IN-DEFER" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/RETURN-IN-DEFER]</code> &mdash; <code>return</code> Statement Inside <code>defer { ... }</code> Block</h3>
+          <p style="margin-bottom:0.85rem;"><code>defer { ... }</code> blocks lower to a C++ RAII scope-exit destructor (<code>struct _CfireDefer { ~_CfireDefer() { ... } }</code>) and cannot return a value to the enclosing function.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn process() -&gt; i32 {
+    defer {
+        return 0 // ERROR [cfire/RETURN-IN-DEFER]
+    }
+    return 1
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn process() -&gt; i32 {
+    defer {
+        cleanup()
+    }
+    return 1 // OK: return from enclosing function
+}</code></pre></div>
           </div>
         </div>
         <nav class="chapter-pager" aria-label="Module Pagination">

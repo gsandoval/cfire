@@ -1644,6 +1644,66 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
         require(resp_llm.contains("Memory Safety, Loan Tracking"), "MCP cfire_doc_llm returns LLM reference sheet (IDE-MCP-01)");
     }
 
+    // 5. SELF-LOCATE-01: Verify Portable Directory Installation, System FHS Prefix Installation, and Symlinked Binary
+    {
+        auto portable_dir = tmp_ide_ws.subpath("portable_dist");
+        auto fhs_prefix = tmp_ide_ws.subpath("fhs_prefix");
+        auto symlink_dir = tmp_ide_ws.subpath("bin_links");
+        auto user_proj = tmp_ide_ws.subpath("external_user_project");
+        std::filesystem::create_directories(symlink_dir);
+        std::filesystem::create_directories(user_proj);
+
+        (void)cfire::fs::write_text(user_proj / "app.cf", R"(package main
+import "core:str"
+fn main() {
+    println("relocatable={}", str.to_upper("ok"))
+}
+)");
+
+        // 5a. Portable Directory Installation (`<portable_dir>/cfire` + `<portable_dir>/runtime/`)
+        run_cfire(std::format("install --portable '{}'", portable_dir.string()))
+            .assert_ok("cfire install --portable exit 0 (SELF-LOCATE-01)");
+        require(std::filesystem::exists(portable_dir / "cfire"), "portable install creates <dir>/cfire (SELF-LOCATE-01)");
+        require(std::filesystem::exists(portable_dir / "runtime" / "cfire_prelude.hpp"), "portable install creates <dir>/runtime/cfire_prelude.hpp (SELF-LOCATE-01)");
+
+        int rc = 0;
+        std::string port_out = cfire::bridge::run_command_capture(
+            std::format("cd '{}' && env -u CFIRE_RUNTIME_DIR '{}' run app.cf 2>&1",
+                user_proj.string(), (portable_dir / "cfire").string()), rc);
+        require(rc == 0 && port_out.contains("relocatable=OK"),
+            std::format("portable cfire runs external project without CFIRE_RUNTIME_DIR (SELF-LOCATE-01): {}", port_out));
+
+        // 5b. System FHS Prefix Installation (`<prefix>/bin/cfire` + `<prefix>/share/cfire/runtime/`)
+        run_cfire(std::format("install --prefix '{}'", fhs_prefix.string()))
+            .assert_ok("cfire install --prefix exit 0 (SELF-LOCATE-01)");
+        require(std::filesystem::exists(fhs_prefix / "bin" / "cfire"), "FHS install creates <prefix>/bin/cfire (SELF-LOCATE-01)");
+        require(std::filesystem::exists(fhs_prefix / "share" / "cfire" / "runtime" / "cfire_prelude.hpp"),
+            "FHS install creates <prefix>/share/cfire/runtime/cfire_prelude.hpp (SELF-LOCATE-01)");
+
+        std::string fhs_doc = cfire::bridge::run_command_capture(
+            std::format("cd '{}' && env -u CFIRE_RUNTIME_DIR '{}' doctor 2>&1",
+                user_proj.string(), (fhs_prefix / "bin" / "cfire").string()), rc);
+        require(rc == 0 && fhs_doc.contains("[System FHS Prefix]"),
+            std::format("FHS-installed cfire auto-detects System FHS Prefix runtime (SELF-LOCATE-01): {}", fhs_doc));
+
+        std::string fhs_run = cfire::bridge::run_command_capture(
+            std::format("cd '{}' && env -u CFIRE_RUNTIME_DIR '{}' run app.cf 2>&1",
+                user_proj.string(), (fhs_prefix / "bin" / "cfire").string()), rc);
+        require(rc == 0 && fhs_run.contains("relocatable=OK"),
+            std::format("FHS-installed cfire runs external project without CFIRE_RUNTIME_DIR (SELF-LOCATE-01): {}", fhs_run));
+
+        // 5c. Symlinked binary (`<symlink_dir>/cfire -> <portable_dir>/cfire`)
+        std::error_code ec;
+        std::filesystem::create_symlink(portable_dir / "cfire", symlink_dir / "cfire", ec);
+        if (!ec) {
+            std::string sym_run = cfire::bridge::run_command_capture(
+                std::format("cd '{}' && env -u CFIRE_RUNTIME_DIR '{}' run app.cf 2>&1",
+                    user_proj.string(), (symlink_dir / "cfire").string()), rc);
+            require(rc == 0 && sym_run.contains("relocatable=OK"),
+                std::format("symlinked cfire resolves target runtime (SELF-LOCATE-01): {}", sym_run));
+        }
+    }
+
     std::println("--- PASS: test_ide_configuration_setup");
 }
 

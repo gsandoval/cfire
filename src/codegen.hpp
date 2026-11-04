@@ -108,6 +108,9 @@ public:
                 used_core_.insert("audio");
             } else if (path == "core:ai" || path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
+            } else if (path == "core:tako") {
+                used_core_.insert("tako");
+                used_core_.insert("json");
             } else if (path.starts_with("core:")) {
                 used_core_.insert(path.substr(5));
             } else if (path == "vendor:raylib") {
@@ -211,6 +214,11 @@ public:
                 used_core_.insert("audio");
             } else if (path == "core:ai" || path.starts_with("core:ai/")) {
                 used_core_.insert("ai");
+                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
+                add_unique(link_tags, "-lsimdjson");
+            } else if (path == "core:tako") {
+                used_core_.insert("tako");
+                used_core_.insert("json");
                 add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
                 add_unique(link_tags, "-lsimdjson");
             } else if (path.starts_with("core:")) {
@@ -434,8 +442,16 @@ public:
                 writeln(std::format("    records.push_back({{\"{}\", true, dur_ms, \"\", 0, \"\"}});", t_name));
                 writeln("} else {");
                 writeln("    failed_count++;");
-                    writeln("    if (!json_mode) std::println(\"--- FAIL: " + t_name + " ({}:{}: {})\", cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, (cfire::testing_detail::failure_expr.empty() ? cfire::testing_detail::failure_msg : cfire::testing_detail::failure_expr));");
-                writeln(std::format("    records.push_back({{\"{}\", false, dur_ms, cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, (cfire::testing_detail::failure_expr.empty() ? cfire::testing_detail::failure_msg : cfire::testing_detail::failure_expr)}});", t_name));
+                writeln("    std::string fail_detail;");
+                writeln("    if (!cfire::testing_detail::failure_expr.empty() && !cfire::testing_detail::failure_msg.empty()) {");
+                writeln("        fail_detail = cfire::testing_detail::failure_expr + \" (\" + cfire::testing_detail::failure_msg + \")\";");
+                writeln("    } else if (!cfire::testing_detail::failure_expr.empty()) {");
+                writeln("        fail_detail = cfire::testing_detail::failure_expr;");
+                writeln("    } else {");
+                writeln("        fail_detail = cfire::testing_detail::failure_msg;");
+                writeln("    }");
+                writeln("    if (!json_mode) std::println(\"--- FAIL: " + t_name + " ({}:{}: {})\", cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail);");
+                writeln(std::format("    records.push_back({{\"{}\", false, dur_ms, cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail}});", t_name));
                 writeln("}");
                 --indent_;
                 writeln("}");
@@ -992,7 +1008,8 @@ public:
                     }
                     return expr_references_ident(st.value, ident);
                 } else if constexpr (std::is_same_v<T, DeferStmt>) {
-                    return expr_references_ident(st.call, ident);
+                    return expr_references_ident(st.call, ident) ||
+                           stmts_reference_ident(st.body, ident);
                 } else if constexpr (std::is_same_v<T, ReturnStmt>) {
                     return expr_references_ident(st.value, ident);
                 } else if constexpr (std::is_same_v<T, IfStmt>) {
@@ -1001,6 +1018,7 @@ public:
                            stmts_reference_ident(st.else_body, ident);
                 } else if constexpr (std::is_same_v<T, ForStmt>) {
                     return expr_references_ident(st.iter_expr, ident) ||
+                           expr_references_ident(st.range_end, ident) ||
                            stmts_reference_ident(st.body, ident);
                 } else if constexpr (std::is_same_v<T, MatchStmt>) {
                     if (expr_references_ident(st.target, ident)) return true;
@@ -1221,7 +1239,22 @@ public:
                 }
                 writeln(std::format("{} {} {};", lhs, st.op, rhs));
             } else if constexpr (std::is_same_v<T, DeferStmt>) {
-                if (!active_async_scopes_.empty()) {
+                if (!st.body.empty()) {
+                    if (!active_async_scopes_.empty()) {
+                        writeln(std::format("{}.defer([&]() {{", active_async_scopes_.back()));
+                        ++indent_;
+                        for (const auto& b : st.body) emit_stmt(b, false);
+                        --indent_;
+                        writeln("});");
+                    } else {
+                        ++defer_count_;
+                        writeln(std::format("auto _defer_{} = cfire::scope_exit([&]() {{", defer_count_));
+                        ++indent_;
+                        for (const auto& b : st.body) emit_stmt(b, false);
+                        --indent_;
+                        writeln("});");
+                    }
+                } else if (!active_async_scopes_.empty()) {
                     writeln(std::format("{}.defer([&] {{ {}; }});", active_async_scopes_.back(), emit_expr(st.call)));
                 } else {
                     ++defer_count_;
@@ -1255,8 +1288,22 @@ public:
             } else if constexpr (std::is_same_v<T, ForStmt>) {
                 if (!st.item_var.empty()) {
                     hoist_subexpr_tries(st.iter_expr, in_main, s->line, false);
+                    if (st.range_end) {
+                        hoist_subexpr_tries(st.range_end, in_main, s->line, false);
+                    }
                     local_vars_.insert(st.item_var);
-                    if (!st.index_var.empty()) {
+                    if (st.range_end) {
+                        std::string start_s = emit_expr(st.iter_expr);
+                        std::string end_s = emit_expr(st.range_end);
+                        std::string cmp_op = st.range_inclusive ? "<=" : "<";
+                        writeln(std::format(
+                            "for (auto {0} = static_cast<std::common_type_t<decltype({1}), decltype({2})>>({1}), _range_end_{0} = static_cast<std::common_type_t<decltype({1}), decltype({2})>>({2}); {0} {3} _range_end_{0}; ++{0}) {{",
+                            st.item_var, start_s, end_s, cmp_op));
+                        ++indent_;
+                        for (const auto& b : st.body) emit_stmt(b, in_main);
+                        --indent_;
+                        writeln("}");
+                    } else if (!st.index_var.empty()) {
                         local_vars_.insert(st.index_var);
                         std::string col = emit_expr(st.iter_expr);
                         loop_index_to_col_[st.index_var] = col;
@@ -1821,32 +1868,46 @@ public:
         return false;
     }
 
-    [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) const -> std::optional<InterpolationResult> {
-        if (lit.kind != TokenKind::String) return std::nullopt;
-        static const std::regex interp_re(R"(\{([a-zA-Z_][a-zA-Z0-9_.\(\)]*)\})");
-        auto begin = std::sregex_iterator(lit.value.begin(), lit.value.end(), interp_re);
-        if (begin == std::sregex_iterator()) return std::nullopt;
+    [[nodiscard]] static auto expr_root_ident(const ExprPtr& e) -> std::string {
+        if (!e) return "";
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) return expr_root_ident(mem->object);
+        if (const auto* idx = std::get_if<IndexExpr>(&e->node)) return expr_root_ident(idx->object);
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) return expr_root_ident(call->callee);
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) return expr_root_ident(un->operand);
+        if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            auto l = expr_root_ident(bin->left);
+            return !l.empty() ? l : expr_root_ident(bin->right);
+        }
+        return "";
+    }
 
-        for (auto it = begin; it != std::sregex_iterator(); ++it) {
-            std::string v = (*it)[1].str();
-            std::string root = v;
-            if (auto p = root.find_first_of(".("); p != std::string::npos) {
-                root = root.substr(0, p);
-            }
-            if (!is_ident_in_scope(root)) {
+    [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) -> std::optional<InterpolationResult> {
+        if (lit.kind != TokenKind::String || !lit.value.contains('{')) return std::nullopt;
+        auto placeholders = scan_interpolation_placeholders(lit.value);
+        if (placeholders.empty()) return std::nullopt;
+
+        std::vector<ExprSnippetResult> parsed_exprs;
+        parsed_exprs.reserve(placeholders.size());
+        for (const auto& ph : placeholders) {
+            auto parsed = parse_expr_snippet(cf_.ast.path, ph.expr_text, line);
+            if (!parsed) return std::nullopt;
+            std::string root = expr_root_ident(parsed->expr);
+            if (root.empty() || !is_ident_in_scope(root)) {
                 return std::nullopt;
             }
+            parsed_exprs.push_back(std::move(*parsed));
         }
 
         InterpolationResult res;
-        res.fmt_str = std::regex_replace(lit.value, interp_re, "{}");
-        for (auto it = begin; it != std::sregex_iterator(); ++it) {
-            std::string v = (*it)[1].str();
-            if (auto mv = cf_.last_use_move.find(cur_fn_ + ":" + v); mv != cf_.last_use_move.end() && mv->second == line) {
-                v = std::format("std::move({})", v);
-            }
-            res.args.push_back(std::move(v));
+        std::size_t cursor = 0;
+        for (std::size_t i = 0; i < placeholders.size(); ++i) {
+            res.fmt_str.append(lit.value.substr(cursor, placeholders[i].start_pos - cursor));
+            res.fmt_str += "{}";
+            cursor = placeholders[i].end_pos + 1;
+            res.args.push_back(emit_expr(parsed_exprs[i].expr));
         }
+        res.fmt_str.append(lit.value.substr(cursor));
         return res;
     }
 
@@ -2132,19 +2193,12 @@ public:
                     else if (ch == '"') escaped_file += "\\\"";
                     else escaped_file += ch;
                 }
-                return std::format("cfire::assert_true_at({}, {}, \"{}\", {}, \"{}\")",
-                    cond, msg, escaped_file, line, escaped_expr);
+                return std::format(
+                    "cfire::assert_binop_at({}, {}, [](const auto& _l, const auto& _r) {{ return _l == _r; }}, \"==\", {}, \"{}\", {}, \"{}\")",
+                    lhs, rhs, msg, escaped_file, line, escaped_expr);
             }
             if (id->name == "assert" && !call.args.empty()) {
-                std::string cond = emit_call_arg(call.args[0]);
                 std::string msg = (call.args.size() >= 2) ? emit_call_arg(call.args[1]) : "\"assertion failed\"";
-                std::string expr_str = cond;
-                std::string escaped_expr;
-                for (char ch : expr_str) {
-                    if (ch == '\\') escaped_expr += "\\\\";
-                    else if (ch == '"') escaped_expr += "\\\"";
-                    else escaped_expr += ch;
-                }
                 int line = call.args[0].value ? call.args[0].value->line : 0;
                 std::string file_str = cf_.ast.path;
                 std::string escaped_file;
@@ -2152,6 +2206,41 @@ public:
                     if (ch == '\\') escaped_file += "\\\\";
                     else if (ch == '"') escaped_file += "\\\"";
                     else escaped_file += ch;
+                }
+                if (call.args[0].value) {
+                    if (const auto* bin = std::get_if<BinaryExpr>(&call.args[0].value->node)) {
+                        if (bin->op == "==" || bin->op == "!=" ||
+                            bin->op == "<"  || bin->op == "<=" ||
+                            bin->op == ">"  || bin->op == ">=") {
+                            // Do not use assert_binop_at if either side is `none` (std::nullopt) where optional/pointer comparison may require contextual conversion
+                            const auto* l_lit = bin->left ? std::get_if<LiteralExpr>(&bin->left->node) : nullptr;
+                            const auto* r_lit = bin->right ? std::get_if<LiteralExpr>(&bin->right->node) : nullptr;
+                            bool has_none = (l_lit && l_lit->kind == TokenKind::KwNone) ||
+                                            (r_lit && r_lit->kind == TokenKind::KwNone);
+                            if (!has_none) {
+                                std::string lhs = emit_expr(bin->left);
+                                std::string rhs = emit_expr(bin->right);
+                                std::string expr_str = std::format("({} {} {})", lhs, bin->op, rhs);
+                                std::string escaped_expr;
+                                for (char ch : expr_str) {
+                                    if (ch == '\\') escaped_expr += "\\\\";
+                                    else if (ch == '"') escaped_expr += "\\\"";
+                                    else escaped_expr += ch;
+                                }
+                                return std::format(
+                                    "cfire::assert_binop_at({}, {}, [](const auto& _l, const auto& _r) {{ return _l {} _r; }}, \"{}\", {}, \"{}\", {}, \"{}\")",
+                                    lhs, rhs, bin->op, bin->op, msg, escaped_file, line, escaped_expr);
+                            }
+                        }
+                    }
+                }
+                std::string cond = emit_call_arg(call.args[0]);
+                std::string expr_str = cond;
+                std::string escaped_expr;
+                for (char ch : expr_str) {
+                    if (ch == '\\') escaped_expr += "\\\\";
+                    else if (ch == '"') escaped_expr += "\\\"";
+                    else escaped_expr += ch;
                 }
                 return std::format("cfire::assert_true_at({}, {}, \"{}\", {}, \"{}\")",
                     cond, msg, escaped_file, line, escaped_expr);

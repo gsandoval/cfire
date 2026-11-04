@@ -153,12 +153,22 @@ struct CheckItem {
         std::error_code ec;
         auto prelude = runtime_dir / "cfire_prelude.hpp";
         auto stdlib_hdr = runtime_dir / "cfire_core_stdlib.hpp";
+        auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
+        if (ec) can_rt = runtime_dir;
+        auto p1 = can_rt.parent_path();
+        auto p2 = p1.parent_path();
+        std::string mode_label = "Portable Directory";
+        if (p1.filename() == "cfire" && (p2.filename() == "share" || p2.filename() == "lib" || p2.filename() == "include")) {
+            mode_label = "System FHS Prefix";
+        } else if (p1.filename() == ".cfire") {
+            mode_label = "User Home";
+        }
         if (std::filesystem::exists(prelude, ec) && std::filesystem::exists(stdlib_hdr, ec)) {
             items.push_back({
                 "Core Toolchain",
                 "cfire Runtime Headers",
                 "ok",
-                runtime_dir.string(),
+                std::format("{} [{}]", runtime_dir.string(), mode_label),
                 ""
             });
         } else {
@@ -167,7 +177,7 @@ struct CheckItem {
                 "cfire Runtime Headers",
                 "error",
                 "Missing cfire_prelude.hpp in " + runtime_dir.string(),
-                "Run `cfire setup` or set CFIRE_RUNTIME_DIR=/path/to/cfire/runtime"
+                "Run `cfire install` or `cfire setup`"
             });
         }
     }
@@ -176,7 +186,9 @@ struct CheckItem {
     {
         std::error_code ec;
         auto pch_dir = std::filesystem::temp_directory_path(ec) / "cfire_pch_cache";
-        auto pch_file = pch_dir / "cfire_prelude_opt.pch";
+        auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
+        std::size_t rt_hash = std::hash<std::string>{}((ec ? runtime_dir : can_rt).string());
+        auto pch_file = pch_dir / std::format("cfire_prelude_opt_{:08x}.pch", static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
         if (std::filesystem::exists(pch_file, ec)) {
             items.push_back({
                 "Core Toolchain",
@@ -569,27 +581,15 @@ inline auto run_setup(
         std::println("==> Native system libraries are already installed.");
     }
 
-    // 2. Sync runtime headers to ~/.cfire/runtime (or /usr/local/share/cfire/runtime if root)
+    // 2. Verify runtime headers (already resolved relative to executable in PortableDir or SystemPrefix mode)
     std::error_code ec;
     if (std::filesystem::exists(runtime_dir / "cfire_prelude.hpp", ec)) {
-        std::filesystem::path dest_rt;
-        if (is_root) {
-            dest_rt = "/usr/local/share/cfire/runtime";
-        } else if (const char* home = std::getenv("HOME")) {
-            dest_rt = std::filesystem::path(home) / ".cfire" / "runtime";
-        }
-        if (!dest_rt.empty() && std::filesystem::weakly_canonical(runtime_dir, ec) != std::filesystem::weakly_canonical(dest_rt, ec)) {
-            std::filesystem::create_directories(dest_rt, ec);
-            std::filesystem::copy(
-                runtime_dir,
-                dest_rt,
-                std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
-                ec
-            );
-            if (!ec) {
-                std::println("==> Synced cfire runtime headers to {}", dest_rt.string());
-            }
-        }
+        std::println("==> Runtime headers auto-detected at: {}", runtime_dir.string());
+    } else if (const char* home = std::getenv("HOME")) {
+        auto dest_rt = std::filesystem::path(home) / ".cfire" / "runtime";
+        std::println("==> Warning: runtime headers not found at {}", runtime_dir.string());
+        std::println("    Run `cfire install` from a cfire distribution to install runtime headers.");
+        (void)dest_rt;
     }
 
     // 3. Pre-warm C++23 Prelude Precompiled Header (.pch)
@@ -625,6 +625,127 @@ inline auto run_setup(
 
     std::println("");
     return run_doctor(runtime_dir, false);
+}
+
+inline auto run_install(
+    const build::ToolchainLayout& layout,
+    std::string_view target_dir_arg,
+    bool portable_mode,
+    bool user_mode
+) -> int {
+    std::error_code ec;
+    if (layout.executable_path.empty() || !std::filesystem::exists(layout.executable_path, ec)) {
+        std::println(stderr, "error: could not determine running cfire executable path");
+        return 1;
+    }
+    if (layout.runtime_dir.empty() || !std::filesystem::exists(layout.runtime_dir / "cfire_prelude.hpp", ec)) {
+        std::println(stderr, "error: could not locate source runtime headers at {}", layout.runtime_dir.string());
+        return 1;
+    }
+
+    std::filesystem::path target_root;
+    if (!target_dir_arg.empty()) {
+        target_root = std::filesystem::path(target_dir_arg);
+    } else if (user_mode) {
+        const char* home = std::getenv("HOME");
+        if (!home) {
+            std::println(stderr, "error: HOME environment variable is not set for --user install");
+            return 1;
+        }
+        target_root = std::filesystem::path(home) / ".local";
+    } else if (portable_mode) {
+        std::println(stderr, "error: --portable requires a destination directory (e.g. `cfire install --portable ./dist/cfire`)");
+        return 1;
+    } else {
+        if (::geteuid() == 0) {
+            target_root = "/usr/local";
+        } else if (const char* home = std::getenv("HOME")) {
+            target_root = std::filesystem::path(home) / ".local";
+        } else {
+            target_root = "/usr/local";
+        }
+    }
+
+    std::filesystem::path dest_bin;
+    std::filesystem::path dest_rt;
+    if (portable_mode) {
+        // Self-contained portable directory layout: <dest>/cfire + <dest>/runtime/
+        dest_bin = target_root / "cfire";
+        dest_rt = target_root / "runtime";
+    } else {
+        // Standard FHS prefix layout: <prefix>/bin/cfire + <prefix>/share/cfire/runtime/
+        dest_bin = target_root / "bin" / "cfire";
+        dest_rt = target_root / "share" / "cfire" / "runtime";
+    }
+
+    std::filesystem::create_directories(dest_bin.parent_path(), ec);
+    if (ec) {
+        std::println(stderr, "error creating directory '{}': {}", dest_bin.parent_path().string(), ec.message());
+        return 1;
+    }
+    std::filesystem::create_directories(dest_rt, ec);
+    if (ec) {
+        std::println(stderr, "error creating directory '{}': {}", dest_rt.string(), ec.message());
+        return 1;
+    }
+
+    auto src_bin_can = std::filesystem::weakly_canonical(layout.executable_path, ec);
+    auto dst_bin_can = std::filesystem::weakly_canonical(dest_bin, ec);
+    if (src_bin_can != dst_bin_can) {
+        std::filesystem::copy_file(layout.executable_path, dest_bin, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) {
+            std::println(stderr, "error copying binary to '{}': {}", dest_bin.string(), ec.message());
+            return 1;
+        }
+        std::filesystem::permissions(
+            dest_bin,
+            std::filesystem::perms::owner_all |
+            std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
+            std::filesystem::perms::others_read | std::filesystem::perms::others_exec,
+            ec
+        );
+    }
+
+    auto src_rt_can = std::filesystem::weakly_canonical(layout.runtime_dir, ec);
+    auto dst_rt_can = std::filesystem::weakly_canonical(dest_rt, ec);
+    if (src_rt_can != dst_rt_can) {
+        std::filesystem::copy(
+            layout.runtime_dir,
+            dest_rt,
+            std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
+            ec
+        );
+        if (ec) {
+            std::println(stderr, "error copying runtime headers to '{}': {}", dest_rt.string(), ec.message());
+            return 1;
+        }
+    }
+
+    if (!layout.pkg_dir.empty() && std::filesystem::is_directory(layout.pkg_dir, ec)) {
+        std::filesystem::path dest_pkg = portable_mode ? (target_root / "pkg") : (target_root / "share" / "cfire" / "pkg");
+        auto src_pkg_can = std::filesystem::weakly_canonical(layout.pkg_dir, ec);
+        auto dst_pkg_can = std::filesystem::weakly_canonical(dest_pkg, ec);
+        if (src_pkg_can != dst_pkg_can) {
+            std::filesystem::create_directories(dest_pkg, ec);
+            std::filesystem::copy(
+                layout.pkg_dir,
+                dest_pkg,
+                std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
+                ec
+            );
+        }
+    }
+
+    if (portable_mode) {
+        std::println("✓ Installed portable cfire bundle to {}:", target_root.string());
+        std::println("  - Binary:  {}", dest_bin.string());
+        std::println("  - Runtime: {} (auto-detected relative to binary)", dest_rt.string());
+    } else {
+        std::println("✓ Installed cfire (System FHS Prefix) to {}:", target_root.string());
+        std::println("  - Binary:  {}", dest_bin.string());
+        std::println("  - Runtime: {} (auto-detected via ../share/cfire/runtime)", dest_rt.string());
+    }
+    return 0;
 }
 
 } // namespace cfire::doctor

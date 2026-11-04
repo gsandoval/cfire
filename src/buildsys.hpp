@@ -18,14 +18,239 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 namespace cfire::build {
+
+enum class InstallKind {
+    PortableDir,      // <dir>/cfire + <dir>/runtime/ (or <dir>/bin/cfire + <dir>/runtime/)
+    SystemPrefix,     // <prefix>/bin/cfire + <prefix>/share/cfire/runtime/ (or lib/include)
+    UserHome,         // ~/.cfire/runtime or ~/.local/share/cfire/runtime
+    EnvOverride,      // CFIRE_RUNTIME_DIR
+    WorkspaceFallback // CWD ancestor walk
+};
+
+struct ToolchainLayout {
+    std::filesystem::path executable_path{};
+    std::filesystem::path install_root{};
+    std::filesystem::path runtime_dir{};
+    std::filesystem::path docs_dir{};
+    std::filesystem::path pkg_dir{};
+    InstallKind kind{InstallKind::PortableDir};
+
+    [[nodiscard]] auto kind_label() const -> std::string_view {
+        switch (kind) {
+            case InstallKind::PortableDir:       return "Portable Directory";
+            case InstallKind::SystemPrefix:      return "System FHS Prefix";
+            case InstallKind::UserHome:          return "User Home";
+            case InstallKind::EnvOverride:       return "CFIRE_RUNTIME_DIR Override";
+            case InstallKind::WorkspaceFallback: return "Workspace Directory";
+        }
+        return "Portable Directory";
+    }
+};
+
+[[nodiscard]] inline auto derive_install_root(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
+    std::error_code ec;
+    auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
+    if (ec) can_rt = runtime_dir;
+    auto p1 = can_rt.parent_path();
+    auto p2 = p1.parent_path();
+    auto p3 = p2.parent_path();
+    // FHS layout: <prefix>/share/cfire/runtime or <prefix>/lib/cfire/runtime or <prefix>/include/cfire/runtime
+    if (p1.filename() == "cfire" && (p2.filename() == "share" || p2.filename() == "lib" || p2.filename() == "include")) {
+        return p3;
+    }
+    // <prefix>/include/cfire where cfire_prelude.hpp is directly inside include/cfire
+    if (can_rt.filename() == "cfire" && p1.filename() == "include") {
+        return p2;
+    }
+    // Portable layout: <root>/runtime
+    return p1;
+}
+
+[[nodiscard]] inline auto derive_pkg_dir(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
+    auto root = derive_install_root(runtime_dir);
+    std::error_code ec;
+    if (std::filesystem::is_directory(root / "pkg", ec)) return root / "pkg";
+    if (std::filesystem::is_directory(root / "share" / "cfire" / "pkg", ec)) return root / "share" / "cfire" / "pkg";
+    return root / "pkg";
+}
+
+[[nodiscard]] inline auto locate_toolchain_layout(const char* argv0 = nullptr) -> ToolchainLayout {
+    ToolchainLayout layout;
+    std::error_code ec;
+
+    auto has_prelude = [](const std::filesystem::path& rt) -> bool {
+        std::error_code e;
+        return !rt.empty() && std::filesystem::exists(rt / "cfire_prelude.hpp", e);
+    };
+
+    // Resolve candidate executable paths (both raw invocation path before symlink resolution and canonical target)
+    std::vector<std::filesystem::path> exe_candidates;
+    auto add_exe_candidate = [&](const std::filesystem::path& p) {
+        if (p.empty()) return;
+        std::error_code e;
+        auto abs_p = std::filesystem::absolute(p, e);
+        if (!e && std::filesystem::exists(abs_p, e)) {
+            if (layout.executable_path.empty()) layout.executable_path = abs_p;
+            exe_candidates.push_back(abs_p);
+            auto can_p = std::filesystem::canonical(abs_p, e);
+            if (!e && can_p != abs_p) {
+                exe_candidates.push_back(can_p);
+            }
+        }
+    };
+
+#if defined(__APPLE__)
+    char ep[1024];
+    uint32_t sz = sizeof(ep);
+    if (_NSGetExecutablePath(ep, &sz) == 0) {
+        add_exe_candidate(std::filesystem::path(ep));
+    }
+#elif defined(__linux__)
+    char ep[1024];
+    ssize_t len = ::readlink("/proc/self/exe", ep, sizeof(ep) - 1);
+    if (len > 0) {
+        ep[len] = '\0';
+        add_exe_candidate(std::filesystem::path(ep));
+    }
+#endif
+    if (argv0 != nullptr && argv0[0] != '\0') {
+        std::filesystem::path a0(argv0);
+        if (a0.has_parent_path()) {
+            add_exe_candidate(a0);
+        } else if (const char* path_env = std::getenv("PATH")) {
+            std::string_view sv(path_env);
+            std::size_t start = 0;
+            while (start <= sv.size()) {
+                auto colon = sv.find(':', start);
+                auto dir_sv = (colon == std::string_view::npos) ? sv.substr(start) : sv.substr(start, colon - start);
+                if (!dir_sv.empty()) {
+                    auto cand = std::filesystem::path(dir_sv) / a0;
+                    if (std::filesystem::exists(cand, ec)) {
+                        add_exe_candidate(cand);
+                        break;
+                    }
+                }
+                if (colon == std::string_view::npos) break;
+                start = colon + 1;
+            }
+        }
+    }
+
+    auto finalize = [&](const std::filesystem::path& rt, InstallKind k) -> ToolchainLayout {
+        std::error_code e;
+        auto can_rt = std::filesystem::weakly_canonical(rt, e);
+        layout.runtime_dir = e ? rt : can_rt;
+        layout.install_root = derive_install_root(layout.runtime_dir);
+        layout.kind = k;
+        if (std::filesystem::exists(layout.install_root / "docs", e)) {
+            layout.docs_dir = layout.install_root / "docs";
+        } else if (std::filesystem::exists(layout.install_root / "share" / "cfire" / "docs", e)) {
+            layout.docs_dir = layout.install_root / "share" / "cfire" / "docs";
+        } else {
+            layout.docs_dir = layout.install_root / "docs";
+        }
+        layout.pkg_dir = derive_pkg_dir(layout.runtime_dir);
+        return layout;
+    };
+
+    // 1. Explicit CFIRE_RUNTIME_DIR environment variable override
+    if (const char* env = std::getenv("CFIRE_RUNTIME_DIR")) {
+        std::filesystem::path env_rt(env);
+        if (has_prelude(env_rt)) {
+            return finalize(env_rt, InstallKind::EnvOverride);
+        }
+    }
+
+    // 2. Executable-relative discovery (Portable Directory & System FHS Prefix layouts)
+    for (const auto& exe_p : exe_candidates) {
+        auto exe_dir = exe_p.parent_path();
+        // 2a. Portable Directory: <exe_dir>/runtime or <exe_dir>/../runtime
+        if (has_prelude(exe_dir / "runtime")) {
+            return finalize(exe_dir / "runtime", InstallKind::PortableDir);
+        }
+        auto parent_dir = exe_dir.parent_path();
+        if (!parent_dir.empty() && has_prelude(parent_dir / "runtime")) {
+            return finalize(parent_dir / "runtime", InstallKind::PortableDir);
+        }
+        // 2b. System / Prefix FHS: <prefix>/bin/cfire -> <prefix>/share/cfire/runtime, lib/cfire/runtime, include/cfire
+        if (!parent_dir.empty()) {
+            for (const auto& rel : {
+                parent_dir / "share" / "cfire" / "runtime",
+                parent_dir / "lib" / "cfire" / "runtime",
+                parent_dir / "include" / "cfire" / "runtime",
+                parent_dir / "include" / "cfire"
+            }) {
+                if (has_prelude(rel)) {
+                    return finalize(rel, InstallKind::SystemPrefix);
+                }
+            }
+        }
+        // 2c. Ancestor walk from exe_dir (for binaries inside nested build directories)
+        for (auto d = exe_dir; !d.empty() && d != d.parent_path(); d = d.parent_path()) {
+            if (has_prelude(d / "runtime")) {
+                return finalize(d / "runtime", InstallKind::PortableDir);
+            }
+        }
+    }
+
+    // 3. Compile-time configured prefix fallback (CFIRE_INSTALL_PREFIX)
+#if defined(CFIRE_INSTALL_PREFIX)
+    {
+        std::filesystem::path compiled_prefix(CFIRE_INSTALL_PREFIX);
+        if (has_prelude(compiled_prefix / "share" / "cfire" / "runtime")) {
+            return finalize(compiled_prefix / "share" / "cfire" / "runtime", InstallKind::SystemPrefix);
+        }
+        if (has_prelude(compiled_prefix / "runtime")) {
+            return finalize(compiled_prefix / "runtime", InstallKind::PortableDir);
+        }
+    }
+#endif
+
+    // 4. User-level & Standard System FHS locations
+    if (const char* home = std::getenv("HOME")) {
+        std::filesystem::path home_p(home);
+        for (const auto& u_rt : {
+            home_p / ".local" / "share" / "cfire" / "runtime",
+            home_p / ".cfire" / "runtime"
+        }) {
+            if (has_prelude(u_rt)) {
+                return finalize(u_rt, InstallKind::UserHome);
+            }
+        }
+    }
+    for (const auto* sys_rt : {
+        "/opt/homebrew/share/cfire/runtime",
+        "/usr/local/share/cfire/runtime",
+        "/usr/share/cfire/runtime"
+    }) {
+        std::filesystem::path s_rt(sys_rt);
+        if (has_prelude(s_rt)) {
+            return finalize(s_rt, InstallKind::SystemPrefix);
+        }
+    }
+
+    // 5. CWD ancestor walk (used by unit test runners compiled into /tmp or workspace subdirs)
+    auto cwd = std::filesystem::current_path(ec);
+    for (auto d = cwd; !d.empty() && d != d.parent_path(); d = d.parent_path()) {
+        if (has_prelude(d / "runtime")) {
+            return finalize(d / "runtime", InstallKind::WorkspaceFallback);
+        }
+    }
+
+    return finalize(cwd / "runtime", InstallKind::WorkspaceFallback);
+}
 
 struct ExternalDepSpec {
     std::string name{};
     std::string driver{}; // "CMake", "CC", "Autotools", "Git", "Archive"
     std::string source{};
     std::string target{};
+    std::filesystem::path base_dir{}; // Directory of the build.cf that declared this dependency
     std::vector<std::string> sources{};
     std::vector<std::string> includes{};
     std::unordered_map<std::string, std::string> defines{};
@@ -127,15 +352,31 @@ struct BuildPlan {
     return out;
 }
 
-inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& cflags, std::vector<std::string>& libs) {
+inline void query_pkg_config(
+    const std::string& pkg,
+    std::vector<std::string>& cflags,
+    std::vector<std::string>& libs,
+    const std::filesystem::path& install_root = {}
+) {
     int code = 0;
     std::string qpkg = bridge::shell_quote(pkg);
-    std::string cf_out = bridge::run_command_capture("pkg-config --cflags " + qpkg + " 2>/dev/null", code);
+    std::string pc_env;
+    if (!install_root.empty()) {
+        std::error_code ec;
+        for (const auto& pc_rel : {install_root / "lib" / "pkgconfig", install_root / "share" / "pkgconfig"}) {
+            if (std::filesystem::is_directory(pc_rel, ec)) {
+                if (!pc_env.empty()) pc_env += ":";
+                pc_env += pc_rel.string();
+            }
+        }
+    }
+    std::string env_prefix = pc_env.empty() ? "" : ("PKG_CONFIG_PATH=" + bridge::shell_quote(pc_env) + " ");
+    std::string cf_out = bridge::run_command_capture(env_prefix + "pkg-config --cflags " + qpkg + " 2>/dev/null", code);
     if (code == 0) {
         for (auto& f : split_ws(cf_out)) cflags.push_back(std::move(f));
     }
     int lb_code = 0;
-    std::string lb_out = bridge::run_command_capture("pkg-config --libs " + qpkg + " 2>/dev/null", lb_code);
+    std::string lb_out = bridge::run_command_capture(env_prefix + "pkg-config --libs " + qpkg + " 2>/dev/null", lb_code);
     if (lb_code == 0 && !lb_out.empty()) {
         for (auto& l : split_ws(lb_out)) libs.push_back(std::move(l));
         return;
@@ -148,10 +389,15 @@ inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& c
     else if (pkg == "libzstd") { hdr = "zstd.h"; lib_flag = "-lzstd"; lib_stem = "libzstd"; }
     else if (pkg == "simdjson") { hdr = "simdjson.h"; lib_flag = "-lsimdjson"; lib_stem = "libsimdjson"; }
     if (!hdr.empty()) {
-        for (const auto* prefix : {"/opt/homebrew", "/usr/local", "/usr"}) {
+        std::vector<std::string> prefixes;
+        if (!install_root.empty()) prefixes.push_back(install_root.string());
+        prefixes.push_back("/opt/homebrew");
+        prefixes.push_back("/usr/local");
+        prefixes.push_back("/usr");
+        for (const auto& prefix : prefixes) {
             std::filesystem::path inc_p = std::filesystem::path(prefix) / "include" / hdr;
             if (std::filesystem::exists(inc_p)) {
-                if (std::string_view(prefix) != "/usr") {
+                if (prefix != "/usr") {
                     cflags.push_back(std::string("-I") + prefix + "/include");
                     libs.push_back(std::string("-L") + prefix + "/lib");
                 }
@@ -174,6 +420,10 @@ inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& c
     if (!raw) return std::unexpected(raw.error());
     auto ast = frontend::parse_source(build_cf_path.string(), *raw);
     if (!ast) return std::unexpected(ast.error());
+
+    std::error_code bcf_ec;
+    auto bcf_abs = std::filesystem::weakly_canonical(build_cf_path, bcf_ec);
+    auto bcf_dir = (bcf_ec ? std::filesystem::absolute(build_cf_path, bcf_ec) : bcf_abs).parent_path();
 
     ParsedBuildCf parsed;
     for (const auto& gv : ast->global_vars) {
@@ -304,6 +554,7 @@ inline void query_pkg_config(const std::string& pkg, std::vector<std::string>& c
         ExternalDepSpec spec;
         spec.name = gv.name;
         spec.driver = mem->field;
+        spec.base_dir = bcf_dir;
         if (mem->field == "Git") {
             spec.fetch_kind = "git";
             spec.is_remote = true;
@@ -1187,25 +1438,82 @@ inline auto resolve_external_dep_source(
     return {};
 }
 
-// Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"`) and merges their declarations.
+[[nodiscard]] inline auto ast_has_top_level_main(const frontend::FileAST& ast) -> bool {
+    for (const auto& fn : ast.functions) {
+        if (!fn.receiver && fn.name == "main") return true;
+    }
+    return false;
+}
+
+// Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"` or `import "pkg:raygui_ext"`)
+// and automatically discovers same-directory sibling `.cf` files sharing `root_ast.package_name`.
 [[nodiscard]] inline auto resolve_local_cf_imports(
     const std::filesystem::path& root_base_dir,
     frontend::FileAST& root_ast,
-    BuildPlan& plan
+    BuildPlan& plan,
+    const std::filesystem::path& runtime_dir = {},
+    bool test_mode = false
 ) -> std::expected<void, std::string> {
     std::vector<frontend::ImportDecl> kept_imports;
     std::unordered_set<std::string> visited_files;
     std::unordered_set<std::string> visited_build_cfs;
     std::unordered_set<std::string> seen_non_local_imports;
 
+    bool is_test_entry = test_mode || (!root_ast.path.empty() && root_ast.path.ends_with("_test.cf"));
+    bool root_has_main = ast_has_top_level_main(root_ast);
+
+    if (!root_ast.path.empty()) {
+        std::error_code ec;
+        auto root_canon = std::filesystem::weakly_canonical(root_ast.path, ec);
+        if (!ec && !root_canon.empty()) {
+            visited_files.insert(root_canon.string());
+        } else {
+            visited_files.insert(root_ast.path);
+        }
+    }
+    {
+        std::error_code ec;
+        auto root_bcf = root_base_dir / "build.cf";
+        if (std::filesystem::exists(root_bcf, ec)) {
+            visited_build_cfs.insert(std::filesystem::weakly_canonical(root_bcf, ec).string());
+        }
+    }
+
+    std::filesystem::path toolchain_pkg_dir = runtime_dir.empty()
+        ? locate_toolchain_layout().pkg_dir
+        : derive_pkg_dir(runtime_dir);
+
     struct WorkItem {
         std::filesystem::path base_dir;
         frontend::ImportDecl imp;
+        bool is_auto_sibling = false;
     };
     std::deque<WorkItem> queue;
 
+    // 0. Automatically discover same-directory sibling `.cf` files with matching `package_name` (ERG-02a / ERG-02b)
+    if (!root_ast.package_name.empty()) {
+        std::error_code ec;
+        std::vector<std::filesystem::path> sibling_candidates;
+        for (const auto& entry : std::filesystem::directory_iterator(root_base_dir, ec)) {
+            if (!entry.is_regular_file()) continue;
+            auto fname = entry.path().filename().string();
+            if (entry.path().extension() != ".cf" || fname == "build.cf") continue;
+            if (!is_test_entry && fname.ends_with("_test.cf")) continue;
+            sibling_candidates.push_back(entry.path());
+        }
+        std::sort(sibling_candidates.begin(), sibling_candidates.end());
+        for (const auto& sib_path : sibling_candidates) {
+            std::string canon = std::filesystem::weakly_canonical(sib_path, ec).string();
+            if (visited_files.contains(canon)) continue;
+            frontend::ImportDecl sib_imp;
+            sib_imp.is_cpp = false;
+            sib_imp.path = "./" + sib_path.filename().string();
+            queue.push_back({root_base_dir, std::move(sib_imp), true});
+        }
+    }
+
     for (const auto& imp : root_ast.imports) {
-        queue.push_back({root_base_dir, imp});
+        queue.push_back({root_base_dir, imp, false});
     }
 
     while (!queue.empty()) {
@@ -1215,8 +1523,17 @@ inline auto resolve_external_dep_source(
         const auto& imp = item.imp;
         const auto& base_dir = item.base_dir;
 
-        if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../"))) {
-            std::filesystem::path target = base_dir / imp.path;
+        if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../") || imp.path.starts_with("pkg:"))) {
+            std::filesystem::path target;
+            if (imp.path.starts_with("pkg:")) {
+                std::string pkg_rel = imp.path.substr(4);
+                target = toolchain_pkg_dir / pkg_rel;
+                if (!std::filesystem::exists(target) && std::filesystem::exists(root_base_dir / "pkg" / pkg_rel)) {
+                    target = root_base_dir / "pkg" / pkg_rel;
+                }
+            } else {
+                target = base_dir / imp.path;
+            }
             std::vector<std::filesystem::path> cf_files;
             std::filesystem::path pkg_dir;
 
@@ -1272,16 +1589,32 @@ inline auto resolve_external_dep_source(
             for (const auto& fpath : cf_files) {
                 std::string canon = std::filesystem::weakly_canonical(fpath).string();
                 if (visited_files.contains(canon)) continue;
-                visited_files.insert(canon);
 
                 auto raw = read_file_text(fpath);
                 if (!raw) return std::unexpected(raw.error());
                 auto sub_ast = frontend::parse_source(fpath.string(), *raw);
-                if (!sub_ast) return std::unexpected(sub_ast.error());
+                if (!sub_ast) {
+                    if (item.is_auto_sibling) continue;
+                    return std::unexpected(sub_ast.error());
+                }
+
+                if (item.is_auto_sibling) {
+                    if (sub_ast->package_name != root_ast.package_name) {
+                        continue;
+                    }
+                    // Exclude sibling standalone examples/executables that also define `fn main()`
+                    if (ast_has_top_level_main(*sub_ast)) {
+                        if (root_has_main) {
+                            continue;
+                        }
+                        root_has_main = true;
+                    }
+                }
+                visited_files.insert(canon);
 
                 // Recursively enqueue subpackage imports (BS-07)
                 for (const auto& simp : sub_ast->imports) {
-                    queue.push_back({fpath.parent_path(), simp});
+                    queue.push_back({fpath.parent_path(), simp, false});
                 }
 
                 // Preserve subpackage AST arena lifetime in root_ast
@@ -1376,9 +1709,19 @@ inline auto resolve_external_dep_source(
     }
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
+    auto install_root = derive_install_root(runtime_dir);
     plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
     if (std::filesystem::is_directory(runtime_dir / "vendor")) {
         plan.cflags.push_back("-I" + (runtime_dir / "vendor").string());
+    }
+    if (!install_root.empty() && install_root != "/usr") {
+        std::error_code root_ec;
+        if (std::filesystem::is_directory(install_root / "include", root_ec)) {
+            plan.cflags.push_back("-I" + (install_root / "include").string());
+        }
+        if (std::filesystem::is_directory(install_root / "lib", root_ec)) {
+            plan.ldflags.push_back("-L" + (install_root / "lib").string());
+        }
     }
     bool is_wasm = plan.target_triple.starts_with("wasm");
 #if defined(__linux__)
@@ -1406,26 +1749,41 @@ inline auto resolve_external_dep_source(
         plan.cflags.push_back("-DPLATFORM_IOS=1");
     }
 
-    // 1. Parse & execute any pre-build commands declared in root sibling `build.cf` (BS-08)
-    auto build_cf = dir / "build.cf";
-    if (cf_file.filename() != "build.cf" && std::filesystem::exists(build_cf)) {
-        auto parsed = parse_build_cf(build_cf);
-        if (!parsed) return std::unexpected(parsed.error());
-        for (auto& dep : parsed->external_deps) {
-            bool exists_already = false;
-            for (const auto& ed : plan.external_deps) {
-                if (ed.name == dep.name) { exists_already = true; break; }
+    // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08)
+    if (cf_file.filename() != "build.cf") {
+        std::filesystem::path found_bcf;
+        std::error_code bcf_ec;
+        auto search_d = std::filesystem::weakly_canonical(dir, bcf_ec);
+        if (bcf_ec || search_d.empty()) search_d = std::filesystem::absolute(dir, bcf_ec);
+        for (int depth = 0; depth < 4 && !search_d.empty(); ++depth) {
+            auto cand_bcf = search_d / "build.cf";
+            if (std::filesystem::exists(cand_bcf, bcf_ec)) {
+                found_bcf = cand_bcf;
+                break;
             }
-            if (!exists_already) {
-                plan.external_deps.push_back(std::move(dep));
-            }
+            if (search_d == search_d.parent_path()) break;
+            search_d = search_d.parent_path();
         }
-        for (auto& cmd : parsed->pre_build_commands) {
-            if (cmd.work_dir.empty()) cmd.work_dir = dir.string();
-            if (auto r = execute_pre_build_command(cmd, dir); !r) {
-                return std::unexpected(r.error());
+        if (!found_bcf.empty()) {
+            auto parsed = parse_build_cf(found_bcf);
+            if (!parsed) return std::unexpected(parsed.error());
+            auto bcf_parent = found_bcf.parent_path();
+            for (auto& dep : parsed->external_deps) {
+                bool exists_already = false;
+                for (const auto& ed : plan.external_deps) {
+                    if (ed.name == dep.name) { exists_already = true; break; }
+                }
+                if (!exists_already) {
+                    plan.external_deps.push_back(std::move(dep));
+                }
             }
-            plan.pre_build_commands.push_back(std::move(cmd));
+            for (auto& cmd : parsed->pre_build_commands) {
+                if (cmd.work_dir.empty()) cmd.work_dir = bcf_parent.string();
+                if (auto r = execute_pre_build_command(cmd, bcf_parent); !r) {
+                    return std::unexpected(r.error());
+                }
+                plan.pre_build_commands.push_back(std::move(cmd));
+            }
         }
     }
 
@@ -1435,30 +1793,15 @@ inline auto resolve_external_dep_source(
     auto ast = frontend::parse_source(cf_file.string(), *raw);
     if (!ast) return std::unexpected(ast.error());
 
-    // 2b. If compiling/checking a *_test.cf file, automatically include sibling package .cf files in the same directory
-    if ((test_mode || cf_file.filename().string().ends_with("_test.cf")) && !ast->package_name.empty()) {
-        std::error_code ec;
-        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-            if (!entry.is_regular_file()) continue;
-            auto fname = entry.path().filename().string();
-            if (entry.path().extension() == ".cf" && fname != "build.cf" &&
-                !fname.ends_with("_test.cf") && entry.path() != cf_file) {
-                frontend::ImportDecl sib_imp;
-                sib_imp.is_cpp = false;
-                sib_imp.path = "./" + fname;
-                ast->imports.push_back(std::move(sib_imp));
-            }
-        }
-    }
-
-    // 3. Resolve local `.cf` package imports (`import "./..."`) recursively
-    if (auto r = resolve_local_cf_imports(dir, *ast, plan); !r) {
+    // 3. Resolve local `.cf` package imports (`import "./..."`, `import "pkg:..."`, and same-directory package siblings) recursively
+    if (auto r = resolve_local_cf_imports(dir, *ast, plan, runtime_dir, test_mode); !r) {
         return std::unexpected(r.error());
     }
 
-    // 4. Build all external dependencies (including those aggregated from subpackages)
+    // 4. Build all external dependencies (anchored to each dependency's declaring build.cf directory)
     for (auto& dep : plan.external_deps) {
-        if (auto r = build_local_dep(dir, dep, plan); !r) {
+        auto dep_base = dep.base_dir.empty() ? dir : dep.base_dir;
+        if (auto r = build_local_dep(dep_base, dep, plan); !r) {
             return std::unexpected(r.error());
         }
     }
@@ -1474,6 +1817,8 @@ inline auto resolve_external_dep_source(
         {"ext:json", "simdjson"},
         {"core:ai", "simdjson"},
         {"ext:ai", "simdjson"},
+        {"core:tako", "simdjson"},
+        {"ext:tako", "simdjson"},
         {"core:db/sqlite", "sqlite3"},
         {"ext:db/sqlite", "sqlite3"},
     };
@@ -1498,7 +1843,7 @@ inline auto resolve_external_dep_source(
         if (seen_pc.contains(pc)) return;
         seen_pc.insert(pc);
         plan.pkg_config_deps.push_back(pc);
-        query_pkg_config(pc, plan.cflags, plan.ldflags);
+        query_pkg_config(pc, plan.cflags, plan.ldflags, install_root);
     };
 
     auto cache_dir = dir / ".cfire" / "cache";
@@ -1517,6 +1862,14 @@ inline auto resolve_external_dep_source(
             plan.auto_linked.push_back(imp.path);
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
                 add_pc(it->second);
+            }
+            if (imp.path == "core:tako" || imp.path == "ext:tako") {
+                if (const char* env_tako = std::getenv("TAKO_SDK_DIR")) {
+                    std::error_code tec;
+                    if (std::filesystem::is_directory(env_tako, tec)) {
+                        plan.cflags.insert(plan.cflags.begin() + 2, "-I" + std::string(env_tako));
+                    }
+                }
             }
             if (imp.path == "core:ai" || imp.path == "ext:ai") {
                 if (!is_wasm && plan.is_ios) {
@@ -2039,7 +2392,11 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 
     auto pch_dir = std::filesystem::temp_directory_path() / "cfire_pch_cache";
     std::filesystem::create_directories(pch_dir, ec);
-    std::string pch_name = sanitize ? "cfire_prelude_san.pch" : "cfire_prelude_opt.pch";
+    auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
+    std::size_t rt_hash = std::hash<std::string>{}((ec ? runtime_dir : can_rt).string());
+    std::string pch_name = std::format("cfire_prelude_{}_{:08x}.pch",
+        sanitize ? "san" : "opt",
+        static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
     auto pch_path = pch_dir / pch_name;
 
     bool needs_build = !std::filesystem::exists(pch_path, ec);

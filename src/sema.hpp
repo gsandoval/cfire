@@ -382,18 +382,48 @@ public:
         return false;
     }
 
+    [[nodiscard]] auto is_ident_in_scope_sema(const std::string& ident) const -> bool {
+        if (local_defined_vars_.contains(ident) || mut_vars_.contains(ident) ||
+            imm_vars_.contains(ident) || move_params_.contains(ident)) {
+            return true;
+        }
+        if (cf_.fn_sigs.contains(ident)) return true;
+        for (const auto& gv : cf_.ast.global_vars) {
+            if (gv.name == ident) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto extract_root_ident_sema(const ExprPtr& e) -> std::string {
+        if (!e) return "";
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) return extract_root_ident_sema(mem->object);
+        if (const auto* idx = std::get_if<IndexExpr>(&e->node)) return extract_root_ident_sema(idx->object);
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) return extract_root_ident_sema(call->callee);
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) return extract_root_ident_sema(un->operand);
+        if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            auto l = extract_root_ident_sema(bin->left);
+            return !l.empty() ? l : extract_root_ident_sema(bin->right);
+        }
+        return "";
+    }
+
     [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string> {
         if (!e) return {};
-        static const std::regex interp_var_re(R"(\{([a-zA-Z_][a-zA-Z0-9_]*)\})");
 
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
             return record_var_read(id->name, e->line, e->col);
         }
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
             if (lit->kind == TokenKind::String && lit->value.contains('{')) {
-                auto begin = std::sregex_iterator(lit->value.begin(), lit->value.end(), interp_var_re);
-                for (auto it = begin; it != std::sregex_iterator(); ++it) {
-                    if (auto r = record_var_read((*it)[1].str(), e->line, e->col); !r) return r;
+                auto placeholders = scan_interpolation_placeholders(lit->value);
+                for (const auto& ph : placeholders) {
+                    if (auto parsed = parse_expr_snippet(path_, ph.expr_text, e->line)) {
+                        std::string root = extract_root_ident_sema(parsed->expr);
+                        if (!root.empty() && is_ident_in_scope_sema(root)) {
+                            if (auto r = check_expr(parsed->expr); !r) return r;
+                        }
+                    }
                 }
             }
             return {};
@@ -1067,9 +1097,28 @@ public:
             return {};
         }
         if (const auto* df = std::get_if<DeferStmt>(&s->node)) {
-            return check_expr(df->call);
+            if (df->call) {
+                return check_expr(df->call);
+            }
+            ++in_defer_depth_;
+            ++scope_depth_;
+            for (const auto& b : df->body) {
+                if (auto r = check_stmt(b); !r) {
+                    --scope_depth_;
+                    --in_defer_depth_;
+                    return r;
+                }
+            }
+            --scope_depth_;
+            --in_defer_depth_;
+            return {};
         }
         if (const auto* rt = std::get_if<ReturnStmt>(&s->node)) {
+            if (in_defer_depth_ > 0) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:1: cannot use 'return' inside a 'defer {{ ... }}' block (cfire/RETURN-IN-DEFER)",
+                    path_, rt->line)); !r) return r;
+            }
             if (auto r = check_expr(rt->value); !r) return r;
             if (rt->value) {
                 bool is_direct = false;
@@ -1196,10 +1245,13 @@ public:
         }
         if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
             if (auto r = check_expr(fs->iter_expr); !r) return r;
+            if (fs->range_end) {
+                if (auto r = check_expr(fs->range_end); !r) return r;
+            }
             auto pre_loop_moves = moved_at_line_;
             auto pre_loop_loans = invalidated_loans_;
             std::string locked_col;
-            if (!fs->item_var.empty()) {
+            if (!fs->item_var.empty() && !fs->range_end) {
                 if (auto pi = extract_path_info(fs->iter_expr); pi && pi->path == pi->root) {
                     if (!active_loop_collections_.contains(pi->root)) {
                         locked_col = pi->root;
@@ -1208,6 +1260,16 @@ public:
                 }
             }
             ++scope_depth_;
+            if (!fs->index_var.empty()) {
+                var_scope_depth_[fs->index_var] = scope_depth_;
+                local_defined_vars_.insert(fs->index_var);
+                imm_vars_.insert(fs->index_var);
+            }
+            if (!fs->item_var.empty()) {
+                var_scope_depth_[fs->item_var] = scope_depth_;
+                local_defined_vars_.insert(fs->item_var);
+                imm_vars_.insert(fs->item_var);
+            }
             for (const auto& b : fs->body) {
                 if (auto r = check_stmt(b); !r) {
                     --scope_depth_;
@@ -1331,6 +1393,7 @@ private:
     bool resilient_{false};
     std::vector<std::string> fallback_errors_{};
     int scope_depth_{1};
+    int in_defer_depth_{0};
     std::unordered_map<std::string, int> var_scope_depth_{};
     std::unordered_set<std::string> local_defined_vars_{};
     std::unordered_map<std::string, std::string> borrow_origin_{};
