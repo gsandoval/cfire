@@ -24,10 +24,12 @@ build: $(HEADERS)
 install: build
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
+	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/pkg
 	cp cfire $(DESTDIR)$(PREFIX)/bin/cfire
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/cfire
 	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
-	@echo "✓ Installed cfire to $(DESTDIR)$(PREFIX)/bin/cfire and runtime headers to $(DESTDIR)$(PREFIX)/share/cfire/runtime"
+	cp -R pkg/* $(DESTDIR)$(PREFIX)/share/cfire/pkg/
+	@echo "✓ Installed cfire to $(DESTDIR)$(PREFIX)/bin/cfire and runtime/pkg to $(DESTDIR)$(PREFIX)/share/cfire"
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/cfire

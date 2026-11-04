@@ -1651,3 +1651,27 @@ out := try os.exec("cat " + untrusted_path) // WARNING [cfire/SHELL-INJECTION-RI
 res := try os.command("cat", [untrusted_path]) // OK: direct posix_spawnp argv
 ```
 
+### `[cfire/RETURN-IN-DEFER]` — `return` Statement Inside `defer { ... }` Block
+
+`defer { ... }` blocks lower to a C++ RAII scope-exit destructor (`struct _CfireDefer { ~_CfireDefer() { ... } }`) and cannot return a value to the enclosing function.
+
+**Rejected (`.cf`):**
+```cf
+fn process() -> i32 {
+    defer {
+        return 0 // ERROR [cfire/RETURN-IN-DEFER]
+    }
+    return 1
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn process() -> i32 {
+    defer {
+        cleanup()
+    }
+    return 1 // OK: return from enclosing function
+}
+```
+

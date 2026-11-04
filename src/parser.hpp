@@ -159,6 +159,18 @@ public:
         return std::move(res.ast);
     }
 
+    [[nodiscard]] auto parse_standalone_expr() -> std::expected<ExprPtr, std::string> {
+        auto ex = parse_expr();
+        if (!ex) {
+            return std::unexpected(ex.error());
+        }
+        if (cur().kind != TokenKind::Eof) {
+            return std::unexpected(std::format("{}:{}:{}: unexpected trailing token '{}' in interpolated expression",
+                file_, cur().line, cur().col, cur().lexeme));
+        }
+        return ex;
+    }
+
 private:
     std::string file_;
     std::vector<Token> tokens_;
@@ -888,9 +900,14 @@ private:
             }
             case TokenKind::KwDefer: {
                 advance();
+                if (cur().kind == TokenKind::LBrace) {
+                    auto blk = parse_block();
+                    if (!blk) return std::unexpected(blk.error());
+                    return make_stmt(DeferStmt{nullptr, tok.line, std::move(*blk)}, tok.line);
+                }
                 auto call = parse_expr();
                 if (!call) return std::unexpected(call.error());
-                return make_stmt(DeferStmt{std::move(*call), tok.line}, tok.line);
+                return make_stmt(DeferStmt{std::move(*call), tok.line, {}}, tok.line);
             }
             case TokenKind::KwReturn: {
                 advance();
@@ -1124,15 +1141,33 @@ private:
             }
             if (auto in_kw = expect(TokenKind::KwIn); !in_kw) return std::unexpected(in_kw.error());
             ExprPtr iter_ex = nullptr;
+            ExprPtr range_end_ex = nullptr;
+            bool range_inc = false;
             {
                 StructLitScope scope(*this, false);
                 auto ie = parse_expr();
                 if (!ie) return std::unexpected(ie.error());
                 iter_ex = std::move(*ie);
+                if (idx_var.empty() &&
+                    (cur().kind == TokenKind::DotDot || cur().kind == TokenKind::DotDotEq)) {
+                    range_inc = (cur().kind == TokenKind::DotDotEq);
+                    advance();
+                    auto re = parse_expr();
+                    if (!re) return std::unexpected(re.error());
+                    range_end_ex = std::move(*re);
+                }
             }
             auto body = parse_block();
             if (!body) return std::unexpected(body.error());
-            return make_stmt(ForStmt{std::move(idx_var), std::move(item_var), std::move(iter_ex), std::move(*body), start.line}, start.line);
+            return make_stmt(ForStmt{
+                std::move(idx_var),
+                std::move(item_var),
+                std::move(iter_ex),
+                std::move(*body),
+                start.line,
+                std::move(range_end_ex),
+                range_inc
+            }, start.line);
         }
         ExprPtr cond = nullptr;
         if (cur().kind == TokenKind::LBrace) {
@@ -1768,6 +1803,77 @@ private:
         return std::unexpected(res.errors.front());
     }
     return std::move(res.ast);
+}
+
+struct ExprSnippetResult {
+    std::shared_ptr<AstArena> arena;
+    ExprPtr expr = nullptr;
+};
+
+[[nodiscard]] inline auto parse_expr_snippet(std::string_view path, std::string_view src, int base_line = 1)
+    -> std::expected<ExprSnippetResult, std::string>
+{
+    auto arena = std::make_shared<AstArena>();
+    ArenaScope scope(arena.get());
+    auto toks = tokenize(path, src);
+    if (!toks) {
+        return std::unexpected(toks.error());
+    }
+    for (auto& t : *toks) {
+        t.line += (base_line - 1);
+    }
+    Parser p(std::string(path), std::move(*toks), false);
+    auto ex = p.parse_standalone_expr();
+    if (!ex) {
+        return std::unexpected(ex.error());
+    }
+    return ExprSnippetResult{arena, *ex};
+}
+
+struct InterpPlaceholder {
+    std::size_t start_pos = 0; // index of '{' in string
+    std::size_t end_pos = 0;   // index of '}' in string (inclusive)
+    std::string expr_text{};   // trimmed expression inside '{...}'
+};
+
+[[nodiscard]] inline auto scan_interpolation_placeholders(std::string_view sv)
+    -> std::vector<InterpPlaceholder>
+{
+    std::vector<InterpPlaceholder> out;
+    std::size_t i = 0;
+    while (i < sv.size()) {
+        if (sv[i] == '{') {
+            if (i + 1 < sv.size() && sv[i + 1] == '{') {
+                i += 2; // escaped '{{'
+                continue;
+            }
+            std::size_t open_idx = i;
+            ++i;
+            int depth = 1;
+            while (i < sv.size() && depth > 0) {
+                if (sv[i] == '{') ++depth;
+                else if (sv[i] == '}') --depth;
+                if (depth > 0) ++i;
+            }
+            if (i < sv.size() && depth == 0) {
+                std::string_view raw_inner = sv.substr(open_idx + 1, i - open_idx - 1);
+                while (!raw_inner.empty() && std::isspace(static_cast<unsigned char>(raw_inner.front()))) {
+                    raw_inner.remove_prefix(1);
+                }
+                while (!raw_inner.empty() && std::isspace(static_cast<unsigned char>(raw_inner.back()))) {
+                    raw_inner.remove_suffix(1);
+                }
+                // Ignore empty `{}` or format-specifier-only `{:02x}`
+                if (!raw_inner.empty() && raw_inner.front() != ':') {
+                    out.push_back(InterpPlaceholder{open_idx, i, std::string(raw_inner)});
+                }
+                ++i;
+                continue;
+            }
+        }
+        ++i;
+    }
+    return out;
 }
 
 } // namespace cfire::frontend
