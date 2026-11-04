@@ -28,68 +28,19 @@
 
 namespace {
 
-auto locate_runtime_dir() -> std::filesystem::path {
-    if (const char* env = std::getenv("CFIRE_RUNTIME_DIR")) {
-        return std::filesystem::path(env);
-    }
-    std::error_code cwd_ec;
-    auto cwd = std::filesystem::current_path(cwd_ec);
-    for (auto d = cwd; !d.empty() && d != d.parent_path(); d = d.parent_path()) {
-        if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
-            return d / "runtime";
-        }
-    }
-#if defined(__APPLE__)
-    char ep[1024];
-    uint32_t sz = sizeof(ep);
-    if (_NSGetExecutablePath(ep, &sz) == 0) {
-        std::error_code ec;
-        auto p = std::filesystem::canonical(ep, ec);
-        if (!ec) {
-            for (auto d = p.parent_path(); !d.empty() && d != d.parent_path(); d = d.parent_path()) {
-                if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
-                    return d / "runtime";
-                }
-            }
-        }
-    }
-#elif defined(__linux__)
-    std::error_code ec;
-    auto p = std::filesystem::canonical("/proc/self/exe", ec);
-    if (!ec) {
-        for (auto d = p.parent_path(); !d.empty() && d != d.parent_path(); d = d.parent_path()) {
-            if (std::filesystem::exists(d / "runtime" / "cfire_prelude.hpp")) {
-                return d / "runtime";
-            }
-        }
-    }
-#endif
-    if (const char* home = std::getenv("HOME")) {
-        auto user_rt = std::filesystem::path(home) / ".cfire" / "runtime";
-        if (std::filesystem::exists(user_rt / "cfire_prelude.hpp")) {
-            return user_rt;
-        }
-    }
-    for (const auto* share : {"/usr/local/share/cfire/runtime", "/usr/share/cfire/runtime"}) {
-        auto share_rt = std::filesystem::path(share);
-        if (std::filesystem::exists(share_rt / "cfire_prelude.hpp")) {
-            return share_rt;
-        }
-    }
-    return cwd / "runtime";
-}
-
 void print_usage() {
     std::println("Usage: cfire <command> [args...]");
     std::println("Commands:");
+    std::println("  init     [--template cli|tako|gui] [--force] [dir] Initialize a new cfire project in current/target directory");
+    std::println("  new      [--template cli|tako|gui] [--force] <dir> Create a new cfire project directory");
     std::println("  run      [--web|--ios] [target|file.cf] Run native app, web app (--web), or iOS Simulator app (--ios)");
-    std::println("  test     [--json] [--filter <pat>] <file.cf> Compile and execute all `test \"...\" {{ ... }}` blocks in file");
+    std::println("  test     [--json] [--filter <pat>] [path|file.cf] Compile and execute all `test \"...\" {{ ... }}` suites");
     std::println("  build    [--target wasm|ios-sim|ios|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
     std::println("  serve    [--port <n>] [--no-open] [target|path] Build & serve WebAssembly / static web app with zero config");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
-    std::println("  check    [--json] [--fix] <file.cf> Type-check, verify parameter intents, and inspect C++ headers");
-    std::println("  fix      [--dry-run] [--json] <file.cf> Auto-fix missing imports, mut annotations, and enum matches");
+    std::println("  check    [--json] [--fix] [path|file.cf] Type-check, verify parameter intents, and inspect C++ headers");
+    std::println("  fix      [--dry-run] [--json] [path|file.cf] Auto-fix missing imports, mut annotations, and enum matches");
     std::println("  inspect  <target> [--json]    Stateless symbol/type hover, foreign C header, or stdlib docs");
     std::println("  outline  [--json] [path]      Token-compressed outline of packages, types, and functions");
     std::println("  fmt      [--check] <path>     Canonically format .cf file(s) or directory");
@@ -100,9 +51,185 @@ void print_usage() {
     std::println("  emit-cpp <file.cf>            Print generated human-readable C++23 source");
     std::println("  eject    <file.cf> [out_dir]  Export standalone C++23 source tree + CMakeLists.txt");
     std::println("  vendor   [dest_dir]           Fetch and vendor all build.cf dependencies for offline builds");
+    std::println("  install  [--prefix <dir>|--user|--portable <dir>] Install cfire binary & runtime headers (FHS prefix or portable bundle)");
     std::println("  doctor   [--json]             Verify C++23 compiler, runtime headers, and native libraries");
     std::println("  setup    [--yes] [--wasm]     Install missing host dependencies and warm C++23 PCH cache");
     std::println("  version  (--version, -v)      Print cfire toolchain version");
+}
+
+[[nodiscard]] auto is_ignored_walk_dir(const std::filesystem::path& p) -> bool {
+    std::string s = p.string();
+    return s.contains("/.cfire") || s.contains("/.tako") || s.contains("/.git") || s.contains("/dist") ||
+           s.contains("/vendor") || s.contains("/node_modules") || s.contains("/ejected_cpp");
+}
+
+[[nodiscard]] auto run_scaffold_command(
+    std::string_view sub,
+    const std::filesystem::path& target_dir,
+    std::string_view tmpl,
+    bool force
+) -> int {
+    std::error_code ec;
+    std::filesystem::path abs_dir = std::filesystem::absolute(target_dir, ec);
+    if (ec || abs_dir.empty()) abs_dir = target_dir;
+    std::filesystem::create_directories(abs_dir, ec);
+    if (ec) {
+        std::println(stderr, "error creating directory '{}': {}", abs_dir.string(), ec.message());
+        return 1;
+    }
+
+    std::string proj_name = abs_dir.filename().string();
+    if (proj_name.empty() || proj_name == "." || proj_name == "/") {
+        proj_name = std::filesystem::current_path(ec).filename().string();
+    }
+    if (proj_name.empty()) proj_name = "cfire_app";
+
+    auto build_cf_path = abs_dir / "build.cf";
+    auto main_cf_path = abs_dir / "main.cf";
+    auto test_cf_path = abs_dir / "main_test.cf";
+    auto gitignore_path = abs_dir / ".gitignore";
+
+    if (!force && (std::filesystem::exists(build_cf_path, ec) || std::filesystem::exists(main_cf_path, ec))) {
+        std::println(stderr, "error: project files already exist in '{}' (pass `--force` to overwrite)", abs_dir.string());
+        return 1;
+    }
+
+    std::string build_cf_txt;
+    std::string main_cf_txt;
+    std::string test_cf_txt;
+
+    if (tmpl == "tako") {
+        build_cf_txt = std::format(R"CF(package build
+
+app := Executable{{
+    name:        "{}",
+    entry:       "main.cf",
+    targets:     ["native", "wasm", "ios-sim"],
+    subsystem:   "gui",
+    web_profile: "canvas",
+}}
+)CF", proj_name);
+        main_cf_txt = std::format(R"CF(package main
+
+import "pkg:tako"
+
+fn greet_label(count: i32) -> str {{
+    return "Clicks: {{count}}"
+}}
+
+fn main() {{
+    mut app := tako.new_app("{}", 420, 320)
+    defer app.close()
+
+    mut count: i32 = 0
+    for app.step() {{
+        app.begin_frame()
+        defer app.end_frame()
+        if app.button(greet_label(count)) {{
+            count += 1
+        }}
+    }}
+}}
+)CF", proj_name);
+        test_cf_txt = R"CF(package main
+
+test "greet_label formats click count" {
+    assert(greet_label(3) == "Clicks: 3")
+}
+)CF";
+    } else if (tmpl == "gui") {
+        build_cf_txt = std::format(R"CF(package build
+
+app := Executable{{
+    name:        "{}",
+    entry:       "main.cf",
+    targets:     ["native", "wasm", "ios-sim"],
+    subsystem:   "gui",
+    web_profile: "canvas",
+}}
+)CF", proj_name);
+        main_cf_txt = std::format(R"CF(package main
+
+import "vendor:raylib" as rl
+
+fn window_title(name: str) -> str {{
+    return "{{name}} — cfire + raylib"
+}}
+
+fn main() {{
+    rl.InitWindow(800, 450, window_title("{}"))
+    defer rl.CloseWindow()
+    rl.SetTargetFPS(60)
+
+    for !rl.WindowShouldClose() {{
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+        rl.ClearBackground(rl.RAYWHITE)
+        rl.DrawText("Hello from {}!", 40, 40, 28, rl.DARKGRAY)
+    }}
+}}
+)CF", proj_name, proj_name);
+        test_cf_txt = std::format(R"CF(package main
+
+test "window_title formats name" {{
+    assert(window_title("{0}") == "{0} — cfire + raylib")
+}}
+)CF", proj_name);
+    } else {
+        // Default: cli
+        build_cf_txt = std::format(R"CF(package build
+
+app := Executable{{
+    name:  "{}",
+    entry: "main.cf",
+}}
+)CF", proj_name);
+        main_cf_txt = std::format(R"CF(package main
+
+fn greet(name: str) -> str {{
+    return "Hello, {{name}}!"
+}}
+
+fn main() {{
+    println("{{}}", greet("{}"))
+}}
+)CF", proj_name);
+        test_cf_txt = std::format(R"CF(package main
+
+test "greet returns expected message" {{
+    assert(greet("{0}") == "Hello, {0}!")
+}}
+)CF", proj_name);
+    }
+
+    std::string gitignore_txt = std::format(".cfire/\ndist/\n{}\n*.app/\n", proj_name);
+
+    auto write_f = [](const std::filesystem::path& p, std::string_view content) -> bool {
+        std::ofstream ofs(p, std::ios::binary | std::ios::trunc);
+        if (!ofs) return false;
+        ofs << content;
+        return static_cast<bool>(ofs);
+    };
+
+    if (!write_f(build_cf_path, build_cf_txt) ||
+        !write_f(main_cf_path, main_cf_txt) ||
+        !write_f(test_cf_path, test_cf_txt) ||
+        !write_f(gitignore_path, gitignore_txt)) {
+        std::println(stderr, "error writing scaffold files in '{}'", abs_dir.string());
+        return 1;
+    }
+
+    std::println("✓ Initialized cfire {} project '{}' in {}", tmpl, proj_name, abs_dir.string());
+    std::println("  + build.cf");
+    std::println("  + main.cf");
+    std::println("  + main_test.cf");
+    std::println("  + .gitignore");
+    if (sub == "new") {
+        std::println("\nNext steps:\n  cd {}\n  cfire run\n  cfire test", target_dir.string());
+    } else {
+        std::println("\nNext steps:\n  cfire run\n  cfire test");
+    }
+    return 0;
 }
 
 auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
@@ -246,7 +373,8 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
     std::string sub = argv[1];
-    auto runtime_dir = locate_runtime_dir();
+    auto toolchain_layout = cfire::build::locate_toolchain_layout(argv[0]);
+    auto runtime_dir = toolchain_layout.runtime_dir;
 
     if (sub == "--version" || sub == "-v" || sub == "version") {
         std::println("cfire {} (ISO C++23 systems toolchain)", cfire::doctor::kCfireVersion);
@@ -256,6 +384,60 @@ auto main(int argc, char** argv) -> int {
     if (sub == "--help" || sub == "-h" || sub == "help") {
         print_usage();
         return 0;
+    }
+
+    if (sub == "init" || sub == "new") {
+        std::string tmpl = "cli";
+        bool force = false;
+        std::filesystem::path target_dir;
+        for (int i = 2; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if ((arg == "--template" || arg == "-t") && i + 1 < argc) {
+                tmpl = argv[++i];
+            } else if (arg.starts_with("--template=")) {
+                tmpl = std::string(arg.substr(11));
+            } else if (arg == "--tako") {
+                tmpl = "tako";
+            } else if (arg == "--gui" || arg == "--raylib") {
+                tmpl = "gui";
+            } else if (arg == "--cli") {
+                tmpl = "cli";
+            } else if (arg == "--force" || arg == "-f") {
+                force = true;
+            } else if (!arg.starts_with("-") && target_dir.empty()) {
+                target_dir = arg;
+            }
+        }
+        if (sub == "new" && target_dir.empty()) {
+            std::println(stderr, "error: `cfire new` requires a target directory (e.g., `cfire new my_app`)");
+            return 1;
+        }
+        if (target_dir.empty()) target_dir = ".";
+        return run_scaffold_command(sub, target_dir, tmpl, force);
+    }
+
+    if (sub == "install") {
+        bool portable_mode = false;
+        bool user_mode = false;
+        std::string target_dir;
+        for (int i = 2; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--portable" || arg == "--dir" || arg == "--bundle") {
+                portable_mode = true;
+                if (i + 1 < argc && argv[i + 1][0] != '-') {
+                    target_dir = argv[++i];
+                }
+            } else if (arg == "--prefix" && i + 1 < argc) {
+                target_dir = argv[++i];
+            } else if (arg.starts_with("--prefix=")) {
+                target_dir = std::string(arg.substr(9));
+            } else if (arg == "--user") {
+                user_mode = true;
+            } else if (!arg.starts_with("-") && target_dir.empty()) {
+                target_dir = std::string(arg);
+            }
+        }
+        return cfire::doctor::run_install(toolchain_layout, target_dir, portable_mode, user_mode);
     }
 
     if (sub == "doctor") {
@@ -653,7 +835,7 @@ auto main(int argc, char** argv) -> int {
             std::print("{}", *md);
             return 0;
         }
-        auto docs_dir = runtime_dir.parent_path() / "docs";
+        auto docs_dir = toolchain_layout.docs_dir;
         auto res = cfire::doc::sync_docs_directory(docs_dir, check_only, runtime_dir);
         if (!res) {
             std::println(stderr, "{}", res.error());
@@ -872,7 +1054,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (argc < 3) {
-        if (sub != "build" && sub != "run") {
+        if (sub != "build" && sub != "run" && sub != "test" && sub != "check" && sub != "fix") {
             print_usage();
             return 1;
         }
@@ -1098,6 +1280,10 @@ auto main(int argc, char** argv) -> int {
                 target = build_cf_cur;
             }
         }
+    } else if (sub == "test" || sub == "check" || sub == "fix") {
+        if (target.empty()) {
+            target = ".";
+        }
     }
 
     if (target.empty()) {
@@ -1106,82 +1292,123 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "fix" || (sub == "check" && fix_mode)) {
-        auto raw_txt = cfire::build::read_file_text(target);
-        if (!raw_txt) {
-            if (json_mode) {
-                std::println("{{\"success\": false, \"file\": \"{}\", \"applied_fixes\": 0, \"edits\": []}}",
-                    cfire::diag::json_escape(target.string()));
-            } else {
-                std::println(stderr, "error reading '{}': {}", target.string(), raw_txt.error());
+        std::vector<std::filesystem::path> fix_files;
+        std::error_code fix_ec;
+        if (std::filesystem::is_directory(target, fix_ec)) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(target, fix_ec)) {
+                if (!entry.is_regular_file() || entry.path().extension() != ".cf") continue;
+                if (entry.path().filename() == "build.cf") continue;
+                if (is_ignored_walk_dir(entry.path())) continue;
+                fix_files.push_back(entry.path());
             }
-            return 1;
+            std::sort(fix_files.begin(), fix_files.end());
+        } else {
+            fix_files.push_back(target);
         }
 
-        std::string current_text = *raw_txt;
-        std::vector<cfire::diag::FixItEdit> total_applied;
+        std::size_t grand_total_fixes = 0;
+        std::vector<std::string> file_jsons;
+        bool any_read_error = false;
 
-        for (int pass = 0; pass < 3; ++pass) {
-            auto pres = cfire::frontend::parse_source_resilient(target.string(), current_text);
-            auto lines = cfire::diag::split_lines(current_text);
-            std::vector<cfire::diag::FixItEdit> pass_edits;
-
-            // 1. Missing stdlib imports
-            auto import_fixes = cfire::diag::detect_missing_stdlib_imports(pres.ast, lines);
-            for (auto& f : import_fixes) {
-                pass_edits.push_back(std::move(f));
+        for (const auto& fpath : fix_files) {
+            auto raw_txt = cfire::build::read_file_text(fpath);
+            if (!raw_txt) {
+                any_read_error = true;
+                if (json_mode && fix_files.size() == 1) {
+                    std::println("{{\"success\": false, \"file\": \"{}\", \"applied_fixes\": 0, \"edits\": []}}",
+                        cfire::diag::json_escape(fpath.string()));
+                    return 1;
+                } else if (!json_mode) {
+                    std::println(stderr, "error reading '{}': {}", fpath.string(), raw_txt.error());
+                }
+                continue;
             }
 
-            // 2. Sema diagnostics & quick-fixes
-            auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
-            for (const auto& w : chk.warnings) {
-                auto d = cfire::diag::parse_diagnostic_string(w, target.string(), "warning", "cfire/WARNING");
-                cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
-                for (auto& fix : d.fixits) {
-                    pass_edits.push_back(std::move(fix));
+            std::string current_text = *raw_txt;
+            std::vector<cfire::diag::FixItEdit> total_applied;
+
+            for (int pass = 0; pass < 3; ++pass) {
+                auto pres = cfire::frontend::parse_source_resilient(fpath.string(), current_text);
+                auto lines = cfire::diag::split_lines(current_text);
+                std::vector<cfire::diag::FixItEdit> pass_edits;
+
+                // 1. Missing stdlib imports
+                auto import_fixes = cfire::diag::detect_missing_stdlib_imports(pres.ast, lines);
+                for (auto& f : import_fixes) {
+                    pass_edits.push_back(std::move(f));
+                }
+
+                // 2. Sema diagnostics & quick-fixes
+                auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
+                for (const auto& w : chk.warnings) {
+                    auto d = cfire::diag::parse_diagnostic_string(w, fpath.string(), "warning", "cfire/WARNING");
+                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                    for (auto& fix : d.fixits) {
+                        pass_edits.push_back(std::move(fix));
+                    }
+                }
+                for (const auto& err : chk.errors) {
+                    auto d = cfire::diag::parse_diagnostic_string(err, fpath.string(), "error", "cfire/SEMA-ERROR");
+                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                    for (auto& fix : d.fixits) {
+                        pass_edits.push_back(std::move(fix));
+                    }
+                }
+
+                if (pass_edits.empty()) {
+                    break;
+                }
+
+                auto [new_text, applied] = cfire::diag::apply_fixits(current_text, pass_edits);
+                if (applied.empty() || new_text == current_text) {
+                    break;
+                }
+
+                for (auto& a : applied) {
+                    total_applied.push_back(std::move(a));
+                }
+                current_text = std::move(new_text);
+            }
+
+            if (!dry_run && !total_applied.empty()) {
+                std::ofstream out(fpath, std::ios::binary | std::ios::trunc);
+                out << current_text;
+            }
+
+            grand_total_fixes += total_applied.size();
+            if (sub == "fix") {
+                if (json_mode) {
+                    file_jsons.push_back(cfire::diag::serialize_fix_result_json(fpath.string(), true, total_applied.size(), total_applied));
+                } else if (fix_files.size() == 1 || !total_applied.empty()) {
+                    if (total_applied.empty()) {
+                        std::println("✓ No fixes needed for {}", fpath.string());
+                    } else {
+                        std::println("✓ Applied {} fix(es) to {}{}", total_applied.size(), fpath.string(), dry_run ? " (dry run)" : "");
+                        for (const auto& edit : total_applied) {
+                            std::println("  - {}", edit.title);
+                        }
+                    }
                 }
             }
-            for (const auto& err : chk.errors) {
-                auto d = cfire::diag::parse_diagnostic_string(err, target.string(), "error", "cfire/SEMA-ERROR");
-                cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
-                for (auto& fix : d.fixits) {
-                    pass_edits.push_back(std::move(fix));
-                }
-            }
-
-            if (pass_edits.empty()) {
-                break;
-            }
-
-            auto [new_text, applied] = cfire::diag::apply_fixits(current_text, pass_edits);
-            if (applied.empty() || new_text == current_text) {
-                break;
-            }
-
-            for (auto& a : applied) {
-                total_applied.push_back(std::move(a));
-            }
-            current_text = std::move(new_text);
-        }
-
-        if (!dry_run && !total_applied.empty()) {
-            std::ofstream out(target, std::ios::binary | std::ios::trunc);
-            out << current_text;
         }
 
         if (sub == "fix") {
             if (json_mode) {
-                std::println("{}", cfire::diag::serialize_fix_result_json(target.string(), true, total_applied.size(), total_applied));
-            } else {
-                if (total_applied.empty()) {
-                    std::println("✓ No fixes needed for {}", target.string());
+                if (fix_files.size() == 1 && !file_jsons.empty()) {
+                    std::println("{}", file_jsons[0]);
                 } else {
-                    std::println("✓ Applied {} fix(es) to {}{}", total_applied.size(), target.string(), dry_run ? " (dry run)" : "");
-                    for (const auto& edit : total_applied) {
-                        std::println("  - {}", edit.title);
+                    std::string joined;
+                    for (std::size_t i = 0; i < file_jsons.size(); ++i) {
+                        if (i > 0) joined += ", ";
+                        joined += file_jsons[i];
                     }
+                    std::println("{{\"success\": {}, \"applied_fixes\": {}, \"files\": [{}]}}",
+                        !any_read_error ? "true" : "false", grand_total_fixes, joined);
                 }
+            } else if (fix_files.size() > 1 && grand_total_fixes == 0) {
+                std::println("✓ No fixes needed across {} file(s) in {}", fix_files.size(), target.string());
             }
-            return 0;
+            return any_read_error ? 1 : 0;
         }
     }
 
@@ -1409,60 +1636,138 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "check") {
-        if (json_mode) {
-            auto raw_txt = cfire::build::read_file_text(target);
-            if (!raw_txt) {
-                std::println("{{\"success\": false, \"file\": \"{}\", \"diagnostics\": [{{\"file\": \"{}\", \"line\": 1, \"col\": 1, \"severity\": \"error\", \"message\": \"{}\", \"code\": \"cfire/FILE-NOT-FOUND\", \"fixits\": []}}]}}",
-                    cfire::diag::json_escape(target.string()), cfire::diag::json_escape(target.string()), cfire::diag::json_escape(raw_txt.error()));
-                return 1;
+        std::vector<std::filesystem::path> check_targets;
+        std::error_code chk_ec;
+        if (std::filesystem::is_directory(target, chk_ec)) {
+            auto bcf = target / "build.cf";
+            if (std::filesystem::exists(bcf, chk_ec)) {
+                if (auto parsed = cfire::build::parse_build_cf(bcf)) {
+                    for (const auto& exe : parsed->executables) {
+                        std::filesystem::path ep = exe.entry;
+                        if (ep.is_relative()) ep = target / ep;
+                        if (std::filesystem::exists(ep, chk_ec)) {
+                            check_targets.push_back(ep);
+                        }
+                    }
+                }
+                if (!check_targets.empty()) {
+                    for (const auto& entry : std::filesystem::recursive_directory_iterator(target, chk_ec)) {
+                        if (!entry.is_regular_file() || entry.path().extension() != ".cf") continue;
+                        if (is_ignored_walk_dir(entry.path())) continue;
+                        if (entry.path().filename().string().ends_with("_test.cf")) {
+                            check_targets.push_back(entry.path());
+                        }
+                    }
+                }
             }
-
-            std::vector<cfire::diag::StructuredDiagnostic> diags;
-            auto pres = cfire::frontend::parse_source_resilient(target.string(), *raw_txt);
-            if (!pres.ok()) {
-                for (const auto& err : pres.errors) {
-                    diags.push_back(cfire::diag::parse_diagnostic_string(err, target.string(), "error", "cfire/SYNTAX-ERROR"));
+            if (check_targets.empty()) {
+                // Group directory `.cf` files by parent directory + package_name so multi-file packages are checked once via their primary file
+                std::unordered_set<std::string> seen_pkg_dirs;
+                std::vector<std::filesystem::path> all_cf;
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(target, chk_ec)) {
+                    if (!entry.is_regular_file() || entry.path().extension() != ".cf") continue;
+                    if (entry.path().filename() == "build.cf") continue;
+                    if (is_ignored_walk_dir(entry.path())) continue;
+                    all_cf.push_back(entry.path());
                 }
+                std::sort(all_cf.begin(), all_cf.end());
+                for (const auto& fpath : all_cf) {
+                    auto raw = cfire::build::read_file_text(fpath);
+                    if (!raw) {
+                        check_targets.push_back(fpath);
+                        continue;
+                    }
+                    auto ast = cfire::frontend::parse_source(fpath.string(), *raw);
+                    if (!ast) {
+                        check_targets.push_back(fpath);
+                        continue;
+                    }
+                    bool has_main = cfire::build::ast_has_top_level_main(*ast);
+                    bool is_test_f = fpath.filename().string().ends_with("_test.cf");
+                    std::string key = std::filesystem::weakly_canonical(fpath.parent_path(), chk_ec).string() + "::" + ast->package_name;
+                    if (has_main || is_test_f || !seen_pkg_dirs.contains(key)) {
+                        seen_pkg_dirs.insert(key);
+                        check_targets.push_back(fpath);
+                    }
+                }
+            }
+        } else {
+            check_targets.push_back(target);
+        }
+
+        if (check_targets.empty()) {
+            if (json_mode) {
+                std::println("{{\"success\": true, \"file\": \"{}\", \"diagnostics\": []}}",
+                    cfire::diag::json_escape(target.string()));
             } else {
-                auto lines = cfire::diag::split_lines(*raw_txt);
-                cfire::build::BuildPlan local_plan;
-                local_plan.entry_file = target.string();
-                auto dir = target.parent_path();
-                if (dir.empty()) dir = ".";
-                (void)cfire::build::resolve_local_cf_imports(dir, pres.ast, local_plan);
+                std::println("✓ No .cf targets found in {}", target.string());
+            }
+            return 0;
+        }
 
-                auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
-                for (const auto& w : chk.warnings) {
-                    auto d = cfire::diag::parse_diagnostic_string(w, target.string(), "warning", "cfire/WARNING");
-                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
-                    diags.push_back(std::move(d));
-                }
-                for (const auto& err : chk.errors) {
-                    auto d = cfire::diag::parse_diagnostic_string(err, target.string(), "error", "cfire/SEMA-ERROR");
-                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
-                    diags.push_back(std::move(d));
+        if (json_mode) {
+            std::vector<cfire::diag::StructuredDiagnostic> all_diags;
+            for (const auto& ctarget : check_targets) {
+                auto raw_txt = cfire::build::read_file_text(ctarget);
+                if (!raw_txt) {
+                    cfire::diag::StructuredDiagnostic d;
+                    d.file = ctarget.string();
+                    d.line = 1;
+                    d.col = 1;
+                    d.severity = "error";
+                    d.code = "cfire/FILE-NOT-FOUND";
+                    d.message = raw_txt.error();
+                    all_diags.push_back(std::move(d));
+                    continue;
                 }
 
-                if (chk.errors.empty()) {
-                    auto emit_res = cfire::build::analyze_and_emit(target, runtime_dir, true, false, target_triple, sysroot);
-                    if (!emit_res) {
-                        auto d = cfire::diag::parse_diagnostic_string(emit_res.error(), target.string(), "error", "cfire/SEMA-ERROR");
-                        diags.push_back(std::move(d));
-                    } else {
-                        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, emit_res->first, emit_res->second, runtime_dir, extra_includes);
-                        if (!syntax_check) {
-                            auto clang_lines = cfire::diag::split_lines(syntax_check.error());
-                            bool found_diag = false;
-                            for (const auto& cl : clang_lines) {
-                                if (cl.contains(": error:") || cl.contains(": warning:")) {
-                                    auto d = cfire::diag::parse_diagnostic_string(cl, target.string(), cl.contains(": error:") ? "error" : "warning", "cfire/TYPE-ERROR");
-                                    diags.push_back(std::move(d));
-                                    found_diag = true;
+                auto pres = cfire::frontend::parse_source_resilient(ctarget.string(), *raw_txt);
+                if (!pres.ok()) {
+                    for (const auto& err : pres.errors) {
+                        all_diags.push_back(cfire::diag::parse_diagnostic_string(err, ctarget.string(), "error", "cfire/SYNTAX-ERROR"));
+                    }
+                } else {
+                    auto lines = cfire::diag::split_lines(*raw_txt);
+                    cfire::build::BuildPlan local_plan;
+                    local_plan.entry_file = ctarget.string();
+                    auto dir = ctarget.parent_path();
+                    if (dir.empty()) dir = ".";
+                    bool is_test_f = ctarget.filename().string().ends_with("_test.cf");
+                    (void)cfire::build::resolve_local_cf_imports(dir, pres.ast, local_plan, runtime_dir, is_test_f);
+
+                    auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
+                    for (const auto& w : chk.warnings) {
+                        auto d = cfire::diag::parse_diagnostic_string(w, ctarget.string(), "warning", "cfire/WARNING");
+                        cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                        all_diags.push_back(std::move(d));
+                    }
+                    for (const auto& err : chk.errors) {
+                        auto d = cfire::diag::parse_diagnostic_string(err, ctarget.string(), "error", "cfire/SEMA-ERROR");
+                        cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                        all_diags.push_back(std::move(d));
+                    }
+
+                    if (chk.errors.empty()) {
+                        auto emit_res = cfire::build::analyze_and_emit(ctarget, runtime_dir, true, is_test_f, target_triple, sysroot);
+                        if (!emit_res) {
+                            auto d = cfire::diag::parse_diagnostic_string(emit_res.error(), ctarget.string(), "error", "cfire/SEMA-ERROR");
+                            all_diags.push_back(std::move(d));
+                        } else {
+                            auto syntax_check = cfire::build::verify_cpp_syntax_only(ctarget, emit_res->first, emit_res->second, runtime_dir, extra_includes);
+                            if (!syntax_check) {
+                                auto clang_lines = cfire::diag::split_lines(syntax_check.error());
+                                bool found_diag = false;
+                                for (const auto& cl : clang_lines) {
+                                    if (cl.contains(": error:") || cl.contains(": warning:")) {
+                                        auto d = cfire::diag::parse_diagnostic_string(cl, ctarget.string(), cl.contains(": error:") ? "error" : "warning", "cfire/TYPE-ERROR");
+                                        all_diags.push_back(std::move(d));
+                                        found_diag = true;
+                                    }
                                 }
-                            }
-                            if (!found_diag && !syntax_check.error().empty()) {
-                                auto d = cfire::diag::parse_diagnostic_string(syntax_check.error(), target.string(), "error", "cfire/TYPE-ERROR");
-                                diags.push_back(std::move(d));
+                                if (!found_diag && !syntax_check.error().empty()) {
+                                    auto d = cfire::diag::parse_diagnostic_string(syntax_check.error(), ctarget.string(), "error", "cfire/TYPE-ERROR");
+                                    all_diags.push_back(std::move(d));
+                                }
                             }
                         }
                     }
@@ -1470,29 +1775,35 @@ auto main(int argc, char** argv) -> int {
             }
 
             bool has_errors = false;
-            for (const auto& d : diags) {
+            for (const auto& d : all_diags) {
                 if (d.severity == "error") {
                     has_errors = true;
                     break;
                 }
             }
-            std::println("{}", cfire::diag::serialize_diagnostics_json(target.string(), !has_errors, diags));
+            std::println("{}", cfire::diag::serialize_diagnostics_json(target.string(), !has_errors, all_diags));
             return has_errors ? 1 : 0;
         }
 
-        auto res = cfire::build::analyze_and_emit(target, runtime_dir, true, false, target_triple, sysroot, web_profile, subsystem);
-        if (!res) {
-            std::println(stderr, "{}", res.error());
-            return 1;
+        int failed_checks = 0;
+        for (const auto& ctarget : check_targets) {
+            bool is_test_f = ctarget.filename().string().ends_with("_test.cf");
+            auto res = cfire::build::analyze_and_emit(ctarget, runtime_dir, true, is_test_f, target_triple, sysroot, web_profile, subsystem);
+            if (!res) {
+                std::println(stderr, "{}", res.error());
+                ++failed_checks;
+                continue;
+            }
+            auto syntax_check = cfire::build::verify_cpp_syntax_only(ctarget, res->first, res->second, runtime_dir, extra_includes);
+            if (!syntax_check) {
+                std::println(stderr, "{}", syntax_check.error());
+                ++failed_checks;
+                continue;
+            }
+            std::println("✓ {} checked cleanly ({} auto-linked packages, {} C++ headers ingested)",
+                ctarget.string(), res->second.auto_linked.size(), res->second.cpp_headers.size());
         }
-        auto syntax_check = cfire::build::verify_cpp_syntax_only(target, res->first, res->second, runtime_dir, extra_includes);
-        if (!syntax_check) {
-            std::println(stderr, "{}", syntax_check.error());
-            return 1;
-        }
-        std::println("✓ {} checked cleanly ({} auto-linked packages, {} C++ headers ingested)",
-            target.string(), res->second.auto_linked.size(), res->second.cpp_headers.size());
-        return 0;
+        return failed_checks > 0 ? 1 : 0;
     }
 
     if (sub == "build") {
@@ -1658,6 +1969,130 @@ auto main(int argc, char** argv) -> int {
             }
             if (!filter_pattern.empty()) {
                 run_args.emplace_back(std::format("--cfire-test-filter={}", filter_pattern));
+            }
+
+            std::error_code test_ec;
+            if (std::filesystem::is_directory(target, test_ec)) {
+                // Discover all test suites in directory (ERG-01a), grouped by (directory, package_name)
+                std::vector<std::filesystem::path> all_cf;
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(target, test_ec)) {
+                    if (!entry.is_regular_file() || entry.path().extension() != ".cf") continue;
+                    if (entry.path().filename() == "build.cf") continue;
+                    if (is_ignored_walk_dir(entry.path())) continue;
+                    all_cf.push_back(entry.path());
+                }
+                std::sort(all_cf.begin(), all_cf.end());
+
+                // Prefer `*_test.cf` files first within each directory so they act as the primary suite entry
+                std::stable_sort(all_cf.begin(), all_cf.end(), [](const auto& a, const auto& b) {
+                    bool a_test = a.filename().string().ends_with("_test.cf");
+                    bool b_test = b.filename().string().ends_with("_test.cf");
+                    if (a.parent_path() == b.parent_path() && a_test != b_test) {
+                        return a_test > b_test;
+                    }
+                    return false;
+                });
+
+                std::unordered_set<std::string> seen_pkg_suites;
+                std::vector<std::filesystem::path> suite_entries;
+                for (const auto& fpath : all_cf) {
+                    auto raw = cfire::build::read_file_text(fpath);
+                    if (!raw) continue;
+                    auto ast = cfire::frontend::parse_source(fpath.string(), *raw);
+                    if (!ast) continue;
+                    bool is_test_name = fpath.filename().string().ends_with("_test.cf");
+                    if (!is_test_name && ast->tests.empty()) continue;
+
+                    std::string pkg_key = std::filesystem::weakly_canonical(fpath.parent_path(), test_ec).string() + "::" + ast->package_name;
+                    if (!ast->package_name.empty()) {
+                        if (seen_pkg_suites.contains(pkg_key)) continue;
+                        seen_pkg_suites.insert(pkg_key);
+                    }
+                    suite_entries.push_back(fpath);
+                }
+
+                if (suite_entries.empty()) {
+                    if (json_mode) {
+                        std::println("{{\"success\": true, \"passed\": 0, \"failed\": 0, \"tests\": []}}");
+                    } else {
+                        std::println("✓ No test suites found in {}", target.string());
+                    }
+                    return 0;
+                }
+
+                int total_passed = 0;
+                int total_failed = 0;
+                int suite_failures = 0;
+                std::string combined_tests_json;
+
+                for (std::size_t idx = 0; idx < suite_entries.size(); ++idx) {
+                    const auto& suite_file = suite_entries[idx];
+                    if (!json_mode && suite_entries.size() > 1) {
+                        std::println("==> Suite {}/{}: {}", idx + 1, suite_entries.size(), suite_file.string());
+                    }
+                    auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}", ::getpid(), idx);
+                    auto plan = cfire::build::build_native(suite_file, runtime_dir, tmp_bin, true, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
+                    if (!plan) {
+                        ++suite_failures;
+                        if (!json_mode) {
+                            std::println(stderr, "{}", plan.error());
+                        }
+                        continue;
+                    }
+                    std::string cmd = cfire::bridge::shell_quote(tmp_bin.string());
+                    for (const auto& arg : run_args) {
+                        cmd += " " + cfire::bridge::shell_quote(arg);
+                    }
+                    if (json_mode) {
+                        int rc = 0;
+                        std::string out = cfire::bridge::run_command_capture(cmd, rc);
+                        std::filesystem::remove(tmp_bin, test_ec);
+                        if (rc != 0) ++suite_failures;
+                        // Extract passed, failed, and tests array from suite JSON
+                        if (auto p_pos = out.find("\"passed\": "); p_pos != std::string::npos) {
+                            p_pos += 10;
+                            auto p_end = out.find_first_of(",}", p_pos);
+                            if (auto v = cfire::detail::parse_int<int>(std::string_view(out).substr(p_pos, p_end - p_pos))) {
+                                total_passed += *v;
+                            }
+                        }
+                        if (auto f_pos = out.find("\"failed\": "); f_pos != std::string::npos) {
+                            f_pos += 10;
+                            auto f_end = out.find_first_of(",}", f_pos);
+                            if (auto v = cfire::detail::parse_int<int>(std::string_view(out).substr(f_pos, f_end - f_pos))) {
+                                total_failed += *v;
+                            }
+                        }
+                        if (auto t_pos = out.find("\"tests\": ["); t_pos != std::string::npos) {
+                            t_pos += 10;
+                            auto t_end = out.rfind("]}");
+                            if (t_end != std::string::npos && t_end > t_pos) {
+                                std::string inner = out.substr(t_pos, t_end - t_pos);
+                                if (!inner.empty()) {
+                                    if (!combined_tests_json.empty()) combined_tests_json += ", ";
+                                    combined_tests_json += inner;
+                                }
+                            }
+                        }
+                    } else {
+                        int rc = std::system(cmd.c_str());
+                        std::filesystem::remove(tmp_bin, test_ec);
+                        if (rc != 0) ++suite_failures;
+                    }
+                }
+
+                if (json_mode) {
+                    bool ok = (suite_failures == 0 && total_failed == 0);
+                    std::println("{{\"success\": {}, \"passed\": {}, \"failed\": {}, \"tests\": [{}]}}",
+                        ok ? "true" : "false", total_passed, total_failed, combined_tests_json);
+                } else if (suite_entries.size() > 1) {
+                    if (suite_failures == 0) {
+                        std::println("✓ All {} test suite(s) passed", suite_entries.size());
+                    } else {
+                        std::println(stderr, "✗ {} of {} test suite(s) failed", suite_failures, suite_entries.size());
+                    }
+                }
+                return suite_failures > 0 ? 1 : 0;
             }
         }
 

@@ -337,6 +337,28 @@ inline std::string failure_file;
 inline int failure_line = 0;
 inline std::string failure_expr;
 inline std::string failure_msg;
+
+template <typename T>
+concept FormattableVal = requires(const T& v) {
+    std::format("{}", v);
+};
+
+template <typename T>
+[[nodiscard]] inline auto format_debug_val(const T& v) -> std::string {
+    using Decayed = std::decay_t<T>;
+    if constexpr (std::is_same_v<Decayed, std::string> ||
+                  std::is_same_v<Decayed, std::string_view> ||
+                  std::is_same_v<Decayed, const char*> ||
+                  std::is_same_v<Decayed, char*>) {
+        return std::format("\"{}\"", v);
+    } else if constexpr (std::is_same_v<Decayed, bool>) {
+        return v ? "true" : "false";
+    } else if constexpr (FormattableVal<T>) {
+        return std::format("{}", v);
+    } else {
+        return "<unformattable>";
+    }
+}
 } // namespace testing_detail
 
 inline void assert_true_at(
@@ -362,6 +384,30 @@ inline void assert_true_at(
             }
             std::abort();
         }
+    }
+}
+
+template <typename L, typename R, typename Pred>
+inline void assert_binop_at(
+    const L& lhs,
+    const R& rhs,
+    Pred&& pred,
+    std::string_view op_str,
+    std::string_view msg,
+    std::string_view file,
+    int line,
+    std::string_view expr_text
+) {
+    if (!pred(lhs, rhs)) {
+        std::string detail = std::format(
+            "{} [left: {}, right: {}]",
+            msg,
+            testing_detail::format_debug_val(lhs),
+            testing_detail::format_debug_val(rhs));
+        std::string full_expr = expr_text.empty()
+            ? std::format("left {} right", op_str)
+            : std::string(expr_text);
+        assert_true_at(false, detail, file, line, full_expr);
     }
 }
 

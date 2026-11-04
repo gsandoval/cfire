@@ -1396,6 +1396,152 @@ fn main() {
         }
     }
 
+    // =========================================================================
+    // 2.21 Developer Ergonomics Milestones (ERG-01 through ERG-05)
+    // =========================================================================
+    {
+        // ERG-03a: Numeric range loop immutability check (negative sema test)
+        require_sema_error(R"(package main
+fn main() {
+    for i in 0..5 {
+        i += 1
+    }
+}
+)", "cfire/ASSIGN-IMMUTABLE", "imm_range.cf");
+
+        // ERG-03b: Return inside defer block (negative sema test)
+        require_sema_error(R"(package main
+fn work() -> i64 {
+    defer {
+        return 1
+    }
+    return 0
+}
+)", "cfire/RETURN-IN-DEFER", "ret_defer.cf");
+
+        // ERG-05a: Use-after-move inside arbitrary expression interpolation (negative sema test)
+        require_sema_error(R"(package main
+fn consume(move b: []u8) {}
+fn main() {
+    mut buf: []u8 = []
+    consume(move buf)
+    s := "len={buf.len() + 1}"
+    println(s)
+}
+)", "cfire/USE-AFTER-MOVE", "bad_interp_move.cf");
+
+        // ERG-02, ERG-03, ERG-04, ERG-05a: End-to-end multi-file package merging, range loops,
+        // block defer LIFO order, expression interpolation, and single-eval power assertions
+        ScopedTempDir tmp("cfire_erg_suite");
+        tmp.file("helpers.cf", R"CF(package main
+
+fn compute_range_sum(limit: i64) -> i64 {
+    mut sum: i64 = 0
+    for i in 0..limit {
+        sum += i
+    }
+    for j in 1..=3 {
+        sum += j * 10
+    }
+    return sum
+}
+
+fn format_summary(a: i64, b: i64) -> str {
+    mut items: []str = ["alpha", "beta"]
+    return "sum={a + b} first={items[0]} literal={{ok}}"
+}
+)CF");
+
+        auto main_cf = tmp.file("main.cf", R"CF(package main
+
+fn run_defer_demo() {
+    println("step:start")
+    defer {
+        println("step:defer1a")
+        println("step:defer1b")
+    }
+    defer {
+        println("step:defer2")
+    }
+    println("step:body")
+}
+
+fn main() {
+    total := compute_range_sum(5)
+    assert(total == 70)
+    assert_eq(total, 70)
+    msg := format_summary(12, 30)
+    println("{} hex={:02x}", msg, 255)
+    run_defer_demo()
+}
+)CF");
+
+        tmp.file("main_test.cf", R"CF(package main
+
+mut eval_counter: i64 = 0
+
+fn bumped() -> i64 {
+    eval_counter += 1
+    return eval_counter
+}
+
+test "ergonomics suite and single-eval assertions" {
+    assert(compute_range_sum(5) == 70)
+    assert_eq(bumped(), 1)
+    assert(bumped() == 2)
+    assert_eq(eval_counter, 2)
+}
+)CF");
+
+        auto erg_bin = tmp.path / "erg_bin";
+        auto plan = cfire::build::build_native(main_cf, rt_dir, erg_bin);
+        require(plan.has_value(), std::format("ERG-02/03/04/05 build_native(main.cf): {}", plan ? "" : plan.error()));
+        if (plan) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(erg_bin.string(), rc);
+            require(rc == 0, std::format("erg_bin exited with code {}:\n{}", rc, out));
+            require(out.contains("sum=42 first=alpha literal={ok} hex=ff"),
+                    std::format("ERG-05a: unexpected interpolation output: {}", out));
+            require(out.contains("step:start\nstep:body\nstep:defer2\nstep:defer1a\nstep:defer1b"),
+                    std::format("ERG-03b: unexpected block defer output: {}", out));
+        }
+
+        // Verify ERG-01a/b & ERG-02c via CLI commands (`cfire check`, `cfire test`, `cfire new`)
+        run_cfire(std::format("check \"{}\"", tmp.path.string()))
+            .assert_ok("ERG-01b: cfire check <dir> ok");
+
+        run_cfire(std::format("test \"{}\"", tmp.path.string()))
+            .assert_ok("ERG-01a/02b: cfire test <dir> ok")
+            .assert_contains("PASS (1 cfire tests succeeded)", "ERG-01a: test suite summary");
+
+        // Verify power-assertion failure formatting (`[left: ..., right: ...]`)
+        ScopedTempDir fail_tmp("cfire_erg_fail_assert");
+        auto fail_test_cf = fail_tmp.file("fail_test.cf", R"CF(package main
+test "power assert diff" {
+    lhs := 41
+    rhs := 42
+    assert(lhs == rhs)
+}
+)CF");
+        run_cfire(std::format("test \"{}\"", fail_test_cf.string()))
+            .assert_fail("ERG-04b: failing power assert exits non-zero")
+            .assert_contains("[left: 41, right: 42]", "ERG-04b: power assert shows evaluated lhs and rhs");
+
+        // Verify ERG-05b (`cfire new <dir>`)
+        ScopedTempDir new_tmp("cfire_erg_new_proj");
+        auto proj_dir = new_tmp.path / "demo_app";
+        run_cfire(std::format("new \"{}\"", proj_dir.string()))
+            .assert_ok("ERG-05b: cfire new <dir> ok");
+        require(std::filesystem::exists(proj_dir / "build.cf") &&
+                std::filesystem::exists(proj_dir / "main.cf") &&
+                std::filesystem::exists(proj_dir / "main_test.cf"),
+                "ERG-05b: scaffolded files created");
+
+        run_cfire(std::format("test \"{}\"", proj_dir.string()))
+            .assert_ok("ERG-05b: cfire test on scaffolded project ok")
+            .assert_contains("PASS (1 cfire tests succeeded)", "ERG-05b: scaffolded project test passed");
+    }
+
     std::println("--- PASS: test_section2_language_ergonomics");
 }
 

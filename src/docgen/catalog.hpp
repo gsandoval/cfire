@@ -670,6 +670,13 @@ struct DiagnosticDoc {
             "Passing a dynamically concatenated or interpolated string (`\"ls \" + user_arg`) to `os.exec` or `os.exec_output` invokes `/bin/sh -c` and risks command injection. Use `os.command(binary, args)` to spawn subprocesses without shell interpretation.",
             "out := try os.exec(\"cat \" + untrusted_path) // WARNING [cfire/SHELL-INJECTION-RISK]",
             "res := try os.command(\"cat\", [untrusted_path]) // OK: direct posix_spawnp argv"
+        },
+        {
+            "cfire/RETURN-IN-DEFER",
+            "`return` Statement Inside `defer { ... }` Block",
+            "`defer { ... }` blocks lower to a C++ RAII scope-exit destructor (`struct _CfireDefer { ~_CfireDefer() { ... } }`) and cannot return a value to the enclosing function.",
+            "fn process() -> i32 {\n    defer {\n        return 0 // ERROR [cfire/RETURN-IN-DEFER]\n    }\n    return 1\n}",
+            "fn process() -> i32 {\n    defer {\n        cleanup()\n    }\n    return 1 // OK: return from enclosing function\n}"
         }
     };
     return diags;

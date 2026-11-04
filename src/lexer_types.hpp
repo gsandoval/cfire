@@ -61,6 +61,7 @@ enum class TokenKind : int {
     Comma,
     Dot,
     DotDot,
+    DotDotEq,
     Arrow,
     FatArrow,
     Assign,
@@ -159,6 +160,7 @@ struct Token {
         case TokenKind::Comma: return ",";
         case TokenKind::Dot: return ".";
         case TokenKind::DotDot: return "..";
+        case TokenKind::DotDotEq: return "..=";
         case TokenKind::Arrow: return "->";
         case TokenKind::FatArrow: return "=>";
         case TokenKind::Assign: return "=";
