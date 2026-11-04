@@ -1,4 +1,5 @@
 #include "../test_harness.hpp"
+#include "../../src/mcp.hpp"
 
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_formatter_lsp_and_docgen");
@@ -623,6 +624,104 @@ fn main() {
             .assert_ok("Showcase Tab 7 runs cleanly")
             .assert_contains("Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.",
                 "Showcase Tab 7 output matches telemetry");
+    }
+
+    // 7. Test DOC-SYNC, LSP-SYNC & MCP-SYNC for ERG-01..ERG-05
+    {
+        auto llm_ref = cfire::doc::generate_llm_reference();
+        require(llm_ref.contains("Same-Directory Package Merging") &&
+                llm_ref.contains("for i in 0..n") &&
+                llm_ref.contains("for i in 1..=n") &&
+                llm_ref.contains("assert_eq") &&
+                llm_ref.contains("cfire init") &&
+                llm_ref.contains("pkg:tako"),
+            "DOC-01a: generate_llm_reference() documents ERG-01..ERG-05 and pkg:tako");
+
+        auto agent_rules = cfire::lsp::cfire_agent_rules_markdown("cfire");
+        require(agent_rules.contains("Same-Directory Package Merging") &&
+                agent_rules.contains("0..n") &&
+                agent_rules.contains("assert_eq") &&
+                agent_rules.contains("pkg:tako"),
+            "DOC-01b: cfire_agent_rules_markdown() documents ERG-01..ERG-05 and pkg:tako");
+
+        ScopedTempDir sync_tmp("cfire_lsp_mcp_sync");
+        auto types_cf = sync_tmp.file("types.cf", R"CF(package main
+
+type Counter struct {
+    Value: i64
+}
+
+type Runner interface {
+    fn step(delta: i64) -> i64
+}
+
+fn (mut self: Counter) add_delta(amount: i64) -> i64 {
+    self.Value += amount
+    return self.Value
+}
+)CF");
+
+        auto app_cf = sync_tmp.file("app.cf", R"CF(package main
+
+fn run_loop() {
+    mut c := Counter{Value: 10}
+    defer {
+        _ = c.add_delta(5)
+    }
+    for idx in 0..4 {
+        _ = c.add_delta(idx)
+    }
+    assert_eq(c.Value, 16)
+}
+
+test "counter sibling test" {
+    mut c := Counter{Value: 1}
+    assert_eq(c.add_delta(2), 3)
+}
+)CF");
+        sync_tmp.file(".tako/ignored.cf", "package ignored\nfn should_not_appear() {}\n");
+
+        cfire::lsp::Server lsp_sync;
+        std::string app_uri = cfire::lsp::detail::path_to_uri(app_cf);
+        std::string types_uri = cfire::lsp::detail::path_to_uri(types_cf);
+
+        // LSP-01a: Hover on range-loop variable `idx` (0-based line 8, col 25)
+        std::string hover_idx = lsp_sync.compute_hover(app_uri, 8, 25);
+        require(hover_idx.contains("idx: i64"),
+            std::format("LSP-01a: expected range loop variable 'idx' hover to report 'idx: i64', got: {}", hover_idx));
+
+        // LSP-01b & LSP-01c: Inlay hints inside `defer { _ = c.add_delta(5) }` resolving sibling receiver method `add_delta(amount: i64)`
+        std::string hints = lsp_sync.compute_inlay_hints(app_uri);
+        require(hints.contains("amount:"),
+            std::format("LSP-01b/c: expected inlay hints to include 'amount:' for sibling method call inside defer block, got: {}", hints));
+
+        // LSP-01c: Go-to-definition on `c.add_delta` (0-based line 5, col 16) resolves to `types.cf`
+        std::string def_loc = lsp_sync.compute_definition(app_uri, 5, 16);
+        require(def_loc.contains(types_uri),
+            std::format("LSP-01c: expected go-to-definition on sibling method 'add_delta' to resolve to '{}', got: {}", types_uri, def_loc));
+
+        // LSP-01d: Hover on `assert_eq` (0-based line 10, col 6)
+        std::string hover_assert_eq = lsp_sync.compute_hover(app_uri, 10, 6);
+        require(hover_assert_eq.contains("assert_eq"),
+            std::format("LSP-01d: expected hover on assert_eq, got: {}", hover_assert_eq));
+
+        // MCP-01a & MCP-01b: Test `cfire_check` with workspace `path` and `cfire_outline` filtering `.tako` & showing `interface`/`test`
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir);
+        std::string check_req = std::format(
+            R"({{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"cfire_check","arguments":{{"path":"{}"}}}}}})",
+            cfire::lsp::detail::json_escape(sync_tmp.path.string()));
+        std::string check_resp = mcp_srv.handle_jsonrpc(check_req);
+        require(check_resp.contains("OK (0 errors)"),
+            std::format("MCP-01a: expected cfire_check on multi-file workspace path to return 'OK (0 errors)', got: {}", check_resp));
+
+        std::string outline_req = std::format(
+            R"({{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{{"name":"cfire_outline","arguments":{{"path":"{}"}}}}}})",
+            cfire::lsp::detail::json_escape(sync_tmp.path.string()));
+        std::string outline_resp = mcp_srv.handle_jsonrpc(outline_req);
+        require(outline_resp.contains("interface `Runner`") &&
+                outline_resp.contains("counter sibling test") &&
+                !outline_resp.contains("should_not_appear"),
+            std::format("MCP-01b: expected cfire_outline to include interface/test and skip .tako, got: {}", outline_resp));
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");

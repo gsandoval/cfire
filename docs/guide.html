@@ -2014,10 +2014,10 @@ cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
     <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
     <pre><code>git clone https://github.com/gsandoval/cfire.git
 cd cfire &amp;&amp; make -j4
-sudo make install        # Installs /usr/local/bin/cfire + /usr/local/share/cfire/runtime
+./cfire install --user   # Installs ~/.local/bin/cfire + ~/.local/share/cfire/runtime (or sudo make install)
 cfire setup --yes        # Installs simdjson, zstd, sqlite, openssl, cmake via Homebrew
 </code></pre>
-  </li>
+   You can also bundle a self-relocating portable toolchain directory (<code>bin/cfire</code> + <code>share/cfire/runtime</code>) anywhere on disk via <code>./cfire install --portable &lt;dir&gt;</code> or install to a custom prefix via <code>./cfire install --prefix &lt;dir&gt;</code>.</li>
 </ol>
 <h4 id="ch1-linux-ubuntu-debian-arch">Linux (Ubuntu / Debian / Arch)</h4>
 <ul>
@@ -2153,10 +2153,13 @@ xcrun --sdk iphonesimulator --show-sdk-path
       <tr><th>MCP Tool Name</th><th>Input Schema</th><th>Behavior &amp; Return Payload</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>cfire_stdlib_list</code></td><td><code>{}</code></td><td>Lists every <code>core:*</code> and <code>vendor:*</code> module with its import path, namespace alias, and summary.</td></tr>
+      <tr><td><code>cfire_stdlib_list</code></td><td><code>{}</code></td><td>Lists every <code>core:*</code>, <code>ext:*</code>, and <code>vendor:*</code> module with its import path, namespace alias, and summary.</td></tr>
       <tr><td><code>cfire_stdlib_lookup</code></td><td><code>{&quot;query&quot;: &quot;str&quot;}</code></td><td>Searches modules, function signatures, and types matching <code>query</code> (e.g., <code>&quot;ext:ai&quot;</code> or <code>&quot;embed&quot;</code>).</td></tr>
-      <tr><td><code>cfire_check</code></td><td><code>{&quot;code&quot;: &quot;str&quot;}</code></td><td>Parses, type-checks, and verifies borrow/intent rules on <code>.cf</code> code; returns <code>&quot;OK (0 errors)&quot;</code> or exact <code>CFxxxx</code> diagnostics.</td></tr>
+      <tr><td><code>cfire_check</code></td><td><code>{&quot;code&quot;?: &quot;str&quot;, &quot;path&quot;?: &quot;str&quot;}</code></td><td>Parses, type-checks, and verifies borrow/intent rules on inline <code>.cf</code> <code>code</code> or a workspace <code>path</code> (including same-directory sibling files); returns <code>&quot;OK (0 errors)&quot;</code> or exact <code>CFxxxx</code> diagnostics.</td></tr>
       <tr><td><code>cfire_eval</code></td><td><code>{&quot;code&quot;: &quot;str&quot;}</code></td><td>Compiles and executes a <code>.cf</code> program or snippet in a temporary sandbox and returns combined stdout/stderr.</td></tr>
+      <tr><td><code>cfire_outline</code></td><td><code>{&quot;path&quot;?: &quot;str&quot;}</code></td><td>Returns a token-compressed structural AST outline of packages, structs, enums, interfaces, functions, and test blocks.</td></tr>
+      <tr><td><code>cfire_inspect</code></td><td><code>{&quot;target&quot;: &quot;str&quot;}</code></td><td>Inspects a stdlib module/symbol, compiler diagnostic rule (<code>cfire/MUT-CALLSITE</code>), or foreign C/C++ header (<code>cpp &lt;header.h&gt;</code>).</td></tr>
+      <tr><td><code>cfire_doc_llm</code></td><td><code>{}</code></td><td>Returns the complete LLM &amp; AI Agent language reference sheet (<code>LLMS.txt</code>).</td></tr>
     </tbody>
   </table>
 </div>
@@ -2368,20 +2371,22 @@ auto main(int argc, char** argv) -&gt; int {
       <tr><th>Command &amp; Syntax</th><th>Supported Flags</th><th>Description</th></tr>
     </thead>
     <tbody>
+      <tr><td><code>cfire init</code> / <code>cfire new &lt;dir&gt;</code></td><td><code>--template &lt;cli|tako|gui&gt;</code>, <code>--name &lt;pkg&gt;</code></td><td>Scaffolds a new <code>cfire</code> workspace (<code>build.cf</code>, <code>src/main.cf</code>, <code>tests/main_test.cf</code>, <code>.gitignore</code>) in the current directory (<code>init</code>) or <code>&lt;dir&gt;</code> (<code>new</code>).</td></tr>
       <tr><td><code>cfire run [target|file.cf] [-- args...]</code></td><td><code>--web</code>, <code>--ios</code>, <code>--device &lt;name&gt;</code>, <code>--port &lt;n&gt;</code>, <code>--no-open</code>, <code>--sanitize</code>, <code>--subsystem &lt;gui|console&gt;</code></td><td>Compiles and executes a native binary, local WebAssembly server (<code>--web</code>), or iOS Simulator app (<code>--ios</code>). Arguments after <code>--</code> pass to the program.</td></tr>
       <tr><td><code>cfire build [target|file.cf]</code></td><td><code>-o &lt;path&gt;</code>, <code>--target &lt;wasm|ios-sim|ios|triple&gt;</code>, <code>--web</code>, <code>--ios</code>, <code>--subsystem &lt;gui|console&gt;</code>, <code>--name &lt;app&gt;</code>, <code>--bundle-id &lt;id&gt;</code>, <code>--icon &lt;png&gt;</code>, <code>--sanitize</code></td><td>Compiles an optimized binary, macOS <code>.app</code> bundle, WebAssembly <code>.html</code>/<code>.wasm</code> bundle, or signed iOS <code>.app</code> bundle.</td></tr>
-      <tr><td><code>cfire check &lt;file.cf&gt;</code></td><td><code>--json</code>, <code>--fix</code></td><td>Runs lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker.</td></tr>
-      <tr><td><code>cfire test [file.cf|dir]</code></td><td><code>--sanitize</code>, <code>--json</code>, <code>--filter &lt;pattern&gt;</code></td><td>Compiles and runs all <code>test &quot;...&quot; { ... }</code> blocks in the target file or directory tree.</td></tr>
+      <tr><td><code>cfire check [file.cf|dir]</code></td><td><code>--json</code>, <code>--fix</code></td><td>Zero-arg workspace-aware lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker.</td></tr>
+      <tr><td><code>cfire test [file.cf|dir]</code></td><td><code>--sanitize</code>, <code>--json</code>, <code>--filter &lt;pattern&gt;</code></td><td>Zero-arg workspace test runner that compiles and runs all <code>test &quot;...&quot; { ... }</code> blocks in the target file or workspace tree.</td></tr>
       <tr><td><code>cfire eval &lt;code|-e expr&gt;</code></td><td><code>-e &lt;expr&gt;</code></td><td>Evaluates a one-shot expression or statement block from CLI arguments or <code>stdin</code>.</td></tr>
       <tr><td><code>cfire serve [target|dir]</code></td><td><code>--port &lt;n&gt;</code>, <code>--no-open</code></td><td>Builds WebAssembly targets (if needed) and serves static/WASM assets with COOP/COEP headers.</td></tr>
       <tr><td><code>cfire fmt [path]</code></td><td><code>--check</code></td><td>Formats <code>.cf</code> files in place according to canonical 4-space alignment rules (or exits non-zero on drift with <code>--check</code>).</td></tr>
-      <tr><td><code>cfire fix &lt;file.cf&gt;</code></td><td><code>--dry-run</code>, <code>--json</code></td><td>Automatically inserts missing <code>core:*</code> imports, missing call-site <code>mut</code> markers, and missing <code>match</code> arms.</td></tr>
+      <tr><td><code>cfire fix [file.cf|dir]</code></td><td><code>--dry-run</code>, <code>--json</code></td><td>Zero-arg workspace auto-fixer that inserts missing <code>core:*</code> imports, missing call-site <code>mut</code> markers, and missing <code>match</code> arms.</td></tr>
       <tr><td><code>cfire refactor rename &lt;file:line:col&gt; &lt;new_name&gt;</code></td><td><code>--diff</code>, <code>--apply</code>, <code>--json</code></td><td>Performs scope- and package-aware semantic symbol renaming across the workspace.</td></tr>
       <tr><td><code>cfire inspect &lt;symbol|header.h&gt;</code></td><td><code>--json</code></td><td>Queries stdlib documentation, symbol signatures, or foreign C/C++ header declarations statelessly.</td></tr>
-      <tr><td><code>cfire outline [path]</code></td><td><code>--json</code></td><td>Prints a token-compressed structural summary of packages, structs, enums, and function signatures.</td></tr>
+      <tr><td><code>cfire outline [path]</code></td><td><code>--json</code></td><td>Prints a token-compressed structural summary of packages, structs, enums, interfaces, functions, and test blocks.</td></tr>
       <tr><td><code>cfire emit-cpp &lt;file.cf&gt;</code></td><td>None</td><td>Prints the generated ISO C++23 source code to <code>stdout</code>.</td></tr>
       <tr><td><code>cfire eject &lt;file.cf&gt; [out_dir]</code></td><td>None</td><td>Exports a standalone C++23 source tree and <code>CMakeLists.txt</code> into <code>out_dir</code> (defaults to <code>ejected_cpp/</code>).</td></tr>
       <tr><td><code>cfire vendor [dest_dir]</code></td><td>None</td><td>Fetches and pins all remote <code>build.Git</code> and <code>build.Archive</code> dependencies from <code>build.cf</code> into <code>vendor/</code> for offline builds.</td></tr>
+      <tr><td><code>cfire install</code></td><td><code>--user</code>, <code>--prefix &lt;dir&gt;</code>, <code>--portable &lt;dir&gt;</code></td><td>Installs the self-relocating <code>cfire</code> binary and <code>runtime/</code> headers to <code>~/.local</code>, <code>&lt;dir&gt;</code>, or a portable bundle.</td></tr>
       <tr><td><code>cfire doc [file.cf]</code></td><td><code>--check</code>, <code>--llm</code>, <code>--root &lt;dir&gt;</code></td><td>Generates <code>docs/</code> HTML site (<code>index.html</code>, <code>guide.html</code>, <code>reference.html</code>, <code>LLMS.txt</code>) or verifies zero doc drift (<code>--check</code>).</td></tr>
       <tr><td><code>cfire lsp</code> / <code>cfire mcp</code> / <code>cfire ide</code></td><td><code>--all</code>, <code>vscode</code>, <code>cursor</code>, <code>zed</code>, <code>neovim</code>, <code>clion</code></td><td>Starts the LSP server (<code>lsp</code>), MCP agent server (<code>mcp</code>), or installs editor integration files (<code>ide</code>).</td></tr>
     </tbody>
@@ -2419,8 +2424,10 @@ auto main(int argc, char** argv) -&gt; int {
 </code></pre>
 <p><strong>Package Resolution Rules:</strong></p>
 <ol>
-  <li><strong>Standard Library (<code>import &quot;core:...&quot;</code> / <code>import &quot;vendor:...&quot;</code>)</strong>: Resolves headers from the <code>cfire</code> runtime directory (<code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:ai</code>, <code>vendor:raylib</code>).</li>
-  <li><strong>Local Workspace Packages (<code>import &quot;./pkg/checksum&quot;</code>)</strong>: Scans all <code>.cf</code> files in <code>./pkg/checksum/</code> belonging to <code>package checksum</code> and merges their exported structs, enums, and functions under the <code>checksum.</code> namespace.</li>
+  <li><strong>Same-Directory Package Merging</strong>: All <code>.cf</code> files in the same directory declaring the same <code>package &lt;name&gt;</code> (e.g., <code>package main</code> in <code>src/main.cf</code>, <code>src/state.cf</code>, and <code>src/view.cf</code>) automatically share their structs, enums, functions, methods, and constants without needing <code>import &quot;./sibling.cf&quot;</code>. Test-only <code>*_test.cf</code> files are automatically excluded from production <code>cfire build</code> and <code>cfire run</code> invocations.</li>
+  <li><strong>Standard Library (<code>import &quot;core:...&quot;</code> / <code>import &quot;ext:...&quot;</code> / <code>import &quot;vendor:...&quot;</code>)</strong>: Resolves headers from the <code>cfire</code> runtime directory (<code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:ai</code>, <code>vendor:raylib</code>).</li>
+  <li><strong>Toolchain Packages (<code>import &quot;pkg:tako&quot;</code> / <code>import &quot;core:tako&quot;</code>)</strong>: Resolves companion toolchain packages (such as the Tako GUI runtime) automatically across workspace parents, <code>~/.local/share</code>, and <code>CFIRE_PKG_PATH</code>, paired with <code>var TakoRuntime = build.Tako()</code> in <code>build.cf</code>.</li>
+  <li><strong>Local Workspace Packages (<code>import &quot;./pkg/checksum&quot;</code>)</strong>: Scans all <code>.cf</code> files in <code>./pkg/checksum/</code> belonging to <code>package checksum</code> and merges their declarations under the <code>checksum.</code> namespace.</li>
 </ol>
     <div class="chapter-pager topic-pager">
       <a href="#ch3-cli-command-flag-reference" class="pager-card pager-prev" onclick="navigateToSubhead('3', 'ch3-cli-command-flag-reference'); return false;">
@@ -2684,7 +2691,7 @@ fn main() {
       <li><code>const NAME: T = expr</code> declares a module-scope compile-time constant (<code>constexpr T NAME = expr;</code>).</li>
     </ul>
   </li>
-  <li><strong>String Literals &amp; Interpolation</strong>: Double-quoted strings (<code>&quot;...&quot;</code>) support escape sequences (<code>\n</code>, <code>\t</code>, <code>\&quot;</code>, <code>\\</code>) and inline variable interpolation (<code>&quot;{var_name}&quot;</code>). Backtick strings (<code></code> <code>...</code> <code></code>) are raw multi-line literals that do not interpret backslashes or quotes.</li>
+  <li><strong>String Literals &amp; Arbitrary Expression Interpolation</strong>: Double-quoted strings (<code>&quot;...&quot;</code>) support escape sequences (<code>\n</code>, <code>\t</code>, <code>\&quot;</code>, <code>\\</code>) and inline interpolation of any <code>cfire</code> expression with optional format specifiers (<code>&quot;{var_name}&quot;</code>, <code>&quot;{a + b}&quot;</code>, <code>&quot;{items[0]}&quot;</code>, <code>&quot;{ratio:.2f}&quot;</code>, <code>&quot;{mask:04x}&quot;</code>). Backtick strings (<code></code> <code>...</code> <code></code>) are raw multi-line literals that do not interpret backslashes or quotes.</li>
   <li><strong>Operators &amp; Explicit Casting (<code>as</code>)</strong>: <code>cfire</code> supports arithmetic (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code>), bitwise (<code>&amp;</code>, <code>|</code>, <code>^</code>, <code>~</code>, <code>&lt;&lt;</code>, <code>&gt;&gt;</code>), compound assignment (<code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code>, <code>%=</code>, <code>&lt;&lt;=</code>, <code>&gt;&gt;=</code>, <code>&amp;=</code>, <code>|=</code>, <code>^=</code>), comparison (<code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>), and short-circuit logical (<code>&amp;&amp;</code>, <code>||</code>, <code>!</code>) operators. Mixed-width arithmetic requires an explicit <code>expr as TargetType</code> cast (<code>static_cast&lt;TargetType&gt;(expr)</code>).</li>
 </ol>
     <div class="chapter-pager topic-pager">
@@ -3612,7 +3619,7 @@ q1=10050 q2=50
   </section>
   <section class="guide-topic" id="topic-ch7-level-3-raii-scope-cleanup-defer" data-topic-id="ch7-level-3-raii-scope-cleanup-defer" data-topic-title="Level 3 — RAII Scope Cleanup (defer)">
 <h3 class="guide-heading" id="ch7-level-3-raii-scope-cleanup-defer"><span class="heading-hash">#</span><span class="heading-text">Level 3 — RAII Scope Cleanup (<code>defer</code>)</span></h3>
-<p><code>defer &lt;stmt&gt;</code> schedules a cleanup statement to run automatically when the enclosing lexical block exits—whether by reaching the closing <code>}</code>, executing an early <code>return</code>, or propagating an error via <code>try</code>:</p>
+<p><code>defer &lt;stmt&gt;</code> and <code>defer { ... }</code> schedule cleanup statements to run automatically when the enclosing lexical block exits—whether by reaching the closing <code>}</code>, executing an early <code>return</code>, or propagating an error via <code>try</code> (<code>return</code> inside a <code>defer { ... }</code> block is rejected at compile time via <code>cfire/RETURN-IN-DEFER</code>):</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -3624,7 +3631,10 @@ fn export_snapshot(db_path: str, log_path: str) -&gt; void! {
     defer db.close() // Registered 1st -&gt; Executes 2nd (LIFO)
 
     mut log_file := try fs.open(log_path, fs.OpenMode::Write)
-    defer log_file.close() // Registered 2nd -&gt; Executes 1st (LIFO)
+    defer {
+        _ = log_file.flush()
+        log_file.close() // Multi-statement block defer -&gt; Executes 1st (LIFO)
+    }
 
     try db.exec(&quot;CREATE TABLE IF NOT EXISTS events (id INT, name TEXT)&quot;)
     try db.exec(&quot;INSERT INTO events VALUES (1, 'boot')&quot;)
@@ -4534,16 +4544,17 @@ test &quot;fibonacci sequence progression&quot; {
     assert(fibonacci(12) &gt; fibonacci(11), &quot;sequence must be strictly increasing&quot;)
 }
 </code></pre>
-<p>Execute tests from the CLI:</p>
+<p>Execute tests from the CLI (each <code>assert(a == b)</code> and <code>assert_eq(a, b)</code> evaluates its operands once and formats <code>[left: &lt;val&gt;, right: &lt;val&gt;]</code> value diffs on failure):</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code># 1. Run all test blocks in a file or directory
+<pre><code># 1. Run all test blocks in the current workspace (or pass a specific file/directory)
+cfire test
 cfire test math_test.cf
 
 # 2. Run only tests matching a substring filter
-cfire test --filter &quot;base cases&quot; math_test.cf
+cfire test --filter &quot;base cases&quot;
 
 # 3. Emit structured JSON test results for CI pipelines
-cfire test --json math_test.cf
+cfire test --json
 </code></pre>
     <div class="chapter-pager topic-pager">
       <a href="#ch12-architecture-invariants" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-architecture-invariants'); return false;">

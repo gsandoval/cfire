@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 
 namespace cfire::mcp {
 
@@ -22,12 +23,22 @@ struct QueryInput {
 struct CodeInput {
     std::string code{};
 };
+struct CheckInput {
+    std::string code{};
+    std::string path{};
+};
 struct PathInput {
     std::string path{};
 };
 struct TargetInput {
     std::string target{};
 };
+
+[[nodiscard]] inline auto is_ignored_mcp_dir(std::string_view name) -> bool {
+    return name == ".cfire" || name == ".tako" || name == ".git" ||
+           name == "dist" || name == "vendor" || name == "node_modules" ||
+           name == "ejected_cpp";
+}
 
 } // namespace cfire::mcp
 
@@ -72,16 +83,27 @@ inline auto parse_struct<cfire::mcp::CodeInput>(simdjson::ondemand::object obj) 
 }
 
 template <>
+inline auto schema_struct<cfire::mcp::CheckInput>() -> std::string {
+    return R"JSON({"type":"object","properties":{"code":{"type":"string","description":"Inline cfire (.cf) source code or snippet to check"},"path":{"type":"string","description":"Path to a .cf file or workspace directory to check (resolves same-directory sibling files)"}},"additionalProperties":false})JSON";
+}
+
+template <>
+inline auto parse_struct<cfire::mcp::CheckInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::CheckInput, cfire::Error> {
+    cfire::mcp::CheckInput out;
+    if (auto c = get_str(obj, "code")) out.code = std::move(*c);
+    if (auto p = get_str(obj, "path")) out.path = std::move(*p);
+    return out;
+}
+
+template <>
 inline auto schema_struct<cfire::mcp::PathInput>() -> std::string {
-    return R"({"type":"object","properties":{"path":{"type":"string","description":"Path to a .cf file or directory to outline"}},"required":["path"],"additionalProperties":false})";
+    return R"JSON({"type":"object","properties":{"path":{"type":"string","description":"Path to a .cf file or directory to outline (defaults to '.')"}},"additionalProperties":false})JSON";
 }
 
 template <>
 inline auto parse_struct<cfire::mcp::PathInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::PathInput, cfire::Error> {
     cfire::mcp::PathInput out;
-    auto p = get_str(obj, "path");
-    if (!p) return std::unexpected(p.error());
-    out.path = std::move(*p);
+    if (auto p = get_str(obj, "path")) out.path = std::move(*p);
     return out;
 }
 
@@ -165,36 +187,96 @@ namespace cfire::mcp {
         }
     );
 
-    srv.register_tool<CodeInput>(
+    srv.register_tool<CheckInput>(
         "cfire_check",
-        "Type-check cfire (.cf) source code, verify memory safety & parameter intents, and validate C++23 codegen with fix-it suggestions.",
-        [runtime_dir](CodeInput in) -> std::expected<std::string, cfire::Error> {
-            auto tmp_dir = std::filesystem::temp_directory_path() / "cfire_mcp_check";
-            std::error_code ec;
-            std::filesystem::create_directories(tmp_dir, ec);
-            auto cf_file = tmp_dir / "snippet.cf";
-            std::string src = in.code;
-            if (src.find("package ") == std::string::npos) {
-                src = "package main\n\nfn main() {\n" + src + "\n}\n";
-            }
-            {
-                std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);
-                out << src;
-            }
-            auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, false, true);
-            if (!res) {
-                auto lines = cfire::diag::split_lines(src);
-                auto sd = cfire::diag::parse_diagnostic_string(res.error(), cf_file.string());
-                cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
-                std::string out_msg = std::format("Diagnostics:\n{}", res.error());
-                for (const auto& fx : sd.fixits) {
-                    out_msg += std::format("\n  fix-it (line {}:{}): {}", fx.start_line, fx.start_col, fx.title);
+        "Type-check cfire (.cf) inline code or a workspace file/directory path, verify memory safety & parameter intents, and validate C++23 codegen with fix-it suggestions.",
+        [runtime_dir](CheckInput in) -> std::expected<std::string, cfire::Error> {
+            auto check_single_cf = [&](const std::filesystem::path& cf_file, std::string_view src_override = "") -> std::optional<std::string> {
+                auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, false, true);
+                if (!res) {
+                    std::string src = src_override.empty()
+                        ? cfire::build::read_file_text(cf_file).value_or("")
+                        : std::string(src_override);
+                    auto lines = cfire::diag::split_lines(src);
+                    auto sd = cfire::diag::parse_diagnostic_string(res.error(), cf_file.string());
+                    cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+                    std::string out_msg = res.error();
+                    for (const auto& fx : sd.fixits) {
+                        out_msg += std::format("\n  fix-it (line {}:{}): {}", fx.start_line, fx.start_col, fx.title);
+                    }
+                    return out_msg;
                 }
-                return out_msg;
+                auto syntax_ok = cfire::build::verify_cpp_syntax_only(cf_file, res->first, res->second, runtime_dir);
+                if (!syntax_ok) {
+                    return syntax_ok.error();
+                }
+                return std::nullopt;
+            };
+
+            if (!in.code.empty()) {
+                auto tmp_dir = std::filesystem::temp_directory_path() / std::format("cfire_mcp_check_{}", ::getpid());
+                std::error_code ec;
+                std::filesystem::create_directories(tmp_dir, ec);
+                auto cf_file = tmp_dir / "snippet.cf";
+                std::string src = in.code;
+                if (src.find("package ") == std::string::npos) {
+                    src = "package main\n\nfn main() {\n" + src + "\n}\n";
+                }
+                {
+                    std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);
+                    out << src;
+                }
+                auto err = check_single_cf(cf_file, src);
+                std::filesystem::remove_all(tmp_dir, ec);
+                if (err) return std::format("Diagnostics:\n{}", *err);
+                return "OK (0 errors)";
             }
-            auto syntax_ok = cfire::build::verify_cpp_syntax_only(cf_file, res->first, res->second, runtime_dir);
-            if (!syntax_ok) {
-                return std::format("Diagnostics:\n{}", syntax_ok.error());
+
+            std::filesystem::path target_path = in.path.empty() ? "." : in.path;
+            std::error_code ec;
+            if (!std::filesystem::exists(target_path, ec)) {
+                return cfire::make_error(std::format("path '{}' not found", target_path.string()));
+            }
+            if (!std::filesystem::is_directory(target_path, ec)) {
+                if (auto err = check_single_cf(target_path)) {
+                    return std::format("Diagnostics:\n{}", *err);
+                }
+                return "OK (0 errors)";
+            }
+
+            std::vector<std::filesystem::path> targets;
+            std::set<std::filesystem::path> seen_dirs;
+            for (auto it = std::filesystem::recursive_directory_iterator(target_path, ec);
+                 it != std::filesystem::recursive_directory_iterator();
+                 it.increment(ec)) {
+                if (ec) break;
+                if (it->is_directory(ec)) {
+                    if (is_ignored_mcp_dir(it->path().filename().string())) {
+                        it.disable_recursion_pending();
+                    }
+                    continue;
+                }
+                if (it->is_regular_file(ec) && it->path().extension() == ".cf") {
+                    if (it->path().filename() == "build.cf") continue;
+                    auto parent_dir = std::filesystem::weakly_canonical(it->path().parent_path(), ec);
+                    std::string fn = it->path().filename().string();
+                    bool is_test_f = fn.ends_with("_test.cf") || fn == "test.cf";
+                    if (is_test_f || !seen_dirs.contains(parent_dir)) {
+                        if (!is_test_f) seen_dirs.insert(parent_dir);
+                        targets.push_back(it->path());
+                    }
+                }
+            }
+            std::sort(targets.begin(), targets.end());
+            std::string all_diags;
+            for (const auto& t : targets) {
+                if (auto err = check_single_cf(t)) {
+                    if (!all_diags.empty()) all_diags += "\n";
+                    all_diags += *err;
+                }
+            }
+            if (!all_diags.empty()) {
+                return std::format("Diagnostics:\n{}", all_diags);
             }
             return "OK (0 errors)";
         }
@@ -204,7 +286,7 @@ namespace cfire::mcp {
         "cfire_eval",
         "Compile and execute a cfire (.cf) program or snippet and return its stdout/stderr.",
         [runtime_dir](CodeInput in) -> std::expected<std::string, cfire::Error> {
-            auto tmp_dir = std::filesystem::temp_directory_path() / "cfire_mcp_eval";
+            auto tmp_dir = std::filesystem::temp_directory_path() / std::format("cfire_mcp_eval_{}", ::getpid());
             std::error_code ec;
             std::filesystem::create_directories(tmp_dir, ec);
             auto cf_file = tmp_dir / "eval.cf";
@@ -219,26 +301,36 @@ namespace cfire::mcp {
             }
             auto plan = cfire::build::build_native(cf_file, runtime_dir, bin_file);
             if (!plan) {
+                std::filesystem::remove_all(tmp_dir, ec);
                 return cfire::make_error(plan.error());
             }
             int rc = 0;
             std::string output = cfire::bridge::run_command_capture("\"" + bin_file.string() + "\" 2>&1", rc);
-            std::filesystem::remove(bin_file, ec);
+            std::filesystem::remove_all(tmp_dir, ec);
             return output;
         }
     );
 
     srv.register_tool<PathInput>(
         "cfire_outline",
-        "Return a token-compressed AST outline of packages, imports, structs, enums, interfaces, and function signatures for a .cf file or directory.",
+        "Return a token-compressed AST outline of packages, imports, structs, enums, interfaces, function signatures, and test blocks for a .cf file or directory.",
         [](PathInput in) -> std::expected<std::string, cfire::Error> {
             std::filesystem::path target_path = in.path.empty() ? "." : in.path;
             std::vector<std::filesystem::path> cf_files;
             std::error_code ec;
             if (std::filesystem::is_directory(target_path, ec)) {
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(target_path, ec)) {
-                    if (entry.is_regular_file() && entry.path().extension() == ".cf") {
-                        cf_files.push_back(entry.path());
+                for (auto it = std::filesystem::recursive_directory_iterator(target_path, ec);
+                     it != std::filesystem::recursive_directory_iterator();
+                     it.increment(ec)) {
+                    if (ec) break;
+                    if (it->is_directory(ec)) {
+                        if (is_ignored_mcp_dir(it->path().filename().string())) {
+                            it.disable_recursion_pending();
+                        }
+                        continue;
+                    }
+                    if (it->is_regular_file(ec) && it->path().extension() == ".cf") {
+                        cf_files.push_back(it->path());
                     }
                 }
             } else if (std::filesystem::exists(target_path, ec)) {
@@ -260,8 +352,14 @@ namespace cfire::mcp {
                 for (const auto& en : ast->enums) {
                     oss << "- enum `" << en.name << "`\n";
                 }
+                for (const auto& iface : ast->interfaces) {
+                    oss << "- interface `" << iface.name << "`\n";
+                }
                 for (const auto& fn : ast->functions) {
                     oss << "- `" << cfire::fmt::format_fn_signature(fn) << "`\n";
+                }
+                for (const auto& t : ast->tests) {
+                    oss << "- test `\"" << t.name << "\"`\n";
                 }
             }
             return oss.str();
@@ -286,6 +384,12 @@ namespace cfire::mcp {
                 while (!header.empty() && std::isspace(static_cast<unsigned char>(header.front()))) header.erase(header.begin());
                 while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back()))) header.pop_back();
                 auto cache_dir = runtime_dir.parent_path() / ".cfire" / "cache";
+                std::error_code ec;
+                std::filesystem::create_directories(cache_dir, ec);
+                if (ec) {
+                    cache_dir = std::filesystem::temp_directory_path() / "cfire_mcp_cache";
+                    std::filesystem::create_directories(cache_dir, ec);
+                }
                 auto idx = cfire::bridge::inspect_header(header, {}, cache_dir);
                 if (!idx) return cfire::make_error(idx.error());
                 std::ostringstream oss;

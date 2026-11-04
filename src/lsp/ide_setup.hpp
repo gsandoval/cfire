@@ -191,6 +191,13 @@ struct DetectedIde {
     return std::format(R"(# cfire (.cf) Language & Toolchain Guidelines
 
 - **Language Overview**: `cfire` (`.cf`) is a memory-safe, zero-overhead systems programming language that transpiles 1-to-1 to human-readable ISO C++23.
+- **Packages & Imports**:
+  - **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants. Never write `import "./sibling.cf"` for same-directory files.
+  - **Toolchain Packages**: Use `import "pkg:tako"` (or `import "core:tako"`) along with `build.Tako()` in `build.cf` for zero-hardcoded-path Tako GUI integration.
+- **Core Ergonomics**:
+  - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={{a + b}} hex={{mask:04x}}"`.
+  - **Loops & Defer**: Use `for i in 0..n` (half-open) or `for i in 1..=n` (inclusive) for numeric ranges, `for item in slice` / `for idx, item in slice` for collections, and `defer cleanup()` or `defer {{ ... }}` for RAII scope cleanup (`return` inside `defer {{ ... }}` is forbidden via `cfire/RETURN-IN-DEFER`).
+  - **Testing**: Co-locate `test "name" {{ ... }}` blocks using `assert(a == b)` or `assert_eq(a, b)` (which automatically format `[left: ..., right: ...]` value diffs on failure).
 - **Parameter Intents**:
   - Default parameters are read-only borrows.
   - `mut` parameters require `mut` at both declaration and call site (`update(mut val)`).
@@ -202,8 +209,8 @@ struct DetectedIde {
   - **Bounds & Arithmetic (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`)**: Constant out-of-bounds indexing and division by zero are rejected at compile time.
   - **Injection Safety (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`)**: Always use parameterized `?1` queries in `db.exec`/`db.query` instead of string concatenation.
 - **Built-In CLI & MCP Tools**:
-  - Prefer MCP tools `cfire_check`, `cfire_stdlib_lookup`, `cfire_outline`, `cfire_inspect`, `cfire_eval`, and `cfire_doc_llm` (powered by `{} mcp`).
-  - CLI equivalents: `cfire check --json <file.cf>`, `cfire fix <file.cf>`, `cfire inspect <target|cfire/CODE>`, `cfire outline --json`, and `cfire doc --llm`.
+  - Prefer MCP tools `cfire_check` (supports both `path` and inline `code`), `cfire_stdlib_lookup`, `cfire_outline`, `cfire_inspect`, `cfire_eval`, and `cfire_doc_llm` (powered by `{} mcp`).
+  - Zero-arg workspace CLI commands: `cfire check`, `cfire test`, `cfire fix`, `cfire build`, `cfire run`, `cfire init`, `cfire new <dir>`, `cfire inspect <target|cfire/CODE>`, `cfire outline --json`, and `cfire doc --llm`.
 )", cfire_bin);
 }
 

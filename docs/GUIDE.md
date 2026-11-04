@@ -72,9 +72,10 @@ cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
    ```bash
    git clone https://github.com/gsandoval/cfire.git
    cd cfire && make -j4
-   sudo make install        # Installs /usr/local/bin/cfire + /usr/local/share/cfire/runtime
+   ./cfire install --user   # Installs ~/.local/bin/cfire + ~/.local/share/cfire/runtime (or sudo make install)
    cfire setup --yes        # Installs simdjson, zstd, sqlite, openssl, cmake via Homebrew
    ```
+   You can also bundle a self-relocating portable toolchain directory (`bin/cfire` + `share/cfire/runtime`) anywhere on disk via `./cfire install --portable <dir>` or install to a custom prefix via `./cfire install --prefix <dir>`.
 
 #### Linux (Ubuntu / Debian / Arch)
 - **Ubuntu 24.04+ / Debian 12+**:
@@ -163,10 +164,13 @@ Tools exposed by `cfire mcp`:
 
 | MCP Tool Name | Input Schema | Behavior & Return Payload |
 | :--- | :--- | :--- |
-| `cfire_stdlib_list` | `{}` | Lists every `core:*` and `vendor:*` module with its import path, namespace alias, and summary. |
+| `cfire_stdlib_list` | `{}` | Lists every `core:*`, `ext:*`, and `vendor:*` module with its import path, namespace alias, and summary. |
 | `cfire_stdlib_lookup` | `{"query": "str"}` | Searches modules, function signatures, and types matching `query` (e.g., `"ext:ai"` or `"embed"`). |
-| `cfire_check` | `{"code": "str"}` | Parses, type-checks, and verifies borrow/intent rules on `.cf` code; returns `"OK (0 errors)"` or exact `CFxxxx` diagnostics. |
+| `cfire_check` | `{"code"?: "str", "path"?: "str"}` | Parses, type-checks, and verifies borrow/intent rules on inline `.cf` `code` or a workspace `path` (including same-directory sibling files); returns `"OK (0 errors)"` or exact `CFxxxx` diagnostics. |
 | `cfire_eval` | `{"code": "str"}` | Compiles and executes a `.cf` program or snippet in a temporary sandbox and returns combined stdout/stderr. |
+| `cfire_outline` | `{"path"?: "str"}` | Returns a token-compressed structural AST outline of packages, structs, enums, interfaces, functions, and test blocks. |
+| `cfire_inspect` | `{"target": "str"}` | Inspects a stdlib module/symbol, compiler diagnostic rule (`cfire/MUT-CALLSITE`), or foreign C/C++ header (`cpp <header.h>`). |
+| `cfire_doc_llm` | `{}` | Returns the complete LLM & AI Agent language reference sheet (`LLMS.txt`). |
 
 #### Editor Syntax & LSP Setup (`cfire ide` & `cfire lsp`)
 Install TextMate grammar, filetype associations, and LSP client configurations automatically:
@@ -292,20 +296,22 @@ The `cfire` binary provides all build, verification, formatting, refactoring, an
 
 | Command & Syntax | Supported Flags | Description |
 | :--- | :--- | :--- |
+| `cfire init` / `cfire new <dir>` | `--template <cli\|tako\|gui>`, `--name <pkg>` | Scaffolds a new `cfire` workspace (`build.cf`, `src/main.cf`, `tests/main_test.cf`, `.gitignore`) in the current directory (`init`) or `<dir>` (`new`). |
 | `cfire run [target\|file.cf] [-- args...]` | `--web`, `--ios`, `--device <name>`, `--port <n>`, `--no-open`, `--sanitize`, `--subsystem <gui\|console>` | Compiles and executes a native binary, local WebAssembly server (`--web`), or iOS Simulator app (`--ios`). Arguments after `--` pass to the program. |
 | `cfire build [target\|file.cf]` | `-o <path>`, `--target <wasm\|ios-sim\|ios\|triple>`, `--web`, `--ios`, `--subsystem <gui\|console>`, `--name <app>`, `--bundle-id <id>`, `--icon <png>`, `--sanitize` | Compiles an optimized binary, macOS `.app` bundle, WebAssembly `.html`/`.wasm` bundle, or signed iOS `.app` bundle. |
-| `cfire check <file.cf>` | `--json`, `--fix` | Runs lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker. |
-| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>` | Compiles and runs all `test "..." { ... }` blocks in the target file or directory tree. |
+| `cfire check [file.cf\|dir]` | `--json`, `--fix` | Zero-arg workspace-aware lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker. |
+| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>` | Zero-arg workspace test runner that compiles and runs all `test "..." { ... }` blocks in the target file or workspace tree. |
 | `cfire eval <code\|-e expr>` | `-e <expr>` | Evaluates a one-shot expression or statement block from CLI arguments or `stdin`. |
 | `cfire serve [target\|dir]` | `--port <n>`, `--no-open` | Builds WebAssembly targets (if needed) and serves static/WASM assets with COOP/COEP headers. |
 | `cfire fmt [path]` | `--check` | Formats `.cf` files in place according to canonical 4-space alignment rules (or exits non-zero on drift with `--check`). |
-| `cfire fix <file.cf>` | `--dry-run`, `--json` | Automatically inserts missing `core:*` imports, missing call-site `mut` markers, and missing `match` arms. |
+| `cfire fix [file.cf\|dir]` | `--dry-run`, `--json` | Zero-arg workspace auto-fixer that inserts missing `core:*` imports, missing call-site `mut` markers, and missing `match` arms. |
 | `cfire refactor rename <file:line:col> <new_name>` | `--diff`, `--apply`, `--json` | Performs scope- and package-aware semantic symbol renaming across the workspace. |
 | `cfire inspect <symbol\|header.h>` | `--json` | Queries stdlib documentation, symbol signatures, or foreign C/C++ header declarations statelessly. |
-| `cfire outline [path]` | `--json` | Prints a token-compressed structural summary of packages, structs, enums, and function signatures. |
+| `cfire outline [path]` | `--json` | Prints a token-compressed structural summary of packages, structs, enums, interfaces, functions, and test blocks. |
 | `cfire emit-cpp <file.cf>` | None | Prints the generated ISO C++23 source code to `stdout`. |
 | `cfire eject <file.cf> [out_dir]` | None | Exports a standalone C++23 source tree and `CMakeLists.txt` into `out_dir` (defaults to `ejected_cpp/`). |
 | `cfire vendor [dest_dir]` | None | Fetches and pins all remote `build.Git` and `build.Archive` dependencies from `build.cf` into `vendor/` for offline builds. |
+| `cfire install` | `--user`, `--prefix <dir>`, `--portable <dir>` | Installs the self-relocating `cfire` binary and `runtime/` headers to `~/.local`, `<dir>`, or a portable bundle. |
 | `cfire doc [file.cf]` | `--check`, `--llm`, `--root <dir>` | Generates `docs/` HTML site (`index.html`, `guide.html`, `reference.html`, `LLMS.txt`) or verifies zero doc drift (`--check`). |
 | `cfire lsp` / `cfire mcp` / `cfire ide` | `--all`, `vscode`, `cursor`, `zed`, `neovim`, `clion` | Starts the LSP server (`lsp`), MCP agent server (`mcp`), or installs editor integration files (`ide`). |
 
@@ -329,8 +335,10 @@ my-service/
 ```
 
 **Package Resolution Rules:**
-1. **Standard Library (`import "core:..."` / `import "vendor:..."`)**: Resolves headers from the `cfire` runtime directory (`ext:net/http`, `ext:db/sqlite`, `ext:ai`, `vendor:raylib`).
-2. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all `.cf` files in `./pkg/checksum/` belonging to `package checksum` and merges their exported structs, enums, and functions under the `checksum.` namespace.
+1. **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` (e.g., `package main` in `src/main.cf`, `src/state.cf`, and `src/view.cf`) automatically share their structs, enums, functions, methods, and constants without needing `import "./sibling.cf"`. Test-only `*_test.cf` files are automatically excluded from production `cfire build` and `cfire run` invocations.
+2. **Standard Library (`import "core:..."` / `import "ext:..."` / `import "vendor:..."`)**: Resolves headers from the `cfire` runtime directory (`ext:net/http`, `ext:db/sqlite`, `ext:ai`, `vendor:raylib`).
+3. **Toolchain Packages (`import "pkg:tako"` / `import "core:tako"`)**: Resolves companion toolchain packages (such as the Tako GUI runtime) automatically across workspace parents, `~/.local/share`, and `CFIRE_PKG_PATH`, paired with `var TakoRuntime = build.Tako()` in `build.cf`.
+4. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all `.cf` files in `./pkg/checksum/` belonging to `package checksum` and merges their declarations under the `checksum.` namespace.
 
 ### Declarative Build System (`build.cf`)
 In multi-target or hybrid C/C++ projects, `build.cf` declares executables, pre-build code generators, and external C/C++/CMake/Make dependencies using top-level declarations in `package build`:
@@ -490,7 +498,7 @@ retries=5 acc=84 scaled=263.89 mask=0xff00 sql_len=44
    - `x: T = expr` and `mut x: T = expr` bind an explicit type `T`.
    - `mut x: T` (without `= expr`) zero-initializes `x` (`T x{};`).
    - `const NAME: T = expr` declares a module-scope compile-time constant (`constexpr T NAME = expr;`).
-2. **String Literals & Interpolation**: Double-quoted strings (`"..."`) support escape sequences (`\n`, `\t`, `\"`, `\\`) and inline variable interpolation (`"{var_name}"`). Backtick strings (`` `...` ``) are raw multi-line literals that do not interpret backslashes or quotes.
+2. **String Literals & Arbitrary Expression Interpolation**: Double-quoted strings (`"..."`) support escape sequences (`\n`, `\t`, `\"`, `\\`) and inline interpolation of any `cfire` expression with optional format specifiers (`"{var_name}"`, `"{a + b}"`, `"{items[0]}"`, `"{ratio:.2f}"`, `"{mask:04x}"`). Backtick strings (`` `...` ``) are raw multi-line literals that do not interpret backslashes or quotes.
 3. **Operators & Explicit Casting (`as`)**: `cfire` supports arithmetic (`+`, `-`, `*`, `/`, `%`), bitwise (`&`, `|`, `^`, `~`, `<<`, `>>`), compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`, `<<=`, `>>=`, `&=`, `|=`, `^=`), comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`), and short-circuit logical (`&&`, `||`, `!`) operators. Mixed-width arithmetic requires an explicit `expr as TargetType` cast (`static_cast<TargetType>(expr)`).
 
 ### Level 2 — Arrays, Slices & Maps (`[]T`, `map`)
@@ -1092,7 +1100,7 @@ q1=10050 q2=50
 > **Divergence Rule (`cfire/NON-DIVERGING-OR-BLOCK`)**: When binding a variable with `x := fallible() or err { ... }`, the `{ ... }` block **must** exit the current control path via `return`, `break`, `continue`, `panic(...)`, or `exit(...)`. This guarantees `x` can never be read in an uninitialized state after the block.
 
 ### Level 3 — RAII Scope Cleanup (`defer`)
-`defer <stmt>` schedules a cleanup statement to run automatically when the enclosing lexical block exits—whether by reaching the closing `}`, executing an early `return`, or propagating an error via `try`:
+`defer <stmt>` and `defer { ... }` schedule cleanup statements to run automatically when the enclosing lexical block exits—whether by reaching the closing `}`, executing an early `return`, or propagating an error via `try` (`return` inside a `defer { ... }` block is rejected at compile time via `cfire/RETURN-IN-DEFER`):
 
 ```cfire
 package main
@@ -1105,7 +1113,10 @@ fn export_snapshot(db_path: str, log_path: str) -> void! {
     defer db.close() // Registered 1st -> Executes 2nd (LIFO)
 
     mut log_file := try fs.open(log_path, fs.OpenMode::Write)
-    defer log_file.close() // Registered 2nd -> Executes 1st (LIFO)
+    defer {
+        _ = log_file.flush()
+        log_file.close() // Multi-statement block defer -> Executes 1st (LIFO)
+    }
 
     try db.exec("CREATE TABLE IF NOT EXISTS events (id INT, name TEXT)")
     try db.exec("INSERT INTO events VALUES (1, 'boot')")
@@ -1650,16 +1661,17 @@ test "fibonacci sequence progression" {
 }
 ```
 
-Execute tests from the CLI:
+Execute tests from the CLI (each `assert(a == b)` and `assert_eq(a, b)` evaluates its operands once and formats `[left: <val>, right: <val>]` value diffs on failure):
 ```bash
-# 1. Run all test blocks in a file or directory
+# 1. Run all test blocks in the current workspace (or pass a specific file/directory)
+cfire test
 cfire test math_test.cf
 
 # 2. Run only tests matching a substring filter
-cfire test --filter "base cases" math_test.cf
+cfire test --filter "base cases"
 
 # 3. Emit structured JSON test results for CI pipelines
-cfire test --json math_test.cf
+cfire test --json
 ```
 
 ### Level 2 — Memory & UB Sanitizers (`--sanitize`)
