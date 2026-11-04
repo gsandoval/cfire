@@ -1029,6 +1029,7 @@ inline void collect_stmt_exprs(
             if (dvs->init) collect_all_exprs(dvs->init, out);
         } else if (const auto* def = std::get_if<DeferStmt>(&s->node)) {
             if (def->call) collect_all_exprs(def->call, out);
+            collect_stmt_exprs(def->body, out);
         } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
             if (es->expr) collect_all_exprs(es->expr, out);
         } else if (const auto* rs = std::get_if<ReturnStmt>(&s->node)) {
@@ -1039,6 +1040,7 @@ inline void collect_stmt_exprs(
             collect_stmt_exprs(ifs->else_body, out);
         } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
             if (fs->iter_expr) collect_all_exprs(fs->iter_expr, out);
+            if (fs->range_end) collect_all_exprs(fs->range_end, out);
             collect_stmt_exprs(fs->body, out);
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
             if (ms->target) collect_all_exprs(ms->target, out);
@@ -1128,7 +1130,49 @@ inline void collect_stmt_bindings(
             collect_stmt_bindings(ifs->then_body, ast, ws, lines, max_line, env, ordered_out);
             collect_stmt_bindings(ifs->else_body, ast, ws, lines, max_line, env, ordered_out);
         } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
+            if (max_line <= 0 || fs->line <= max_line) {
+                if (!fs->index_var.empty() && fs->index_var != "_") {
+                    LocalBindingInfo idx_info;
+                    idx_info.name = fs->index_var;
+                    idx_info.is_mut = false;
+                    idx_info.decl_line = fs->line;
+                    idx_info.cf_type = "usize";
+                    idx_info.cpp_type = "std::size_t";
+                    idx_info.inferred_colon_eq = false;
+                    env[idx_info.name] = idx_info;
+                }
+                if (!fs->item_var.empty() && fs->item_var != "_") {
+                    LocalBindingInfo item_info;
+                    item_info.name = fs->item_var;
+                    item_info.is_mut = false;
+                    item_info.decl_line = fs->line;
+                    if (fs->range_end) {
+                        item_info.cf_type = "i64";
+                        item_info.cpp_type = "std::int64_t";
+                    } else if (fs->iter_expr) {
+                        std::string col_t = infer_expr_cf_type(fs->iter_expr, ast, ws, env);
+                        if (col_t.starts_with("&mut ")) col_t = col_t.substr(5);
+                        else if (col_t.starts_with("&")) col_t = col_t.substr(1);
+                        if (col_t.starts_with("[]")) {
+                            item_info.cf_type = col_t.substr(2);
+                        } else if (col_t.starts_with("[")) {
+                            if (auto rb = col_t.find(']'); rb != std::string::npos && rb + 1 < col_t.size()) {
+                                item_info.cf_type = col_t.substr(rb + 1);
+                            }
+                        } else if (col_t == "str" || col_t == "bytes") {
+                            item_info.cf_type = "u8";
+                        } else {
+                            item_info.cf_type = "auto";
+                        }
+                        item_info.cpp_type = cf_type_string_to_cpp(item_info.cf_type);
+                    }
+                    item_info.inferred_colon_eq = false;
+                    env[item_info.name] = item_info;
+                }
+            }
             collect_stmt_bindings(fs->body, ast, ws, lines, max_line, env, ordered_out);
+        } else if (const auto* def = std::get_if<DeferStmt>(&s->node)) {
+            collect_stmt_bindings(def->body, ast, ws, lines, max_line, env, ordered_out);
         } else if (const auto* as = std::get_if<AsyncScopeStmt>(&s->node)) {
             collect_stmt_bindings(as->body, ast, ws, lines, max_line, env, ordered_out);
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
@@ -1220,6 +1264,7 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
             walk_stmts_calls(ifs->else_body, visitor);
         } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
             walk_expr_calls(fs->iter_expr, visitor);
+            walk_expr_calls(fs->range_end, visitor);
             walk_stmts_calls(fs->body, visitor);
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
             walk_expr_calls(ms->target, visitor);
@@ -1230,6 +1275,7 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
             walk_expr_calls(rs->value, visitor);
         } else if (const auto* ds = std::get_if<DeferStmt>(&s->node)) {
             walk_expr_calls(ds->call, visitor);
+            walk_stmts_calls(ds->body, visitor);
         } else if (const auto* asc = std::get_if<AsyncScopeStmt>(&s->node)) {
             walk_stmts_calls(asc->body, visitor);
         }
