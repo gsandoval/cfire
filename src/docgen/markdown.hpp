@@ -1374,7 +1374,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
     if (!ast.tests.empty()) {
         md += "## Built-in Tests\n\n";
         for (const auto& t : ast.tests) {
-            md += std::format("- `test \"{}\"` (line {})\n", t.name, t.line);
+            const char* kind = t.is_bench ? "bench" : (t.is_fuzz ? "fuzz" : "test");
+            md += std::format("- `{} \"{}\"` (line {})\n", kind, t.name, t.line);
         }
         md += "\n";
     }
@@ -1434,8 +1435,12 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Conditional / unbounded loop: `for cond { ... }` / `for { ... }`
   - Exhaustive pattern match: `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
   - Single-statement or multi-statement RAII scope cleanup: `defer resource.close()` or `defer { f.flush(); f.close() }` (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`)
-- Testing & Power-Assertions:
+- Testing, Fuzzing, Benchmarks & Zero-Code Invariants:
   - Unit test blocks: `test "description" { ... }`
+  - Property-based fuzz blocks: `fuzz "description" |x: i64, s: str| { ... }` (or parameterized `test "name" |x: i64| { ... }`): automatically runs 16 adversarial edge-case dictionary seeds + deterministic PRNG runs (`--fuzz-runs <N>`, `--seed <S>`) for primitives, `str`, `[]T`, and reflected user structs, with automatic counterexample shrinking on failure.
+  - Multi-iteration statistical benchmarks: `bench "description" { black_box(work()) }` and parameterized variations `bench "name" |size in [64, 1024, 16384]| { ... }` or `|w in [16, 64], h in [16, 64]|` or `|k in 1..=4|`: dynamically calibrates batch size `B`, collects 10-25 timing samples over `--bench-time <ms>`, and reports `iters`, `min`, `p50`, `mean +- stddev%`, `p99`, and `ops/s`. During normal `cfire test`, each `bench` block runs 1 smoke iteration.
+  - Executable doc-tests: fenced ` ```cf ` blocks inside `///` doc-comments containing `assert(...)` or `assert_eq(...)` are automatically extracted and executed by `cfire test`.
+  - Zero-code automatic checks: every `test`/`fuzz` block enforces an open file-descriptor leak canary (`count_open_fds()`), and importing `ext:json` with JSON-tagged structs automatically synthesizes `[auto] json round-trip: <StructName>` tests during `cfire test`.
   - Power-assertions (`assert(a == b)`, `assert_eq(a, b)`): evaluate each operand once and automatically print `[left: <val>, right: <val>]` value diffs on failure.
 - Error Handling:
   - `val := try fallible()` (early return error on failure)
@@ -1446,6 +1451,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Region & Loan Tracking (`cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`, `cfire/ITERATOR-INVALIDATION`): Taking `&x` or `&mut x` records an active loan on `x`; mutating, moving, or outliving `x` while borrowed, returning `&local`, or calling `.push()`/`.clear()`/`.erase()` on a slice/map while iterating over it is rejected at compile time.
   - Null-Safety Flow Analysis (`cfire/NULL-DEREF`): Raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) must be initialized non-null or guarded by `if p != none` / `assert(p != none)` before `*p` or `p.field` dereference.
   - Bounds & Arithmetic Safety (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`): Constant out-of-bounds indexing and division/modulo by constant zero are rejected at compile time; dynamic slice indexing (`arr[i]`) and `slice_from(s, offset, count)` enforce bounds checks at runtime.
+  - Struct Tag Validation (`cfire/INVALID-STRUCT-TAG`): Duplicate `json`, `sql`/`db`, or `cli` flag tags across fields of the same struct, or invalid `default:"..."` literals that cannot parse into numeric/boolean field types, are rejected at compile time.
   - Injection Warnings (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Dynamic string concatenation in `db.exec`/`db.query` or `os.exec`/`os.exec_output` emits a warning; use parameterized `?1` queries.
 - Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp::some_c_func()`
 - CLI Tooling:
@@ -1453,14 +1459,15 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `cfire run [--web] [--ios] [target]`: Run native app, execute binary, launch iOS Simulator (`--ios`), or serve web app (`--web`)
   - `cfire build [--target wasm|ios-sim|ios] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, signed macOS/iOS `.app` bundle, or WebAssembly
   - `cfire check [--json] [--fix] [file|dir]`: Zero-arg workspace-aware type & borrow checker with 1-based coordinates and fixits
-  - `cfire test [--sanitize] [--json] [--filter <pat>] [file|dir]`: Zero-arg workspace test runner discovering all `*_test.cf` and `test "..."` blocks
+  - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Zero-arg workspace test & fuzz runner (discovers `test`, `fuzz`, `///` doc-tests, and `[auto] json round-trip` invariants)
+  - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Multi-iteration parameterized statistical benchmark runner
   - `cfire fix [--dry-run] [--json] [file|dir]`: Zero-arg workspace auto-fixer for missing `core:*` imports, `mut` call-site markers, and `match` arms
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in zero-dependency static server with WASM MIME and COOP/COEP isolation headers
-  - `cfire outline [--json] [file|dir]`: AST symbol outline with exact types, intents, receivers, interfaces, and test blocks
+  - `cfire outline [--json] [file|dir]`: AST symbol outline with exact types, intents, receivers, interfaces, and test/fuzz/bench blocks
   - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or compiler diagnostic rule (`cfire inspect cfire/USE-AFTER-FREE`)
   - `cfire install [--user|--prefix <dir>|--portable <dir>]`: Install self-relocating `cfire` binary and `runtime/` headers
   - `cfire ide [target|--all|--status] [--global]`: Auto-detect & configure LSP, MCP, and agent rules for VS Code, Antigravity (`agy`), Claude Code (`claude`), Cursor, Windsurf, Zed, Neovim, and CLion
-  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio (`cfire_stdlib_list`, `cfire_stdlib_lookup`, `cfire_check`, `cfire_eval`, `cfire_outline`, `cfire_inspect`, `cfire_doc_llm`)
+  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio (`cfire_stdlib_list`, `cfire_stdlib_lookup`, `cfire_check`, `cfire_test`, `cfire_eval`, `cfire_outline`, `cfire_inspect`, `cfire_doc_llm`)
   - `cfire doc --llm`: Dump this LLM context reference sheet
   - `cfire eval 'expr'`: Immediate evaluation of expressions
 

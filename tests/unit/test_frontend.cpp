@@ -1639,6 +1639,104 @@ test "power assert diff" {
         run_cfire(std::format("test \"{}\"", proj_dir.string()))
             .assert_ok("ERG-05b: cfire test on scaffolded project ok")
             .assert_contains("PASS (1 cfire tests succeeded)", "ERG-05b: scaffolded project test passed");
+
+        // TEST-01 through TEST-06: Fuzzing, Shrinking, Auto-JSON Round-Trip, FD Leak Canary, Doc-Tests, Benchmarks & LSP
+        ScopedTempDir test_suite_tmp("cfire_native_test_fuzz_bench");
+        auto suite_cf = test_suite_tmp.file("suite.cf", R"CF(package main
+
+import "ext:json"
+
+type Packet struct {
+    Id:   i64  `json:"id"`
+    Tag:  str  `json:"tag"`
+    Flag: bool `json:"flag"`
+}
+
+/// Doubles an integer and verifies via executable doc-test.
+/// ```cf
+/// assert_eq(double_val(21), 42)
+/// assert(double_val(0) == 0)
+/// ```
+fn double_val(x: i64) -> i64 {
+    return x * 2
+}
+
+fuzz "double_val algebraic property" |x: i64| {
+    if x > -1000000 && x < 1000000 {
+        assert_eq(double_val(x), x + x)
+    }
+}
+
+fuzz "struct arbitrary generation" |p: Packet| {
+    s := json.stringify(p)
+    assert(s.len() > 0)
+}
+
+bench "double_val throughput" |size in [16, 64]| {
+    mut acc: i64 = 0
+    for i in 0..size {
+        acc += double_val(i)
+    }
+    black_box(acc)
+}
+
+fn main() {}
+)CF");
+
+        // 1. Run `cfire test` (verifies fuzzing, doc-test extraction, [auto] json round-trip synthesis, and 1-iter bench smoke pass)
+        run_cfire(std::format("test \"{}\" --fuzz-runs 32 --seed 42", suite_cf.string()))
+            .assert_ok("TEST-01/03b/05a: cfire test with fuzz, doctest, auto json round-trip, and bench smoke")
+            .assert_contains("[doctest] double_val", "TEST-05a: executable /// doctest discovered and passed")
+            .assert_contains("[auto] json round-trip: Packet", "TEST-03b: automatic JSON round-trip test synthesized and passed")
+            .assert_contains("--- PASS: double_val algebraic property", "TEST-01: fuzz block passed");
+
+        // 2. Run `cfire bench` (verifies multi-iteration statistical harness and parameter variations)
+        run_cfire(std::format("bench \"{}\" --bench-time 25", suite_cf.string()))
+            .assert_ok("TEST-05b/c/d: cfire bench multi-iteration parameterized benchmark")
+            .assert_contains("double_val throughput/size=16", "TEST-05c: benchmark variation size=16")
+            .assert_contains("double_val throughput/size=64", "TEST-05c: benchmark variation size=64")
+            .assert_contains("ops/s", "TEST-05b: benchmark statistical output columns");
+
+        // 3. Verify TEST-02: Automatic Counterexample Shrinking on failing fuzz test
+        ScopedTempDir shrink_tmp("cfire_native_fuzz_shrink");
+        auto shrink_cf = shrink_tmp.file("shrink_fail.cf", R"CF(package main
+fuzz "shrink integer above 100" |x: i64| {
+    assert(x < 100)
+}
+)CF");
+        run_cfire(std::format("test \"{}\" --fuzz-runs 64 --seed 12345", shrink_cf.string()))
+            .assert_fail("TEST-02: failing fuzz block exits non-zero")
+            .assert_contains("(x=100)", "TEST-02: shrinks failing i64 down to exact minimal boundary 100")
+            .assert_contains("reproduce: --seed 12345", "TEST-02: prints deterministic reproduction command");
+
+        // 4. Verify TEST-04: Automatic Resource-Leak Canary on unclosed file descriptor
+        ScopedTempDir leak_tmp("cfire_native_fd_leak");
+        auto leak_cf = leak_tmp.file("leak_fail.cf", R"CF(package main
+test "deliberate fd leak" {
+    cpp {
+        std::FILE* leaked_fp = std::fopen("/dev/null", "r");
+        (void)leaked_fp;
+    }
+}
+)CF");
+        run_cfire(std::format("test \"{}\"", leak_cf.string()))
+            .assert_fail("TEST-04: leaked file descriptor fails test")
+            .assert_contains("resource leak canary", "TEST-04: reports open file descriptor leak canary");
+
+        // 5. Verify TEST-06: LSP hover/symbols and `cfire outline --json` for `fuzz`, `bench`, `black_box`
+        run_cfire(std::format("outline --json \"{}\"", suite_cf.string()))
+            .assert_ok("TEST-06: cfire outline --json ok")
+            .assert_contains("\"kind\": \"fuzz\"", "TEST-06: outline --json includes fuzz kind")
+            .assert_contains("\"kind\": \"bench\"", "TEST-06: outline --json includes bench kind");
+
+        {
+            cfire::lsp::Server lsp_srv;
+            std::string uri = cfire::lsp::detail::path_to_uri(suite_cf);
+            std::string syms = lsp_srv.compute_document_symbols(uri);
+            require(syms.contains("fuzz: double_val algebraic property") &&
+                    syms.contains("bench: double_val throughput"),
+                    std::format("TEST-06a: LSP documentSymbol includes fuzz and bench blocks: {}", syms));
+        }
     }
 
     std::println("--- PASS: test_section2_language_ergonomics");

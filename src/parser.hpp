@@ -112,7 +112,16 @@ public:
                     break;
                 }
                 case TokenKind::Ident: {
-                    if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon) {
+                    if ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String) {
+                        auto td = parse_test_decl();
+                        if (!td) {
+                            record_error(td.error());
+                            if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                            synchronize_decl();
+                        } else {
+                            f.tests.push_back(std::move(*td));
+                        }
+                    } else if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon) {
                         auto gv = parse_global_var();
                         if (!gv) {
                             record_error(gv.error());
@@ -220,7 +229,8 @@ private:
                 case TokenKind::KwTest:
                     return;
                 case TokenKind::Ident:
-                    if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon) {
+                    if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                        ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String)) {
                         return;
                     }
                     advance();
@@ -259,7 +269,8 @@ private:
                 case TokenKind::Ident:
                     if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
                         peek(1).kind == TokenKind::Assign || peek(1).kind == TokenKind::PlusEq ||
-                        peek(1).kind == TokenKind::MinusEq) {
+                        peek(1).kind == TokenKind::MinusEq ||
+                        ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String)) {
                         return;
                     }
                     break;
@@ -847,12 +858,100 @@ private:
     }
 
     [[nodiscard]] auto parse_test_decl() -> std::expected<TestDecl, std::string> {
-        Token start = advance(); // 'test'
+        Token start = advance(); // 'test', 'fuzz', or 'bench'
         auto name_tok = expect(TokenKind::String);
         if (!name_tok) return std::unexpected(name_tok.error());
+
+        TestDecl td;
+        td.name = name_tok->lexeme;
+        td.line = start.line;
+        td.is_fuzz = (start.lexeme == "fuzz");
+        td.is_bench = (start.lexeme == "bench");
+
+        if (cur().kind == TokenKind::DoublePipe) {
+            advance(); // '||'
+        } else if (cur().kind == TokenKind::Pipe) {
+            advance(); // '|'
+            StructLitScope param_scope(*this, false);
+            while (cur().kind != TokenKind::Pipe && cur().kind != TokenKind::Eof) {
+                auto p_id = expect(TokenKind::Ident);
+                if (!p_id) return std::unexpected(p_id.error());
+                if (cur().kind == TokenKind::KwIn) {
+                    advance(); // 'in'
+                    BenchParamVariation var;
+                    var.name = p_id->lexeme;
+                    var.line = p_id->line;
+                    if (cur().kind == TokenKind::LBracket) {
+                        advance(); // '['
+                        StructLitScope bracket_scope(*this, true);
+                        while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                            auto val_ex = parse_expr();
+                            if (!val_ex) return std::unexpected(val_ex.error());
+                            var.values.push_back(std::move(*val_ex));
+                            if (cur().kind == TokenKind::Comma) advance();
+                        }
+                        if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                    } else {
+                        auto first_ex = parse_expr();
+                        if (!first_ex) return std::unexpected(first_ex.error());
+                        if (cur().kind == TokenKind::DotDot || cur().kind == TokenKind::DotDotEq) {
+                            bool inclusive = (advance().kind == TokenKind::DotDotEq);
+                            auto end_ex = parse_expr();
+                            if (!end_ex) return std::unexpected(end_ex.error());
+                            const auto* l_lit = std::get_if<LiteralExpr>(&(*first_ex)->node);
+                            const auto* r_lit = std::get_if<LiteralExpr>(&(*end_ex)->node);
+                            if (l_lit && r_lit && l_lit->kind == TokenKind::Int && r_lit->kind == TokenKind::Int) {
+                                auto s_val = cfire::detail::parse_int<std::int64_t>(l_lit->value);
+                                auto e_val = cfire::detail::parse_int<std::int64_t>(r_lit->value);
+                                if (s_val && e_val) {
+                                    std::int64_t limit = inclusive ? *e_val : (*e_val - 1);
+                                    for (std::int64_t v = *s_val; v <= limit && var.values.size() < 64; ++v) {
+                                        var.values.push_back(make_expr(LiteralExpr{TokenKind::Int, std::to_string(v)}, p_id->line, p_id->col));
+                                    }
+                                }
+                            }
+                            if (var.values.empty()) {
+                                var.values.push_back(std::move(*first_ex));
+                                var.values.push_back(std::move(*end_ex));
+                            }
+                        } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&(*first_ex)->node)) {
+                            var.values = arr_lit->elements;
+                        } else {
+                            var.values.push_back(std::move(*first_ex));
+                        }
+                    }
+                    if (!var.values.empty()) {
+                        const auto& v0 = var.values.front();
+                        if (const auto* lit = std::get_if<LiteralExpr>(&v0->node)) {
+                            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) {
+                                var.inferred_type = TypeRef{"str"};
+                            } else if (lit->kind == TokenKind::Float) {
+                                var.inferred_type = TypeRef{"f64"};
+                            } else if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) {
+                                var.inferred_type = TypeRef{"bool"};
+                            }
+                        }
+                    }
+                    td.bench_variations.push_back(std::move(var));
+                } else {
+                    TypeRef p_type{"i64"};
+                    if (cur().kind == TokenKind::Colon) {
+                        advance(); // ':'
+                        auto tr = parse_type_ref();
+                        if (!tr) return std::unexpected(tr.error());
+                        p_type = std::move(*tr);
+                    }
+                    td.params.push_back(ParamDecl{"in", p_id->lexeme, std::move(p_type), p_id->line, p_id->col});
+                }
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
+        }
+
         auto body = parse_block();
         if (!body) return std::unexpected(body.error());
-        return TestDecl{name_tok->lexeme, std::move(*body), start.line};
+        td.body = std::move(*body);
+        return td;
     }
 
     [[nodiscard]] auto parse_block() -> std::expected<std::vector<StmtPtr>, std::string> {
@@ -1317,7 +1416,12 @@ private:
         if (!left) return std::unexpected(left.error());
         if (cur().kind == TokenKind::KwOr) {
             Token or_tok = advance();
-            if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace) {
+            bool is_struct_lit_fallback = (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace) &&
+                !cur().lexeme.empty() &&
+                std::isupper(static_cast<unsigned char>(cur().lexeme[0])) &&
+                (peek(2).kind == TokenKind::RBrace ||
+                 (peek(2).kind == TokenKind::Ident && peek(3).kind == TokenKind::Colon));
+            if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace && !is_struct_lit_fallback) {
                 std::string err_var = advance().lexeme;
                 auto body = parse_block();
                 if (!body) return std::unexpected(body.error());
@@ -1803,6 +1907,97 @@ private:
         return std::unexpected(res.errors.front());
     }
     return std::move(res.ast);
+}
+
+inline void append_doctests(std::string_view path, std::string_view src, FileAST& ast) {
+    if (!src.contains("///") || !src.contains("```")) return;
+    std::vector<std::string> lines;
+    {
+        std::istringstream iss{std::string(src)};
+        std::string l;
+        while (std::getline(iss, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(std::move(l));
+        }
+    }
+
+    struct RawDocBlock {
+        int start_line = 1;
+        std::string code;
+        std::string target_symbol;
+    };
+    std::vector<RawDocBlock> blocks;
+    bool in_fence = false;
+    int fence_start_line = 1;
+    std::string cur_code;
+
+    auto trim_left = [](std::string_view sv) -> std::string_view {
+        while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+        return sv;
+    };
+
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        std::string_view t = trim_left(lines[i]);
+        if (t.starts_with("///")) {
+            std::string_view body = t.substr(3);
+            if (!body.empty() && body.front() == ' ') body.remove_prefix(1);
+            std::string_view b_trim = trim_left(body);
+            if (!in_fence) {
+                if (b_trim.starts_with("```cf") || b_trim.starts_with("```cfire")) {
+                    in_fence = true;
+                    fence_start_line = static_cast<int>(i) + 1;
+                    cur_code.clear();
+                }
+            } else {
+                if (b_trim.starts_with("```")) {
+                    in_fence = false;
+                    // Look ahead for the documented symbol (`fn <name>` or `type <name>`)
+                    std::string sym_name = std::format("line {}", fence_start_line);
+                    for (std::size_t k = i + 1; k < lines.size(); ++k) {
+                        std::string_view next_t = trim_left(lines[k]);
+                        if (next_t.starts_with("///") || next_t.empty()) continue;
+                        if (next_t.starts_with("fn ")) {
+                            std::string_view rest = trim_left(next_t.substr(3));
+                            if (!rest.empty() && rest.front() == '(') {
+                                auto rp = rest.find(')');
+                                if (rp != std::string_view::npos) rest = trim_left(rest.substr(rp + 1));
+                            }
+                            std::size_t end_id = 0;
+                            while (end_id < rest.size() && (std::isalnum(static_cast<unsigned char>(rest[end_id])) || rest[end_id] == '_')) ++end_id;
+                            if (end_id > 0) sym_name = std::string(rest.substr(0, end_id));
+                        } else if (next_t.starts_with("type ")) {
+                            std::string_view rest = trim_left(next_t.substr(5));
+                            std::size_t end_id = 0;
+                            while (end_id < rest.size() && (std::isalnum(static_cast<unsigned char>(rest[end_id])) || rest[end_id] == '_')) ++end_id;
+                            if (end_id > 0) sym_name = std::string(rest.substr(0, end_id));
+                        }
+                        break;
+                    }
+                    if (cur_code.contains("assert(") || cur_code.contains("assert_eq(")) {
+                        blocks.push_back(RawDocBlock{fence_start_line, std::move(cur_code), std::move(sym_name)});
+                    }
+                    cur_code.clear();
+                } else {
+                    cur_code += std::string(body) + "\n";
+                }
+            }
+        } else {
+            in_fence = false;
+            cur_code.clear();
+        }
+    }
+
+    for (std::size_t b = 0; b < blocks.size(); ++b) {
+        std::string wrapped = std::format("package main\ntest \"[doctest] {} (#{})\" {{\n{}}}\n",
+            blocks[b].target_symbol, b + 1, blocks[b].code);
+        auto dt_ast = parse_source(path, wrapped);
+        if (dt_ast && !dt_ast->tests.empty()) {
+            if (dt_ast->arena) ast.child_arenas.push_back(dt_ast->arena);
+            auto td = std::move(dt_ast->tests.front());
+            td.line = blocks[b].start_line;
+            ast.tests.push_back(std::move(td));
+        }
+    }
 }
 
 struct ExprSnippetResult {

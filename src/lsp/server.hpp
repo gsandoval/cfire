@@ -821,6 +821,22 @@ public:
                        "Evaluates `left` and `right` once, verifies `left == right`, and formats `[left: <val>, right: <val>]` value diffs on failure.\n\n"
                        "**Example:**\n```cf\nassert_eq(actual_count, 42, \"count mismatch\")\n```";
             }
+            if (sym.name == "black_box") {
+                return "### Built-in Optimization Barrier `black_box(value)`\n```cf\nblack_box[T](val: T) -> T\n```\n"
+                       "Prevents the C++23 optimizer (`-O2`/`-O3`) from constant-folding or dead-code-eliminating benchmark expressions inside `bench \"...\"` blocks.\n\n"
+                       "**Example:**\n```cf\nbench \"hash throughput\" |n in [64, 1024]| {\n    black_box(compute_hash(n))\n}\n```";
+            }
+            if (sym.name == "fuzz") {
+                return "### Property-Based Fuzz Test `fuzz \"name\" |params...| { ... }`\n"
+                       "Automatically generates deterministic adversarial edge-case inputs (`0`, `-1`, `MIN`, `MAX`, empty/UTF-8/NUL/SQL/JSON strings, reflected structs) and shrinks any failing counterexample to its minimal input.\n\n"
+                       "**CLI Flags:** `cfire test --fuzz-runs 500 --seed 12345`\n\n"
+                       "**Example:**\n```cf\nfuzz \"addition is commutative\" |a: i64, b: i64| {\n    assert_eq(a + b, b + a)\n}\n```";
+            }
+            if (sym.name == "bench") {
+                return "### Statistical Micro-Benchmark `bench \"name\" |param in [...]| { ... }`\n"
+                       "Runs warmup, dynamic batch calibration, and multi-sample statistical timing (`iters`, `min`, `p50`, `mean`, `p99`, `±stddev%`, `ops/s`) across parameter variations (`cfire bench`). Also runs 1 smoke iteration during `cfire test`.\n\n"
+                       "**Example:**\n```cf\nbench \"payload encode\" |size in [64, 1024, 16384]| {\n    black_box(encode_payload(size))\n}\n```";
+            }
             if (sym.name == "make") {
                 return "### Built-in Allocator `make[T](...args)`\n```cf\nmake[own[T]](args...) -> own[T]\nmake[shared[T]](args...) -> shared[T]\nmake[sync.Channel[T]](capacity: usize) -> sync.Channel[T]\n```\n"
                        "Allocates a managed smart pointer on the heap (`std::make_unique` for `own[T]`, `std::make_shared` for `shared[T]`), or initializes a bounded/unbounded channel.\n\n"
@@ -1852,6 +1868,7 @@ public:
         append_item("panic", 3, "panic(message: string)", "Terminates the program immediately with an error message.");
         append_item("assert", 3, "assert(cond: bool, msg: string = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).");
         append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: string = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.");
+        append_item("black_box", 3, "black_box(val: T) -> T", "Compiler optimization barrier for benchmarks inside bench \"...\" blocks.");
         append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.");
         append_item("@pkg", 14, "@pkg(\"libname\")", "Specifies system package / pkg-config dependency for C/C++ header import.");
 
@@ -1877,6 +1894,10 @@ public:
                         "defer {\n\t${0}\n}", 2);
             append_item("test", 15, "test \"name\" { ... }", "Unit test block snippet",
                         "test \"${1:name}\" {\n\t${0}\n}", 2);
+            append_item("fuzz", 15, "fuzz \"name\" |x: i64| { ... }", "Property-based fuzz test with counterexample shrinking",
+                        "fuzz \"${1:name}\" |${2:x: i64}| {\n\t${0}\n}", 2);
+            append_item("bench", 15, "bench \"name\" |n in [64, 1024]| { ... }", "Statistical micro-benchmark with parameter variations",
+                        "bench \"${1:name}\" |${2:n in [64, 1024]}| {\n\tblack_box(${0})\n}", 2);
             append_item("cpp", 15, "cpp { ... }", "Direct inline C++23 emission block.",
                         "cpp {\n\t${0}\n}", 2);
         } else {
@@ -1888,6 +1909,8 @@ public:
             append_item("if", 14, "if keyword", "Conditional statement");
             append_item("defer", 14, "defer <expr> / defer { ... }", "Schedules statement or block to execute when enclosing scope exits.");
             append_item("test", 14, "test \"name\" { ... }", "Unit test declaration");
+            append_item("fuzz", 14, "fuzz \"name\" |...| { ... }", "Property-based fuzz test declaration");
+            append_item("bench", 14, "bench \"name\" |...| { ... }", "Statistical micro-benchmark declaration");
             append_item("cpp", 14, "cpp { ... }", "Direct inline C++23 emission block.");
         }
         out += "]";
@@ -2229,7 +2252,7 @@ public:
             }
         }
 
-        std::unordered_set<std::string> builtins = {"println", "print", "panic", "assert", "assert_eq", "make"};
+        std::unordered_set<std::string> builtins = {"println", "print", "panic", "assert", "assert_eq", "black_box", "make"};
         std::unordered_set<std::string> namespaces = {"cpp"};
         for (const auto& mod : cfire::doc::stdlib_catalog()) {
             namespaces.insert(mod.ns_alias);
@@ -2391,7 +2414,9 @@ public:
 
             if (t.kind == TokenKind::Ident || t.kind == TokenKind::KwCpp) {
                 int len = static_cast<int>(t.lexeme.size());
-                if (builtins.contains(t.lexeme)) {
+                if (t.col == 1 && (t.lexeme == "fuzz" || t.lexeme == "bench")) {
+                    raw_tokens.push_back(RawToken{line_0, col_0, len, 10 /* keyword */, 0});
+                } else if (builtins.contains(t.lexeme)) {
                     raw_tokens.push_back(RawToken{line_0, col_0, len, 8 /* function */, 16 /* defaultLibrary */});
                 } else if (namespaces.contains(t.lexeme)) {
                     raw_tokens.push_back(RawToken{line_0, col_0, len, 15 /* namespace */, (t.lexeme == "cpp" ? 16 : 0)});
@@ -3054,7 +3079,8 @@ public:
         for (const auto& t : ast_res->tests) {
             if (!first) out += ",";
             first = false;
-            out += make_sym("test: " + t.name, "test", 12, t.line);
+            std::string prefix = t.is_fuzz ? "fuzz" : (t.is_bench ? "bench" : "test");
+            out += make_sym(prefix + ": " + t.name, prefix, 12, t.line);
         }
         out += "]";
         return out;

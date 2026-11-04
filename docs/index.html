@@ -914,7 +914,7 @@ tr:hover td { background: #1F242C; }
       <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">19 Rules</div>
+      <div class="stat-val">20 Rules</div>
       <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
@@ -1111,6 +1111,15 @@ struct cfire::reflect_struct&lt;Box&gt; {
     static constexpr std::array&lt;std::string_view, 1&gt; field_tags = {
         R&quot;tag()tag&quot;,
     };
+};
+
+template &lt;&gt;
+struct cfire::testing_detail::Arbitrary&lt;Box&gt; {
+    static auto generate(cfire::testing_detail::FuzzRng&amp; rng, std::size_t iter) -&gt; Box {
+        Box out{};
+        out.value = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.value)&gt;&gt;::generate(rng, iter + 0);
+        return out;
+    }
 };
 
 inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void;
@@ -1394,6 +1403,17 @@ struct cfire::reflect_struct&lt;Metric&gt; {
         R&quot;tag(json:&quot;latency_ms&quot;)tag&quot;,
         R&quot;tag(json:&quot;healthy&quot;)tag&quot;,
     };
+};
+
+template &lt;&gt;
+struct cfire::testing_detail::Arbitrary&lt;Metric&gt; {
+    static auto generate(cfire::testing_detail::FuzzRng&amp; rng, std::size_t iter) -&gt; Metric {
+        Metric out{};
+        out.service = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.service)&gt;&gt;::generate(rng, iter + 0);
+        out.latency = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.latency)&gt;&gt;::generate(rng, iter + 1);
+        out.healthy = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.healthy)&gt;&gt;::generate(rng, iter + 2);
+        return out;
+    }
 };
 
 template &lt;&gt;
@@ -1682,6 +1702,16 @@ struct cfire::reflect_struct&lt;QueryPlan&gt; {
 };
 
 template &lt;&gt;
+struct cfire::testing_detail::Arbitrary&lt;QueryPlan&gt; {
+    static auto generate(cfire::testing_detail::FuzzRng&amp; rng, std::size_t iter) -&gt; QueryPlan {
+        QueryPlan out{};
+        out.Target = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Target)&gt;&gt;::generate(rng, iter + 0);
+        out.TopK = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.TopK)&gt;&gt;::generate(rng, iter + 1);
+        return out;
+    }
+};
+
+template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;QueryPlan&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;QueryPlan, cfire::Error&gt; {
     QueryPlan out{};
     CFIRE_TRY_ASSIGN(out.Target, cfire::json::get_str(obj, &quot;target&quot;));
@@ -1731,6 +1761,17 @@ struct cfire::reflect_struct&lt;DocEntry&gt; {
         R&quot;tag(sql:&quot;title&quot;)tag&quot;,
         R&quot;tag(sql:&quot;snippet&quot;)tag&quot;,
     };
+};
+
+template &lt;&gt;
+struct cfire::testing_detail::Arbitrary&lt;DocEntry&gt; {
+    static auto generate(cfire::testing_detail::FuzzRng&amp; rng, std::size_t iter) -&gt; DocEntry {
+        DocEntry out{};
+        out.Id = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Id)&gt;&gt;::generate(rng, iter + 0);
+        out.Title = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Title)&gt;&gt;::generate(rng, iter + 1);
+        out.Snippet = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Snippet)&gt;&gt;::generate(rng, iter + 2);
+        return out;
+    }
 };
 
 template &lt;&gt;
