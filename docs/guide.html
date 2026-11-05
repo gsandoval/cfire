@@ -1863,6 +1863,7 @@ tr:hover td { background: #1F242C; }
             <li><a href="#ch17-level-1-tools-structured-output-extai" onclick="navigateToSubhead('17', 'ch17-level-1-tools-structured-output-extai'); return false;">Level 1 — Tools &amp; Structured Output (ext:ai)</a></li>
             <li><a href="#ch17-level-2-document-ingestion-vector-rag" onclick="navigateToSubhead('17', 'ch17-level-2-document-ingestion-vector-rag'); return false;">Level 2 — Document Ingestion &amp; Vector RAG</a></li>
             <li><a href="#ch17-level-3-model-context-protocol-mcpserver" onclick="navigateToSubhead('17', 'ch17-level-3-model-context-protocol-mcpserver'); return false;">Level 3 — Model Context Protocol (McpServer)</a></li>
+            <li><a href="#ch17-hybrid-native-webview-applications-extwebui" onclick="navigateToSubhead('17', 'ch17-hybrid-native-webview-applications-extwebui'); return false;">Hybrid Native WebView Applications (ext:webui)</a></li>
           </ul>
         </li>
         <li class="nav-item" id="nav-item-18">
@@ -1872,14 +1873,14 @@ tr:hover td { background: #1F242C; }
           </a>
           <ul class="subhead-list">
             <li><a href="#ch18-blueprint-rag-httpjson-microservice" onclick="navigateToSubhead('18', 'ch18-blueprint-rag-httpjson-microservice'); return false;">Blueprint: RAG + HTTP/JSON Microservice</a></li>
-            <li><a href="#ch18-canonical-projects-index-examples0116" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0116'); return false;">Canonical Projects Index (examples/01–16)</a></li>
+            <li><a href="#ch18-canonical-projects-index-examples0117" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0117'); return false;">Canonical Projects Index (examples/01–17)</a></li>
             <li><a href="#ch18-further-reference-module-index" onclick="navigateToSubhead('18', 'ch18-further-reference-module-index'); return false;">Further Reference &amp; Module Index</a></li>
           </ul>
         </li>
       </ul>
       <a href="reference.html" class="sidebar-footer-card">
         <span class="sfc-title">Stdlib Reference</span>
-        <span class="sfc-badge">33 MODULES</span>
+        <span class="sfc-badge">34 MODULES</span>
       </a>
     </div>
   </aside>
@@ -2064,10 +2065,10 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
   </section>
   <section class="guide-topic" id="topic-ch1-package-namespaces-system-dependency-matrix" data-topic-id="ch1-package-namespaces-system-dependency-matrix" data-topic-title="Package Namespaces &amp; System Dependency Matrix">
 <h3 class="guide-heading" id="ch1-package-namespaces-system-dependency-matrix"><span class="heading-hash">#</span><span class="heading-text">Package Namespaces &amp; System Dependency Matrix</span></h3>
-<p><code>cfire</code> organizes its 33 built-in modules into three explicit package namespaces:</p>
+<p><code>cfire</code> organizes its 34 built-in modules into three explicit package namespaces:</p>
 <ul>
   <li><strong><code>core:*</code> (Foundational Core — 21 Modules)</strong>: Pure ISO C++23 header-only primitives (<code>core:str</code>, <code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:sort</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:crypto/*</code>, <code>core:encoding/*</code>) with zero external C/OS library dependencies.</li>
-  <li><strong><code>ext:*</code> (Domain &amp; Platform Extensions — 10 Opt-In Modules)</strong>: Domain and platform engines (<code>ext:json</code>, <code>ext:compress/zstd</code>, <code>ext:db/sqlite</code>, <code>ext:net</code>, <code>ext:net/url</code>, <code>ext:net/tls</code>, <code>ext:net/http</code>, <code>ext:net/websocket</code>, <code>ext:audio</code>, <code>ext:ai</code>) that query <code>pkg-config</code> and standard system paths only when imported, with built-in portable fallbacks when an optional system library is absent.</li>
+  <li><strong><code>ext:*</code> (Domain &amp; Platform Extensions — 11 Opt-In Modules)</strong>: Domain and platform engines (<code>ext:json</code>, <code>ext:compress/zstd</code>, <code>ext:db/sqlite</code>, <code>ext:net</code>, <code>ext:net/url</code>, <code>ext:net/tls</code>, <code>ext:net/http</code>, <code>ext:net/websocket</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>) that query <code>pkg-config</code> and standard system paths only when imported, with built-in portable fallbacks when an optional system library is absent.</li>
   <li><strong><code>vendor:*</code> (Bundled Third-Party C/C++ Engines — 2 Modules)</strong>: <code>vendor:raylib</code> and <code>vendor:raygui</code>.</li>
 </ul>
 <div class="table-wrap">
@@ -2083,6 +2084,7 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
       <tr><td><code>ext:net/tls</code> &amp; <code>ext:net/http</code></td><td><code>libssl</code> / <code>libcrypto</code></td><td><code>openssl</code></td><td>Dynamic <code>dlopen(&quot;libssl&quot;)</code> on Desktop/Linux; Apple <code>Foundation</code> <code>NSURLConnection</code> on macOS/iOS; browser <code>XMLHttpRequest</code> on WASM</td></tr>
       <tr><td><code>ext:audio</code></td><td><code>CoreAudio</code> / <code>libasound2</code></td><td><code>alsa</code></td><td><code>AudioToolbox.framework</code> on macOS/iOS; dynamic <code>dlopen(&quot;libasound.so.2&quot;)</code> on Linux; <code>WebAudio</code> on WASM; deterministic software mixer in headless CI</td></tr>
       <tr><td><code>ext:ai</code> (OCR &amp; PDF)</td><td><code>Vision</code> / <code>libtesseract</code> / <code>pdftotext</code></td><td><code>tesseract</code></td><td><code>Vision.framework</code> &amp; <code>PDFKit</code> on macOS/iOS; <code>dlopen(&quot;libtesseract.so.5&quot;)</code> &amp; <code>pdftotext</code> on Linux; pure C++23 <code>/FlateDecode</code> PDF parser &amp; PNG/JPEG metadata reader on all targets</td></tr>
+      <tr><td><code>ext:webui</code></td><td><code>WebKit.framework</code> / <code>webkit2gtk-4.1</code></td><td><code>webkit2gtk-4.1</code></td><td><code>WKWebView</code> + <code>Cocoa</code> on macOS, <code>WKWebView</code> + <code>UIKit</code> on iOS, <code>WebKitGTK</code> + <code>GTK3</code> on Linux, and deterministic headless RPC/Event dispatcher in CI</td></tr>
       <tr><td><code>vendor:raylib</code> &amp; <code>vendor:raygui</code></td><td>Bundled in <code>runtime/</code></td><td>None required</td><td>Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and <code>UIKit</code> + <code>OpenGLES3</code> on iOS</td></tr>
     </tbody>
   </table>
@@ -5639,13 +5641,14 @@ fn main() -&gt; void! {
 <p><code>ext:ai</code> provides a unified, zero-dependency SDK for cloud and local LLM inference, compile-time JSON Schema structured extraction (<code>generate_struct[T]</code>), multimodal image/audio/document attachments, offline document and slide deck ingestion (<code>load_document</code>, <code>chunk_document</code>), on-device OCR (<code>ocr</code>), local text and visual embeddings (<code>embed</code>, <code>embed_image</code>), language identification (<code>detect_language</code>), and a JSON-RPC 2.0 Model Context Protocol server (<code>McpServer</code>).</p>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 17 Topics (6)</span>
+    <span class="topic-pill-label">Ch 17 Topics (7)</span>
     <a href="#ch17-provider-client-auth-matrix" class="topic-pill active" data-topic-pill="ch17-provider-client-auth-matrix" onclick="navigateToSubhead('17', 'ch17-provider-client-auth-matrix'); return false;">17.1: Provider Client &amp; Auth Matrix</a>
     <a href="#ch17-complete-extai-api-specification" class="topic-pill" data-topic-pill="ch17-complete-extai-api-specification" onclick="navigateToSubhead('17', 'ch17-complete-extai-api-specification'); return false;">17.2: Complete ext:ai API Specification</a>
     <a href="#ch17-cross-platform-on-device-cloud-parity-matrix" class="topic-pill" data-topic-pill="ch17-cross-platform-on-device-cloud-parity-matrix" onclick="navigateToSubhead('17', 'ch17-cross-platform-on-device-cloud-parity-matrix'); return false;">17.3: Cross-Platform On-Device &amp; Cloud Parity Matrix</a>
     <a href="#ch17-level-1-tools-structured-output-extai" class="topic-pill" data-topic-pill="ch17-level-1-tools-structured-output-extai" onclick="navigateToSubhead('17', 'ch17-level-1-tools-structured-output-extai'); return false;">17.4: Level 1 — Tools &amp; Structured Output (ext:ai)</a>
     <a href="#ch17-level-2-document-ingestion-vector-rag" class="topic-pill" data-topic-pill="ch17-level-2-document-ingestion-vector-rag" onclick="navigateToSubhead('17', 'ch17-level-2-document-ingestion-vector-rag'); return false;">17.5: Level 2 — Document Ingestion &amp; Vector RAG</a>
     <a href="#ch17-level-3-model-context-protocol-mcpserver" class="topic-pill" data-topic-pill="ch17-level-3-model-context-protocol-mcpserver" onclick="navigateToSubhead('17', 'ch17-level-3-model-context-protocol-mcpserver'); return false;">17.6: Level 3 — Model Context Protocol (McpServer)</a>
+    <a href="#ch17-hybrid-native-webview-applications-extwebui" class="topic-pill" data-topic-pill="ch17-hybrid-native-webview-applications-extwebui" onclick="navigateToSubhead('17', 'ch17-hybrid-native-webview-applications-extwebui'); return false;">17.7: Hybrid Native WebView Applications (ext:webui)</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch17-provider-client-auth-matrix" data-topic-id="ch17-provider-client-auth-matrix" data-topic-title="Provider Client &amp; Auth Matrix">
 <h3 class="guide-heading" id="ch17-provider-client-auth-matrix"><span class="heading-hash">#</span><span class="heading-text">Provider Client &amp; Auth Matrix</span></h3>
@@ -5897,6 +5900,70 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.5)</span>
         <strong class="pager-title">Level 2 — Document Ingestion &amp; Vector RAG</strong>
       </a>
+      <a href="#ch17-hybrid-native-webview-applications-extwebui" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-hybrid-native-webview-applications-extwebui'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 17.7) &rarr;</span>
+        <strong class="pager-title">Hybrid Native WebView Applications (ext:webui)</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch17-hybrid-native-webview-applications-extwebui" data-topic-id="ch17-hybrid-native-webview-applications-extwebui" data-topic-title="Hybrid Native WebView Applications (ext:webui)">
+<h3 class="guide-heading" id="ch17-hybrid-native-webview-applications-extwebui"><span class="heading-hash">#</span><span class="heading-text">Hybrid Native WebView Applications (<code>ext:webui</code>)</span></h3>
+<p><code>import &quot;ext:webui&quot;</code> provides a Wails/Tauri-style hybrid application engine that pairs a native OS WebView (<code>WKWebView</code> on macOS and iOS, <code>WebKitGTK</code> on Linux) with a two-way typed JSON-RPC 2.0 and pub/sub event bridge—without bundling Chromium/Electron or opening a local TCP port.</p>
+<h4 id="ch17-architecture-zero-port-security-model">Architecture &amp; Zero-Port Security Model</h4>
+<ul>
+  <li><strong>Custom Scheme Asset Serving (<code>app://localhost/</code>)</strong>: Frontend HTML/CSS/JS assets registered via <code>app.serve_dir(&quot;./ui&quot;)</code> or <code>app.embed_asset(path, content, mime)</code> are served in-memory via <code>WKURLSchemeHandler</code> (macOS/iOS) and <code>webkit_web_context_register_uri_scheme</code> (Linux) with strict path-traversal rejection (<code>..</code> segments blocked).</li>
+  <li><strong>Zero-Boilerplate Typed RPC (<code>app.bind[T]</code>)</strong>: Importing <code>ext:webui</code> automatically enables compile-time JSON struct reflection (<code>cfire::json::parse_struct&lt;T&gt;</code> / <code>stringify_struct&lt;T&gt;</code>) for every struct in your package. Calling <code>app.bind[Req](&quot;method&quot;) |req| { ... }</code> exposes <code>await window.backend.method(args)</code> (via ES6 <code>Proxy</code>) and <code>await window.invoke(&quot;method&quot;, args)</code> in JavaScript.</li>
+  <li><strong>Wails/Tauri Preload Runtime (<code>window.runtime</code>)</strong>: Automatically injects <code>window.runtime.EventsOn</code>, <code>EventsOnce</code>, <code>EventsOff</code>, <code>EventsEmit</code>, <code>WindowSetTitle</code>, <code>WindowSetSize</code>, <code>WindowFullscreen</code>, <code>WindowMinimise</code>, <code>WindowMaximise</code>, <code>WindowCenter</code>, <code>Quit</code>, and frameless window dragging via CSS <code>--wails-draggable: drag</code> (or <code>-webkit-app-region: drag</code>).</li>
+  <li><strong>Deterministic Headless &amp; Offscreen Testing</strong>: Verify RPC handlers and pub/sub events in milliseconds with <code>app.call_rpc(method, json)?</code> and <code>app.dispatch_event(topic, json)</code>, or run a real offscreen <code>WKWebView</code> DOM/JS integration test on macOS via <code>app.run_webview_test(js_assertion)?</code>.</li>
+</ul>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+import &quot;ext:webui&quot;
+
+type TrackMix struct {
+    Channel: i64  `json:&quot;channel&quot;`
+    Name:    str  `json:&quot;name&quot;`
+    GainDb:  f64  `json:&quot;gain_db&quot;`
+    Muted:   bool `json:&quot;muted&quot;`
+}
+
+type MixResult struct {
+    Channel: i64  `json:&quot;channel&quot;`
+    PeakPct: f64  `json:&quot;peak_pct&quot;`
+    Clipped: bool `json:&quot;clipped&quot;`
+    Status:  str  `json:&quot;status&quot;`
+}
+
+fn main() -&gt; void! {
+    mut app := webui.new_app(&quot;cfire Studio&quot;, 1024, 680)
+    app.serve_dir(&quot;examples/17-webui-studio/ui&quot;)
+
+    app.bind[TrackMix](&quot;update_track&quot;) |req| {
+        mut peak := 75.0 + req.GainDb * 2.5
+        mut label := &quot;ACTIVE&quot;
+        if req.Muted {
+            peak = 0.0
+            label = &quot;MUTED&quot;
+        }
+        return MixResult{
+            Channel: req.Channel,
+            PeakPct: peak,
+            Clipped: peak &gt;= 100.0,
+            Status:  label,
+        }
+    }
+
+    res := app.call_rpc(&quot;update_track&quot;, &quot;{\&quot;channel\&quot;:1,\&quot;name\&quot;:\&quot;Synth\&quot;,\&quot;gain_db\&quot;:4.0,\&quot;muted\&quot;:false}&quot;)?
+    println(&quot;RPC response: {}&quot;, res)
+}
+</code></pre>
+<p>Scaffold a new hybrid WebUI project in one command with <code>cfire new my-app --webui</code> (or <code>cfire init --webui</code>), run it natively on desktop via <code>cfire run</code>, or launch it inside the iOS Simulator via <code>cfire run --ios</code>.</p>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch17-level-3-model-context-protocol-mcpserver" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-level-3-model-context-protocol-mcpserver'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.6)</span>
+        <strong class="pager-title">Level 3 — Model Context Protocol (McpServer)</strong>
+      </a>
       <a href="#ch18-blueprint-rag-httpjson-microservice" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-blueprint-rag-httpjson-microservice'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 18.1) &rarr;</span>
         <strong class="pager-title">Blueprint: RAG + HTTP/JSON Microservice</strong>
@@ -5918,12 +5985,12 @@ fn main() {
 <article class="chapter-pane" id="chapter-pane-18" data-chapter="18" data-part="Part IV: Networking, Data, UI &amp; AI" data-title="Production Patterns &amp; Examples">
   <div class="chapter-intro">
 <h2 id="chapter-18"><a id="ch18"></a>18. Production Patterns &amp; Examples</h2>
-<p>This chapter demonstrates how <code>cfire</code>'s standard library modules compose into a single, zero-dependency binary and provides a complete engineering guide to the 16 canonical projects in <a href="file:///Users/memo/Programming/cfire/examples"><code>examples/</code></a>.</p>
+<p>This chapter demonstrates how <code>cfire</code>'s standard library modules compose into a single, zero-dependency binary and provides a complete engineering guide to the 17 canonical projects in <a href="file:///Users/memo/Programming/cfire/examples"><code>examples/</code></a>.</p>
   </div>
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 18 Topics (3)</span>
     <a href="#ch18-blueprint-rag-httpjson-microservice" class="topic-pill active" data-topic-pill="ch18-blueprint-rag-httpjson-microservice" onclick="navigateToSubhead('18', 'ch18-blueprint-rag-httpjson-microservice'); return false;">18.1: Blueprint: RAG + HTTP/JSON Microservice</a>
-    <a href="#ch18-canonical-projects-index-examples0116" class="topic-pill" data-topic-pill="ch18-canonical-projects-index-examples0116" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0116'); return false;">18.2: Canonical Projects Index (examples/01–16)</a>
+    <a href="#ch18-canonical-projects-index-examples0117" class="topic-pill" data-topic-pill="ch18-canonical-projects-index-examples0117" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0117'); return false;">18.2: Canonical Projects Index (examples/01–17)</a>
     <a href="#ch18-further-reference-module-index" class="topic-pill" data-topic-pill="ch18-further-reference-module-index" onclick="navigateToSubhead('18', 'ch18-further-reference-module-index'); return false;">18.3: Further Reference &amp; Module Index</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch18-blueprint-rag-httpjson-microservice" data-topic-id="ch18-blueprint-rag-httpjson-microservice" data-topic-title="Blueprint: RAG + HTTP/JSON Microservice">
@@ -5996,18 +6063,18 @@ fn main() -&gt; void! {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch17-level-3-model-context-protocol-mcpserver" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-level-3-model-context-protocol-mcpserver'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.6)</span>
-        <strong class="pager-title">Level 3 — Model Context Protocol (McpServer)</strong>
+      <a href="#ch17-hybrid-native-webview-applications-extwebui" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-hybrid-native-webview-applications-extwebui'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.7)</span>
+        <strong class="pager-title">Hybrid Native WebView Applications (ext:webui)</strong>
       </a>
-      <a href="#ch18-canonical-projects-index-examples0116" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0116'); return false;">
+      <a href="#ch18-canonical-projects-index-examples0117" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0117'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 18.2) &rarr;</span>
-        <strong class="pager-title">Canonical Projects Index (examples/01–16)</strong>
+        <strong class="pager-title">Canonical Projects Index (examples/01–17)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch18-canonical-projects-index-examples0116" data-topic-id="ch18-canonical-projects-index-examples0116" data-topic-title="Canonical Projects Index (examples/01–16)">
-<h3 class="guide-heading" id="ch18-canonical-projects-index-examples0116"><span class="heading-hash">#</span><span class="heading-text">Canonical Projects Index (<code>examples/01</code>–<code>16</code>)</span></h3>
+  <section class="guide-topic" id="topic-ch18-canonical-projects-index-examples0117" data-topic-id="ch18-canonical-projects-index-examples0117" data-topic-title="Canonical Projects Index (examples/01–17)">
+<h3 class="guide-heading" id="ch18-canonical-projects-index-examples0117"><span class="heading-hash">#</span><span class="heading-text">Canonical Projects Index (<code>examples/01</code>–<code>17</code>)</span></h3>
 <p>Every project in <a href="file:///Users/memo/Programming/cfire/examples"><code>examples/</code></a> is continuously verified by <code>make -C cfire test-examples</code> and can be run directly from the repository root:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
@@ -6032,6 +6099,7 @@ fn main() -&gt; void! {
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>ai.make_mcp_server</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>ext:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
+      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/17-webui-studio"><code>examples/17-webui-studio</code></a></td><td>Hybrid WebUI Studio</td><td>Wails/Tauri-style native WebView (<code>ext:webui</code>), typed <code>app.bind[T]</code> JSON-RPC 2.0, <code>window.backend</code> ES6 Proxy, <code>app://localhost/</code> VFS, offscreen <code>WKWebView</code> test (<code>--ios</code> &amp; desktop)</td><td><code>cfire run examples/17-webui-studio/main.cf</code></td></tr>
     </tbody>
   </table>
 </div>
@@ -6053,13 +6121,13 @@ fn main() -&gt; void! {
   <li><strong>LLM Context Snapshot</strong>: Feed <a href="file:///Users/memo/Programming/cfire/docs/LLMS.txt"><code>LLMS.txt</code></a> or start <code>cfire mcp</code> to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.</li>
 </ul>
     <div class="chapter-pager topic-pager">
-      <a href="#ch18-canonical-projects-index-examples0116" class="pager-card pager-prev" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0116'); return false;">
+      <a href="#ch18-canonical-projects-index-examples0117" class="pager-card pager-prev" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0117'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 18.2)</span>
-        <strong class="pager-title">Canonical Projects Index (examples/01–16)</strong>
+        <strong class="pager-title">Canonical Projects Index (examples/01–17)</strong>
       </a>
       <a href="reference.html" class="pager-card pager-next">
         <span class="pager-label">NEXT &rarr;</span>
-        <strong class="pager-title">Stdlib Reference (33 Modules)</strong>
+        <strong class="pager-title">Stdlib Reference (34 Modules)</strong>
       </a>
     </div>
   </section>
@@ -6070,7 +6138,7 @@ fn main() -&gt; void! {
     </a>
     <a href="reference.html" class="pager-card pager-next">
       <span class="pager-label">NEXT &rarr;</span>
-      <strong class="pager-title">Stdlib Reference (33 Modules)</strong>
+      <strong class="pager-title">Stdlib Reference (34 Modules)</strong>
     </a>
   </div>
 </article>
@@ -6230,12 +6298,13 @@ fn main() -&gt; void! {
         <li><a href="#ch17-level-1-tools-structured-output-extai" onclick="navigateToSubhead('17', 'ch17-level-1-tools-structured-output-extai'); return false;">17.4: Level 1 — Tools &amp; Structured Output (ext:ai)</a></li>
         <li><a href="#ch17-level-2-document-ingestion-vector-rag" onclick="navigateToSubhead('17', 'ch17-level-2-document-ingestion-vector-rag'); return false;">17.5: Level 2 — Document Ingestion &amp; Vector RAG</a></li>
         <li><a href="#ch17-level-3-model-context-protocol-mcpserver" onclick="navigateToSubhead('17', 'ch17-level-3-model-context-protocol-mcpserver'); return false;">17.6: Level 3 — Model Context Protocol (McpServer)</a></li>
+        <li><a href="#ch17-hybrid-native-webview-applications-extwebui" onclick="navigateToSubhead('17', 'ch17-hybrid-native-webview-applications-extwebui'); return false;">17.7: Hybrid Native WebView Applications (ext:webui)</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-18" style="display: none;">
       <ul class="toc-list">
         <li><a href="#ch18-blueprint-rag-httpjson-microservice" onclick="navigateToSubhead('18', 'ch18-blueprint-rag-httpjson-microservice'); return false;">18.1: Blueprint: RAG + HTTP/JSON Microservice</a></li>
-        <li><a href="#ch18-canonical-projects-index-examples0116" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0116'); return false;">18.2: Canonical Projects Index (examples/01–16)</a></li>
+        <li><a href="#ch18-canonical-projects-index-examples0117" onclick="navigateToSubhead('18', 'ch18-canonical-projects-index-examples0117'); return false;">18.2: Canonical Projects Index (examples/01–17)</a></li>
         <li><a href="#ch18-further-reference-module-index" onclick="navigateToSubhead('18', 'ch18-further-reference-module-index'); return false;">18.3: Further Reference &amp; Module Index</a></li>
       </ul>
     </div>
@@ -6277,7 +6346,7 @@ fn main() -&gt; void! {
   <div class="toc-quick-links">
     <div class="toc-header">QUICK LINKS</div>
     <ul class="toc-list">
-      <li><a href="reference.html">Stdlib Catalog (33 Modules) &rarr;</a></li>
+      <li><a href="reference.html">Stdlib Catalog (34 Modules) &rarr;</a></li>
       <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
       <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
       <li><a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub Repository &rarr;</a></li>

@@ -2981,4 +2981,254 @@ fn main() {
     std::println("--- PASS: test_performance_benchmarks");
 }
 
+struct WebuiTestMixReq {
+    std::int32_t channel{1};
+    double gain_db{0.0};
+    bool muted{false};
+};
+
+struct WebuiTestMixRes {
+    std::int32_t channel{1};
+    double effective_db{0.0};
+    std::string status{"ok"};
+};
+
+namespace cfire::json {
+template <>
+inline auto parse_struct<WebuiTestMixReq>(simdjson::ondemand::object obj) -> std::expected<WebuiTestMixReq, cfire::Error> {
+    WebuiTestMixReq out{};
+    CFIRE_TRY_ASSIGN(out.channel, cfire::json::get_i32(obj, "channel"));
+    CFIRE_TRY_ASSIGN(out.gain_db, cfire::json::get_f64(obj, "gain_db"));
+    CFIRE_TRY_ASSIGN(out.muted, cfire::json::get_bool(obj, "muted"));
+    return out;
+}
+
+template <>
+inline auto stringify_struct<WebuiTestMixRes>(const WebuiTestMixRes& val) -> std::string {
+    return std::format("{{\"channel\":{},\"effective_db\":{},\"status\":\"{}\"}}",
+        val.channel, val.effective_db, cfire::json::escape_string(val.status));
+}
+} // namespace cfire::json
+
+void test_webui_rpc_events_and_linux_backend([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_webui_rpc_events_and_linux_backend");
+
+    auto app = cfire::webui::new_app("Studio Desk", 1024, 720);
+    require(app.title() == "Studio Desk", "initial app title");
+
+    // 1. Typed struct RPC binding
+    app.bind<WebuiTestMixReq>("set_track", [&](const WebuiTestMixReq& req) -> std::expected<WebuiTestMixRes, cfire::Error> {
+        if (req.channel <= 0) {
+            return cfire::make_error("channel must be >= 1");
+        }
+        double eff = req.muted ? -96.0 : req.gain_db;
+        app.emit("meter:update", WebuiTestMixRes{req.channel, eff, req.muted ? "muted" : "active"});
+        return WebuiTestMixRes{req.channel, eff, req.muted ? "muted" : "active"};
+    });
+
+    // 2. Zero-arg action binding
+    int reset_count = 0;
+    app.bind_action("reset_desk", [&]() -> std::string {
+        ++reset_count;
+        return "desk_reset_ok";
+    });
+
+    // 3. Frontend event listener (`app.on`)
+    std::string last_fader_event;
+    app.on("fader:drag", [&](const std::string& payload) {
+        last_fader_event = payload;
+    });
+
+    // 4. Verify RPC execution via `call_rpc`
+    auto ok_res = app.call_rpc("set_track", R"({"channel":2,"gain_db":-4.5,"muted":false})");
+    require(ok_res.has_value(), "call_rpc(set_track) succeeds");
+    if (ok_res) {
+        require(ok_res->contains("\"channel\":2") && ok_res->contains("\"effective_db\":-4.5"),
+            "call_rpc serialized WebuiTestMixRes JSON");
+    }
+    require(app.emitted_events_count("meter:update") == 1, "app.emit recorded 1 meter:update event");
+    require(app.last_emitted_payload("meter:update").contains("\"status\":\"active\""),
+        "last_emitted_payload matches emitted struct");
+
+    auto err_res = app.call_rpc("set_track", R"({"channel":0,"gain_db":0.0,"muted":false})");
+    require(!err_res.has_value() && err_res.error().message().contains("channel must be >= 1"),
+        "call_rpc propagates fallible error");
+
+    auto act_res = app.call_rpc("reset_desk", "{}");
+    require(act_res.has_value() && *act_res == "\"desk_reset_ok\"" && reset_count == 1,
+        "bind_action executes and serializes string result");
+
+    // 5. Verify raw IPC JSON-RPC & event messages (`handle_ipc`)
+    app.handle_ipc(R"({"event":"fader:drag","data":{"ch":3,"db":-12.0}})");
+    require(last_fader_event.contains("\"ch\":3"), "app.on receives frontend event payload");
+
+    app.handle_ipc(R"({"__sys":"set_title","title":"Mastering Console v2"})");
+    require(app.title() == "Mastering Console v2", "__sys set_title updates window title");
+
+    // 6. Verify KV state store & VFS asset resolution
+    app.set_state("preset", "Warm Tape");
+    require(app.get_state("preset") == "Warm Tape", "get_state returns set_state value");
+    require(app.emitted_events_count("state:change") == 1, "set_state emits state:change event");
+
+    app.set_html("<!doctype html><html><body>Studio UI</body></html>");
+    require(app.resolve_asset_content("/").contains("Studio UI"), "resolve_asset_content('/') maps to /index.html");
+    require(app.resolve_asset_mime("/index.html") == "text/html; charset=utf-8", "MIME type for .html");
+
+    ScopedTempDir vfs_dir("webui_vfs");
+    (void)vfs_dir.file("app.css", "body { background: #000; }");
+    (void)vfs_dir.file("bundle.mjs", "export const x = 1;");
+    app.serve_dir(vfs_dir.path.string());
+    require(app.resolve_asset_content("/app.css").contains("background: #000"), "serve_dir resolves /app.css");
+    require(app.resolve_asset_mime("/bundle.mjs") == "text/javascript; charset=utf-8", "MIME type for .mjs");
+    require(app.resolve_asset_content("/../etc/passwd").empty(), "path traversal rejected in Asset VFS");
+
+    // 7. Verify Linux WebKitGTK Backend Compilation & IPC Dispatch via Mock GTK/WebKitGTK C Headers
+    {
+        std::string_view linux_mock_cpp = R"CPP(
+#define CFIRE_TEST_LINUX_WEBKITGTK_BACKEND 1
+#include <cstring>
+#include <cstdlib>
+#include <string>
+
+// Minimal mock declarations for GTK3 + WebKit2GTK C API
+using gboolean = int;
+using gint = int;
+using gint64 = long long;
+using gssize = long;
+using guint = unsigned int;
+using gpointer = void*;
+using GDestroyNotify = void(*)(gpointer);
+using GCallback = void(*)();
+
+#ifndef FALSE
+#define FALSE 0
+#endif
+#ifndef TRUE
+#define TRUE 1
+#endif
+constexpr gboolean G_SOURCE_REMOVE = 0;
+constexpr int G_PRIORITY_DEFAULT = 0;
+constexpr int GTK_WINDOW_TOPLEVEL = 0;
+constexpr int GTK_WIN_POS_CENTER = 1;
+constexpr int WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES = 0;
+constexpr int WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START = 0;
+
+struct GtkWidget {};
+struct GtkWindow {};
+struct GtkContainer {};
+struct GInputStream { std::string data; };
+struct WebKitURISchemeRequest { std::string path; std::string finished_body; std::string finished_mime; };
+struct WebKitUserContentManager {};
+struct WebKitUserScript {};
+struct WebKitWebContext {};
+struct WebKitWebView { std::string last_eval_js; std::string loaded_uri; };
+struct JSCValue { std::string str; };
+struct WebKitJavascriptResult { JSCValue val; };
+
+using WebKitURISchemeRequestCallback = void(*)(WebKitURISchemeRequest*, gpointer);
+
+static WebKitURISchemeRequestCallback g_registered_scheme_cb = nullptr;
+static gpointer g_registered_scheme_ud = nullptr;
+static WebKitWebView g_mock_webview{};
+static GtkWidget g_mock_window{};
+
+#define GTK_WINDOW(w) reinterpret_cast<GtkWindow*>(w)
+#define GTK_CONTAINER(w) reinterpret_cast<GtkContainer*>(w)
+#define WEBKIT_WEB_VIEW(w) (&g_mock_webview)
+#define G_CALLBACK(fn) reinterpret_cast<GCallback>(fn)
+
+inline gpointer g_malloc(std::size_t n) { return std::malloc(n); }
+inline void g_free(gpointer p) { std::free(p); }
+inline void g_object_unref(gpointer p) { delete static_cast<GInputStream*>(p); }
+
+inline GInputStream* g_memory_input_stream_new_from_data(const void* data, gssize len, GDestroyNotify destroy) {
+    auto* s = new GInputStream{};
+    if (data && len > 0) s->data.assign(static_cast<const char*>(data), static_cast<std::size_t>(len));
+    if (destroy) destroy(const_cast<void*>(data));
+    return s;
+}
+
+inline const char* webkit_uri_scheme_request_get_path(WebKitURISchemeRequest* req) { return req->path.c_str(); }
+inline void webkit_uri_scheme_request_finish(WebKitURISchemeRequest* req, GInputStream* stream, gint64, const char* mime) {
+    req->finished_body = stream->data;
+    req->finished_mime = mime ? mime : "";
+}
+
+inline JSCValue* webkit_javascript_result_get_js_value(WebKitJavascriptResult* r) { return &r->val; }
+inline gboolean jsc_value_is_string(JSCValue*) { return TRUE; }
+inline char* jsc_value_to_string(JSCValue* v) {
+    char* out = static_cast<char*>(g_malloc(v->str.size() + 1));
+    std::memcpy(out, v->str.c_str(), v->str.size() + 1);
+    return out;
+}
+
+inline void gtk_main_quit() {}
+inline void webkit_web_view_evaluate_javascript(WebKitWebView* wv, const char* script, gssize, const char*, const char*, void*, void*, void*) {
+    if (wv && script) wv->last_eval_js = script;
+}
+inline guint g_idle_add_full(gint, gboolean(*fn)(gpointer), gpointer data, GDestroyNotify) {
+    if (fn) fn(data);
+    return 1;
+}
+inline gboolean gtk_init_check(int*, char***) { return TRUE; }
+inline GtkWidget* gtk_window_new(int) { return &g_mock_window; }
+inline void gtk_window_set_title(GtkWindow*, const char*) {}
+inline void gtk_window_set_default_size(GtkWindow*, gint, gint) {}
+inline void gtk_window_set_position(GtkWindow*, int) {}
+inline void gtk_window_set_decorated(GtkWindow*, gboolean) {}
+inline void gtk_window_resize(GtkWindow*, gint, gint) {}
+inline void gtk_window_fullscreen(GtkWindow*) {}
+inline void gtk_window_unfullscreen(GtkWindow*) {}
+inline void gtk_window_iconify(GtkWindow*) {}
+inline void gtk_window_maximize(GtkWindow*) {}
+inline void gtk_window_unmaximize(GtkWindow*) {}
+inline void g_signal_connect(gpointer, const char*, GCallback, gpointer) {}
+inline WebKitWebContext* webkit_web_context_get_default() { return nullptr; }
+inline void webkit_web_context_register_uri_scheme(WebKitWebContext*, const char*, WebKitURISchemeRequestCallback cb, gpointer ud, GDestroyNotify) {
+    g_registered_scheme_cb = cb;
+    g_registered_scheme_ud = ud;
+}
+inline WebKitUserContentManager* webkit_user_content_manager_new() { return nullptr; }
+inline WebKitUserScript* webkit_user_script_new(const char*, int, int, const char* const*, const char* const*) { return nullptr; }
+inline void webkit_user_content_manager_add_script(WebKitUserContentManager*, WebKitUserScript*) {}
+inline void webkit_user_script_unref(WebKitUserScript*) {}
+inline void webkit_user_content_manager_register_script_message_handler(WebKitUserContentManager*, const char*) {}
+inline GtkWidget* webkit_web_view_new_with_user_content_manager(WebKitUserContentManager*) { return reinterpret_cast<GtkWidget*>(&g_mock_webview); }
+inline void gtk_container_add(GtkContainer*, GtkWidget*) {}
+inline void webkit_web_view_load_uri(WebKitWebView* wv, const char* uri) { if (wv && uri) wv->loaded_uri = uri; }
+inline void gtk_widget_show_all(GtkWidget*) {}
+inline void gtk_main() {
+    // Exercise custom URI scheme callback (`app://localhost/index.html`)
+    if (g_registered_scheme_cb) {
+        WebKitURISchemeRequest req{"/index.html", "", ""};
+        g_registered_scheme_cb(&req, g_registered_scheme_ud);
+        if (req.finished_body.find("Linux WebKitGTK Ready") == std::string::npos) std::exit(2);
+    }
+}
+
+#include "core/webui.hpp"
+
+int main() {
+    auto app = cfire::webui::new_app("Linux Test", 800, 600);
+    app.set_html("<html><body>Linux WebKitGTK Ready</body></html>");
+    int ping_calls = 0;
+    app.bind_action("ping", [&]() -> std::string {
+        ++ping_calls;
+        return "pong";
+    });
+    app.run_linux_webkitgtk();
+    if (g_mock_webview.loaded_uri != "app://localhost/index.html") return 3;
+    auto r = app.call_rpc("ping", "{}");
+    if (!r || *r != "\"pong\"" || ping_calls != 1) return 4;
+    return 0;
+}
+)CPP";
+        auto linux_res = compile_and_run_cpp(linux_mock_cpp, rt_dir, "webui_linux_mock");
+        linux_res.assert_ok("Linux WebKitGTK backend mock-header compilation and URI/IPC verification");
+    }
+
+    std::println("--- PASS: test_webui_rpc_events_and_linux_backend");
+}
+
+
 

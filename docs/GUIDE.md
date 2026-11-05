@@ -108,9 +108,9 @@ sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-d
 ```
 
 ### Package Namespaces & System Dependency Matrix
-`cfire` organizes its 33 built-in modules into three explicit package namespaces:
+`cfire` organizes its 34 built-in modules into three explicit package namespaces:
 - **`core:*` (Foundational Core — 21 Modules)**: Pure ISO C++23 header-only primitives (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:fs`, `core:os`, `core:time`, `core:math`, `core:rand`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:crypto/*`, `core:encoding/*`) with zero external C/OS library dependencies.
-- **`ext:*` (Domain & Platform Extensions — 10 Opt-In Modules)**: Domain and platform engines (`ext:json`, `ext:compress/zstd`, `ext:db/sqlite`, `ext:net`, `ext:net/url`, `ext:net/tls`, `ext:net/http`, `ext:net/websocket`, `ext:audio`, `ext:ai`) that query `pkg-config` and standard system paths only when imported, with built-in portable fallbacks when an optional system library is absent.
+- **`ext:*` (Domain & Platform Extensions — 11 Opt-In Modules)**: Domain and platform engines (`ext:json`, `ext:compress/zstd`, `ext:db/sqlite`, `ext:net`, `ext:net/url`, `ext:net/tls`, `ext:net/http`, `ext:net/websocket`, `ext:audio`, `ext:ai`, `ext:webui`) that query `pkg-config` and standard system paths only when imported, with built-in portable fallbacks when an optional system library is absent.
 - **`vendor:*` (Bundled Third-Party C/C++ Engines — 2 Modules)**: `vendor:raylib` and `vendor:raygui`.
 
 | Extension / Vendor Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
@@ -121,6 +121,7 @@ sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-d
 | `ext:net/tls` & `ext:net/http` | `libssl` / `libcrypto` | `openssl` | Dynamic `dlopen("libssl")` on Desktop/Linux; Apple `Foundation` `NSURLConnection` on macOS/iOS; browser `XMLHttpRequest` on WASM |
 | `ext:audio` | `CoreAudio` / `libasound2` | `alsa` | `AudioToolbox.framework` on macOS/iOS; dynamic `dlopen("libasound.so.2")` on Linux; `WebAudio` on WASM; deterministic software mixer in headless CI |
 | `ext:ai` (OCR & PDF) | `Vision` / `libtesseract` / `pdftotext` | `tesseract` | `Vision.framework` & `PDFKit` on macOS/iOS; `dlopen("libtesseract.so.5")` & `pdftotext` on Linux; pure C++23 `/FlateDecode` PDF parser & PNG/JPEG metadata reader on all targets |
+| `ext:webui` | `WebKit.framework` / `webkit2gtk-4.1` | `webkit2gtk-4.1` | `WKWebView` + `Cocoa` on macOS, `WKWebView` + `UIKit` on iOS, `WebKitGTK` + `GTK3` on Linux, and deterministic headless RPC/Event dispatcher in CI |
 | `vendor:raylib` & `vendor:raygui` | Bundled in `runtime/` | None required | Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and `UIKit` + `OpenGLES3` on iOS |
 
 ### Cross-Compilation Target Setup
@@ -2513,9 +2514,66 @@ MCP JSON-RPC response contains SIMD: true
 
 ---
 
+### Hybrid Native WebView Applications (`ext:webui`)
+
+`import "ext:webui"` provides a Wails/Tauri-style hybrid application engine that pairs a native OS WebView (`WKWebView` on macOS and iOS, `WebKitGTK` on Linux) with a two-way typed JSON-RPC 2.0 and pub/sub event bridge—without bundling Chromium/Electron or opening a local TCP port.
+
+#### Architecture & Zero-Port Security Model
+- **Custom Scheme Asset Serving (`app://localhost/`)**: Frontend HTML/CSS/JS assets registered via `app.serve_dir("./ui")` or `app.embed_asset(path, content, mime)` are served in-memory via `WKURLSchemeHandler` (macOS/iOS) and `webkit_web_context_register_uri_scheme` (Linux) with strict path-traversal rejection (`..` segments blocked).
+- **Zero-Boilerplate Typed RPC (`app.bind[T]`)**: Importing `ext:webui` automatically enables compile-time JSON struct reflection (`cfire::json::parse_struct<T>` / `stringify_struct<T>`) for every struct in your package. Calling `app.bind[Req]("method") |req| { ... }` exposes `await window.backend.method(args)` (via ES6 `Proxy`) and `await window.invoke("method", args)` in JavaScript.
+- **Wails/Tauri Preload Runtime (`window.runtime`)**: Automatically injects `window.runtime.EventsOn`, `EventsOnce`, `EventsOff`, `EventsEmit`, `WindowSetTitle`, `WindowSetSize`, `WindowFullscreen`, `WindowMinimise`, `WindowMaximise`, `WindowCenter`, `Quit`, and frameless window dragging via CSS `--wails-draggable: drag` (or `-webkit-app-region: drag`).
+- **Deterministic Headless & Offscreen Testing**: Verify RPC handlers and pub/sub events in milliseconds with `app.call_rpc(method, json)?` and `app.dispatch_event(topic, json)`, or run a real offscreen `WKWebView` DOM/JS integration test on macOS via `app.run_webview_test(js_assertion)?`.
+
+```cfire
+package main
+
+import "ext:webui"
+
+type TrackMix struct {
+    Channel: i64  `json:"channel"`
+    Name:    str  `json:"name"`
+    GainDb:  f64  `json:"gain_db"`
+    Muted:   bool `json:"muted"`
+}
+
+type MixResult struct {
+    Channel: i64  `json:"channel"`
+    PeakPct: f64  `json:"peak_pct"`
+    Clipped: bool `json:"clipped"`
+    Status:  str  `json:"status"`
+}
+
+fn main() -> void! {
+    mut app := webui.new_app("cfire Studio", 1024, 680)
+    app.serve_dir("examples/17-webui-studio/ui")
+
+    app.bind[TrackMix]("update_track") |req| {
+        mut peak := 75.0 + req.GainDb * 2.5
+        mut label := "ACTIVE"
+        if req.Muted {
+            peak = 0.0
+            label = "MUTED"
+        }
+        return MixResult{
+            Channel: req.Channel,
+            PeakPct: peak,
+            Clipped: peak >= 100.0,
+            Status:  label,
+        }
+    }
+
+    res := app.call_rpc("update_track", "{\"channel\":1,\"name\":\"Synth\",\"gain_db\":4.0,\"muted\":false}")?
+    println("RPC response: {}", res)
+}
+```
+
+Scaffold a new hybrid WebUI project in one command with `cfire new my-app --webui` (or `cfire init --webui`), run it natively on desktop via `cfire run`, or launch it inside the iOS Simulator via `cfire run --ios`.
+
+---
+
 ## Chapter 18: Production Patterns & Examples
 
-This chapter demonstrates how `cfire`'s standard library modules compose into a single, zero-dependency binary and provides a complete engineering guide to the 16 canonical projects in [`examples/`](file:///Users/memo/Programming/cfire/examples).
+This chapter demonstrates how `cfire`'s standard library modules compose into a single, zero-dependency binary and provides a complete engineering guide to the 17 canonical projects in [`examples/`](file:///Users/memo/Programming/cfire/examples).
 
 ### Blueprint: RAG + HTTP/JSON Microservice
 
@@ -2589,7 +2647,7 @@ fn main() -> void! {
 HTTP 200 -> top hit: 'Lock-Free Audio'
 ```
 
-### Canonical Projects Index (`examples/01`–`16`)
+### Canonical Projects Index (`examples/01`–`17`)
 
 Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is continuously verified by `make -C cfire test-examples` and can be run directly from the repository root:
 
@@ -2611,6 +2669,7 @@ Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is
 | [`examples/14-ai-rag-sqlite`](file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |
 | [`examples/15-mcp-server`](file:///Users/memo/Programming/cfire/examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`ai.make_mcp_server`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
 | [`examples/16-audio-synth`](file:///Users/memo/Programming/cfire/examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`ext:audio`) | `cfire run examples/16-audio-synth/main.cf` |
+| [`examples/17-webui-studio`](file:///Users/memo/Programming/cfire/examples/17-webui-studio) | Hybrid WebUI Studio | Wails/Tauri-style native WebView (`ext:webui`), typed `app.bind[T]` JSON-RPC 2.0, `window.backend` ES6 Proxy, `app://localhost/` VFS, offscreen `WKWebView` test (`--ios` & desktop) | `cfire run examples/17-webui-studio/main.cf` |
 
 ### Further Reference & Module Index
 

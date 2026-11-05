@@ -1641,7 +1641,7 @@ tr:hover td { background: #1F242C; }
           <div id="ref-search-results" class="search-results-dropdown"></div>
         </div>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0; margin-bottom: 0.75rem;">
-          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 33 Modules)</strong></a></li>
+          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 34 Modules)</strong></a></li>
         </ul>
         <h4>Foundational Core (21)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
@@ -1667,7 +1667,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-time" id="nav-pane-mod-time" onclick="navigateToRefPane('mod-time'); return false;"><code>core:time</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
           <li class="nav-item"><a href="#mod-unicode" id="nav-pane-mod-unicode" onclick="navigateToRefPane('mod-unicode'); return false;"><code>core:unicode</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
         </ul>
-        <h4 style="margin-top:1rem;">Domain Extensions (10)</h4>
+        <h4 style="margin-top:1rem;">Domain Extensions (11)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#mod-ai" id="nav-pane-mod-ai" onclick="navigateToRefPane('mod-ai'); return false;"><code>ext:ai</code> <span style="color:var(--muted);font-size:0.75rem;">(38)</span></a></li>
           <li class="nav-item"><a href="#mod-audio" id="nav-pane-mod-audio" onclick="navigateToRefPane('mod-audio'); return false;"><code>ext:audio</code> <span style="color:var(--muted);font-size:0.75rem;">(25)</span></a></li>
@@ -1679,6 +1679,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-tls" id="nav-pane-mod-tls" onclick="navigateToRefPane('mod-tls'); return false;"><code>ext:net/tls</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-url" id="nav-pane-mod-url" onclick="navigateToRefPane('mod-url'); return false;"><code>ext:net/url</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-websocket" id="nav-pane-mod-websocket" onclick="navigateToRefPane('mod-websocket'); return false;"><code>ext:net/websocket</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
+          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(35)</span></a></li>
         </ul>
         <h4 style="margin-top:1rem;">Vendor Libraries (2)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
@@ -1727,16 +1728,16 @@ tr:hover td { background: #1F242C; }
           <span>/</span>
           <a href="#overview" onclick="navigateToRefPane('overview'); return false;">Stdlib Reference</a>
           <span>/</span>
-          <span class="crumb-current" id="ref-active-crumb">Overview (All 33 Modules)</span>
+          <span class="crumb-current" id="ref-active-crumb">Overview (All 34 Modules)</span>
         </div>
         <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
           <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
-          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (33)</button>
+          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (34)</button>
         </div>
       </div>
-      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 33 Modules)">
+      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 34 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">33 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (10 opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 20 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">34 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (11 opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 20 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Strings, Unicode, Regex &amp; Containers</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
@@ -2065,10 +2066,10 @@ fn main() {
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#overview" class="pager-card prev" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">&larr; Overview</span>
-            <span class="pager-title">All 33 Standard Library Modules</span>
+            <span class="pager-title">All 34 Standard Library Modules</span>
           </a>
           <a href="#mod-collections" class="pager-card next" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">Next Module (2/33) &rarr;</span>
+            <span class="pager-dir">Next Module (2/34) &rarr;</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, Deque)</span>
           </a>
         </nav>
@@ -2111,11 +2112,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-cli" class="pager-card prev" onclick="navigateToRefPane('mod-cli'); return false;">
-            <span class="pager-dir">&larr; Previous Module (1/33)</span>
+            <span class="pager-dir">&larr; Previous Module (1/34)</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser</span>
           </a>
           <a href="#mod-aes" class="pager-card next" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">Next Module (3/33) &rarr;</span>
+            <span class="pager-dir">Next Module (3/34) &rarr;</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
         </nav>
@@ -2154,11 +2155,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-collections" class="pager-card prev" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">&larr; Previous Module (2/33)</span>
+            <span class="pager-dir">&larr; Previous Module (2/34)</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, Deque)</span>
           </a>
           <a href="#mod-blake3" class="pager-card next" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">Next Module (4/33) &rarr;</span>
+            <span class="pager-dir">Next Module (4/34) &rarr;</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
         </nav>
@@ -2184,11 +2185,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-aes" class="pager-card prev" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">&larr; Previous Module (3/33)</span>
+            <span class="pager-dir">&larr; Previous Module (3/34)</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
           <a href="#mod-hmac" class="pager-card next" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">Next Module (5/33) &rarr;</span>
+            <span class="pager-dir">Next Module (5/34) &rarr;</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256</span>
           </a>
         </nav>
@@ -2223,11 +2224,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-blake3" class="pager-card prev" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">&larr; Previous Module (4/33)</span>
+            <span class="pager-dir">&larr; Previous Module (4/34)</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
           <a href="#mod-sha256" class="pager-card next" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">Next Module (6/33) &rarr;</span>
+            <span class="pager-dir">Next Module (6/34) &rarr;</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
         </nav>
@@ -2256,11 +2257,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hmac" class="pager-card prev" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">&larr; Previous Module (5/33)</span>
+            <span class="pager-dir">&larr; Previous Module (5/34)</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256 &amp; RFC 5869 HKDF-SHA256</span>
           </a>
           <a href="#mod-base64" class="pager-card next" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">Next Module (7/33) &rarr;</span>
+            <span class="pager-dir">Next Module (7/34) &rarr;</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
         </nav>
@@ -2292,11 +2293,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sha256" class="pager-card prev" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">&larr; Previous Module (6/33)</span>
+            <span class="pager-dir">&larr; Previous Module (6/34)</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
           <a href="#mod-csv" class="pager-card next" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">Next Module (8/33) &rarr;</span>
+            <span class="pager-dir">Next Module (8/34) &rarr;</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
         </nav>
@@ -2331,11 +2332,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-base64" class="pager-card prev" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">&larr; Previous Module (7/33)</span>
+            <span class="pager-dir">&larr; Previous Module (7/34)</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
           <a href="#mod-hex" class="pager-card next" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">Next Module (9/33) &rarr;</span>
+            <span class="pager-dir">Next Module (9/34) &rarr;</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
         </nav>
@@ -2367,11 +2368,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-csv" class="pager-card prev" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">&larr; Previous Module (8/33)</span>
+            <span class="pager-dir">&larr; Previous Module (8/34)</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
           <a href="#mod-fs" class="pager-card next" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">Next Module (10/33) &rarr;</span>
+            <span class="pager-dir">Next Module (10/34) &rarr;</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
         </nav>
@@ -2426,11 +2427,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hex" class="pager-card prev" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (9/33)</span>
+            <span class="pager-dir">&larr; Previous Module (9/34)</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
           <a href="#mod-log" class="pager-card next" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">Next Module (11/33) &rarr;</span>
+            <span class="pager-dir">Next Module (11/34) &rarr;</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
         </nav>
@@ -2465,11 +2466,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-fs" class="pager-card prev" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">&larr; Previous Module (10/33)</span>
+            <span class="pager-dir">&larr; Previous Module (10/34)</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
           <a href="#mod-math" class="pager-card next" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">Next Module (12/33) &rarr;</span>
+            <span class="pager-dir">Next Module (12/34) &rarr;</span>
             <span class="pager-title">core:math &mdash; Numeric &amp; Floating-Point Utilities</span>
           </a>
         </nav>
@@ -2498,11 +2499,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-log" class="pager-card prev" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">&larr; Previous Module (11/33)</span>
+            <span class="pager-dir">&larr; Previous Module (11/34)</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
           <a href="#mod-os" class="pager-card next" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">Next Module (13/33) &rarr;</span>
+            <span class="pager-dir">Next Module (13/34) &rarr;</span>
             <span class="pager-title">core:os &mdash; Environment, Working Directory &amp; Subprocesses</span>
           </a>
         </nav>
@@ -2537,11 +2538,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-math" class="pager-card prev" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">&larr; Previous Module (12/33)</span>
+            <span class="pager-dir">&larr; Previous Module (12/34)</span>
             <span class="pager-title">core:math &mdash; Numeric &amp; Floating-Point Utilities</span>
           </a>
           <a href="#mod-rand" class="pager-card next" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">Next Module (14/33) &rarr;</span>
+            <span class="pager-dir">Next Module (14/34) &rarr;</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
         </nav>
@@ -2571,11 +2572,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-os" class="pager-card prev" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">&larr; Previous Module (13/33)</span>
+            <span class="pager-dir">&larr; Previous Module (13/34)</span>
             <span class="pager-title">core:os &mdash; Environment, Working Directory &amp; Subprocesses</span>
           </a>
           <a href="#mod-regex" class="pager-card next" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">Next Module (15/33) &rarr;</span>
+            <span class="pager-dir">Next Module (15/34) &rarr;</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
         </nav>
@@ -2611,11 +2612,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rand" class="pager-card prev" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">&larr; Previous Module (14/33)</span>
+            <span class="pager-dir">&larr; Previous Module (14/34)</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
           <a href="#mod-sort" class="pager-card next" onclick="navigateToRefPane('mod-sort'); return false;">
-            <span class="pager-dir">Next Module (16/33) &rarr;</span>
+            <span class="pager-dir">Next Module (16/34) &rarr;</span>
             <span class="pager-title">core:sort &mdash; Slice Sorting &amp; Binary Search</span>
           </a>
         </nav>
@@ -2649,11 +2650,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-regex" class="pager-card prev" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (15/33)</span>
+            <span class="pager-dir">&larr; Previous Module (15/34)</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
           <a href="#mod-str" class="pager-card next" onclick="navigateToRefPane('mod-str'); return false;">
-            <span class="pager-dir">Next Module (17/33) &rarr;</span>
+            <span class="pager-dir">Next Module (17/34) &rarr;</span>
             <span class="pager-title">core:str &mdash; UTF-8 String Manipulation</span>
           </a>
         </nav>
@@ -2698,11 +2699,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sort" class="pager-card prev" onclick="navigateToRefPane('mod-sort'); return false;">
-            <span class="pager-dir">&larr; Previous Module (16/33)</span>
+            <span class="pager-dir">&larr; Previous Module (16/34)</span>
             <span class="pager-title">core:sort &mdash; Slice Sorting &amp; Binary Search</span>
           </a>
           <a href="#mod-sync" class="pager-card next" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">Next Module (18/33) &rarr;</span>
+            <span class="pager-dir">Next Module (18/34) &rarr;</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels</span>
           </a>
         </nav>
@@ -2749,11 +2750,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-str" class="pager-card prev" onclick="navigateToRefPane('mod-str'); return false;">
-            <span class="pager-dir">&larr; Previous Module (17/33)</span>
+            <span class="pager-dir">&larr; Previous Module (17/34)</span>
             <span class="pager-title">core:str &mdash; UTF-8 String Manipulation</span>
           </a>
           <a href="#mod-context" class="pager-card next" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">Next Module (19/33) &rarr;</span>
+            <span class="pager-dir">Next Module (19/34) &rarr;</span>
             <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
         </nav>
@@ -2792,11 +2793,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sync" class="pager-card prev" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">&larr; Previous Module (18/33)</span>
+            <span class="pager-dir">&larr; Previous Module (18/34)</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels</span>
           </a>
           <a href="#mod-time" class="pager-card next" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">Next Module (20/33) &rarr;</span>
+            <span class="pager-dir">Next Module (20/34) &rarr;</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
         </nav>
@@ -2835,11 +2836,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-context" class="pager-card prev" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">&larr; Previous Module (19/33)</span>
+            <span class="pager-dir">&larr; Previous Module (19/34)</span>
             <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
           <a href="#mod-unicode" class="pager-card next" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">Next Module (21/33) &rarr;</span>
+            <span class="pager-dir">Next Module (21/34) &rarr;</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
         </nav>
@@ -2879,11 +2880,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-time" class="pager-card prev" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">&larr; Previous Module (20/33)</span>
+            <span class="pager-dir">&larr; Previous Module (20/34)</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
           <a href="#mod-ai" class="pager-card next" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">Next Module (22/33) &rarr;</span>
+            <span class="pager-dir">Next Module (22/34) &rarr;</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Document Ingestion &amp; MCP</span>
           </a>
         </nav>
@@ -2978,11 +2979,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-unicode" class="pager-card prev" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">&larr; Previous Module (21/33)</span>
+            <span class="pager-dir">&larr; Previous Module (21/34)</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
           <a href="#mod-audio" class="pager-card next" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">Next Module (23/33) &rarr;</span>
+            <span class="pager-dir">Next Module (23/34) &rarr;</span>
             <span class="pager-title">ext:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
           </a>
         </nav>
@@ -3047,11 +3048,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-ai" class="pager-card prev" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">&larr; Previous Module (22/33)</span>
+            <span class="pager-dir">&larr; Previous Module (22/34)</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Document Ingestion &amp; MCP</span>
           </a>
           <a href="#mod-zstd" class="pager-card next" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">Next Module (24/33) &rarr;</span>
+            <span class="pager-dir">Next Module (24/34) &rarr;</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
         </nav>
@@ -3084,11 +3085,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-audio" class="pager-card prev" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">&larr; Previous Module (23/33)</span>
+            <span class="pager-dir">&larr; Previous Module (23/34)</span>
             <span class="pager-title">ext:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
           </a>
           <a href="#mod-sqlite" class="pager-card next" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">Next Module (25/33) &rarr;</span>
+            <span class="pager-dir">Next Module (25/34) &rarr;</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 with WAL, Vector Search &amp; Row Mapping</span>
           </a>
         </nav>
@@ -3138,11 +3139,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-zstd" class="pager-card prev" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">&larr; Previous Module (24/33)</span>
+            <span class="pager-dir">&larr; Previous Module (24/34)</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
           <a href="#mod-json" class="pager-card next" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">Next Module (26/33) &rarr;</span>
+            <span class="pager-dir">Next Module (26/34) &rarr;</span>
             <span class="pager-title">ext:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
         </nav>
@@ -3188,11 +3189,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sqlite" class="pager-card prev" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">&larr; Previous Module (25/33)</span>
+            <span class="pager-dir">&larr; Previous Module (25/34)</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 with WAL, Vector Search &amp; Row Mapping</span>
           </a>
           <a href="#mod-net" class="pager-card next" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">Next Module (27/33) &rarr;</span>
+            <span class="pager-dir">Next Module (27/34) &rarr;</span>
             <span class="pager-title">ext:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
         </nav>
@@ -3235,11 +3236,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-json" class="pager-card prev" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">&larr; Previous Module (26/33)</span>
+            <span class="pager-dir">&larr; Previous Module (26/34)</span>
             <span class="pager-title">ext:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
           <a href="#mod-http" class="pager-card next" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">Next Module (28/33) &rarr;</span>
+            <span class="pager-dir">Next Module (28/34) &rarr;</span>
             <span class="pager-title">ext:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
         </nav>
@@ -3314,11 +3315,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-net" class="pager-card prev" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">&larr; Previous Module (27/33)</span>
+            <span class="pager-dir">&larr; Previous Module (27/34)</span>
             <span class="pager-title">ext:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
           <a href="#mod-tls" class="pager-card next" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">Next Module (29/33) &rarr;</span>
+            <span class="pager-dir">Next Module (29/34) &rarr;</span>
             <span class="pager-title">ext:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
         </nav>
@@ -3359,11 +3360,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-http" class="pager-card prev" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">&larr; Previous Module (28/33)</span>
+            <span class="pager-dir">&larr; Previous Module (28/34)</span>
             <span class="pager-title">ext:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
           <a href="#mod-url" class="pager-card next" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">Next Module (30/33) &rarr;</span>
+            <span class="pager-dir">Next Module (30/34) &rarr;</span>
             <span class="pager-title">ext:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
         </nav>
@@ -3395,11 +3396,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-tls" class="pager-card prev" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">&larr; Previous Module (29/33)</span>
+            <span class="pager-dir">&larr; Previous Module (29/34)</span>
             <span class="pager-title">ext:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
           <a href="#mod-websocket" class="pager-card next" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">Next Module (31/33) &rarr;</span>
+            <span class="pager-dir">Next Module (31/34) &rarr;</span>
             <span class="pager-title">ext:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
         </nav>
@@ -3456,11 +3457,113 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-url" class="pager-card prev" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">&larr; Previous Module (30/33)</span>
+            <span class="pager-dir">&larr; Previous Module (30/34)</span>
             <span class="pager-title">ext:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
+          <a href="#mod-webui" class="pager-card next" onclick="navigateToRefPane('mod-webui'); return false;">
+            <span class="pager-dir">Next Module (32/34) &rarr;</span>
+            <span class="pager-title">ext:webui &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</span>
+          </a>
+        </nav>
+      </article>
+      <article class="ref-pane" id="ref-pane-mod-webui" data-pane-id="mod-webui" data-pane-title="ext:webui — Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework">
+        <h2 id="mod-webui" style="margin-top:0.25rem;"><code>import "ext:webui"</code> &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</h2>
+        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 35 exported functions</small></p>
+        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
+        <pre><code>package main
+
+import &quot;ext:webui&quot;
+
+type TrackMixReq struct {
+    channel: i32  `json:&quot;channel&quot;`
+    gain_db: f64  `json:&quot;gain_db&quot;`
+    muted:   bool `json:&quot;muted&quot;`
+}
+
+type TrackStatusRes struct {
+    channel:      i32 `json:&quot;channel&quot;`
+    effective_db: f64 `json:&quot;effective_db&quot;`
+    status:       str `json:&quot;status&quot;`
+}
+
+fn main() {
+    mut app := webui.new_app(&quot;Pocket Mastering Studio&quot;, 960, 640)
+    defer app.close()
+
+    app.serve_dir(&quot;./ui&quot;)
+    app.set_dark_mode(true)
+
+    // Bind a typed cfire struct handler callable from JS via `await window.backend.set_track({...})`
+    app.bind[TrackMixReq](&quot;set_track&quot;) |req| {
+        mut eff := req.gain_db
+        mut label := &quot;active&quot;
+        if req.muted {
+            eff = -96.0
+            label = &quot;muted&quot;
+        }
+        res := TrackStatusRes{
+            channel:      req.channel,
+            effective_db: eff,
+            status:       label,
+        }
+        app.emit(&quot;meter:peak&quot;, res)
+        return res
+    }
+
+    // Listen for live frontend events (`window.runtime.EventsEmit(&quot;fader:input&quot;, ...)`)
+    app.on(&quot;fader:input&quot;) |payload| {
+        app.set_state(&quot;last_fader&quot;, payload)
+    }
+
+    app.run()
+}</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+          <tbody>
+            <tr><td><code>fn new_app(title: str = &quot;cfire WebUI&quot;, width: i32 = 960, height: i32 = 640) -&gt; App</code></td><td><code>cfire::webui::new_app(title, width, height)</code></td><td>Creates a new native WebView application instance with initial window title and dimensions.<br/><code>mut app := webui.new_app(&quot;Studio Desk&quot;, 980, 640)</code></td></tr>
+            <tr><td><code>fn (mut app: App) bind[T](name: str, handler: fn(T) -&gt; any!)</code></td><td><code>app.bind&lt;T&gt;(name, handler)</code></td><td>Binds a typed <code>cfire</code> closure to <code>window.backend.&lt;name&gt;(params)</code> and <code>window.invoke(name, params)</code>, automatically deserializing incoming JSON into struct <code>T</code> and serializing the return value.<br/><code>app.bind[TrackMix](&quot;set_track&quot;) |req| { return compute_mix(req) }</code></td></tr>
+            <tr><td><code>fn (mut app: App) bind_action(name: str, handler: fn() -&gt; any!)</code></td><td><code>app.bind_action(name, handler)</code></td><td>Binds a zero-argument action closure to <code>window.backend.&lt;name&gt;()</code>.<br/><code>app.bind_action(&quot;reset_desk&quot;) || { return &quot;ok&quot; }</code></td></tr>
+            <tr><td><code>fn (mut app: App) bind_raw(name: str, handler: fn(str) -&gt; str!)</code></td><td><code>app.bind_raw(name, handler)</code></td><td>Binds a raw JSON string RPC handler to <code>window.backend.&lt;name&gt;(params)</code>.<br/><code>app.bind_raw(&quot;raw_op&quot;) |raw_json| { return raw_json }</code></td></tr>
+            <tr><td><code>fn (mut app: App) on(event: str, handler: fn(str))</code></td><td><code>app.on(event, handler)</code></td><td>Subscribes a backend callback to frontend events emitted via <code>window.runtime.EventsEmit(event, data)</code>.<br/><code>app.on(&quot;fader:input&quot;) |payload| { println(&quot;{}&quot;, payload) }</code></td></tr>
+            <tr><td><code>fn (mut app: App) emit(event: str, payload: any)</code></td><td><code>app.emit(event, payload)</code></td><td>Serializes <code>payload</code> as JSON and dispatches it to all frontend <code>window.runtime.EventsOn(event, fn)</code> listeners.<br/><code>app.emit(&quot;meter:peak&quot;, status)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_state(key: str, val: str)</code></td><td><code>app.set_state(key, val)</code></td><td>Updates a reactive key-value state entry and broadcasts a <code>state:change</code> event (<code>{key, value}</code>) to the frontend.<br/><code>app.set_state(&quot;preset&quot;, &quot;Warm Tape&quot;)</code></td></tr>
+            <tr><td><code>fn (app: App) get_state(key: str) -&gt; str</code></td><td><code>app.get_state(key)</code></td><td>Reads the current string value for <code>key</code> from the application's state store.<br/><code>p := app.get_state(&quot;preset&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_html(html: str)</code></td><td><code>app.set_html(html)</code></td><td>Registers inline HTML content as <code>/index.html</code> on the <code>app://localhost/</code> virtual filesystem.<br/><code>app.set_html(&quot;&lt;!doctype html&gt;&lt;html&gt;&lt;body&gt;&lt;h1&gt;Hello&lt;/h1&gt;&lt;/body&gt;&lt;/html&gt;&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) embed_asset(path: str, content: str, mime: str = &quot;&quot;)</code></td><td><code>app.embed_asset(path, content, mime)</code></td><td>Embeds an in-memory asset (<code>.html</code>, <code>.css</code>, <code>.js</code>, <code>.svg</code>, etc.) into the <code>app://localhost/</code> virtual filesystem.<br/><code>app.embed_asset(&quot;/app.css&quot;, &quot;body { background: #111; }&quot;, &quot;text/css&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) serve_dir(dir_path: str)</code></td><td><code>app.serve_dir(dir_path)</code></td><td>Mounts a local or bundled asset directory (e.g. <code>&quot;./ui&quot;</code>) under <code>app://localhost/</code>.<br/><code>app.serve_dir(&quot;./ui&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) eval(js: str)</code></td><td><code>app.eval(js)</code></td><td>Asynchronously evaluates arbitrary JavaScript inside the active WebView on the main UI thread.<br/><code>app.eval(&quot;document.body.classList.add('ready')&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_title(title: str)</code></td><td><code>app.set_title(title)</code></td><td>Updates the native window title.<br/><code>app.set_title(&quot;Mastering Studio — Active&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_size(width: i32, height: i32)</code></td><td><code>app.set_size(width, height)</code></td><td>Resizes the native application window.<br/><code>app.set_size(1280, 800)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_min_size(min_w: i32, min_h: i32)</code></td><td><code>app.set_min_size(min_w, min_h)</code></td><td>Sets the minimum resizable dimensions for the native window.<br/><code>app.set_min_size(640, 420)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_max_size(max_w: i32, max_h: i32)</code></td><td><code>app.set_max_size(max_w, max_h)</code></td><td>Sets the maximum resizable dimensions for the native window.<br/><code>app.set_max_size(1920, 1080)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_frameless(frameless: bool)</code></td><td><code>app.set_frameless(frameless)</code></td><td>Configures a frameless full-size content view window with CSS <code>--wails-draggable: drag</code> support.<br/><code>app.set_frameless(true)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_transparent(transparent: bool)</code></td><td><code>app.set_transparent(transparent)</code></td><td>Enables or disables transparent window and WebView background rendering.<br/><code>app.set_transparent(true)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_dark_mode(dark: bool)</code></td><td><code>app.set_dark_mode(dark)</code></td><td>Configures dark or light native window appearance.<br/><code>app.set_dark_mode(true)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_always_on_top(on_top: bool)</code></td><td><code>app.set_always_on_top(on_top)</code></td><td>Floats the application window above standard desktop windows.<br/><code>app.set_always_on_top(true)</code></td></tr>
+            <tr><td><code>fn (mut app: App) fullscreen()</code></td><td><code>app.fullscreen()</code></td><td>Toggles native fullscreen window mode.<br/><code>app.fullscreen()</code></td></tr>
+            <tr><td><code>fn (mut app: App) minimize()</code></td><td><code>app.minimize()</code></td><td>Minimizes the native window to the dock or taskbar.<br/><code>app.minimize()</code></td></tr>
+            <tr><td><code>fn (mut app: App) maximize()</code></td><td><code>app.maximize()</code></td><td>Zooms or maximizes the native window.<br/><code>app.maximize()</code></td></tr>
+            <tr><td><code>fn (mut app: App) center()</code></td><td><code>app.center()</code></td><td>Centers the native window on the active screen.<br/><code>app.center()</code></td></tr>
+            <tr><td><code>fn (app: App) open_file_dialog(title: str = &quot;Open File&quot;) -&gt; str</code></td><td><code>app.open_file_dialog(title)</code></td><td>Opens a native OS file picker dialog and returns the selected path (or <code>&quot;&quot;</code> if cancelled).<br/><code>path := app.open_file_dialog(&quot;Select Audio Track&quot;)</code></td></tr>
+            <tr><td><code>fn (app: App) save_file_dialog(title: str = &quot;Save File&quot;, default_name: str = &quot;&quot;) -&gt; str</code></td><td><code>app.save_file_dialog(title, default_name)</code></td><td>Opens a native OS save-file dialog and returns the chosen destination path.<br/><code>dest := app.save_file_dialog(&quot;Export Preset&quot;, &quot;studio.json&quot;)</code></td></tr>
+            <tr><td><code>fn (app: App) message_dialog(title: str, message: str)</code></td><td><code>app.message_dialog(title, message)</code></td><td>Displays a modal native OS alert dialog.<br/><code>app.message_dialog(&quot;Export Complete&quot;, &quot;Saved master preset.&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) call_rpc(method: str, params_json: str = &quot;{}&quot;) -&gt; str!</code></td><td><code>app.call_rpc(method, params_json)</code></td><td>Directly invokes a bound RPC handler in-memory without opening a window (ideal for <code>cfire test</code> and <code>fuzz</code> blocks).<br/><code>res := try app.call_rpc(&quot;set_track&quot;, &quot;{\&quot;channel\&quot;:1}&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) dispatch_event(event: str, data_json: str = &quot;{}&quot;)</code></td><td><code>app.dispatch_event(event, data_json)</code></td><td>Dispatches a synthetic frontend event to <code>app.on(event)</code> listeners during headless testing.<br/><code>app.dispatch_event(&quot;fader:input&quot;, &quot;{\&quot;channel\&quot;:1}&quot;)</code></td></tr>
+            <tr><td><code>fn (app: App) emitted_events_count(event: str) -&gt; i64</code></td><td><code>app.emitted_events_count(event)</code></td><td>Returns the number of times <code>app.emit(event, ...)</code> has been triggered.<br/><code>n := app.emitted_events_count(&quot;meter:peak&quot;)</code></td></tr>
+            <tr><td><code>fn (app: App) last_emitted_payload(event: str) -&gt; str</code></td><td><code>app.last_emitted_payload(event)</code></td><td>Returns the most recent JSON payload emitted for <code>event</code>.<br/><code>last := app.last_emitted_payload(&quot;meter:peak&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -&gt; bool!</code></td><td><code>app.run_webview_test(timeout_ms)</code></td><td>Boots an offscreen native <code>WKWebView</code>, executes the loaded page's JavaScript and RPC calls until <code>window.runtime.Quit()</code> or <code>timeout_ms</code>, and returns <code>true</code> if <code>Quit()</code> was reached.<br/><code>ok := try app.run_webview_test(3000)</code></td></tr>
+            <tr><td><code>fn (mut app: App) run()</code></td><td><code>app.run()</code></td><td>Launches the native OS window and WebView event loop (<code>NSWindow</code>+<code>WKWebView</code> on macOS, <code>UIWindow</code>+<code>WKWebView</code> on iOS, <code>GtkWindow</code>+<code>WebKitGTK</code> on Linux).<br/><code>app.run()</code></td></tr>
+            <tr><td><code>fn (mut app: App) quit()</code></td><td><code>app.quit()</code></td><td>Requests termination of the native WebView event loop.<br/><code>app.quit()</code></td></tr>
+            <tr><td><code>fn (mut app: App) close()</code></td><td><code>app.close()</code></td><td>Deterministic RAII cleanup handle for <code>defer app.close()</code>.<br/><code>defer app.close()</code></td></tr>
+          </tbody>
+        </table></div>
+        <nav class="chapter-pager" aria-label="Module Pagination">
+          <a href="#mod-websocket" class="pager-card prev" onclick="navigateToRefPane('mod-websocket'); return false;">
+            <span class="pager-dir">&larr; Previous Module (31/34)</span>
+            <span class="pager-title">ext:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
+          </a>
           <a href="#mod-rg" class="pager-card next" onclick="navigateToRefPane('mod-rg'); return false;">
-            <span class="pager-dir">Next Module (32/33) &rarr;</span>
+            <span class="pager-dir">Next Module (33/34) &rarr;</span>
             <span class="pager-title">vendor:raygui &mdash; Raygui 4.0 Immediate-Mode GUI Controls</span>
           </a>
         </nav>
@@ -3517,12 +3620,12 @@ fn main() {
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-websocket" class="pager-card prev" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">&larr; Previous Module (31/33)</span>
-            <span class="pager-title">ext:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
+          <a href="#mod-webui" class="pager-card prev" onclick="navigateToRefPane('mod-webui'); return false;">
+            <span class="pager-dir">&larr; Previous Module (32/34)</span>
+            <span class="pager-title">ext:webui &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</span>
           </a>
           <a href="#mod-rl" class="pager-card next" onclick="navigateToRefPane('mod-rl'); return false;">
-            <span class="pager-dir">Next Module (33/33) &rarr;</span>
+            <span class="pager-dir">Next Module (34/34) &rarr;</span>
             <span class="pager-title">vendor:raylib &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Math</span>
           </a>
         </nav>
@@ -3587,7 +3690,7 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rg" class="pager-card prev" onclick="navigateToRefPane('mod-rg'); return false;">
-            <span class="pager-dir">&larr; Previous Module (32/33)</span>
+            <span class="pager-dir">&larr; Previous Module (33/34)</span>
             <span class="pager-title">vendor:raygui &mdash; Raygui 4.0 Immediate-Mode GUI Controls</span>
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
@@ -3878,7 +3981,7 @@ x := 100 / denom // OK</code></pre></div>
           </a>
           <a href="#overview" class="pager-card next" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">Back to Overview &rarr;</span>
-            <span class="pager-title">All 33 Standard Library Modules</span>
+            <span class="pager-title">All 34 Standard Library Modules</span>
           </a>
         </nav>
       </article>

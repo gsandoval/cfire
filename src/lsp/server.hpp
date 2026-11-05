@@ -556,7 +556,7 @@ public:
         (void)col;
         std::string path = detail::uri_to_path(uri);
         auto pres = cfire::frontend::parse_source_resilient(path, text);
-        if (pres.ok() || !pres.ast.functions.empty() || !pres.ast.structs.empty() || !pres.ast.enums.empty()) {
+        if (pres.ok()) {
             auto ws = resolve_workspace(uri, pres.ast);
             last_good_ast_[uri] = pres.ast;
             last_good_ws_[uri] = ws;
@@ -591,6 +591,13 @@ public:
                     return {*patched_ast, ws};
                 }
             }
+        }
+
+        if (!pres.ast.functions.empty() || !pres.ast.structs.empty() || !pres.ast.enums.empty()) {
+            auto ws = resolve_workspace(uri, pres.ast);
+            last_good_ast_[uri] = pres.ast;
+            last_good_ws_[uri] = ws;
+            return {pres.ast, ws};
         }
 
         // Recovery 2: Fall back to last known valid AST

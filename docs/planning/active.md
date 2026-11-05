@@ -4,6 +4,37 @@ This document tracks items currently under active design, scoping, or implementa
 
 ---
 
+## Completed Milestone: `WEBUI-01` — Native WebView & Two-Way RPC Application Framework (`WEBUI-P0-01` – `WEBUI-P0-06`)
+
+| Task ID | Priority | Component | Summary | Status | Section Gate |
+| :--- | :---: | :--- | :--- | :---: | :---: |
+| `WEBUI-P0-01` | P0 | `runtime/core/webui.hpp`, `runtime/cfire_core_stdlib.hpp` | **Core RPC Router, Event Bus, Asset VFS (`app://localhost/`) & Wails/Tauri JS Preload Bridge**: Typed `app.bind[T](name) \|req\|`, `app.bind_action`, `app.on`, `app.emit`, `app.set_state`, `app.serve_dir`, `app.set_html`, and injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` | `[DONE]` | Passed (`make review-check`) |
+| `WEBUI-P0-02` | P0 | `runtime/core/webui.hpp` | **Native macOS (`Cocoa` + `WKWebView`) & iOS (`UIKit` + `WKWebView`) Backends**: Objective-C++ `WKURLSchemeHandler` (`app://localhost/`), `WKScriptMessageHandler`, `NSWindow` / `UIWindow` lifecycle, native dialogs, and `run_webview_test` offscreen `WKWebView` test runner | `[DONE]` | Passed (`make review-check`) |
+| `WEBUI-P0-03` | P0 | `runtime/core/webui.hpp`, `tests/unit/test_stdlib.cpp` | **Native Linux (`GTK3` + `WebKitGTK`) Backend & Mock-Header Verification**: `webkit_web_context_register_uri_scheme("app")`, `WebKitUserContentManager` script message handler, `g_idle_add_full` thread-safe dispatch, headless CI fallback, and mock-header compile test | `[DONE]` | Passed (`make review-check`) |
+| `WEBUI-P0-04` | P0 | `src/codegen.hpp`, `src/buildsys.hpp`, `tests/unit/test_sema.cpp` | **Codegen & Build System Integration**: Auto-enable `json` struct reflection for `ext:webui`, `.mm` Objective-C++ compilation (`plan.uses_objc`, skipping C++-only PCH), macOS/iOS/Linux framework & `pkg-config` flags, and `./ui` bundle copying | `[DONE]` | Passed (`make review-check`) |
+| `WEBUI-P0-05` | P0 | `src/main.cpp`, `examples/17-webui-studio/`, `Makefile`, `tests/e2e/test_canonical.cpp` | **CLI Scaffolding (`cfire init --webui`) & Canonical Studio Example (`17-webui-studio`)**: Project generator (`--template webui` / `--webui`) and interactive multi-channel studio mixer example with unit, doc, fuzz, bench, and live `WKWebView` tests | `[DONE]` | Passed (`make review-check`) |
+| `WEBUI-P0-06` | P0 | `src/docgen/catalog.hpp`, `src/docgen/markdown.hpp`, `src/lsp/json_rpc.hpp`, `src/lsp/server.hpp`, `src/lsp/ide_setup.hpp`, `src/mcp.hpp`, `docs/GUIDE.md`, `tests/unit/test_frontend.cpp` | **Stdlib Catalog, LSP, MCP & Docs Sync + Cross-Platform Validation**: Register `ext:webui` in catalog (`stdlib_catalog()`, `discover_runtime_modules()`, `module_practical_example()`), add LSP `webui.App` & `\|req\|` closure type inference + unit tests, update MCP tools & `GUIDE.md`, and pass `make review-check` + `--target ios-sim` build | `[DONE]` | Passed (`make review-check`) |
+
+### Pre-Implementation Quality Gate (`WEBUI-01`)
+1. **Scope & Problem Statement**:
+   - Provide a first-class, zero-bloat WebView application framework (`import "ext:webui"`) enabling developers to build desktop (macOS, Linux) and mobile (iOS) applications with HTML5/CSS3/JS UIs backed by typed `cfire` functions, structs, and real-time events.
+   - **Hard Constraints**:
+     - Do **not** extend `cfire` at the core language level (`src/lexer.hpp`, `src/parser.hpp`, `src/ast.hpp`, and core `src/sema.hpp` rules remain untouched). Use `cfire`'s existing generic method call (`app.bind[ReqStruct]("name") |req| { ... }`) and trailing closure syntax.
+     - Do **not** add an `ext:wails` package alias—the package is strictly `import "ext:webui"`.
+     - Synchronize **LSP** (`src/lsp/json_rpc.hpp`, `src/lsp/server.hpp`, `src/lsp/ide_setup.hpp`), **MCP** (`src/mcp.hpp`), and **Docs** (`src/docgen/catalog.hpp`, `src/docgen/markdown.hpp`, `docs/GUIDE.md`) completely so `./cfire doc --check` and `make test-lsp` pass 100%.
+2. **Resolved Architectural & Ergonomic Decisions**:
+   - **Why Not Link Go's Wails Binary Directly**: Wails is written in Go (`cgo` + Go runtime/GC), which adds ~20 MB per binary and does not support iOS. Instead, we implement the native C/Objective-C++ WebView layer (`WKWebView` on macOS/iOS, `WebKitGTK` on Linux, matching `webview/webview` and Tauri's `wry`) with Wails v2/v3 + Tauri v2's exact JS and backend ergonomics.
+   - **Frontend JS Ergonomics**: Standard Wails (`await window.backend.<method>(args)` via ES6 `Proxy`, `window.runtime.EventsOn`, `window.runtime.EventsEmit`, `window.runtime.WindowSetTitle`, `window.runtime.Quit`, CSS `--wails-draggable: drag`) **and** Tauri (`await window.invoke("method", args)`).
+   - **Custom URI Scheme (`app://localhost/`)**: Served via `WKURLSchemeHandler` (macOS/iOS) and `webkit_web_context_register_uri_scheme` (Linux) for a secure context (`window.isSecureContext === true`) with zero open TCP ports.
+3. **Testing & Verification Matrix**:
+   - **Unit & Mock-Header Tests (`tests/unit/test_stdlib.cpp`)**: Headless RPC (`app.call_rpc`), event bus (`app.dispatch_event`, `app.emit`), asset VFS (`app://localhost/`), and Linux `WebKitGTK` mock-header compile & callback verification.
+   - **LSP Verification (`tests/unit/test_lsp.cpp`)**: Verify `webui.` module completions, `app.` handle method completions (`bind`, `bind_action`, `on`, `emit`, `set_html`, `serve_dir`, `run`), and typed struct field completions on `req.` inside `app.bind[TrackMix]("...") |req| { ... }`.
+   - **Live macOS `WKWebView` Integration Test (`examples/17-webui-studio/main.cf`)**: Real `WKWebView` boot via `app.run_webview_test(3000)` executing JS `await window.backend.*`, `await window.invoke(...)`, `window.runtime.EventsEmit(...)`, and `window.runtime.EventsOn(...)` inside WebKit.
+   - **iOS Simulator Cross-Compilation (`--target ios-sim`)**: `./cfire build --target ios-sim examples/17-webui-studio/main.cf` verifying `UIKit` + `WKWebView` compilation and `.app` bundle creation.
+   - **Regression Gate**: `make review-check` must pass 100% with 0 compiler warnings, 0 formatting diffs, and 0 doc diffs.
+
+---
+
 ## Completed Milestone: `SAFE-01` — Memory Safety, Use-After-Free & Bounds Verification (`SAFE-P0-01` – `SAFE-P0-03`)
 
 | Task ID | Priority | Component | Summary | Status | Section Gate |
