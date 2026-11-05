@@ -1,12 +1,8 @@
 # The `cfire` Language & Systems Programming Guide
 
-**cfire** (pronounced *sapphire* • `/ˈsæf.aɪ.ər/`) is a systems programming language that compiles 1-to-1 to human-readable ISO C++23. It provides call-site mutability enforcement (`in`, `mut`, `move`), value-based error handling (`T!`), lexical structured concurrency (`async.scope`), zero-wrapper C/C++ header ingestion (`import cpp`), and a single-binary multi-target toolchain covering native desktop/server (`x86_64` / `arm64`), WebAssembly (`--web` / `--target=wasm`), and native iOS (`--ios`).
+**cfire** (pronounced *sapphire* • `/ˈsæf.aɪ.ər/`) is a systems programming language that compiles 1-to-1 to human-readable ISO C++23. It gives you the ergonomics of a modern language—read-only bindings by default, explicit call-site mutation and move markers (`in`, `mut`, `move`, `out`), value-based error handling (`T!`), lexical structured concurrency (`async.scope`), and zero-wrapper C/C++ header ingestion (`import cpp`)—while compiling down to clean, standard C++23 across native desktop/server (`x86_64` / `arm64`), WebAssembly (`--web`), and native iOS (`--ios`).
 
-Every chapter in this manual is structured for both **sequential reading** and **random-access engineering reference**:
-- **Architecture & Invariants**: Exact compile-time guarantees, memory layout, and ISO C++23 lowering rules.
-- **Specification Tables**: Complete syntax forms, CLI flags, struct tags, or API parameters.
-- **Progressive Mechanics (Levels 1–4)**: Runnable `.cf` source code paired with numbered execution walkthroughs and expected terminal output.
-- **Diagnostics & Edge Cases**: Compile-time error codes (`CF1xxx`–`CF5xxx`, `cfire/MUT-ALIAS`) and runtime failure behavior.
+This guide is written as a hands-on builder's tour rather than a dry language specification. Each chapter walks through real engineering problems step by step—starting with a working example, showing what happens under the hood in emitted ISO C++23, and highlighting how the compiler's 18 static safety checks catch subtle bugs before they ever reach a debugger.
 
 ---
 
@@ -14,17 +10,17 @@ Every chapter in this manual is structured for both **sequential reading** and *
 
 ## Chapter 1: Installation & Platform Setup
 
-### Compilation Pipeline & Architecture
-`cfire` is distributed as a single self-contained native binary with zero external runtime dependencies. Compiling a `.cf` target executes a deterministic 5-stage pipeline:
+### How the `cfire` Toolchain Works
+`cfire` ships as a single self-contained native binary with zero external runtime dependencies. When you run or build a `.cf` file, the compiler steps through five deterministic stages:
 
-1. **Lexical & Resilient Syntax Analysis (`lexer` / `parser`)**: Tokenizes `.cf` source files and constructs a typed Abstract Syntax Tree (AST) with statement-level error recovery for IDE/LSP responsiveness.
-2. **Clang AST Bridge (`clang_bridge`)**: For any `import cpp "header.h"` declaration, invokes the system Clang frontend (`-Xclang -ast-dump=json`) to extract C/C++ function signatures, structs, enums, and preprocessor macros without writing manual FFI bindings.
-3. **Semantic & Borrow Verification (`sema`)**: Resolves package imports, infers types, checks exhaustiveness on `match` statements, validates call-site `mut`/`move` intent markers, performs control-flow-graph (CFG) use-after-move analysis, and rejects escaping stack references.
-4. **ISO C++23 Code Generation (`codegen`)**: Emits standard ISO C++23 source code annotated with `#line` directives so debugger frames and sanitizer stack traces point directly to `.cf` filenames and line numbers.
-5. **PCH-Accelerated Backend Compilation (`buildsys`)**: Compiles the generated C++23 source against a precompiled header (`cfire_prelude.hpp.pch`) using the host C++23 compiler (`clang++` 18+ or `g++` 14+) and links required system or vendor libraries.
+1. **Lexical & Resilient Syntax Analysis (`lexer` / `parser`)**: Tokenizes `.cf` source files and constructs a typed Abstract Syntax Tree (AST) with statement-level error recovery so your editor and LSP stay responsive while you type.
+2. **Clang AST Bridge (`clang_bridge`)**: Whenever it sees `import cpp "header.h"`, `cfire` invokes the system Clang frontend (`-Xclang -ast-dump=json`) to ingest C/C++ function signatures, structs, enums, and macros directly—no manual FFI glue required.
+3. **Semantic, Intent & Loan Verification (`sema`)**: Resolves package imports, infers types, checks `match` exhaustiveness and reachability, verifies call-site `mut`/`move`/`out` markers, tracks local pointer/slice loans against container mutations (`cfire/USE-AFTER-FREE`, `cfire/ITERATOR-INVALIDATION`), and enforces flow-sensitive null checks (`cfire/NULL-DEREF`).
+4. **ISO C++23 Code Generation (`codegen`)**: Emits standard ISO C++23 source code annotated with `#line` directives so `lldb`, `gdb`, and AddressSanitizer stack traces point directly to your `.cf` filenames and line numbers.
+5. **PCH-Accelerated Backend Compilation (`buildsys`)**: Compiles the generated C++23 translation unit against a precompiled header (`cfire_prelude.hpp.pch`) using your host C++23 compiler (`clang++` 18+ or `g++` 14+) and links the required system or vendor libraries.
 
 > [!NOTE]
-> **Backend Compiler Discovery Order**: `cfire` locates a C++23-capable compiler by checking: (1) the `CFIRE_CXX` environment variable, (2) the `CXX` environment variable, (3) `clang++-18` / `clang++` (macOS Xcode Command Line Tools or LLVM 18+), and (4) `g++-14` / `g++`. Executables produced by `cfire build` are standalone native Mach-O, ELF, WASM, or iOS `.app` binaries with no garbage collector or virtual machine.
+> **Backend Compiler Discovery Order**: `cfire` locates a C++23-capable compiler by checking: (1) `CFIRE_CXX`, (2) `CXX`, (3) `clang++-18` / `clang++` (macOS Xcode Command Line Tools or LLVM 18+), and (4) `g++-14` / `g++`. Executables produced by `cfire build` are standalone native Mach-O, ELF, WASM, or iOS `.app` binaries with no garbage collector or virtual machine.
 
 ### Quick Installation Script (macOS & Linux)
 Install the `cfire` binary and standard `runtime/` headers (`~/.local/bin/cfire` and `~/.cfire/runtime`, or `/usr/local/bin/cfire` and `/usr/local/share/cfire/runtime` when run as root):
@@ -33,7 +29,7 @@ Install the `cfire` binary and standard `runtime/` headers (`~/.local/bin/cfire`
 curl -fsSL https://cfire.memo.engineer/install.sh | sh
 ```
 
-To also bootstrap all optional native acceleration libraries (`simdjson`, `libzstd`, `sqlite3`, `openssl`, `cmake`) and pre-compile the C++23 runtime precompiled header (`.pch`) in one command, pass `--setup`:
+To bootstrap all optional native acceleration libraries (`simdjson`, `libzstd`, `sqlite3`, `openssl`, `cmake`) and warm the C++23 runtime precompiled header (`.pch`) in one shot, pass `--setup`:
 
 ```bash
 curl -fsSL https://cfire.memo.engineer/install.sh | sh -s -- --setup
@@ -45,15 +41,15 @@ cfire --version
 # Output: cfire 0.9.4 (ISO C++23 systems toolchain)
 ```
 
-### Toolchain Health & Setup (`cfire doctor`)
-Run `cfire doctor` at any time on a new machine to inspect the C++23 compiler, `runtime/` header discovery, `.pch` cache, `pkg-config` tools, native `core:*` engine libraries, and cross-compilation SDKs (`em++`, iOS Simulator):
+### Checking Toolchain Health (`cfire doctor` & `cfire setup`)
+Whenever you set up a new machine or CI runner, run `cfire doctor` to verify your C++23 compiler, `runtime/` header discovery, `.pch` cache, `pkg-config` tools, native `ext:*` libraries, and cross-compilation SDKs (`em++`, iOS Simulator):
 
 ```bash
 cfire doctor
 cfire doctor --json   # Machine-readable JSON report for CI & coding agents
 ```
 
-If any optional native libraries or build tools are missing, run `cfire setup` to install them automatically via the host package manager (`brew` on macOS; `apt-get`, `dnf`, `pacman`, or `apk` on Linux), sync `runtime/` headers to `~/.cfire/runtime`, and warm the C++23 prelude `.pch`:
+If any optional native libraries or build tools are missing, `cfire setup` installs them automatically via your host package manager (`brew` on macOS; `apt-get`, `dnf`, `pacman`, or `apk` on Linux), syncs `runtime/` headers to `~/.cfire/runtime`, and precompiles the C++23 prelude `.pch`:
 
 ```bash
 cfire setup --yes             # Install missing native libraries + warm C++23 PCH
@@ -61,10 +57,10 @@ cfire setup --yes --raylib    # Also pre-fetch vendor:raylib into global cache
 cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
 ```
 
-### Manual Source Build & Platform Toolchains
+### Building from Source & Platform Setup
 
 #### macOS (Apple Silicon `arm64` & Intel `x86_64`)
-1. Install Xcode Command Line Tools (provides `clang++`, macOS SDK headers, and system frameworks):
+1. Install Xcode Command Line Tools (provides `clang++`, macOS SDK headers, and system frameworks including `WebKit.framework` and `AudioToolbox.framework`):
    ```bash
    xcode-select --install
    ```
@@ -75,7 +71,7 @@ cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
    ./cfire install --user   # Installs ~/.local/bin/cfire + ~/.local/share/cfire/runtime (or sudo make install)
    cfire setup --yes        # Installs simdjson, zstd, sqlite, openssl, cmake via Homebrew
    ```
-   You can also bundle a self-relocating portable toolchain directory (`bin/cfire` + `share/cfire/runtime`) anywhere on disk via `./cfire install --portable <dir>` or install to a custom prefix via `./cfire install --prefix <dir>`.
+   Need a self-relocating toolchain folder you can copy onto another machine or CI image? Run `./cfire install --portable <dir>` (or `./cfire install --prefix <dir>`).
 
 #### Linux (Ubuntu / Debian / Arch)
 - **Ubuntu 24.04+ / Debian 12+**:
@@ -87,12 +83,12 @@ cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
    ```
 - **Arch Linux**:
    ```bash
-   sudo pacman -S clang make pkgconf simdjson zstd sqlite openssl alsa-lib
+   sudo pacman -S clang make pkgconf simdjson zstd sqlite openssl alsa-lib webkit2gtk-4.1
    cd cfire && sudo make install
    ```
 
 #### Docker & OrbStack Containers
-Build and run the official Ubuntu 24.04 Linux container image with all `core:*` native engines pre-installed:
+Build and run the official Ubuntu 24.04 container image with all `core:*` and `ext:*` native libraries pre-installed:
 ```bash
 docker build -t cfire:latest .
 docker run --rm cfire:latest doctor
@@ -107,10 +103,10 @@ wsl
 sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev
 ```
 
-### Package Namespaces & System Dependency Matrix
-`cfire` organizes its 34 built-in modules into three explicit package namespaces:
+### Understanding the Three Stdlib Namespaces (`core:*`, `ext:*`, `vendor:*`)
+One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 34 built-in modules into three explicit namespaces:
 - **`core:*` (Foundational Core — 21 Modules)**: Pure ISO C++23 header-only primitives (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:fs`, `core:os`, `core:time`, `core:math`, `core:rand`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:crypto/*`, `core:encoding/*`) with zero external C/OS library dependencies.
-- **`ext:*` (Domain & Platform Extensions — 11 Opt-In Modules)**: Domain and platform engines (`ext:json`, `ext:compress/zstd`, `ext:db/sqlite`, `ext:net`, `ext:net/url`, `ext:net/tls`, `ext:net/http`, `ext:net/websocket`, `ext:audio`, `ext:ai`, `ext:webui`) that query `pkg-config` and standard system paths only when imported, with built-in portable fallbacks when an optional system library is absent.
+- **`ext:*` (Domain & Platform Extensions — 11 Opt-In Modules)**: Domain engines (`ext:json`, `ext:compress/zstd`, `ext:db/sqlite`, `ext:net`, `ext:net/url`, `ext:net/tls`, `ext:net/http`, `ext:net/websocket`, `ext:audio`, `ext:ai`, `ext:webui`) that link native libraries only when imported—and include built-in portable fallbacks when an optional system library isn't installed.
 - **`vendor:*` (Bundled Third-Party C/C++ Engines — 2 Modules)**: `vendor:raylib` and `vendor:raygui`.
 
 | Extension / Vendor Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
@@ -124,31 +120,36 @@ sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-d
 | `ext:webui` | `WebKit.framework` / `webkit2gtk-4.1` | `webkit2gtk-4.1` | `WKWebView` + `Cocoa` on macOS, `WKWebView` + `UIKit` on iOS, `WebKitGTK` + `GTK3` on Linux, and deterministic headless RPC/Event dispatcher in CI |
 | `vendor:raylib` & `vendor:raygui` | Bundled in `runtime/` | None required | Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and `UIKit` + `OpenGLES3` on iOS |
 
-### Cross-Compilation Target Setup
+### Setting Up WebAssembly & iOS Cross-Compilation
 
 #### WebAssembly (`--web` / `--target=wasm`)
-Compiling `.cf` applications to WebAssembly (`.html` + `.js` + `.wasm`) requires the Emscripten SDK (`em++` in `PATH`):
+Compiling `.cf` applications to WebAssembly (`.html` + `.js` + `.wasm`) uses the Emscripten SDK (`em++` in `PATH`):
 ```bash
 git clone https://github.com/emscripten-core/emsdk.git
 cd emsdk && ./emsdk install latest && ./emsdk activate latest
 source ./emsdk_env.sh
 ```
-- **Execution**: `cfire run --web app.cf` compiles with `-std=c++23 -O2 -msimd128` and starts a local HTTP server (or executes via `node` for CLI-profile targets).
-- **Profiles**: GUI applications importing `vendor:raylib` or `ext:audio` default to the `canvas` profile (HTML5 WebGL canvas + drag-and-drop `MEMFS` file staging); console applications default to the `cli` profile.
+- **Running in the Browser**: `cfire run --web app.cf` compiles with `-std=c++23 -O2 -msimd128` and starts a local HTTP server (or runs via `node` for CLI targets).
+- **Web Profiles**: GUI applications importing `vendor:raylib` or `ext:audio` automatically select the `canvas` profile (HTML5 WebGL canvas + drag-and-drop `MEMFS` file staging); console applications select the `cli` profile.
 
 #### Native iOS Simulator & Device (`--ios`)
-Building for iOS requires macOS with full Xcode installed (not just Command Line Tools) so `xcrun` can resolve the `iphonesimulator` and `iphoneos` SDK sysroots:
+Building for iOS requires macOS with full Xcode installed so `xcrun` can resolve the `iphonesimulator` and `iphoneos` SDK sysroots:
 ```bash
 xcode-select -p
 xcrun --sdk iphonesimulator --show-sdk-path
 ```
-- **Output Layout**: `cfire build --target=ios-sim app.cf -o build/MyApp` generates a complete `build/MyApp.app/` bundle containing the Mach-O executable (`arm64-apple-ios16.0-simulator`), `Info.plist`, `PkgInfo`, and bundled assets/icons, then signs it with `codesign --force --sign -`.
-- **Execution**: `cfire run --ios app.cf` boots the active iOS Simulator via `xcrun simctl`, installs the `.app` bundle, and streams stdout/stderr back to your terminal.
+- **App Bundle Generation**: `cfire build --target=ios-sim app.cf -o build/MyApp` generates a complete `build/MyApp.app/` bundle containing the Mach-O executable (`arm64-apple-ios16.0-simulator`), `Info.plist`, `PkgInfo`, and bundled assets/icons, then signs it with `codesign --force --sign -`.
+- **One-Command Simulator Launch**: `cfire run --ios app.cf` boots the active iOS Simulator via `xcrun simctl`, installs the `.app` bundle, and streams stdout/stderr right back to your terminal.
 
-### AI Agent (MCP) & Editor (LSP) Setup
+### Connecting Your Editor (LSP) & AI Agents (MCP)
 
 #### Model Context Protocol Server (`cfire mcp`)
-`cfire mcp` starts a JSON-RPC 2.0 Model Context Protocol server over `stdio` for AI coding agents (Claude Code, Cursor, Antigravity):
+If you pair-program with AI coding agents (Claude Code, Cursor, Windsurf, Antigravity), `cfire mcp` runs a built-in JSON-RPC 2.0 Model Context Protocol server over `stdio`. Instead of guessing stdlib signatures, your agent can query the compiler and run checks directly:
+
+```bash
+cfire mcp --setup          # Automatically registers cfire MCP in detected AI clients
+cfire mcp --print-config   # Prints the JSON configuration block
+```
 
 ```json
 {
@@ -166,47 +167,44 @@ Tools exposed by `cfire mcp`:
 | MCP Tool Name | Input Schema | Behavior & Return Payload |
 | :--- | :--- | :--- |
 | `cfire_stdlib_list` | `{}` | Lists every `core:*`, `ext:*`, and `vendor:*` module with its import path, namespace alias, and summary. |
-| `cfire_stdlib_lookup` | `{"query": "str"}` | Searches modules, function signatures, and types matching `query` (e.g., `"ext:ai"` or `"embed"`). |
-| `cfire_check` | `{"code"?: "str", "path"?: "str"}` | Parses, type-checks, and verifies borrow/intent rules on inline `.cf` `code` or a workspace `path` (including same-directory sibling files); returns `"OK (0 errors)"` or exact `CFxxxx` diagnostics. |
+| `cfire_stdlib_lookup` | `{"query": "str"}` | Searches modules, function signatures, and types matching `query` (e.g., `"ext:webui"` or `"bind"`). |
+| `cfire_check` | `{"code"?: "str", "path"?: "str"}` | Parses, type-checks, and verifies loan/intent rules on inline `.cf` `code` or a workspace `path`; returns `"OK (0 errors)"` or exact diagnostics. |
 | `cfire_test` | `{"path"?: "str", "filter"?: "str", "bench"?: bool, "fuzz_runs"?: int, "seed"?: int, "bench_time"?: int}` | Executes unit tests (`test`), property-based fuzz tests (`fuzz` with shrinking), `///` doc-tests, automatic JSON round-trip invariants, or statistical benchmarks (`bench`). |
-| `cfire_eval` | `{"code": "str"}` | Compiles and executes a `.cf` program or snippet in a temporary sandbox and returns combined stdout/stderr. |
+| `cfire_eval` | `{"code": "str"}` | Compiles and executes a `.cf` snippet in a temporary sandbox and returns combined stdout/stderr. |
 | `cfire_outline` | `{"path"?: "str"}` | Returns a token-compressed structural AST outline of packages, structs, enums, interfaces, functions, and test blocks. |
 | `cfire_inspect` | `{"target": "str"}` | Inspects a stdlib module/symbol, compiler diagnostic rule (`cfire/MUT-CALLSITE`), or foreign C/C++ header (`cpp <header.h>`). |
 | `cfire_doc_llm` | `{}` | Returns the complete LLM & AI Agent language reference sheet (`LLMS.txt`). |
 
 #### Editor Syntax & LSP Setup (`cfire ide` & `cfire lsp`)
-Install TextMate grammar, filetype associations, and LSP client configurations automatically:
+Install TextMate syntax highlighting, filetype associations, and LSP client configurations with a single command:
 ```bash
-cfire ide --all       # Configures VS Code, Cursor, Zed, Neovim, and CLion
-cfire ide vscode      # Configures only VS Code / Cursor
+cfire ide --all       # Configures VS Code, Antigravity, Cursor, Windsurf, Zed, Neovim, and CLion
+cfire ide --status    # Checks which editors and AI agents are configured on your machine
 cfire lsp             # Starts the JSON-RPC 2.0 Language Server on stdio
 ```
-The built-in `cfire lsp` daemon supports debounced background diagnostics (`textDocument/publishDiagnostics`), type/memory-layout hover (`textDocument/hover`), auto-import completion (`textDocument/completion`), signature help, inlay type/parameter hints, go-to-definition (`textDocument/definition`), cross-package find-references and rename (`textDocument/rename`), quick-fix code actions (`cfire/MUT-CALLSITE` and exhaustive `match` arm generation), and range formatting.
+The built-in `cfire lsp` daemon provides live diagnostics (`textDocument/publishDiagnostics`), type/memory-layout hover, auto-import completion, signature help, inlay hints, go-to-definition, cross-package rename (`textDocument/rename`), quick-fix code actions (`cfire/MUT-CALLSITE` and exhaustive `match` arm synthesis), and formatting.
 
 ---
 
 ## Chapter 2: Quickstart & Toolchain Tour
 
-### Level 1 — One-Shot Evaluation (`cfire eval`)
-`cfire eval` compiles and runs expressions or statements from the command line without creating a project file. It automatically wraps snippets in `package main` and imports common standard library modules (`core:fs`, `core:str`, `core:math`, `core:time`, `ext:json`, `ext:ai`):
+### Trying Ideas Instantly with `cfire eval`
+Before creating a single file, you can test expressions, math, or standard library functions right from your terminal using `cfire eval`. It wraps your snippet in `package main`, detects module prefixes (`math.`, `str.`, `json.`, `fs.`, `time.`), and injects the matching `import` headers automatically:
 
 ```bash
 # 1. Expression mode (-e): evaluates the expression and prints its result
 cfire eval -e "2.0 * math.pi() * 10.0"
 # Output: 62.83185307179586
 
-# 2. Statement mode: executes one or more semicolon- or newline-separated statements
+# 2. Statement mode: executes semicolon- or newline-separated statements
 cfire eval 'nums := [10, 20, 30]; println("count={} first={}", nums.len(), nums[0])'
 # Output: count=3 first=10
 ```
 
-**How It Works:**
-1. When `-e <expr>` is passed, `cfire` wraps the expression in `println("{}", (<expr>))` inside an auto-generated `fn main()`.
-2. When raw statements are passed without `-e`, `cfire` scans the token stream for module identifiers (`math.`, `str.`, `json.`, `fs.`) and injects the corresponding `import "core:..."` headers automatically.
-3. Because the precompiled header (`.cfire/cache/pch/`) is reused across invocations, `cfire eval` executes native C++23 code with near-instant startup.
+Because `cfire` caches a precompiled C++23 runtime header (`.cfire/cache/pch/`), `cfire eval` compiles and runs native machine code in milliseconds.
 
-### Level 2 — Anatomy of a `.cf` Program (`hello.cf`)
-Create a standalone source file named `hello.cf`:
+### Writing Your First `.cf` Program (`hello.cf`)
+Let's create a small standalone program in `hello.cf` that trims a node name and logs a startup timestamp:
 
 ```cfire
 package main
@@ -221,22 +219,22 @@ fn main() {
 }
 ```
 
-Compile and execute in a single step:
+Run it directly with `cfire run`:
 ```bash
 cfire run hello.cf
 # Output: [1730462400123] node=cfire-node-01 ready
 ```
 
-**Line-by-Line Mechanics:**
-1. **`package main` (Line 1)**: Every `.cf` file begins with a `package` declaration. An executable entry file must declare `package main` and define `fn main()`.
-2. **`import "core:str"` & `import "core:time"` (Lines 3–4)**: Imports built-in standard library modules under their default namespace aliases (`str` and `time`). You can override the alias with `import "core:str" as s`.
-3. **`started_ms := time.now_ms()` (Line 7)**: The `:=` operator declares an **immutable** local variable and infers its type (`i64`) from the right-hand expression. Reassigning `started_ms` later in `main` is a compile-time error (`CF3003`).
-4. **`println("[{}] node={} ready", ...)` (Line 9)**: Built-in formatted output lowered directly to C++23 `std::println`. Placeholders `{}` accept any primitive, `str`, struct, slice, or format specifier (such as `{:.2f}` for floats or `{:x}` for hex).
+Notice a few details that shape daily code in `cfire`:
+- Every `.cf` file starts with a `package` declaration (`package main` for executable entry points).
+- Standard library imports always carry their tier prefix (`import "core:str"`, `import "core:time"`). Their last path segment (`str`, `time`) becomes the namespace alias unless you rename it with `as`.
+- `started_ms := time.now_ms()` declares an **immutable** binding (`const std::int64_t` in C++23). If you try to reassign `started_ms` later, the compiler stops you with `CF3003`. When you actually want mutation, you opt in with `mut`.
 
-### Level 3 — Builds, C++23 Emit & CMake Eject
+### Checking, Building, Inspecting C++23 & Ejecting to CMake
+As your single-file script grows into a real service or desktop app, the same CLI scales with you:
 
 ```bash
-# 1. Type-check and verify borrow/intent rules without linking an executable
+# 1. Type-check and verify intent & loan rules without invoking the linker
 cfire check hello.cf
 
 # 2. Run under AddressSanitizer (ASan) + UndefinedBehaviorSanitizer (UBSan)
@@ -249,15 +247,15 @@ cfire build hello.cf -o ./bin/hello
 # 4. Inspect the exact ISO C++23 code generated by the compiler
 cfire emit-cpp hello.cf
 
-# 5. Export a zero-dependency C++23 + CMake project tree
+# 5. Export a zero-lock-in C++23 + CMake project tree
 cfire eject hello.cf dist/
 ```
 
-#### Under the Hood: Output of `cfire emit-cpp hello.cf`
-Running `cfire emit-cpp hello.cf` prints the exact ISO C++23 translation unit compiled by the backend:
+#### What `cfire emit-cpp` Produces
+There is no black box between `.cf` and your CPU. Running `cfire emit-cpp hello.cf` prints the exact ISO C++23 source code compiled by the backend:
 
 ```cpp
-// Generated by cfire 0.2.0 — ISO C++23
+// Generated by cfire 0.9.4 — ISO C++23
 #include "cfire_prelude.hpp"
 #include "core/str.hpp"
 #include "core/time.hpp"
@@ -274,62 +272,54 @@ auto main(int argc, char** argv) -> int {
 }
 ```
 
-- Notice that immutable `:=` bindings lower to `const` C++23 variables (`const std::int64_t`, `const std::string`).
-- Every statement is preceded by a `#line` directive mapping back to `hello.cf`, ensuring `lldb`, `gdb`, and ASan report `.cf` line numbers.
+Every statement is preceded by a `#line` directive mapping back to `hello.cf`. If you attach `lldb` or trigger an AddressSanitizer report, the stack trace points straight to `hello.cf:9`.
 
-#### Output of `cfire eject hello.cf dist/`
-`cfire eject` packages the emitted C++23 source, the required runtime headers, and a standalone `CMakeLists.txt` into `dist/` so the project can be built on any machine with a C++23 compiler—even without `cfire` installed:
+#### Zero Lock-In with `cfire eject`
+Adopting a new systems language is much easier when you know you can walk away at any time. Running `cfire eject hello.cf dist/` exports a self-contained CMake project:
 
 ```text
 dist/
 ├── CMakeLists.txt          # Standalone CMake 3.25+ build configuration
-├── main.cpp                # Generated ISO C++23 source
+├── main.cpp                # Clean, human-readable ISO C++23 source
 └── runtime/
     ├── cfire_prelude.hpp   # Core slice, map, error, and RAII defer primitives
-    └── core/               # Self-contained standard library headers
+    └── core/               # Only the standard library headers your project uses
 ```
+
+Anyone on your team—or any downstream platform—can build `dist/` with vanilla `cmake` and `clang++`/`g++` without `cfire` installed.
 
 ---
 
 ## Chapter 3: Workspaces, CLI & Build System
 
-### CLI Command & Flag Reference
-The `cfire` binary provides all build, verification, formatting, refactoring, and agent tooling:
+### Scaffolding New Projects (`cfire new` & `cfire init`)
+Instead of wiring up directories and build files by hand, use `cfire new <dir>` (or `cfire init` inside an existing directory) with one of the four built-in project templates:
 
-| Command & Syntax | Supported Flags | Description |
-| :--- | :--- | :--- |
-| `cfire init` / `cfire new <dir>` | `--template <cli\|tako\|gui>`, `--name <pkg>` | Scaffolds a new `cfire` workspace (`build.cf`, `src/main.cf`, `tests/main_test.cf`, `.gitignore`) in the current directory (`init`) or `<dir>` (`new`). |
-| `cfire run [target\|file.cf] [-- args...]` | `--web`, `--ios`, `--device <name>`, `--port <n>`, `--no-open`, `--sanitize`, `--subsystem <gui\|console>` | Compiles and executes a native binary, local WebAssembly server (`--web`), or iOS Simulator app (`--ios`). Arguments after `--` pass to the program. |
-| `cfire build [target\|file.cf]` | `-o <path>`, `--target <wasm\|ios-sim\|ios\|triple>`, `--web`, `--ios`, `--subsystem <gui\|console>`, `--name <app>`, `--bundle-id <id>`, `--icon <png>`, `--sanitize` | Compiles an optimized binary, macOS `.app` bundle, WebAssembly `.html`/`.wasm` bundle, or signed iOS `.app` bundle. |
-| `cfire check [file.cf\|dir]` | `--json`, `--fix` | Zero-arg workspace-aware lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker. |
-| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>`, `--bench`, `--fuzz-runs <N>`, `--seed <S>`, `--bench-time <ms>` | Zero-arg workspace test & fuzz runner that compiles and executes `test`, `fuzz` (with counterexample shrinking), `///` doc-tests, and `[auto] json round-trip` checks. |
-| `cfire bench [file.cf\|dir]` | `--json`, `--filter <pattern>`, `--bench-time <ms>` | Multi-iteration parameterized statistical benchmark runner (`bench "name" \|size in [...]\| { ... }`). |
-| `cfire eval <code\|-e expr>` | `-e <expr>` | Evaluates a one-shot expression or statement block from CLI arguments or `stdin`. |
-| `cfire serve [target\|dir]` | `--port <n>`, `--no-open` | Builds WebAssembly targets (if needed) and serves static/WASM assets with COOP/COEP headers. |
-| `cfire fmt [path]` | `--check` | Formats `.cf` files in place according to canonical 4-space alignment rules (or exits non-zero on drift with `--check`). |
-| `cfire fix [file.cf\|dir]` | `--dry-run`, `--json` | Zero-arg workspace auto-fixer that inserts missing `core:*` imports, missing call-site `mut` markers, and missing `match` arms. |
-| `cfire refactor rename <file:line:col> <new_name>` | `--diff`, `--apply`, `--json` | Performs scope- and package-aware semantic symbol renaming across the workspace. |
-| `cfire inspect <symbol\|header.h>` | `--json` | Queries stdlib documentation, symbol signatures, or foreign C/C++ header declarations statelessly. |
-| `cfire outline [path]` | `--json` | Prints a token-compressed structural summary of packages, structs, enums, interfaces, functions, and test blocks. |
-| `cfire emit-cpp <file.cf>` | None | Prints the generated ISO C++23 source code to `stdout`. |
-| `cfire eject <file.cf> [out_dir]` | None | Exports a standalone C++23 source tree and `CMakeLists.txt` into `out_dir` (defaults to `ejected_cpp/`). |
-| `cfire vendor [dest_dir]` | None | Fetches and pins all remote `build.Git` and `build.Archive` dependencies from `build.cf` into `vendor/` for offline builds. |
-| `cfire install` | `--user`, `--prefix <dir>`, `--portable <dir>` | Installs the self-relocating `cfire` binary and `runtime/` headers to `~/.local`, `<dir>`, or a portable bundle. |
-| `cfire doc [file.cf]` | `--check`, `--llm`, `--root <dir>` | Generates `docs/` HTML site (`index.html`, `guide.html`, `reference.html`, `LLMS.txt`) or verifies zero doc drift (`--check`). |
-| `cfire lsp` / `cfire mcp` / `cfire ide` | `--all`, `vscode`, `cursor`, `zed`, `neovim`, `clion` | Starts the LSP server (`lsp`), MCP agent server (`mcp`), or installs editor integration files (`ide`). |
+```bash
+cfire new my-cli               # Default: CLI / backend service template (--template cli)
+cfire new --template webui app # Hybrid desktop/mobile WebView app (ext:webui + ./ui/index.html)
+cfire new --template gui game  # Hardware-accelerated 2D/3D raylib window (vendor:raylib)
+cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
+```
 
-#### Environment Variables
-- `CFIRE_CXX`: Overrides the backend C++23 compiler executable (e.g., `/opt/homebrew/opt/llvm/bin/clang++`).
-- `CFIRE_RUNTIME_DIR`: Overrides the path to the `runtime/` header directory.
+Every scaffolded workspace includes a ready-to-run `build.cf`, `main.cf`, a unit test in `main_test.cf`, and a `.gitignore` so you can immediately run `cfire run` and `cfire test`:
+
+| Template (`--template`) | Generated Files | Target Matrix & Default Subsystem | Best For |
+| :--- | :--- | :--- | :--- |
+| `cli` (default) | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` (`console`) | CLI tools, microservices, AI agents, systems daemons. |
+| `webui` | `build.cf`, `main.cf`, `main_test.cf`, `ui/index.html`, `.gitignore` | `["native", "ios-sim"]` (`gui`) | Wails/Tauri-style desktop & mobile apps using HTML/CSS/JS over `ext:webui`. |
+| `gui` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native", "wasm", "ios-sim"]` (`gui`, `canvas`) | 60 FPS 2D/3D canvases, games, and visualizers using `vendor:raylib` & `vendor:raygui`. |
+| `tako` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native", "wasm", "ios-sim"]` (`gui`, `canvas`) | Ergonomic desktop/web/iOS tools using `pkg:tako` / `core:tako`. |
 
 ### Multi-Package Workspace Layout
-A multi-package `cfire` workspace organizes entry executables, internal library packages, and C/C++ dependencies around a root `build.cf` file:
+As a codebase grows beyond a single directory, you can split domain logic into internal packages under `pkg/` and third-party C/C++ libraries under `vendor/`:
 
 ```text
 my-service/
 ├── build.cf                    # Declarative build graph (executables, C/CMake deps, pre-build hooks)
 ├── cfire.lock                  # Deterministic SHA-256 & commit lockfile for remote dependencies
 ├── main.cf                     # Entry package (`package main`)
+├── main_test.cf                # Entry package tests (automatically excluded from production builds)
 ├── pkg/
 │   └── checksum/
 │       └── checksum.cf         # Internal package (`package checksum`, imported as `import "./pkg/checksum"`)
@@ -337,14 +327,14 @@ my-service/
     └── fastcrc/                # Local or vendored C/C++/CMake library sources
 ```
 
-**Package Resolution Rules:**
-1. **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` (e.g., `package main` in `src/main.cf`, `src/state.cf`, and `src/view.cf`) automatically share their structs, enums, functions, methods, and constants without needing `import "./sibling.cf"`. Test-only `*_test.cf` files are automatically excluded from production `cfire build` and `cfire run` invocations.
-2. **Standard Library (`import "core:..."` / `import "ext:..."` / `import "vendor:..."`)**: Resolves headers from the `cfire` runtime directory (`ext:net/http`, `ext:db/sqlite`, `ext:ai`, `vendor:raylib`).
-3. **Toolchain Packages (`import "pkg:tako"` / `import "core:tako"`)**: Resolves companion toolchain packages (such as the Tako GUI runtime) automatically across workspace parents, `~/.local/share`, and `CFIRE_PKG_PATH`, paired with `var TakoRuntime = build.Tako()` in `build.cf`.
-4. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all `.cf` files in `./pkg/checksum/` belonging to `package checksum` and merges their declarations under the `checksum.` namespace.
+How `cfire` resolves files and packages across your workspace:
+1. **Same-Directory Package Merging**: All `.cf` files in the same folder declaring the same `package <name>` (for example, `main.cf`, `routes.cf`, and `store.cf` all declaring `package main`) automatically share their types, functions, methods, and constants—no relative imports needed between sibling files. Test files ending in `_test.cf` are compiled during `cfire test` and excluded during `cfire build` / `cfire run`.
+2. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all non-test `.cf` files in `./pkg/checksum/` belonging to `package checksum` and exposes their declarations under the `checksum.` namespace.
+3. **Standard Library (`import "core:..."`, `"ext:..."`, `"vendor:..."`)**: Resolves headers from the `cfire` runtime directory and auto-links required system frameworks.
+4. **Companion Toolchain Packages (`import "pkg:tako"` / `import "core:tako"`)**: Resolves companion SDK headers across workspace parents, `~/.local/share`, and `CFIRE_PKG_PATH`.
 
-### Declarative Build System (`build.cf`)
-In multi-target or hybrid C/C++ projects, `build.cf` declares executables, pre-build code generators, and external C/C++/CMake/Make dependencies using top-level declarations in `package build`:
+### Declarative Build Files (`build.cf`)
+For single-package projects, `cfire run main.cf` works with zero configuration. When you need multi-target app bundles, pre-build code generation, or C/C++/CMake dependencies, declare them in `build.cf`:
 
 ```cfire
 package build
@@ -372,13 +362,7 @@ KVStore := build.CMake("./vendor/libkv_cmake", {
     Defines:  {"KV_SALT": 42},
 })
 
-// 4. External GNU Make subproject
-var LegacyMath = build.Make("./vendor/libmath_make", {
-    Target:   "vecmath",
-    Includes: ["include"],
-})
-
-// 5. Remote Git repository dependency (pinned in cfire.lock)
+// 4. Remote Git repository dependency (pinned in cfire.lock)
 var RemoteEngine = build.Git("https://github.com/example/engine.git", {
     Tag:      "v1.2.0",
     Driver:   "CMake",
@@ -386,14 +370,7 @@ var RemoteEngine = build.Git("https://github.com/example/engine.git", {
     Includes: ["include"],
 })
 
-// 6. Remote tarball/zip archive dependency with SHA-256 verification
-var ArchiveLib = build.Archive("https://example.com/releases/lib codec-1.0.tar.gz", {
-    Sha256:   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    Sources:  ["src/codec.c"],
-    Includes: ["include"],
-})
-
-// 7. Multi-target application executable definition
+// 5. Multi-target application executable definition
 var App = build.Executable("service-app", {
     Entry:      "src/main.cf",
     Subsystem:  "console",
@@ -406,34 +383,39 @@ var App = build.Executable("service-app", {
 })
 ```
 
-#### `build.cf` Specification Tables
+#### `build.Executable` & Dependency Builder Reference
 
-#### 1. `build.Executable` & `build.App` Fields
-| Field | Type | Default | Description |
+| Field / Builder | Type / Signature | Default / Config | Purpose |
 | :--- | :--- | :--- | :--- |
-| `Entry` | `str` | `"main.cf"` | Path to the entry `.cf` file containing `fn main()`. |
-| `Subsystem` | `str` | `"auto"` | `"console"` (standard CLI binary) or `"gui"` (creates a macOS `.app` bundle and suppresses terminal window). Auto-switches to `"gui"` when `vendor:raylib` is imported. |
-| `Name` | `str` | `<name>` | Human-readable application display name (`CFBundleDisplayName` on macOS/iOS, `<title>` on WebAssembly). |
-| `BundleId` | `str` | `"com.cfire.<name>"` | Reverse-DNS bundle identifier (`CFBundleIdentifier`) used for macOS/iOS code signing and Simulator launching. |
-| `Icon` | `str` | `""` | Path to a `.png` icon; automatically generates `.icns` on macOS, `AppIcon60x60@2x.png` on iOS, and loads window icon pixels via `SetWindowIcon` on Linux. |
-| `Targets` | `[]str` | `["native"]` | Target list built when invoking `cfire build build.cf` (`"native"`, `"wasm"`, `"ios-sim"`, `"ios"`). |
-| `OutDir` | `str` | `"build"` | Output directory root for compiled artifacts (`build/native/`, `build/wasm/`, `build/ios-sim/`). |
-| `WebProfile` | `str` | `"auto"` | `"canvas"` (HTML5 WebGL + Audio shell) or `"cli"` (console output runner) when compiling for `--target=wasm`. |
+| `Entry` | `str` | `"main.cf"` | Entry `.cf` file containing `fn main()`. |
+| `Subsystem` | `str` | `"auto"` | `"console"` (CLI binary) or `"gui"` (creates a macOS `.app` bundle and suppresses terminal console). Auto-switches to `"gui"` when `vendor:raylib` or `ext:webui` is used. |
+| `Name` & `BundleId` | `str` | `<name>`, `"com.cfire.<name>"` | Display name and reverse-DNS `CFBundleIdentifier` for macOS/iOS signing and Simulator launch. |
+| `Icon` | `str` | `""` | Path to a `.png` icon; auto-generates `.icns` on macOS, `AppIcon60x60@2x.png` on iOS, and window icon pixels on Linux. |
+| `Targets` & `WebProfile` | `[]str`, `str` | `["native"]`, `"auto"` | Target triples (`"native"`, `"wasm"`, `"ios-sim"`, `"ios"`) and WASM shell profile (`"canvas"` or `"cli"`). |
+| `build.CC(dir, cfg)` | Builder | `Sources`, `Includes`, `Defines` | Compiles C/C++ sources into a SHA-256-cached static archive (`lib<name>.a`) and feeds `Includes` to the Clang AST bridge. |
+| `build.CMake(dir, cfg)` | Builder | `Target`, `Includes`, `Defines` | Configures and builds a CMake subproject in `.cfire/cache/deps/` and links the target archive. |
+| `build.Make(dir, cfg)` | Builder | `Target`, `Includes`, `Defines` | Runs `make -C <dir>` and links `lib<Target>.a`. |
+| `build.Git(url, cfg)` / `Archive` | Builder | `Tag`/`Commit`/`Sha256`, `Driver` | Fetches remote dependency, pins cryptographic hashes in `cfire.lock`, and builds via `Driver` (vendor offline with `cfire vendor`). |
 
-#### 2. External Dependency Builders (`build.CC`, `CMake`, `Git`)
-| Builder Function | First Argument | Supported Config Fields | Behavior |
-| :--- | :--- | :--- | :--- |
-| `build.CC(dir, cfg)` | Local directory path | `Sources`, `Includes`, `Defines` | Compiles listed C/C++ files into a cached static library (`lib<name>.a`) and adds `Includes` to the Clang AST bridge. |
-| `build.CMake(dir, cfg)` | CMake project directory | `Target`, `Includes`, `Defines` | Runs `cmake -B <cache> -DCMAKE_BUILD_TYPE=Release` and `cmake --build`, then links the resulting static/shared library. |
-| `build.Make(dir, cfg)` | Makefile directory | `Target`, `Includes`, `Defines` | Executes `make -C <dir>` and links the resulting `lib<Target>.a` archive. |
-| `build.Git(url, cfg)` | Git repository URL | `Tag` / `Ref` / `Commit`, `Driver` (`"CC"`\|`"CMake"`\|`"Make"`), `Sources`, `Target`, `Includes`, `Policy` | Clones the repository into `.cfire/deps/` (or uses `vendor/` if `Policy: "vendor"`), records the commit hash in `cfire.lock`, and builds via `Driver`. |
-| `build.Archive(url, cfg)` | `.tar.gz` / `.zip` URL | `Sha256`, `Driver`, `Sources`, `Target`, `Includes`, `Policy` | Downloads the archive, verifies its SHA-256 digest against `Sha256` and `cfire.lock`, extracts it, and builds via `Driver`. |
-| `build.Command(bin, cfg)` | Executable name | `Args`, `Inputs`, `Outputs`, `WorkDir` | Runs pre-build command before `.cf` parsing whenever any file in `Inputs` has a newer mtime than `Outputs`. |
+### Complete CLI Command Reference
+Every tool in the `cfire` workflow lives inside the single `cfire` binary:
 
-### Precompiled Header & Artifact Cache
-`cfire` stores build artifacts in `.cfire/` (or the system temporary cache during `cfire run`):
-- **Precompiled Header (`.cfire/cache/pch/`)**: The standard runtime prelude (`cfire_prelude.hpp`, `<vector>`, `<string>`, `<expected>`, `<variant>`, `<format>`, `<chrono>`) is precompiled once per compiler version and target triple (`native`, `wasm`, `ios-sim`), cutting C++23 frontend parse time by ~85%.
-- **External Dependency Cache (`.cfire/cache/deps/`)**: Static archives built by `build.CC`, `build.CMake`, and `build.Make` are keyed by a SHA-256 hash of their source files, compiler flags, and target triple, so C/C++ dependencies only recompile when their sources change.
+| Command & Syntax | Supported Flags | Description |
+| :--- | :--- | :--- |
+| `cfire init` / `cfire new <dir>` | `--template <cli\|tako\|gui\|webui>`, `--force` | Scaffolds a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`, plus `ui/index.html` for `webui`). |
+| `cfire run [target\|file.cf] [-- args...]` | `--web`, `--ios`, `--device <name>`, `--port <n>`, `--no-open`, `--sanitize`, `--subsystem <gui\|console>` | Compiles and executes a native binary, local WebAssembly server (`--web`), or iOS Simulator app (`--ios`). |
+| `cfire build [target\|file.cf]` | `-o <path>`, `--target <wasm\|ios-sim\|ios\|triple>`, `--web`, `--ios`, `--subsystem <gui\|console>`, `--name <app>`, `--bundle-id <id>`, `--icon <png>`, `--sanitize` | Compiles an optimized binary, macOS `.app` bundle, WebAssembly `.html`/`.wasm` bundle, or signed iOS `.app` bundle. |
+| `cfire check [file.cf\|dir]` | `--json`, `--fix` | Workspace-aware lexer, parser, Clang header bridge, and semantic/loan/intent analyzer (with optional auto-fix via `--fix`). |
+| `cfire fix [file.cf\|dir]` | `--dry-run`, `--json` | Automatically inserts missing `core:*` imports, missing call-site `mut` markers, and missing `match` arms. |
+| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>`, `--bench`, `--fuzz-runs <N>`, `--seed <S>`, `--bench-time <ms>` | Compiles and executes `test`, `fuzz` (with counterexample shrinking), `///` doc-tests, and `[auto] json round-trip` checks. |
+| `cfire bench [file.cf\|dir]` | `--json`, `--filter <pattern>`, `--bench-time <ms>` | Runs parameterized statistical micro-benchmarks (`bench "name" \|size in [...]\| { ... }`). |
+| `cfire eval <code\|-e expr>` | `-e <expr>` | Evaluates a one-shot expression or statement block from CLI arguments or `stdin`. |
+| `cfire serve [target\|dir]` | `--port <n>`, `--no-open` | Builds WebAssembly targets and serves static/WASM assets with COOP/COEP headers. |
+| `cfire fmt [path]` | `--check` | Canonically formats `.cf` files in place (or exits non-zero on formatting drift with `--check`). |
+| `cfire refactor rename <loc> <new>` | `--diff`, `--apply`, `--json` | Performs scope- and package-aware semantic symbol renaming across the workspace. |
+| `cfire inspect <target>` / `outline` | `--json` | Queries stdlib docs, diagnostic rules, or C headers (`inspect`), or prints a token-compressed AST summary (`outline`). |
+| `cfire emit-cpp` / `eject` / `vendor` | `[out_dir]` | Prints emitted ISO C++23 (`emit-cpp`), exports a standalone CMake tree (`eject`), or vendors remote deps (`vendor`). |
+| `cfire doc [file.cf]` | `--check`, `--llm`, `--root <dir>` | Generates the `docs/` HTML site and `LLMS.txt` or verifies zero documentation drift (`--check`). |
 
 ---
 
@@ -441,124 +423,111 @@ var App = build.Executable("service-app", {
 
 ## Chapter 4: Primitives, Collections & Control Flow
 
-### Architecture & Invariants
-`cfire` enforces three foundational language invariants across all bindings, expressions, and control-flow constructs:
-1. **Immutability by Default**: Local bindings declared with `:=` or `: T =` are `const` in emitted C++23 unless prefixed with `mut`.
-2. **Deterministic Value & RAII Semantics**: All values have deterministic stack or RAII-owned heap lifetimes; there is no garbage collector.
-3. **Fixed-Width Scalar Types**: Integer and floating-point types have explicit bit widths and never silently narrow across assignments.
+### Bindings, Scalar Types & Numeric Conversions
+In C++, local variables are mutable by default (`int x = 10;`) and numeric types silently convert—often narrowing a 64-bit integer or signed index without a warning until runtime data corrupts.
 
-### Primitive Types Specification
-| `cfire` Type | Bit Width | Value Range / Representation | Default Zero Value | Emitted ISO C++23 Type |
-| :--- | :---: | :--- | :---: | :--- |
-| `i8` | 8-bit signed | `-128` to `127` | `0` | `std::int8_t` |
-| `i16` | 16-bit signed | `-32,768` to `32,767` | `0` | `std::int16_t` |
-| `i32` | 32-bit signed | `-2,147,483,648` to `2,147,483,647` | `0` | `std::int32_t` |
-| `i64` | 64-bit signed | `-9.22e18` to `9.22e18` (default integer literal type) | `0` | `std::int64_t` |
-| `u8` / `byte` | 8-bit unsigned | `0` to `255` (`byte` aliases `u8` / `std::byte` in I/O slices) | `0` | `std::uint8_t` |
-| `u16` | 16-bit unsigned | `0` to `65,535` | `0` | `std::uint16_t` |
-| `u32` | 32-bit unsigned | `0` to `4,294,967,295` | `0` | `std::uint32_t` |
-| `u64` | 64-bit unsigned | `0` to `1.84e19` | `0` | `std::uint64_t` |
-| `usize` | Pointer-sized unsigned | 64-bit on `x86_64`/`arm64`, 32-bit on `wasm32` | `0` | `std::size_t` |
-| `f32` | 32-bit IEEE-754 | Single-precision float | `0.0` | `float` |
-| `f64` | 64-bit IEEE-754 | Double-precision float (default float literal type) | `0.0` | `double` |
-| `bool` | 1-byte logical | `true` or `false` | `false` | `bool` |
-| `str` | UTF-8 string | Owned UTF-8 text buffer (`&str` borrows as `std::string_view`) | `""` | `std::string` |
-| `void` | 0-bit unit | Return-only unit type for procedures | — | `void` |
+`cfire` flips both defaults:
+1. **Immutable by Default (`:=`)**: Declaring `count := 42` emits `const std::int64_t count = 42;`. You only mark a variable `mut` when its state genuinely changes over time.
+2. **Explicit Numeric Conversions (`i32(x)`, `f64(x)`, or `x as T`)**: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using either clean constructor-style calls (`f64(count)`, `f32(x)`, `i32(y)`, `u8(b)`, `byte(b)`, `usize(n)`) or the `as` operator (`count as f64`).
+3. **Native String Interpolation**: Every double-quoted string (`"..."`) supports `{expr}` interpolation directly—including arbitrary expressions and format specifiers like `"{scaled:.2f}"` or `"{mask:04x}"`—without needing a `f"..."` prefix.
 
-### Level 1 — Variables, Constants & Type Casting
 ```cfire
 package main
 
 const MAX_RETRIES: i32 = 5
 
 fn main() {
-    // 1. Immutable inferred bindings (lower to 'const')
+    // 1. Immutable inferred bindings (lower to 'const' in C++23)
     count := 42                  // inferred as i64
     ratio := 3.14159             // inferred as f64
     mask := 0xFF_00              // hex literal with digit separator
     raw_sql := `SELECT id, email FROM users WHERE active = 1`
 
-    // 2. Explicit type annotations & mutable bindings
+    // 2. Mutable bindings require 'mut'
     mut accumulator: i64 = 0
     accumulator += count
-    accumulator <<= 1            // compound bitwise shift
+    accumulator <<= 1
 
-    // 3. Explicit numeric conversion and inline string interpolation
-    scaled := (accumulator as f64) * ratio
+    // 3. Constructor-style numeric conversions & native string interpolation
+    scaled := f64(accumulator) * ratio
+    pixel_x := f32(count) * 1.5
+    low_byte := u8(mask & 0xFF)
+
     summary := "retries={MAX_RETRIES} acc={accumulator}"
-    println("{} scaled={:.2f} mask=0x{:x} sql_len={}", summary, scaled, mask, raw_sql.len())
+    println("{} scaled={:.2f} px={:.1f} byte={} mask=0x{:x} sql_len={}",
+        summary, scaled, pixel_x, low_byte, mask, raw_sql.len())
 }
 ```
 ```text
 # Output:
-retries=5 acc=84 scaled=263.89 mask=0xff00 sql_len=44
+retries=5 acc=84 scaled=263.89 px=63.0 byte=0 mask=0xff00 sql_len=44
 ```
 
-**Line-by-Line Mechanics:**
-1. **Declaration Forms**:
-   - `x := expr` declares an immutable variable with inferred type (`const auto x = expr;`).
-   - `mut x := expr` declares a mutable variable with inferred type (`auto x = expr;`).
-   - `x: T = expr` and `mut x: T = expr` bind an explicit type `T`.
-   - `mut x: T` (without `= expr`) zero-initializes `x` (`T x{};`).
-   - `const NAME: T = expr` declares a module-scope compile-time constant (`constexpr T NAME = expr;`).
-2. **String Literals & Arbitrary Expression Interpolation**: Double-quoted strings (`"..."`) support escape sequences (`\n`, `\t`, `\"`, `\\`) and inline interpolation of any `cfire` expression with optional format specifiers (`"{var_name}"`, `"{a + b}"`, `"{items[0]}"`, `"{ratio:.2f}"`, `"{mask:04x}"`). Backtick strings (`` `...` ``) are raw multi-line literals that do not interpret backslashes or quotes.
-3. **Operators & Explicit Casting (`as`)**: `cfire` supports arithmetic (`+`, `-`, `*`, `/`, `%`), bitwise (`&`, `|`, `^`, `~`, `<<`, `>>`), compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`, `<<=`, `>>=`, `&=`, `|=`, `^=`), comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`), and short-circuit logical (`&&`, `||`, `!`) operators. Mixed-width arithmetic requires an explicit `expr as TargetType` cast (`static_cast<TargetType>(expr)`).
+#### Scalar Types & Conversion Constructors
+All scalar types have explicit bit widths, deterministic zero values (`mut x: i32` initializes to `0`), and built-in conversion constructors:
 
-### Level 2 — Arrays, Slices & Maps (`[]T`, `map`)
-`cfire` provides three built-in collection types in the language prelude (plus `Set[T]`, `PriorityQueue[T]`, and `Deque[T]` in `core:collections`):
+| `cfire` Type | Constructor / Cast | Bit Width & Representation | Default Zero Value | Emitted ISO C++23 Type |
+| :--- | :--- | :--- | :---: | :--- |
+| `i8`, `i16`, `i32`, `i64` | `i8(x)`, `i16(x)`, `i32(x)`, `i64(x)` | Signed integers (`i64` is default integer literal type) | `0` | `std::int8_t` .. `std::int64_t` |
+| `u8` / `byte` | `u8(x)`, `byte(x)` | 8-bit unsigned (`0..255`) | `0` | `std::uint8_t` |
+| `u16`, `u32`, `u64` | `u16(x)`, `u32(x)`, `u64(x)` | Unsigned 16/32/64-bit integers | `0` | `std::uint16_t` .. `std::uint64_t` |
+| `usize`, `isize` | `usize(x)`, `isize(x)` | Pointer-sized unsigned / signed integers | `0` | `std::size_t`, `std::ptrdiff_t` |
+| `f32`, `f64` | `f32(x)`, `f64(x)` | IEEE-754 single & double precision (`f64` default) | `0.0` | `float`, `double` |
+| `bool` | `bool_(x)` / `x as bool` | Logical boolean (`true` / `false`) | `false` | `bool` |
+| `str` | `"{x}"` / `str(x)` | Owned UTF-8 text buffer (`&str` borrows as `std::string_view`) | `""` | `std::string` |
 
-| Collection Syntax | Memory Backing & Lowering | Core Operations |
-| :--- | :--- | :--- |
-| `[N]T` (Fixed Array) | Stack-allocated `std::array<T, N>` | Indexing `arr[i]`, `.len()`, value copy, zero heap allocation. |
-| `[]T` (Dynamic Slice) | Contiguous `std::vector<T>` | `.push(val)`, `.push(move val)`, `.len()`, `.capacity()`, `s[i]`, sub-slicing `s[start..end]`. |
-| `map[K]V` / `Map[K, V]` | Hash table `cfire::Map<K, V>` | `m[k] = v` / `m.set(k, v)`, `m.get(k) -> V?`, `m.contains(k) -> bool`, `m.remove(k)`, `m.len()`. |
+### Working with Slices (`[]T`), Fixed Arrays (`[N]T`) & Maps (`map[K]V`)
+Three collection types are built directly into the language prelude (with `Set[T]`, `PriorityQueue[T]`, and `Deque[T]` available in `core:collections`):
 
 ```cfire
 package main
 
 fn main() {
-    // 1. Dynamic Slice ([]i32)
+    // 1. Dynamic Slice ([]i32 -> std::vector<int32_t>)
     mut scores: []i32 = [98, 84]
     scores.push(91)
     top_two := scores[0..2]
 
-    // 2. Fixed-Size Stack Array ([3]f64)
+    // 2. Fixed-Size Stack Array ([3]f64 -> std::array<double, 3>)
     weights: [3]f64 = [1.0, 2.5, 0.75]
 
-    // 3. Hash Map (map[str]i32)
+    // 3. Hash Map (map[str]i32 -> cfire::Map<std::string, int32_t>)
     mut ports: map[str]i32
     ports["http"] = 8080
     ports["https"] = 8443
 
+    // Safe lookup: .get(key) returns V? without inserting a default key!
     http_port := ports.get("http") or 80
-    println("top_two={} weight0={} http_port={} has_tls={}",
-        top_two.len(), weights[0], http_port, ports.contains("https"))
+    smtp_port := ports.get("smtp") or 25
+    println("top_two={} weight0={} http={} smtp={} has_tls={}",
+        top_two.len(), weights[0], http_port, smtp_port, ports.contains("https"))
 }
 ```
 ```text
 # Output:
-top_two=2 weight0=1 http_port=8080 has_tls=true
+top_two=2 weight0=1 http=8080 smtp=25 has_tls=true
 ```
 
-**How It Works:**
-- **Sub-slicing (`scores[0..2]`)**: Slices a half-open range `[start, end)` from a slice or string. String slicing (`label[0..4]`) returns a substring over byte offsets `[0, 4)`.
-- **Safe Map Lookup (`ports.get(key)`)**: Returns an optional `V?` (`std::optional<V>`) rather than silently default-inserting a missing key like C++ `std::map::operator[]`. Combine `.get(key)` with `or <fallback>` to extract a value with a default in one expression.
+> [!TIP]
+> **Why `ports.get(key) or default` Beats C++ `std::map::operator[]`**: In C++, reading `ports["smtp"]` silently mutates the map by inserting a default-constructed entry. In `cfire`, `ports.get("smtp")` is read-only and returns an optional `i32?`, which pairs naturally with `or 25`.
 
-### Level 3 — Control Flow (`if`, `for`, Ranges)
-`cfire` unifies all iteration constructs under the single `for` keyword and requires braces `{ ... }` around all conditional and loop bodies (parentheses around conditions are optional):
+Additionally, all slice and array indexing (`scores[i]`) is checked at compile time for negative or constant out-of-bounds indices (`cfire/INDEX-OUT-OF-BOUNDS`) and verified at runtime via `cfire::index_at`.
+
+### Unified `for` Loops, Ranges & Conditionals
+Rather than juggling `for (;;)`, `while`, `do-while`, and `std::ranges::views::iota`, `cfire` uses a single `for` keyword across ranges, collections, and conditional loops:
 
 ```cfire
 package main
 
 fn main() {
+    // 1. Half-open range (0..5 iterates 0, 1, 2, 3, 4)
     mut sum_exclusive: i64 = 0
-    // 1. Half-open range loop: 0, 1, 2, 3, 4
     for i in 0..5 {
         sum_exclusive += i
     }
 
+    // 2. Inclusive range (1..=5 iterates 1, 2, 3, 4, 5)
     mut sum_inclusive: i64 = 0
-    // 2. Inclusive range loop: 1, 2, 3, 4, 5
     for i in 1..=5 {
         if i == 3 {
             continue
@@ -566,7 +535,7 @@ fn main() {
         sum_inclusive += i
     }
 
-    // 3. Slice iteration (value and indexed forms)
+    // 3. Collection iteration over []T, [N]T, str, or Channel[T]
     items: []str = ["alpha", "beta", "gamma"]
     mut joined := ""
     for item in items {
@@ -576,7 +545,7 @@ fn main() {
         joined = joined + item
     }
 
-    // 4. Conditional (while-style) loop with break
+    // 4. Conditional (while-style) loop
     mut countdown := 3
     for countdown > 0 {
         if countdown == 1 {
@@ -594,26 +563,18 @@ fn main() {
 excl=10 incl=12 items=alpha,beta,gamma countdown=1
 ```
 
-#### Control Flow Specification Table
-| Construct | Syntax | Semantics & C++23 Lowering |
-| :--- | :--- | :--- |
-| Conditional branch | `if cond { ... } else if cond2 { ... } else { ... }` | Evaluates `bool` conditions without parentheses; lowers to C++ `if (...) { ... } else ...`. |
-| Exclusive range loop | `for i in start..end { ... }` | Iterates `i` from `start` while `i < end` (`for (auto i = start; i < end; ++i)`). |
-| Inclusive range loop | `for i in start..=end { ... }` | Iterates `i` from `start` while `i <= end` (`for (auto i = start; i <= end; ++i)`). |
-| Collection loop | `for elem in collection { ... }` | Range-based `for (const auto& elem : collection)` over `[]T`, `[N]T`, `str`, or `Channel[T]`. |
-| Conditional loop | `for cond { ... }` | Executes while `cond` is `true` (`while (cond) { ... }`). |
-| Unbounded loop | `for { ... }` | Infinite loop exited via `break` or `return` (`while (true) { ... }`). |
+### Pointers (`*T`, `*mut T`) & RAII Smart Ownership (`^T` / `own[T]`, `shared[T]`)
+When you need indirection or heap allocation, `cfire` separates **owning smart pointers** from **non-owning pointers and borrows** right in the syntax:
 
-### Level 4 — Pointer & Smart Ownership Taxonomy
-`cfire` distinguishes non-owning borrows from heap-owning smart pointers at the type level:
-
-| Pointer / Handle Syntax | Creation Expression | Ownership & Nullability | Emitted ISO C++23 Type |
+| Syntax | Creation Expression | Ownership & Mutation Semantics | Emitted ISO C++23 Type |
 | :--- | :--- | :--- | :--- |
-| `&T` | `&x` (or `in` parameter) | Non-null immutable borrow (`&str` lowers to `std::string_view`) | `const T&` / `std::string_view` |
-| `&mut T` | `&mut x` | Non-null mutable borrow (used for C/Raygui in-place pointers) | `T&` / `T*` |
-| `own[T]` / `^T` | `make(own[T], val)` | Unique RAII heap ownership; cannot be copied, only moved | `std::unique_ptr<T>` |
-| `shared[T]` | `make(shared[T], val)` | Reference-counted shared heap ownership (atomic refcount) | `std::shared_ptr<T>` |
-| `*T` | Foreign C pointer | Raw pointer for C/C++ FFI boundaries | `T*` |
+| `^T` / `own[T]` | `make(own[T], val)` / `new(T)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
+| `shared[T]` | `make(shared[T], val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
+| `&T` / `&mut T` | `&x` / `&mut x` | Non-owning immutable or mutable borrow (`&str` -> `std::string_view`) | `const T&` / `T*` |
+| `*T` | `&x` or foreign C pointer | Non-owning pointer; requires null check (`if p != none`) before deref | `T*` |
+| `*mut T` | `&mut x` | Rebindable pointer to a mutable target; supports `*p = val` and `*p += 1` | `T*` |
+
+Let's see how unique (`own[T]`), shared (`shared[T]`), and rebindable mutable pointers (`*mut T`) work together:
 
 ```cfire
 package main
@@ -631,34 +592,39 @@ fn main() {
     shared_pkt := make(shared[Packet], Packet{Sequence: 2, Payload: "ACK"})
     shared_clone := shared_pkt
 
-    println("seq1={} seq2={} payload2={}",
-        (*unique_pkt).Sequence, (*shared_clone).Sequence, (*shared_clone).Payload)
+    // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
+    mut a: i32 = 10
+    mut b: i32 = 20
+    mut cursor: *mut i32 = &mut a
+    *cursor += 5
+    cursor = &mut b
+    *cursor = 99
+
+    println("seq1={} seq2={} a={} b={}",
+        (*unique_pkt).Sequence, (*shared_clone).Sequence, a, b)
 }
 ```
 ```text
 # Output:
-seq1=1 seq2=2 payload2=ACK
+seq1=1 seq2=2 a=15 b=99
 ```
 
 ---
 
-## Chapter 5: Functions & Call-Site Intent Safety
+## Chapter 5: Functions, Call-Site Intent & Loan Safety
 
-### Call-Site Exclusivity Invariants
-In C and C++, a call expression such as `process(cfg, buf)` hides whether `cfg` or `buf` is read-only, mutated in place, or moved from. `cfire` enforces **Call-Site Intent Visibility** and the **Law of Exclusivity**:
-1. Every function parameter has an explicit or default passing intent (`in`, `mut`, `out`, or `move`).
-2. Whenever a parameter is declared `mut`, `out`, or `move`, the caller **must** write `mut`, `out`, or `move` before the argument at the call site.
-3. A single call expression cannot pass the same variable as `mut`/`out` more than once, or alias a `mut`/`out` argument with another `in` argument (`cfire/MUT-ALIAS`).
+### Seeing Every Mutation & Move at the Call Site
+If you have ever hunted down a bug in C++ where a helper function quietly modified a struct via a non-`const` reference (`void process(Config& cfg)`), you know the frustration: the function signature is buried in another file, and the call site (`process(cfg)`) looks completely read-only.
 
-### Parameter Intent Specification Table
-| Intent Modifier | Default? | Callee Access | Mandatory Call-Site Marker | Emitted ISO C++23 Parameter & Call Lowering |
+In `cfire`, parameters are read-only (`in`) by default. Whenever a function mutates an argument in place (`mut`), writes an output value (`out`), or takes ownership (`move`), **both the function declaration and the call site must state that intent**:
+
+| Intent Modifier | Default? | Callee Access | Mandatory Call-Site Marker | Emitted ISO C++23 Lowering |
 | :--- | :---: | :--- | :--- | :--- |
-| `in` (or omitted) | **Yes** | Read-only | None (`f(x)`) | Scalars by value (`const T`); structs/slices/maps by `const T&`; `&str` by `std::string_view` |
+| `in` (or omitted) | **Yes** | Read-only | None (`f(x)`) | Scalars by `const T`; structs/slices/maps by `const T&`; `&str` by `std::string_view` |
 | `mut` | No | Read-write in place | `mut` (`f(mut x)`) | `T&` parameter; caller variable must be declared `mut` |
 | `out` | No | Write-to output | `out` (`f(out x)`) | `T&` parameter; initializes or overwrites `x` in place |
-| `move` | No | Takes ownership | `move` (`f(move x)`) | `T` / `T&&` parameter with `std::move(x)` at call site; invalidates `x` in caller scope |
+| `move` | No | Takes ownership | `move` (`f(move x)`) | `T` parameter with `std::move(x)` at call site; invalidates `x` in caller scope |
 
-### Level 1 — Parameter Intents & Tuples
 ```cfire
 package main
 
@@ -668,21 +634,21 @@ type Buffer struct {
 
 // 1. 'in' intent (default): read-only borrow (const Buffer&)
 fn entry_count(in buf: Buffer) -> usize {
-    return buf.Entries.len
+    return buf.Entries.len()
 }
 
 // 2. 'mut' and 'move' intents: mutates 'buf' in place and consumes 'msg'
 fn append_entry(prefix: &str, mut buf: Buffer, move msg: str) -> usize {
     formatted := "[{prefix}] {msg}"
     buf.Entries.push(move formatted)
-    return buf.Entries.len
+    return buf.Entries.len()
 }
 
 // 3. 'out' intent and multiple return values (tuple)
 fn summarize(in buf: Buffer, out first_item: str) -> (usize, bool) {
-    if buf.Entries.len > 0 {
+    if buf.Entries.len() > 0 {
         first_item = buf.Entries[0]
-        return (buf.Entries.len, true)
+        return (buf.Entries.len(), true)
     }
     first_item = "<empty>"
     return (0, false)
@@ -692,7 +658,7 @@ fn main() {
     mut log := Buffer{}
     payload := "handshake verified"
 
-    // Call site explicitly documents that 'log' is mutated and 'payload' is moved:
+    // Call site documents that 'log' is mutated and 'payload' is moved:
     _ := append_entry("NET", mut log, move payload)
 
     mut head := ""
@@ -705,122 +671,88 @@ fn main() {
 count=1 total=1 ok=true head=[NET] handshake verified
 ```
 
-#### Under the Hood: Emitted ISO C++23
-```cpp
-auto entry_count(const Buffer& buf) -> std::size_t {
-    return buf.Entries.size();
-}
+> [!TIP]
+> **Let `cfire fix` Add Missing Call-Site Markers**: If you write `append_entry("NET", log, move payload)` and forget `mut` at the call site, `cfire check` flags `cfire/MUT-CALLSITE` with the exact column—and running `cfire fix` (or triggering the LSP code action in your editor) inserts `mut` automatically.
 
-auto append_entry(std::string_view prefix, Buffer& buf, std::string msg) -> std::size_t {
-    const std::string formatted = std::format("[{}] {}", prefix, msg);
-    buf.Entries.push_back(std::move(formatted));
-    return buf.Entries.size();
-}
-
-auto summarize(const Buffer& buf, std::string& first_item) -> std::tuple<std::size_t, bool> {
-    if (buf.Entries.size() > 0) {
-        first_item = buf.Entries[0];
-        return std::make_tuple(buf.Entries.size(), true);
-    }
-    first_item = std::string("<empty>");
-    return std::make_tuple(0, false);
-}
-```
-
-### Level 2 — Closures & Trailing Closure Syntax
-`cfire` supports anonymous closures with pipe-delimited parameter lists (`|p1, p2| { ... }`). When a function's final parameter is a callable, callers can pass the closure outside the closing parenthesis using **Trailing Closure Syntax**:
+### Closures, Trailing Blocks & Zero-Overhead Generics
+When a function's last parameter is a callback (`fn(...)`), you can pass a pipe-delimited closure (`|arg| { ... }`) after the closing parenthesis using **Trailing Closure Syntax**. This is the same mechanism used by `app.bind[T]("route") |req| { ... }` in `ext:webui` and `scope.spawn() || { ... }` in `core:sync`:
 
 ```cfire
 package main
 
-fn apply_twice(seed: i32, op: fn(i32) -> i32) -> i32 {
-    return op(op(seed))
-}
-
-fn for_each_Filtered(items: []i32, min_val: i32, visit: fn(i32)) {
+fn for_each_above[T](items: []T, threshold: T, visit: fn(T)) {
     for x in items {
-        if x >= min_val {
+        if x >= threshold {
             visit(x)
         }
     }
 }
 
 fn main() {
-    factor := 3
-    // 1. Inline closure capturing 'factor' from lexical scope
-    tripled_twice := apply_twice(2, |v| {
-        return v * factor
-    })
-
-    // 2. Trailing closure syntax after ')'
-    mut acc := 0
+    mut total: i32 = 0
     scores: []i32 = [10, 50, 25, 80]
-    for_each_Filtered(scores, 30) |score| {
-        acc += score
+
+    // Generic function + trailing closure syntax
+    for_each_above(scores, 30) |score| {
+        total += score
     }
 
-    println("tripled_twice={} filtered_sum={}", tripled_twice, acc)
+    println("filtered_sum={}", total)
 }
 ```
 ```text
 # Output:
-tripled_twice=18 filtered_sum=130
+filtered_sum=130
 ```
 
-### Level 3 — Generics & Monomorphization
-Functions parameterize over types using square brackets `fn name[T, U](...)`. Type parameters lower directly to C++23 `template <typename T, typename U>` functions, generating specialized machine code with zero boxing or virtual dispatch:
+Generic type parameters (`[T]`) lower 1-to-1 to C++23 `template <typename T>` functions—giving you full monomorphization with zero heap boxing or virtual dispatch.
+
+### Loan Tracking: How `cfire` Prevents Dangling Pointers & Iterator Invalidation
+One of the easiest ways to corrupt memory in C++ is taking a pointer, slice view, or iterator into a `std::vector` or `std::string`, and then calling `.push_back()` or `.clear()` while that view is still live. If the vector reallocates, the pointer dangles silently.
+
+`cfire` solves this without requiring lifetime annotations (`'a`) on your types or functions. Its lexical loan tracker (`src/sema.hpp`) watches local borrows (`&x`, `s[a..b]`, `.data()`, `.byte_ptr()`) and active `for` loops:
 
 ```cfire
 package main
 
-fn clamp_generic[T](val: T, lo: T, hi: T) -> T {
-    if val < lo {
-        return lo
-    }
-    if val > hi {
-        return hi
-    }
-    return val
-}
-
 fn main() {
-    i_clamped := clamp_generic(150, 0, 100)
-    f_clamped := clamp_generic(1.85, 0.0, 1.0)
-    println("i={} f={:.2f}", i_clamped, f_clamped)
+    mut nums: []i32 = [10, 20, 30]
+
+    // 1. Taking a view or pointer records an active loan on 'nums'
+    view := nums[0..2]
+    println("first_in_view={}", view[0])
+
+    // 2. Because 'view' is never read again after line 9, its loan ends!
+    //    Mutating 'nums' here is 100% safe and accepted:
+    nums.push(40)
+    println("new_len={}", nums.len())
 }
 ```
-```text
-# Output:
-i=100 f=1.00
-```
 
-### Level 4 — Intent, Move & Pattern Diagnostics
-The semantic analyzer (`sema`) enforces 8 static intent, move, and pattern-matching rules at compile time before C++23 codegen runs (note: `cfire` lowers to standard C++23 references and smart pointers rather than a full Rust-style lifetime borrow checker):
+If you tried to read `view[0]` *after* `nums.push(40)`, the compiler immediately halts with `cfire/USE-AFTER-FREE`. Similarly, if you try to call `nums.push(...)` or `nums.clear()` *inside* `for x in nums { ... }`, the compiler rejects it with `cfire/ITERATOR-INVALIDATION`.
 
-| Diagnostic Code | Violation Condition | Rejected Code Example | Remediation |
-| :--- | :--- | :--- | :--- |
-| `cfire/MUT-CALLSITE` | Calling a function with a `mut` parameter without writing `mut` at the call site. | `apply_defaults(c)` | Write `apply_defaults(mut c)` at the call site. |
-| `cfire/IMMUTABLE-MUT-ARG` | Passing an immutable binding (`c := ...`) to a `mut` or `out` parameter. | `c := Config{}; apply_defaults(mut c)` | Declare the binding as `mut c := Config{}`. |
-| `cfire/MUT-RECEIVER` | Calling a `fn (mut s: T)` method on an immutable struct instance. | `s := Scene{}; s.register(...)` | Declare `mut s := Scene{}`. |
-| `cfire/MUT-ALIAS` | Passing the same variable more than once when at least one argument is `mut`/`out`. | `transfer(mut a, mut a)` | Pass distinct variables to each parameter. |
-| `cfire/USE-AFTER-MOVE` | Reading or passing a variable after `move x` has transferred ownership on an earlier path. | `consume(move buf); println("{}", buf.len)` | Read `buf.len` before `consume(move buf)` or pass by `in`/`mut` borrow instead. |
-| `cfire/NON-EXHAUSTIVE-MATCH` | A `match` over an `enum` omits one or more variants without a `_ =>` wildcard arm. | `match tok { Ident(s) => {} }` | Handle all variants or add `_ => { ... }`. |
-| `cfire/NON-DIVERGING-OR-BLOCK` | An `x := fallible() or err { ... }` block does not exit via `return`/`break`/`panic`. | `x := f() or err { println("{}", err) }` | Add `return` or `panic(...)` inside the recovery block. |
-| `cfire/UNREACHABLE-MATCH-ARM` | A `match` arm is shadowed by an earlier wildcard, duplicate variant/literal, or broader slice pattern. | `[h, ..t] => {}, [a, ..m, b] => {}` | Order more specific slice patterns (`[a]`, `[a, ..m, b]`) before general prefix patterns, or remove dead arms. |
-| `CF3002` | Returning a borrow (`&T`) pointing to a stack-allocated local variable. | `fn bad() -> &i32 { x := 1; return &x }` | Return `i32` by value or allocate with `make(own[T], ...)`. |
+#### Summary of Intent & Loan Safety Rules in Chapter 5
+
+| Diagnostic Rule | What It Catches at Compile Time | How to Fix It |
+| :--- | :--- | :--- |
+| `cfire/MUT-CALLSITE` | Calling a `mut` parameter without writing `mut` at the call site. | Write `f(mut x)` (or run `cfire fix`). |
+| `cfire/MOVE-CALLSITE` | Calling a `move` parameter without writing `move` at the call site. | Write `f(move x)` to confirm ownership transfer. |
+| `cfire/IMMUTABLE-MUT-ARG` | Passing an immutable binding (`x := ...`) to a `mut` or `out` parameter. | Declare `mut x := ...`. |
+| `cfire/MUT-RECEIVER` | Calling a `fn (mut s: T)` method on an immutable struct variable. | Declare `mut s := ...`. |
+| `cfire/MUT-ALIAS` | Passing the same variable twice in one call when at least one arg is `mut`/`out`. | Pass distinct variables (`transfer(mut a, mut b)`). |
+| `cfire/USE-AFTER-MOVE` | Reading a variable after `move x` transferred ownership on an earlier path. | Read before `move x`, or pass by `in`/`mut` borrow. |
+| `cfire/USE-AFTER-FREE` | Reading a pointer/view (`&x`, `.data()`, `.byte_ptr()`, `s[a..b]`) after `.push()`, `.clear()`, `move`, or reassignment mutated the owner. | Finish reading the view before mutating the container, or re-slice after `.push()`. |
+| `cfire/DANGLING-POINTER` | Assigning the address of an inner-scope variable (`ptr = &local`) to an outer pointer. | Keep the pointee in the outer scope or allocate with `make(own[T], ...)`. |
+| `cfire/DANGLING-RETURN` | Returning a pointer or view (`&local`, `local.data()`) to stack-local storage. | Return an owned value (`T`, `str`, `[]T`) or `own[T]` instead. |
+| `cfire/ITERATOR-INVALIDATION` | Mutating a collection (`.push()`, `.clear()`, `.remove()`, `move`) inside `for x in col`. | Collect mutations in a separate slice and apply them after the loop. |
 
 ---
 
 ## Chapter 6: Structs, Tags, Enums & Interfaces
 
-### Architecture & Invariants
-`cfire`'s type system maps directly to zero-overhead C++23 layout primitives:
-- **`type Name struct`**: Standard-layout C++23 `struct Name` with default member initializers, designated field construction, and value/mutable receiver methods.
-- **Backtick Field Tags (`` `json:"..." sql:"..."` ``)**: Parsed into compile-time `constexpr` reflection traits (`cfire::meta::fields<T>`) with zero runtime RTTI or heap metadata.
-- **`type Name enum`**: Tagged union lowered to `std::variant<...>`, verified for exhaustiveness in `match` statements and expressions (`cfire/NON-EXHAUSTIVE-MATCH`).
-- **`type Name interface`**: Structural type constraint lowered to a C++20 `concept` without `vtable` pointer indirection.
+### Structs, Default Field Values & Receiver Methods
+Structs in `cfire` map directly to standard-layout C++23 `struct` types. You can give fields default values right in the declaration, construct instances with named fields in any order, and attach methods using value (`fn (s: T)`) or mutable (`fn (mut s: T)`) receivers:
 
-### Level 1 — Structs, Defaults & Receiver Methods
 ```cfire
 package main
 
@@ -831,7 +763,7 @@ type Endpoint struct {
     Requests:   i64  = 0
 }
 
-// 1. Immutable receiver method: borrows 'self' as 'const Endpoint&'
+// 1. Read-only receiver: borrows 'e' as 'const Endpoint&'
 fn (e: Endpoint) scheme() -> str {
     if e.TlsEnabled {
         return "https"
@@ -839,7 +771,7 @@ fn (e: Endpoint) scheme() -> str {
     return "http"
 }
 
-// 2. Mutable receiver method: borrows 'self' as 'Endpoint&'
+// 2. Mutable receiver: mutates 'e' in place ('Endpoint&')
 fn (mut e: Endpoint) record_hit(count: i64) {
     e.Requests += count
 }
@@ -859,21 +791,17 @@ fn main() {
 default=http://127.0.0.1:8080 prod=https://api.cfire.dev:443 hits=42
 ```
 
-**How It Works:**
-1. Fields with `= <expr>` default values can be omitted when constructing a struct literal (`Endpoint{}`). Any omitted field without an explicit default is zero-initialized (`0`, `false`, `""`, or empty slice/map).
-2. Methods declare their receiver before the function name: `fn (e: Endpoint) ...` cannot mutate fields of `e`, whereas `fn (mut e: Endpoint) ...` mutates `e` in place and can only be invoked on a `mut` variable (`cfire/MUT-RECEIVER`).
+### Compile-Time Struct Tags (`json`, `sql`, `cli`, `desc`)
+In C++, serializing a struct to JSON, mapping it from a SQLite row, or generating an OpenAI/MCP tool schema usually requires external code generators or heavy macro boilerplate.
 
-### Level 2 — Compile-Time Struct Reflection Tags
-Backtick string literals attached to struct fields configure serialization, database mapping, CLI flag parsing, and AI JSON Schema synthesis at compile time:
+In `cfire`, you attach backtick tags directly to your struct fields (or even leave them untagged—`cfire` automatically reflects all struct field names at compile time via `cfire::reflect_struct<T>`!):
 
-| Tag Key | Consuming Modules | Syntax Example | Compile-Time Behavior |
+| Tag Key | Consuming Modules | Example | What It Configures at Compile Time |
 | :--- | :--- | :--- | :--- |
-| `json` | `ext:json`, `ext:ai` | `` `json:"user_id"` `` | Maps struct field to JSON object key `"user_id"` in `json.parse[T]`, `json.stringify`, and `json.schema[T]()`. |
+| `json` | `ext:json`, `ext:webui`, `ext:ai` | `` `json:"user_id"` `` | Maps the field to JSON key `"user_id"` in `json.parse[T]`, `json.stringify`, `app.bind[T]`, and `json.schema[T]()`. |
 | `sql` | `ext:db/sqlite` | `` `sql:"user_id"` `` | Maps SQLite result column `"user_id"` into the struct field during `db.query[T](sql, ...)`. |
-| `cli` | `core:cli` | `` `cli:"--port,-p"` `` | Binds long (`--port`) and short (`-p`) command-line flags to the struct field in `cli.parse[T]()`. |
-| `env` | `core:cli` | `` `env:"SERVICE_PORT"` `` | Reads the fallback value from environment variable `SERVICE_PORT` when the CLI flag is omitted. |
-| `default` | `core:cli` | `` `default:"8080"` `` | Supplies the default string/numeric/boolean value when neither CLI flag nor `env` variable is set. |
-| `desc` | `core:cli`, `ext:ai` | `` `desc:"Listen port"` `` | Populates `--help` usage text in `core:cli` and the `"description"` property in `json.schema[T]()` for LLM tool/structured outputs. |
+| `cli`, `env`, `default` | `core:cli` | `` `cli:"--port,-p" env:"PORT" default:"8080"` `` | Binds CLI flags, environment variable fallbacks, and default values in `cli.parse[T]()`. |
+| `desc` | `core:cli`, `ext:ai` | `` `desc:"Listen port"` `` | Populates `--help` text in `core:cli` and the `"description"` property in `json.schema[T]()` for LLM tool schemas. |
 
 ```cfire
 package main
@@ -900,8 +828,10 @@ json={"id":7,"email":"dev@cfire.io","active":true}
 has_desc=true
 ```
 
-### Level 3 — Algebraic Enums & Exhaustive `match`
-`cfire` enums are full algebraic sum types: each variant can be a unit tag or carry one or more typed payload fields. `match` can be used both as a statement and as a value-producing expression, and also supports structural slice patterns (`[]`, `[head, ..tail]`, `[first, ..mid, last]`):
+### Algebraic Enums, Slice Patterns & Exhaustive `match`
+Enums in `cfire` can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to `std::variant<...>`). When you `match` on an enum or a slice, the compiler verifies two things before emitting C++23:
+1. **Exhaustiveness (`cfire/NON-EXHAUSTIVE-MATCH`)**: Every variant of an enum must be handled (or covered by a `_ =>` wildcard arm).
+2. **Reachability (`cfire/UNREACHABLE-MATCH-ARM`)**: No arm can be shadowed by an earlier duplicate variant, wildcard, or broader slice rest pattern (`[head, ..tail]`).
 
 ```cfire
 package main
@@ -914,7 +844,6 @@ type Event enum {
 }
 
 fn describe_event(e: Event) -> str {
-    // Expression-oriented match (compiler verifies all 4 variants are handled)
     return match e {
         Event::Connected(addr)     => "connected:" + addr,
         Event::Data(payload)       => "bytes:{payload.len()}",
@@ -943,13 +872,8 @@ fn main() {
 event=resize:1920x1080 route=api->..(2)..->profile
 ```
 
-**Exhaustiveness & Reachability Rules (`cfire/NON-EXHAUSTIVE-MATCH` & `cfire/UNREACHABLE-MATCH-ARM`):**
-1. Matching over an `enum` must either list every variant of the enum or provide a fallback `_ => ...` wildcard arm. Adding a new variant to `Event` immediately flags every unhandled `match` site at compile time.
-2. Matching over primitives (`i64`, `str`) must always include a wildcard `_ => ...` arm when used as a value expression.
-3. Every `match` arm must be reachable (`cfire/UNREACHABLE-MATCH-ARM`): duplicate enum/literal arms, arms appearing after `_ => ...`, or slice patterns already subsumed by an earlier rest pattern (such as `[first, ..mid, last]` placed after `[head, ..tail]`) are rejected at compile time. Unused slice pattern bindings are elided from the emitted C++23 code.
-
-### Level 4 — Interfaces & C++20 Concepts (`interface`)
-An `interface` defines a structural contract of method signatures. Any `struct` that implements matching methods satisfies the interface automatically without an explicit `implements` keyword, and generic functions constrained by `[T: InterfaceName]` lower directly to C++20 `concept` constraints:
+### Structural Interfaces & C++20 `concept` Lowering
+Interfaces in `cfire` are structural: any `struct` that implements the required methods satisfies the interface automatically without an `implements` keyword. When you constrain a generic function with `[T: Measurable]`, `cfire` lowers the interface directly to a zero-overhead C++20 `concept`—no `vtable` pointer indirection or heap allocation required:
 
 ```cfire
 package main
@@ -964,7 +888,7 @@ type Crate struct {
 }
 
 fn (c: Crate) weight_kg() -> f64 {
-    return (c.Items as f64) * c.UnitMass
+    return f64(c.Items) * c.UnitMass
 }
 
 fn shipping_cost[T: Measurable](parcel: T, rate_per_kg: f64) -> f64 {
@@ -981,34 +905,25 @@ fn main() {
 total_cost=$35.00
 ```
 
-#### Under the Hood: Emitted C++20 `concept`
-```cpp
-template <typename T>
-concept Measurable = requires(const T& self) {
-    { self.weight_kg() } -> std::convertible_to<double>;
-};
-
-template <Measurable T>
-auto shipping_cost(const T& parcel, double rate_per_kg) -> double {
-    return parcel.weight_kg() * rate_per_kg;
-}
-```
-
 ---
 
-## Chapter 7: Error Handling, Optionals & Defer
+## Chapter 7: Error Handling, Optionals, Null Safety & Defer
 
-### Architecture & Invariants (`T!` vs `T?`)
-`cfire` eliminates C++ exceptions (`try`/`catch` stack unwinding) and null pointer dereferences by separating **recoverable errors** from **optional absence** in the type system:
+### Separating Errors from Absence (`T!` vs `T?`)
+We avoid C++ exceptions (`try`/`catch` stack unwinding) for a straightforward reason: hidden control flow makes systems code harder to reason about and adds unpredictable latency on the failure path. At the same time, returning `-1` or `nullptr` and hoping the caller remembers to check `errno` is how bugs slip into production.
 
-| Type Syntax | Meaning | Emitted ISO C++23 Type | Construction | Unwrapping & Propagation |
+`cfire` separates **recoverable failures** (`T!`) from **valid absence** (`T?`) directly in the return type, and lowers both to flat value types on the stack:
+
+| Type Syntax | What It Represents | Emitted ISO C++23 Type | Construction | Unwrapping & Recovery |
 | :--- | :--- | :--- | :--- | :--- |
 | `T!` | Fallible result (either a valid `T` or a `cfire::Error` message/code) | `std::expected<T, cfire::Error>` | Return `val` or `return error("msg")` | `try expr`, `expr or default_val`, `expr or err { ... return }` |
 | `void!` | Fallible procedure (succeeds or returns `cfire::Error`) | `std::expected<void, cfire::Error>` | Implicit success at end of fn or `return error("msg")` | `try expr`, `expr or err { ... }` |
-| `T?` | Optional value (either a present `T` or `nil`) | `std::optional<T>` | Assign `val` or `nil` | `expr or default_val`, or check `if x != nil { use(x?) }` |
+| `T?` | Optional value (either a present `T` or `none` / `nil`) | `std::optional<T>` | Assign `val` or `none` (`nil`) | `expr or default_val`, or guard with `if x != none` |
 
-### Level 1 — Fallible Returns (`T!`) & `try`
-Any function returning `T!` or `void!` can construct an error with `error("description")` or propagate errors from inner fallible calls using `try`:
+### Propagating Errors with `try` and Recovering with `or`
+When a function can fail, mark its return type with `!`. Inside any fallible function, `try expr` unwraps the happy path or immediately returns the error to your caller—running any active `defer` blocks in reverse order on the way out.
+
+When you want to handle an error or provide a fallback right at the call site, use `or`:
 
 ```cfire
 package main
@@ -1021,89 +936,90 @@ fn parse_port(raw: str) -> u16! {
         return error("port string is empty")
     }
     if cleaned == "8080" {
-        return 8080 as u16
+        return u16(8080)
     }
     if cleaned == "443" {
-        return 443 as u16
+        return u16(443)
     }
     return error("unsupported port: " + cleaned)
 }
 
+fn lookup_limit(tier: str) -> i64? {
+    if tier == "pro" { return 10000 }
+    if tier == "free" { return 100 }
+    return none
+}
+
 fn build_endpoint(host: str, raw_port: str) -> str! {
-    // 'try' unwraps u16 on success or immediately returns the Error to caller
+    // 'try' unwraps u16 on success or immediately returns the Error to the caller
     port := try parse_port(raw_port)
     return "{host}:{port}"
 }
 
+fn compute_quota(tier: str, raw_port: str) -> i64 {
+    // Form 1: Inline default value on an optional (T?)
+    base := lookup_limit(tier) or 50
+
+    // Form 2: Diverging recovery block on a fallible (T!) with bound 'err'
+    port := parse_port(raw_port) or err {
+        println("warn: recovering from invalid port ({})", err.message())
+        return base
+    }
+
+    return base + i64(port)
+}
+
 fn main() {
     ep := build_endpoint("127.0.0.1", " 8080 ") or "0.0.0.0:80"
-    fallback := build_endpoint("127.0.0.1", "invalid") or "0.0.0.0:80"
-    println("valid={} fallback={}", ep, fallback)
+    q1 := compute_quota("pro", "443")
+    q2 := compute_quota("guest", "bad")
+    println("ep={} q1={} q2={}", ep, q1, q2)
 }
 ```
 ```text
 # Output:
-valid=127.0.0.1:8080 fallback=0.0.0.0:80
+warn: recovering from invalid port (unsupported port: bad)
+ep=127.0.0.1:8080 q1=10443 q2=50
 ```
 
-**How `try` Works:**
-- Evaluating `port := try parse_port(raw_port)` checks whether the returned `std::expected<uint16_t, cfire::Error>` holds a value.
-- If it holds an error, the enclosing function immediately returns `std::unexpected(res.error())`, running any active `defer` statements in LIFO order before exiting.
-- If `try` is used inside `fn main()`, an unhandled error prints the diagnostic message to `stderr` and exits with code `1`.
+> [!IMPORTANT]
+> **Divergence Rule (`cfire/NON-DIVERGING-OR-BLOCK`)**: When you bind a variable with `x := fallible() or err { ... }`, the `{ ... }` recovery block **must** exit the current control path via `return`, `break`, `continue`, `panic(...)`, or `exit(...)`. That invariant guarantees `x` can never be read in an uninitialized state after the block.
 
-### Level 2 — Error Recovery (`or`) & Optionals (`T?`)
-The `or` operator handles both `T!` errors and `T?` (`nil`) optionals at the call site without verbose `if (!res.has_value())` boilerplate:
+### Flow-Sensitive Null Pointer Safety (`cfire/NULL-DEREF`)
+When you work with heap pointers (`*T` or rebindable `*mut T`), a pointer initialized to `none` (or returned from a function that might yield `none`) cannot be dereferenced blindly.
+
+The semantic analyzer tracks pointer nullability across branches (`cfire/NULL-DEREF`). If a pointer might be `none`, dereferencing `*p` or accessing `p.field` is a compile-time error until you prove it is non-null with `if p != none` (or `assert(p != none)`):
 
 ```cfire
 package main
 
-fn lookup_limit(tier: str) -> i64? {
-    if tier == "pro" {
-        return 10000
-    }
-    if tier == "free" {
-        return 100
-    }
-    return nil
+type Session struct {
+    id: i32
 }
 
-fn require_positive(v: i64) -> i64! {
-    if v <= 0 {
-        return error("value must be > 0")
+fn inspect_session(maybe_ptr: *Session) -> i32 {
+    // Error if uncommented: [cfire/NULL-DEREF] dereference of potentially null pointer 'maybe_ptr'
+    // return maybe_ptr.id
+
+    if maybe_ptr != none {
+        // Inside this guarded branch, the compiler knows maybe_ptr is non-null
+        return maybe_ptr.id
     }
-    return v * 2
-}
-
-fn compute_quota(tier: str, bonus: i64) -> i64 {
-    // Form 1: Inline default value on optional (T?)
-    base := lookup_limit(tier) or 50
-
-    // Form 2: Diverging recovery block on fallible (T!) with bound 'err'
-    extra := require_positive(bonus) or err {
-        println("warn: recovering from invalid bonus ({})", err.message())
-        return base
-    }
-
-    return base + extra
+    return -1
 }
 
 fn main() {
-    q1 := compute_quota("pro", 25)
-    q2 := compute_quota("unknown", -5)
-    println("q1={} q2={}", q1, q2)
+    s := new(Session{ id: 42 })
+    println("active={} empty={}", inspect_session(s), inspect_session(none))
 }
 ```
 ```text
 # Output:
-warn: recovering from invalid bonus (value must be > 0)
-q1=10050 q2=50
+active=42 empty=-1
 ```
 
-> [!IMPORTANT]
-> **Divergence Rule (`cfire/NON-DIVERGING-OR-BLOCK`)**: When binding a variable with `x := fallible() or err { ... }`, the `{ ... }` block **must** exit the current control path via `return`, `break`, `continue`, `panic(...)`, or `exit(...)`. This guarantees `x` can never be read in an uninitialized state after the block.
-
-### Level 3 — RAII Scope Cleanup (`defer`)
-`defer <stmt>` and `defer { ... }` schedule cleanup statements to run automatically when the enclosing lexical block exits—whether by reaching the closing `}`, executing an early `return`, or propagating an error via `try` (`return` inside a `defer { ... }` block is rejected at compile time via `cfire/RETURN-IN-DEFER`):
+### Deterministic Scope Cleanup with `defer` (`cfire/RETURN-IN-DEFER`)
+Whenever you open a file, lock a resource, or spin up a temporary database handle, write its `defer` cleanup on the very next line. `defer <stmt>` and `defer { ... }` schedule cleanup statements to run in last-in, first-out (LIFO) order when the lexical block exits—whether at the closing `}`, an early `return`, or an error propagated via `try`:
 
 ```cfire
 package main
@@ -1118,7 +1034,7 @@ fn export_snapshot(db_path: str, log_path: str) -> void! {
     mut log_file := try fs.open(log_path, fs.OpenMode::Write)
     defer {
         _ = log_file.flush()
-        log_file.close() // Multi-statement block defer -> Executes 1st (LIFO)
+        log_file.close() // Registered 2nd -> Executes 1st (LIFO)
     }
 
     try db.exec("CREATE TABLE IF NOT EXISTS events (id INT, name TEXT)")
@@ -1141,36 +1057,18 @@ fn main() {
 snapshot_ok
 ```
 
-#### Under the Hood: C++23 Scope-Guard Lowering for `defer`
-Each `defer` statement lowers to an stack-allocated `cfire::ScopeGuard` lambda object whose destructor runs deterministically during C++ stack unwinding at block exit:
-
-```cpp
-auto export_snapshot(std::string db_path, std::string log_path) -> std::expected<void, cfire::Error> {
-    auto _try_0 = cfire::sqlite::open(db_path);
-    if (!_try_0) return std::unexpected(_try_0.error());
-    auto db = std::move(*_try_0);
-    auto _defer_1 = cfire::make_scope_guard([&]() { db.close(); });
-
-    auto _try_2 = cfire::fs::open(log_path, cfire::fs::OpenMode::Write);
-    if (!_try_2) return std::unexpected(_try_2.error());
-    auto log_file = std::move(*_try_2);
-    auto _defer_3 = cfire::make_scope_guard([&]() { log_file.close(); });
-    // When export_snapshot returns (or if any subsequent 'try' fails),
-    // _defer_3::~ScopeGuard() runs first, followed by _defer_1::~ScopeGuard().
-}
-```
+Each `defer` lowers to a stack-allocated `cfire::ScopeGuard` lambda whose destructor runs deterministically during C++ stack unwinding. Note that placing a `return` statement inside a `defer { ... }` block is rejected at compile time (`cfire/RETURN-IN-DEFER`), because silently hijacking a function's return value during cleanup masks upstream errors.
 
 ---
 
 # Part III: Core Stdlib & Concurrency
 
-## Chapter 8: Strings, Unicode, Regex & Containers
+## Chapter 8: Strings, Buffers, Unicode, Regex & Containers
 
-### Architecture & Invariants
-`cfire` strings (`str`) are UTF-8 encoded buffers backed by `std::string`, and borrowed string views (`&str`) lower to `std::string_view`. Text manipulation, RFC 3629 Unicode scalar decoding, ECMAScript regular expressions, and specialized generic data structures (`Set[T]`, `PriorityQueue[T]`, `Deque[T]`, and in-place sorting) are provided by five Tier 1A foundational modules: `core:str`, `core:unicode`, `core:regex`, `core:collections`, and `core:sort`.
+### UTF-8 Strings, Unicode Scalars & Regular Expressions
+In `cfire`, `str` is an owned UTF-8 buffer (`std::string`), and `&str` is a borrowed zero-copy view (`std::string_view`). Because UTF-8 codepoints vary from 1 to 4 bytes, `s.len()` always reports the exact byte count in $O(1)$ time, while `core:unicode` decodes 32-bit Unicode scalar values (`runes`) when you need character-level inspection:
 
-### Text, Unicode & Regex Specification
-| Module | Function / Method | Signature | Description |
+| Module | Function / Method | Signature | What It Does |
 | :--- | :--- | :--- | :--- |
 | `core:str` | `str.split` / `str.join` | `fn(s: str, sep: str) -> []str` / `fn(items: []str, sep: str) -> str` | Splits `s` on delimiter `sep` or joins a slice of strings with `sep`. |
 | `core:str` | `str.trim` / `trim_left` / `trim_right` | `fn(s: str) -> str` | Strips leading and/or trailing ASCII whitespace (`' '`, `'\t'`, `'\n'`, `'\r'`). |
@@ -1178,15 +1076,14 @@ auto export_snapshot(std::string db_path, std::string log_path) -> std::expected
 | `core:str` | `str.starts_with` / `ends_with` / `contains` | `fn(s: str, pat: str) -> bool` | Prefix, suffix, and substring containment checks. |
 | `core:str` | `str.index_of` / `last_index_of` | `fn(s: str, sub: str) -> i64` | Returns the 0-based byte offset of `sub` in `s`, or `-1` if absent. |
 | `core:str` | `str.to_upper` / `to_lower` / `repeat` | `fn(s: str) -> str` / `fn(s: str, count: usize) -> str` | ASCII case conversion and `count`-fold string repetition. |
-| `core:unicode` | `unicode.is_valid_utf8` / `rune_count` | `fn(s: str) -> bool` / `fn(s: str) -> usize` | Validates RFC 3629 UTF-8 byte sequences and counts Unicode codepoints (scalar values). |
-| `core:unicode` | `unicode.runes` / `encode_rune` | `fn(s: str) -> []u32` / `fn(r: u32) -> str` | Decodes a UTF-8 string into 32-bit Unicode scalar values (`u32`) or encodes a codepoint to UTF-8. |
+| `core:unicode` | `unicode.is_valid_utf8` / `rune_count` | `fn(s: str) -> bool` / `fn(s: str) -> usize` | Validates RFC 3629 UTF-8 byte sequences and counts Unicode codepoints. |
+| `core:unicode` | `unicode.runes` / `encode_rune` | `fn(s: str) -> []u32` / `fn(r: u32) -> str` | Decodes UTF-8 into 32-bit scalar values (`u32`) or encodes a codepoint to UTF-8. |
 | `core:unicode` | `unicode.to_lower` / `to_upper` | `fn(s: str) -> str` | Full Unicode case folding across Latin, Greek, and Cyrillic scripts. |
 | `core:unicode` | `unicode.is_letter` / `is_digit` / `is_space` | `fn(r: u32) -> bool` | Unicode general category classification predicates on a 32-bit rune. |
 | `core:regex` | `regex.compile` | `fn(pattern: str) -> Regex!` | Compiles an ECMAScript regular expression (`std::regex`), returning an error on invalid syntax. |
-| `core:regex` | `regex.is_match` / `find` / `find_all` | `fn(pat: str, text: str) -> bool!` / `Match?!` / `[]str!` | Tests pattern matches or extracts the first (`Match { text, index }`) or all non-overlapping matches. |
+| `core:regex` | `regex.is_match` / `find` / `find_all` | `fn(pat: str, text: str) -> bool!` / `Match?!` / `[]str!` | Tests matches or extracts the first (`Match { text, index }`) or all non-overlapping matches. |
 | `core:regex` | `regex.replace_all` | `fn(pat: str, text: str, replacement: str) -> str!` | Replaces every match of `pat` in `text` with `replacement`. |
 
-### Level 1 — Strings, Runes & Regex (`core:str`)
 ```cfire
 package main
 
@@ -1215,13 +1112,43 @@ joined=node_01|node_02|node_03 runes=7 bytes=10 regex=node_#|node_#|node_#
 last_rune=U+1F525 valid_utf8=true
 ```
 
-**Line-by-Line Mechanics:**
-1. **`str.split(str.trim(raw), ", ")` (Line 9)**: Strips outer whitespace and splits `raw` into a 3-element `[]str` slice (`["node_01", "node_02", "node_03"]`).
-2. **`unicode.runes(banner)` & `unicode.rune_count(banner)` (Lines 13 & 17)**: While `banner.len()` returns the UTF-8 byte length (`10`, because `🔥` `U+1F525` is 4 UTF-8 bytes), `unicode.rune_count(banner)` returns `7` scalar codepoints.
-3. **`try regex.replace_all(...)` (Line 15)**: Compiles the raw string pattern `` `[0-9]+` `` and replaces digit runs with `"#"`.
+### Zero-Copy Buffer Pointers & Compile-Time Bounds Checks
+When you pass buffers to C APIs, socket layers, or SIMD loops, copying a `str` into a new `[]byte` vector just to read its bytes wastes memory bandwidth. Strings and slices expose built-in zero-copy pointer and byte-slice methods:
 
-### Level 2 — Generic Containers & Sorting
-Beyond built-in slices (`[]T`) and maps (`map[K]V`), `core:collections` and `core:sort` provide generic hash sets, max-heap priority queues, double-ended queues, in-place sorting, and logarithmic binary search:
+| Method | Receiver | Return Type | Behavior |
+| :--- | :--- | :--- | :--- |
+| `s.bytes()` | `str` / `&str` | `[]byte` | Copies the UTF-8 bytes of `s` into a `std::vector<uint8_t>` (`[]byte`). |
+| `s.data()` / `s.byte_ptr()` | `str` | `const char*` / `char*` | Direct pointer to the underlying contiguous UTF-8 byte buffer (`s.data()`). |
+| `s.byte_ptr_at(offset)` | `str` | `char*` | Pointer to byte `offset` (`s.data() + offset`), Useful when advancing through a read/write buffer in chunks. |
+| `slice.data()` / `slice.data_ptr()` | `[]T` / `mut []T` | `const T*` / `T*` | Direct pointer to the contiguous backing storage of a slice (`std::vector<T>::data()`). |
+
+At the same time, the compiler guards slice/array indexing and arithmetic division against constant-folded bugs before your binary ever runs:
+- **`cfire/INDEX-OUT-OF-BOUNDS`**: Rejects negative index expressions (`items[-1]`) or constant indices that exceed a known array/slice length (`arr[5]` on `[4]i32`).
+- **`cfire/DIVIDE-BY-ZERO`**: Rejects integer division (`/`) or remainder (`%`) where the divisor evaluates to constant `0`.
+
+```cfire
+package main
+
+fn main() {
+    mut packet := "PING:1024"
+    // Zero-copy pointer offset into the payload after "PING:"
+    payload_ptr := packet.byte_ptr_at(5)
+    raw_bytes := packet.bytes()
+
+    mut samples: []f32 = [0.25, 0.5, 0.75, 1.0]
+    buf_ptr := samples.data_ptr()
+
+    println("bytes={} first_payload_byte={} first_sample={:.2f}",
+        raw_bytes.len(), i32(*payload_ptr), *buf_ptr)
+}
+```
+```text
+# Output:
+bytes=9 first_payload_byte=49 first_sample=0.25
+```
+
+### Generic Sets, Priority Queues, Deques & Sorting
+Beyond built-in slices (`[]T`) and hash maps (`map[K]V`), `core:collections` and `core:sort` give you generic hash sets, max-heap priority queues, double-ended ring queues, in-place sorting, and binary search:
 
 | Module | Type / Function | Operations / Signature | C++23 Backing |
 | :--- | :--- | :--- | :--- |
@@ -1267,22 +1194,19 @@ min=7 idx_of_19=2 max_pq=88 front=leader-0 regions=2
 
 ## Chapter 9: Filesystem, OS, Time, CLI & Logging
 
-### Architecture & Invariants
-`cfire`'s Tier 1B system modules provide cross-platform filesystem streaming (`core:fs`), zero-shell-injection subprocess execution (`core:os`), monotonic and RFC 3339 clocks (`core:time`), IEEE-754 math (`core:math`), OS-entropy CSPRNG (`core:rand`), compile-time struct-tag CLI flag parsing (`core:cli`), and structured JSON/Text logging (`core:log`).
+### Streaming File I/O, Clocks & OS Entropy (`core:fs`, `core:time`, `core:rand`)
+Whether your code runs on a Linux server, macOS desktop, or inside the iOS Simulator, `core:fs`, `core:time`, `core:math`, and `core:rand` give you a single system interface (automatically resolving writable `Documents/` sandbox paths and read-only bundle assets when compiled with `--ios`):
 
-### Filesystem, OS, Time & Random Specification
 | Module | Function / Method | Signature | Description |
 | :--- | :--- | :--- | :--- |
-| `core:fs` | `fs.read_text` / `write_text` / `append_text` | `fn(path: str) -> str!` / `fn(path: str, data: str) -> void!` | One-shot file read/write (automatically resolves iOS `Documents/` sandbox & bundle resources). |
+| `core:fs` | `fs.read_text` / `write_text` / `append_text` | `fn(path: str) -> str!` / `fn(path: str, data: str) -> void!` | One-shot file read/write. |
 | `core:fs` | `fs.open(path, mode)` | `fn(path: str, mode: OpenMode) -> File!` | Opens a streaming `File` handle (`OpenMode::Read`, `Write`, `Append`, `ReadWrite`) supporting `.read_line()`, `.write_str()`, `.seek()`, `.tell()`, `.flush()`, `.close()`. |
 | `core:fs` | `fs.exists` / `is_dir` / `mkdir_all` / `remove` / `list_dir` | `fn(path: str) -> ...` | Path inspection, recursive directory creation, removal, and directory listing. |
 | `core:os` | `os.getenv` / `os.setenv` / `os.cwd` | `fn(key: str, fallback: str = "") -> str` | Reads or sets process environment variables and queries the working directory. |
-| `core:os` | `os.command(binary, args)` | `fn(bin: str, args: []str) -> ExecResult!` | Spawns `bin` directly via `posix_spawnp` (zero shell injection) and returns `ExecResult { exit_code, stdout, stderr }`. |
 | `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.format_rfc3339()`, and thread sleep. |
 | `core:rand` | `rand.u64` / `range_i64` / `f64_unit` / `bytes` | `fn(n: usize) -> []byte` | Thread-local `MT19937_64` draws and OS-entropy CSPRNG byte slices (`rand.bytes`). |
 | `core:math` | `math.sqrt` / `sin` / `cos` / `pow` / `clamp_f64` | `fn(f64) -> f64` | IEEE-754 transcendental functions and numeric clamping. |
 
-### Level 1 — File I/O, Clocks & CSPRNG (`core:fs`)
 ```cfire
 package main
 
@@ -1297,7 +1221,6 @@ fn main() -> void! {
     tmp := "/tmp/cfire_sys_demo.txt"
     defer { _ = fs.remove(tmp) }
 
-    // 1. Streaming file write and read-back
     mut f := try fs.open(tmp, fs.OpenMode::Write)
     try f.write_str("host=" + os.getenv("USER", "ci") + "\n")
     try f.close()
@@ -1314,12 +1237,36 @@ fn main() -> void! {
 has_host=true token_bytes=16 hypot=5.0 elapsed>=true
 ```
 
-### Level 2 — CLI Parsing & Structured Logging
-`core:cli` synthesizes command-line parsers and `--help` screens from struct field tags at compile time, while `core:log` emits leveled structured logs in either human-readable text or machine-parsable JSON:
+### Safe Subprocess Execution vs Shell Injection (`cfire/SHELL-INJECTION-RISK`)
+Shelling out via `/bin/sh -c` with string-concatenated arguments (`os.exec("tar -xf " + user_file)`) is one of the oldest remote-code-execution vectors in systems programming: if `user_file` contains `; rm -rf /`, the shell happily runs both commands.
+
+`cfire` enforces subprocess safety at two levels:
+1. **Compile-Time Guard (`cfire/SHELL-INJECTION-RISK`)**: Passing a dynamically concatenated or interpolated string to `os.exec(...)` or `os.exec_output(...)` triggers `cfire/SHELL-INJECTION-RISK` during `cfire check` and `cfire build`.
+2. **Direct `posix_spawnp` Execution (`os.command(binary, args)`)**: Always prefer `os.command(bin, args)`. It spawns the binary directly via `posix_spawnp` without invoking `/bin/sh`, passing each element of `args: []str` as a verbatim `argv` entry and returning `ExecResult { exit_code, stdout, stderr }`:
+
+```cfire
+package main
+
+import "core:os"
+import "core:str"
+
+fn main() -> void! {
+    // Spawns /bin/echo directly via posix_spawnp — shell metacharacters are inert literals
+    res := try os.command("echo", ["hello; uname -a", "safe-argv"])
+    println("exit={} output={}", res.exit_code, str.trim(res.stdout))
+}
+```
+```text
+# Output:
+exit=0 output=hello; uname -a safe-argv
+```
+
+### Compile-Time CLI Flag Parsing & Structured Logging (`core:cli`, `core:log`)
+Instead of writing imperative flag-parsing loops for every tool, tag a struct with `` `cli:"--flag,-f" env:"VAR" default:"..." desc:"..."` `` and call `cli.parse[T]()`. Pair it with `core:log` to emit leveled logs in human-readable text during local development or structured JSON in production:
 
 | Module | Function / Method | Signature | Description |
 | :--- | :--- | :--- | :--- |
-| `core:cli` | `cli.parse[T](args)` | `fn[T](args: []str? = nil) -> T!` | Parses `argc`/`argv` (or an explicit `[]str` slice) into struct `T` using `` `cli:"--flag,-f" env:"VAR" default:"..." desc:"..."` `` tags. |
+| `core:cli` | `cli.parse[T](args)` | `fn[T](args: []str? = none) -> T!` | Parses `argc`/`argv` (or an explicit `[]str` slice) into struct `T` using `cli`, `env`, and `default` tags. |
 | `core:cli` | `cli.help[T](prog_name)` | `fn[T](prog_name: str = "") -> str` | Generates a formatted `--help` usage screen from struct `T`'s compile-time reflection tags. |
 | `core:log` | `log.set_level(lvl)` / `set_format(fmt)` | `fn(Level)` / `fn(Format)` | Configures minimum severity (`Level::Debug`, `Info`, `Warn`, `Error`) and output format (`Format::Text` or `Format::Json`). |
 | `core:log` | `log.debug` / `info` / `warn` / `error` | `fn(msg: str, ...kv_pairs)` | Emits a timestamped log record with variadic `"key", "value"` structured attributes. |
@@ -1331,15 +1278,15 @@ import "core:cli"
 import "core:log"
 
 type ServerFlags struct {
-    Host:    str  `cli:"--host,-h" default:"127.0.0.1" desc:"Bind address"`
-    Port:    u16  `cli:"--port,-p" default:"9090"      desc:"Listen port"`
-    Workers: i32  `cli:"--workers" default:"4"         desc:"Worker thread count"`
+    Host:    str `cli:"--host,-h" default:"127.0.0.1" desc:"Bind address"`
+    Port:    u16 `cli:"--port,-p" default:"9090"      desc:"Listen port"`
+    Workers: i32 `cli:"--workers" default:"4"         desc:"Worker thread count"`
 }
 
 fn main() -> void! {
     flags := try cli.parse[ServerFlags](["--port", "8088", "--workers", "8"])
     log.set_format(log.Format::Json)
-    log.info("server configured", "host", flags.Host, "port", f"{flags.Port}", "workers", f"{flags.Workers}")
+    log.info("server configured", "host", flags.Host, "port", "{flags.Port}", "workers", "{flags.Workers}")
 }
 ```
 ```text
@@ -1351,13 +1298,14 @@ fn main() -> void! {
 
 ## Chapter 10: Structured Concurrency & Channels
 
-### Lexical Task Lifetime Invariants
-Unstructured concurrency (`std::thread::detach` or fire-and-forget goroutines) permits background threads to outlive the stack frame whose local variables they reference, causing use-after-free races. `cfire` enforces **Lexical Structured Concurrency**:
-1. **`async.scope(workers: N) |scope| { ... }`**: Allocates a bounded worker pool of `N` hardware threads (`std::jthread`) scoped to the lexical block.
-2. **Mandatory Join Barrier**: The closing `}` of `async.scope` blocks until every task submitted via `scope.spawn || { ... }` finishes executing.
-3. **Safe Stack Borrowing**: Because no spawned task can outlive `async.scope`, tasks can safely read outer immutable bindings (`in`) or write to disjoint pre-allocated slice slots (`&mut results[i]`) without heap-allocating `std::shared_ptr` wrappers.
+### Why Unstructured Threads Fail & How `async.scope` Fixes It
+Detached threads (`std::thread::detach`) and fire-and-forget tasks break stack memory safety: if a background thread outlives the function that spawned it, any borrowed stack reference becomes a use-after-free race. To work around that, most C++ codebases end up wrapping everything in `std::shared_ptr` and `std::mutex`.
 
-### Level 1 — Parallel Scopes (`async.scope`)
+`cfire` enforces **Lexical Structured Concurrency** via `async.scope(workers: N) |scope| { ... }`:
+1. **Bounded Worker Pool**: Allocates `N` hardware worker threads (`std::jthread`) scoped to the lexical block.
+2. **Mandatory Join Barrier**: The closing `}` of `async.scope` blocks until every task spawned via `scope.spawn || { ... }` finishes.
+3. **Zero-Heap Stack Borrowing**: Because no worker can outlive `async.scope`, tasks can read outer immutable bindings (`in`) or write to disjoint pre-allocated slice slots (`&mut results[i]`) without `shared_ptr` overhead:
+
 ```cfire
 package main
 
@@ -1372,7 +1320,7 @@ fn run_parallel_shards(shard_count: usize, scale: i32) -> []i32 {
     async.scope(workers: 4) |scope| {
         for i in 0..shard_count {
             slot := &mut results[i]
-            shard_idx := i as i32
+            shard_idx := i32(i)
             scope.spawn || {
                 *slot = compute_shard_checksum(shard_idx, scale)
             }
@@ -1392,13 +1340,8 @@ fn main() {
 shards=[10, 20, 30, 40]
 ```
 
-**Line-by-Line Mechanics:**
-1. **`mut results := make([]i32, shard_count)` (Line 8)**: Allocates a fixed-length vector of `shard_count` zero-initialized `i32` elements prior to spawning tasks, preventing vector reallocation races during parallel execution.
-2. **`slot := &mut results[i]` (Line 12)**: Captures an exclusive mutable pointer/reference to element `i` for each task, while `scale` is captured as an immutable value.
-3. **Scope Exit Barrier (Line 17)**: Execution cannot reach `return results` until all spawned tasks complete.
-
-### Level 2 — Thread-Safe MPMC Channels (`core:sync`)
-`core:sync` provides typed, reference-counted multi-producer / multi-consumer (`MPMC`) channels backed by `std::mutex`, `std::condition_variable`, and `std::deque<T>`:
+### Communicating Across Workers with MPMC Channels (`core:sync`)
+When workers need to stream items through a producer/consumer pipeline rather than write to fixed slice slots, use `sync.make_channel[T]()`. It provides a typed, thread-safe multi-producer / multi-consumer (`MPMC`) queue that integrates directly with `for item in ch` loops:
 
 | Function / Method | Signature | Behavior |
 | :--- | :--- | :--- |
@@ -1418,7 +1361,6 @@ fn main() {
     mut total: i64 = 0
 
     async.scope(workers: 2) |scope| {
-        // Producer task
         scope.spawn || {
             for i in 1..=4 {
                 ch.send(i * 10)
@@ -1426,7 +1368,6 @@ fn main() {
             ch.close()
         }
 
-        // Consumer task iterating until ch.close() drains the queue
         scope.spawn || {
             for val in ch {
                 total += val
@@ -1442,13 +1383,13 @@ fn main() {
 channel_sum=100
 ```
 
-### Level 3 — Cancellation & Deadlines (`context`)
-`core:sync/context` implements hierarchical cancellation tokens and automatic deadlines modeled after Go's `context.Context`:
+### Hierarchical Cancellation & Deadlines (`core:sync/context`)
+Long-running network calls and worker pipelines need cooperative timeouts and cancellation. `core:sync/context` implements hierarchical cancellation tokens where cancelling a parent `Context` automatically cancels all of its child contexts and wakes any blocked `recv_ctx` or `sleep_ctx` calls:
 
 | Function / Method | Signature | Behavior |
 | :--- | :--- | :--- |
 | `context.background()` | `fn background() -> Context` | Returns a root, non-cancellable `Context`. |
-| `context.with_cancel(parent)` | `fn with_cancel(parent: Context) -> (Context, fn(reason: str = ""))` | Creates a child `Context` and a `cancel(reason)` closure. Cancelling a parent cancels all derived children. |
+| `context.with_cancel(parent)` | `fn with_cancel(parent: Context) -> (Context, fn(reason: str = ""))` | Creates a child `Context` and a `cancel(reason)` closure. |
 | `context.with_timeout(parent, ms)` | `fn with_timeout(parent: Context, ms: i64) -> (Context, fn(reason: str = ""))` | Creates a child `Context` that automatically cancels after `ms` milliseconds. |
 | `ctx.is_cancelled()` / `ctx.done()` | `fn (ctx: Context) is_cancelled() -> bool` | Non-blocking atomic check returning `true` once cancelled or expired. |
 | `ctx.reason()` | `fn (ctx: Context) reason() -> str` | Returns the string reason passed to `cancel(reason)` (or `"timeout"`). |
@@ -1471,7 +1412,6 @@ fn main() {
 
     async.scope(workers: 2) |scope| {
         scope.spawn || {
-            // Waits on an empty channel until the 50ms context deadline fires
             msg := ch.recv_ctx(ctx) or " aborted:{ctx.reason()}"
             ch.send(msg)
         }
@@ -1490,25 +1430,19 @@ cancelled=true result= aborted:timeout
 
 ## Chapter 11: C/C++ Interop & Native Dependencies
 
-### Direct AST Ingestion vs Manual FFI
-Because `cfire` lowers to ISO C++23, calling C or C++ libraries requires **zero dynamic FFI marshaling, zero wrapper generators (SWIG/bindgen), and zero ABI thunks**:
-1. **Inline `cpp { ... }` Escape Blocks**: Embed raw C++23 statements, preprocessor conditionals (`#if`), or SIMD intrinsics directly inside `.cf` functions with full access to local `.cf` bindings.
-2. **Clang AST Header Bridge (`import cpp "header.h"`)**: Invokes `clang -Xclang -ast-dump=json` at compile time, caches the parsed symbol table in `.cfire/cache/`, and exposes C/C++ functions, structs, and constants under the `cpp::` (or `cpp.`) namespace.
-3. **Automatic Boundary Coercion**: `cfire` automatically converts `.cf` `str` arguments to `const char*` (via `cfire::c_arg`) when calling C functions expecting null-terminated strings.
+### Zero-Wrapper Interop: Inline `cpp` Blocks & ABI Coercion
+Because `cfire` compiles to ISO C++23, calling C or C++ libraries requires **zero dynamic FFI marshaling, zero wrapper generators (SWIG/bindgen), and zero ABI thunks**. Every `.cf` type lowers to a standard C++23 layout:
 
-### C/C++ ABI Type Coercion Matrix
 | `.cf` Type / Expression | C / C++23 Parameter Type | Boundary Conversion Performed by `cfire` |
 | :--- | :--- | :--- |
 | `i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool` | `int8_t`..`int64_t`, `uint8_t`..`uint64_t`, `float`, `double`, `bool` | Identical C++23 scalar type (0-cost pass-through) |
 | `str` passed to `const char*` | `const char*` | Automatic `cfire::c_arg(s)` (`.c_str()`, 0 allocation) |
 | `&str` | `std::string_view` | 0-copy pointer + length view |
-| `s.data()` / `s.byte_ptr()` | `const char*` / `char*` | Direct raw pointer to contiguous UTF-8 buffer |
-| `s.byte_ptr_at(offset)` | `char*` | Bounds-checked pointer offset `s.data() + offset` |
-| `slice.data()` / `slice.data_ptr()` | `const T*` (immutable) or `T*` (`mut` slice) | Direct pointer to contiguous `std::vector<T>` buffer |
+| `s.data()` / `s.byte_ptr()` / `s.byte_ptr_at(i)` | `const char*` / `char*` | Direct raw pointer to contiguous UTF-8 buffer |
+| `slice.data()` / `slice.data_ptr()` | `const T*` / `T*` | Direct pointer to contiguous `std::vector<T>` buffer |
 | `&T` / `&mut T` | `const T&` or `const T*` / `T&` or `T*` | Direct reference or address-of `&x` for C out-pointers |
 
-### Level 1 — Inline `cpp { ... }` Escape Blocks
-Local `.cf` parameters and variables are directly in scope inside `cpp { ... }` blocks under their exact identifiers:
+When you need platform `#ifdef` intrinsics or direct C++ statements inside a `.cf` function, open a `cpp { ... }` block—all local `.cf` parameters and variables are directly in scope:
 
 ```cfire
 package main
@@ -1542,8 +1476,8 @@ fn main() {
 arch=arm64 worker_slots>=true
 ```
 
-### Level 2 — Clang AST Header Bridge (`import cpp`)
-Use `import cpp "<header.h>"` with optional `@pkg("<pkg-config-name>")` and `@define("<KEY>", "<VAL>")` attributes to import system or third-party C/C++ headers directly:
+### Importing C Headers & Using Bitwise Flag Enums (`import cpp`)
+Use `import cpp "<header.h>"` (with optional `@pkg("<pkg-config-name>")` and `@define("<KEY>", "<VAL>")` attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under `cpp::` (or `cpp.`):
 
 ```cfire
 package main
@@ -1566,19 +1500,18 @@ fn main() {
 zstd_version=true bound_for_1kb=true
 ```
 
-**Inspecting Foreign C/C++ Headers from the CLI:**
-Before writing code against a C header, run `cfire inspect` to list every ingested symbol and its mapped `.cf` signature:
-```bash
-cfire inspect "cpp zstd.h"
-# Output:
-# Header: <zstd.h> (42 symbols)
-#   cpp::ZSTD_compress(void*, size_t, const void*, size_t, int) -> size_t
-#   cpp::ZSTD_compressBound(size_t) -> size_t
-#   cpp::ZSTD_versionNumber() -> unsigned int
+**Bitwise Flag Operators & Formatting on C / Vendor Enums:**
+C libraries (like Raylib's `ConfigFlags` or POSIX file flags) frequently use `enum` types as bitmasks. `cfire` supports bitwise operators (`|`, `&`, `^`, `~`, `|=`, `&=`) and `"{flag}"` string formatting directly on C and `vendor:*` enums without requiring manual integer casts:
+```cfire
+// Combine C enum bitflags directly with | and &=
+mut flags := rl.ConfigFlags::FLAG_WINDOW_RESIZABLE | rl.ConfigFlags::FLAG_VSYNC_HINT
+flags |= rl.ConfigFlags::FLAG_MSAA_4X_HINT
 ```
 
-### Level 3 — C, CMake & Make in `build.cf`
-When a project combines `.cf` packages with local C sources (`build.CC`), a CMake subproject (`build.CMake`), and a Makefile library (`build.Make`), `build.cf` compiles each dependency into `.cfire/cache/deps/`, injects its `Includes` and `Defines` into the Clang AST bridge, and links all resulting archives automatically:
+Before writing code against a foreign header, run `cfire inspect "cpp zstd.h"` from the terminal to list every discovered symbol and its mapped `.cf` signature.
+
+### Orchestrating C, CMake & Make Libraries in `build.cf`
+When your project combines `.cf` code with local C files (`build.CC`), a CMake subproject (`build.CMake`), or a Makefile archive (`build.Make`), declare them in `build.cf`. The build driver compiles each native dependency into `.cfire/cache/deps/`, forwards its `Includes` and `Defines` to the Clang AST bridge, and links the resulting static archives automatically:
 
 ```cfire
 package build
@@ -1608,7 +1541,7 @@ var App = build.Executable("hybrid-build-demo", {
 })
 ```
 
-And in `main.cf`, all three native libraries are imported directly via `import cpp`:
+In `main.cf`, import all three headers directly via `import cpp`:
 ```cfire
 package main
 
@@ -1618,7 +1551,7 @@ import cpp "vecmath.h"
 
 fn main() {
     payload := "cfire-hybrid"
-    crc := cpp::fastcrc32(payload, payload.len() as u32)
+    crc := cpp::fastcrc32(payload, u32(payload.len()))
     hash := cpp::kv_hash_key(payload)
     dot := cpp::vm_dot2d(2.0, 3.0, 4.0, 5.0)
     println("crc=0x{:x} kv_hash={} dot={:.1f}", crc, hash, dot)
@@ -1627,21 +1560,16 @@ fn main() {
 
 ---
 
-## Chapter 12: Testing, Sanitizers & Diagnostics
+## Chapter 12: Testing, Fuzzing, Sanitizers & Diagnostics
 
-### Architecture & Invariants
-`cfire` integrates unit testing, property-based fuzzing with automatic counterexample shrinking, zero-code invariant synthesis, multi-iteration statistical benchmarking, hardware memory sanitizers, and structured machine-readable diagnostics directly into the compiler binary:
-- **Zero-Config Test Blocks (`test "name" { ... }`)**: Co-located in implementation or test `.cf` files. Stripped from production `cfire build` binaries; compiled into a dedicated test harness runner during `cfire test`.
-- **Native Property-Based Fuzzing & Shrinking (`fuzz "name" |x: i64, s: str| { ... }`)**: Generates 16 deterministic adversarial boundary cases (`0`, `-1`, `INT64_MIN`, `INT64_MAX`, `NaN`, empty/UTF-8/NUL/SQL-quote strings) followed by seeded SplitMix64 PRNG runs across primitives, slices (`[]T`), and reflected user structs (`Arbitrary<T>`), automatically shrinking any failing input to its minimal counterexample.
-- **Zero-Code Invariant Checks**:
-  - **Executable Doc-Tests (`///`)**: Fenced ```` ```cf ```` blocks inside `///` doc-comments containing `assert` or `assert_eq` are automatically extracted and executed during `cfire test`.
-  - **Automatic JSON Round-Trip Tests (`[auto] json round-trip: <Struct>`)**: Importing `ext:json` alongside JSON-tagged structs automatically verifies `json.parse[T](json.stringify(v)) == v` across 16 arbitrary struct instances plus malformed JSON rejection.
-  - **Resource-Leak Canary**: Every `test` and `fuzz` block snapshots open OS file descriptors before and after execution, failing immediately if a test leaks an unclosed file, socket, or SQLite handle (`missing 'defer file.close()'?`).
-- **Multi-Iteration Statistical Benchmarks (`bench "name" |size in [64, 1024]| { ... }`)**: Performs warmup, dynamic batch calibration ($B$), and 10–25 sample windows over `--bench-time <ms>` (reporting `iters`, `min`, `p50`, `mean ± stddev%`, `p99`, and `ops/s`) with `black_box(x)` dead-code-elimination barriers. During normal `cfire test`, each `bench` block executes a single 1-iteration smoke pass so benchmark code never bit-rots.
-- **Source-Mapped Sanitizers (`--sanitize`)**: Compiles with `-fsanitize=address,undefined -fno-omit-frame-pointer -g` and `#line` directives so buffer overflows, use-after-free, or signed integer overflows report exact `.cf` source coordinates.
-- **Auto-Remediation (`cfire fix`)**: Deterministic AST/token rewriter that repairs missing standard library imports, missing call-site `mut` annotations, and non-exhaustive `match` blocks automatically.
+### Unit Tests, Doc-Tests & Resource-Leak Canaries (`cfire test`)
+Testing shouldn't require installing a third-party test framework or maintaining separate CMake test targets. `cfire` builds unit tests, executable doc-tests, automatic JSON round-trip invariants, and OS file-descriptor leak detection directly into `cfire test`:
 
-### Level 1 — Unit Testing (`test` & `assert_eq`)
+- **Co-Located `test "name" { ... }` Blocks**: Stripped from production `cfire build` binaries; compiled into a fast test runner during `cfire test`.
+- **Executable Doc-Tests (`///`)**: Any fenced ```` ```cf ```` block inside a `///` doc-comment that calls `assert` or `assert_eq` is automatically extracted and run as part of `cfire test`.
+- **Automatic JSON Round-Trip Invariants**: Importing `ext:json` alongside JSON-tagged structs automatically synthesizes `[auto] json round-trip: <Struct>` tests across 16 arbitrary instances.
+- **File-Descriptor Leak Canary**: Every `test` and `fuzz` block snapshots open OS file descriptors before and after execution, failing immediately if a test leaks an unclosed file, socket, or SQLite handle (`missing 'defer file.close()'?`).
+
 ```cfire
 package main
 
@@ -1652,7 +1580,7 @@ package main
 /// ```
 fn fibonacci(n: i32) -> i64 {
     if n <= 1 {
-        return n as i64
+        return i64(n)
     }
     mut prev: i64 = 0
     mut curr: i64 = 1
@@ -1675,20 +1603,18 @@ test "fibonacci sequence progression" {
 }
 ```
 
-Execute tests from the CLI (each `assert(a == b)` and `assert_eq(a, b)` evaluates its operands once and formats `[left: <val>, right: <val>]` value diffs on failure):
 ```bash
-# 1. Run all test, fuzz, doc-test, and [auto] invariant blocks in the workspace
+# Run all test, fuzz, doc-test, and [auto] invariant blocks in the workspace
 cfire test
-cfire test math_test.cf
-
-# 2. Run only tests matching a substring filter
 cfire test --filter "base cases"
-
-# 3. Emit structured JSON test results for CI pipelines
 cfire test --json
 ```
 
-### Level 1B — Property-Based Fuzzing (`fuzz`) & Parameterized Benchmarks (`bench`)
+### Property-Based Fuzzing & Statistical Benchmarks (`fuzz` & `bench`)
+Hand-written unit tests check the inputs you thought of; property-based `fuzz` blocks find the edge cases you missed. Each `fuzz "name" |...|` block runs 16 deterministic adversarial boundary cases (`0`, `-1`, `INT64_MIN`, `INT64_MAX`, `NaN`, empty/UTF-8/NUL/SQL-quote strings) followed by seeded SplitMix64 PRNG draws across primitives, slices, and user structs, shrinking any failure to a minimal counterexample.
+
+For performance work, `bench "name" |param in [...]|` performs warmup, dynamic batch calibration, and multi-sample statistical timing (`min`, `p50`, `mean ± stddev%`, `p99`, `ops/s`) with `black_box(x)` dead-code-elimination barriers:
+
 ```cfire
 package main
 
@@ -1701,65 +1627,57 @@ fuzz "hex round-trip invariant" |raw: []byte| {
 }
 
 bench "hex encode throughput" |size in [64, 1024, 16384]| {
-    payload := make([]byte, size as usize)
+    payload := make([]byte, usize(size))
     black_box(hex.encode(payload))
 }
 ```
 
 ```bash
-# Customize fuzz iteration count or replay a deterministic seed on failure:
+# Run fuzz tests with custom iteration count and deterministic seed:
 cfire test --fuzz-runs 500 --seed 1337
 
-# Run full multi-iteration statistical benchmarks across all parameter variations:
+# Run statistical benchmarks:
 cfire bench
 cfire bench --bench-time 250 --filter "hex encode"
-cfire bench --json
 ```
 
-### Level 2 — Memory & UB Sanitizers (`--sanitize`)
-Pass `--sanitize` to `cfire test` or `cfire run` to enable AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan):
+### Source-Mapped Sanitizers (`--sanitize`) & Auto-Remediation (`cfire fix`)
+When your project mixes `.cf` code with raw `import cpp` headers or `cpp { ... }` blocks, pass `--sanitize` to `cfire test` or `cfire run`. The compiler links AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan) with `#line` directives so any C buffer overflow, use-after-free, or signed integer overflow points directly to the offending `.cf` line:
 
 ```bash
-cfire test --sanitize math_test.cf
+cfire test --sanitize
 cfire run --sanitize src/main.cf
 ```
 
-What `--sanitize` detects at runtime with zero false positives:
-- Out-of-bounds heap, stack, or global array accesses (`import cpp` or `cpp { ... }` blocks).
-- Heap use-after-free and double-free bugs across foreign C libraries.
-- Signed integer overflow, shift-exponent out-of-bounds, and misaligned/null pointer dereferences.
-
-### Level 3 — Diagnostics & Auto-Fix (`cfire fix`)
-Every compiler error and semantic rule violation carries a stable identifier that can be queried in `docs/reference.html` or emitted as JSON via `cfire check --json <file.cf>`:
-
-#### 1. Compiler Stage Diagnostic Ranges (`CF1xxx`–`CF5xxx`)
-| Code Prefix | Compiler Stage | Representative Error Conditions |
-| :--- | :--- | :--- |
-| `CF1xxx` | Lexical Analyzer (`lexer`) | Unterminated string or raw literal, invalid numeric/hex token, unrecognized byte sequence. |
-| `CF2xxx` | Syntax Parser (`parser`) | Missing closing `}` or `)`, unexpected token in `type`/`fn`/`match` declaration (`cfire/SYNTAX-ERROR`). |
-| `CF3xxx` | Semantic & Borrow Checker (`sema`) | Escaping reference to stack local (`CF3002`), type mismatch across assignment/return, unknown identifier or field. |
-| `CF4xxx` | ISO C++23 Emitter (`codegen`) | Unsupported target-specific intrinsic or invalid C++23 template instantiation (`cfire/TYPE-ERROR`). |
-| `CF5xxx` | Build & Linker Driver (`buildsys`) | Missing `build.cf` entry target, failed external `CMake`/`Make`/`CC` build step, or unresolved native linker symbol. |
-
-#### 2. Semantic Safety & Exclusivity Rule Catalog
-| Rule Code | Enforced Invariant | `cfire fix` Auto-Fixable? |
-| :--- | :--- | :---: |
-| `cfire/MUT-CALLSITE` | Call site must write `mut arg` when passing to a `mut param: T` parameter. | **Yes** (inserts `mut ` at call site) |
-| `cfire/IMMUTABLE-MUT-ARG` | Argument passed as `mut` must be declared with `mut` at its binding site. | **Yes** (upgrades binding to `mut`) |
-| `cfire/MUT-RECEIVER` | Calling a `fn (mut self: T)` method requires a mutable struct binding. | **Yes** (upgrades receiver binding to `mut`) |
-| `cfire/MUT-ALIAS` | A `mut`/`out` argument cannot alias any other argument in the same call expression. | Manual refactor required |
-| `cfire/USE-AFTER-MOVE` | A variable moved with `move x` cannot be read or moved again on the same execution path. | Manual refactor required |
-| `cfire/NON-EXHAUSTIVE-MATCH` | `match` over an `enum` must cover all variants (or include `_ => { ... }`). | **Yes** (generates missing variant arms) |
-| `cfire/NON-DIVERGING-OR-BLOCK` | Error recovery block `val := f() or err { ... }` must diverge (`return`, `break`, `continue`, `panic`). | Manual refactor required |
-| `cfire/INVALID-STRUCT-TAG` | Duplicate `json`/`sql`/`cli` struct tags or unparsable `default:"..."` literals are rejected at compile time. | Manual refactor required |
-
+And when the compiler flags missing stdlib imports, missing call-site `mut` / `move` markers, or non-exhaustive `match` arms, run `cfire fix` to rewrite your source file automatically:
 ```bash
-# Preview automatic fixes without modifying files on disk:
 cfire fix --dry-run src/main.cf
-
-# Apply automatic fixes in place:
 cfire fix src/main.cf
 ```
+
+### Complete 18-Rule `cfire/*` Safety & Diagnostics Reference
+Every compiler stage (`CF1xxx`–`CF5xxx`) and semantic safety rule (`cfire/*`) has a stable identifier that can be inspected in [`reference.html`](file:///Users/memo/Programming/cfire/docs/reference.html) or emitted as structured JSON via `cfire check --json <file.cf>`. Below are all 18 semantic safety and exclusivity rules enforced by the compiler:
+
+| Rule Code | Category | Enforced Invariant | `cfire fix`? |
+| :--- | :--- | :--- | :---: |
+| `cfire/MUT-CALLSITE` | Call-Site Intent | Call site must write `mut arg` when passing to a `mut` / `out` parameter. | **Yes** |
+| `cfire/MOVE-CALLSITE` | Call-Site Intent | Call site must write `move arg` when passing to a `move` parameter. | **Yes** |
+| `cfire/IMMUTABLE-MUT-ARG` | Mutability | Argument passed as `mut` / `out` must be declared `mut` at its binding site. | **Yes** |
+| `cfire/MUT-RECEIVER` | Mutability | Calling a `fn (mut self: T)` method requires a `mut` receiver binding. | **Yes** |
+| `cfire/MUT-ALIAS` | Aliasing Safety | A `mut`/`out` argument cannot alias any other argument in the same call expression. | Manual |
+| `cfire/USE-AFTER-MOVE` | Ownership | A variable moved with `move x` cannot be read or moved again unless re-initialized. | Manual |
+| `cfire/USE-AFTER-FREE` | Heap Safety | Heap pointer freed via `free(p)` cannot be dereferenced, passed, or freed again (`double free`). | Manual |
+| `cfire/DANGLING-POINTER` | Lifetime / Loans | Taking `&x` or `&mut x` of an inner-scope local variable cannot assign into an outer-scope pointer, and a variable cannot be mutated while borrowed. | Manual |
+| `cfire/DANGLING-RETURN` | Lifetime / Loans | A function cannot return the address of a stack-local variable or parameter (`return &local`). | Manual |
+| `cfire/ITERATOR-INVALIDATION` | Container Safety | A container (`[]T`, `map[K]V`, `str`) cannot be structurally mutated (`.push`, `.clear`, `.remove`) inside a `for item in container` loop. | Manual |
+| `cfire/NULL-DEREF` | Null Safety | A pointer (`*T`, `*mut T`) that is `none` or potentially null cannot be dereferenced without an explicit `if p != none` guard. | Manual |
+| `cfire/INDEX-OUT-OF-BOUNDS` | Bounds Safety | Negative slice/array indices (`s[-1]`) or constant indices `>= N` on `[N]T` are rejected at compile time. | Manual |
+| `cfire/DIVIDE-BY-ZERO` | Arithmetic Safety | Integer division (`/`) or modulo (`%`) by a constant zero expression is rejected at compile time. | Manual |
+| `cfire/NON-EXHAUSTIVE-MATCH` | Pattern Matching | `match` over an `enum` must cover every declared variant (or include a wildcard `_ => { ... }` arm). | **Yes** |
+| `cfire/NON-DIVERGING-OR-BLOCK` | Error Handling | Recovery block `val := fallible() or err { ... }` must diverge (`return`, `break`, `continue`, `panic`). | Manual |
+| `cfire/RETURN-IN-DEFER` | Control Flow | `return` is forbidden inside a `defer { ... }` block so cleanup cannot silently swallow upstream return values or errors. | Manual |
+| `cfire/SQL-INJECTION-RISK` | Security | Concatenating or interpolating runtime variables into `db.exec` / `db.query` SQL strings is rejected; use `?1`, `?2` parameters. | Manual |
+| `cfire/SHELL-INJECTION-RISK` | Security | Concatenating or interpolating runtime variables into `os.exec` / `os.exec_output` commands is rejected; use `os.command(bin, args)`. | Manual |
 
 ---
 
@@ -1767,9 +1685,10 @@ cfire fix src/main.cf
 
 ## Chapter 13: HTTP, SSE, WebSockets & TLS
 
-The `ext:net` family provides a unified networking stack spanning raw TCP sockets, RFC 3986 URL parsing, OpenSSL TLS 1.3 transport, full HTTP/1.1 client/server routing with Server-Sent Events (SSE), and RFC 6455 WebSockets. Every layer automatically negotiates its transport backend across Desktop (macOS/Linux), iOS (`Foundation` `NSURLSession`), WebAssembly (`emscripten_fetch`), and restricted container/sandbox environments where kernel socket binding is disabled.
+### One Networking Stack Across Desktop, iOS & WebAssembly
+Writing networking code in C++ usually forces you to choose between a heavyweight library that won't cross-compile to WebAssembly or iOS, and low-level POSIX sockets that don't speak HTTP, TLS 1.3, or WebSockets.
 
-### Cross-Platform Transport Matrix
+The `ext:net` family gives you one API from raw TCP sockets up to HTTP routers, Server-Sent Events (SSE), and RFC 6455 WebSockets—negotiating the native OS transport automatically on each target:
 
 | Module | Primary Types | Desktop (macOS / Linux) | iOS (`--ios`) | Web (`--web`) | Restricted Sandbox Fallback |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -1779,57 +1698,29 @@ The `ext:net` family provides a unified networking stack spanning raw TCP socket
 | `ext:net/http` | `Client`, `Server`, `Router`, `Request`, `Response`, `SseEvent` | Native `ext:net` + `ext:net/tls` (with `curl` fallback for external HTTPS if OpenSSL is absent) | Native `NSURLSession` synchronous bridge for external HTTPS; native `ext:net` for local loopback | Browser `emscripten_fetch` synchronous XHR bridge | In-process router registry for `127.0.0.1` / `localhost` servers |
 | `ext:net/websocket` | `WebSocket`, `WsPair`, `WsServer`, `Frame` | RFC 6455 frame engine over `TcpStream` / `TlsStream` | RFC 6455 frame engine | RFC 6455 frame engine | In-memory `websocket.pair()` full-duplex channel |
 
-### TCP Sockets & URL Parsing (`ext:net`, `url`)
+### Building an HTTP Router & Streaming SSE (`ext:net/http`)
+Let's build an HTTP service with pre-dispatch middleware, parameterized routes (`/users/:id`), and a real-time Server-Sent Events (`/v1/stream`) endpoint. Notice how `router.dispatch(...)` lets you unit-test your entire routing table in memory before binding a live port via `http.make_server(0)`:
 
-| Signature | Return Type | Semantics |
+| Function / Method | Signature | Description |
 | :--- | :--- | :--- |
-| `net.listen(port: int = 0)` | `TcpListener!` | Binds a listening TCP socket on `127.0.0.1:port`. Passing `0` dynamically allocates an ephemeral port (queryable via `listener.port()`). |
-| `listener.accept()` | `TcpStream!` | Blocks until a client connects and returns the bidirectional `TcpStream`. |
-| `net.connect(host: str, port: int)` | `TcpStream!` | Establishes a TCP connection to `host:port`. |
-| `net.socket_pair()` | `SocketPair!` | Creates a connected pair of local streams (`.client` and `.server`) for deterministic zero-port testing. |
-| `stream.write_str(data: str)` | `int!` | Writes UTF-8 bytes to the stream and returns the byte count written. |
-| `stream.read_str(max_bytes: usize = 4096)` | `str!` | Reads up to `max_bytes` from the stream. |
-| `stream.read_line()` | `str!` | Reads until `\n` (stripping trailing `\r\n`). |
-| `url.parse(raw: str)` | `Url!` | Parses `scheme://host:port/path?query#fragment` into `Url { scheme, host, port, path, query, fragment }`. |
-| `url.encode(raw: str)` / `url.decode(raw: str)` | `str` / `str!` | Applies or decodes RFC 3986 percent-encoding (`%XX` and `+` space decoding). |
-
-### HTTP Client, SSE & Router (`ext:net/http`)
-
-#### HTTP Client Specification
-
-| Function | Signature | Description |
-| :--- | :--- | :--- |
-| `http.get` | `fn(url: str) -> Response!` | Sends an `HTTP GET` request over `http://` or `https://` with TLS peer verification enabled. |
-| `http.get_insecure` | `fn(url: str) -> Response!` | Sends an `HTTP GET` request bypassing TLS certificate chain verification (for local self-signed dev servers). |
-| `http.post` | `fn(url: str, body: str, content_type: str = "application/json") -> Response!` | Sends an `HTTP POST` request with the given payload and `Content-Type` header. |
-| `http.request` | `fn(method: str, url: str, body: str = "", headers: map[str]str = {}) -> Response!` | Sends an arbitrary HTTP verb (`PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`) with custom headers. |
-| `http.post_sse` | `fn(url: str, body: str, headers: map[str]str, on_event: fn(SseEvent) -> bool) -> void!` | Streams `text/event-stream` chunks in real time, invoking `on_event(SseEvent { event, data, id })` for each dispatched SSE frame until the stream ends or `on_event` returns `false`. |
-
-#### HTTP Router & Server Specification
-
-| Method / Factory | Signature | Description |
-| :--- | :--- | :--- |
-| `http.make_router()` | `fn() -> Router` | Constructs a pattern-matching HTTP router supporting static paths (`/health`), named parameters (`/users/:id`), and prefix wildcards (`/static/*`). |
+| `http.get` / `http.get_insecure` | `fn(url: str) -> Response!` | Sends an `HTTP GET` request over `http://` or `https://` (`get_insecure` skips self-signed cert verification). |
+| `http.post` / `http.request` | `fn(url: str, body: str, ...) -> Response!` | Sends an `HTTP POST` or custom HTTP verb (`PUT`, `PATCH`, `DELETE`) with headers. |
+| `http.post_sse` | `fn(url: str, body: str, headers: map[str]str, on_event: fn(SseEvent) -> bool) -> void!` | Streams `text/event-stream` chunks in real time, invoking `on_event` for each frame until the stream ends or `on_event` returns `false`. |
+| `http.make_router()` | `fn() -> Router` | Constructs a pattern-matching router supporting static paths, `:param` segments, and `*` wildcards. |
 | `router.get` / `post` / `put` / `delete_` | `fn(pattern: str, handler: fn(Request) -> Response)` | Registers a route handler for the specified HTTP method and path pattern. |
-| `router.use` | `fn(middleware: fn(Request) -> int)` | Registers a middleware hook executed before route dispatch. Returning `0` continues dispatch; returning a non-zero HTTP status code short-circuits with that status. |
-| `router.ws` | `fn(pattern: str, handler: fn(Request, mut WebSocket) -> void)` | Registers an RFC 6455 WebSocket upgrade endpoint on the HTTP router. |
+| `router.use` | `fn(middleware: fn(Request) -> int)` | Runs before route dispatch (`0` continues; non-zero HTTP status code short-circuits). |
 | `router.dispatch` | `fn(req: Request) -> Response` | Executes middleware and route matching in memory without opening a network socket. |
-| `req.param(name)` / `req.query(key)` / `req.header(name)` | `fn(str) -> str` | Extracts URL route parameter `:name`, query parameter `?key=val`, or case-insensitive request header. |
-| `http.Response.text` / `json` / `html` / `redirect` | `fn(status: int, body: str) -> Response` | Constructs an `http.Response` with the appropriate `Content-Type` (`text/plain`, `application/json`, `text/html`) or `Location` header. |
-| `http.make_server` | `fn(port: int = 0) -> Server!` | Binds a multi-threaded HTTP/1.1 server on `port` (`0` picks an ephemeral port via `server.port()`). |
-| `http.make_tls_server_pem` | `fn(cert_pem: str, key_pem: str, port: int = 0) -> Server!` | Binds an HTTPS (TLS 1.3) server using in-memory PEM certificate and private key strings. |
-| `server.serve_in_background` | `fn(router: Router) -> void` | Spawns the background accept loop dispatching incoming connections through `router`. |
-| `server.stop` | `fn() -> void` | Signals the accept loop to terminate and joins worker threads. |
-
-### Level 1 — HTTP Routing & Live SSE Streaming
+| `http.make_server` / `make_tls_server_pem` | `fn(port: int = 0) -> Server!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`). |
 
 ```cfire
+package main
+
 import "ext:net/http"
 
 fn main() -> void! {
     mut router := http.make_router()
 
-    // Middleware: reject requests missing X-Api-Version when targeting /v1/*
+    // Middleware: return 0 to continue or an HTTP status code to halt dispatch
     router.use(|req: http.Request| -> int {
         if req.path == "/forbidden" { return 403 }
         return 0
@@ -1858,7 +1749,7 @@ fn main() -> void! {
     defer server.stop()
     server.serve_in_background(router)
 
-    base := f"http://127.0.0.1:{server.port()}"
+    base := "http://127.0.0.1:{server.port()}"
     live := try http.get(base + "/users/99?format=compact")
     println("Live GET status={}, body={}", live.status, live.body)
 
@@ -1871,47 +1762,33 @@ fn main() -> void! {
     println("SSE events ({}): {}", chunks.len(), chunks[0])
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `router.use(...)` attaches a pre-dispatch middleware closure. Returning `0` allows execution to proceed to the matched route handler; returning an HTTP status code (`403`) halts dispatch immediately.
-2. `router.get("/users/:id", ...)` extracts `:id` via `req.param("id")` and query string parameters (`?format=...`) via `req.query("format")`.
-3. `router.dispatch(...)` tests routing and middleware deterministically in memory without allocating a kernel socket.
-4. `http.make_server(0)` binds to `127.0.0.1` on an OS-assigned ephemeral port (`server.port()`). `defer server.stop()` guarantees clean socket teardown on scope exit.
-5. `http.post_sse(...)` parses `event:` and `data:` lines from a `text/event-stream` response, invoking the callback for each completed SSE frame until the callback returns `false`.
-
-#### Expected Output
-
 ```text
+# Output:
 In-memory status=200, body={"id":"42","format":"full"}
 Live GET status=200, body={"id":"99","format":"compact"}
 SSE events (2): token:{"chunk":"hello"}
 ```
 
-### TLS 1.3 & WebSockets (`tls`, `websocket`)
-
-#### WebSocket & TLS Specification
+### Upgrading to WebSockets & Self-Signed TLS 1.3 (`ext:net/websocket`, `ext:net/tls`)
+Need full-duplex framing or an encrypted local HTTPS server? Register a WebSocket route directly on your HTTP router with `router.ws("/path", ...)`, and synthesize an in-memory RSA-2048 X.509 certificate with `tls.generate_self_signed_pem("localhost")`—no external `openssl` shell scripts or temporary `.pem` files on disk required:
 
 | Function / Method | Signature | Description |
 | :--- | :--- | :--- |
-| `tls.available()` | `fn() -> bool` | Returns `true` if the OpenSSL 1.3 dynamic bridge (`libssl` / `libcrypto`) is loaded on the host. |
+| `tls.available()` | `fn() -> bool` | Returns `true` if the OpenSSL 1.3 dynamic bridge (`libssl` / `libcrypto`) is available on the host. |
 | `tls.generate_self_signed_pem(cn)` | `fn(cn: str = "localhost") -> PemPair!` | Generates an ephemeral RSA-2048 X.509 v3 certificate and private key in memory (`.cert_pem`, `.key_pem`). |
-| `websocket.pair()` | `fn() -> WsPair` | Returns a connected in-memory `WsPair { client, server }` for deterministic RFC 6455 frame testing. |
-| `websocket.connect(url)` | `fn(url: str) -> WebSocket!` | Performs an RFC 6455 HTTP `Upgrade: websocket` handshake (`Sec-WebSocket-Key` / `Sec-WebSocket-Accept`) over `ws://` or `wss://`. |
-| `websocket.connect_insecure(url)` | `fn(url: str) -> WebSocket!` | Connects to a `wss://` endpoint bypassing TLS certificate verification. |
-| `ws.send_text(msg)` / `ws.recv_text()` | `fn(str) -> void!` / `fn() -> str!` | Sends or receives a UTF-8 text WebSocket frame (opcode `0x1`), automatically applying client-to-server masking per RFC 6455 §5.3. |
-| `ws.send_binary(bytes)` / `ws.recv_binary()` | `fn([]byte) -> void!` / `fn() -> []byte!` | Sends or receives a binary WebSocket frame (opcode `0x2`). |
-| `ws.ping(payload)` / `ws.close()` | `fn(str) -> void!` / `fn() -> void!` | Sends a control Ping frame (`0x9` — `recv_text()` automatically replies with Pong `0xA`) or initiates the Close handshake (`0x8`). |
-
-### Level 2 — TLS 1.3 HTTPS & WebSocket Upgrade
+| `websocket.pair()` | `fn() -> WsPair` | Returns a connected in-memory `WsPair { client, server }` for zero-socket RFC 6455 frame testing. |
+| `websocket.connect(url)` | `fn(url: str) -> WebSocket!` | Performs an RFC 6455 HTTP `Upgrade: websocket` handshake over `ws://` or `wss://`. |
+| `ws.send_text(msg)` / `ws.recv_text()` | `fn(str) -> void!` / `fn() -> str!` | Sends or receives a UTF-8 text WebSocket frame (`0x1`) with automatic RFC 6455 §5.3 client masking. |
+| `ws.send_binary(b)` / `ws.recv_binary()` | `fn([]byte) -> void!` / `fn() -> []byte!` | Sends or receives a binary WebSocket frame (`0x2`). |
 
 ```cfire
+package main
+
 import "ext:net/http"
 import "ext:net/tls"
 import "ext:net/websocket"
 
 fn main() -> void! {
-    // 1. Bidirectional RFC 6455 WebSocket upgrade on an HTTP router
     mut router := http.make_router()
     router.ws("/ws/echo", |req: http.Request, mut ws: websocket.WebSocket| {
         if msg := ws.recv_text() {
@@ -1924,13 +1801,12 @@ fn main() -> void! {
     defer srv.stop()
     srv.serve_in_background(router)
 
-    mut client := try websocket.connect(f"ws://127.0.0.1:{srv.port()}/ws/echo")
+    mut client := try websocket.connect("ws://127.0.0.1:{srv.port()}/ws/echo")
     defer { _ = client.close() }
     try client.send_text("cfire-frame")
     reply := try client.recv_text()
     println("WS reply: {}", reply)
 
-    // 2. Self-signed TLS 1.3 HTTPS server if OpenSSL is available on the host
     if tls.available() {
         pem := try tls.generate_self_signed_pem("localhost")
         mut tls_router := http.make_router()
@@ -1941,22 +1817,13 @@ fn main() -> void! {
         defer tls_srv.stop()
         tls_srv.serve_in_background(tls_router)
 
-        sec := try http.get_insecure(f"https://127.0.0.1:{tls_srv.port()}/secure")
+        sec := try http.get_insecure("https://127.0.0.1:{tls_srv.port()}/secure")
         println("HTTPS status={}, body={}", sec.status, sec.body)
     }
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `router.ws("/ws/echo", ...)` registers a WebSocket endpoint on the standard HTTP router. When a client sends `Upgrade: websocket`, the server validates `Sec-WebSocket-Key`, replies with `HTTP/1.1 101 Switching Protocols`, and transfers the underlying stream to the handler's `mut ws: websocket.WebSocket`.
-2. `websocket.connect("ws://...")` performs the client handshake, masks outbound frames with a random 32-bit key, and unmasks inbound server frames.
-3. `tls.generate_self_signed_pem("localhost")` synthesizes an X.509 certificate and private key in memory without touching disk or shelling out to the `openssl` CLI.
-4. `http.make_tls_server_pem(...)` wraps the accept loop in a TLS 1.3 context, and `http.get_insecure(...)` verifies the encrypted round-trip against the self-signed certificate.
-
-#### Expected Output
-
 ```text
+# Output:
 WS reply: echo:cfire-frame
 HTTPS status=200, body=TLS-1.3-OK
 ```
@@ -1965,91 +1832,73 @@ HTTPS status=200, body=TLS-1.3-OK
 
 ## Chapter 14: JSON, SQLite, Zstd & Cryptography
 
-`cfire` ships zero-boilerplate compile-time JSON serialization (`ext:json`), an embedded SQLite 3 engine with hardware-accelerated SIMD vector similarity functions (`ext:db/sqlite`), RFC 8878 Zstandard compression (`ext:compress/zstd`), and NIST/RFC cryptographic primitives (`core:crypto/*`, `core:encoding/*`).
-
-### Compile-Time JSON & Schema (`ext:json`)
-
-`ext:json` uses the compiler's `cfire::reflect<T>` metadata tables (Chapter 6) to parse and serialize native `cfire` structs, slices, maps, and `Option` fields without runtime type reflection overhead, plus provides a dynamic DOM (`json.Value`) for unstructured payloads.
+### Compile-Time JSON Serialization & Schema Synthesis (`ext:json`)
+Using the `cfire::reflect<T>` tables generated for every struct (Chapter 6), `ext:json` parses and serializes structs, slices, maps, and optional (`T?`) fields directly without building an intermediate DOM—unless you explicitly ask for `json.parse_dynamic(raw)`:
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
-| `json.parse[T]` | `fn[T](raw: str) -> T!` | Parses a UTF-8 JSON string directly into struct, slice, map, or primitive `T`. Honors `` `json:"name"` `` and `` `validate:"..."` `` field tags. |
+| `json.parse[T]` | `fn[T](raw: str) -> T!` | Parses a UTF-8 JSON string into struct, slice, map, or primitive `T`. Honors `json` and `validate` field tags. |
 | `json.stringify[T]` | `fn[T](val: T, pretty: bool = false) -> str` | Serializes `val` to compact (`pretty = false`) or 2-space indented (`pretty = true`) JSON. |
-| `json.schema[T]` | `fn[T]() -> str` | Generates a Draft 2020-12 JSON Schema object describing `T`'s fields, types, and `required` constraints for LLM structured outputs (`ext:ai`). |
-| `json.parse_dynamic` | `fn(raw: str) -> json.Value!` | Parses arbitrary untyped JSON into a navigable `json.Value` DOM tree. |
-| `json.stringify_dynamic` | `fn(val: json.Value, pretty: bool = false) -> str` | Serializes a `json.Value` DOM node back to a JSON string. |
-
-### Level 1 — Struct JSON, Schema & Dynamic DOM
+| `json.schema[T]` | `fn[T]() -> str` | Generates a Draft 2020-12 JSON Schema object describing `T`'s fields and `required` constraints. |
+| `json.parse_dynamic` | `fn(raw: str) -> json.Value!` | Parses untyped JSON into a navigable `json.Value` DOM tree (`.get(k)`, `.at(i)`, `.as_str()`, `.as_f64()`). |
 
 ```cfire
+package main
+
 import "ext:json"
 
 type Metric struct {
-    Name:  str      `json:"name"`
-    Value: f64      `json:"value"`
-    Tags:  []str    `json:"tags"`
-    Note:  Option[str] `json:"note"`
+    Name:  str   `json:"name"`
+    Value: f64   `json:"value"`
+    Tags:  []str `json:"tags"`
+    Note:  str?  `json:"note"`
 }
 
 fn main() -> void! {
     raw := "{\"name\":\"cpu.load\",\"value\":92.5,\"tags\":[\"prod\",\"us-east\"],\"note\":null}"
     m := try json.parse[Metric](raw)
-    println("Parsed: {} = {:.1f} (tags={}, has_note={})", m.Name, m.Value, m.Tags.len(), m.Note.is_some())
+    println("Parsed: {} = {:.1f} (tags={}, has_note={})", m.Name, m.Value, m.Tags.len(), m.Note != none)
 
-    // Round-trip back to compact JSON and emit Draft 2020-12 JSON Schema
     encoded := json.stringify(m)
     schema  := json.schema[Metric]()
     println("Encoded: {}", encoded)
     println("Schema has properties: {}", schema.contains("\"properties\""))
 
-    // Dynamic DOM parsing for unstructured payloads
     dom := try json.parse_dynamic(raw)
     println("Dynamic lookup: name={}, tag[0]={}", dom.get("name").as_str(), dom.get("tags").at(0).as_str())
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `json.parse[Metric](raw)` maps JSON keys to struct fields using the compile-time `` `json:"..."` `` tags. A JSON `null` (or omitted key) targeting an `Option[T]` field deserializes cleanly to `None`.
-2. `json.stringify(m)` emits compact JSON without intermediate DOM allocation.
-3. `json.schema[Metric]()` inspects `cfire::reflect<Metric>` at compile time to emit the JSON Schema Draft 2020-12 specification used by `ai.generate_struct[T]` (Chapter 17).
-4. `json.parse_dynamic(raw)` constructs a `json.Value` tree supporting `.get(key)`, `.at(index)`, `.as_str()`, `.as_f64()`, `.as_i64()`, and `.as_bool()`.
-
-#### Expected Output
-
 ```text
+# Output:
 Parsed: cpu.load = 92.5 (tags=2, has_note=false)
 Encoded: {"name":"cpu.load","value":92.5,"tags":["prod","us-east"],"note":null}
 Schema has properties: true
 Dynamic lookup: name=cpu.load, tag[0]=prod
 ```
 
-### SQLite WAL & Vector Search (`ext:db/sqlite`)
+### Embedded SQLite WAL, Vector Search & SQL Injection Safety (`ext:db/sqlite`)
+`ext:db/sqlite` embeds SQLite 3 configured with Write-Ahead Logging (`PRAGMA journal_mode=WAL;`), compile-time row-to-struct mapping (`db.query[T]` using `` `sql:"..."` `` or `` `json:"..."` `` tags), atomic transaction scopes (`db.tx`), and SIMD-accelerated vector similarity SQL functions (`vec_cosine_similarity` and `vec_l2_distance`).
 
-`ext:db/sqlite` embeds SQLite 3 with Write-Ahead Logging (`PRAGMA journal_mode=WAL;`), positional parameter binding (`?1`, `?2`, ...), compile-time row-to-struct mapping (`db.query[T]`), RAII transaction scopes (`db.tx`), and custom SQL scalar functions for hardware-accelerated vector similarity search (`vec_cosine_similarity` and `vec_l2_distance`).
-
-> [!NOTE]
-> **Cross-Platform Database Paths:** On iOS (`--ios`), passing a relative filename to `sqlite.open("app.db")` automatically resolves writable paths inside the app's `NSHomeDirectory()/Documents` sandbox container (or falls back to a read-only bundle resource if present in the `.app` bundle). On WebAssembly (`--web`), `sqlite.open` operates against Emscripten's virtual MEMFS filesystem.
+> [!IMPORTANT]
+> **Compile-Time SQL Injection Prevention (`cfire/SQL-INJECTION-RISK`)**: Never concatenate or interpolate runtime variables into a SQL string (`db.exec("DELETE FROM users WHERE name = '" + user + "'")`). The compiler rejects dynamic string construction inside `db.exec`, `db.query`, and `db.query_one` with `cfire/SQL-INJECTION-RISK`. Always pass runtime values as positional `?1`, `?2` parameters.
 
 | Function / Method | Signature | Description |
 | :--- | :--- | :--- |
-| `sqlite.open(path)` | `fn(path: str) -> DB!` | Opens or creates a SQLite 3 database at `path` (or `":memory:"`), enables `WAL` mode and `FOREIGN_KEYS`, and registers the `vec_cosine_similarity` and `vec_l2_distance` SQL functions. |
-| `db.exec(sql, ...args)` | `fn(sql: str, ...args) -> int!` | Prepares `sql`, binds variadic arguments (`int`, `i64`, `f64`, `bool`, `str`, `[]byte`, `[]f32`) to `?1`, `?2`, ..., executes the statement, and returns the number of affected rows. |
-| `db.query[T](sql, ...args)` | `fn[T](sql: str, ...args) -> []T!` | Executes a `SELECT` query and maps each result row into struct `T` (matching column names against `` `db:"..."` `` or `` `json:"..."` `` tags, or positional field order) or primitive `T`. |
-| `db.query_one[T](sql, ...args)` | `fn[T](sql: str, ...args) -> Option[T]!` | Executes `sql` and returns `Some(row)` for the first row or `None` if the result set is empty. |
-| `db.tx(fn_body)` | `fn(body: fn() -> void!) -> void!` | Wraps `body()` in `BEGIN IMMEDIATE` ... `COMMIT`, automatically issuing `ROLLBACK` if `body()` returns an `Err`. |
-| `db.last_insert_rowid()` | `fn() -> i64` | Returns the `ROWID` of the most recent successful `INSERT` on the connection. |
-| `sqlite.vec_to_blob(vec)` / `sqlite.blob_to_vec(b)` | `fn([]f32) -> []byte` / `fn([]byte) -> []f32` | Packs or unpacks an `[]f32` embedding slice into a contiguous little-endian IEEE-754 `BLOB` (note: `db.exec` and `db.query` also bind `[]f32` slices directly). |
-
-### Level 2 — SQLite Transactions & Vector Search
+| `sqlite.open(path)` | `fn(path: str) -> DB!` | Opens a SQLite 3 database at `path` (or `":memory:"`), enables `WAL`, and registers `vec_cosine_similarity` & `vec_l2_distance`. |
+| `db.exec(sql, ...args)` | `fn(sql: str, ...args) -> int!` | Binds variadic arguments (`int`, `i64`, `f64`, `bool`, `str`, `[]byte`, `[]f32`) to `?1`, `?2`, ... and returns affected rows. |
+| `db.query[T](sql, ...args)` | `fn[T](sql: str, ...args) -> []T!` | Executes a `SELECT` query and maps each row into struct `T` via `` `sql:"..."` `` / `` `json:"..."` `` tags. |
+| `db.query_one[T](sql, ...args)` | `fn[T](sql: str, ...args) -> T?!` | Returns the first matching row as `T?` (`none` if the result set is empty). |
+| `db.tx(fn_body)` | `fn(body: fn() -> void!) -> void!` | Wraps `body()` in `BEGIN IMMEDIATE` ... `COMMIT`, automatically issuing `ROLLBACK` on error. |
 
 ```cfire
+package main
+
 import "ext:db/sqlite"
 
 type DocHit struct {
-    Id:    i64 `db:"id"`
-    Title: str `db:"title"`
-    Score: f64 `db:"score"`
+    Id:    i64 `sql:"id"`
+    Title: str `sql:"title"`
+    Score: f64 `sql:"score"`
 }
 
 fn main() -> void! {
@@ -2077,37 +1926,27 @@ fn main() -> void! {
     }
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `sqlite.open(":memory:")` initializes an in-memory SQLite instance and registers `vec_cosine_similarity(blob_a, blob_b)` and `vec_l2_distance(blob_a, blob_b)` using ARM NEON (`float32x4_t`) on Apple Silicon/iOS and AVX2/SSE on x86_64.
-2. `db.tx(|| -> void! { ... })` executes all three `INSERT` statements inside a single atomic transaction. Passing `[]f32{...}` to `?2` automatically binds the slice as a raw `sizeof(float) * N` SQLite `BLOB`.
-3. `db.query[DocHit](...)` binds `query_vec` to `?1`, computes cosine similarity in C++ across every row, sorts in descending order, and maps columns `id`, `title`, and `score` directly into `DocHit` structs via the `` `db:"..."` `` tags.
-
-#### Expected Output
-
 ```text
+# Output:
 #1 Kernel Scheduler (cosine=0.9986)
 #3 SQLite WAL Engine (cosine=0.9848)
 ```
 
-### Zstandard, Cryptography & Encodings
+### Zstandard Compression, AES-256-GCM & Cryptographic Hashing
+When you need to compress telemetry frames, verify webhook signatures in constant time, or encrypt payloads at rest, `ext:compress/zstd`, `core:crypto/*`, and `core:encoding/*` work out of the box with zero external dependencies:
 
 | Module | Function | Signature | Description |
 | :--- | :--- | :--- | :--- |
-| `ext:compress/zstd` | `zstd.compress` / `zstd.compress_str` | `fn(data: []byte, level: int = 3) -> []byte!` | Compresses bytes or UTF-8 string into an RFC 8878 Zstandard frame (`0xFD2FB528` magic header + XXH64 content checksum). Uses system `libzstd` when available or the built-in pure-C++23 RFC 8878 frame encoder. |
-| `ext:compress/zstd` | `zstd.decompress` / `zstd.decompress_str` | `fn(frame: []byte) -> []byte!` / `str!` | Verifies the RFC 8878 Zstandard frame header and XXH64 checksum and restores the original payload. |
-| `core:crypto/sha256` | `sha256.hash` / `sha256.hash_hex` | `fn(data: str) -> [32]byte` / `str` | Computes the FIPS 180-4 SHA-256 digest as a 32-byte array or 64-character lowercase hex string. |
-| `core:crypto/blake3` | `blake3.hash` / `blake3.hash_hex` / `blake3.keyed_hash_hex` | `fn(data: str) -> [32]byte` / `str` | Computes the cryptographic BLAKE3 hash (or 32-byte keyed MAC). |
-| `core:crypto/hmac` | `hmac.sha256_hex` / `hmac.verify` / `hmac.equal` | `fn(key: str, msg: str) -> str` / `bool` | Computes RFC 2104 `HMAC-SHA256` and performs constant-time `O(N)` tag verification immune to timing side-channels. |
-| `core:crypto/aes` | `aes.encrypt_gcm` / `aes.decrypt_gcm` | `fn(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = {}) -> []byte!` | Performs NIST SP 800-38D `AES-256-GCM` authenticated encryption (32-byte key, 12-byte nonce, 16-byte authentication tag appended). |
-| `core:encoding/base64` | `base64.encode` / `decode_str` / `encode_url` | `fn(str) -> str` / `fn(str) -> str!` | RFC 4648 Standard and URL-safe Base64 encoding and decoding. |
-| `core:encoding/hex` | `hex.encode_str` / `decode_str` | `fn(str) -> str` / `fn(str) -> str!` | Lowercase hexadecimal encoding and decoding. |
-| `core:encoding/csv` | `csv.parse` / `csv.parse_Stream[T]` / `csv.stringify` | `fn(raw: str) -> [][]str!` / `[]T!` | RFC 4180 CSV parser (supporting quoted fields and escaped quotes) and struct slice mapper. |
-
-### Level 3 — Zstd Compression & AES-256-GCM
+| `ext:compress/zstd` | `zstd.compress_str` / `decompress_str` | `fn(data: str, level: int = 3) -> []byte!` / `fn(frame: []byte) -> str!` | Compresses/decompresses RFC 8878 Zstandard frames with XXH64 checksum verification. |
+| `core:crypto/sha256` | `sha256.hash` / `sha256.hash_hex` | `fn(data: str) -> [32]byte` / `str` | FIPS 180-4 SHA-256 digest as a 32-byte array or 64-char hex string. |
+| `core:crypto/blake3` | `blake3.hash` / `blake3.hash_hex` | `fn(data: str) -> [32]byte` / `str` | Cryptographic BLAKE3 hash (plus `keyed_hash_hex` for 32-byte keyed MACs). |
+| `core:crypto/hmac` | `hmac.sha256_hex` / `hmac.verify` | `fn(key: str, msg: str) -> str` / `bool` | RFC 2104 `HMAC-SHA256` with constant-time `O(N)` tag comparison. |
+| `core:crypto/aes` | `aes.encrypt_gcm` / `aes.decrypt_gcm` | `fn(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = {}) -> []byte!` | NIST SP 800-38D `AES-256-GCM` authenticated encryption (32-byte key, 12-byte IV, 16-byte tag). |
+| `core:encoding/*` | `base64` / `hex` / `csv` | `encode`, `decode`, `csv.parse` | RFC 4648 Base64, lowercase hex, and RFC 4180 CSV parsing/serialization. |
 
 ```cfire
+package main
+
 import "ext:compress/zstd"
 import "core:crypto/aes"
 import "core:crypto/hmac"
@@ -2116,79 +1955,46 @@ import "core:encoding/hex"
 
 fn main() -> void! {
     payload := "ts=1730419200 level=INFO msg=\"request completed\" latency_ms=4.2\n"
-    // 1. Compress UTF-8 payload into an RFC 8878 Zstandard frame
     compressed := try zstd.compress_str(payload, 3)
     restored   := try zstd.decompress_str(compressed)
     println("Zstd round-trip match: {} (frame={} bytes)", restored == payload, compressed.len())
 
-    // 2. Derive a 32-byte key with SHA-256 and encrypt with AES-256-GCM
     key_arr := sha256.hash("master-secret-passphrase")
     mut key := []byte{}
     for b in key_arr { key.push(b) }
-    nonce := try hex.decode("000102030405060708090a0b") // 12-byte GCM IV
+    nonce := try hex.decode("000102030405060708090a0b")
     aad   := try hex.decode("feedface")
 
     ciphertext := try aes.encrypt_gcm(key, nonce, compressed, aad)
     decrypted  := try aes.decrypt_gcm(key, nonce, ciphertext, aad)
     final_str  := try zstd.decompress_str(decrypted)
 
-    // 3. Constant-time HMAC-SHA256 verification
     mac := hmac.sha256_hex("webhook-secret", final_str)
     println("AES-GCM + Zstd verified: {}, HMAC valid: {}", final_str == payload, hmac.verify("webhook-secret", final_str, mac))
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `zstd.compress_str(payload, 3)` compresses the log line into an RFC 8878 frame, and `zstd.decompress_str(compressed)` verifies the magic number and checksum before returning the original `str`.
-2. `aes.encrypt_gcm(key, nonce, compressed, aad)` encrypts the compressed frame using a 256-bit key (`32` bytes), a 96-bit nonce (`12` bytes), and Additional Authenticated Data (`aad`), appending the 128-bit (`16`-byte) authentication tag to `ciphertext`.
-3. Modifying a single byte of `ciphertext` or `aad` causes `aes.decrypt_gcm` to return an `Err("aes.decrypt_gcm: authentication tag mismatch")` before any plaintext is released.
-4. `hmac.verify` compares the expected and computed HMAC digests in constant time via bitwise XOR accumulation.
-
-#### Expected Output
-
 ```text
+# Output:
 Zstd round-trip match: true (frame=77 bytes)
 AES-GCM + Zstd verified: true, HMAC valid: true
 ```
 
 ---
 
-## Chapter 15: 2D/3D Graphics & Native UI
+## Chapter 15: 2D/3D Graphics, Raygui Widgets & Native iOS UI
 
-`cfire` integrates `vendor:raylib` (Raylib 5.0 2D/3D graphics, input, and `<raymath.h>`) and `vendor:raygui` (immediate-mode UI controls) with zero external build configuration. A single `.cf` source file compiles to native macOS Metal/OpenGL `.app` bundles, Linux X11/Wayland executables, HTML5 WebGL2/Canvas WebAssembly pages (`--web`), and native iOS `UIKit`/`OpenGLES` applications (`--ios`).
-
-### Cross-Platform Window & Font Pipeline
+### Hardware-Accelerated Canvas & Immediate-Mode Controls (`vendor:raylib`, `vendor:raygui`)
+`cfire` embeds Raylib 5.0 (`vendor:raylib`) and Raygui (`vendor:raygui`) with a custom high-DPI font rasterizer (`CoreText` on macOS, `UIFont` on iOS, system TrueType on Linux). A single `.cf` file compiles to a native macOS Metal/OpenGL `.app`, a Linux desktop binary, an HTML5 WebGL2 canvas (`cfire run --web`), or a 60/120 Hz iOS Simulator app (`cfire run --ios`):
 
 | Subsystem | macOS (`darwin`) | Linux (`linux`) | iOS (`--ios`) | WebAssembly (`--web`) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Window & Context** | Cocoa (`NSWindow`) + OpenGL 3.3 / Metal layer (`FLAG_WINDOW_HIGHDPI`) | X11 / Wayland + OpenGL 3.3 + auto-discovered `icon.png` (`SetWindowIcon`) | Native `UIWindow` + `UIViewController` + `CADisplayLink` 60/120 Hz | HTML5 `<canvas>` + WebGL2 + `emscripten_set_main_loop` |
-| **High-DPI Font Rasterizer** | `CoreText.framework` full-line subpixel/2x Retina texture rasterizer | Automatic system TrueType discovery (`fc-match` / DejaVu / Liberation / Noto) at 2x oversampling | Native `UIFont` (`SF Pro`) glyph atlas + UTF-8 punctuation/Latin-1 folding | Embedded 2x high-DPI font atlas + UTF-8 punctuation folding |
-| **Safe Area & Keyboard** | Full window viewport + hardware keyboard | Full window viewport + hardware keyboard | `GetSafeAreaRect()` insets past Dynamic Island & Home Indicator; `RequestKeyboard()` invokes `<UIKeyInput>` | Full canvas viewport + DOM keyboard events |
-| **Haptic Feedback** | No-op on desktop | No-op on desktop | `TriggerHaptic(style)` invokes `UIImpactFeedbackGenerator` (Taptic Engine) | `TriggerHaptic(style)` invokes `navigator.vibrate([12..35])` |
-
-### `vendor:raylib` & `raygui` Specification
-
-| Module | Function | Signature | Description |
-| :--- | :--- | :--- | :--- |
-| `vendor:raylib` | `InitWindow` / `CloseWindow` | `fn(width: i32, height: i32, title: str)` / `fn()` | Initializes the window and GPU context (`0, 0` uses full screen on iOS/mobile). Pair with `defer rl.CloseWindow()`. |
-| `vendor:raylib` | `SetTargetFPS` / `GetFrameTime` | `fn(fps: i32)` / `fn() -> f32` | Caps frame rate and returns the delta time (`dt`) in seconds since the previous frame. |
-| `vendor:raylib` | `WindowShouldClose` | `fn() -> bool` | Returns `true` when `KEY_ESCAPE` or the OS window close button is pressed. |
-| `vendor:raylib` | `BeginDrawing` / `EndDrawing` | `fn()` / `fn()` | Opens and flushes the frame's backbuffer swap. |
-| `vendor:raylib` | `BeginMode2D` / `EndMode2D` | `fn(camera: rl.Camera2D)` / `fn()` | Applies a 2D affine camera transform (`offset`, `target`, `rotation`, `zoom`). |
-| `vendor:raylib` | `BeginScissorMode` / `EndScissorMode` | `fn(x: i32, y: i32, w: i32, h: i32)` / `fn()` | Clips subsequent draw calls to the pixel rectangle `(x, y, w, h)` for scroll views. |
-| `vendor:raylib` | `DrawText` / `DrawRectangleRounded` / `DrawCircleV` | `fn(...)` | Hardware-accelerated text and primitive rendering with automatic `cfire` `str` to `const char*` lowering. |
-| `vendor:raylib` | `GetSafeAreaRect` | `fn() -> rl.Rectangle` | Returns the usable screen area inset past mobile notches, Dynamic Island, and Home Indicator bars. |
-| `vendor:raylib` | `RequestKeyboard` / `TriggerHaptic` | `fn()` / `fn(style: i32)` | Summons the mobile software keyboard or fires a haptic pulse (`0` = Light, `1` = Medium, `2` = Heavy). |
-| `vendor:raygui` | `GuiButton` / `GuiWindowBox` | `fn(bounds: rl.Rectangle, text: str) -> i32` | Renders a clickable button or window container; returns `1` on click/close. |
-| `vendor:raygui` | `GuiCheckBox` | `fn(bounds: rl.Rectangle, text: str, checked: &mut bool) -> i32` | Renders a checkbox and mutates `checked` in place. |
-| `vendor:raygui` | `GuiSliderBar` / `GuiProgressBar` | `fn(bounds: rl.Rectangle, left: str, right: str, value: &mut f32, min: f32, max: f32) -> i32` | Renders a continuous slider or progress bar and clamps `value` within `[min, max]`. |
-| `vendor:raygui` | `GuiComboBox` | `fn(bounds: rl.Rectangle, text: str, active: &mut i32) -> i32` | Renders a semicolon-delimited (`"Low;Medium;High"`) dropdown selector updating `active`. |
-| `vendor:raygui` | `GuiTextBox` | `fn(bounds: rl.Rectangle, text: &mut str, textSize: i32, editMode: bool) -> i32` | Renders an interactive text input field backed directly by a mutable `cfire` `str`. |
-
-### Level 1 — Raygui Controls & Live Text Input
+| **Window & Context** | Cocoa (`NSWindow`) + high-DPI Retina OpenGL/Metal | X11 / Wayland + OpenGL 3.3 + auto-discovered `icon.png` | Native `UIWindow` + `UIViewController` + `CADisplayLink` | HTML5 `<canvas>` + WebGL2 + `emscripten_set_main_loop` |
+| **Font Rasterizer** | `CoreText.framework` 2x Retina subpixel rasterizer | System TrueType discovery (`fc-match` / DejaVu / Noto) | Native `UIFont` (`SF Pro`) glyph atlas | Embedded 2x high-DPI font atlas |
+| **Safe Area & Haptics** | Full viewport | Full viewport | `GetSafeAreaRect()` Dynamic Island inset + `TriggerHaptic` Taptic Engine | Full canvas + `navigator.vibrate` |
 
 ```cfire
+package main
+
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
 
@@ -2208,10 +2014,9 @@ fn main() {
         defer rl.EndDrawing()
         rl.ClearBackground(rl.GetColor(0x18181bff))
 
-        // Immediate-mode control panel
         _ = rg.GuiWindowBox(rl.Rectangle{x: 24.0, y: 24.0, width: 340.0, height: 260.0}, "Node Configuration")
         _ = rg.GuiCheckBox(rl.Rectangle{x: 44.0, y: 68.0, width: 20.0, height: 20.0}, "Enable VSync Lock", &mut vsync)
-        _ = rg.GuiSliderBar(rl.Rectangle{x: 90.0, y: 108.0, width: 200.0, height: 20.0}, "Gain", f"{gain_db:.1f} dB", &mut gain_db, -24.0, 12.0)
+        _ = rg.GuiSliderBar(rl.Rectangle{x: 90.0, y: 108.0, width: 200.0, height: 20.0}, "Gain", "{gain_db:.1f} dB", &mut gain_db, -24.0, 12.0)
         _ = rg.GuiComboBox(rl.Rectangle{x: 44.0, y: 148.0, width: 246.0, height: 28.0}, "Eco;Balanced;Turbo", &mut profile)
 
         if rg.GuiTextBox(rl.Rectangle{x: 44.0, y: 192.0, width: 246.0, height: 28.0}, &mut hostname, 64, editing) != 0 {
@@ -2221,30 +2026,32 @@ fn main() {
             rl.TriggerHaptic(1)
         }
 
-        rl.DrawText(f"Host: {hostname} | Gain: {gain_db:.1f} dB", 400, 40, 20, rl.RAYWHITE)
+        rl.DrawText("Host: {hostname} | Gain: {gain_db:.1f} dB", 400, 40, 20, rl.RAYWHITE)
     }
 }
 ```
 
-**Line-by-Line Mechanics:**
+### Zero-Coordinate iOS Auto-Layout (`GuiIos*`) & Workspace Widgets (`pkg/raygui_ext`)
+Positioning every mobile button by manual `(x, y)` coordinates gets tedious fast when adapting to iPhone safe areas, Dynamic Island notches, and software keyboards. `vendor:raygui` includes a built-in **Zero-Coordinate iOS Layout Engine** (`rg.GuiIos*`) modeled after SwiftUI's `NavigationStack` and `Form`:
 
-1. `rl.InitWindow(800, 480, ...)` creates a high-DPI window and binds `CoreText` (macOS) or Fontconfig TrueType (Linux) so `rl.DrawText` and `rg.Gui*` controls render at native Retina resolution.
-2. `rg.GuiTextBox(..., &mut hostname, 64, editing)` passes a mutable reference to a native `cfire` `str` (`std::string`), syncing edits back into `hostname` without manual `char[]` scratch buffers.
-3. `f"{gain_db:.1f} dB"` formats a string inline and lowers automatically to `const char*` via `cfire::c_arg(...)`.
+| `vendor:raygui` iOS Control | Signature | What It Renders & Manages Automatically |
+| :--- | :--- | :--- |
+| `rg.GuiIosBegin` / `GuiIosEnd` | `fn(title: str)` / `fn()` | Reads `GetSafeAreaRect()`, renders the translucent iOS navigation bar, manages vertical touch-drag momentum scrolling, and clips content inside the safe area. |
+| `rg.GuiIosSection` | `fn(label: str)` | Starts an inset grouped section header (like SwiftUI `Section("AUDIO ENGINE")`). |
+| `rg.GuiIosToggle` | `fn(label: str, active: &mut bool) -> bool` | Full-width grouped row with an animated pill switch and automatic Taptic feedback on toggle. |
+| `rg.GuiIosSlider` | `fn(label: str, val: &mut f32, min: f32, max: f32, unit: str)` | Grouped card row with value readout badge and touch-friendly thumb slider. |
+| `rg.GuiIosSegmented` | `fn(options: str, active: &mut i32)` | Semicolon-delimited (`"Sine;Saw;Square"`) sliding pill segmented control. |
+| `rg.GuiIosTextField` | `fn(label: str, text: &mut str, placeholder: str)` | Auto-focusing text field that summons the iOS software keyboard (`RequestKeyboard()`) on tap without manual focus state variables. |
+| `rg.GuiIosButton` | `fn(label: str, accent: bool = true) -> bool` | Full-width rounded action button with press highlight and haptic feedback. |
+| `rg.GuiIosTabBar` | `fn(tabs: str, active: &mut i32)` | Bottom dock bar pinned above the iOS Home Indicator (`"Synth;Presets;Settings"`). |
 
-### Mobile Safe Areas & Multi-Target Packaging
-
-When targeting mobile (`--ios`) or responsive web (`--web`), combine `rl.GetSafeAreaRect()`, `rl.BeginScissorMode(...)`, `rl.RequestKeyboard()`, and `rl.TriggerHaptic(...)` (or the zero-coordinate layout kit in [`examples/13-ios-native-ui/ui/kit.cf`](file:///Users/memo/Programming/cfire/examples/13-ios-native-ui/ui/kit.cf) using `GuiIos*` patterns) to adapt to any viewport:
+For desktop IDE and studio tools, the workspace also includes `pkg/raygui_ext` (`code_editor.cf`, `splitter.cf`, `text_buffer.cf`), providing resizable split-pane layouts, line-numbered code editors, and gap-buffer text editing out of the box.
 
 ```bash
-# 1. Native macOS .app bundle (suppresses terminal window and generates Info.plist + Apple Silicon binary)
-cfire build --subsystem=gui examples/13-ios-native-ui/main.cf -o PocketStudio
-
-# 2. WebAssembly HTML5 Canvas + WebGL2 + WebAudio bundle (--target=wasm or --web)
-cfire build --target=wasm examples/13-ios-native-ui/main.cf -o build/web/index.html
+# Scaffold a graphical app or launch directly on Desktop, WebAssembly, or iOS Simulator:
+cfire new my-studio --template gui
+cfire run examples/13-ios-native-ui/main.cf
 cfire run --web examples/13-ios-native-ui/main.cf
-
-# 3. Native iOS Simulator .app bundle (compiles against iPhoneSimulator.sdk and launches in Simulator.app)
 cfire run --ios examples/13-ios-native-ui/main.cf
 ```
 
@@ -2252,37 +2059,28 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 
 ## Chapter 16: Audio Synthesis & Real-Time DSP
 
-`ext:audio` provides a zero-dependency, 64-voice lock-free stereo `f32` audio engine, procedural waveform/SFX generators, ADSR envelope shaping, real-time push ring buffers (`Stream`), master RMS/peak metering, and a pure-C++23 RIFF/WAV encoder/decoder.
-
-### Audio Architecture & Backend Matrix
+### Lock-Free 64-Voice Mixer & Procedural Waveforms (`ext:audio`)
+`ext:audio` gives you a zero-dependency, 64-voice lock-free stereo `f32` audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (`Stream`), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:
 
 | Target Platform | Hardware Backend | Mixer Architecture | Headless / CI Fallback |
 | :--- | :--- | :--- | :--- |
 | **macOS & iOS (`__APPLE__`)** | `AudioToolbox.framework` (`AudioQueueNewOutput`) | 64-voice lock-free `f32` stereo mixer + 32-stream ring buffers with linear pitch resampling and constant-power stereo panning | Automatic software mixer when `CFIRE_HEADLESS_TEST=1` or no audio output device is present |
 | **Linux (`__linux__`)** | Runtime `dlopen("libasound.so.2")` (ALSA PCM non-blocking thread) | Identical 64-voice lock-free `f32` stereo mixer | Automatic fallback if `libasound.so.2` or `/dev/snd` is unavailable |
-| **WebAssembly (`__EMSCRIPTEN__`)** | Browser `AudioContext` + `ScriptProcessorNode` (auto-resumed on pointer/key gesture) | Identical 64-voice `f32` stereo mixer | Software buffer advancement in headless Node/WASM |
-
-### Complete `ext:audio` Specification
+| **WebAssembly (`__EMSCRIPTEN__`)** | Browser `AudioContext` + `ScriptProcessorNode` (auto-resumed on gesture) | Identical 64-voice `f32` stereo mixer | Software buffer advancement in headless Node/WASM |
 
 | Category | Function / Method | Signature | Description |
 | :--- | :--- | :--- | :--- |
 | **Lifecycle & Metering** | `audio.init` / `audio.close` | `fn(sample_rate: i32 = 48000, channels: i32 = 2) -> void!` / `fn()` | Starts and stops the hardware audio device and mixer thread. |
-| **Lifecycle & Metering** | `audio.set_master_volume` / `master_volume` | `fn(vol: f32)` / `fn() -> f32` | Sets or queries master output gain (`0.0` to `1.0`). |
-| **Lifecycle & Metering** | `audio.rms_level` / `audio.peak_level` | `fn() -> f32` / `fn() -> f32` | Returns live master Root-Mean-Square (`rms_level`) or Peak (`peak_level`) amplitude in `[0.0, 1.0]`. |
-| **Procedural Synthesis** | `audio.gen_tone` | `fn(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave` | Synthesizes a band-controlled `Waveform` (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with an attack/release envelope. |
-| **Procedural Synthesis** | `audio.gen_chirp` | `fn(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave` | Synthesizes a continuous frequency sweep from `start_hz` to `end_hz`. |
-| **Procedural Synthesis** | `audio.gen_sfx` | `fn(preset: SfxPreset) -> Wave` | Synthesizes zero-asset procedural sound effects: `SfxPreset::Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`. |
-| **RIFF/WAV Codec** | `audio.encode_wav` / `decode_wav` | `fn(wave: Wave) -> []byte` / `fn(data: []byte) -> Wave!` | Encodes a `Wave` to a 16-bit PCM RIFF/WAV byte slice or decodes 8/16/24-bit PCM and 32-bit IEEE float WAV data. |
-| **RIFF/WAV Codec** | `audio.save_wav` / `load_wav` | `fn(wave: Wave, path: str) -> void!` / `fn(path: str) -> Wave!` | Reads or writes `.wav` files on disk (resolving iOS `.app` bundle and `Documents/` paths automatically). |
-| **Polyphonic `Sound`** | `audio.load_sound_from_wave` / `load_sound` | `fn(wave: Wave) -> Sound` / `fn(path: str) -> Sound!` | Uploads PCM frames into a mixer slot and returns a lightweight `Sound` handle. |
-| **Polyphonic `Sound`** | `sound.play` / `stop` | `fn()` / `fn()` | Allocates a free voice from the 64-voice pool for immediate polyphonic playback, or stops active voices for this `Sound`. |
-| **Polyphonic `Sound`** | `sound.set_volume` / `set_pitch` / `set_pan` / `set_looping` | `fn(f32)` / `fn(f32)` / `fn(f32)` / `fn(bool)` | Adjusts per-sound gain (`0.0..2.0`), pitch playback rate (`0.1..4.0`), stereo pan (`-1.0` left .. `+1.0` right), or seamless looping. |
-| **Real-Time `Stream`** | `audio.open_stream` | `fn(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!` | Allocates a lock-free SPSC ring buffer stream mixed into the master output. |
-| **Real-Time `Stream`** | `stream.needs_data` / `push_samples` | `fn(target_frames: i32 = 2048) -> bool` / `fn(samples: []f32)` | Checks if queued frames dropped below `target_frames` and pushes interleaved stereo `f32` samples. |
+| **Lifecycle & Metering** | `audio.rms_level` / `audio.peak_level` | `fn() -> f32` / `fn() -> f32` | Returns live master RMS (`rms_level`) or Peak (`peak_level`) amplitude in `[0.0, 1.0]`. |
+| **Procedural Synthesis** | `audio.gen_tone` / `gen_chirp` / `gen_sfx` | `fn(...) -> Wave` | Synthesizes waveforms (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`), frequency sweeps, or game SFX (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`). |
+| **RIFF/WAV Codec** | `audio.encode_wav` / `decode_wav` / `save_wav` / `load_wav` | `fn(...)` | Encodes/decodes 8/16/24-bit PCM and 32-bit float RIFF/WAV in memory or on disk. |
+| **Polyphonic `Sound`** | `audio.load_sound_from_wave` / `sound.play` | `fn(wave: Wave) -> Sound` | Uploads PCM frames into the mixer and triggers polyphonic playback with `.set_volume`, `.set_pitch`, `.set_pan`, `.set_looping`. |
+| **Real-Time `Stream`** | `audio.open_stream` / `needs_data` / `push_samples` | `Stream` methods | Lock-free SPSC ring buffer for real-time custom DSP synthesis. |
 
-### Level 1 — Polyphonic SFX, Streams & WAV Codec
-
+### Streaming Real-Time DSP & Encoding RIFF/WAV Files
 ```cfire
+package main
+
 import "ext:audio"
 import "core:fs"
 
@@ -2317,17 +2115,8 @@ fn main() -> void! {
         wav_bytes.len(), decoded.frame_count(), decoded.channels, audio.rms_level() >= 0.0)
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `audio.init(48000, 2)` starts the 48 kHz stereo mixer. In headless test environments without audio hardware, `ext:audio` initializes the software mixer transparently so `rms_level()`, `peak_level()`, and stream buffers remain testable.
-2. `coin_sfx.set_pitch(1.15)` and `coin_sfx.set_pan(-0.25)` configure linear-interpolated resampling and constant-power stereo panning before `coin_sfx.play()` triggers a voice in the 64-voice pool.
-3. `stream.needs_data(2048)` queries the lock-free ring buffer fill level, and `stream.push_samples(chirp.samples)` enqueues interleaved `f32` frames without blocking the audio callback thread.
-4. `audio.save_wav` and `audio.load_wav` serialize and parse standard 44-byte RIFF/WAV headers and 16-bit little-endian PCM frames.
-
-#### Expected Output
-
 ```text
+# Output:
 WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 ```
 
@@ -2335,53 +2124,23 @@ WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 
 ## Chapter 17: LLMs, Multimodal RAG & MCP
 
-`ext:ai` provides a unified, zero-dependency SDK for cloud and local LLM inference, compile-time JSON Schema structured extraction (`generate_struct[T]`), multimodal image/audio/document attachments, offline document and slide deck ingestion (`load_document`, `chunk_document`), on-device OCR (`ocr`), local text and visual embeddings (`embed`, `embed_image`), language identification (`detect_language`), and a JSON-RPC 2.0 Model Context Protocol server (`McpServer`).
+### Unified Cloud & On-Device Inference (`ext:ai`)
+`ext:ai` gives you one zero-dependency SDK across OpenAI, Anthropic, Gemini, local Ollama, any OpenAI-compatible server (`vLLM`, `llama-server`), and 100% offline Apple on-device (`NaturalLanguage` / `Vision`) inference:
 
-### Provider Client & Auth Matrix
-
-| Constructor | Default Base URL | Default Auth Environment Variable | Wire Protocol & Capabilities |
+| Constructor | Default Base URL | Auth Env Var | Capabilities |
 | :--- | :--- | :--- | :--- |
-| `ai.openai(api_key = "", base_url = "https://api.openai.com/v1")` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | OpenAI `/chat/completions`, `/embeddings`, SSE streaming, `response_format: json_schema`, tool calling, vision & PDF/audio input |
-| `ai.anthropic(api_key = "", base_url = "https://api.anthropic.com/v1")` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | Anthropic `/v1/messages` (`2023-06-01`), SSE streaming, tool use, native image/PDF document blocks, browser CORS support |
-| `ai.gemini(api_key = "", base_url = "https://generativelanguage.googleapis.com/v1beta")` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | Gemini `:generateContent`, `:streamGenerateContent?alt=sse`, `:embedContent`, `responseSchema`, `inlineData` multimodal attachments |
-| `ai.ollama(host = "http://127.0.0.1:11434")` | `http://127.0.0.1:11434` | `OLLAMA_HOST` | Local Ollama `/v1/chat/completions` & `/api/embed` (vision, tools, structured JSON schema) |
-| `ai.openai_compatible(base_url, api_key = "")` | User-specified URL | Optional `api_key` | Any OpenAI-compatible server (`vLLM`, `llama-server`, `LM Studio`, `Groq`, `Together`, `DeepSeek`) |
-| `ai.apple()` | On-device (`NaturalLanguage` / `Vision`) | None (100% offline) | Apple `NLEmbedding`, `NLLanguageRecognizer`, `VNRecognizeTextRequest`, plus deterministic local synthesis |
+| `ai.openai(api_key = "")` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `/chat/completions`, `/embeddings`, SSE streaming, `json_schema`, tools, vision/PDF/audio |
+| `ai.anthropic(api_key = "")` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | `/v1/messages`, SSE streaming, tool use, native image/PDF blocks |
+| `ai.gemini(api_key = "")` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` | `:generateContent`, `:streamGenerateContent`, `:embedContent`, `responseSchema`, `inlineData` |
+| `ai.ollama(host = "http://127.0.0.1:11434")` | `http://127.0.0.1:11434` | `OLLAMA_HOST` | Local `/v1/chat/completions` & `/api/embed` (vision, tools, structured JSON schema) |
+| `ai.apple()` | On-device (`NaturalLanguage` / `Vision`) | None (offline) | Apple `NLEmbedding`, `NLLanguageRecognizer`, `VNRecognizeTextRequest`, local synthesis |
 
-### Complete `ext:ai` API Specification
-
-| Category | Function / Method | Signature | Description |
-| :--- | :--- | :--- | :--- |
-| **Messages & Multimodal** | `ai.system` / `ai.user` / `ai.assistant` | `fn(content: str) -> Message` | Constructs a role-tagged chat `Message`. |
-| **Messages & Multimodal** | `ai.user_with_file` | `fn(content: str, file_path: str) -> Message!` | Loads `file_path` into a MIME-typed `Attachment` (or extracts Markdown for Office/ODF/EPUB/text files) and attaches it to a user `Message`. |
-| **Messages & Multimodal** | `ai.load_attachment` / `detect_mime_type` | `fn(path: str) -> Attachment!` / `fn(path: str, data: []byte = {}) -> str` | Inspects magic bytes (`%PDF-`, `\x89PNG`, `BM`, `\xFF\xD8\xFF`, `RIFF....WEBP`, ZIP/OOXML/ODF/EPUB) and loads a multimodal `Attachment`. |
-| **Inference & Streaming** | `client.ask` / `client.ask_with_file` | `fn(model: str, prompt: str, ...) -> str!` | Single-turn text or multimodal file completion returning the assistant's text response. |
-| **Inference & Streaming** | `client.chat` / `client.stream` | `fn(model: str, msgs: []Message) -> ChatResponse!` / `fn(model: str, msgs: []Message, on_delta: fn(str)) -> str!` | Multi-turn chat completion or real-time SSE token streaming (preserving full multi-turn history and multimodal attachments across OpenAI, Anthropic, Gemini, and Ollama). |
-| **Tools & Structured Output** | `ai.tool_def[T]` / `client.chat_with_tools` | `fn[T](name: str, desc: str) -> Tool` / `fn(model: str, msgs: []Message, tools: []Tool) -> ChatResponse!` | Derives a tool's JSON Schema from struct `T` at compile time and returns model `ToolCall` invocations (`res.tool_calls`). |
-| **Tools & Structured Output** | `client.generate_struct[T]` | `fn[T](model: str, prompt: str, sys: str = "") -> T!` | Constrains the LLM output to `json.schema[T]()` and deserializes the response directly into `T!`. |
-| **Tools & Structured Output** | `client.generate_struct_from_file[T]` | `fn[T](model: str, prompt: str, file_path: str, sys: str = "") -> T!` | Extracts a strongly-typed struct `T` directly from an image, PDF, slide deck, spreadsheet, or document. |
-| **Document Ingestion & RAG** | `ai.load_document` / `parse_document` | `fn(path: str) -> Document!` / `fn(data: []byte, filename: str) -> Document!` | Extracts clean Markdown (`doc.markdown`) and 1-based page/slide/sheet `sections` (`[]DocumentSection { index, kind, title, text }`) from `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, `.md`, or images. |
-| **Document Ingestion & RAG** | `ai.chunk_document` / `chunk_text` | `fn(doc: Document, max_chars: i32 = 512, overlap: i32 = 64) -> []DocumentSection` | Splits a `Document` into overlapping chunks while preserving each chunk's originating page/slide `index` and `title`. |
-| **Embeddings, OCR & NLP** | `ai.embed` / `client.embed` | `fn(model: str, text: str) -> []f32!` | Computes an L2-normalized `[]f32` text embedding (`model = "local"` runs 100% offline). |
-| **Embeddings, OCR & NLP** | `ai.embed_image` / `client.embed_image` | `fn(model: str, path: str) -> []f32!` | Computes a 384-dim L2-normalized visual + semantic image embedding (`model = "local"` decodes PNG/BMP/PPM/JPEG pixels into 4x4 RGB/Luma moments + Sobel HOG + 64-bit dHash + OCR features). |
-| **Embeddings, OCR & NLP** | `ai.ocr` / `ai.detect_language` | `fn(path: str) -> str!` / `fn(text: str) -> str` | Extracts text from images and identifies the dominant BCP-47 language tag (`"en"`, `"es"`, `"fr"`, `"de"`, `"pt"`, `"it"`, `"ja"`, `"ko"`, `"zh-Hans"`, `"ru"`, `"ar"`, `"hi"`). |
-| **Vector Math & MCP** | `ai.cosine_similarity` / `l2_distance` / `dot_product` / `normalize` | `fn([]f32, []f32) -> f32` / `fn([]f32) -> []f32` | Hardware SIMD-accelerated (`ARM NEON`, `AVX2`, `WASM SIMD128`) vector operations. |
-| **Vector Math & MCP** | `ai.make_mcp_server` / `register_tool[T]` / `handle_jsonrpc` / `serve_stdio` | `McpServer` methods | Exposes `cfire` functions as schema-validated Model Context Protocol tools over JSON-RPC 2.0. |
-
-### Cross-Platform On-Device & Cloud Parity Matrix
-
-| Capability | macOS & iOS (`__APPLE__`) | Linux (`__linux__`) | WebAssembly (`__EMSCRIPTEN__`) |
-| :--- | :--- | :--- | :--- |
-| **Office & E-Book (`.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`)** | Pure C++23 RFC 1951 `DEFLATE` + ZIP/XML parser (with automatic iOS `.app` bundle & `Documents/` sandbox path resolution) | Pure C++23 RFC 1951 `DEFLATE` + ZIP/XML parser | Pure C++23 RFC 1951 `DEFLATE` + ZIP/XML parser + browser drag-and-drop `MEMFS` staging (`window.cfireStageFile`) |
-| **PDF (`.pdf`) Extraction** | `PDFKit.framework` (macOS) + pure C++23 `/FlateDecode`, `/ToUnicode` CMap & `TJ` kerning parser (iOS & fallback) | Auto-detected `pdftotext -layout` + pure C++23 `/FlateDecode`, `/ToUnicode` CMap & `TJ` kerning parser | Pure C++23 `/FlateDecode`, `/ToUnicode` CMap & `TJ` kerning parser |
-| **Image OCR (`ai.ocr`)** | `Vision.framework` (`VNRecognizeTextRequest`) + PNG/JPEG metadata | Dynamic `dlopen("libtesseract.so.5")` C-API -> `tesseract` CLI -> `CFIRE_OCR_MODEL` + metadata | PNG `tEXt`/`iTXt` & JPEG `COM` metadata |
-| **Local Visual Embeddings (`ai.embed_image("local", ...)`)** | Pure C++23 PNG/BMP/PPM pixel decoder + CoreGraphics JPEG/HEIC fallback -> 4x4 RGB/Luma + Sobel HOG + dHash + OCR | Pure C++23 PNG/BMP/PPM pixel decoder + ImageMagick/ffmpeg fallback -> 4x4 RGB/Luma + Sobel HOG + dHash + OCR | Pure C++23 PNG/BMP/PPM pixel decoder -> 4x4 RGB/Luma + Sobel HOG + dHash |
-| **Language Detection (`ai.detect_language`)** | Apple `NLLanguageRecognizer` + Unicode script & stopword profile fallback | Unicode script block scanner (CJK, Hiragana/Katakana, Hangul, Cyrillic, Arabic, Devanagari) + Latin stopword/diacritic scorer | Unicode script block scanner + Latin stopword/diacritic scorer |
-| **Cloud AI HTTPS Transport** | `libssl` (macOS) / `Foundation` `NSURLSession` native HTTPS (iOS & fallback) | `libssl` (`OpenSSL`) + `curl` fallback | Browser `emscripten_fetch` XHR with custom auth & Anthropic browser CORS headers |
-
-### Level 1 — Tools & Structured Output (`ext:ai`)
+### Schema-Typed Tool Calling & `generate_struct[T]`
+Because `cfire` reflects struct tags at compile time, you never hand-write JSON Schema strings for LLM tool definitions or structured output extraction. Pass any struct `T` to `ai.tool_def[T](name, desc)` or `client.generate_struct[T](model, prompt)`:
 
 ```cfire
+package main
+
 import "ext:ai" as ai
 
 type WeatherLookup struct {
@@ -2395,56 +2154,45 @@ type IncidentTicket struct {
 }
 
 fn main() -> void! {
-    // 1. Construct a schema-typed tool definition at compile time
     weather_tool := ai.tool_def[WeatherLookup]("get_weather", "Fetches current weather for a city")
     println("Tool '{}' schema has city: {}", weather_tool.name, weather_tool.parameters_schema.contains("\"city\""))
 
-    // 2. Offline on-device client (swap with ai.openai(), ai.anthropic(), ai.gemini(), or ai.ollama())
     client := ai.apple()
     ticket := try client.generate_struct[IncidentTicket](
         "local",
         "Service=auth-gateway experienced p99 latency spike (severity 2)"
     )
     println("Structured ticket: service={}, severity={}", ticket.Service, ticket.Severity)
-
-    // 3. Language detection across scripts
     println("Lang(FR)={}, Lang(JA)={}", ai.detect_language("Bonjour le monde, comment allez-vous"), ai.detect_language("これは日本語のテストです"))
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `ai.tool_def[WeatherLookup](...)` inspects `WeatherLookup`'s `json` and `desc` field tags at compile time to build the exact JSON Schema required by OpenAI `tools`, Anthropic `input_schema`, and Gemini `functionDeclarations`.
-2. `client.generate_struct[IncidentTicket](...)` attaches `json.schema[IncidentTicket]()` to the request and parses the returned JSON payload directly into an `IncidentTicket` struct.
-3. `ai.detect_language(...)` returns the BCP-47 language code (`"fr"`, `"ja"`) on macOS, Linux, iOS, and WebAssembly alike.
-
-#### Expected Output
-
 ```text
+# Output:
 Tool 'get_weather' schema has city: true
 Structured ticket: service=auth-gateway, severity=2
 Lang(FR)=fr, Lang(JA)=ja
 ```
 
-### Level 2 — Document Ingestion & Vector RAG
+### Offline Document Ingestion & SIMD Vector RAG
+`ai.load_document(path)` and `ai.parse_document(bytes, filename)` extract structured sections (`[]DocumentSection { index, kind, title, text }`) from `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, and `.md` files using a built-in pure-C++23 DEFLATE/ZIP/XML/PDF parser. Combine `ai.chunk_document`, `ai.embed("local", ...)`, and `ext:db/sqlite` for an offline vector RAG pipeline:
 
 ```cfire
+package main
+
 import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
 
 type RagHit struct {
-    Page:  i32 `db:"page_num"`
-    Title: str `db:"title"`
-    Score: f64 `db:"score"`
+    Page:  i32 `sql:"page_num"`
+    Title: str `sql:"title"`
+    Score: f64 `sql:"score"`
 }
 
 fn main() -> void! {
-    // 1. Parse an in-memory Markdown/HTML/Office/PDF document into structured sections
     raw_doc := "# Storage Engine\nWrite-Ahead Logging (WAL) enables concurrent readers.\n\n# Network Layer\nRFC 6455 WebSockets provide full-duplex framing."
     doc     := try ai.parse_document(raw_doc.bytes(), "architecture.md")
     chunks  := ai.chunk_document(doc, 256, 32)
 
-    // 2. Index chunks into an in-memory SQLite vector table
     mut db := try sqlite.open(":memory:")
     defer db.close()
     try db.exec("CREATE TABLE chunks (page_num INT, title TEXT, body TEXT, vec BLOB)")
@@ -2454,7 +2202,6 @@ fn main() -> void! {
         try db.exec("INSERT INTO chunks VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, v)
     }
 
-    // 3. Retrieve the closest section using SIMD vec_cosine_similarity
     qvec := try ai.embed("local", "concurrent database WAL readers")
     hits := try db.query[RagHit](
         "SELECT page_num, title, vec_cosine_similarity(vec, ?1) AS score FROM chunks ORDER BY score DESC LIMIT 1",
@@ -2463,22 +2210,17 @@ fn main() -> void! {
     println("Top RAG hit: section #{} '{}' (score > 0.2: {})", hits[0].Page, hits[0].Title, hits[0].Score > 0.2)
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `ai.parse_document(...)` (and `ai.load_document(path)` for `.pdf`, `.pptx`, `.docx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`) parses the file into a `Document` with 1-based `sections` (`DocumentSection { index, kind, title, text }`).
-2. `ai.chunk_document(doc, 256, 32)` splits long sections into 256-character windows with 32-character overlap while preserving each chunk's `index` and `title` provenance.
-3. `ai.embed("local", ...)` generates a 384-dimensional L2-normalized `[]f32` embedding vector that binds directly to SQLite's `?4` `BLOB` parameter and is ranked via `vec_cosine_similarity(vec, ?1)`.
-
-#### Expected Output
-
 ```text
+# Output:
 Top RAG hit: section #1 'Storage Engine' (score > 0.2: true)
 ```
 
-### Level 3 — Model Context Protocol (`McpServer`)
+### Building Model Context Protocol (`McpServer`) Tools
+Want to expose your `cfire` functions as tools inside Claude Desktop, Cursor, or another MCP host? `ai.make_mcp_server(name, version)` and `mcp.register_tool[T](...)` wire up schema validation and JSON-RPC 2.0 dispatch in a few lines:
 
 ```cfire
+package main
+
 import "ext:ai" as ai
 
 type SearchArgs struct {
@@ -2490,39 +2232,65 @@ fn main() {
     mut mcp := ai.make_mcp_server("cfire-kb-server", "1.0.0")
 
     mcp.register_tool[SearchArgs]("search_kb", "Searches the internal knowledge base", |args: SearchArgs| -> str! {
-        return f"[{{\"query\":\"{args.Query}\",\"limit\":{args.Limit}}}]"
+        return "[{{\"query\":\"{args.Query}\",\"limit\":{args.Limit}}}]"
     })
 
-    // Handle a JSON-RPC 2.0 tools/call request in memory (use mcp.serve_stdio() in production)
+    // Test JSON-RPC 2.0 dispatch in memory (call mcp.serve_stdio() in production)
     req  := "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"search_kb\",\"arguments\":{\"query\":\"SIMD\",\"limit\":3}}}"
     resp := mcp.handle_jsonrpc(req)
     println("MCP JSON-RPC response contains SIMD: {}", resp.contains("SIMD"))
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `ai.make_mcp_server("cfire-kb-server", "1.0.0")` initializes a JSON-RPC 2.0 server implementing the Model Context Protocol (`initialize`, `tools/list`, `tools/call`, and `ping`).
-2. `mcp.register_tool[SearchArgs](...)` derives the tool's JSON Schema from `SearchArgs` at compile time and automatically deserializes incoming `params.arguments` JSON into `args: SearchArgs` before invoking the handler closure.
-3. Calling `mcp.serve_stdio()` runs the blocking `stdin`/`stdout` JSON-RPC loop ready for registration in Claude Desktop, Cursor, or any MCP host.
-
-#### Expected Output
-
 ```text
+# Output:
 MCP JSON-RPC response contains SIMD: true
 ```
 
 ---
 
-### Hybrid Native WebView Applications (`ext:webui`)
+## Chapter 18: Hybrid Desktop & Mobile Applications (`ext:webui`)
 
-`import "ext:webui"` provides a Wails/Tauri-style hybrid application engine that pairs a native OS WebView (`WKWebView` on macOS and iOS, `WebKitGTK` on Linux) with a two-way typed JSON-RPC 2.0 and pub/sub event bridge—without bundling Chromium/Electron or opening a local TCP port.
+### Why `ext:webui`? Architecture & Zero-Port VFS (`app://localhost/`)
+Shipping a desktop or mobile UI shouldn't require bundling a 150 MB Chromium runtime (Electron) or exposing a localhost TCP port that other local processes can probe.
 
-#### Architecture & Zero-Port Security Model
-- **Custom Scheme Asset Serving (`app://localhost/`)**: Frontend HTML/CSS/JS assets registered via `app.serve_dir("./ui")` or `app.embed_asset(path, content, mime)` are served in-memory via `WKURLSchemeHandler` (macOS/iOS) and `webkit_web_context_register_uri_scheme` (Linux) with strict path-traversal rejection (`..` segments blocked).
-- **Zero-Boilerplate Typed RPC (`app.bind[T]`)**: Importing `ext:webui` automatically enables compile-time JSON struct reflection (`cfire::json::parse_struct<T>` / `stringify_struct<T>`) for every struct in your package. Calling `app.bind[Req]("method") |req| { ... }` exposes `await window.backend.method(args)` (via ES6 `Proxy`) and `await window.invoke("method", args)` in JavaScript.
-- **Wails/Tauri Preload Runtime (`window.runtime`)**: Automatically injects `window.runtime.EventsOn`, `EventsOnce`, `EventsOff`, `EventsEmit`, `WindowSetTitle`, `WindowSetSize`, `WindowFullscreen`, `WindowMinimise`, `WindowMaximise`, `WindowCenter`, `Quit`, and frameless window dragging via CSS `--wails-draggable: drag` (or `-webkit-app-region: drag`).
-- **Deterministic Headless & Offscreen Testing**: Verify RPC handlers and pub/sub events in milliseconds with `app.call_rpc(method, json)?` and `app.dispatch_event(topic, json)`, or run a real offscreen `WKWebView` DOM/JS integration test on macOS via `app.run_webview_test(js_assertion)?`.
+`import "ext:webui"` gives you a Wails/Tauri-style hybrid application engine built directly on the operating system's native WebView (`WKWebView` on macOS and iOS, `WebKitGTK` on Linux) coupled to your `cfire` backend over an in-process JSON-RPC 2.0 and pub/sub event bridge:
+
+- **Zero-Port Custom URI Scheme (`app://localhost/`)**: Frontend assets are served directly from memory or disk via `WKURLSchemeHandler` (macOS/iOS) and `webkit_web_context_register_uri_scheme` (Linux). No TCP socket is ever bound.
+- **Three Asset Loading Strategies**:
+  1. `app.set_html(html_str)`: Inline a self-contained HTML/CSS/JS document for single-file utilities and tests.
+  2. `app.embed_asset(path, content, mime)`: Register individual virtual files (`"/app.js"`, `"/styles.css"`) in memory (`mime = ""` auto-detects `.html`, `.css`, `.js`, `.mjs`, `.json`, `.svg`, `.wasm`, `.png`, `.ico`).
+  3. `app.serve_dir("ui")`: Serve a directory tree from disk with automatic path-traversal protection (`..` segments are rejected with `403`). At runtime, `serve_dir` automatically resolves relative paths across your working directory (`./ui`), packaged macOS app bundles (`<App>.app/Contents/Resources/ui`), and iOS Simulator/device bundles (`<App>.app/ui`).
+
+Scaffold a complete hybrid app in one command, or run the canonical studio example on desktop or iOS Simulator:
+```bash
+cfire new my-studio --template webui
+cfire run examples/17-webui-studio/main.cf
+cfire run --ios examples/17-webui-studio/main.cf
+```
+
+### Typed RPC Bindings (`bind[T]`, `bind_action`, `bind_raw`) & `window.backend`
+When you import `ext:webui`, the compiler automatically emits `cfire::json::parse_struct<T>` and `stringify_struct<T>` reflection bridges for every struct in your package. You can expose backend functions to JavaScript in three ways depending on how structured the call is:
+
+| Method | Signature | When to Use It |
+| :--- | :--- | :--- |
+| `app.bind[Req](name) \|req\| { ... }` | `fn[Req, Resp](name: str, handler: fn(Req) -> Resp)` | **Typed Struct RPC (Recommended)**: Deserializes the JS argument object into `req: Req` via `` `json:"..."` `` tags and serializes the returned `Resp` struct (or `Resp!`) back to JS. |
+| `app.bind_action(name) \|\| { ... }` | `fn[Resp](name: str, handler: fn() -> Resp)` | **Zero-Argument Action**: Binds a callback that takes no payload (`await window.backend.reset_peaks()`) and returns a struct, primitive, or JSON string. |
+| `app.bind_raw(name) \|raw_json\| { ... }` | `fn(name: str, handler: fn(str) -> str)` | **Dynamic JSON Escape Hatch**: Receives the raw JSON argument string and returns a raw JSON string (`"{...}"`). |
+
+On the frontend, `ext:webui` injects a preload script before any page scripts run. Every bound function is callable as an `async` method on the `window.backend` ES6 `Proxy` (or via `window.invoke(method, args)`):
+
+```javascript
+// Inside your frontend UI JavaScript:
+const mix = await window.backend.update_track({
+    channel: 1,
+    name: "Poly Synth",
+    gain_db: 3.5,
+    muted: false,
+});
+console.log(mix.peak_pct, mix.status); // 83.75, "ACTIVE"
+```
+
+Let's wire up both `app.bind[T]` and `app.bind_action` on the `cfire` side:
 
 ```cfire
 package main
@@ -2545,8 +2313,8 @@ type MixResult struct {
 
 fn main() -> void! {
     mut app := webui.new_app("cfire Studio", 1024, 680)
-    app.serve_dir("examples/17-webui-studio/ui")
 
+    // 1. Typed struct-in -> struct-out RPC binding
     app.bind[TrackMix]("update_track") |req| {
         mut peak := 75.0 + req.GainDb * 2.5
         mut label := "ACTIVE"
@@ -2562,24 +2330,133 @@ fn main() -> void! {
         }
     }
 
-    res := app.call_rpc("update_track", "{\"channel\":1,\"name\":\"Synth\",\"gain_db\":4.0,\"muted\":false}")?
+    // 2. Zero-argument action binding
+    app.bind_action("ping_engine") || {
+        return "{\"engine\":\"ready\"}"
+    }
+
+    res := try app.call_rpc("update_track", "{\"channel\":1,\"name\":\"Synth\",\"gain_db\":4.0,\"muted\":false}")
     println("RPC response: {}", res)
 }
 ```
+```text
+# Output:
+RPC response: {"channel":1,"peak_pct":85,"clipped":false,"status":"ACTIVE"}
+```
 
-Scaffold a new hybrid WebUI project in one command with `cfire new my-app --webui` (or `cfire init --webui`), run it natively on desktop via `cfire run`, or launch it inside the iOS Simulator via `cfire run --ios`.
+### Bidirectional Event Bus & Reactive State (`on`, `emit`, `set_state`)
+RPC is great when the user clicks a button and waits for a reply, but live telemetry, audio meters, and background progress bars need push events and shared state in both directions:
+
+| Backend (`cfire`) Method | Frontend (`window.runtime`) Counterpart | Behavior |
+| :--- | :--- | :--- |
+| `app.on(topic) \|payload\| { ... }` | `window.runtime.EventsEmit(topic, data)` | Frontend publishes `topic`; all matching `cfire` `app.on` listeners receive the serialized JSON payload. |
+| `app.emit(topic, payload)` | `const off = window.runtime.EventsOn(topic, fn)` | Backend broadcasts `topic` (struct or JSON string) to all subscribed JS listeners (`EventsOnce` auto-unsubscribes after 1 event; `EventsOff(topic)` clears a topic). |
+| `app.set_state(key, value)` / `app.get_state(key)` | `window.runtime.EventsOn("state:change", fn)` | Updates the thread-safe reactive key-value store on the backend and automatically broadcasts `"state:change"` with `{"key": ..., "value": ...}` to the WebView. |
+
+```cfire
+package main
+
+import "ext:webui"
+
+type TransportEvent struct {
+    Playing: bool `json:"playing"`
+    Bpm:     i64  `json:"bpm"`
+}
+
+fn main() {
+    mut app := webui.new_app("Event Bus Demo", 800, 600)
+
+    // Listen for events emitted from JavaScript via window.runtime.EventsEmit("transport:toggle", ...)
+    app.on("transport:toggle") |payload| {
+        app.set_state("transport", payload)
+        app.emit("transport:ack", TransportEvent{ Playing: true, Bpm: 128 })
+    }
+
+    // Simulate an incoming frontend event in headless mode
+    app.dispatch_event("transport:toggle", "{\"playing\":true}")
+    println("state={} emitted_count={} last_topic={}",
+        app.get_state("transport"), app.emitted_events_count(), app.last_emitted_topic())
+}
+```
+```text
+# Output:
+state={"playing":true} emitted_count=2 last_topic=transport:ack
+```
+
+### Frameless Window Chrome, Drag Regions & Native OS Dialogs
+To make a hybrid app feel like a native macOS or Linux tool rather than a browser tab, `ext:webui` gives both your `.cf` backend and `window.runtime` full control over window chrome, custom titlebar drag regions, and native OS file/message dialogs:
+
+| Window & Dialog API | Signature / Usage | Description |
+| :--- | :--- | :--- |
+| `app.set_title(title)` / `set_size(w, h)` | `fn(str)` / `fn(i32, i32)` | Sets window title and initial/live logical pixel dimensions. |
+| `app.set_min_size(w, h)` / `set_max_size(w, h)` | `fn(i32, i32)` | Constrains user window resizing bounds. |
+| `app.set_frameless(true)` / `set_transparent(true)` | `fn(bool)` | Hides the OS titlebar (`NSWindowStyleMaskFullSizeContentView` on macOS) or enables transparent WebView backgrounds. |
+| `app.set_dark_mode(true)` / `set_always_on_top(true)` | `fn(bool)` | Forces `NSAppearanceNameDarkAqua` (macOS) / dark GTK theme or floats the window above other apps. |
+| `app.center()` / `fullscreen()` / `minimize()` / `maximize()` | `fn()` | Controls window placement (also callable from JS via `window.runtime.WindowCenter()`, `WindowMinimise()`, `WindowMaximise()`, `WindowFullscreen()`, `Quit()`). |
+| **CSS / HTML Drag Regions** | `data-webui-drag-region` or `--wails-draggable: drag` | Add `data-webui-drag-region` (or CSS `-webkit-app-region: drag`) to your custom HTML header bar to initiate native OS window dragging (`performWindowDragWithEvent:` on macOS, `begin_move_drag` on GTK); interactive `<button>` and `<input>` children remain clickable automatically. |
+| `app.open_file_dialog(title, dir, filter)` | `fn(str, str = "", str = "") -> str` | Opens a native `NSOpenPanel` (macOS) or `zenity` file picker and returns the selected path. |
+| `app.save_file_dialog(title, default_name)` | `fn(str, str = "") -> str` | Opens a native `NSSavePanel` save dialog and returns the target path. |
+| `app.message_dialog(title, message, level)` | `fn(str, str, str = "info") -> bool` | Displays a native `NSAlert` modal (`"info"`, `"warning"`, `"error"`, or `"confirm"` with Cancel/OK buttons). |
+
+### Headless & Live Offscreen `WKWebView` Testing (`cfire test`)
+Most WebView frameworks are painful to test in CI because spinning up a visible GUI window hangs headless runners. `ext:webui` gives you two tiers of automated verification inside standard `cfire test` blocks:
+
+1. **Millisecond Headless Contract Tests**: Use `try app.call_rpc(method, json)`, `app.dispatch_event(topic, json)`, `app.resolve_asset_content(path)`, and `app.resolve_asset_mime(path)` to test your RPC serialization, state mutations, and VFS security in memory on every platform.
+2. **Real Offscreen `WKWebView` DOM + JS Integration Tests (`app.run_webview_test(timeout_ms)`)**: On macOS, calling `try app.run_webview_test(3000)` boots a real offscreen `WKWebView`, loads your HTML/CSS/JS over `app://localhost/`, executes your frontend JavaScript against your live `cfire` `app.bind[T]` handlers, and waits up to `timeout_ms` for your script to set `window.__TEST_PASSED = true` (or fails immediately with `window.__TEST_ERROR`):
+
+```cfire
+package main
+
+import "ext:webui"
+
+type EchoReq struct {
+    Text: str `json:"text"`
+}
+
+fn main() -> void! {
+    mut app := webui.new_app("WebView Test Runner", 640, 480)
+    app.bind[EchoReq]("upper_echo") |req| {
+        return "{\"reply\":\"" + req.Text + "!\"}"
+    }
+    app.set_html(`<!doctype html><html><body><script>
+        (async () => {
+            try {
+                const res = await window.backend.upper_echo({ text: "cfire" });
+                if (res.reply === "cfire!") {
+                    window.__TEST_PASSED = true;
+                } else {
+                    window.__TEST_ERROR = "unexpected reply: " + JSON.stringify(res);
+                }
+            } catch (e) {
+                window.__TEST_ERROR = String(e);
+            }
+        })();
+    </script></body></html>`)
+
+    // 1. Fast headless RPC & VFS check
+    rpc_out := try app.call_rpc("upper_echo", "{\"text\":\"studio\"}")
+    mime    := app.resolve_asset_mime("/index.html")
+
+    // 2. Real offscreen WKWebView round-trip test (auto-skips on headless Linux without display)
+    try app.run_webview_test(3000)
+    println("rpc={} mime={} webview_test=PASSED", rpc_out, mime)
+}
+```
+```text
+# Output:
+rpc={"reply":"studio!"} mime=text/html; charset=utf-8 webview_test=PASSED
+```
 
 ---
 
-## Chapter 18: Production Patterns & Examples
-
-This chapter demonstrates how `cfire`'s standard library modules compose into a single, zero-dependency binary and provides a complete engineering guide to the 17 canonical projects in [`examples/`](file:///Users/memo/Programming/cfire/examples).
+## Chapter 19: Production Patterns, Cloud Services & Canonical Examples
 
 ### Blueprint: RAG + HTTP/JSON Microservice
-
-The following self-contained service combines `ext:db/sqlite` (WAL mode + SIMD vector search), `ext:ai` (document chunking + local embeddings), `ext:json` (compile-time struct serialization), and `ext:net/http` (pattern-matched HTTP router) into a single executable:
+Let's pull `ext:db/sqlite` (WAL mode + SIMD vector search), `ext:ai` (local embeddings), `ext:json` (compile-time struct serialization), and `ext:net/http` (pattern-matched HTTP router) together into a single, zero-dependency microservice:
 
 ```cfire
+package main
+
 import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
 import "ext:json" as json
@@ -2591,8 +2468,8 @@ type SearchRequest struct {
 }
 
 type SearchResult struct {
-    Title: str `db:"title" json:"title"`
-    Score: f64 `db:"score" json:"score"`
+    Title: str `sql:"title" json:"title"`
+    Score: f64 `sql:"score" json:"score"`
 }
 
 fn main() -> void! {
@@ -2634,22 +2511,42 @@ fn main() -> void! {
     println("HTTP {} -> top hit: '{}'", res.status, parsed[0].Title)
 }
 ```
-
-**Line-by-Line Mechanics:**
-
-1. `SearchResult` uses dual reflection tags (`` `db:"title" json:"title"` ``) so the exact same struct maps out of SQLite (`db.query[SearchResult]`) and serializes directly to the HTTP response body (`json.stringify(hits)`).
-2. Inside the `router.post("/v1/search", ...)` closure, `or return http.Response.json(...)` converts any JSON parse, embedding, or SQLite error into a structured HTTP status response without throwing exceptions.
-3. `router.dispatch(...)` verifies the entire JSON -> Embedding -> SQLite SIMD Vector Search -> JSON pipeline in memory.
-
-#### Expected Output
-
 ```text
+# Output:
 HTTP 200 -> top hit: 'Lock-Free Audio'
 ```
 
-### Canonical Projects Index (`examples/01`–`17`)
+### Cloud & Local Service Primitives (`core:tako`)
+When you want to prototype or test AWS-style cloud workflows—IAM permission evaluation, S3 object buckets, DynamoDB key-value tables, SQS FIFO queues, Secrets Manager, and CloudWatch metrics/alarms—without network credentials or cloud bills, `import "core:tako"` (scaffolded via `cfire new my-cloud --template tako`) provides an in-memory cloud runtime backed by `pkg/tako`:
 
-Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is continuously verified by `make -C cfire test-examples` and can be run directly from the repository root:
+```cfire
+package main
+
+import "core:tako" as tk
+
+fn main() -> void! {
+    mut s3  := tk.NewS3Service()
+    mut sqs := tk.NewSQSService()
+
+    try s3.CreateBucket("artifacts")
+    etag := try s3.PutObject("artifacts", "release/v1.tar.zst", "zstd-frame-bytes", "application/zstd")
+    obj  := try s3.GetObject("artifacts", "release/v1.tar.zst")
+
+    q_url  := try sqs.CreateQueue("build-jobs", true)
+    msg_id := try sqs.SendMessage(q_url, "{\"target\":\"arm64\"}", "builds", "dedup-01")
+    msgs   := try sqs.ReceiveMessages(q_url, 1)
+
+    println("s3_etag_ok={} body={} sqs_msg={} received={}",
+        !etag.empty(), obj.Body, !msg_id.empty(), msgs.len())
+}
+```
+```text
+# Output:
+s3_etag_ok=true body=zstd-frame-bytes sqs_msg=true received=1
+```
+
+### Canonical Projects Index (`examples/01`–`17`)
+Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is continuously verified by `make test-examples` and can be run directly from the repository root:
 
 | Directory | Title | Core Technologies Demonstrated | Run / Build Command |
 | :--- | :--- | :--- | :--- |
@@ -2672,6 +2569,5 @@ Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is
 | [`examples/17-webui-studio`](file:///Users/memo/Programming/cfire/examples/17-webui-studio) | Hybrid WebUI Studio | Wails/Tauri-style native WebView (`ext:webui`), typed `app.bind[T]` JSON-RPC 2.0, `window.backend` ES6 Proxy, `app://localhost/` VFS, offscreen `WKWebView` test (`--ios` & desktop) | `cfire run examples/17-webui-studio/main.cf` |
 
 ### Further Reference & Module Index
-
 - **Standard Library API Reference**: Browse [`reference.html`](file:///Users/memo/Programming/cfire/docs/reference.html) (or [`STDLIB_REFERENCE.md`](file:///Users/memo/Programming/cfire/docs/STDLIB_REFERENCE.md)) for every function signature, C++23 lowering expression, and diagnostic code in the compiler catalog.
 - **LLM Context Snapshot**: Feed [`LLMS.txt`](file:///Users/memo/Programming/cfire/docs/LLMS.txt) or start `cfire mcp` to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.
