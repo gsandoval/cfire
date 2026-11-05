@@ -882,13 +882,13 @@ tr:hover td { background: #1F242C; }
       Expressive systems programming built for native, web, mobile, and AI.
     </h1>
     <p class="subtitle">
-      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 33-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, WebAssembly, and iOS with zero lock-in.
+      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 34-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, WebAssembly, and iOS with zero lock-in.
     </p>
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 33 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 34 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -983,7 +983,7 @@ tr:hover td { background: #1F242C; }
         </div>
         <h3>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 21 zero-dependency C++23 primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:cli</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 10 opt-in domain packages (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 21 zero-dependency C++23 primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:cli</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 11 opt-in domain packages (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
         </p>
       </div>
       <div class="bento-footer">
@@ -1099,7 +1099,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 21 zero-dep core modules + 10 opt-in domain extensions (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>) + 2 vendor engines.</td>
+          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 21 zero-dep core modules + 11 opt-in domain extensions (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>) + 2 vendor engines.</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -1243,13 +1243,13 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-18">
       <div class="roadmap-num">Chapter 18</div>
       <h4>Production Patterns &amp; Examples</h4>
-      <p>End-to-end architectures, canonical projects index (01-hello-core through 16-audio-synth), and best practices.</p>
+      <p>End-to-end architectures, canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
     </a>
   </div>
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Catalog (33 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Catalog (34 Modules) &rarr;</a>
   </div>
 </div>
 

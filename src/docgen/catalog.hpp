@@ -489,6 +489,47 @@ struct DiagnosticDoc {
             }
         },
         {
+            "ext:webui", "webui", "Hybrid Native WebView & Two-Way Typed RPC Application Framework", "(WKWebView / WebKitGTK + JSON-RPC 2.0)",
+            "Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (`WKWebView` on macOS & iOS, `WebKitGTK` on Linux) over a custom `app://localhost/` URI scheme with two-way typed struct RPC (`app.bind[T]`), live event streaming (`app.on`, `app.emit`), reactive key-value state (`app.set_state`), and an injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` JavaScript bridge.",
+            {
+                {"new_app", "fn new_app(title: str = \"cfire WebUI\", width: i32 = 960, height: i32 = 640) -> App", "cfire::webui::new_app(title, width, height)", "Creates a new native WebView application instance with initial window title and dimensions.", "mut app := webui.new_app(\"Studio Desk\", 980, 640)"},
+                {"App.bind", "fn (mut app: App) bind[T](name: str, handler: fn(T) -> any!)", "app.bind<T>(name, handler)", "Binds a typed `cfire` closure to `window.backend.<name>(params)` and `window.invoke(name, params)`, automatically deserializing incoming JSON into struct `T` and serializing the return value.", "app.bind[TrackMix](\"set_track\") |req| { return compute_mix(req) }"},
+                {"App.bind_action", "fn (mut app: App) bind_action(name: str, handler: fn() -> any!)", "app.bind_action(name, handler)", "Binds a zero-argument action closure to `window.backend.<name>()`.", "app.bind_action(\"reset_desk\") || { return \"ok\" }"},
+                {"App.bind_raw", "fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)", "app.bind_raw(name, handler)", "Binds a raw JSON string RPC handler to `window.backend.<name>(params)`.", "app.bind_raw(\"raw_op\") |raw_json| { return raw_json }"},
+                {"App.on", "fn (mut app: App) on(event: str, handler: fn(str))", "app.on(event, handler)", "Subscribes a backend callback to frontend events emitted via `window.runtime.EventsEmit(event, data)`.", "app.on(\"fader:input\") |payload| { println(\"{}\", payload) }"},
+                {"App.emit", "fn (mut app: App) emit(event: str, payload: any)", "app.emit(event, payload)", "Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners.", "app.emit(\"meter:peak\", status)"},
+                {"App.set_state", "fn (mut app: App) set_state(key: str, val: str)", "app.set_state(key, val)", "Updates a reactive key-value state entry and broadcasts a `state:change` event (`{key, value}`) to the frontend.", "app.set_state(\"preset\", \"Warm Tape\")"},
+                {"App.get_state", "fn (app: App) get_state(key: str) -> str", "app.get_state(key)", "Reads the current string value for `key` from the application's state store.", "p := app.get_state(\"preset\")"},
+                {"App.set_html", "fn (mut app: App) set_html(html: str)", "app.set_html(html)", "Registers inline HTML content as `/index.html` on the `app://localhost/` virtual filesystem.", "app.set_html(\"<!doctype html><html><body><h1>Hello</h1></body></html>\")"},
+                {"App.embed_asset", "fn (mut app: App) embed_asset(path: str, content: str, mime: str = \"\")", "app.embed_asset(path, content, mime)", "Embeds an in-memory asset (`.html`, `.css`, `.js`, `.svg`, etc.) into the `app://localhost/` virtual filesystem.", "app.embed_asset(\"/app.css\", \"body { background: #111; }\", \"text/css\")"},
+                {"App.serve_dir", "fn (mut app: App) serve_dir(dir_path: str)", "app.serve_dir(dir_path)", "Mounts a local or bundled asset directory (e.g. `\"./ui\"`) under `app://localhost/`.", "app.serve_dir(\"./ui\")"},
+                {"App.eval", "fn (mut app: App) eval(js: str)", "app.eval(js)", "Asynchronously evaluates arbitrary JavaScript inside the active WebView on the main UI thread.", "app.eval(\"document.body.classList.add('ready')\")"},
+                {"App.set_title", "fn (mut app: App) set_title(title: str)", "app.set_title(title)", "Updates the native window title.", "app.set_title(\"Mastering Studio — Active\")"},
+                {"App.set_size", "fn (mut app: App) set_size(width: i32, height: i32)", "app.set_size(width, height)", "Resizes the native application window.", "app.set_size(1280, 800)"},
+                {"App.set_min_size", "fn (mut app: App) set_min_size(min_w: i32, min_h: i32)", "app.set_min_size(min_w, min_h)", "Sets the minimum resizable dimensions for the native window.", "app.set_min_size(640, 420)"},
+                {"App.set_max_size", "fn (mut app: App) set_max_size(max_w: i32, max_h: i32)", "app.set_max_size(max_w, max_h)", "Sets the maximum resizable dimensions for the native window.", "app.set_max_size(1920, 1080)"},
+                {"App.set_frameless", "fn (mut app: App) set_frameless(frameless: bool)", "app.set_frameless(frameless)", "Configures a frameless full-size content view window with CSS `--wails-draggable: drag` support.", "app.set_frameless(true)"},
+                {"App.set_transparent", "fn (mut app: App) set_transparent(transparent: bool)", "app.set_transparent(transparent)", "Enables or disables transparent window and WebView background rendering.", "app.set_transparent(true)"},
+                {"App.set_dark_mode", "fn (mut app: App) set_dark_mode(dark: bool)", "app.set_dark_mode(dark)", "Configures dark or light native window appearance.", "app.set_dark_mode(true)"},
+                {"App.set_always_on_top", "fn (mut app: App) set_always_on_top(on_top: bool)", "app.set_always_on_top(on_top)", "Floats the application window above standard desktop windows.", "app.set_always_on_top(true)"},
+                {"App.fullscreen", "fn (mut app: App) fullscreen()", "app.fullscreen()", "Toggles native fullscreen window mode.", "app.fullscreen()"},
+                {"App.minimize", "fn (mut app: App) minimize()", "app.minimize()", "Minimizes the native window to the dock or taskbar.", "app.minimize()"},
+                {"App.maximize", "fn (mut app: App) maximize()", "app.maximize()", "Zooms or maximizes the native window.", "app.maximize()"},
+                {"App.center", "fn (mut app: App) center()", "app.center()", "Centers the native window on the active screen.", "app.center()"},
+                {"App.open_file_dialog", "fn (app: App) open_file_dialog(title: str = \"Open File\") -> str", "app.open_file_dialog(title)", "Opens a native OS file picker dialog and returns the selected path (or `\"\"` if cancelled).", "path := app.open_file_dialog(\"Select Audio Track\")"},
+                {"App.save_file_dialog", "fn (app: App) save_file_dialog(title: str = \"Save File\", default_name: str = \"\") -> str", "app.save_file_dialog(title, default_name)", "Opens a native OS save-file dialog and returns the chosen destination path.", "dest := app.save_file_dialog(\"Export Preset\", \"studio.json\")"},
+                {"App.message_dialog", "fn (app: App) message_dialog(title: str, message: str)", "app.message_dialog(title, message)", "Displays a modal native OS alert dialog.", "app.message_dialog(\"Export Complete\", \"Saved master preset.\")"},
+                {"App.call_rpc", "fn (mut app: App) call_rpc(method: str, params_json: str = \"{}\") -> str!", "app.call_rpc(method, params_json)", "Directly invokes a bound RPC handler in-memory without opening a window (ideal for `cfire test` and `fuzz` blocks).", "res := try app.call_rpc(\"set_track\", \"{\\\"channel\\\":1}\")"},
+                {"App.dispatch_event", "fn (mut app: App) dispatch_event(event: str, data_json: str = \"{}\")", "app.dispatch_event(event, data_json)", "Dispatches a synthetic frontend event to `app.on(event)` listeners during headless testing.", "app.dispatch_event(\"fader:input\", \"{\\\"channel\\\":1}\")"},
+                {"App.emitted_events_count", "fn (app: App) emitted_events_count(event: str) -> i64", "app.emitted_events_count(event)", "Returns the number of times `app.emit(event, ...)` has been triggered.", "n := app.emitted_events_count(\"meter:peak\")"},
+                {"App.last_emitted_payload", "fn (app: App) last_emitted_payload(event: str) -> str", "app.last_emitted_payload(event)", "Returns the most recent JSON payload emitted for `event`.", "last := app.last_emitted_payload(\"meter:peak\")"},
+                {"App.run_webview_test", "fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!", "app.run_webview_test(timeout_ms)", "Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached.", "ok := try app.run_webview_test(3000)"},
+                {"App.run", "fn (mut app: App) run()", "app.run()", "Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux).", "app.run()"},
+                {"App.quit", "fn (mut app: App) quit()", "app.quit()", "Requests termination of the native WebView event loop.", "app.quit()"},
+                {"App.close", "fn (mut app: App) close()", "app.close()", "Deterministic RAII cleanup handle for `defer app.close()`.", "defer app.close()"}
+            }
+        },
+        {
             "vendor:raygui", "rg", "Raygui 4.0 Immediate-Mode GUI Controls", "-lraylib",
             "Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing.",
             {
@@ -1330,6 +1371,55 @@ fn main() {
     println("Top match: {} (score={})", hits[0].title, hits[0].score)
 })CF";
     }
+    if (mod == "ext:webui") {
+        return R"CF(package main
+
+import "ext:webui"
+
+type TrackMixReq struct {
+    channel: i32  `json:"channel"`
+    gain_db: f64  `json:"gain_db"`
+    muted:   bool `json:"muted"`
+}
+
+type TrackStatusRes struct {
+    channel:      i32 `json:"channel"`
+    effective_db: f64 `json:"effective_db"`
+    status:       str `json:"status"`
+}
+
+fn main() {
+    mut app := webui.new_app("Pocket Mastering Studio", 960, 640)
+    defer app.close()
+
+    app.serve_dir("./ui")
+    app.set_dark_mode(true)
+
+    // Bind a typed cfire struct handler callable from JS via `await window.backend.set_track({...})`
+    app.bind[TrackMixReq]("set_track") |req| {
+        mut eff := req.gain_db
+        mut label := "active"
+        if req.muted {
+            eff = -96.0
+            label = "muted"
+        }
+        res := TrackStatusRes{
+            channel:      req.channel,
+            effective_db: eff,
+            status:       label,
+        }
+        app.emit("meter:peak", res)
+        return res
+    }
+
+    // Listen for live frontend events (`window.runtime.EventsEmit("fader:input", ...)`)
+    app.on("fader:input") |payload| {
+        app.set_state("last_fader", payload)
+    }
+
+    app.run()
+})CF";
+    }
     if (mod == "vendor:raygui") {
         return R"CF(package main
 
@@ -1399,6 +1489,7 @@ struct DiscoveredModule {
             else if (rel == "unicode.hpp") discovered.push_back({"core:unicode", "core/" + rel, false});
             else if (rel == "audio.hpp") discovered.push_back({"ext:audio", "core/" + rel, false});
             else if (rel == "ai.hpp") discovered.push_back({"ext:ai", "core/" + rel, false});
+            else if (rel == "webui.hpp") discovered.push_back({"ext:webui", "core/" + rel, false});
             else if (rel == "crypto.hpp") {
                 discovered.push_back({"core:crypto/sha256", "core/" + rel, false});
                 discovered.push_back({"core:crypto/hmac", "core/" + rel, false});

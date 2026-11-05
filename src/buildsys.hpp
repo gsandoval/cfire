@@ -329,6 +329,7 @@ struct BuildPlan {
     std::string ios_app_bundle{};
     bool is_ios{false};
     bool is_ios_sim{false};
+    bool uses_objc{false};
     int window_init_width{0};
     int window_init_height{0};
     std::string emscripten_compiler{};
@@ -1825,6 +1826,8 @@ inline auto resolve_external_dep_source(
         {"ext:ai", "simdjson"},
         {"core:tako", "simdjson"},
         {"ext:tako", "simdjson"},
+        {"core:webui", "simdjson"},
+        {"ext:webui", "simdjson"},
         {"core:db/sqlite", "sqlite3"},
         {"ext:db/sqlite", "sqlite3"},
     };
@@ -1906,6 +1909,44 @@ inline auto resolve_external_dep_source(
                         });
 #elif defined(__linux__)
                         plan.ldflags.insert(plan.ldflags.end(), {"-ldl", "-lpthread"});
+#endif
+                    }
+                }
+            }
+            if (imp.path == "core:webui" || imp.path == "ext:webui") {
+                plan.is_gui = true;
+                if (!is_wasm) {
+                    if (plan.is_ios) {
+                        plan.uses_objc = true;
+                        plan.cflags.push_back("-fobjc-arc");
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "UIKit",
+                            "-framework", "WebKit",
+                            "-framework", "Foundation",
+                            "-framework", "CoreGraphics"
+                        });
+                    } else {
+#if defined(__APPLE__)
+                        plan.uses_objc = true;
+                        plan.cflags.push_back("-fobjc-arc");
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "Cocoa",
+                            "-framework", "WebKit"
+                        });
+#elif defined(__linux__)
+                        int wk_rc = 0;
+                        (void)bridge::run_command_capture("pkg-config --exists webkit2gtk-4.1 2>/dev/null", wk_rc);
+                        if (wk_rc == 0) {
+                            add_pc("webkit2gtk-4.1");
+                            add_pc("gtk+-3.0");
+                        } else {
+                            int wk40_rc = 0;
+                            (void)bridge::run_command_capture("pkg-config --exists webkit2gtk-4.0 2>/dev/null", wk40_rc);
+                            if (wk40_rc == 0) {
+                                add_pc("webkit2gtk-4.0");
+                                add_pc("gtk+-3.0");
+                            }
+                        }
 #endif
                     }
                 }
@@ -2454,7 +2495,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     }
 
     std::string pch_path;
-    if (plan.target_triple.empty()) {
+    if (plan.target_triple.empty() && !plan.uses_objc) {
         pch_path = ensure_prelude_pch(runtime_dir, false);
     }
     std::string cmd = "clang++ -O2";
@@ -2462,6 +2503,9 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     for (const auto& inc : extra_includes) cmd += " -I \"" + inc + "\"";
     if (!pch_path.empty()) {
         cmd += std::format(" -include-pch \"{}\"", pch_path);
+    }
+    if (plan.uses_objc) {
+        cmd += " -x objective-c++";
     }
     cmd += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
     int rc = 0;
@@ -2685,8 +2729,12 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 
     auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
     std::filesystem::create_directories(gen_dir);
+    if (out_bin.has_parent_path()) {
+        std::error_code out_ec;
+        std::filesystem::create_directories(out_bin.parent_path(), out_ec);
+    }
     auto stem = test_mode ? (cf_file.stem().string() + "_test") : cf_file.stem().string();
-    auto cpp_path = gen_dir / (stem + (plan.is_ios && plan.is_gui ? ".mm" : ".cpp"));
+    auto cpp_path = gen_dir / (stem + ((plan.uses_objc || (plan.is_ios && plan.is_gui)) ? ".mm" : ".cpp"));
     plan.generated_cpp = cpp_path.string();
 
     {
@@ -2697,15 +2745,15 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     std::string opt_flags = sanitize
         ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
         : "-O2";
-    // Only use host PCH if compiling natively for the host (empty target_triple)
+    // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
     std::string pch_path;
-    if (plan.target_triple.empty()) {
+    if (plan.target_triple.empty() && !plan.uses_objc) {
         pch_path = ensure_prelude_pch(runtime_dir, sanitize);
     }
 
     std::string compiler = is_wasm ? plan.emscripten_compiler : "clang++";
     std::string cmd = compiler;
-    if (plan.is_ios && plan.is_gui) {
+    if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
         cmd += " -fobjc-arc";
     }
     for (const auto& f : plan.cflags) {
@@ -2807,6 +2855,14 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         plist << "</dict>\n</plist>\n";
         plist.close();
 
+        auto ui_src_dir = cf_file.parent_path() / "ui";
+        if (std::filesystem::exists(ui_src_dir, ec) && std::filesystem::is_directory(ui_src_dir, ec)) {
+            auto ui_dest_dir = app_bundle / "Contents" / "Resources" / "ui";
+            std::filesystem::create_directories(ui_dest_dir, ec);
+            std::filesystem::copy(ui_src_dir, ui_dest_dir,
+                std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+        }
+
 #if defined(__APPLE__)
         int cs_rc = 0;
         std::string cs_cmd = std::format("codesign --force --deep --sign - \"{}\" 2>/dev/null", app_bundle.string());
@@ -2826,6 +2882,14 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         std::filesystem::permissions(bundle_bin,
             std::filesystem::perms::owner_all | std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
             std::filesystem::perms::others_read | std::filesystem::perms::others_exec, ec);
+
+        auto ui_src_dir = cf_file.parent_path() / "ui";
+        if (std::filesystem::exists(ui_src_dir, ec) && std::filesystem::is_directory(ui_src_dir, ec)) {
+            auto ui_dest_dir = app_bundle / "ui";
+            std::filesystem::create_directories(ui_dest_dir, ec);
+            std::filesystem::copy(ui_src_dir, ui_dest_dir,
+                std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+        }
 
         std::string effective_name = plan.app_name.empty() ? bin_name : plan.app_name;
         std::string effective_bundle_id = plan.bundle_id.empty() ? ("com.cfire." + bin_name) : plan.bundle_id;

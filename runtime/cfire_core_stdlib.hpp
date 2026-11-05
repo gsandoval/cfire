@@ -22,3 +22,4 @@
 #include "core/unicode.hpp"
 #include "core/audio.hpp"
 #include "core/ai.hpp"
+#include "core/webui.hpp"

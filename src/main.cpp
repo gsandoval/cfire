@@ -31,8 +31,8 @@ namespace {
 void print_usage() {
     std::println("Usage: cfire <command> [args...]");
     std::println("Commands:");
-    std::println("  init     [--template cli|tako|gui] [--force] [dir] Initialize a new cfire project in current/target directory");
-    std::println("  new      [--template cli|tako|gui] [--force] <dir> Create a new cfire project directory");
+    std::println("  init     [--template cli|tako|gui|webui] [--force] [dir] Initialize a new cfire project in current/target directory");
+    std::println("  new      [--template cli|tako|gui|webui] [--force] <dir> Create a new cfire project directory");
     std::println("  run      [--web|--ios] [target|file.cf] Run native app, web app (--web), or iOS Simulator app (--ios)");
     std::println("  test     [--json] [--filter <pat>] [--fuzz-runs <N>] [--seed <S>] [path|file.cf] Compile and execute test, fuzz & doc-test suites");
     std::println("  bench    [--json] [--filter <pat>] [--bench-time <ms>] [path|file.cf] Run statistical micro-benchmarks (`bench \"...\"`)");
@@ -98,6 +98,7 @@ void print_usage() {
     std::string build_cf_txt;
     std::string main_cf_txt;
     std::string test_cf_txt;
+    std::string ui_html_txt;
 
     if (tmpl == "tako") {
         build_cf_txt = std::format(R"CF(package build
@@ -176,6 +177,124 @@ test "window_title formats name" {{
     assert(window_title("{0}") == "{0} — cfire + raylib")
 }}
 )CF", proj_name);
+    } else if (tmpl == "webui") {
+        build_cf_txt = std::format(R"CF(package build
+
+app := Executable{{
+    name:      "{}",
+    entry:     "main.cf",
+    targets:   ["native", "ios-sim"],
+    subsystem: "gui",
+}}
+)CF", proj_name);
+        main_cf_txt = std::format(R"CF(package main
+
+import "ext:webui"
+
+type GreetReq struct {{
+    name:  str `json:"name"`
+    count: i32 `json:"count"`
+}}
+
+type GreetRes struct {{
+    message: str `json:"message"`
+    count:   i32 `json:"count"`
+}}
+
+fn format_greeting(req: GreetReq) -> GreetRes {{
+    next_count := req.count + 1
+    return GreetRes{{
+        message: "Hello, {{req.name}}! (clicked {{next_count}} times)",
+        count:   next_count,
+    }}
+}}
+
+fn build_app() -> webui.App {{
+    mut app := webui.new_app("{}", 960, 640)
+    app.serve_dir("./ui")
+    app.bind[GreetReq]("greet") |req| {{
+        res := format_greeting(req)
+        app.emit("greet:updated", res)
+        return res
+    }}
+    app.bind_action("ping") || {{
+        return "pong"
+    }}
+    return app
+}}
+
+fn main() {{
+    mut app := build_app()
+    defer app.close()
+    app.run()
+}}
+)CF", proj_name);
+        test_cf_txt = R"CF(package main
+
+test "webui bound greet RPC round-trip" {
+    mut app := build_app()
+    defer app.close()
+    raw := try app.call_rpc("greet", "{\"name\":\"Developer\",\"count\":2}")
+    assert(raw.contains("\"count\":3"))
+    assert(app.emitted_events_count("greet:updated") == 1)
+}
+)CF";
+        ui_html_txt = std::format(R"HTML(<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{0}</title>
+  <style>
+    body {{
+      margin: 0;
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }}
+    .card {{
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 28px;
+      max-width: 440px;
+      width: 100%;
+    }}
+    button {{
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>{0}</h2>
+    <p id="status">Ready</p>
+    <button id="btn">Invoke cfire Backend</button>
+  </div>
+  <script>
+    let count = 0;
+    window.runtime.EventsOn("greet:updated", (ev) => {{
+      document.getElementById("status").textContent = ev.message;
+    }});
+    document.getElementById("btn").addEventListener("click", async () => {{
+      const res = await window.backend.greet({{ name: "cfire", count }});
+      count = res.count;
+    }});
+  </script>
+</body>
+</html>
+)HTML", proj_name);
     } else {
         // Default: cli
         build_cf_txt = std::format(R"CF(package build
@@ -219,11 +338,22 @@ test "greet returns expected message" {{
         std::println(stderr, "error writing scaffold files in '{}'", abs_dir.string());
         return 1;
     }
+    if (!ui_html_txt.empty()) {
+        auto ui_dir = abs_dir / "ui";
+        std::filesystem::create_directories(ui_dir, ec);
+        if (!write_f(ui_dir / "index.html", ui_html_txt)) {
+            std::println(stderr, "error writing ui/index.html in '{}'", abs_dir.string());
+            return 1;
+        }
+    }
 
     std::println("✓ Initialized cfire {} project '{}' in {}", tmpl, proj_name, abs_dir.string());
     std::println("  + build.cf");
     std::println("  + main.cf");
     std::println("  + main_test.cf");
+    if (!ui_html_txt.empty()) {
+        std::println("  + ui/index.html");
+    }
     std::println("  + .gitignore");
     if (sub == "new") {
         std::println("\nNext steps:\n  cd {}\n  cfire run\n  cfire test", target_dir.string());
@@ -401,6 +531,8 @@ auto main(int argc, char** argv) -> int {
                 tmpl = "tako";
             } else if (arg == "--gui" || arg == "--raylib") {
                 tmpl = "gui";
+            } else if (arg == "--webui") {
+                tmpl = "webui";
             } else if (arg == "--cli") {
                 tmpl = "cli";
             } else if (arg == "--force" || arg == "-f") {

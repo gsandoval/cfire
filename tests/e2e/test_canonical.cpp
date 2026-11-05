@@ -171,6 +171,19 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
                 "cfire::audio::encode_wav(synth_wave)",
             },
         },
+        {
+            .name = "17-webui-studio",
+            .cf_path = "examples/17-webui-studio/main.cf",
+            .args = "",
+            .expected_stdout = {
+                "Studio RPC ready -> track={\"channel\":1,\"effective_db\":-3,\"headroom_db\":3,\"status\":\"active\"} preset=\"loaded:Punchy Bus\" state=Punchy Bus",
+            },
+            .expected_cpp = {
+                "cfire::webui::new_app(\"Pocket Mastering Studio\", 980, 640)",
+                "app.bind<TrackMixReq>(\"set_track\"",
+                "app.bind_action(\"reset_desk\"",
+            },
+        },
     };
 
     auto tmp_dir = std::filesystem::temp_directory_path() / "cfire_conformance_bins";
@@ -221,7 +234,7 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
         }
 
         int rc = 0;
-        std::string run_cmd = "\"" + out_bin.string() + "\" " + tc.args;
+        std::string run_cmd = "CFIRE_HEADLESS_TEST=1 \"" + out_bin.string() + "\" " + tc.args;
         std::string out = cfire::bridge::run_command_capture(run_cmd, rc);
         require(rc == 0, std::format("{} exited with code {}: {}", tc.name, rc, out));
         for (const auto& sub : tc.expected_stdout) {
@@ -230,7 +243,9 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
         }
 
         // For 09-stdlib-test-pointers, verify PCH acceleration and compile+run in `cfire test --sanitize` mode
-        require(plan->used_pch, std::format("expected PCH cache acceleration on {}", tc.name));
+        if (!plan->uses_objc) {
+            require(plan->used_pch, std::format("expected PCH cache acceleration on {}", tc.name));
+        }
         if (tc.name == "09-stdlib-test-pointers") {
             auto test_bin = tmp_dir / "09_test_runner";
             auto test_plan = cfire::build::build_native(tc.cf_path, rt_dir, test_bin, true, true);

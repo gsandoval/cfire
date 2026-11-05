@@ -66,6 +66,7 @@ auto main(int argc, char** argv) -> int {
         test_sync_context(rt_dir);
         test_net_websocket(rt_dir);
         test_net_http_and_router(rt_dir);
+        test_webui_rpc_events_and_linux_backend(rt_dir);
         test_security_and_fuzzing(rt_dir);
         test_performance_benchmarks(rt_dir);
     }

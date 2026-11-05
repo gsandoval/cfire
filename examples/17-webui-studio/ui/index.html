@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket Mastering & Telemetry Studio</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f17;
+      --panel: #141b26;
+      --border: #253042;
+      --accent: #38bdf8;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; user-select: none; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 18px;
+      --wails-draggable: drag;
+    }
+    .badge {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .tracks {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+    }
+    .strip {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .strip-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.active {
+      background: var(--accent);
+      color: #090d16;
+      border-color: var(--accent);
+    }
+    footer {
+      margin-top: 18px;
+      padding: 12px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header data-webui-drag-region>
+    <div>
+      <strong>Pocket Mastering Studio</strong>
+      <span style="color:var(--muted);margin-left:8px;font-size:13px">cfire ext:webui</span>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span id="preset-badge" class="badge">Warm Tape</span>
+      <button onclick="resetConsole()">Reset Console</button>
+    </div>
+  </header>
+
+  <section class="tracks">
+    <div class="strip">
+      <div class="strip-head"><span>CH 1 — Drums</span><span id="db-1">0.0 dB</span></div>
+      <input id="fader-1" type="range" min="-24" max="6" step="0.5" value="0" oninput="onFader(1, this.value)">
+      <div class="controls">
+        <button id="mute-1" onclick="toggleMute(1)">Mute</button>
+        <button onclick="applyPreset('Punchy Bus')">Punchy Preset</button>
+      </div>
+    </div>
+    <div class="strip">
+      <div class="strip-head"><span>CH 2 — Synth Bus</span><span id="db-2">-1.5 dB</span></div>
+      <input id="fader-2" type="range" min="-24" max="6" step="0.5" value="-1.5" oninput="onFader(2, this.value)">
+      <div class="controls">
+        <button id="mute-2" onclick="toggleMute(2)">Mute</button>
+        <button onclick="applyPreset(' Velvet Master')">Velvet Preset</button>
+      </div>
+    </div>
+  </section>
+
+  <footer id="telemetry-log">Ready — waiting for fader or preset events...</footer>
+
+  <script>
+    const muted = { 1: false, 2: false };
+
+    window.runtime.EventsOn("meter:peak", (ev) => {
+      const log = document.getElementById("telemetry-log");
+      log.textContent = `[meter:peak] ch=${ev.channel} effective=${ev.effective_db.toFixed(1)} dB headroom=${ev.headroom_db.toFixed(1)} dB (${ev.status})`;
+    });
+
+    window.runtime.EventsOn("state:change", (ev) => {
+      if (ev.key === "preset") {
+        document.getElementById("preset-badge").textContent = ev.value;
+      }
+    });
+
+    async function onFader(channel, val) {
+      const gain_db = parseFloat(val);
+      document.getElementById(`db-${channel}`).textContent = `${gain_db.toFixed(1)} dB`;
+      window.runtime.EventsEmit("fader:input", { channel, gain_db });
+      await window.backend.set_track({ channel, gain_db, muted: !!muted[channel] });
+    }
+
+    async function toggleMute(channel) {
+      muted[channel] = !muted[channel];
+      const btn = document.getElementById(`mute-${channel}`);
+      btn.classList.toggle("active", muted[channel]);
+      const gain_db = parseFloat(document.getElementById(`fader-${channel}`).value);
+      await window.backend.set_track({ channel, gain_db, muted: muted[channel] });
+    }
+
+    async function applyPreset(name) {
+      await window.invoke("load_preset", { name: name.trim(), ceiling_db: -0.3 });
+    }
+
+    async function resetConsole() {
+      const msg = await window.backend.reset_desk();
+      document.getElementById("telemetry-log").textContent = `[reset] ${msg}`;
+    }
+  </script>
+</body>
+</html>

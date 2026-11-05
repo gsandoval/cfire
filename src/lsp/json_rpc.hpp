@@ -627,6 +627,7 @@ struct LocalBindingInfo {
                                     if (ret == "TcpListener!") return "net.TcpListener!";
                                     if (ret == "TcpConn!") return "net.TcpConn!";
                                     if (ret == "Conn!") return "sqlite.Conn!";
+                                    if (ret == "App") return "webui.App";
                                     return ret;
                                 }
                                 return "void";
@@ -678,6 +679,16 @@ struct LocalBindingInfo {
                             return "[]" + cfire::fmt::format_type_ref(call->type_args[0]) + "!";
                         }
                         return "void!";
+                    }
+                    if (rtype == "webui.App" || rtype == "App") {
+                        if (mem->field == "get_state" || mem->field == "open_file_dialog" ||
+                            mem->field == "save_file_dialog" || mem->field == "last_emitted_payload") {
+                            return "str";
+                        }
+                        if (mem->field == "call_rpc") return "str!";
+                        if (mem->field == "emitted_events_count") return "i64";
+                        if (mem->field == "run_webview_test") return "bool!";
+                        return "void";
                     }
                     if (mem->field == "size") return "usize";
                     if (mem->field == "empty") return "bool";
@@ -752,6 +763,7 @@ struct LocalBindingInfo {
         if (v == "net.TcpListener") return "cfire::net::TcpListener";
         if (v == "net.TcpConn") return "cfire::net::TcpConn";
         if (v == "sqlite.Conn") return "cfire::sqlite::Conn";
+        if (v == "webui.App" || v == "App") return "cfire::webui::App";
         if (v == "context.Context" || v == "Context") return "cfire::sync::context::Context";
         if (v == "websocket.Conn") return "cfire::websocket::Conn";
         if (v.starts_with("sync.Channel[") && v.ends_with("]")) {
@@ -972,6 +984,11 @@ inline auto expr_to_string(const cfire::frontend::ExprPtr& e) -> std::string {
     return "";
 }
 
+inline void collect_stmt_exprs(
+    const std::vector<cfire::frontend::StmtPtr>& stmts,
+    std::vector<cfire::frontend::ExprPtr>& out
+);
+
 inline void collect_all_exprs(
     const cfire::frontend::ExprPtr& e,
     std::vector<cfire::frontend::ExprPtr>& out
@@ -996,6 +1013,7 @@ inline void collect_all_exprs(
     } else if (const auto* call = std::get_if<CallExpr>(&e->node)) {
         collect_all_exprs(call->callee, out);
         for (const auto& a : call->args) collect_all_exprs(a.value, out);
+        if (call->block_arg) collect_stmt_exprs(call->block_arg->body, out);
     } else if (const auto* sl = std::get_if<StructLitExpr>(&e->node)) {
         for (const auto& f : sl->fields) collect_all_exprs(f.value, out);
     } else if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
@@ -1178,6 +1196,40 @@ inline void collect_stmt_bindings(
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
             for (const auto& arm : ms->arms) {
                 collect_stmt_bindings(arm.body, ast, ws, lines, max_line, env, ordered_out);
+            }
+        } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
+            if (es->expr) {
+                if (const auto* call = std::get_if<CallExpr>(&es->expr->node)) {
+                    if (call->block_arg) {
+                        if (max_line <= 0 || es->line <= max_line) {
+                            for (std::size_t pi = 0; pi < call->block_arg->params.size(); ++pi) {
+                                const auto& bp_name = call->block_arg->params[pi];
+                                if (bp_name.empty() || bp_name == "_") continue;
+                                LocalBindingInfo pinfo;
+                                pinfo.name = bp_name;
+                                pinfo.is_mut = false;
+                                pinfo.is_param = true;
+                                pinfo.intent = "in";
+                                pinfo.decl_line = es->line;
+                                if (pi < call->type_args.size()) {
+                                    pinfo.cf_type = cfire::fmt::format_type_ref(call->type_args[pi]);
+                                } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                                    if (mem->field == "on" || mem->field == "bind_raw") {
+                                        pinfo.cf_type = "str";
+                                    } else {
+                                        pinfo.cf_type = "auto";
+                                    }
+                                } else {
+                                    pinfo.cf_type = "auto";
+                                }
+                                pinfo.cpp_type = cf_type_string_to_cpp(pinfo.cf_type);
+                                pinfo.inferred_colon_eq = false;
+                                env[pinfo.name] = pinfo;
+                            }
+                        }
+                        collect_stmt_bindings(call->block_arg->body, ast, ws, lines, max_line, env, ordered_out);
+                    }
+                }
             }
         }
     }

@@ -1,0 +1,165 @@
+package main
+
+import "core:math"
+import "core:str"
+import "ext:webui"
+
+type TrackMixReq struct {
+    channel: i32  `json:"channel"`
+    gain_db: f64  `json:"gain_db"`
+    muted:   bool `json:"muted"`
+}
+
+type TrackStatusRes struct {
+    channel:      i32 `json:"channel"`
+    effective_db: f64 `json:"effective_db"`
+    headroom_db:  f64 `json:"headroom_db"`
+    status:       str `json:"status"`
+}
+
+type PresetConfig struct {
+    name:       str `json:"name"`
+    ceiling_db: f64 `json:"ceiling_db"`
+}
+
+/// Computes clamped effective channel gain and headroom in dB.
+///
+/// ```cfire
+/// res := compute_track_mix(TrackMixReq{ channel: 1, gain_db: -3.5, muted: false })
+/// assert(res.channel == 1)
+/// assert(res.effective_db == -3.5)
+/// assert(res.headroom_db == 3.5)
+/// assert(res.status == "active")
+/// ```
+fn compute_track_mix(req: TrackMixReq) -> TrackStatusRes {
+    clamped_gain := math.clamp_f64(req.gain_db, -60.0, 12.0)
+    mut effective := clamped_gain
+    mut headroom := 0.0 - clamped_gain
+    mut state_label := "active"
+    if clamped_gain > 0.0 {
+        state_label = "hot"
+    }
+    if req.muted {
+        effective = -96.0
+        headroom = 96.0
+        state_label = "muted"
+    }
+    return TrackStatusRes{
+        channel:      req.channel,
+        effective_db: effective,
+        headroom_db:  headroom,
+        status:       state_label,
+    }
+}
+
+fn configure_studio_app() -> webui.App {
+    mut app := webui.new_app("Pocket Mastering Studio", 980, 640)
+    app.set_dark_mode(true)
+    app.set_min_size(640, 420)
+    app.serve_dir("./ui")
+    app.set_state("preset", "Warm Tape")
+
+    app.bind[TrackMixReq]("set_track") |req| {
+        if req.channel <= 0 || req.channel > 32 {
+            return error("channel out of range (1..32)")
+        }
+        status := compute_track_mix(req)
+        app.emit("meter:peak", status)
+        return status
+    }
+
+    app.bind[PresetConfig]("load_preset") |preset| {
+        clean_name := str.trim(preset.name)
+        app.set_state("preset", clean_name)
+        return "loaded:{clean_name}"
+    }
+
+    app.bind_action("reset_desk") || {
+        app.set_state("preset", "Unity Flat")
+        return "unity_reset_ok"
+    }
+
+    app.on("fader:input") |payload| {
+        app.set_state("last_fader_event", payload)
+    }
+
+    return app
+}
+
+fn main() {
+    mut app := configure_studio_app()
+    defer app.close()
+
+    ch1 := try app.call_rpc("set_track", "{\"channel\":1,\"gain_db\":-3.0,\"muted\":false}")
+    preset_res := try app.call_rpc("load_preset", "{\"name\":\"Punchy Bus\",\"ceiling_db\":-0.3}")
+    cur_state := app.get_state("preset")
+    println("Studio RPC ready -> track={ch1} preset={preset_res} state={cur_state}")
+
+    app.run()
+}
+
+test "studio RPC bind, state store, and event bus round-trip" {
+    mut app := configure_studio_app()
+    defer app.close()
+
+    r1 := try app.call_rpc("set_track", "{\"channel\":2,\"gain_db\":-6.0,\"muted\":false}")
+    assert(r1.contains("\"channel\":2"))
+    assert(r1.contains("\"effective_db\":-6"))
+    assert(app.emitted_events_count("meter:peak") == 1)
+
+    r2 := try app.call_rpc("load_preset", "{\"name\":\"  Velvet Master  \",\"ceiling_db\":-0.5}")
+    assert(r2 == "\"loaded:Velvet Master\"")
+    assert(app.get_state("preset") == "Velvet Master")
+
+    app.dispatch_event("fader:input", "{\"channel\":2,\"gain_db\":-4.0}")
+    assert(app.get_state("last_fader_event").contains("\"channel\":2"))
+}
+
+test "live WKWebView JS bridge executes window.backend and window.runtime" {
+    mut app := configure_studio_app()
+    defer app.close()
+
+    app.set_html(`<!doctype html><html><body><script>
+      (async function() {
+        try {
+          window.runtime.EventsOn('meter:peak', function(ev) {
+            window.runtime.EventsEmit('fader:input', { channel: ev.channel, status: ev.status });
+          });
+          const track = await window.backend.set_track({ channel: 4, gain_db: -2.5, muted: false });
+          const preset = await window.invoke('load_preset', { name: 'Live WebKit Preset', ceiling_db: -0.2 });
+          if (track.channel === 4 && preset === 'loaded:Live WebKit Preset') {
+            window.runtime.Quit();
+          }
+        } catch (e) {
+          window.runtime.Quit();
+        }
+      })();
+    </script></body></html>`)
+
+        quit_cleanly := try app.run_webview_test(3000)
+        assert(quit_cleanly)
+        assert(app.get_state("preset") == "Live WebKit Preset")
+        assert(app.emitted_events_count("meter:peak") == 1)
+        assert(app.get_state("last_fader_event").contains("\"channel\":4"))
+    }
+
+    fuzz "compute_track_mix invariants hold across arbitrary fader inputs" |ch: i32, gain: f64, muted: bool| {
+        res := compute_track_mix(TrackMixReq{
+                channel: ch,
+                gain_db: gain,
+                muted:   muted,
+        })
+        assert(res.channel == ch)
+        if muted {
+            assert(res.effective_db == -96.0)
+            assert(res.status == "muted")
+        } else {
+            assert(res.effective_db >= -60.0 && res.effective_db <= 12.0)
+        }
+    }
+
+    bench "studio RPC set_track dispatch throughput" {
+        mut app := configure_studio_app()
+        defer app.close()
+        _ := try app.call_rpc("set_track", "{\"channel\":1,\"gain_db\":-3.0,\"muted\":false}")
+    }

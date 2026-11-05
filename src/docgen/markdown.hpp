@@ -1394,7 +1394,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
 - Imports:
   - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:tako"`)
-  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:db/sqlite"`, `import "ext:ai"`)
+  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:db/sqlite"`, `import "ext:ai"`, `import "ext:webui"`)
   - Bundled Vendor: `import "vendor:<module>"` (e.g. `import "vendor:raylib"`, `import "vendor:raygui"`)
   - Toolchain Packages: `import "pkg:<name>"` (e.g. `import "pkg:tako"`, resolved automatically from workspace/toolchain roots alongside `build.Tako()` in `build.cf`)
   - Local package: `import "./path/to/pkg"`
