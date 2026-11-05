@@ -891,12 +891,17 @@ namespace detail {
     out += detail::navbar_html("guide");
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
-    out += "    <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
-    out += "      <div class=\"nav-search-wrapper\">\n";
-    out += "        <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Search topics, APIs &amp; code...\" oninput=\"filterGuideNav(this.value)\" />\n";
-    out += "        <kbd class=\"nav-search-kbd\">⌘K</kbd>\n";
-    out += "      </div>\n";
-    out += "      <div id=\"guide-search-results\" class=\"search-results-dropdown\"></div>\n";
+    out += "    <details class=\"sidebar-details\" id=\"guide-sidebar-details\">\n";
+    out += "      <summary class=\"sidebar-summary\">\n";
+    out += "        <span id=\"mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Ch 1:</span> Installation &amp; Platform Setup</span>\n";
+    out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
+    out += "      </summary>\n";
+    out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
+    out += "        <div class=\"nav-search-wrapper\">\n";
+    out += "          <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Search topics, APIs &amp; code...\" oninput=\"filterGuideNav(this.value)\" />\n";
+    out += "          <kbd class=\"nav-search-kbd\">⌘K</kbd>\n";
+    out += "        </div>\n";
+    out += "        <div id=\"guide-search-results\" class=\"search-results-dropdown\"></div>\n";
 
     std::string current_rendered_part;
     for (const auto& entry : chapters) {
@@ -934,11 +939,12 @@ namespace detail {
         out += "      </ul>\n";
     }
 
-    out += std::format(R"HTML(      <a href="reference.html" class="sidebar-footer-card">
-        <span class="sfc-title">Stdlib Reference</span>
-        <span class="sfc-badge">{} MODULES</span>
-      </a>
-    </div>
+    out += std::format(R"HTML(        <a href="reference.html" class="sidebar-footer-card">
+          <span class="sfc-title">Stdlib Reference</span>
+          <span class="sfc-badge">{} MODULES</span>
+        </a>
+      </div>
+    </details>
   </aside>
 )HTML", stdlib_catalog().size());
 
@@ -953,10 +959,16 @@ namespace detail {
           <span class="sep">/</span>
           <span class="current" id="breadcrumb-chapter">Chapter 1: Installation &amp; Platform Setup</span>
         </div>
-        <div class="reader-mode-toggle">
-          <button class="mode-btn active" id="btn-topic-mode" onclick="setReaderMode('topic')">Topic View</button>
-          <button class="mode-btn" id="btn-chapter-mode" onclick="setReaderMode('chapter')">Full Chapter</button>
-          <button class="mode-btn" id="btn-all-mode" onclick="setReaderMode('all')">View All</button>
+        <div class="toolbar-actions">
+          <div class="reader-mode-toggle">
+            <button class="mode-btn active" id="btn-topic-mode" onclick="setReaderMode('topic')">Topic View</button>
+            <button class="mode-btn" id="btn-chapter-mode" onclick="setReaderMode('chapter')">Full Chapter</button>
+            <button class="mode-btn" id="btn-all-mode" onclick="setReaderMode('all')">View All</button>
+          </div>
+          <button type="button" class="btn-toolbar-ai" onclick="openAiModal()" title="Generate context-rich AI prompt for this topic">
+            <span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">auto_awesome</span>
+            <span>Ask AI</span>
+          </button>
         </div>
       </div>
 
@@ -971,9 +983,14 @@ namespace detail {
 
     out += toc_rail_html;
     out += "  </div>\n</div>\n";
+    out += detail::ai_context_modal_html();
+
+    out += std::format(R"JS(
+<script>
+const TOTAL_GUIDE_CHAPTERS = {};
+)JS", chapters.size());
 
     out += R"JS(
-<script>
 function copyCode(btn) {
   const pre = btn.closest('.code-header').nextElementSibling;
   const code = pre ? pre.querySelector('code') : null;
@@ -982,18 +999,6 @@ function copyCode(btn) {
     const orig = btn.innerText;
     btn.innerText = 'Copied!';
     setTimeout(() => { btn.innerText = orig; }, 2000);
-  });
-}
-
-function askAiAgent() {
-  const prompt = 'I am studying the cfire language guide at ' + window.location.href + ' — help me understand this concept with practical examples.';
-  navigator.clipboard.writeText(prompt).then(() => {
-    const label = document.getElementById('ai-agent-label');
-    if (label) {
-      const orig = label.innerText;
-      label.innerText = 'Prompt Copied!';
-      setTimeout(() => { label.innerText = orig; }, 2000);
-    }
   });
 }
 
@@ -1090,10 +1095,13 @@ function activateTopicWithinChapter(targetPane, sid) {
   } else if (intro) {
     intro.style.display = 'block';
   }
-  // Sync topic pills
+  // Sync topic pills & scroll active pill into horizontal view on mobile
   targetPane.querySelectorAll('.topic-pill').forEach(p => {
     if (p.getAttribute('data-topic-pill') === sid) {
       p.classList.add('active');
+      if (window.innerWidth <= 840 && p.scrollIntoView) {
+        p.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
     } else {
       p.classList.remove('active');
     }
@@ -1123,10 +1131,18 @@ function navigateToChapter(num, updateHash) {
     const bChap = document.getElementById('breadcrumb-chapter');
     if (bPart) bPart.innerText = part;
     if (bChap) bChap.innerText = 'Ch ' + num + ': ' + title;
+    const mobLabel = document.getElementById('mobile-sidebar-label');
+    if (mobLabel) {
+      mobLabel.innerHTML = '<span class="sidebar-summary-badge">Ch ' + num + ':</span> ' + title;
+    }
     const firstTopic = targetPane.querySelector('.guide-topic');
     if (firstTopic) {
       activateTopicWithinChapter(targetPane, firstTopic.getAttribute('data-topic-id'));
     }
+  }
+  const mobDetails = document.getElementById('guide-sidebar-details');
+  if (mobDetails && window.innerWidth <= 840) {
+    mobDetails.removeAttribute('open');
   }
 
   // Update dynamic sidebar active disclosure
@@ -1155,6 +1171,7 @@ function navigateToChapter(num, updateHash) {
   }
   const vp = document.getElementById('guide-viewport');
   if (vp) vp.scrollTop = 0;
+  if (window.innerWidth <= 840) window.scrollTo(0, 0);
 }
 
 function navigateToSubhead(num, sid) {
@@ -1162,9 +1179,14 @@ function navigateToSubhead(num, sid) {
   history.pushState(null, '', '#' + sid);
   const targetPane = document.getElementById('chapter-pane-' + num);
   activateTopicWithinChapter(targetPane, sid);
+  const mobDetails = document.getElementById('guide-sidebar-details');
+  if (mobDetails && window.innerWidth <= 840) {
+    mobDetails.removeAttribute('open');
+  }
   const vp = document.getElementById('guide-viewport');
   if (vp && vp.classList.contains('topic-View-mode')) {
     vp.scrollTop = 0;
+    if (window.innerWidth <= 840) window.scrollTo(0, 0);
   } else {
     setTimeout(() => {
       const el = document.getElementById(sid);
@@ -1188,7 +1210,7 @@ function setReaderMode(mode) {
   if (mode === 'all') {
     vp.classList.add('view-all-mode');
     if (btnAll) btnAll.classList.add('active');
-    if (bChap) bChap.innerText = 'All 16 Chapters';
+    if (bChap) bChap.innerText = 'All ' + TOTAL_GUIDE_CHAPTERS + ' Chapters';
     document.querySelectorAll('.chapter-intro').forEach(el => el.style.display = 'block');
     document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'block');
   } else if (mode === 'chapter') {
@@ -1237,6 +1259,8 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     const filter = document.getElementById('guide-filter');
     if (filter) { filter.focus(); filter.select(); }
+  } else if (e.key === 'Escape') {
+    closeAiModal();
   }
 });
 

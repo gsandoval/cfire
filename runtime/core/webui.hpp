@@ -298,6 +298,7 @@ struct AppState {
     std::function<void()> platform_center{};
     std::function<void()> platform_drag{};
     std::function<void()> platform_quit{};
+    std::function<void(const std::string&, std::function<void(bool)>)> platform_screenshot{};
 
     AppState() {
         embedded_assets["/index.html"] = AssetEntry{
@@ -452,6 +453,27 @@ struct AppState {
             std::string params_json = "{}";
             if (auto pv = parsed->get("params")) {
                 params_json = cfire::json::stringify_dynamic(*pv, 0);
+            }
+            if (method_name == "__screenshot") {
+                std::string shot_path{};
+                if (auto pv = parsed->get("params"); pv && pv->is_object()) {
+                    if (auto pp = pv->get("path"); pp && pp->is_string()) {
+                        shot_path = std::string(pp->as_str());
+                    }
+                }
+                std::function<void(const std::string&, std::function<void(bool)>)> sfn;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(mtx);
+                    sfn = platform_screenshot;
+                }
+                if (sfn && !shot_path.empty()) {
+                    sfn(shot_path, [this, id_js](bool ok) {
+                        eval_js(std::format("window.__cfire_rpc_resolve({}, true, {});", id_js, ok ? "true" : "false"));
+                    });
+                } else {
+                    eval_js(std::format("window.__cfire_rpc_resolve({}, true, false);", id_js));
+                }
+                return;
             }
             auto res = call_rpc_internal(method_name, params_json);
             if (res) {
@@ -1162,8 +1184,27 @@ public:
                 state_->platform_quit = [st = state_]() {
                     st->quit_requested.store(true, std::memory_order_relaxed);
                 };
+                state_->platform_screenshot = [webView](const std::string& out_path, std::function<void(bool)> done) {
+                    NSString* ns_path = [NSString stringWithUTF8String:out_path.c_str()];
+                    WKSnapshotConfiguration* snapCfg = [[WKSnapshotConfiguration alloc] init];
+                    [webView takeSnapshotWithConfiguration:snapCfg completionHandler:^(NSImage* image, NSError* error) {
+                        bool ok = false;
+                        if (image && !error && ns_path) {
+                            CGImageRef cgRef = [image CGImageForProposedRect:NULL context:nil hints:nil];
+                            if (cgRef) {
+                                NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithCGImage:cgRef];
+                                NSData* pngData = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+                                if (pngData) {
+                                    ok = [pngData writeToFile:ns_path atomically:YES];
+                                }
+                            }
+                        }
+                        if (done) done(ok);
+                    }];
+                };
             }
 
+            [window orderBack:nil];
             NSURL* startURL = [NSURL URLWithString:@"app://localhost/index.html"];
             [webView loadRequest:[NSURLRequest requestWithURL:startURL]];
 
@@ -1183,6 +1224,7 @@ public:
                 state_->platform_eval = nullptr;
                 state_->platform_set_title = nullptr;
                 state_->platform_quit = nullptr;
+                state_->platform_screenshot = nullptr;
             }
             [window close];
             return state_->quit_requested.load(std::memory_order_relaxed);
@@ -1337,6 +1379,26 @@ public:
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [window close];
                         [NSApp stop:nil];
+                    });
+                };
+                state_->platform_screenshot = [webView](const std::string& out_path, std::function<void(bool)> done) {
+                    NSString* ns_path = [NSString stringWithUTF8String:out_path.c_str()];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        WKSnapshotConfiguration* snapCfg = [[WKSnapshotConfiguration alloc] init];
+                        [webView takeSnapshotWithConfiguration:snapCfg completionHandler:^(NSImage* image, NSError* error) {
+                            bool ok = false;
+                            if (image && !error && ns_path) {
+                                CGImageRef cgRef = [image CGImageForProposedRect:NULL context:nil hints:nil];
+                                if (cgRef) {
+                                    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithCGImage:cgRef];
+                                    NSData* pngData = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+                                    if (pngData) {
+                                        ok = [pngData writeToFile:ns_path atomically:YES];
+                                    }
+                                }
+                            }
+                            if (done) done(ok);
+                        }];
                     });
                 };
             }
