@@ -501,10 +501,21 @@ struct GlobalVarDecl {
     int line = 1;
 };
 
+struct BenchParamVariation {
+    std::string name{};
+    TypeRef inferred_type{"i64"};
+    std::vector<ExprPtr> values{};
+    int line = 1;
+};
+
 struct TestDecl {
     std::string name{};
     std::vector<StmtPtr> body{};
     int line = 1;
+    bool is_fuzz = false;
+    bool is_bench = false;
+    std::vector<ParamDecl> params{};
+    std::vector<BenchParamVariation> bench_variations{};
 };
 
 struct FileAST {

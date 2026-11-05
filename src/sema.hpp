@@ -1431,9 +1431,14 @@ private:
         }
     }
 
-    // 2. Index Struct Field Tags
+    // 2. Index Struct Field Tags & Validate Tag Invariants (TEST-03a)
     for (const auto& st : ast.structs) {
         std::vector<StructTagInfo> tags;
+        std::unordered_map<std::string, std::string> seen_json_keys;
+        std::unordered_map<std::string, std::string> seen_db_cols;
+        std::unordered_map<std::string, std::string> seen_cli_longs;
+        std::unordered_map<std::string, std::string> seen_cli_shorts;
+
         for (const auto& fld : st.fields) {
             if (fld.raw_tag.empty()) continue;
             StructTagInfo info;
@@ -1452,13 +1457,79 @@ private:
                     } else {
                         info.cli_long = trim_str(val);
                     }
+                    if (!info.cli_long.empty() && info.cli_long != "-") {
+                        if (auto prev = seen_cli_longs.find(info.cli_long); prev != seen_cli_longs.end()) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: duplicate cli flag '--{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, info.cli_long, st.name, fld.name, prev->second));
+                        } else {
+                            seen_cli_longs[info.cli_long] = fld.name;
+                        }
+                    }
+                    if (!info.cli_short.empty() && info.cli_short != "-") {
+                        if (auto prev = seen_cli_shorts.find(info.cli_short); prev != seen_cli_shorts.end()) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: duplicate cli short flag '-{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, info.cli_short, st.name, fld.name, prev->second));
+                        } else {
+                            seen_cli_shorts[info.cli_short] = fld.name;
+                        }
+                    }
                 } else if (key == "help") {
                     info.cli_help = val;
                 } else if (key == "json") {
                     auto comma = val.find(',');
-                    info.json_key = trim_str(comma != std::string::npos ? std::string_view(val).substr(0, comma) : std::string_view(val));
+                    info.json_key = trim_str(comma != std::string_view::npos ? std::string_view(val).substr(0, comma) : std::string_view(val));
+                    if (!info.json_key.empty() && info.json_key != "-") {
+                        if (auto prev = seen_json_keys.find(info.json_key); prev != seen_json_keys.end()) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: duplicate json tag key '{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, info.json_key, st.name, fld.name, prev->second));
+                        } else {
+                            seen_json_keys[info.json_key] = fld.name;
+                        }
+                    }
                 } else if (key == "db" || key == "sql") {
                     info.db_column = trim_str(val);
+                    if (!info.db_column.empty() && info.db_column != "-") {
+                        if (auto prev = seen_db_cols.find(info.db_column); prev != seen_db_cols.end()) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: duplicate {} column tag '{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, key, info.db_column, st.name, fld.name, prev->second));
+                        } else {
+                            seen_db_cols[info.db_column] = fld.name;
+                        }
+                    }
+                } else if (key == "default") {
+                    std::string dval = trim_str(val);
+                    const std::string& tname = fld.type.name;
+                    if (tname == "i8" || tname == "i16" || tname == "i32" || tname == "i64" || tname == "int") {
+                        if (!cfire::detail::parse_int<std::int64_t>(dval)) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: invalid default tag value '{}' for integer field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, dval, st.name, fld.name, tname));
+                        }
+                    } else if (tname == "u8" || tname == "u16" || tname == "u32" || tname == "u64" || tname == "usize" || tname == "byte") {
+                        if (dval.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(dval)) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: invalid default tag value '{}' for unsigned field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, dval, st.name, fld.name, tname));
+                        }
+                    } else if (tname == "bool") {
+                        if (dval != "true" && dval != "false" && dval != "1" && dval != "0") {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: invalid default tag value '{}' for bool field '{}.{}' (expected 'true' or 'false') (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, dval, st.name, fld.name));
+                        }
+                    } else if (tname == "f32" || tname == "f64") {
+                        char* endp = nullptr;
+                        (void)std::strtod(dval.c_str(), &endp);
+                        if (dval.empty() || endp != dval.c_str() + dval.size()) {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: invalid default tag value '{}' for float field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
+                                ast.path, fld.line, dval, st.name, fld.name, tname));
+                        }
+                    }
                 }
                 info.custom_tags[key] = val;
             }
@@ -1493,12 +1564,22 @@ private:
         }
     }
 
-    // 5. Validate Test Declarations
+    // 5. Validate Test, Fuzz, and Bench Declarations
     for (std::size_t idx = 0; idx < ast.tests.size(); ++idx) {
+        const auto& td = ast.tests[idx];
         FnDecl dummy_fn;
         dummy_fn.name = std::format("__cfire_test_{}", idx);
+        dummy_fn.params = td.params;
+        for (const auto& bv : td.bench_variations) {
+            dummy_fn.params.push_back(ParamDecl{"in", bv.name, bv.inferred_type, bv.line, 1});
+        }
         SemaFnChecker checker(ast.path, dummy_fn, cf, cf.warnings, cf.errors, true);
-        for (const auto& st : ast.tests[idx].body) {
+        for (const auto& bv : td.bench_variations) {
+            for (const auto& vex : bv.values) {
+                (void)checker.check_expr(vex);
+            }
+        }
+        for (const auto& st : td.body) {
             (void)checker.check_stmt(st);
         }
     }

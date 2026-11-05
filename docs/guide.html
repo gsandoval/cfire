@@ -1792,6 +1792,7 @@ tr:hover td { background: #1F242C; }
           <ul class="subhead-list">
             <li><a href="#ch12-architecture-invariants" onclick="navigateToSubhead('12', 'ch12-architecture-invariants'); return false;">Architecture &amp; Invariants</a></li>
             <li><a href="#ch12-level-1-unit-testing-test-assert-eq" onclick="navigateToSubhead('12', 'ch12-level-1-unit-testing-test-assert-eq'); return false;">Level 1 — Unit Testing (test &amp; assert_eq)</a></li>
+            <li><a href="#ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" onclick="navigateToSubhead('12', 'ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench'); return false;">Level 1B — Property-Based Fuzzing (fuzz) &amp; Parameterized Benchmarks (bench)</a></li>
             <li><a href="#ch12-level-2-memory-ub-sanitizers-sanitize" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">Level 2 — Memory &amp; UB Sanitizers (--sanitize)</a></li>
             <li><a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</a></li>
           </ul>
@@ -2156,6 +2157,7 @@ xcrun --sdk iphonesimulator --show-sdk-path
       <tr><td><code>cfire_stdlib_list</code></td><td><code>{}</code></td><td>Lists every <code>core:*</code>, <code>ext:*</code>, and <code>vendor:*</code> module with its import path, namespace alias, and summary.</td></tr>
       <tr><td><code>cfire_stdlib_lookup</code></td><td><code>{&quot;query&quot;: &quot;str&quot;}</code></td><td>Searches modules, function signatures, and types matching <code>query</code> (e.g., <code>&quot;ext:ai&quot;</code> or <code>&quot;embed&quot;</code>).</td></tr>
       <tr><td><code>cfire_check</code></td><td><code>{&quot;code&quot;?: &quot;str&quot;, &quot;path&quot;?: &quot;str&quot;}</code></td><td>Parses, type-checks, and verifies borrow/intent rules on inline <code>.cf</code> <code>code</code> or a workspace <code>path</code> (including same-directory sibling files); returns <code>&quot;OK (0 errors)&quot;</code> or exact <code>CFxxxx</code> diagnostics.</td></tr>
+      <tr><td><code>cfire_test</code></td><td><code>{&quot;path&quot;?: &quot;str&quot;, &quot;filter&quot;?: &quot;str&quot;, &quot;bench&quot;?: bool, &quot;fuzz_runs&quot;?: int, &quot;seed&quot;?: int, &quot;bench_time&quot;?: int}</code></td><td>Executes unit tests (<code>test</code>), property-based fuzz tests (<code>fuzz</code> with shrinking), <code>///</code> doc-tests, automatic JSON round-trip invariants, or statistical benchmarks (<code>bench</code>).</td></tr>
       <tr><td><code>cfire_eval</code></td><td><code>{&quot;code&quot;: &quot;str&quot;}</code></td><td>Compiles and executes a <code>.cf</code> program or snippet in a temporary sandbox and returns combined stdout/stderr.</td></tr>
       <tr><td><code>cfire_outline</code></td><td><code>{&quot;path&quot;?: &quot;str&quot;}</code></td><td>Returns a token-compressed structural AST outline of packages, structs, enums, interfaces, functions, and test blocks.</td></tr>
       <tr><td><code>cfire_inspect</code></td><td><code>{&quot;target&quot;: &quot;str&quot;}</code></td><td>Inspects a stdlib module/symbol, compiler diagnostic rule (<code>cfire/MUT-CALLSITE</code>), or foreign C/C++ header (<code>cpp &lt;header.h&gt;</code>).</td></tr>
@@ -2375,7 +2377,8 @@ auto main(int argc, char** argv) -&gt; int {
       <tr><td><code>cfire run [target|file.cf] [-- args...]</code></td><td><code>--web</code>, <code>--ios</code>, <code>--device &lt;name&gt;</code>, <code>--port &lt;n&gt;</code>, <code>--no-open</code>, <code>--sanitize</code>, <code>--subsystem &lt;gui|console&gt;</code></td><td>Compiles and executes a native binary, local WebAssembly server (<code>--web</code>), or iOS Simulator app (<code>--ios</code>). Arguments after <code>--</code> pass to the program.</td></tr>
       <tr><td><code>cfire build [target|file.cf]</code></td><td><code>-o &lt;path&gt;</code>, <code>--target &lt;wasm|ios-sim|ios|triple&gt;</code>, <code>--web</code>, <code>--ios</code>, <code>--subsystem &lt;gui|console&gt;</code>, <code>--name &lt;app&gt;</code>, <code>--bundle-id &lt;id&gt;</code>, <code>--icon &lt;png&gt;</code>, <code>--sanitize</code></td><td>Compiles an optimized binary, macOS <code>.app</code> bundle, WebAssembly <code>.html</code>/<code>.wasm</code> bundle, or signed iOS <code>.app</code> bundle.</td></tr>
       <tr><td><code>cfire check [file.cf|dir]</code></td><td><code>--json</code>, <code>--fix</code></td><td>Zero-arg workspace-aware lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker.</td></tr>
-      <tr><td><code>cfire test [file.cf|dir]</code></td><td><code>--sanitize</code>, <code>--json</code>, <code>--filter &lt;pattern&gt;</code></td><td>Zero-arg workspace test runner that compiles and runs all <code>test &quot;...&quot; { ... }</code> blocks in the target file or workspace tree.</td></tr>
+      <tr><td><code>cfire test [file.cf|dir]</code></td><td><code>--sanitize</code>, <code>--json</code>, <code>--filter &lt;pattern&gt;</code>, <code>--bench</code>, <code>--fuzz-runs &lt;N&gt;</code>, <code>--seed &lt;S&gt;</code>, <code>--bench-time &lt;ms&gt;</code></td><td>Zero-arg workspace test &amp; fuzz runner that compiles and executes <code>test</code>, <code>fuzz</code> (with counterexample shrinking), <code>///</code> doc-tests, and <code>[auto] json round-trip</code> checks.</td></tr>
+      <tr><td><code>cfire bench [file.cf|dir]</code></td><td><code>--json</code>, <code>--filter &lt;pattern&gt;</code>, <code>--bench-time &lt;ms&gt;</code></td><td>Multi-iteration parameterized statistical benchmark runner (<code>bench &quot;name&quot; |size in [...]| { ... }</code>).</td></tr>
       <tr><td><code>cfire eval &lt;code|-e expr&gt;</code></td><td><code>-e &lt;expr&gt;</code></td><td>Evaluates a one-shot expression or statement block from CLI arguments or <code>stdin</code>.</td></tr>
       <tr><td><code>cfire serve [target|dir]</code></td><td><code>--port &lt;n&gt;</code>, <code>--no-open</code></td><td>Builds WebAssembly targets (if needed) and serves static/WASM assets with COOP/COEP headers.</td></tr>
       <tr><td><code>cfire fmt [path]</code></td><td><code>--check</code></td><td>Formats <code>.cf</code> files in place according to canonical 4-space alignment rules (or exits non-zero on drift with <code>--check</code>).</td></tr>
@@ -4490,17 +4493,27 @@ fn main() {
 <h2 id="chapter-12"><a id="ch12"></a>12. Testing, Sanitizers &amp; Diagnostics</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 12 Topics (4)</span>
+    <span class="topic-pill-label">Ch 12 Topics (5)</span>
     <a href="#ch12-architecture-invariants" class="topic-pill active" data-topic-pill="ch12-architecture-invariants" onclick="navigateToSubhead('12', 'ch12-architecture-invariants'); return false;">12.1: Architecture &amp; Invariants</a>
     <a href="#ch12-level-1-unit-testing-test-assert-eq" class="topic-pill" data-topic-pill="ch12-level-1-unit-testing-test-assert-eq" onclick="navigateToSubhead('12', 'ch12-level-1-unit-testing-test-assert-eq'); return false;">12.2: Level 1 — Unit Testing (test &amp; assert_eq)</a>
-    <a href="#ch12-level-2-memory-ub-sanitizers-sanitize" class="topic-pill" data-topic-pill="ch12-level-2-memory-ub-sanitizers-sanitize" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">12.3: Level 2 — Memory &amp; UB Sanitizers (--sanitize)</a>
-    <a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" class="topic-pill" data-topic-pill="ch12-level-3-diagnostics-auto-fix-cfire-fix" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">12.4: Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</a>
+    <a href="#ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" class="topic-pill" data-topic-pill="ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" onclick="navigateToSubhead('12', 'ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench'); return false;">12.3: Level 1B — Property-Based Fuzzing (fuzz) &amp; Parameterized Benchmarks (bench)</a>
+    <a href="#ch12-level-2-memory-ub-sanitizers-sanitize" class="topic-pill" data-topic-pill="ch12-level-2-memory-ub-sanitizers-sanitize" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">12.4: Level 2 — Memory &amp; UB Sanitizers (--sanitize)</a>
+    <a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" class="topic-pill" data-topic-pill="ch12-level-3-diagnostics-auto-fix-cfire-fix" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">12.5: Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch12-architecture-invariants" data-topic-id="ch12-architecture-invariants" data-topic-title="Architecture &amp; Invariants">
 <h3 class="guide-heading" id="ch12-architecture-invariants"><span class="heading-hash">#</span><span class="heading-text">Architecture &amp; Invariants</span></h3>
-<p><code>cfire</code> integrates unit testing, hardware memory sanitizers, and structured machine-readable diagnostics directly into the compiler binary:</p>
+<p><code>cfire</code> integrates unit testing, property-based fuzzing with automatic counterexample shrinking, zero-code invariant synthesis, multi-iteration statistical benchmarking, hardware memory sanitizers, and structured machine-readable diagnostics directly into the compiler binary:</p>
 <ul>
   <li><strong>Zero-Config Test Blocks (<code>test &quot;name&quot; { ... }</code>)</strong>: Co-located in implementation or test <code>.cf</code> files. Stripped from production <code>cfire build</code> binaries; compiled into a dedicated test harness runner during <code>cfire test</code>.</li>
+  <li><strong>Native Property-Based Fuzzing &amp; Shrinking (<code>fuzz &quot;name&quot; |x: i64, s: str| { ... }</code>)</strong>: Generates 16 deterministic adversarial boundary cases (<code>0</code>, <code>-1</code>, <code>INT64_MIN</code>, <code>INT64_MAX</code>, <code>NaN</code>, empty/UTF-8/NUL/SQL-quote strings) followed by seeded SplitMix64 PRNG runs across primitives, slices (<code>[]T</code>), and reflected user structs (<code>Arbitrary&lt;T&gt;</code>), automatically shrinking any failing input to its minimal counterexample.</li>
+  <li><strong>Zero-Code Invariant Checks</strong>:
+    <ul>
+      <li><strong>Executable Doc-Tests (<code>///</code>)</strong>: Fenced <code></code><code></code> <code></code><code>cf </code><code></code><code> blocks inside </code>///<code> doc-comments containing </code>assert<code> or </code>assert_eq<code> are automatically extracted and executed during </code>cfire test`.</li>
+      <li><strong>Automatic JSON Round-Trip Tests (<code>[auto] json round-trip: &lt;Struct&gt;</code>)</strong>: Importing <code>ext:json</code> alongside JSON-tagged structs automatically verifies <code>json.parse[T](json.stringify(v)) == v</code> across 16 arbitrary struct instances plus malformed JSON rejection.</li>
+      <li><strong>Resource-Leak Canary</strong>: Every <code>test</code> and <code>fuzz</code> block snapshots open OS file descriptors before and after execution, failing immediately if a test leaks an unclosed file, socket, or SQLite handle (<code>missing 'defer file.close()'?</code>).</li>
+    </ul>
+  </li>
+  <li><strong>Multi-Iteration Statistical Benchmarks (<code>bench &quot;name&quot; |size in [64, 1024]| { ... }</code>)</strong>: Performs warmup, dynamic batch calibration ($B$), and 10–25 sample windows over <code>--bench-time &lt;ms&gt;</code> (reporting <code>iters</code>, <code>min</code>, <code>p50</code>, <code>mean ± stddev%</code>, <code>p99</code>, and <code>ops/s</code>) with <code>black_box(x)</code> dead-code-elimination barriers. During normal <code>cfire test</code>, each <code>bench</code> block executes a single 1-iteration smoke pass so benchmark code never bit-rots.</li>
   <li><strong>Source-Mapped Sanitizers (<code>--sanitize</code>)</strong>: Compiles with <code>-fsanitize=address,undefined -fno-omit-frame-pointer -g</code> and <code>#line</code> directives so buffer overflows, use-after-free, or signed integer overflows report exact <code>.cf</code> source coordinates.</li>
   <li><strong>Auto-Remediation (<code>cfire fix</code>)</strong>: Deterministic AST/token rewriter that repairs missing standard library imports, missing call-site <code>mut</code> annotations, and non-exhaustive <code>match</code> blocks automatically.</li>
 </ul>
@@ -4520,6 +4533,11 @@ fn main() {
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
+/// Computes the N-th Fibonacci number.
+/// ```cf
+/// assert_eq(fibonacci(0), 0)
+/// assert_eq(fibonacci(10), 55)
+/// ```
 fn fibonacci(n: i32) -&gt; i64 {
     if n &lt;= 1 {
         return n as i64
@@ -4546,7 +4564,7 @@ test &quot;fibonacci sequence progression&quot; {
 </code></pre>
 <p>Execute tests from the CLI (each <code>assert(a == b)</code> and <code>assert_eq(a, b)</code> evaluates its operands once and formats <code>[left: &lt;val&gt;, right: &lt;val&gt;]</code> value diffs on failure):</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code># 1. Run all test blocks in the current workspace (or pass a specific file/directory)
+<pre><code># 1. Run all test, fuzz, doc-test, and [auto] invariant blocks in the workspace
 cfire test
 cfire test math_test.cf
 
@@ -4561,8 +4579,46 @@ cfire test --json
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.1)</span>
         <strong class="pager-title">Architecture &amp; Invariants</strong>
       </a>
-      <a href="#ch12-level-2-memory-ub-sanitizers-sanitize" class="pager-card pager-next" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">
+      <a href="#ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" class="pager-card pager-next" onclick="navigateToSubhead('12', 'ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 12.3) &rarr;</span>
+        <strong class="pager-title">Level 1B — Property-Based Fuzzing (fuzz) &amp; Parameterized Benchmarks (bench)</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" data-topic-id="ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" data-topic-title="Level 1B — Property-Based Fuzzing (fuzz) &amp; Parameterized Benchmarks (bench)">
+<h3 class="guide-heading" id="ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench"><span class="heading-hash">#</span><span class="heading-text">Level 1B — Property-Based Fuzzing (<code>fuzz</code>) &amp; Parameterized Benchmarks (<code>bench</code>)</span></h3>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+import &quot;core:encoding/hex&quot;
+
+fuzz &quot;hex round-trip invariant&quot; |raw: []byte| {
+    encoded := hex.encode(raw)
+    decoded := try hex.decode(encoded)
+    assert_eq(decoded.len(), raw.len())
+}
+
+bench &quot;hex encode throughput&quot; |size in [64, 1024, 16384]| {
+    payload := make([]byte, size as usize)
+    black_box(hex.encode(payload))
+}
+</code></pre>
+<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code># Customize fuzz iteration count or replay a deterministic seed on failure:
+cfire test --fuzz-runs 500 --seed 1337
+
+# Run full multi-iteration statistical benchmarks across all parameter variations:
+cfire bench
+cfire bench --bench-time 250 --filter &quot;hex encode&quot;
+cfire bench --json
+</code></pre>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch12-level-1-unit-testing-test-assert-eq" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-level-1-unit-testing-test-assert-eq'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.2)</span>
+        <strong class="pager-title">Level 1 — Unit Testing (test &amp; assert_eq)</strong>
+      </a>
+      <a href="#ch12-level-2-memory-ub-sanitizers-sanitize" class="pager-card pager-next" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 12.4) &rarr;</span>
         <strong class="pager-title">Level 2 — Memory &amp; UB Sanitizers (--sanitize)</strong>
       </a>
     </div>
@@ -4581,12 +4637,12 @@ cfire run --sanitize src/main.cf
   <li>Signed integer overflow, shift-exponent out-of-bounds, and misaligned/null pointer dereferences.</li>
 </ul>
     <div class="chapter-pager topic-pager">
-      <a href="#ch12-level-1-unit-testing-test-assert-eq" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-level-1-unit-testing-test-assert-eq'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.2)</span>
-        <strong class="pager-title">Level 1 — Unit Testing (test &amp; assert_eq)</strong>
+      <a href="#ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.3)</span>
+        <strong class="pager-title">Level 1B — Property-Based Fuzzing (fuzz) &amp; Parameterized Benchmarks (bench)</strong>
       </a>
       <a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" class="pager-card pager-next" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">
-        <span class="pager-label">NEXT TOPIC (CH 12.4) &rarr;</span>
+        <span class="pager-label">NEXT TOPIC (CH 12.5) &rarr;</span>
         <strong class="pager-title">Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</strong>
       </a>
     </div>
@@ -4625,6 +4681,7 @@ cfire run --sanitize src/main.cf
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>A variable moved with <code>move x</code> cannot be read or moved again on the same execution path.</td><td>Manual refactor required</td></tr>
       <tr><td><code>cfire/NON-EXHAUSTIVE-MATCH</code></td><td><code>match</code> over an <code>enum</code> must cover all variants (or include <code>_ =&gt; { ... }</code>).</td><td><strong>Yes</strong> (generates missing variant arms)</td></tr>
       <tr><td><code>cfire/NON-DIVERGING-OR-BLOCK</code></td><td>Error recovery block <code>val := f() or err { ... }</code> must diverge (<code>return</code>, <code>break</code>, <code>continue</code>, <code>panic</code>).</td><td>Manual refactor required</td></tr>
+      <tr><td><code>cfire/INVALID-STRUCT-TAG</code></td><td>Duplicate <code>json</code>/<code>sql</code>/<code>cli</code> struct tags or unparsable <code>default:&quot;...&quot;</code> literals are rejected at compile time.</td><td>Manual refactor required</td></tr>
     </tbody>
   </table>
 </div>
@@ -4637,7 +4694,7 @@ cfire fix src/main.cf
 </code></pre>
     <div class="chapter-pager topic-pager">
       <a href="#ch12-level-2-memory-ub-sanitizers-sanitize" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.3)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.4)</span>
         <strong class="pager-title">Level 2 — Memory &amp; UB Sanitizers (--sanitize)</strong>
       </a>
       <a href="#ch13-cross-platform-transport-matrix" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-cross-platform-transport-matrix'); return false;">
@@ -4692,7 +4749,7 @@ cfire fix src/main.cf
 </div>
     <div class="chapter-pager topic-pager">
       <a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.4)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.5)</span>
         <strong class="pager-title">Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</strong>
       </a>
       <a href="#ch13-tcp-sockets-url-parsing-extnet-url" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-tcp-sockets-url-parsing-extnet-url'); return false;">
@@ -6125,8 +6182,9 @@ fn main() -&gt; void! {
       <ul class="toc-list">
         <li><a href="#ch12-architecture-invariants" onclick="navigateToSubhead('12', 'ch12-architecture-invariants'); return false;">12.1: Architecture &amp; Invariants</a></li>
         <li><a href="#ch12-level-1-unit-testing-test-assert-eq" onclick="navigateToSubhead('12', 'ch12-level-1-unit-testing-test-assert-eq'); return false;">12.2: Level 1 — Unit Testing (test &amp; assert_eq)</a></li>
-        <li><a href="#ch12-level-2-memory-ub-sanitizers-sanitize" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">12.3: Level 2 — Memory &amp; UB Sanitizers (--sanitize)</a></li>
-        <li><a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">12.4: Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</a></li>
+        <li><a href="#ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench" onclick="navigateToSubhead('12', 'ch12-level-1b-property-based-fuzzing-fuzz-parameterized-benchmarks-bench'); return false;">12.3: Level 1B — Property-Based Fuzzing (fuzz) &amp; Parameterized Benchmarks (bench)</a></li>
+        <li><a href="#ch12-level-2-memory-ub-sanitizers-sanitize" onclick="navigateToSubhead('12', 'ch12-level-2-memory-ub-sanitizers-sanitize'); return false;">12.4: Level 2 — Memory &amp; UB Sanitizers (--sanitize)</a></li>
+        <li><a href="#ch12-level-3-diagnostics-auto-fix-cfire-fix" onclick="navigateToSubhead('12', 'ch12-level-3-diagnostics-auto-fix-cfire-fix'); return false;">12.5: Level 3 — Diagnostics &amp; Auto-Fix (cfire fix)</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-13" style="display: none;">

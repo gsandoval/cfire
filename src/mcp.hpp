@@ -33,6 +33,14 @@ struct PathInput {
 struct TargetInput {
     std::string target{};
 };
+struct TestInput {
+    std::string path{};
+    std::string filter{};
+    bool bench{false};
+    int fuzz_runs{100};
+    std::uint64_t seed{0};
+    int bench_time{200};
+};
 
 [[nodiscard]] inline auto is_ignored_mcp_dir(std::string_view name) -> bool {
     return name == ".cfire" || name == ".tako" || name == ".git" ||
@@ -118,6 +126,23 @@ inline auto parse_struct<cfire::mcp::TargetInput>(simdjson::ondemand::object obj
     auto t = get_str(obj, "target");
     if (!t) return std::unexpected(t.error());
     out.target = std::move(*t);
+    return out;
+}
+
+template <>
+inline auto schema_struct<cfire::mcp::TestInput>() -> std::string {
+    return R"JSON({"type":"object","properties":{"path":{"type":"string","description":"Path to a .cf file or directory to test (defaults to '.')"},"filter":{"type":"string","description":"Substring filter for test, fuzz, or bench names"},"bench":{"type":"boolean","description":"Run multi-iteration statistical benchmarks (bench blocks)"},"fuzz_runs":{"type":"integer","description":"Number of property-based fuzz iterations per fuzz block (default 100)"},"seed":{"type":"integer","description":"Deterministic PRNG seed for fuzzing (0 = auto)"},"bench_time":{"type":"integer","description":"Target benchmark measurement window in ms per benchmark variation (default 200)"}},"additionalProperties":false})JSON";
+}
+
+template <>
+inline auto parse_struct<cfire::mcp::TestInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::TestInput, cfire::Error> {
+    cfire::mcp::TestInput out;
+    if (auto p = get_str(obj, "path")) out.path = std::move(*p);
+    if (auto f = get_str(obj, "filter")) out.filter = std::move(*f);
+    if (auto b = get_bool(obj, "bench")) out.bench = *b;
+    if (auto fr = get_i64(obj, "fuzz_runs")) out.fuzz_runs = static_cast<int>(*fr);
+    if (auto sd = get_i64(obj, "seed")) out.seed = static_cast<std::uint64_t>(*sd);
+    if (auto bt = get_i64(obj, "bench_time")) out.bench_time = static_cast<int>(*bt);
     return out;
 }
 
@@ -359,10 +384,28 @@ namespace cfire::mcp {
                     oss << "- `" << cfire::fmt::format_fn_signature(fn) << "`\n";
                 }
                 for (const auto& t : ast->tests) {
-                    oss << "- test `\"" << t.name << "\"`\n";
+                    const char* kind = t.is_bench ? "bench" : (t.is_fuzz ? "fuzz" : "test");
+                    oss << "- " << kind << " `\"" << t.name << "\"`\n";
                 }
             }
             return oss.str();
+        }
+    );
+
+    srv.register_tool<TestInput>(
+        "cfire_test",
+        "Run cfire unit tests (`test`), property-based fuzz tests (`fuzz` with counterexample shrinking), executable doc-tests (`///`), automatic JSON round-trip invariants, and multi-iteration parameterized benchmarks (`bench`).",
+        [runtime_dir](TestInput in) -> std::expected<std::string, cfire::Error> {
+            auto cfire_bin = cfire::lsp::resolve_cfire_binary(runtime_dir.parent_path());
+            std::string cmd = "\"" + cfire_bin + "\" " + (in.bench ? "bench" : "test");
+            if (!in.path.empty()) cmd += " \"" + in.path + "\"";
+            if (!in.filter.empty()) cmd += " --filter \"" + in.filter + "\"";
+            if (in.fuzz_runs > 0 && !in.bench) cmd += std::format(" --fuzz-runs {}", in.fuzz_runs);
+            if (in.seed != 0 && !in.bench) cmd += std::format(" --seed {}", in.seed);
+            if (in.bench_time > 0 && in.bench) cmd += std::format(" --bench-time {}", in.bench_time);
+            cmd += " 2>&1";
+            int rc = 0;
+            return cfire::bridge::run_command_capture(cmd, rc);
         }
     );
 

@@ -56,8 +56,7 @@ fn compute_visual_rows(font: rl.Font, body: str, max_row_w: f32, font_size: f32)
     bsize := body.len()
     mut ls: i32 = 0
     mut log_line: i32 = 1
-    mut i: i32 = 0
-    for i <= bsize {
+    for i in 0..=bsize {
         if i == bsize || u8(body[i]) == 10 {
             le := i
             if le == ls {
@@ -92,11 +91,11 @@ fn compute_visual_rows(font: rl.Font, body: str, max_row_w: f32, font_size: f32)
                         if seg_end > le { seg_end = le }
                     }
                     vrows.push(VisualRow{
-                        logical_line: log_line,
-                        is_continuation: cont,
-                        start_byte: seg_start,
-                        end_byte: seg_end,
-                        text: str(body[seg_start..seg_end])
+                            logical_line: log_line,
+                            is_continuation: cont,
+                            start_byte: seg_start,
+                            end_byte: seg_end,
+                            text: str(body[seg_start..seg_end])
                     })
                     seg_start = seg_end
                     cont = true
@@ -105,7 +104,6 @@ fn compute_visual_rows(font: rl.Font, body: str, max_row_w: f32, font_size: f32)
             ls = i + 1
             log_line = log_line + 1
         }
-        i = i + 1
     }
     if vrows.len() == 0 {
         vrows.push(VisualRow{logical_line: 1, is_continuation: false, start_byte: 0, end_byte: 0, text: ""})
@@ -153,14 +151,13 @@ fn GuiCodeEditor(
     if cur > bsize { cur = bsize }
 
     mut cur_vrow: i32 = 0
-    mut vi: i32 = 0
-    for vi < vrows.len() {
-        is_last_seg := (vi + 1 == vrows.len()) || (vrows[vi + 1].logical_line != vrows[vi].logical_line)
-        if cur >= vrows[vi].start_byte && (cur < vrows[vi].end_byte || (is_last_seg && cur == vrows[vi].end_byte)) {
+    for vi_idx, vr in vrows {
+        vi := i32(vi_idx)
+        is_last_seg := (vi + 1 == vrows.len()) || (vrows[vi + 1].logical_line != vr.logical_line)
+        if cur >= vr.start_byte && (cur < vr.end_byte || (is_last_seg && cur == vr.end_byte)) {
             cur_vrow = vi
             break
         }
-        vi = vi + 1
     }
 
     mut rows_cnt := vrows.len() + 3
@@ -257,8 +254,7 @@ fn GuiCodeEditor(
 
     mut total_vrows := vrows.len()
     if total_vrows < 16 { total_vrows = 16 }
-    vi = 0
-    for vi < total_vrows {
+    for vi in 0..total_vrows {
         ly := text_y + f32(vi) * line_h
         if ly + line_h >= bounds.y && ly <= bounds.y + bounds.height {
             if is_focused && vi == cur_vrow {
@@ -289,9 +285,9 @@ fn GuiCodeEditor(
                     num_col = style.cursor_color
                 }
                 if !vr.is_continuation {
-                    mut num_buf := str(vr.logical_line)
+                    mut num_buf := "{vr.logical_line}"
                     if vr.logical_line < 10 {
-                        num_buf = "0" + num_buf
+                        num_buf = "0{num_buf}"
                     }
                     if font.texture.id > 0 {
                         rl.DrawTextEx(font, num_buf, vec2(bounds.x + 12.0, ly), 14.0, 0.5, num_col)
@@ -325,7 +321,6 @@ fn GuiCodeEditor(
                 }
             }
         }
-        vi = vi + 1
     }
 
     active_vr := vrows[cur_vrow]

@@ -44,21 +44,20 @@ fn main() {
     println("    Server listening on http://127.0.0.1:{}", port)
 
     server.serve_in_background(router)
+    defer server.stop()
 
     // 4. Client roundtrip requests over loopback
-    get_url := "http://127.0.0.1:" + str(port) + "/health"
+    get_url := "http://127.0.0.1:{port}/health"
     live_get := try http.get(get_url)
     println("    Client GET /health -> status: {}, body: {}", live_get.status_code, live_get.body)
 
-    client_item_url := "http://127.0.0.1:" + str(port) + "/items/999"
+    client_item_url := "http://127.0.0.1:{port}/items/999"
     live_item := try http.get(client_item_url)
     println("    Client GET /items/999 -> status: {}, body: {}", live_item.status_code, live_item.body)
 
-    post_url := "http://127.0.0.1:" + str(port) + "/items"
+    post_url := "http://127.0.0.1:{port}/items"
     live_post := try http.post(post_url, "{\"name\":\"sensor-v2\"}")
     println("    Client POST /items -> status: {}, body: {}", live_post.status_code, live_post.body)
 
-    // 5. Clean server shutdown
-    server.stop()
     println("=== HTTP Server and Router demo completed successfully ===")
 }

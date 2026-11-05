@@ -4,6 +4,13 @@ import "vendor:raylib" as rl
 import "vendor:raygui" as rg
 import "core:str"
 
+/// Returns international/Spanish accent variants for a base key (`a`, `e`, `i`, `o`, `u`, `n`, `?`, `!`).
+/// ```cf
+/// vars := get_spanish_accent_variants("a", false)
+/// assert_eq(vars.len(), 4)
+/// assert_eq(vars[0], "á")
+/// assert_eq(get_spanish_accent_variants("n", true)[0], "Ñ")
+/// ```
 fn get_spanish_accent_variants(base_key: str, uppercase: bool) -> []str {
     mut res: []str = []
     if base_key == "a" || base_key == "A" {
@@ -152,8 +159,8 @@ fn GuiAccentPopupOverlay(
     rl.DrawRectangleLines(i32(pop_x), i32(pop_y), i32(pop_w), i32(pop_h), style.accent_color)
     rl.DrawRectangle(i32(pop_x), i32(pop_y), i32(pop_w), 3, style.accent_color)
 
-    mut vi: i32 = 0
-    for v in vars {
+    for idx, v in vars {
+        vi := i32(idx)
         c_rec := rl.Rectangle{x: pop_x + 8.0 + f32(vi) * cell_w, y: pop_y + 6.0, width: cell_w - 4.0, height: 30.0}
         c_hov := rl.CheckCollisionPointRec(m, c_rec)
         c_sel := (selected_idx == vi) || c_hov
@@ -161,7 +168,7 @@ fn GuiAccentPopupOverlay(
             rl.DrawRectangleRec(c_rec, style.selected_bg)
             rl.DrawRectangleLines(i32(c_rec.x), i32(c_rec.y), i32(c_rec.width), i32(c_rec.height), style.accent_color)
         }
-        badge := str(vi + 1) + ":" + v
+        badge := "{vi + 1}:{v}"
         mut txt_col := style.text_color
         if c_sel { txt_col = style.accent_color }
 
@@ -174,7 +181,6 @@ fn GuiAccentPopupOverlay(
         if c_hov && rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) {
             return vi
         }
-        vi = vi + 1
     }
 
     if rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && !rl.CheckCollisionPointRec(m, pop_rec) {

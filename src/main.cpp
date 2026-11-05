@@ -34,7 +34,8 @@ void print_usage() {
     std::println("  init     [--template cli|tako|gui] [--force] [dir] Initialize a new cfire project in current/target directory");
     std::println("  new      [--template cli|tako|gui] [--force] <dir> Create a new cfire project directory");
     std::println("  run      [--web|--ios] [target|file.cf] Run native app, web app (--web), or iOS Simulator app (--ios)");
-    std::println("  test     [--json] [--filter <pat>] [path|file.cf] Compile and execute all `test \"...\" {{ ... }}` suites");
+    std::println("  test     [--json] [--filter <pat>] [--fuzz-runs <N>] [--seed <S>] [path|file.cf] Compile and execute test, fuzz & doc-test suites");
+    std::println("  bench    [--json] [--filter <pat>] [--bench-time <ms>] [path|file.cf] Run statistical micro-benchmarks (`bench \"...\"`)");
     std::println("  build    [--target wasm|ios-sim|ios|<triple>] [--icon <path>] [--name <name>] [target|file.cf]");
     std::println("  serve    [--port <n>] [--no-open] [target|path] Build & serve WebAssembly / static web app with zero config");
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
@@ -1045,6 +1046,15 @@ auto main(int argc, char** argv) -> int {
                     cfire::lsp::detail::json_escape(cfire::fmt::format_type_ref(fn.return_type)),
                     fn.is_async ? "true" : "false");
             }
+            json += "\n      ],\n";
+            json += "      \"tests\": [\n";
+            for (std::size_t i = 0; i < ast->tests.size(); ++i) {
+                if (i > 0) json += ",\n";
+                const auto& td = ast->tests[i];
+                std::string kind = td.is_fuzz ? "fuzz" : (td.is_bench ? "bench" : "test");
+                json += std::format("        {{\"name\": \"{}\", \"kind\": \"{}\", \"line\": {}}}",
+                    cfire::lsp::detail::json_escape(td.name), kind, td.line);
+            }
             json += "\n      ]\n";
             json += "    }";
         }
@@ -1054,7 +1064,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (argc < 3) {
-        if (sub != "build" && sub != "run" && sub != "test" && sub != "check" && sub != "fix") {
+        if (sub != "build" && sub != "run" && sub != "test" && sub != "bench" && sub != "check" && sub != "fix") {
             print_usage();
             return 1;
         }
@@ -1063,7 +1073,11 @@ auto main(int argc, char** argv) -> int {
     bool json_mode = false;
     bool fix_mode = false;
     bool dry_run = false;
+    bool bench_mode = (sub == "bench");
     std::string filter_pattern;
+    std::string fuzz_runs_arg;
+    std::string fuzz_seed_arg;
+    std::string bench_time_arg;
     std::string custom_output_path;
     std::string target_triple;
     std::string sysroot;
@@ -1105,6 +1119,34 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg == "--dry-run") {
             dry_run = true;
+            continue;
+        }
+        if (arg == "--bench" || arg == "-bench") {
+            bench_mode = true;
+            continue;
+        }
+        if ((arg == "--fuzz-runs" || arg == "-fuzz-runs") && i + 1 < argc) {
+            fuzz_runs_arg = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--fuzz-runs=")) {
+            fuzz_runs_arg = std::string(arg.substr(12));
+            continue;
+        }
+        if ((arg == "--seed" || arg == "-seed") && i + 1 < argc) {
+            fuzz_seed_arg = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--seed=")) {
+            fuzz_seed_arg = std::string(arg.substr(7));
+            continue;
+        }
+        if ((arg == "--bench-time" || arg == "-bench-time") && i + 1 < argc) {
+            bench_time_arg = argv[++i];
+            continue;
+        }
+        if (arg.starts_with("--bench-time=")) {
+            bench_time_arg = std::string(arg.substr(13));
             continue;
         }
         if ((arg == "--filter" || arg == "-filter") && i + 1 < argc) {
@@ -1280,7 +1322,7 @@ auto main(int argc, char** argv) -> int {
                 target = build_cf_cur;
             }
         }
-    } else if (sub == "test" || sub == "check" || sub == "fix") {
+    } else if (sub == "test" || sub == "bench" || sub == "check" || sub == "fix") {
         if (target.empty()) {
             target = ".";
         }
@@ -1961,14 +2003,26 @@ auto main(int argc, char** argv) -> int {
         return 0;
     }
 
-    if (sub == "run" || sub == "test") {
-        bool is_test = (sub == "test");
+    if (sub == "run" || sub == "test" || sub == "bench") {
+        bool is_test = (sub == "test" || sub == "bench");
         if (is_test) {
             if (json_mode) {
                 run_args.emplace_back("--cfire-test-json");
             }
+            if (bench_mode) {
+                run_args.emplace_back("--cfire-bench");
+            }
             if (!filter_pattern.empty()) {
                 run_args.emplace_back(std::format("--cfire-test-filter={}", filter_pattern));
+            }
+            if (!fuzz_runs_arg.empty()) {
+                run_args.emplace_back(std::format("--cfire-fuzz-runs={}", fuzz_runs_arg));
+            }
+            if (!fuzz_seed_arg.empty()) {
+                run_args.emplace_back(std::format("--cfire-seed={}", fuzz_seed_arg));
+            }
+            if (!bench_time_arg.empty()) {
+                run_args.emplace_back(std::format("--cfire-bench-time={}", bench_time_arg));
             }
 
             std::error_code test_ec;
@@ -2000,6 +2054,7 @@ auto main(int argc, char** argv) -> int {
                     if (!raw) continue;
                     auto ast = cfire::frontend::parse_source(fpath.string(), *raw);
                     if (!ast) continue;
+                    cfire::frontend::append_doctests(fpath.string(), *raw, *ast);
                     bool is_test_name = fpath.filename().string().ends_with("_test.cf");
                     if (!is_test_name && ast->tests.empty()) continue;
 

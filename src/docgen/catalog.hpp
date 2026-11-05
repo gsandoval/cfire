@@ -677,6 +677,13 @@ struct DiagnosticDoc {
             "`defer { ... }` blocks lower to a C++ RAII scope-exit destructor (`struct _CfireDefer { ~_CfireDefer() { ... } }`) and cannot return a value to the enclosing function.",
             "fn process() -> i32 {\n    defer {\n        return 0 // ERROR [cfire/RETURN-IN-DEFER]\n    }\n    return 1\n}",
             "fn process() -> i32 {\n    defer {\n        cleanup()\n    }\n    return 1 // OK: return from enclosing function\n}"
+        },
+        {
+            "cfire/INVALID-STRUCT-TAG",
+            "Duplicate or Malformed Struct Reflection Tag",
+            "Struct reflection tags (`json:\"...\"`, `sql:\"...\"`, `db:\"...\"`, `cli:\"...\"`, `default:\"...\"`) are validated at compile time. Duplicate `json`, `sql`/`db`, or `cli` flag names across fields of the same struct, or `default:\"...\"` literals that cannot parse into the field's numeric or boolean type, are rejected at compile time.",
+            "type Config struct {\n    Port: i64 `json:\"port\" default:\"not_a_number\"`\n    Alt:  i64 `json:\"port\"` // ERROR [cfire/INVALID-STRUCT-TAG]\n}",
+            "type Config struct {\n    Port: i64 `json:\"port\" default:\"8080\"`\n    Alt:  i64 `json:\"alt_port\"` // OK\n}"
         }
     };
     return diags;

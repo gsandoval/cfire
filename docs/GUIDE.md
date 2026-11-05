@@ -167,6 +167,7 @@ Tools exposed by `cfire mcp`:
 | `cfire_stdlib_list` | `{}` | Lists every `core:*`, `ext:*`, and `vendor:*` module with its import path, namespace alias, and summary. |
 | `cfire_stdlib_lookup` | `{"query": "str"}` | Searches modules, function signatures, and types matching `query` (e.g., `"ext:ai"` or `"embed"`). |
 | `cfire_check` | `{"code"?: "str", "path"?: "str"}` | Parses, type-checks, and verifies borrow/intent rules on inline `.cf` `code` or a workspace `path` (including same-directory sibling files); returns `"OK (0 errors)"` or exact `CFxxxx` diagnostics. |
+| `cfire_test` | `{"path"?: "str", "filter"?: "str", "bench"?: bool, "fuzz_runs"?: int, "seed"?: int, "bench_time"?: int}` | Executes unit tests (`test`), property-based fuzz tests (`fuzz` with shrinking), `///` doc-tests, automatic JSON round-trip invariants, or statistical benchmarks (`bench`). |
 | `cfire_eval` | `{"code": "str"}` | Compiles and executes a `.cf` program or snippet in a temporary sandbox and returns combined stdout/stderr. |
 | `cfire_outline` | `{"path"?: "str"}` | Returns a token-compressed structural AST outline of packages, structs, enums, interfaces, functions, and test blocks. |
 | `cfire_inspect` | `{"target": "str"}` | Inspects a stdlib module/symbol, compiler diagnostic rule (`cfire/MUT-CALLSITE`), or foreign C/C++ header (`cpp <header.h>`). |
@@ -300,7 +301,8 @@ The `cfire` binary provides all build, verification, formatting, refactoring, an
 | `cfire run [target\|file.cf] [-- args...]` | `--web`, `--ios`, `--device <name>`, `--port <n>`, `--no-open`, `--sanitize`, `--subsystem <gui\|console>` | Compiles and executes a native binary, local WebAssembly server (`--web`), or iOS Simulator app (`--ios`). Arguments after `--` pass to the program. |
 | `cfire build [target\|file.cf]` | `-o <path>`, `--target <wasm\|ios-sim\|ios\|triple>`, `--web`, `--ios`, `--subsystem <gui\|console>`, `--name <app>`, `--bundle-id <id>`, `--icon <png>`, `--sanitize` | Compiles an optimized binary, macOS `.app` bundle, WebAssembly `.html`/`.wasm` bundle, or signed iOS `.app` bundle. |
 | `cfire check [file.cf\|dir]` | `--json`, `--fix` | Zero-arg workspace-aware lexer, parser, Clang header bridge, and semantic/borrow analyzer without invoking the C++ backend linker. |
-| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>` | Zero-arg workspace test runner that compiles and runs all `test "..." { ... }` blocks in the target file or workspace tree. |
+| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>`, `--bench`, `--fuzz-runs <N>`, `--seed <S>`, `--bench-time <ms>` | Zero-arg workspace test & fuzz runner that compiles and executes `test`, `fuzz` (with counterexample shrinking), `///` doc-tests, and `[auto] json round-trip` checks. |
+| `cfire bench [file.cf\|dir]` | `--json`, `--filter <pattern>`, `--bench-time <ms>` | Multi-iteration parameterized statistical benchmark runner (`bench "name" \|size in [...]\| { ... }`). |
 | `cfire eval <code\|-e expr>` | `-e <expr>` | Evaluates a one-shot expression or statement block from CLI arguments or `stdin`. |
 | `cfire serve [target\|dir]` | `--port <n>`, `--no-open` | Builds WebAssembly targets (if needed) and serves static/WASM assets with COOP/COEP headers. |
 | `cfire fmt [path]` | `--check` | Formats `.cf` files in place according to canonical 4-space alignment rules (or exits non-zero on drift with `--check`). |
@@ -1627,8 +1629,14 @@ fn main() {
 ## Chapter 12: Testing, Sanitizers & Diagnostics
 
 ### Architecture & Invariants
-`cfire` integrates unit testing, hardware memory sanitizers, and structured machine-readable diagnostics directly into the compiler binary:
+`cfire` integrates unit testing, property-based fuzzing with automatic counterexample shrinking, zero-code invariant synthesis, multi-iteration statistical benchmarking, hardware memory sanitizers, and structured machine-readable diagnostics directly into the compiler binary:
 - **Zero-Config Test Blocks (`test "name" { ... }`)**: Co-located in implementation or test `.cf` files. Stripped from production `cfire build` binaries; compiled into a dedicated test harness runner during `cfire test`.
+- **Native Property-Based Fuzzing & Shrinking (`fuzz "name" |x: i64, s: str| { ... }`)**: Generates 16 deterministic adversarial boundary cases (`0`, `-1`, `INT64_MIN`, `INT64_MAX`, `NaN`, empty/UTF-8/NUL/SQL-quote strings) followed by seeded SplitMix64 PRNG runs across primitives, slices (`[]T`), and reflected user structs (`Arbitrary<T>`), automatically shrinking any failing input to its minimal counterexample.
+- **Zero-Code Invariant Checks**:
+  - **Executable Doc-Tests (`///`)**: Fenced ```` ```cf ```` blocks inside `///` doc-comments containing `assert` or `assert_eq` are automatically extracted and executed during `cfire test`.
+  - **Automatic JSON Round-Trip Tests (`[auto] json round-trip: <Struct>`)**: Importing `ext:json` alongside JSON-tagged structs automatically verifies `json.parse[T](json.stringify(v)) == v` across 16 arbitrary struct instances plus malformed JSON rejection.
+  - **Resource-Leak Canary**: Every `test` and `fuzz` block snapshots open OS file descriptors before and after execution, failing immediately if a test leaks an unclosed file, socket, or SQLite handle (`missing 'defer file.close()'?`).
+- **Multi-Iteration Statistical Benchmarks (`bench "name" |size in [64, 1024]| { ... }`)**: Performs warmup, dynamic batch calibration ($B$), and 10–25 sample windows over `--bench-time <ms>` (reporting `iters`, `min`, `p50`, `mean ± stddev%`, `p99`, and `ops/s`) with `black_box(x)` dead-code-elimination barriers. During normal `cfire test`, each `bench` block executes a single 1-iteration smoke pass so benchmark code never bit-rots.
 - **Source-Mapped Sanitizers (`--sanitize`)**: Compiles with `-fsanitize=address,undefined -fno-omit-frame-pointer -g` and `#line` directives so buffer overflows, use-after-free, or signed integer overflows report exact `.cf` source coordinates.
 - **Auto-Remediation (`cfire fix`)**: Deterministic AST/token rewriter that repairs missing standard library imports, missing call-site `mut` annotations, and non-exhaustive `match` blocks automatically.
 
@@ -1636,6 +1644,11 @@ fn main() {
 ```cfire
 package main
 
+/// Computes the N-th Fibonacci number.
+/// ```cf
+/// assert_eq(fibonacci(0), 0)
+/// assert_eq(fibonacci(10), 55)
+/// ```
 fn fibonacci(n: i32) -> i64 {
     if n <= 1 {
         return n as i64
@@ -1663,7 +1676,7 @@ test "fibonacci sequence progression" {
 
 Execute tests from the CLI (each `assert(a == b)` and `assert_eq(a, b)` evaluates its operands once and formats `[left: <val>, right: <val>]` value diffs on failure):
 ```bash
-# 1. Run all test blocks in the current workspace (or pass a specific file/directory)
+# 1. Run all test, fuzz, doc-test, and [auto] invariant blocks in the workspace
 cfire test
 cfire test math_test.cf
 
@@ -1672,6 +1685,34 @@ cfire test --filter "base cases"
 
 # 3. Emit structured JSON test results for CI pipelines
 cfire test --json
+```
+
+### Level 1B — Property-Based Fuzzing (`fuzz`) & Parameterized Benchmarks (`bench`)
+```cfire
+package main
+
+import "core:encoding/hex"
+
+fuzz "hex round-trip invariant" |raw: []byte| {
+    encoded := hex.encode(raw)
+    decoded := try hex.decode(encoded)
+    assert_eq(decoded.len(), raw.len())
+}
+
+bench "hex encode throughput" |size in [64, 1024, 16384]| {
+    payload := make([]byte, size as usize)
+    black_box(hex.encode(payload))
+}
+```
+
+```bash
+# Customize fuzz iteration count or replay a deterministic seed on failure:
+cfire test --fuzz-runs 500 --seed 1337
+
+# Run full multi-iteration statistical benchmarks across all parameter variations:
+cfire bench
+cfire bench --bench-time 250 --filter "hex encode"
+cfire bench --json
 ```
 
 ### Level 2 — Memory & UB Sanitizers (`--sanitize`)
@@ -1709,6 +1750,7 @@ Every compiler error and semantic rule violation carries a stable identifier tha
 | `cfire/USE-AFTER-MOVE` | A variable moved with `move x` cannot be read or moved again on the same execution path. | Manual refactor required |
 | `cfire/NON-EXHAUSTIVE-MATCH` | `match` over an `enum` must cover all variants (or include `_ => { ... }`). | **Yes** (generates missing variant arms) |
 | `cfire/NON-DIVERGING-OR-BLOCK` | Error recovery block `val := f() or err { ... }` must diverge (`return`, `break`, `continue`, `panic`). | Manual refactor required |
+| `cfire/INVALID-STRUCT-TAG` | Duplicate `json`/`sql`/`cli` struct tags or unparsable `default:"..."` literals are rejected at compile time. | Manual refactor required |
 
 ```bash
 # Preview automatic fixes without modifying files on disk:

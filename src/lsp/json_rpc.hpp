@@ -1323,6 +1323,28 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
     for (const auto& t : ast.tests) {
         if (one_based >= t.line) {
             env.clear();
+            for (const auto& p : t.params) {
+                LocalBindingInfo pi;
+                pi.name = p.name;
+                pi.cf_type = cfire::fmt::format_type_ref(p.type);
+                pi.cpp_type = lower_type_preview(p.type, true, p.intent);
+                pi.is_mut = false;
+                pi.is_param = true;
+                pi.intent = p.intent;
+                pi.decl_line = p.line;
+                env[pi.name] = pi;
+            }
+            for (const auto& bv : t.bench_variations) {
+                LocalBindingInfo bi;
+                bi.name = bv.name;
+                bi.cf_type = cfire::fmt::format_type_ref(bv.inferred_type);
+                bi.cpp_type = lower_type_preview(bv.inferred_type, true, "in");
+                bi.is_mut = false;
+                bi.is_param = true;
+                bi.intent = "in";
+                bi.decl_line = bv.line;
+                env[bi.name] = bi;
+            }
             collect_stmt_bindings(t.body, ast, ws, lines, one_based, env, dummy);
         }
     }

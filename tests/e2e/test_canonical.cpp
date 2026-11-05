@@ -239,8 +239,13 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
             if (test_plan) {
                 int trc = 0;
                 std::string tout = cfire::bridge::run_command_capture("\"" + test_bin.string() + "\"", trc);
-                require(trc == 0 && tout.contains("PASS (2 cfire tests succeeded)"),
-                    std::format("expected 'PASS (2 cfire tests succeeded)' from cfire test --sanitize mode, got:\n{}", tout));
+                require(trc == 0 &&
+                        tout.contains("[doctest] compute_fixed_sum (#1)") &&
+                        tout.contains("math.clamp_i64 stays within bounds") &&
+                        tout.contains("str.split and str.join throughput") &&
+                        tout.contains("[auto] json round-trip: Metric") &&
+                        tout.contains("PASS (6 cfire tests succeeded)"),
+                    std::format("expected 'PASS (6 cfire tests succeeded)' from cfire test --sanitize mode, got:\n{}", tout));
             }
         }
     }

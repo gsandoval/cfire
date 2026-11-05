@@ -20,8 +20,19 @@ type Box struct {
     Value: i32
 }
 
+/// Computes the sum of a 4-element fixed-size array into `total`.
+/// ```cf
+/// arr: [4]i32 = [10, 20, 30, 40]
+/// mut sum: i32 = 0
+/// compute_fixed_sum(arr, out sum)
+/// assert_eq(sum, 100)
+/// ```
 fn compute_fixed_sum(arr: [4]i32, out total: i32) {
-    total = arr[0] + arr[1] + arr[2] + arr[3]
+    mut acc: i32 = 0
+    for i in 0..4 {
+        acc += arr[i]
+    }
+    total = acc
 }
 
 fn run_app() -> void! {
@@ -77,18 +88,33 @@ fn run_app() -> void! {
 
 test "smart pointers and fixed array out intent" {
     b := make(own[Box], Box{Value: 99})
-    assert((*b).Value == 99, "expected owned box value 99")
+    assert_eq((*b).Value, 99, "expected owned box value 99")
 
     arr: [4]i32 = [1, 2, 3, 4]
     mut total: i32 = 0
     compute_fixed_sum(arr, out total)
-    assert(total == 10, "expected fixed array sum 10")
+    assert_eq(total, 10, "expected fixed array sum 10")
 }
 
 test "core:str and core:math utilities" {
     trimmed := str.trim("  sapphire on fire  ")
-    assert(trimmed == "sapphire on fire", "trim check")
-    assert(math.clamp_i64(500, 0, 100) == 100, "clamp check")
+    assert_eq(trimmed, "sapphire on fire", "trim check")
+    assert_eq(math.clamp_i64(500, 0, 100), 100, "clamp check")
+}
+
+fuzz "math.clamp_i64 stays within bounds" |x: i64| {
+    c := math.clamp_i64(x, -50, 50)
+    assert(c >= -50 && c <= 50)
+}
+
+bench "str.split and str.join throughput" |n in [8, 32]| {
+    mut items: []str = []
+    for i in 0..n {
+        items.push("part-{i}")
+    }
+    joined := str.join(items, ",")
+    split_back := str.split(joined, ",")
+    assert_eq(split_back.len(), n)
 }
 
 fn main() {

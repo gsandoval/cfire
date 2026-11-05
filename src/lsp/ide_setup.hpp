@@ -197,7 +197,11 @@ struct DetectedIde {
 - **Core Ergonomics**:
   - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={{a + b}} hex={{mask:04x}}"`.
   - **Loops & Defer**: Use `for i in 0..n` (half-open) or `for i in 1..=n` (inclusive) for numeric ranges, `for item in slice` / `for idx, item in slice` for collections, and `defer cleanup()` or `defer {{ ... }}` for RAII scope cleanup (`return` inside `defer {{ ... }}` is forbidden via `cfire/RETURN-IN-DEFER`).
-  - **Testing**: Co-locate `test "name" {{ ... }}` blocks using `assert(a == b)` or `assert_eq(a, b)` (which automatically format `[left: ..., right: ...]` value diffs on failure).
+  - **Testing, Fuzzing & Benchmarking**:
+    - Unit tests: `test "name" {{ ... }}` using `assert(a == b)` or `assert_eq(a, b)` (power-assertions format `[left: ..., right: ...]` diffs on failure).
+    - Property-based fuzzing: `fuzz "name" |x: i64, s: str| {{ ... }}` (or parameterized `test "name" |x: i64| {{ ... }}`) runs 16 adversarial edge-case dictionary seeds + deterministic PRNG iterations (`--fuzz-runs <N>`, `--seed <S>`) with automatic counterexample shrinking.
+    - Multi-iteration statistical benchmarks: `bench "name" |size in [64, 1024, 16384]| {{ black_box(work(size)) }}` (run via `cfire bench` or `cfire test --bench`).
+    - Zero-code automatic invariants: fenced ```` ```cf ```` blocks in `///` doc-comments with `assert` run as doc-tests; JSON-tagged structs auto-run `[auto] json round-trip: <Struct>` during `cfire test`; every test checks for open file-descriptor leaks.
 - **Parameter Intents**:
   - Default parameters are read-only borrows.
   - `mut` parameters require `mut` at both declaration and call site (`update(mut val)`).
@@ -206,11 +210,11 @@ struct DetectedIde {
 - **Compile-Time Memory Safety**:
   - **Loan & Origin Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`, `cfire/ITERATOR-INVALIDATION`)**: Do not mutate, move, or reallocate a container (`.push()`, `.clear()`, `.erase()`) while a pointer (`&x`, `.data()`) or slice view (`s[a..b]`) borrows from it, or while iterating over it.
   - **Flow-Sensitive Null Safety (`cfire/NULL-DEREF`)**: Guard nullable raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) with `if p != none {{ ... }}` or `assert(p != none)` before dereferencing (`*p` or `p.field`).
-  - **Bounds & Arithmetic (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`)**: Constant out-of-bounds indexing and division by zero are rejected at compile time.
+  - **Bounds, Arithmetic & Struct Tags (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`)**: Constant out-of-bounds indexing, division by zero, duplicate `json`/`sql`/`cli` struct tags, and unparsable `default:"..."` tags are rejected at compile time.
   - **Injection Safety (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`)**: Always use parameterized `?1` queries in `db.exec`/`db.query` instead of string concatenation.
 - **Built-In CLI & MCP Tools**:
-  - Prefer MCP tools `cfire_check` (supports both `path` and inline `code`), `cfire_stdlib_lookup`, `cfire_outline`, `cfire_inspect`, `cfire_eval`, and `cfire_doc_llm` (powered by `{} mcp`).
-  - Zero-arg workspace CLI commands: `cfire check`, `cfire test`, `cfire fix`, `cfire build`, `cfire run`, `cfire init`, `cfire new <dir>`, `cfire inspect <target|cfire/CODE>`, `cfire outline --json`, and `cfire doc --llm`.
+  - Prefer MCP tools `cfire_check` (supports both `path` and inline `code`), `cfire_test` (unit tests, fuzzing, and benchmarks), `cfire_stdlib_lookup`, `cfire_outline`, `cfire_inspect`, `cfire_eval`, and `cfire_doc_llm` (powered by `{} mcp`).
+  - Zero-arg workspace CLI commands: `cfire check`, `cfire test`, `cfire bench`, `cfire fix`, `cfire build`, `cfire run`, `cfire init`, `cfire new <dir>`, `cfire inspect <target|cfire/CODE>`, `cfire outline --json`, and `cfire doc --llm`.
 )", cfire_bin);
 }
 
