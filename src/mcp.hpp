@@ -64,7 +64,7 @@ inline auto parse_struct<cfire::mcp::EmptyInput>(simdjson::ondemand::object) -> 
 
 template <>
 inline auto schema_struct<cfire::mcp::QueryInput>() -> std::string {
-    return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:str', 'ext:ai', 'vendor:raylib'), diagnostic code (e.g. 'cfire/USE-AFTER-FREE'), or function/type name"}},"required":["query"],"additionalProperties":false})";
+    return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:str', 'ext:ai', 'ext:webui', 'vendor:raylib'), diagnostic code (e.g. 'cfire/USE-AFTER-FREE'), or function/type name"}},"required":["query"],"additionalProperties":false})";
 }
 
 template <>
@@ -167,7 +167,7 @@ namespace cfire::mcp {
 
     srv.register_tool<QueryInput>(
         "cfire_stdlib_lookup",
-        "Look up cfire standard library functions, types, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples by module path (e.g. 'core:str', 'ext:ai', 'vendor:raylib') or symbol name.",
+        "Look up cfire standard library functions, types, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples by module path (e.g. 'core:str', 'ext:ai', 'ext:webui', 'vendor:raylib') or symbol name.",
         [](QueryInput in) -> std::expected<std::string, cfire::Error> {
             std::ostringstream oss;
             bool found = false;
@@ -318,7 +318,7 @@ namespace cfire::mcp {
             auto bin_file = tmp_dir / "eval_bin";
             std::string src = in.code;
             if (src.find("package ") == std::string::npos) {
-                src = "package main\nimport \"ext:ai\"\nimport \"ext:json\"\nimport \"core:str\"\nimport \"core:math\"\n\nfn main() {\n" + src + "\n}\n";
+                src = "package main\nimport \"ext:ai\"\nimport \"ext:json\"\nimport \"ext:webui\"\nimport \"core:str\"\nimport \"core:math\"\n\nfn main() {\n" + src + "\n}\n";
             }
             {
                 std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);

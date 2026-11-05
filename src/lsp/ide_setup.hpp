@@ -193,7 +193,7 @@ struct DetectedIde {
 - **Language Overview**: `cfire` (`.cf`) is a memory-safe, zero-overhead systems programming language that transpiles 1-to-1 to human-readable ISO C++23.
 - **Packages & Imports**:
   - **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants. Never write `import "./sibling.cf"` for same-directory files.
-  - **Toolchain Packages**: Use `import "pkg:tako"` (or `import "core:tako"`) along with `build.Tako()` in `build.cf` for zero-hardcoded-path Tako GUI integration.
+  - **Toolchain & Hybrid Native WebUI Packages**: Use `import "pkg:tako"` (or `import "core:tako"`) along with `build.Tako()` in `build.cf` for zero-hardcoded-path Tako GUI integration, or `import "ext:webui"` (`cfire init --webui` / `cfire new <dir> --webui`) for Wails/Tauri-style hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, iOS, and Linux.
 - **Core Ergonomics**:
   - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={{a + b}} hex={{mask:04x}}"`.
   - **Loops & Defer**: Use `for i in 0..n` (half-open) or `for i in 1..=n` (inclusive) for numeric ranges, `for item in slice` / `for idx, item in slice` for collections, and `defer cleanup()` or `defer {{ ... }}` for RAII scope cleanup (`return` inside `defer {{ ... }}` is forbidden via `cfire/RETURN-IN-DEFER`).

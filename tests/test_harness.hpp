@@ -202,6 +202,7 @@ void test_sync_context(const std::filesystem::path& rt_dir);
 void test_net_websocket(const std::filesystem::path& rt_dir);
 void test_net_http_and_router(const std::filesystem::path& rt_dir);
 void test_section3_agent_tooling(const std::filesystem::path& rt_dir);
+void test_webui_rpc_events_and_linux_backend(const std::filesystem::path& rt_dir);
 void test_security_and_fuzzing(const std::filesystem::path& rt_dir);
 void test_performance_benchmarks(const std::filesystem::path& rt_dir);
 

@@ -111,6 +111,9 @@ public:
             } else if (path == "core:tako") {
                 used_core_.insert("tako");
                 used_core_.insert("json");
+            } else if (path == "core:webui") {
+                used_core_.insert("webui");
+                used_core_.insert("json");
             } else if (path.starts_with("core:")) {
                 used_core_.insert(path.substr(5));
             } else if (path == "vendor:raylib") {
@@ -218,6 +221,11 @@ public:
                 add_unique(link_tags, "-lsimdjson");
             } else if (path == "core:tako") {
                 used_core_.insert("tako");
+                used_core_.insert("json");
+                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
+                add_unique(link_tags, "-lsimdjson");
+            } else if (path == "core:webui") {
+                used_core_.insert("webui");
                 used_core_.insert("json");
                 add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
                 add_unique(link_tags, "-lsimdjson");
@@ -541,7 +549,8 @@ public:
                 writeln("cfire::testing_detail::failure_line = 0;");
                 writeln("cfire::testing_detail::failure_expr.clear();");
                 writeln("cfire::testing_detail::failure_msg.clear();");
-                bool check_fd_leak = !stmts_reference_ident(td.body, "InitWindow");
+                bool check_fd_leak = !stmts_reference_ident(td.body, "InitWindow") &&
+                                     !stmts_reference_ident(td.body, "run_webview_test");
                 if (check_fd_leak) {
                     writeln("const std::size_t fds_before = cfire::testing_detail::count_open_fds();");
                 }
@@ -984,14 +993,14 @@ public:
             writeln("}");
         }
 
-        if ((has_json || has_desc) && used_core_.contains("json")) {
+        if ((has_json || has_desc || used_core_.contains("webui")) && used_core_.contains("json")) {
             writeln();
             writeln("template <>");
             writeln(std::format("inline auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
             ++indent_;
             writeln(std::format("{} out{{}};", st.name));
             for (const auto& t : tags) {
-                std::string jkey = has_json ? t.json_key : t.field_name;
+                std::string jkey = !t.json_key.empty() ? t.json_key : (has_json ? "" : t.field_name);
                 if (!jkey.empty()) {
                     if (t.field_type.is_slice && t.field_type.elem_type) {
                         std::string elem_cpp = lower_owning_type(*t.field_type.elem_type);
@@ -1026,7 +1035,7 @@ public:
             writeln("std::string out = \"{\";");
             bool first_j = true;
             for (const auto& t : tags) {
-                std::string jkey = has_json ? t.json_key : t.field_name;
+                std::string jkey = !t.json_key.empty() ? t.json_key : (has_json ? "" : t.field_name);
                 if (!jkey.empty()) {
                     std::string prefix = first_j ? "" : ",";
                     first_j = false;
@@ -1055,7 +1064,7 @@ public:
             bool first_p = true;
             bool first_r = true;
             for (const auto& t : tags) {
-                std::string jkey = has_json ? t.json_key : t.field_name;
+                std::string jkey = !t.json_key.empty() ? t.json_key : (has_json ? "" : t.field_name);
                 if (jkey.empty()) continue;
                 std::string p_prefix = first_p ? "" : ",";
                 first_p = false;
@@ -2834,20 +2843,86 @@ public:
         return std::format("{}({})", callee, args);
     }
 
-    static auto stmt_contains_try_without_val_return(const std::vector<StmtPtr>& stmts, bool& has_try, bool& has_val_ret) -> void {
+    [[nodiscard]] auto infer_closure_expr_cpp_type(
+        const ExprPtr& e,
+        const std::unordered_map<std::string, std::string>& local_types
+    ) const -> std::string {
+        if (!e) return "";
+        if (const auto* sl = std::get_if<StructLitExpr>(&e->node)) {
+            return sl->type_name;
+        }
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "std::string";
+            if (lit->kind == TokenKind::Float) return "double";
+            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
+            return "std::int64_t";
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (auto it = local_types.find(id->name); it != local_types.end()) {
+                return it->second;
+            }
+        }
+        if (const auto* c = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&c->callee->node)) {
+                if (auto fit = cf_.fn_sigs.find(cid->name); fit != cf_.fn_sigs.end()) {
+                    TypeRef rt = fit->second.return_type;
+                    rt.is_fallible = false;
+                    return lower_owning_type(rt);
+                }
+            }
+        }
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            return infer_closure_expr_cpp_type(tr->inner, local_types);
+        }
+        return "";
+    }
+
+    auto analyze_closure_returns(
+        const std::vector<StmtPtr>& stmts,
+        std::unordered_map<std::string, std::string>& local_types,
+        bool& has_fallible,
+        bool& has_val_ret,
+        std::string& val_ret_cpp
+    ) const -> void {
         for (const auto& s : stmts) {
             if (!s) continue;
             if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
-                if (vd->init && std::holds_alternative<TryExpr>(vd->init->node)) has_try = true;
+                if (vd->init && std::holds_alternative<TryExpr>(vd->init->node)) has_fallible = true;
+                if (vd->type) {
+                    local_types[vd->name] = lower_owning_type(*vd->type);
+                } else if (vd->init) {
+                    std::string t = infer_closure_expr_cpp_type(vd->init, local_types);
+                    if (!t.empty()) local_types[vd->name] = t;
+                }
             } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
-                if (es->expr && std::holds_alternative<TryExpr>(es->expr->node)) has_try = true;
+                if (es->expr && std::holds_alternative<TryExpr>(es->expr->node)) has_fallible = true;
             } else if (const auto* rs = std::get_if<ReturnStmt>(&s->node)) {
-                if (rs->value) has_val_ret = true;
+                if (rs->value) {
+                    bool is_err_call = false;
+                    if (const auto* c = std::get_if<CallExpr>(&rs->value->node)) {
+                        if (const auto* cid = std::get_if<IdentExpr>(&c->callee->node)) {
+                            if (cid->name == "error" || cid->name == "Err") {
+                                is_err_call = true;
+                                has_fallible = true;
+                            }
+                        }
+                    }
+                    if (!is_err_call) {
+                        has_val_ret = true;
+                        if (val_ret_cpp.empty()) {
+                            val_ret_cpp = infer_closure_expr_cpp_type(rs->value, local_types);
+                        }
+                    }
+                }
             } else if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
-                stmt_contains_try_without_val_return(ifs->then_body, has_try, has_val_ret);
-                stmt_contains_try_without_val_return(ifs->else_body, has_try, has_val_ret);
+                analyze_closure_returns(ifs->then_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+                analyze_closure_returns(ifs->else_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
             } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
-                stmt_contains_try_without_val_return(fs->body, has_try, has_val_ret);
+                analyze_closure_returns(fs->body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+            } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
+                for (const auto& arm : ms->arms) {
+                    analyze_closure_returns(arm.body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+                }
             }
         }
     }
@@ -2871,12 +2946,16 @@ public:
                 is_fallible_void = true;
             }
         } else {
-            bool has_try = false;
+            std::unordered_map<std::string, std::string> cl_local_types;
+            bool has_fallible = false;
             bool has_val_ret = false;
-            stmt_contains_try_without_val_return(cl.body, has_try, has_val_ret);
-            if (has_try && !has_val_ret) {
+            std::string val_ret_cpp;
+            analyze_closure_returns(cl.body, cl_local_types, has_fallible, has_val_ret, val_ret_cpp);
+            if (has_fallible && !has_val_ret) {
                 sb << ") -> std::expected<void, cfire::Error> {\n";
                 is_fallible_void = true;
+            } else if (has_fallible && !val_ret_cpp.empty()) {
+                sb << ") -> std::expected<" << val_ret_cpp << ", cfire::Error> {\n";
             } else {
                 sb << ") {\n";
             }
@@ -3017,6 +3096,7 @@ public:
             if (tr.name == "ai::ToolCall") return "cfire::ai::ToolCall";
             if (tr.name == "ai::ChatResponse") return "cfire::ai::ChatResponse";
             if (tr.name == "ai::McpServer") return "cfire::ai::McpServer";
+            if (tr.name == "webui::App" || (tr.name == "App" && used_core_.contains("webui"))) return "cfire::webui::App";
         }
         if (tr.name == "sync::Channel" && tr.elem_type) {
             return std::format("cfire::sync::Channel<{}>", lower_owning_type(*tr.elem_type));

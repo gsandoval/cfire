@@ -397,6 +397,59 @@ fn main() -> i32 {
             "LSP did not confuse embedded \"id\":999 in string literal with RPC message id (CPP-QA-03)");
     }
 
+    // 2g. Test LSP completion & hover for ext:webui (App handle methods and typed bind[T] block parameter)
+    {
+        cfire::lsp::Server webui_srv(10);
+        std::stringstream w_in;
+        std::stringstream w_out;
+
+        std::string_view webui_src = R"(package main
+
+import "ext:webui"
+
+type TrackMix struct {
+    Channel: i64 `json:"channel"`
+    Gain: f64 `json:"gain"`
+}
+
+fn main() {
+    webui.
+    mut app := webui.new_app("Studio", 800, 600)
+    app.
+    app.bind[TrackMix]("set_track") |req| {
+        req.
+    }
+}
+)";
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
+        w_in << rpc_frame(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"text":"{}","uri":"file:///tmp/webui_lsp.cf","languageId":"cfire","version":1}}}}}})",
+            cfire::lsp::detail::json_escape(webui_src)));
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","id":401,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"},"position":{"line":10,"character":10}}})");
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","id":402,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"},"position":{"line":12,"character":8}}})");
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","id":403,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"},"position":{"line":14,"character":12}}})");
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","id":404,"method":"shutdown","params":null})");
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","method":"exit","params":null})");
+
+        webui_srv.handle_stream(w_in, w_out);
+        std::string w_resp = w_out.str();
+
+        require(w_resp.contains(R"("id":401)") && w_resp.contains(R"("label":"new_app")"),
+            "LSP completion on webui. expected new_app (WEBUI-P0-06)");
+        require(w_resp.contains(R"("id":402)") &&
+                w_resp.contains(R"("label":"bind")") &&
+                w_resp.contains(R"("label":"bind_action")") &&
+                w_resp.contains(R"("label":"on")") &&
+                w_resp.contains(R"("label":"emit")") &&
+                w_resp.contains(R"("label":"serve_dir")") &&
+                w_resp.contains(R"("label":"run")"),
+            "LSP completion on app. expected webui.App handle methods (WEBUI-P0-06)");
+        require(w_resp.contains(R"("id":403)") &&
+                w_resp.contains(R"("label":"Channel")") &&
+                w_resp.contains(R"("label":"Gain")"),
+            "LSP completion on req. inside app.bind[TrackMix] block expected struct fields Channel and Gain (WEBUI-P0-06)");
+    }
+
     auto ide_res = cfire::lsp::configure_ide(rt_dir.parent_path(), "zed");
     require(ide_res.has_value(), "cfire::lsp::configure_ide(zed)");
 
@@ -419,6 +472,7 @@ fn main() -> i32 {
     require(has_module("core:math"), "catalog discovered core:math");
     require(has_module("ext:ai"), "catalog discovered ext:ai");
     require(has_module("ext:db/sqlite"), "catalog discovered ext:db/sqlite");
+    require(has_module("ext:webui"), "catalog discovered ext:webui");
 
     auto pkg_md = cfire::doc::extract_file_markdown_doc("examples/09-stdlib-test-pointers/main.cf");
     require(pkg_md.has_value() && pkg_md->contains("compute_fixed_sum") && pkg_md->contains("type Metric struct"),
