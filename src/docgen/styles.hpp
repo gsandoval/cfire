@@ -1501,6 +1501,258 @@ tr:hover td { background: #1F242C; }
 .footer-links a:hover { color: var(--text-bright); }
 
 /* Responsive adjustments for mobile & tablet */
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+.btn-toolbar-ai {
+    background: var(--bg-card);
+    border: 1px solid #F97316;
+    color: #F97316;
+    padding: 0.3rem 0.65rem;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+.btn-toolbar-ai:hover {
+    background: #F97316;
+    color: #0D1117;
+}
+.btn-toolbar-share {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.3rem 0.55rem;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+.btn-toolbar-share:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-bright);
+    border-color: var(--border-dark);
+}
+
+/* Ask AI with Topic Context Modal & Mobile Bottom Sheet */
+.ai-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(9, 13, 18, 0.82);
+    z-index: 250;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.ai-modal-backdrop.open {
+    display: flex;
+}
+.ai-modal-sheet {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 620px;
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.ai-modal-header {
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    background: #1C2128;
+}
+.ai-modal-title {
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    font-weight: 800;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+.ai-modal-close {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+}
+.ai-modal-close:hover {
+    color: var(--text-bright);
+    border-color: var(--border-dark);
+}
+.ai-modal-body {
+    padding: 1rem 1.1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+.ai-modal-sub {
+    font-size: 0.84rem;
+    color: var(--muted);
+    line-height: 1.5;
+    margin: 0;
+}
+.ai-goal-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.ai-goal-pill {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.3rem 0.65rem;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.ai-goal-pill:hover {
+    color: var(--text-bright);
+    border-color: var(--border-dark);
+}
+.ai-goal-pill.active {
+    background: #27140B;
+    border-color: #F97316;
+    color: #F97316;
+    font-weight: 700;
+}
+.ai-context-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.7rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.ai-context-opt {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+}
+.ai-context-opt input[type="checkbox"] {
+    accent-color: #F97316;
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+}
+.ai-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+.ai-prompt-preview {
+    width: 100%;
+    height: 150px;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.65rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.5;
+    color: var(--text);
+    resize: vertical;
+    outline: none;
+}
+.ai-prompt-preview:focus {
+    border-color: #F97316;
+}
+.ai-modal-footer {
+    padding: 0.75rem 1.1rem;
+    border-top: 1px solid var(--border);
+    background: #1C2128;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+.ai-btn-secondary {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.48rem 0.85rem;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    text-decoration: none !important;
+}
+.ai-btn-secondary:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-dark);
+    color: var(--text-bright);
+}
+.ai-btn-primary {
+    background: #F97316;
+    border: 1px solid #F97316;
+    color: #0D1117;
+    padding: 0.48rem 1rem;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+}
+.ai-btn-primary:hover {
+    background: #FB923C;
+    border-color: #FB923C;
+}
+
 @media (max-width: 1100px) {
     .guide-toc-rail { display: none; }
 }
@@ -1515,7 +1767,7 @@ tr:hover td { background: #1F242C; }
     .doc-layout { display: block; width: 100%; min-width: 0; }
     .sidebar {
         position: static; max-height: none; width: 100%;
-        margin-bottom: 2rem; padding: 0.85rem 1rem;
+        margin-bottom: 1.25rem; padding: 0.7rem 0.9rem;
     }
     .guide-shell {
         display: block;
@@ -1523,14 +1775,18 @@ tr:hover td { background: #1F242C; }
         overflow: visible;
     }
     .guide-sidebar {
-        position: static;
+        position: sticky;
+        top: 0;
+        z-index: 90;
         width: 100%;
         height: auto;
         max-height: none;
         border-right: none;
         border-bottom: 1px solid var(--border);
-        margin-bottom: 1.5rem;
-        padding: 0.85rem 1rem;
+        margin-bottom: 0;
+        padding: 0.55rem 0.9rem;
+        background: rgba(13, 17, 23, 0.96);
+        backdrop-filter: blur(8px);
     }
     .guide-viewport {
         height: auto;
@@ -1538,21 +1794,66 @@ tr:hover td { background: #1F242C; }
         display: block;
     }
     .guide-content-inner {
-        padding: 1.5rem 1rem 4rem;
+        padding: 1.15rem 1rem 3.5rem;
     }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
-        font-weight: 750; font-size: 0.9rem; cursor: pointer; color: var(--text-bright);
+        gap: 0.5rem;
+        font-family: var(--font-mono);
+        font-weight: 700; font-size: 0.82rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
     }
     .sidebar-summary::-webkit-details-marker { display: none; }
-    .sidebar-chevron { font-size: 0.8rem; color: var(--muted); transition: transform 0.2s ease; }
+    .sidebar-summary-badge {
+        color: #F97316;
+        font-weight: 800;
+        margin-right: 0.35rem;
+    }
+    .sidebar-chevron { font-size: 1rem; color: var(--muted); transition: transform 0.2s ease; flex-shrink: 0; }
     .sidebar-details:not([open]) .sidebar-content { display: none; }
     .sidebar-details[open] .sidebar-content {
-        display: block; margin-top: 0.85rem; padding-top: 0.85rem;
-        border-top: 1px solid var(--border); max-height: 50vh; overflow-y: auto;
+        display: block; margin-top: 0.65rem; padding: 0.75rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        max-height: 62vh; overflow-y: auto;
     }
     .sidebar-details[open] .sidebar-chevron { transform: rotate(180deg); }
+    .reader-toolbar {
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        padding-bottom: 0.85rem;
+        margin-bottom: 1.25rem;
+    }
+    .reader-breadcrumbs {
+        width: 100%;
+        flex-basis: 100%;
+        font-size: 0.74rem;
+    }
+    .toolbar-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .topic-pill-bar {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding: 0.5rem 0.65rem;
+        gap: 0.4rem;
+        margin: 0.75rem 0 1.25rem;
+    }
+    .topic-pill-bar::-webkit-scrollbar { display: none; }
+    .topic-pill-label { display: none; }
+    .topic-pill {
+        flex-shrink: 0;
+        white-space: nowrap;
+        padding: 0.32rem 0.7rem;
+    }
     .grid-2 { grid-template-columns: 1fr; }
     .rosetta-mobile-toggle { display: flex; }
     .rosetta-pane-cpp { display: none; }
@@ -1562,23 +1863,53 @@ tr:hover td { background: #1F242C; }
 }
 
 @media (max-width: 680px) {
-    .navbar-inner { flex-wrap: wrap; padding: 0.6rem 0.85rem; gap: 0.5rem; }
-    .brand { font-size: 1.1rem; }
-    .brand img.brand-icon { width: 26px; height: 26px; }
+    .navbar { position: relative; }
+    .navbar-inner { flex-wrap: wrap; padding: 0.5rem 0.75rem; gap: 0.4rem; }
+    .brand { font-size: 1.05rem; }
+    .brand img.brand-icon { width: 24px; height: 24px; }
     .nav-links {
-        display: flex; align-items: center; gap: 0.4rem;
+        display: flex; align-items: center; gap: 0.35rem;
         width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
         scrollbar-width: none; padding: 0.1rem 0;
     }
     .nav-links::-webkit-scrollbar { display: none; }
     .nav-links a {
-        white-space: nowrap; padding: 0.35rem 0.65rem; border-radius: 6px;
-        background: #161B22; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
+        white-space: nowrap; padding: 0.3rem 0.6rem; border-radius: 5px;
+        background: #161B22; font-size: 0.78rem; color: var(--muted); flex-shrink: 0;
     }
     .nav-links a.active { background: #21262D; color: var(--text-bright) !important; }
     .btn-nav-primary {
-        margin-left: auto; padding: 0.35rem 0.75rem !important;
-        font-size: 0.8rem !important; flex-shrink: 0;
+        margin-left: auto; padding: 0.3rem 0.65rem !important;
+        font-size: 0.76rem !important; flex-shrink: 0;
+    }
+    .mode-btn {
+        padding: 0.28rem 0.55rem;
+        font-size: 0.7rem;
+    }
+    .chapter-pager {
+        flex-direction: column;
+        gap: 0.65rem;
+        margin-top: 2.25rem;
+    }
+    .pager-card {
+        width: 100%;
+        min-width: 0;
+        padding: 0.95rem 1.1rem;
+    }
+    .pager-card.empty { display: none; }
+    .pager-card.pager-next, .pager-card.next {
+        text-align: left;
+        margin-left: 0;
+    }
+    .ai-modal-backdrop {
+        align-items: flex-end;
+        padding: 0;
+    }
+    .ai-modal-sheet {
+        border-radius: 12px 12px 0 0;
+        max-width: 100%;
+        max-height: 88vh;
+        border-bottom: none;
     }
     .table-scroll-cue { display: block; }
 
@@ -1626,8 +1957,205 @@ tr:hover td { background: #1F242C; }
 @media (min-width: 841px) {
     .rosetta-mobile-toggle { display: none; }
     .rosetta-pane-cf, .rosetta-pane-cpp { display: block !important; }
+    .sidebar-details > .sidebar-content { display: block !important; }
 }
 )CSS";
+}
+
+[[nodiscard]] inline auto ai_context_modal_html() -> std::string {
+    return R"HTML(
+<div class="ai-modal-backdrop" id="ai-modal-backdrop" onclick="if(event.target===this)closeAiModal()">
+  <div class="ai-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
+    <div class="ai-modal-header">
+      <div class="ai-modal-title" id="ai-modal-title">
+        <span class="material-symbols-outlined" style="color:#F97316;font-size:1.1rem;" aria-hidden="true">auto_awesome</span>
+        <span>Ask AI with Topic Context</span>
+      </div>
+      <button type="button" class="ai-modal-close" onclick="closeAiModal()" aria-label="Close modal">&times;</button>
+    </div>
+    <div class="ai-modal-body">
+      <p class="ai-modal-sub">
+        Assemble a self-contained prompt with the active documentation section, runnable <code>.cf</code> code snippets, and a compact <code>cfire</code> language primer so any AI assistant writes valid <code>cfire</code> code immediately.
+      </p>
+      <div class="ai-goal-row" role="group" aria-label="Prompt Goal">
+        <button type="button" class="ai-goal-pill active" data-goal="explain" onclick="setAiGoal('explain', this)">Explain &amp; Walk Through</button>
+        <button type="button" class="ai-goal-pill" data-goal="build" onclick="setAiGoal('build', this)">Build a Practical Feature</button>
+        <button type="button" class="ai-goal-pill" data-goal="debug" onclick="setAiGoal('debug', this)">Review / Debug My Code</button>
+      </div>
+      <div class="ai-context-box">
+        <label class="ai-context-opt">
+          <input type="checkbox" id="ai-opt-topic" checked onchange="updateAiPromptPreview()" />
+          <span id="ai-opt-topic-label">Include Active Section Prose &amp; API Signatures</span>
+        </label>
+        <label class="ai-context-opt">
+          <input type="checkbox" id="ai-opt-code" checked onchange="updateAiPromptPreview()" />
+          <span id="ai-opt-code-label">Include Visible .cf &amp; Emitted C++23 Code Snippets</span>
+        </label>
+        <label class="ai-context-opt">
+          <input type="checkbox" id="ai-opt-primer" checked onchange="updateAiPromptPreview()" />
+          <span>Include Compact cfire Grammar &amp; Safety Primer (prevents Rust/Go hallucinations)</span>
+        </label>
+      </div>
+      <div class="ai-preview-head">
+        <span>Generated Markdown Prompt Preview (Editable)</span>
+        <span id="ai-prompt-stats">0 chars</span>
+      </div>
+      <textarea id="ai-prompt-preview" class="ai-prompt-preview" spellcheck="false"></textarea>
+    </div>
+    <div class="ai-modal-footer">
+      <a href="LLMS.txt" target="_blank" rel="noopener" class="ai-btn-secondary" title="Open complete single-file LLM specification">
+        <span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">description</span>
+        <span>Open Full LLMS.txt</span>
+      </a>
+      <button type="button" class="ai-btn-primary" id="btn-copy-ai-prompt" onclick="copyAiRichPrompt()">
+        <span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">content_copy</span>
+        <span id="btn-copy-ai-label">Copy Rich Prompt</span>
+      </button>
+    </div>
+  </div>
+</div>
+<script>
+let currentAiGoal = 'explain';
+
+const CFIRE_GRAMMAR_PRIMER = [
+  '## cfire Language Quick Reference (ISO C++23 Transpiler)',
+  '- File header: `package main` and `import "core:str"`, `import "ext:webui"`, `import "vendor:raylib" as rl`.',
+  '- Bindings: `x := 42` (immutable by default), `mut count := 0` (mutable).',
+  '- Functions & Intents: `fn update(mut s: State, in cfg: Config, move buf: []u8) -> i32!`. Callers MUST annotate `mut`, `move`, or `out` at the call site: `update(mut s, cfg, move buf)`.',
+  '- Error Handling: Fallible return `T!` (`std::expected<T, cfire::Error>`). Propagate with prefix `try expr` (NEVER postfix `?`), fallback with `expr or fallback`, or `expr or |err| { ... }`.',
+  '- Optionals & Pointers: `T?` (`std::optional<T>`) with `none`; `*T` / `*mut T` (non-owning pointer, requires `if p != none` before `*p`); `^T` (`own[T]`); `defer cleanup()`.',
+  '- Strings: All double-quoted strings interpolate `{expr}` natively (e.g. `"Hello, {name}!"` — do NOT prefix with `f"..."`).',
+  '- Testing & CLI: `test "name" { assert(cond) }`, run with `cfire test`, `cfire check`, `cfire fix`, `cfire run`.'
+].join('\n');
+
+function extractActiveDocContext() {
+  let title = document.title;
+  let prose = '';
+  let snippets = [];
+
+  // Check guide.html active topic or chapter
+  const activePane = document.querySelector('.chapter-pane.active');
+  const vp = document.getElementById('guide-viewport');
+  if (activePane) {
+    const chNum = activePane.getAttribute('data-chapter') || '';
+    const chTitle = activePane.getAttribute('data-title') || '';
+    const isTopicMode = vp && vp.classList.contains('topic-View-mode');
+    const activeTopic = isTopicMode ? activePane.querySelector('.guide-topic.active-topic') : activePane;
+    const scopeEl = activeTopic || activePane;
+    const topicTitle = (activeTopic && activeTopic.getAttribute('data-topic-title'))
+      ? ('Ch ' + chNum + ': ' + chTitle + ' — ' + activeTopic.getAttribute('data-topic-title'))
+      : ('Ch ' + chNum + ': ' + chTitle);
+    title = topicTitle;
+
+    scopeEl.querySelectorAll('p, li, .callout, .table-wrap').forEach(el => {
+      if (el.closest('pre') || el.closest('.chapter-pager') || el.closest('.topic-pager')) return;
+      const t = (el.innerText || '').trim();
+      if (t && prose.length < 3200) prose += t + '\n\n';
+    });
+    scopeEl.querySelectorAll('pre code').forEach((codeEl, idx) => {
+      if (snippets.length < 4) {
+        const codeTxt = (codeEl.innerText || '').trim();
+        if (codeTxt) snippets.push('```cf\n' + codeTxt + '\n```');
+      }
+    });
+  } else {
+    // Check reference.html active pane
+    const refPane = document.querySelector('.ref-pane.active');
+    if (refPane) {
+      title = refPane.getAttribute('data-pane-title') || title;
+      refPane.querySelectorAll('p, tbody tr').forEach(el => {
+        const t = (el.innerText || '').replace(/\s+/g, ' ').trim();
+        if (t && prose.length < 3500) prose += '- ' + t + '\n';
+      });
+      refPane.querySelectorAll('pre code').forEach(codeEl => {
+        if (snippets.length < 4) {
+          const codeTxt = (codeEl.innerText || '').trim();
+          if (codeTxt) snippets.push('```cf\n' + codeTxt + '\n```');
+        }
+      });
+    }
+  }
+  return { title, prose: prose.trim(), snippets };
+}
+
+function updateAiPromptPreview() {
+  const ctx = extractActiveDocContext();
+  const incTopic = document.getElementById('ai-opt-topic')?.checked ?? true;
+  const incCode = document.getElementById('ai-opt-code')?.checked ?? true;
+  const incPrimer = document.getElementById('ai-opt-primer')?.checked ?? true;
+
+  const topicLbl = document.getElementById('ai-opt-topic-label');
+  if (topicLbl) topicLbl.textContent = 'Active Section (' + ctx.title + ')';
+  const codeLbl = document.getElementById('ai-opt-code-label');
+  if (codeLbl) codeLbl.textContent = 'Visible Code Snippets (' + ctx.snippets.length + ' block' + (ctx.snippets.length === 1 ? '' : 's') + ')';
+
+  let goalInstruction = 'Walk me through this cfire topic step by step, explain the key design trade-offs, and show a practical, runnable `.cf` example.';
+  if (currentAiGoal === 'build') {
+    goalInstruction = 'Using the cfire APIs and patterns below, help me design and build a complete, idiomatic `.cf` module with a `test "..."` block.';
+  } else if (currentAiGoal === 'debug') {
+    goalInstruction = 'Use the cfire grammar rules and API signatures below to review or debug my `.cf` code (I will paste my code below):';
+  }
+
+  let parts = [];
+  parts.push('I am working with the **cfire** systems programming language (`' + ctx.title + '`).\n\n**Task:** ' + goalInstruction);
+  if (incPrimer) {
+    parts.push(CFIRE_GRAMMAR_PRIMER);
+  }
+  if (incTopic && ctx.prose) {
+    parts.push('## Active Documentation Context: ' + ctx.title + '\n' + ctx.prose);
+  }
+  if (incCode && ctx.snippets.length > 0) {
+    parts.push('## Code Examples from This Section\n' + ctx.snippets.join('\n\n'));
+  }
+  parts.push('Reference URL: ' + window.location.href);
+
+  const fullPrompt = parts.join('\n\n---\n\n');
+  const box = document.getElementById('ai-prompt-preview');
+  if (box) box.value = fullPrompt;
+  const stats = document.getElementById('ai-prompt-stats');
+  if (stats) stats.textContent = fullPrompt.length.toLocaleString() + ' chars (~' + Math.ceil(fullPrompt.length / 4) + ' tokens)';
+}
+
+function setAiGoal(goal, btn) {
+  currentAiGoal = goal;
+  document.querySelectorAll('.ai-goal-pill').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  updateAiPromptPreview();
+}
+
+function openAiModal() {
+  updateAiPromptPreview();
+  const backdrop = document.getElementById('ai-modal-backdrop');
+  if (backdrop) backdrop.classList.add('open');
+}
+
+function closeAiModal() {
+  const backdrop = document.getElementById('ai-modal-backdrop');
+  if (backdrop) backdrop.classList.remove('open');
+}
+
+function askAiAgent() {
+  openAiModal();
+}
+
+function copyAiRichPrompt() {
+  const box = document.getElementById('ai-prompt-preview');
+  if (!box) return;
+  navigator.clipboard.writeText(box.value).then(() => {
+    const lbl = document.getElementById('btn-copy-ai-label');
+    const railLbl = document.getElementById('ai-agent-label');
+    if (lbl) {
+      lbl.textContent = 'Copied Rich Prompt!';
+      setTimeout(() => { lbl.textContent = 'Copy Rich Prompt'; }, 2200);
+    }
+    if (railLbl) {
+      railLbl.textContent = 'Prompt Copied!';
+      setTimeout(() => { railLbl.textContent = 'Ask AI Agent'; }, 2200);
+    }
+  });
+}
+</script>
+)HTML";
 }
 
 [[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string {

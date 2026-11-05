@@ -930,7 +930,7 @@ tr:hover td { background: #1F242C; }
       <div class="card-num">03. THE CFIRE DIFFERENTIATOR</div>
       <h3>Ejectable C++23 + Tiered Stdlib</h3>
       <p>
-        <strong>cfire</strong> combines Go/Odin-inspired syntax, 8 static intent and pattern-reachability checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
+        <strong>cfire</strong> combines Go/Odin-inspired syntax, 18 static safety, loan-tracking, and intent checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
       </p>
     </div>
   </div>
@@ -945,15 +945,15 @@ tr:hover td { background: #1F242C; }
       <div>
         <div class="bento-card-header">
           <span class="material-symbols-outlined bento-icon" aria-hidden="true">shield</span>
-          <span class="bento-tag">STATIC INTENT &amp; MATCH CHECKS</span>
+          <span class="bento-tag">STATIC INTENT &amp; LOAN SAFETY</span>
         </div>
-        <h3>Call-Site Intent &amp; Pattern Hygiene</h3>
+        <h3>Call-Site Intent, Loan Tracking &amp; Pattern Hygiene</h3>
         <p>
-          Catches common mutation, aliasing, and pattern mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, single-call mutable alias exclusivity, local use-after-move checks, and exhaustive/reachable <code>match</code> verification (8 <code>cfire/*</code> rules). Does not require borrow lifetimes.
+          Catches common mutation, pointer/view invalidation, null dereference, bounds, and injection mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, loan tracking across container mutations, flow-sensitive null checks, and exhaustive <code>match</code> verification (18 <code>cfire/*</code> rules).
         </p>
       </div>
       <div class="bento-footer">
-        <code>cfire/MUT-CALLSITE &bull; cfire/MUT-ALIAS &bull; cfire/UNREACHABLE-MATCH-ARM</code>
+        <code>cfire/MUT-CALLSITE &bull; cfire/USE-AFTER-FREE &bull; cfire/NULL-DEREF</code>
       </div>
     </div>
 
@@ -1081,7 +1081,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>ORC ref-counting (Nim) or ref-counted/RAII C++ (Jakt).</td>
           <td>Full compile-time borrow &amp; lifetime checker.</td>
           <td>Manual allocators (Odin) or tracing GC (Go).</td>
-          <td><strong>C++23 RAII + 8 static checks</strong> (call-site <code>mut</code>/<code>move</code>, alias exclusivity, local use-after-move, <code>match</code> reachability; no borrow checker).</td>
+          <td><strong>C++23 RAII + 18 static checks</strong> (call-site <code>mut</code>/<code>move</code>, loan/iterator invalidation, flow-sensitive null checks, bounds, and <code>match</code> reachability).</td>
         </tr>
         <tr>
           <td><strong>C &amp; C++ Interop</strong></td>
@@ -1242,8 +1242,13 @@ fn main() {
     </a>
     <a class="roadmap-card" href="guide.html#chapter-18">
       <div class="roadmap-num">Chapter 18</div>
+      <h4>Hybrid Desktop &amp; Mobile WebUI</h4>
+      <p>Wails/Tauri-class native WebView apps (<code>ext:webui</code>), zero-port <code>app://localhost/</code> VFS, typed RPC, event bus, and headless testing.</p>
+    </a>
+    <a class="roadmap-card" href="guide.html#chapter-19">
+      <div class="roadmap-num">Chapter 19</div>
       <h4>Production Patterns &amp; Examples</h4>
-      <p>End-to-end architectures, canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
+      <p>End-to-end architectures, cloud services (<code>core:tako</code>), canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
     </a>
   </div>
 

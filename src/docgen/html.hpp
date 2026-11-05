@@ -249,6 +249,39 @@ fn main() {
 )CF";
     std::string snip7_cpp = compile_snippet_to_cpp("snippet_ai.cf", snip7_cf);
 
+    // 8. Hybrid Desktop & Mobile WebUI (ext:webui) Snippet
+    std::string_view snip8_cf = R"CF(package main
+
+import "ext:webui"
+
+type GreetReq struct {
+    name:  str `json:"name"`
+    count: i32 `json:"count"`
+}
+
+type GreetRes struct {
+    message: str `json:"message"`
+    count:   i32 `json:"count"`
+}
+
+fn main() {
+    mut app := webui.new_app("cfire Studio", 960, 640)
+    defer app.close()
+    app.serve_dir("./ui")
+
+    app.bind[GreetReq]("greet") |req| {
+        next := req.count + 1
+        res := GreetRes{message: "Hello, {req.name}!", count: next}
+        app.emit("greet:updated", res)
+        return res
+    }
+
+    raw := try app.call_rpc("greet", `{"name":"Ada","count":1}`)
+    println("rpc={} events={}", raw, app.emitted_events_count("greet:updated"))
+}
+)CF";
+    std::string snip8_cpp = compile_snippet_to_cpp("snippet_webui.cf", snip8_cf);
+
     std::string out;
     out += R"HTML(  <!-- Interactive Live Rosetta Showcase -->
   <h2 class="section-title">See the Lowering: Live <code>.cf</code> &rarr; ISO C++23</h2>
@@ -262,6 +295,7 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
     <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>ext:audio</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (<code>ext:ai</code>)</button>
+    <button class="tab-btn" onclick="showTab('tab-webui', this)">8. Hybrid WebUI (<code>ext:webui</code>)</button>
   </div>
 
   <!-- Tab 1: Intents -->
@@ -293,7 +327,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -327,7 +361,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -361,7 +395,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -395,7 +429,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -429,7 +463,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -463,7 +497,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -497,7 +531,41 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">8/8 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 8: Hybrid Desktop & Mobile WebUI -->
+  <div id="tab-webui" class="tab-panel">
+    <div class="rosetta-mobile-toggle">
+      <button class="active" onclick="toggleRosettaMobile(this, 'cf')">cfire (.cf)</button>
+      <button onclick="toggleRosettaMobile(this, 'cpp')">Emitted ISO C++23</button>
+    </div>
+    <div class="grid-2">
+      <div class="rosetta-pane-cf">
+        <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>)HTML";
+    out += html_escape(snip8_cf);
+    out += R"HTML(</code></pre>
+      </div>
+      <div class="rosetta-pane-cpp">
+        <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>)HTML";
+    out += html_escape(snip8_cpp);
+    out += R"HTML(</code></pre>
+      </div>
+    </div>
+    <div class="telemetry-bar">
+      <div class="telemetry-header">
+        <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">terminal</span> Terminal Execution Telemetry</span>
+        <span class="telemetry-pass" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> PASS (0 diagnostics)</span>
+      </div>
+      <div class="telemetry-body">
+        <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
+        <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rpc={"message":"Hello, Ada!","count":2} events=1</strong></span>
+        <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
       </div>
     </div>
   </div>)HTML";
@@ -566,9 +634,9 @@ fn main() {
     out += detail::navbar_html("reference");
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
-    out += "    <details class=\"sidebar-details\" open>\n";
+    out += "    <details class=\"sidebar-details\" id=\"ref-sidebar-details\">\n";
     out += "      <summary class=\"sidebar-summary\">\n";
-    out += "        <span>Modules &amp; Diagnostics</span>\n";
+    out += "        <span id=\"ref-mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Stdlib:</span> Overview &amp; Diagnostics</span>\n";
     out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
     out += "      </summary>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
@@ -612,7 +680,7 @@ fn main() {
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
           <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (18 Chapters) &rarr;</a></li>
+            <li style="margin-bottom: 0.35rem;"><a href="guide.html">Language Guide (19 Chapters) &rarr;</a></li>
             <li style="margin-bottom: 0.35rem;"><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
             <li style="margin-bottom: 0.35rem;"><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
           </ul>
@@ -630,9 +698,15 @@ fn main() {
           <span>/</span>
           <span class="crumb-current" id="ref-active-crumb">Overview (All {0} Modules)</span>
         </div>
-        <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
-          <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
-          <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All ({0})</button>
+        <div class="toolbar-actions">
+          <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
+            <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
+            <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All ({0})</button>
+          </div>
+          <button type="button" class="btn-toolbar-ai" onclick="openAiModal()" title="Generate context-rich AI prompt for this module">
+            <span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">auto_awesome</span>
+            <span>Ask AI</span>
+          </button>
         </div>
       </div>
 )HTML", mods.size());
@@ -640,7 +714,7 @@ fn main() {
     // Pane 0: Categorized Overview Dashboard
     out += std::format("      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All {} Modules)\">\n", mods.size());
     out += "        <h1>Standard Library &amp; Diagnostics Reference</h1>\n";
-    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> ({} zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> ({} opt-in networking, database, compression, audio, and AI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> ({} bundled C/C++ engines) — plus {} semantic diagnostics, verified by <code>cfire doc --check</code>.</p>\n", mods.size(), core_count, ext_count, vendor_count, diags.size());
+    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> ({} zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> ({} opt-in networking, database, compression, audio, AI, and WebUI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> ({} bundled C/C++ engines) — plus {} semantic diagnostics, verified by <code>cfire doc --check</code>.</p>\n", mods.size(), core_count, ext_count, vendor_count, diags.size());
 
     struct CategoryGroup {
         std::string_view title;
@@ -650,7 +724,7 @@ fn main() {
         {"core:* — Strings, Unicode, Regex & Containers", {"str", "unicode", "regex", "collections", "sort"}},
         {"core:* — Filesystem, OS, Time, Sync, CLI & Logging", {"fs", "os", "time", "math", "rand", "sync", "context", "cli", "log"}},
         {"core:* — Cryptography & Data Encodings", {"aes", "blake3", "hmac", "sha256", "base64", "csv", "hex"}},
-        {"ext:* — JSON, Compression, Networking, SQLite, Audio & AI", {"json", "zstd", "net", "http", "tls", "url", "websocket", "sqlite", "audio", "ai"}},
+        {"ext:* — JSON, Compression, Networking, SQLite, Audio, AI & WebUI", {"json", "zstd", "net", "http", "tls", "url", "websocket", "sqlite", "audio", "ai", "webui"}},
         {"vendor:* — Graphics & Immediate-Mode GUI", {"rl", "rg"}},
     };
 
@@ -680,7 +754,7 @@ fn main() {
         out += "        </div>\n";
     }
 
-    out += "        <div class=\"ref-category-title\">Compiler Semantic Diagnostics (8 Rules)</div>\n";
+    out += std::format("        <div class=\"ref-category-title\">Compiler Semantic Diagnostics ({} Rules)</div>\n", diags.size());
     out += "        <div class=\"ref-category-grid\">\n";
     out += std::format(
         "          <a href=\"#diagnostics\" class=\"ref-mod-card\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
@@ -708,7 +782,7 @@ fn main() {
     }
     out += "      </article>\n";
 
-    // Individual Module Panes (1..33)
+    // Individual Module Panes (1..34)
     for (std::size_t i = 0; i < mods.size(); ++i) {
         const auto& mod = mods[i];
         out += std::format(
@@ -763,10 +837,10 @@ fn main() {
                 "          </a>\n",
                 next.ns_alias, next.ns_alias, i + 2, mods.size(), next.import_path, detail::html_escape(next.title));
         } else {
-            out += "          <a href=\"#diagnostics\" class=\"pager-card next\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
+            out += std::format("          <a href=\"#diagnostics\" class=\"pager-card next\" onclick=\"navigateToRefPane('diagnostics'); return false;\">\n"
                    "            <span class=\"pager-dir\">Diagnostics Reference &rarr;</span>\n"
-                   "            <span class=\"pager-title\">8 Semantic Verification Rules</span>\n"
-                   "          </a>\n";
+                   "            <span class=\"pager-title\">{} Semantic Verification Rules</span>\n"
+                   "          </a>\n", diags.size());
         }
         out += "        </nav>\n";
         out += "      </article>\n";
@@ -810,6 +884,9 @@ fn main() {
     </main>
   </div>
 </div>
+)HTML";
+    out += detail::ai_context_modal_html();
+    out += R"HTML(
 <script>
 let currentRefMode = 'module';
 let activeRefPane = 'overview';
@@ -844,9 +921,18 @@ function navigateToRefPane(paneId, pushHash = true) {
   const navLink = document.getElementById('nav-pane-' + paneId);
   if (navLink) navLink.classList.add('active');
 
+  const paneTitle = target.getAttribute('data-pane-title') || paneId;
   const crumb = document.getElementById('ref-active-crumb');
   if (crumb) {
-    crumb.textContent = target.getAttribute('data-pane-title') || paneId;
+    crumb.textContent = paneTitle;
+  }
+  const mobLabel = document.getElementById('ref-mobile-sidebar-label');
+  if (mobLabel) {
+    mobLabel.innerHTML = '<span class="sidebar-summary-badge">Stdlib:</span> ' + paneTitle;
+  }
+  const mobDetails = document.getElementById('ref-sidebar-details');
+  if (mobDetails && window.innerWidth <= 840) {
+    mobDetails.removeAttribute('open');
   }
 
   if (pushHash) {
@@ -871,6 +957,10 @@ function navigateToRefDiag(diagId) {
   const navDiag = document.getElementById('nav-' + diagId);
   if (navDiag) navDiag.classList.add('active');
   history.replaceState(null, '', '#' + diagId);
+  const mobDetails = document.getElementById('ref-sidebar-details');
+  if (mobDetails && window.innerWidth <= 840) {
+    mobDetails.removeAttribute('open');
+  }
   const el = document.getElementById(diagId);
   if (el) {
     setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
@@ -960,6 +1050,7 @@ document.addEventListener('keydown', e => {
   } else if (e.key === 'Escape') {
     const dropdown = document.getElementById('ref-search-results');
     if (dropdown) dropdown.classList.remove('open');
+    closeAiModal();
   }
 });
 
