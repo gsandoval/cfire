@@ -48,6 +48,10 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
     return out;
 }
 
+[[nodiscard]] inline auto encode(std::span<const std::uint8_t> data, bool url_safe = false) -> std::string {
+    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size()), url_safe);
+}
+
 [[nodiscard]] inline auto encode_str(std::string_view s, bool url_safe = false) -> std::string {
     return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()), url_safe);
 }
@@ -136,6 +140,14 @@ namespace cfire::hex {
         out.push_back(digits[val & 0x0F]);
     }
     return out;
+}
+
+[[nodiscard]] inline auto encode(std::span<const std::uint8_t> data) -> std::string {
+    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size()));
+}
+
+[[nodiscard]] inline auto encode(std::string_view s) -> std::string {
+    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()));
 }
 
 [[nodiscard]] inline auto encode_str(std::string_view s) -> std::string {

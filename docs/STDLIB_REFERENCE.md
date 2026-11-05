@@ -1675,3 +1675,23 @@ fn process() -> i32 {
 }
 ```
 
+### `[cfire/INVALID-STRUCT-TAG]` — Duplicate or Malformed Struct Reflection Tag
+
+Struct reflection tags (`json:"..."`, `sql:"..."`, `db:"..."`, `cli:"..."`, `default:"..."`) are validated at compile time. Duplicate `json`, `sql`/`db`, or `cli` flag names across fields of the same struct, or `default:"..."` literals that cannot parse into the field's numeric or boolean type, are rejected at compile time.
+
+**Rejected (`.cf`):**
+```cf
+type Config struct {
+    Port: i64 `json:"port" default:"not_a_number"`
+    Alt:  i64 `json:"port"` // ERROR [cfire/INVALID-STRUCT-TAG]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+type Config struct {
+    Port: i64 `json:"port" default:"8080"`
+    Alt:  i64 `json:"alt_port"` // OK
+}
+```
+

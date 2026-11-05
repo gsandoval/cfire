@@ -359,7 +359,42 @@ fn main() {}
         run_cfire("inspect cfire/USE-AFTER-FREE")
             .assert_ok("cfire inspect cfire/USE-AFTER-FREE exit 0 (TOOL-SAFE-01)")
             .assert_contains("Use of Dangling Pointer or Slice View After Owner Invalidation", "cfire inspect shows diagnostic rule title (TOOL-SAFE-01)");
+
+        run_cfire("inspect cfire/INVALID-STRUCT-TAG")
+            .assert_ok("cfire inspect cfire/INVALID-STRUCT-TAG exit 0 (TEST-03a/06)")
+            .assert_contains("Duplicate or Malformed Struct Reflection Tag", "cfire inspect shows INVALID-STRUCT-TAG rule title (TEST-03a/06)");
     }
+
+    // TEST-03a: Compile-Time Struct Tag & Default Value Validation (cfire/INVALID-STRUCT-TAG)
+    require_sema_error(R"(package main
+type BadJson struct {
+    A: str `json:"id"`
+    B: i64 `json:"id"`
+}
+fn main() {}
+)", "cfire/INVALID-STRUCT-TAG", "dup_json_tag.cf");
+
+    require_sema_error(R"(package main
+type BadCli struct {
+    Host: str `cli:"--host,-h"`
+    Help: str `cli:"--help,-h"`
+}
+fn main() {}
+)", "cfire/INVALID-STRUCT-TAG", "dup_cli_flag.cf");
+
+    require_sema_error(R"(package main
+type BadDefault struct {
+    Port: i64 `default:"eighty"`
+}
+fn main() {}
+)", "cfire/INVALID-STRUCT-TAG", "bad_default_int.cf");
+
+    require_sema_error(R"(package main
+type BadBoolDefault struct {
+    Debug: bool `default:"maybe"`
+}
+fn main() {}
+)", "cfire/INVALID-STRUCT-TAG", "bad_default_bool.cf");
 
     // SEC-02: CSPRNG (sha256::random_bytes / random_hex) & RFC 5869 HKDF-SHA256
     {

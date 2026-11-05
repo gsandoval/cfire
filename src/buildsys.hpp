@@ -1597,6 +1597,9 @@ inline auto resolve_external_dep_source(
                     if (item.is_auto_sibling) continue;
                     return std::unexpected(sub_ast.error());
                 }
+                if (is_test_entry) {
+                    frontend::append_doctests(fpath.string(), *raw, *sub_ast);
+                }
 
                 if (item.is_auto_sibling) {
                     if (sub_ast->package_name != root_ast.package_name) {
@@ -1792,6 +1795,9 @@ inline auto resolve_external_dep_source(
     if (!raw) return std::unexpected(raw.error());
     auto ast = frontend::parse_source(cf_file.string(), *raw);
     if (!ast) return std::unexpected(ast.error());
+    if (test_mode) {
+        frontend::append_doctests(cf_file.string(), *raw, *ast);
+    }
 
     // 3. Resolve local `.cf` package imports (`import "./..."`, `import "pkg:..."`, and same-directory package siblings) recursively
     if (auto r = resolve_local_cf_imports(dir, *ast, plan, runtime_dir, test_mode); !r) {

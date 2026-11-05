@@ -1,0 +1,164 @@
+package main
+
+import "core:crypto/sha256"
+import "core:encoding/base64"
+import "core:encoding/csv"
+import "core:encoding/hex"
+import "core:fs"
+import "core:str"
+import "core:unicode"
+import "ext:compress/zstd"
+import "ext:json"
+import "ext:net/url"
+
+type ConfigRecord struct {
+    service:     str   `json:"service"`
+    port:        i32   `json:"port"`
+    tls_enabled: bool  `json:"tls_enabled"`
+    tags:        []str `json:"tags"`
+}
+
+type MetricSample struct {
+    name:  str `json:"name"`
+    count: i64 `json:"count"`
+    ratio: f64 `json:"ratio"`
+}
+
+/// Computes the inclusive arithmetic sum `1 + 2 + ... + n` using an inclusive range loop.
+/// ```cf
+/// assert_eq(sum_inclusive(5), 15)
+/// assert_eq(sum_inclusive(10), 55)
+/// ```
+fn sum_inclusive(n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    mut total: i32 = 0
+    for i in 1..=n {
+        total += i
+    }
+    return total
+}
+
+/// Formats indexed items as `"0:first,1:second"` using indexed iteration and expression interpolation.
+/// ```cf
+/// items: []str = ["alpha", "beta"]
+/// assert_eq(format_indexed_list(items), "0:alpha,1:beta")
+/// ```
+fn format_indexed_list(items: []str) -> str {
+    mut parts: []str = []
+    for idx, item in items {
+        parts.push("{idx}:{item}")
+    }
+    return str.join(parts, ",")
+}
+
+test "ergonomics: range loops, indexed iteration, expression interpolation, and block defer" {
+    assert_eq(sum_inclusive(6), 21)
+    assert_ne(sum_inclusive(6), 20)
+
+    words: []str = ["cfire", "fuzz", "bench"]
+    formatted := format_indexed_list(words)
+    assert_eq(formatted, "0:cfire,1:fuzz,2:bench")
+
+    tmp_path := "/tmp/cfire_stdlib_suite_defer.txt"
+    defer {
+        _ = fs.remove(tmp_path)
+    }
+    base := 1
+    try fs.write_text(tmp_path, "line={base + 2}")
+    loaded := try fs.read_text(tmp_path)
+    assert_eq(loaded, "line=3")
+}
+
+fuzz "hex encode/decode round-trip" |data: []byte| {
+    encoded := hex.encode(data)
+    assert_eq(encoded.len(), data.len() * 2)
+    decoded := hex.decode(encoded) or []
+    assert_eq(decoded.len(), data.len())
+    for i, b in data {
+        assert_eq(u8(decoded[i]), b)
+    }
+}
+
+fuzz "base64 encode/decode round-trip" |data: []byte| {
+    encoded := base64.encode(data)
+    decoded := base64.decode(encoded) or []
+    assert_eq(decoded.len(), data.len())
+    for i, b in data {
+        assert_eq(u8(decoded[i]), b)
+    }
+}
+
+fuzz "zstd compress/decompress round-trip" |data: []byte| {
+    compressed := zstd.compress(data, 1) or []
+    if data.len() > 0 {
+        assert(compressed.len() > 0)
+    }
+    decompressed := zstd.decompress(compressed) or []
+    assert_eq(decompressed.len(), data.len())
+    for i, b in data {
+        assert_eq(u8(decompressed[i]), b)
+    }
+}
+
+fuzz "url encode/decode round-trip" |s: str| {
+    encoded := url.encode(s)
+    decoded := url.decode(encoded)
+    assert_eq(decoded, s)
+}
+
+fuzz "csv stringify/parse single-row round-trip" |a: str, b: str| {
+    clean_a := str.replace(a, "\r", "")
+    clean_b := str.replace(b, "\r", "")
+    if clean_a.len() > 0 || clean_b.len() > 0 {
+        rows: [][]str = [[clean_a, clean_b]]
+        serialized := csv.stringify(rows)
+        parsed := csv.parse(serialized)
+        assert_eq(parsed.len(), 1)
+        assert_eq(parsed[0].len(), 2)
+        assert_eq(parsed[0][0], clean_a)
+        assert_eq(parsed[0][1], clean_b)
+    }
+}
+
+fuzz "unicode is_valid_utf8 and rune_count consistency" |s: str| {
+    if unicode.is_valid_utf8(s) {
+        rc := unicode.rune_count(s)
+        assert(rc >= 0)
+        assert(rc <= s.len())
+    }
+}
+
+bench "sha256 digest throughput" |size in [64, 1024, 16384]| {
+    mut payload := "cfire-bench"
+    for _ in 0..(size / 16) {
+        payload = "{payload}-0123456789abcdef"
+    }
+    digest := sha256.hash_hex(payload)
+    assert_eq(digest.len(), 64)
+}
+
+bench "zstd round-trip throughput" |size in [128, 2048, 8192]| {
+    mut buf: []byte = []
+    for i in 0..size {
+        buf.push(byte(i % 251))
+    }
+    compressed := zstd.compress(buf, 1) or []
+    decompressed := zstd.decompress(compressed) or []
+    assert_eq(decompressed.len(), size)
+}
+
+bench "json struct serialize and parse" |count in [10, 50]| {
+    for i in 0..count {
+        rec := ConfigRecord{
+            service:     "api-{i}",
+            port:        8080 + i32(i),
+            tls_enabled: (i % 2) == 0,
+            tags:        ["prod", "v2"],
+        }
+        raw := json.stringify(rec)
+        parsed := json.parse[ConfigRecord](raw) or ConfigRecord{}
+        assert_eq(parsed.port, 8080 + i32(i))
+    }
+}

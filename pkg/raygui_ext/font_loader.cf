@@ -3,28 +3,26 @@ package raygui_ext
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
 import "core:encoding/base64"
-import "./embedded_font.cf"
-import "./embedded_mono_font.cf"
 
+/// Builds the extended Unicode codepoint table (ASCII, Latin-1/Spanish accents, punctuation, and arrows).
+/// ```cf
+/// cps := build_extended_codepoints()
+/// assert(cps.len() > 500)
+/// assert_eq(cps[0], 32)
+/// ```
 fn build_extended_codepoints() -> []i32 {
     mut cps: []i32 = []
-    mut cp: i32 = 32
     // ASCII and Latin Extended-A / Latin-1 Supplement (covers all Spanish accents, ñ, ¿, ¡, umlauts, cedillas)
-    for cp <= 512 {
+    for cp in 32..=512 {
         cps.push(cp)
-        cp = cp + 1
     }
     // General Punctuation & Quotes (en-dash, em-dash, curly quotes, bullets)
-    cp = 0x2010
-    for cp <= 0x203A {
+    for cp in 0x2010..=0x203A {
         cps.push(cp)
-        cp = cp + 1
     }
     // Arrows & UI Symbols (←, ↑, →, ↓, ↔, etc.)
-    cp = 0x2190
-    for cp <= 0x21FF {
+    for cp in 0x2190..=0x21FF {
         cps.push(cp)
-        cp = cp + 1
     }
     return cps
 }

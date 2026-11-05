@@ -395,7 +395,8 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
     if (!verify_ast ||
         verify_ast->structs.size() != ast_res->structs.size() ||
         verify_ast->enums.size() != ast_res->enums.size() ||
-        verify_ast->functions.size() != ast_res->functions.size()) {
+        verify_ast->functions.size() != ast_res->functions.size() ||
+        verify_ast->tests.size() != ast_res->tests.size()) {
         return std::unexpected("formatter roundtrip verification failed");
     }
     return out;

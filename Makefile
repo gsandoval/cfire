@@ -67,6 +67,8 @@ fmt: build
 test: build .cfire_test_runner
 	./.cfire_test_runner
 	rm -f .cfire_test_runner $(TEST_OBJS)
+	./cfire test tests/stdlib_suite_test.cf
+	./cfire test pkg/raygui_ext/raygui_ext_test.cf
 	./cfire doc --check
 
 test-unit: build .cfire_test_runner
@@ -74,15 +76,20 @@ test-unit: build .cfire_test_runner
 
 test-stdlib: build .cfire_test_runner
 	./.cfire_test_runner stdlib
+	./cfire test tests/stdlib_suite_test.cf
 
 test-e2e: build .cfire_test_runner
 	./.cfire_test_runner e2e
 
 fuzz: build .cfire_test_runner
 	./.cfire_test_runner fuzz
+	./cfire test tests/stdlib_suite_test.cf --fuzz-runs 500
+	./cfire test pkg/raygui_ext/raygui_ext_test.cf --fuzz-runs 500
 
 bench: build .cfire_test_runner
 	./.cfire_test_runner bench
+	./cfire bench tests/stdlib_suite_test.cf
+	./cfire bench pkg/raygui_ext/raygui_ext_test.cf
 
 clean:
-	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire cfire_cross_*
+	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire tests/.cfire pkg/raygui_ext/.cfire cfire_cross_*
