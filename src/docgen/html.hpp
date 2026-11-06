@@ -634,11 +634,11 @@ fn main() {
     out += detail::navbar_html("reference");
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
-    out += "    <details class=\"sidebar-details\" id=\"ref-sidebar-details\">\n";
-    out += "      <summary class=\"sidebar-summary\">\n";
+    out += "    <div class=\"sidebar-details\" id=\"ref-sidebar-details\">\n";
+    out += "      <button type=\"button\" class=\"sidebar-summary\" onclick=\"this.parentElement.classList.toggle('open')\">\n";
     out += "        <span id=\"ref-mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Stdlib:</span> Overview &amp; Diagnostics</span>\n";
     out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
-    out += "      </summary>\n";
+    out += "      </button>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
     out += "        <div style=\"position:relative; margin-bottom: 0.75rem;\">\n";
     out += "          <input type=\"text\" id=\"ref-filter\" class=\"search-input\" placeholder=\"Search APIs &amp; errors (⌘K)...\" oninput=\"filterRefNav(this.value)\" autocomplete=\"off\" />\n";
@@ -686,7 +686,7 @@ fn main() {
           </ul>
         </div>
       </div>
-    </details>
+    </div>
   </aside>
   <div class="guide-viewport" id="ref-viewport">
     <main class="guide-content-inner" style="max-width: 960px;">
@@ -932,7 +932,7 @@ function navigateToRefPane(paneId, pushHash = true) {
   }
   const mobDetails = document.getElementById('ref-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
-    mobDetails.removeAttribute('open');
+    mobDetails.classList.remove('open');
   }
 
   if (pushHash) {
@@ -959,7 +959,7 @@ function navigateToRefDiag(diagId) {
   history.replaceState(null, '', '#' + diagId);
   const mobDetails = document.getElementById('ref-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
-    mobDetails.removeAttribute('open');
+    mobDetails.classList.remove('open');
   }
   const el = document.getElementById(diagId);
   if (el) {
