@@ -1093,6 +1093,12 @@ public:
             if (const auto* call = std::get_if<CallExpr>(&es->expr->node)) {
                 if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
                     if (id->name == "panic" || id->name == "exit") return true;
+                } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                    if (mem->field == "exit" && mem->object) {
+                        if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                            if (obj_id->name == "os") return true;
+                        }
+                    }
                 }
             }
         }

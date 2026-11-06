@@ -139,7 +139,7 @@ public:
             }
             std::string id = id_opt.value_or("1");
             std::string resp = std::format(
-                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"textDocumentSync":1,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"1.3.0"}}}}}})",
+                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"textDocumentSync":1,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"1.3.0"}}}}}})",
                 id);
             send_rpc(out, resp);
             return true;
@@ -250,6 +250,42 @@ public:
             int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
             std::string loc_json = compute_type_definition(uri, line, character);
             send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, loc_json));
+            return true;
+        }
+
+        if (method == "textDocument/implementation") {
+            std::string id = id_opt.value_or("1");
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            std::size_t pos_idx = detail::find_json_key(msg, "position");
+            int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            std::string impl_json = compute_implementation(uri, line, character);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, impl_json));
+            return true;
+        }
+
+        if (method == "textDocument/prepareCallHierarchy") {
+            std::string id = id_opt.value_or("1");
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            std::size_t pos_idx = detail::find_json_key(msg, "position");
+            int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            std::string prep_json = compute_prepare_call_hierarchy(uri, line, character);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, prep_json));
+            return true;
+        }
+
+        if (method == "callHierarchy/incomingCalls") {
+            std::string id = id_opt.value_or("1");
+            std::string calls_json = compute_incoming_calls(msg);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, calls_json));
+            return true;
+        }
+
+        if (method == "callHierarchy/outgoingCalls") {
+            std::string id = id_opt.value_or("1");
+            std::string calls_json = compute_outgoing_calls(msg);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, calls_json));
             return true;
         }
 
@@ -2270,6 +2306,401 @@ public:
         }
 
         return "null";
+    }
+
+    auto compute_implementation(const std::string& uri, int line, int character) -> std::string {
+        std::string text = get_doc_text(uri);
+        auto lines = detail::split_lines(text);
+        auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
+        if (!ast_res) return "[]";
+
+        auto sym = detail::symbol_at_position(lines, line, character);
+        if (sym.name.empty()) return "[]";
+
+        auto all_cf_files = discover_workspace_cf_files(uri);
+
+        // 1. Check if symbol is an interface name
+        const cfire::frontend::InterfaceDecl* target_iface = nullptr;
+        for (const auto& iface : ast_res->interfaces) {
+            if (iface.name == sym.name) {
+                target_iface = &iface;
+                break;
+            }
+        }
+        if (!target_iface) {
+            for (const auto& pkg : ws.local_packages) {
+                for (const auto& iface : pkg.ast.interfaces) {
+                    if (iface.name == sym.name) {
+                        target_iface = &iface;
+                        break;
+                    }
+                }
+                if (target_iface) break;
+            }
+        }
+
+        std::string out = "[";
+        bool first = true;
+        auto append_loc = [&](std::string_view doc_uri, int one_based_line) {
+            int ln = std::max(0, one_based_line - 1);
+            if (!first) out += ",";
+            first = false;
+            out += std::format(
+                R"({{"uri":"{}","range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}}}})",
+                detail::json_escape(doc_uri), ln, ln);
+        };
+
+        if (target_iface && !target_iface->methods.empty()) {
+            auto check_ast_impls = [&](std::string_view doc_uri, const cfire::frontend::FileAST& doc_ast) {
+                std::unordered_map<std::string, std::unordered_set<std::string>> struct_methods;
+                for (const auto& fn : doc_ast.functions) {
+                    if (fn.receiver) {
+                        struct_methods[fn.receiver->type.name].insert(fn.name);
+                    }
+                }
+                for (const auto& st : doc_ast.structs) {
+                    auto it = struct_methods.find(st.name);
+                    if (it == struct_methods.end()) continue;
+                    bool all_implemented = true;
+                    for (const auto& m : target_iface->methods) {
+                        if (!it->second.contains(m.name)) {
+                            all_implemented = false;
+                            break;
+                        }
+                    }
+                    if (all_implemented) {
+                        append_loc(doc_uri, st.line);
+                    }
+                }
+            };
+            check_ast_impls(uri, *ast_res);
+            for (const auto& doc_uri : all_cf_files) {
+                if (doc_uri == uri) continue;
+                if (auto doc_ast = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), get_doc_text(doc_uri))) {
+                    check_ast_impls(doc_uri, *doc_ast);
+                }
+            }
+            out += "]";
+            return out;
+        }
+
+        // 2. Otherwise, find all receiver methods (or functions) matching `sym.name`
+        auto collect_methods = [&](std::string_view doc_uri, const cfire::frontend::FileAST& doc_ast, bool receiver_only) {
+            for (const auto& fn : doc_ast.functions) {
+                if (fn.name == sym.name && (!receiver_only || fn.receiver.has_value())) {
+                    append_loc(doc_uri, fn.line);
+                }
+            }
+        };
+        collect_methods(uri, *ast_res, true);
+        for (const auto& doc_uri : all_cf_files) {
+            if (doc_uri == uri) continue;
+            if (auto doc_ast = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), get_doc_text(doc_uri))) {
+                collect_methods(doc_uri, *doc_ast, true);
+            }
+        }
+        if (first) {
+            collect_methods(uri, *ast_res, false);
+            for (const auto& doc_uri : all_cf_files) {
+                if (doc_uri == uri) continue;
+                if (auto doc_ast = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), get_doc_text(doc_uri))) {
+                    collect_methods(doc_uri, *doc_ast, false);
+                }
+            }
+        }
+        out += "]";
+        return out;
+    }
+
+    static void collect_expr_calls(
+        const cfire::frontend::ExprPtr& e,
+        std::vector<std::pair<std::string, int>>& calls
+    ) {
+        if (!e) return;
+        using namespace cfire::frontend;
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (call->callee) {
+                if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
+                    calls.emplace_back(id->name, e->line);
+                } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                    calls.emplace_back(mem->field, e->line);
+                    collect_expr_calls(mem->object, calls);
+                } else {
+                    collect_expr_calls(call->callee, calls);
+                }
+            }
+            for (const auto& arg : call->args) {
+                collect_expr_calls(arg.value, calls);
+            }
+            if (call->block_arg) {
+                collect_stmt_calls(call->block_arg->body, calls);
+            }
+            return;
+        }
+        if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            collect_expr_calls(bin->left, calls);
+            collect_expr_calls(bin->right, calls);
+        } else if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            collect_expr_calls(un->operand, calls);
+        } else if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            collect_expr_calls(mem->object, calls);
+        } else if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
+            collect_expr_calls(idx->object, calls);
+            collect_expr_calls(idx->index, calls);
+        } else if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
+            collect_expr_calls(sl->object, calls);
+            collect_expr_calls(sl->start, calls);
+            collect_expr_calls(sl->end, calls);
+        } else if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            collect_expr_calls(tr->inner, calls);
+        } else if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            collect_expr_calls(or_ex->inner, calls);
+            collect_expr_calls(or_ex->fallback_val, calls);
+            collect_stmt_calls(or_ex->handler_body, calls);
+        } else if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
+            for (const auto& f : st->fields) collect_expr_calls(f.value, calls);
+        } else if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
+            for (const auto& el : arr->elements) collect_expr_calls(el, calls);
+        } else if (const auto* tup = std::get_if<TupleExpr>(&e->node)) {
+            for (const auto& el : tup->elements) collect_expr_calls(el, calls);
+        } else if (const auto* cl = std::get_if<ClosureExpr>(&e->node)) {
+            collect_stmt_calls(cl->body, calls);
+        } else if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            collect_expr_calls(me->target, calls);
+            for (const auto& arm : me->arms) collect_stmt_calls(arm.body, calls);
+        }
+    }
+
+    static void collect_stmt_calls(
+        const std::vector<cfire::frontend::StmtPtr>& stmts,
+        std::vector<std::pair<std::string, int>>& calls
+    ) {
+        using namespace cfire::frontend;
+        for (const auto& s : stmts) {
+            if (!s) continue;
+            if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
+                collect_expr_calls(vd->init, calls);
+            } else if (const auto* dvs = std::get_if<DestructureVarDeclStmt>(&s->node)) {
+                collect_expr_calls(dvs->init, calls);
+            } else if (const auto* as = std::get_if<AssignStmt>(&s->node)) {
+                collect_expr_calls(as->target, calls);
+                collect_expr_calls(as->value, calls);
+            } else if (const auto* das = std::get_if<DestructureAssignStmt>(&s->node)) {
+                for (const auto& t : das->targets) collect_expr_calls(t, calls);
+                collect_expr_calls(das->value, calls);
+            } else if (const auto* df = std::get_if<DeferStmt>(&s->node)) {
+                collect_expr_calls(df->call, calls);
+                collect_stmt_calls(df->body, calls);
+            } else if (const auto* rt = std::get_if<ReturnStmt>(&s->node)) {
+                collect_expr_calls(rt->value, calls);
+            } else if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
+                collect_expr_calls(ifs->cond, calls);
+                collect_stmt_calls(ifs->then_body, calls);
+                collect_stmt_calls(ifs->else_body, calls);
+            } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
+                collect_expr_calls(fs->iter_expr, calls);
+                collect_expr_calls(fs->range_end, calls);
+                collect_stmt_calls(fs->body, calls);
+            } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
+                collect_expr_calls(ms->target, calls);
+                for (const auto& arm : ms->arms) collect_stmt_calls(arm.body, calls);
+            } else if (const auto* sc = std::get_if<AsyncScopeStmt>(&s->node)) {
+                collect_expr_calls(sc->workers, calls);
+                collect_stmt_calls(sc->body, calls);
+            } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
+                collect_expr_calls(es->expr, calls);
+            }
+        }
+    }
+
+    auto compute_prepare_call_hierarchy(const std::string& uri, int line, int character) -> std::string {
+        std::string text = get_doc_text(uri);
+        auto lines = detail::split_lines(text);
+        auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
+        if (!ast_res) return "[]";
+
+        auto sym = detail::symbol_at_position(lines, line, character);
+        std::string target_name = sym.name;
+        if (target_name.empty() || target_name == "fn") {
+            for (const auto& fn : ast_res->functions) {
+                if (fn.line - 1 == line) {
+                    target_name = fn.name;
+                    break;
+                }
+            }
+        }
+        if (target_name.empty()) return "[]";
+
+        auto format_item = [](std::string_view name, int kind, std::string_view sig, std::string_view doc_uri, int one_based_line) -> std::string {
+            int ln = std::max(0, one_based_line - 1);
+            return std::format(
+                R"({{"name":"{}","kind":{},"detail":"{}","uri":"{}","range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":20}}}},"selectionRange":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}}}})",
+                detail::json_escape(name), kind, detail::json_escape(sig), detail::json_escape(doc_uri), ln, ln, ln, ln);
+        };
+
+        for (const auto& fn : ast_res->functions) {
+            if (fn.name == target_name) {
+                int kind = fn.receiver ? 6 : 12;
+                return "[" + format_item(fn.name, kind, cfire::fmt::format_fn_signature(fn), uri, fn.line) + "]";
+            }
+        }
+        for (const auto& pkg : ws.local_packages) {
+            for (const auto& fn : pkg.ast.functions) {
+                if (fn.name == target_name) {
+                    int kind = fn.receiver ? 6 : 12;
+                    return "[" + format_item(fn.name, kind, cfire::fmt::format_fn_signature(fn), pkg.uri, fn.line) + "]";
+                }
+            }
+        }
+        for (const auto& doc_uri : discover_workspace_cf_files(uri)) {
+            if (doc_uri == uri) continue;
+            if (auto doc_ast = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), get_doc_text(doc_uri))) {
+                for (const auto& fn : doc_ast->functions) {
+                    if (fn.name == target_name) {
+                        int kind = fn.receiver ? 6 : 12;
+                        return "[" + format_item(fn.name, kind, cfire::fmt::format_fn_signature(fn), doc_uri, fn.line) + "]";
+                    }
+                }
+            }
+        }
+        return "[]";
+    }
+
+    auto compute_incoming_calls(std::string_view msg) -> std::string {
+        std::size_t item_idx = detail::find_json_key(msg, "item");
+        std::string_view sub = (item_idx != std::string_view::npos) ? msg.substr(item_idx) : msg;
+        std::string target_name = detail::extract_json_string(sub, "name").value_or("");
+        std::string item_uri = detail::extract_json_string(sub, "uri").value_or("");
+        if (target_name.empty()) return "[]";
+
+        auto all_cf_files = discover_workspace_cf_files(item_uri);
+        std::string out = "[";
+        bool first_caller = true;
+
+        for (const auto& doc_uri : all_cf_files) {
+            std::string doc_text = get_doc_text(doc_uri);
+            auto doc_ast = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), doc_text);
+            if (!doc_ast) continue;
+
+            for (const auto& fn : doc_ast->functions) {
+                std::vector<std::pair<std::string, int>> calls;
+                collect_stmt_calls(fn.body, calls);
+                std::vector<int> call_lines;
+                for (const auto& [callee, ln] : calls) {
+                    if (callee == target_name) {
+                        call_lines.push_back(std::max(0, ln - 1));
+                    }
+                }
+                if (!call_lines.empty()) {
+                    if (!first_caller) out += ",";
+                    first_caller = false;
+                    int fn_ln = std::max(0, fn.line - 1);
+                    int kind = fn.receiver ? 6 : 12;
+                    std::string ranges_json = "[";
+                    for (std::size_t i = 0; i < call_lines.size(); ++i) {
+                        if (i > 0) ranges_json += ",";
+                        ranges_json += std::format(
+                            R"({{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}})",
+                            call_lines[i], call_lines[i]);
+                    }
+                    ranges_json += "]";
+                    out += std::format(
+                        R"({{"from":{{"name":"{}","kind":{},"detail":"{}","uri":"{}","range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":20}}}},"selectionRange":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}}}},"fromRanges":{}}})",
+                        detail::json_escape(fn.name), kind, detail::json_escape(cfire::fmt::format_fn_signature(fn)),
+                        detail::json_escape(doc_uri), fn_ln, fn_ln, fn_ln, fn_ln, ranges_json);
+                }
+            }
+        }
+        out += "]";
+        return out;
+    }
+
+    auto compute_outgoing_calls(std::string_view msg) -> std::string {
+        std::size_t item_idx = detail::find_json_key(msg, "item");
+        std::string_view sub = (item_idx != std::string_view::npos) ? msg.substr(item_idx) : msg;
+        std::string caller_name = detail::extract_json_string(sub, "name").value_or("");
+        std::string caller_uri = detail::extract_json_string(sub, "uri").value_or("");
+        if (caller_name.empty() || caller_uri.empty()) return "[]";
+
+        std::string text = get_doc_text(caller_uri);
+        auto [ast_res, ws] = get_or_parse_ast(caller_uri, text);
+        if (!ast_res) return "[]";
+
+        std::vector<std::pair<std::string, int>> raw_calls;
+        for (const auto& fn : ast_res->functions) {
+            if (fn.name == caller_name) {
+                collect_stmt_calls(fn.body, raw_calls);
+                break;
+            }
+        }
+        if (raw_calls.empty()) return "[]";
+
+        struct CalleeGroup {
+            std::string name;
+            std::vector<int> call_lines;
+        };
+        std::vector<CalleeGroup> groups;
+        std::unordered_map<std::string, std::size_t> group_idx;
+        for (const auto& [callee, ln] : raw_calls) {
+            int zln = std::max(0, ln - 1);
+            if (auto it = group_idx.find(callee); it != group_idx.end()) {
+                groups[it->second].call_lines.push_back(zln);
+            } else {
+                group_idx[callee] = groups.size();
+                groups.push_back(CalleeGroup{callee, {zln}});
+            }
+        }
+
+        auto all_cf_files = discover_workspace_cf_files(caller_uri);
+        auto resolve_callee = [&](const std::string& name) -> std::optional<std::tuple<std::string, int, int, std::string>> {
+            for (const auto& fn : ast_res->functions) {
+                if (fn.name == name) {
+                    return std::make_tuple(caller_uri, std::max(0, fn.line - 1), fn.receiver ? 6 : 12, cfire::fmt::format_fn_signature(fn));
+                }
+            }
+            for (const auto& pkg : ws.local_packages) {
+                for (const auto& fn : pkg.ast.functions) {
+                    if (fn.name == name) {
+                        return std::make_tuple(pkg.uri, std::max(0, fn.line - 1), fn.receiver ? 6 : 12, cfire::fmt::format_fn_signature(fn));
+                    }
+                }
+            }
+            for (const auto& doc_uri : all_cf_files) {
+                if (doc_uri == caller_uri) continue;
+                if (auto doc_ast = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), get_doc_text(doc_uri))) {
+                    for (const auto& fn : doc_ast->functions) {
+                        if (fn.name == name) {
+                            return std::make_tuple(doc_uri, std::max(0, fn.line - 1), fn.receiver ? 6 : 12, cfire::fmt::format_fn_signature(fn));
+                        }
+                    }
+                }
+            }
+            return std::nullopt;
+        };
+
+        std::string out = "[";
+        bool first = true;
+        for (const auto& g : groups) {
+            auto resolved = resolve_callee(g.name);
+            if (!resolved) continue;
+            const auto& [c_uri, c_ln, c_kind, c_sig] = *resolved;
+            if (!first) out += ",";
+            first = false;
+            std::string ranges_json = "[";
+            for (std::size_t i = 0; i < g.call_lines.size(); ++i) {
+                if (i > 0) ranges_json += ",";
+                ranges_json += std::format(
+                    R"({{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}})",
+                    g.call_lines[i], g.call_lines[i]);
+            }
+            ranges_json += "]";
+            out += std::format(
+                R"({{"to":{{"name":"{}","kind":{},"detail":"{}","uri":"{}","range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":20}}}},"selectionRange":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}}}},"fromRanges":{}}})",
+                detail::json_escape(g.name), c_kind, detail::json_escape(c_sig),
+                detail::json_escape(c_uri), c_ln, c_ln, c_ln, c_ln, ranges_json);
+        }
+        out += "]";
+        return out;
     }
 
     auto compute_semantic_tokens(const std::string& uri) -> std::string {
