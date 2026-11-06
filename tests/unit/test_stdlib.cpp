@@ -1590,11 +1590,26 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
     require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "mcp_config.json"), "creates Antigravity .agents/plugins/cfire/mcp_config.json (IDE-MCP-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "rules" / "cfire.md"), "creates Antigravity .agents/rules/cfire.md (IDE-MCP-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".mcp.json"), "creates Claude Code .mcp.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".lsp.json"), "creates Claude Code .lsp.json (E7)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".claude-plugin" / "plugin.json"), "creates Claude Code .claude-plugin/plugin.json (E7)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".claude" / "rules" / "cfire.md"), "creates Claude Code .claude/rules/cfire.md (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / "opencode.json"), "creates OpenCode opencode.json (E7)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".codex" / "config.toml"), "creates Codex CLI .codex/config.toml (E7)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".zed" / "settings.json"), "creates .zed/settings.json (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".nvim.lua"), "creates .nvim.lua (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "lsp.xml"), "creates .idea/lsp.xml (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "mcp.json"), "creates .idea/mcp.json (IDE-MCP-01)");
+
+    // Verify contents of .lsp.json, opencode.json, and .codex/config.toml
+    auto claude_lsp_txt = cfire::fs::read_text(tmp_ide_ws.path / ".lsp.json");
+    require(claude_lsp_txt.has_value() && claude_lsp_txt->contains("\".cf\": \"cfire\"") && claude_lsp_txt->contains("\"args\": [\"lsp\"]"),
+        "Claude Code .lsp.json maps .cf to cfire lsp (E7)");
+    auto opencode_txt = cfire::fs::read_text(tmp_ide_ws.path / "opencode.json");
+    require(opencode_txt.has_value() && opencode_txt->contains("\"lsp\"") && opencode_txt->contains("\"mcp\""),
+        "OpenCode opencode.json configures both lsp and mcp (E7)");
+    auto codex_txt = cfire::fs::read_text(tmp_ide_ws.path / ".codex" / "config.toml");
+    require(codex_txt.has_value() && codex_txt->contains("[mcp_servers.cfire]"),
+        "Codex CLI .codex/config.toml configures mcp_servers.cfire (E7)");
 
     // Verify contents of .vscode/settings.json & .zed/settings.json
     auto vs_txt = cfire::fs::read_text(tmp_ide_ws.path / ".vscode" / "settings.json");
@@ -1642,6 +1657,79 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
 
         auto resp_llm = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cfire_doc_llm","arguments":{}}})");
         require(resp_llm.contains("Memory Safety, Loan Tracking"), "MCP cfire_doc_llm returns LLM reference sheet (IDE-MCP-01)");
+
+        // E1: Verify MCP cfire_check reports undefined symbol inside fn main()
+        auto bad_main_cf = tmp_ide_ws.file("bad_main_mcp.cf", R"(package main
+fn main() {
+    undeclared_symbol_in_main(123)
+}
+)");
+        auto resp_chk = mcp_srv.handle_jsonrpc(std::format(
+            R"({{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"cfire_check","arguments":{{"path":"{}"}}}}}})",
+            cfire::lsp::detail::json_escape(bad_main_cf.string())));
+        require(resp_chk.contains("use of undeclared identifier") && resp_chk.contains("undeclared_symbol_in_main"),
+            std::format("E1: MCP cfire_check catches undefined identifier inside fn main(): {}", resp_chk));
+
+        // E7: Verify LSP 3.17 textDocument/implementation and Call Hierarchy (prepareCallHierarchy, incomingCalls, outgoingCalls)
+        {
+            cfire::lsp::Server hier_srv(10);
+            std::stringstream h_in;
+            std::stringstream h_out;
+            auto rpc_f = [](std::string_view p) {
+                return std::format("Content-Length: {}\r\n\r\n{}", p.size(), p);
+            };
+            std::string_view hier_src = R"(package main
+
+type Store interface {
+    save(k: str) -> bool
+}
+
+type MemoryStore struct {
+    id: i32
+}
+
+fn (s: MemoryStore) save(k: str) -> bool {
+    return helper_validate(k)
+}
+
+fn helper_validate(k: str) -> bool {
+    return k != ""
+}
+
+fn caller_entry() -> bool {
+    return helper_validate("ok")
+}
+)";
+            h_in << rpc_f(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
+            h_in << rpc_f(std::format(
+                R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"text":"{}","uri":"file:///tmp/hier_lsp.cf","languageId":"cfire","version":1}}}}}})",
+                cfire::lsp::detail::json_escape(hier_src)));
+            // Go to implementation on `Store` (line 2, char 5)
+            h_in << rpc_f(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/implementation","params":{"textDocument":{"uri":"file:///tmp/hier_lsp.cf"},"position":{"line":2,"character":5}}})");
+            // Prepare call hierarchy on `helper_validate` (line 14, char 3)
+            h_in << rpc_f(R"({"jsonrpc":"2.0","id":11,"method":"textDocument/prepareCallHierarchy","params":{"textDocument":{"uri":"file:///tmp/hier_lsp.cf"},"position":{"line":14,"character":3}}})");
+            // Incoming calls to `helper_validate`
+            h_in << rpc_f(R"({"jsonrpc":"2.0","id":12,"method":"callHierarchy/incomingCalls","params":{"item":{"name":"helper_validate","kind":12,"uri":"file:///tmp/hier_lsp.cf"}}})");
+            // Outgoing calls from `caller_entry`
+            h_in << rpc_f(R"({"jsonrpc":"2.0","id":13,"method":"callHierarchy/outgoingCalls","params":{"item":{"name":"caller_entry","kind":12,"uri":"file:///tmp/hier_lsp.cf"}}})");
+            h_in << rpc_f(R"({"jsonrpc":"2.0","id":14,"method":"shutdown","params":null})");
+            h_in << rpc_f(R"({"jsonrpc":"2.0","method":"exit","params":null})");
+
+            hier_srv.handle_stream(h_in, h_out);
+            std::string h_resp = h_out.str();
+
+            require(h_resp.contains("\"implementationProvider\":true") && h_resp.contains("\"callHierarchyProvider\":true"),
+                "E7: LSP initialize advertises implementationProvider and callHierarchyProvider");
+            require(h_resp.contains(R"("id":10)") && h_resp.contains(R"("line":6)"),
+                std::format("E7: textDocument/implementation on Store finds MemoryStore at line 6: {}", h_resp));
+            require(h_resp.contains(R"("id":11)") && h_resp.contains(R"("name":"helper_validate")"),
+                std::format("E7: textDocument/prepareCallHierarchy returns helper_validate item: {}", h_resp));
+            require(h_resp.contains(R"("id":12)") && h_resp.contains(R"("name":"caller_entry")") &&
+                    h_resp.contains(R"("name":"save")") && h_resp.contains("fn (s: MemoryStore) save"),
+                std::format("E7: callHierarchy/incomingCalls finds caller_entry and MemoryStore.save: {}", h_resp));
+            require(h_resp.contains(R"("id":13)") && h_resp.contains(R"("name":"helper_validate")"),
+                std::format("E7: callHierarchy/outgoingCalls from caller_entry finds helper_validate: {}", h_resp));
+        }
     }
 
     // 5. SELF-LOCATE-01: Verify Portable Directory Installation, System FHS Prefix Installation, and Symlinked Binary

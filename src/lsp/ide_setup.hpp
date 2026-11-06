@@ -133,8 +133,42 @@ struct DetectedIde {
             reason = "~/.claude installation";
         }
         if (!reason.empty()) {
-            bool cfg = std::filesystem::exists(workspace_dir / ".mcp.json", ec);
+            bool cfg = std::filesystem::exists(workspace_dir / ".mcp.json", ec) &&
+                       std::filesystem::exists(workspace_dir / ".lsp.json", ec);
             out.push_back({"claude", "Claude Code", reason, cfg});
+        }
+    }
+
+    // 6. OpenCode
+    {
+        std::string reason;
+        if (std::getenv("OPENCODE") != nullptr) {
+            reason = "OPENCODE env";
+        } else if (std::filesystem::exists(workspace_dir / "opencode.json", ec) ||
+                   std::filesystem::exists(workspace_dir / "opencode.jsonc", ec)) {
+            reason = "opencode.json file";
+        } else if (!home_dir.empty() && std::filesystem::exists(home_dir / ".config" / "opencode", ec)) {
+            reason = "~/.config/opencode installation";
+        }
+        if (!reason.empty()) {
+            bool cfg = std::filesystem::exists(workspace_dir / "opencode.json", ec);
+            out.push_back({"opencode", "OpenCode", reason, cfg});
+        }
+    }
+
+    // 7. Codex CLI
+    {
+        std::string reason;
+        if (std::getenv("CODEX_HOME") != nullptr) {
+            reason = "CODEX_HOME env";
+        } else if (std::filesystem::exists(workspace_dir / ".codex", ec)) {
+            reason = ".codex/ directory";
+        } else if (!home_dir.empty() && std::filesystem::exists(home_dir / ".codex", ec)) {
+            reason = "~/.codex installation";
+        }
+        if (!reason.empty()) {
+            bool cfg = std::filesystem::exists(workspace_dir / ".codex" / "config.toml", ec);
+            out.push_back({"codex", "Codex CLI", reason, cfg});
         }
     }
 
@@ -212,9 +246,10 @@ struct DetectedIde {
   - **Flow-Sensitive Null Safety (`cfire/NULL-DEREF`)**: Guard nullable raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) with `if p != none {{ ... }}` or `assert(p != none)` before dereferencing (`*p` or `p.field`).
   - **Bounds, Arithmetic & Struct Tags (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`)**: Constant out-of-bounds indexing, division by zero, duplicate `json`/`sql`/`cli` struct tags, and unparsable `default:"..."` tags are rejected at compile time.
   - **Injection Safety (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`)**: Always use parameterized `?1` queries in `db.exec`/`db.query` instead of string concatenation.
-- **Built-In CLI & MCP Tools**:
-  - Prefer MCP tools `cfire_check` (supports both `path` and inline `code`), `cfire_test` (unit tests, fuzzing, and benchmarks), `cfire_stdlib_lookup`, `cfire_outline`, `cfire_inspect`, `cfire_eval`, and `cfire_doc_llm` (powered by `{} mcp`).
-  - Zero-arg workspace CLI commands: `cfire check`, `cfire test`, `cfire bench`, `cfire fix`, `cfire build`, `cfire run`, `cfire init`, `cfire new <dir>`, `cfire inspect <target|cfire/CODE>`, `cfire outline --json`, and `cfire doc --llm`.
+- **Built-In LSP, CLI & MCP Tools**:
+  - **LSP Code Intelligence**: `cfire lsp` provides full LSP 3.17 navigation for `.cf` files (`goToDefinition`, `findReferences`, `hover`, `documentSymbol`, `workspaceSymbol`, `goToImplementation`, `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`, and real-time `publishDiagnostics`). Prefer LSP semantic lookups over raw text `grep`.
+  - **MCP Tools**: Prefer MCP tools `cfire_check` (supports both `path` and inline `code`), `cfire_test` (unit tests, fuzzing, and benchmarks), `cfire_stdlib_lookup`, `cfire_outline`, `cfire_inspect`, `cfire_eval`, and `cfire_doc_llm` (powered by `{} mcp`).
+  - **Zero-arg Workspace CLI Commands**: `cfire check`, `cfire test`, `cfire bench`, `cfire fix`, `cfire build`, `cfire run`, `cfire init`, `cfire new <dir>`, `cfire inspect <target|cfire/CODE>`, `cfire outline --json`, and `cfire doc --llm`.
 )", cfire_bin);
 }
 
@@ -437,13 +472,99 @@ struct DetectedIde {
             std::ofstream m_ofs(repo_root / ".mcp.json", std::ios::trunc);
             m_ofs << claude_mcp;
         }
+        std::string claude_lsp = std::format(R"({{
+  "cfire": {{
+    "command": "{}",
+    "args": ["lsp"],
+    "transport": "stdio",
+    "extensionToLanguage": {{
+      ".cf": "cfire"
+    }}
+  }}
+}}
+)", cfire_bin);
+        {
+            std::ofstream l_ofs(repo_root / ".lsp.json", std::ios::trunc);
+            l_ofs << claude_lsp;
+        }
+        auto claude_plugin_dir = repo_root / ".claude-plugin";
+        std::filesystem::create_directories(claude_plugin_dir, ec);
+        std::string claude_plugin = std::format(R"({{
+  "name": "cfire",
+  "version": "1.3.0",
+  "description": "Official cfire (.cf) Language Server (LSP) and Compiler/Stdlib MCP plugin for Claude Code.",
+  "mcpServers": {{
+    "cfire": {{
+      "type": "stdio",
+      "command": "{}",
+      "args": ["mcp"]
+    }}
+  }},
+  "lspServers": {{
+    "cfire": {{
+      "command": "{}",
+      "args": ["lsp"],
+      "transport": "stdio",
+      "extensionToLanguage": {{
+        ".cf": "cfire"
+      }}
+    }}
+  }}
+}}
+)", cfire_bin, cfire_bin);
+        {
+            std::ofstream p_ofs(claude_plugin_dir / "plugin.json", std::ios::trunc);
+            p_ofs << claude_plugin;
+        }
         auto claude_rules_dir = repo_root / ".claude" / "rules";
         std::filesystem::create_directories(claude_rules_dir, ec);
         {
             std::ofstream r_ofs(claude_rules_dir / "cfire.md", std::ios::trunc);
             r_ofs << cfire_agent_rules_markdown(cfire_bin);
         }
-        configured.push_back("Claude Code (.mcp.json + .claude/rules/cfire.md)");
+        configured.push_back("Claude Code (.mcp.json + .lsp.json + .claude-plugin/plugin.json + .claude/rules/cfire.md)");
+    }
+
+    // 6. OpenCode (opencode)
+    if (has_target("opencode", targets)) {
+        std::string opencode_cfg = std::format(R"({{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {{
+    "cfire": {{
+      "command": ["{}", "lsp"],
+      "extensions": [".cf"]
+    }}
+  }},
+  "mcp": {{
+    "cfire": {{
+      "type": "local",
+      "command": ["{}", "mcp"],
+      "enabled": true
+    }}
+  }}
+}}
+)", cfire_bin, cfire_bin);
+        {
+            std::ofstream o_ofs(repo_root / "opencode.json", std::ios::trunc);
+            o_ofs << opencode_cfg;
+        }
+        configured.push_back("OpenCode (opencode.json with LSP + MCP)");
+    }
+
+    // 7. Codex CLI (codex)
+    if (has_target("codex", targets)) {
+        auto codex_dir = repo_root / ".codex";
+        std::filesystem::create_directories(codex_dir, ec);
+        std::string codex_toml = std::format(R"(# Auto-generated by cfire ide
+[mcp_servers.cfire]
+command = "{}"
+args = ["mcp"]
+)", cfire_bin);
+        {
+            std::ofstream c_ofs(codex_dir / "config.toml", std::ios::trunc);
+            c_ofs << codex_toml;
+        }
+        configured.push_back("Codex CLI (.codex/config.toml)");
     }
 
     // 6. Zed
@@ -540,7 +661,7 @@ vim.api.nvim_create_autocmd("BufWritePre", {{
 
     if (configured.empty()) {
         return std::unexpected(std::format(
-            "unsupported editor '{}' (supported: 'vscode', 'cursor', 'windsurf', 'antigravity'/'agy', 'claude'/'claude-code', 'zed', 'nvim', 'clion', 'all', '--status')",
+            "unsupported editor '{}' (supported: 'vscode', 'cursor', 'windsurf', 'antigravity'/'agy', 'claude'/'claude-code', 'opencode', 'codex', 'zed', 'nvim', 'clion', 'all', '--status')",
             editor_input));
     }
 

@@ -783,14 +783,31 @@ inline auto Emitter::analyze_closure_returns(
         if (!s) continue;
         if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
             if (vd->init && std::holds_alternative<TryExpr>(vd->init->node)) has_fallible = true;
+            if (vd->init) {
+                if (const auto* or_ex = std::get_if<OrExpr>(&vd->init->node); or_ex && !or_ex->handler_body.empty()) {
+                    analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+                }
+            }
             if (vd->type) {
                 local_types[vd->name] = lower_owning_type(*vd->type);
             } else if (vd->init) {
                 std::string t = infer_closure_expr_cpp_type(vd->init, local_types);
                 if (!t.empty()) local_types[vd->name] = t;
             }
+        } else if (const auto* as = std::get_if<AssignStmt>(&s->node)) {
+            if (as->value && std::holds_alternative<TryExpr>(as->value->node)) has_fallible = true;
+            if (as->value) {
+                if (const auto* or_ex = std::get_if<OrExpr>(&as->value->node); or_ex && !or_ex->handler_body.empty()) {
+                    analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+                }
+            }
         } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
             if (es->expr && std::holds_alternative<TryExpr>(es->expr->node)) has_fallible = true;
+            if (es->expr) {
+                if (const auto* or_ex = std::get_if<OrExpr>(&es->expr->node); or_ex && !or_ex->handler_body.empty()) {
+                    analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+                }
+            }
         } else if (const auto* rs = std::get_if<ReturnStmt>(&s->node)) {
             if (rs->value) {
                 bool is_err_call = false;

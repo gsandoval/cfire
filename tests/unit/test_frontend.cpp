@@ -2208,6 +2208,86 @@ fn main() {
                 require(llm_ref.contains("[]byte(s_or_slice)") && llm_ref.contains("readln(prompt: str = \"\") -> str?") &&
                         llm_ref.contains("cfire/OPTIONAL-OR-ERR") && !llm_ref.contains("`bytes`, `[]byte`"),
                         "UPSTREAM-03: generate_llm_reference includes canonical []byte(x), readln, and OPTIONAL-OR-ERR");
+
+                // 6. Follow-up Upstream Review Fixes (CF-027 & E1..E7)
+                // E3: Reserved parameter-intent keywords `out`, `move`, and `mut` as variable names emit actionable diagnostic
+                {
+                    auto bad_out = cfire::frontend::parse_source("bad_out.cf", "package main\nfn main() {\n    out := 1\n}\n");
+                    require(!bad_out.has_value() && bad_out.error().contains("'out' is a reserved parameter-intent keyword"),
+                            std::format("E3: expected reserved keyword diagnostic for 'out := 1', got: {}", bad_out ? "ok" : bad_out.error()));
+
+                    auto bad_move = cfire::frontend::parse_source("bad_move.cf", "package main\nfn main() {\n    move := 1\n}\n");
+                    require(!bad_move.has_value() && bad_move.error().contains("'move' is a reserved parameter-intent keyword"),
+                            std::format("E3: expected reserved keyword diagnostic for 'move := 1', got: {}", bad_move ? "ok" : bad_move.error()));
+                }
+
+                // E4 & E5: `core:build` module in stdlib_catalog and `Channel.close` mutable receiver signature
+                require(has_cat_fn("core:build", "Executable") && has_cat_fn("core:build", "Library") &&
+                        has_cat_fn("core:build", "Step") && has_cat_fn("core:build", "CMake"),
+                        "E4: core:build declarative builders documented in stdlib_catalog");
+                {
+                    bool found_mut_close = false;
+                    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                        if (mod.import_path == "core:sync") {
+                            for (const auto& fn : mod.functions) {
+                                if (fn.name == "Channel.close" && fn.cf_sig.contains("mut ch: Channel[T]")) {
+                                    found_mut_close = true;
+                                }
+                            }
+                        }
+                    }
+                    require(found_mut_close, "E5: core:sync Channel.close documented with mut receiver");
+                }
+
+                // E6: `os.exit(code)` recognized as diverging inside `or err { ... }` handler block
+                require_sema_ok(R"(package main
+import "core:os"
+fn fallible() -> i32! { return 42 }
+fn main() {
+    val := fallible() or err {
+        os.exit(1)
+    }
+    assert(val == 42)
+}
+)", "test_os_exit_diverges.cf");
+
+                // CF-027: Closure returning both `return error(...)` inside `or err` handler and `return v` value
+                auto cf027_file = cf_tmp.file("cf027_closure.cf", R"CF(package main
+
+fn check(s: str) -> str! {
+    if s == "" {
+        return error("empty")
+    }
+    return s
+}
+
+fn apply(cb: fn(str) -> str!) -> str! {
+    return try cb("hello")
+}
+
+test "CF-027 closure mixed error and value return inside or err block" {
+    res := try apply(|params: str| {
+        v := check(params) or err {
+            return error("wrapped: " + err.message())
+        }
+        return v + "!"
+    })
+    assert_eq(res, "hello!")
+}
+)CF");
+                run_cfire(std::format("test \"{}\"", cf027_file.string()))
+                    .assert_ok("CF-027: closure with or err { return error(...) } and value return compiles and passes");
+
+                // E2: `cfire run` preserves non-zero process exit code (not truncated to 0 via & 0xFF on wait status)
+                auto exit3_cf = cf_tmp.file("exit3.cf", R"CF(package main
+import "core:os"
+fn main() {
+    os.exit(3)
+}
+)CF");
+                auto exit3_res = run_cfire(std::format("run \"{}\"", exit3_cf.string()));
+                require(exit3_res.exit_code == 3,
+                        std::format("E2: expected cfire run os.exit(3) to return exit code 3, got {}", exit3_res.exit_code));
             }
         }
     }

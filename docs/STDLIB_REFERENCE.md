@@ -4,6 +4,45 @@
 
 ## 1. Built-In `core:*` Standard Library Modules
 
+### `core:build` (`build`) — Declarative Project & Cross-Platform Build System (`build.cf`)
+
+- **Auto-Link Flags:** `(compiler-integrated)`
+- **Overview:** Declarative build manifest module (`build.cf`) for configuring native, GUI, WebAssembly, and iOS executables (`build.Executable`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`), external CMake/Git dependencies (`build.CMake`, `build.GitDependency`), pkg-config/framework links, and compile-time host/target queries (`build.os()`, `build.arch()`).
+
+**Practical Example:**
+```cf
+package main
+
+import "core:build"
+
+// Declarative desktop GUI & CLI build manifest (`build.cf`)
+app := build.Executable("Flint", {
+    Entry: "src/main.cf",
+    Subsystem: "gui",
+    OutDir: "build",
+    BundleId: "dev.flint.app",
+    Icon: "assets/icon.png",
+    Targets: ["native"]
+})
+
+fn main() {
+    println("Target OS: {}, Arch: {}", build.os(), build.arch())
+}
+```
+
+| `.cf` Signature | Lowered C++23 | Description | Example |
+|---|---|---|---|
+| `fn Executable(name: str, cfg: ExecutableConfig) -> Target` | `(buildsys manifest)` | Declares an executable build target with `Entry`, `Subsystem` (`"cli"` or `"gui"`), `OutDir`, `Targets` (`["native", "wasm", "ios-sim"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, and `Flags`. | `app := build.Executable("Flint", { Entry: "src/main.cf", Subsystem: "gui", BundleId: "dev.flint.app", Icon: "assets/icon.png" })` |
+| `fn Library(name: str, cfg: LibraryConfig) -> Target` | `(buildsys manifest)` | Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, and `Flags`. | `lib := build.Library("corelib", { Sources: ["native/bridge.cpp"], Includes: ["native"] })` |
+| `fn Step(name: str, cfg: StepConfig) -> StepTarget` | `(buildsys manifest)` | Declares a custom build step executing `Command` and `Args` in `WorkDir` whenever `Inputs` are newer than `Outputs`. | `gen := build.Step("assets", { Command: "python3", Args: ["scripts/bundle.py"], Inputs: ["ui/index.html"], Outputs: ["ui/bundle.js"] })` |
+| `fn CMake(name: str, cfg: CMakeConfig) -> DepTarget` | `(buildsys manifest)` | Declares an external CMake or Git dependency (`Url`, `Commit`/`Branch`, `Sha256`, `Includes`, `Flags`, `Driver`). | `dep := build.CMake("zstd", { Url: "https://github.com/facebook/zstd.git", Branch: "v1.5.6" })` |
+| `fn Link(lib: str)` | `(buildsys manifest)` | Adds a system library (`"sqlite3"`) or Apple framework (`"-framework Security"`) to the linker flags. | `build.Link("sqlite3")` |
+| `fn Include(dir: str)` | `(buildsys manifest)` | Adds a relative or absolute header search directory (`-I<dir>`) for `import cpp` headers. | `build.Include("src/native/include")` |
+| `fn PkgConfig(pkg: str)` | `(buildsys manifest)` | Queries `pkg-config --cflags --libs <pkg>` and links the resolved flags into the build. | `build.PkgConfig("libssh")` |
+| `fn Tako()` | `(buildsys manifest)` | Auto-discovers and links the local Tako GUI runtime and headers (`import "pkg:tako"`). | `build.Tako()` |
+| `fn os() -> str` | `(compile-time constant)` | Returns the target operating system identifier (`"macos"`, `"linux"`, `"windows"`, `"ios"`, `"wasm"`). | `if build.os() == "macos" { ... }` |
+| `fn arch() -> str` | `(compile-time constant)` | Returns the target CPU architecture identifier (`"arm64"`, `"x86_64"`, `"wasm32"`). | `if build.arch() == "arm64" { ... }` |
+
 ### `core:cli` (`cli`) — Struct-Tag Command-Line Parser & Interactive Prompts
 
 - **Auto-Link Flags:** `(header-only)`
@@ -617,7 +656,7 @@ fn main() {
 | `fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -> T?` | `ch.recv_timeout(timeout_ms)` | Waits up to `timeout_ms` milliseconds for a value from the channel, returning `none` on timeout or closed empty channel. | `v := ch.recv_timeout(50) or { return }` |
 | `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!` | `ch.recv_ctx(ctx)` | Receives from the channel or aborts immediately with an error if `ctx` is cancelled. | `v := try ch.recv_ctx(ctx)` |
 | `fn (ch: Channel[T]) len() -> usize` | `ch.len()` | Returns the number of buffered items currently queued in the channel. | `n := ch.len()` |
-| `fn (ch: Channel[T]) close()` | `ch.close()` | Closes the channel and wakes all waiting receivers. | `ch.close()` |
+| `fn (mut ch: Channel[T]) close()` | `ch.close()` | Closes the channel and wakes all waiting receivers. | `ch.close()` |
 | `type Mutex struct` | `cfire::sync::Mutex` | Mutual exclusion lock movable at initialization (`mut mu := sync.Mutex{}`). | `mut mu := sync.Mutex{}` |
 | `fn (mut m: Mutex) lock()` | `m.lock()` | Acquires the mutex lock, blocking until available. | `mu.lock()` |
 | `fn (mut m: Mutex) unlock()` | `m.unlock()` | Releases the mutex lock. | `mu.unlock()` |
@@ -1695,7 +1734,7 @@ match shape {
 
 ### `[cfire/NON-DIVERGING-OR-BLOCK]` — Non-Diverging Error Recovery Block on Value Binding
 
-When initializing or assigning a variable with `val := fallible() or err { ... }`, the error recovery block must definitely diverge with `return`, `panic(...)`, or `exit(...)` to avoid unwrapping an uninitialized value.
+When initializing or assigning a variable with `val := fallible() or err { ... }`, the error recovery block must definitely diverge with `return`, `panic(...)`, or `os.exit(...)` to avoid unwrapping an uninitialized value.
 
 **Rejected (`.cf`):**
 ```cf

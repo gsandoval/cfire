@@ -217,7 +217,9 @@ namespace cfire::mcp {
         "Type-check cfire (.cf) inline code or a workspace file/directory path, verify memory safety & parameter intents, and validate C++23 codegen with fix-it suggestions.",
         [runtime_dir](CheckInput in) -> std::expected<std::string, cfire::Error> {
             auto check_single_cf = [&](const std::filesystem::path& cf_file, std::string_view src_override = "") -> std::optional<std::string> {
-                auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, false, true);
+                std::string fname = cf_file.filename().string();
+                bool is_test_f = fname.ends_with("_test.cf") || fname == "test.cf";
+                auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, true, is_test_f);
                 if (!res) {
                     std::string src = src_override.empty()
                         ? cfire::build::read_file_text(cf_file).value_or("")
