@@ -9,6 +9,8 @@
 #include "core/json.hpp"
 #include "core/sqlite.hpp"
 #include "core/crypto.hpp"
+#include "core/sodium.hpp"
+#include "core/keychain.hpp"
 #include "core/encoding.hpp"
 #include "core/net.hpp"
 #include "core/sync.hpp"
@@ -23,3 +25,4 @@
 #include "core/audio.hpp"
 #include "core/ai.hpp"
 #include "core/webui.hpp"
+#include "core/ssh.hpp"

@@ -61,6 +61,9 @@ public:
     {
         if (fn.receiver) {
             var_scope_depth_[fn.receiver->name] = 0;
+            if (!fn.receiver->type.name.empty()) {
+                var_types_[fn.receiver->name] = fn.receiver->type.name;
+            }
             if (fn.receiver->intent == "mut") {
                 mut_vars_.insert(fn.receiver->name);
             } else {
@@ -77,6 +80,9 @@ public:
         }
         for (const auto& p : fn.params) {
             var_scope_depth_[p.name] = 0;
+            if (!p.type.name.empty()) {
+                var_types_[p.name] = p.type.name;
+            }
             if (p.intent == "move") {
                 move_params_.insert(p.name);
             }
@@ -98,7 +104,10 @@ public:
                     fixed_array_lens_[p.name] = *n;
                 }
             }
-            if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty()) {
+            if (p.type.is_optional) {
+                optional_vars_.insert(p.name);
+            }
+            if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty() || p.type.is_optional) {
                 ptr_or_smart_vars_.insert(p.name);
                 ptr_null_state_[p.name] = p.type.is_optional ? NullState::MaybeNull : NullState::NonNull;
             }
@@ -311,6 +320,153 @@ public:
         return false;
     }
 
+    [[nodiscard]] auto is_namespace_ident_sema(std::string_view name) const -> bool {
+        if (name == "fs" || name == "zstd" || name == "json" ||
+            name == "sqlite" || name == "blake3" || name == "net" || name == "cli" ||
+            name == "time" || name == "os" || name == "sync" || name == "str" ||
+            name == "math" || name == "rand" || name == "log" || name == "regex" ||
+            name == "collections" || name == "sort" || name == "unicode" ||
+            name == "base64" || name == "hex" || name == "csv" ||
+            name == "aes" || name == "hmac" || name == "sha256" ||
+            name == "sodium" || name == "keychain" || name == "ssh" || name == "webui" ||
+            name == "context" || name == "websocket" || name == "http" || name == "url" || name == "tls" ||
+            name == "audio" || name == "ai" || name == "cpp" || name == "testing") {
+            return true;
+        }
+        for (const auto& imp : cf_.ast.imports) {
+            if (!imp.alias.empty() && imp.alias == name) return true;
+            auto slash = imp.path.rfind('/');
+            std::string_view tail = (slash == std::string::npos) ? std::string_view(imp.path) : std::string_view(imp.path).substr(slash + 1);
+            if (tail == name) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto is_common_stdlib_method_sema(std::string_view name) -> bool {
+        return name == "open" || name == "close" || name == "fd" || name == "read" || name == "read_bytes" ||
+               name == "read_exact" || name == "read_str" || name == "read_line" ||
+               name == "read_all" || name == "write" ||
+               name == "write_str" || name == "write_bytes" || name == "flush" || name == "seek" ||
+               name == "tell" || name == "size" || name == "len" || name == "empty" ||
+               name == "clear" || name == "push" || name == "pop" || name == "get" || name == "set" ||
+               name == "contains" || name == "keys" || name == "values" || name == "erase" ||
+               name == "remove" || name == "send" || name == "recv" || name == "try_recv" ||
+               name == "recv_timeout" || name == "bind" || name == "step" || name == "exec" ||
+               name == "query" || name == "prepare" || name == "begin" || name == "commit" ||
+               name == "rollback" || name == "join" || name == "detach" || name == "lock" ||
+               name == "unlock" || name == "reset" || name == "has_value" || name == "value_or" ||
+               name == "value" || name == "parse_i64" || name == "parse_i32" || name == "parse_u64" ||
+               name == "parse_f64" || name == "parse_bool";
+    }
+
+    [[nodiscard]] auto expr_returns_optional_sema(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            return optional_vars_.contains(id->name);
+        }
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            return expr_returns_optional_sema(tr->inner);
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (cid->name == "readln") {
+                    return true;
+                }
+                if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
+                    return it->second.return_type.is_optional && !it->second.return_type.is_fallible;
+                }
+            } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                    if (is_namespace_ident_sema(recv_id->name) && !is_ident_in_scope_sema(recv_id->name)) {
+                        if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt")) {
+                            return true;
+                        }
+                        if (recv_id->name == "str" && (mem->field == "find" || mem->field == "rfind" ||
+                            mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
+                            mem->field == "parse_f64" || mem->field == "parse_bool")) {
+                            return true;
+                        }
+                        if (recv_id->name == "cli" && mem->field == "try_parse") {
+                            return true;
+                        }
+                        if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
+                            return it->second.return_type.is_optional && !it->second.return_type.is_fallible;
+                        }
+                        return false;
+                    }
+                    if (auto vt = var_types_.find(recv_id->name); vt != var_types_.end()) {
+                        if (auto mit = cf_.methods.find(vt->second + "::" + mem->field); mit != cf_.methods.end()) {
+                            return mit->second.return_type.is_optional && !mit->second.return_type.is_fallible;
+                        }
+                    }
+                }
+                if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
+                    mem->field == "parse_f64" || mem->field == "parse_bool" ||
+                    mem->field == "try_recv" || mem->field == "recv_timeout" ||
+                    mem->field == "getenv_opt") {
+                    return true;
+                }
+                if (auto oit = cf_.method_owner.find(mem->field); oit != cf_.method_owner.end()) {
+                    auto owners_it = cf_.method_owners.find(mem->field);
+                    if (owners_it != cf_.method_owners.end() && owners_it->second.size() == 1 && !is_common_stdlib_method_sema(mem->field)) {
+                        if (auto mit = cf_.methods.find(oit->second + "::" + mem->field); mit != cf_.methods.end()) {
+                            return mit->second.return_type.is_optional && !mit->second.return_type.is_fallible;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto infer_expr_type_name_sema(const ExprPtr& e) const -> std::string {
+        if (!e) return "";
+        if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
+            return st->type_name;
+        }
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            return infer_expr_type_name_sema(tr->inner);
+        }
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            return infer_expr_type_name_sema(or_ex->inner);
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (auto it = var_types_.find(id->name); it != var_types_.end()) {
+                return it->second;
+            }
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (cid->name == "readln") return "str";
+                if (cid->name == "[]byte" || cid->name == "[]u8" || cid->name == "str" ||
+                    cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" ||
+                    cid->name == "u8" || cid->name == "byte" || cid->name == "u16" || cid->name == "u32" ||
+                    cid->name == "u64" || cid->name == "usize" || cid->name == "isize" ||
+                    cid->name == "f32" || cid->name == "f64" || cid->name == "bool") {
+                    return cid->name;
+                }
+                if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
+                    return it->second.return_type.name;
+                }
+            } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                    if (is_namespace_ident_sema(recv_id->name) && !is_ident_in_scope_sema(recv_id->name)) {
+                        if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
+                            return it->second.return_type.name;
+                        }
+                        return "";
+                    }
+                    if (auto vt = var_types_.find(recv_id->name); vt != var_types_.end()) {
+                        if (auto mit = cf_.methods.find(vt->second + "::" + mem->field); mit != cf_.methods.end()) {
+                            return mit->second.return_type.name;
+                        }
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
     [[nodiscard]] auto infer_expr_null_state(const ExprPtr& e) const -> std::optional<NullState> {
         if (!e) return std::nullopt;
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
@@ -324,6 +480,14 @@ public:
                 return NullState::NonNull;
             }
             return std::nullopt;
+        }
+        if (expr_returns_optional_sema(e)) {
+            if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+                if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
+                    return it->second;
+                }
+            }
+            return NullState::MaybeNull;
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
@@ -550,6 +714,11 @@ public:
         }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
             if (auto r = check_expr(or_ex->inner); !r) return r;
+            if (!or_ex->err_var.empty() && expr_returns_optional_sema(or_ex->inner)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: cannot bind error variable '{}' on optional 'T?' in 'or' block; use 'or {{ ... }}' or 'or fallback' instead (cfire/OPTIONAL-OR-ERR)",
+                    path_, e->line, e->col, or_ex->err_var)); !r) return r;
+            }
             if (or_ex->fallback_val) {
                 if (auto r = check_expr(or_ex->fallback_val); !r) return r;
             }
@@ -590,20 +759,31 @@ public:
                     target_sig = &it->second;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                if (auto owner_it = cf_.method_owner.find(mem->field); owner_it != cf_.method_owner.end()) {
-                    std::string mkey = owner_it->second + "::" + mem->field;
+                const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (obj_id && is_namespace_ident_sema(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
+                    if (auto it = cf_.fn_sigs.find(obj_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
+                        target_sig = &it->second;
+                    }
+                } else if (obj_id && var_types_.contains(obj_id->name)) {
+                    std::string mkey = var_types_.at(obj_id->name) + "::" + mem->field;
                     if (auto mit = cf_.methods.find(mkey); mit != cf_.methods.end()) {
                         target_sig = &mit->second;
-                        // Verify receiver mutability if method requires `mut` receiver!
-                        if (target_sig->receiver && target_sig->receiver->intent == "mut") {
-                            if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                                if (imm_vars_.contains(obj_id->name)) {
-                                    if (auto r = emit_error(std::format(
-                                        "{}:{}:{}: cannot call mutating method '{}' on immutable variable '{}' (cfire/MUT-RECEIVER)",
-                                        path_, e->line, e->col, mem->field, obj_id->name)); !r) return r;
-                                }
-                            }
+                    }
+                } else if (auto owner_it = cf_.method_owner.find(mem->field); owner_it != cf_.method_owner.end()) {
+                    auto owners_it = cf_.method_owners.find(mem->field);
+                    if (owners_it != cf_.method_owners.end() && owners_it->second.size() == 1 &&
+                        !is_common_stdlib_method_sema(mem->field)) {
+                        std::string mkey = owner_it->second + "::" + mem->field;
+                        if (auto mit = cf_.methods.find(mkey); mit != cf_.methods.end()) {
+                            target_sig = &mit->second;
                         }
+                    }
+                }
+                if (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") {
+                    if (obj_id && imm_vars_.contains(obj_id->name)) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: cannot call mutating method '{}' on immutable variable '{}' (cfire/MUT-RECEIVER)",
+                            path_, e->line, e->col, mem->field, obj_id->name)); !r) return r;
                     }
                 }
                 if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
@@ -986,8 +1166,21 @@ public:
             if (auto src = extract_borrow_source(vd->init)) {
                 borrow_origin_[vd->name] = *src;
             }
+            if (vd->type && !vd->type->name.empty()) {
+                var_types_[vd->name] = vd->type->name;
+            } else if (std::string inferred_t = infer_expr_type_name_sema(vd->init); !inferred_t.empty()) {
+                var_types_[vd->name] = std::move(inferred_t);
+            } else {
+                var_types_.erase(vd->name);
+            }
+            bool is_opt_var = (vd->type && vd->type->is_optional) || (!vd->type && expr_returns_optional_sema(vd->init));
+            if (is_opt_var) {
+                optional_vars_.insert(vd->name);
+            } else {
+                optional_vars_.erase(vd->name);
+            }
             bool is_ptr_or_smart = (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr || !vd->type->smart_wrap.empty())) ||
-                                   is_ptr_or_smart_init(vd->init);
+                                   is_ptr_or_smart_init(vd->init) || is_opt_var;
             if (is_ptr_or_smart) {
                 ptr_or_smart_vars_.insert(vd->name);
             } else {
@@ -997,6 +1190,14 @@ public:
                 ptr_null_state_[vd->name] = *ns;
             } else if (!vd->init && is_ptr_or_smart) {
                 ptr_null_state_[vd->name] = NullState::Null;
+            } else if (is_opt_var) {
+                if (vd->init && (std::holds_alternative<StructLitExpr>(vd->init->node) ||
+                                 (std::holds_alternative<LiteralExpr>(vd->init->node) &&
+                                  std::get<LiteralExpr>(vd->init->node).kind != TokenKind::KwNone))) {
+                    ptr_null_state_[vd->name] = NullState::NonNull;
+                } else {
+                    ptr_null_state_[vd->name] = NullState::MaybeNull;
+                }
             } else if (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr || !vd->type->smart_wrap.empty())) {
                 ptr_null_state_[vd->name] = vd->type->is_optional ? NullState::MaybeNull : NullState::NonNull;
             } else {
@@ -1400,6 +1601,8 @@ private:
     std::unordered_map<std::string, InvalidatedLoan> invalidated_loans_{};
     std::unordered_set<std::string> active_loop_collections_{};
     std::unordered_set<std::string> ptr_or_smart_vars_{};
+    std::unordered_set<std::string> optional_vars_{};
+    std::unordered_map<std::string, std::string> var_types_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
     std::unordered_map<std::string, std::size_t> fixed_array_lens_{};
     std::unordered_set<std::string> map_vars_{};
@@ -1440,10 +1643,13 @@ private:
         std::unordered_map<std::string, std::string> seen_cli_shorts;
 
         for (const auto& fld : st.fields) {
-            if (fld.raw_tag.empty()) continue;
             StructTagInfo info;
             info.field_name = fld.name;
             info.field_type = fld.type;
+            if (fld.raw_tag.empty()) {
+                tags.push_back(std::move(info));
+                continue;
+            }
 
             auto begin = std::sregex_iterator(fld.raw_tag.begin(), fld.raw_tag.end(), tag_re);
             for (auto it = begin; it != std::sregex_iterator(); ++it) {
@@ -1535,9 +1741,7 @@ private:
             }
             tags.push_back(std::move(info));
         }
-        if (!tags.empty()) {
-            cf.struct_tags[st.name] = std::move(tags);
-        }
+        cf.struct_tags[st.name] = std::move(tags);
     }
 
     // 3. Index Functions & Methods
@@ -1548,7 +1752,12 @@ private:
             cf.method_owner[fn.name] = fn.receiver->type.name;
             cf.method_owners[fn.name].insert(fn.receiver->type.name);
         } else {
-            cf.fn_sigs[fn.name] = fn;
+            if (!fn.package_name.empty()) {
+                cf.fn_sigs[fn.package_name + "." + fn.name] = fn;
+            }
+            if (fn.package_name.empty() || !cf.fn_sigs.contains(fn.name)) {
+                cf.fn_sigs[fn.name] = fn;
+            }
         }
     }
 

@@ -32,11 +32,16 @@ public:
     bool in_main_ = false;
     bool in_test_ = false;
     bool in_fallible_void_ = false;
+    bool in_ptr_return_ = false;
+    std::string cur_fn_raw_return_type_{};
     std::string source_path_{};
     int last_source_line_ = -1;
     std::ostringstream buf_;
     int indent_ = 0;
     std::string cur_fn_{};
+    std::string cur_pkg_{};
+    std::unordered_set<std::string> colliding_fn_names_{};
+    std::unordered_set<std::string> colliding_gv_names_{};
     int defer_count_ = 0;
     int try_count_ = 0;
     std::unordered_set<std::string> used_core_{};
@@ -44,10 +49,27 @@ public:
     std::vector<std::string> active_async_scopes_{};
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
+    std::unordered_set<std::string> ptr_field_names_{};
+    std::unordered_set<std::string> optional_vars_{};
     std::unordered_set<std::string> map_vars_{};
     std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
     std::unordered_map<std::string, std::string> loop_index_to_col_{};
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
+
+    [[nodiscard]] static auto sanitize_cpp_ident(std::string_view id) -> std::string {
+        static const std::unordered_set<std::string_view> kCppReserved = {
+            "short", "long", "signed", "unsigned", "class", "template", "operator",
+            "export", "delete", "new", "private", "protected", "public", "virtual",
+            "override", "final", "typename", "namespace", "using", "this", "throw",
+            "catch", "union", "goto", "register", "volatile", "friend", "explicit",
+            "mutable", "inline", "constexpr", "consteval", "constinit", "co_await",
+            "co_return", "co_yield", "concept", "requires", "stdout", "stderr", "stdin"
+        };
+        if (kCppReserved.contains(id)) {
+            return std::string(id) + "_cf_";
+        }
+        return std::string(id);
+    }
 
     [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
         std::string out;
@@ -67,6 +89,27 @@ public:
     }
 
     void init_imports() {
+        std::unordered_map<std::string, std::size_t> fn_counts;
+        for (const auto& fn : cf_.ast.functions) {
+            if (!fn.receiver) fn_counts[fn.name]++;
+        }
+        for (const auto& [name, count] : fn_counts) {
+            if (count > 1) colliding_fn_names_.insert(name);
+        }
+        std::unordered_map<std::string, std::size_t> gv_counts;
+        for (const auto& gv : cf_.ast.global_vars) {
+            gv_counts[gv.name]++;
+        }
+        for (const auto& [name, count] : gv_counts) {
+            if (count > 1) colliding_gv_names_.insert(name);
+        }
+        for (const auto& st : cf_.ast.structs) {
+            for (const auto& fld : st.fields) {
+                if (fld.type.is_ptr || fld.type.is_mut_ptr) {
+                    ptr_field_names_.insert(fld.name);
+                }
+            }
+        }
         for (const auto& imp : cf_.ast.imports) {
             if (imp.is_cpp) continue;
             std::string path = imp.path.starts_with("ext:") ? ("core:" + imp.path.substr(4)) : imp.path;
@@ -80,6 +123,12 @@ public:
                 used_core_.insert("json");
             } else if (path == "core:db/sqlite" || path == "core:sqlite") {
                 used_core_.insert("sqlite");
+            } else if (path == "core:crypto/sodium" || path == "core:sodium") {
+                used_core_.insert("sodium");
+            } else if (path == "core:keychain" || path == "core:os/keychain") {
+                used_core_.insert("keychain");
+            } else if (path == "core:net/ssh" || path == "core:ssh") {
+                used_core_.insert("ssh");
             } else if (path.starts_with("core:crypto/") || path == "core:crypto") {
                 used_core_.insert("crypto");
             } else if (path.starts_with("core:net/") || path == "core:net" || path == "core:http" || path == "core:websocket" || path == "core:tls") {
@@ -189,6 +238,18 @@ public:
                 used_core_.insert("sqlite");
                 add_unique(defines, "#define CFIRE_USE_SQLITE 1");
                 add_unique(link_tags, "-lsqlite3");
+            } else if (path == "core:crypto/sodium" || path == "core:sodium") {
+                used_core_.insert("sodium");
+                add_unique(link_tags, "@pkg:libsodium");
+            } else if (path == "core:keychain" || path == "core:os/keychain") {
+                used_core_.insert("keychain");
+#if defined(__APPLE__)
+                add_unique(link_tags, "-framework Security");
+                add_unique(link_tags, "-framework CoreFoundation");
+#endif
+            } else if (path == "core:net/ssh" || path == "core:ssh") {
+                used_core_.insert("ssh");
+                add_unique(link_tags, "@pkg:libssh");
             } else if (path.starts_with("core:crypto/") || path == "core:crypto") {
                 used_core_.insert("crypto");
             } else if (path.starts_with("core:net/") || path == "core:net" || path == "core:http" || path == "core:websocket" || path == "core:tls") {
@@ -346,53 +407,116 @@ public:
             writeln();
         }
 
-        // Forward declare all structs so recursive shared_ptr/pointers work
+        // Forward declare all structs & enums so recursive shared_ptr/pointers work
+        for (const auto& en : ast.enums) {
+            writeln(std::format("struct {};", en.name));
+        }
         for (const auto& st : ast.structs) {
             writeln(std::format("struct {};", st.name));
         }
-        if (!ast.structs.empty()) writeln();
+        if (!ast.structs.empty() || !ast.enums.empty()) writeln();
 
-        // Emit Structs & Enums in source declaration order
+        // Emit Structs & Enums in dependency-resolved topological order (preserving source order when independent)
         struct TypeItem {
             int line;
             bool is_enum;
             std::size_t idx;
+            std::string name;
         };
         std::vector<TypeItem> items;
         for (std::size_t i = 0; i < ast.enums.size(); ++i) {
-            items.push_back(TypeItem{ast.enums[i].line, true, i});
+            items.push_back(TypeItem{ast.enums[i].line, true, i, ast.enums[i].name});
         }
         for (std::size_t i = 0; i < ast.structs.size(); ++i) {
-            items.push_back(TypeItem{ast.structs[i].line, false, i});
+            items.push_back(TypeItem{ast.structs[i].line, false, i, ast.structs[i].name});
         }
         std::stable_sort(items.begin(), items.end(), [](const auto& a, const auto& b) {
             return a.line < b.line;
         });
 
-        for (const auto& it : items) {
-            if (it.is_enum) {
-                emit_enum(ast.enums[it.idx]);
+        std::unordered_map<std::string, std::size_t> name_to_item;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            name_to_item[items[i].name] = i;
+        }
+        auto collect_type_deps = [&](const auto& self, const TypeRef& tr, std::vector<std::size_t>& deps) -> void {
+            if (tr.is_ptr || tr.is_mut_ptr || !tr.smart_wrap.empty()) {
+                return;
+            }
+            std::string clean = tr.name;
+            if (auto dot_pos = clean.rfind('.'); dot_pos != std::string::npos) clean = clean.substr(dot_pos + 1);
+            if (auto col_pos = clean.rfind("::"); col_pos != std::string::npos) clean = clean.substr(col_pos + 2);
+            if (auto it = name_to_item.find(clean); it != name_to_item.end()) {
+                deps.push_back(it->second);
+            }
+            if (tr.elem_type) self(self, *tr.elem_type, deps);
+            if (tr.key_type) self(self, *tr.key_type, deps);
+            for (const auto& tt : tr.tuple_types) self(self, tt, deps);
+        };
+
+        std::vector<int> visit_state(items.size(), 0); // 0 = unvisited, 1 = visiting, 2 = emitted
+        auto emit_item_dfs = [&](const auto& self, std::size_t k) -> void {
+            if (visit_state[k] != 0) return;
+            visit_state[k] = 1;
+            std::vector<std::size_t> deps;
+            if (items[k].is_enum) {
+                for (const auto& v : ast.enums[items[k].idx].variants) {
+                    for (const auto& pt : v.payload_types) collect_type_deps(collect_type_deps, pt, deps);
+                }
             } else {
-                emit_struct(ast.structs[it.idx]);
+                for (const auto& fld : ast.structs[items[k].idx].fields) {
+                    collect_type_deps(collect_type_deps, fld.type, deps);
+                }
+            }
+            for (std::size_t d : deps) {
+                if (d != k && visit_state[d] == 0) {
+                    self(self, d);
+                }
+            }
+            visit_state[k] = 2;
+            if (items[k].is_enum) {
+                emit_enum(ast.enums[items[k].idx]);
+            } else {
+                emit_struct(ast.structs[items[k].idx]);
             }
             writeln();
+        };
+
+        for (std::size_t k = 0; k < items.size(); ++k) {
+            emit_item_dfs(emit_item_dfs, k);
         }
 
         // 4. Forward Declarations for Functions & Receiver Methods (before global vars so globals can reference functions)
+        std::set<std::string> emitted_method_fallbacks;
         for (const auto& fn : ast.functions) {
+            if (fn.receiver && !emitted_method_fallbacks.contains(fn.name)) {
+                emitted_method_fallbacks.insert(fn.name);
+                writeln(std::format(
+                    "template <typename Self, typename... Args> requires requires(Self&& s, Args&&... a) {{ std::forward<Self>(s).{0}(std::forward<Args>(a)...); }} inline auto cfire_method_{0}(Self&& s, Args&&... a) -> decltype(auto) {{ return std::forward<Self>(s).{0}(std::forward<Args>(a)...); }}",
+                    fn.name));
+                if (fn.name == "push") {
+                    writeln("template <typename T, typename Arg> inline void cfire_method_push(std::vector<T>& s, Arg&& a) { cfire::vec_push(s, std::forward<Arg>(a)); }");
+                } else if (fn.name == "pop") {
+                    writeln("template <typename T> inline void cfire_method_pop(std::vector<T>& s) { s.pop_back(); }");
+                }
+            }
             emit_function_forward_decl(fn);
         }
         if (!ast.functions.empty()) writeln();
 
         // 5a. Emit Global / Package-level Variables
         for (const auto& gv : ast.global_vars) {
+            cur_pkg_ = gv.package_name;
             std::string type_str = gv.type ? lower_owning_type(*gv.type) : "auto";
             std::string mut_str = gv.is_mut ? "" : "const ";
+            std::string gname = (!gv.package_name.empty() && colliding_gv_names_.contains(gv.name))
+                ? std::format("cfire_pkg_{}__{}", gv.package_name, sanitize_cpp_ident(gv.name))
+                : sanitize_cpp_ident(gv.name);
             if (gv.value) {
-                writeln(std::format("inline {}{} {} = {};", mut_str, type_str, gv.name, emit_expr(gv.value)));
+                writeln(std::format("inline {}{} {} = {};", mut_str, type_str, gname, emit_expr(gv.value)));
             } else {
-                writeln(std::format("inline {}{} {}{{}};", mut_str, type_str, gv.name));
+                writeln(std::format("inline {}{} {}{{}};", mut_str, type_str, gname));
             }
+            cur_pkg_.clear();
         }
         if (!ast.global_vars.empty()) writeln();
 
@@ -471,6 +595,7 @@ public:
         if ((test_mode_ || !has_user_main) && (!ast.tests.empty() || !auto_json_structs.empty())) {
             writeln("auto main(int argc, char** argv) -> int {");
             ++indent_;
+            writeln("cfire::detail::set_process_args(argc, argv);");
             writeln("bool json_mode = false;");
             writeln("bool bench_mode = false;");
             writeln("double bench_time_ms = 200.0;");
@@ -501,6 +626,11 @@ public:
             writeln("}");
             writeln("(void)bench_mode; (void)bench_time_ms; (void)fuzz_runs; (void)fuzz_seed;");
             writeln("cfire::testing_detail::in_test_harness = true;");
+            if (used_core_.contains("sqlite")) {
+                writeln("#if defined(CFIRE_USE_SQLITE)");
+                writeln("{ unsigned char _sq_warm = 0; sqlite3_randomness(1, &_sq_warm); }");
+                writeln("#endif");
+            }
             writeln("int passed_count = 0;");
             writeln("int failed_count = 0;");
             writeln("struct TestResultRecord { std::string name; bool passed; double duration_ms; std::string file; int line; std::string error; };");
@@ -550,7 +680,20 @@ public:
                 writeln("cfire::testing_detail::failure_expr.clear();");
                 writeln("cfire::testing_detail::failure_msg.clear();");
                 bool check_fd_leak = !stmts_reference_ident(td.body, "InitWindow") &&
-                                     !stmts_reference_ident(td.body, "run_webview_test");
+                                     !stmts_reference_ident(td.body, "run_webview_test") &&
+                                     !stmts_reference_ident(td.body, "keychain");
+                if (check_fd_leak) {
+                    for (const auto& fn : ast.functions) {
+                        if (!fn.receiver && stmts_reference_ident(td.body, fn.name)) {
+                            if (stmts_reference_ident(fn.body, "InitWindow") ||
+                                stmts_reference_ident(fn.body, "run_webview_test") ||
+                                stmts_reference_ident(fn.body, "keychain")) {
+                                check_fd_leak = false;
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (check_fd_leak) {
                     writeln("const std::size_t fds_before = cfire::testing_detail::count_open_fds();");
                 }
@@ -905,10 +1048,15 @@ public:
         ++indent_;
         for (const auto& fld : st.fields) {
             std::string cpp_type = lower_owning_type(fld.type);
+            std::string fname = sanitize_cpp_ident(fld.name);
             if (fld.default_val) {
-                writeln(std::format("{} {} = {};", cpp_type, fld.name, emit_expr(fld.default_val)));
+                std::string dval = emit_expr(fld.default_val);
+                if ((fld.type.is_ptr || fld.type.is_mut_ptr) && dval == "std::nullopt") {
+                    dval = "nullptr";
+                }
+                writeln(std::format("{} {} = {};", cpp_type, fname, dval));
             } else {
-                writeln(std::format("{} {}{{}};", cpp_type, fld.name));
+                writeln(std::format("{} {}{{}};", cpp_type, fname));
             }
         }
         --indent_;
@@ -954,8 +1102,9 @@ public:
             ++indent_;
             writeln(std::format("{} out{{}};", st.name));
             for (std::size_t fi = 0; fi < st.fields.size(); ++fi) {
+                std::string fname = sanitize_cpp_ident(st.fields[fi].name);
                 writeln(std::format("out.{} = cfire::testing_detail::Arbitrary<std::decay_t<decltype(out.{})>>::generate(rng, iter + {});",
-                    st.fields[fi].name, st.fields[fi].name, fi));
+                    fname, fname, fi));
             }
             writeln("return out;");
             --indent_;
@@ -975,8 +1124,25 @@ public:
             if (t.custom_tags.contains("desc")) has_desc = true;
             if (!t.db_column.empty()) has_db = true;
         }
+        (void)has_json; (void)has_desc;
 
         if (has_cli && used_core_.contains("cli")) {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("inline auto cfire::cli::try_parse<{}>(int argc, char** argv) -> std::optional<{}> {{", st.name, st.name));
+            ++indent_;
+            writeln(std::format("{} out{{}};", st.name));
+            writeln("cfire::cli::FlagReader reader(argc, argv);");
+            for (const auto& t : tags) {
+                if (!t.cli_long.empty()) {
+                    writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
+                }
+            }
+            writeln("if (reader.has_errors()) return std::nullopt;");
+            writeln("return out;");
+            --indent_;
+            writeln("}");
+
             writeln();
             writeln("template <>");
             writeln(std::format("inline auto cfire::cli::parse<{}>(int argc, char** argv) -> {} {{", st.name, st.name));
@@ -985,7 +1151,7 @@ public:
             writeln("cfire::cli::FlagReader reader(argc, argv);");
             for (const auto& t : tags) {
                 if (!t.cli_long.empty()) {
-                    writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, t.field_name));
+                    writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
                 }
             }
             writeln("return out;");
@@ -993,34 +1159,39 @@ public:
             writeln("}");
         }
 
-        if ((has_json || has_desc || used_core_.contains("webui")) && used_core_.contains("json")) {
+        if (can_emit_arbitrary && used_core_.contains("json")) {
             writeln();
             writeln("template <>");
             writeln(std::format("inline auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
             ++indent_;
+            writeln("(void)obj;");
             writeln(std::format("{} out{{}};", st.name));
             for (const auto& t : tags) {
-                std::string jkey = !t.json_key.empty() ? t.json_key : (has_json ? "" : t.field_name);
+                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
+                std::string fname = sanitize_cpp_ident(t.field_name);
                 if (!jkey.empty()) {
-                    if (t.field_type.is_slice && t.field_type.elem_type) {
+                    if (t.field_type.is_optional) {
+                        std::string inner_cpp = lower_raw_owning_type(t.field_type);
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_opt<{}>(obj, \"{}\"));", fname, inner_cpp, jkey));
+                    } else if (t.field_type.is_slice && t.field_type.elem_type) {
                         std::string elem_cpp = lower_owning_type(*t.field_type.elem_type);
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_vec<{}>(obj, \"{}\"));", t.field_name, elem_cpp, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_vec<{}>(obj, \"{}\"));", fname, elem_cpp, jkey));
                     } else if (t.field_type.name == "str") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\"));", fname, jkey));
                     } else if (t.field_type.name == "u64" || t.field_type.name == "usize") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\"));", fname, jkey));
                     } else if (t.field_type.name == "i64" || t.field_type.name == "isize") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\"));", fname, jkey));
                     } else if (t.field_type.name == "i32") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\"));", fname, jkey));
                     } else if (t.field_type.name == "f64") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\"));", fname, jkey));
                     } else if (t.field_type.name == "f32") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f32(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f32(obj, \"{}\"));", fname, jkey));
                     } else if (t.field_type.name == "bool") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\"));", t.field_name, jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\"));", fname, jkey));
                     } else if (is_local_type(t.field_type.name)) {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", t.field_name, lower_raw_owning_type(t.field_type), jkey));
+                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", fname, lower_raw_owning_type(t.field_type), jkey));
                     }
                 }
             }
@@ -1032,21 +1203,23 @@ public:
             writeln("template <>");
             writeln(std::format("inline auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", st.name, st.name));
             ++indent_;
+            writeln("(void)val;");
             writeln("std::string out = \"{\";");
             bool first_j = true;
             for (const auto& t : tags) {
-                std::string jkey = !t.json_key.empty() ? t.json_key : (has_json ? "" : t.field_name);
+                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
+                std::string fname = sanitize_cpp_ident(t.field_name);
                 if (!jkey.empty()) {
                     std::string prefix = first_j ? "" : ",";
                     first_j = false;
-                    if (t.field_type.is_slice || is_local_type(t.field_type.name)) {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::stringify(val.{}));", prefix, jkey, t.field_name));
+                    if (t.field_type.is_optional || t.field_type.is_slice || is_local_type(t.field_type.name)) {
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::stringify(val.{}));", prefix, jkey, fname));
                     } else if (t.field_type.name == "str") {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, jkey, t.field_name));
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, jkey, fname));
                     } else if (t.field_type.name == "bool") {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{} ? \"true\" : \"false\");", prefix, jkey, t.field_name));
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{} ? \"true\" : \"false\");", prefix, jkey, fname));
                     } else {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{});", prefix, jkey, t.field_name));
+                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{});", prefix, jkey, fname));
                     }
                 }
             }
@@ -1064,7 +1237,7 @@ public:
             bool first_p = true;
             bool first_r = true;
             for (const auto& t : tags) {
-                std::string jkey = !t.json_key.empty() ? t.json_key : (has_json ? "" : t.field_name);
+                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
                 if (jkey.empty()) continue;
                 std::string p_prefix = first_p ? "" : ",";
                 first_p = false;
@@ -1106,14 +1279,15 @@ public:
                     std::string col_fn = "col_str";
                     if (t.field_type.is_slice && t.field_type.elem_type) {
                         if (t.field_type.elem_type->name == "f32") col_fn = "col_f32_vec";
-                        else if (t.field_type.elem_type->name == "byte" || t.field_type.elem_type->name == "u8") col_fn = "col_bytes";
+                        else if (t.field_type.elem_type->name == "byte") col_fn = "col_bytes";
+                        else if (t.field_type.elem_type->name == "u8") col_fn = "col_u8_vec";
                     } else if (t.field_type.name == "u64" || t.field_type.name == "usize") col_fn = "col_u64";
                     else if (t.field_type.name == "i64" || t.field_type.name == "isize") col_fn = "col_i64";
                     else if (t.field_type.name == "i32") col_fn = "col_i32";
                     else if (t.field_type.name == "f64") col_fn = "col_f64";
                     else if (t.field_type.name == "f32") col_fn = "col_f32";
                     else if (t.field_type.name == "bool") col_fn = "col_bool";
-                    writeln(std::format(".{} = cfire::sqlite::{}(stmt, {}),", t.field_name, col_fn, col_idx++));
+                    writeln(std::format(".{} = cfire::sqlite::{}(stmt, {}),", sanitize_cpp_ident(t.field_name), col_fn, col_idx++));
                 }
             }
             --indent_;
@@ -1123,9 +1297,17 @@ public:
         }
     }
 
+    [[nodiscard]] auto emitted_fn_symbol(const FnDecl& fn) const -> std::string {
+        if (fn.receiver) return fn.receiver->type.name + "__" + fn.name;
+        if (!fn.package_name.empty() && colliding_fn_names_.contains(fn.name)) {
+            return std::format("cfire_pkg_{}__{}", fn.package_name, sanitize_cpp_ident(fn.name));
+        }
+        return sanitize_cpp_ident(fn.name);
+    }
+
     void emit_function_forward_decl(const FnDecl& fn) {
         if (fn.name == "main" && !fn.receiver) return;
-        std::string cur_fn = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
+        std::string cur_fn = emitted_fn_symbol(fn);
 
         if (!fn.type_params.empty()) {
             std::string tparams;
@@ -1143,11 +1325,11 @@ public:
 
         std::string param_list;
         if (fn.receiver) {
-            param_list += std::format("{} {}", lower_param_type(fn.receiver->intent, fn.receiver->type), fn.receiver->name);
+            param_list += std::format("{} {}", lower_param_type(fn.receiver->intent, fn.receiver->type), sanitize_cpp_ident(fn.receiver->name));
         }
         for (std::size_t i = 0; i < fn.params.size(); ++i) {
             if (!param_list.empty()) param_list += ", ";
-            param_list += std::format("{} {}", lower_param_type(fn.params[i].intent, fn.params[i].type), fn.params[i].name);
+            param_list += std::format("{} {}", lower_param_type(fn.params[i].intent, fn.params[i].type), sanitize_cpp_ident(fn.params[i].name));
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
@@ -1161,13 +1343,18 @@ public:
 
     void emit_function(const FnDecl& fn) {
         if (fn.line > 0) emit_line_directive(fn.line);
-        cur_fn_ = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
+        cur_pkg_ = fn.package_name;
+        cur_fn_ = emitted_fn_symbol(fn);
         defer_count_ = 0;
         local_vars_.clear();
+        ptr_vars_.clear();
+        optional_vars_.clear();
         map_vars_.clear();
         fixed_array_vars_.clear();
         if (fn.receiver) {
             local_vars_.insert(fn.receiver->name);
+            if (fn.receiver->type.is_ptr || fn.receiver->type.is_mut_ptr) ptr_vars_.insert(fn.receiver->name);
+            if (fn.receiver->type.is_optional) optional_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_map) map_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_array && !fn.receiver->type.array_len.empty()) {
                 if (auto n = cfire::detail::parse_int<std::size_t>(fn.receiver->type.array_len)) {
@@ -1177,6 +1364,8 @@ public:
         }
         for (const auto& p : fn.params) {
             local_vars_.insert(p.name);
+            if (p.type.is_ptr || p.type.is_mut_ptr) ptr_vars_.insert(p.name);
+            if (p.type.is_optional) optional_vars_.insert(p.name);
             if (p.type.is_map) map_vars_.insert(p.name);
             if (p.type.is_array && !p.type.array_len.empty()) {
                 if (auto n = cfire::detail::parse_int<std::size_t>(p.type.array_len)) {
@@ -1188,6 +1377,7 @@ public:
         if (fn.name == "main" && !fn.receiver) {
             in_main_ = true;
             in_fallible_void_ = false;
+            in_ptr_return_ = false;
             local_vars_.insert("argc");
             local_vars_.insert("argv");
             bool is_gui = used_vendor_.contains("raylib") || used_vendor_.contains("raygui");
@@ -1198,7 +1388,7 @@ public:
                 writeln("auto main(int argc, char** argv) -> int {");
                 writeln("#endif");
                 ++indent_;
-                writeln("(void)argc; (void)argv;");
+                writeln("cfire::detail::set_process_args(argc, argv);");
                 for (const auto& st : fn.body) emit_stmt(st, true);
                 writeln("return 0;");
                 --indent_;
@@ -1209,6 +1399,7 @@ public:
             } else {
                 writeln("auto main(int argc, char** argv) -> int {");
                 ++indent_;
+                writeln("cfire::detail::set_process_args(argc, argv);");
                 for (const auto& st : fn.body) emit_stmt(st, true);
                 writeln("return 0;");
                 --indent_;
@@ -1216,10 +1407,16 @@ public:
             }
             in_main_ = false;
             local_vars_.clear();
+            ptr_vars_.clear();
+            optional_vars_.clear();
             return;
         }
         in_main_ = false;
         in_fallible_void_ = (fn.return_type.name == "void" && fn.return_type.is_fallible);
+        in_ptr_return_ = (fn.return_type.is_ptr || fn.return_type.is_mut_ptr);
+        cur_fn_raw_return_type_ = (fn.return_type.is_fallible || fn.return_type.is_optional)
+            ? lower_raw_owning_type(fn.return_type)
+            : "";
 
         if (!fn.type_params.empty()) {
             std::string tparams;
@@ -1238,14 +1435,16 @@ public:
         std::string param_list;
         std::string pass_args;
         if (fn.receiver) {
-            param_list += std::format("{} {}", lower_param_type(fn.receiver->intent, fn.receiver->type), fn.receiver->name);
-            pass_args += fn.receiver->name;
+            std::string rname = sanitize_cpp_ident(fn.receiver->name);
+            param_list += std::format("{} {}", lower_param_type(fn.receiver->intent, fn.receiver->type), rname);
+            pass_args += rname;
         }
         for (std::size_t i = 0; i < fn.params.size(); ++i) {
+            std::string pname = sanitize_cpp_ident(fn.params[i].name);
             if (!param_list.empty()) param_list += ", ";
-            param_list += std::format("{} {}", lower_param_type(fn.params[i].intent, fn.params[i].type), fn.params[i].name);
+            param_list += std::format("{} {}", lower_param_type(fn.params[i].intent, fn.params[i].type), pname);
             if (!pass_args.empty()) pass_args += ", ";
-            pass_args += (fn.params[i].intent == "move") ? std::format("std::move({})", fn.params[i].name) : fn.params[i].name;
+            pass_args += (fn.params[i].intent == "move") ? std::format("std::move({})", pname) : pname;
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
@@ -1260,7 +1459,12 @@ public:
         --indent_;
         writeln("}");
         in_fallible_void_ = false;
+        in_ptr_return_ = false;
+        cur_fn_raw_return_type_.clear();
+        cur_pkg_.clear();
         local_vars_.clear();
+        ptr_vars_.clear();
+        optional_vars_.clear();
 
         if (fn.receiver) {
             if (!fn.type_params.empty()) {
@@ -1473,750 +1677,65 @@ public:
         }, e->node);
     }
 
-    void emit_stmt(const StmtPtr& s, bool in_main) {
-        if (!s) return;
-        if (s->line > 0) emit_line_directive(s->line);
-        std::visit([&](const auto& st) {
-            using T = std::decay_t<decltype(st)>;
-            if constexpr (std::is_same_v<T, VarDeclStmt>) {
-                if (st.init) {
-                    bool top_try = std::holds_alternative<TryExpr>(st.init->node);
-                    hoist_subexpr_tries(st.init, in_main, s->line, top_try);
-                }
-                local_vars_.insert(st.name);
-                if (st.init) {
-                    if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
-                        if (in_main) {
-                            int id = ++try_count_;
-                            std::string tmp = std::format("_try_{}", id);
-                            writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                            writeln(std::format("if (!{}.has_value()) {{", tmp));
-                            ++indent_;
-                            writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                            writeln("return 1;");
-                            --indent_;
-                            writeln("}");
-                            writeln(std::format("auto {} = std::move(*{});", st.name, tmp));
-                            return;
-                        }
-                        if (in_test_) {
-                            int id = ++try_count_;
-                            std::string tmp = std::format("_try_{}", id);
-                            writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                            writeln(std::format("if (!{}.has_value()) {{", tmp));
-                            ++indent_;
-                            writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                                tmp, escape_line_path(cf_.ast.path), s->line));
-                            writeln("return;");
-                            --indent_;
-                            writeln("}");
-                            writeln(std::format("auto {} = std::move(*{});", st.name, tmp));
-                            return;
-                        }
-                        std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
-                        writeln(std::format("CFIRE_TRY_ASSIGN({} {}, {});", cpp_type, st.name, emit_expr(try_ex->inner)));
-                        return;
-                    }
-                    if (const auto* or_ex = std::get_if<OrExpr>(&st.init->node); or_ex && !or_ex->handler_body.empty()) {
-                        int id = ++try_count_;
-                        std::string tmp = std::format("_res_{}", id);
-                        writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
-                        writeln(std::format("if (!{}.has_value()) {{", tmp));
-                        ++indent_;
-                        local_vars_.insert(or_ex->err_var);
-                        writeln(std::format("const cfire::Error& {} = {}.error();", or_ex->err_var, tmp));
-                        for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
-                        --indent_;
-                        writeln("}");
-                        writeln(std::format("auto {} = std::move(*{});", st.name, tmp));
-                        return;
-                    }
-                    if (const auto* call_ex = std::get_if<CallExpr>(&st.init->node)) {
-                        if (const auto* id = std::get_if<IdentExpr>(&call_ex->callee->node);
-                            id && id->name == "make" && call_ex->type_args.size() == 1 &&
-                            call_ex->type_args[0].smart_wrap.empty()) {
-                            if (call_ex->args.empty()) {
-                                writeln(std::format("{} {}{{}};", lower_owning_type(call_ex->type_args[0]), st.name));
-                            } else {
-                                writeln(std::format("{} {}({});",
-                                    lower_owning_type(call_ex->type_args[0]), st.name, emit_expr(call_ex->args[0].value)));
-                            }
-                            return;
-                        }
-                    }
-                }
-                if (st.type && (st.type->is_ptr || st.type->is_mut_ptr)) {
-                    ptr_vars_.insert(st.name);
-                }
-                if (st.type) {
-                    if (st.type->is_map) map_vars_.insert(st.name);
-                    if (st.type->is_array && !st.type->array_len.empty()) {
-                        if (auto n = cfire::detail::parse_int<std::size_t>(st.type->array_len)) {
-                            fixed_array_vars_[st.name] = *n;
-                        }
-                    }
-                }
-                if (st.init) {
-                    if (const auto* call_ex = std::get_if<CallExpr>(&st.init->node)) {
-                        if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node);
-                            cid && cid->name == "make" && call_ex->type_args.size() == 1 && call_ex->type_args[0].is_map) {
-                            map_vars_.insert(st.name);
-                        }
-                    }
-                }
-                std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
-                if (!st.type && st.init) {
-                    if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && lit->kind == TokenKind::String) {
-                        cpp_type = "std::string";
-                    }
-                }
-                if (st.init) {
-                    std::string init_val = emit_expr(st.init);
-                    if (st.type && (st.type->is_ptr || st.type->is_mut_ptr) && init_val == "std::nullopt") {
-                        init_val = "nullptr";
-                    }
-                    if (st.name == "_") {
-                        writeln(std::format("(void)({});", init_val));
-                    } else {
-                        writeln(std::format("{} {} = {};", cpp_type, st.name, init_val));
-                    }
-                } else {
-                    writeln(std::format("{} {}{{}};", cpp_type, st.name));
-                }
-            } else if constexpr (std::is_same_v<T, AssignStmt>) {
-                hoist_subexpr_tries(st.target, in_main, s->line, false);
-                bool top_try = st.value && std::holds_alternative<TryExpr>(st.value->node);
-                hoist_subexpr_tries(st.value, in_main, s->line, top_try);
-                std::string lhs = emit_expr(st.target);
-                if (lhs == "_") {
-                    if (const auto* try_ex = std::get_if<TryExpr>(&st.value->node)) {
-                        if (in_main || in_test_) {
-                            hoist_subexpr_tries(st.value, in_main, s->line, false);
-                            return;
-                        }
-                        writeln(std::format("CFIRE_TRY({});", emit_expr(try_ex->inner)));
-                        return;
-                    }
-                    writeln(std::format("(void){};", emit_expr(st.value)));
-                    return;
-                }
-                if (top_try) {
-                    hoist_subexpr_tries(st.value, in_main, s->line, false);
-                }
-                std::string rhs = emit_expr(st.value);
-                if (rhs == "std::nullopt") {
-                    if (const auto* id = std::get_if<IdentExpr>(&st.target->node); id && ptr_vars_.contains(id->name)) {
-                        rhs = "nullptr";
-                    }
-                }
-                writeln(std::format("{} {} {};", lhs, st.op, rhs));
-            } else if constexpr (std::is_same_v<T, DeferStmt>) {
-                if (!st.body.empty()) {
-                    if (!active_async_scopes_.empty()) {
-                        writeln(std::format("{}.defer([&]() {{", active_async_scopes_.back()));
-                        ++indent_;
-                        for (const auto& b : st.body) emit_stmt(b, false);
-                        --indent_;
-                        writeln("});");
-                    } else {
-                        ++defer_count_;
-                        writeln(std::format("auto _defer_{} = cfire::scope_exit([&]() {{", defer_count_));
-                        ++indent_;
-                        for (const auto& b : st.body) emit_stmt(b, false);
-                        --indent_;
-                        writeln("});");
-                    }
-                } else if (!active_async_scopes_.empty()) {
-                    writeln(std::format("{}.defer([&] {{ {}; }});", active_async_scopes_.back(), emit_expr(st.call)));
-                } else {
-                    ++defer_count_;
-                    writeln(std::format("auto _defer_{} = cfire::scope_exit([&] {{ {}; }});", defer_count_, emit_expr(st.call)));
-                }
-            } else if constexpr (std::is_same_v<T, ReturnStmt>) {
-                hoist_subexpr_tries(st.value, in_main, s->line, false);
-                if (!st.value) {
-                    writeln(in_main ? "return 0;" : (in_fallible_void_ ? "return {};" : "return;"));
-                } else {
-                    writeln(std::format("return {};", emit_expr(st.value)));
-                }
-            } else if constexpr (std::is_same_v<T, IfStmt>) {
-                hoist_subexpr_tries(st.cond, in_main, s->line, false);
-                std::string cond = emit_expr(st.cond);
-                if (cond.starts_with('(') && cond.ends_with(')')) {
-                    writeln(std::format("if {} {{", cond));
-                } else {
-                    writeln(std::format("if ({}) {{", cond));
-                }
-                ++indent_;
-                for (const auto& b : st.then_body) emit_stmt(b, in_main);
-                --indent_;
-                if (!st.else_body.empty()) {
-                    writeln("} else {");
-                    ++indent_;
-                    for (const auto& b : st.else_body) emit_stmt(b, in_main);
-                    --indent_;
-                }
-                writeln("}");
-            } else if constexpr (std::is_same_v<T, ForStmt>) {
-                if (!st.item_var.empty()) {
-                    hoist_subexpr_tries(st.iter_expr, in_main, s->line, false);
-                    if (st.range_end) {
-                        hoist_subexpr_tries(st.range_end, in_main, s->line, false);
-                    }
-                    local_vars_.insert(st.item_var);
-                    if (st.range_end) {
-                        std::string start_s = emit_expr(st.iter_expr);
-                        std::string end_s = emit_expr(st.range_end);
-                        std::string cmp_op = st.range_inclusive ? "<=" : "<";
-                        writeln(std::format(
-                            "for (auto {0} = static_cast<std::common_type_t<decltype({1}), decltype({2})>>({1}), _range_end_{0} = static_cast<std::common_type_t<decltype({1}), decltype({2})>>({2}); {0} {3} _range_end_{0}; ++{0}) {{",
-                            st.item_var, start_s, end_s, cmp_op));
-                        ++indent_;
-                        for (const auto& b : st.body) emit_stmt(b, in_main);
-                        --indent_;
-                        writeln("}");
-                    } else if (!st.index_var.empty()) {
-                        local_vars_.insert(st.index_var);
-                        std::string col = emit_expr(st.iter_expr);
-                        loop_index_to_col_[st.index_var] = col;
-                        writeln(std::format("for (std::size_t {0} = 0; {0} < {1}.size(); ++{0}) {{", st.index_var, col));
-                        ++indent_;
-                        writeln(std::format("const auto& {} = {}[{}];", st.item_var, col, st.index_var));
-                        for (const auto& b : st.body) emit_stmt(b, in_main);
-                        --indent_;
-                        writeln("}");
-                        loop_index_to_col_.erase(st.index_var);
-                    } else {
-                        writeln(std::format("for (const auto& {} : {}) {{", st.item_var, emit_expr(st.iter_expr)));
-                        ++indent_;
-                        for (const auto& b : st.body) emit_stmt(b, in_main);
-                        --indent_;
-                        writeln("}");
-                    }
-                } else {
-                    std::string cond = emit_expr(st.iter_expr);
-                    if (cond.starts_with('(') && cond.ends_with(')')) {
-                        writeln(std::format("while {} {{", cond));
-                    } else {
-                        writeln(std::format("while ({}) {{", cond));
-                    }
-                    ++indent_;
-                    for (const auto& b : st.body) emit_stmt(b, in_main);
-                    --indent_;
-                    writeln("}");
-                }
-            } else if constexpr (std::is_same_v<T, MatchStmt>) {
-                hoist_subexpr_tries(st.target, in_main, s->line, false);
-                emit_match_stmt(st, in_main);
-            } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
-                writeln("{");
-                ++indent_;
-                local_vars_.insert(st.scope_var);
-                writeln(std::format("cfire::async::Scope {}({});", st.scope_var, emit_expr(st.workers)));
-                active_async_scopes_.push_back(st.scope_var);
-                for (const auto& b : st.body) emit_stmt(b, in_main);
-                active_async_scopes_.pop_back();
-                writeln(std::format("{}.join_all();", st.scope_var));
-                --indent_;
-                writeln("}");
-            } else if constexpr (std::is_same_v<T, CppBlockStmt>) {
-                writeln("{");
-                ++indent_;
-                std::istringstream iss(trim_str(st.raw_code));
-                std::string line;
-                while (std::getline(iss, line)) {
-                    writeln(trim_str(line));
-                }
-                --indent_;
-                writeln("}");
-            } else if constexpr (std::is_same_v<T, ExprStmt>) {
-                if (const auto* id = std::get_if<IdentExpr>(&st.expr->node)) {
-                    if (id->name == "break") {
-                        writeln("break;");
-                        return;
-                    }
-                    if (id->name == "continue") {
-                        writeln("continue;");
-                        return;
-                    }
-                }
-                bool top_try = st.expr && std::holds_alternative<TryExpr>(st.expr->node);
-                hoist_subexpr_tries(st.expr, in_main, s->line, top_try);
-                if (const auto* try_ex = std::get_if<TryExpr>(&st.expr->node)) {
-                    if (in_main) {
-                        int id = ++try_count_;
-                        std::string tmp = std::format("_try_v_{}", id);
-                        writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                        writeln(std::format("if (!{}.has_value()) {{", tmp));
-                        ++indent_;
-                        writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                        writeln("return 1;");
-                        --indent_;
-                        writeln("}");
-                        return;
-                    }
-                    if (in_test_) {
-                        int id = ++try_count_;
-                        std::string tmp = std::format("_try_v_{}", id);
-                        writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                        writeln(std::format("if (!{}.has_value()) {{", tmp));
-                        ++indent_;
-                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                            tmp, escape_line_path(cf_.ast.path), s->line));
-                        writeln("return;");
-                        --indent_;
-                        writeln("}");
-                        return;
-                    }
-                    writeln(std::format("CFIRE_TRY({});", emit_expr(try_ex->inner)));
-                    return;
-                }
-                if (const auto* or_ex = std::get_if<OrExpr>(&st.expr->node); or_ex && !or_ex->handler_body.empty()) {
-                    int id = ++try_count_;
-                    std::string tmp = std::format("_res_v_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
-                    writeln(std::format("if (!{}.has_value()) {{", tmp));
-                    ++indent_;
-                    local_vars_.insert(or_ex->err_var);
-                    writeln(std::format("const cfire::Error& {} = {}.error();", or_ex->err_var, tmp));
-                    for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
-                    --indent_;
-                    writeln("}");
-                    return;
-                }
-                writeln(std::format("(void)({});", emit_expr(st.expr)));
-            } else if constexpr (std::is_same_v<T, DestructureVarDeclStmt>) {
-                bool top_try = st.init && std::holds_alternative<TryExpr>(st.init->node);
-                hoist_subexpr_tries(st.init, in_main, s->line, top_try);
-                std::string names;
-                for (std::size_t i = 0; i < st.bindings.size(); ++i) {
-                    if (i > 0) names += ", ";
-                    names += st.bindings[i].first;
-                    local_vars_.insert(st.bindings[i].first);
-                }
-                if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
-                    int id = ++try_count_;
-                    std::string tmp = std::format("_try_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                    writeln(std::format("if (!{}.has_value()) {{", tmp));
-                    ++indent_;
-                    if (in_main) {
-                        writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                        writeln("return 1;");
-                    } else if (in_test_) {
-                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                            tmp, escape_line_path(cf_.ast.path), s->line));
-                        writeln("return;");
-                    } else {
-                        writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
-                    }
-                    --indent_;
-                    writeln("}");
-                    writeln(std::format("auto [{}] = std::move(*{});", names, tmp));
-                    return;
-                }
-                writeln(std::format("auto [{}] = {};", names, emit_expr(st.init)));
-            } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
-                for (const auto& t : st.targets) {
-                    hoist_subexpr_tries(t, in_main, s->line, false);
-                }
-                hoist_subexpr_tries(st.value, in_main, s->line, false);
-                std::string targs;
-                for (std::size_t i = 0; i < st.targets.size(); ++i) {
-                    if (i > 0) targs += ", ";
-                    targs += emit_expr(st.targets[i]);
-                }
-                writeln(std::format("std::tie({}) = {};", targs, emit_expr(st.value)));
-            }
-        }, s->node);
+    [[nodiscard]] auto is_core_ns_ident(std::string_view name) const -> bool {
+        return name == "fs" || name == "zstd" || name == "json" ||
+               name == "sqlite" || name == "blake3" || name == "net" || name == "cli" ||
+               name == "time" || name == "os" || name == "sync" || name == "str" ||
+               name == "math" || name == "rand" || name == "log" || name == "regex" ||
+               name == "collections" || name == "sort" || name == "unicode" ||
+               name == "base64" || name == "hex" || name == "csv" ||
+               name == "aes" || name == "hmac" || name == "sha256" ||
+               name == "sodium" || name == "keychain" || name == "ssh" || name == "webui" ||
+               name == "context" || name == "websocket" || name == "http" || name == "url" || name == "tls" ||
+               name == "audio" || name == "ai" ||
+               used_core_.contains(std::string(name));
     }
 
-    void emit_match_stmt(const MatchStmt& ms, bool in_main) {
-        bool is_slice_match = false;
-        bool is_primitive_match = false;
-        for (const auto& a : ms.arms) {
-            if (a.is_slice_pattern) {
-                is_slice_match = true;
-            }
-            if (!a.literal_val.empty()) {
-                is_primitive_match = true;
-            }
+    [[nodiscard]] auto expr_returns_optional(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            return expr_returns_optional(tr->inner);
         }
-
-        if (is_slice_match) {
-            std::string target_expr = emit_expr(ms.target);
-            writeln("{");
-            ++indent_;
-            writeln(std::format("const auto& _target = {};", target_expr));
-            writeln("bool _matched = false;");
-
-            for (const auto& arm : ms.arms) {
-                if (arm.is_slice_pattern) {
-                    std::size_t head_count = arm.slice_head.size();
-                    std::size_t tail_count = arm.slice_tail.size();
-                    std::size_t min_size = head_count + tail_count;
-
-                    std::string cond;
-                    if (!arm.slice_has_rest) {
-                        cond = std::format("_target.size() == {}", min_size);
-                    } else {
-                        if (min_size == 0) {
-                            cond = "true";
-                        } else {
-                            cond = std::format("_target.size() >= {}", min_size);
-                        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (cid->name == "readln") {
+                    return true;
+                }
+                if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
+                    return it->second.return_type.is_optional;
+                }
+            } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                    if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt")) {
+                        return true;
                     }
-
-                    writeln(std::format("if (!_matched && {}) {{", cond));
-                    ++indent_;
-                    writeln("_matched = true;");
-
-                    // Bind head elements
-                    for (std::size_t i = 0; i < head_count; ++i) {
-                        if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
-                            local_vars_.insert(arm.slice_head[i]);
-                            writeln(std::format("const auto& {} = _target[{}];", arm.slice_head[i], i));
-                        }
+                    if (recv_id->name == "cli" && mem->field == "try_parse") {
+                        return true;
                     }
-
-                    // Bind rest slice
-                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
-                        stmts_reference_ident(arm.body, arm.slice_rest)) {
-                        local_vars_.insert(arm.slice_rest);
-                        std::string rest_start = std::to_string(head_count);
-                        std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
-                        writeln(std::format("auto {} = cfire::slice(_target, {}, {});", arm.slice_rest, rest_start, rest_end));
+                    if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
+                        return it->second.return_type.is_optional;
                     }
-
-                    // Bind tail elements
-                    for (std::size_t i = 0; i < tail_count; ++i) {
-                        if (arm.slice_tail[i] != "_" && stmts_reference_ident(arm.body, arm.slice_tail[i])) {
-                            local_vars_.insert(arm.slice_tail[i]);
-                            std::size_t offset_from_end = tail_count - i;
-                            writeln(std::format("const auto& {} = _target[_target.size() - {}];", arm.slice_tail[i], offset_from_end));
-                        }
+                }
+                if (auto oit = cf_.method_owner.find(mem->field); oit != cf_.method_owner.end()) {
+                    if (auto mit = cf_.methods.find(oit->second + "::" + mem->field); mit != cf_.methods.end()) {
+                        return mit->second.return_type.is_optional;
                     }
-
-                    for (const auto& b : arm.body) {
-                        emit_stmt(b, in_main);
-                    }
-                    --indent_;
-                    writeln("}");
-                } else if (arm.variant_name == "_") {
-                    writeln("if (!_matched) {");
-                    ++indent_;
-                    writeln("_matched = true;");
-                    for (const auto& b : arm.body) {
-                        emit_stmt(b, in_main);
-                    }
-                    --indent_;
-                    writeln("}");
+                }
+                if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
+                    mem->field == "parse_f64" || mem->field == "parse_bool" ||
+                    mem->field == "try_recv" || mem->field == "recv_timeout" ||
+                    mem->field == "getenv_opt") {
+                    return true;
                 }
             }
-            --indent_;
-            writeln("}");
-            return;
         }
-
-        std::string enum_name;
-        for (const auto& arm : ms.arms) {
-            if (!arm.enum_prefix.empty()) {
-                enum_name = arm.enum_prefix;
-                break;
-            }
-            if (auto it = cf_.variant_to_enum.find(arm.variant_name); it != cf_.variant_to_enum.end()) {
-                enum_name = it->second;
-                break;
-            }
-        }
-
-        if (is_primitive_match || (enum_name.empty() && !is_slice_match)) {
-            std::string target_expr = emit_expr(ms.target);
-            writeln("{");
-            ++indent_;
-            writeln(std::format("const auto& _target = {};", target_expr));
-            bool first = true;
-            for (const auto& arm : ms.arms) {
-                if (arm.variant_name == "_" && arm.literal_val.empty()) {
-                    writeln("else {");
-                    ++indent_;
-                    for (const auto& b : arm.body) emit_stmt(b, in_main);
-                    --indent_;
-                    writeln("}");
-                } else {
-                    std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
-                    if (first) {
-                        writeln(std::format("if (_target == {}) {{", pat));
-                        first = false;
-                    } else {
-                        writeln(std::format("else if (_target == {}) {{", pat));
-                    }
-                    ++indent_;
-                    for (const auto& b : arm.body) emit_stmt(b, in_main);
-                    --indent_;
-                    writeln("}");
-                }
-            }
-            --indent_;
-            writeln("}");
-            return;
-        }
-
-        bool is_rvalue = ms.is_move || (ms.target && std::holds_alternative<CallExpr>(ms.target->node));
-
-        writeln(std::format("std::visit(cfire::overloaded{{"));
-        ++indent_;
-        for (const auto& arm : ms.arms) {
-            if (arm.variant_name == "_") {
-                writeln(is_rvalue ? "[&](auto&&) {" : "[&](const auto&) {");
-            } else {
-                if (is_rvalue) {
-                    writeln(std::format("[&]({}::_{}&& _m) {{", enum_name, arm.variant_name));
-                } else {
-                    writeln(std::format("[&](const {}::_{}& _m) {{", enum_name, arm.variant_name));
-                }
-            }
-            ++indent_;
-            for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
-                local_vars_.insert(arm.bindings[i]);
-                if (is_rvalue) {
-                    writeln(std::format("auto&& {} = std::move(_m._{});", arm.bindings[i], i));
-                } else {
-                    writeln(std::format("const auto& {} = _m._{};", arm.bindings[i], i));
-                }
-            }
-            for (const auto& b : arm.body) {
-                emit_stmt(b, in_main);
-            }
-            --indent_;
-            writeln("},");
-        }
-        --indent_;
-        if (is_rvalue) {
-            std::string t_str = emit_expr(ms.target);
-            if (t_str.starts_with("std::move(") && t_str.ends_with(")")) {
-                std::string inner = t_str.substr(10, t_str.size() - 11);
-                writeln(std::format("}}, std::move({}._v));", inner));
-            } else {
-                writeln(std::format("}}, std::move({}._v));", t_str));
-            }
-        } else {
-            writeln(std::format("}}, {}._v);", emit_expr(ms.target)));
-        }
+        return false;
     }
 
-    void emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr) {
-        if (body.empty()) {
-            if (is_expr) {
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "return {};\n";
-            }
-            return;
-        }
-        for (std::size_t i = 0; i < body.size(); ++i) {
-            bool is_last = (i + 1 == body.size());
-            if (is_expr && is_last) {
-                if (std::holds_alternative<ExprStmt>(body[i]->node)) {
-                    const auto& es = std::get<ExprStmt>(body[i]->node);
-                    for (int j = 0; j < indent_; ++j) sb << "    ";
-                    sb << "return " << emit_expr(es.expr) << ";\n";
-                    continue;
-                }
-            }
-            Emitter sub(cf_);
-            sub.indent_ = indent_;
-            sub.cur_fn_ = cur_fn_;
-            sub.used_core_ = used_core_;
-            sub.used_vendor_ = used_vendor_;
-            sub.local_vars_ = local_vars_;
-            sub.ptr_vars_ = ptr_vars_;
-            sub.map_vars_ = map_vars_;
-            sub.fixed_array_vars_ = fixed_array_vars_;
-            sub.in_main_ = in_main_;
-            sub.emit_stmt(body[i], false);
-            sb << sub.buf_.str();
-            local_vars_ = sub.local_vars_;
-            ptr_vars_ = sub.ptr_vars_;
-            map_vars_ = sub.map_vars_;
-            fixed_array_vars_ = sub.fixed_array_vars_;
-        }
-    }
-
-    [[nodiscard]] auto emit_match_expr(const MatchExpr& me) -> std::string {
-        bool is_slice_match = false;
-        bool is_primitive_match = false;
-        for (const auto& a : me.arms) {
-            if (a.is_slice_pattern) is_slice_match = true;
-            if (!a.literal_val.empty()) is_primitive_match = true;
-        }
-
-        std::string enum_name;
-        for (const auto& arm : me.arms) {
-            if (!arm.enum_prefix.empty()) {
-                enum_name = arm.enum_prefix;
-                break;
-            }
-            if (auto it = cf_.variant_to_enum.find(arm.variant_name); it != cf_.variant_to_enum.end()) {
-                enum_name = it->second;
-                break;
-            }
-        }
-
-        std::ostringstream sb;
-        if (is_slice_match) {
-            sb << "([&]() -> auto {\n";
-            ++indent_;
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "const auto& _target = " << emit_expr(me.target) << ";\n";
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "bool _matched = false;\n";
-
-            for (const auto& arm : me.arms) {
-                if (arm.is_slice_pattern) {
-                    std::size_t head_count = arm.slice_head.size();
-                    std::size_t tail_count = arm.slice_tail.size();
-                    std::size_t min_size = head_count + tail_count;
-
-                    std::string cond;
-                    if (!arm.slice_has_rest) {
-                        cond = std::format("_target.size() == {}", min_size);
-                    } else {
-                        if (min_size == 0) cond = "true";
-                        else cond = std::format("_target.size() >= {}", min_size);
-                    }
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "if (!_matched && " << cond << ") {\n";
-                    ++indent_;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "_matched = true;\n";
-                    for (std::size_t i = 0; i < head_count; ++i) {
-                        if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
-                            for (int j = 0; j < indent_; ++j) sb << "    ";
-                            sb << "const auto& " << arm.slice_head[i] << " = _target[" << i << "];\n";
-                        }
-                    }
-                    if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
-                        stmts_reference_ident(arm.body, arm.slice_rest)) {
-                        std::string rest_start = std::to_string(head_count);
-                        std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
-                        for (int j = 0; j < indent_; ++j) sb << "    ";
-                        sb << "auto " << arm.slice_rest << " = cfire::slice(_target, " << rest_start << ", " << rest_end << ");\n";
-                    }
-                    for (std::size_t i = 0; i < tail_count; ++i) {
-                        if (arm.slice_tail[i] != "_" && stmts_reference_ident(arm.body, arm.slice_tail[i])) {
-                            std::size_t offset_from_end = tail_count - i;
-                            for (int j = 0; j < indent_; ++j) sb << "    ";
-                            sb << "const auto& " << arm.slice_tail[i] << " = _target[_target.size() - " << offset_from_end << "];\n";
-                        }
-                    }
-                    emit_match_arm_body(sb, arm.body, true);
-                    --indent_;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "}\n";
-                } else if (arm.variant_name == "_") {
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "if (!_matched) {\n";
-                    ++indent_;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "_matched = true;\n";
-                    emit_match_arm_body(sb, arm.body, true);
-                    --indent_;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "}\n";
-                }
-            }
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "cfire::assert_true(false, \"unreachable slice match\");\n";
-            --indent_;
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "})()";
-            return sb.str();
-        }
-
-        if (is_primitive_match || enum_name.empty()) {
-            sb << "([&]() -> auto {\n";
-            ++indent_;
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "const auto& _target = " << emit_expr(me.target) << ";\n";
-            bool first = true;
-            for (const auto& arm : me.arms) {
-                if (arm.variant_name == "_" && arm.literal_val.empty()) {
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "else {\n";
-                    ++indent_;
-                    emit_match_arm_body(sb, arm.body, true);
-                    --indent_;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "}\n";
-                } else {
-                    std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    if (first) {
-                        sb << "if (_target == " << pat << ") {\n";
-                        first = false;
-                    } else {
-                        sb << "else if (_target == " << pat << ") {\n";
-                    }
-                    ++indent_;
-                    emit_match_arm_body(sb, arm.body, true);
-                    --indent_;
-                    for (int i = 0; i < indent_; ++i) sb << "    ";
-                    sb << "}\n";
-                }
-            }
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "cfire::assert_true(false, \"unreachable match\");\n";
-            --indent_;
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "})()";
-            return sb.str();
-        }
-
-        // Tagged enum match:
-        bool is_rvalue = me.is_move || (me.target && std::holds_alternative<CallExpr>(me.target->node));
-        sb << "std::visit(cfire::overloaded{\n";
-        ++indent_;
-        for (const auto& arm : me.arms) {
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            if (arm.variant_name == "_") {
-                sb << (is_rvalue ? "[&](auto&&) -> auto {\n" : "[&](const auto&) -> auto {\n");
-            } else {
-                if (is_rvalue) {
-                    sb << std::format("[&]({}::_{}&& _m) -> auto {{\n", enum_name, arm.variant_name);
-                } else {
-                    sb << std::format("[&](const {}::_{}& _m) -> auto {{\n", enum_name, arm.variant_name);
-                }
-            }
-            ++indent_;
-            for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
-                local_vars_.insert(arm.bindings[i]);
-                for (int j = 0; j < indent_; ++j) sb << "    ";
-                if (is_rvalue) {
-                    sb << std::format("auto&& {} = std::move(_m._{});\n", arm.bindings[i], i);
-                } else {
-                    sb << std::format("const auto& {} = _m._{};\n", arm.bindings[i], i);
-                }
-            }
-            emit_match_arm_body(sb, arm.body, true);
-            --indent_;
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "},\n";
-        }
-        --indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        if (is_rvalue) {
-            std::string t_str = emit_expr(me.target);
-            if (t_str.starts_with("std::move(") && t_str.ends_with(")")) {
-                std::string inner = t_str.substr(10, t_str.size() - 11);
-                sb << "}, std::move(" << inner << "._v))";
-            } else {
-                sb << "}, std::move(" << t_str << "._v))";
-            }
-        } else {
-            sb << "}, " << emit_expr(me.target) << "._v)";
-        }
-        return sb.str();
-    }
+    void emit_stmt(const StmtPtr& s, bool in_main);
+    void emit_match_stmt(const MatchStmt& ms, bool in_main);
+    void emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr);
+    [[nodiscard]] auto emit_match_expr(const MatchExpr& me) -> std::string;
 
     struct InterpolationResult {
         std::string fmt_str{};
@@ -2234,10 +1753,32 @@ public:
     [[nodiscard]] auto is_ident_in_scope(const std::string& ident) const -> bool {
         if (local_vars_.contains(ident)) return true;
         if (cf_.fn_sigs.contains(ident)) return true;
+        if (is_core_ns_ident(ident)) return true;
+        if (is_vendor_alias(ident)) return true;
+        if (is_local_type(ident)) return true;
+        if (ident == "i8" || ident == "i16" || ident == "i32" || ident == "i64" ||
+            ident == "u8" || ident == "u16" || ident == "u32" || ident == "u64" ||
+            ident == "usize" || ident == "isize" || ident == "f32" || ident == "f64" ||
+            ident == "bool" || ident == "byte" || ident == "str") {
+            return true;
+        }
         for (const auto& gv : cf_.ast.global_vars) {
             if (gv.name == ident) return true;
         }
         return false;
+    }
+
+    [[nodiscard]] static auto escape_unescaped_quotes(std::string_view sv) -> std::string {
+        std::string out;
+        out.reserve(sv.size());
+        for (std::size_t i = 0; i < sv.size(); ++i) {
+            if (sv[i] == '"' && (i == 0 || sv[i - 1] != '\\')) {
+                out += "\\\"";
+            } else {
+                out.push_back(sv[i]);
+            }
+        }
+        return out;
     }
 
     [[nodiscard]] static auto expr_root_ident(const ExprPtr& e) -> std::string {
@@ -2254,750 +1795,22 @@ public:
         return "";
     }
 
-    [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) -> std::optional<InterpolationResult> {
-        if (lit.kind != TokenKind::String || !lit.value.contains('{')) return std::nullopt;
-        auto placeholders = scan_interpolation_placeholders(lit.value);
-        if (placeholders.empty()) return std::nullopt;
-
-        std::vector<ExprSnippetResult> parsed_exprs;
-        parsed_exprs.reserve(placeholders.size());
-        for (const auto& ph : placeholders) {
-            auto parsed = parse_expr_snippet(cf_.ast.path, ph.expr_text, line);
-            if (!parsed) return std::nullopt;
-            std::string root = expr_root_ident(parsed->expr);
-            if (root.empty() || !is_ident_in_scope(root)) {
-                return std::nullopt;
-            }
-            parsed_exprs.push_back(std::move(*parsed));
-        }
-
-        InterpolationResult res;
-        std::size_t cursor = 0;
-        for (std::size_t i = 0; i < placeholders.size(); ++i) {
-            res.fmt_str.append(lit.value.substr(cursor, placeholders[i].start_pos - cursor));
-            res.fmt_str += "{}";
-            cursor = placeholders[i].end_pos + 1;
-            res.args.push_back(emit_expr(parsed_exprs[i].expr));
-        }
-        res.fmt_str.append(lit.value.substr(cursor));
-        return res;
-    }
-
-    [[nodiscard]] auto emit_expr(const ExprPtr& e) -> std::string {
-        if (!e) return "";
-        if (auto it = hoisted_tries_.find(e); it != hoisted_tries_.end()) {
-            return it->second;
-        }
-        return std::visit([&](const auto& ex) -> std::string {
-            using T = std::decay_t<decltype(ex)>;
-            if constexpr (std::is_same_v<T, IdentExpr>) {
-                std::string name = ex.name;
-                if (name.starts_with("cpp::")) name.erase(0, 5);
-                if (name.starts_with("http.")) {
-                    name = "cfire::http::" + name.substr(5);
-                } else if (name.starts_with("http::")) {
-                    name = "cfire::http::" + name.substr(6);
-                } else if (name.starts_with("url.")) {
-                    name = "cfire::url::" + name.substr(4);
-                } else if (name.starts_with("url::")) {
-                    name = "cfire::url::" + name.substr(5);
-                }
-                if (auto col_pos = name.find("::"); col_pos != std::string::npos) {
-                    if (is_vendor_alias(name.substr(0, col_pos))) {
-                        name.erase(0, col_pos + 2);
-                    }
-                }
-                // Check if this is an Enum Variant e.g. `Shape::Empty` (0-arg) or `Shape::Circle` (constructor)
-                if (auto pos = name.find("::"); pos != std::string::npos) {
-                    std::string en_name = name.substr(0, pos);
-                    std::string v_name = name.substr(pos + 2);
-                    if (auto it = cf_.enums.find(en_name); it != cf_.enums.end()) {
-                        for (const auto& v : it->second.variants) {
-                            if (v.name == v_name) {
-                                if (v.payload_types.empty()) {
-                                    return std::format("{}::{}()", en_name, v_name);
-                                } else {
-                                    return std::format("{}::{}", en_name, v_name);
-                                }
-                            }
-                        }
-                    }
-                }
-                if (auto it = cf_.last_use_move.find(cur_fn_ + ":" + ex.name); it != cf_.last_use_move.end() && it->second == e->line) {
-                    return std::format("std::move({})", name);
-                }
-                return name;
-            } else if constexpr (std::is_same_v<T, LiteralExpr>) {
-                if (ex.kind == TokenKind::KwNone) {
-                    return "std::nullopt";
-                }
-                if (ex.kind == TokenKind::String) {
-                    if (auto interp = extract_interpolation(ex, e->line)) {
-                        std::string args;
-                        for (std::size_t i = 0; i < interp->args.size(); ++i) {
-                            if (i > 0) args += ", ";
-                            args += interp->args[i];
-                        }
-                        return std::format("std::format(\"{}\", {})", interp->fmt_str, args);
-                    }
-                    return std::format("\"{}\"", ex.value);
-                }
-                if (ex.kind == TokenKind::RawString) {
-                    return std::format("R\"({})\"", ex.value);
-                }
-                return ex.value;
-            } else if constexpr (std::is_same_v<T, UnaryExpr>) {
-                if (ex.op == "move") return std::format("std::move({})", emit_expr(ex.operand));
-                if (ex.op == "&mut") return "&" + emit_expr(ex.operand);
-                if (ex.op == "*") return "(*" + emit_expr(ex.operand) + ")";
-                return ex.op + emit_expr(ex.operand);
-            } else if constexpr (std::is_same_v<T, BinaryExpr>) {
-                return std::format("({} {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
-            } else if constexpr (std::is_same_v<T, MemberExpr>) {
-                if (const auto* id = std::get_if<IdentExpr>(&ex.object->node)) {
-                    if (cf_.enums.contains(id->name)) {
-                        return std::format("{}::{}()", id->name, ex.field);
-                    }
-                    if (is_vendor_alias(id->name)) {
-                        return ex.field;
-                    }
-                    if (id->name == "fs" || id->name == "zstd" || id->name == "json" ||
-                        id->name == "sqlite" || id->name == "blake3" || id->name == "net" || id->name == "cli" ||
-                        id->name == "time" || id->name == "os" || id->name == "sync" || id->name == "str" ||
-                        id->name == "math" || id->name == "rand" || id->name == "log" || id->name == "regex" ||
-                        id->name == "collections" || id->name == "sort" || id->name == "unicode" ||
-                        id->name == "base64" || id->name == "hex" || id->name == "csv" ||
-                        id->name == "aes" || id->name == "hmac" || id->name == "sha256" ||
-                        id->name == "context" || id->name == "websocket" || id->name == "http" || id->name == "url" || id->name == "tls" ||
-                        id->name == "audio" || id->name == "ai" ||
-                        used_core_.contains(id->name)) {
-                        return std::format("cfire::{}::{}", id->name, ex.field);
-                    }
-                    if (!is_ident_in_scope(id->name)) {
-                        for (const auto& gv : cf_.ast.global_vars) {
-                            if (gv.name == ex.field) return ex.field;
-                        }
-                    }
-                }
-                std::string obj = emit_expr(ex.object);
-                if (ex.is_namespace) return obj + "::" + ex.field;
-                if (obj.ends_with("::Response") || obj.ends_with("::Request") || obj.ends_with("::Router") || obj.ends_with("::HttpServer") ||
-                    obj.ends_with("::ServerContext") || obj.ends_with("::Waveform") || obj.ends_with("::SfxPreset") || obj.ends_with("::Provider") ||
-                    obj == "Response" || obj == "Request" || obj == "Router" || obj == "HttpServer" || obj == "ServerContext" ||
-                    obj == "Waveform" || obj == "SfxPreset" || obj == "Provider") {
-                    return obj + "::" + ex.field;
-                }
-                if (ex.field == "len") return obj + ".size()";
-                if (ex.field == "empty") return obj + ".empty";
-                return obj + "." + ex.field;
-            } else if constexpr (std::is_same_v<T, IndexExpr>) {
-                bool use_raw_index = false;
-                if (ex.object) {
-                    if (const auto* obj_id = std::get_if<IdentExpr>(&ex.object->node)) {
-                        if (map_vars_.contains(obj_id->name)) {
-                            use_raw_index = true;
-                        } else if (fixed_array_vars_.contains(obj_id->name) && ex.index) {
-                            if (const auto* lit = std::get_if<LiteralExpr>(&ex.index->node); lit && lit->kind == TokenKind::Int) {
-                                use_raw_index = true;
-                            }
-                        }
-                        if (!use_raw_index && ex.index) {
-                            if (const auto* idx_id = std::get_if<IdentExpr>(&ex.index->node)) {
-                                if (auto it = loop_index_to_col_.find(idx_id->name); it != loop_index_to_col_.end() && it->second == obj_id->name) {
-                                    use_raw_index = true;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (use_raw_index) {
-                    return std::format("{}[{}]", emit_expr(ex.object), emit_expr(ex.index));
-                }
-                return std::format(
-                    "cfire::index_at({}, {}, \"{}\", {})",
-                    emit_expr(ex.object),
-                    emit_expr(ex.index),
-                    escape_line_path(source_path_),
-                    e->line
-                );
-            } else if constexpr (std::is_same_v<T, SliceExpr>) {
-                std::string obj = emit_expr(ex.object);
-                std::string start_s = ex.start ? emit_expr(ex.start) : "0";
-                std::string end_s = ex.end ? emit_expr(ex.end) : (obj + ".size()");
-                return std::format("cfire::slice({}, {}, {})", obj, start_s, end_s);
-            } else if constexpr (std::is_same_v<T, StructLitExpr>) {
-                std::string tname = ex.type_name;
-                if (tname.starts_with("cpp::")) tname.erase(0, 5);
-                if (tname == "http.Request" || tname == "http::Request") tname = "cfire::http::Request";
-                if (tname == "http.Response" || tname == "http::Response") tname = "cfire::http::Response";
-                if (tname == "http.Router" || tname == "http::Router") tname = "cfire::http::Router";
-                if (tname == "http.HttpServer" || tname == "http::HttpServer") tname = "cfire::http::HttpServer";
-                if (tname == "url.Url" || tname == "url::Url") tname = "cfire::url::Url";
-                if (auto dot_pos = tname.find('.'); dot_pos != std::string::npos) {
-                    std::string mod = tname.substr(0, dot_pos);
-                    std::string rest = tname.substr(dot_pos + 1);
-                    if (used_core_.contains(mod)) {
-                        tname = std::format("cfire::{}::{}", mod, rest);
-                    } else if (is_local_type(rest) || is_vendor_alias(mod)) {
-                        tname = rest;
-                    } else {
-                        tname = std::format("{}::{}", mod, rest);
-                    }
-                } else if (auto col_pos = tname.find("::"); col_pos != std::string::npos) {
-                    std::string mod = tname.substr(0, col_pos);
-                    std::string rest = tname.substr(col_pos + 2);
-                    if (used_core_.contains(mod)) {
-                        tname = std::format("cfire::{}::{}", mod, rest);
-                    } else if (is_local_type(rest) || is_vendor_alias(mod)) {
-                        tname = rest;
-                    }
-                }
-                if (ex.fields.empty()) return tname + "{}";
-                std::string inits;
-                for (std::size_t i = 0; i < ex.fields.size(); ++i) {
-                    if (i > 0) inits += ", ";
-                    inits += std::format(".{} = {}", ex.fields[i].name, emit_expr(ex.fields[i].value));
-                }
-                return std::format("{}{{{}}}", tname, inits);
-            } else if constexpr (std::is_same_v<T, ArrayLitExpr>) {
-                std::string elems;
-                for (std::size_t i = 0; i < ex.elements.size(); ++i) {
-                    if (i > 0) elems += ", ";
-                    elems += emit_expr(ex.elements[i]);
-                }
-                return std::format("{{{}}}", elems);
-            } else if constexpr (std::is_same_v<T, ClosureExpr>) {
-                return emit_closure(ex);
-            } else if constexpr (std::is_same_v<T, OrExpr>) {
-                if (ex.fallback_val) {
-                    return std::format("{}.value_or({})", emit_expr(ex.inner), emit_expr(ex.fallback_val));
-                }
-                return emit_expr(ex.inner);
-            } else if constexpr (std::is_same_v<T, TryExpr>) {
-                std::string inner = emit_expr(ex.inner);
-                return std::format("([&]() -> decltype(auto) {{\n"
-                                   "    auto&& _res = ({0});\n"
-                                   "    if (!_res.has_value()) {{\n"
-                                   "        std::println(stderr, \"Error: {{}}\", _res.error().message());\n"
-                                   "        std::abort();\n"
-                                   "    }}\n"
-                                   "    return cfire::unwrap_val(std::forward<decltype(_res)>(_res));\n"
-                                   "}})()", inner);
-            } else if constexpr (std::is_same_v<T, CallExpr>) {
-                return emit_call(ex);
-            } else if constexpr (std::is_same_v<T, TupleExpr>) {
-                std::string elems;
-                for (std::size_t i = 0; i < ex.elements.size(); ++i) {
-                    if (i > 0) elems += ", ";
-                    elems += emit_expr(ex.elements[i]);
-                }
-                return std::format("std::make_tuple({})", elems);
-            } else if constexpr (std::is_same_v<T, MatchExpr>) {
-                return emit_match_expr(ex);
-            }
-            return "";
-        }, e->node);
-    }
-
-    [[nodiscard]] auto emit_call(const CallExpr& call) -> std::string {
-        if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
-            if (id->name == "println" || id->name == "print") {
-                std::string fn = (id->name == "print") ? "std::print" : "std::println";
-                if (call.args.empty()) {
-                    return std::format("{}()", fn);
-                }
-                const auto* first_lit = (call.args[0].value) ? std::get_if<LiteralExpr>(&call.args[0].value->node) : nullptr;
-                if (first_lit && (first_lit->kind == TokenKind::String || first_lit->kind == TokenKind::RawString)) {
-                    if (first_lit->kind == TokenKind::RawString) {
-                        std::string trailing;
-                        for (std::size_t i = 1; i < call.args.size(); ++i) {
-                            trailing += ", " + emit_call_arg(call.args[i]);
-                        }
-                        return std::format("{}(R\"({})\"{})", fn, first_lit->value, trailing);
-                    }
-                    auto interp = extract_interpolation(*first_lit, call.args[0].line);
-                    std::string fmt_str = interp ? interp->fmt_str : first_lit->value;
-                    std::string all_args;
-                    if (interp) {
-                        for (const auto& a : interp->args) {
-                            if (!all_args.empty()) all_args += ", ";
-                            all_args += a;
-                        }
-                    }
-                    for (std::size_t i = 1; i < call.args.size(); ++i) {
-                        if (!all_args.empty()) all_args += ", ";
-                        all_args += emit_call_arg(call.args[i]);
-                    }
-                    if (all_args.empty()) {
-                        return std::format("{}(\"{}\")", fn, fmt_str);
-                    }
-                    return std::format("{}(\"{}\", {})", fn, fmt_str, all_args);
-                }
-
-                // First argument is not a string literal
-                if (call.args.size() == 1) {
-                    return std::format("{}(\"{{}}\", {})", fn, emit_call_arg(call.args[0]));
-                }
-                std::string args;
-                for (std::size_t i = 0; i < call.args.size(); ++i) {
-                    if (i > 0) args += ", ";
-                    args += emit_call_arg(call.args[i]);
-                }
-                return std::format("{}({})", fn, args);
-            }
-            if ((id->name == "assert_eq" || id->name == "assert_ne") && call.args.size() >= 2) {
-                std::string op_str = (id->name == "assert_ne") ? "!=" : "==";
-                std::string default_msg = (id->name == "assert_ne") ? "\"assert_ne failed\"" : "\"assert_eq failed\"";
-                std::string lhs = emit_call_arg(call.args[0]);
-                std::string rhs = emit_call_arg(call.args[1]);
-                std::string cond = std::format("(({}) {} ({}))", lhs, op_str, rhs);
-                std::string msg = (call.args.size() >= 3) ? emit_call_arg(call.args[2]) : default_msg;
-                std::string expr_str = cond;
-                std::string escaped_expr;
-                for (char ch : expr_str) {
-                    if (ch == '\\') escaped_expr += "\\\\";
-                    else if (ch == '"') escaped_expr += "\\\"";
-                    else escaped_expr += ch;
-                }
-                int line = call.args[0].value ? call.args[0].value->line : 0;
-                std::string file_str = cf_.ast.path;
-                std::string escaped_file;
-                for (char ch : file_str) {
-                    if (ch == '\\') escaped_file += "\\\\";
-                    else if (ch == '"') escaped_file += "\\\"";
-                    else escaped_file += ch;
-                }
-                return std::format(
-                    "cfire::assert_binop_at({}, {}, [](const auto& _l, const auto& _r) {{ return _l {} _r; }}, \"{}\", {}, \"{}\", {}, \"{}\")",
-                    lhs, rhs, op_str, op_str, msg, escaped_file, line, escaped_expr);
-            }
-            if (id->name == "assert" && !call.args.empty()) {
-                std::string msg = (call.args.size() >= 2) ? emit_call_arg(call.args[1]) : "\"assertion failed\"";
-                int line = call.args[0].value ? call.args[0].value->line : 0;
-                std::string file_str = cf_.ast.path;
-                std::string escaped_file;
-                for (char ch : file_str) {
-                    if (ch == '\\') escaped_file += "\\\\";
-                    else if (ch == '"') escaped_file += "\\\"";
-                    else escaped_file += ch;
-                }
-                if (call.args[0].value) {
-                    if (const auto* bin = std::get_if<BinaryExpr>(&call.args[0].value->node)) {
-                        if (bin->op == "==" || bin->op == "!=" ||
-                            bin->op == "<"  || bin->op == "<=" ||
-                            bin->op == ">"  || bin->op == ">=") {
-                            // Do not use assert_binop_at if either side is `none` (std::nullopt) where optional/pointer comparison may require contextual conversion
-                            const auto* l_lit = bin->left ? std::get_if<LiteralExpr>(&bin->left->node) : nullptr;
-                            const auto* r_lit = bin->right ? std::get_if<LiteralExpr>(&bin->right->node) : nullptr;
-                            bool has_none = (l_lit && l_lit->kind == TokenKind::KwNone) ||
-                                            (r_lit && r_lit->kind == TokenKind::KwNone);
-                            if (!has_none) {
-                                std::string lhs = emit_expr(bin->left);
-                                std::string rhs = emit_expr(bin->right);
-                                std::string expr_str = std::format("({} {} {})", lhs, bin->op, rhs);
-                                std::string escaped_expr;
-                                for (char ch : expr_str) {
-                                    if (ch == '\\') escaped_expr += "\\\\";
-                                    else if (ch == '"') escaped_expr += "\\\"";
-                                    else escaped_expr += ch;
-                                }
-                                return std::format(
-                                    "cfire::assert_binop_at({}, {}, [](const auto& _l, const auto& _r) {{ return _l {} _r; }}, \"{}\", {}, \"{}\", {}, \"{}\")",
-                                    lhs, rhs, bin->op, bin->op, msg, escaped_file, line, escaped_expr);
-                            }
-                        }
-                    }
-                }
-                std::string cond = emit_call_arg(call.args[0]);
-                std::string expr_str = cond;
-                std::string escaped_expr;
-                for (char ch : expr_str) {
-                    if (ch == '\\') escaped_expr += "\\\\";
-                    else if (ch == '"') escaped_expr += "\\\"";
-                    else escaped_expr += ch;
-                }
-                return std::format("cfire::assert_true_at({}, {}, \"{}\", {}, \"{}\")",
-                    cond, msg, escaped_file, line, escaped_expr);
-            }
-            if (id->name == "make" && call.type_args.size() == 1) {
-                const auto& ta = call.type_args[0];
-                std::string args;
-                for (std::size_t i = 0; i < call.args.size(); ++i) {
-                    if (i > 0) args += ", ";
-                    args += emit_call_arg(call.args[i]);
-                }
-                if (ta.smart_wrap == "own" && ta.elem_type) {
-                    return std::format("cfire::make_own<{}>({})", lower_owning_type(*ta.elem_type), args);
-                }
-                if (ta.smart_wrap == "shared" && ta.elem_type) {
-                    return std::format("cfire::make_shared_ptr<{}>({})", lower_owning_type(*ta.elem_type), args);
-                }
-                return std::format("{}{{{}}}", lower_owning_type(ta), args);
-            }
-            if ((id->name == "error" || id->name == "Err") && call.args.size() == 1) {
-                return std::format("cfire::make_error({})", emit_call_arg(call.args[0]));
-            }
-            if (id->name == "black_box" && call.args.size() == 1) {
-                return std::format("cfire::black_box({})", emit_call_arg(call.args[0]));
-            }
-        }
-
-        if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
-            if (mem->field == "len" && call.args.empty()) {
-                return std::format("{}.size()", emit_expr(mem->object));
-            }
-            if (mem->field == "byte_ptr" && call.args.empty()) {
-                used_core_.insert("str");
-                return std::format("cfire::str::byte_ptr({})", emit_expr(mem->object));
-            }
-            if (mem->field == "byte_ptr_at" && call.args.size() == 1) {
-                used_core_.insert("str");
-                return std::format("cfire::str::byte_ptr_at({}, {})", emit_expr(mem->object), emit_call_arg(call.args[0]));
-            }
-            if ((mem->field == "data" || mem->field == "data_ptr") && call.args.empty()) {
-                return std::format("({}).data()", emit_expr(mem->object));
-            }
-            // Check if this is an Enum Variant constructor e.g. `Shape.Circle(2.0)`
-            if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && cf_.enums.contains(id->name)) {
-                std::string args;
-                for (std::size_t i = 0; i < call.args.size(); ++i) {
-                    if (i > 0) args += ", ";
-                    args += emit_call_arg(call.args[i]);
-                }
-                return std::format("{}::{}({})", id->name, mem->field, args);
-            }
-
-            // Check if this is a user-defined receiver method `obj.method(args...)` -> `cfire_method_<name>(obj, args...)`
-            // Overloaded cfire_method_<name> resolves via C++ overload resolution natively across multiple receiver types!
-            if (auto owners_it = cf_.method_owners.find(mem->field); owners_it != cf_.method_owners.end()) {
-                std::string args = emit_expr(mem->object);
-                for (const auto& a : call.args) {
-                    args += ", " + emit_call_arg(a);
-                }
-                if (call.block_arg) {
-                    args += ", " + emit_closure(*call.block_arg);
-                }
-                return std::format("cfire_method_{}({})", mem->field, args);
-            }
-            if (auto owner_it = cf_.method_owner.find(mem->field); owner_it != cf_.method_owner.end()) {
-                std::string args = emit_expr(mem->object);
-                for (const auto& a : call.args) {
-                    args += ", " + emit_call_arg(a);
-                }
-                if (call.block_arg) {
-                    args += ", " + emit_closure(*call.block_arg);
-                }
-                return std::format("cfire_method_{}({})", mem->field, args);
-            }
-
-            // Check if `pkg.fn(args...)` refers to a merged local package function in `cf_.fn_sigs`
-            if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && cf_.fn_sigs.contains(mem->field)) {
-                std::string args;
-                for (std::size_t i = 0; i < call.args.size(); ++i) {
-                    if (i > 0) args += ", ";
-                    args += emit_call_arg(call.args[i]);
-                }
-                if (call.block_arg) {
-                    if (!args.empty()) args += ", ";
-                    args += emit_closure(*call.block_arg);
-                }
-                return std::format("{}({})", mem->field, args);
-            }
-
-            std::string obj = emit_expr(mem->object);
-            if (mem->field == "push" && call.args.size() == 1) {
-                return std::format("{}.push_back({})", obj, emit_call_arg(call.args[0]));
-            }
-            if (mem->field == "pop" && call.args.empty()) {
-                return std::format("{}.pop_back()", obj);
-            }
-            if (mem->field == "with_ext" && call.args.size() == 1) {
-                return std::format("cfire::path_with_ext({}, {})", obj, emit_call_arg(call.args[0]));
-            }
-            if (mem->field == "bytes" && call.args.empty()) {
-                return std::format("cfire::to_bytes({})", obj);
-            }
-            if (mem->field == "parse" && call.type_args.size() == 1) {
-                if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && id->name == "cli") {
-                    return std::format("cfire::cli::parse<{}>(argc, argv)", call.type_args[0].name);
-                }
-            }
-            if (mem->field == "tx" && call.args.empty() && call.block_arg && call.block_arg->params.size() == 1) {
-                std::string tx_param = call.block_arg->params[0];
-                std::ostringstream sb;
-                sb << std::format("{}.tx([&](cfire::sqlite::Conn& {}) -> std::expected<void, cfire::Error> {{\n", obj, tx_param);
-                ++indent_;
-                Emitter sub(cf_);
-                sub.indent_ = indent_;
-                sub.cur_fn_ = cur_fn_;
-                sub.used_core_ = used_core_;
-                sub.used_vendor_ = used_vendor_;
-                sub.local_vars_ = local_vars_;
-                sub.ptr_vars_ = ptr_vars_;
-                sub.map_vars_ = map_vars_;
-                sub.fixed_array_vars_ = fixed_array_vars_;
-                sub.local_vars_.insert(tx_param);
-                sub.in_fallible_void_ = true;
-                for (const auto& st : call.block_arg->body) {
-                    sub.emit_stmt(st, false);
-                }
-                sb << sub.buf_.str();
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "return {};\n";
-                --indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "})";
-                return sb.str();
-            }
-            if (mem->field == "spawn" && call.block_arg) {
-                std::ostringstream sb;
-                sb << std::format("{}.spawn([=]() {{\n", obj);
-                ++indent_;
-                Emitter sub(cf_);
-                sub.indent_ = indent_;
-                sub.cur_fn_ = cur_fn_;
-                sub.used_core_ = used_core_;
-                sub.used_vendor_ = used_vendor_;
-                sub.local_vars_ = local_vars_;
-                sub.ptr_vars_ = ptr_vars_;
-                sub.map_vars_ = map_vars_;
-                sub.fixed_array_vars_ = fixed_array_vars_;
-                for (const auto& st : call.block_arg->body) {
-                    sub.emit_stmt(st, false);
-                }
-                sb << sub.buf_.str();
-                --indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "})";
-                return sb.str();
-            }
-        }
-
-        bool is_vendor_call = false;
-        if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
-            if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && is_vendor_alias(id->name)) {
-                is_vendor_call = true;
-            }
-        } else if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
-            if (auto col_pos = id->name.find("::"); col_pos != std::string::npos) {
-                if (is_vendor_alias(id->name.substr(0, col_pos))) {
-                    is_vendor_call = true;
-                }
-            }
-        }
-
-        std::string callee = emit_expr(call.callee);
-        std::string lookup_name = callee;
-        if (auto colon_pos = lookup_name.rfind("::"); colon_pos != std::string::npos) {
-            lookup_name = lookup_name.substr(colon_pos + 2);
-        }
-        const std::vector<std::string>* cpp_params = nullptr;
-        if (auto it = cf_.cpp_fn_params.find(lookup_name); it != cf_.cpp_fn_params.end()) {
-            cpp_params = &it->second;
-        }
-
-        if (!call.type_args.empty()) {
-            std::string targs;
-            for (std::size_t i = 0; i < call.type_args.size(); ++i) {
-                if (i > 0) targs += ", ";
-                targs += lower_owning_type(call.type_args[i]);
-            }
-            callee = std::format("{}<{}>", callee, targs);
-        }
-        std::string args;
-        for (std::size_t i = 0; i < call.args.size(); ++i) {
-            if (i > 0) args += ", ";
-            std::string arg_val = emit_call_arg(call.args[i]);
-            if (cpp_params && i < cpp_params->size()) {
-                const std::string& ptype = (*cpp_params)[i];
-                if ((ptype == "const char *" || ptype == "const char*") &&
-                    !arg_val.starts_with("\"") && !arg_val.ends_with(".c_str()") && !arg_val.ends_with(".data()")) {
-                    arg_val = std::format("cfire::c_str({})", arg_val);
-                } else if ((ptype.contains("basic_string<char>") || ptype.contains("std::string")) &&
-                           !ptype.contains("string_view") && !arg_val.starts_with("std::string(")) {
-                    arg_val = std::format("std::string({})", arg_val);
-                }
-            } else if (is_vendor_call) {
-                bool is_plain_lit_or_const = false;
-                if (call.args[i].value) {
-                    if (const auto* lit = std::get_if<LiteralExpr>(&call.args[i].value->node)) {
-                        if (lit->kind != TokenKind::String || !arg_val.starts_with("std::format(")) {
-                            is_plain_lit_or_const = true;
-                        }
-                    } else if (const auto* mem = std::get_if<MemberExpr>(&call.args[i].value->node)) {
-                        if (const auto* mid = std::get_if<IdentExpr>(&mem->object->node); mid && is_vendor_alias(mid->name)) {
-                            is_plain_lit_or_const = true;
-                        }
-                    }
-                }
-                if (!is_plain_lit_or_const && !arg_val.starts_with("&")) {
-                    arg_val = std::format("cfire::c_arg({})", arg_val);
-                }
-            }
-            args += arg_val;
-        }
-        if (call.block_arg) {
-            if (!args.empty()) args += ", ";
-            args += emit_closure(*call.block_arg);
-        }
-        return std::format("{}({})", callee, args);
-    }
-
+    [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) -> std::optional<InterpolationResult>;
+    [[nodiscard]] auto emit_expr(const ExprPtr& e) -> std::string;
+    [[nodiscard]] auto emit_call(const CallExpr& call) -> std::string;
     [[nodiscard]] auto infer_closure_expr_cpp_type(
         const ExprPtr& e,
         const std::unordered_map<std::string, std::string>& local_types
-    ) const -> std::string {
-        if (!e) return "";
-        if (const auto* sl = std::get_if<StructLitExpr>(&e->node)) {
-            return sl->type_name;
-        }
-        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
-            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "std::string";
-            if (lit->kind == TokenKind::Float) return "double";
-            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
-            return "std::int64_t";
-        }
-        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
-            if (auto it = local_types.find(id->name); it != local_types.end()) {
-                return it->second;
-            }
-        }
-        if (const auto* c = std::get_if<CallExpr>(&e->node)) {
-            if (const auto* cid = std::get_if<IdentExpr>(&c->callee->node)) {
-                if (auto fit = cf_.fn_sigs.find(cid->name); fit != cf_.fn_sigs.end()) {
-                    TypeRef rt = fit->second.return_type;
-                    rt.is_fallible = false;
-                    return lower_owning_type(rt);
-                }
-            }
-        }
-        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
-            return infer_closure_expr_cpp_type(tr->inner, local_types);
-        }
-        return "";
-    }
-
+    ) const -> std::string;
     auto analyze_closure_returns(
         const std::vector<StmtPtr>& stmts,
         std::unordered_map<std::string, std::string>& local_types,
         bool& has_fallible,
         bool& has_val_ret,
         std::string& val_ret_cpp
-    ) const -> void {
-        for (const auto& s : stmts) {
-            if (!s) continue;
-            if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
-                if (vd->init && std::holds_alternative<TryExpr>(vd->init->node)) has_fallible = true;
-                if (vd->type) {
-                    local_types[vd->name] = lower_owning_type(*vd->type);
-                } else if (vd->init) {
-                    std::string t = infer_closure_expr_cpp_type(vd->init, local_types);
-                    if (!t.empty()) local_types[vd->name] = t;
-                }
-            } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
-                if (es->expr && std::holds_alternative<TryExpr>(es->expr->node)) has_fallible = true;
-            } else if (const auto* rs = std::get_if<ReturnStmt>(&s->node)) {
-                if (rs->value) {
-                    bool is_err_call = false;
-                    if (const auto* c = std::get_if<CallExpr>(&rs->value->node)) {
-                        if (const auto* cid = std::get_if<IdentExpr>(&c->callee->node)) {
-                            if (cid->name == "error" || cid->name == "Err") {
-                                is_err_call = true;
-                                has_fallible = true;
-                            }
-                        }
-                    }
-                    if (!is_err_call) {
-                        has_val_ret = true;
-                        if (val_ret_cpp.empty()) {
-                            val_ret_cpp = infer_closure_expr_cpp_type(rs->value, local_types);
-                        }
-                    }
-                }
-            } else if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
-                analyze_closure_returns(ifs->then_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-                analyze_closure_returns(ifs->else_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-            } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
-                analyze_closure_returns(fs->body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-            } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
-                for (const auto& arm : ms->arms) {
-                    analyze_closure_returns(arm.body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-                }
-            }
-        }
-    }
-
-    [[nodiscard]] auto emit_closure(const ClosureExpr& cl) -> std::string {
-        std::ostringstream sb;
-        sb << "[&](";
-        for (std::size_t i = 0; i < cl.params.size(); ++i) {
-            if (i > 0) sb << ", ";
-            if (i < cl.param_types.size() && cl.param_types[i].has_value()) {
-                std::string p_intent = (i < cl.param_intents.size()) ? cl.param_intents[i] : "in";
-                sb << lower_param_type(p_intent, *cl.param_types[i]) << " " << cl.params[i];
-            } else {
-                sb << "auto&& " << cl.params[i];
-            }
-        }
-        bool is_fallible_void = false;
-        if (cl.return_type) {
-            sb << ") -> " << lower_return_type(*cl.return_type) << " {\n";
-            if (cl.return_type->name == "void" && cl.return_type->is_fallible) {
-                is_fallible_void = true;
-            }
-        } else {
-            std::unordered_map<std::string, std::string> cl_local_types;
-            bool has_fallible = false;
-            bool has_val_ret = false;
-            std::string val_ret_cpp;
-            analyze_closure_returns(cl.body, cl_local_types, has_fallible, has_val_ret, val_ret_cpp);
-            if (has_fallible && !has_val_ret) {
-                sb << ") -> std::expected<void, cfire::Error> {\n";
-                is_fallible_void = true;
-            } else if (has_fallible && !val_ret_cpp.empty()) {
-                sb << ") -> std::expected<" << val_ret_cpp << ", cfire::Error> {\n";
-            } else {
-                sb << ") {\n";
-            }
-        }
-        ++indent_;
-        Emitter sub(cf_);
-        sub.indent_ = indent_;
-        sub.cur_fn_ = cur_fn_;
-        sub.used_core_ = used_core_;
-        sub.used_vendor_ = used_vendor_;
-        sub.local_vars_ = local_vars_;
-        sub.ptr_vars_ = ptr_vars_;
-        sub.map_vars_ = map_vars_;
-        sub.fixed_array_vars_ = fixed_array_vars_;
-        for (const auto& p : cl.params) sub.local_vars_.insert(p);
-        sub.in_main_ = false;
-        sub.in_test_ = false;
-        sub.in_fallible_void_ = is_fallible_void;
-        for (const auto& st : cl.body) {
-            sub.emit_stmt(st, false);
-        }
-        sb << sub.buf_.str();
-        if (is_fallible_void) {
-            bool has_ret = !cl.body.empty() && std::holds_alternative<ReturnStmt>(cl.body.back()->node);
-            if (!has_ret) {
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "return {};\n";
-            }
-        }
-        --indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "}";
-        return sb.str();
-    }
-
-    [[nodiscard]] auto emit_call_arg(const CallArg& a) -> std::string {
-        std::string val = emit_expr(a.value);
-        if (a.intent == "move" && !val.starts_with("std::move(")) {
-            return std::format("std::move({})", val);
-        }
-        return val;
-    }
+    ) const -> void;
+    [[nodiscard]] auto emit_closure(const ClosureExpr& cl) -> std::string;
+    [[nodiscard]] auto emit_call_arg(const CallArg& a) -> std::string;
 
     [[nodiscard]] auto lower_raw_owning_type(const TypeRef& tr) const -> std::string {
         if (tr.is_mut_borrow) {
@@ -3005,7 +1818,6 @@ public:
                 return std::format("std::span<{}>", lower_owning_type(*tr.elem_type));
             }
             if (tr.name == "str") return "std::string&";
-            if (tr.name == "bytes") return "std::span<std::byte>";
             return (tr.elem_type ? lower_owning_type(*tr.elem_type) : tr.name) + "&";
         }
         if (tr.is_borrow) {
@@ -3013,7 +1825,6 @@ public:
                 return std::format("std::span<const {}>", lower_owning_type(*tr.elem_type));
             }
             if (tr.name == "str") return "std::string_view";
-            if (tr.name == "bytes") return "std::span<const std::byte>";
             return "const " + (tr.elem_type ? lower_owning_type(*tr.elem_type) : tr.name) + "&";
         }
         if (tr.smart_wrap == "own" && tr.elem_type) {
@@ -3053,12 +1864,12 @@ public:
         }
         if (tr.name == "str") return "std::string";
         if (tr.name == "path") return "std::filesystem::path";
-        if (tr.name == "bytes") return "std::vector<std::byte>";
         if (tr.name == "i8") return "std::int8_t";
         if (tr.name == "i16") return "std::int16_t";
         if (tr.name == "i32") return "std::int32_t";
         if (tr.name == "i64") return "std::int64_t";
-        if (tr.name == "u8" || tr.name == "byte") return "std::uint8_t";
+        if (tr.name == "u8") return "std::uint8_t";
+        if (tr.name == "byte") return "std::byte";
         if (tr.name == "c_char" || tr.name == "char") return "char";
         if (tr.name == "u16") return "std::uint16_t";
         if (tr.name == "u32") return "std::uint32_t";
@@ -3133,12 +1944,12 @@ public:
     [[nodiscard]] auto lower_param_type(std::string_view intent, const TypeRef& tr) const -> std::string {
         if (intent == "mut" || intent == "out") return lower_owning_type(tr) + "&";
         if (intent == "move") return lower_owning_type(tr) + "&&";
+        if (tr.is_ptr || tr.is_mut_ptr) return lower_owning_type(tr);
         if (tr.is_mut_borrow) {
             if (tr.is_slice && tr.elem_type) {
                 return std::format("std::span<{}>", lower_owning_type(*tr.elem_type));
             }
             if (tr.name == "str") return "std::string&";
-            if (tr.name == "bytes") return "std::span<std::byte>";
             return lower_owning_type(tr);
         }
         if (tr.is_borrow) {
@@ -3146,14 +1957,12 @@ public:
                 return std::format("std::span<const {}>", lower_owning_type(*tr.elem_type));
             }
             if (tr.name == "str") return "std::string_view";
-            if (tr.name == "bytes") return "std::span<const std::byte>";
             return lower_owning_type(tr);
         }
         if (tr.name == "str") return "const std::string&";
         if (tr.is_slice && tr.elem_type) {
             return std::format("const std::vector<{}>&", lower_owning_type(*tr.elem_type));
         }
-        if (tr.name == "bytes") return "const std::vector<std::byte>&";
         if (tr.name == "path") return "const std::filesystem::path&";
         if (tr.name == "i8" || tr.name == "i16" || tr.name == "i32" || tr.name == "i64" ||
             tr.name == "u8" || tr.name == "byte" || tr.name == "u16" || tr.name == "u32" ||
@@ -3169,6 +1978,13 @@ public:
     }
 };
 
+
+} // namespace cfire::frontend
+
+#include "codegen/stmt.hpp"
+#include "codegen/expr.hpp"
+
+namespace cfire::frontend {
 
 [[nodiscard]] inline auto emit_cpp(const CheckedFile& cf, bool test_mode = false) -> std::string {
     Emitter em(cf, test_mode);

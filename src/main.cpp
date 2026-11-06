@@ -101,14 +101,16 @@ void print_usage() {
     std::string ui_html_txt;
 
     if (tmpl == "tako") {
-        build_cf_txt = std::format(R"CF(package build
+        build_cf_txt = std::format(R"CF(package main
 
-app := Executable{{
-    name:        "{}",
-    entry:       "main.cf",
-    targets:     ["native", "wasm", "ios-sim"],
-    subsystem:   "gui",
-    web_profile: "canvas",
+import "core:build"
+
+app := build.Executable{{
+    Name:       "{}",
+    Entry:      "main.cf",
+    Targets:    ["native", "wasm", "ios-sim"],
+    Subsystem:  "gui",
+    WebProfile: "canvas",
 }}
 )CF", proj_name);
         main_cf_txt = std::format(R"CF(package main
@@ -140,14 +142,16 @@ test "greet_label formats click count" {
 }
 )CF";
     } else if (tmpl == "gui") {
-        build_cf_txt = std::format(R"CF(package build
+        build_cf_txt = std::format(R"CF(package main
 
-app := Executable{{
-    name:        "{}",
-    entry:       "main.cf",
-    targets:     ["native", "wasm", "ios-sim"],
-    subsystem:   "gui",
-    web_profile: "canvas",
+import "core:build"
+
+app := build.Executable{{
+    Name:       "{}",
+    Entry:      "main.cf",
+    Targets:    ["native", "wasm", "ios-sim"],
+    Subsystem:  "gui",
+    WebProfile: "canvas",
 }}
 )CF", proj_name);
         main_cf_txt = std::format(R"CF(package main
@@ -178,13 +182,15 @@ test "window_title formats name" {{
 }}
 )CF", proj_name);
     } else if (tmpl == "webui") {
-        build_cf_txt = std::format(R"CF(package build
+        build_cf_txt = std::format(R"CF(package main
 
-app := Executable{{
-    name:      "{}",
-    entry:     "main.cf",
-    targets:   ["native", "ios-sim"],
-    subsystem: "gui",
+import "core:build"
+
+app := build.Executable{{
+    Name:      "{}",
+    Entry:     "main.cf",
+    Targets:   ["native", "ios-sim"],
+    Subsystem: "gui",
 }}
 )CF", proj_name);
         main_cf_txt = std::format(R"CF(package main
@@ -297,11 +303,13 @@ test "webui bound greet RPC round-trip" {
 )HTML", proj_name);
     } else {
         // Default: cli
-        build_cf_txt = std::format(R"CF(package build
+        build_cf_txt = std::format(R"CF(package main
 
-app := Executable{{
-    name:  "{}",
-    entry: "main.cf",
+import "core:build"
+
+app := build.Executable{{
+    Name:  "{}",
+    Entry: "main.cf",
 }}
 )CF", proj_name);
         main_cf_txt = std::format(R"CF(package main
@@ -508,7 +516,7 @@ auto main(int argc, char** argv) -> int {
     auto runtime_dir = toolchain_layout.runtime_dir;
 
     if (sub == "--version" || sub == "-v" || sub == "version") {
-        std::println("cfire {} (ISO C++23 systems toolchain)", cfire::doctor::kCfireVersion);
+        std::println("cfire {} ({}, ISO C++23 systems toolchain)", cfire::doctor::kCfireVersion, cfire::doctor::kCfireGitSha);
         return 0;
     }
 

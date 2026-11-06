@@ -882,13 +882,13 @@ tr:hover td { background: #1F242C; }
       Expressive systems programming built for native, web, mobile, and AI.
     </h1>
     <p class="subtitle">
-      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 34-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, WebAssembly, and iOS with zero lock-in.
+      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 37-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, Windows, WebAssembly, and iOS with zero lock-in.
     </p>
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 34 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 37 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -914,12 +914,12 @@ tr:hover td { background: #1F242C; }
       <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">20 Rules</div>
+      <div class="stat-val">21 Rules</div>
       <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">Core + Ext</div>
-      <div class="stat-lbl">34 Tiered Stdlib Modules</div>
+      <div class="stat-lbl">37 Tiered Stdlib Modules</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">cfire eject</div>
@@ -1133,6 +1133,7 @@ inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
 
 #line 11 &quot;snippet_intents.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 12 &quot;snippet_intents.cf&quot;
     auto b = Box{.value = 40};
     #line 14 &quot;snippet_intents.cf&quot;
@@ -1195,6 +1196,8 @@ fn main() {
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
 
+struct Token;
+
 struct Token {
     struct _Ident {
         std::string _0{};
@@ -1235,7 +1238,7 @@ struct Token {
             auto mid = cfire::slice(_target, 1, (_target.size() - 1));
             const auto&amp; last = _target[_target.size() - 1];
             #line 13 &quot;snippet_patterns.cf&quot;
-            return ((((first + &quot;..(&quot;) + str(mid.size())) + &quot;)..&quot;) + last);
+            return ((((first + &quot;..(&quot;) + cfire::str_ctor(mid.size())) + &quot;)..&quot;) + last);
         }
     }
     #line 15 &quot;snippet_patterns.cf&quot;
@@ -1244,6 +1247,7 @@ struct Token {
 
 #line 18 &quot;snippet_patterns.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 19 &quot;snippet_patterns.cf&quot;
     std::vector&lt;std::string&gt; items = {&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;};
     #line 20 &quot;snippet_patterns.cf&quot;
@@ -1303,6 +1307,7 @@ fn main() {
 
 #line 7 &quot;snippet_net.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 8 &quot;snippet_net.cf&quot;
     auto bg = cfire::context::background();
     #line 9 &quot;snippet_net.cf&quot;
@@ -1419,6 +1424,7 @@ struct cfire::testing_detail::Arbitrary&lt;Metric&gt; {
 
 template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;Metric&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;Metric, cfire::Error&gt; {
+    (void)obj;
     Metric out{};
     CFIRE_TRY_ASSIGN(out.service, cfire::json::get_str(obj, &quot;service&quot;));
     CFIRE_TRY_ASSIGN(out.latency, cfire::json::get_f64(obj, &quot;latency_ms&quot;));
@@ -1428,6 +1434,7 @@ inline auto cfire::json::parse_struct&lt;Metric&gt;(simdjson::ondemand::object o
 
 template &lt;&gt;
 inline auto cfire::json::stringify_struct&lt;Metric&gt;(const Metric&amp; val) -&gt; std::string {
+    (void)val;
     std::string out = &quot;{&quot;;
     out += std::format(&quot;\&quot;service\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.service));
     out += std::format(&quot;,\&quot;latency_ms\&quot;:{}&quot;, val.latency);
@@ -1454,6 +1461,7 @@ inline auto cfire::json::schema_struct&lt;Metric&gt;() -&gt; std::string {
 
 #line 11 &quot;snippet_json.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 12 &quot;snippet_json.cf&quot;
     auto payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
     #line 13 &quot;snippet_json.cf&quot;
@@ -1513,6 +1521,7 @@ fn main() {
 
 #line 6 &quot;snippet_interop.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 7 &quot;snippet_interop.cf&quot;
     std::string msg = &quot;cfire systems programming&quot;;
     #line 9 &quot;snippet_interop.cf&quot;
@@ -1574,6 +1583,7 @@ fn main() {
 
 #line 5 &quot;snippet_audio.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 6 &quot;snippet_audio.cf&quot;
     auto _try_v_1 = cfire::audio::init(48000, 2);
     if (!_try_v_1.has_value()) {
@@ -1714,6 +1724,7 @@ struct cfire::testing_detail::Arbitrary&lt;QueryPlan&gt; {
 
 template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;QueryPlan&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;QueryPlan, cfire::Error&gt; {
+    (void)obj;
     QueryPlan out{};
     CFIRE_TRY_ASSIGN(out.Target, cfire::json::get_str(obj, &quot;target&quot;));
     CFIRE_TRY_ASSIGN(out.TopK, cfire::json::get_i64(obj, &quot;top_k&quot;));
@@ -1722,6 +1733,7 @@ inline auto cfire::json::parse_struct&lt;QueryPlan&gt;(simdjson::ondemand::objec
 
 template &lt;&gt;
 inline auto cfire::json::stringify_struct&lt;QueryPlan&gt;(const QueryPlan&amp; val) -&gt; std::string {
+    (void)val;
     std::string out = &quot;{&quot;;
     out += std::format(&quot;\&quot;target\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.Target));
     out += std::format(&quot;,\&quot;top_k\&quot;:{}&quot;, val.TopK);
@@ -1776,6 +1788,42 @@ struct cfire::testing_detail::Arbitrary&lt;DocEntry&gt; {
 };
 
 template &lt;&gt;
+inline auto cfire::json::parse_struct&lt;DocEntry&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;DocEntry, cfire::Error&gt; {
+    (void)obj;
+    DocEntry out{};
+    CFIRE_TRY_ASSIGN(out.Id, cfire::json::get_i64(obj, &quot;Id&quot;));
+    CFIRE_TRY_ASSIGN(out.Title, cfire::json::get_str(obj, &quot;Title&quot;));
+    CFIRE_TRY_ASSIGN(out.Snippet, cfire::json::get_str(obj, &quot;Snippet&quot;));
+    return out;
+}
+
+template &lt;&gt;
+inline auto cfire::json::stringify_struct&lt;DocEntry&gt;(const DocEntry&amp; val) -&gt; std::string {
+    (void)val;
+    std::string out = &quot;{&quot;;
+    out += std::format(&quot;\&quot;Id\&quot;:{}&quot;, val.Id);
+    out += std::format(&quot;,\&quot;Title\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.Title));
+    out += std::format(&quot;,\&quot;Snippet\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.Snippet));
+    out += &quot;}&quot;;
+    return out;
+}
+
+template &lt;&gt;
+inline auto cfire::json::schema_struct&lt;DocEntry&gt;() -&gt; std::string {
+    std::string props = &quot;{&quot;;
+    std::string req = &quot;[&quot;;
+    props += std::format(&quot;\&quot;Id\&quot;:{}&quot;, cfire::json::schema&lt;std::int64_t&gt;());
+    req += &quot;\&quot;Id\&quot;&quot;;
+    props += std::format(&quot;,\&quot;Title\&quot;:{}&quot;, cfire::json::schema&lt;std::string&gt;());
+    req += &quot;,\&quot;Title\&quot;&quot;;
+    props += std::format(&quot;,\&quot;Snippet\&quot;:{}&quot;, cfire::json::schema&lt;std::string&gt;());
+    req += &quot;,\&quot;Snippet\&quot;&quot;;
+    props += &quot;}&quot;;
+    req += &quot;]&quot;;
+    return std::format(R&quot;({{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{},&quot;required&quot;:{},&quot;additionalProperties&quot;:false}})&quot;, props, req);
+}
+
+template &lt;&gt;
 inline auto cfire::sqlite::map_row&lt;DocEntry&gt;(sqlite3_stmt* stmt) -&gt; DocEntry {
     return DocEntry{
         .Id = cfire::sqlite::col_i64(stmt, 0),
@@ -1787,6 +1835,7 @@ inline auto cfire::sqlite::map_row&lt;DocEntry&gt;(sqlite3_stmt* stmt) -&gt; Doc
 
 #line 18 &quot;snippet_ai.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 20 &quot;snippet_ai.cf&quot;
     auto schema = cfire::json::schema&lt;QueryPlan&gt;();
     #line 23 &quot;snippet_ai.cf&quot;
@@ -1947,6 +1996,7 @@ struct cfire::testing_detail::Arbitrary&lt;GreetReq&gt; {
 
 template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;GreetReq&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;GreetReq, cfire::Error&gt; {
+    (void)obj;
     GreetReq out{};
     CFIRE_TRY_ASSIGN(out.name, cfire::json::get_str(obj, &quot;name&quot;));
     CFIRE_TRY_ASSIGN(out.count, cfire::json::get_i32(obj, &quot;count&quot;));
@@ -1955,6 +2005,7 @@ inline auto cfire::json::parse_struct&lt;GreetReq&gt;(simdjson::ondemand::object
 
 template &lt;&gt;
 inline auto cfire::json::stringify_struct&lt;GreetReq&gt;(const GreetReq&amp; val) -&gt; std::string {
+    (void)val;
     std::string out = &quot;{&quot;;
     out += std::format(&quot;\&quot;name\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.name));
     out += std::format(&quot;,\&quot;count\&quot;:{}&quot;, val.count);
@@ -2006,6 +2057,7 @@ struct cfire::testing_detail::Arbitrary&lt;GreetRes&gt; {
 
 template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;GreetRes&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;GreetRes, cfire::Error&gt; {
+    (void)obj;
     GreetRes out{};
     CFIRE_TRY_ASSIGN(out.message, cfire::json::get_str(obj, &quot;message&quot;));
     CFIRE_TRY_ASSIGN(out.count, cfire::json::get_i32(obj, &quot;count&quot;));
@@ -2014,6 +2066,7 @@ inline auto cfire::json::parse_struct&lt;GreetRes&gt;(simdjson::ondemand::object
 
 template &lt;&gt;
 inline auto cfire::json::stringify_struct&lt;GreetRes&gt;(const GreetRes&amp; val) -&gt; std::string {
+    (void)val;
     std::string out = &quot;{&quot;;
     out += std::format(&quot;\&quot;message\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.message));
     out += std::format(&quot;,\&quot;count\&quot;:{}&quot;, val.count);
@@ -2037,6 +2090,7 @@ inline auto cfire::json::schema_struct&lt;GreetRes&gt;() -&gt; std::string {
 
 #line 15 &quot;snippet_webui.cf&quot;
 auto main(int argc, char** argv) -&gt; int {
+    cfire::detail::set_process_args(argc, argv);
     #line 16 &quot;snippet_webui.cf&quot;
     auto app = cfire::webui::new_app(&quot;cfire Studio&quot;, 960, 640);
     #line 17 &quot;snippet_webui.cf&quot;
@@ -2308,7 +2362,7 @@ fn main() {
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Catalog (34 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Catalog (37 Modules) &rarr;</a>
   </div>
 </div>
 
