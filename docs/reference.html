@@ -1777,6 +1777,8 @@ tr:hover td { background: #1F242C; }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
         gap: 0.5rem;
+        width: 100%;
+        text-align: left;
         font-family: var(--font-mono);
         font-weight: 700; font-size: 0.82rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
@@ -1792,15 +1794,15 @@ tr:hover td { background: #1F242C; }
         margin-right: 0.35rem;
     }
     .sidebar-chevron { font-size: 1rem; color: var(--muted); transition: transform 0.2s ease; flex-shrink: 0; }
-    .sidebar-details:not([open]) .sidebar-content { display: none; }
-    .sidebar-details[open] .sidebar-content {
+    .sidebar-details:not(.open) .sidebar-content { display: none; }
+    .sidebar-details.open .sidebar-content {
         display: block; margin-top: 0.65rem; padding: 0.75rem;
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 6px;
         max-height: 62vh; overflow-y: auto;
     }
-    .sidebar-details[open] .sidebar-chevron { transform: rotate(180deg); }
+    .sidebar-details.open .sidebar-chevron { transform: rotate(180deg); }
     .reader-toolbar {
         flex-wrap: wrap;
         gap: 0.65rem;
@@ -1962,11 +1964,11 @@ tr:hover td { background: #1F242C; }
 </nav>
 <div class="guide-shell">
   <aside class="guide-sidebar">
-    <details class="sidebar-details" id="ref-sidebar-details">
-      <summary class="sidebar-summary">
+    <div class="sidebar-details" id="ref-sidebar-details">
+      <button type="button" class="sidebar-summary" onclick="this.parentElement.classList.toggle('open')">
         <span id="ref-mobile-sidebar-label"><span class="sidebar-summary-badge">Stdlib:</span> Overview &amp; Diagnostics</span>
         <span class="material-symbols-outlined sidebar-chevron" aria-hidden="true">expand_more</span>
-      </summary>
+      </button>
       <div class="sidebar-content" id="sidebar-nav">
         <div style="position:relative; margin-bottom: 0.75rem;">
           <input type="text" id="ref-filter" class="search-input" placeholder="Search APIs &amp; errors (⌘K)..." oninput="filterRefNav(this.value)" autocomplete="off" />
@@ -2050,7 +2052,7 @@ tr:hover td { background: #1F242C; }
           </ul>
         </div>
       </div>
-    </details>
+    </div>
   </aside>
   <div class="guide-viewport" id="ref-viewport">
     <main class="guide-content-inner" style="max-width: 960px;">
@@ -4575,7 +4577,7 @@ function navigateToRefPane(paneId, pushHash = true) {
   }
   const mobDetails = document.getElementById('ref-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
-    mobDetails.removeAttribute('open');
+    mobDetails.classList.remove('open');
   }
 
   if (pushHash) {
@@ -4602,7 +4604,7 @@ function navigateToRefDiag(diagId) {
   history.replaceState(null, '', '#' + diagId);
   const mobDetails = document.getElementById('ref-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
-    mobDetails.removeAttribute('open');
+    mobDetails.classList.remove('open');
   }
   const el = document.getElementById(diagId);
   if (el) {

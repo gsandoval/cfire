@@ -1799,6 +1799,8 @@ tr:hover td { background: #1F242C; }
     .sidebar-summary {
         display: flex; align-items: center; justify-content: space-between;
         gap: 0.5rem;
+        width: 100%;
+        text-align: left;
         font-family: var(--font-mono);
         font-weight: 700; font-size: 0.82rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
@@ -1814,15 +1816,15 @@ tr:hover td { background: #1F242C; }
         margin-right: 0.35rem;
     }
     .sidebar-chevron { font-size: 1rem; color: var(--muted); transition: transform 0.2s ease; flex-shrink: 0; }
-    .sidebar-details:not([open]) .sidebar-content { display: none; }
-    .sidebar-details[open] .sidebar-content {
+    .sidebar-details:not(.open) .sidebar-content { display: none; }
+    .sidebar-details.open .sidebar-content {
         display: block; margin-top: 0.65rem; padding: 0.75rem;
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 6px;
         max-height: 62vh; overflow-y: auto;
     }
-    .sidebar-details[open] .sidebar-chevron { transform: rotate(180deg); }
+    .sidebar-details.open .sidebar-chevron { transform: rotate(180deg); }
     .reader-toolbar {
         flex-wrap: wrap;
         gap: 0.65rem;

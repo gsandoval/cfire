@@ -891,11 +891,11 @@ namespace detail {
     out += detail::navbar_html("guide");
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
-    out += "    <details class=\"sidebar-details\" id=\"guide-sidebar-details\">\n";
-    out += "      <summary class=\"sidebar-summary\">\n";
+    out += "    <div class=\"sidebar-details\" id=\"guide-sidebar-details\">\n";
+    out += "      <button type=\"button\" class=\"sidebar-summary\" onclick=\"this.parentElement.classList.toggle('open')\">\n";
     out += "        <span id=\"mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Ch 1:</span> Installation &amp; Platform Setup</span>\n";
     out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
-    out += "      </summary>\n";
+    out += "      </button>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
     out += "        <div class=\"nav-search-wrapper\">\n";
     out += "          <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Search topics, APIs &amp; code...\" oninput=\"filterGuideNav(this.value)\" />\n";
@@ -944,7 +944,7 @@ namespace detail {
           <span class="sfc-badge">{} MODULES</span>
         </a>
       </div>
-    </details>
+    </div>
   </aside>
 )HTML", stdlib_catalog().size());
 
@@ -1142,7 +1142,7 @@ function navigateToChapter(num, updateHash) {
   }
   const mobDetails = document.getElementById('guide-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
-    mobDetails.removeAttribute('open');
+    mobDetails.classList.remove('open');
   }
 
   // Update dynamic sidebar active disclosure
@@ -1181,7 +1181,7 @@ function navigateToSubhead(num, sid) {
   activateTopicWithinChapter(targetPane, sid);
   const mobDetails = document.getElementById('guide-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
-    mobDetails.removeAttribute('open');
+    mobDetails.classList.remove('open');
   }
   const vp = document.getElementById('guide-viewport');
   if (vp && vp.classList.contains('topic-View-mode')) {
