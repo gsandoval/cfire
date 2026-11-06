@@ -25,8 +25,20 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
 
 namespace {
+
+[[nodiscard]] inline auto unwrap_system_exit_code(int rc) -> int {
+    if (rc == 0) return 0;
+#if !defined(_WIN32)
+    if (WIFEXITED(rc)) return WEXITSTATUS(rc);
+    if (WIFSIGNALED(rc)) return 128 + WTERMSIG(rc);
+#endif
+    return rc == -1 ? 1 : rc;
+}
 
 void print_usage() {
     std::println("Usage: cfire <command> [args...]");
@@ -2429,7 +2441,7 @@ auto main(int argc, char** argv) -> int {
                 cmd += " " + cfire::bridge::shell_quote(arg);
             }
             int rc = std::system(cmd.c_str());
-            return rc == 0 ? 0 : 1;
+            return unwrap_system_exit_code(rc);
         }
 
         if (target_triple.starts_with("wasm")) {
@@ -2450,7 +2462,7 @@ auto main(int argc, char** argv) -> int {
                         cmd += " " + cfire::bridge::shell_quote(arg);
                     }
                     int rc = std::system(cmd.c_str());
-                    return rc == 0 ? 0 : 1;
+                    return unwrap_system_exit_code(rc);
                 }
             }
             return cfire::serve::run_server(tmp_html, web_port, open_browser);
@@ -2507,7 +2519,7 @@ auto main(int argc, char** argv) -> int {
         }
         int rc = std::system(cmd.c_str());
         std::filesystem::remove(tmp_bin);
-        return rc == 0 ? 0 : 1;
+        return unwrap_system_exit_code(rc);
     }
 
     if (sub == "eject") {

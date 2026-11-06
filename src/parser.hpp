@@ -1081,6 +1081,17 @@ private:
             }
             case TokenKind::KwMut: {
                 advance();
+                if (cur().kind == TokenKind::ColonEq || cur().kind == TokenKind::Colon || cur().kind == TokenKind::Assign) {
+                    return std::unexpected(std::format(
+                        "{}:{}:{}: 'mut' is a reserved parameter-intent and mutability keyword and cannot be used as a variable name; choose a different identifier",
+                        file_, tok.line, tok.col));
+                }
+                if (cur().kind == TokenKind::KwOut || cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwMut) {
+                    Token kw_tok = advance();
+                    return std::unexpected(std::format(
+                        "{}:{}:{}: '{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')",
+                        file_, kw_tok.line, kw_tok.col, kw_tok.lexeme));
+                }
                 auto id_tok = expect(TokenKind::Ident);
                 if (!id_tok) return std::unexpected(id_tok.error());
                 if (cur().kind == TokenKind::Colon) {
@@ -1195,6 +1206,14 @@ private:
             return std::unexpected(std::format(
                 "{}:{}:{}: 'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead",
                 file_, tok.line, tok.col, id_tok.lexeme, id_tok.lexeme));
+        }
+
+        if ((tok.kind == TokenKind::KwOut || tok.kind == TokenKind::KwMove) &&
+            (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon || peek(1).kind == TokenKind::Assign)) {
+            advance();
+            return std::unexpected(std::format(
+                "{}:{}:{}: '{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')",
+                file_, tok.line, tok.col, tok.lexeme));
         }
 
         if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
@@ -1937,6 +1956,12 @@ private:
                 if (!cl) return std::unexpected(cl.error());
                 return make_expr(std::move(*cl), tok.line, tok.col);
             }
+            case TokenKind::KwOut:
+            case TokenKind::KwMove:
+            case TokenKind::KwMut:
+                return std::unexpected(std::format(
+                    "{}:{}:{}: '{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')",
+                    file_, tok.line, tok.col, tok.lexeme));
             default:
                 return std::unexpected(std::format("{}:{}:{}: unexpected token '{}' in expression",
                     file_, tok.line, tok.col, tok.lexeme));

@@ -1975,10 +1975,11 @@ tr:hover td { background: #1F242C; }
           <div id="ref-search-results" class="search-results-dropdown"></div>
         </div>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0; margin-bottom: 0.75rem;">
-          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 37 Modules)</strong></a></li>
+          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 38 Modules)</strong></a></li>
         </ul>
-        <h4>Foundational Core (21)</h4>
+        <h4>Foundational Core (22)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
+          <li class="nav-item"><a href="#mod-build" id="nav-pane-mod-build" onclick="navigateToRefPane('mod-build'); return false;"><code>core:build</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
           <li class="nav-item"><a href="#mod-cli" id="nav-pane-mod-cli" onclick="navigateToRefPane('mod-cli'); return false;"><code>core:cli</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-collections" id="nav-pane-mod-collections" onclick="navigateToRefPane('mod-collections'); return false;"><code>core:collections</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-aes" id="nav-pane-mod-aes" onclick="navigateToRefPane('mod-aes'); return false;"><code>core:crypto/aes</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
@@ -2066,12 +2067,12 @@ tr:hover td { background: #1F242C; }
           <span>/</span>
           <a href="#overview" onclick="navigateToRefPane('overview'); return false;">Stdlib Reference</a>
           <span>/</span>
-          <span class="crumb-current" id="ref-active-crumb">Overview (All 37 Modules)</span>
+          <span class="crumb-current" id="ref-active-crumb">Overview (All 38 Modules)</span>
         </div>
         <div class="toolbar-actions">
           <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
             <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
-            <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (37)</button>
+            <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (38)</button>
           </div>
           <button type="button" class="btn-toolbar-ai" onclick="openAiModal()" title="Generate context-rich AI prompt for this module">
             <span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">auto_awesome</span>
@@ -2079,9 +2080,9 @@ tr:hover td { background: #1F242C; }
           </button>
         </div>
       </div>
-      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 37 Modules)">
+      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 38 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">37 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (21 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (14 opt-in networking, database, compression, audio, AI, and WebUI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 21 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">38 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (22 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (14 opt-in networking, database, compression, audio, AI, and WebUI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 21 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Strings, Unicode, Regex &amp; Containers</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
@@ -2382,8 +2383,55 @@ tr:hover td { background: #1F242C; }
         </div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <div class="pager-card empty"></div>
-          <a href="#mod-cli" class="pager-card next" onclick="navigateToRefPane('mod-cli'); return false;">
+          <a href="#mod-build" class="pager-card next" onclick="navigateToRefPane('mod-build'); return false;">
             <span class="pager-dir">First Module &rarr;</span>
+            <span class="pager-title">core:build &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</span>
+          </a>
+        </nav>
+      </article>
+      <article class="ref-pane" id="ref-pane-mod-build" data-pane-id="mod-build" data-pane-title="core:build — Declarative Project &amp; Cross-Platform Build System (`build.cf`)">
+        <h2 id="mod-build" style="margin-top:0.25rem;"><code>import "core:build"</code> &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</h2>
+        <p>Declarative build manifest module (<code>build.cf</code>) for configuring native, GUI, WebAssembly, and iOS executables (<code>build.Executable</code>), static/shared libraries (<code>build.Library</code>), pre-build codegen steps (<code>build.Step</code>), external CMake/Git dependencies (<code>build.CMake</code>, <code>build.GitDependency</code>), pkg-config/framework links, and compile-time host/target queries (<code>build.os()</code>, <code>build.arch()</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(compiler-integrated)</code> &bull; Namespace: <code>build.*</code> &bull; 10 exported functions</small></p>
+        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
+        <pre><code>package main
+
+import &quot;core:build&quot;
+
+// Declarative desktop GUI &amp; CLI build manifest (`build.cf`)
+app := build.Executable(&quot;Flint&quot;, {
+    Entry: &quot;src/main.cf&quot;,
+    Subsystem: &quot;gui&quot;,
+    OutDir: &quot;build&quot;,
+    BundleId: &quot;dev.flint.app&quot;,
+    Icon: &quot;assets/icon.png&quot;,
+    Targets: [&quot;native&quot;]
+})
+
+fn main() {
+    println(&quot;Target OS: {}, Arch: {}&quot;, build.os(), build.arch())
+}</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+          <tbody>
+            <tr><td><code>fn Executable(name: str, cfg: ExecutableConfig) -&gt; Target</code></td><td><code>(buildsys manifest)</code></td><td>Declares an executable build target with <code>Entry</code>, <code>Subsystem</code> (<code>&quot;cli&quot;</code> or <code>&quot;gui&quot;</code>), <code>OutDir</code>, <code>Targets</code> (<code>[&quot;native&quot;, &quot;wasm&quot;, &quot;ios-sim&quot;]</code>), <code>WebProfile</code>, <code>BundleId</code>, <code>AppName</code>, <code>Icon</code> (<code>.png</code>/<code>.svg</code>/<code>.icns</code>/<code>.ico</code>), <code>Sources</code>, <code>Includes</code>, <code>Defines</code>, and <code>Flags</code>.<br/><code>app := build.Executable(&quot;Flint&quot;, { Entry: &quot;src/main.cf&quot;, Subsystem: &quot;gui&quot;, BundleId: &quot;dev.flint.app&quot;, Icon: &quot;assets/icon.png&quot; })</code></td></tr>
+            <tr><td><code>fn Library(name: str, cfg: LibraryConfig) -&gt; Target</code></td><td><code>(buildsys manifest)</code></td><td>Declares a static or shared C/C++/cfire library target with <code>Sources</code>, <code>Includes</code>, <code>Defines</code>, and <code>Flags</code>.<br/><code>lib := build.Library(&quot;corelib&quot;, { Sources: [&quot;native/bridge.cpp&quot;], Includes: [&quot;native&quot;] })</code></td></tr>
+            <tr><td><code>fn Step(name: str, cfg: StepConfig) -&gt; StepTarget</code></td><td><code>(buildsys manifest)</code></td><td>Declares a custom build step executing <code>Command</code> and <code>Args</code> in <code>WorkDir</code> whenever <code>Inputs</code> are newer than <code>Outputs</code>.<br/><code>gen := build.Step(&quot;assets&quot;, { Command: &quot;python3&quot;, Args: [&quot;scripts/bundle.py&quot;], Inputs: [&quot;ui/index.html&quot;], Outputs: [&quot;ui/bundle.js&quot;] })</code></td></tr>
+            <tr><td><code>fn CMake(name: str, cfg: CMakeConfig) -&gt; DepTarget</code></td><td><code>(buildsys manifest)</code></td><td>Declares an external CMake or Git dependency (<code>Url</code>, <code>Commit</code>/<code>Branch</code>, <code>Sha256</code>, <code>Includes</code>, <code>Flags</code>, <code>Driver</code>).<br/><code>dep := build.CMake(&quot;zstd&quot;, { Url: &quot;https://github.com/facebook/zstd.git&quot;, Branch: &quot;v1.5.6&quot; })</code></td></tr>
+            <tr><td><code>fn Link(lib: str)</code></td><td><code>(buildsys manifest)</code></td><td>Adds a system library (<code>&quot;sqlite3&quot;</code>) or Apple framework (<code>&quot;-framework Security&quot;</code>) to the linker flags.<br/><code>build.Link(&quot;sqlite3&quot;)</code></td></tr>
+            <tr><td><code>fn Include(dir: str)</code></td><td><code>(buildsys manifest)</code></td><td>Adds a relative or absolute header search directory (<code>-I&lt;dir&gt;</code>) for <code>import cpp</code> headers.<br/><code>build.Include(&quot;src/native/include&quot;)</code></td></tr>
+            <tr><td><code>fn PkgConfig(pkg: str)</code></td><td><code>(buildsys manifest)</code></td><td>Queries <code>pkg-config --cflags --libs &lt;pkg&gt;</code> and links the resolved flags into the build.<br/><code>build.PkgConfig(&quot;libssh&quot;)</code></td></tr>
+            <tr><td><code>fn Tako()</code></td><td><code>(buildsys manifest)</code></td><td>Auto-discovers and links the local Tako GUI runtime and headers (<code>import &quot;pkg:tako&quot;</code>).<br/><code>build.Tako()</code></td></tr>
+            <tr><td><code>fn os() -&gt; str</code></td><td><code>(compile-time constant)</code></td><td>Returns the target operating system identifier (<code>&quot;macos&quot;</code>, <code>&quot;linux&quot;</code>, <code>&quot;windows&quot;</code>, <code>&quot;ios&quot;</code>, <code>&quot;wasm&quot;</code>).<br/><code>if build.os() == &quot;macos&quot; { ... }</code></td></tr>
+            <tr><td><code>fn arch() -&gt; str</code></td><td><code>(compile-time constant)</code></td><td>Returns the target CPU architecture identifier (<code>&quot;arm64&quot;</code>, <code>&quot;x86_64&quot;</code>, <code>&quot;wasm32&quot;</code>).<br/><code>if build.arch() == &quot;arm64&quot; { ... }</code></td></tr>
+          </tbody>
+        </table></div>
+        <nav class="chapter-pager" aria-label="Module Pagination">
+          <a href="#overview" class="pager-card prev" onclick="navigateToRefPane('overview'); return false;">
+            <span class="pager-dir">&larr; Overview</span>
+            <span class="pager-title">All 38 Standard Library Modules</span>
+          </a>
+          <a href="#mod-cli" class="pager-card next" onclick="navigateToRefPane('mod-cli'); return false;">
+            <span class="pager-dir">Next Module (2/38) &rarr;</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</span>
           </a>
         </nav>
@@ -2422,12 +2470,12 @@ fn main() {
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#overview" class="pager-card prev" onclick="navigateToRefPane('overview'); return false;">
-            <span class="pager-dir">&larr; Overview</span>
-            <span class="pager-title">All 37 Standard Library Modules</span>
+          <a href="#mod-build" class="pager-card prev" onclick="navigateToRefPane('mod-build'); return false;">
+            <span class="pager-dir">&larr; Previous Module (1/38)</span>
+            <span class="pager-title">core:build &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</span>
           </a>
           <a href="#mod-collections" class="pager-card next" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">Next Module (2/37) &rarr;</span>
+            <span class="pager-dir">Next Module (3/38) &rarr;</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, Deque)</span>
           </a>
         </nav>
@@ -2470,11 +2518,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-cli" class="pager-card prev" onclick="navigateToRefPane('mod-cli'); return false;">
-            <span class="pager-dir">&larr; Previous Module (1/37)</span>
+            <span class="pager-dir">&larr; Previous Module (2/38)</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</span>
           </a>
           <a href="#mod-aes" class="pager-card next" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">Next Module (3/37) &rarr;</span>
+            <span class="pager-dir">Next Module (4/38) &rarr;</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
         </nav>
@@ -2516,11 +2564,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-collections" class="pager-card prev" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">&larr; Previous Module (2/37)</span>
+            <span class="pager-dir">&larr; Previous Module (3/38)</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, Deque)</span>
           </a>
           <a href="#mod-blake3" class="pager-card next" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">Next Module (4/37) &rarr;</span>
+            <span class="pager-dir">Next Module (5/38) &rarr;</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
         </nav>
@@ -2546,11 +2594,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-aes" class="pager-card prev" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">&larr; Previous Module (3/37)</span>
+            <span class="pager-dir">&larr; Previous Module (4/38)</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
           <a href="#mod-hmac" class="pager-card next" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">Next Module (5/37) &rarr;</span>
+            <span class="pager-dir">Next Module (6/38) &rarr;</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</span>
           </a>
         </nav>
@@ -2586,11 +2634,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-blake3" class="pager-card prev" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">&larr; Previous Module (4/37)</span>
+            <span class="pager-dir">&larr; Previous Module (5/38)</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
           <a href="#mod-sha256" class="pager-card next" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">Next Module (6/37) &rarr;</span>
+            <span class="pager-dir">Next Module (7/38) &rarr;</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
         </nav>
@@ -2619,11 +2667,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hmac" class="pager-card prev" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">&larr; Previous Module (5/37)</span>
+            <span class="pager-dir">&larr; Previous Module (6/38)</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</span>
           </a>
           <a href="#mod-base64" class="pager-card next" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">Next Module (7/37) &rarr;</span>
+            <span class="pager-dir">Next Module (8/38) &rarr;</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
         </nav>
@@ -2655,11 +2703,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sha256" class="pager-card prev" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">&larr; Previous Module (6/37)</span>
+            <span class="pager-dir">&larr; Previous Module (7/38)</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
           <a href="#mod-csv" class="pager-card next" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">Next Module (8/37) &rarr;</span>
+            <span class="pager-dir">Next Module (9/38) &rarr;</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
         </nav>
@@ -2694,11 +2742,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-base64" class="pager-card prev" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">&larr; Previous Module (7/37)</span>
+            <span class="pager-dir">&larr; Previous Module (8/38)</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
           <a href="#mod-hex" class="pager-card next" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">Next Module (9/37) &rarr;</span>
+            <span class="pager-dir">Next Module (10/38) &rarr;</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
         </nav>
@@ -2730,11 +2778,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-csv" class="pager-card prev" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">&larr; Previous Module (8/37)</span>
+            <span class="pager-dir">&larr; Previous Module (9/38)</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
           <a href="#mod-fs" class="pager-card next" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">Next Module (10/37) &rarr;</span>
+            <span class="pager-dir">Next Module (11/38) &rarr;</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
         </nav>
@@ -2791,11 +2839,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hex" class="pager-card prev" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (9/37)</span>
+            <span class="pager-dir">&larr; Previous Module (10/38)</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
           <a href="#mod-log" class="pager-card next" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">Next Module (11/37) &rarr;</span>
+            <span class="pager-dir">Next Module (12/38) &rarr;</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
         </nav>
@@ -2830,11 +2878,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-fs" class="pager-card prev" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">&larr; Previous Module (10/37)</span>
+            <span class="pager-dir">&larr; Previous Module (11/38)</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
           <a href="#mod-math" class="pager-card next" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">Next Module (12/37) &rarr;</span>
+            <span class="pager-dir">Next Module (13/38) &rarr;</span>
             <span class="pager-title">core:math &mdash; Numeric &amp; Floating-Point Utilities</span>
           </a>
         </nav>
@@ -2863,11 +2911,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-log" class="pager-card prev" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">&larr; Previous Module (11/37)</span>
+            <span class="pager-dir">&larr; Previous Module (12/38)</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
           <a href="#mod-os" class="pager-card next" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">Next Module (13/37) &rarr;</span>
+            <span class="pager-dir">Next Module (14/38) &rarr;</span>
             <span class="pager-title">core:os &mdash; Environment, File Descriptors, Terminal, Pipes &amp; Subprocesses</span>
           </a>
         </nav>
@@ -2917,11 +2965,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-math" class="pager-card prev" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">&larr; Previous Module (12/37)</span>
+            <span class="pager-dir">&larr; Previous Module (13/38)</span>
             <span class="pager-title">core:math &mdash; Numeric &amp; Floating-Point Utilities</span>
           </a>
           <a href="#mod-rand" class="pager-card next" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">Next Module (14/37) &rarr;</span>
+            <span class="pager-dir">Next Module (15/38) &rarr;</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
         </nav>
@@ -2951,11 +2999,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-os" class="pager-card prev" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">&larr; Previous Module (13/37)</span>
+            <span class="pager-dir">&larr; Previous Module (14/38)</span>
             <span class="pager-title">core:os &mdash; Environment, File Descriptors, Terminal, Pipes &amp; Subprocesses</span>
           </a>
           <a href="#mod-regex" class="pager-card next" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">Next Module (15/37) &rarr;</span>
+            <span class="pager-dir">Next Module (16/38) &rarr;</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
         </nav>
@@ -2991,11 +3039,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rand" class="pager-card prev" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">&larr; Previous Module (14/37)</span>
+            <span class="pager-dir">&larr; Previous Module (15/38)</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
           <a href="#mod-sort" class="pager-card next" onclick="navigateToRefPane('mod-sort'); return false;">
-            <span class="pager-dir">Next Module (16/37) &rarr;</span>
+            <span class="pager-dir">Next Module (17/38) &rarr;</span>
             <span class="pager-title">core:sort &mdash; Slice Sorting &amp; Binary Search</span>
           </a>
         </nav>
@@ -3029,11 +3077,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-regex" class="pager-card prev" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (15/37)</span>
+            <span class="pager-dir">&larr; Previous Module (16/38)</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
           <a href="#mod-str" class="pager-card next" onclick="navigateToRefPane('mod-str'); return false;">
-            <span class="pager-dir">Next Module (17/37) &rarr;</span>
+            <span class="pager-dir">Next Module (18/38) &rarr;</span>
             <span class="pager-title">core:str &mdash; UTF-8 String Manipulation</span>
           </a>
         </nav>
@@ -3084,11 +3132,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sort" class="pager-card prev" onclick="navigateToRefPane('mod-sort'); return false;">
-            <span class="pager-dir">&larr; Previous Module (16/37)</span>
+            <span class="pager-dir">&larr; Previous Module (17/38)</span>
             <span class="pager-title">core:sort &mdash; Slice Sorting &amp; Binary Search</span>
           </a>
           <a href="#mod-sync" class="pager-card next" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">Next Module (18/37) &rarr;</span>
+            <span class="pager-dir">Next Module (19/38) &rarr;</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels &amp; Mutexes</span>
           </a>
         </nav>
@@ -3133,7 +3181,7 @@ fn main() {
             <tr><td><code>fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -&gt; T?</code></td><td><code>ch.recv_timeout(timeout_ms)</code></td><td>Waits up to <code>timeout_ms</code> milliseconds for a value from the channel, returning <code>none</code> on timeout or closed empty channel.<br/><code>v := ch.recv_timeout(50) or { return }</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) recv_ctx(ctx: Context) -&gt; T!</code></td><td><code>ch.recv_ctx(ctx)</code></td><td>Receives from the channel or aborts immediately with an error if <code>ctx</code> is cancelled.<br/><code>v := try ch.recv_ctx(ctx)</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) len() -&gt; usize</code></td><td><code>ch.len()</code></td><td>Returns the number of buffered items currently queued in the channel.<br/><code>n := ch.len()</code></td></tr>
-            <tr><td><code>fn (ch: Channel[T]) close()</code></td><td><code>ch.close()</code></td><td>Closes the channel and wakes all waiting receivers.<br/><code>ch.close()</code></td></tr>
+            <tr><td><code>fn (mut ch: Channel[T]) close()</code></td><td><code>ch.close()</code></td><td>Closes the channel and wakes all waiting receivers.<br/><code>ch.close()</code></td></tr>
             <tr><td><code>type Mutex struct</code></td><td><code>cfire::sync::Mutex</code></td><td>Mutual exclusion lock movable at initialization (<code>mut mu := sync.Mutex{}</code>).<br/><code>mut mu := sync.Mutex{}</code></td></tr>
             <tr><td><code>fn (mut m: Mutex) lock()</code></td><td><code>m.lock()</code></td><td>Acquires the mutex lock, blocking until available.<br/><code>mu.lock()</code></td></tr>
             <tr><td><code>fn (mut m: Mutex) unlock()</code></td><td><code>m.unlock()</code></td><td>Releases the mutex lock.<br/><code>mu.unlock()</code></td></tr>
@@ -3143,11 +3191,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-str" class="pager-card prev" onclick="navigateToRefPane('mod-str'); return false;">
-            <span class="pager-dir">&larr; Previous Module (17/37)</span>
+            <span class="pager-dir">&larr; Previous Module (18/38)</span>
             <span class="pager-title">core:str &mdash; UTF-8 String Manipulation</span>
           </a>
           <a href="#mod-context" class="pager-card next" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">Next Module (19/37) &rarr;</span>
+            <span class="pager-dir">Next Module (20/38) &rarr;</span>
             <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
         </nav>
@@ -3186,11 +3234,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sync" class="pager-card prev" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">&larr; Previous Module (18/37)</span>
+            <span class="pager-dir">&larr; Previous Module (19/38)</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels &amp; Mutexes</span>
           </a>
           <a href="#mod-time" class="pager-card next" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">Next Module (20/37) &rarr;</span>
+            <span class="pager-dir">Next Module (21/38) &rarr;</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
         </nav>
@@ -3229,11 +3277,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-context" class="pager-card prev" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">&larr; Previous Module (19/37)</span>
+            <span class="pager-dir">&larr; Previous Module (20/38)</span>
             <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
           <a href="#mod-unicode" class="pager-card next" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">Next Module (21/37) &rarr;</span>
+            <span class="pager-dir">Next Module (22/38) &rarr;</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
         </nav>
@@ -3273,11 +3321,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-time" class="pager-card prev" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">&larr; Previous Module (20/37)</span>
+            <span class="pager-dir">&larr; Previous Module (21/38)</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
           <a href="#mod-ai" class="pager-card next" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">Next Module (22/37) &rarr;</span>
+            <span class="pager-dir">Next Module (23/38) &rarr;</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Document Ingestion &amp; MCP</span>
           </a>
         </nav>
@@ -3372,11 +3420,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-unicode" class="pager-card prev" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">&larr; Previous Module (21/37)</span>
+            <span class="pager-dir">&larr; Previous Module (22/38)</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
           <a href="#mod-audio" class="pager-card next" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">Next Module (23/37) &rarr;</span>
+            <span class="pager-dir">Next Module (24/38) &rarr;</span>
             <span class="pager-title">ext:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
           </a>
         </nav>
@@ -3441,11 +3489,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-ai" class="pager-card prev" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">&larr; Previous Module (22/37)</span>
+            <span class="pager-dir">&larr; Previous Module (23/38)</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Document Ingestion &amp; MCP</span>
           </a>
           <a href="#mod-zstd" class="pager-card next" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">Next Module (24/37) &rarr;</span>
+            <span class="pager-dir">Next Module (25/38) &rarr;</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
         </nav>
@@ -3478,11 +3526,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-audio" class="pager-card prev" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">&larr; Previous Module (23/37)</span>
+            <span class="pager-dir">&larr; Previous Module (24/38)</span>
             <span class="pager-title">ext:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
           </a>
           <a href="#mod-sodium" class="pager-card next" onclick="navigateToRefPane('mod-sodium'); return false;">
-            <span class="pager-dir">Next Module (25/37) &rarr;</span>
+            <span class="pager-dir">Next Module (26/38) &rarr;</span>
             <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
         </nav>
@@ -3518,11 +3566,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-zstd" class="pager-card prev" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">&larr; Previous Module (24/37)</span>
+            <span class="pager-dir">&larr; Previous Module (25/38)</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
           <a href="#mod-sqlite" class="pager-card next" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">Next Module (26/37) &rarr;</span>
+            <span class="pager-dir">Next Module (27/38) &rarr;</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</span>
           </a>
         </nav>
@@ -3575,11 +3623,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sodium" class="pager-card prev" onclick="navigateToRefPane('mod-sodium'); return false;">
-            <span class="pager-dir">&larr; Previous Module (25/37)</span>
+            <span class="pager-dir">&larr; Previous Module (26/38)</span>
             <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
           <a href="#mod-json" class="pager-card next" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">Next Module (27/37) &rarr;</span>
+            <span class="pager-dir">Next Module (28/38) &rarr;</span>
             <span class="pager-title">ext:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
         </nav>
@@ -3625,11 +3673,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sqlite" class="pager-card prev" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">&larr; Previous Module (26/37)</span>
+            <span class="pager-dir">&larr; Previous Module (27/38)</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</span>
           </a>
           <a href="#mod-keychain" class="pager-card next" onclick="navigateToRefPane('mod-keychain'); return false;">
-            <span class="pager-dir">Next Module (28/37) &rarr;</span>
+            <span class="pager-dir">Next Module (29/38) &rarr;</span>
             <span class="pager-title">ext:keychain &mdash; Native OS Credential Keychain &amp; Secret Service</span>
           </a>
         </nav>
@@ -3658,11 +3706,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-json" class="pager-card prev" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">&larr; Previous Module (27/37)</span>
+            <span class="pager-dir">&larr; Previous Module (28/38)</span>
             <span class="pager-title">ext:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
           <a href="#mod-net" class="pager-card next" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">Next Module (29/37) &rarr;</span>
+            <span class="pager-dir">Next Module (30/38) &rarr;</span>
             <span class="pager-title">ext:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
         </nav>
@@ -3711,11 +3759,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-keychain" class="pager-card prev" onclick="navigateToRefPane('mod-keychain'); return false;">
-            <span class="pager-dir">&larr; Previous Module (28/37)</span>
+            <span class="pager-dir">&larr; Previous Module (29/38)</span>
             <span class="pager-title">ext:keychain &mdash; Native OS Credential Keychain &amp; Secret Service</span>
           </a>
           <a href="#mod-http" class="pager-card next" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">Next Module (30/37) &rarr;</span>
+            <span class="pager-dir">Next Module (31/38) &rarr;</span>
             <span class="pager-title">ext:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
         </nav>
@@ -3790,11 +3838,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-net" class="pager-card prev" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">&larr; Previous Module (29/37)</span>
+            <span class="pager-dir">&larr; Previous Module (30/38)</span>
             <span class="pager-title">ext:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
           <a href="#mod-ssh" class="pager-card next" onclick="navigateToRefPane('mod-ssh'); return false;">
-            <span class="pager-dir">Next Module (31/37) &rarr;</span>
+            <span class="pager-dir">Next Module (32/38) &rarr;</span>
             <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
           </a>
         </nav>
@@ -3857,11 +3905,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-http" class="pager-card prev" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">&larr; Previous Module (30/37)</span>
+            <span class="pager-dir">&larr; Previous Module (31/38)</span>
             <span class="pager-title">ext:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
           <a href="#mod-tls" class="pager-card next" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">Next Module (32/37) &rarr;</span>
+            <span class="pager-dir">Next Module (33/38) &rarr;</span>
             <span class="pager-title">ext:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
         </nav>
@@ -3902,11 +3950,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-ssh" class="pager-card prev" onclick="navigateToRefPane('mod-ssh'); return false;">
-            <span class="pager-dir">&larr; Previous Module (31/37)</span>
+            <span class="pager-dir">&larr; Previous Module (32/38)</span>
             <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
           </a>
           <a href="#mod-url" class="pager-card next" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">Next Module (33/37) &rarr;</span>
+            <span class="pager-dir">Next Module (34/38) &rarr;</span>
             <span class="pager-title">ext:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
         </nav>
@@ -3938,11 +3986,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-tls" class="pager-card prev" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">&larr; Previous Module (32/37)</span>
+            <span class="pager-dir">&larr; Previous Module (33/38)</span>
             <span class="pager-title">ext:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
           <a href="#mod-websocket" class="pager-card next" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">Next Module (34/37) &rarr;</span>
+            <span class="pager-dir">Next Module (35/38) &rarr;</span>
             <span class="pager-title">ext:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
         </nav>
@@ -3999,11 +4047,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-url" class="pager-card prev" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">&larr; Previous Module (33/37)</span>
+            <span class="pager-dir">&larr; Previous Module (34/38)</span>
             <span class="pager-title">ext:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
           <a href="#mod-webui" class="pager-card next" onclick="navigateToRefPane('mod-webui'); return false;">
-            <span class="pager-dir">Next Module (35/37) &rarr;</span>
+            <span class="pager-dir">Next Module (36/38) &rarr;</span>
             <span class="pager-title">ext:webui &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</span>
           </a>
         </nav>
@@ -4112,11 +4160,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-websocket" class="pager-card prev" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">&larr; Previous Module (34/37)</span>
+            <span class="pager-dir">&larr; Previous Module (35/38)</span>
             <span class="pager-title">ext:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
           <a href="#mod-rg" class="pager-card next" onclick="navigateToRefPane('mod-rg'); return false;">
-            <span class="pager-dir">Next Module (36/37) &rarr;</span>
+            <span class="pager-dir">Next Module (37/38) &rarr;</span>
             <span class="pager-title">vendor:raygui &mdash; Raygui 4.0 Immediate-Mode GUI Controls</span>
           </a>
         </nav>
@@ -4174,11 +4222,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-webui" class="pager-card prev" onclick="navigateToRefPane('mod-webui'); return false;">
-            <span class="pager-dir">&larr; Previous Module (35/37)</span>
+            <span class="pager-dir">&larr; Previous Module (36/38)</span>
             <span class="pager-title">ext:webui &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</span>
           </a>
           <a href="#mod-rl" class="pager-card next" onclick="navigateToRefPane('mod-rl'); return false;">
-            <span class="pager-dir">Next Module (37/37) &rarr;</span>
+            <span class="pager-dir">Next Module (38/38) &rarr;</span>
             <span class="pager-title">vendor:raylib &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Math</span>
           </a>
         </nav>
@@ -4243,7 +4291,7 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rg" class="pager-card prev" onclick="navigateToRefPane('mod-rg'); return false;">
-            <span class="pager-dir">&larr; Previous Module (36/37)</span>
+            <span class="pager-dir">&larr; Previous Module (37/38)</span>
             <span class="pager-title">vendor:raygui &mdash; Raygui 4.0 Immediate-Mode GUI Controls</span>
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
@@ -4340,7 +4388,7 @@ consume(move buf) // OK: moved on last use</code></pre></div>
         </div>
         <div class="card" id="diag-cfire/NON-DIVERGING-OR-BLOCK" style="margin-bottom:1.25rem;">
           <h3><code>[cfire/NON-DIVERGING-OR-BLOCK]</code> &mdash; Non-Diverging Error Recovery Block on Value Binding</h3>
-          <p style="margin-bottom:0.85rem;">When initializing or assigning a variable with <code>val := fallible() or err { ... }</code>, the error recovery block must definitely diverge with <code>return</code>, <code>panic(...)</code>, or <code>exit(...)</code> to avoid unwrapping an uninitialized value.</p>
+          <p style="margin-bottom:0.85rem;">When initializing or assigning a variable with <code>val := fallible() or err { ... }</code>, the error recovery block must definitely diverge with <code>return</code>, <code>panic(...)</code>, or <code>os.exit(...)</code> to avoid unwrapping an uninitialized value.</p>
           <div class="grid-2">
             <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn compute() -&gt; i32 {
     // ERROR [cfire/NON-DIVERGING-OR-BLOCK]: handler does not diverge
@@ -4546,7 +4594,7 @@ x := 100 / denom // OK</code></pre></div>
           </a>
           <a href="#overview" class="pager-card next" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">Back to Overview &rarr;</span>
-            <span class="pager-title">All 37 Standard Library Modules</span>
+            <span class="pager-title">All 38 Standard Library Modules</span>
           </a>
         </nav>
       </article>
