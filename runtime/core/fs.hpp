@@ -199,6 +199,13 @@ namespace detail {
 
 [[nodiscard]] inline auto write_all(
     const std::filesystem::path& p,
+    std::span<const std::uint8_t> data
+) -> std::expected<void, cfire::Error> {
+    return write_bytes(p, std::as_bytes(data));
+}
+
+[[nodiscard]] inline auto write_all(
+    const std::filesystem::path& p,
     std::string_view text
 ) -> std::expected<void, cfire::Error> {
     return write_bytes(p, to_bytes(text));
@@ -246,6 +253,15 @@ public:
         return fp_ != nullptr;
     }
 
+    [[nodiscard]] auto fd() const noexcept -> std::int32_t {
+        if (!fp_) return -1;
+#if !defined(_WIN32)
+        return static_cast<std::int32_t>(::fileno(fp_));
+#else
+        return -1;
+#endif
+    }
+
     void close() noexcept {
         if (fp_) {
             std::fclose(fp_);
@@ -265,6 +281,33 @@ public:
 
     [[nodiscard]] auto read(std::span<uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
         return read(std::as_writable_bytes(buf));
+    }
+
+    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::byte>, cfire::Error> {
+        if (!fp_) return cfire::make_error("file is not open");
+        std::vector<std::byte> buf(max_bytes);
+        auto n = read(std::span<std::byte>(buf));
+        if (!n) return std::unexpected(n.error());
+        buf.resize(*n);
+        return buf;
+    }
+
+    [[nodiscard]] auto read_line() -> std::optional<std::string> {
+        if (!fp_) return std::nullopt;
+        std::string out;
+        char chunk[512];
+        bool got_any = false;
+        while (std::fgets(chunk, sizeof(chunk), fp_) != nullptr) {
+            got_any = true;
+            out.append(chunk);
+            if (!out.empty() && out.back() == '\n') {
+                out.pop_back();
+                if (!out.empty() && out.back() == '\r') out.pop_back();
+                break;
+            }
+        }
+        if (!got_any) return std::nullopt;
+        return out;
     }
 
     [[nodiscard]] auto read_all() -> std::expected<std::vector<std::byte>, cfire::Error> {
@@ -298,8 +341,20 @@ public:
         return write(std::as_bytes(data));
     }
 
-    [[nodiscard]] auto write_str(std::string_view s) -> std::expected<std::size_t, cfire::Error> {
+    [[nodiscard]] auto write(std::string_view s) -> std::expected<std::size_t, cfire::Error> {
         return write(std::as_bytes(std::span(s.data(), s.size())));
+    }
+
+    [[nodiscard]] auto write_str(std::string_view s) -> std::expected<std::size_t, cfire::Error> {
+        return write(s);
+    }
+
+    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
+        return write(data);
+    }
+
+    [[nodiscard]] auto write_bytes(std::span<const uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
+        return write(std::as_bytes(data));
     }
 
     [[nodiscard]] auto seek(int64_t offset, SeekWhence whence = SeekWhence::Start) -> std::expected<int64_t, cfire::Error> {

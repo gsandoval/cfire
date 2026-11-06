@@ -110,6 +110,14 @@ public:
     [[nodiscard]] auto release_fd() noexcept -> int { return std::exchange(fd_, -1); }
     [[nodiscard]] auto endpoint() const noexcept -> const std::string& { return endpoint_; }
 
+    void close() noexcept {
+        tls_.reset();
+        if (fd_ >= 0) {
+            ::close(fd_);
+            fd_ = -1;
+        }
+    }
+
     [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ != nullptr && tls_->ssl != nullptr; }
     void set_tls(std::shared_ptr<TlsStream> tls) noexcept { tls_ = std::move(tls); }
     [[nodiscard]] auto tls() const noexcept -> const std::shared_ptr<TlsStream>& { return tls_; }
@@ -144,31 +152,116 @@ public:
             }
             return total;
         }
-        ssize_t sent = ::send(fd_, payload.data(), payload.size(), MSG_NOSIGNAL);
-        if (sent < 0) {
-            return cfire::make_error("tcp socket send failed");
+        std::size_t total = 0;
+        while (total < payload.size()) {
+            ssize_t sent = ::send(fd_, payload.data() + total, payload.size() - total, MSG_NOSIGNAL);
+            if (sent < 0) {
+                if (errno == EINTR) continue;
+                return cfire::make_error("tcp socket send failed");
+            }
+            if (sent == 0) {
+                return cfire::make_error("tcp socket send wrote 0 bytes");
+            }
+            total += static_cast<std::size_t>(sent);
         }
-        return static_cast<std::size_t>(sent);
+        return total;
+    }
+
+    [[nodiscard]] auto write(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
+        return write(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+    }
+
+    [[nodiscard]] auto write(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
+        return write(std::as_bytes(data));
+    }
+
+    [[nodiscard]] auto write_str(std::string_view payload) -> std::expected<std::size_t, cfire::Error> {
+        return write(payload);
+    }
+
+    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
+        return write(data);
+    }
+
+    [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
+        return write(std::as_bytes(data));
+    }
+
+    [[nodiscard]] auto read(std::span<std::byte> buf) -> std::expected<std::size_t, cfire::Error> {
+        if (fd_ < 0) return std::size_t{0};
+        if (buf.empty()) return std::size_t{0};
+        if (tls_ && tls_->ssl && tls_->read_fn) {
+            ssize_t n = tls_->read_fn(tls_->ssl, buf.data(), buf.size());
+            if (n < 0) return cfire::make_error("tls socket read failed");
+            return static_cast<std::size_t>(n);
+        }
+        while (true) {
+            ssize_t n = ::recv(fd_, buf.data(), buf.size(), 0);
+            if (n < 0) {
+                if (errno == EINTR) continue;
+                return cfire::make_error("tcp socket recv failed");
+            }
+            return static_cast<std::size_t>(n);
+        }
+    }
+
+    [[nodiscard]] auto read(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
+        return read(std::as_writable_bytes(buf));
+    }
+
+    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 1024) -> std::expected<std::vector<std::byte>, cfire::Error> {
+        std::vector<std::byte> buf(max_bytes);
+        auto n = read(std::span<std::byte>(buf));
+        if (!n) return std::unexpected(n.error());
+        buf.resize(*n);
+        return buf;
+    }
+
+    [[nodiscard]] auto read_exact(std::size_t exact_bytes) -> std::expected<std::vector<std::byte>, cfire::Error> {
+        std::vector<std::byte> buf(exact_bytes);
+        std::size_t total = 0;
+        while (total < exact_bytes) {
+            auto n = read(std::span<std::byte>(buf.data() + total, exact_bytes - total));
+            if (!n) return std::unexpected(n.error());
+            if (*n == 0) {
+                return cfire::make_error(std::format("unexpected EOF in read_exact (expected {} bytes, got {})", exact_bytes, total));
+            }
+            total += *n;
+        }
+        return buf;
     }
 
     [[nodiscard]] auto read_str(std::size_t max_bytes = 1024) -> std::expected<std::string, cfire::Error> {
         if (fd_ < 0) return std::string{};
-        if (tls_ && tls_->ssl && tls_->read_fn) {
-            std::string buf(max_bytes, '\0');
-            ssize_t n = tls_->read_fn(tls_->ssl, buf.data(), max_bytes);
-            if (n < 0) {
-                return cfire::make_error("tls socket read failed");
-            }
-            buf.resize(static_cast<std::size_t>(n));
-            return buf;
-        }
         std::string buf(max_bytes, '\0');
-        ssize_t n = ::recv(fd_, buf.data(), max_bytes, 0);
-        if (n < 0) {
-            return cfire::make_error("tcp socket recv failed");
-        }
-        buf.resize(static_cast<std::size_t>(n));
+        auto n = read(std::as_writable_bytes(std::span(buf.data(), max_bytes)));
+        if (!n) return std::unexpected(n.error());
+        buf.resize(*n);
         return buf;
+    }
+
+    [[nodiscard]] auto read_line(std::size_t max_bytes = 65536) -> std::optional<std::string> {
+        if (fd_ < 0) return std::nullopt;
+        std::string out;
+        char c = '\0';
+        bool got_any = false;
+        while (out.size() < max_bytes) {
+            ssize_t n = 0;
+            if (tls_ && tls_->ssl && tls_->read_fn) {
+                n = tls_->read_fn(tls_->ssl, &c, 1);
+            } else {
+                while ((n = ::recv(fd_, &c, 1, 0)) < 0 && errno == EINTR) {}
+            }
+            if (n <= 0) break;
+            got_any = true;
+            if (c == '\n') {
+                if (!out.empty() && out.back() == '\r') out.pop_back();
+                break;
+            }
+            out.push_back(c);
+        }
+        if (!got_any) return std::nullopt;
+        return out;
     }
 
 private:

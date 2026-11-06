@@ -490,6 +490,7 @@ struct FnDecl {
     TypeRef return_type{"void"};
     std::vector<StmtPtr> body{};
     int line = 1;
+    std::string package_name{};
 };
 
 struct GlobalVarDecl {
@@ -499,6 +500,7 @@ struct GlobalVarDecl {
     ExprPtr value{};
     bool was_var = false;
     int line = 1;
+    std::string package_name{};
 };
 
 struct BenchParamVariation {

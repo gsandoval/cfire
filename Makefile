@@ -1,7 +1,8 @@
 CXX      := clang++
+GIT_SHA  := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 LINUX_CXXFLAGS := $(if $(filter Linux,$(shell uname -s)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
-CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality $(LINUX_CXXFLAGS) -Iruntime -Isrc
-LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation,-ldl -lpthread)
+CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
+LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation -framework Security,-ldl -lpthread)
 PREFIX   ?= /usr/local
 
 TEST_SRCS := tests/unit/test_frontend.cpp \

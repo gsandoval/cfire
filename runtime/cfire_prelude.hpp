@@ -10,6 +10,7 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -23,6 +24,7 @@
 #include <print>
 #endif
 #include <cstdio>
+#include <cerrno>
 #include <span>
 #include <string>
 #include <string_view>
@@ -31,6 +33,19 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#if !defined(_WIN32)
+#include <unistd.h>
+#if !defined(__EMSCRIPTEN__)
+#include <termios.h>
+#endif
+#else
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
+#include <io.h>
+#include <fcntl.h>
+#include <windows.h>
+#endif
 
 #if !__has_include(<print>)
 namespace std {
@@ -147,6 +162,23 @@ inline auto operator!=(std::nullopt_t, T* ptr) noexcept -> bool {
     return ptr != nullptr;
 }
 
+template <std::integral I>
+constexpr auto operator==(std::byte lhs, I rhs) noexcept -> bool {
+    return std::to_integer<I>(lhs) == rhs;
+}
+template <std::integral I>
+constexpr auto operator==(I lhs, std::byte rhs) noexcept -> bool {
+    return lhs == std::to_integer<I>(rhs);
+}
+template <std::integral I>
+constexpr auto operator!=(std::byte lhs, I rhs) noexcept -> bool {
+    return std::to_integer<I>(lhs) != rhs;
+}
+template <std::integral I>
+constexpr auto operator!=(I lhs, std::byte rhs) noexcept -> bool {
+    return lhs != std::to_integer<I>(rhs);
+}
+
 namespace cfire {
 
 // --- Error Type for T! (std::expected<T, cfire::Error>) ---
@@ -155,7 +187,7 @@ public:
     Error(std::string msg) : msg_(std::move(msg)) {}
     Error(std::string_view msg) : msg_(msg) {}
     Error(const char* msg) : msg_(msg) {}
-    [[nodiscard]] auto message() const noexcept CFIRE_LIFETIMEBOUND -> std::string_view { return msg_; }
+    [[nodiscard]] auto message() const noexcept -> const std::string& { return msg_; }
     [[nodiscard]] auto size() const noexcept -> std::size_t { return msg_.size(); }
     [[nodiscard]] auto data() const noexcept -> const char* { return msg_.data(); }
     [[nodiscard]] auto c_str() const noexcept -> const char* { return msg_.c_str(); }
@@ -428,6 +460,13 @@ struct Arbitrary<T, std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T,
             if (iter < kEdges.size()) return kEdges[iter];
         }
         return static_cast<T>(rng.next_u64());
+    }
+};
+
+template <>
+struct Arbitrary<std::byte> {
+    static auto generate(FuzzRng& rng, std::size_t iter) -> std::byte {
+        return static_cast<std::byte>(Arbitrary<std::uint8_t>::generate(rng, iter));
     }
 };
 
@@ -763,13 +802,59 @@ inline void assert_binop_at(
         std::string detail = std::format(
             "{} [left: {}, right: {}]",
             msg,
-            testing_detail::format_debug_val(lhs),
-            testing_detail::format_debug_val(rhs));
+            testing_detail::format_fuzz_arg(lhs),
+            testing_detail::format_fuzz_arg(rhs));
         std::string full_expr = expr_text.empty()
             ? std::format("left {} right", op_str)
             : std::string(expr_text);
         assert_true_at(false, detail, file, line, full_expr);
     }
+}
+
+template <typename L, typename Elem, typename Pred>
+inline void assert_binop_at(
+    const std::vector<L>& lhs,
+    std::initializer_list<Elem> rhs_init,
+    Pred&& pred,
+    std::string_view op_str,
+    std::string_view msg,
+    std::string_view file,
+    int line,
+    std::string_view expr_text
+) {
+    std::vector<L> rhs;
+    rhs.reserve(rhs_init.size());
+    for (const auto& item : rhs_init) {
+        rhs.push_back(static_cast<L>(item));
+    }
+    assert_binop_at(lhs, rhs, std::forward<Pred>(pred), op_str, msg, file, line, expr_text);
+}
+
+template <typename L, typename Elem, typename Pred>
+inline void assert_binop_at(
+    std::initializer_list<L> lhs_init,
+    std::initializer_list<Elem> rhs_init,
+    Pred&& pred,
+    std::string_view op_str,
+    std::string_view msg,
+    std::string_view file,
+    int line,
+    std::string_view expr_text
+) {
+    using ValT = std::conditional_t<std::is_convertible_v<L, std::string_view>, std::string, L>;
+    std::vector<ValT> lhs;
+    lhs.reserve(lhs_init.size());
+    for (const auto& item : lhs_init) lhs.push_back(static_cast<ValT>(item));
+    assert_binop_at(lhs, rhs_init, std::forward<Pred>(pred), op_str, msg, file, line, expr_text);
+}
+
+[[noreturn]] inline void panic(
+    std::string_view msg,
+    std::string_view file = "",
+    int line = 0
+) {
+    assert_true_at(false, msg, file, line, "panic");
+    std::abort();
 }
 
 inline void assert_true(bool cond, std::string_view msg = "assertion failed") {
@@ -894,18 +979,283 @@ template <typename T>
 [[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> std::span<const std::byte> {
     return std::as_bytes(std::span<const char>(sv.data(), sv.size()));
 }
+[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> std::span<const std::byte> {
+    return std::as_bytes(sp);
+}
+[[nodiscard]] inline auto to_bytes(std::span<const std::byte> sp) noexcept -> std::span<const std::byte> {
+    return sp;
+}
+[[nodiscard]] inline auto to_u8_vec(std::span<const std::byte> sp) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out(sp.size());
+    if (!sp.empty()) {
+        std::memcpy(out.data(), sp.data(), sp.size());
+    }
+    return out;
+}
+[[nodiscard]] inline auto to_u8_vec(std::span<const std::uint8_t> sp) -> std::vector<std::uint8_t> {
+    return std::vector<std::uint8_t>(sp.begin(), sp.end());
+}
+[[nodiscard]] inline auto to_u8_vec(std::string_view sv) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out(sv.size());
+    if (!sv.empty()) {
+        std::memcpy(out.data(), sv.data(), sv.size());
+    }
+    return out;
+}
+[[nodiscard]] inline auto to_u8_vec(std::initializer_list<std::uint8_t> init) -> std::vector<std::uint8_t> {
+    return std::vector<std::uint8_t>(init.begin(), init.end());
+}
+[[nodiscard]] inline auto to_byte_vec(std::span<const std::uint8_t> sp) -> std::vector<std::byte> {
+    std::vector<std::byte> out(sp.size());
+    if (!sp.empty()) {
+        std::memcpy(out.data(), sp.data(), sp.size());
+    }
+    return out;
+}
+[[nodiscard]] inline auto to_byte_vec(std::span<const std::byte> sp) -> std::vector<std::byte> {
+    return std::vector<std::byte>(sp.begin(), sp.end());
+}
+[[nodiscard]] inline auto to_byte_vec(std::string_view sv) -> std::vector<std::byte> {
+    std::vector<std::byte> out(sv.size());
+    if (!sv.empty()) {
+        std::memcpy(out.data(), sv.data(), sv.size());
+    }
+    return out;
+}
+[[nodiscard]] inline auto to_byte_vec(std::initializer_list<std::uint8_t> init) -> std::vector<std::byte> {
+    std::vector<std::byte> out;
+    out.reserve(init.size());
+    for (auto b : init) out.push_back(static_cast<std::byte>(b));
+    return out;
+}
+[[nodiscard]] inline auto to_str(std::span<const std::byte> sp) -> std::string {
+    return std::string(reinterpret_cast<const char*>(sp.data()), sp.size());
+}
+[[nodiscard]] inline auto to_str(std::span<const std::uint8_t> sp) -> std::string {
+    return std::string(reinterpret_cast<const char*>(sp.data()), sp.size());
+}
+
+template <typename T, typename U>
+inline void vec_push(std::vector<T>& vec, U&& val) {
+    if constexpr (std::is_same_v<T, std::byte> && std::is_integral_v<std::remove_cvref_t<U>>) {
+        vec.push_back(static_cast<std::byte>(val));
+    } else if constexpr (std::is_same_v<T, std::uint8_t> && std::is_same_v<std::remove_cvref_t<U>, std::byte>) {
+        vec.push_back(static_cast<std::uint8_t>(val));
+    } else {
+        vec.push_back(std::forward<U>(val));
+    }
+}
 
 template <typename T>
-[[nodiscard]] inline auto str(const T& val) -> std::string {
+[[nodiscard]] inline auto str_ctor(const T& val) -> std::string {
     if constexpr (std::is_convertible_v<T, std::string_view>) {
         return std::string(val);
+    } else if constexpr (std::is_convertible_v<T, std::span<const std::byte>>) {
+        return to_str(std::span<const std::byte>(val));
+    } else if constexpr (std::is_convertible_v<T, std::span<const std::uint8_t>>) {
+        return to_str(std::span<const std::uint8_t>(val));
     } else {
         return std::format("{}", val);
     }
 }
 
+// --- Safe, EINTR-Resilient POSIX File Descriptor Primitives & Console Input ---
+namespace detail {
+
+[[nodiscard]] inline auto fd_read(int fd, std::span<std::byte> buf) -> std::expected<std::size_t, Error> {
+    if (fd < 0) return make_error("invalid file descriptor");
+    if (buf.empty()) return std::size_t{0};
+#if !defined(_WIN32)
+    while (true) {
+        ssize_t n = ::read(fd, buf.data(), buf.size());
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return make_error(std::format("fd_read({}) failed: {}", fd, std::strerror(errno)));
+        }
+        return static_cast<std::size_t>(n);
+    }
+#else
+    int n = ::_read(fd, buf.data(), static_cast<unsigned int>(std::min<std::size_t>(buf.size(), 0x7fffffffU)));
+    if (n < 0) {
+        return make_error(std::format("fd_read({}) failed: {}", fd, std::strerror(errno)));
+    }
+    return static_cast<std::size_t>(n);
+#endif
+}
+
+[[nodiscard]] inline auto fd_write_all(int fd, std::span<const std::byte> data) -> std::expected<std::size_t, Error> {
+    if (fd < 0) return make_error("invalid file descriptor");
+    if (data.empty()) return std::size_t{0};
+#if !defined(_WIN32)
+    std::size_t total = 0;
+    while (total < data.size()) {
+        ssize_t n = ::write(fd, data.data() + total, data.size() - total);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return make_error(std::format("fd_write({}) failed: {}", fd, std::strerror(errno)));
+        }
+        if (n == 0) {
+            return make_error(std::format("fd_write({}) wrote 0 bytes", fd));
+        }
+        total += static_cast<std::size_t>(n);
+    }
+    return total;
+#else
+    std::size_t total = 0;
+    while (total < data.size()) {
+        unsigned int chunk = static_cast<unsigned int>(std::min<std::size_t>(data.size() - total, 0x7fffffffU));
+        int n = ::_write(fd, data.data() + total, chunk);
+        if (n <= 0) {
+            return make_error(std::format("fd_write({}) failed: {}", fd, std::strerror(errno)));
+        }
+        total += static_cast<std::size_t>(n);
+    }
+    return total;
+#endif
+}
+
+[[nodiscard]] inline auto fd_read_all_bounded(
+    int fd,
+    std::size_t max_bytes = 64ULL * 1024ULL * 1024ULL
+) -> std::expected<std::vector<std::byte>, Error> {
+    if (fd < 0) return make_error("invalid file descriptor");
+    std::vector<std::byte> out;
+    std::array<std::byte, 8192> chunk{};
+    while (true) {
+        auto n = fd_read(fd, chunk);
+        if (!n) return std::unexpected(n.error());
+        if (*n == 0) break;
+        if (out.size() + *n > max_bytes) {
+            return make_error(std::format("fd_read_all exceeded max_bytes limit ({})", max_bytes));
+        }
+        out.insert(out.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(*n));
+    }
+    return out;
+}
+
+[[nodiscard]] inline auto fd_read_line(
+    int fd,
+    std::size_t max_bytes = 1024ULL * 1024ULL
+) -> std::optional<std::string> {
+    if (fd < 0) return std::nullopt;
+    std::string line;
+    char ch = '\0';
+    bool got_any = false;
+    while (line.size() < max_bytes) {
+#if !defined(_WIN32)
+        ssize_t n = ::read(fd, &ch, 1);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+#else
+        int n = ::_read(fd, &ch, 1);
+        if (n < 0) break;
+#endif
+        if (n == 0) break;
+        got_any = true;
+        if (ch == '\n') {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            return line;
+        }
+        line.push_back(ch);
+    }
+    if (!got_any) return std::nullopt;
+    if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    return line;
+}
+
+[[nodiscard]] inline auto readln_noecho(std::string_view prompt = "") -> std::optional<std::string> {
+#if !defined(_WIN32)
+    if (!prompt.empty()) {
+        std::fflush(stderr);
+        (void)fd_write_all(STDERR_FILENO, std::as_bytes(std::span(prompt.data(), prompt.size())));
+    }
+#if !defined(__EMSCRIPTEN__)
+    struct TermiosEchoGuard {
+        struct termios orig{};
+        bool active = false;
+        TermiosEchoGuard() noexcept {
+            if (::tcgetattr(STDIN_FILENO, &orig) == 0) {
+                struct termios noecho = orig;
+                noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+                if (::tcsetattr(STDIN_FILENO, TCSANOW, &noecho) == 0) {
+                    active = true;
+                }
+            }
+        }
+        ~TermiosEchoGuard() noexcept {
+            if (active) {
+                (void)::tcsetattr(STDIN_FILENO, TCSANOW, &orig);
+                const char nl = '\n';
+                (void)fd_write_all(STDERR_FILENO, std::as_bytes(std::span(&nl, 1)));
+            }
+        }
+    } echo_guard;
+#endif
+    return fd_read_line(STDIN_FILENO);
+#else
+    if (!prompt.empty()) {
+        std::fflush(stderr);
+        (void)fd_write_all(2, std::as_bytes(std::span(prompt.data(), prompt.size())));
+    }
+    HANDLE hIn = ::GetStdHandle(STD_INPUT_HANDLE);
+    DWORD origMode = 0;
+    bool hasMode = (hIn != INVALID_HANDLE_VALUE && ::GetConsoleMode(hIn, &origMode) != 0);
+    if (hasMode) {
+        ::SetConsoleMode(hIn, origMode & ~static_cast<DWORD>(ENABLE_ECHO_INPUT));
+    }
+    auto res = fd_read_line(0);
+    if (hasMode) {
+        ::SetConsoleMode(hIn, origMode);
+        const char nl = '\n';
+        (void)fd_write_all(2, std::as_bytes(std::span(&nl, 1)));
+    }
+    return res;
+#endif
+}
+
+} // namespace detail
+
+// --- Built-in Console Line Input (`readln`) ---
+[[nodiscard]] inline auto readln(std::string_view prompt = "") -> std::optional<std::string> {
+#if !defined(_WIN32)
+    if (!prompt.empty()) {
+        std::fflush(stdout);
+        (void)detail::fd_write_all(STDOUT_FILENO, std::as_bytes(std::span(prompt.data(), prompt.size())));
+    }
+    return detail::fd_read_line(STDIN_FILENO);
+#else
+    if (!prompt.empty()) {
+        std::fflush(stdout);
+        (void)detail::fd_write_all(1, std::as_bytes(std::span(prompt.data(), prompt.size())));
+    }
+    return detail::fd_read_line(0);
+#endif
+}
+
 // --- High-Performance Zero-Allocation Exception-Free Integer Parsing (<charconv>) ---
 namespace detail {
+
+inline auto process_args_storage() -> std::vector<std::string>& {
+    static std::vector<std::string> s_args;
+    return s_args;
+}
+
+inline void set_process_args(int argc, char** argv) {
+    auto& out = process_args_storage();
+    out.clear();
+    if (argc > 0 && argv) {
+        out.reserve(static_cast<std::size_t>(argc));
+        for (int i = 0; i < argc; ++i) {
+            if (argv[i]) out.emplace_back(argv[i]);
+        }
+    }
+}
 
 template <typename T>
 [[nodiscard]] inline auto parse_int(std::string_view sv) noexcept -> std::optional<T> {
@@ -916,6 +1266,21 @@ template <typename T>
     auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), val);
     if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
         return val;
+    }
+    return std::nullopt;
+}
+
+template <typename T>
+[[nodiscard]] inline auto parse_float(std::string_view sv) noexcept -> std::optional<T> {
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+    while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) sv.remove_suffix(1);
+    if (sv.empty()) return std::nullopt;
+    std::string tmp(sv);
+    char* end_ptr = nullptr;
+    errno = 0;
+    double d = std::strtod(tmp.c_str(), &end_ptr);
+    if (errno == 0 && end_ptr == tmp.c_str() + tmp.size()) {
+        return static_cast<T>(d);
     }
     return std::nullopt;
 }
@@ -979,6 +1344,35 @@ decltype(auto) unwrap_val(E&& exp) {
     }
 }
 
+template <typename Exp>
+auto unwrap_or_default(Exp&& exp) {
+    using V = typename std::decay_t<Exp>::value_type;
+    if constexpr (std::is_void_v<V>) {
+        (void)exp;
+        return;
+    } else {
+        if (exp.has_value()) return std::move(*exp);
+        return V{};
+    }
+}
+
+template <typename Exp, typename U>
+auto unwrap_or(Exp&& exp, U&& fallback) {
+    using V = typename std::decay_t<Exp>::value_type;
+    if constexpr (std::is_void_v<V>) {
+        (void)exp;
+        return std::forward<U>(fallback);
+    } else {
+        if (exp.has_value()) return std::move(*exp);
+        return static_cast<V>(std::forward<U>(fallback));
+    }
+}
+
+template <typename T>
+inline auto extract_or_error(const std::expected<T, Error>& res) -> const Error& {
+    return res.error();
+}
+
 template <typename T>
 struct reflect_struct {
     static constexpr std::string_view name = "";
@@ -987,58 +1381,64 @@ struct reflect_struct {
 
 // --- Built-in Numeric & Primitive Type Conversion Constructors (LANG-P0-01) ---
 template <typename T>
+concept CfireScalarCastable =
+    std::is_arithmetic_v<std::remove_cvref_t<T>> ||
+    std::is_same_v<std::remove_cvref_t<T>, std::byte> ||
+    std::is_enum_v<std::remove_cvref_t<T>>;
+
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto i8(T val) noexcept -> std::int8_t {
     return static_cast<std::int8_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto i16(T val) noexcept -> std::int16_t {
     return static_cast<std::int16_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto i32(T val) noexcept -> std::int32_t {
     return static_cast<std::int32_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto i64(T val) noexcept -> std::int64_t {
     return static_cast<std::int64_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto u8(T val) noexcept -> std::uint8_t {
     return static_cast<std::uint8_t>(val);
 }
-template <typename T>
-[[nodiscard]] constexpr auto byte(T val) noexcept -> std::uint8_t {
-    return static_cast<std::uint8_t>(val);
+template <CfireScalarCastable T>
+[[nodiscard]] constexpr auto byte(T val) noexcept -> std::byte {
+    return static_cast<std::byte>(static_cast<std::uint8_t>(val));
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto u16(T val) noexcept -> std::uint16_t {
     return static_cast<std::uint16_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto u32(T val) noexcept -> std::uint32_t {
     return static_cast<std::uint32_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto u64(T val) noexcept -> std::uint64_t {
     return static_cast<std::uint64_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto usize(T val) noexcept -> std::size_t {
     return static_cast<std::size_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto isize(T val) noexcept -> std::ptrdiff_t {
     return static_cast<std::ptrdiff_t>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto f32(T val) noexcept -> float {
     return static_cast<float>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto f64(T val) noexcept -> double {
     return static_cast<double>(val);
 }
-template <typename T>
+template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto bool_(T val) noexcept -> bool {
     return static_cast<bool>(val);
 }
@@ -1123,7 +1523,11 @@ constexpr auto operator&=(E& a, I b) noexcept -> E& {
 
 } // namespace cfire
 
-using cfire::str;
+template <typename T>
+[[nodiscard]] inline auto str(const T& val) -> std::string {
+    return cfire::str_ctor(val);
+}
+using cfire::readln;
 using cfire::i8;
 using cfire::i16;
 using cfire::i32;

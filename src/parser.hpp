@@ -121,7 +121,8 @@ public:
                         } else {
                             f.tests.push_back(std::move(*td));
                         }
-                    } else if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon) {
+                    } else if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                               (cur().lexeme == "const" && peek(1).kind == TokenKind::Ident)) {
                         auto gv = parse_global_var();
                         if (!gv) {
                             record_error(gv.error());
@@ -136,6 +137,14 @@ public:
                         if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
                         synchronize_decl();
                     }
+                    break;
+                }
+                case TokenKind::CppBlock: {
+                    Token cpp_tok = advance();
+                    record_error(std::format(
+                        "{}:{}:{}: top-level 'cpp {{ ... }}' blocks are not supported in cfire; use 'import cpp \"header.h\"' for headers or place 'cpp {{ ... }}' inside a 'fn' body",
+                        file_, cpp_tok.line, cpp_tok.col));
+                    if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
                     break;
                 }
                 case TokenKind::KwTest: {
@@ -227,9 +236,11 @@ private:
                 case TokenKind::KwVar:
                 case TokenKind::KwMut:
                 case TokenKind::KwTest:
+                case TokenKind::CppBlock:
                     return;
                 case TokenKind::Ident:
                     if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                        (cur().lexeme == "const" && peek(1).kind == TokenKind::Ident) ||
                         ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String)) {
                         return;
                     }
@@ -384,9 +395,10 @@ private:
     }
 
     [[nodiscard]] auto parse_import() -> std::expected<ImportDecl, std::string> {
-        Token start = advance(); // 'import'
         ImportDecl imp;
-        imp.line = start.line;
+        auto start = expect(TokenKind::KwImport);
+        if (!start) return std::unexpected(start.error());
+        imp.line = start->line;
         if (cur().kind == TokenKind::KwCpp) {
             advance();
             imp.is_cpp = true;
@@ -461,6 +473,9 @@ private:
                     }
                 }
                 st.fields.push_back(std::move(field));
+                while (cur().kind == TokenKind::Comma || cur().kind == TokenKind::Semicolon) {
+                    advance();
+                }
             }
             if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
             f.structs.push_back(std::move(st));
@@ -531,13 +546,7 @@ private:
                     auto rt = parse_type_ref();
                     if (!rt) return std::unexpected(rt.error());
                     sig.return_type = std::move(*rt);
-                    if (sig.return_type.is_slice && sig.return_type.elem_type && sig.return_type.elem_type->is_fallible) {
-                        sig.return_type.elem_type->is_fallible = false;
-                        sig.return_type.is_fallible = true;
-                    } else if (sig.return_type.is_slice && sig.return_type.elem_type && sig.return_type.elem_type->is_optional) {
-                        sig.return_type.elem_type->is_optional = false;
-                        sig.return_type.is_optional = true;
-                    }
+                    hoist_nested_fallible_optional(sig.return_type);
                 }
                 iface.methods.push_back(std::move(sig));
             }
@@ -548,6 +557,23 @@ private:
 
         return std::unexpected(std::format("{}:{}:{}: expected 'struct', 'enum', or 'interface' after type name",
             file_, cur().line, cur().col));
+    }
+
+    static void hoist_nested_fallible_optional(TypeRef& rt) {
+        TypeRef* cur_t = &rt;
+        while ((cur_t->is_slice || cur_t->is_array || cur_t->is_map) && cur_t->elem_type) {
+            cur_t = cur_t->elem_type.get();
+        }
+        if (cur_t != &rt) {
+            if (cur_t->is_fallible) {
+                cur_t->is_fallible = false;
+                rt.is_fallible = true;
+            }
+            if (cur_t->is_optional) {
+                cur_t->is_optional = false;
+                rt.is_optional = true;
+            }
+        }
     }
 
     [[nodiscard]] auto parse_type_ref() -> std::expected<TypeRef, std::string> {
@@ -676,7 +702,12 @@ private:
             }
         } else {
             if (cur().kind == TokenKind::Ident || cur().kind == TokenKind::KwCpp) {
-                tr.name = advance().lexeme;
+                Token name_tok = advance();
+                if (name_tok.lexeme == "bytes" && cur().kind != TokenKind::DoubleColon && cur().kind != TokenKind::Dot) {
+                    return std::unexpected(std::format("{}:{}:{}: 'bytes' is not a type in cfire; use '[]byte' instead",
+                        file_, name_tok.line, name_tok.col));
+                }
+                tr.name = name_tok.lexeme;
             } else {
                 return std::unexpected(std::format("{}:{}:{}: expected type name, got '{}'",
                     file_, cur().line, cur().col, cur().lexeme));
@@ -804,13 +835,7 @@ private:
             auto ret = parse_type_ref();
             if (!ret) return std::unexpected(ret.error());
             fn.return_type = std::move(*ret);
-            if (fn.return_type.is_slice && fn.return_type.elem_type && fn.return_type.elem_type->is_fallible) {
-                fn.return_type.elem_type->is_fallible = false;
-                fn.return_type.is_fallible = true;
-            } else if (fn.return_type.is_slice && fn.return_type.elem_type && fn.return_type.elem_type->is_optional) {
-                fn.return_type.elem_type->is_optional = false;
-                fn.return_type.is_optional = true;
-            }
+            hoist_nested_fallible_optional(fn.return_type);
         }
         auto body = parse_block();
         if (!body) return std::unexpected(body.error());
@@ -832,6 +857,12 @@ private:
         } else if (cur().kind == TokenKind::KwMut) {
             advance(); // 'mut'
             is_mut = true;
+        } else if (cur().kind == TokenKind::Ident && cur().lexeme == "const") {
+            Token const_tok = advance(); // 'const'
+            std::string var_name = (cur().kind == TokenKind::Ident) ? cur().lexeme : "x";
+            return std::unexpected(std::format(
+                "{}:{}:{}: 'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead",
+                file_, const_tok.line, const_tok.col, var_name, var_name));
         }
 
         auto name_tok = expect(TokenKind::Ident);
@@ -1158,6 +1189,14 @@ private:
             }
         }
 
+        if (tok.kind == TokenKind::Ident && tok.lexeme == "const" && peek(1).kind == TokenKind::Ident) {
+            advance(); // 'const'
+            Token id_tok = advance();
+            return std::unexpected(std::format(
+                "{}:{}:{}: 'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead",
+                file_, tok.line, tok.col, id_tok.lexeme, id_tok.lexeme));
+        }
+
         if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
             Token id_tok = advance();
             advance(); // ':='
@@ -1416,6 +1455,11 @@ private:
         if (!left) return std::unexpected(left.error());
         if (cur().kind == TokenKind::KwOr) {
             Token or_tok = advance();
+            if (cur().kind == TokenKind::LBrace) {
+                auto body = parse_block();
+                if (!body) return std::unexpected(body.error());
+                return make_expr(OrExpr{std::move(*left), "", std::move(*body), nullptr}, or_tok.line, or_tok.col);
+            }
             bool is_struct_lit_fallback = (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace) &&
                 !cur().lexeme.empty() &&
                 std::isupper(static_cast<unsigned char>(cur().lexeme[0])) &&
@@ -1634,6 +1678,17 @@ private:
                         break;
                     }
                     return expr;
+                }
+                case TokenKind::KwAs: {
+                    Token as_tok = advance(); // 'as'
+                    auto target_t = parse_type_ref();
+                    std::string target_name = target_t ? target_t->name : "T";
+                    if (target_t && target_t->is_slice && target_t->elem_type) {
+                        target_name = "[]" + target_t->elem_type->name;
+                    }
+                    return std::unexpected(std::format(
+                        "{}:{}:{}: 'as' cast syntax is not supported in cfire; use constructor conversion '{}(...)' instead",
+                        file_, as_tok.line, as_tok.col, target_name));
                 }
                 default:
                     return expr;
@@ -1869,6 +1924,11 @@ private:
                     if (cur().kind == TokenKind::Comma) advance();
                 }
                 if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                if (arr.elements.empty() && cur().kind == TokenKind::Ident &&
+                    (cur().lexeme == "byte" || cur().lexeme == "u8") && peek(1).kind == TokenKind::LParen) {
+                    Token elem_tok = advance(); // consume 'byte' or 'u8'
+                    return make_expr(IdentExpr{"[]" + elem_tok.lexeme}, tok.line, tok.col);
+                }
                 return make_expr(std::move(arr), tok.line, tok.col);
             }
             case TokenKind::Pipe:
@@ -2045,9 +2105,18 @@ struct InterpPlaceholder {
             std::size_t open_idx = i;
             ++i;
             int depth = 1;
+            bool in_quote = false;
             while (i < sv.size() && depth > 0) {
-                if (sv[i] == '{') ++depth;
-                else if (sv[i] == '}') --depth;
+                if (sv[i] == '\\' && i + 1 < sv.size()) {
+                    i += 2;
+                    continue;
+                }
+                if (sv[i] == '"') {
+                    in_quote = !in_quote;
+                } else if (!in_quote) {
+                    if (sv[i] == '{') ++depth;
+                    else if (sv[i] == '}') --depth;
+                }
                 if (depth > 0) ++i;
             }
             if (i < sv.size() && depth == 0) {

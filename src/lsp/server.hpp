@@ -813,6 +813,21 @@ public:
                        "Formats and writes text to `stdout` without a trailing newline. Powered by ISO C++23 `std::print`.\n\n"
                        "**Example:**\n```cf\nprint(\"Processing... \")\n```";
             }
+            if (sym.name == "eprintln") {
+                return "### Built-in Function `eprintln(format, ...args)`\n```cf\neprintln(format: str, ...args: Any) -> void\n```\n"
+                       "Formats and writes text to `stderr` with a trailing newline. Powered by ISO C++23 `std::println(stderr, ...)`.\n\n"
+                       "**Example:**\n```cf\neprintln(\"Error: failed to open {}\", path)\n```";
+            }
+            if (sym.name == "eprint") {
+                return "### Built-in Function `eprint(format, ...args)`\n```cf\neprint(format: str, ...args: Any) -> void\n```\n"
+                       "Formats and writes text to `stderr` without a trailing newline. Powered by ISO C++23 `std::print(stderr, ...)`.\n\n"
+                       "**Example:**\n```cf\neprint(\"Warning: \")\n```";
+            }
+            if (sym.name == "readln") {
+                return "### Built-in Function `readln(prompt)`\n```cf\nreadln(prompt: str = \"\") -> str?\n```\n"
+                       "Optionally prints `prompt` to `stdout` (flushed) and reads a single line from `stdin` without the trailing newline (`\\n` / `\\r\\n`), returning `none` on EOF.\n\n"
+                       "**Example:**\n```cf\nline := readln(\"> \") or { return }\n```";
+            }
             if (sym.name == "panic") {
                 return "### Built-in Function `panic(msg)`\n```cf\npanic(msg: str) -> void\n```\n"
                        "Aborts the current process immediately with a formatted error message to `stderr`.\n\n"
@@ -827,6 +842,11 @@ public:
                 return "### Built-in Power-Assertion `assert_eq(left, right, message)`\n```cf\nassert_eq(left: T, right: T, msg: str = \"\") -> void\n```\n"
                        "Evaluates `left` and `right` once, verifies `left == right`, and formats `[left: <val>, right: <val>]` value diffs on failure.\n\n"
                        "**Example:**\n```cf\nassert_eq(actual_count, 42, \"count mismatch\")\n```";
+            }
+            if (sym.name == "assert_ne") {
+                return "### Built-in Power-Assertion `assert_ne(left, right, message)`\n```cf\nassert_ne(left: T, right: T, msg: str = \"\") -> void\n```\n"
+                       "Evaluates `left` and `right` once, verifies `left != right`, and formats `[left: <val>, right: <val>]` value diffs on failure.\n\n"
+                       "**Example:**\n```cf\nassert_ne(status, 0, \"expected non-zero status\")\n```";
             }
             if (sym.name == "black_box") {
                 return "### Built-in Optimization Barrier `black_box(value)`\n```cf\nblack_box[T](val: T) -> T\n```\n"
@@ -972,6 +992,9 @@ public:
                             return std::format("### `{}` (`{}`)\n```cf\n{}\n```\n**Lowered C++23:** `{}`\n\n{}\n\n**Example:**\n```cf\n{}\n```",
                                 fn.name, mod.import_path, fn.cf_sig, fn.cpp_lowering, fn.summary, fn.example);
                         }
+                    } else if (recv_type == "str" && mod.import_path == "core:str" && fn.name == sym.name) {
+                        return std::format("### `{}.{}` (`{}`)\n```cf\n{}\n```\n**Lowered C++23:** `{}`\n\n{}\n\n**Example:**\n```cf\n{}\n```",
+                            mod.ns_alias, fn.name, mod.import_path, fn.cf_sig, fn.cpp_lowering, fn.summary, fn.example);
                     }
                 }
             }
@@ -1734,6 +1757,15 @@ public:
                     append_item("empty", 2, "fn empty() -> bool", "Returns true if empty");
                     append_item("data", 2, "fn data() -> *const c_char", "Returns raw pointer to null-terminated UTF-8 C string (lowers to .data())");
                     append_item("bytes", 2, "fn bytes() -> []byte", "Returns safe byte slice view over UTF-8 bytes (lowers to cfire::to_bytes())");
+                    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                        if (mod.import_path == "core:str") {
+                            for (const auto& fn : mod.functions) {
+                                if (!fn.name.contains('.')) {
+                                    append_item(fn.name, 2, fn.cf_sig, fn.summary);
+                                }
+                            }
+                        }
+                    }
                 }
                 if (rtype.starts_with("[")) {
                     append_item("len", 10, "usize", "Length in elements (lowers to .size())");
@@ -1869,12 +1901,20 @@ public:
             }
         }
 
-        // Built-in functions and directives
+        // Built-in functions, type constructors, and directives
         append_item("println", 3, "println(args...)", "Prints formatted arguments followed by a newline to standard output.");
         append_item("print", 3, "print(args...)", "Prints formatted arguments to standard output without trailing newline.");
-        append_item("panic", 3, "panic(message: string)", "Terminates the program immediately with an error message.");
-        append_item("assert", 3, "assert(cond: bool, msg: string = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).");
-        append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: string = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.");
+        append_item("eprintln", 3, "eprintln(args...)", "Prints formatted arguments followed by a newline to standard error.");
+        append_item("eprint", 3, "eprint(args...)", "Prints formatted arguments to standard error without trailing newline.");
+        append_item("readln", 3, "readln(prompt: str = \"\") -> str?", "Reads a single line from standard input without trailing newline, or none on EOF.");
+        append_item("panic", 3, "panic(message: str)", "Terminates the program immediately with an error message.");
+        append_item("assert", 3, "assert(cond: bool, msg: str = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).");
+        append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: str = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.");
+        append_item("assert_ne", 3, "assert_ne(left: T, right: T, msg: str = \"\")", "Verifies left != right with single evaluation and [left, right] value diff reporting.");
+        append_item("[]byte", 3, "[]byte(val: str | []u8) -> []byte", "Constructs an owning byte slice ([]byte) from a string or slice.");
+        append_item("[]u8", 3, "[]u8(val: str | []byte) -> []u8", "Constructs an owning u8 slice ([]u8) from a string or byte slice.");
+        append_item("str", 3, "str(val: []byte | []u8 | scalar) -> str", "Constructs a UTF-8 string from a byte/u8 slice or scalar value.");
+        append_item("byte", 3, "byte(val: integer) -> byte", "Constructs a std::byte value from an integer.");
         append_item("black_box", 3, "black_box(val: T) -> T", "Compiler optimization barrier for benchmarks inside bench \"...\" blocks.");
         append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.");
         append_item("@pkg", 14, "@pkg(\"libname\")", "Specifies system package / pkg-config dependency for C/C++ header import.");
@@ -2259,7 +2299,7 @@ public:
             }
         }
 
-        std::unordered_set<std::string> builtins = {"println", "print", "panic", "assert", "assert_eq", "black_box", "make"};
+        std::unordered_set<std::string> builtins = {"println", "print", "eprintln", "eprint", "readln", "panic", "assert", "assert_eq", "assert_ne", "black_box", "make"};
         std::unordered_set<std::string> namespaces = {"cpp"};
         for (const auto& mod : cfire::doc::stdlib_catalog()) {
             namespaces.insert(mod.ns_alias);

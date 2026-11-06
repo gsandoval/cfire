@@ -294,6 +294,10 @@ struct ExecutableSpec {
     std::vector<std::string> targets{"native"};
     std::string out_dir{};
     std::string web_profile{"auto"};
+    std::vector<std::string> frameworks{};
+    std::vector<std::string> libraries{};
+    std::vector<std::string> url_schemes{};
+    std::string sign_identity{};
 };
 
 struct ParsedBuildCf {
@@ -325,6 +329,8 @@ struct BuildPlan {
     std::string app_name{};
     std::string bundle_id{};
     std::string icon_path{};
+    std::vector<std::string> url_schemes{};
+    std::string sign_identity{};
     std::string macos_app_bundle{};
     std::string ios_app_bundle{};
     bool is_ios{false};
@@ -387,6 +393,9 @@ inline void query_pkg_config(
     std::string lib_flag;
     std::string lib_stem;
     if (pkg == "sqlite3") { hdr = "sqlite3.h"; lib_flag = "-lsqlite3"; lib_stem = "libsqlite3"; }
+    else if (pkg == "sqlcipher") { hdr = "sqlcipher/sqlite3.h"; lib_flag = "-lsqlcipher"; lib_stem = "libsqlcipher"; }
+    else if (pkg == "libsodium") { hdr = "sodium.h"; lib_flag = "-lsodium"; lib_stem = "libsodium"; }
+    else if (pkg == "libssh") { hdr = "libssh/libssh.h"; lib_flag = "-lssh"; lib_stem = "libssh"; }
     else if (pkg == "libzstd") { hdr = "zstd.h"; lib_flag = "-lzstd"; lib_stem = "libzstd"; }
     else if (pkg == "simdjson") { hdr = "simdjson.h"; lib_flag = "-lsimdjson"; lib_stem = "libsimdjson"; }
     if (!hdr.empty()) {
@@ -426,9 +435,104 @@ inline void query_pkg_config(
     auto bcf_abs = std::filesystem::weakly_canonical(build_cf_path, bcf_ec);
     auto bcf_dir = (bcf_ec ? std::filesystem::absolute(build_cf_path, bcf_ec) : bcf_abs).parent_path();
 
+    auto populate_exe_fields = [](ExecutableSpec& exe_spec, const frontend::StructLitExpr& st_lit) {
+        for (const auto& fld : st_lit.fields) {
+            if (!fld.value) continue;
+            if (fld.name == "Entry" || fld.name == "entry") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.entry = lit->value;
+                }
+            } else if (fld.name == "Subsystem" || fld.name == "subsystem") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.subsystem = lit->value;
+                }
+            } else if (fld.name == "Name" || fld.name == "name") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    if (exe_spec.name.empty()) exe_spec.name = lit->value;
+                    exe_spec.app_name = lit->value;
+                }
+            } else if (fld.name == "BundleId" || fld.name == "BundleID" || fld.name == "Identifier" || fld.name == "bundle_id") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.bundle_id = lit->value;
+                }
+            } else if (fld.name == "Icon" || fld.name == "icon") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.icon = lit->value;
+                }
+            } else if (fld.name == "Targets" || fld.name == "targets") {
+                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
+                    exe_spec.targets.clear();
+                    for (const auto& el : arr->elements) {
+                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                            exe_spec.targets.push_back(lit->value);
+                        }
+                    }
+                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.targets = {lit->value};
+                }
+            } else if (fld.name == "OutDir" || fld.name == "out_dir") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.out_dir = lit->value;
+                }
+            } else if (fld.name == "WebProfile" || fld.name == "web_profile") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.web_profile = lit->value;
+                }
+            } else if (fld.name == "Frameworks" || fld.name == "frameworks") {
+                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
+                    for (const auto& el : arr->elements) {
+                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                            exe_spec.frameworks.push_back(lit->value);
+                        }
+                    }
+                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.frameworks.push_back(lit->value);
+                }
+            } else if (fld.name == "Libraries" || fld.name == "libraries" || fld.name == "Libs" || fld.name == "libs") {
+                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
+                    for (const auto& el : arr->elements) {
+                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                            exe_spec.libraries.push_back(lit->value);
+                        }
+                    }
+                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.libraries.push_back(lit->value);
+                }
+            } else if (fld.name == "UrlSchemes" || fld.name == "url_schemes") {
+                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
+                    for (const auto& el : arr->elements) {
+                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                            exe_spec.url_schemes.push_back(lit->value);
+                        }
+                    }
+                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.url_schemes.push_back(lit->value);
+                }
+            } else if (fld.name == "SignIdentity" || fld.name == "sign_identity") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.sign_identity = lit->value;
+                }
+            }
+        }
+    };
+
     ParsedBuildCf parsed;
     for (const auto& gv : ast->global_vars) {
         if (!gv.value) continue;
+        if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&gv.value->node)) {
+            if (st_lit->type_name == "Executable" || st_lit->type_name == "App" ||
+                st_lit->type_name == "build.Executable" || st_lit->type_name == "build.App") {
+                ExecutableSpec exe_spec;
+                exe_spec.var_name = gv.name;
+                populate_exe_fields(exe_spec, *st_lit);
+                if (exe_spec.name.empty()) exe_spec.name = gv.name;
+                if (exe_spec.targets.empty()) exe_spec.targets.push_back("native");
+                if (exe_spec.app_name.empty()) exe_spec.app_name = exe_spec.name;
+                if (exe_spec.bundle_id.empty()) exe_spec.bundle_id = "com.cfire." + exe_spec.name;
+                parsed.executables.push_back(std::move(exe_spec));
+                continue;
+            }
+        }
         const auto* call = std::get_if<frontend::CallExpr>(&gv.value->node);
         if (!call || !call->callee) continue;
         const auto* mem = std::get_if<frontend::MemberExpr>(&call->callee->node);
@@ -447,49 +551,7 @@ inline void query_pkg_config(
             }
             if (call->args.size() > 1 && call->args[1].value) {
                 if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&call->args[1].value->node)) {
-                    for (const auto& fld : st_lit->fields) {
-                        if (!fld.value) continue;
-                        if (fld.name == "Entry") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.entry = lit->value;
-                            }
-                        } else if (fld.name == "Subsystem") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.subsystem = lit->value;
-                            }
-                        } else if (fld.name == "Name") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.app_name = lit->value;
-                            }
-                        } else if (fld.name == "BundleId" || fld.name == "BundleID" || fld.name == "Identifier") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.bundle_id = lit->value;
-                            }
-                        } else if (fld.name == "Icon") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.icon = lit->value;
-                            }
-                        } else if (fld.name == "Targets") {
-                            if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
-                                exe_spec.targets.clear();
-                                for (const auto& el : arr->elements) {
-                                    if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
-                                        exe_spec.targets.push_back(lit->value);
-                                    }
-                                }
-                            } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.targets = {lit->value};
-                            }
-                        } else if (fld.name == "OutDir") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.out_dir = lit->value;
-                            }
-                        } else if (fld.name == "WebProfile") {
-                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                                exe_spec.web_profile = lit->value;
-                            }
-                        }
-                    }
+                    populate_exe_fields(exe_spec, *st_lit);
                 }
             }
             if (exe_spec.targets.empty()) {
@@ -1446,6 +1508,41 @@ inline auto resolve_external_dep_source(
     return false;
 }
 
+[[nodiscard]] inline auto is_platform_file_enabled(
+    const std::filesystem::path& p,
+    const BuildPlan& plan
+) -> bool {
+    std::string stem = p.stem().string();
+    if (stem.ends_with("_test")) {
+        stem.resize(stem.size() - 5);
+    }
+    bool is_apple = false;
+    bool is_linux = false;
+    bool is_windows = false;
+    if (!plan.target_triple.empty()) {
+        is_apple = plan.target_triple.find("apple") != std::string::npos ||
+                   plan.target_triple.find("darwin") != std::string::npos ||
+                   plan.target_triple.find("macos") != std::string::npos;
+        is_linux = plan.target_triple.find("linux") != std::string::npos;
+        is_windows = plan.target_triple.find("windows") != std::string::npos ||
+                     plan.target_triple.find("mingw") != std::string::npos ||
+                     plan.target_triple.find("win32") != std::string::npos;
+    } else {
+#if defined(__APPLE__)
+        is_apple = true;
+#elif defined(__linux__)
+        is_linux = true;
+#elif defined(_WIN32)
+        is_windows = true;
+#endif
+    }
+    if (stem.ends_with("_darwin") || stem.ends_with("_macos")) return is_apple && !plan.is_ios;
+    if (stem.ends_with("_ios")) return plan.is_ios;
+    if (stem.ends_with("_linux")) return is_linux;
+    if (stem.ends_with("_windows")) return is_windows;
+    return true;
+}
+
 // Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"` or `import "pkg:raygui_ext"`)
 // and automatically discovers same-directory sibling `.cf` files sharing `root_ast.package_name`.
 [[nodiscard]] inline auto resolve_local_cf_imports(
@@ -1500,6 +1597,7 @@ inline auto resolve_external_dep_source(
             auto fname = entry.path().filename().string();
             if (entry.path().extension() != ".cf" || fname == "build.cf") continue;
             if (!is_test_entry && fname.ends_with("_test.cf")) continue;
+            if (!is_platform_file_enabled(entry.path(), plan)) continue;
             sibling_candidates.push_back(entry.path());
         }
         std::sort(sibling_candidates.begin(), sibling_candidates.end());
@@ -1571,7 +1669,8 @@ inline auto resolve_external_dep_source(
                 for (const auto& entry : std::filesystem::directory_iterator(target)) {
                     auto fname = entry.path().filename().string();
                     if (entry.is_regular_file() && entry.path().extension() == ".cf" &&
-                        fname != "build.cf" && !fname.ends_with("_test.cf")) {
+                        fname != "build.cf" && !fname.ends_with("_test.cf") &&
+                        is_platform_file_enabled(entry.path(), plan)) {
                         cf_files.push_back(entry.path());
                     }
                 }
@@ -1595,7 +1694,15 @@ inline auto resolve_external_dep_source(
                 if (!raw) return std::unexpected(raw.error());
                 auto sub_ast = frontend::parse_source(fpath.string(), *raw);
                 if (!sub_ast) {
-                    if (item.is_auto_sibling) continue;
+                    if (item.is_auto_sibling) {
+                        // Only skip if the sibling belongs to a different package; if it shares
+                        // package_name or is a *_test.cf file, surface the syntax error!
+                        std::string pkg_prefix = "package " + root_ast.package_name;
+                        if (!fpath.string().ends_with("_test.cf") &&
+                            raw->find(pkg_prefix) == std::string::npos) {
+                            continue;
+                        }
+                    }
                     return std::unexpected(sub_ast.error());
                 }
                 if (is_test_entry) {
@@ -1627,10 +1734,24 @@ inline auto resolve_external_dep_source(
                     sub_ast->child_arenas.begin(), sub_ast->child_arenas.end());
 
                 // Merge AST declarations
+                std::string sub_pkg_tag;
+                if (!sub_ast->package_name.empty() && sub_ast->package_name != root_ast.package_name) {
+                    sub_pkg_tag = !imp.alias.empty() ? imp.alias : sub_ast->package_name;
+                }
                 for (auto& st : sub_ast->structs) root_ast.structs.push_back(std::move(st));
                 for (auto& en : sub_ast->enums) root_ast.enums.push_back(std::move(en));
                 for (auto& ifc : sub_ast->interfaces) root_ast.interfaces.push_back(std::move(ifc));
-                for (auto& gv : sub_ast->global_vars) root_ast.global_vars.push_back(std::move(gv));
+                for (auto& gv : sub_ast->global_vars) {
+                    if (gv.package_name.empty() && !sub_pkg_tag.empty()) {
+                        gv.package_name = sub_pkg_tag;
+                    }
+                    root_ast.global_vars.push_back(std::move(gv));
+                }
+                for (auto& fn : sub_ast->functions) {
+                    if (fn.package_name.empty() && !sub_pkg_tag.empty()) {
+                        fn.package_name = sub_pkg_tag;
+                    }
+                }
                 root_ast.functions.insert(root_ast.functions.begin(),
                     std::make_move_iterator(sub_ast->functions.begin()),
                     std::make_move_iterator(sub_ast->functions.end()));
@@ -1732,6 +1853,8 @@ inline auto resolve_external_dep_source(
     if (!is_wasm) {
         plan.cflags.push_back("-Wno-builtin-macro-redefined");
         plan.cflags.push_back("-D__cpp_concepts=202002L");
+        plan.cflags.push_back("-pthread");
+        plan.ldflags.push_back("-pthread");
     }
 #endif
     if (!plan.target_triple.empty()) {
@@ -1772,6 +1895,48 @@ inline auto resolve_external_dep_source(
             auto parsed = parse_build_cf(found_bcf);
             if (!parsed) return std::unexpected(parsed.error());
             auto bcf_parent = found_bcf.parent_path();
+            if (!parsed->executables.empty()) {
+                const ExecutableSpec* matched_exe = &parsed->executables[0];
+                auto cf_canon = std::filesystem::weakly_canonical(cf_file, bcf_ec);
+                for (const auto& ex : parsed->executables) {
+                    if (!ex.entry.empty()) {
+                        auto ex_canon = std::filesystem::weakly_canonical(bcf_parent / ex.entry, bcf_ec);
+                        if (!bcf_ec && ex_canon == cf_canon) {
+                            matched_exe = &ex;
+                            break;
+                        }
+                    }
+                }
+                if (plan.app_name.empty()) plan.app_name = matched_exe->app_name;
+                if (plan.bundle_id.empty()) plan.bundle_id = matched_exe->bundle_id;
+                if (plan.url_schemes.empty()) plan.url_schemes = matched_exe->url_schemes;
+                if (plan.sign_identity.empty()) plan.sign_identity = matched_exe->sign_identity;
+                if (plan.icon_path.empty() && !matched_exe->icon.empty()) {
+                    auto icon_cand = bcf_parent / matched_exe->icon;
+                    if (std::filesystem::exists(icon_cand, bcf_ec)) {
+                        plan.icon_path = icon_cand.string();
+                    } else {
+                        plan.icon_path = matched_exe->icon;
+                    }
+                }
+#if defined(__APPLE__)
+                if (!is_wasm) {
+                    for (const auto& fw : matched_exe->frameworks) {
+                        if (!fw.empty()) {
+                            plan.ldflags.push_back("-framework");
+                            plan.ldflags.push_back(fw);
+                        }
+                    }
+                }
+#endif
+                if (!is_wasm) {
+                    for (const auto& lib : matched_exe->libraries) {
+                        if (!lib.empty()) {
+                            plan.ldflags.push_back(lib.starts_with("-l") ? lib : ("-l" + lib));
+                        }
+                    }
+                }
+            }
             for (auto& dep : parsed->external_deps) {
                 bool exists_already = false;
                 for (const auto& ed : plan.external_deps) {
@@ -1947,7 +2112,18 @@ inline auto resolve_external_dep_source(
                                 add_pc("gtk+-3.0");
                             }
                         }
+#elif defined(_WIN32)
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32"
+                        });
 #endif
+                        if (plan.target_triple.find("windows") != std::string::npos ||
+                            plan.target_triple.find("win32") != std::string::npos ||
+                            plan.target_triple.find("mingw") != std::string::npos) {
+                            plan.ldflags.insert(plan.ldflags.end(), {
+                                "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32"
+                            });
+                        }
                     }
                 }
             }
@@ -2155,6 +2331,61 @@ inline auto resolve_external_dep_source(
 #endif
                 }
                 } // !is_wasm
+            }
+            if (imp.path == "core:crypto/sodium" || imp.path == "ext:crypto/sodium") {
+                if (!is_wasm && !plan.is_ios) {
+                    int sod_rc = 0;
+                    (void)bridge::run_command_capture("pkg-config --exists libsodium 2>/dev/null", sod_rc);
+                    bool found_sodium = (sod_rc == 0);
+                    if (!found_sodium) {
+                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+                            if (std::filesystem::exists(std::filesystem::path(inc_dir) / "sodium.h")) {
+                                found_sodium = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (found_sodium) {
+                        add_pc("libsodium");
+                        plan.cflags.push_back("-DCFIRE_HAS_LIBSODIUM=1");
+                    }
+                }
+            }
+            if (imp.path == "core:keychain" || imp.path == "ext:keychain") {
+                if (!is_wasm) {
+#if defined(__APPLE__)
+                    plan.ldflags.insert(plan.ldflags.end(), {
+                        "-framework", "Security",
+                        "-framework", "CoreFoundation"
+                    });
+#elif defined(_WIN32)
+                    plan.ldflags.push_back("-ladvapi32");
+#endif
+                    if (plan.target_triple.find("windows") != std::string::npos ||
+                        plan.target_triple.find("win32") != std::string::npos ||
+                        plan.target_triple.find("mingw") != std::string::npos) {
+                        plan.ldflags.push_back("-ladvapi32");
+                    }
+                }
+            }
+            if (imp.path == "core:net/ssh" || imp.path == "ext:net/ssh" || imp.path == "core:ssh") {
+                if (!is_wasm && !plan.is_ios) {
+                    int ssh_rc = 0;
+                    (void)bridge::run_command_capture("pkg-config --exists libssh 2>/dev/null", ssh_rc);
+                    bool found_libssh = (ssh_rc == 0);
+                    if (!found_libssh) {
+                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+                            if (std::filesystem::exists(std::filesystem::path(inc_dir) / "libssh" / "libssh.h")) {
+                                found_libssh = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (found_libssh) {
+                        add_pc("libssh");
+                        plan.cflags.push_back("-DCFIRE_HAS_LIBSSH=1");
+                    }
+                }
             }
             continue;
         }
@@ -2429,6 +2660,13 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     );
 }
 
+[[nodiscard]] inline auto resolve_cxx_compiler() -> std::string {
+    if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
+        return std::string(env_cxx);
+    }
+    return "clang++";
+}
+
 [[nodiscard]] inline auto ensure_prelude_pch(
     const std::filesystem::path& runtime_dir,
     bool sanitize
@@ -2440,7 +2678,8 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     auto pch_dir = std::filesystem::temp_directory_path() / "cfire_pch_cache";
     std::filesystem::create_directories(pch_dir, ec);
     auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
-    std::size_t rt_hash = std::hash<std::string>{}((ec ? runtime_dir : can_rt).string());
+    std::string cxx_bin = resolve_cxx_compiler();
+    std::size_t rt_hash = std::hash<std::string>{}((ec ? runtime_dir : can_rt).string() + "|" + cxx_bin);
     std::string pch_name = std::format("cfire_prelude_{}_{:08x}.pch",
         sanitize ? "san" : "opt",
         static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
@@ -2460,11 +2699,11 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
             ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
             : "-O2";
 #if defined(__linux__)
-        opt_flags += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L";
+        opt_flags += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -pthread";
 #endif
         std::string cmd = std::format(
-            "clang++ -std=c++2b -Wno-c++11-narrowing {} -x c++-header \"{}\" -o \"{}\"",
-            opt_flags, prelude_hdr.string(), pch_path.string());
+            "{} -std=c++2b -Wno-c++11-narrowing {} -x c++-header \"{}\" -o \"{}\"",
+            cxx_bin, opt_flags, prelude_hdr.string(), pch_path.string());
         int rc = 0;
         (void)bridge::run_command_capture(cmd, rc);
         if (rc != 0) {
@@ -2498,7 +2737,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     if (plan.target_triple.empty() && !plan.uses_objc) {
         pch_path = ensure_prelude_pch(runtime_dir, false);
     }
-    std::string cmd = "clang++ -O2";
+    std::string cmd = resolve_cxx_compiler() + " -O2";
     for (const auto& f : plan.cflags) cmd += " " + f;
     for (const auto& inc : extra_includes) cmd += " -I \"" + inc + "\"";
     if (!pch_path.empty()) {
@@ -2527,8 +2766,8 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     if (icon_src.extension() == ".icns") {
         return icon_src;
     }
-    if (icon_src.extension() != ".png") {
-        return std::unexpected(std::format("unsupported icon format '{}'; expected .png or .icns", icon_src.extension().string()));
+    if (icon_src.extension() != ".png" && icon_src.extension() != ".svg") {
+        return std::unexpected(std::format("unsupported icon format '{}'; expected .png, .svg, or .icns", icon_src.extension().string()));
     }
 
 #if defined(__APPLE__)
@@ -2541,6 +2780,29 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         auto icns_time = std::filesystem::last_write_time(cached_icns, ec);
         if (!ec && icns_time >= src_time) {
             return cached_icns;
+        }
+    }
+
+    std::filesystem::path raster_src = icon_src;
+    if (icon_src.extension() == ".svg") {
+        int ql_rc = 0;
+        std::string ql_cmd = std::format("/usr/bin/qlmanage -t -s 1024 -o {} {} >/dev/null 2>&1",
+            bridge::shell_quote(cache_dir.string()),
+            bridge::shell_quote(icon_src.string()));
+        (void)bridge::run_command_capture(ql_cmd, ql_rc);
+        auto ql_png = cache_dir / (icon_src.filename().string() + ".png");
+        if (std::filesystem::exists(ql_png, ec)) {
+            raster_src = ql_png;
+        } else {
+            auto rsvg_png = cache_dir / (stem + "_1024.png");
+            int rs_rc = 0;
+            std::string rs_cmd = std::format("rsvg-convert -w 1024 -h 1024 {} -o {} >/dev/null 2>&1",
+                bridge::shell_quote(icon_src.string()),
+                bridge::shell_quote(rsvg_png.string()));
+            (void)bridge::run_command_capture(rs_cmd, rs_rc);
+            if (std::filesystem::exists(rsvg_png, ec)) {
+                raster_src = rsvg_png;
+            }
         }
     }
 
@@ -2561,7 +2823,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         {1024, "icon_512x512@2x.png"},
     };
 
-    std::string q_src = bridge::shell_quote(icon_src.string());
+    std::string q_src = bridge::shell_quote(raster_src.string());
     for (const auto& sc : scales) {
         auto out_p = iconset_dir / sc.filename;
         std::string q_out = bridge::shell_quote(out_p.string());
@@ -2611,16 +2873,24 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
     plan.extra_includes = extra_includes;
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
-    plan.app_name = app_name;
-    plan.bundle_id = bundle_id;
-    plan.icon_path = icon_path;
-    if (!plan.icon_path.empty()) {
-        std::filesystem::path icon_resolved = plan.icon_path;
-        if (icon_resolved.is_relative() && !std::filesystem::exists(icon_resolved)) {
-            if (std::filesystem::exists(cf_file.parent_path() / icon_resolved)) {
-                icon_resolved = std::filesystem::absolute(cf_file.parent_path() / icon_resolved);
+    if (!app_name.empty()) plan.app_name = app_name;
+    if (!bundle_id.empty()) plan.bundle_id = bundle_id;
+    if (!icon_path.empty()) plan.icon_path = icon_path;
+    auto resolve_icon_candidate = [&](const std::string& p_str) -> std::filesystem::path {
+        std::filesystem::path icon_resolved = p_str;
+        std::error_code ec;
+        if (icon_resolved.is_relative() && !std::filesystem::exists(icon_resolved, ec)) {
+            if (std::filesystem::exists(cf_file.parent_path() / icon_resolved, ec)) {
+                icon_resolved = std::filesystem::absolute(cf_file.parent_path() / icon_resolved, ec);
+            } else if (std::filesystem::exists(cf_file.parent_path().parent_path() / icon_resolved, ec)) {
+                icon_resolved = std::filesystem::absolute(cf_file.parent_path().parent_path() / icon_resolved, ec);
             }
         }
+        return icon_resolved;
+    };
+    if (!plan.icon_path.empty()) {
+        std::filesystem::path icon_resolved = resolve_icon_candidate(plan.icon_path);
+        plan.icon_path = icon_resolved.string();
         plan.cflags.push_back(std::format("-DCFIRE_APP_ICON_PATH=\\\"{}\\\"", icon_resolved.string()));
     }
 
@@ -2751,7 +3021,7 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         pch_path = ensure_prelude_pch(runtime_dir, sanitize);
     }
 
-    std::string compiler = is_wasm ? plan.emscripten_compiler : "clang++";
+    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler();
     std::string cmd = compiler;
     if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
         cmd += " -fobjc-arc";
@@ -2852,6 +3122,15 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         if (has_icon) {
             plist << "    <key>CFBundleIconFile</key>\n    <string>AppIcon</string>\n";
         }
+        if (!plan.url_schemes.empty()) {
+            plist << "    <key>CFBundleURLTypes</key>\n    <array>\n        <dict>\n";
+            plist << std::format("            <key>CFBundleURLName</key>\n            <string>{}</string>\n", effective_bundle_id);
+            plist << "            <key>CFBundleURLSchemes</key>\n            <array>\n";
+            for (const auto& sch : plan.url_schemes) {
+                plist << std::format("                <string>{}</string>\n", sch);
+            }
+            plist << "            </array>\n        </dict>\n    </array>\n";
+        }
         plist << "</dict>\n</plist>\n";
         plist.close();
 
@@ -2865,7 +3144,9 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 
 #if defined(__APPLE__)
         int cs_rc = 0;
-        std::string cs_cmd = std::format("codesign --force --deep --sign - \"{}\" 2>/dev/null", app_bundle.string());
+        std::string sign_id = plan.sign_identity.empty() ? "-" : plan.sign_identity;
+        std::string cs_cmd = std::format("codesign --force --deep --sign {} \"{}\" 2>/dev/null",
+            bridge::shell_quote(sign_id), app_bundle.string());
         (void)bridge::run_command_capture(cs_cmd, cs_rc);
 #endif
     }

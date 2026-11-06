@@ -18,7 +18,12 @@
 
 namespace cfire::doctor {
 
-inline constexpr std::string_view kCfireVersion = "0.9.4";
+inline constexpr std::string_view kCfireVersion = "0.9.5";
+#ifdef CFIRE_GIT_SHA
+inline constexpr std::string_view kCfireGitSha = CFIRE_GIT_SHA;
+#else
+inline constexpr std::string_view kCfireGitSha = "dev";
+#endif
 
 struct CheckItem {
     std::string category;
@@ -446,6 +451,7 @@ inline auto run_doctor(const std::filesystem::path& runtime_dir, bool json_mode)
     if (json_mode) {
         std::string out = "{\n";
         out += std::format("  \"version\": \"{}\",\n", kCfireVersion);
+        out += std::format("  \"commit\": \"{}\",\n", kCfireGitSha);
         out += std::format("  \"runtime_dir\": \"{}\",\n", json::escape_string(runtime_dir.string()));
         out += std::format("  \"ok_count\": {},\n", ok_count);
         out += std::format("  \"warn_count\": {},\n", warn_count);
@@ -469,7 +475,7 @@ inline auto run_doctor(const std::filesystem::path& runtime_dir, bool json_mode)
         return err_count == 0 ? 0 : 1;
     }
 
-    std::println("cfire doctor — v{} Environment & Dependency Health Report", kCfireVersion);
+    std::println("cfire doctor — v{} ({}) Environment & Dependency Health Report", kCfireVersion, kCfireGitSha);
     std::println("====================================================================");
 
     std::string current_cat;

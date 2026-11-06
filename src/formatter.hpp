@@ -222,8 +222,36 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         const std::string& raw = raw_lines[i];
         if (in_raw_string) {
             out_lines[i] = raw;
-            if (raw.find('`') != std::string::npos) {
+            auto close_bt = raw.find('`');
+            if (close_bt != std::string::npos) {
                 in_raw_string = false;
+                bool in_str = false;
+                int net_delta = 0;
+                for (std::size_t k = close_bt + 1; k < raw.size(); ++k) {
+                    char c = raw[k];
+                    if (!in_str && c == '/' && k + 1 < raw.size() && raw[k + 1] == '/') {
+                        break;
+                    }
+                    if (c == '"' && (k == 0 || raw[k - 1] != '\\')) {
+                        in_str = !in_str;
+                        continue;
+                    }
+                    if (!in_str && c == '`') {
+                        auto next_bt = raw.find('`', k + 1);
+                        if (next_bt != std::string::npos) {
+                            k = next_bt;
+                            continue;
+                        } else {
+                            in_raw_string = true;
+                            break;
+                        }
+                    }
+                    if (!in_str) {
+                        if (c == '{' || c == '(' || c == '[') ++net_delta;
+                        else if (c == '}' || c == ')' || c == ']') --net_delta;
+                    }
+                }
+                indent = std::max(0, indent + net_delta);
             }
             continue;
         }

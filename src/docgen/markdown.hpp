@@ -1416,16 +1416,24 @@ window.addEventListener('hashchange', updateChapterFromHash);
 ## Grammar & Syntax Rules
 - Package: `package <name>` (canonical entry: `package main`)
   - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
+  - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
 - Imports:
   - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:tako"`)
-  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:db/sqlite"`, `import "ext:ai"`, `import "ext:webui"`)
+  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:net/ssh"`, `import "ext:db/sqlite"`, `import "ext:ai"`, `import "ext:webui"`, `import "ext:keychain"`, `import "ext:crypto/sodium"`)
   - Bundled Vendor: `import "vendor:<module>"` (e.g. `import "vendor:raylib"`, `import "vendor:raygui"`)
   - Toolchain Packages: `import "pkg:<name>"` (e.g. `import "pkg:tako"`, resolved automatically from workspace/toolchain roots alongside `build.Tako()` in `build.cf`)
   - Local package: `import "./path/to/pkg"`
-  - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")`
+  - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")` (for linking system frameworks/libraries declaratively, set `Frameworks: [...]`, `Libraries: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` on `build.Executable` in `build.cf`).
 - Variable Declarations:
-  - Immutable binding: `x := 42`, `name: str = "cfire"`
+  - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
+- Built-in Prelude Functions & Type Constructors:
+  - Standard Output & Error: `println(fmt, ...)` / `print(fmt, ...)` (`stdout`), `eprintln(fmt, ...)` / `eprint(fmt, ...)` (`stderr`)
+  - Interactive Line Input: `readln(prompt: str = "") -> str?` (reads one line from `stdin` or returns `none` on EOF; for no-echo password entry use `cli.prompt_password(...)` from `core:cli`)
+  - Assertions: `assert(cond)`, `assert_eq(a, b)`, `assert_ne(a, b)`, `panic(msg)`
+  - Canonical Type Constructors (`T(x)`, no `as` keyword):
+    - Scalar conversions: `i8(x)`, `i16(x)`, `i32(x)`, `i64(x)`, `isize(x)`, `u8(x)`, `byte(x)`, `u16(x)`, `u32(x)`, `u64(x)`, `usize(x)`, `f32(x)`, `f64(x)`, `bool(x)`
+    - Byte/u8 slice & string conversions: `[]byte(s_or_slice)`, `[]u8(s_or_slice)`, `str(bytes_or_scalar)`
 - Strings & Arbitrary Expression Interpolation:
   - Double-quoted strings interpolate arbitrary expressions and optional format specifiers: `"sum={a + b} first={items[0]} hex={mask:04x}"` (lowers to `std::format("sum={} first={} hex={:04x}", a + b, items[0], mask)`)
   - Raw multi-line strings: `` `SELECT * FROM users` ``
@@ -1442,8 +1450,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `move`: transfers ownership with `move` at call site: `consume(move item)`
   - `out`: writes output in-place with `out` at call site: `populate(out dst)`
 - Types:
-  - Primitives: `i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`, `bool`, `char`, `void`
-  - Strings & Bytes: `str`, `&str`, `bytes`, `[]byte`
+  - Primitives: `i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `byte`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`, `bool`, `char`, `void`
+  - Strings & Byte Slices: `str`, `&str`, `[]byte`, `[]u8`
   - Slices & Arrays: `[]T`, `&[]T`, `&mut []T`, `[N]T`
   - Maps: `map[Key]Val`
   - Smart Pointers: `own[T]` (unique), `shared[T]` (reference-counted)
@@ -1465,11 +1473,14 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Multi-iteration statistical benchmarks: `bench "description" { black_box(work()) }` and parameterized variations `bench "name" |size in [64, 1024, 16384]| { ... }` or `|w in [16, 64], h in [16, 64]|` or `|k in 1..=4|`: dynamically calibrates batch size `B`, collects 10-25 timing samples over `--bench-time <ms>`, and reports `iters`, `min`, `p50`, `mean +- stddev%`, `p99`, and `ops/s`. During normal `cfire test`, each `bench` block runs 1 smoke iteration.
   - Executable doc-tests: fenced ` ```cf ` blocks inside `///` doc-comments containing `assert(...)` or `assert_eq(...)` are automatically extracted and executed by `cfire test`.
   - Zero-code automatic checks: every `test`/`fuzz` block enforces an open file-descriptor leak canary (`count_open_fds()`), and importing `ext:json` with JSON-tagged structs automatically synthesizes `[auto] json round-trip: <StructName>` tests during `cfire test`.
-  - Power-assertions (`assert(a == b)`, `assert_eq(a, b)`): evaluate each operand once and automatically print `[left: <val>, right: <val>]` value diffs on failure.
-- Error Handling:
+  - Power-assertions (`assert(a == b)`, `assert_eq(a, b)`, `assert_ne(a, b)`): evaluate each operand once and automatically print `[left: <val>, right: <val>]` value diffs on failure.
+- Error (`T!`) & Optional (`T?`) Handling:
   - `val := try fallible()` (early return error on failure)
   - `val := fallible() or fallback_expr`
-  - `val := fallible() or err { return -1 }` (block must definitely diverge or panic)
+  - `val := fallible() or err { return -1 }` or parameterless `val := fallible() or { return -1 }` (block must definitely diverge or panic)
+  - `val := optional() or fallback_expr`
+  - `val := optional() or { return -1 }` (`or err { ... }` on `T?` is rejected via `cfire/OPTIONAL-OR-ERR`)
+  - Flow-sensitive narrowing: after `if opt != none { ... }` or `if opt == none { return }`, `opt` is narrowed to `T` and its fields/methods can be accessed directly (`opt.field`).
 - Memory Safety, Loan Tracking & Bounds Rules:
   - Move Discipline (`cfire/USE-AFTER-FREE`, `cfire/MOVE-CALLSITE`): Passing a non-Copy variable (`own[T]`, `str`, `[]T`, `map[K]V`, or structs containing them) with `move` invalidates the variable unless reassigned on all control-flow paths; `move` parameters require `move` at the call site.
   - Region & Loan Tracking (`cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`, `cfire/ITERATOR-INVALIDATION`): Taking `&x` or `&mut x` records an active loan on `x`; mutating, moving, or outliving `x` while borrowed, returning `&local`, or calling `.push()`/`.clear()`/`.erase()` on a slice/map while iterating over it is rejected at compile time.

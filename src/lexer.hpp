@@ -139,13 +139,74 @@ namespace cfire::frontend {
             continue;
         }
 
-        // Double-quoted String
+        // Double-quoted String (supports nested quotes inside `{...}` interpolations, CF-034)
         if (c == '"') {
             advance();
             std::string s;
-            while (i < n && peek() != '"') {
-                if (peek() == '\\') {
+            int interp_depth = 0;
+            bool in_inner_quote = false;
+            while (i < n) {
+                char cur_ch = peek();
+                if (cur_ch == '\\') {
                     s.push_back(advance());
+                    if (i < n) s.push_back(advance());
+                    continue;
+                }
+                if (in_inner_quote) {
+                    if (cur_ch == '"') {
+                        in_inner_quote = false;
+                    }
+                    s.push_back(advance());
+                    continue;
+                }
+                if (cur_ch == '"') {
+                    if (interp_depth > 0) {
+                        // Only treat '"' as a nested string quote inside `{ ... }` if a matching '"'
+                        // and closing '}' appear before the end of the line.
+                        bool has_closing_quote = false;
+                        bool has_closing_brace = false;
+                        for (std::size_t k = i + 1; k < n && src[k] != '\n'; ++k) {
+                            if (src[k] == '\\' && k + 1 < n) {
+                                ++k;
+                                continue;
+                            }
+                            if (!has_closing_quote) {
+                                if (src[k] == '"') has_closing_quote = true;
+                            } else if (src[k] == '}') {
+                                has_closing_brace = true;
+                                break;
+                            }
+                        }
+                        if (has_closing_quote && has_closing_brace) {
+                            in_inner_quote = true;
+                            s.push_back(advance());
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (cur_ch == '{') {
+                    if (peek(1) == '{') {
+                        s.push_back(advance());
+                        s.push_back(advance());
+                        continue;
+                    }
+                    char next_c = peek(1);
+                    if (interp_depth > 0 || std::isalpha(static_cast<unsigned char>(next_c)) ||
+                        next_c == '_' || next_c == '(' || next_c == '*' || next_c == '&' || next_c == '!') {
+                        ++interp_depth;
+                    }
+                    s.push_back(advance());
+                    continue;
+                }
+                if (cur_ch == '}' && interp_depth > 0) {
+                    --interp_depth;
+                    s.push_back(advance());
+                    continue;
+                }
+                if (cur_ch == '\n') {
+                    interp_depth = 0;
+                    in_inner_quote = false;
                 }
                 s.push_back(advance());
             }
