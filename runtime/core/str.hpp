@@ -180,5 +180,29 @@ template <typename T>
     return sp.data() + offset;
 }
 
+// --- Safe Numeric & Boolean Parsing (`CF-022`) ---
+[[nodiscard]] inline auto parse_i64(std::string_view sv) noexcept -> std::optional<std::int64_t> {
+    return cfire::detail::parse_int<std::int64_t>(trim(sv));
+}
+
+[[nodiscard]] inline auto parse_i32(std::string_view sv) noexcept -> std::optional<std::int32_t> {
+    return cfire::detail::parse_int<std::int32_t>(trim(sv));
+}
+
+[[nodiscard]] inline auto parse_u64(std::string_view sv) noexcept -> std::optional<std::uint64_t> {
+    return cfire::detail::parse_int<std::uint64_t>(trim(sv));
+}
+
+[[nodiscard]] inline auto parse_f64(std::string_view sv) noexcept -> std::optional<double> {
+    return cfire::detail::parse_float<double>(trim(sv));
+}
+
+[[nodiscard]] inline auto parse_bool(std::string_view sv) noexcept -> std::optional<bool> {
+    auto s = to_lower(trim(sv));
+    if (s == "true" || s == "1") return true;
+    if (s == "false" || s == "0") return false;
+    return std::nullopt;
+}
+
 } // namespace cfire::str
 

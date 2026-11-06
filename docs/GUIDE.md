@@ -395,7 +395,7 @@ var App = build.Executable("service-app", {
 | `build.CC(dir, cfg)` | Builder | `Sources`, `Includes`, `Defines` | Compiles C/C++ sources into a SHA-256-cached static archive (`lib<name>.a`) and feeds `Includes` to the Clang AST bridge. |
 | `build.CMake(dir, cfg)` | Builder | `Target`, `Includes`, `Defines` | Configures and builds a CMake subproject in `.cfire/cache/deps/` and links the target archive. |
 | `build.Make(dir, cfg)` | Builder | `Target`, `Includes`, `Defines` | Runs `make -C <dir>` and links `lib<Target>.a`. |
-| `build.Git(url, cfg)` / `Archive` | Builder | `Tag`/`Commit`/`Sha256`, `Driver` | Fetches remote dependency, pins cryptographic hashes in `cfire.lock`, and builds via `Driver` (vendor offline with `cfire vendor`). |
+| `build.Git(url, cfg)` / `build.Archive` | Builder | `Tag`/`Commit`/`Sha256`, `Driver` | Fetches remote dependency, pins cryptographic hashes in `cfire.lock`, and builds via `Driver` (vendor offline with `cfire vendor`). |
 
 ### Complete CLI Command Reference
 Every tool in the `cfire` workflow lives inside the single `cfire` binary:

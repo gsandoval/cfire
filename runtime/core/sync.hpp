@@ -25,8 +25,17 @@ struct ContextState {
     std::vector<std::function<void()>> callbacks{};
     std::thread timer_thread{};
     ~ContextState() {
+        {
+            std::lock_guard<std::mutex> lk(mu);
+            cancelled.store(true, std::memory_order_relaxed);
+        }
+        cv.notify_all();
         if (timer_thread.joinable()) {
-            timer_thread.detach();
+            if (timer_thread.get_id() == std::this_thread::get_id()) {
+                timer_thread.detach();
+            } else {
+                timer_thread.join();
+            }
         }
     }
 };
@@ -188,13 +197,46 @@ public:
         return val;
     }
 
+    [[nodiscard]] auto try_recv() const -> std::optional<T> {
+        std::unique_lock<std::mutex> lk(state_->mu);
+        if (state_->q.empty()) {
+            return std::nullopt;
+        }
+        T val = std::move(state_->q.front());
+        state_->q.pop();
+        return val;
+    }
+
+    [[nodiscard]] auto recv_timeout(std::int64_t ms) const -> std::optional<T> {
+        std::unique_lock<std::mutex> lk(state_->mu);
+        if (!state_->cv.wait_for(lk, std::chrono::milliseconds(ms), [&] {
+            return !state_->q.empty() || state_->closed;
+        })) {
+            return std::nullopt;
+        }
+        if (state_->q.empty()) {
+            return std::nullopt;
+        }
+        T val = std::move(state_->q.front());
+        state_->q.pop();
+        return val;
+    }
+
+    [[nodiscard]] auto len() const -> std::size_t {
+        std::unique_lock<std::mutex> lk(state_->mu);
+        return state_->q.size();
+    }
+
     [[nodiscard]] auto recv_ctx(const context::Context& ctx) const -> std::expected<T, cfire::Error> {
         std::unique_lock<std::mutex> lk(state_->mu);
         if (ctx.is_cancelled()) {
             return cfire::make_error("context cancelled: " + ctx.reason());
         }
-        ctx.on_cancel([this] {
-            state_->cv.notify_all();
+        std::weak_ptr<State> weak_state = state_;
+        ctx.on_cancel([weak_state] {
+            if (auto st = weak_state.lock()) {
+                st->cv.notify_all();
+            }
         });
         state_->cv.wait(lk, [&] {
             return !state_->q.empty() || state_->closed || ctx.is_cancelled();
@@ -227,8 +269,28 @@ private:
 };
 
 template <typename T>
-[[nodiscard]] inline auto make_channel() -> Channel<T> {
+[[nodiscard]] inline auto make_channel([[maybe_unused]] std::size_t capacity = 0) -> Channel<T> {
     return Channel<T>{};
+}
+
+class Mutex {
+public:
+    Mutex() : mu_(std::make_shared<std::mutex>()) {}
+    void lock() const { mu_->lock(); }
+    void unlock() const { mu_->unlock(); }
+    [[nodiscard]] auto try_lock() const -> bool { return mu_->try_lock(); }
+
+    template <typename Fn>
+    decltype(auto) with_lock(Fn&& fn) const {
+        std::lock_guard<std::mutex> lk(*mu_);
+        return fn();
+    }
+private:
+    std::shared_ptr<std::mutex> mu_;
+};
+
+[[nodiscard]] inline auto new_mutex() -> Mutex {
+    return Mutex{};
 }
 
 } // namespace cfire::sync

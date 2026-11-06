@@ -42,10 +42,16 @@ struct DiagnosticDoc {
 [[nodiscard]] inline auto stdlib_catalog() -> const std::vector<StdModuleDoc>& {
     static const std::vector<StdModuleDoc> catalog = {
         {
-            "core:cli", "cli", "Struct-Tag Command-Line Parser", "(header-only)",
-            "Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:\"--flag,help\"`).",
+            "core:cli", "cli", "Struct-Tag Command-Line Parser & Interactive Prompts", "(header-only)",
+            "Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:\"--flag,help\"`), subcommand/positional argument helpers, and interactive terminal prompts.",
             {
-                {"parse", "fn parse[T](args: []str?) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"}
+                {"parse", "fn parse[T](args: []str?) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"},
+                {"try_parse", "fn try_parse[T]() -> T?", "cfire::cli::try_parse<T>(argc, argv)", "Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid.", "args := cli.try_parse[Args]() or { return }"},
+                {"args", "fn args() -> []str", "cfire::cli::args()", "Returns the raw command-line arguments passed to the process (excluding `argv[0]`).", "raw := cli.args()"},
+                {"subcommand", "fn subcommand() -> str", "cfire::cli::subcommand()", "Returns the first non-flag positional argument (subcommand name) or `\"\"` if none.", "cmd := cli.subcommand()"},
+                {"positional", "fn positional() -> []str", "cfire::cli::positional()", "Returns all non-flag positional arguments passed on the command line.", "files := cli.positional()"},
+                {"prompt", "fn prompt(message: str = \"\") -> str?", "cfire::cli::prompt(message)", "Prints `message` to stderr and reads a line from stdin without trailing newline, or `none` on EOF.", "user := cli.prompt(\"Username: \") or { return }"},
+                {"prompt_password", "fn prompt_password(message: str = \"\") -> str?", "cfire::cli::prompt_password(message)", "Prints `message` to stderr with terminal echo disabled (`termios` `~ECHO`) and reads a password line from stdin, or `none` on EOF.", "pw := cli.prompt_password(\"Password: \") or { return }"}
             }
         },
         {
@@ -61,6 +67,9 @@ struct DiagnosticDoc {
             "core:crypto/aes", "aes", "NIST FIPS 197 AES-256 Symmetric Encryption & GCM AEAD", "(Header-only pure C++23)",
             "Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).",
             {
+                {"generate_key", "fn generate_key() -> []byte", "cfire::aes::generate_key()", "Generates a 32-byte (256-bit) cryptographically secure AES-256 key from OS entropy.", "key := aes.generate_key()"},
+                {"encrypt", "fn encrypt(key: []byte, plaintext: []byte, aad: []byte = []) -> []byte!", "cfire::aes::encrypt(key, pt, aad)", "Encrypts `plaintext` with AES-256-GCM using a fresh 12-byte random nonce and returns `[12-byte nonce || ciphertext || 16-byte tag]`.", "blob := try aes.encrypt(key, secret, aad)"},
+                {"decrypt", "fn decrypt(key: []byte, combined: []byte, aad: []byte = []) -> []byte!", "cfire::aes::decrypt(key, combined, aad)", "Authenticates and decrypts a combined `[12-byte nonce || ciphertext || 16-byte tag]` AES-256-GCM payload.", "pt := try aes.decrypt(key, blob, aad)"},
                 {"encrypt_gcm", "fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -> GcmResult!", "cfire::aes::encrypt_gcm(key, nonce, pt, aad)", "Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.", "res := try aes.encrypt_gcm(key, nonce, secret, aad)"},
                 {"decrypt_gcm", "fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -> []byte!", "cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)", "Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.", "pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)"},
                 {"encrypt_ctr", "fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -> []byte!", "cfire::aes::encrypt_ctr(key, iv, pt)", "Encrypts plaintext using AES-256-CTR mode.", "ct := try aes.encrypt_ctr(key, iv, pt)"},
@@ -75,13 +84,14 @@ struct DiagnosticDoc {
             }
         },
         {
-            "core:crypto/hmac", "hmac", "RFC 2104 HMAC-SHA256 & RFC 5869 HKDF-SHA256", "(CommonCrypto / built-in)",
-            "Computes RFC 2104 keyed HMAC-SHA256 authentication digests and RFC 5869 HKDF-SHA256 derived keys.",
+            "core:crypto/hmac", "hmac", "RFC 2104 HMAC-SHA256, RFC 5869 HKDF & PBKDF2-SHA256", "(CommonCrypto / built-in)",
+            "Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys.",
             {
                 {"sha256_hex", "fn sha256_hex(key: str, data: str) -> str", "cfire::hmac::sha256_hex(key, data)", "Returns a 64-character lowercase hex HMAC-SHA256 digest.", "sig := hmac.sha256_hex(secret, payload)"},
                 {"equal", "fn equal(a: str, b: str) -> bool", "cfire::hmac::equal(a, b)", "Performs a constant-time equality check on two MAC digests to prevent timing attacks.", "ok := hmac.equal(sig1, sig2)"},
                 {"hkdf_sha256", "fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -> []byte", "cfire::hmac::hkdf_sha256(ikm, salt, info, length)", "Derives cryptographic key material of `length` bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand.", "key := hmac.hkdf_sha256(ikm, salt, info, 32)"},
-                {"hkdf_sha256_hex", "fn hkdf_sha256_hex(ikm: str, salt: str = \"\", info: str = \"\", length: usize = 32) -> str", "cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)", "Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.", "khex := hmac.hkdf_sha256_hex(secret, \"salt\", \"ctx\", 32)"}
+                {"hkdf_sha256_hex", "fn hkdf_sha256_hex(ikm: str, salt: str = \"\", info: str = \"\", length: usize = 32) -> str", "cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)", "Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.", "khex := hmac.hkdf_sha256_hex(secret, \"salt\", \"ctx\", 32)"},
+                {"pbkdf2_sha256", "fn pbkdf2_sha256(password: str, salt: []byte, iterations: u32 = 600000, length: usize = 32) -> []byte", "cfire::hmac::pbkdf2_sha256(password, salt, iterations, length)", "Derives a cryptographic key of `length` bytes from `password` and `salt` using RFC 8018 PBKDF2-HMAC-SHA256.", "key := hmac.pbkdf2_sha256(password, salt, 600000, 32)"}
             }
         },
         {
@@ -133,10 +143,12 @@ struct DiagnosticDoc {
                 {"read_text", "fn read_text(path: str) -> str!", "cfire::fs::read_text(path)", "Reads an entire UTF-8 text file into a `str`.", "txt := try fs.read_text(\"config.json\")"},
                 {"write_text", "fn write_text(path: str, text: str) -> void!", "cfire::fs::write_text(path, text)", "Writes a UTF-8 string to disk.", "try fs.write_text(\"hello.txt\", \"sapphire\")"},
                 {"open", "fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!", "cfire::fs::open(path, mode)", "Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.", "mut f := try fs.open(\"log.txt\", OpenMode::Append)"},
-                {"File.read", "fn (mut f: File) read(mut buf: []byte) -> usize!", "f.read(buf)", "Reads up to `buf.len` bytes from the streaming file handle.", "n := try f.read(mut buf)"},
+                {"File.fd", "fn (f: File) fd() -> i32", "f.fd()", "Returns the underlying OS file descriptor (`-1` if closed).", "fd := f.fd()"},
+                {"File.read", "fn (mut f: File) read(mut buf: []byte) -> usize!", "f.read(buf)", "Reads up to `buf.len()` bytes from the streaming file handle.", "n := try f.read(mut buf)"},
+                {"File.read_bytes", "fn (mut f: File) read_bytes(max_bytes: usize = 4096) -> []byte!", "f.read_bytes(max_bytes)", "Reads up to `max_bytes` from the file stream into a new byte slice.", "chunk := try f.read_bytes(4096)"},
+                {"File.read_line", "fn (mut f: File) read_line() -> str?", "f.read_line()", "Reads the next line from the file stream, or `none` on EOF.", "line := f.read_line() or { return }"},
                 {"File.read_all", "fn (mut f: File) read_all() -> []byte!", "f.read_all()", "Reads all remaining bytes from current file position to EOF.", "bytes := try f.read_all()"},
-                {"File.write", "fn (mut f: File) write(data: []byte) -> usize!", "f.write(data)", "Writes byte slice to file stream.", "n := try f.write(buf)"},
-                {"File.write_str", "fn (mut f: File) write_str(s: str) -> usize!", "f.write_str(s)", "Writes UTF-8 string to file stream.", "try f.write_str(\"header\\n\")"},
+                {"File.write", "fn (mut f: File) write(data: []byte | str) -> usize!", "f.write(data)", "Writes a byte slice or UTF-8 string to the file stream.", "n := try f.write(\"header\\n\")"},
                 {"File.seek", "fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!", "f.seek(offset, whence)", "Seeks within file to offset from Start, Current, or End.", "pos := try f.seek(0, SeekWhence::Start)"},
                 {"File.tell", "fn (mut f: File) tell() -> i64!", "f.tell()", "Returns current byte offset within file stream.", "pos := try f.tell()"},
                 {"File.flush", "fn (mut f: File) flush() -> void!", "f.flush()", "Flushes buffered stream data to disk.", "try f.flush()"},
@@ -173,12 +185,29 @@ struct DiagnosticDoc {
             }
         },
         {
-            "core:os", "os", "Environment, Working Directory & Subprocesses", "(header-only)",
-            "Process environment inspection, working directory queries, and subprocess output capture.",
+            "core:os", "os", "Environment, File Descriptors, Terminal, Pipes & Subprocesses", "(header-only)",
+            "Process environment inspection, working directory queries, safe EINTR-resilient POSIX file descriptor operations (`STDIN`, `STDOUT`, `STDERR`, `fd_read`, `fd_write`, `fd_close`, `pipe`, `socketpair`, `poll_fd`), raw terminal control (`term_size`, `make_raw`, `on_signal`), and subprocess execution (`command`, `exec_output`).",
             {
+                {"args", "fn args() -> []str", "cfire::os::args()", "Returns the command-line arguments passed to the current process.", "argv := os.args()"},
+                {"exit", "fn exit(code: i32)", "cfire::os::exit(code)", "Terminates the current process immediately with status `code`.", "os.exit(1)"},
                 {"getenv", "fn getenv(key: str, fallback: str = \"\") -> str", "cfire::os::getenv(key, fallback)", "Reads environment variable `key`, returning `fallback` if unset.", "mode := os.getenv(\"ENV\", \"dev\")"},
+                {"getenv_opt", "fn getenv_opt(key: str) -> str?", "cfire::os::getenv_opt(key)", "Reads environment variable `key`, returning `none` if unset.", "val := os.getenv_opt(\"API_KEY\") or { return }"},
                 {"setenv", "fn setenv(key: str, value: str)", "cfire::os::setenv(key, value)", "Sets environment variable `key` to `value` in the current process.", "os.setenv(\"MODE\", \"prod\")"},
                 {"cwd", "fn cwd() -> str", "cfire::os::cwd()", "Returns the current working directory path.", "dir := os.cwd()"},
+                {"is_tty", "fn is_tty(fd: i32 = os.STDIN) -> bool", "cfire::os::is_tty(fd)", "Returns `true` if file descriptor `fd` (defaulting to `os.STDIN`) refers to an interactive terminal.", "if os.is_tty(os.STDOUT) { ... }"},
+                {"term_size", "fn term_size(fd: i32 = os.STDIN) -> TermSize", "cfire::os::term_size(fd)", "Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY.", "sz := os.term_size()"},
+                {"make_raw", "fn make_raw(fd: i32 = os.STDIN) -> RawTerminal!", "cfire::os::make_raw(fd)", "Places terminal file descriptor `fd` into raw mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit.", "raw := try os.make_raw()"},
+                {"on_signal", "fn on_signal(sig: i32, handler: fn(i32))", "cfire::os::on_signal(sig, handler)", "Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`).", "os.on_signal(28, |sig| { println(\"resized: {}\", sig) })"},
+                {"fd_read", "fn fd_read(fd: i32, mut buf: []byte) -> usize!", "cfire::os::fd_read(fd, buf)", "Reads up to `buf.len()` bytes from file descriptor `fd` with automatic `EINTR` retry.", "n := try os.fd_read(r_fd, mut buf)"},
+                {"fd_read_bytes", "fn fd_read_bytes(fd: i32, max_bytes: usize = 4096) -> []byte!", "cfire::os::fd_read_bytes(fd, max_bytes)", "Reads up to `max_bytes` from file descriptor `fd` into a new byte slice.", "chunk := try os.fd_read_bytes(r_fd, 1024)"},
+                {"fd_write", "fn fd_write(fd: i32, data: []byte | str) -> usize!", "cfire::os::fd_write(fd, data)", "Writes all bytes in `data` to file descriptor `fd`, looping across partial writes and `EINTR`.", "try os.fd_write(w_fd, \"ping\")"},
+                {"fd_close", "fn fd_close(fd: i32) -> void!", "cfire::os::fd_close(fd)", "Safely closes file descriptor `fd`.", "try os.fd_close(fd)"},
+                {"pipe", "fn pipe() -> []i32!", "cfire::os::pipe()", "Creates an OS pipe `[read_fd, write_fd]` with `FD_CLOEXEC` enabled.", "fds := try os.pipe()"},
+                {"socketpair", "fn socketpair() -> []i32!", "cfire::os::socketpair()", "Creates a connected UNIX stream socket pair `[fd0, fd1]` with `FD_CLOEXEC` enabled.", "pair := try os.socketpair()"},
+                {"poll_fd", "fn poll_fd(fd: i32, timeout_ms: i64 = 0) -> bool", "cfire::os::poll_fd(fd, timeout_ms)", "Polls file descriptor `fd` for readability up to `timeout_ms` milliseconds (`EINTR`-safe).", "if os.poll_fd(r_fd, 50) { ... }"},
+                {"read_stdin", "fn read_stdin(max_bytes: usize = 67108864) -> str!", "cfire::os::read_stdin(max_bytes)", "Reads all remaining text from standard input up to `max_bytes` until EOF.", "all := try os.read_stdin()"},
+                {"read_stdin_lines", "fn read_stdin_lines() -> []str!", "cfire::os::read_stdin_lines()", "Reads all lines from standard input into a string slice.", "lines := try os.read_stdin_lines()"},
+                {"read_stdin_bytes", "fn read_stdin_bytes(max_bytes: usize = 67108864) -> []byte!", "cfire::os::read_stdin_bytes(max_bytes)", "Reads all remaining raw bytes from standard input up to `max_bytes` until EOF.", "raw := try os.read_stdin_bytes()"},
                 {"exec_output", "fn exec_output(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec_output(\"uname -s\")"},
                 {"command", "fn command(binary: str, args: []str) -> ExecResult!", "cfire::os::command(binary, args)", "Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.", "res := try os.command(\"git\", [\"status\"])"}
             }
@@ -224,8 +253,14 @@ struct DiagnosticDoc {
                 {"to_upper", "fn to_upper(s: str) -> str", "cfire::str::to_upper(s)", "Converts ASCII characters to uppercase.", "u := str.to_upper(\"cfire\")"},
                 {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"},
                 {"index_of", "fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64", "cfire::str::index_of(s, substr, start_pos)", "Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.", "idx := str.index_of(path, \".\")"},
+                {"find", "fn find(s: str, substr: str, start_pos: usize = 0) -> usize?", "cfire::str::find(s, substr, start_pos)", "Finds the first byte offset of `substr` in `s` starting at `start_pos`, or `none` if not found.", "pos := str.find(s, \":\") or { return }"},
                 {"last_index_of", "fn last_index_of(s: str, substr: str) -> i64", "cfire::str::last_index_of(s, substr)", "Finds last occurrence of `substr` in `s`; returns index or -1.", "idx := str.last_index_of(path, \"/\")"},
                 {"rfind", "fn rfind(s: str, substr: str, start_pos: usize = npos) -> i64", "cfire::str::rfind(s, substr, start_pos)", "Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.", "pos := str.rfind(s, \"#\")"},
+                {"parse_i64", "fn parse_i64(s: str) -> i64?", "cfire::str::parse_i64(s)", "Parses a base-10 signed 64-bit integer from `s` (or as method `s.parse_i64()`), returning `none` on invalid input or overflow.", "n := str.parse_i64(\"42\") or 0"},
+                {"parse_i32", "fn parse_i32(s: str) -> i32?", "cfire::str::parse_i32(s)", "Parses a base-10 signed 32-bit integer from `s` (or as method `s.parse_i32()`), returning `none` on invalid input or overflow.", "n := str.parse_i32(\"42\") or 0"},
+                {"parse_u64", "fn parse_u64(s: str) -> u64?", "cfire::str::parse_u64(s)", "Parses a base-10 unsigned 64-bit integer from `s` (or as method `s.parse_u64()`), returning `none` on invalid input or overflow.", "n := str.parse_u64(\"42\") or 0"},
+                {"parse_f64", "fn parse_f64(s: str) -> f64?", "cfire::str::parse_f64(s)", "Parses a 64-bit floating-point number from `s` (or as method `s.parse_f64()`), returning `none` on invalid input.", "v := str.parse_f64(\"3.14\") or 0.0"},
+                {"parse_bool", "fn parse_bool(s: str) -> bool?", "cfire::str::parse_bool(s)", "Parses `\"true\"`, `\"false\"`, `\"1\"`, or `\"0\"` (ASCII case-insensitive) into a `bool`, returning `none` otherwise.", "b := str.parse_bool(\"true\") or false"},
                 {"byte_ptr", "fn byte_ptr(s: str) -> *c_char", "cfire::str::byte_ptr(s)", "Returns a raw pointer to the underlying buffer of `s` for C FFI interop.", "ptr := s.byte_ptr()"},
                 {"byte_ptr_at", "fn byte_ptr_at(s: str, offset: i64) -> *c_char", "cfire::str::byte_ptr_at(s, offset)", "Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.", "ptr := s.byte_ptr_at(4)"},
                 {"str.data", "fn (s: str) data() -> *const c_char", "(s).data()", "Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.", "ptr := s.data()"},
@@ -235,14 +270,22 @@ struct DiagnosticDoc {
             }
         },
         {
-            "core:sync", "sync", "Thread-Safe Typed Channels", "(header-only)",
-            "Go-style typed MPSC/MPMC channels (`Channel[T]`) synchronized with `std::mutex` and `std::condition_variable`.",
+            "core:sync", "sync", "Thread-Safe Typed Channels & Mutexes", "(header-only)",
+            "Go-style typed MPSC/MPMC channels (`Channel[T]`) with non-blocking and timeout receives, plus movable mutual exclusion locks (`Mutex`).",
             {
                 {"make_channel", "fn make_channel[T]() -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
                 {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
                 {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
+                {"Channel.try_recv", "fn (ch: Channel[T]) try_recv() -> T?", "ch.try_recv()", "Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty.", "v := ch.try_recv() or { return }"},
+                {"Channel.recv_timeout", "fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -> T?", "ch.recv_timeout(timeout_ms)", "Waits up to `timeout_ms` milliseconds for a value from the channel, returning `none` on timeout or closed empty channel.", "v := ch.recv_timeout(50) or { return }"},
                 {"Channel.recv_ctx", "fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!", "ch.recv_ctx(ctx)", "Receives from the channel or aborts immediately with an error if `ctx` is cancelled.", "v := try ch.recv_ctx(ctx)"},
-                {"Channel.close", "fn (ch: Channel[T]) close()", "ch.close()", "Closes the channel and wakes all waiting receivers.", "ch.close()"}
+                {"Channel.len", "fn (ch: Channel[T]) len() -> usize", "ch.len()", "Returns the number of buffered items currently queued in the channel.", "n := ch.len()"},
+                {"Channel.close", "fn (ch: Channel[T]) close()", "ch.close()", "Closes the channel and wakes all waiting receivers.", "ch.close()"},
+                {"Mutex", "type Mutex struct", "cfire::sync::Mutex", "Mutual exclusion lock movable at initialization (`mut mu := sync.Mutex{}`).", "mut mu := sync.Mutex{}"},
+                {"Mutex.lock", "fn (mut m: Mutex) lock()", "m.lock()", "Acquires the mutex lock, blocking until available.", "mu.lock()"},
+                {"Mutex.unlock", "fn (mut m: Mutex) unlock()", "m.unlock()", "Releases the mutex lock.", "mu.unlock()"},
+                {"Mutex.try_lock", "fn (mut m: Mutex) try_lock() -> bool", "m.try_lock()", "Attempts to acquire the mutex without blocking; returns `true` if acquired.", "if mu.try_lock() { defer mu.unlock() }"},
+                {"Mutex.with_lock", "fn (mut m: Mutex) with_lock(fn: fn())", "m.with_lock(fn)", "Executes `fn` while holding the mutex lock and unlocks automatically via RAII.", "mu.with_lock(|| { count += 1 })"}
             }
         },
         {
@@ -300,9 +343,9 @@ struct DiagnosticDoc {
                 {"user", "fn user(content: str) -> Message", "cfire::ai::user(content)", "Constructs a user role `Message`.", "m := ai.user(\"Summarize this file.\")"},
                 {"user_with_file", "fn user_with_file(content: str, file_path: str) -> Message!", "cfire::ai::user_with_file(content, file_path)", "Constructs a multimodal user `Message` with an attached file (`.png`, `.jpg`, `.webp`, `.bmp`, `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, `.wav`).", "m := try ai.user_with_file(\"Describe this diagram\", \"arch.png\")"},
                 {"load_attachment", "fn load_attachment(path: str) -> Attachment!", "cfire::ai::load_attachment(path)", "Loads a file from disk into a MIME-typed multimodal `Attachment` (populating extracted Markdown automatically for Office/OpenDocument/EPUB/text formats).", "att := try ai.load_attachment(\"slides.pptx\")"},
-                {"detect_mime_type", "fn detect_mime_type(path_or_name: str, data: bytes = []) -> str", "cfire::ai::detect_mime_type(path_or_name, data)", "Detects the MIME type of a file from magic bytes (`%PDF-`, `PNG`, `BMP`, `JPEG`, `WEBP`, `ZIP`/OOXML/ODF/EPUB) and filename extension.", "mime := ai.detect_mime_type(\"report.pdf\")"},
+                {"detect_mime_type", "fn detect_mime_type(path_or_name: str, data: []byte = []) -> str", "cfire::ai::detect_mime_type(path_or_name, data)", "Detects the MIME type of a file from magic bytes (`%PDF-`, `PNG`, `BMP`, `JPEG`, `WEBP`, `ZIP`/OOXML/ODF/EPUB) and filename extension.", "mime := ai.detect_mime_type(\"report.pdf\")"},
                 {"load_document", "fn load_document(path: str) -> Document!", "cfire::ai::load_document(path)", "Extracts structured Markdown and per-page/per-slide `sections` (`[]DocumentSection`) from `.pdf` (Apple `PDFKit`, Linux `pdftotext`, or portable C++23 `/FlateDecode` + `/ToUnicode` CMap), `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.md`, `.csv`, or image files.", "doc := try ai.load_document(\"deck.pptx\")"},
-                {"parse_document", "fn parse_document(data: bytes, filename: str = \"document.txt\") -> Document!", "cfire::ai::parse_document(data, filename)", "Parses an in-memory byte slice or string into a structured `Document` with page/slide `sections`.", "doc := try ai.parse_document(raw_bytes, \"spec.docx\")"},
+                {"parse_document", "fn parse_document(data: []byte, filename: str = \"document.txt\") -> Document!", "cfire::ai::parse_document(data, filename)", "Parses an in-memory byte slice or string into a structured `Document` with page/slide `sections`.", "doc := try ai.parse_document(raw_bytes, \"spec.docx\")"},
                 {"chunk_document", "fn chunk_document(doc: Document, max_chars: i32 = 512, overlap: i32 = 64) -> []DocumentSection", "cfire::ai::chunk_document(doc, max_chars, overlap)", "Splits a `Document` into RAG-ready chunks while preserving each chunk's 1-based page/slide `index` and section `title`.", "chunks := ai.chunk_document(doc, 512, 64)"},
                 {"ocr", "fn ocr(path: str) -> str!", "cfire::ai::ocr(path)", "Extracts text from an image file using Apple `Vision.framework` on macOS/iOS, dynamic `libtesseract.so.5` C-API / `tesseract` CLI / `CFIRE_OCR_MODEL` on Linux, and embedded PNG/JPEG text metadata.", "text := try ai.ocr(\"receipt.png\")"},
                 {"embed_image", "fn embed_image(model: str, path: str) -> []f32!", "cfire::ai::embed_image(model, path)", "Computes a normalized `[]f32` visual/multimodal embedding vector for an image (`model: \"local\"` decodes PNG/BMP pixels in pure C++23 to compute 4x4 RGB/Luma moments, Sobel HOG edge histograms, 8x8 dHash, and fused OCR semantics).", "ivec := try ai.embed_image(\"local\", \"diagram.png\")"},
@@ -371,10 +414,26 @@ struct DiagnosticDoc {
             }
         },
         {
-            "ext:db/sqlite", "sqlite", "Embedded SQLite3 with WAL, Vector Search & Row Mapping", "-lsqlite3",
-            "RAII SQLite3 wrapper enabling `PRAGMA journal_mode=WAL`, parameterized queries, `[]f32` embedding BLOB binding, built-in SQL vector similarity functions (`vec_cosine_similarity`, `vec_l2_distance`, `vec_dot`), dynamic extension loading (`sqlite-vec`), atomic transactions, and compile-time `sql:\"...\"` struct row mapping.",
+            "ext:crypto/sodium", "sodium", "Memory-Hard Argon2id KDF & XChaCha20-Poly1305 AEAD", "-lsodium (or built-in fallback)",
+            "Modern cryptographic primitives backed by `libsodium` (`crypto_pwhash` Argon2id password hashing and `crypto_aead_xchacha20poly1305_ietf` 192-bit nonce AEAD) with automatic portable C++23 fallback.",
+            {
+                {"argon2id", "fn argon2id(password: str, salt: []byte, out_len: usize = 32, opslimit: u64 = 2, memlimit: usize = 67108864) -> []byte!", "cfire::sodium::argon2id(password, salt, out_len, opslimit, memlimit)", "Derives a cryptographic key of `out_len` bytes from `password` and a 16-byte `salt` using Argon2id.", "key := try sodium.argon2id(master_pw, salt, 32)"},
+                {"argon2id_str", "fn argon2id_str(password: str, opslimit: u64 = 2, memlimit: usize = 67108864) -> str!", "cfire::sodium::argon2id_str(password, opslimit, memlimit)", "Hashes a password into a PHC-formatted `$argon2id$...` verification string.", "encoded := try sodium.argon2id_str(password)"},
+                {"argon2id_verify", "fn argon2id_verify(encoded: str, password: str) -> bool", "cfire::sodium::argon2id_verify(encoded, password)", "Verifies a password against an encoded Argon2id hash string in constant time.", "ok := sodium.argon2id_verify(encoded, password)"},
+                {"xchacha20poly1305_encrypt", "fn xchacha20poly1305_encrypt(key: []byte, plaintext: []byte, aad: []byte = []) -> []byte!", "cfire::sodium::xchacha20poly1305_encrypt(key, pt, aad)", "Encrypts `plaintext` with a 32-byte key using XChaCha20-Poly1305, returning `[24-byte random nonce || ciphertext || 16-byte Poly1305 tag]`.", "sealed := try sodium.xchacha20poly1305_encrypt(key, secret)"},
+                {"xchacha20poly1305_decrypt", "fn xchacha20poly1305_decrypt(key: []byte, combined: []byte, aad: []byte = []) -> []byte!", "cfire::sodium::xchacha20poly1305_decrypt(key, combined, aad)", "Authenticates and decrypts a `[24-byte nonce || ciphertext || 16-byte tag]` XChaCha20-Poly1305 payload.", "pt := try sodium.xchacha20poly1305_decrypt(key, sealed)"},
+                {"random_bytes", "fn random_bytes(n: usize) -> []byte", "cfire::sodium::random_bytes(n)", "Generates `n` cryptographically secure random bytes (`randombytes_buf`).", "salt := sodium.random_bytes(16)"},
+                {"memzero", "fn memzero(mut buf: []byte)", "cfire::sodium::memzero(buf)", "Securely zeroes sensitive key material in memory (`sodium_memzero`).", "sodium.memzero(mut key)"}
+            }
+        },
+        {
+            "ext:db/sqlite", "sqlite", "Embedded SQLite3 & SQLCipher with WAL, Vector Search & Row Mapping", "-lsqlite3 / -lsqlcipher",
+            "RAII SQLite3 & SQLCipher wrapper enabling `PRAGMA journal_mode=WAL`, `open_encrypted` full-database encryption, parameterized queries, `[]f32` embedding BLOB binding, built-in SQL vector similarity functions (`vec_cosine_similarity`, `vec_l2_distance`, `vec_dot`), dynamic extension loading (`sqlite-vec`), atomic transactions, and compile-time `sql:\"...\"` struct row mapping.",
             {
                 {"open", "fn open(path: str) -> Conn!", "cfire::sqlite::open(path)", "Opens an SQLite3 database connection, enables WAL mode, and registers vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`, `vec_dot`, `vec_dims`).", "mut db := try sqlite.open(\"app.db\")"},
+                {"open_encrypted", "fn open_encrypted(path: str, key: str) -> Conn!", "cfire::sqlite::open_encrypted(path, key)", "Opens an SQLite3 / SQLCipher database and applies `PRAGMA key` encryption immediately before schema access.", "mut db := try sqlite.open_encrypted(\"vault.db\", master_key)"},
+                {"Conn.apply_key", "fn (mut db: Conn) apply_key(key: str) -> void!", "db.apply_key(key)", "Applies an encryption key (`sqlite3_key` / `PRAGMA key`) to an open database connection.", "try db.apply_key(master_key)"},
+                {"Conn.rekey", "fn (mut db: Conn) rekey(new_key: str) -> void!", "db.rekey(new_key)", "Rotates the database encryption key (`sqlite3_rekey` / `PRAGMA rekey`).", "try db.rekey(next_key)"},
                 {"Conn.exec", "fn (mut db: Conn) exec(sql: str, ...args) -> void!", "db.exec(sql, args...)", "Executes a parameterized SQL statement (`?1`, `?2`, ...), including `[]f32` vector and `[]byte` BLOB parameters.", "try db.exec(\"INSERT INTO docs VALUES (?1, ?2)\", id, vec)"},
                 {"Conn.query", "fn (mut db: Conn) query[T](sql: str, ...args) -> []T!", "db.query<T>(sql, args...)", "Executes a `SELECT` query and maps rows directly into struct `T` via `sql:\"...\"` tags (supporting `str`, `i64`, `f64`, `[]f32`, `[]byte`).", "rows := try db.query[Doc](\"SELECT id, text FROM docs ORDER BY vec_cosine_similarity(vec, ?1) DESC\", qvec)"},
                 {"Conn.load_extension", "fn (mut db: Conn) load_extension(path: str, entry_point: str = \"\") -> void!", "db.load_extension(path, entry_point)", "Dynamically loads a native SQLite extension shared library (e.g. `sqlite-vec` `vec0` or `sqlite-vss`).", "try db.load_extension(\"./vec0\")"},
@@ -383,14 +442,23 @@ struct DiagnosticDoc {
         },
         {
             "ext:json", "json", "Compile-Time SIMD JSON Reflection & Dynamic DOM", "-lsimdjson (or header-only)",
-            "Uses `json:\"...\"` struct tags to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.",
+            "Uses `json:\"...\"` struct tags (with automatic field-name fallback and `T?` optional field support) to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.",
             {
-                {"parse", "fn parse[T](payload: []byte | str) -> T!", "cfire::json::parse<T>(payload)", "Parses UTF-8 JSON into a tagged struct `T` using `simdjson::ondemand`.", "cfg := try json.parse[Config](raw)"},
-                {"stringify", "fn stringify[T](val: T) -> str", "cfire::json::stringify<T>(val)", "Serializes a tagged struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`) into a JSON string.", "payload := json.stringify(metric)"},
+                {"parse", "fn parse[T](payload: []byte | str) -> T!", "cfire::json::parse<T>(payload)", "Parses UTF-8 JSON into a struct `T` using `simdjson::ondemand`.", "cfg := try json.parse[Config](raw)"},
+                {"stringify", "fn stringify[T](val: T) -> str", "cfire::json::stringify<T>(val)", "Serializes a struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`, `T?`, slices, nested structs) into a JSON string.", "payload := json.stringify(metric)"},
                 {"schema", "fn schema[T]() -> str", "cfire::json::schema<T>()", "Generates a Draft 2020-12 / OpenAI Strict Mode / MCP JSON Schema string for struct `T` using `json:\"...\"` and `desc:\"...\"` tags.", "s := json.schema[SearchTool]()"},
                 {"escape_string", "fn escape_string(s: str) -> str", "cfire::json::escape_string(s)", "Escapes quotes, backslashes, and control characters for JSON strings.", "esc := json.escape_string(raw_txt)"},
                 {"parse_dynamic", "fn parse_dynamic(payload: str) -> Value!", "cfire::json::parse_dynamic(payload)", "Parses arbitrary JSON into a recursive dynamic DOM `Value`.", "v := try json.parse_dynamic(raw)"},
                 {"stringify_dynamic", "fn stringify_dynamic(val: Value, indent: i32 = 0) -> str", "cfire::json::stringify_dynamic(val, indent)", "Serializes a dynamic DOM `Value` into compact or indented JSON.", "s := json.stringify_dynamic(v, 2)"}
+            }
+        },
+        {
+            "ext:keychain", "keychain", "Native OS Credential Keychain & Secret Service", "-framework Security (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)",
+            "Cross-platform OS credential storage backed by `Security.framework` (`SecItemAdd` / `SecItemCopyMatching` / `SecItemDelete`) on macOS & iOS, `libsecret` (`secret-tool`) on Linux, and Windows Credential Manager (`CredWriteA` / `CredReadA`) on Windows.",
+            {
+                {"set", "fn set(service: str, account: str, secret: str) -> void!", "cfire::keychain::set(service, account, secret)", "Stores or updates a generic password for `(service, account)` in the OS keychain.", "try keychain.set(\"dev.flint.vault\", \"master\", token)"},
+                {"get", "fn get(service: str, account: str) -> str!", "cfire::keychain::get(service, account)", "Retrieves the secret stored for `(service, account)` from the OS keychain.", "sec := try keychain.get(\"dev.flint.vault\", \"master\")"},
+                {"delete_password", "fn delete_password(service: str, account: str) -> void!", "cfire::keychain::delete_password(service, account)", "Removes the credential entry for `(service, account)` from the OS keychain.", "try keychain.delete_password(\"dev.flint.vault\", \"master\")"}
             }
         },
         {
@@ -402,9 +470,15 @@ struct DiagnosticDoc {
                 {"TcpListener.port", "fn (ln: TcpListener) port() -> u16", "ln.port()", "Returns the bound TCP port.", "p := ln.port()"},
                 {"TcpListener.accept", "fn (mut ln: TcpListener) accept() -> TcpConn!", "ln.accept()", "Accepts an incoming TCP connection with a safe poll timeout.", "mut conn := try ln.accept()"},
                 {"connect_tcp", "fn connect_tcp(host: str, port: u16) -> TcpConn!", "cfire::net::connect_tcp(host, port)", "Connects a `TcpConn` to `host:port`.", "mut c := try net.connect_tcp(\"127.0.0.1\", p)"},
-                {"TcpConn.write", "fn (mut c: TcpConn) write(payload: str) -> usize!", "c.write(payload)", "Writes bytes to an open TCP connection.", "_ := try c.write(\"PING\")"},
+                {"TcpConn.fd", "fn (c: TcpConn) fd() -> i32", "c.fd()", "Returns the underlying socket file descriptor (`-1` if closed).", "fd := conn.fd()"},
+                {"TcpConn.write", "fn (mut c: TcpConn) write(payload: []byte | str) -> usize!", "c.write(payload)", "Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`.", "_ := try c.write(\"PING\")"},
+                {"TcpConn.read", "fn (mut c: TcpConn) read(mut buf: []byte) -> usize!", "c.read(buf)", "Reads up to `buf.len()` bytes from the socket into `buf` (`EINTR`-safe).", "n := try conn.read(mut buf)"},
+                {"TcpConn.read_bytes", "fn (mut c: TcpConn) read_bytes(max_bytes: usize = 1024) -> []byte!", "c.read_bytes(max_bytes)", "Reads up to `max_bytes` from the socket into a new byte slice.", "pkt := try conn.read_bytes(256)"},
+                {"TcpConn.read_exact", "fn (mut c: TcpConn) read_exact(exact_bytes: usize) -> []byte!", "c.read_exact(exact_bytes)", "Reads exactly `exact_bytes` from the socket or returns an error on premature EOF.", "hdr := try conn.read_exact(8)"},
                 {"TcpConn.read_str", "fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -> str!", "c.read_str(max_bytes)", "Reads up to `max_bytes` from the socket as a string.", "msg := try conn.read_str(64)"},
-                {"TcpConn.set_timeout_ms", "fn (mut c: TcpConn) set_timeout_ms(ms: i32) -> void", "c.set_timeout_ms(ms)", "Sets socket read/write timeout in milliseconds (`0` for blocking).", "conn.set_timeout_ms(5000)"}
+                {"TcpConn.read_line", "fn (mut c: TcpConn) read_line(max_bytes: usize = 65536) -> str?", "c.read_line(max_bytes)", "Reads a newline-delimited line up to `max_bytes` from the socket, or `none` on EOF.", "line := conn.read_line() or { return }"},
+                {"TcpConn.set_timeout_ms", "fn (mut c: TcpConn) set_timeout_ms(ms: i32) -> void", "c.set_timeout_ms(ms)", "Sets socket read/write timeout in milliseconds (`0` for blocking).", "conn.set_timeout_ms(5000)"},
+                {"TcpConn.close", "fn (mut c: TcpConn) close() -> void", "c.close()", "Closes the TCP socket connection.", "conn.close()"}
             }
         },
         {
@@ -438,6 +512,35 @@ struct DiagnosticDoc {
                 {"Request.param", "fn (req: Request) param(key: str, fallback: str = \"\") -> str", "req.param(key, fallback)", "Retrieves a named route path parameter extracted by the router.", "id := req.param(\"id\")"},
                 {"Request.query", "fn (req: Request) query(key: str, fallback: str = \"\") -> str", "req.query(key, fallback)", "Retrieves a decoded URL query parameter.", "page := req.query(\"page\", \"1\")"},
                 {"Request.header", "fn (req: Request) header(key: str, fallback: str = \"\") -> str", "req.header(key, fallback)", "Performs a case-insensitive header lookup.", "auth := req.header(\"Authorization\")"}
+            }
+        },
+        {
+            "ext:net/ssh", "ssh", "First-Class SSH Client, PTY, SFTP & Port Forwarding", "-lssh (libssh)",
+            "SSHv2 client, interactive PTY terminal sessions, one-shot command execution, SFTP file transfers, and TCP port forwarding backed by `libssh` (`CFIRE_HAS_LIBSSH=1`) with deterministic loopback/mock support (`ssh.enable_mock_server()`) for headless testing.",
+            {
+                {"dial", "fn dial(host: str, port: u16 = 22, user: str = \"root\", timeout_ms: i64 = 10000) -> Session!", "cfire::ssh::dial(host, port, user, timeout_ms)", "Connects an SSH session to `host:port` as `user` with a connection timeout in milliseconds.", "mut sess := try ssh.dial(\"10.0.0.10\", 22, \"deploy\", 5000)"},
+                {"enable_mock_server", "fn enable_mock_server(enabled: bool = true)", "cfire::ssh::enable_mock_server(enabled)", "Enables or disables the deterministic in-memory loopback SSH/PTY/SFTP mock server for unit tests.", "ssh.enable_mock_server(true)"},
+                {"Session.host_key_fingerprint", "fn (sess: Session) host_key_fingerprint() -> str", "sess.host_key_fingerprint()", "Returns the connected server's public key fingerprint in `SHA256:<base64>` format.", "fp := sess.host_key_fingerprint()"},
+                {"Session.is_known_host", "fn (sess: Session) is_known_host() -> bool", "sess.is_known_host()", "Checks whether the server's public key matches `~/.ssh/known_hosts`.", "if !sess.is_known_host() { ... }"},
+                {"Session.write_known_host", "fn (mut sess: Session) write_known_host() -> void!", "sess.write_known_host()", "Appends the server's public key to `~/.ssh/known_hosts` (TOFU).", "try sess.write_known_host()"},
+                {"Session.auth_publickey_mem", "fn (mut sess: Session) auth_publickey_mem(private_key_pem: str, passphrase: str = \"\") -> void!", "sess.auth_publickey_mem(private_key_pem, passphrase)", "Authenticates using an in-memory private key (PEM/OpenSSH) without writing temporary files to disk.", "try sess.auth_publickey_mem(pem_key, \"\")"},
+                {"Session.auth_publickey_file", "fn (mut sess: Session) auth_publickey_file(private_key_path: str, passphrase: str = \"\") -> void!", "sess.auth_publickey_file(private_key_path, passphrase)", "Authenticates using a private key file on disk.", "try sess.auth_publickey_file(\"/Users/me/.ssh/id_ed25519\", \"\")"},
+                {"Session.auth_password", "fn (mut sess: Session) auth_password(password: str) -> void!", "sess.auth_password(password)", "Authenticates using password authentication.", "try sess.auth_password(secret_pw)"},
+                {"Session.auth_agent", "fn (mut sess: Session) auth_agent() -> void!", "sess.auth_agent()", "Authenticates via the local `ssh-agent` (`SSH_AUTH_SOCK`).", "try sess.auth_agent()"},
+                {"Session.exec", "fn (mut sess: Session) exec(command: str) -> ExecResult!", "sess.exec(command)", "Executes a one-shot remote command and returns `ExecResult{exit_code, stdout, stderr}`.", "res := try sess.exec(\"uname -a\")"},
+                {"Session.open_pty", "fn (mut sess: Session) open_pty(term: str = \"xterm-256color\", cols: i32 = 80, rows: i32 = 24) -> Channel!", "sess.open_pty(term, cols, rows)", "Opens an interactive PTY shell channel with initial terminal type and dimensions.", "mut ch := try sess.open_pty(\"xterm-256color\", 120, 36)"},
+                {"Session.open_forward", "fn (mut sess: Session) open_forward(remote_host: str, remote_port: u16, source_host: str = \"127.0.0.1\", local_port: u16 = 0) -> Channel!", "sess.open_forward(remote_host, remote_port, source_host, local_port)", "Opens a direct TCP/IP port-forwarding channel (`ssh_channel_open_forward`).", "mut fwd := try sess.open_forward(\"127.0.0.1\", 5432)"},
+                {"Session.sftp_write_all", "fn (mut sess: Session) sftp_write_all(remote_path: str, data: str | []byte, mode: u32 = 0644) -> void!", "sess.sftp_write_all(remote_path, data, mode)", "Uploads `data` to `remote_path` over SFTP.", "try sess.sftp_write_all(\"/remote/app.conf\", cfg_text)"},
+                {"Session.sftp_read_all", "fn (mut sess: Session) sftp_read_all(remote_path: str) -> str!", "sess.sftp_read_all(remote_path)", "Downloads the contents of `remote_path` over SFTP.", "body := try sess.sftp_read_all(\"/remote/app.conf\")"},
+                {"Session.sftp_list_dir", "fn (mut sess: Session) sftp_list_dir(remote_path: str) -> []SftpEntry!", "sess.sftp_list_dir(remote_path)", "Lists directory entries in `remote_path` over SFTP.", "entries := try sess.sftp_list_dir(\"/remote\")"},
+                {"Session.sftp_mkdir", "fn (mut sess: Session) sftp_mkdir(remote_path: str, mode: u32 = 0755) -> void!", "sess.sftp_mkdir(remote_path, mode)", "Creates a remote directory over SFTP.", "try sess.sftp_mkdir(\"/remote/releases\")"},
+                {"Session.sftp_remove", "fn (mut sess: Session) sftp_remove(remote_path: str) -> void!", "sess.sftp_remove(remote_path)", "Removes a remote file over SFTP.", "try sess.sftp_remove(\"/remote/old.tmp\")"},
+                {"Session.close", "fn (mut sess: Session) close()", "sess.close()", "Disconnects and frees the SSH session.", "defer sess.close()"},
+                {"Channel.read", "fn (mut ch: Channel) read(max_bytes: usize = 4096) -> str!", "ch.read(max_bytes)", "Non-blockingly reads up to `max_bytes` from the SSH channel (`\"\"` when no data is currently ready).", "chunk := try ch.read(4096)"},
+                {"Channel.write", "fn (mut ch: Channel) write(data: str | []byte) -> usize!", "ch.write(data)", "Writes `data` into the SSH channel (e.g. PTY stdin).", "_ = try ch.write(\"ls -la\\n\")"},
+                {"Channel.resize_pty", "fn (mut ch: Channel) resize_pty(cols: i32, rows: i32) -> void!", "ch.resize_pty(cols, rows)", "Dynamically resizes an open interactive PTY (`ssh_channel_change_pty_size`).", "try ch.resize_pty(140, 42)"},
+                {"Channel.is_eof", "fn (ch: Channel) is_eof() -> bool", "ch.is_eof()", "Returns `true` if the remote channel has reached EOF.", "if ch.is_eof() { break }"},
+                {"Channel.close", "fn (mut ch: Channel) close()", "ch.close()", "Sends EOF and closes the SSH channel.", "defer ch.close()"}
             }
         },
         {
@@ -489,15 +592,26 @@ struct DiagnosticDoc {
             }
         },
         {
-            "ext:webui", "webui", "Hybrid Native WebView & Two-Way Typed RPC Application Framework", "(WKWebView / WebKitGTK + JSON-RPC 2.0)",
-            "Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (`WKWebView` on macOS & iOS, `WebKitGTK` on Linux) over a custom `app://localhost/` URI scheme with two-way typed struct RPC (`app.bind[T]`), live event streaming (`app.on`, `app.emit`), reactive key-value state (`app.set_state`), and an injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` JavaScript bridge.",
+            "ext:webui", "webui", "Hybrid Native WebView & Two-Way Typed RPC Application Framework", "(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)",
+            "Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (`WKWebView` on macOS & iOS, `WebKitGTK` on Linux, `WebView2` on Windows) over a custom `app://localhost/` URI scheme with two-way typed struct RPC (`app.bind[T]`), live event streaming (`app.on`, `app.emit`), reactive key-value state (`app.set_state`), and an injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` JavaScript bridge.",
             {
                 {"new_app", "fn new_app(title: str = \"cfire WebUI\", width: i32 = 960, height: i32 = 640) -> App", "cfire::webui::new_app(title, width, height)", "Creates a new native WebView application instance with initial window title and dimensions.", "mut app := webui.new_app(\"Studio Desk\", 980, 640)"},
                 {"App.bind", "fn (mut app: App) bind[T](name: str, handler: fn(T) -> any!)", "app.bind<T>(name, handler)", "Binds a typed `cfire` closure to `window.backend.<name>(params)` and `window.invoke(name, params)`, automatically deserializing incoming JSON into struct `T` and serializing the return value.", "app.bind[TrackMix](\"set_track\") |req| { return compute_mix(req) }"},
+                {"App.bind_async", "fn (mut app: App) bind_async[T](name: str, handler: fn(T) -> any!)", "app.bind_async<T>(name, handler)", "Binds a typed RPC handler that executes asynchronously on a background worker thread without blocking the main UI/WebView thread.", "app.bind_async[ConnectReq](\"connect_ssh\") |req| { return dial(req) }"},
                 {"App.bind_action", "fn (mut app: App) bind_action(name: str, handler: fn() -> any!)", "app.bind_action(name, handler)", "Binds a zero-argument action closure to `window.backend.<name>()`.", "app.bind_action(\"reset_desk\") || { return \"ok\" }"},
+                {"App.bind_action_async", "fn (mut app: App) bind_action_async(name: str, handler: fn() -> any!)", "app.bind_action_async(name, handler)", "Binds a zero-argument RPC action that executes asynchronously on a background worker thread.", "app.bind_action_async(\"sync_now\") || { return run_sync() }"},
                 {"App.bind_raw", "fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)", "app.bind_raw(name, handler)", "Binds a raw JSON string RPC handler to `window.backend.<name>(params)`.", "app.bind_raw(\"raw_op\") |raw_json| { return raw_json }"},
                 {"App.on", "fn (mut app: App) on(event: str, handler: fn(str))", "app.on(event, handler)", "Subscribes a backend callback to frontend events emitted via `window.runtime.EventsEmit(event, data)`.", "app.on(\"fader:input\") |payload| { println(\"{}\", payload) }"},
                 {"App.emit", "fn (mut app: App) emit(event: str, payload: any)", "app.emit(event, payload)", "Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners.", "app.emit(\"meter:peak\", status)"},
+                {"App.emit_bytes", "fn (mut app: App) emit_bytes(event: str, data: []byte)", "app.emit_bytes(event, data)", "Emits a binary `[]byte` payload to frontend `window.runtime.EventsOn(event, fn)` listeners as a Base64-decoded `Uint8Array`.", "app.emit_bytes(\"pty:data\", chunk)"},
+                {"App.clear_history", "fn (mut app: App) clear_history()", "app.clear_history()", "Clears the bounded in-memory ring buffer of recorded emitted events.", "app.clear_history()"},
+                {"App.set_max_history", "fn (mut app: App) set_max_history(max_events: usize)", "app.set_max_history(max_events)", "Sets the maximum number of emitted events retained per event name for testing inspection (`0` disables history retention).", "app.set_max_history(128)"},
+                {"App.clipboard_set", "fn (app: App) clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)", "app.clipboard_set(text, concealed, clear_after_ms)", "Copies `text` to the native OS system clipboard (`NSPasteboard` on macOS, `GtkClipboard` on Linux, `Win32` on Windows), optionally marking it concealed (`org.nspasteboard.ConcealedType` / `ExcludeClipboardContentFromMonitorProcessing`) and auto-clearing after `clear_after_ms` if unchanged.", "app.clipboard_set(token, true, 15000)"},
+                {"App.clipboard_set_secret", "fn (app: App) clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)", "app.clipboard_set_secret(text, clear_after_ms)", "Copies a sensitive secret to the OS clipboard marked as concealed/transient and automatically clears it after `clear_after_ms` if the clipboard has not been overwritten.", "app.clipboard_set_secret(password, 30000)"},
+                {"App.clipboard_get", "fn (app: App) clipboard_get() -> str", "app.clipboard_get()", "Reads current plain text from the native OS system clipboard.", "clip := app.clipboard_get()"},
+                {"App.monospace_fonts", "fn (app: App) monospace_fonts() -> []str", "app.monospace_fonts()", "Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows).", "fonts := app.monospace_fonts()"},
+                {"App.set_icon", "fn (mut app: App) set_icon(icon_path: str)", "app.set_icon(icon_path)", "Sets the application window and dock/taskbar icon from a `.png`, `.icns`, or `.ico` file.", "app.set_icon(\"assets/icon.png\")"},
+                {"App.add_menu_item", "fn (mut app: App) add_menu_item(menu: str, title: str, shortcut: str, event: str)", "app.add_menu_item(menu, title, shortcut, event)", "Adds a custom menu item with keyboard shortcut to the application menu bar that emits `event` to `app.on(event)` when triggered.", "app.add_menu_item(\"Shell\", \"New Tab\", \"t\", \"menu:new_tab\")"},
                 {"App.set_state", "fn (mut app: App) set_state(key: str, val: str)", "app.set_state(key, val)", "Updates a reactive key-value state entry and broadcasts a `state:change` event (`{key, value}`) to the frontend.", "app.set_state(\"preset\", \"Warm Tape\")"},
                 {"App.get_state", "fn (app: App) get_state(key: str) -> str", "app.get_state(key)", "Reads the current string value for `key` from the application's state store.", "p := app.get_state(\"preset\")"},
                 {"App.set_html", "fn (mut app: App) set_html(html: str)", "app.set_html(html)", "Registers inline HTML content as `/index.html` on the `app://localhost/` virtual filesystem.", "app.set_html(\"<!doctype html><html><body><h1>Hello</h1></body></html>\")"},
@@ -650,6 +764,13 @@ struct DiagnosticDoc {
             "fn consume(move buf: []byte) { ... }\nfn main() {\n    data := []byte(\"payload\")\n    consume(move data) // OK\n}"
         },
         {
+            "cfire/OPTIONAL-OR-ERR",
+            "Binding Error Variable `or err` on Optional `T?`",
+            "Optional values (`T?`, lowered to `std::optional<T>`) represent absence (`none`), not an error (`cfire::Error`). Use `or fallback` or a parameterless `or { ... }` block on `T?`, and reserve `or err { ... }` for fallible `T!` (`std::expected<T, cfire::Error>`) results.",
+            "opt := \"42\".parse_i64() or err {\n    return 0 // ERROR [cfire/OPTIONAL-OR-ERR]\n}",
+            "opt := \"42\".parse_i64() or {\n    return 0 // OK\n}"
+        },
+        {
             "cfire/USE-AFTER-FREE",
             "Use of Dangling Pointer or Slice View After Owner Invalidation",
             "Pointers (`&x`, `&mut x`, `.data()`, `.byte_ptr()`) and slice views (`s[a..b]`) track their root owner variable. If the owner is moved (`move x`), reassigned (`x = ...`), or structurally mutated by a reallocating container method (`.push()`, `.pop()`, `.clear()`, `.erase()`, `.remove()`), any subsequent read or dereference of the borrowed pointer/view is rejected at compile time.",
@@ -783,11 +904,11 @@ fn main() {
 
     // Hardware-accelerated Zstandard frame compression
     compressed := try zstd.compress(raw, level: 3)
-    println("Original size: {} bytes -> Compressed: {} bytes", raw.len(), compressed.len())
+    println("Original size: {} bytes -> Compressed: {} bytes", raw.len, compressed.len)
 
     // Decompression using the embedded frame content size
     decompressed := try zstd.decompress(compressed)
-    println("Decompressed size: {} bytes", decompressed.len())
+    println("Decompressed size: {} bytes", decompressed.len)
 })CF";
     }
     if (mod == "ext:json") {
@@ -1039,15 +1160,13 @@ fn main() {
         return R"CF(package main
 
 import "core:os"
-import "core:os/exec"
 
 fn main() {
-    home := os.getenv("HOME") or "/tmp"
+    home := os.getenv_opt("HOME") or "/tmp"
     println("Environment $HOME: {}", home)
 
-    // Execute external process and capture stdout/exit code
-    cmd := exec.command("git", ["rev-parse", "--short", "HEAD"])
-    output := try cmd.output()
+    // Execute external process without shell interpretation and capture stdout/exit code
+    output := try os.command("git", ["rev-parse", "--short", "HEAD"])
     println("Current Git commit: {} (exit code {})", output.stdout, output.exit_code)
 })CF";
     }
@@ -1152,12 +1271,12 @@ fn main() {
 import "core:encoding/hex"
 
 fn main() {
-    binary_bytes := []byte{0xCA, 0xFE, 0xBA, 0xBE}
+    binary_bytes := []byte([0xCA, 0xFE, 0xBA, 0xBE])
     hex_str := hex.encode(binary_bytes)
     println("Hexadecimal string: 0x{}", hex_str)
 
     restored := try hex.decode(hex_str)
-    println("Restored byte length: {}", restored.len())
+    println("Restored byte length: {}", restored.len)
 })CF";
     }
     if (mod == "core:encoding/csv") {
@@ -1371,6 +1490,59 @@ fn main() {
     println("Top match: {} (score={})", hits[0].title, hits[0].score)
 })CF";
     }
+    if (mod == "ext:crypto/sodium") {
+        return R"CF(package main
+
+import "ext:crypto/sodium"
+
+fn main() {
+    salt := sodium.random_bytes(16)
+    mut key := try sodium.argon2id("correct horse battery staple", salt, 32)
+    defer sodium.memzero(mut key)
+
+    sealed := try sodium.xchacha20poly1305_encrypt(key, []byte("top-secret-vault-payload"))
+    opened := try sodium.xchacha20poly1305_decrypt(key, sealed)
+    println("Decrypted bytes: {}", opened.len)
+})CF";
+    }
+    if (mod == "ext:keychain") {
+        return R"CF(package main
+
+import "ext:keychain"
+
+fn main() {
+    try keychain.set("dev.flint.ssh", "vault-key", "super-secret-token")
+    secret := try keychain.get("dev.flint.ssh", "vault-key")
+    println("Retrieved secret length: {}", secret.len())
+    try keychain.delete_password("dev.flint.ssh", "vault-key")
+})CF";
+    }
+    if (mod == "ext:net/ssh") {
+        return R"CF(package main
+
+import "ext:net/ssh"
+import "ext:keychain"
+
+fn main() {
+    mut sess := try ssh.dial("10.0.0.12", 22, "deploy", 5000)
+    defer sess.close()
+
+    fp := sess.host_key_fingerprint()
+    println("Host key: {fp}")
+
+    priv_key := try keychain.get("com.example.ssh", "id_ed25519")
+    try sess.auth_publickey_mem(priv_key, "")
+
+    res := try sess.exec("uname -a")
+    print(res.stdout)
+
+    mut ch := try sess.open_pty("xterm-256color", 120, 36)
+    defer ch.close()
+    _ = try ch.write("ls -la\n")
+    chunk := try ch.read(4096)
+    print(chunk)
+})CF";
+    }
     if (mod == "ext:webui") {
         return R"CF(package main
 
@@ -1481,6 +1653,7 @@ struct DiscoveredModule {
             else if (rel == "net/tls.hpp") discovered.push_back({"ext:net/tls", "core/" + rel, false});
             else if (rel == "net/url.hpp") discovered.push_back({"ext:net/url", "core/" + rel, false});
             else if (rel == "net/websocket.hpp") discovered.push_back({"ext:net/websocket", "core/" + rel, false});
+            else if (rel == "ssh.hpp") discovered.push_back({"ext:net/ssh", "core/" + rel, false});
             else if (rel == "os.hpp") discovered.push_back({"core:os", "core/" + rel, false});
             else if (rel == "regex.hpp") discovered.push_back({"core:regex", "core/" + rel, false});
             else if (rel == "sqlite.hpp") discovered.push_back({"ext:db/sqlite", "core/" + rel, false});
@@ -1490,6 +1663,8 @@ struct DiscoveredModule {
             else if (rel == "audio.hpp") discovered.push_back({"ext:audio", "core/" + rel, false});
             else if (rel == "ai.hpp") discovered.push_back({"ext:ai", "core/" + rel, false});
             else if (rel == "webui.hpp") discovered.push_back({"ext:webui", "core/" + rel, false});
+            else if (rel == "sodium.hpp") discovered.push_back({"ext:crypto/sodium", "core/" + rel, false});
+            else if (rel == "keychain.hpp") discovered.push_back({"ext:keychain", "core/" + rel, false});
             else if (rel == "crypto.hpp") {
                 discovered.push_back({"core:crypto/sha256", "core/" + rel, false});
                 discovered.push_back({"core:crypto/hmac", "core/" + rel, false});

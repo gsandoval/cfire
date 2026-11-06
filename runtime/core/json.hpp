@@ -579,7 +579,9 @@ template <typename T>
 template <typename T>
 [[nodiscard]] auto stringify(const T& val) -> std::string {
     using D = std::decay_t<T>;
-    if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
+    if constexpr (detail::is_std_optional<D>::value) {
+        return val.has_value() ? stringify(*val) : "null";
+    } else if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
         return std::format("\"{}\"", escape_string(val));
     } else if constexpr (std::is_same_v<D, bool>) {
         return val ? "true" : "false";
@@ -730,6 +732,43 @@ template <typename Elem>
     }
     return out;
 }
+
+template <typename T>
+[[nodiscard]] inline auto get_opt(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::optional<T>, cfire::Error>
+{
+    auto f = obj[key];
+    if (f.error() == simdjson::NO_SUCH_FIELD) return std::optional<T>{std::nullopt};
+    if (f.error()) return cfire::make_error(std::format("invalid optional field '{}'", key));
+    if (f.value().is_null()) return std::optional<T>{std::nullopt};
+    if constexpr (std::is_same_v<T, std::string>) {
+        auto res = f.get_string();
+        if (res.error()) return cfire::make_error(std::format("invalid optional string field '{}'", key));
+        return std::optional<T>{std::string(res.value())};
+    } else if constexpr (std::is_same_v<T, bool>) {
+        auto res = f.get_bool();
+        if (res.error()) return cfire::make_error(std::format("invalid optional bool field '{}'", key));
+        return std::optional<T>{res.value()};
+    } else if constexpr (std::is_unsigned_v<T>) {
+        auto res = f.get_uint64();
+        if (res.error()) return cfire::make_error(std::format("invalid optional unsigned field '{}'", key));
+        return std::optional<T>{static_cast<T>(res.value())};
+    } else if constexpr (std::is_integral_v<T>) {
+        auto res = f.get_int64();
+        if (res.error()) return cfire::make_error(std::format("invalid optional int field '{}'", key));
+        return std::optional<T>{static_cast<T>(res.value())};
+    } else if constexpr (std::is_floating_point_v<T>) {
+        auto res = f.get_double();
+        if (res.error()) return cfire::make_error(std::format("invalid optional float field '{}'", key));
+        return std::optional<T>{static_cast<T>(res.value())};
+    } else {
+        auto sub = f.get_object();
+        if (sub.error()) return cfire::make_error(std::format("invalid optional object field '{}'", key));
+        auto parsed = parse_struct<T>(sub.value());
+        if (!parsed) return std::unexpected(parsed.error());
+        return std::optional<T>{std::move(*parsed)};
+    }
+}
 #else
 [[nodiscard]] inline auto get_str(simdjson::ondemand::object& obj, std::string_view key)
     -> std::expected<std::string, cfire::Error> {
@@ -825,6 +864,34 @@ template <typename Elem>
         }
     }
     return out;
+}
+
+template <typename T>
+[[nodiscard]] inline auto get_opt(simdjson::ondemand::object& obj, std::string_view key)
+    -> std::expected<std::optional<T>, cfire::Error>
+{
+    if (!obj.val) return std::optional<T>{std::nullopt};
+    auto v = obj.val->get(key);
+    if (!v || v->is_null()) return std::optional<T>{std::nullopt};
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (!v->is_string()) return cfire::make_error(std::format("invalid optional string field '{}'", key));
+        return std::optional<T>{std::string(v->as_str())};
+    } else if constexpr (std::is_same_v<T, bool>) {
+        if (!v->is_bool()) return cfire::make_error(std::format("invalid optional bool field '{}'", key));
+        return std::optional<T>{v->as_bool()};
+    } else if constexpr (std::is_integral_v<T>) {
+        if (!v->is_number()) return cfire::make_error(std::format("invalid optional int field '{}'", key));
+        return std::optional<T>{static_cast<T>(v->as_int())};
+    } else if constexpr (std::is_floating_point_v<T>) {
+        if (!v->is_number()) return cfire::make_error(std::format("invalid optional float field '{}'", key));
+        return std::optional<T>{static_cast<T>(v->as_float())};
+    } else {
+        if (!v->is_object()) return cfire::make_error(std::format("invalid optional object field '{}'", key));
+        simdjson::ondemand::object sub_obj{&(*v)};
+        auto parsed = parse_struct<T>(sub_obj);
+        if (!parsed) return std::unexpected(parsed.error());
+        return std::optional<T>{std::move(*parsed)};
+    }
 }
 #endif
 

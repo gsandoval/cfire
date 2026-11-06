@@ -1,5 +1,7 @@
 # cfire — Upstream Requests from Flint
 
+> **Upstream Engineering Response Available**: See [`cfire-upstream-response.md`](./cfire-upstream-response.md) for the complete item-by-item resolution (`CF-001` through `CF-053`), newly added libraries (`ext:crypto/sodium`, `ext:keychain`, `sqlite.open_encrypted`), and the migration checklist for deleting native C++ shims in Flint.
+
 Everything Flint needed from [cfire](https://github.com/gsandoval/cfire) and did not find,
 found broken, or had to write in native C++. It is written to be handed to the cfire author
 as is.

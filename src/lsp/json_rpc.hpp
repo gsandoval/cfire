@@ -347,18 +347,19 @@ struct CallContext {
         if (n == "i16") return "std::int16_t";
         if (n == "i32" || n == "int") return "std::int32_t";
         if (n == "i64") return "std::int64_t";
-        if (n == "u8" || n == "byte") return "std::byte";
+        if (n == "u8") return "std::uint8_t";
+        if (n == "byte") return "std::byte";
         if (n == "u16") return "std::uint16_t";
         if (n == "u32") return "std::uint32_t";
         if (n == "u64") return "std::uint64_t";
         if (n == "usize") return "std::size_t";
+        if (n == "isize") return "std::ptrdiff_t";
         if (n == "f32") return "float";
         if (n == "f64") return "double";
         if (n == "bool") return "bool";
         if (n == "void") return "void";
         if (n == "str") return param_borrow ? "std::string_view" : "std::string";
         if (n == "path") return param_borrow ? "const std::filesystem::path&" : "std::filesystem::path";
-        if (n == "bytes") return param_borrow ? "std::span<const std::byte>" : "std::vector<std::byte>";
         return std::string(n);
     };
     bool borrow = is_param && (intent == "in" || intent.empty());
@@ -585,7 +586,7 @@ struct LocalBindingInfo {
     }
     if (const auto* orex = std::get_if<OrExpr>(&e->node)) {
         std::string inner = infer_expr_cf_type(orex->inner, ast, ws, env);
-        if (inner.ends_with("!")) inner.pop_back();
+        if (inner.ends_with("!") || inner.ends_with("?")) inner.pop_back();
         return inner;
     }
     if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
@@ -593,6 +594,14 @@ struct LocalBindingInfo {
     }
     if (const auto* call = std::get_if<CallExpr>(&e->node)) {
         if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+            if (cid->name == "readln") return "str?";
+            if (cid->name == "[]byte" || cid->name == "[]u8" || cid->name == "str" ||
+                cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" ||
+                cid->name == "u8" || cid->name == "byte" || cid->name == "u16" || cid->name == "u32" ||
+                cid->name == "u64" || cid->name == "usize" || cid->name == "isize" ||
+                cid->name == "f32" || cid->name == "f64" || cid->name == "bool") {
+                return cid->name;
+            }
             if (cid->name == "make" && !call->type_args.empty()) {
                 return cfire::fmt::format_type_ref(call->type_args[0]);
             }
@@ -627,6 +636,9 @@ struct LocalBindingInfo {
                                     if (ret == "TcpListener!") return "net.TcpListener!";
                                     if (ret == "TcpConn!") return "net.TcpConn!";
                                     if (ret == "Conn!") return "sqlite.Conn!";
+                                    if (ret == "Session!") return "ssh.Session!";
+                                    if (ret == "Channel!") return "ssh.Channel!";
+                                    if (ret == "ExecResult!") return "ssh.ExecResult!";
                                     if (ret == "App") return "webui.App";
                                     return ret;
                                 }
@@ -682,12 +694,31 @@ struct LocalBindingInfo {
                     }
                     if (rtype == "webui.App" || rtype == "App") {
                         if (mem->field == "get_state" || mem->field == "open_file_dialog" ||
-                            mem->field == "save_file_dialog" || mem->field == "last_emitted_payload") {
+                            mem->field == "save_file_dialog" || mem->field == "last_emitted_payload" ||
+                            mem->field == "clipboard_get") {
                             return "str";
                         }
                         if (mem->field == "call_rpc") return "str!";
                         if (mem->field == "emitted_events_count") return "i64";
                         if (mem->field == "run_webview_test") return "bool!";
+                        if (mem->field == "is_clipboard_concealed") return "bool";
+                        if (mem->field == "monospace_fonts") return "[]str";
+                        return "void";
+                    }
+                    if (rtype == "ssh.Session" || rtype == "Session") {
+                        if (mem->field == "host_key_fingerprint" || mem->field == "sftp_read_all") return (mem->field == "sftp_read_all") ? "str!" : "str";
+                        if (mem->field == "is_known_host") return "bool";
+                        if (mem->field == "exec") return "ssh.ExecResult!";
+                        if (mem->field == "open_pty" || mem->field == "open_forward") return "ssh.Channel!";
+                        if (mem->field == "sftp_list_dir") return "[]ssh.SftpEntry!";
+                        if (mem->field == "close") return "void";
+                        return "void!";
+                    }
+                    if (rtype == "ssh.Channel" || rtype == "Channel") {
+                        if (mem->field == "read") return "str!";
+                        if (mem->field == "write") return "usize!";
+                        if (mem->field == "is_eof") return "bool";
+                        if (mem->field == "resize_pty") return "void!";
                         return "void";
                     }
                     if (mem->field == "size") return "usize";
@@ -737,14 +768,24 @@ struct LocalBindingInfo {
 [[nodiscard]] inline auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string {
     std::string s(cf_t);
     bool fallible = false;
+    bool optional = false;
     if (s.ends_with("!")) {
         fallible = true;
         s.pop_back();
     }
+    if (s.ends_with("?")) {
+        optional = true;
+        s.pop_back();
+    }
     auto map_inner = [](std::string_view v) -> std::string {
         if (v == "str") return "std::string";
+        if (v == "i8") return "std::int8_t";
+        if (v == "i16") return "std::int16_t";
         if (v == "i32" || v == "int") return "std::int32_t";
         if (v == "i64") return "std::int64_t";
+        if (v == "isize") return "std::ptrdiff_t";
+        if (v == "u8") return "std::uint8_t";
+        if (v == "byte") return "std::byte";
         if (v == "u16") return "std::uint16_t";
         if (v == "u32") return "std::uint32_t";
         if (v == "u64") return "std::uint64_t";
@@ -752,7 +793,8 @@ struct LocalBindingInfo {
         if (v == "f32") return "float";
         if (v == "f64") return "double";
         if (v == "bool") return "bool";
-        if (v == "[]byte" || v == "bytes") return "std::vector<std::byte>";
+        if (v == "[]byte") return "std::vector<std::byte>";
+        if (v == "[]u8") return "std::vector<std::uint8_t>";
         if (v == "[]str") return "std::vector<std::string>";
         if (v.starts_with("own[") && v.ends_with("]")) {
             return std::format("std::unique_ptr<{}>", v.substr(4, v.size() - 5));
@@ -760,10 +802,17 @@ struct LocalBindingInfo {
         if (v.starts_with("shared[") && v.ends_with("]")) {
             return std::format("std::shared_ptr<{}>", v.substr(7, v.size() - 8));
         }
+        if (v == "fs.File" || v == "File") return "cfire::fs::File";
+        if (v == "sync.Mutex" || v == "Mutex") return "cfire::sync::Mutex";
         if (v == "net.TcpListener") return "cfire::net::TcpListener";
         if (v == "net.TcpConn") return "cfire::net::TcpConn";
         if (v == "sqlite.Conn") return "cfire::sqlite::Conn";
         if (v == "webui.App" || v == "App") return "cfire::webui::App";
+        if (v == "ssh.Session" || v == "Session") return "cfire::ssh::Session";
+        if (v == "ssh.Channel") return "cfire::ssh::Channel";
+        if (v == "ssh.ExecResult" || v == "ExecResult") return "cfire::ssh::ExecResult";
+        if (v == "ssh.SftpEntry" || v == "SftpEntry") return "cfire::ssh::SftpEntry";
+        if (v == "[]ssh.SftpEntry") return "std::vector<cfire::ssh::SftpEntry>";
         if (v == "context.Context" || v == "Context") return "cfire::sync::context::Context";
         if (v == "websocket.Conn") return "cfire::websocket::Conn";
         if (v.starts_with("sync.Channel[") && v.ends_with("]")) {
@@ -791,6 +840,9 @@ struct LocalBindingInfo {
         cpp = tuple_cpp;
     } else {
         cpp = map_inner(s);
+    }
+    if (optional) {
+        cpp = std::format("std::optional<{}>", cpp);
     }
     if (fallible) {
         return std::format("std::expected<{}, cfire::Error>", cpp);
@@ -1177,7 +1229,7 @@ inline void collect_stmt_bindings(
                             if (auto rb = col_t.find(']'); rb != std::string::npos && rb + 1 < col_t.size()) {
                                 item_info.cf_type = col_t.substr(rb + 1);
                             }
-                        } else if (col_t == "str" || col_t == "bytes") {
+                        } else if (col_t == "str") {
                             item_info.cf_type = "u8";
                         } else {
                             item_info.cf_type = "auto";

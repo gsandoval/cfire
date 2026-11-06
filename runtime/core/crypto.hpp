@@ -120,6 +120,14 @@ namespace detail {
 #endif
 }
 
+[[nodiscard]] inline auto hash_bytes(std::span<const std::uint8_t> data) -> std::vector<std::byte> {
+    return hash_bytes(std::as_bytes(data));
+}
+
+[[nodiscard]] inline auto hash_bytes(std::string_view sv) -> std::vector<std::byte> {
+    return hash_bytes(std::span<const std::byte>(reinterpret_cast<const std::byte*>(sv.data()), sv.size()));
+}
+
 [[nodiscard]] inline auto hash_hex(std::span<const std::byte> data) -> std::string {
     auto b = hash_bytes(data);
     std::string hex;
@@ -128,6 +136,10 @@ namespace detail {
         hex += std::format("{:02x}", static_cast<unsigned char>(byte_val));
     }
     return hex;
+}
+
+[[nodiscard]] inline auto hash_hex(std::span<const std::uint8_t> data) -> std::string {
+    return hash_hex(std::as_bytes(data));
 }
 
 [[nodiscard]] inline auto hash_hex(std::string_view sv) -> std::string {
@@ -334,6 +346,76 @@ namespace cfire::hmac {
         hex += std::format("{:02x}", static_cast<unsigned char>(b));
     }
     return hex;
+}
+
+[[nodiscard]] inline auto sha256_bytes(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::vector<std::byte> {
+    return sha256_bytes(std::as_bytes(key), std::as_bytes(data));
+}
+
+[[nodiscard]] inline auto sha256_hex(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::string {
+    return sha256_hex(std::as_bytes(key), std::as_bytes(data));
+}
+
+[[nodiscard]] inline auto equal(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) -> bool {
+    return equal(std::as_bytes(a), std::as_bytes(b));
+}
+
+// RFC 8018 PBKDF2-HMAC-SHA256 (`CF-006`)
+[[nodiscard]] inline auto pbkdf2_sha256(
+    std::span<const std::byte> password,
+    std::span<const std::byte> salt,
+    std::uint32_t iterations = 600000,
+    std::size_t key_len = 32
+) -> std::vector<std::byte> {
+    if (key_len == 0) return {};
+    if (iterations == 0) iterations = 1;
+    constexpr std::size_t kHashLen = 32;
+    std::size_t blocks = (key_len + kHashLen - 1) / kHashLen;
+    std::vector<std::byte> dk;
+    dk.reserve(blocks * kHashLen);
+
+    for (std::size_t b = 1; b <= blocks; ++b) {
+        std::vector<std::byte> salt_block(salt.begin(), salt.end());
+        salt_block.push_back(static_cast<std::byte>((b >> 24) & 0xFF));
+        salt_block.push_back(static_cast<std::byte>((b >> 16) & 0xFF));
+        salt_block.push_back(static_cast<std::byte>((b >> 8) & 0xFF));
+        salt_block.push_back(static_cast<std::byte>(b & 0xFF));
+
+        auto u = sha256_bytes(password, salt_block);
+        auto t = u;
+        for (std::uint32_t iter = 2; iter <= iterations; ++iter) {
+            u = sha256_bytes(password, u);
+            for (std::size_t k = 0; k < kHashLen; ++k) {
+                t[k] ^= u[k];
+            }
+        }
+        dk.insert(dk.end(), t.begin(), t.end());
+    }
+    dk.resize(key_len);
+    return dk;
+}
+
+[[nodiscard]] inline auto pbkdf2_sha256(
+    std::string_view password,
+    std::string_view salt,
+    std::uint32_t iterations = 600000,
+    std::size_t key_len = 32
+) -> std::vector<std::byte> {
+    return pbkdf2_sha256(
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(password.data()), password.size()),
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(salt.data()), salt.size()),
+        iterations,
+        key_len
+    );
+}
+
+[[nodiscard]] inline auto pbkdf2_sha256(
+    std::span<const std::uint8_t> password,
+    std::span<const std::uint8_t> salt,
+    std::uint32_t iterations = 600000,
+    std::size_t key_len = 32
+) -> std::vector<std::byte> {
+    return pbkdf2_sha256(std::as_bytes(password), std::as_bytes(salt), iterations, key_len);
 }
 
 } // namespace cfire::hmac
@@ -764,6 +846,84 @@ inline void compute_ghash_tag(
     auto res = decrypt_gcm(key, nonce, ciphertext, tag, aad);
     if (!res) return std::unexpected(res.error());
     return std::string(reinterpret_cast<const char*>(res->data()), res->size());
+}
+
+[[nodiscard]] inline auto encrypt_gcm(
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> nonce,
+    std::span<const std::uint8_t> plaintext,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<GcmResult, cfire::Error> {
+    return encrypt_gcm(std::as_bytes(key), std::as_bytes(nonce), std::as_bytes(plaintext), std::as_bytes(aad));
+}
+
+[[nodiscard]] inline auto decrypt_gcm(
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> nonce,
+    std::span<const std::uint8_t> ciphertext,
+    std::span<const std::uint8_t> tag,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    return decrypt_gcm(std::as_bytes(key), std::as_bytes(nonce), std::as_bytes(ciphertext), std::as_bytes(tag), std::as_bytes(aad));
+}
+
+// High-level OS CSPRNG Key Generation & Combined Nonce+Ciphertext+Tag AES-256-GCM (`CF-006`)
+[[nodiscard]] inline auto generate_key() -> std::vector<std::byte> {
+    return cfire::sha256::random_bytes(32);
+}
+
+[[nodiscard]] inline auto encrypt(
+    std::span<const std::byte> key,
+    std::span<const std::byte> plaintext,
+    std::span<const std::byte> aad = {}
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    auto nonce = cfire::sha256::random_bytes(12);
+    auto gcm = encrypt_gcm(key, nonce, plaintext, aad);
+    if (!gcm) return std::unexpected(gcm.error());
+    std::vector<std::byte> packet;
+    packet.reserve(12 + gcm->ciphertext.size() + 16);
+    packet.insert(packet.end(), nonce.begin(), nonce.end());
+    packet.insert(packet.end(), gcm->ciphertext.begin(), gcm->ciphertext.end());
+    packet.insert(packet.end(), gcm->tag.begin(), gcm->tag.end());
+    return packet;
+}
+
+[[nodiscard]] inline auto encrypt(
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> plaintext,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    return encrypt(std::as_bytes(key), std::as_bytes(plaintext), std::as_bytes(aad));
+}
+
+[[nodiscard]] inline auto encrypt(
+    std::span<const std::byte> key,
+    std::string_view plaintext,
+    std::string_view aad = ""
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    return encrypt(key, cfire::to_bytes(plaintext), cfire::to_bytes(aad));
+}
+
+[[nodiscard]] inline auto decrypt(
+    std::span<const std::byte> key,
+    std::span<const std::byte> packet,
+    std::span<const std::byte> aad = {}
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    if (packet.size() < 28) {
+        return cfire::make_error("AES-GCM packet too short (expected >= 28 bytes for 12B nonce + 16B tag)");
+    }
+    auto nonce = packet.subspan(0, 12);
+    auto ct = packet.subspan(12, packet.size() - 28);
+    auto tag = packet.subspan(packet.size() - 16, 16);
+    return decrypt_gcm(key, nonce, ct, tag, aad);
+}
+
+[[nodiscard]] inline auto decrypt(
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> packet,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    return decrypt(std::as_bytes(key), std::as_bytes(packet), std::as_bytes(aad));
 }
 
 } // namespace cfire::aes
