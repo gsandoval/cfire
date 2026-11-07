@@ -139,7 +139,8 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
             },
             .expected_cpp = {
                 "cfire::json::schema<QueryPlan>()",
-                "cfire::ai::embed(\"local\", doc)",
+                "cfire::ai::local()",
+                "client.embed(doc)",
                 "cfire::sqlite::open(\":memory:\")",
             },
         },
@@ -487,8 +488,8 @@ import "core:os"
 import "core:fs"
 import "core:cli"
 import "core:crypto/aes"
-import "ext:keychain"
-import "ext:net"
+import "core:keychain"
+import "core:net"
 import "ext:webui"
 
 fn main() {
@@ -646,8 +647,8 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         ofs << R"(package main
 import "core:fs"
 import "core:json"
-import "core:db/sqlite"
-import "core:compress/zstd"
+import "ext:db/sqlite"
+import "ext:compress/zstd"
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
 

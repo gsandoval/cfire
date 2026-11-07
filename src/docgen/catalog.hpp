@@ -36,13 +36,13 @@ struct DiscoveredModule {
             else if (rel == "ios_raylib.hpp" || rel == "desktop_raylib.hpp") continue; // Built-in platform backends for vendor:raylib
             else if (rel == "compress.hpp") discovered.push_back({"ext:compress/zstd", "core/" + rel, false});
             else if (rel == "fs.hpp") discovered.push_back({"core:fs", "core/" + rel, false});
-            else if (rel == "json.hpp") discovered.push_back({"ext:json", "core/" + rel, false});
+            else if (rel == "json.hpp") discovered.push_back({"core:json", "core/" + rel, false});
             else if (rel == "log.hpp") discovered.push_back({"core:log", "core/" + rel, false});
-            else if (rel == "net.hpp") discovered.push_back({"ext:net", "core/" + rel, false});
-            else if (rel == "net/http.hpp") discovered.push_back({"ext:net/http", "core/" + rel, false});
-            else if (rel == "net/tls.hpp") discovered.push_back({"ext:net/tls", "core/" + rel, false});
-            else if (rel == "net/url.hpp") discovered.push_back({"ext:net/url", "core/" + rel, false});
-            else if (rel == "net/websocket.hpp") discovered.push_back({"ext:net/websocket", "core/" + rel, false});
+            else if (rel == "net.hpp") discovered.push_back({"core:net", "core/" + rel, false});
+            else if (rel == "net/http.hpp") discovered.push_back({"core:net/http", "core/" + rel, false});
+            else if (rel == "net/tls.hpp") discovered.push_back({"core:net/tls", "core/" + rel, false});
+            else if (rel == "net/url.hpp") discovered.push_back({"core:net/url", "core/" + rel, false});
+            else if (rel == "net/websocket.hpp") discovered.push_back({"core:net/websocket", "core/" + rel, false});
             else if (rel == "ssh.hpp") discovered.push_back({"ext:net/ssh", "core/" + rel, false});
             else if (rel == "os.hpp") discovered.push_back({"core:os", "core/" + rel, false});
             else if (rel == "regex.hpp") discovered.push_back({"core:regex", "core/" + rel, false});
@@ -50,11 +50,11 @@ struct DiscoveredModule {
             else if (rel == "str.hpp") discovered.push_back({"core:str", "core/" + rel, false});
             else if (rel == "time.hpp") discovered.push_back({"core:time", "core/" + rel, false});
             else if (rel == "unicode.hpp") discovered.push_back({"core:unicode", "core/" + rel, false});
-            else if (rel == "audio.hpp") discovered.push_back({"ext:audio", "core/" + rel, false});
+            else if (rel == "audio.hpp") discovered.push_back({"core:audio", "core/" + rel, false});
             else if (rel == "ai.hpp") discovered.push_back({"ext:ai", "core/" + rel, false});
             else if (rel == "webui.hpp") discovered.push_back({"ext:webui", "core/" + rel, false});
             else if (rel == "sodium.hpp") discovered.push_back({"ext:crypto/sodium", "core/" + rel, false});
-            else if (rel == "keychain.hpp") discovered.push_back({"ext:keychain", "core/" + rel, false});
+            else if (rel == "keychain.hpp") discovered.push_back({"core:keychain", "core/" + rel, false});
             else if (rel == "crypto.hpp") {
                 discovered.push_back({"core:crypto/sha256", "core/" + rel, false});
                 discovered.push_back({"core:crypto/hmac", "core/" + rel, false});

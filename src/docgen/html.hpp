@@ -135,7 +135,7 @@ fn main() {
     // 3. WebSockets & Concurrency Snippet
     std::string_view snip3_cf = R"(package main
 
-import "ext:net/websocket"
+import "core:net/websocket"
 import "core:sync/context"
 import "core:time"
 
@@ -154,7 +154,7 @@ fn main() {
     // 4. JSON Struct Tags Snippet
     std::string_view snip4_cf = R"(package main
 
-import "ext:json"
+import "core:json"
 
 type Metric struct {
     service: str  `json:"service"`
@@ -186,7 +186,7 @@ fn main() {
     // 6. Multi-Target Audio DSP & Trailing Closures Snippet
     std::string_view snip6_cf = R"(package main
 
-import "ext:audio"
+import "core:audio"
 
 fn main() {
     try audio.init(48000, 2)
@@ -209,7 +209,7 @@ fn main() {
 
 import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
-import "ext:json" as json
+import "core:json" as json
 
 type QueryPlan struct {
     Target: str `json:"target" desc:"Search target concept"`
@@ -230,17 +230,18 @@ fn main() {
     doc := try ai.parse_document("# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.", "arch.md")
     chunks := ai.chunk_document(doc, 512, 64)
 
-    // 3. Embedded SQLite with AVX2/NEON SIMD vector similarity
+    // 3. Embedded SQLite with AVX2/NEON SIMD vector similarity & stateful on-device Client
+    client := ai.local()
     mut db := try sqlite.open(":memory:")
     try db.exec("CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)")
 
     for ch in chunks {
-        vec := try ai.embed("local", ch.text)
+        vec := try client.embed(ch.text)
         try db.exec("INSERT INTO docs VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, vec)
     }
 
     // 4. In-database semantic search
-    qvec := try ai.embed("local", "modern C++23 compiler")
+    qvec := try client.embed("modern C++23 compiler")
     hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
     if hits.len() > 0 {
         println("Match [{}]: {}", hits[0].Title, hits[0].Snippet)
@@ -293,7 +294,7 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
-    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>ext:audio</code>)</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>core:audio</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (<code>ext:ai</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-webui', this)">8. Hybrid WebUI (<code>ext:webui</code>)</button>
   </div>
@@ -724,17 +725,18 @@ fn main() {
     // Pane 0: Categorized Overview Dashboard
     out += std::format("      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-short=\"Overview\" data-pane-title=\"Overview (All {} Modules)\">\n", mods.size());
     out += "        <h1>Standard Library &amp; Diagnostics Reference</h1>\n";
-    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> ({} zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> ({} opt-in networking, database, compression, audio, AI, and WebUI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> ({} bundled C/C++ engines) — plus {} semantic diagnostics, verified by <code>cfire doc --check</code>.</p>\n", mods.size(), core_count, ext_count, vendor_count, diags.size());
+    out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> ({} zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> ({} opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> ({} bundled C/C++ graphics engines) — plus {} semantic diagnostics, verified by <code>cfire doc --check</code>.</p>\n", mods.size(), core_count, ext_count, vendor_count, diags.size());
 
     struct CategoryGroup {
         std::string_view title;
         std::vector<std::string_view> aliases;
     };
     const std::vector<CategoryGroup> categories = {
-        {"core:* — Strings, Unicode, Regex & Containers", {"str", "unicode", "regex", "collections", "sort"}},
-        {"core:* — Filesystem, OS, Time, Sync, CLI & Logging", {"fs", "os", "time", "math", "rand", "sync", "context", "cli", "log"}},
-        {"core:* — Cryptography & Data Encodings", {"aes", "blake3", "hmac", "sha256", "base64", "csv", "hex"}},
-        {"ext:* — JSON, Compression, Networking, SQLite, Audio, AI & WebUI", {"json", "zstd", "net", "http", "tls", "url", "websocket", "sqlite", "audio", "ai", "webui"}},
+        {"core:* — Text, Containers, Math & Data Formats", {"str", "unicode", "regex", "collections", "sort", "math", "rand", "json", "base64", "csv", "hex"}},
+        {"core:* — OS, Filesystem, Concurrency, CLI & Build", {"fs", "os", "time", "sync", "context", "cli", "log", "keychain", "build"}},
+        {"core:* — Networking, Web Protocols & Audio", {"net", "url", "tls", "http", "websocket", "audio"}},
+        {"core:* — Cryptography & Hashing", {"aes", "blake3", "hmac", "sha256"}},
+        {"ext:* — Native C Libraries, WebUI & AI Engines", {"ai", "zstd", "sodium", "sqlite", "ssh", "webui"}},
         {"vendor:* — Graphics & Immediate-Mode GUI", {"rl", "rg"}},
     };
 

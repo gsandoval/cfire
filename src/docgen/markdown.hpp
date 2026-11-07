@@ -1558,8 +1558,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
   - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
 - Imports:
-  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:tako"`)
-  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:json"`, `import "ext:net/http"`, `import "ext:net/ssh"`, `import "ext:db/sqlite"`, `import "ext:ai"`, `import "ext:webui"`, `import "ext:keychain"`, `import "ext:crypto/sodium"`)
+  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:json"`, `import "core:net/http"`, `import "core:audio"`, `import "core:keychain"`)
+  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)
   - Bundled Vendor: `import "vendor:<module>"` (e.g. `import "vendor:raylib"`, `import "vendor:raygui"`)
   - Toolchain Packages: `import "pkg:<name>"` (e.g. `import "pkg:tako"`, resolved automatically from workspace/toolchain roots alongside `build.Tako()` in `build.cf`)
   - Local package: `import "./path/to/pkg"`
@@ -1612,7 +1612,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Property-based fuzz blocks: `fuzz "description" |x: i64, s: str| { ... }` (or parameterized `test "name" |x: i64| { ... }`): automatically runs 16 adversarial edge-case dictionary seeds + deterministic PRNG runs (`--fuzz-runs <N>`, `--seed <S>`) for primitives, `str`, `[]T`, and reflected user structs, with automatic counterexample shrinking on failure.
   - Multi-iteration statistical benchmarks: `bench "description" { black_box(work()) }` and parameterized variations `bench "name" |size in [64, 1024, 16384]| { ... }` or `|w in [16, 64], h in [16, 64]|` or `|k in 1..=4|`: dynamically calibrates batch size `B`, collects 10-25 timing samples over `--bench-time <ms>`, and reports `iters`, `min`, `p50`, `mean +- stddev%`, `p99`, and `ops/s`. During normal `cfire test`, each `bench` block runs 1 smoke iteration.
   - Executable doc-tests: fenced ` ```cf ` blocks inside `///` doc-comments containing `assert(...)` or `assert_eq(...)` are automatically extracted and executed by `cfire test`.
-  - Zero-code automatic checks: every `test`/`fuzz` block enforces an open file-descriptor leak canary (`count_open_fds()`), and importing `ext:json` with JSON-tagged structs automatically synthesizes `[auto] json round-trip: <StructName>` tests during `cfire test`.
+  - Zero-code automatic checks: every `test`/`fuzz` block enforces an open file-descriptor leak canary (`count_open_fds()`), and importing `core:json` with JSON-tagged structs automatically synthesizes `[auto] json round-trip: <StructName>` tests during `cfire test`.
   - Power-assertions (`assert(a == b)`, `assert_eq(a, b)`, `assert_ne(a, b)`): evaluate each operand once and automatically print `[left: <val>, right: <val>]` value diffs on failure.
 - Error (`T!`) & Optional (`T?`) Handling:
   - `val := try fallible()` (early return error on failure)

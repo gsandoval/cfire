@@ -624,14 +624,14 @@ test "passing test assertion" {
             .assert_contains("\"name\": \"cos\"", "inspect cpp contains math function cos");
 
         // Form 3: stdlib module & symbol
-        auto insp3 = run_cfire("inspect ext:json --json");
-        insp3.assert_ok("cfire inspect ext:json exit 0")
-            .assert_contains("\"name\": \"json\"", "inspect ext:json name match")
-            .assert_contains("\"import_path\": \"ext:json\"", "inspect ext:json import_path match")
-            .assert_contains("stringify", "inspect ext:json functions contains stringify");
-        auto insp3_alias = run_cfire("inspect core:json --json");
-        insp3_alias.assert_ok("cfire inspect core:json alias exit 0")
-            .assert_contains("\"import_path\": \"ext:json\"", "inspect core:json alias resolves to ext:json");
+        auto insp3 = run_cfire("inspect core:json --json");
+        insp3.assert_ok("cfire inspect core:json exit 0")
+            .assert_contains("\"name\": \"json\"", "inspect core:json name match")
+            .assert_contains("\"import_path\": \"core:json\"", "inspect core:json import_path match")
+            .assert_contains("stringify", "inspect core:json functions contains stringify");
+        auto insp3_alias = run_cfire("inspect ext:json --json");
+        insp3_alias.assert_ok("cfire inspect ext:json alias exit 0")
+            .assert_contains("\"import_path\": \"core:json\"", "inspect ext:json alias resolves to core:json");
 
         auto insp4 = run_cfire("inspect json.stringify --json");
         insp4.assert_ok("cfire inspect json.stringify exit 0")

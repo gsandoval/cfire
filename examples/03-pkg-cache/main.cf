@@ -1,6 +1,6 @@
 package main
 
-import "ext:json"
+import "core:json"
 import "ext:db/sqlite"
 import "core:crypto/blake3"
 

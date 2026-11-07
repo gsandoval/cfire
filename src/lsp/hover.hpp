@@ -21,7 +21,7 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
                 std::string desc;
                 if (tag_content.contains("json:")) {
                     desc += "### Struct Tag `` `json:\"<key>\"` ``\n"
-                            "Specifies the JSON object property key for compile-time reflection in `ext:json` (`json.parse_struct[T]` / `json.stringify_struct`).\n\n"
+                            "Specifies the JSON object property key for compile-time reflection in `core:json` (`json.parse_struct[T]` / `json.stringify_struct`).\n\n"
                             "**Example:**\n```cf\nService: str `json:\"service\"`\n```\n";
                 }
                 if (tag_content.contains("cli:") || tag_content.contains("help:")) {

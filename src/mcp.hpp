@@ -322,7 +322,7 @@ namespace cfire::mcp {
             auto bin_file = tmp_dir / "eval_bin";
             std::string src = in.code;
             if (src.find("package ") == std::string::npos) {
-                src = "package main\nimport \"ext:ai\"\nimport \"ext:json\"\nimport \"ext:webui\"\nimport \"core:str\"\nimport \"core:math\"\n\nfn main() {\n" + src + "\n}\n";
+                src = "package main\nimport \"ext:ai\"\nimport \"core:json\"\nimport \"ext:webui\"\nimport \"core:str\"\nimport \"core:math\"\n\nfn main() {\n" + src + "\n}\n";
             }
             {
                 std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);
