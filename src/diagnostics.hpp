@@ -12,7 +12,7 @@
 #include <unordered_set>
 #include "cfire_prelude.hpp"
 #include "ast.hpp"
-#include "docgen/catalog.hpp"
+#include "docgen/catalog_types.hpp"
 
 namespace cfire::diag {
 
@@ -23,6 +23,7 @@ struct FixItEdit {
     int end_line = 1;   // 1-based
     int end_col = 1;    // 1-based
     std::string replacement{};
+    bool is_preferred = true;
 };
 
 struct StructuredDiagnostic {
@@ -36,27 +37,7 @@ struct StructuredDiagnostic {
 };
 
 [[nodiscard]] inline auto json_escape(std::string_view s) -> std::string {
-    std::string out;
-    out.reserve(s.size() + 16);
-    for (char c : s) {
-        switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\b': out += "\\b"; break;
-            case '\f': out += "\\f"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20) {
-                    out += std::format("\\u{:04x}", static_cast<unsigned int>(c));
-                } else {
-                    out += c;
-                }
-                break;
-        }
-    }
-    return out;
+    return cfire::detail::json_escape(s);
 }
 
 [[nodiscard]] inline auto parse_diagnostic_string(
@@ -146,7 +127,8 @@ struct StructuredDiagnostic {
 inline void synthesize_fixits_for_diagnostic(
     StructuredDiagnostic& d,
     const cfire::frontend::FileAST* ast,
-    const std::vector<std::string>& lines
+    const std::vector<std::string>& lines,
+    const std::vector<const cfire::frontend::EnumDecl*>& extra_enums = {}
 ) {
     if (d.code == "cfire/MUT-CALLSITE") {
         FixItEdit edit;
@@ -260,91 +242,176 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
-    if (d.code == "cfire/NON-EXHAUSTIVE-MATCH" && ast != nullptr) {
+    if (d.code == "cfire/NON-EXHAUSTIVE-MATCH") {
         std::string enum_name;
+        std::string fallback_variant;
         if (auto p = d.message.find("non-exhaustive match on enum '"); p != std::string::npos) {
             p += 30;
             if (auto e = d.message.find('\'', p); e != std::string::npos) {
                 enum_name = d.message.substr(p, e - p);
             }
         }
+        if (auto p = d.message.find("missing variant '"); p != std::string::npos) {
+            p += 17;
+            if (auto e = d.message.find('\'', p); e != std::string::npos) {
+                fallback_variant = d.message.substr(p, e - p);
+            }
+        }
+
+        const cfire::frontend::EnumDecl* target_enum = nullptr;
         if (!enum_name.empty()) {
-            const cfire::frontend::EnumDecl* target_enum = nullptr;
-            for (const auto& en : ast->enums) {
-                if (en.name == enum_name) {
-                    target_enum = &en;
-                    break;
+            if (ast != nullptr) {
+                for (const auto& en : ast->enums) {
+                    if (en.name == enum_name) {
+                        target_enum = &en;
+                        break;
+                    }
                 }
             }
-            if (target_enum) {
-                // Find closing brace of match statement around d.line
-                int match_close_line = -1;
-                int brace_depth = 0;
-                bool found_open_brace = false;
-
-                int start_0 = std::max(0, d.line - 1);
-                for (int ln = start_0; ln < static_cast<int>(lines.size()); ++ln) {
-                    const std::string& cur_ln = lines[static_cast<std::size_t>(ln)];
-                    for (int c_idx = 0; c_idx < static_cast<int>(cur_ln.size()); ++c_idx) {
-                        char c = cur_ln[static_cast<std::size_t>(c_idx)];
-                        if (c == '{') {
-                            found_open_brace = true;
-                            ++brace_depth;
-                        } else if (c == '}') {
-                            if (found_open_brace) {
-                                --brace_depth;
-                                if (brace_depth == 0) {
-                                    match_close_line = ln + 1; // 1-based
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (match_close_line != -1) break;
-                }
-
-                if (match_close_line != -1) {
-                    std::string base_indent;
-                    if (start_0 < static_cast<int>(lines.size())) {
-                        const std::string& match_ln = lines[static_cast<std::size_t>(start_0)];
-                        for (char c : match_ln) {
-                            if (c == ' ' || c == '\t') base_indent += c;
-                            else break;
-                        }
-                    }
-                    std::string arm_indent = base_indent + "    ";
-
-                    // Collect missing variants
-                    std::vector<std::string> missing;
-                    for (const auto& v : target_enum->variants) {
-                        if (d.message.find(std::format("missing variant '{}'", v.name)) != std::string::npos) {
-                            missing.push_back(v.name);
-                        }
-                    }
-                    if (missing.empty()) {
-                        for (const auto& v : target_enum->variants) {
-                            missing.push_back(v.name);
-                        }
-                    }
-
-                    std::string arms_text;
-                    for (const auto& m : missing) {
-                        arms_text += arm_indent + enum_name + "::" + m + " => {}\n";
-                    }
-
-                    if (!arms_text.empty()) {
-                        FixItEdit edit;
-                        edit.title = std::format("Add missing match arm(s) for enum '{}'", enum_name);
-                        edit.start_line = match_close_line;
-                        edit.start_col = 1;
-                        edit.end_line = match_close_line;
-                        edit.end_col = 1;
-                        edit.replacement = arms_text;
-                        d.fixits.push_back(std::move(edit));
+            if (!target_enum) {
+                for (const auto* en : extra_enums) {
+                    if (en && en->name == enum_name) {
+                        target_enum = en;
+                        break;
                     }
                 }
             }
         }
+
+        int start_0 = std::max(0, d.line - 1);
+        std::string base_indent;
+        if (static_cast<std::size_t>(start_0) < lines.size()) {
+            const std::string& match_ln = lines[static_cast<std::size_t>(start_0)];
+            for (char c : match_ln) {
+                if (c == ' ' || c == '\t') base_indent += c;
+                else break;
+            }
+        }
+        std::string arm_indent = base_indent + "    ";
+        std::string body_indent = arm_indent + "    ";
+
+        int match_close_line = -1; // 0-based
+        int match_close_col = 0;   // 0-based
+        int brace_depth = 0;
+        bool found_open_brace = false;
+
+        for (int ln = start_0; ln < static_cast<int>(lines.size()); ++ln) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(ln)];
+            for (int col = 0; col < static_cast<int>(cur_ln.size()); ++col) {
+                char c = cur_ln[static_cast<std::size_t>(col)];
+                if (c == '{') {
+                    found_open_brace = true;
+                    ++brace_depth;
+                } else if (c == '}') {
+                    if (found_open_brace) {
+                        --brace_depth;
+                        if (brace_depth == 0) {
+                            match_close_line = ln;
+                            match_close_col = col;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (match_close_line != -1) break;
+        }
+
+        if (match_close_line == -1) {
+            match_close_line = start_0 + 1;
+            match_close_col = 0;
+        }
+
+        std::unordered_set<std::string> covered;
+        if (ast != nullptr) {
+            const cfire::frontend::MatchStmt* target_match = nullptr;
+            auto find_match = [&](auto self, const std::vector<cfire::frontend::StmtPtr>& stmts) -> void {
+                if (target_match) return;
+                for (const auto& s : stmts) {
+                    if (!s) continue;
+                    if (const auto* ms = std::get_if<cfire::frontend::MatchStmt>(&s->node)) {
+                        if (ms->line - 1 == start_0 || (ms->line - 1 <= start_0 && start_0 <= match_close_line)) {
+                            target_match = ms;
+                            return;
+                        }
+                    }
+                    if (const auto* ifs = std::get_if<cfire::frontend::IfStmt>(&s->node)) {
+                        self(self, ifs->then_body);
+                        self(self, ifs->else_body);
+                    } else if (const auto* fs = std::get_if<cfire::frontend::ForStmt>(&s->node)) {
+                        self(self, fs->body);
+                    } else if (const auto* ms2 = std::get_if<cfire::frontend::MatchStmt>(&s->node)) {
+                        for (const auto& arm : ms2->arms) self(self, arm.body);
+                    }
+                }
+            };
+            for (const auto& fn : ast->functions) find_match(find_match, fn.body);
+            for (const auto& t : ast->tests) find_match(find_match, t.body);
+            if (target_match) {
+                for (const auto& arm : target_match->arms) {
+                    covered.insert(arm.variant_name);
+                }
+            }
+        }
+
+        std::string arms_text;
+        if (target_enum) {
+            for (const auto& v : target_enum->variants) {
+                if (!covered.contains(v.name)) {
+                    arms_text += arm_indent + v.name;
+                    if (!v.payload_types.empty()) {
+                        arms_text += "(";
+                        for (std::size_t i = 0; i < v.payload_types.size(); ++i) {
+                            if (i > 0) arms_text += ", ";
+                            arms_text += std::format("v{}", i);
+                        }
+                        arms_text += ")";
+                    }
+                    arms_text += " => {\n" + body_indent + "\n" + arm_indent + "}\n";
+                }
+            }
+        } else if (!fallback_variant.empty()) {
+            arms_text = arm_indent + fallback_variant + " => {\n" + body_indent + "\n" + arm_indent + "}\n";
+        }
+
+        int edit_ln_0 = match_close_line;
+        int edit_col_0 = 0;
+        if (match_close_col > 0 && static_cast<std::size_t>(match_close_line) < lines.size()) {
+            const std::string& cl_ln = lines[static_cast<std::size_t>(match_close_line)];
+            std::size_t first_non_ws = cl_ln.find_first_not_of(" \t");
+            if (first_non_ws != std::string::npos && static_cast<int>(first_non_ws) == match_close_col) {
+                edit_col_0 = 0;
+            } else {
+                edit_col_0 = match_close_col;
+                arms_text = "\n" + arms_text + base_indent;
+            }
+        }
+
+        if (!arms_text.empty()) {
+            FixItEdit edit;
+            edit.title = std::format("Fill missing match arms for '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
+                enum_name.empty() ? "enum" : enum_name);
+            edit.start_line = edit_ln_0 + 1;
+            edit.start_col = edit_col_0 + 1;
+            edit.end_line = edit_ln_0 + 1;
+            edit.end_col = edit_col_0 + 1;
+            edit.replacement = arms_text;
+            edit.is_preferred = true;
+            d.fixits.push_back(std::move(edit));
+        }
+
+        std::string wildcard_text = arm_indent + "_ => {\n" + body_indent + "\n" + arm_indent + "}\n";
+        if (edit_col_0 > 0) {
+            wildcard_text = "\n" + wildcard_text + base_indent;
+        }
+        FixItEdit wc_edit;
+        wc_edit.title = "Add wildcard pattern '_ => { ... }' (cfire/NON-EXHAUSTIVE-MATCH)";
+        wc_edit.start_line = edit_ln_0 + 1;
+        wc_edit.start_col = edit_col_0 + 1;
+        wc_edit.end_line = edit_ln_0 + 1;
+        wc_edit.end_col = edit_col_0 + 1;
+        wc_edit.replacement = wildcard_text;
+        wc_edit.is_preferred = false;
+        d.fixits.push_back(std::move(wc_edit));
     }
 }
 
@@ -489,6 +556,16 @@ inline auto apply_fixits(
     std::size_t last_start = result.size() + 1;
 
     for (const auto& oe : offset_edits) {
+        if (!applied_edits.empty()) {
+            const auto& prev = applied_edits.back();
+            if (prev.start_line == oe.edit.start_line &&
+                prev.start_col == oe.edit.start_col &&
+                prev.end_line == oe.edit.end_line &&
+                prev.end_col == oe.edit.end_col &&
+                prev.replacement == oe.edit.replacement) {
+                continue;
+            }
+        }
         if (oe.end_byte <= last_start && oe.start_byte <= oe.end_byte && oe.end_byte <= result.size()) {
             result.replace(oe.start_byte, oe.end_byte - oe.start_byte, oe.edit.replacement);
             last_start = oe.start_byte;

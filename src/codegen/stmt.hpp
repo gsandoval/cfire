@@ -3,6 +3,14 @@
 
 namespace cfire::frontend {
 
+inline void Emitter::emit_or_handler_body(const OrExpr& or_ex, std::string_view tmp, bool in_main) {
+    if (!or_ex.err_var.empty()) {
+        local_vars_.insert(or_ex.err_var);
+        writeln(std::format("const cfire::Error& {} = cfire::extract_or_error({});", sanitize_cpp_ident(or_ex.err_var), tmp));
+    }
+    for (const auto& hs : or_ex.handler_body) emit_stmt(hs, in_main);
+}
+
 inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
     if (!s) return;
     if (s->line > 0) emit_line_directive(s->line);
@@ -20,30 +28,11 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             std::string vname = sanitize_cpp_ident(st.name);
             if (st.init) {
                 if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
-                    if (in_main) {
+                    if (in_main || in_test_) {
                         int id = ++try_count_;
                         std::string tmp = std::format("_try_{}", id);
                         writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                        writeln(std::format("if (!{}.has_value()) {{", tmp));
-                        ++indent_;
-                        writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                        writeln("return 1;");
-                        --indent_;
-                        writeln("}");
-                        writeln(std::format("auto {} = std::move(*{});", vname, tmp));
-                        return;
-                    }
-                    if (in_test_) {
-                        int id = ++try_count_;
-                        std::string tmp = std::format("_try_{}", id);
-                        writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                        writeln(std::format("if (!{}.has_value()) {{", tmp));
-                        ++indent_;
-                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                            tmp, escape_line_path(cf_.ast.path), s->line));
-                        writeln("return;");
-                        --indent_;
-                        writeln("}");
+                        emit_try_unwrap_check(tmp, s->line, in_main);
                         writeln(std::format("auto {} = std::move(*{});", vname, tmp));
                         return;
                     }
@@ -57,11 +46,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
                     writeln(std::format("if (!{}.has_value()) {{", tmp));
                     ++indent_;
-                    if (!or_ex->err_var.empty()) {
-                        local_vars_.insert(or_ex->err_var);
-                        writeln(std::format("const cfire::Error& {} = cfire::extract_or_error({});", sanitize_cpp_ident(or_ex->err_var), tmp));
-                    }
-                    for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
+                    emit_or_handler_body(*or_ex, tmp, in_main);
                     --indent_;
                     writeln("}");
                     writeln(std::format("auto {} = std::move(*{});", vname, tmp));
@@ -148,11 +133,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
                     writeln(std::format("if (!{}.has_value()) {{", tmp));
                     ++indent_;
-                    if (!or_ex->err_var.empty()) {
-                        local_vars_.insert(or_ex->err_var);
-                        writeln(std::format("const cfire::Error& {} = cfire::extract_or_error({});", sanitize_cpp_ident(or_ex->err_var), tmp));
-                    }
-                    for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
+                    emit_or_handler_body(*or_ex, tmp, in_main);
                     --indent_;
                     writeln("} else {");
                     ++indent_;
@@ -313,29 +294,11 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             bool top_try = st.expr && std::holds_alternative<TryExpr>(st.expr->node);
             hoist_subexpr_tries(st.expr, in_main, s->line, top_try);
             if (const auto* try_ex = std::get_if<TryExpr>(&st.expr->node)) {
-                if (in_main) {
+                if (in_main || in_test_) {
                     int id = ++try_count_;
                     std::string tmp = std::format("_try_v_{}", id);
                     writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                    writeln(std::format("if (!{}.has_value()) {{", tmp));
-                    ++indent_;
-                    writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                    writeln("return 1;");
-                    --indent_;
-                    writeln("}");
-                    return;
-                }
-                if (in_test_) {
-                    int id = ++try_count_;
-                    std::string tmp = std::format("_try_v_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                    writeln(std::format("if (!{}.has_value()) {{", tmp));
-                    ++indent_;
-                    writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                        tmp, escape_line_path(cf_.ast.path), s->line));
-                    writeln("return;");
-                    --indent_;
-                    writeln("}");
+                    emit_try_unwrap_check(tmp, s->line, in_main);
                     return;
                 }
                 writeln(std::format("CFIRE_TRY({});", emit_expr(try_ex->inner)));
@@ -347,11 +310,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
                 writeln(std::format("if (!{}.has_value()) {{", tmp));
                 ++indent_;
-                if (!or_ex->err_var.empty()) {
-                    local_vars_.insert(or_ex->err_var);
-                    writeln(std::format("const cfire::Error& {} = cfire::extract_or_error({});", sanitize_cpp_ident(or_ex->err_var), tmp));
-                }
-                for (const auto& hs : or_ex->handler_body) emit_stmt(hs, in_main);
+                emit_or_handler_body(*or_ex, tmp, in_main);
                 --indent_;
                 writeln("}");
                 return;
@@ -370,20 +329,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 int id = ++try_count_;
                 std::string tmp = std::format("_try_{}", id);
                 writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
-                writeln(std::format("if (!{}.has_value()) {{", tmp));
-                ++indent_;
-                if (in_main) {
-                    writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                    writeln("return 1;");
-                } else if (in_test_) {
-                    writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                        tmp, escape_line_path(cf_.ast.path), s->line));
-                    writeln("return;");
-                } else {
-                    writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
-                }
-                --indent_;
-                writeln("}");
+                emit_try_unwrap_check(tmp, s->line, in_main);
                 writeln(std::format("auto [{}] = std::move(*{});", names, tmp));
                 return;
             }
@@ -403,26 +349,53 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
     }, s->node);
 }
 
-inline void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
+inline void Emitter::emit_match_common(
+    const ExprPtr& target,
+    bool is_move,
+    const std::vector<MatchArm>& arms,
+    bool is_expr,
+    bool in_main,
+    std::ostringstream& sb
+) {
+    auto write_ln = [&](std::string_view line) {
+        if (is_expr) {
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << line << "\n";
+        } else {
+            writeln(line);
+        }
+    };
+    auto write_tail = [&](std::string_view line) {
+        if (is_expr) {
+            for (int i = 0; i < indent_; ++i) sb << "    ";
+            sb << line;
+        } else {
+            writeln(std::format("{};", line));
+        }
+    };
+    auto emit_arm = [&](const std::vector<StmtPtr>& body) {
+        if (is_expr) {
+            emit_match_arm_body(sb, body, true);
+        } else {
+            for (const auto& b : body) emit_stmt(b, in_main);
+        }
+    };
+
     bool is_slice_match = false;
     bool is_primitive_match = false;
-    for (const auto& a : ms.arms) {
-        if (a.is_slice_pattern) {
-            is_slice_match = true;
-        }
-        if (!a.literal_val.empty()) {
-            is_primitive_match = true;
-        }
+    for (const auto& a : arms) {
+        if (a.is_slice_pattern) is_slice_match = true;
+        if (!a.literal_val.empty()) is_primitive_match = true;
     }
 
     if (is_slice_match) {
-        std::string target_expr = emit_expr(ms.target);
-        writeln("{");
+        std::string target_expr = emit_expr(target);
+        write_ln(is_expr ? "([&]() -> auto {" : "{");
         ++indent_;
-        writeln(std::format("const auto& _target = {};", target_expr));
-        writeln("bool _matched = false;");
+        write_ln(std::format("const auto& _target = {};", target_expr));
+        write_ln("bool _matched = false;");
 
-        for (const auto& arm : ms.arms) {
+        for (const auto& arm : arms) {
             if (arm.is_slice_pattern) {
                 std::size_t head_count = arm.slice_head.size();
                 std::size_t tail_count = arm.slice_tail.size();
@@ -432,66 +405,60 @@ inline void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
                 if (!arm.slice_has_rest) {
                     cond = std::format("_target.size() == {}", min_size);
                 } else {
-                    if (min_size == 0) {
-                        cond = "true";
-                    } else {
-                        cond = std::format("_target.size() >= {}", min_size);
-                    }
+                    cond = (min_size == 0) ? "true" : std::format("_target.size() >= {}", min_size);
                 }
 
-                writeln(std::format("if (!_matched && {}) {{", cond));
+                write_ln(std::format("if (!_matched && {}) {{", cond));
                 ++indent_;
-                writeln("_matched = true;");
+                write_ln("_matched = true;");
 
-                // Bind head elements
                 for (std::size_t i = 0; i < head_count; ++i) {
                     if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
                         local_vars_.insert(arm.slice_head[i]);
-                        writeln(std::format("const auto& {} = _target[{}];", arm.slice_head[i], i));
+                        write_ln(std::format("const auto& {} = _target[{}];", arm.slice_head[i], i));
                     }
                 }
-
-                // Bind rest slice
                 if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
                     stmts_reference_ident(arm.body, arm.slice_rest)) {
                     local_vars_.insert(arm.slice_rest);
                     std::string rest_start = std::to_string(head_count);
                     std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
-                    writeln(std::format("auto {} = cfire::slice(_target, {}, {});", arm.slice_rest, rest_start, rest_end));
+                    write_ln(std::format("auto {} = cfire::slice(_target, {}, {});", arm.slice_rest, rest_start, rest_end));
                 }
-
-                // Bind tail elements
                 for (std::size_t i = 0; i < tail_count; ++i) {
                     if (arm.slice_tail[i] != "_" && stmts_reference_ident(arm.body, arm.slice_tail[i])) {
                         local_vars_.insert(arm.slice_tail[i]);
                         std::size_t offset_from_end = tail_count - i;
-                        writeln(std::format("const auto& {} = _target[_target.size() - {}];", arm.slice_tail[i], offset_from_end));
+                        write_ln(std::format("const auto& {} = _target[_target.size() - {}];", arm.slice_tail[i], offset_from_end));
                     }
                 }
 
-                for (const auto& b : arm.body) {
-                    emit_stmt(b, in_main);
-                }
+                emit_arm(arm.body);
                 --indent_;
-                writeln("}");
+                write_ln("}");
             } else if (arm.variant_name == "_") {
-                writeln("if (!_matched) {");
+                write_ln("if (!_matched) {");
                 ++indent_;
-                writeln("_matched = true;");
-                for (const auto& b : arm.body) {
-                    emit_stmt(b, in_main);
-                }
+                write_ln("_matched = true;");
+                emit_arm(arm.body);
                 --indent_;
-                writeln("}");
+                write_ln("}");
             }
         }
+        if (is_expr) {
+            write_ln("cfire::assert_true(false, \"unreachable slice match\");");
+        }
         --indent_;
-        writeln("}");
+        if (is_expr) {
+            write_tail("})()");
+        } else {
+            write_ln("}");
+        }
         return;
     }
 
     std::string enum_name;
-    for (const auto& arm : ms.arms) {
+    for (const auto& arm : arms) {
         if (!arm.enum_prefix.empty()) {
             enum_name = arm.enum_prefix;
             break;
@@ -502,79 +469,89 @@ inline void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
         }
     }
 
-    if (is_primitive_match || (enum_name.empty() && !is_slice_match)) {
-        std::string target_expr = emit_expr(ms.target);
-        writeln("{");
+    if (is_primitive_match || enum_name.empty()) {
+        std::string target_expr = emit_expr(target);
+        write_ln(is_expr ? "([&]() -> auto {" : "{");
         ++indent_;
-        writeln(std::format("const auto& _target = {};", target_expr));
+        write_ln(std::format("const auto& _target = {};", target_expr));
         bool first = true;
-        for (const auto& arm : ms.arms) {
+        for (const auto& arm : arms) {
             if (arm.variant_name == "_" && arm.literal_val.empty()) {
-                writeln("else {");
+                write_ln("else {");
                 ++indent_;
-                for (const auto& b : arm.body) emit_stmt(b, in_main);
+                emit_arm(arm.body);
                 --indent_;
-                writeln("}");
+                write_ln("}");
             } else {
                 std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
                 if (first) {
-                    writeln(std::format("if (_target == {}) {{", pat));
+                    write_ln(std::format("if (_target == {}) {{", pat));
                     first = false;
                 } else {
-                    writeln(std::format("else if (_target == {}) {{", pat));
+                    write_ln(std::format("else if (_target == {}) {{", pat));
                 }
                 ++indent_;
-                for (const auto& b : arm.body) emit_stmt(b, in_main);
+                emit_arm(arm.body);
                 --indent_;
-                writeln("}");
+                write_ln("}");
             }
         }
+        if (is_expr) {
+            write_ln("cfire::assert_true(false, \"unreachable match\");");
+        }
         --indent_;
-        writeln("}");
+        if (is_expr) {
+            write_tail("})()");
+        } else {
+            write_ln("}");
+        }
         return;
     }
 
-    bool is_rvalue = ms.is_move || (ms.target && std::holds_alternative<CallExpr>(ms.target->node));
-
-    writeln(std::format("std::visit(cfire::overloaded{{"));
+    bool is_rvalue = is_move || (target && std::holds_alternative<CallExpr>(target->node));
+    std::string_view ret_arrow = is_expr ? " -> auto " : " ";
+    write_ln("std::visit(cfire::overloaded{");
     ++indent_;
-    for (const auto& arm : ms.arms) {
+    for (const auto& arm : arms) {
         if (arm.variant_name == "_") {
-            writeln(is_rvalue ? "[&](auto&&) {" : "[&](const auto&) {");
+            write_ln(std::format("[&]({}){}{{", is_rvalue ? "auto&&" : "const auto&", ret_arrow));
         } else {
             if (is_rvalue) {
-                writeln(std::format("[&]({}::_{}&& _m) {{", enum_name, arm.variant_name));
+                write_ln(std::format("[&]({}::_{}&& _m){}{{", enum_name, arm.variant_name, ret_arrow));
             } else {
-                writeln(std::format("[&](const {}::_{}& _m) {{", enum_name, arm.variant_name));
+                write_ln(std::format("[&](const {}::_{}& _m){}{{", enum_name, arm.variant_name, ret_arrow));
             }
         }
         ++indent_;
         for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
             local_vars_.insert(arm.bindings[i]);
             if (is_rvalue) {
-                writeln(std::format("auto&& {} = std::move(_m._{});", arm.bindings[i], i));
+                write_ln(std::format("auto&& {} = std::move(_m._{});", arm.bindings[i], i));
             } else {
-                writeln(std::format("const auto& {} = _m._{};", arm.bindings[i], i));
+                write_ln(std::format("const auto& {} = _m._{};", arm.bindings[i], i));
             }
         }
-        for (const auto& b : arm.body) {
-            emit_stmt(b, in_main);
-        }
+        emit_arm(arm.body);
         --indent_;
-        writeln("},");
+        write_ln("},");
     }
     --indent_;
     if (is_rvalue) {
-        std::string t_str = emit_expr(ms.target);
+        std::string t_str = emit_expr(target);
         if (t_str.starts_with("std::move(") && t_str.ends_with(")")) {
             std::string inner = t_str.substr(10, t_str.size() - 11);
-            writeln(std::format("}}, std::move({}._v));", inner));
+            write_tail(std::format("}}, std::move({}._v))", inner));
         } else {
-            writeln(std::format("}}, std::move({}._v));", t_str));
+            write_tail(std::format("}}, std::move({}._v))", t_str));
         }
     } else {
-        writeln(std::format("}}, {}._v);", emit_expr(ms.target)));
+        write_tail(std::format("}}, {}._v)", emit_expr(target)));
     }
+}
+
+inline void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
+    std::ostringstream dummy;
+    emit_match_common(ms.target, ms.is_move, ms.arms, false, in_main, dummy);
 }
 
 inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr) {
@@ -604,17 +581,7 @@ inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vect
                 continue;
             }
         }
-        Emitter sub(cf_);
-        sub.indent_ = indent_;
-        sub.cur_fn_ = cur_fn_;
-        sub.used_core_ = used_core_;
-        sub.used_vendor_ = used_vendor_;
-        sub.local_vars_ = local_vars_;
-        sub.ptr_vars_ = ptr_vars_;
-        sub.optional_vars_ = optional_vars_;
-        sub.map_vars_ = map_vars_;
-        sub.fixed_array_vars_ = fixed_array_vars_;
-        sub.in_main_ = in_main_;
+        Emitter sub = make_sub_emitter();
         sub.emit_stmt(body[i], false);
         sb << sub.buf_.str();
         local_vars_ = sub.local_vars_;
@@ -626,178 +593,8 @@ inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vect
 }
 
 [[nodiscard]] inline auto Emitter::emit_match_expr(const MatchExpr& me) -> std::string {
-    bool is_slice_match = false;
-    bool is_primitive_match = false;
-    for (const auto& a : me.arms) {
-        if (a.is_slice_pattern) is_slice_match = true;
-        if (!a.literal_val.empty()) is_primitive_match = true;
-    }
-
-    std::string enum_name;
-    for (const auto& arm : me.arms) {
-        if (!arm.enum_prefix.empty()) {
-            enum_name = arm.enum_prefix;
-            break;
-        }
-        if (auto it = cf_.variant_to_enum.find(arm.variant_name); it != cf_.variant_to_enum.end()) {
-            enum_name = it->second;
-            break;
-        }
-    }
-
     std::ostringstream sb;
-    if (is_slice_match) {
-        sb << "([&]() -> auto {\n";
-        ++indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "const auto& _target = " << emit_expr(me.target) << ";\n";
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "bool _matched = false;\n";
-
-        for (const auto& arm : me.arms) {
-            if (arm.is_slice_pattern) {
-                std::size_t head_count = arm.slice_head.size();
-                std::size_t tail_count = arm.slice_tail.size();
-                std::size_t min_size = head_count + tail_count;
-
-                std::string cond;
-                if (!arm.slice_has_rest) {
-                    cond = std::format("_target.size() == {}", min_size);
-                } else {
-                    if (min_size == 0) cond = "true";
-                    else cond = std::format("_target.size() >= {}", min_size);
-                }
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "if (!_matched && " << cond << ") {\n";
-                ++indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "_matched = true;\n";
-                for (std::size_t i = 0; i < head_count; ++i) {
-                    if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
-                        for (int j = 0; j < indent_; ++j) sb << "    ";
-                        sb << "const auto& " << arm.slice_head[i] << " = _target[" << i << "];\n";
-                    }
-                }
-                if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
-                    stmts_reference_ident(arm.body, arm.slice_rest)) {
-                    std::string rest_start = std::to_string(head_count);
-                    std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
-                    for (int j = 0; j < indent_; ++j) sb << "    ";
-                    sb << "auto " << arm.slice_rest << " = cfire::slice(_target, " << rest_start << ", " << rest_end << ");\n";
-                }
-                for (std::size_t i = 0; i < tail_count; ++i) {
-                    if (arm.slice_tail[i] != "_" && stmts_reference_ident(arm.body, arm.slice_tail[i])) {
-                        std::size_t offset_from_end = tail_count - i;
-                        for (int j = 0; j < indent_; ++j) sb << "    ";
-                        sb << "const auto& " << arm.slice_tail[i] << " = _target[_target.size() - " << offset_from_end << "];\n";
-                    }
-                }
-                emit_match_arm_body(sb, arm.body, true);
-                --indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "}\n";
-            } else if (arm.variant_name == "_") {
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "if (!_matched) {\n";
-                ++indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "_matched = true;\n";
-                emit_match_arm_body(sb, arm.body, true);
-                --indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "}\n";
-            }
-        }
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "cfire::assert_true(false, \"unreachable slice match\");\n";
-        --indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "})()";
-        return sb.str();
-    }
-
-    if (is_primitive_match || enum_name.empty()) {
-        sb << "([&]() -> auto {\n";
-        ++indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "const auto& _target = " << emit_expr(me.target) << ";\n";
-        bool first = true;
-        for (const auto& arm : me.arms) {
-            if (arm.variant_name == "_" && arm.literal_val.empty()) {
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "else {\n";
-                ++indent_;
-                emit_match_arm_body(sb, arm.body, true);
-                --indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "}\n";
-            } else {
-                std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                if (first) {
-                    sb << "if (_target == " << pat << ") {\n";
-                    first = false;
-                } else {
-                    sb << "else if (_target == " << pat << ") {\n";
-                }
-                ++indent_;
-                emit_match_arm_body(sb, arm.body, true);
-                --indent_;
-                for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "}\n";
-            }
-        }
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "cfire::assert_true(false, \"unreachable match\");\n";
-        --indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "})()";
-        return sb.str();
-    }
-
-    // Tagged enum match:
-    bool is_rvalue = me.is_move || (me.target && std::holds_alternative<CallExpr>(me.target->node));
-    sb << "std::visit(cfire::overloaded{\n";
-    ++indent_;
-    for (const auto& arm : me.arms) {
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        if (arm.variant_name == "_") {
-            sb << (is_rvalue ? "[&](auto&&) -> auto {\n" : "[&](const auto&) -> auto {\n");
-        } else {
-            if (is_rvalue) {
-                sb << std::format("[&]({}::_{}&& _m) -> auto {{\n", enum_name, arm.variant_name);
-            } else {
-                sb << std::format("[&](const {}::_{}& _m) -> auto {{\n", enum_name, arm.variant_name);
-            }
-        }
-        ++indent_;
-        for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
-            local_vars_.insert(arm.bindings[i]);
-            for (int j = 0; j < indent_; ++j) sb << "    ";
-            if (is_rvalue) {
-                sb << std::format("auto&& {} = std::move(_m._{});\n", arm.bindings[i], i);
-            } else {
-                sb << std::format("const auto& {} = _m._{};\n", arm.bindings[i], i);
-            }
-        }
-        emit_match_arm_body(sb, arm.body, true);
-        --indent_;
-        for (int i = 0; i < indent_; ++i) sb << "    ";
-        sb << "},\n";
-    }
-    --indent_;
-    for (int i = 0; i < indent_; ++i) sb << "    ";
-    if (is_rvalue) {
-        std::string t_str = emit_expr(me.target);
-        if (t_str.starts_with("std::move(") && t_str.ends_with(")")) {
-            std::string inner = t_str.substr(10, t_str.size() - 11);
-            sb << "}, std::move(" << inner << "._v))";
-        } else {
-            sb << "}, std::move(" << t_str << "._v))";
-        }
-    } else {
-        sb << "}, " << emit_expr(me.target) << "._v)";
-    }
+    emit_match_common(me.target, me.is_move, me.arms, true, false, sb);
     return sb.str();
 }
 

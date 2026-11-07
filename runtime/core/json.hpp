@@ -13,27 +13,7 @@
 namespace cfire::json {
 
 [[nodiscard]] inline auto escape_string(std::string_view sv) -> std::string {
-    std::string out;
-    out.reserve(sv.size() + 16);
-    for (char c : sv) {
-        switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\b': out += "\\b"; break;
-            case '\f': out += "\\f"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20) {
-                    out += std::format("\\u{:04x}", static_cast<unsigned int>(static_cast<unsigned char>(c)));
-                } else {
-                    out.push_back(c);
-                }
-                break;
-        }
-    }
-    return out;
+    return cfire::detail::json_escape(sv);
 }
 
 struct Value;

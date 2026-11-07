@@ -517,7 +517,8 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
     }
 
     // 3. Toolchain detection & wasm build verification
-    auto build_cli_out = run_cfire(std::format("build --target=wasm \"{}\"", cli_cf.string()));
+    auto out_wasm_html = tmp.path / "cli.html";
+    auto build_cli_out = run_cfire(std::format("build --target=wasm \"{}\" -o \"{}\"", cli_cf.string(), out_wasm_html.string()));
     int has_empp = 0;
     (void)cfire::bridge::run_command_capture("which em++ 2>/dev/null", has_empp);
     if (has_empp == 0) {

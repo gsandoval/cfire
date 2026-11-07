@@ -466,10 +466,8 @@ private:
                 }
                 if (cur().kind == TokenKind::RawString) {
                     field.raw_tag = advance().lexeme;
-                    static const std::regex s_tag_re(R"re((\w+):"([^"]*)")re");
-                    for (auto it = std::sregex_iterator(field.raw_tag.begin(), field.raw_tag.end(), s_tag_re);
-                         it != std::sregex_iterator(); ++it) {
-                        field.tags[(*it)[1].str()] = (*it)[2].str();
+                    for (auto& [k, v] : parse_struct_tags(field.raw_tag)) {
+                        field.tags[std::move(k)] = std::move(v);
                     }
                 }
                 st.fields.push_back(std::move(field));
@@ -585,21 +583,19 @@ private:
         TypeRef tr;
         if (cur().kind == TokenKind::Amp) {
             advance();
+            bool mut_borrow = false;
             if (cur().kind == TokenKind::KwMut) {
                 advance();
-                tr.is_mut_borrow = true;
-            } else {
-                tr.is_borrow = true;
+                mut_borrow = true;
             }
             auto inner = parse_type_ref();
             if (!inner) return std::unexpected(inner.error());
-            tr.name = inner->name;
-            tr.is_slice = inner->is_slice;
-            tr.is_array = inner->is_array;
-            tr.array_len = inner->array_len;
-            tr.is_map = inner->is_map;
-            tr.key_type = inner->key_type;
-            tr.elem_type = inner->elem_type ? inner->elem_type : std::make_shared<TypeRef>(std::move(*inner));
+            tr = *inner;
+            tr.is_mut_borrow = mut_borrow;
+            tr.is_borrow = !mut_borrow;
+            if (!inner->elem_type) {
+                tr.elem_type = std::make_shared<TypeRef>(std::move(*inner));
+            }
         } else if (cur().kind == TokenKind::Star) {
             advance();
             if (cur().kind == TokenKind::KwMut) {
@@ -687,6 +683,7 @@ private:
                 auto rt = parse_type_ref();
                 if (!rt) return std::unexpected(rt.error());
                 rtype = std::move(*rt);
+                hoist_nested_fallible_optional(rtype);
             }
             tr.is_fn = true;
             tr.fn_params = std::move(ptypes);
@@ -1803,6 +1800,7 @@ private:
             StructLitScope scope(*this, false);
             auto rtype = parse_type_ref();
             if (!rtype) return std::unexpected(rtype.error());
+            hoist_nested_fallible_optional(*rtype);
             cl.return_type = std::move(*rtype);
         }
         if (cur().kind == TokenKind::KwAsync) {

@@ -64,68 +64,7 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto simd_cosine_sim(std::span<const float> a, std::span<const float> b) noexcept -> double {
-    std::size_t n = std::min(a.size(), b.size());
-    if (n == 0) return 0.0;
-    std::size_t i = 0;
-    double dot = 0.0;
-    double na = 0.0;
-    double nb = 0.0;
-#if defined(__AVX2__)
-    __m256 v_dot = _mm256_setzero_ps();
-    __m256 v_na  = _mm256_setzero_ps();
-    __m256 v_nb  = _mm256_setzero_ps();
-    for (; i + 8 <= n; i += 8) {
-        __m256 va = _mm256_loadu_ps(a.data() + i);
-        __m256 vb = _mm256_loadu_ps(b.data() + i);
-        v_dot = _mm256_add_ps(v_dot, _mm256_mul_ps(va, vb));
-        v_na  = _mm256_add_ps(v_na,  _mm256_mul_ps(va, va));
-        v_nb  = _mm256_add_ps(v_nb,  _mm256_mul_ps(vb, vb));
-    }
-    alignas(32) float t_dot[8], t_na[8], t_nb[8];
-    _mm256_store_ps(t_dot, v_dot);
-    _mm256_store_ps(t_na,  v_na);
-    _mm256_store_ps(t_nb,  v_nb);
-    for (int k = 0; k < 8; ++k) { dot += t_dot[k]; na += t_na[k]; nb += t_nb[k]; }
-#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
-    float32x4_t v_dot = vdupq_n_f32(0.0f);
-    float32x4_t v_na  = vdupq_n_f32(0.0f);
-    float32x4_t v_nb  = vdupq_n_f32(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        float32x4_t va = vld1q_f32(a.data() + i);
-        float32x4_t vb = vld1q_f32(b.data() + i);
-        v_dot = vfmaq_f32(v_dot, va, vb);
-        v_na  = vfmaq_f32(v_na,  va, va);
-        v_nb  = vfmaq_f32(v_nb,  vb, vb);
-    }
-    dot += static_cast<double>(vaddvq_f32(v_dot));
-    na  += static_cast<double>(vaddvq_f32(v_na));
-    nb  += static_cast<double>(vaddvq_f32(v_nb));
-#elif defined(__wasm_simd128__)
-    v128_t v_dot = wasm_f32x4_splat(0.0f);
-    v128_t v_na  = wasm_f32x4_splat(0.0f);
-    v128_t v_nb  = wasm_f32x4_splat(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        v128_t va = wasm_v128_load(a.data() + i);
-        v128_t vb = wasm_v128_load(b.data() + i);
-        v_dot = wasm_f32x4_add(v_dot, wasm_f32x4_mul(va, vb));
-        v_na  = wasm_f32x4_add(v_na,  wasm_f32x4_mul(va, va));
-        v_nb  = wasm_f32x4_add(v_nb,  wasm_f32x4_mul(vb, vb));
-    }
-    alignas(16) float t_dot[4], t_na[4], t_nb[4];
-    wasm_v128_store(t_dot, v_dot);
-    wasm_v128_store(t_na,  v_na);
-    wasm_v128_store(t_nb,  v_nb);
-    for (int k = 0; k < 4; ++k) { dot += t_dot[k]; na += t_na[k]; nb += t_nb[k]; }
-#endif
-    for (; i < n; ++i) {
-        double va = static_cast<double>(a[i]);
-        double vb = static_cast<double>(b[i]);
-        dot += va * vb;
-        na += va * va;
-        nb += vb * vb;
-    }
-    double denom = std::sqrt(na) * std::sqrt(nb);
-    return denom > 1e-12 ? (dot / denom) : 0.0;
+    return cfire::detail::simd_cosine_similarity(a, b);
 }
 
 inline void sql_vec_cosine_similarity(sqlite3_context* ctx, int argc, sqlite3_value** argv) noexcept {
@@ -150,15 +89,7 @@ inline void sql_vec_l2_distance(sqlite3_context* ctx, int argc, sqlite3_value** 
     std::vector<float> s0, s1;
     auto a = extract_f32_span(argv[0], s0);
     auto b = extract_f32_span(argv[1], s1);
-    std::size_t n = std::min(a.size(), b.size());
-    if (n == 0) { sqlite3_result_double(ctx, 0.0); return; }
-
-    double sum_sq = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-        double d = static_cast<double>(a[i]) - static_cast<double>(b[i]);
-        sum_sq += d * d;
-    }
-    sqlite3_result_double(ctx, std::sqrt(sum_sq));
+    sqlite3_result_double(ctx, cfire::detail::simd_l2_distance(a, b));
 }
 
 inline void sql_vec_dot(sqlite3_context* ctx, int argc, sqlite3_value** argv) noexcept {
@@ -166,12 +97,7 @@ inline void sql_vec_dot(sqlite3_context* ctx, int argc, sqlite3_value** argv) no
     std::vector<float> s0, s1;
     auto a = extract_f32_span(argv[0], s0);
     auto b = extract_f32_span(argv[1], s1);
-    std::size_t n = std::min(a.size(), b.size());
-    double dot = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-        dot += static_cast<double>(a[i]) * static_cast<double>(b[i]);
-    }
-    sqlite3_result_double(ctx, dot);
+    sqlite3_result_double(ctx, cfire::detail::simd_dot_product(a, b));
 }
 
 inline void sql_vec_dims(sqlite3_context* ctx, int argc, sqlite3_value** argv) noexcept {
@@ -346,12 +272,7 @@ public:
 
     [[nodiscard]] auto apply_key(std::span<const std::byte> key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
-        std::string hex;
-        hex.reserve(key.size() * 2);
-        for (std::byte b : key) {
-            hex += std::format("{:02x}", static_cast<unsigned char>(b));
-        }
-        return exec(std::format("PRAGMA key = \"x'{}'\";", hex));
+        return exec(std::format("PRAGMA key = \"x'{}'\";", cfire::detail::bytes_to_hex(key)));
     }
 
     [[nodiscard]] auto apply_key(std::span<const std::uint8_t> key) -> std::expected<void, cfire::Error> {
@@ -370,12 +291,7 @@ public:
     }
 
     [[nodiscard]] auto rekey(std::span<const std::byte> new_key) -> std::expected<void, cfire::Error> {
-        std::string hex;
-        hex.reserve(new_key.size() * 2);
-        for (std::byte b : new_key) {
-            hex += std::format("{:02x}", static_cast<unsigned char>(b));
-        }
-        return exec(std::format("PRAGMA rekey = \"x'{}'\";", hex));
+        return exec(std::format("PRAGMA rekey = \"x'{}'\";", cfire::detail::bytes_to_hex(new_key)));
     }
 
     [[nodiscard]] auto rekey(std::span<const std::uint8_t> new_key) -> std::expected<void, cfire::Error> {
