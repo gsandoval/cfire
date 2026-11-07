@@ -893,6 +893,12 @@ public:
     }
 #endif
 
+#if defined(CFIRE_HAS_WIN32_BACKEND)
+    void run_win32_webview2(bool offscreen_test = false, std::int32_t timeout_ms = 3000) {
+        detail::run_win32_webview2(state_, offscreen_test, timeout_ms);
+    }
+#endif
+
 private:
     std::shared_ptr<detail::AppState> state_;
 

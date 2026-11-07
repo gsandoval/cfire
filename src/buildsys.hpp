@@ -78,6 +78,18 @@ namespace cfire::build {
     if (test_mode) {
         plan.cflags.push_back("-DCFIRE_TEST_MODE=1");
     }
+    bool is_win_target = (plan.target_triple.find("windows") != std::string::npos ||
+                          plan.target_triple.find("win32") != std::string::npos ||
+                          plan.target_triple.find("mingw") != std::string::npos);
+#if defined(_WIN32)
+    if (!is_wasm) {
+        is_win_target = true;
+    }
+#endif
+    if (is_win_target) {
+        plan.ldflags.push_back("-lws2_32");
+        plan.ldflags.push_back("-ladvapi32");
+    }
 
     // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08, CF-031)
     if (cf_file.filename() != "build.cf") {
@@ -368,14 +380,14 @@ namespace cfire::build {
                         }
 #elif defined(_WIN32)
                         plan.ldflags.insert(plan.ldflags.end(), {
-                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32"
+                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32"
                         });
 #endif
                         if (plan.target_triple.find("windows") != std::string::npos ||
                             plan.target_triple.find("win32") != std::string::npos ||
                             plan.target_triple.find("mingw") != std::string::npos) {
                             plan.ldflags.insert(plan.ldflags.end(), {
-                                "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32"
+                                "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32"
                             });
                         }
                     }

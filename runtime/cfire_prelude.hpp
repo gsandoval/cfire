@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <charconv>
@@ -51,6 +52,8 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
 #endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <io.h>
 #include <fcntl.h>
 #include <windows.h>
@@ -617,6 +620,90 @@ template <typename T>
 // --- Safe, EINTR-Resilient POSIX File Descriptor Primitives & Console Input ---
 namespace detail {
 
+#if defined(_WIN32)
+inline void ensure_winsock() noexcept {
+    static const bool initialized = []() noexcept {
+        WSADATA wsa{};
+        return ::WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    (void)initialized;
+}
+
+inline auto win32_socket_table_mu() -> std::mutex& {
+    static std::mutex mu;
+    return mu;
+}
+
+inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
+    static std::unordered_map<int, SOCKET> tbl;
+    return tbl;
+}
+
+[[nodiscard]] inline auto register_win32_socket_fd(SOCKET s) -> int {
+    static std::atomic<int> next_fd{100000};
+    int fd = next_fd.fetch_add(1, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lk(win32_socket_table_mu());
+    win32_socket_table()[fd] = s;
+    return fd;
+}
+
+[[nodiscard]] inline auto lookup_win32_socket_fd(int fd, SOCKET& out) -> bool {
+    std::lock_guard<std::mutex> lk(win32_socket_table_mu());
+    auto it = win32_socket_table().find(fd);
+    if (it == win32_socket_table().end()) return false;
+    out = it->second;
+    return true;
+}
+
+[[nodiscard]] inline auto take_win32_socket_fd(int fd, SOCKET& out) -> bool {
+    std::lock_guard<std::mutex> lk(win32_socket_table_mu());
+    auto it = win32_socket_table().find(fd);
+    if (it == win32_socket_table().end()) return false;
+    out = it->second;
+    win32_socket_table().erase(it);
+    return true;
+}
+
+[[nodiscard]] inline auto win32_create_socketpair(SOCKET out_pair[2]) noexcept -> bool {
+    ensure_winsock();
+    SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listener == INVALID_SOCKET) return false;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    if (::bind(listener, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
+        ::listen(listener, 1) != 0) {
+        ::closesocket(listener);
+        return false;
+    }
+    int len = sizeof(addr);
+    if (::getsockname(listener, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+        ::closesocket(listener);
+        return false;
+    }
+    SOCKET client = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (client == INVALID_SOCKET) {
+        ::closesocket(listener);
+        return false;
+    }
+    if (::connect(client, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        ::closesocket(client);
+        ::closesocket(listener);
+        return false;
+    }
+    SOCKET server = ::accept(listener, nullptr, nullptr);
+    ::closesocket(listener);
+    if (server == INVALID_SOCKET) {
+        ::closesocket(client);
+        return false;
+    }
+    out_pair[0] = client;
+    out_pair[1] = server;
+    return true;
+}
+#endif
+
 [[nodiscard]] inline auto fd_read(int fd, std::span<std::byte> buf) -> std::expected<std::size_t, Error> {
     if (fd < 0) return make_error("invalid file descriptor");
     if (buf.empty()) return std::size_t{0};
@@ -630,6 +717,15 @@ namespace detail {
         return static_cast<std::size_t>(n);
     }
 #else
+    SOCKET s = INVALID_SOCKET;
+    if (lookup_win32_socket_fd(fd, s)) {
+        int chunk = static_cast<int>(std::min<std::size_t>(buf.size(), 0x7fffffffU));
+        int n = ::recv(s, reinterpret_cast<char*>(buf.data()), chunk, 0);
+        if (n < 0) {
+            return make_error(std::format("fd_read({}) socket recv failed: {}", fd, ::WSAGetLastError()));
+        }
+        return static_cast<std::size_t>(n);
+    }
     int n = ::_read(fd, buf.data(), static_cast<unsigned int>(std::min<std::size_t>(buf.size(), 0x7fffffffU)));
     if (n < 0) {
         return make_error(std::format("fd_read({}) failed: {}", fd, std::strerror(errno)));
@@ -656,6 +752,19 @@ namespace detail {
     }
     return total;
 #else
+    SOCKET s = INVALID_SOCKET;
+    if (lookup_win32_socket_fd(fd, s)) {
+        std::size_t total = 0;
+        while (total < data.size()) {
+            int chunk = static_cast<int>(std::min<std::size_t>(data.size() - total, 0x7fffffffU));
+            int n = ::send(s, reinterpret_cast<const char*>(data.data() + total), chunk, 0);
+            if (n <= 0) {
+                return make_error(std::format("fd_write({}) socket send failed: {}", fd, ::WSAGetLastError()));
+            }
+            total += static_cast<std::size_t>(n);
+        }
+        return total;
+    }
     std::size_t total = 0;
     while (total < data.size()) {
         unsigned int chunk = static_cast<unsigned int>(std::min<std::size_t>(data.size() - total, 0x7fffffffU));
@@ -704,7 +813,8 @@ namespace detail {
             break;
         }
 #else
-        int n = ::_read(fd, &ch, 1);
+        SOCKET s = INVALID_SOCKET;
+        int n = lookup_win32_socket_fd(fd, s) ? ::recv(s, &ch, 1, 0) : ::_read(fd, &ch, 1);
         if (n < 0) break;
 #endif
         if (n == 0) break;

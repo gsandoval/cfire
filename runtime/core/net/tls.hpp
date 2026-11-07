@@ -1,7 +1,11 @@
 #pragma once
 #include "tcp.hpp"
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -83,7 +87,11 @@ struct OpenSslApi {
 template <typename FnPtr>
 inline void load_sym(void* handle, const char* name, FnPtr& out) noexcept {
     if (!handle) return;
+#if defined(_WIN32)
+    void* sym = reinterpret_cast<void*>(::GetProcAddress(static_cast<HMODULE>(handle), name));
+#else
     void* sym = ::dlsym(handle, name);
+#endif
     if (sym) {
         std::memcpy(&out, &sym, sizeof(FnPtr));
     }
@@ -102,6 +110,9 @@ inline auto api() -> const OpenSslApi& {
             "libcrypto.dylib",
             "libcrypto.so.3",
             "libcrypto.so",
+            "libcrypto-3-x64.dll",
+            "libcrypto-3.dll",
+            "libcrypto.dll",
         };
         static constexpr const char* kSslPaths[] = {
             "/opt/homebrew/opt/openssl@3/lib/libssl.dylib",
@@ -113,14 +124,25 @@ inline auto api() -> const OpenSslApi& {
             "libssl.dylib",
             "libssl.so.3",
             "libssl.so",
+            "libssl-3-x64.dll",
+            "libssl-3.dll",
+            "libssl.dll",
         };
 
         for (const char* p : kCryptoPaths) {
+#if defined(_WIN32)
+            a.crypto_handle = static_cast<void*>(::LoadLibraryA(p));
+#else
             a.crypto_handle = ::dlopen(p, RTLD_LAZY | RTLD_GLOBAL);
+#endif
             if (a.crypto_handle) break;
         }
         for (const char* p : kSslPaths) {
+#if defined(_WIN32)
+            a.ssl_handle = static_cast<void*>(::LoadLibraryA(p));
+#else
             a.ssl_handle = ::dlopen(p, RTLD_LAZY | RTLD_GLOBAL);
+#endif
             if (a.ssl_handle) break;
         }
 

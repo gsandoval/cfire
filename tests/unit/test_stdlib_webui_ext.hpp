@@ -246,6 +246,404 @@ int main() {
         linux_res.assert_ok("Linux WebKitGTK backend mock-header compilation and URI/IPC verification");
     }
 
+    // 7b. Verify Windows Win32 + WebView2 Backend Compilation, Clipboard, Dialogs, Tray & WndProc via Mock Win32 Headers
+    {
+        std::string_view win32_mock_cpp = R"CPP(
+#define CFIRE_TEST_WIN32_BACKEND 1
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <cwchar>
+#include <map>
+#include <string>
+#include <vector>
+
+using BOOL = int;
+using UINT = unsigned int;
+using DWORD = unsigned long;
+using WPARAM = std::uintptr_t;
+using LPARAM = std::intptr_t;
+using LRESULT = std::intptr_t;
+using LONG_PTR = std::intptr_t;
+using UINT_PTR = std::uintptr_t;
+using HRESULT = long;
+using HANDLE = void*;
+using HGLOBAL = void*;
+using HWND = void*;
+using HMENU = void*;
+using HINSTANCE = void*;
+using HICON = void*;
+using HCURSOR = void*;
+using HBRUSH = void*;
+using HDC = void*;
+
+#ifndef CALLBACK
+#define CALLBACK
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+constexpr UINT CP_UTF8 = 65001;
+constexpr UINT GMEM_MOVEABLE = 2;
+constexpr UINT CF_UNICODETEXT = 13;
+constexpr int MAX_PATH = 260;
+
+constexpr DWORD OFN_PATHMUSTEXIST = 0x800;
+constexpr DWORD OFN_FILEMUSTEXIST = 0x1000;
+constexpr DWORD OFN_NOCHANGEDIR = 0x8;
+constexpr DWORD OFN_OVERWRITEPROMPT = 0x2;
+constexpr UINT MB_OK = 0;
+constexpr UINT MB_ICONINFORMATION = 0x40;
+
+constexpr unsigned char FIXED_PITCH = 1;
+constexpr DWORD TRUETYPE_FONTTYPE = 0x4;
+constexpr unsigned char DEFAULT_CHARSET = 1;
+constexpr int GWLP_USERDATA = -21;
+
+constexpr UINT WM_CREATE = 1;
+constexpr UINT WM_DESTROY = 2;
+constexpr UINT WM_SIZE = 5;
+constexpr UINT WM_CLOSE = 0x10;
+constexpr UINT WM_QUIT = 0x12;
+constexpr UINT WM_GETMINMAXINFO = 0x24;
+constexpr UINT WM_SETICON = 0x80;
+constexpr UINT WM_NCLBUTTONDOWN = 0xA1;
+constexpr UINT WM_LBUTTONUP = 0x202;
+constexpr UINT WM_RBUTTONUP = 0x205;
+constexpr UINT WM_APP = 0x8000;
+
+constexpr int SW_HIDE = 0;
+constexpr int SW_SHOW = 5;
+constexpr int SW_MINIMIZE = 6;
+constexpr int SW_MAXIMIZE = 3;
+constexpr int SW_RESTORE = 9;
+constexpr UINT SWP_NOMOVE = 2;
+constexpr UINT SWP_NOZORDER = 4;
+constexpr WPARAM HTCAPTION = 2;
+
+constexpr UINT MF_SEPARATOR = 0x800;
+constexpr UINT MF_STRING = 0;
+constexpr UINT TPM_RETURNCMD = 0x100;
+constexpr UINT TPM_NONOTIFY = 0x80;
+constexpr UINT TPM_RIGHTBUTTON = 0x2;
+
+constexpr DWORD COINIT_APARTMENTTHREADED = 2;
+constexpr UINT CS_HREDRAW = 2;
+constexpr UINT CS_VREDRAW = 1;
+constexpr DWORD WS_POPUP = 0x80000000U;
+constexpr DWORD WS_OVERLAPPEDWINDOW = 0x00CF0000U;
+constexpr DWORD WS_EX_TOPMOST = 0x8U;
+constexpr int CW_USEDEFAULT = -2147483647 - 1;
+
+constexpr UINT IMAGE_ICON = 1;
+constexpr UINT LR_LOADFROMFILE = 0x10;
+constexpr UINT LR_DEFAULTSIZE = 0x40;
+constexpr WPARAM ICON_BIG = 1;
+constexpr WPARAM ICON_SMALL = 0;
+
+constexpr UINT NIF_MESSAGE = 1;
+constexpr UINT NIF_ICON = 2;
+constexpr UINT NIF_TIP = 4;
+constexpr DWORD NIM_ADD = 0;
+constexpr DWORD NIM_DELETE = 2;
+constexpr UINT PM_REMOVE = 1;
+
+#define MAKEINTRESOURCEW(i) reinterpret_cast<const wchar_t*>(static_cast<std::uintptr_t>(i))
+#define RGB(r, g, b) (static_cast<DWORD>(r) | (static_cast<DWORD>(g) << 8) | (static_cast<DWORD>(b) << 16))
+
+struct POINT { long x; long y; };
+struct RECT { long left; long top; long right; long bottom; };
+struct MINMAXINFO {
+    POINT ptReserved;
+    POINT ptMaxSize;
+    POINT ptMaxPosition;
+    POINT ptMinTrackSize;
+    POINT ptMaxTrackSize;
+};
+struct CREATESTRUCTW { void* lpCreateParams; };
+struct OPENFILENAMEW {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    wchar_t* lpstrFile;
+    DWORD nMaxFile;
+    const wchar_t* lpstrFilter;
+    DWORD nFilterIndex;
+    const wchar_t* lpstrTitle;
+    DWORD Flags;
+};
+struct LOGFONTW {
+    unsigned char lfCharSet;
+    unsigned char lfPitchAndFamily;
+    wchar_t lfFaceName[32];
+};
+struct TEXTMETRICW { int dummy; };
+using WNDPROC = LRESULT(*)(HWND, UINT, WPARAM, LPARAM);
+struct WNDCLASSEXW {
+    UINT cbSize;
+    UINT style;
+    WNDPROC lpfnWndProc;
+    HINSTANCE hInstance;
+    HCURSOR hCursor;
+    HBRUSH hbrBackground;
+    const wchar_t* lpszClassName;
+};
+struct NOTIFYICONDATAW {
+    DWORD cbSize;
+    HWND hWnd;
+    UINT uID;
+    UINT uFlags;
+    UINT uCallbackMessage;
+    HICON hIcon;
+    wchar_t szTip[128];
+};
+struct MSG {
+    HWND hwnd;
+    UINT message;
+    WPARAM wParam;
+    LPARAM lParam;
+};
+
+static std::map<UINT, std::vector<unsigned char>> g_clip_data;
+static std::map<std::wstring, UINT> g_clip_formats;
+static UINT g_next_fmt = 0xC000;
+static LONG_PTR g_wnd_userdata = 0;
+static WNDPROC g_registered_wndproc = nullptr;
+static int g_dummy_hwnd_obj = 1;
+static int g_tray_add_calls = 0;
+static int g_tray_del_calls = 0;
+static int g_last_show_cmd = -1;
+static std::wstring g_last_msgbox_title;
+static std::wstring g_last_msgbox_text;
+static std::vector<std::wstring> g_popup_menu_items;
+
+inline int MultiByteToWideChar(UINT, DWORD, const char* src, int srclen, wchar_t* dst, int dstlen) {
+    if (!src || srclen <= 0) return 0;
+    if (!dst || dstlen == 0) return srclen;
+    for (int i = 0; i < srclen && i < dstlen; ++i) {
+        dst[i] = static_cast<wchar_t>(static_cast<unsigned char>(src[i]));
+    }
+    return srclen;
+}
+
+inline int WideCharToMultiByte(UINT, DWORD, const wchar_t* src, int srclen, char* dst, int dstlen, const char*, BOOL*) {
+    if (!src || srclen <= 0) return 0;
+    if (!dst || dstlen == 0) return srclen;
+    for (int i = 0; i < srclen && i < dstlen; ++i) {
+        dst[i] = static_cast<char>(src[i] & 0xFF);
+    }
+    return srclen;
+}
+
+inline HWND GetActiveWindow() { return &g_dummy_hwnd_obj; }
+inline BOOL OpenClipboard(HWND) { return TRUE; }
+inline BOOL EmptyClipboard() { g_clip_data.clear(); return TRUE; }
+inline BOOL CloseClipboard() { return TRUE; }
+inline HGLOBAL GlobalAlloc(UINT, std::size_t bytes) {
+    auto* v = new std::vector<unsigned char>(bytes, 0);
+    return v;
+}
+inline void* GlobalLock(HGLOBAL h) {
+    return h ? static_cast<std::vector<unsigned char>*>(h)->data() : nullptr;
+}
+inline BOOL GlobalUnlock(HGLOBAL) { return TRUE; }
+inline HGLOBAL GlobalFree(HGLOBAL h) {
+    delete static_cast<std::vector<unsigned char>*>(h);
+    return nullptr;
+}
+inline HANDLE SetClipboardData(UINT fmt, HANDLE hMem) {
+    if (hMem) {
+        auto* v = static_cast<std::vector<unsigned char>*>(hMem);
+        g_clip_data[fmt] = *v;
+        delete v;
+    }
+    return hMem;
+}
+inline HANDLE GetClipboardData(UINT fmt) {
+    auto it = g_clip_data.find(fmt);
+    if (it == g_clip_data.end()) return nullptr;
+    static std::vector<unsigned char> s_view_buf;
+    s_view_buf = it->second;
+    return &s_view_buf;
+}
+inline UINT RegisterClipboardFormatW(const wchar_t* name) {
+    std::wstring k(name ? name : L"");
+    auto it = g_clip_formats.find(k);
+    if (it != g_clip_formats.end()) return it->second;
+    UINT id = ++g_next_fmt;
+    g_clip_formats[k] = id;
+    return id;
+}
+
+inline BOOL GetOpenFileNameW(OPENFILENAMEW* ofn) {
+    if (!ofn || !ofn->lpstrFile) return FALSE;
+    std::wcsncpy(ofn->lpstrFile, L"C:\\Users\\memo\\vault.kdbx", ofn->nMaxFile - 1);
+    return TRUE;
+}
+inline BOOL GetSaveFileNameW(OPENFILENAMEW* ofn) {
+    if (!ofn || !ofn->lpstrFile) return FALSE;
+    return TRUE;
+}
+inline int MessageBoxW(HWND, const wchar_t* text, const wchar_t* caption, UINT) {
+    g_last_msgbox_text = text ? text : L"";
+    g_last_msgbox_title = caption ? caption : L"";
+    return 1;
+}
+
+inline HDC GetDC(HWND) { return &g_dummy_hwnd_obj; }
+inline int ReleaseDC(HWND, HDC) { return 1; }
+using FONTENUMPROCW = int(*)(const LOGFONTW*, const TEXTMETRICW*, DWORD, LPARAM);
+inline int EnumFontFamiliesExW(HDC, LOGFONTW*, FONTENUMPROCW cb, LPARAM lParam, DWORD) {
+    LOGFONTW lf{};
+    lf.lfPitchAndFamily = FIXED_PITCH;
+    std::wcsncpy(lf.lfFaceName, L"Cascadia Mono", 31);
+    TEXTMETRICW tm{};
+    if (cb) cb(&lf, &tm, TRUETYPE_FONTTYPE, lParam);
+    return 1;
+}
+
+inline LONG_PTR GetWindowLongPtrW(HWND, int) { return g_wnd_userdata; }
+inline LONG_PTR SetWindowLongPtrW(HWND, int, LONG_PTR v) {
+    LONG_PTR old = g_wnd_userdata;
+    g_wnd_userdata = v;
+    return old;
+}
+inline BOOL GetClientRect(HWND, RECT* r) {
+    if (r) *r = RECT{0, 0, 960, 640};
+    return TRUE;
+}
+inline BOOL ShowWindow(HWND, int cmd) { g_last_show_cmd = cmd; return TRUE; }
+inline BOOL DestroyWindow(HWND hwnd) {
+    if (g_registered_wndproc) g_registered_wndproc(hwnd, WM_DESTROY, 0, 0);
+    return TRUE;
+}
+inline HMENU CreatePopupMenu() {
+    g_popup_menu_items.clear();
+    return &g_dummy_hwnd_obj;
+}
+inline BOOL AppendMenuW(HMENU, UINT flags, UINT_PTR, const wchar_t* item) {
+    if (flags == MF_SEPARATOR) g_popup_menu_items.emplace_back(L"-");
+    else if (item) g_popup_menu_items.emplace_back(item);
+    return TRUE;
+}
+inline BOOL GetCursorPos(POINT* pt) { if (pt) *pt = POINT{100, 100}; return TRUE; }
+inline BOOL SetForegroundWindow(HWND) { return TRUE; }
+inline BOOL TrackPopupMenu(HMENU, UINT, int, int, int, HWND, const RECT*) {
+    // Simulate selecting item 1 ("Show Flint")
+    return 1;
+}
+inline BOOL DestroyMenu(HMENU) { return TRUE; }
+inline void PostQuitMessage(int) {}
+inline LRESULT DefWindowProcW(HWND, UINT, WPARAM, LPARAM) { return 0; }
+
+inline HRESULT CoInitializeEx(void*, DWORD) { return 0; }
+inline void CoUninitialize() {}
+inline HINSTANCE GetModuleHandleW(const wchar_t*) { return &g_dummy_hwnd_obj; }
+inline HCURSOR LoadCursorW(HINSTANCE, const wchar_t*) { return &g_dummy_hwnd_obj; }
+inline HBRUSH CreateSolidBrush(DWORD) { return &g_dummy_hwnd_obj; }
+inline UINT RegisterClassExW(const WNDCLASSEXW* wc) {
+    if (wc) g_registered_wndproc = wc->lpfnWndProc;
+    return 1;
+}
+inline HWND CreateWindowExW(DWORD, const wchar_t*, const wchar_t*, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, void* lpParam) {
+    HWND hwnd = &g_dummy_hwnd_obj;
+    if (g_registered_wndproc) {
+        CREATESTRUCTW cs{lpParam};
+        g_registered_wndproc(hwnd, WM_CREATE, 0, reinterpret_cast<LPARAM>(&cs));
+    }
+    return hwnd;
+}
+inline HRESULT DwmSetWindowAttribute(HWND, DWORD, const void*, DWORD) { return 0; }
+inline HANDLE LoadImageW(HINSTANCE, const wchar_t*, UINT, int, int, UINT) { return &g_dummy_hwnd_obj; }
+inline HICON LoadIconW(HINSTANCE, const wchar_t*) { return &g_dummy_hwnd_obj; }
+inline LRESULT SendMessageW(HWND, UINT, WPARAM, LPARAM) { return 0; }
+inline BOOL Shell_NotifyIconW(DWORD msg, NOTIFYICONDATAW*) {
+    if (msg == NIM_ADD) ++g_tray_add_calls;
+    if (msg == NIM_DELETE) ++g_tray_del_calls;
+    return TRUE;
+}
+inline BOOL SetWindowTextW(HWND, const wchar_t*) { return TRUE; }
+inline BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT) { return TRUE; }
+inline BOOL ReleaseCapture() { return TRUE; }
+inline BOOL PostMessageW(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
+    if (g_registered_wndproc) g_registered_wndproc(hwnd, msg, w, l);
+    return TRUE;
+}
+inline BOOL UpdateWindow(HWND) { return TRUE; }
+static int g_peek_step = 0;
+inline BOOL PeekMessageW(MSG* msg, HWND, UINT, UINT, UINT) {
+    if (!msg) return FALSE;
+    ++g_peek_step;
+    if (g_peek_step == 1) {
+        // Step 1: simulate user clicking window close button while hide_on_close is true
+        if (g_registered_wndproc) g_registered_wndproc(&g_dummy_hwnd_obj, WM_CLOSE, 0, 0);
+        return FALSE;
+    }
+    if (g_peek_step == 2) {
+        // Step 2: simulate user right-clicking system tray icon (selects item 1)
+        if (g_registered_wndproc) g_registered_wndproc(&g_dummy_hwnd_obj, WM_APP + 1, 0, WM_RBUTTONUP);
+        return FALSE;
+    }
+    if (g_peek_step == 3) {
+        msg->hwnd = &g_dummy_hwnd_obj;
+        msg->message = WM_QUIT;
+        return TRUE;
+    }
+    return FALSE;
+}
+inline BOOL GetMessageW(MSG*, HWND, UINT, UINT) { return 0; }
+inline BOOL TranslateMessage(const MSG*) { return TRUE; }
+inline LRESULT DispatchMessageW(const MSG*) { return 0; }
+
+#include "core/webui.hpp"
+
+int main() {
+    // 1. UTF-8 <-> Wide round-trip
+    auto w = cfire::webui::detail::utf8_to_wide("Flint Win32");
+    if (cfire::webui::detail::wide_to_utf8(w) != "Flint Win32") return 2;
+
+    // 2. Concealed clipboard & format tags
+    cfire::webui::detail::win32_clipboard_set("top-secret-pw", true);
+    if (cfire::webui::detail::win32_clipboard_get() != "top-secret-pw") return 3;
+    if (!g_clip_formats.contains(L"ExcludeClipboardContentFromMonitorProcessing")) return 4;
+    if (!g_clip_formats.contains(L"CanIncludeInClipboardHistory")) return 5;
+
+    // 3. File & message dialogs + font enumeration
+    if (cfire::webui::detail::win32_open_file_dialog("Open Vault") != "C:\\Users\\memo\\vault.kdbx") return 6;
+    if (cfire::webui::detail::win32_save_file_dialog("Save Vault", "backup.kdbx") != "backup.kdbx") return 7;
+    cfire::webui::detail::win32_message_dialog("Notice", "Saved!");
+    if (g_last_msgbox_title != L"Notice" || g_last_msgbox_text != L"Saved!") return 8;
+    auto fonts = cfire::webui::detail::win32_monospace_fonts();
+    if (fonts.empty() || fonts[0] != "Cascadia Mono") return 9;
+
+    // 4. Full Win32 event loop, tray menu dispatch, and hide_on_close behavior
+    auto app = cfire::webui::new_app("Flint Win32", 960, 640);
+    app.set_hide_on_close(true);
+    app.set_tray("", "Flint SSH");
+    app.add_tray_item("Show Flint", "tray:show");
+    app.add_tray_item("-", "");
+    app.add_tray_item("Quit", "tray:quit");
+
+    int close_req_count = 0;
+    int tray_show_count = 0;
+    app.on("window:close_requested", [&]() { ++close_req_count; });
+    app.on("tray:show", [&]() { ++tray_show_count; });
+
+    app.run_win32_webview2(true, 100);
+
+    if (g_tray_add_calls != 1 || g_tray_del_calls != 1) return 10;
+    if (close_req_count != 1 || !app.is_window_hidden() || g_last_show_cmd != SW_HIDE) return 11;
+    if (tray_show_count != 1 || g_popup_menu_items.size() != 3) return 12;
+    return 0;
+}
+)CPP";
+        auto win32_res = compile_and_run_cpp(win32_mock_cpp, rt_dir, "webui_win32_mock");
+        win32_res.assert_ok("Windows Win32 + WebView2 backend mock-header compilation and clipboard/dialog/tray/WndProc verification");
+    }
+
     // 4. Verify Upstream Stdlib & Extension Additions (CF-002, CF-003, CF-006, CF-007, CF-008, CF-021, CF-022, CF-026, CF-028, CF-043, CF-045, CF-046, CF-053)
     {
         // CF-006: ext:crypto/sodium + PBKDF2 + AES auto-nonce encrypt/decrypt

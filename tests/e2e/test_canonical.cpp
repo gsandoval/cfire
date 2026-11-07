@@ -462,7 +462,6 @@ fn main() {
 
 void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_cfire_cross_compile");
-    (void)rt_dir;
     ScopedTempDir tmp("cfire_cross");
     auto main_cf = tmp.file("main.cf", "package main\n\nfn main() {\n    println(\"cross target test ok\")\n}\n");
 
@@ -477,6 +476,70 @@ void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
     run_cfire(std::format("emit-cpp \"{}\" --target x86_64-apple-darwin", main_cf.string()))
         .assert_ok("cfire emit-cpp --target exit 0 (BS-EXT-02)")
         .assert_contains("auto main(", "emit-cpp contains main (BS-EXT-02)");
+
+    // 3. Windows target resolution (*_windows.cf file selection & Win32 linker flags)
+    ScopedTempDir win_tmp("cfire_win_cross");
+    (void)win_tmp.file("plat_windows.cf", "package main\nfn target_os_tag() -> str { return \"win32-target\" }\n");
+    (void)win_tmp.file("plat_darwin.cf", "package main\nfn target_os_tag() -> str { return \"darwin-target\" }\n");
+    (void)win_tmp.file("plat_linux.cf", "package main\nfn target_os_tag() -> str { return \"linux-target\" }\n");
+    auto win_main = win_tmp.file("main.cf", R"(package main
+import "core:os"
+import "core:fs"
+import "core:cli"
+import "core:crypto/aes"
+import "ext:keychain"
+import "ext:net"
+import "ext:webui"
+
+fn main() {
+    tag := target_os_tag()
+    pid := os.getpid()
+    key := aes.generate_key()
+    app := webui.new_app("Win32 Cross", 800, 600)
+    app.set_hide_on_close(true)
+    println("{tag}:{pid}:{key.len()}")
+}
+)");
+
+    for (const char* triple : {"x86_64-pc-windows-gnu", "x86_64-pc-windows-msvc"}) {
+        auto win_emit = cfire::build::analyze_and_emit(win_main, rt_dir, false, false, triple);
+        require(win_emit.has_value(), std::format("analyze_and_emit for {}", triple));
+        if (win_emit) {
+            require(win_emit->first.contains("\"win32-target\"") && !win_emit->first.contains("\"darwin-target\""),
+                std::format("{} selects *_windows.cf and excludes *_darwin.cf", triple));
+            bool has_ws2 = false;
+            bool has_comdlg = false;
+            for (const auto& lf : win_emit->second.ldflags) {
+                if (lf == "-lws2_32") has_ws2 = true;
+                if (lf == "-lcomdlg32") has_comdlg = true;
+            }
+            require(has_ws2 && has_comdlg, std::format("{} includes -lws2_32 and -lcomdlg32 linker flags", triple));
+        }
+    }
+
+    // 4. Real MinGW-w64 cross-compilation & PE32+ .exe linking when x86_64-w64-mingw32-g++ is available
+    int has_mingw = 0;
+    (void)cfire::bridge::run_command_capture("which x86_64-w64-mingw32-g++ 2>/dev/null", has_mingw);
+    if (has_mingw == 0) {
+        auto win_emit = cfire::build::analyze_and_emit(win_main, rt_dir, false, false, "x86_64-w64-mingw32");
+        require(win_emit.has_value(), "analyze_and_emit for x86_64-w64-mingw32");
+        if (win_emit) {
+            auto cpp_path = win_tmp.path / "win_cross.cpp";
+            auto exe_path = win_tmp.path / "win_cross.exe";
+            {
+                std::ofstream ofs(cpp_path);
+                ofs << win_emit->first;
+            }
+            std::string cmd = std::format(
+                "x86_64-w64-mingw32-g++ -std=c++23 -O2 -Wall -Wextra -I\"{}\" -I\"{}\" \"{}\" -o \"{}\" "
+                "-lws2_32 -ladvapi32 -luser32 -lgdi32 -lshell32 -lole32 -ldwmapi -lcomdlg32 -lstdc++exp",
+                rt_dir.string(), (rt_dir / "vendor").string(), cpp_path.string(), exe_path.string());
+            int mrc = 0;
+            std::string mout = cfire::bridge::run_command_capture(cmd, mrc);
+            require(mrc == 0 && std::filesystem::exists(exe_path),
+                std::format("x86_64-w64-mingw32-g++ cross-compiled and linked win_cross.exe cleanly (rc={}): {}", mrc, mout));
+        }
+    }
 
     std::println("--- PASS: test_cfire_cross_compile");
 }

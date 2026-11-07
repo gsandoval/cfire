@@ -2,7 +2,7 @@
 
 #include "bridge.hpp"
 
-#if defined(_WIN32)
+#if defined(CFIRE_HAS_WIN32_BACKEND)
 
 namespace cfire::webui::detail {
 
@@ -241,7 +241,7 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
                 }
                 return 0;
             }
-            break;
+            return ::DefWindowProcW(hwnd, msg, wParam, lParam);
         }
         case WM_DESTROY: {
             if (ctx && ctx->state) {
@@ -426,4 +426,4 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
 
 } // namespace cfire::webui::detail
 
-#endif // defined(_WIN32)
+#endif // defined(CFIRE_HAS_WIN32_BACKEND)
