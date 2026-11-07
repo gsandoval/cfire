@@ -258,9 +258,26 @@ public:
 #endif
     }
 
-    // SQLCipher Encryption & Rekey Support (`CF-007`)
+    // SQLCipher Encryption & Rekey Support (`CF-007`, `CF-069`)
+    [[nodiscard]] auto has_cipher_support() -> bool {
+        if (!db_) return false;
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, "PRAGMA cipher_version;", -1, &stmt, nullptr) != SQLITE_OK || !stmt) {
+            return false;
+        }
+        auto guard = cfire::scope_exit([stmt] { sqlite3_finalize(stmt); });
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* ver = sqlite3_column_text(stmt, 0);
+            return ver && ver[0] != '\0';
+        }
+        return false;
+    }
+
     [[nodiscard]] auto apply_key(std::string_view key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
+        if (!has_cipher_support()) {
+            return cfire::make_error("sqlite.open_encrypted requires SQLCipher (linked libsqlite3 does not support encryption; install sqlcipher)");
+        }
         std::string escaped;
         escaped.reserve(key.size() + 8);
         for (char c : key) {
@@ -272,6 +289,9 @@ public:
 
     [[nodiscard]] auto apply_key(std::span<const std::byte> key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
+        if (!has_cipher_support()) {
+            return cfire::make_error("sqlite.open_encrypted requires SQLCipher (linked libsqlite3 does not support encryption; install sqlcipher)");
+        }
         return exec(std::format("PRAGMA key = \"x'{}'\";", cfire::detail::bytes_to_hex(key)));
     }
 
@@ -281,6 +301,9 @@ public:
 
     [[nodiscard]] auto rekey(std::string_view new_key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
+        if (!has_cipher_support()) {
+            return cfire::make_error("sqlite.rekey requires SQLCipher (linked libsqlite3 does not support encryption; install sqlcipher)");
+        }
         std::string escaped;
         escaped.reserve(new_key.size() + 8);
         for (char c : new_key) {
@@ -291,6 +314,10 @@ public:
     }
 
     [[nodiscard]] auto rekey(std::span<const std::byte> new_key) -> std::expected<void, cfire::Error> {
+        if (!db_) return cfire::make_error("sqlite connection is closed");
+        if (!has_cipher_support()) {
+            return cfire::make_error("sqlite.rekey requires SQLCipher (linked libsqlite3 does not support encryption; install sqlcipher)");
+        }
         return exec(std::format("PRAGMA rekey = \"x'{}'\";", cfire::detail::bytes_to_hex(new_key)));
     }
 
@@ -319,7 +346,8 @@ private:
     }
 #endif
     sqlite3* raw = nullptr;
-    std::string resolved_str = resolved.string();
+    auto u8 = resolved.u8string();
+    std::string resolved_str(reinterpret_cast<const char*>(u8.data()), u8.size());
     if (sqlite3_open(resolved_str.c_str(), &raw) != SQLITE_OK) {
         std::string err = raw ? sqlite3_errmsg(raw) : "unknown sqlite open error";
         if (raw) sqlite3_close(raw);
@@ -334,8 +362,11 @@ private:
 [[nodiscard]] inline auto open_encrypted(const std::filesystem::path& p, std::string_view key)
     -> std::expected<Conn, cfire::Error>
 {
+    std::error_code ec;
+    auto u8 = p.u8string();
+    std::string p_str(reinterpret_cast<const char*>(u8.data()), u8.size());
+    bool existed_before = (p_str == ":memory:") || std::filesystem::exists(p, ec);
     sqlite3* raw = nullptr;
-    std::string p_str = p.string();
     if (sqlite3_open(p_str.c_str(), &raw) != SQLITE_OK) {
         std::string err = raw ? sqlite3_errmsg(raw) : "unknown sqlite open error";
         if (raw) sqlite3_close(raw);
@@ -343,7 +374,13 @@ private:
     }
     detail::register_vector_functions(raw);
     Conn conn(raw);
-    CFIRE_TRY(conn.apply_key(key));
+    if (auto r = conn.apply_key(key); !r) {
+        conn.close();
+        if (!existed_before) {
+            std::filesystem::remove(p, ec);
+        }
+        return std::unexpected(r.error());
+    }
     (void)conn.exec("PRAGMA journal_mode=WAL;");
     return conn;
 }
@@ -351,8 +388,11 @@ private:
 [[nodiscard]] inline auto open_encrypted(const std::filesystem::path& p, std::span<const std::byte> key)
     -> std::expected<Conn, cfire::Error>
 {
+    std::error_code ec;
+    auto u8 = p.u8string();
+    std::string p_str(reinterpret_cast<const char*>(u8.data()), u8.size());
+    bool existed_before = (p_str == ":memory:") || std::filesystem::exists(p, ec);
     sqlite3* raw = nullptr;
-    std::string p_str = p.string();
     if (sqlite3_open(p_str.c_str(), &raw) != SQLITE_OK) {
         std::string err = raw ? sqlite3_errmsg(raw) : "unknown sqlite open error";
         if (raw) sqlite3_close(raw);
@@ -360,7 +400,13 @@ private:
     }
     detail::register_vector_functions(raw);
     Conn conn(raw);
-    CFIRE_TRY(conn.apply_key(key));
+    if (auto r = conn.apply_key(key); !r) {
+        conn.close();
+        if (!existed_before) {
+            std::filesystem::remove(p, ec);
+        }
+        return std::unexpected(r.error());
+    }
     (void)conn.exec("PRAGMA journal_mode=WAL;");
     return conn;
 }

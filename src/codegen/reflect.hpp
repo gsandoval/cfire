@@ -29,8 +29,7 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
 
     bool can_emit_arbitrary = true;
     for (const auto& fld : st.fields) {
-        if (fld.type.is_ptr || fld.type.is_mut_ptr || fld.type.is_borrow ||
-            fld.type.is_mut_borrow || fld.type.is_fn || !fld.type.smart_wrap.empty()) {
+        if (is_non_value_field_type(fld.type, 0)) {
             can_emit_arbitrary = false;
             break;
         }
@@ -101,7 +100,18 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
         writeln("}");
     }
 
-    if (can_emit_arbitrary && used_core_.contains("json")) {
+    bool can_emit_json = can_emit_arbitrary;
+    if (can_emit_json) {
+        for (const auto& t : tags) {
+            std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
+            if (!jkey.empty() && !can_emit_json_field_type(t.field_type, 0)) {
+                can_emit_json = false;
+                break;
+            }
+        }
+    }
+
+    if (can_emit_json && used_core_.contains("json")) {
         writeln();
         writeln("template <>");
         writeln(std::format("inline auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
@@ -111,6 +121,18 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
         for (const auto& t : tags) {
             std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
             std::string fname = sanitize_cpp_ident(t.field_name);
+            if (auto dit = t.custom_tags.find("default"); dit != t.custom_tags.end()) {
+                const std::string& dval = dit->second;
+                if (t.field_type.name == "str") {
+                    writeln(std::format("out.{} = \"{}\";", fname, escape_unescaped_quotes(dval)));
+                } else if (t.field_type.name == "bool") {
+                    writeln(std::format("out.{} = {};", fname, (dval == "true" || dval == "1") ? "true" : "false"));
+                } else if (!dval.empty() && (t.field_type.name == "u64" || t.field_type.name == "usize" ||
+                           t.field_type.name == "i64" || t.field_type.name == "isize" ||
+                           t.field_type.name == "i32" || t.field_type.name == "f64" || t.field_type.name == "f32")) {
+                    writeln(std::format("out.{} = static_cast<{}>({});", fname, lower_raw_owning_type(t.field_type), dval));
+                }
+            }
             if (!jkey.empty()) {
                 if (t.field_type.is_optional) {
                     std::string inner_cpp = lower_raw_owning_type(t.field_type);
@@ -119,19 +141,19 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
                     std::string elem_cpp = lower_owning_type(*t.field_type.elem_type);
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_vec<{}>(obj, \"{}\"));", fname, elem_cpp, jkey));
                 } else if (t.field_type.name == "str") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "u64" || t.field_type.name == "usize") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "i64" || t.field_type.name == "isize") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "i32") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "f64") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "f32") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f32(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f32(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "bool") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\"));", fname, jkey));
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (is_local_type(t.field_type.name)) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", fname, lower_raw_owning_type(t.field_type), jkey));
                 }

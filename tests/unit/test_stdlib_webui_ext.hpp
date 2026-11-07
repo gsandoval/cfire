@@ -249,6 +249,7 @@ int main() {
     // 4. Verify Upstream Stdlib & Extension Additions (CF-002, CF-003, CF-006, CF-007, CF-008, CF-021, CF-022, CF-026, CF-028, CF-043, CF-045, CF-046, CF-053)
     {
         // CF-006: ext:crypto/sodium + PBKDF2 + AES auto-nonce encrypt/decrypt
+#if defined(CFIRE_SODIUM_NATIVE)
         auto salt = cfire::sodium::random_bytes(16);
         require(salt.size() == 16, "CF-006: sodium::random_bytes(16)");
         auto kdf_key = cfire::sodium::argon2id("flint-master-password", salt, 32);
@@ -260,14 +261,20 @@ int main() {
         require(!cfire::sodium::argon2id_verify(*phc, "wrong-password"),
             "CF-006: sodium::argon2id_verify rejects wrong password");
 
-        auto plain = cfire::to_bytes("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI");
-        auto xsealed = cfire::sodium::xchacha20poly1305_encrypt(*kdf_key, plain);
-        require(xsealed.has_value() && xsealed->size() == plain.size() + 40,
+        auto plain_sod = cfire::to_bytes("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI");
+        auto xsealed = cfire::sodium::xchacha20poly1305_encrypt(*kdf_key, plain_sod);
+        require(xsealed.has_value() && xsealed->size() == plain_sod.size() + 40,
             "CF-006: sodium::xchacha20poly1305_encrypt output size");
         auto xopened = cfire::sodium::xchacha20poly1305_decrypt(*kdf_key, *xsealed);
         require(xopened.has_value() && str(*xopened) == "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI",
             "CF-006: sodium::xchacha20poly1305_decrypt round-trip");
+        auto b2 = cfire::sodium::blake2b(plain_sod, 32);
+        require(b2.has_value() && b2->size() == 32, "CF-006: sodium::blake2b(32)");
+        auto subk = cfire::sodium::derive_subkey(*kdf_key, 1, "flintvlt", 32);
+        require(subk.has_value() && subk->size() == 32, "CF-006: sodium::derive_subkey");
         cfire::sodium::memzero(*kdf_key);
+#endif
+        auto plain = cfire::to_bytes("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI");
 
         auto aes_key = cfire::aes::generate_key();
         auto aes_blob = cfire::aes::encrypt(aes_key, plain);
@@ -373,10 +380,16 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(70));
         require(app.clipboard_get() == "user-copied-later", "CF-053: auto-clear does not wipe newer clipboard content");
 
-        // CF-051 & CF-052: set_icon and add_menu_item
+        // CF-051, CF-052 & CF-082: set_icon, add_menu_item, system tray, and window visibility controls
         app.set_icon("assets/flint-icon.svg");
         app.add_menu_item("Shell", "New Tab", "t", "menu:new_tab");
+        app.set_tray("assets/flint-tray.png", "Flint SSH");
+        app.add_tray_item("Quick Connect", "tray:connect");
+        app.set_hide_on_close(true);
+        app.hide_window();
+        app.show_window();
         require(!app.monospace_fonts().empty(), "CF-045: monospace_fonts returns non-empty list");
+        require(cfire::os::getpid() > 0, "CF-064: os::getpid() > 0");
 
         // CF-005: ext:net/ssh (dial, host_key_fingerprint, known_hosts, auth_publickey_mem, exec, PTY, SFTP, forward)
         {

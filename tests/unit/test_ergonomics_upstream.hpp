@@ -513,12 +513,18 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     }
     assert(unwrapped_opt.export == 55)
 
-    // CF-007: sqlite.open_encrypted + []byte BLOB parameter binding
-    mut db := try sqlite.open_encrypted(":memory:", "vault-secret-key")
+    // CF-007 / CF-069: sqlite.open + []byte BLOB parameter binding (and fail-closed open_encrypted check)
+    mut db := try sqlite.open(":memory:")
     defer db.close()
     try db.exec("CREATE TABLE secrets (id TEXT, cipher BLOB)")
     blob := []byte("encrypted-payload")
     try db.exec("INSERT INTO secrets VALUES (?1, ?2)", "k1", blob)
+
+    mut enc_db := sqlite.open_encrypted(":memory:", "vault-secret-key") or err {
+        assert(err.message().contains("SQLCipher"))
+        return
+    }
+    defer enc_db.close()
 }
 )CF");
             run_cfire(std::format("test \"{}\"", upstream_cf.string()))
@@ -743,6 +749,201 @@ fn main() {
                 auto exit3_res = run_cfire(std::format("run \"{}\"", exit3_cf.string()));
                 require(exit3_res.exit_code == 3,
                         std::format("E2: expected cfire run os.exit(3) to return exit code 3, got {}", exit3_res.exit_code));
+
+                // 7. Upstream Round 3 Audit & Orthogonality Suite (CF-006..CF-085)
+                // CF-006 / CF-070: Reject `core:crypto/sodium` and `core:sodium` in Sema
+                require_sema_error(R"(package main
+import "core:crypto/sodium"
+fn main() {}
+)", "cfire/INVALID-IMPORT", "bad_core_sodium.cf");
+
+                // CF-059: Reject `.find()` and `.rfind()` on `str` receivers with fix-it pointing to `index_of` / `last_index_of`
+                require_sema_error(R"(package main
+fn main() {
+    s := "hello:world"
+    pos := s.find(":")
+    println("{}", pos)
+}
+)", "cfire/UNKNOWN-METHOD", "bad_str_find.cf");
+
+                // CF-062: Reject integer literals in `[]byte` slice literal with `cfire/TYPE-MISMATCH`
+                require_sema_error(R"(package main
+fn main() {
+    b: []byte = [0x61, 0x62]
+    println("{}", b.len())
+}
+)", "cfire/TYPE-MISMATCH", "bad_byte_slice_lit.cf");
+
+                // CF-060: Passing `s[a..b]` (`&str`) to owning `str` parameter emits `cfire/TYPE-MISMATCH` with `&str` / `str(...)` hint
+                require_sema_error(R"(package main
+fn consume_owned(s: str) {}
+fn main() {
+    full := "hello world"
+    consume_owned(full[0..5])
+}
+)", "cfire/TYPE-MISMATCH", "bad_slice_view_owned.cf");
+
+                // CF-085: Reject `shared(v)` constructor syntax in Sema with fix-it pointing to `make[shared[T]](v)`
+                require_sema_error(R"(package main
+type Box struct {
+    v: i64
+}
+fn main() {
+    b := shared(Box{v: 1})
+    println("{}", b.v)
+}
+)", "cfire/INVALID-SMART-PTR-CTOR", "bad_shared_ctor.cf");
+
+                // Multi-package type & function mangling (CF-017), interpolation (CF-034/CF-060),
+                // JSON default tags (CF-057), JSON non-serializable struct guard (CF-066),
+                // [][]str push (CF-067), #line directives (CF-068), negative struct defaults (CF-078),
+                // nested scope.spawn (CF-083), and smart-pointer auto-deref (CF-085)
+                auto r3_dir = cf_tmp.subpath("round3");
+                auto pkg_a_dir = r3_dir / "pkga";
+                auto pkg_b_dir = r3_dir / "pkgb";
+                std::filesystem::create_directories(pkg_a_dir);
+                std::filesystem::create_directories(pkg_b_dir);
+                (void)cfire::fs::write_text(pkg_a_dir / "a.cf", R"CF(package pkga
+type Record struct {
+    id: i64
+}
+fn make_rec() -> Record {
+    return Record{id: 10}
+}
+)CF");
+                (void)cfire::fs::write_text(pkg_b_dir / "b.cf", R"CF(package pkgb
+type Record struct {
+    id: i64
+}
+fn make_rec() -> Record {
+    return Record{id: 20}
+}
+)CF");
+
+                auto round3_cf = cf_tmp.file("round3/round3_suite.cf", R"CF(package main
+
+import "ext:json"
+import "core:os"
+import "core:sync"
+import "./pkga" as pa
+import "./pkgb" as pb
+
+// CF-078: Negative default values in struct fields
+// CF-057: `default:"..."` tags honored by json.parse when key is absent or null
+type EndpointConfig struct {
+    Host: str `json:"host" default:"127.0.0.1"`
+    Port: i32 = -1 `json:"port" default:"2222"`
+    Bias: f64 = -0.5 `json:"bias"`
+    Enabled: bool `json:"enabled" default:"true"`
+}
+
+// CF-066: Struct holding non-serializable handle (`sync.Mutex`) alongside `ext:json` import
+type RuntimeHolder struct {
+    name: str
+    mu: sync.Mutex
+}
+
+type SharedCounter struct {
+    count: i64
+}
+
+fn (c: SharedCounter) doubled() -> i64 {
+    return c.count * 2
+}
+
+fn borrow_slice(v: &str) -> usize {
+    return v.len()
+}
+
+test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
+    // CF-017: Colliding struct and function names across two imported packages
+    ra := pa.make_rec()
+    rb := pb.make_rec()
+    assert_eq(ra.id + rb.id, 30)
+
+    // CF-063: os.getenv returns non-optional str directly
+    env_val := os.getenv("CFIRE_NONEXISTENT_VAR_999", "fallback_val")
+    assert_eq(env_val, "fallback_val")
+    assert(os.getpid() > 0)
+
+    // CF-059 & CF-060: s.index_of / s.last_index_of and zero-copy &str slice view + explicit str(...) copy
+    addr := "10.0.0.1:8022"
+    colon := addr.index_of(":")
+    last_dot := addr.last_index_of(".")
+    assert_eq(colon, 8)
+    assert_eq(last_dot, 6)
+    host_view := addr[0..usize(colon)]
+    assert_eq(borrow_slice(host_view), 8)
+    owned_host := str(addr[0..usize(colon)])
+    assert_eq(owned_host, "10.0.0.1")
+
+    // CF-034 & CF-060: String interpolation with package call and slice expression
+    interp := "host={addr[0..usize(colon)]} a={pa.make_rec().id}"
+    assert_eq(interp, "host=10.0.0.1 a=10")
+
+    // CF-078 & CF-057: Negative struct field defaults and JSON `default:"..."` tags on missing/null keys
+    def_ep := EndpointConfig{}
+    assert_eq(def_ep.Port, -1)
+    assert(def_ep.Bias == -0.5)
+
+    parsed_ep := try json.parse[EndpointConfig](`{"port": null}`)
+    assert_eq(parsed_ep.Host, "127.0.0.1")
+    assert_eq(parsed_ep.Port, 2222)
+    assert_eq(parsed_ep.Enabled, true)
+
+    // CF-067: Pushing slice literal into [][]str
+    mut rows: [][]str = []
+    rows.push(["col1", "col2"])
+    rows.push(["col3"])
+    assert_eq(rows.len(), 2)
+    assert_eq(rows[0][1], "col2")
+
+    // CF-085: make[shared[T]] and make[own[T]] with auto-deref on .field and .method()
+    sc := make[shared[SharedCounter]](SharedCounter{count: 21})
+    assert_eq(sc.count, 21)
+    assert_eq(sc.doubled(), 42)
+    oc := make[own[SharedCounter]](SharedCounter{count: 9})
+    assert_eq(oc.count, 9)
+    assert_eq(oc.doubled(), 18)
+
+    // CF-083: Nested scope.spawn inside async.scope
+    ch := sync.make_channel[i64](4)
+    async.scope(2) |scope| {
+        scope.spawn(|| {
+            scope.spawn(|| {
+                ch.send(100)
+            })
+            ch.send(23)
+        })
+    }
+    assert_eq(ch.len(), 2)
+    v1 := ch.try_recv() or 0
+    v2 := ch.try_recv() or 0
+    assert_eq(v1 + v2, 123)
+}
+)CF");
+                run_cfire(std::format("test \"{}\"", round3_cf.string()))
+                    .assert_ok("CF-017/034/057/059/060/063/066/067/078/083/085: round 3 upstream suite passes");
+
+                // CF-018 / CF-080: Test file using `import cpp` is automatically exempted from FD leak canary
+                auto cpp_fd_cf = cf_tmp.file("cpp_fd_exempt/cpp_fd_exempt_test.cf", R"CF(package main
+import cpp "<cstdio>"
+test "cpp import exempts fd leak canary" {
+    cpp {
+        std::FILE* fp = std::fopen("/dev/null", "r");
+        (void)fp;
+    }
+}
+)CF");
+                run_cfire(std::format("test \"{}\"", cpp_fd_cf.string()))
+                    .assert_ok("CF-018/080: test suite with `import cpp` is automatically exempted from FD leak canary");
+
+                require(has_cat_fn("core:fs", "rename") && has_cat_fn("core:os", "getpid") &&
+                        has_cat_fn("ext:crypto/sodium", "blake2b") && has_cat_fn("ext:crypto/sodium", "derive_subkey") &&
+                        has_cat_fn("ext:webui", "App.set_tray") && has_cat_fn("ext:webui", "App.add_tray_item") &&
+                        has_cat_fn("ext:webui", "App.hide_window") && has_cat_fn("ext:webui", "App.show_window") &&
+                        has_cat_fn("ext:webui", "App.set_hide_on_close"),
+                        "Round 3 catalog entries present in stdlib_catalog");
             }
         }
     }

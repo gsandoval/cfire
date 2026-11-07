@@ -6,8 +6,10 @@
 #include <vector>
 #include <optional>
 #include <algorithm>
+#if !defined(_WIN32)
 #include <termios.h>
 #include <unistd.h>
+#endif
 
 namespace cfire::cli {
 

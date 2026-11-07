@@ -46,6 +46,112 @@ inline void linux_destroy_cb(GtkWidget* widget, gpointer user_data) {
     gtk_main_quit();
 }
 
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+inline gboolean linux_delete_event_cb(GtkWidget* widget, GdkEvent* /*event*/, gpointer user_data) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (st && st->hide_on_close && !st->quit_requested.load(std::memory_order_relaxed)) {
+        {
+            std::lock_guard<std::recursive_mutex> lock(st->mtx);
+            st->window_hidden = true;
+        }
+        gtk_widget_hide(widget);
+        st->record_emitted("window:close_requested", "{}");
+        st->dispatch_event_internal("window:close_requested", "{}");
+        st->eval_js("window.__cfire_event_dispatch(\"window:close_requested\", {});");
+        return TRUE;
+    }
+    return FALSE;
+}
+
+struct LinuxTrayMenuItemCtx {
+    detail::AppState* st;
+    std::string event;
+};
+
+inline void linux_tray_item_activate_cb(GtkMenuItem* /*item*/, gpointer user_data) {
+    auto* ctx = static_cast<LinuxTrayMenuItemCtx*>(user_data);
+    if (ctx && ctx->st) {
+        ctx->st->record_emitted(ctx->event, "{}");
+        ctx->st->dispatch_event_internal(ctx->event, "{}");
+        std::string ev_escaped = cfire::json::escape_string(ctx->event);
+        ctx->st->eval_js(std::format("window.__cfire_event_dispatch(\"{}\", {{}});", ev_escaped));
+    }
+}
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+inline void linux_tray_popup_cb(GtkStatusIcon* status_icon, guint button, guint activate_time, gpointer user_data) {
+    auto* menu = static_cast<GtkMenu*>(user_data);
+    if (menu) {
+        gtk_menu_popup(menu, nullptr, nullptr, gtk_status_icon_position_menu, status_icon, button, activate_time);
+    }
+}
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+struct LinuxSecretClipboardData {
+    std::string text;
+};
+
+inline void linux_secret_clipboard_get_cb(GtkClipboard* /*cb*/, GtkSelectionData* selection_data, guint info, gpointer user_data) {
+    auto* d = static_cast<LinuxSecretClipboardData*>(user_data);
+    if (!d) return;
+    if (info == 1) {
+        GdkAtom atom = gdk_atom_intern_static_string("x-kde-passwordManagerHint");
+        const guchar secret_hint[] = "secret";
+        gtk_selection_data_set(selection_data, atom, 8, secret_hint, 6);
+    } else {
+        gtk_selection_data_set_text(selection_data, d->text.c_str(), static_cast<gint>(d->text.size()));
+    }
+}
+
+inline void linux_secret_clipboard_clear_cb(GtkClipboard* /*cb*/, gpointer user_data) {
+    auto* d = static_cast<LinuxSecretClipboardData*>(user_data);
+    if (d) {
+        if (!d->text.empty()) {
+            volatile char* p = d->text.data();
+            for (std::size_t i = 0; i < d->text.size(); ++i) p[i] = 0;
+        }
+        delete d;
+    }
+}
+
+inline void linux_clipboard_set(std::string_view text, bool concealed) {
+    if (!gtk_init_check(nullptr, nullptr)) return;
+    GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    if (!cb) return;
+    if (!concealed) {
+        gtk_clipboard_set_text(cb, std::string(text).c_str(), static_cast<gint>(text.size()));
+        return;
+    }
+    static GtkTargetEntry targets[] = {
+        {const_cast<gchar*>("UTF8_STRING"), 0, 0},
+        {const_cast<gchar*>("COMPOUND_TEXT"), 0, 0},
+        {const_cast<gchar*>("TEXT"), 0, 0},
+        {const_cast<gchar*>("STRING"), 0, 0},
+        {const_cast<gchar*>("text/plain;charset=utf-8"), 0, 0},
+        {const_cast<gchar*>("text/plain"), 0, 0},
+        {const_cast<gchar*>("x-kde-passwordManagerHint"), 0, 1},
+    };
+    auto* d = new LinuxSecretClipboardData{std::string(text)};
+    if (!gtk_clipboard_set_with_data(
+            cb,
+            targets,
+            static_cast<guint>(sizeof(targets) / sizeof(targets[0])),
+            linux_secret_clipboard_get_cb,
+            linux_secret_clipboard_clear_cb,
+            d)) {
+        delete d;
+    }
+}
+
+inline gboolean linux_idle_clear_clipboard(gpointer /*data*/) {
+    if (gtk_init_check(nullptr, nullptr)) {
+        GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+        if (cb) gtk_clipboard_set_text(cb, "", 0);
+    }
+    return G_SOURCE_REMOVE;
+}
+#endif
+
 struct LinuxEvalPayload {
     WebKitWebView* webview;
     std::string js;
@@ -75,6 +181,43 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     if (!state_->icon_path.empty()) {
         gtk_window_set_icon_from_file(GTK_WINDOW(window), state_->icon_path.c_str(), nullptr);
     }
+    g_signal_connect(window, "delete-event", G_CALLBACK(linux_delete_event_cb), state_.get());
+    std::vector<std::unique_ptr<LinuxTrayMenuItemCtx>> tray_ctxs;
+    GtkWidget* tray_menu = nullptr;
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    GtkStatusIcon* tray_icon = nullptr;
+    if (state_->has_tray) {
+        if (!state_->tray_icon_path.empty()) {
+            tray_icon = gtk_status_icon_new_from_file(state_->tray_icon_path.c_str());
+        } else {
+            tray_icon = gtk_status_icon_new_from_icon_name("application-x-executable");
+        }
+        if (tray_icon) {
+            if (!state_->tray_tooltip.empty()) {
+                gtk_status_icon_set_tooltip_text(tray_icon, state_->tray_tooltip.c_str());
+            }
+            gtk_status_icon_set_visible(tray_icon, TRUE);
+            if (!state_->tray_items.empty()) {
+                tray_menu = gtk_menu_new();
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                for (const auto& titem : state_->tray_items) {
+                    if (titem.title == "-") {
+                        GtkWidget* sep = gtk_separator_menu_item_new();
+                        gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), sep);
+                        continue;
+                    }
+                    GtkWidget* mi = gtk_menu_item_new_with_label(titem.title.c_str());
+                    auto ctx = std::make_unique<LinuxTrayMenuItemCtx>(LinuxTrayMenuItemCtx{state_.get(), titem.event});
+                    g_signal_connect(mi, "activate", G_CALLBACK(linux_tray_item_activate_cb), ctx.get());
+                    tray_ctxs.push_back(std::move(ctx));
+                    gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), mi);
+                }
+                gtk_widget_show_all(tray_menu);
+                g_signal_connect(tray_icon, "popup-menu", G_CALLBACK(linux_tray_popup_cb), tray_menu);
+            }
+        }
+    }
+    G_GNUC_END_IGNORE_DEPRECATIONS
 #endif
     g_signal_connect(window, "destroy", G_CALLBACK(linux_destroy_cb), state_.get());
 
@@ -121,6 +264,15 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
             if (st->is_maximized) gtk_window_maximize(GTK_WINDOW(window));
             else gtk_window_unmaximize(GTK_WINDOW(window));
         };
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        state_->platform_hide_window = [window]() {
+            gtk_widget_hide(window);
+        };
+        state_->platform_show_window = [window]() {
+            gtk_widget_show_all(window);
+            gtk_window_present(GTK_WINDOW(window));
+        };
+#endif
         state_->platform_quit = []() {
             gtk_main_quit();
         };
@@ -130,6 +282,10 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     gtk_widget_show_all(window);
     gtk_main();
 
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+    if (tray_menu) gtk_widget_destroy(tray_menu);
+    if (tray_icon) g_object_unref(tray_icon);
+#endif
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->platform_eval = nullptr;
@@ -138,6 +294,8 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         state_->platform_fullscreen = nullptr;
         state_->platform_minimize = nullptr;
         state_->platform_maximize = nullptr;
+        state_->platform_hide_window = nullptr;
+        state_->platform_show_window = nullptr;
         state_->platform_quit = nullptr;
     }
 }

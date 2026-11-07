@@ -75,14 +75,17 @@ namespace cfire::build {
     if (plan.is_ios) {
         plan.cflags.push_back("-DPLATFORM_IOS=1");
     }
+    if (test_mode) {
+        plan.cflags.push_back("-DCFIRE_TEST_MODE=1");
+    }
 
-    // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08)
+    // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08, CF-031)
     if (cf_file.filename() != "build.cf") {
         std::filesystem::path found_bcf;
         std::error_code bcf_ec;
         auto search_d = std::filesystem::weakly_canonical(dir, bcf_ec);
         if (bcf_ec || search_d.empty()) search_d = std::filesystem::absolute(dir, bcf_ec);
-        for (int depth = 0; depth < 4 && !search_d.empty(); ++depth) {
+        for (int depth = 0; depth < 8 && !search_d.empty(); ++depth) {
             auto cand_bcf = search_d / "build.cf";
             if (std::filesystem::exists(cand_bcf, bcf_ec)) {
                 found_bcf = cand_bcf;
@@ -97,12 +100,14 @@ namespace cfire::build {
             auto bcf_parent = found_bcf.parent_path();
             if (!parsed->executables.empty()) {
                 const ExecutableSpec* matched_exe = &parsed->executables[0];
+                bool exact_entry_match = false;
                 auto cf_canon = std::filesystem::weakly_canonical(cf_file, bcf_ec);
                 for (const auto& ex : parsed->executables) {
                     if (!ex.entry.empty()) {
                         auto ex_canon = std::filesystem::weakly_canonical(bcf_parent / ex.entry, bcf_ec);
                         if (!bcf_ec && ex_canon == cf_canon) {
                             matched_exe = &ex;
+                            exact_entry_match = true;
                             break;
                         }
                     }
@@ -119,21 +124,35 @@ namespace cfire::build {
                         plan.icon_path = matched_exe->icon;
                     }
                 }
+                std::vector<std::string> fws_to_link;
+                std::vector<std::string> libs_to_link;
+                auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
+                    if (item.empty()) return;
+                    for (const auto& existing : vec) {
+                        if (existing == item) return;
+                    }
+                    vec.push_back(item);
+                };
+                if (test_mode || !exact_entry_match) {
+                    for (const auto& ex : parsed->executables) {
+                        for (const auto& fw : ex.frameworks) add_unique(fws_to_link, fw);
+                        for (const auto& lib : ex.libraries) add_unique(libs_to_link, lib);
+                    }
+                } else {
+                    for (const auto& fw : matched_exe->frameworks) add_unique(fws_to_link, fw);
+                    for (const auto& lib : matched_exe->libraries) add_unique(libs_to_link, lib);
+                }
 #if defined(__APPLE__)
                 if (!is_wasm) {
-                    for (const auto& fw : matched_exe->frameworks) {
-                        if (!fw.empty()) {
-                            plan.ldflags.push_back("-framework");
-                            plan.ldflags.push_back(fw);
-                        }
+                    for (const auto& fw : fws_to_link) {
+                        plan.ldflags.push_back("-framework");
+                        plan.ldflags.push_back(fw);
                     }
                 }
 #endif
                 if (!is_wasm) {
-                    for (const auto& lib : matched_exe->libraries) {
-                        if (!lib.empty()) {
-                            plan.ldflags.push_back(lib.starts_with("-l") ? lib : ("-l" + lib));
-                        }
+                    for (const auto& lib : libs_to_link) {
+                        plan.ldflags.push_back(lib.starts_with("-l") ? lib : ("-l" + lib));
                     }
                 }
             }
@@ -193,8 +212,34 @@ namespace cfire::build {
         {"ext:tako", "simdjson"},
         {"core:webui", "simdjson"},
         {"ext:webui", "simdjson"},
-        {"core:db/sqlite", "sqlite3"},
-        {"ext:db/sqlite", "sqlite3"},
+    };
+
+    auto has_sqlcipher = [&]() -> bool {
+        if (is_wasm || plan.is_ios) return false;
+        std::error_code ec;
+        if (const char* home = std::getenv("HOME")) {
+            auto loc = std::filesystem::path(home) / ".local";
+            if ((std::filesystem::exists(loc / "include" / "sqlcipher" / "sqlite3.h", ec) ||
+                 std::filesystem::exists(loc / "include" / "sqlite3.h", ec)) &&
+                (std::filesystem::exists(loc / "lib" / "libsqlcipher.a", ec) ||
+                 std::filesystem::exists(loc / "lib" / "libsqlcipher.so", ec) ||
+                 std::filesystem::exists(loc / "lib" / "libsqlcipher.dylib", ec))) {
+                return true;
+            }
+        }
+        int sc_rc = 0;
+        (void)bridge::run_command_capture("pkg-config --exists sqlcipher 2>/dev/null", sc_rc);
+        if (sc_rc == 0) return true;
+        for (const char* inc_p : {
+            "/opt/homebrew/opt/sqlcipher/include/sqlcipher/sqlite3.h",
+            "/usr/local/opt/sqlcipher/include/sqlcipher/sqlite3.h",
+            "/opt/homebrew/include/sqlcipher/sqlite3.h",
+            "/usr/local/include/sqlcipher/sqlite3.h",
+            "/usr/include/sqlcipher/sqlite3.h"
+        }) {
+            if (std::filesystem::exists(inc_p, ec)) return true;
+        }
+        return false;
     };
 
     std::unordered_set<std::string> seen_pc;
@@ -236,6 +281,15 @@ namespace cfire::build {
             plan.auto_linked.push_back(imp.path);
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
                 add_pc(it->second);
+            }
+            if (imp.path == "core:db/sqlite" || imp.path == "ext:db/sqlite" ||
+                imp.path == "core:sqlite" || imp.path == "ext:sqlite") {
+                if (has_sqlcipher()) {
+                    add_pc("sqlcipher");
+                    plan.cflags.push_back("-DSQLITE_HAS_CODEC=1");
+                } else {
+                    add_pc("sqlite3");
+                }
             }
             if (imp.path == "core:tako" || imp.path == "ext:tako") {
                 if (const char* env_tako = std::getenv("TAKO_SDK_DIR")) {
@@ -383,18 +437,6 @@ namespace cfire::build {
                                 break;
                             }
                         }
-                        auto cache_raylib_wasm = get_package_cache_root() / "vendor_raylib_wasm";
-                        std::string raylib_web_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_webassembly.zip";
-                        std::cout << "==> Auto-resolving missing vendor:raylib WebAssembly build from " << raylib_web_url << "..." << std::endl;
-                        std::string actual_sha;
-                        auto fetch_res = fetch_archive(raylib_web_url, "", cache_raylib_wasm, actual_sha);
-                        if (fetch_res && std::filesystem::exists(cache_raylib_wasm / "include" / "raylib.h")) {
-                            plan.cflags.push_back("-I" + (cache_raylib_wasm / "include").string());
-                            if (std::filesystem::exists(cache_raylib_wasm / "lib" / "libraylib.a")) {
-                                plan.ldflags.push_back((cache_raylib_wasm / "lib" / "libraylib.a").string());
-                            }
-                            found_raylib_wasm = true;
-                        }
                     }
                     plan.cflags.push_back("-DPLATFORM_WEB");
                     plan.ldflags.push_back("-sUSE_GLFW=3");
@@ -423,15 +465,32 @@ namespace cfire::build {
                 };
                 bool found_raylib = false;
 
-                // 1. Try system pkg-config
-                int chk_rc = 0;
-                (void)bridge::run_command_capture("pkg-config --exists raylib 2>/dev/null", chk_rc);
-                if (chk_rc == 0) {
-                    add_pc("raylib");
-                    found_raylib = true;
+                // 1. Try ~/.local/include + ~/.local/lib first (CF-075)
+                if (const char* home = std::getenv("HOME")) {
+                    auto loc = std::filesystem::path(home) / ".local";
+                    if (is_readable(loc / "include" / "raylib.h")) {
+                        plan.cflags.push_back("-I" + (loc / "include").string());
+                        if (is_readable(loc / "lib" / "libraylib.a")) {
+                            plan.ldflags.push_back((loc / "lib" / "libraylib.a").string());
+                        } else {
+                            plan.ldflags.push_back("-L" + (loc / "lib").string());
+                            plan.ldflags.push_back("-lraylib");
+                        }
+                        found_raylib = true;
+                    }
                 }
 
-                // 2. Try standard system directories
+                // 2. Try system pkg-config
+                if (!found_raylib) {
+                    int chk_rc = 0;
+                    (void)bridge::run_command_capture("pkg-config --exists raylib 2>/dev/null", chk_rc);
+                    if (chk_rc == 0) {
+                        add_pc("raylib");
+                        found_raylib = true;
+                    }
+                }
+
+                // 3. Try standard system directories
                 if (!found_raylib) {
                     for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
                         if (is_readable(std::filesystem::path(inc_dir) / "raylib.h")) {
@@ -450,7 +509,7 @@ namespace cfire::build {
                     }
                 }
 
-                // 3. Try project-local vendor/raylib or ancestor vendor_raylib cache
+                // 4. Try project-local vendor/raylib or ancestor vendor_raylib cache
                 if (!found_raylib) {
                     for (auto cur = std::filesystem::absolute(dir); !cur.empty() && cur != cur.parent_path(); cur = cur.parent_path()) {
                         auto v_dir = cur / "vendor" / "raylib";
@@ -474,7 +533,7 @@ namespace cfire::build {
                     }
                 }
 
-                // 4. Try current working directory cache and global/local package cache
+                // 5. Try current working directory cache and global/local package cache (populated via `cfire setup --raylib`)
                 if (!found_raylib) {
                     auto cwd_cache = std::filesystem::current_path() / ".cfire" / "cache" / "vendor_raylib";
                     if (is_readable(cwd_cache / "include" / "raylib.h") && is_readable(cwd_cache / "lib" / "libraylib.a")) {
@@ -497,27 +556,6 @@ namespace cfire::build {
                     }
                 }
 
-                // 5. If still not found, attempt automatic fetch from official release
-                if (!found_raylib) {
-                    auto cache_raylib = get_package_cache_root() / "vendor_raylib";
-                    std::string raylib_url;
-#if defined(__APPLE__)
-                    raylib_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_macos.tar.gz";
-#elif defined(__linux__)
-                    raylib_url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_linux_amd64.tar.gz";
-#endif
-                    if (!raylib_url.empty()) {
-                        std::cout << "==> Auto-resolving missing vendor:raylib from " << raylib_url << "..." << std::endl;
-                        std::string actual_sha;
-                        auto fetch_res = fetch_archive(raylib_url, "", cache_raylib, actual_sha);
-                        if (fetch_res && is_readable(cache_raylib / "include" / "raylib.h") && is_readable(cache_raylib / "lib" / "libraylib.a")) {
-                            plan.cflags.push_back("-I" + (cache_raylib / "include").string());
-                            plan.ldflags.push_back((cache_raylib / "lib" / "libraylib.a").string());
-                            found_raylib = true;
-                        }
-                    }
-                }
-
                 if (found_raylib) {
 #if defined(__APPLE__)
                     plan.ldflags.insert(plan.ldflags.end(), {"-framework", "Cocoa", "-framework", "IOKit", "-framework", "OpenGL", "-framework", "AudioToolbox", "-framework", "CoreFoundation", "-framework", "ApplicationServices"});
@@ -532,11 +570,15 @@ namespace cfire::build {
                 }
                 } // !is_wasm
             }
-            if (imp.path == "core:crypto/sodium" || imp.path == "ext:crypto/sodium") {
+            if (imp.path == "ext:crypto/sodium" || imp.path == "ext:sodium") {
                 if (!is_wasm && !plan.is_ios) {
                     int sod_rc = 0;
                     (void)bridge::run_command_capture("pkg-config --exists libsodium 2>/dev/null", sod_rc);
                     bool found_sodium = (sod_rc == 0);
+                    if (!found_sodium && std::getenv("HOME")) {
+                        auto loc_inc = std::filesystem::path(std::getenv("HOME")) / ".local" / "include" / "sodium.h";
+                        if (std::filesystem::exists(loc_inc)) found_sodium = true;
+                    }
                     if (!found_sodium) {
                         for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
                             if (std::filesystem::exists(std::filesystem::path(inc_dir) / "sodium.h")) {
@@ -548,6 +590,9 @@ namespace cfire::build {
                     if (found_sodium) {
                         add_pc("libsodium");
                         plan.cflags.push_back("-DCFIRE_HAS_LIBSODIUM=1");
+                    } else if (inspect_clang_ast) {
+                        return std::unexpected(
+                            "ext:crypto/sodium requires libsodium (install via 'brew install libsodium' or 'apt install libsodium-dev')");
                     }
                 }
             }
@@ -573,6 +618,10 @@ namespace cfire::build {
                     int ssh_rc = 0;
                     (void)bridge::run_command_capture("pkg-config --exists libssh 2>/dev/null", ssh_rc);
                     bool found_libssh = (ssh_rc == 0);
+                    if (!found_libssh && std::getenv("HOME")) {
+                        auto loc_inc = std::filesystem::path(std::getenv("HOME")) / ".local" / "include" / "libssh" / "libssh.h";
+                        if (std::filesystem::exists(loc_inc)) found_libssh = true;
+                    }
                     if (!found_libssh) {
                         for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
                             if (std::filesystem::exists(std::filesystem::path(inc_dir) / "libssh" / "libssh.h")) {
@@ -603,6 +652,38 @@ namespace cfire::build {
                 }
             }
             plan.cpp_headers[imp.path] = std::move(*idx);
+        }
+    }
+
+    if (inspect_clang_ast && !is_wasm && seen_pc.contains("simdjson")) {
+        bool has_local_simdjson = false;
+        if (const char* home = std::getenv("HOME")) {
+            auto loc = std::filesystem::path(home) / ".local";
+            std::error_code ec;
+            if (std::filesystem::exists(loc / "include" / "simdjson.h", ec)) {
+                has_local_simdjson = true;
+            }
+        }
+        if (!has_local_simdjson) {
+            int sj_rc = 0;
+            auto sj_ver = bridge::run_command_capture("pkg-config --modversion simdjson 2>/dev/null", sj_rc);
+            sj_ver = trim_whitespace(sj_ver);
+            if (sj_rc == 0 && !sj_ver.empty() && (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
+                int cl_rc = 0;
+                auto cl_ver = bridge::run_command_capture("clang++ -dumpversion 2>/dev/null", cl_rc);
+                cl_ver = trim_whitespace(cl_ver);
+                int cl_maj = 0;
+                if (auto dot = cl_ver.find('.'); dot != std::string::npos) {
+                    if (auto parsed_maj = cfire::detail::parse_int<int>(cl_ver.substr(0, dot))) cl_maj = *parsed_maj;
+                } else if (auto parsed_maj = cfire::detail::parse_int<int>(cl_ver)) {
+                    cl_maj = *parsed_maj;
+                }
+                if (cl_maj >= 19) {
+                    return std::unexpected(std::format(
+                        "system simdjson {} is incompatible with Clang {} (requires simdjson >= 4.0; install simdjson >= 4.0 to ~/.local or upgrade libsimdjson-dev)",
+                        sj_ver, cl_maj));
+                }
+            }
         }
     }
 

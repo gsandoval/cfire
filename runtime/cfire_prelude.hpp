@@ -48,6 +48,9 @@
 #ifndef NOMINMAX
 #define NOMINMAX 1
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
 #include <io.h>
 #include <fcntl.h>
 #include <windows.h>
@@ -477,9 +480,16 @@ private:
 [[nodiscard]] inline auto c_str(const std::string& s CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return s.c_str();
 }
+#if defined(_WIN32)
+[[nodiscard]] inline auto c_str(const std::filesystem::path& p) noexcept -> CStrViewHolder {
+    auto u8 = p.u8string();
+    return CStrViewHolder(std::string_view(reinterpret_cast<const char*>(u8.data()), u8.size()));
+}
+#else
 [[nodiscard]] inline auto c_str(const std::filesystem::path& p CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return p.c_str();
 }
+#endif
 [[nodiscard]] inline auto c_str(const char* s CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return s;
 }
@@ -489,9 +499,16 @@ private:
 [[nodiscard]] inline auto c_arg(const std::string& s CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return s.c_str();
 }
+#if defined(_WIN32)
+[[nodiscard]] inline auto c_arg(const std::filesystem::path& p) noexcept -> CStrViewHolder {
+    auto u8 = p.u8string();
+    return CStrViewHolder(std::string_view(reinterpret_cast<const char*>(u8.data()), u8.size()));
+}
+#else
 [[nodiscard]] inline auto c_arg(const std::filesystem::path& p CFIRE_LIFETIMEBOUND) noexcept -> const char* {
     return p.c_str();
 }
+#endif
 [[nodiscard]] inline auto c_arg(std::string_view sv) noexcept -> CStrViewHolder {
     return CStrViewHolder(sv);
 }
@@ -573,7 +590,7 @@ template <typename T>
     return std::string(reinterpret_cast<const char*>(sp.data()), sp.size());
 }
 
-template <typename T, typename U>
+template <typename T, typename U = T>
 inline void vec_push(std::vector<T>& vec, U&& val) {
     if constexpr (std::is_same_v<T, std::byte> && std::is_integral_v<std::remove_cvref_t<U>>) {
         vec.push_back(static_cast<std::byte>(val));
@@ -1039,46 +1056,101 @@ namespace async {
 class Scope {
 public:
     explicit Scope(std::size_t max_workers = 4)
-        : limiter_(std::make_shared<WorkerLimiter>(max_workers == 0 ? 4 : max_workers)) {}
-    ~Scope() { join_all(); }
+        : state_(std::make_shared<State>(max_workers == 0 ? 4 : max_workers)),
+          is_owner_(true) {}
+
+    Scope(const Scope& other) noexcept
+        : state_(other.state_), is_owner_(false) {}
+
+    auto operator=(const Scope& other) noexcept -> Scope& {
+        if (this != &other) {
+            if (is_owner_) join_all();
+            state_ = other.state_;
+            is_owner_ = false;
+        }
+        return *this;
+    }
+
+    Scope(Scope&& other) noexcept
+        : state_(std::move(other.state_)),
+          is_owner_(std::exchange(other.is_owner_, false)) {}
+
+    auto operator=(Scope&& other) noexcept -> Scope& {
+        if (this != &other) {
+            if (is_owner_) join_all();
+            state_ = std::move(other.state_);
+            is_owner_ = std::exchange(other.is_owner_, false);
+        }
+        return *this;
+    }
+
+    ~Scope() {
+        if (is_owner_) {
+            join_all();
+        }
+    }
 
     template <typename F>
     void spawn(F&& task) {
-        auto lim = limiter_;
-        futures_.emplace_back(std::async(std::launch::async, [lim, fn = std::forward<F>(task)]() mutable {
-            lim->acquire();
-            auto rel = cfire::scope_exit([&] { lim->release(); });
+        if (!state_) return;
+        auto st = state_;
+        auto fut = std::async(std::launch::async, [st, fn = std::forward<F>(task)]() mutable {
+            st->acquire();
+            auto rel = cfire::scope_exit([&] { st->release(); });
             fn();
-        }));
+        });
+        std::lock_guard<std::mutex> lk(state_->state_mu);
+        state_->futures.emplace_back(std::move(fut));
     }
 
     template <typename F>
     void defer(F&& fn) {
-        defers_.emplace_back(std::forward<F>(fn));
+        if (!state_) return;
+        std::lock_guard<std::mutex> lk(state_->state_mu);
+        state_->defers.emplace_back(std::forward<F>(fn));
     }
 
     void join_all() {
-        for (auto& f : futures_) {
-            if (f.valid()) {
-                f.get();
+        if (!state_) return;
+        while (true) {
+            std::vector<std::future<void>> batch;
+            {
+                std::lock_guard<std::mutex> lk(state_->state_mu);
+                if (state_->futures.empty()) break;
+                batch.swap(state_->futures);
+            }
+            for (auto& f : batch) {
+                if (f.valid()) {
+                    f.get();
+                }
             }
         }
-        futures_.clear();
 
-        while (!defers_.empty()) {
-            auto fn = std::move(defers_.back());
-            defers_.pop_back();
+        std::vector<std::function<void()>> defers;
+        {
+            std::lock_guard<std::mutex> lk(state_->state_mu);
+            defers.swap(state_->defers);
+        }
+        while (!defers.empty()) {
+            auto fn = std::move(defers.back());
+            defers.pop_back();
             fn();
         }
     }
 
 private:
-    struct WorkerLimiter {
+    struct State {
         std::mutex mu;
         std::condition_variable cv;
         std::size_t active = 0;
         std::size_t limit = 4;
-        explicit WorkerLimiter(std::size_t lim) : limit(lim) {}
+
+        std::mutex state_mu;
+        std::vector<std::future<void>> futures;
+        std::vector<std::function<void()>> defers;
+
+        explicit State(std::size_t lim) : limit(lim) {}
+
         void acquire() {
             std::unique_lock<std::mutex> lk(mu);
             cv.wait(lk, [&] { return active < limit; });
@@ -1093,9 +1165,8 @@ private:
         }
     };
 
-    std::shared_ptr<WorkerLimiter> limiter_;
-    std::vector<std::future<void>> futures_;
-    std::vector<std::function<void()>> defers_;
+    std::shared_ptr<State> state_;
+    bool is_owner_ = false;
 };
 
 template <typename F>
@@ -1313,7 +1384,9 @@ using cfire::i16;
 using cfire::i32;
 using cfire::i64;
 using cfire::u8;
+#if !defined(_WIN32)
 using cfire::byte;
+#endif
 using cfire::u16;
 using cfire::u32;
 using cfire::u64;

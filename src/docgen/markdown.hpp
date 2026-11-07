@@ -106,6 +106,122 @@ namespace detail {
     return html_escape(cleaned);
 }
 
+[[nodiscard]] inline auto short_part_title(std::string_view raw) -> std::string {
+    if (raw.find("Part I:") != std::string_view::npos) return "Part I &mdash; Tooling &amp; Setup";
+    if (raw.find("Part II:") != std::string_view::npos) return "Part II &mdash; Core Language";
+    if (raw.find("Part III:") != std::string_view::npos) return "Part III &mdash; Core Stdlib";
+    if (raw.find("Part IV:") != std::string_view::npos) return "Part IV &mdash; Net, UI &amp; AI";
+    return clean_nav_title(raw);
+}
+
+[[nodiscard]] inline auto short_chapter_title(int num, std::string_view raw) -> std::string {
+    switch (num) {
+        case 1: return "Install &amp; Setup";
+        case 2: return "Quickstart &amp; Tour";
+        case 3: return "Workspaces &amp; CLI";
+        case 4: return "Types &amp; Control";
+        case 5: return "Functions &amp; Loans";
+        case 6: return "Structs &amp; Enums";
+        case 7: return "Errors &amp; Defer";
+        case 8: return "Strings &amp; Containers";
+        case 9: return "FS, OS &amp; CLI";
+        case 10: return "Concurrency &amp; Channels";
+        case 11: return "C/C++ Interop";
+        case 12: return "Testing &amp; Rules";
+        case 13: return "HTTP, WS &amp; TLS";
+        case 14: return "JSON, SQLite &amp; Crypto";
+        case 15: return "Graphics &amp; iOS UI";
+        case 16: return "Audio &amp; DSP";
+        case 17: return "AI, RAG &amp; MCP";
+        case 18: return "Hybrid WebUI Apps";
+        case 19: return "Production &amp; Examples";
+        default: return clean_nav_title(raw);
+    }
+}
+
+[[nodiscard]] inline auto short_topic_title(std::string_view raw) -> std::string {
+    static const std::pair<std::string_view, std::string_view> kMap[] = {
+        {"How the `cfire` Toolchain Works", "Toolchain"},
+        {"Quick Installation Script", "Quick Install"},
+        {"Checking Toolchain Health", "Doctor & Setup"},
+        {"Building from Source", "Source Build"},
+        {"Understanding the Three Stdlib Namespaces", "Stdlib Tiers"},
+        {"Setting Up WebAssembly & iOS", "WASM & iOS"},
+        {"Connecting Your Editor (LSP)", "LSP & MCP"},
+        {"Trying Ideas Instantly", "Live Eval"},
+        {"Writing Your First `.cf` Program", "Hello World"},
+        {"Checking, Building, Inspecting C++23", "Build & Eject"},
+        {"Scaffolding New Projects", "Project Init"},
+        {"Multi-Package Workspace Layout", "Workspaces"},
+        {"Declarative Build Files", "build.cf Spec"},
+        {"Complete CLI Command Reference", "CLI Commands"},
+        {"Bindings, Scalar Types", "Scalars & Types"},
+        {"Working with Slices", "Slices & Maps"},
+        {"Unified `for` Loops", "Loops & Ranges"},
+        {"Pointers (`*T`, `*mut T`)", "Pointers & RAII"},
+        {"Seeing Every Mutation & Move", "Call-Site Intent"},
+        {"Closures, Trailing Blocks", "Closures & Generics"},
+        {"Loan Tracking:", "Loan Tracking"},
+        {"Structs, Default Field Values", "Structs & Methods"},
+        {"Compile-Time Struct Tags", "Struct Tags"},
+        {"Algebraic Enums, Slice Patterns", "Enums & Match"},
+        {"Structural Interfaces", "Interfaces"},
+        {"Separating Errors from Absence", "T! vs T? Types"},
+        {"Propagating Errors with `try`", "try & or Recovery"},
+        {"Flow-Sensitive Null Pointer Safety", "Null Safety"},
+        {"Deterministic Scope Cleanup", "defer Cleanup"},
+        {"UTF-8 Strings, Unicode Scalars", "UTF-8 & Regex"},
+        {"Zero-Copy Buffer Pointers", "Buffer Pointers"},
+        {"Generic Sets, Priority Queues", "Sets, Heaps & Sort"},
+        {"Streaming File I/O, Clocks", "FS, Time & Rand"},
+        {"Safe Subprocess Execution", "Safe Subprocesses"},
+        {"Compile-Time CLI Flag Parsing", "CLI & Logging"},
+        {"Why Unstructured Threads Fail", "async.scope Tasks"},
+        {"Communicating Across Workers", "MPMC Channels"},
+        {"Hierarchical Cancellation", "Context & Deadlines"},
+        {"Zero-Wrapper Interop:", "Inline C++ Blocks"},
+        {"Importing C Headers", "C Headers & Flags"},
+        {"Orchestrating C, CMake", "Native Libraries"},
+        {"Unit Tests, Doc-Tests", "Unit & Doc Tests"},
+        {"Property-Based Fuzzing", "Fuzzing & Bench"},
+        {"Source-Mapped Sanitizers", "Sanitizers & Fix"},
+        {"Complete 18-Rule", "18 Safety Rules"},
+        {"One Networking Stack", "Cross-Platform Net"},
+        {"Building an HTTP Router", "HTTP & SSE"},
+        {"Upgrading to WebSockets", "WebSockets & TLS"},
+        {"Compile-Time JSON Serialization", "JSON & Schemas"},
+        {"Embedded SQLite WAL", "SQLite & Vectors"},
+        {"Zstandard Compression", "Zstd, AES & Hash"},
+        {"Hardware-Accelerated Canvas", "Raylib & Raygui"},
+        {"Zero-Coordinate iOS Auto-Layout", "iOS Auto-Layout"},
+        {"Lock-Free 64-Voice Mixer", "64-Voice Mixer"},
+        {"Streaming Real-Time DSP", "Real-Time DSP"},
+        {"Unified Cloud & On-Device Inference", "Cloud & Local AI"},
+        {"Schema-Typed Tool Calling", "Structured Tools"},
+        {"Offline Document Ingestion", "Document RAG"},
+        {"Building Model Context Protocol", "MCP Servers"},
+        {"Why `ext:webui`?", "WebUI Architecture"},
+        {"Typed RPC Bindings", "Typed RPC Bindings"},
+        {"Bidirectional Event Bus", "Events & State"},
+        {"Frameless Window Chrome", "Window Chrome"},
+        {"Headless & Live Offscreen", "Offscreen Testing"},
+        {"Blueprint: RAG + HTTP/JSON", "RAG Microservice"},
+        {"Cloud & Local Service Primitives", "Cloud Primitives"},
+        {"Canonical Projects Index", "Examples Index"},
+        {"Further Reference & Module Index", "Module Index"},
+    };
+    for (const auto& [prefix, short_lbl] : kMap) {
+        if (raw.starts_with(prefix)) {
+            return html_escape(short_lbl);
+        }
+    }
+    std::string cleaned = clean_nav_title(raw);
+    auto paren = cleaned.find(" (");
+    if (paren != std::string::npos) cleaned = cleaned.substr(0, paren);
+    if (cleaned.size() > 24) cleaned = cleaned.substr(0, 22) + "..";
+    return cleaned;
+}
+
 [[nodiscard]] inline auto slugify_heading(std::string_view text) -> std::string {
     std::string slug;
     for (char c : text) {
@@ -711,20 +827,20 @@ namespace detail {
     for (size_t i = 0; i < chapters.size(); ++i) {
         auto& ch = chapters[i];
         std::string active_cls = (i == 0) ? " active" : "";
-        panes_html += std::format("<article class=\"chapter-pane{}\" id=\"chapter-pane-{}\" data-chapter=\"{}\" data-part=\"{}\" data-title=\"{}\">\n",
-            active_cls, ch.num_str, ch.num_str, detail::clean_nav_title(ch.part), detail::clean_nav_title(ch.title));
+        panes_html += std::format("<article class=\"chapter-pane{}\" id=\"chapter-pane-{}\" data-chapter=\"{}\" data-part=\"{}\" data-title=\"{}\" data-short-title=\"{}\">\n",
+            active_cls, ch.num_str, ch.num_str, detail::clean_nav_title(ch.part), detail::clean_nav_title(ch.title), detail::short_chapter_title(ch.num, ch.title));
         panes_html += "  <div class=\"chapter-intro\">\n" + ch.html + "  </div>\n";
 
-        // Render Bite-Sized Topic Pill Bar if chapter has subheads
+        // Render Bite-Sized Topic Pill Bar if chapter has subheads (compact 2-word labels on desktop)
         if (!ch.subheads.empty()) {
             panes_html += "  <div class=\"topic-pill-bar\">\n";
-            panes_html += std::format("    <span class=\"topic-pill-label\">Ch {} Topics ({})</span>\n", ch.num_str, ch.subheads.size());
+            panes_html += std::format("    <span class=\"topic-pill-label\">Ch {} ({})</span>\n", ch.num_str, ch.subheads.size());
             for (size_t s = 0; s < ch.subheads.size(); ++s) {
                 std::string sid = ch.subheads[s].id.substr(1);
                 std::string pill_active = (s == 0) ? " active" : "";
                 panes_html += std::format(
-                    "    <a href=\"#{}\" class=\"topic-pill{}\" data-topic-pill=\"{}\" onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}.{}: {}</a>\n",
-                    sid, pill_active, sid, ch.num_str, sid, ch.num_str, s + 1, detail::clean_nav_title(ch.subheads[s].title));
+                    "    <a href=\"#{}\" class=\"topic-pill{}\" data-topic-pill=\"{}\" title=\"{}\" onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}.{} {}</a>\n",
+                    sid, pill_active, sid, detail::clean_nav_title(ch.subheads[s].title), ch.num_str, sid, ch.num_str, s + 1, detail::short_topic_title(ch.subheads[s].title));
             }
             panes_html += "  </div>\n";
 
@@ -732,8 +848,8 @@ namespace detail {
             for (size_t s = 0; s < ch.subheads.size(); ++s) {
                 std::string sid = ch.subheads[s].id.substr(1);
                 std::string topic_active = (s == 0) ? " active-topic" : "";
-                panes_html += std::format("  <section class=\"guide-topic{}\" id=\"topic-{}\" data-topic-id=\"{}\" data-topic-title=\"{}\">\n",
-                    topic_active, sid, sid, detail::clean_nav_title(ch.subheads[s].title));
+                panes_html += std::format("  <section class=\"guide-topic{}\" id=\"topic-{}\" data-topic-id=\"{}\" data-topic-title=\"{}\" data-short-title=\"{}.{} {}\">\n",
+                    topic_active, sid, sid, detail::clean_nav_title(ch.subheads[s].title), ch.num_str, s + 1, detail::short_topic_title(ch.subheads[s].title));
                 panes_html += ch.subheads[s].html;
 
                 // Bite-Sized Topic Pager (Prev Bite / Next Bite across chapters)
@@ -822,8 +938,8 @@ namespace detail {
             for (size_t s = 0; s < ch.subheads.size(); ++s) {
                 const auto& sh = ch.subheads[s];
                 std::string active_toc = (i == 0 && s == 0) ? " class=\"active-toc-item\"" : "";
-                toc_rail_html += std::format("        <li><a href=\"{}\"{} onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}.{}: {}</a></li>\n",
-                    sh.id, active_toc, ch.num_str, sh.id.substr(1), ch.num_str, s + 1, detail::clean_nav_title(sh.title));
+                toc_rail_html += std::format("        <li><a href=\"{}\"{} title=\"{}\" onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}.{} {}</a></li>\n",
+                    sh.id, active_toc, detail::clean_nav_title(sh.title), ch.num_str, sh.id.substr(1), ch.num_str, s + 1, detail::short_topic_title(sh.title));
             }
             toc_rail_html += "      </ul>\n";
         } else {
@@ -892,10 +1008,14 @@ namespace detail {
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
     out += "    <div class=\"sidebar-details\" id=\"guide-sidebar-details\">\n";
-    out += "      <button type=\"button\" class=\"sidebar-summary\" onclick=\"this.parentElement.classList.toggle('open')\">\n";
-    out += "        <span id=\"mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Ch 1:</span> Installation &amp; Platform Setup</span>\n";
-    out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
-    out += "      </button>\n";
+    out += "      <div class=\"mobile-unified-bar\">\n";
+    out += "        <button type=\"button\" class=\"sidebar-summary\" onclick=\"this.closest('.sidebar-details').classList.toggle('open')\">\n";
+    out += "          <span id=\"mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Ch 1</span> Install &amp; Setup</span>\n";
+    out += "          <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
+    out += "        </button>\n";
+    out += "        <select id=\"mobile-topic-select\" class=\"mobile-topic-select\" aria-label=\"Jump to subsection\" onchange=\"if(this.value){const p=this.value.split('|');navigateToSubhead(p[0],p[1]);}\"></select>\n";
+    out += "        <button type=\"button\" class=\"mobile-mode-btn\" id=\"mobile-mode-cycle\" onclick=\"cycleMobileReaderMode()\" title=\"Toggle Paged vs Full Chapter view\">Paged</button>\n";
+    out += "      </div>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
     out += "        <div class=\"nav-search-wrapper\">\n";
     out += "          <input type=\"text\" id=\"guide-filter\" class=\"search-input\" placeholder=\"Search topics, APIs &amp; code...\" oninput=\"filterGuideNav(this.value)\" />\n";
@@ -910,30 +1030,22 @@ namespace detail {
                 out += "      </ul>\n";
             }
             current_rendered_part = entry.part;
-            out += "      <h4 class=\"sidebar-part-title\">" + detail::clean_nav_title(current_rendered_part) + "</h4>\n";
+            out += "      <h4 class=\"sidebar-part-title\">" + detail::short_part_title(current_rendered_part) + "</h4>\n";
             out += "      <ul class=\"sidebar-chapter-list\">\n";
         }
         std::string is_active_cls = (entry.num == 1) ? " is-active" : "";
         std::string active_cls = (entry.num == 1) ? " active" : "";
         std::string badge_html = (entry.num == 1) ? "<span class=\"active-badge\">ACTIVE</span>" : "";
         out += std::format("        <li class=\"nav-item{}\" id=\"nav-item-{}\">\n"
-                           "          <a href=\"#{}\" class=\"sidebar-ch-link{}\" data-chapter=\"{}\" onclick=\"navigateToChapter('{}'); return false;\">\n"
+                           "          <a href=\"#{}\" class=\"sidebar-ch-link{}\" data-chapter=\"{}\" title=\"{}\" onclick=\"navigateToChapter('{}'); return false;\">\n"
                            "            <span class=\"ch-text\">Ch {}: {}</span>\n"
                            "            {}\n"
-                           "          </a>",
+                           "          </a>\n"
+                           "        </li>\n",
             is_active_cls, entry.num_str,
-            entry.id, active_cls, entry.num_str, entry.num_str,
-            entry.num_str, detail::clean_nav_title(entry.title),
+            entry.id, active_cls, entry.num_str, detail::clean_nav_title(entry.title), entry.num_str,
+            entry.num_str, detail::short_chapter_title(entry.num, entry.title),
             badge_html);
-        if (!entry.subheads.empty()) {
-            out += "\n          <ul class=\"subhead-list\">\n";
-            for (const auto& sub : entry.subheads) {
-                out += std::format("            <li><a href=\"{}\" onclick=\"navigateToSubhead('{}', '{}'); return false;\">{}</a></li>\n",
-                    sub.id, entry.num_str, sub.id.substr(1), detail::clean_nav_title(sub.title));
-            }
-            out += "          </ul>\n        ";
-        }
-        out += "</li>\n";
     }
     if (!current_rendered_part.empty()) {
         out += "      </ul>\n";
@@ -1020,8 +1132,6 @@ function filterGuideNav(query) {
   if (!q) {
     items.forEach(li => {
       li.style.display = '';
-      const sub = li.querySelector('.subhead-list');
-      if (sub) sub.style.display = '';
     });
     if (resultsBox) {
       resultsBox.classList.remove('active');
@@ -1030,14 +1140,9 @@ function filterGuideNav(query) {
     return;
   }
   items.forEach(li => {
-    const text = li.innerText.toLowerCase();
-    if (text.includes(q)) {
-      li.style.display = '';
-      const sub = li.querySelector('.subhead-list');
-      if (sub) sub.style.display = 'block';
-    } else {
-      li.style.display = 'none';
-    }
+    const a = li.querySelector('.sidebar-ch-link');
+    const text = (li.innerText + ' ' + (a ? (a.getAttribute('title') || '') : '')).toLowerCase();
+    li.style.display = text.includes(q) ? '' : 'none';
   });
 
   // Deep search across all bite-sized topic sections (headings, tables, and code blocks)
@@ -1049,7 +1154,7 @@ function filterGuideNav(query) {
       if (bodyText.includes(q)) {
         const pane = sec.closest('.chapter-pane');
         const chNum = pane ? pane.getAttribute('data-chapter') : '1';
-        const chTitle = pane ? pane.getAttribute('data-title') : '';
+        const chTitle = pane ? (pane.getAttribute('data-short-title') || pane.getAttribute('data-title') || '') : '';
         const sid = sec.getAttribute('data-topic-id');
         const tTitle = sec.getAttribute('data-topic-title') || sid;
         hits.push({ chNum, chTitle, sid, tTitle });
@@ -1067,6 +1172,27 @@ function filterGuideNav(query) {
       resultsBox.classList.add('active');
     }
   }
+}
+
+function syncMobileTopicSelect(targetPane, activeSid) {
+  const sel = document.getElementById('mobile-topic-select');
+  if (!sel || !targetPane) return;
+  const chNum = targetPane.getAttribute('data-chapter') || '1';
+  const topics = targetPane.querySelectorAll('.guide-topic');
+  if (topics.length === 0) {
+    sel.style.display = 'none';
+    return;
+  }
+  sel.style.display = '';
+  const total = topics.length;
+  let opts = '';
+  topics.forEach((t, idx) => {
+    const sid = t.getAttribute('data-topic-id') || '';
+    const shortLbl = t.getAttribute('data-short-title') || ((idx + 1) + '. Topic');
+    const selected = (sid === activeSid) ? ' selected' : '';
+    opts += '<option value="' + chNum + '|' + sid + '"' + selected + '>' + shortLbl + ' (' + (idx + 1) + '/' + total + ')</option>';
+  });
+  sel.innerHTML = opts;
 }
 
 function activateTopicWithinChapter(targetPane, sid) {
@@ -1095,25 +1221,22 @@ function activateTopicWithinChapter(targetPane, sid) {
   } else if (intro) {
     intro.style.display = 'block';
   }
-  // Sync topic pills & scroll active pill into horizontal view on mobile
+  // Sync desktop topic pills
   targetPane.querySelectorAll('.topic-pill').forEach(p => {
     if (p.getAttribute('data-topic-pill') === sid) {
       p.classList.add('active');
-      if (window.innerWidth <= 840 && p.scrollIntoView) {
-        p.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      }
     } else {
       p.classList.remove('active');
     }
   });
-  // Sync right-rail and sidebar subhead links
-  document.querySelectorAll('.toc-list a, .subhead-list a').forEach(a => {
-    a.classList.remove('active-toc-item', 'active-subhead');
+  // Sync mobile unified topic selector
+  syncMobileTopicSelect(targetPane, sid);
+  // Sync right-rail TOC links
+  document.querySelectorAll('.toc-list a').forEach(a => {
+    a.classList.remove('active-toc-item');
   });
   const tocLink = document.querySelector('.toc-chapter-group a[href="#' + sid + '"]');
   if (tocLink) tocLink.classList.add('active-toc-item');
-  const subLink = document.querySelector('.subhead-list a[href="#' + sid + '"]');
-  if (subLink) subLink.classList.add('active-subhead');
 }
 
 function navigateToChapter(num, updateHash) {
@@ -1127,17 +1250,20 @@ function navigateToChapter(num, updateHash) {
     targetPane.classList.add('active');
     const part = targetPane.getAttribute('data-part') || '';
     const title = targetPane.getAttribute('data-title') || '';
+    const shortTitle = targetPane.getAttribute('data-short-title') || title;
     const bPart = document.getElementById('breadcrumb-part');
     const bChap = document.getElementById('breadcrumb-chapter');
     if (bPart) bPart.innerText = part;
     if (bChap) bChap.innerText = 'Ch ' + num + ': ' + title;
     const mobLabel = document.getElementById('mobile-sidebar-label');
     if (mobLabel) {
-      mobLabel.innerHTML = '<span class="sidebar-summary-badge">Ch ' + num + ':</span> ' + title;
+      mobLabel.innerHTML = '<span class="sidebar-summary-badge">Ch ' + num + '</span> ' + shortTitle;
     }
     const firstTopic = targetPane.querySelector('.guide-topic');
     if (firstTopic) {
       activateTopicWithinChapter(targetPane, firstTopic.getAttribute('data-topic-id'));
+    } else {
+      syncMobileTopicSelect(targetPane, '');
     }
   }
   const mobDetails = document.getElementById('guide-sidebar-details');
@@ -1145,7 +1271,7 @@ function navigateToChapter(num, updateHash) {
     mobDetails.classList.remove('open');
   }
 
-  // Update dynamic sidebar active disclosure
+  // Update dynamic sidebar active chapter state
   document.querySelectorAll('#sidebar-nav .nav-item').forEach(li => li.classList.remove('is-active'));
   const activeLi = document.getElementById('nav-item-' + num);
   if (activeLi) activeLi.classList.add('is-active');
@@ -1200,6 +1326,7 @@ function setReaderMode(mode) {
   const btnTopic = document.getElementById('btn-topic-mode');
   const btnChap = document.getElementById('btn-chapter-mode');
   const btnAll = document.getElementById('btn-all-mode');
+  const mobCycle = document.getElementById('mobile-mode-cycle');
   const bChap = document.getElementById('breadcrumb-chapter');
   if (!vp) return;
   vp.classList.remove('topic-View-mode', 'chapter-View-mode', 'view-all-mode');
@@ -1210,18 +1337,31 @@ function setReaderMode(mode) {
   if (mode === 'all') {
     vp.classList.add('view-all-mode');
     if (btnAll) btnAll.classList.add('active');
+    if (mobCycle) mobCycle.textContent = 'All';
     if (bChap) bChap.innerText = 'All ' + TOTAL_GUIDE_CHAPTERS + ' Chapters';
     document.querySelectorAll('.chapter-intro').forEach(el => el.style.display = 'block');
     document.querySelectorAll('.toc-chapter-group').forEach(g => g.style.display = 'block');
   } else if (mode === 'chapter') {
     vp.classList.add('chapter-View-mode');
     if (btnChap) btnChap.classList.add('active');
+    if (mobCycle) mobCycle.textContent = 'Full';
     document.querySelectorAll('.chapter-intro').forEach(el => el.style.display = 'block');
     updateChapterFromHash();
   } else {
     vp.classList.add('topic-View-mode');
     if (btnTopic) btnTopic.classList.add('active');
+    if (mobCycle) mobCycle.textContent = 'Paged';
     updateChapterFromHash();
+  }
+}
+
+function cycleMobileReaderMode() {
+  const vp = document.getElementById('guide-viewport');
+  if (!vp) return;
+  if (vp.classList.contains('topic-View-mode')) {
+    setReaderMode('chapter');
+  } else {
+    setReaderMode('topic');
   }
 }
 

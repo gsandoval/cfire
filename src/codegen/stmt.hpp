@@ -25,6 +25,25 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             if ((st.type && st.type->is_optional) || (!st.type && expr_returns_optional(st.init))) {
                 optional_vars_.insert(st.name);
             }
+            bool is_smart_var = (st.type && !st.type->smart_wrap.empty());
+            if (!is_smart_var && st.init) {
+                const Expr* cur_init = st.init;
+                if (const auto* tr = std::get_if<TryExpr>(&cur_init->node)) cur_init = tr->inner;
+                else if (const auto* or_ex = std::get_if<OrExpr>(&cur_init->node)) cur_init = or_ex->inner;
+                if (cur_init) {
+                    if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
+                        if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node)) {
+                            if (cid->name == "make" && call_ex->type_args.size() == 1 && !call_ex->type_args[0].smart_wrap.empty()) {
+                                is_smart_var = true;
+                            } else if (auto fit = cf_.fn_sigs.find(cid->name); fit != cf_.fn_sigs.end() && !fit->second.return_type.smart_wrap.empty()) {
+                                is_smart_var = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (is_smart_var) smart_ptr_vars_.insert(st.name);
+            else smart_ptr_vars_.erase(st.name);
             std::string vname = sanitize_cpp_ident(st.name);
             if (st.init) {
                 if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {

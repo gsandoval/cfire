@@ -428,9 +428,17 @@ struct TargetResolution {
     const ExecutableSpec* chosen = nullptr;
     if (!target_name.empty() && target_name != "all" && target_name != ".") {
         for (const auto& exe : parsed->executables) {
-            if (exe.name == target_name || exe.var_name == target_name) {
+            if (exe.var_name == target_name) {
                 chosen = &exe;
                 break;
+            }
+        }
+        if (!chosen) {
+            for (const auto& exe : parsed->executables) {
+                if (exe.name == target_name || exe.app_name == target_name) {
+                    chosen = &exe;
+                    break;
+                }
             }
         }
     } else {

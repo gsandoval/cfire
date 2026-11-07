@@ -243,8 +243,18 @@ namespace cfire::build {
                 if (!sub_ast->package_name.empty() && sub_ast->package_name != root_ast.package_name) {
                     sub_pkg_tag = !imp.alias.empty() ? imp.alias : sub_ast->package_name;
                 }
-                for (auto& st : sub_ast->structs) root_ast.structs.push_back(std::move(st));
-                for (auto& en : sub_ast->enums) root_ast.enums.push_back(std::move(en));
+                for (auto& st : sub_ast->structs) {
+                    if (st.package_name.empty() && !sub_pkg_tag.empty()) {
+                        st.package_name = sub_pkg_tag;
+                    }
+                    root_ast.structs.push_back(std::move(st));
+                }
+                for (auto& en : sub_ast->enums) {
+                    if (en.package_name.empty() && !sub_pkg_tag.empty()) {
+                        en.package_name = sub_pkg_tag;
+                    }
+                    root_ast.enums.push_back(std::move(en));
+                }
                 for (auto& ifc : sub_ast->interfaces) root_ast.interfaces.push_back(std::move(ifc));
                 for (auto& gv : sub_ast->global_vars) {
                     if (gv.package_name.empty() && !sub_pkg_tag.empty()) {
@@ -269,6 +279,194 @@ namespace cfire::build {
                 seen_non_local_imports.insert(imp_key);
                 kept_imports.push_back(imp);
             }
+        }
+    }
+
+    // Disambiguate colliding struct/enum names across packages (CF-017)
+    std::unordered_map<std::string, std::size_t> type_counts;
+    for (const auto& st : root_ast.structs) type_counts[st.name]++;
+    for (const auto& en : root_ast.enums) type_counts[en.name]++;
+
+    std::unordered_map<std::string, std::string> pkg_type_renames;
+    for (auto& st : root_ast.structs) {
+        if (!st.package_name.empty() && type_counts[st.name] > 1) {
+            std::string mangled = std::format("cfire_pkg_{}__{}", st.package_name, st.name);
+            pkg_type_renames[st.package_name + "." + st.name] = mangled;
+            pkg_type_renames[st.package_name + "::" + st.name] = mangled;
+            st.name = mangled;
+        }
+    }
+    for (auto& en : root_ast.enums) {
+        if (!en.package_name.empty() && type_counts[en.name] > 1) {
+            std::string mangled = std::format("cfire_pkg_{}__{}", en.package_name, en.name);
+            pkg_type_renames[en.package_name + "." + en.name] = mangled;
+            pkg_type_renames[en.package_name + "::" + en.name] = mangled;
+            en.name = mangled;
+        }
+    }
+
+    if (!pkg_type_renames.empty()) {
+        auto resolve_type_name = [&](const std::string& tname, const std::string& cur_pkg) -> std::string {
+            if (auto it = pkg_type_renames.find(tname); it != pkg_type_renames.end()) {
+                return it->second;
+            }
+            if (!cur_pkg.empty()) {
+                if (auto it = pkg_type_renames.find(cur_pkg + "." + tname); it != pkg_type_renames.end()) {
+                    return it->second;
+                }
+            }
+            return tname;
+        };
+
+        auto rewrite_tref = [&](const auto& self, frontend::TypeRef& tr, const std::string& cur_pkg) -> void {
+            tr.name = resolve_type_name(tr.name, cur_pkg);
+            if (tr.elem_type) self(self, *tr.elem_type, cur_pkg);
+            if (tr.key_type) self(self, *tr.key_type, cur_pkg);
+            for (auto& tt : tr.tuple_types) self(self, tt, cur_pkg);
+        };
+
+        auto rewrite_expr = [&](const auto& self, const auto& rewrite_stmts, frontend::ExprPtr& e, const std::string& cur_pkg) -> void {
+            if (!e) return;
+            std::visit([&](auto& ex) {
+                using T = std::decay_t<decltype(ex)>;
+                if constexpr (std::is_same_v<T, frontend::IdentExpr>) {
+                    if (auto col = ex.name.find("::"); col != std::string::npos) {
+                        std::string prefix = ex.name.substr(0, col);
+                        std::string rest = ex.name.substr(col + 2);
+                        std::string resolved = resolve_type_name(prefix, cur_pkg);
+                        if (resolved != prefix) {
+                            ex.name = resolved + "::" + rest;
+                        }
+                    } else {
+                        ex.name = resolve_type_name(ex.name, cur_pkg);
+                    }
+                } else if constexpr (std::is_same_v<T, frontend::UnaryExpr>) {
+                    self(self, rewrite_stmts, ex.operand, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::BinaryExpr>) {
+                    self(self, rewrite_stmts, ex.left, cur_pkg);
+                    self(self, rewrite_stmts, ex.right, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::MemberExpr>) {
+                    if (const auto* id = ex.object ? std::get_if<frontend::IdentExpr>(&ex.object->node) : nullptr) {
+                        if (auto it = pkg_type_renames.find(id->name + "." + ex.field); it != pkg_type_renames.end()) {
+                            e->node = frontend::IdentExpr{it->second};
+                            return;
+                        }
+                    }
+                    self(self, rewrite_stmts, ex.object, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::IndexExpr>) {
+                    self(self, rewrite_stmts, ex.object, cur_pkg);
+                    self(self, rewrite_stmts, ex.index, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::SliceExpr>) {
+                    self(self, rewrite_stmts, ex.object, cur_pkg);
+                    self(self, rewrite_stmts, ex.start, cur_pkg);
+                    self(self, rewrite_stmts, ex.end, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::StructLitExpr>) {
+                    ex.type_name = resolve_type_name(ex.type_name, cur_pkg);
+                    for (auto& f : ex.fields) self(self, rewrite_stmts, f.value, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::ArrayLitExpr> || std::is_same_v<T, frontend::TupleExpr>) {
+                    for (auto& el : ex.elements) self(self, rewrite_stmts, el, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::ClosureExpr>) {
+                    for (auto& pt : ex.param_types) {
+                        if (pt) rewrite_tref(rewrite_tref, *pt, cur_pkg);
+                    }
+                    if (ex.return_type) rewrite_tref(rewrite_tref, *ex.return_type, cur_pkg);
+                    rewrite_stmts(rewrite_stmts, self, ex.body, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::OrExpr>) {
+                    self(self, rewrite_stmts, ex.inner, cur_pkg);
+                    self(self, rewrite_stmts, ex.fallback_val, cur_pkg);
+                    rewrite_stmts(rewrite_stmts, self, ex.handler_body, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::TryExpr>) {
+                    self(self, rewrite_stmts, ex.inner, cur_pkg);
+                } else if constexpr (std::is_same_v<T, frontend::CallExpr>) {
+                    self(self, rewrite_stmts, ex.callee, cur_pkg);
+                    for (auto& ta : ex.type_args) rewrite_tref(rewrite_tref, ta, cur_pkg);
+                    for (auto& a : ex.args) self(self, rewrite_stmts, a.value, cur_pkg);
+                    if (ex.block_arg) {
+                        for (auto& pt : ex.block_arg->param_types) {
+                            if (pt) rewrite_tref(rewrite_tref, *pt, cur_pkg);
+                        }
+                        if (ex.block_arg->return_type) rewrite_tref(rewrite_tref, *ex.block_arg->return_type, cur_pkg);
+                        rewrite_stmts(rewrite_stmts, self, ex.block_arg->body, cur_pkg);
+                    }
+                } else if constexpr (std::is_same_v<T, frontend::MatchExpr>) {
+                    self(self, rewrite_stmts, ex.target, cur_pkg);
+                    for (auto& arm : ex.arms) {
+                        if (!arm.enum_prefix.empty()) arm.enum_prefix = resolve_type_name(arm.enum_prefix, cur_pkg);
+                        rewrite_stmts(rewrite_stmts, self, arm.body, cur_pkg);
+                    }
+                }
+            }, e->node);
+        };
+
+        auto rewrite_stmts = [&](const auto& self, const auto& rexpr, std::vector<frontend::StmtPtr>& stmts, const std::string& cur_pkg) -> void {
+            for (auto& s : stmts) {
+                if (!s) continue;
+                std::visit([&](auto& st) {
+                    using T = std::decay_t<decltype(st)>;
+                    if constexpr (std::is_same_v<T, frontend::VarDeclStmt>) {
+                        if (st.type) rewrite_tref(rewrite_tref, *st.type, cur_pkg);
+                        rexpr(rexpr, self, st.init, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::DestructureVarDeclStmt>) {
+                        rexpr(rexpr, self, st.init, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::AssignStmt>) {
+                        rexpr(rexpr, self, st.target, cur_pkg);
+                        rexpr(rexpr, self, st.value, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::DestructureAssignStmt>) {
+                        for (auto& t : st.targets) rexpr(rexpr, self, t, cur_pkg);
+                        rexpr(rexpr, self, st.value, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::DeferStmt>) {
+                        rexpr(rexpr, self, st.call, cur_pkg);
+                        self(self, rexpr, st.body, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::ReturnStmt>) {
+                        rexpr(rexpr, self, st.value, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::IfStmt>) {
+                        rexpr(rexpr, self, st.cond, cur_pkg);
+                        self(self, rexpr, st.then_body, cur_pkg);
+                        self(self, rexpr, st.else_body, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::ForStmt>) {
+                        rexpr(rexpr, self, st.iter_expr, cur_pkg);
+                        rexpr(rexpr, self, st.range_end, cur_pkg);
+                        self(self, rexpr, st.body, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::MatchStmt>) {
+                        rexpr(rexpr, self, st.target, cur_pkg);
+                        for (auto& arm : st.arms) {
+                            if (!arm.enum_prefix.empty()) arm.enum_prefix = resolve_type_name(arm.enum_prefix, cur_pkg);
+                            self(self, rexpr, arm.body, cur_pkg);
+                        }
+                    } else if constexpr (std::is_same_v<T, frontend::AsyncScopeStmt>) {
+                        rexpr(rexpr, self, st.workers, cur_pkg);
+                        self(self, rexpr, st.body, cur_pkg);
+                    } else if constexpr (std::is_same_v<T, frontend::ExprStmt>) {
+                        rexpr(rexpr, self, st.expr, cur_pkg);
+                    }
+                }, s->node);
+            }
+        };
+
+        for (auto& st : root_ast.structs) {
+            for (auto& fld : st.fields) {
+                rewrite_tref(rewrite_tref, fld.type, st.package_name);
+                rewrite_expr(rewrite_expr, rewrite_stmts, fld.default_val, st.package_name);
+            }
+        }
+        for (auto& en : root_ast.enums) {
+            for (auto& v : en.variants) {
+                for (auto& pt : v.payload_types) rewrite_tref(rewrite_tref, pt, en.package_name);
+            }
+        }
+        for (auto& gv : root_ast.global_vars) {
+            if (gv.type) rewrite_tref(rewrite_tref, *gv.type, gv.package_name);
+            rewrite_expr(rewrite_expr, rewrite_stmts, gv.value, gv.package_name);
+        }
+        for (auto& fn : root_ast.functions) {
+            if (fn.receiver) rewrite_tref(rewrite_tref, fn.receiver->type, fn.package_name);
+            for (auto& p : fn.params) rewrite_tref(rewrite_tref, p.type, fn.package_name);
+            rewrite_tref(rewrite_tref, fn.return_type, fn.package_name);
+            rewrite_stmts(rewrite_stmts, rewrite_expr, fn.body, fn.package_name);
+        }
+        for (auto& td : root_ast.tests) {
+            for (auto& p : td.params) rewrite_tref(rewrite_tref, p.type, "");
+            rewrite_stmts(rewrite_stmts, rewrite_expr, td.body, "");
         }
     }
 

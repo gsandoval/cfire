@@ -566,6 +566,7 @@ auto main(int argc, char** argv) -> int {
         auto build_cf_cur = std::filesystem::current_path() / "build.cf";
         if (target.empty() || target == "." || target == "all") {
             if (std::filesystem::exists(build_cf_cur)) {
+                if (target == "all") build_target_filter = "all";
                 target = build_cf_cur;
             }
         } else if (target != "build.cf" && target.extension() != ".cf") {
@@ -573,6 +574,9 @@ auto main(int argc, char** argv) -> int {
                 build_target_filter = target.string();
                 target = build_cf_cur;
             }
+        }
+        if (sub == "build" && target.filename() == "build.cf" && build_target_filter.empty() && !run_args.empty()) {
+            build_target_filter = run_args[0];
         }
     } else if (sub == "test" || sub == "bench" || sub == "check" || sub == "fix") {
         if (target.empty()) {
@@ -622,10 +626,22 @@ auto main(int argc, char** argv) -> int {
 
             bool build_all = build_target_filter.empty() || build_target_filter == "all";
             bool matched_any = false;
+            bool has_var_name_match = false;
+            if (!build_all) {
+                for (const auto& exe : parsed->executables) {
+                    if (exe.var_name == build_target_filter) {
+                        has_var_name_match = true;
+                        break;
+                    }
+                }
+            }
 
             for (const auto& exe : parsed->executables) {
-                if (!build_all && exe.name != build_target_filter && exe.var_name != build_target_filter) {
-                    continue;
+                if (!build_all) {
+                    bool matches = has_var_name_match
+                        ? (exe.var_name == build_target_filter)
+                        : (exe.name == build_target_filter || exe.app_name == build_target_filter);
+                    if (!matches) continue;
                 }
                 matched_any = true;
 

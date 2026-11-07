@@ -82,6 +82,62 @@ inline void setenv(std::string_view key, std::string_view val) {
     return std::filesystem::current_path();
 }
 
+[[nodiscard]] inline auto getpid() noexcept -> std::int64_t {
+#if defined(_WIN32)
+    return static_cast<std::int64_t>(::GetCurrentProcessId());
+#else
+    return static_cast<std::int64_t>(::getpid());
+#endif
+}
+
+#if defined(_WIN32)
+namespace detail {
+struct Win32Utf8ConsoleInit {
+    Win32Utf8ConsoleInit() noexcept {
+        ::SetConsoleOutputCP(CP_UTF8);
+        ::SetConsoleCP(CP_UTF8);
+    }
+};
+inline Win32Utf8ConsoleInit g_win32_utf8_console_init{};
+
+[[nodiscard]] inline auto win32_utf8_to_wide(std::string_view s) -> std::wstring {
+    if (s.empty()) return L"";
+    int len = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    if (len <= 0) return L"";
+    std::wstring out(static_cast<std::size_t>(len), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), len);
+    return out;
+}
+
+// CommandLineToArgvW-compatible argument escaping (CF-010.d)
+[[nodiscard]] inline auto quote_win32_arg(std::wstring_view arg) -> std::wstring {
+    if (!arg.empty() && arg.find_first_of(L" \t\n\v\"") == std::wstring_view::npos) {
+        return std::wstring(arg);
+    }
+    std::wstring out = L"\"";
+    for (auto it = arg.begin(); ; ++it) {
+        std::size_t num_backslashes = 0;
+        while (it != arg.end() && *it == L'\\') {
+            ++it;
+            ++num_backslashes;
+        }
+        if (it == arg.end()) {
+            out.append(num_backslashes * 2, L'\\');
+            break;
+        } else if (*it == L'"') {
+            out.append(num_backslashes * 2 + 1, L'\\');
+            out.push_back(L'"');
+        } else {
+            out.append(num_backslashes, L'\\');
+            out.push_back(*it);
+        }
+    }
+    out.push_back(L'"');
+    return out;
+}
+} // namespace detail
+#endif
+
 [[nodiscard]] inline auto exec(std::string_view cmd) -> std::expected<std::string, cfire::Error> {
     std::string c(cmd);
 #if defined(_WIN32)
@@ -252,20 +308,21 @@ inline constexpr std::int32_t STDERR = STDERR_FILENO;
         return cfire::make_error("failed to create Win32 subprocess pipes");
     }
 
-    std::string cmd_line = std::format("\"{}\"", binary);
+    std::wstring cmd_line = detail::quote_win32_arg(detail::win32_utf8_to_wide(binary));
     for (const auto& a : args) {
-        cmd_line += std::format(" \"{}\"", a);
+        cmd_line.push_back(L' ');
+        cmd_line += detail::quote_win32_arg(detail::win32_utf8_to_wide(a));
     }
 
-    STARTUPINFOA si{};
-    si.cb = sizeof(STARTUPINFOA);
+    STARTUPINFOW si{};
+    si.cb = sizeof(STARTUPINFOW);
     si.hStdOutput = out_write;
     si.hStdError = err_write;
     si.hStdInput = ::GetStdHandle(STD_INPUT_HANDLE);
     si.dwFlags |= STARTF_USESTDHANDLES;
 
     PROCESS_INFORMATION pi{};
-    BOOL ok = ::CreateProcessA(
+    BOOL ok = ::CreateProcessW(
         nullptr,
         cmd_line.data(),
         nullptr,
@@ -282,7 +339,7 @@ inline constexpr std::int32_t STDERR = STDERR_FILENO;
     if (!ok) {
         ::CloseHandle(out_read);
         ::CloseHandle(err_read);
-        return cfire::make_error(std::format("CreateProcessA failed for '{}'", binary));
+        return cfire::make_error(std::format("CreateProcessW failed for '{}'", binary));
     }
 
     auto read_handle = [](HANDLE h) -> std::string {
@@ -297,8 +354,11 @@ inline constexpr std::int32_t STDERR = STDERR_FILENO;
     };
 
     ExecResult res;
+    std::thread err_thread([&]() {
+        res.stderr_cf_ = read_handle(err_read);
+    });
     res.stdout_cf_ = read_handle(out_read);
-    res.stderr_cf_ = read_handle(err_read);
+    err_thread.join();
     ::WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD exit_code = 0;
     ::GetExitCodeProcess(pi.hProcess, &exit_code);
@@ -427,13 +487,73 @@ struct TermSize {
 #endif
 }
 
+namespace detail {
+struct AtexitTermState {
+#if defined(_WIN32)
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    DWORD orig_mode = 0;
+#else
+    int fd = -1;
+    struct termios orig{};
+#endif
+    bool active = false;
+};
+
+inline auto atexit_term_state() noexcept -> AtexitTermState& {
+    static AtexitTermState st{};
+    return st;
+}
+
+inline void atexit_restore_term() noexcept {
+    auto& st = atexit_term_state();
+    if (!st.active) return;
+#if defined(_WIN32)
+    if (st.handle != INVALID_HANDLE_VALUE) {
+        ::SetConsoleMode(st.handle, st.orig_mode);
+    }
+#else
+    if (st.fd >= 0) {
+        ::tcsetattr(st.fd, TCSAFLUSH, &st.orig);
+    }
+#endif
+    st.active = false;
+}
+
+inline void register_atexit_term(
+#if defined(_WIN32)
+    HANDLE h, DWORD orig
+#else
+    int fd, const struct termios& orig
+#endif
+) noexcept {
+    static bool registered = false;
+    auto& st = atexit_term_state();
+#if defined(_WIN32)
+    st.handle = h;
+    st.orig_mode = orig;
+#else
+    st.fd = fd;
+    st.orig = orig;
+#endif
+    st.active = true;
+    if (!registered) {
+        registered = true;
+        std::atexit(atexit_restore_term);
+    }
+}
+} // namespace detail
+
 class RawTerminal {
 public:
     RawTerminal() = default;
 #if defined(_WIN32)
-    RawTerminal(HANDLE h, DWORD orig) noexcept : handle_(h), active_(true), orig_mode_(orig) {}
+    RawTerminal(HANDLE h, DWORD orig) noexcept : handle_(h), active_(true), orig_mode_(orig) {
+        detail::register_atexit_term(h, orig);
+    }
 #else
-    RawTerminal(int fd, const struct termios& orig) noexcept : fd_(fd), active_(true), orig_(orig) {}
+    RawTerminal(int fd, const struct termios& orig) noexcept : fd_(fd), active_(true), orig_(orig) {
+        detail::register_atexit_term(fd, orig);
+    }
 #endif
     ~RawTerminal() { restore(); }
     RawTerminal(const RawTerminal&) = delete;
@@ -467,11 +587,13 @@ public:
         if (active_ && handle_ != INVALID_HANDLE_VALUE) {
             ::SetConsoleMode(handle_, orig_mode_);
             active_ = false;
+            detail::atexit_term_state().active = false;
         }
 #else
         if (active_ && fd_ >= 0) {
             ::tcsetattr(fd_, TCSAFLUSH, &orig_);
             active_ = false;
+            detail::atexit_term_state().active = false;
         }
 #endif
     }
@@ -495,7 +617,11 @@ private:
     if (hIn == INVALID_HANDLE_VALUE || !::GetConsoleMode(hIn, &orig)) {
         return cfire::make_error("GetConsoleMode failed (not a console)");
     }
-    DWORD raw = orig & ~static_cast<DWORD>(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+#ifndef ENABLE_VIRTUAL_TERMINAL_INPUT
+#define ENABLE_VIRTUAL_TERMINAL_INPUT 0x0200
+#endif
+    DWORD raw = (orig & ~static_cast<DWORD>(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT)) |
+                static_cast<DWORD>(ENABLE_VIRTUAL_TERMINAL_INPUT);
     if (!::SetConsoleMode(hIn, raw)) {
         return cfire::make_error("SetConsoleMode failed");
     }
@@ -519,8 +645,26 @@ private:
 #if defined(_WIN32)
     intptr_t osf = ::_get_osfhandle(static_cast<int>(fd));
     if (osf == -1) return false;
+    HANDLE h = reinterpret_cast<HANDLE>(osf);
+    if (::GetFileType(h) == FILE_TYPE_PIPE) {
+        auto start = std::chrono::steady_clock::now();
+        while (true) {
+            DWORD avail = 0;
+            if (!::PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr)) {
+                return true; // Pipe broken / EOF -> readable
+            }
+            if (avail > 0) return true;
+            if (timeout_ms == 0) return false;
+            if (timeout_ms > 0) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start).count();
+                if (elapsed >= timeout_ms) return false;
+            }
+            ::Sleep(1);
+        }
+    }
     DWORD wait_ms = timeout_ms < 0 ? INFINITE : static_cast<DWORD>(timeout_ms);
-    return ::WaitForSingleObject(reinterpret_cast<HANDLE>(osf), wait_ms) == WAIT_OBJECT_0;
+    return ::WaitForSingleObject(h, wait_ms) == WAIT_OBJECT_0;
 #else
     struct pollfd pfd{};
     pfd.fd = fd;
