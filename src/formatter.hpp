@@ -213,6 +213,53 @@ struct StructFieldLine {
     return !out.type_and_default.empty();
 }
 
+[[nodiscard]] inline auto scan_line_brace_delta(std::string_view line, std::size_t start_idx, bool& in_raw_string) -> int {
+    bool in_str = false;
+    int net_delta = 0;
+    for (std::size_t k = start_idx; k < line.size(); ++k) {
+        char c = line[k];
+        if (in_str) {
+            if (c == '\\' && k + 1 < line.size()) {
+                ++k;
+            } else if (c == '"') {
+                in_str = false;
+            }
+            continue;
+        }
+        if (c == '/' && k + 1 < line.size() && line[k + 1] == '/') {
+            break;
+        }
+        if (c == '"') {
+            in_str = true;
+            continue;
+        }
+        if (c == '\'') {
+            // C++ char literal inside cpp {} block (e.g. '{', '\'', '\x7b')
+            if (k + 2 < line.size() && line[k + 1] != '\\' && line[k + 2] == '\'') {
+                k += 2;
+                continue;
+            }
+            if (k + 3 < line.size() && line[k + 1] == '\\' && line[k + 3] == '\'') {
+                k += 3;
+                continue;
+            }
+        }
+        if (c == '`') {
+            auto next_bt = line.find('`', k + 1);
+            if (next_bt != std::string_view::npos) {
+                k = next_bt;
+                continue;
+            } else {
+                in_raw_string = true;
+                break;
+            }
+        }
+        if (c == '{' || c == '(' || c == '[') ++net_delta;
+        else if (c == '}' || c == ')' || c == ']') --net_delta;
+    }
+    return net_delta;
+}
+
 inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
     std::vector<std::string> out_lines(raw_lines.size());
     int indent = 0;
@@ -225,32 +272,7 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
             auto close_bt = raw.find('`');
             if (close_bt != std::string::npos) {
                 in_raw_string = false;
-                bool in_str = false;
-                int net_delta = 0;
-                for (std::size_t k = close_bt + 1; k < raw.size(); ++k) {
-                    char c = raw[k];
-                    if (!in_str && c == '/' && k + 1 < raw.size() && raw[k + 1] == '/') {
-                        break;
-                    }
-                    if (c == '"' && (k == 0 || raw[k - 1] != '\\')) {
-                        in_str = !in_str;
-                        continue;
-                    }
-                    if (!in_str && c == '`') {
-                        auto next_bt = raw.find('`', k + 1);
-                        if (next_bt != std::string::npos) {
-                            k = next_bt;
-                            continue;
-                        } else {
-                            in_raw_string = true;
-                            break;
-                        }
-                    }
-                    if (!in_str) {
-                        if (c == '{' || c == '(' || c == '[') ++net_delta;
-                        else if (c == '}' || c == ')' || c == ']') --net_delta;
-                    }
-                }
+                int net_delta = scan_line_brace_delta(raw, close_bt + 1, in_raw_string);
                 indent = std::max(0, indent + net_delta);
             }
             continue;
@@ -339,33 +361,8 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         int line_indent = std::max(0, indent - leading_close);
         out_lines[i] = std::string(line_indent * 4, ' ') + trimmed;
 
-        // Update net brace depth ignoring strings and comments
-        bool in_str = false;
-        int net_delta = 0;
-        for (std::size_t k = 0; k < trimmed.size(); ++k) {
-            char c = trimmed[k];
-            if (!in_str && c == '/' && k + 1 < trimmed.size() && trimmed[k + 1] == '/') {
-                break;
-            }
-            if (c == '"' && (k == 0 || trimmed[k - 1] != '\\')) {
-                in_str = !in_str;
-                continue;
-            }
-            if (!in_str && c == '`') {
-                auto close_bt = trimmed.find('`', k + 1);
-                if (close_bt != std::string::npos) {
-                    k = close_bt;
-                    continue;
-                } else {
-                    in_raw_string = true;
-                    break;
-                }
-            }
-            if (!in_str) {
-                if (c == '{' || c == '(' || c == '[') ++net_delta;
-                else if (c == '}' || c == ')' || c == ']') --net_delta;
-            }
-        }
+        // Update net brace depth ignoring strings, char literals, and comments
+        int net_delta = scan_line_brace_delta(trimmed, 0, in_raw_string);
         indent = std::max(0, indent + net_delta);
     }
     return out_lines;

@@ -354,23 +354,38 @@ inline constexpr std::int32_t STDERR = STDERR_FILENO;
     }
 
     ExecResult res;
-    auto read_pipe = [](int fd) -> std::string {
-        std::string out;
-        char buf[4096];
-        while (true) {
-            ssize_t n = ::read(fd, buf, sizeof(buf));
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                break;
-            }
-            if (n == 0) break;
-            out.append(buf, static_cast<std::size_t>(n));
+    struct pollfd pfds[2]{};
+    pfds[0].fd = stdout_pipe[0];
+    pfds[0].events = POLLIN;
+    pfds[1].fd = stderr_pipe[0];
+    pfds[1].events = POLLIN;
+    int open_pipes = 2;
+    char buf[4096];
+
+    while (open_pipes > 0) {
+        int prc = ::poll(pfds, 2, -1);
+        if (prc < 0) {
+            if (errno == EINTR) continue;
+            break;
         }
-        ::close(fd);
-        return out;
-    };
-    res.stdout_cf_ = read_pipe(stdout_pipe[0]);
-    res.stderr_cf_ = read_pipe(stderr_pipe[0]);
+        auto drain_one = [&](int idx, std::string& dst) {
+            if (pfds[idx].fd < 0) return;
+            if (pfds[idx].revents & (POLLIN | POLLHUP | POLLERR)) {
+                ssize_t n = ::read(pfds[idx].fd, buf, sizeof(buf));
+                if (n > 0) {
+                    dst.append(buf, static_cast<std::size_t>(n));
+                } else if (n == 0 || (n < 0 && errno != EINTR && errno != EAGAIN)) {
+                    ::close(pfds[idx].fd);
+                    pfds[idx].fd = -1;
+                    --open_pipes;
+                }
+            }
+        };
+        drain_one(0, res.stdout_cf_);
+        drain_one(1, res.stderr_cf_);
+    }
+    if (pfds[0].fd >= 0) ::close(pfds[0].fd);
+    if (pfds[1].fd >= 0) ::close(pfds[1].fd);
 
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
@@ -531,21 +546,28 @@ private:
 }
 
 namespace detail {
-inline auto signal_handlers() -> std::unordered_map<int, std::function<void(std::int32_t)>>& {
-    static std::unordered_map<int, std::function<void(std::int32_t)>> map;
-    return map;
+inline auto signal_mutex() -> std::mutex& {
+    static std::mutex mu;
+    return mu;
+}
+inline auto signal_handlers() -> std::array<std::function<void(std::int32_t)>, 64>& {
+    static std::array<std::function<void(std::int32_t)>, 64> handlers{};
+    return handlers;
 }
 inline void signal_trampoline(int sig) {
-    auto& m = signal_handlers();
-    if (auto it = m.find(sig); it != m.end() && it->second) {
-        it->second(static_cast<std::int32_t>(sig));
+    if (sig >= 0 && sig < 64) {
+        auto& h = signal_handlers()[static_cast<std::size_t>(sig)];
+        if (h) h(static_cast<std::int32_t>(sig));
     }
 }
 } // namespace detail
 
 inline void on_signal(std::int32_t sig, std::function<void(std::int32_t)> handler) {
-    detail::signal_handlers()[static_cast<int>(sig)] = std::move(handler);
-    std::signal(static_cast<int>(sig), detail::signal_trampoline);
+    if (sig >= 0 && sig < 64) {
+        std::lock_guard<std::mutex> lk(detail::signal_mutex());
+        detail::signal_handlers()[static_cast<std::size_t>(sig)] = std::move(handler);
+        std::signal(static_cast<int>(sig), detail::signal_trampoline);
+    }
 }
 
 } // namespace cfire::os

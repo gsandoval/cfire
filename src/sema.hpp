@@ -3,9 +3,9 @@
 
 #include "ast.hpp"
 #include "diagnostics.hpp"
+#include "parser.hpp"
 #include <expected>
 #include <format>
-#include <regex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -359,6 +359,33 @@ public:
                name == "parse_f64" || name == "parse_bool";
     }
 
+    [[nodiscard]] auto resolve_member_call_sig(const MemberExpr& mem) const -> const FnDecl* {
+        const auto* obj_id = mem.object ? std::get_if<IdentExpr>(&mem.object->node) : nullptr;
+        if (obj_id && is_namespace_ident_sema(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
+            if (auto it = cf_.fn_sigs.find(obj_id->name + "." + mem.field); it != cf_.fn_sigs.end()) {
+                return &it->second;
+            }
+            return nullptr;
+        }
+        if (obj_id) {
+            if (auto vt = var_types_.find(obj_id->name); vt != var_types_.end()) {
+                if (auto mit = cf_.methods.find(vt->second + "::" + mem.field); mit != cf_.methods.end()) {
+                    return &mit->second;
+                }
+            }
+        }
+        if (auto owner_it = cf_.method_owner.find(mem.field); owner_it != cf_.method_owner.end()) {
+            auto owners_it = cf_.method_owners.find(mem.field);
+            if (owners_it != cf_.method_owners.end() && owners_it->second.size() == 1 &&
+                !is_common_stdlib_method_sema(mem.field)) {
+                if (auto mit = cf_.methods.find(owner_it->second + "::" + mem.field); mit != cf_.methods.end()) {
+                    return &mit->second;
+                }
+            }
+        }
+        return nullptr;
+    }
+
     [[nodiscard]] auto expr_returns_optional_sema(const ExprPtr& e) const -> bool {
         if (!e) return false;
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
@@ -389,15 +416,10 @@ public:
                         if (recv_id->name == "cli" && mem->field == "try_parse") {
                             return true;
                         }
-                        if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
-                            return it->second.return_type.is_optional && !it->second.return_type.is_fallible;
+                        if (const auto* sig = resolve_member_call_sig(*mem)) {
+                            return sig->return_type.is_optional && !sig->return_type.is_fallible;
                         }
                         return false;
-                    }
-                    if (auto vt = var_types_.find(recv_id->name); vt != var_types_.end()) {
-                        if (auto mit = cf_.methods.find(vt->second + "::" + mem->field); mit != cf_.methods.end()) {
-                            return mit->second.return_type.is_optional && !mit->second.return_type.is_fallible;
-                        }
                     }
                 }
                 if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
@@ -406,13 +428,8 @@ public:
                     mem->field == "getenv_opt") {
                     return true;
                 }
-                if (auto oit = cf_.method_owner.find(mem->field); oit != cf_.method_owner.end()) {
-                    auto owners_it = cf_.method_owners.find(mem->field);
-                    if (owners_it != cf_.method_owners.end() && owners_it->second.size() == 1 && !is_common_stdlib_method_sema(mem->field)) {
-                        if (auto mit = cf_.methods.find(oit->second + "::" + mem->field); mit != cf_.methods.end()) {
-                            return mit->second.return_type.is_optional && !mit->second.return_type.is_fallible;
-                        }
-                    }
+                if (const auto* sig = resolve_member_call_sig(*mem)) {
+                    return sig->return_type.is_optional && !sig->return_type.is_fallible;
                 }
             }
         }
@@ -449,18 +466,8 @@ public:
                     return it->second.return_type.name;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                    if (is_namespace_ident_sema(recv_id->name) && !is_ident_in_scope_sema(recv_id->name)) {
-                        if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
-                            return it->second.return_type.name;
-                        }
-                        return "";
-                    }
-                    if (auto vt = var_types_.find(recv_id->name); vt != var_types_.end()) {
-                        if (auto mit = cf_.methods.find(vt->second + "::" + mem->field); mit != cf_.methods.end()) {
-                            return mit->second.return_type.name;
-                        }
-                    }
+                if (const auto* sig = resolve_member_call_sig(*mem)) {
+                    return sig->return_type.name;
                 }
             }
         }
@@ -574,134 +581,23 @@ public:
 
     [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string> {
         if (!e) return {};
-
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
             return record_var_read(id->name, e->line, e->col);
         }
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
-            if (lit->kind == TokenKind::String && lit->value.contains('{')) {
-                auto placeholders = scan_interpolation_placeholders(lit->value);
-                for (const auto& ph : placeholders) {
-                    if (auto parsed = parse_expr_snippet(path_, ph.expr_text, e->line)) {
-                        std::string root = extract_root_ident_sema(parsed->expr);
-                        if (!root.empty() && is_ident_in_scope_sema(root)) {
-                            if (auto r = check_expr(parsed->expr); !r) return r;
-                        }
-                    }
-                }
-            }
-            return {};
+            return check_literal_expr(*lit, e->line);
         }
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
-            if (auto r = check_expr(un->operand); !r) return r;
-            if (un->op == "move") {
-                if (auto pi = extract_path_info(un->operand)) {
-                    if (auto r = check_not_iterated_collection(pi->root, e->line, e->col); !r) return r;
-                    moved_at_line_[pi->root] = e->line;
-                    invalidate_loans_for_owner(
-                        pi->root,
-                        std::format("underlying owner '{}' was moved at line {}", pi->root, e->line),
-                        e->line);
-                }
-            } else if (un->op == "*" && un->operand) {
-                if (const auto* id = std::get_if<IdentExpr>(&un->operand->node)) {
-                    if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
-                        if (it->second == NullState::Null) {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: dereference of null pointer '{}' (cfire/NULL-DEREF)",
-                                path_, e->line, e->col, id->name)); !r) return r;
-                        } else if (it->second == NullState::MaybeNull) {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: dereference of potentially null pointer '{}' without '!= none' guard (cfire/NULL-DEREF)",
-                                path_, e->line, e->col, id->name)); !r) return r;
-                        }
-                    }
-                }
-            }
-            return {};
+            return check_unary_expr(*un, e->line, e->col);
         }
         if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
-            if (auto r = check_expr(bin->left); !r) return r;
-            if (auto r = check_expr(bin->right); !r) return r;
-            if ((bin->op == "/" || bin->op == "%") && is_const_zero_expr(bin->right)) {
-                return emit_error(std::format(
-                    "{}:{}:{}: division or modulo by constant zero (cfire/DIVIDE-BY-ZERO)",
-                    path_, e->line, e->col));
-            }
-            return {};
+            return check_binary_expr(*bin, e->line, e->col);
         }
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
-            if (auto r = check_expr(mem->object); !r) return r;
-            if (!mem->is_namespace && mem->object) {
-                if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
-                    if (ptr_or_smart_vars_.contains(id->name) &&
-                        mem->field != "reset" && mem->field != "get" &&
-                        mem->field != "has_value" && mem->field != "value_or") {
-                        if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
-                            if (it->second == NullState::Null) {
-                                return emit_error(std::format(
-                                    "{}:{}:{}: member access on null pointer '{}' (cfire/NULL-DEREF)",
-                                    path_, e->line, e->col, id->name));
-                            }
-                            if (it->second == NullState::MaybeNull) {
-                                return emit_error(std::format(
-                                    "{}:{}:{}: member access on potentially null pointer '{}' without '!= none' guard (cfire/NULL-DEREF)",
-                                    path_, e->line, e->col, id->name));
-                            }
-                        }
-                    }
-                }
-            }
-            return {};
+            return check_member_expr(*mem, e->line, e->col);
         }
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
-            if (auto r = check_expr(idx->object); !r) return r;
-            if (auto r = check_expr(idx->index); !r) return r;
-
-            bool is_map_obj = false;
-            const IdentExpr* obj_id = idx->object ? std::get_if<IdentExpr>(&idx->object->node) : nullptr;
-            if (obj_id && map_vars_.contains(obj_id->name)) {
-                is_map_obj = true;
-            }
-            if (!is_map_obj && idx->index) {
-                if (const auto* un_idx = std::get_if<UnaryExpr>(&idx->index->node)) {
-                    if (un_idx->op == "-" && un_idx->operand) {
-                        if (const auto* neg_lit = std::get_if<LiteralExpr>(&un_idx->operand->node);
-                            neg_lit && neg_lit->kind == TokenKind::Int && neg_lit->value != "0") {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: negative index -{} is out of bounds (cfire/INDEX-OUT-OF-BOUNDS)",
-                                path_, e->line, e->col, neg_lit->value)); !r) return r;
-                        }
-                    }
-                } else if (const auto* idx_lit = std::get_if<LiteralExpr>(&idx->index->node)) {
-                    if (idx_lit->kind == TokenKind::Int) {
-                        if (idx_lit->value.starts_with('-') && idx_lit->value != "-0") {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: negative index {} is out of bounds (cfire/INDEX-OUT-OF-BOUNDS)",
-                                path_, e->line, e->col, idx_lit->value)); !r) return r;
-                        } else if (auto k = cfire::detail::parse_int<std::size_t>(idx_lit->value)) {
-                            if (obj_id) {
-                                if (auto fit = fixed_array_lens_.find(obj_id->name); fit != fixed_array_lens_.end()) {
-                                    if (*k >= fit->second) {
-                                        if (auto r = emit_error(std::format(
-                                            "{}:{}:{}: index {} is out of bounds for array '{}' of length {} (cfire/INDEX-OUT-OF-BOUNDS)",
-                                            path_, e->line, e->col, *k, obj_id->name, fit->second)); !r) return r;
-                                    }
-                                }
-                            } else if (idx->object) {
-                                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&idx->object->node)) {
-                                    if (*k >= arr_lit->elements.size()) {
-                                        if (auto r = emit_error(std::format(
-                                            "{}:{}:{}: index {} is out of bounds for array literal of length {} (cfire/INDEX-OUT-OF-BOUNDS)",
-                                            path_, e->line, e->col, *k, arr_lit->elements.size())); !r) return r;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return {};
+            return check_index_expr(*idx, e->line, e->col);
         }
         if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
             if (auto r = check_expr(sl->object); !r) return r;
@@ -713,19 +609,7 @@ public:
             return check_expr(tr->inner);
         }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
-            if (auto r = check_expr(or_ex->inner); !r) return r;
-            if (!or_ex->err_var.empty() && expr_returns_optional_sema(or_ex->inner)) {
-                if (auto r = emit_error(std::format(
-                    "{}:{}:{}: cannot bind error variable '{}' on optional 'T?' in 'or' block; use 'or {{ ... }}' or 'or fallback' instead (cfire/OPTIONAL-OR-ERR)",
-                    path_, e->line, e->col, or_ex->err_var)); !r) return r;
-            }
-            if (or_ex->fallback_val) {
-                if (auto r = check_expr(or_ex->fallback_val); !r) return r;
-            }
-            for (const auto& s : or_ex->handler_body) {
-                if (auto r = check_stmt(s); !r) return r;
-            }
-            return {};
+            return check_or_expr(*or_ex, e->line, e->col);
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
             for (const auto& f : st->fields) {
@@ -746,234 +630,382 @@ public:
             return {};
         }
         if (const auto* cl = std::get_if<ClosureExpr>(&e->node)) {
-            for (const auto& s : cl->body) {
-                if (auto r = check_stmt(s); !r) return r;
+            ScopeGuard sg(*this);
+            for (std::size_t i = 0; i < cl->params.size(); ++i) {
+                bool is_mut = (i < cl->param_intents.size()) &&
+                              (cl->param_intents[i] == "mut" || cl->param_intents[i] == "out");
+                bind_scoped_var(cl->params[i], is_mut);
             }
-            return {};
+            return check_block_stmts(cl->body);
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
-            if (auto r = check_expr(call->callee); !r) return r;
-            const FnDecl* target_sig = nullptr;
-            if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
-                if (auto it = cf_.fn_sigs.find(id->name); it != cf_.fn_sigs.end()) {
-                    target_sig = &it->second;
+            return check_call_expr(*call, e->line, e->col);
+        }
+        if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            return check_match_common(me->target, me->is_move, me->arms, me->line, me->col, true);
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_literal_expr(const LiteralExpr& lit, int line) -> std::expected<void, std::string> {
+        if (lit.kind == TokenKind::String && lit.value.contains('{')) {
+            auto placeholders = scan_interpolation_placeholders(lit.value);
+            for (const auto& ph : placeholders) {
+                if (auto parsed = parse_expr_snippet(path_, ph.expr_text, line)) {
+                    std::string root = extract_root_ident_sema(parsed->expr);
+                    if (!root.empty() && is_ident_in_scope_sema(root)) {
+                        if (auto r = check_expr(parsed->expr); !r) return r;
+                    }
                 }
-            } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
-                if (obj_id && is_namespace_ident_sema(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
-                    if (auto it = cf_.fn_sigs.find(obj_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
-                        target_sig = &it->second;
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_unary_expr(const UnaryExpr& un, int line, int col) -> std::expected<void, std::string> {
+        if (auto r = check_expr(un.operand); !r) return r;
+        if (un.op == "move") {
+            if (auto pi = extract_path_info(un.operand)) {
+                if (auto r = check_not_iterated_collection(pi->root, line, col); !r) return r;
+                moved_at_line_[pi->root] = line;
+                invalidate_loans_for_owner(
+                    pi->root,
+                    std::format("underlying owner '{}' was moved at line {}", pi->root, line),
+                    line);
+            }
+        } else if (un.op == "*" && un.operand) {
+            if (const auto* id = std::get_if<IdentExpr>(&un.operand->node)) {
+                if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
+                    if (it->second == NullState::Null) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: dereference of null pointer '{}' (cfire/NULL-DEREF)",
+                            path_, line, col, id->name)); !r) return r;
+                    } else if (it->second == NullState::MaybeNull) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: dereference of potentially null pointer '{}' without '!= none' guard (cfire/NULL-DEREF)",
+                            path_, line, col, id->name)); !r) return r;
                     }
-                } else if (obj_id && var_types_.contains(obj_id->name)) {
-                    std::string mkey = var_types_.at(obj_id->name) + "::" + mem->field;
-                    if (auto mit = cf_.methods.find(mkey); mit != cf_.methods.end()) {
-                        target_sig = &mit->second;
-                    }
-                } else if (auto owner_it = cf_.method_owner.find(mem->field); owner_it != cf_.method_owner.end()) {
-                    auto owners_it = cf_.method_owners.find(mem->field);
-                    if (owners_it != cf_.method_owners.end() && owners_it->second.size() == 1 &&
-                        !is_common_stdlib_method_sema(mem->field)) {
-                        std::string mkey = owner_it->second + "::" + mem->field;
-                        if (auto mit = cf_.methods.find(mkey); mit != cf_.methods.end()) {
-                            target_sig = &mit->second;
+                }
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_binary_expr(const BinaryExpr& bin, int line, int col) -> std::expected<void, std::string> {
+        if (auto r = check_expr(bin.left); !r) return r;
+        if (auto r = check_expr(bin.right); !r) return r;
+        if ((bin.op == "/" || bin.op == "%") && is_const_zero_expr(bin.right)) {
+            return emit_error(std::format(
+                "{}:{}:{}: division or modulo by constant zero (cfire/DIVIDE-BY-ZERO)",
+                path_, line, col));
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_member_expr(const MemberExpr& mem, int line, int col) -> std::expected<void, std::string> {
+        if (auto r = check_expr(mem.object); !r) return r;
+        if (!mem.is_namespace && mem.object) {
+            if (const auto* id = std::get_if<IdentExpr>(&mem.object->node)) {
+                if (ptr_or_smart_vars_.contains(id->name) &&
+                    mem.field != "reset" && mem.field != "get" &&
+                    mem.field != "has_value" && mem.field != "value_or") {
+                    if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
+                        if (it->second == NullState::Null) {
+                            return emit_error(std::format(
+                                "{}:{}:{}: member access on null pointer '{}' (cfire/NULL-DEREF)",
+                                path_, line, col, id->name));
+                        }
+                        if (it->second == NullState::MaybeNull) {
+                            return emit_error(std::format(
+                                "{}:{}:{}: member access on potentially null pointer '{}' without '!= none' guard (cfire/NULL-DEREF)",
+                                path_, line, col, id->name));
                         }
                     }
                 }
-                if (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") {
-                    if (obj_id && imm_vars_.contains(obj_id->name)) {
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_index_expr(const IndexExpr& idx, int line, int col) -> std::expected<void, std::string> {
+        if (auto r = check_expr(idx.object); !r) return r;
+        if (auto r = check_expr(idx.index); !r) return r;
+
+        bool is_map_obj = false;
+        const IdentExpr* obj_id = idx.object ? std::get_if<IdentExpr>(&idx.object->node) : nullptr;
+        if (obj_id && map_vars_.contains(obj_id->name)) {
+            is_map_obj = true;
+        }
+        if (!is_map_obj && idx.index) {
+            if (const auto* un_idx = std::get_if<UnaryExpr>(&idx.index->node)) {
+                if (un_idx->op == "-" && un_idx->operand) {
+                    if (const auto* neg_lit = std::get_if<LiteralExpr>(&un_idx->operand->node);
+                        neg_lit && neg_lit->kind == TokenKind::Int && neg_lit->value != "0") {
                         if (auto r = emit_error(std::format(
-                            "{}:{}:{}: cannot call mutating method '{}' on immutable variable '{}' (cfire/MUT-RECEIVER)",
-                            path_, e->line, e->col, mem->field, obj_id->name)); !r) return r;
+                            "{}:{}:{}: negative index -{} is out of bounds (cfire/INDEX-OUT-OF-BOUNDS)",
+                            path_, line, col, neg_lit->value)); !r) return r;
                     }
                 }
-                if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
-                    mem->field == "erase" || mem->field == "remove") {
-                    if (auto pi = extract_path_info(mem->object)) {
-                        if (auto r = check_not_iterated_collection(pi->root, e->line, e->col); !r) return r;
-                        invalidate_loans_for_owner(
-                            pi->root,
-                            std::format("underlying container '{}' was mutated at line {}", pi->root, e->line),
-                            e->line);
-                    }
-                }
-                if (!call->args.empty() && is_dynamic_string_expr(call->args[0].value)) {
-                    const auto* recv_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
-                    if (recv_id && recv_id->name == "os" && (mem->field == "exec" || mem->field == "exec_output")) {
-                        warnings_.push_back(std::format(
-                            "{}:{}:{}: warning: dynamic string interpolation/concatenation in 'os.{}' risks shell command injection; prefer 'os.command(binary, args)' (cfire/SHELL-INJECTION-RISK)",
-                            path_, call->args[0].line, call->args[0].col, mem->field));
-                    } else if ((!recv_id || recv_id->name != "os") && (mem->field == "exec" || mem->field == "query")) {
-                        warnings_.push_back(std::format(
-                            "{}:{}:{}: warning: dynamic string interpolation/concatenation in SQL '{}' risks SQL injection; use parameterized '?1' bindings instead (cfire/SQL-INJECTION-RISK)",
-                            path_, call->args[0].line, call->args[0].col, mem->field));
-                    }
-                }
-            }
-
-            if (target_sig) {
-                std::size_t actual_args = call->args.size() + (call->block_arg ? 1 : 0);
-                if (actual_args != target_sig->params.size()) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: call to '{}' expects {} argument(s), got {} (cfire/ARITY-MISMATCH)",
-                        path_, e->line, e->col, target_sig->name, target_sig->params.size(), actual_args)); !r) return r;
-                }
-            }
-
-            struct SeenArgPath {
-                PathInfo info;
-                bool is_mut_or_out;
-            };
-            std::vector<SeenArgPath> seen_paths;
-
-            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                if (auto p = extract_path_info(mem->object)) {
-                    bool is_mut = (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut");
-                    seen_paths.push_back({*p, is_mut});
-                }
-            }
-
-            for (std::size_t i = 0; i < call->args.size(); ++i) {
-                const auto& arg = call->args[i];
-                if (arg.intent == "out") {
-                    warnings_.push_back(std::format(
-                        "{}:{}:{}: warning: 'out' call-site annotation is deprecated; use multi-return tuple destructuring instead (cfire/DEPRECATED-OUT-PARAM)",
-                        path_, arg.line, arg.col));
-                }
-                if (auto r = check_expr(arg.value); !r) return r;
-                if (target_sig && i < target_sig->params.size()) {
-                    const auto& expected = target_sig->params[i].intent;
-                    if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
-                        std::string_view rule = (expected == "out")
-                            ? "cfire/OUT-CALLSITE"
-                            : (expected == "move" ? "cfire/MOVE-CALLSITE" : "cfire/MUT-CALLSITE");
+            } else if (const auto* idx_lit = std::get_if<LiteralExpr>(&idx.index->node)) {
+                if (idx_lit->kind == TokenKind::Int) {
+                    if (idx_lit->value.starts_with('-') && idx_lit->value != "-0") {
                         if (auto r = emit_error(std::format(
-                            "{}:{}:{}: parameter '{}' of {} requires explicit '{}' annotation at call-site ({})",
-                            path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule)); !r) return r;
-                    }
-                }
-                if (auto pi = extract_path_info(arg.value)) {
-                    bool is_mut_or_out = (arg.intent == "mut" || arg.intent == "out");
-                    for (const auto& prev : seen_paths) {
-                        if (prev.info.root == pi->root && (prev.is_mut_or_out || is_mut_or_out)) {
-                            if (paths_conflict(prev.info.path, pi->path)) {
-                                std::string entity = (pi->path == pi->root && prev.info.path == prev.info.root)
-                                    ? std::format("variable '{}'", pi->root)
-                                    : std::format("projection '{}'", pi->path);
-                                if (auto r = emit_error(std::format(
-                                    "{}:{}:{}: cannot alias {} with a mut/out parameter in the same call (cfire/MUT-ALIAS)",
-                                    path_, arg.line, arg.col, entity)); !r) return r;
+                            "{}:{}:{}: negative index {} is out of bounds (cfire/INDEX-OUT-OF-BOUNDS)",
+                            path_, line, col, idx_lit->value)); !r) return r;
+                    } else if (auto k = cfire::detail::parse_int<std::size_t>(idx_lit->value)) {
+                        if (obj_id) {
+                            if (auto fit = fixed_array_lens_.find(obj_id->name); fit != fixed_array_lens_.end()) {
+                                if (*k >= fit->second) {
+                                    if (auto r = emit_error(std::format(
+                                        "{}:{}:{}: index {} is out of bounds for array '{}' of length {} (cfire/INDEX-OUT-OF-BOUNDS)",
+                                        path_, line, col, *k, obj_id->name, fit->second)); !r) return r;
+                                }
+                            }
+                        } else if (idx.object) {
+                            if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&idx.object->node)) {
+                                if (*k >= arr_lit->elements.size()) {
+                                    if (auto r = emit_error(std::format(
+                                        "{}:{}:{}: index {} is out of bounds for array literal of length {} (cfire/INDEX-OUT-OF-BOUNDS)",
+                                        path_, line, col, *k, arr_lit->elements.size())); !r) return r;
+                                }
                             }
                         }
                     }
-                    seen_paths.push_back({*pi, is_mut_or_out});
+                }
+            }
+        }
+        return {};
+    }
 
-                    if (is_mut_or_out) {
-                        if (imm_vars_.contains(pi->root)) {
-                            std::string entity = (pi->path == pi->root) ? pi->root : pi->path;
+    [[nodiscard]] auto check_or_expr(const OrExpr& or_ex, int line, int col) -> std::expected<void, std::string> {
+        if (auto r = check_expr(or_ex.inner); !r) return r;
+        if (!or_ex.err_var.empty() && expr_returns_optional_sema(or_ex.inner)) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: cannot bind error variable '{}' on optional 'T?' in 'or' block; use 'or {{ ... }}' or 'or fallback' instead (cfire/OPTIONAL-OR-ERR)",
+                path_, line, col, or_ex.err_var)); !r) return r;
+        }
+        if (or_ex.fallback_val) {
+            if (auto r = check_expr(or_ex.fallback_val); !r) return r;
+        }
+        if (!or_ex.handler_body.empty()) {
+            ScopeGuard sg(*this);
+            if (!or_ex.err_var.empty()) {
+                bind_scoped_var(or_ex.err_var, false);
+            }
+            if (auto r = check_block_stmts(or_ex.handler_body); !r) return r;
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_call_expr(const CallExpr& call, int line, int col) -> std::expected<void, std::string> {
+        if (auto r = check_expr(call.callee); !r) return r;
+        const FnDecl* target_sig = nullptr;
+        if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
+            if (auto it = cf_.fn_sigs.find(id->name); it != cf_.fn_sigs.end()) {
+                target_sig = &it->second;
+            }
+        } else if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
+            const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+            target_sig = resolve_member_call_sig(*mem);
+            if (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") {
+                if (obj_id && imm_vars_.contains(obj_id->name)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: cannot call mutating method '{}' on immutable variable '{}' (cfire/MUT-RECEIVER)",
+                        path_, line, col, mem->field, obj_id->name)); !r) return r;
+                }
+            }
+            if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
+                mem->field == "erase" || mem->field == "remove") {
+                if (auto pi = extract_path_info(mem->object)) {
+                    if (auto r = check_not_iterated_collection(pi->root, line, col); !r) return r;
+                    invalidate_loans_for_owner(
+                        pi->root,
+                        std::format("underlying container '{}' was mutated at line {}", pi->root, line),
+                        line);
+                }
+            }
+            if (!call.args.empty() && is_dynamic_string_expr(call.args[0].value)) {
+                const auto* recv_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (recv_id && recv_id->name == "os" && (mem->field == "exec" || mem->field == "exec_output")) {
+                    warnings_.push_back(std::format(
+                        "{}:{}:{}: warning: dynamic string interpolation/concatenation in 'os.{}' risks shell command injection; prefer 'os.command(binary, args)' (cfire/SHELL-INJECTION-RISK)",
+                        path_, call.args[0].line, call.args[0].col, mem->field));
+                } else if ((!recv_id || recv_id->name != "os") && (mem->field == "exec" || mem->field == "query")) {
+                    warnings_.push_back(std::format(
+                        "{}:{}:{}: warning: dynamic string interpolation/concatenation in SQL '{}' risks SQL injection; use parameterized '?1' bindings instead (cfire/SQL-INJECTION-RISK)",
+                        path_, call.args[0].line, call.args[0].col, mem->field));
+                }
+            }
+        }
+
+        if (target_sig) {
+            std::size_t actual_args = call.args.size() + (call.block_arg ? 1 : 0);
+            if (actual_args != target_sig->params.size()) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: call to '{}' expects {} argument(s), got {} (cfire/ARITY-MISMATCH)",
+                    path_, line, col, target_sig->name, target_sig->params.size(), actual_args)); !r) return r;
+            }
+        }
+
+        struct SeenArgPath {
+            PathInfo info;
+            bool is_mut_or_out;
+        };
+        std::vector<SeenArgPath> seen_paths;
+
+        if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
+            if (auto p = extract_path_info(mem->object)) {
+                bool is_mut = (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut");
+                seen_paths.push_back({*p, is_mut});
+            }
+        }
+
+        for (std::size_t i = 0; i < call.args.size(); ++i) {
+            const auto& arg = call.args[i];
+            if (arg.intent == "out") {
+                warnings_.push_back(std::format(
+                    "{}:{}:{}: warning: 'out' call-site annotation is deprecated; use multi-return tuple destructuring instead (cfire/DEPRECATED-OUT-PARAM)",
+                    path_, arg.line, arg.col));
+            }
+            if (auto r = check_expr(arg.value); !r) return r;
+            if (target_sig && i < target_sig->params.size()) {
+                const auto& expected = target_sig->params[i].intent;
+                if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
+                    std::string_view rule = (expected == "out")
+                        ? "cfire/OUT-CALLSITE"
+                        : (expected == "move" ? "cfire/MOVE-CALLSITE" : "cfire/MUT-CALLSITE");
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: parameter '{}' of {} requires explicit '{}' annotation at call-site ({})",
+                        path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule)); !r) return r;
+                }
+            }
+            if (auto pi = extract_path_info(arg.value)) {
+                bool is_mut_or_out = (arg.intent == "mut" || arg.intent == "out");
+                for (const auto& prev : seen_paths) {
+                    if (prev.info.root == pi->root && (prev.is_mut_or_out || is_mut_or_out)) {
+                        if (paths_conflict(prev.info.path, pi->path)) {
+                            std::string entity = (pi->path == pi->root && prev.info.path == prev.info.root)
+                                ? std::format("variable '{}'", pi->root)
+                                : std::format("projection '{}'", pi->path);
                             if (auto r = emit_error(std::format(
-                                "{}:{}:{}: cannot pass immutable variable '{}' as '{}' argument (cfire/IMMUTABLE-MUT-ARG)",
-                                path_, arg.line, arg.col, entity, arg.intent)); !r) return r;
-                        }
-                        if (pi->path == pi->root) {
-                            if (auto r = check_not_iterated_collection(pi->root, arg.line, arg.col); !r) return r;
+                                "{}:{}:{}: cannot alias {} with a mut/out parameter in the same call (cfire/MUT-ALIAS)",
+                                path_, arg.line, arg.col, entity)); !r) return r;
                         }
                     }
-                    if (arg.intent == "move") {
+                }
+                seen_paths.push_back({*pi, is_mut_or_out});
+
+                if (is_mut_or_out) {
+                    if (imm_vars_.contains(pi->root)) {
+                        std::string entity = (pi->path == pi->root) ? pi->root : pi->path;
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: cannot pass immutable variable '{}' as '{}' argument (cfire/IMMUTABLE-MUT-ARG)",
+                            path_, arg.line, arg.col, entity, arg.intent)); !r) return r;
+                    }
+                    if (pi->path == pi->root) {
                         if (auto r = check_not_iterated_collection(pi->root, arg.line, arg.col); !r) return r;
-                        moved_at_line_[pi->root] = arg.line;
-                        invalidate_loans_for_owner(
-                            pi->root,
-                            std::format("underlying owner '{}' was moved at line {}", pi->root, arg.line),
-                            arg.line);
                     }
+                }
+                if (arg.intent == "move") {
+                    if (auto r = check_not_iterated_collection(pi->root, arg.line, arg.col); !r) return r;
+                    moved_at_line_[pi->root] = arg.line;
+                    invalidate_loans_for_owner(
+                        pi->root,
+                        std::format("underlying owner '{}' was moved at line {}", pi->root, arg.line),
+                        arg.line);
                 }
             }
-            if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
-                if (id->name == "assert" && !call->args.empty()) {
-                    if (auto nc = extract_null_check(call->args[0].value); nc && nc->second) {
-                        ptr_null_state_[nc->first] = NullState::NonNull;
-                    }
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
+            if (id->name == "assert" && !call.args.empty()) {
+                if (auto nc = extract_null_check(call.args[0].value); nc && nc->second) {
+                    ptr_null_state_[nc->first] = NullState::NonNull;
                 }
             }
-            if (call->block_arg) {
-                ++scope_depth_;
-                for (const auto& s : call->block_arg->body) {
-                    if (auto r = check_stmt(s); !r) {
-                        --scope_depth_;
-                        return r;
-                    }
-                }
-                --scope_depth_;
+        }
+        if (call.block_arg) {
+            ScopeGuard sg(*this);
+            for (std::size_t i = 0; i < call.block_arg->params.size(); ++i) {
+                bool is_mut = (i < call.block_arg->param_intents.size()) &&
+                              (call.block_arg->param_intents[i] == "mut" || call.block_arg->param_intents[i] == "out");
+                bind_scoped_var(call.block_arg->params[i], is_mut);
+            }
+            if (auto r = check_block_stmts(call.block_arg->body); !r) return r;
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_match_common(
+        const ExprPtr& target,
+        bool is_move,
+        const std::vector<MatchArm>& arms,
+        int line,
+        int col,
+        bool is_expr_match
+    ) -> std::expected<void, std::string> {
+        if (auto r = check_expr(target); !r) return r;
+        if (is_move && target) {
+            if (auto pi = extract_path_info(target)) {
+                if (auto r = check_not_iterated_collection(pi->root, line, col); !r) return r;
+                moved_at_line_[pi->root] = line;
+                invalidate_loans_for_owner(
+                    pi->root,
+                    std::format("underlying owner '{}' was moved at line {}", pi->root, line),
+                    line);
+            }
+        }
+        if (auto r = check_match_arms_reachability(arms, line, col); !r) return r;
+        bool is_slice_match = false;
+        bool is_primitive_match = false;
+        for (const auto& a : arms) {
+            if (a.is_slice_pattern) is_slice_match = true;
+            if (!a.literal_val.empty()) is_primitive_match = true;
+        }
+        if (!is_expr_match && is_slice_match) {
+            for (const auto& arm : arms) {
+                ScopeGuard sg(*this);
+                bind_match_arm_vars(arm);
+                if (auto r = check_block_stmts(arm.body); !r) return r;
             }
             return {};
         }
-        if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
-            if (auto r = check_expr(me->target); !r) return r;
-            if (me->is_move && me->target) {
-                if (auto pi = extract_path_info(me->target)) {
-                    if (auto r = check_not_iterated_collection(pi->root, me->line, me->col); !r) return r;
-                    moved_at_line_[pi->root] = me->line;
-                    invalidate_loans_for_owner(
-                        pi->root,
-                        std::format("underlying owner '{}' was moved at line {}", pi->root, me->line),
-                        me->line);
+
+        std::string enum_name;
+        std::unordered_set<std::string> covered;
+        bool has_wildcard = false;
+
+        for (const auto& arm : arms) {
+            if (arm.variant_name == "_") {
+                has_wildcard = true;
+            } else {
+                covered.insert(arm.variant_name);
+                if (!arm.enum_prefix.empty()) {
+                    enum_name = arm.enum_prefix;
+                } else if (auto vit = cf_.variant_to_enum.find(arm.variant_name); vit != cf_.variant_to_enum.end()) {
+                    enum_name = vit->second;
                 }
             }
-            if (auto r = check_match_arms_reachability(me->arms, me->line, me->col); !r) return r;
-            bool is_slice_match = false;
-            bool is_primitive_match = false;
-            for (const auto& a : me->arms) {
-                if (a.is_slice_pattern) {
-                    is_slice_match = true;
-                }
-                if (!a.literal_val.empty()) {
-                    is_primitive_match = true;
-                }
-            }
+            ScopeGuard sg(*this);
+            bind_match_arm_vars(arm);
+            if (auto r = check_block_stmts(arm.body); !r) return r;
+        }
 
-            std::string enum_name;
-            std::unordered_set<std::string> covered;
-            bool has_wildcard = false;
-
-            for (const auto& arm : me->arms) {
-                if (arm.variant_name == "_") {
-                    has_wildcard = true;
-                } else {
-                    covered.insert(arm.variant_name);
-                    if (!arm.enum_prefix.empty()) {
-                        enum_name = arm.enum_prefix;
-                    } else if (auto vit = cf_.variant_to_enum.find(arm.variant_name); vit != cf_.variant_to_enum.end()) {
-                        enum_name = vit->second;
+        if (!has_wildcard && !enum_name.empty()) {
+            if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
+                for (const auto& v : eit->second.variants) {
+                    if (!covered.contains(v.name)) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
+                            path_, line, col, enum_name, v.name)); !r) return r;
                     }
                 }
-                ++scope_depth_;
-                for (const auto& b : arm.body) {
-                    if (auto r = check_stmt(b); !r) {
-                        --scope_depth_;
-                        return r;
-                    }
-                }
-                --scope_depth_;
             }
-
-            if (!has_wildcard && !enum_name.empty()) {
-                if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
-                    for (const auto& v : eit->second.variants) {
-                        if (!covered.contains(v.name)) {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
-                                path_, me->line, me->col, enum_name, v.name)); !r) return r;
-                        }
-                    }
-                }
-            } else if ((is_slice_match || is_primitive_match || enum_name.empty()) && !has_wildcard) {
-                if (!is_slice_match || !is_slice_exhaustively_covered(me->arms)) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: match expression must have a wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
-                        path_, me->line, me->col)); !r) return r;
-                }
+        } else if (is_expr_match && (is_slice_match || is_primitive_match || enum_name.empty()) && !has_wildcard) {
+            if (!is_slice_match || !is_slice_exhaustively_covered(arms)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: match expression must have a wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
+                    path_, line, col)); !r) return r;
             }
-            return {};
         }
         return {};
     }
@@ -1117,479 +1149,532 @@ public:
         return false;
     }
 
+    struct SavedVarDeclState {
+        std::optional<int> scope_depth{};
+        bool was_local_defined{false};
+        bool was_mut{false};
+        bool was_imm{false};
+        std::optional<std::string> var_type{};
+        bool was_optional{false};
+        bool was_ptr_or_smart{false};
+        std::optional<NullState> null_state{};
+        std::optional<std::size_t> fixed_array_len{};
+        bool was_map{false};
+        std::optional<std::string> borrow_origin{};
+        std::optional<int> moved_at_line{};
+        std::optional<InvalidatedLoan> invalidated_loan{};
+    };
+
+    struct ScopeGuard {
+        SemaFnChecker& checker;
+        std::unordered_map<std::string, SavedVarDeclState> saved_vars{};
+
+        explicit ScopeGuard(SemaFnChecker& c) : checker(c) {
+            ++checker.scope_depth_;
+            checker.scope_stack_.push_back(&saved_vars);
+        }
+        ~ScopeGuard() {
+            for (const auto& [name, st] : saved_vars) {
+                if (st.scope_depth) checker.var_scope_depth_[name] = *st.scope_depth;
+                else checker.var_scope_depth_.erase(name);
+
+                if (st.was_local_defined) checker.local_defined_vars_.insert(name);
+                else checker.local_defined_vars_.erase(name);
+
+                if (st.was_mut) checker.mut_vars_.insert(name);
+                else checker.mut_vars_.erase(name);
+
+                if (st.was_imm) checker.imm_vars_.insert(name);
+                else checker.imm_vars_.erase(name);
+
+                if (st.var_type) checker.var_types_[name] = *st.var_type;
+                else checker.var_types_.erase(name);
+
+                if (st.was_optional) checker.optional_vars_.insert(name);
+                else checker.optional_vars_.erase(name);
+
+                if (st.was_ptr_or_smart) checker.ptr_or_smart_vars_.insert(name);
+                else checker.ptr_or_smart_vars_.erase(name);
+
+                if (st.null_state) checker.ptr_null_state_[name] = *st.null_state;
+                else checker.ptr_null_state_.erase(name);
+
+                if (st.fixed_array_len) checker.fixed_array_lens_[name] = *st.fixed_array_len;
+                else checker.fixed_array_lens_.erase(name);
+
+                if (st.was_map) checker.map_vars_.insert(name);
+                else checker.map_vars_.erase(name);
+
+                if (st.borrow_origin) checker.borrow_origin_[name] = *st.borrow_origin;
+                else checker.borrow_origin_.erase(name);
+
+                if (st.moved_at_line) checker.moved_at_line_[name] = *st.moved_at_line;
+                else checker.moved_at_line_.erase(name);
+
+                if (st.invalidated_loan) checker.invalidated_loans_[name] = *st.invalidated_loan;
+                else checker.invalidated_loans_.erase(name);
+            }
+            checker.scope_stack_.pop_back();
+            --checker.scope_depth_;
+        }
+        ScopeGuard(const ScopeGuard&) = delete;
+        ScopeGuard& operator=(const ScopeGuard&) = delete;
+    };
+
+    void save_var_before_redecl(const std::string& name) {
+        if (scope_stack_.empty() || name.empty() || name == "_") return;
+        auto* top = scope_stack_.back();
+        if (top->contains(name)) return;
+        SavedVarDeclState st;
+        if (auto it = var_scope_depth_.find(name); it != var_scope_depth_.end()) st.scope_depth = it->second;
+        st.was_local_defined = local_defined_vars_.contains(name);
+        st.was_mut = mut_vars_.contains(name);
+        st.was_imm = imm_vars_.contains(name);
+        if (auto it = var_types_.find(name); it != var_types_.end()) st.var_type = it->second;
+        st.was_optional = optional_vars_.contains(name);
+        st.was_ptr_or_smart = ptr_or_smart_vars_.contains(name);
+        if (auto it = ptr_null_state_.find(name); it != ptr_null_state_.end()) st.null_state = it->second;
+        if (auto it = fixed_array_lens_.find(name); it != fixed_array_lens_.end()) st.fixed_array_len = it->second;
+        st.was_map = map_vars_.contains(name);
+        if (auto it = borrow_origin_.find(name); it != borrow_origin_.end()) st.borrow_origin = it->second;
+        if (auto it = moved_at_line_.find(name); it != moved_at_line_.end()) st.moved_at_line = it->second;
+        if (auto it = invalidated_loans_.find(name); it != invalidated_loans_.end()) st.invalidated_loan = it->second;
+        top->emplace(name, std::move(st));
+    }
+
+    void bind_scoped_var(const std::string& name, bool is_mut) {
+        if (name.empty() || name == "_") return;
+        save_var_before_redecl(name);
+        var_scope_depth_[name] = scope_depth_;
+        local_defined_vars_.insert(name);
+        moved_at_line_.erase(name);
+        invalidated_loans_.erase(name);
+        borrow_origin_.erase(name);
+        if (is_mut) {
+            imm_vars_.erase(name);
+            mut_vars_.insert(name);
+        } else {
+            mut_vars_.erase(name);
+            imm_vars_.insert(name);
+        }
+    }
+
+    void bind_match_arm_vars(const MatchArm& arm) {
+        for (const auto& b : arm.bindings) {
+            bind_scoped_var(b, false);
+        }
+        if (arm.is_slice_pattern) {
+            for (const auto& h : arm.slice_head) bind_scoped_var(h, false);
+            if (!arm.slice_rest.empty()) bind_scoped_var(arm.slice_rest, false);
+            for (const auto& t : arm.slice_tail) bind_scoped_var(t, false);
+        }
+    }
+
+    [[nodiscard]] auto check_block_stmts(const std::vector<StmtPtr>& stmts) -> std::expected<void, std::string> {
+        for (const auto& b : stmts) {
+            if (auto r = check_stmt(b); !r) return r;
+        }
+        return {};
+    }
+
     [[nodiscard]] auto check_stmt(const StmtPtr& s) -> std::expected<void, std::string> {
         if (!s) return {};
         if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
-            if (vd->was_var) {
-                warnings_.push_back(std::format(
-                    "{}:{}:{}: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
-                    path_, vd->line, vd->col));
-            }
-            var_scope_depth_[vd->name] = scope_depth_;
-            local_defined_vars_.insert(vd->name);
-            moved_at_line_.erase(vd->name);
-            invalidated_loans_.erase(vd->name);
-            borrow_origin_.erase(vd->name);
-
-            if (vd->is_mut) {
-                imm_vars_.erase(vd->name);
-                mut_vars_.insert(vd->name);
-            } else {
-                mut_vars_.erase(vd->name);
-                imm_vars_.insert(vd->name);
-            }
-            if (vd->type) {
-                if (vd->type->is_map) {
-                    map_vars_.insert(vd->name);
-                }
-                if (vd->type->is_array && !vd->type->array_len.empty()) {
-                    if (auto n = cfire::detail::parse_int<std::size_t>(vd->type->array_len)) {
-                        fixed_array_lens_[vd->name] = *n;
-                    }
-                }
-            } else if (!vd->is_mut && vd->init) {
-                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&vd->init->node)) {
-                    fixed_array_lens_[vd->name] = arr_lit->elements.size();
-                }
-            }
-            if (vd->init) {
-                if (const auto* call_ex = std::get_if<CallExpr>(&vd->init->node)) {
-                    if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node);
-                        cid && cid->name == "make" && call_ex->type_args.size() == 1 && call_ex->type_args[0].is_map) {
-                        map_vars_.insert(vd->name);
-                    }
-                }
-                if (const auto* or_ex = std::get_if<OrExpr>(&vd->init->node); or_ex && !or_ex->handler_body.empty()) {
-                    if (!block_diverges(or_ex->handler_body)) {
-                        if (auto r = emit_error(std::format(
-                            "{}:{}:{}: block 'or {} {{ ... }}' must definitely diverge with return or panic, otherwise unwrapping empty value causes undefined behavior (cfire/NON-DIVERGING-OR-BLOCK)",
-                            path_, vd->line, vd->col, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
-                    }
-                }
-            }
-            if (auto r = check_expr(vd->init); !r) return r;
-
-            if (auto src = extract_borrow_source(vd->init)) {
-                borrow_origin_[vd->name] = *src;
-            }
-            if (vd->type && !vd->type->name.empty()) {
-                var_types_[vd->name] = vd->type->name;
-            } else if (std::string inferred_t = infer_expr_type_name_sema(vd->init); !inferred_t.empty()) {
-                var_types_[vd->name] = std::move(inferred_t);
-            } else {
-                var_types_.erase(vd->name);
-            }
-            bool is_opt_var = (vd->type && vd->type->is_optional) || (!vd->type && expr_returns_optional_sema(vd->init));
-            if (is_opt_var) {
-                optional_vars_.insert(vd->name);
-            } else {
-                optional_vars_.erase(vd->name);
-            }
-            bool is_ptr_or_smart = (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr || !vd->type->smart_wrap.empty())) ||
-                                   is_ptr_or_smart_init(vd->init) || is_opt_var;
-            if (is_ptr_or_smart) {
-                ptr_or_smart_vars_.insert(vd->name);
-            } else {
-                ptr_or_smart_vars_.erase(vd->name);
-            }
-            if (auto ns = infer_expr_null_state(vd->init)) {
-                ptr_null_state_[vd->name] = *ns;
-            } else if (!vd->init && is_ptr_or_smart) {
-                ptr_null_state_[vd->name] = NullState::Null;
-            } else if (is_opt_var) {
-                if (vd->init && (std::holds_alternative<StructLitExpr>(vd->init->node) ||
-                                 (std::holds_alternative<LiteralExpr>(vd->init->node) &&
-                                  std::get<LiteralExpr>(vd->init->node).kind != TokenKind::KwNone))) {
-                    ptr_null_state_[vd->name] = NullState::NonNull;
-                } else {
-                    ptr_null_state_[vd->name] = NullState::MaybeNull;
-                }
-            } else if (vd->type && (vd->type->is_ptr || vd->type->is_mut_ptr || !vd->type->smart_wrap.empty())) {
-                ptr_null_state_[vd->name] = vd->type->is_optional ? NullState::MaybeNull : NullState::NonNull;
-            } else {
-                ptr_null_state_.erase(vd->name);
-            }
-            return {};
+            return check_var_decl_stmt(*vd);
         }
         if (const auto* dvs = std::get_if<DestructureVarDeclStmt>(&s->node)) {
-            for (const auto& [name, is_mut] : dvs->bindings) {
-                var_scope_depth_[name] = scope_depth_;
-                local_defined_vars_.insert(name);
-                if (is_mut) {
-                    mut_vars_.insert(name);
-                } else {
-                    imm_vars_.insert(name);
-                }
-            }
-            return check_expr(dvs->init);
+            return check_destructure_var_decl_stmt(*dvs);
         }
         if (const auto* as = std::get_if<AssignStmt>(&s->node)) {
-            if (as->value) {
-                if (const auto* or_ex = std::get_if<OrExpr>(&as->value->node); or_ex && !or_ex->handler_body.empty()) {
-                    if (!block_diverges(or_ex->handler_body)) {
-                        if (auto r = emit_error(std::format(
-                            "{}:{}:{}: assignment from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
-                            path_, as->line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
-                    }
-                }
-            }
-            if (auto r = check_expr(as->value); !r) return r;
-            if ((as->op == "/=" || as->op == "%=") && is_const_zero_expr(as->value)) {
-                if (auto r = emit_error(std::format(
-                    "{}:{}:1: division or modulo assignment by constant zero (cfire/DIVIDE-BY-ZERO)",
-                    path_, as->line)); !r) return r;
-            }
-            if (as->op != "=") {
-                if (auto r = check_expr(as->target); !r) return r;
-            }
-            if (const auto* id = std::get_if<IdentExpr>(&as->target->node)) {
-                if (imm_vars_.contains(id->name)) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
-                        path_, as->line, 1, id->name)); !r) return r;
-                }
-                if (auto r = check_not_iterated_collection(id->name, as->line, 1); !r) return r;
-                moved_at_line_.erase(id->name);
-                if (as->op == "=") {
-                    invalidate_loans_for_owner(
-                        id->name,
-                        std::format("underlying owner '{}' was reassigned at line {}", id->name, as->line),
-                        as->line);
-                    if (auto src = extract_borrow_source(as->value)) {
-                        auto d_target = var_scope_depth_.find(id->name);
-                        auto d_src = var_scope_depth_.find(*src);
-                        if (d_target != var_scope_depth_.end() && d_src != var_scope_depth_.end()) {
-                            if (d_src->second > d_target->second) {
-                                if (auto r = emit_error(std::format(
-                                    "{}:{}:1: pointer/view '{}' cannot borrow '{}' from an inner scope (cfire/DANGLING-POINTER)",
-                                    path_, as->line, id->name, *src)); !r) return r;
-                            }
-                        }
-                        borrow_origin_[id->name] = *src;
-                        invalidated_loans_.erase(id->name);
-                    } else {
-                        borrow_origin_.erase(id->name);
-                        invalidated_loans_.erase(id->name);
-                    }
-                    if (is_ptr_or_smart_init(as->value)) {
-                        ptr_or_smart_vars_.insert(id->name);
-                    }
-                    if (auto ns = infer_expr_null_state(as->value)) {
-                        ptr_null_state_[id->name] = *ns;
-                    } else if (ptr_null_state_.contains(id->name)) {
-                        ptr_null_state_[id->name] = NullState::NonNull;
-                    }
-                }
-            } else {
-                if (as->op == "=") {
-                    if (auto r = check_expr(as->target); !r) return r;
-                }
-            }
-            return {};
+            return check_assign_stmt(*as);
         }
         if (const auto* das = std::get_if<DestructureAssignStmt>(&s->node)) {
-            if (auto r = check_expr(das->value); !r) return r;
-            for (const auto& targ : das->targets) {
-                if (const auto* id = std::get_if<IdentExpr>(&targ->node)) {
-                    if (imm_vars_.contains(id->name)) {
-                        if (auto r = emit_error(std::format(
-                            "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
-                            path_, das->line, 1, id->name)); !r) return r;
-                    }
-                    moved_at_line_.erase(id->name);
-                } else {
-                    if (auto r = check_expr(targ); !r) return r;
-                }
-            }
-            return {};
+            return check_destructure_assign_stmt(*das);
         }
         if (const auto* df = std::get_if<DeferStmt>(&s->node)) {
-            if (df->call) {
-                return check_expr(df->call);
-            }
-            ++in_defer_depth_;
-            ++scope_depth_;
-            for (const auto& b : df->body) {
-                if (auto r = check_stmt(b); !r) {
-                    --scope_depth_;
-                    --in_defer_depth_;
-                    return r;
-                }
-            }
-            --scope_depth_;
-            --in_defer_depth_;
-            return {};
+            return check_defer_stmt(*df);
         }
         if (const auto* rt = std::get_if<ReturnStmt>(&s->node)) {
-            if (in_defer_depth_ > 0) {
-                if (auto r = emit_error(std::format(
-                    "{}:{}:1: cannot use 'return' inside a 'defer {{ ... }}' block (cfire/RETURN-IN-DEFER)",
-                    path_, rt->line)); !r) return r;
-            }
-            if (auto r = check_expr(rt->value); !r) return r;
-            if (rt->value) {
-                bool is_direct = false;
-                if (auto src = extract_borrow_source(rt->value, &is_direct)) {
-                    if (local_defined_vars_.contains(*src) || move_params_.contains(*src)) {
-                        if (auto r = emit_error(std::format(
-                            "{}:{}:1: cannot return pointer/view borrowing local variable '{}' (cfire/DANGLING-RETURN)",
-                            path_, rt->line, *src)); !r) return r;
-                    }
-                }
-            }
-            return {};
+            return check_return_stmt(*rt);
         }
         if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
-            if (auto r = check_expr(ifs->cond); !r) return r;
-            auto initial_moves = moved_at_line_;
-            auto initial_loans = invalidated_loans_;
-            auto initial_null = ptr_null_state_;
-            auto nc = extract_null_check(ifs->cond);
-
-            if (nc) {
-                ptr_null_state_[nc->first] = nc->second ? NullState::NonNull : NullState::Null;
-            }
-            ++scope_depth_;
-            for (const auto& b : ifs->then_body) {
-                if (auto r = check_stmt(b); !r) {
-                    --scope_depth_;
-                    return r;
-                }
-            }
-            --scope_depth_;
-            auto then_moves = moved_at_line_;
-            auto then_loans = invalidated_loans_;
-            auto then_null = ptr_null_state_;
-
-            moved_at_line_ = initial_moves;
-            invalidated_loans_ = initial_loans;
-            ptr_null_state_ = initial_null;
-            if (nc) {
-                ptr_null_state_[nc->first] = nc->second ? NullState::Null : NullState::NonNull;
-            }
-            ++scope_depth_;
-            for (const auto& b : ifs->else_body) {
-                if (auto r = check_stmt(b); !r) {
-                    --scope_depth_;
-                    return r;
-                }
-            }
-            --scope_depth_;
-            auto else_moves = moved_at_line_;
-            auto else_loans = invalidated_loans_;
-            auto else_null = ptr_null_state_;
-
-            bool then_div = block_diverges(ifs->then_body);
-            bool else_div = !ifs->else_body.empty() && block_diverges(ifs->else_body);
-
-            if (ifs->else_body.empty()) {
-                moved_at_line_ = initial_moves;
-                if (then_div) {
-                    invalidated_loans_ = else_loans;
-                    ptr_null_state_ = else_null;
-                } else {
-                    invalidated_loans_ = then_loans;
-                    for (const auto& [k, v] : initial_loans) {
-                        invalidated_loans_.try_emplace(k, v);
-                    }
-                    std::unordered_map<std::string, NullState> merged_null = initial_null;
-                    for (const auto& [var, st] : then_null) {
-                        if (nc && var == nc->first) {
-                            // Do not leak cond-narrowing out of a non-diverging if-block unless reassigned
-                            continue;
-                        }
-                        auto it = initial_null.find(var);
-                        if (it == initial_null.end() || it->second == st) {
-                            merged_null[var] = st;
-                        } else {
-                            merged_null[var] = NullState::MaybeNull;
-                        }
-                    }
-                    ptr_null_state_ = std::move(merged_null);
-                }
-            } else {
-                if (then_div) {
-                    moved_at_line_ = else_moves;
-                    invalidated_loans_ = else_loans;
-                    ptr_null_state_ = else_null;
-                } else if (else_div) {
-                    moved_at_line_ = then_moves;
-                    invalidated_loans_ = then_loans;
-                    ptr_null_state_ = then_null;
-                } else {
-                    std::unordered_map<std::string, int> post_moves = initial_moves;
-                    for (const auto& [var, line] : then_moves) {
-                        if (else_moves.contains(var)) {
-                            post_moves[var] = std::max(line, else_moves[var]);
-                        }
-                    }
-                    moved_at_line_ = std::move(post_moves);
-
-                    std::unordered_map<std::string, InvalidatedLoan> post_loans = then_loans;
-                    for (const auto& [var, loan] : else_loans) {
-                        post_loans.try_emplace(var, loan);
-                    }
-                    invalidated_loans_ = std::move(post_loans);
-
-                    std::unordered_map<std::string, NullState> merged_null = initial_null;
-                    for (const auto& [var, st_then] : then_null) {
-                        auto it_else = else_null.find(var);
-                        if (it_else != else_null.end() && it_else->second == st_then) {
-                            if (nc && var == nc->first) {
-                                // Only preserve if both branches ended with same state independently of complementary cond
-                                merged_null[var] = st_then;
-                            } else {
-                                merged_null[var] = st_then;
-                            }
-                        } else {
-                            merged_null[var] = NullState::MaybeNull;
-                        }
-                    }
-                    ptr_null_state_ = std::move(merged_null);
-                }
-            }
-            return {};
+            return check_if_stmt(*ifs);
         }
         if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
-            if (auto r = check_expr(fs->iter_expr); !r) return r;
-            if (fs->range_end) {
-                if (auto r = check_expr(fs->range_end); !r) return r;
-            }
-            auto pre_loop_moves = moved_at_line_;
-            auto pre_loop_loans = invalidated_loans_;
-            std::string locked_col;
-            if (!fs->item_var.empty() && !fs->range_end) {
-                if (auto pi = extract_path_info(fs->iter_expr); pi && pi->path == pi->root) {
-                    if (!active_loop_collections_.contains(pi->root)) {
-                        locked_col = pi->root;
-                        active_loop_collections_.insert(locked_col);
-                    }
-                }
-            }
-            ++scope_depth_;
-            if (!fs->index_var.empty()) {
-                var_scope_depth_[fs->index_var] = scope_depth_;
-                local_defined_vars_.insert(fs->index_var);
-                imm_vars_.insert(fs->index_var);
-            }
-            if (!fs->item_var.empty()) {
-                var_scope_depth_[fs->item_var] = scope_depth_;
-                local_defined_vars_.insert(fs->item_var);
-                imm_vars_.insert(fs->item_var);
-            }
-            for (const auto& b : fs->body) {
-                if (auto r = check_stmt(b); !r) {
-                    --scope_depth_;
-                    if (!locked_col.empty()) active_loop_collections_.erase(locked_col);
-                    return r;
-                }
-            }
-            --scope_depth_;
-            if (!locked_col.empty()) active_loop_collections_.erase(locked_col);
-
-            for (const auto& [var, line] : moved_at_line_) {
-                if (!pre_loop_moves.contains(var)) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: variable '{}' moved inside loop body without reassignment before next iteration (cfire/USE-AFTER-MOVE)",
-                        path_, line, 1, var)); !r) return r;
-                }
-            }
-            for (const auto& [var, loan] : invalidated_loans_) {
-                if (!pre_loop_loans.contains(var) && var_scope_depth_.contains(var) && var_scope_depth_[var] <= scope_depth_) {
-                    // Loan on outer pointer invalidated inside loop; remains invalidated after loop
-                }
-            }
-            return {};
+            return check_for_stmt(*fs);
         }
         if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
-            if (auto r = check_expr(ms->target); !r) return r;
-            if (ms->is_move && ms->target) {
-                if (auto pi = extract_path_info(ms->target)) {
-                    if (auto r = check_not_iterated_collection(pi->root, ms->line, ms->col); !r) return r;
-                    moved_at_line_[pi->root] = ms->line;
-                    invalidate_loans_for_owner(
-                        pi->root,
-                        std::format("underlying owner '{}' was moved at line {}", pi->root, ms->line),
-                        ms->line);
-                }
-            }
-            if (auto r = check_match_arms_reachability(ms->arms, ms->line, ms->col); !r) return r;
-            bool is_slice_match = false;
-            for (const auto& a : ms->arms) {
-                if (a.is_slice_pattern) {
-                    is_slice_match = true;
-                    break;
-                }
-            }
-            if (is_slice_match) {
-                for (const auto& arm : ms->arms) {
-                    ++scope_depth_;
-                    for (const auto& b : arm.body) {
-                        if (auto r = check_stmt(b); !r) {
-                            --scope_depth_;
-                            return r;
-                        }
-                    }
-                    --scope_depth_;
-                }
-                return {};
-            }
-
-            std::string enum_name;
-            std::unordered_set<std::string> covered;
-            bool has_wildcard = false;
-
-            for (const auto& arm : ms->arms) {
-                if (arm.variant_name == "_") {
-                    has_wildcard = true;
-                } else {
-                    covered.insert(arm.variant_name);
-                    if (!arm.enum_prefix.empty()) {
-                        enum_name = arm.enum_prefix;
-                    } else if (auto vit = cf_.variant_to_enum.find(arm.variant_name); vit != cf_.variant_to_enum.end()) {
-                        enum_name = vit->second;
-                    }
-                }
-                ++scope_depth_;
-                for (const auto& b : arm.body) {
-                    if (auto r = check_stmt(b); !r) {
-                        --scope_depth_;
-                        return r;
-                    }
-                }
-                --scope_depth_;
-            }
-
-            // Exhaustiveness check against known EnumDecl
-            if (!has_wildcard && !enum_name.empty()) {
-                if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
-                    for (const auto& v : eit->second.variants) {
-                        if (!covered.contains(v.name)) {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
-                                path_, ms->line, ms->col, enum_name, v.name)); !r) return r;
-                        }
-                    }
-                }
-            }
-            return {};
+            return check_match_common(ms->target, ms->is_move, ms->arms, ms->line, ms->col, false);
         }
         if (const auto* sc = std::get_if<AsyncScopeStmt>(&s->node)) {
-            if (auto r = check_expr(sc->workers); !r) return r;
-            ++scope_depth_;
-            for (const auto& b : sc->body) {
-                if (auto r = check_stmt(b); !r) {
-                    --scope_depth_;
-                    return r;
-                }
-            }
-            --scope_depth_;
-            return {};
+            return check_async_scope_stmt(*sc);
         }
         if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
             return check_expr(es->expr);
         }
         return {};
+    }
+
+    [[nodiscard]] auto check_var_decl_stmt(const VarDeclStmt& vd) -> std::expected<void, std::string> {
+        if (vd.was_var) {
+            warnings_.push_back(std::format(
+                "{}:{}:{}: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
+                path_, vd.line, vd.col));
+        }
+        if (vd.init) {
+            if (const auto* or_ex = std::get_if<OrExpr>(&vd.init->node); or_ex && !or_ex->handler_body.empty()) {
+                if (!block_diverges(or_ex->handler_body)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: block 'or {} {{ ... }}' must definitely diverge with return or panic, otherwise unwrapping empty value causes undefined behavior (cfire/NON-DIVERGING-OR-BLOCK)",
+                        path_, vd.line, vd.col, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
+                }
+            }
+        }
+        // Check initializer expression before binding the new variable so `x := x + 1` reads outer `x` first
+        if (auto r = check_expr(vd.init); !r) return r;
+
+        auto src = extract_borrow_source(vd.init);
+        std::string inferred_t = (!vd.type || vd.type->name.empty()) ? infer_expr_type_name_sema(vd.init) : vd.type->name;
+        bool is_opt_var = (vd.type && vd.type->is_optional) || (!vd.type && expr_returns_optional_sema(vd.init));
+        bool is_ptr_or_smart = (vd.type && (vd.type->is_ptr || vd.type->is_mut_ptr || !vd.type->smart_wrap.empty())) ||
+                               is_ptr_or_smart_init(vd.init) || is_opt_var;
+        auto init_ns = infer_expr_null_state(vd.init);
+
+        bind_scoped_var(vd.name, vd.is_mut);
+        map_vars_.erase(vd.name);
+        fixed_array_lens_.erase(vd.name);
+
+        if (vd.type) {
+            if (vd.type->is_map) {
+                map_vars_.insert(vd.name);
+            }
+            if (vd.type->is_array && !vd.type->array_len.empty()) {
+                if (auto n = cfire::detail::parse_int<std::size_t>(vd.type->array_len)) {
+                    fixed_array_lens_[vd.name] = *n;
+                }
+            }
+        } else if (!vd.is_mut && vd.init) {
+            if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&vd.init->node)) {
+                fixed_array_lens_[vd.name] = arr_lit->elements.size();
+            }
+        }
+        if (vd.init) {
+            if (const auto* call_ex = std::get_if<CallExpr>(&vd.init->node)) {
+                if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node);
+                    cid && cid->name == "make" && call_ex->type_args.size() == 1 && call_ex->type_args[0].is_map) {
+                    map_vars_.insert(vd.name);
+                }
+            }
+        }
+
+        if (src) {
+            borrow_origin_[vd.name] = *src;
+        }
+        if (!inferred_t.empty()) {
+            var_types_[vd.name] = std::move(inferred_t);
+        } else {
+            var_types_.erase(vd.name);
+        }
+        if (is_opt_var) {
+            optional_vars_.insert(vd.name);
+        } else {
+            optional_vars_.erase(vd.name);
+        }
+        if (is_ptr_or_smart) {
+            ptr_or_smart_vars_.insert(vd.name);
+        } else {
+            ptr_or_smart_vars_.erase(vd.name);
+        }
+        if (init_ns) {
+            ptr_null_state_[vd.name] = *init_ns;
+        } else if (!vd.init && is_ptr_or_smart) {
+            ptr_null_state_[vd.name] = NullState::Null;
+        } else if (is_opt_var) {
+            if (vd.init && (std::holds_alternative<StructLitExpr>(vd.init->node) ||
+                            (std::holds_alternative<LiteralExpr>(vd.init->node) &&
+                             std::get<LiteralExpr>(vd.init->node).kind != TokenKind::KwNone))) {
+                ptr_null_state_[vd.name] = NullState::NonNull;
+            } else {
+                ptr_null_state_[vd.name] = NullState::MaybeNull;
+            }
+        } else if (vd.type && (vd.type->is_ptr || vd.type->is_mut_ptr || !vd.type->smart_wrap.empty())) {
+            ptr_null_state_[vd.name] = vd.type->is_optional ? NullState::MaybeNull : NullState::NonNull;
+        } else {
+            ptr_null_state_.erase(vd.name);
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_destructure_var_decl_stmt(const DestructureVarDeclStmt& dvs) -> std::expected<void, std::string> {
+        if (auto r = check_expr(dvs.init); !r) return r;
+        for (const auto& [name, is_mut] : dvs.bindings) {
+            bind_scoped_var(name, is_mut);
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_assign_stmt(const AssignStmt& as) -> std::expected<void, std::string> {
+        if (as.value) {
+            if (const auto* or_ex = std::get_if<OrExpr>(&as.value->node); or_ex && !or_ex->handler_body.empty()) {
+                if (!block_diverges(or_ex->handler_body)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: assignment from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
+                        path_, as.line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
+                }
+            }
+        }
+        if (auto r = check_expr(as.value); !r) return r;
+        if ((as.op == "/=" || as.op == "%=") && is_const_zero_expr(as.value)) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:1: division or modulo assignment by constant zero (cfire/DIVIDE-BY-ZERO)",
+                path_, as.line)); !r) return r;
+        }
+        if (as.op != "=") {
+            if (auto r = check_expr(as.target); !r) return r;
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
+            if (imm_vars_.contains(id->name)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
+                    path_, as.line, 1, id->name)); !r) return r;
+            }
+            if (auto r = check_not_iterated_collection(id->name, as.line, 1); !r) return r;
+            moved_at_line_.erase(id->name);
+            if (as.op == "=") {
+                invalidate_loans_for_owner(
+                    id->name,
+                    std::format("underlying owner '{}' was reassigned at line {}", id->name, as.line),
+                    as.line);
+                if (auto src = extract_borrow_source(as.value)) {
+                    auto d_target = var_scope_depth_.find(id->name);
+                    auto d_src = var_scope_depth_.find(*src);
+                    if (d_target != var_scope_depth_.end() && d_src != var_scope_depth_.end()) {
+                        if (d_src->second > d_target->second) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:1: pointer/view '{}' cannot borrow '{}' from an inner scope (cfire/DANGLING-POINTER)",
+                                path_, as.line, id->name, *src)); !r) return r;
+                        }
+                    }
+                    borrow_origin_[id->name] = *src;
+                    invalidated_loans_.erase(id->name);
+                } else {
+                    borrow_origin_.erase(id->name);
+                    invalidated_loans_.erase(id->name);
+                }
+                if (is_ptr_or_smart_init(as.value)) {
+                    ptr_or_smart_vars_.insert(id->name);
+                }
+                if (auto ns = infer_expr_null_state(as.value)) {
+                    ptr_null_state_[id->name] = *ns;
+                } else if (ptr_null_state_.contains(id->name)) {
+                    ptr_null_state_[id->name] = NullState::NonNull;
+                }
+            }
+        } else {
+            if (as.op == "=") {
+                if (auto r = check_expr(as.target); !r) return r;
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_destructure_assign_stmt(const DestructureAssignStmt& das) -> std::expected<void, std::string> {
+        if (auto r = check_expr(das.value); !r) return r;
+        for (const auto& targ : das.targets) {
+            if (const auto* id = std::get_if<IdentExpr>(&targ->node)) {
+                if (imm_vars_.contains(id->name)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
+                        path_, das.line, 1, id->name)); !r) return r;
+                }
+                moved_at_line_.erase(id->name);
+            } else {
+                if (auto r = check_expr(targ); !r) return r;
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_defer_stmt(const DeferStmt& df) -> std::expected<void, std::string> {
+        if (df.call) {
+            return check_expr(df.call);
+        }
+        ++in_defer_depth_;
+        auto defer_guard = cfire::scope_exit([this] { --in_defer_depth_; });
+        ScopeGuard sg(*this);
+        return check_block_stmts(df.body);
+    }
+
+    [[nodiscard]] auto check_return_stmt(const ReturnStmt& rt) -> std::expected<void, std::string> {
+        if (in_defer_depth_ > 0) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:1: cannot use 'return' inside a 'defer {{ ... }}' block (cfire/RETURN-IN-DEFER)",
+                path_, rt.line)); !r) return r;
+        }
+        if (auto r = check_expr(rt.value); !r) return r;
+        if (rt.value) {
+            bool is_direct = false;
+            if (auto src = extract_borrow_source(rt.value, &is_direct)) {
+                if (local_defined_vars_.contains(*src) || move_params_.contains(*src)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:1: cannot return pointer/view borrowing local variable '{}' (cfire/DANGLING-RETURN)",
+                        path_, rt.line, *src)); !r) return r;
+                }
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_if_stmt(const IfStmt& ifs) -> std::expected<void, std::string> {
+        if (auto r = check_expr(ifs.cond); !r) return r;
+        auto initial_moves = moved_at_line_;
+        auto initial_loans = invalidated_loans_;
+        auto initial_null = ptr_null_state_;
+        auto nc = extract_null_check(ifs.cond);
+
+        if (nc) {
+            ptr_null_state_[nc->first] = nc->second ? NullState::NonNull : NullState::Null;
+        }
+        {
+            ScopeGuard sg(*this);
+            if (auto r = check_block_stmts(ifs.then_body); !r) return r;
+        }
+        auto then_moves = moved_at_line_;
+        auto then_loans = invalidated_loans_;
+        auto then_null = ptr_null_state_;
+
+        moved_at_line_ = initial_moves;
+        invalidated_loans_ = initial_loans;
+        ptr_null_state_ = initial_null;
+        if (nc) {
+            ptr_null_state_[nc->first] = nc->second ? NullState::Null : NullState::NonNull;
+        }
+        {
+            ScopeGuard sg(*this);
+            if (auto r = check_block_stmts(ifs.else_body); !r) return r;
+        }
+        auto else_moves = moved_at_line_;
+        auto else_loans = invalidated_loans_;
+        auto else_null = ptr_null_state_;
+
+        bool then_div = block_diverges(ifs.then_body);
+        bool else_div = !ifs.else_body.empty() && block_diverges(ifs.else_body);
+
+        if (ifs.else_body.empty()) {
+            moved_at_line_ = initial_moves;
+            if (then_div) {
+                invalidated_loans_ = else_loans;
+                ptr_null_state_ = else_null;
+            } else {
+                invalidated_loans_ = then_loans;
+                for (const auto& [k, v] : initial_loans) {
+                    invalidated_loans_.try_emplace(k, v);
+                }
+                std::unordered_map<std::string, NullState> merged_null = initial_null;
+                for (const auto& [var, st] : then_null) {
+                    if (nc && var == nc->first) {
+                        continue;
+                    }
+                    auto it = initial_null.find(var);
+                    if (it == initial_null.end() || it->second == st) {
+                        merged_null[var] = st;
+                    } else {
+                        merged_null[var] = NullState::MaybeNull;
+                    }
+                }
+                ptr_null_state_ = std::move(merged_null);
+            }
+        } else {
+            if (then_div) {
+                moved_at_line_ = else_moves;
+                invalidated_loans_ = else_loans;
+                ptr_null_state_ = else_null;
+            } else if (else_div) {
+                moved_at_line_ = then_moves;
+                invalidated_loans_ = then_loans;
+                ptr_null_state_ = then_null;
+            } else {
+                std::unordered_map<std::string, int> post_moves = initial_moves;
+                for (const auto& [var, line] : then_moves) {
+                    if (else_moves.contains(var)) {
+                        post_moves[var] = std::max(line, else_moves[var]);
+                    }
+                }
+                moved_at_line_ = std::move(post_moves);
+
+                std::unordered_map<std::string, InvalidatedLoan> post_loans = then_loans;
+                for (const auto& [var, loan] : else_loans) {
+                    post_loans.try_emplace(var, loan);
+                }
+                invalidated_loans_ = std::move(post_loans);
+
+                std::unordered_map<std::string, NullState> merged_null = initial_null;
+                for (const auto& [var, st_then] : then_null) {
+                    auto it_else = else_null.find(var);
+                    if (it_else != else_null.end() && it_else->second == st_then) {
+                        merged_null[var] = st_then;
+                    } else {
+                        merged_null[var] = NullState::MaybeNull;
+                    }
+                }
+                ptr_null_state_ = std::move(merged_null);
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_for_stmt(const ForStmt& fs) -> std::expected<void, std::string> {
+        if (auto r = check_expr(fs.iter_expr); !r) return r;
+        if (fs.range_end) {
+            if (auto r = check_expr(fs.range_end); !r) return r;
+        }
+        auto pre_loop_moves = moved_at_line_;
+        auto pre_loop_loans = invalidated_loans_;
+        std::string locked_col;
+        if (!fs.item_var.empty() && !fs.range_end) {
+            if (auto pi = extract_path_info(fs.iter_expr); pi && pi->path == pi->root) {
+                if (!active_loop_collections_.contains(pi->root)) {
+                    locked_col = pi->root;
+                    active_loop_collections_.insert(locked_col);
+                }
+            }
+        }
+        auto unlock_guard = cfire::scope_exit([this, &locked_col] {
+            if (!locked_col.empty()) active_loop_collections_.erase(locked_col);
+        });
+        {
+            ScopeGuard sg(*this);
+            if (!fs.index_var.empty()) {
+                bind_scoped_var(fs.index_var, false);
+            }
+            if (!fs.item_var.empty()) {
+                bind_scoped_var(fs.item_var, false);
+            }
+            if (auto r = check_block_stmts(fs.body); !r) return r;
+        }
+
+        for (const auto& [var, line] : moved_at_line_) {
+            if (!pre_loop_moves.contains(var)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: variable '{}' moved inside loop body without reassignment before next iteration (cfire/USE-AFTER-MOVE)",
+                    path_, line, 1, var)); !r) return r;
+            }
+        }
+        for (const auto& [var, loan] : invalidated_loans_) {
+            if (!pre_loop_loans.contains(var) && var_scope_depth_.contains(var) && var_scope_depth_[var] <= scope_depth_) {
+                // Loan on outer pointer invalidated inside loop; remains invalidated after loop
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_async_scope_stmt(const AsyncScopeStmt& sc) -> std::expected<void, std::string> {
+        if (auto r = check_expr(sc.workers); !r) return r;
+        ScopeGuard sg(*this);
+        if (!sc.scope_var.empty()) {
+            bind_scoped_var(sc.scope_var, false);
+        }
+        return check_block_stmts(sc.body);
     }
 
 private:
@@ -1601,6 +1686,7 @@ private:
     std::vector<std::string> fallback_errors_{};
     int scope_depth_{1};
     int in_defer_depth_{0};
+    std::vector<std::unordered_map<std::string, SavedVarDeclState>*> scope_stack_{};
     std::unordered_map<std::string, int> var_scope_depth_{};
     std::unordered_set<std::string> local_defined_vars_{};
     std::unordered_map<std::string, std::string> borrow_origin_{};
@@ -1621,7 +1707,6 @@ private:
 
 [[nodiscard]] inline auto analyze_resilient(FileAST ast) -> CheckedFile {
     CheckedFile cf;
-    static const std::regex tag_re(R"re((\w+):"([^"]*)")re");
 
     // 0. Check Global / Package Variables
     for (const auto& gv : ast.global_vars) {
@@ -1657,10 +1742,7 @@ private:
                 continue;
             }
 
-            auto begin = std::sregex_iterator(fld.raw_tag.begin(), fld.raw_tag.end(), tag_re);
-            for (auto it = begin; it != std::sregex_iterator(); ++it) {
-                std::string key = (*it)[1].str();
-                std::string val = (*it)[2].str();
+            for (const auto& [key, val] : parse_struct_tags(fld.raw_tag)) {
                 if (key == "cli") {
                     auto comma = val.find(',');
                     if (comma != std::string::npos) {

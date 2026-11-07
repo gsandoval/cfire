@@ -104,64 +104,42 @@ inline auto get_format() noexcept -> Format {
     return detail::g_format.load(std::memory_order_relaxed);
 }
 
+namespace detail {
 template <typename... Args>
-inline void debug(std::string_view msg, Args&&... args) {
+[[nodiscard]] inline auto collect_kv_pairs(Args&&... args) -> std::vector<std::pair<std::string, std::string>> {
     std::vector<std::pair<std::string, std::string>> attrs;
-    auto add_pairs = [&]<typename Self, typename K, typename V, typename... Rest>(Self& self, K&& k, V&& v, Rest&&... rest) {
-        attrs.emplace_back(std::string(std::forward<K>(k)), std::string(std::forward<V>(v)));
-        if constexpr (sizeof...(rest) >= 2) {
-            self(self, std::forward<Rest>(rest)...);
-        }
-    };
-    if constexpr (sizeof...(args) >= 2) {
+    if constexpr (sizeof...(Args) >= 2) {
+        attrs.reserve(sizeof...(Args) / 2);
+        auto add_pairs = [&]<typename Self, typename K, typename V, typename... Rest>(Self& self, K&& k, V&& v, Rest&&... rest) {
+            attrs.emplace_back(std::string(std::forward<K>(k)), std::string(std::forward<V>(v)));
+            if constexpr (sizeof...(rest) >= 2) {
+                self(self, std::forward<Rest>(rest)...);
+            }
+        };
         add_pairs(add_pairs, std::forward<Args>(args)...);
     }
-    detail::write_log(Level::Debug, msg, attrs);
+    return attrs;
+}
+} // namespace detail
+
+template <typename... Args>
+inline void debug(std::string_view msg, Args&&... args) {
+    detail::write_log(Level::Debug, msg, detail::collect_kv_pairs(std::forward<Args>(args)...));
 }
 
 template <typename... Args>
 inline void info(std::string_view msg, Args&&... args) {
-    std::vector<std::pair<std::string, std::string>> attrs;
-    auto add_pairs = [&]<typename Self, typename K, typename V, typename... Rest>(Self& self, K&& k, V&& v, Rest&&... rest) {
-        attrs.emplace_back(std::string(std::forward<K>(k)), std::string(std::forward<V>(v)));
-        if constexpr (sizeof...(rest) >= 2) {
-            self(self, std::forward<Rest>(rest)...);
-        }
-    };
-    if constexpr (sizeof...(args) >= 2) {
-        add_pairs(add_pairs, std::forward<Args>(args)...);
-    }
-    detail::write_log(Level::Info, msg, attrs);
+    detail::write_log(Level::Info, msg, detail::collect_kv_pairs(std::forward<Args>(args)...));
 }
 
 template <typename... Args>
 inline void warn(std::string_view msg, Args&&... args) {
-    std::vector<std::pair<std::string, std::string>> attrs;
-    auto add_pairs = [&]<typename Self, typename K, typename V, typename... Rest>(Self& self, K&& k, V&& v, Rest&&... rest) {
-        attrs.emplace_back(std::string(std::forward<K>(k)), std::string(std::forward<V>(v)));
-        if constexpr (sizeof...(rest) >= 2) {
-            self(self, std::forward<Rest>(rest)...);
-        }
-    };
-    if constexpr (sizeof...(args) >= 2) {
-        add_pairs(add_pairs, std::forward<Args>(args)...);
-    }
-    detail::write_log(Level::Warn, msg, attrs);
+    detail::write_log(Level::Warn, msg, detail::collect_kv_pairs(std::forward<Args>(args)...));
 }
 
 template <typename... Args>
 inline void error(std::string_view msg, Args&&... args) {
-    std::vector<std::pair<std::string, std::string>> attrs;
-    auto add_pairs = [&]<typename Self, typename K, typename V, typename... Rest>(Self& self, K&& k, V&& v, Rest&&... rest) {
-        attrs.emplace_back(std::string(std::forward<K>(k)), std::string(std::forward<V>(v)));
-        if constexpr (sizeof...(rest) >= 2) {
-            self(self, std::forward<Rest>(rest)...);
-        }
-    };
-    if constexpr (sizeof...(args) >= 2) {
-        add_pairs(add_pairs, std::forward<Args>(args)...);
-    }
-    detail::write_log(Level::Error, msg, attrs);
+    detail::write_log(Level::Error, msg, detail::collect_kv_pairs(std::forward<Args>(args)...));
 }
 
 } // namespace cfire::log

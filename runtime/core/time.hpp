@@ -83,7 +83,7 @@ struct Time {
     }
 
     // Calendar breakdowns (UTC)
-    [[nodiscard]] inline auto year() const noexcept -> std::int32_t {
+    [[nodiscard]] inline auto to_utc_tm() const noexcept -> std::tm {
         std::time_t t = std::chrono::system_clock::to_time_t(tp);
         std::tm tm_buf{};
 #if defined(_WIN32)
@@ -91,67 +91,30 @@ struct Time {
 #else
         gmtime_r(&t, &tm_buf);
 #endif
-        return tm_buf.tm_year + 1900;
+        return tm_buf;
+    }
+
+    [[nodiscard]] inline auto year() const noexcept -> std::int32_t {
+        return to_utc_tm().tm_year + 1900;
     }
     [[nodiscard]] inline auto month() const noexcept -> std::int32_t {
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_buf{};
-#if defined(_WIN32)
-        gmtime_s(&tm_buf, &t);
-#else
-        gmtime_r(&t, &tm_buf);
-#endif
-        return tm_buf.tm_mon + 1;
+        return to_utc_tm().tm_mon + 1;
     }
     [[nodiscard]] inline auto day() const noexcept -> std::int32_t {
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_buf{};
-#if defined(_WIN32)
-        gmtime_s(&tm_buf, &t);
-#else
-        gmtime_r(&t, &tm_buf);
-#endif
-        return tm_buf.tm_mday;
+        return to_utc_tm().tm_mday;
     }
     [[nodiscard]] inline auto hour() const noexcept -> std::int32_t {
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_buf{};
-#if defined(_WIN32)
-        gmtime_s(&tm_buf, &t);
-#else
-        gmtime_r(&t, &tm_buf);
-#endif
-        return tm_buf.tm_hour;
+        return to_utc_tm().tm_hour;
     }
     [[nodiscard]] inline auto minute() const noexcept -> std::int32_t {
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_buf{};
-#if defined(_WIN32)
-        gmtime_s(&tm_buf, &t);
-#else
-        gmtime_r(&t, &tm_buf);
-#endif
-        return tm_buf.tm_min;
+        return to_utc_tm().tm_min;
     }
     [[nodiscard]] inline auto second() const noexcept -> std::int32_t {
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_buf{};
-#if defined(_WIN32)
-        gmtime_s(&tm_buf, &t);
-#else
-        gmtime_r(&t, &tm_buf);
-#endif
-        return tm_buf.tm_sec;
+        return to_utc_tm().tm_sec;
     }
 
     [[nodiscard]] inline auto format_rfc3339() const -> std::string {
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_buf{};
-#if defined(_WIN32)
-        gmtime_s(&tm_buf, &t);
-#else
-        gmtime_r(&t, &tm_buf);
-#endif
+        auto tm_buf = to_utc_tm();
         return std::format("{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z",
             tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
             tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);

@@ -1,6 +1,7 @@
 #pragma once
 // src/codegen.hpp — C++23 Emitter for cfire (.cf)
 
+#include "module_registry.hpp"
 #include "sema.hpp"
 #include <algorithm>
 #include <format>
@@ -88,6 +89,32 @@ public:
         }
     }
 
+    [[nodiscard]] auto make_sub_emitter(bool inherit_return_context = true) const -> Emitter {
+        Emitter sub(cf_, test_mode_);
+        sub.indent_ = indent_;
+        sub.cur_fn_ = cur_fn_;
+        sub.cur_pkg_ = cur_pkg_;
+        sub.colliding_fn_names_ = colliding_fn_names_;
+        sub.colliding_gv_names_ = colliding_gv_names_;
+        sub.used_core_ = used_core_;
+        sub.used_vendor_ = used_vendor_;
+        sub.local_vars_ = local_vars_;
+        sub.ptr_vars_ = ptr_vars_;
+        sub.ptr_field_names_ = ptr_field_names_;
+        sub.optional_vars_ = optional_vars_;
+        sub.map_vars_ = map_vars_;
+        sub.fixed_array_vars_ = fixed_array_vars_;
+        sub.loop_index_to_col_ = loop_index_to_col_;
+        if (inherit_return_context) {
+            sub.in_main_ = in_main_;
+            sub.in_test_ = in_test_;
+            sub.in_fallible_void_ = in_fallible_void_;
+            sub.in_ptr_return_ = in_ptr_return_;
+            sub.cur_fn_raw_return_type_ = cur_fn_raw_return_type_;
+        }
+        return sub;
+    }
+
     void init_imports() {
         std::unordered_map<std::string, std::size_t> fn_counts;
         for (const auto& fn : cf_.ast.functions) {
@@ -112,67 +139,17 @@ public:
         }
         for (const auto& imp : cf_.ast.imports) {
             if (imp.is_cpp) continue;
-            std::string path = imp.path.starts_with("ext:") ? ("core:" + imp.path.substr(4)) : imp.path;
-            if (path == "core:fs") {
-                used_core_.insert("fs");
-            } else if (path == "core:cli") {
-                used_core_.insert("cli");
-            } else if (path.starts_with("core:compress/") || path == "core:compress" || path == "core:zstd") {
-                used_core_.insert("compress");
-            } else if (path == "core:json") {
-                used_core_.insert("json");
-            } else if (path == "core:db/sqlite" || path == "core:sqlite") {
-                used_core_.insert("sqlite");
-            } else if (path == "core:crypto/sodium" || path == "core:sodium") {
-                used_core_.insert("sodium");
-            } else if (path == "core:keychain" || path == "core:os/keychain") {
-                used_core_.insert("keychain");
-            } else if (path == "core:net/ssh" || path == "core:ssh") {
-                used_core_.insert("ssh");
-            } else if (path.starts_with("core:crypto/") || path == "core:crypto") {
-                used_core_.insert("crypto");
-            } else if (path.starts_with("core:net/") || path == "core:net" || path == "core:http" || path == "core:websocket" || path == "core:tls") {
-                used_core_.insert("net");
-            } else if (path == "core:time") {
-                used_core_.insert("time");
-            } else if (path == "core:os") {
-                used_core_.insert("os");
-            } else if (path.starts_with("core:sync/") || path == "core:sync" || path == "core:context") {
-                used_core_.insert("sync");
-            } else if (path == "core:str") {
-                used_core_.insert("str");
-            } else if (path == "core:math" || path == "core:rand") {
-                used_core_.insert("math");
-            } else if (path.starts_with("core:encoding/") || path == "core:encoding" || path == "core:base64" || path == "core:hex" || path == "core:csv") {
-                used_core_.insert("encoding");
-            } else if (path == "core:regex") {
-                used_core_.insert("regex");
-            } else if (path == "core:collections" || path == "core:sort") {
-                used_core_.insert("collections");
-            } else if (path == "core:log") {
-                used_core_.insert("log");
-            } else if (path == "core:unicode") {
-                used_core_.insert("unicode");
-            } else if (path == "core:audio") {
-                used_core_.insert("audio");
-            } else if (path == "core:ai" || path.starts_with("core:ai/")) {
-                used_core_.insert("ai");
-            } else if (path == "core:tako") {
-                used_core_.insert("tako");
-                used_core_.insert("json");
-            } else if (path == "core:webui") {
-                used_core_.insert("webui");
-                used_core_.insert("json");
-            } else if (path.starts_with("core:")) {
-                used_core_.insert(path.substr(5));
-            } else if (path == "vendor:raylib") {
-                std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
-                used_vendor_["raylib"] = alias;
-            } else if (path == "vendor:raygui") {
-                std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
-                used_vendor_["raygui"] = alias;
-                if (!used_vendor_.contains("raylib")) {
-                    used_vendor_["raylib"] = "raylib";
+            auto resolved = cfire::modules::resolve_import(imp.path);
+            for (const auto& ck : resolved.core_keys) {
+                used_core_.insert(ck);
+            }
+            if (resolved.is_vendor) {
+                std::string alias = imp.alias.empty() ? resolved.vendor_key : imp.alias;
+                used_vendor_[resolved.vendor_key] = alias;
+                for (const auto& iv : resolved.implied_vendors) {
+                    if (!used_vendor_.contains(iv)) {
+                        used_vendor_[iv] = iv;
+                    }
                 }
             }
         }
@@ -221,88 +198,24 @@ public:
                 cpp_headers.push_back(std::move(header));
                 continue;
             }
-            std::string path = imp.path.starts_with("ext:") ? ("core:" + imp.path.substr(4)) : imp.path;
-            if (path == "core:fs") {
-                used_core_.insert("fs");
-            } else if (path == "core:cli") {
-                used_core_.insert("cli");
-            } else if (path.starts_with("core:compress/") || path == "core:compress" || path == "core:zstd") {
-                used_core_.insert("compress");
-                add_unique(defines, "#define CFIRE_USE_ZSTD 1");
-                add_unique(link_tags, "-lzstd");
-            } else if (path == "core:json") {
-                used_core_.insert("json");
-                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
-                add_unique(link_tags, "-lsimdjson");
-            } else if (path == "core:db/sqlite" || path == "core:sqlite") {
-                used_core_.insert("sqlite");
-                add_unique(defines, "#define CFIRE_USE_SQLITE 1");
-                add_unique(link_tags, "-lsqlite3");
-            } else if (path == "core:crypto/sodium" || path == "core:sodium") {
-                used_core_.insert("sodium");
-                add_unique(link_tags, "@pkg:libsodium");
-            } else if (path == "core:keychain" || path == "core:os/keychain") {
-                used_core_.insert("keychain");
-#if defined(__APPLE__)
-                add_unique(link_tags, "-framework Security");
-                add_unique(link_tags, "-framework CoreFoundation");
-#endif
-            } else if (path == "core:net/ssh" || path == "core:ssh") {
-                used_core_.insert("ssh");
-                add_unique(link_tags, "@pkg:libssh");
-            } else if (path.starts_with("core:crypto/") || path == "core:crypto") {
-                used_core_.insert("crypto");
-            } else if (path.starts_with("core:net/") || path == "core:net" || path == "core:http" || path == "core:websocket" || path == "core:tls") {
-                used_core_.insert("net");
-            } else if (path == "core:time") {
-                used_core_.insert("time");
-            } else if (path == "core:os") {
-                used_core_.insert("os");
-            } else if (path.starts_with("core:sync/") || path == "core:sync" || path == "core:context") {
-                used_core_.insert("sync");
-            } else if (path == "core:str") {
-                used_core_.insert("str");
-            } else if (path == "core:math" || path == "core:rand") {
-                used_core_.insert("math");
-            } else if (path.starts_with("core:encoding/") || path == "core:encoding" || path == "core:base64" || path == "core:hex" || path == "core:csv") {
-                used_core_.insert("encoding");
-            } else if (path == "core:regex") {
-                used_core_.insert("regex");
-            } else if (path == "core:collections" || path == "core:sort") {
-                used_core_.insert("collections");
-            } else if (path == "core:log") {
-                used_core_.insert("log");
-            } else if (path == "core:unicode") {
-                used_core_.insert("unicode");
-            } else if (path == "core:audio") {
-                used_core_.insert("audio");
-            } else if (path == "core:ai" || path.starts_with("core:ai/")) {
-                used_core_.insert("ai");
-                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
-                add_unique(link_tags, "-lsimdjson");
-            } else if (path == "core:tako") {
-                used_core_.insert("tako");
-                used_core_.insert("json");
-                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
-                add_unique(link_tags, "-lsimdjson");
-            } else if (path == "core:webui") {
-                used_core_.insert("webui");
-                used_core_.insert("json");
-                add_unique(defines, "#define CFIRE_USE_SIMDJSON 1");
-                add_unique(link_tags, "-lsimdjson");
-            } else if (path.starts_with("core:")) {
-                used_core_.insert(path.substr(5));
-            } else if (path == "vendor:raylib") {
-                std::string alias = imp.alias.empty() ? "raylib" : imp.alias;
-                used_vendor_["raylib"] = alias;
-                add_unique(link_tags, "-lraylib");
-            } else if (path == "vendor:raygui") {
-                std::string alias = imp.alias.empty() ? "raygui" : imp.alias;
-                used_vendor_["raygui"] = alias;
-                if (!used_vendor_.contains("raylib")) {
-                    used_vendor_["raylib"] = "raylib";
+            auto resolved = cfire::modules::resolve_import(imp.path);
+            for (const auto& ck : resolved.core_keys) {
+                used_core_.insert(ck);
+            }
+            for (const auto& def : resolved.defines) {
+                add_unique(defines, def);
+            }
+            for (const auto& lt : resolved.link_tags) {
+                add_unique(link_tags, lt);
+            }
+            if (resolved.is_vendor) {
+                std::string alias = imp.alias.empty() ? resolved.vendor_key : imp.alias;
+                used_vendor_[resolved.vendor_key] = alias;
+                for (const auto& iv : resolved.implied_vendors) {
+                    if (!used_vendor_.contains(iv)) {
+                        used_vendor_[iv] = iv;
+                    }
                 }
-                add_unique(link_tags, "-lraylib");
             }
         }
 
@@ -338,25 +251,7 @@ public:
         if (!used_core_.empty()) {
             std::set<std::string> core_headers;
             for (const auto& mod : used_core_) {
-                if (mod == "cli") core_headers.insert("core/cli.hpp");
-                else if (mod == "collections" || mod == "sort") core_headers.insert("core/collections.hpp");
-                else if (mod == "zstd" || mod == "compress") core_headers.insert("core/compress.hpp");
-                else if (mod == "crypto") core_headers.insert("core/crypto.hpp");
-                else if (mod == "encoding" || mod == "base64" || mod == "hex" || mod == "csv") core_headers.insert("core/encoding.hpp");
-                else if (mod == "fs") core_headers.insert("core/fs.hpp");
-                else if (mod == "json") core_headers.insert("core/json.hpp");
-                else if (mod == "log") core_headers.insert("core/log.hpp");
-                else if (mod == "math" || mod == "rand") core_headers.insert("core/math.hpp");
-                else if (mod == "net" || mod == "http" || mod == "websocket" || mod == "url" || mod == "tls") core_headers.insert("core/net.hpp");
-                else if (mod == "os") core_headers.insert("core/os.hpp");
-                else if (mod == "regex") core_headers.insert("core/regex.hpp");
-                else if (mod == "sqlite") core_headers.insert("core/sqlite.hpp");
-                else if (mod == "str") core_headers.insert("core/str.hpp");
-                else if (mod == "sync" || mod == "context") core_headers.insert("core/sync.hpp");
-                else if (mod == "time") core_headers.insert("core/time.hpp");
-                else if (mod == "unicode") core_headers.insert("core/unicode.hpp");
-                else if (mod == "audio") core_headers.insert("core/audio.hpp");
-                else core_headers.insert(std::format("core/{}.hpp", mod));
+                core_headers.insert(cfire::modules::core_module_header(mod));
             }
             for (const auto& hdr : core_headers) {
                 writeln(std::format("#include \"{}\"", hdr));
@@ -532,470 +427,11 @@ public:
         }
 
         // 5. Emit `test "..."`, `fuzz "..."`, `bench "..."`, and `[auto]` Invariant Blocks & Test Harness Runner
-        std::vector<std::pair<std::string, int>> auto_json_structs;
-        if (test_mode_ && used_core_.contains("json")) {
-            for (const auto& st : ast.structs) {
-                auto it = cf_.struct_tags.find(st.name);
-                if (it == cf_.struct_tags.end()) continue;
-                bool has_json_or_desc = false;
-                for (const auto& t : it->second) {
-                    if (!t.json_key.empty() || t.custom_tags.contains("desc")) {
-                        has_json_or_desc = true;
-                        break;
-                    }
-                }
-                if (!has_json_or_desc) continue;
-                bool supported = true;
-                for (const auto& fld : st.fields) {
-                    if (fld.type.is_ptr || fld.type.is_mut_ptr || fld.type.is_borrow ||
-                        fld.type.is_mut_borrow || fld.type.is_fn || !fld.type.smart_wrap.empty()) {
-                        supported = false;
-                        break;
-                    }
-                }
-                if (supported) {
-                    auto_json_structs.emplace_back(st.name, st.line);
-                }
-            }
-        }
-
-        for (std::size_t i = 0; i < ast.tests.size(); ++i) {
-            emit_test_decl(ast.tests[i], i);
-            writeln();
-        }
-        for (std::size_t j = 0; j < auto_json_structs.size(); ++j) {
-            const auto& [sname, sline] = auto_json_structs[j];
-            writeln(std::format("inline void __cfire_auto_json_{}(std::uint64_t seed) {{", j));
-            ++indent_;
-            writeln("cfire::testing_detail::FuzzRng rng(seed);");
-            writeln("for (std::size_t iter = 0; iter < 16; ++iter) {");
-            ++indent_;
-            writeln(std::format("auto val = cfire::testing_detail::Arbitrary<{}>::generate(rng, iter);", sname));
-            writeln("std::string encoded = cfire::json::stringify(val);");
-            writeln(std::format("auto decoded = cfire::json::parse<{}>(encoded);", sname));
-            writeln(std::format("cfire::assert_true_at(decoded.has_value(), \"auto JSON round-trip parse failed for '{}'\", \"{}\", {}, \"json.parse(json.stringify(val))\");",
-                sname, escape_line_path(source_path_), sline));
-            writeln("if (decoded.has_value()) {");
-            ++indent_;
-            writeln("std::string reencoded = cfire::json::stringify(*decoded);");
-            writeln(std::format("cfire::assert_binop_at(reencoded, encoded, [](const auto& _l, const auto& _r) {{ return _l == _r; }}, \"==\", \"auto JSON round-trip mismatch for '{}'\", \"{}\", {}, \"json.stringify(decoded) == json.stringify(val)\");",
-                sname, escape_line_path(source_path_), sline));
-            --indent_;
-            writeln("}");
-            --indent_;
-            writeln("}");
-            writeln(std::format("auto bad = cfire::json::parse<{}>(\"{{malformed_json\");", sname));
-            writeln(std::format("cfire::assert_true_at(!bad.has_value(), \"expected malformed JSON to return Err for '{}'\", \"{}\", {}, \"!json.parse(\\\"{{malformed\\\").has_value()\");",
-                sname, escape_line_path(source_path_), sline));
-            --indent_;
-            writeln("}");
-            writeln();
-        }
-
-        if ((test_mode_ || !has_user_main) && (!ast.tests.empty() || !auto_json_structs.empty())) {
-            writeln("auto main(int argc, char** argv) -> int {");
-            ++indent_;
-            writeln("cfire::detail::set_process_args(argc, argv);");
-            writeln("bool json_mode = false;");
-            writeln("bool bench_mode = false;");
-            writeln("double bench_time_ms = 200.0;");
-            writeln("std::size_t fuzz_runs = 100;");
-            writeln("std::uint64_t fuzz_seed = 0x9E3779B97F4A7C15ULL;");
-            writeln("std::string filter;");
-            writeln("for (int i = 1; i < argc; ++i) {");
-            writeln("    std::string_view a = argv[i];");
-            writeln("    if (a == \"--cfire-test-json\") json_mode = true;");
-            writeln("    else if (a == \"--cfire-bench\") bench_mode = true;");
-            writeln("    else if (a.starts_with(\"--cfire-test-filter=\")) filter = a.substr(20);");
-            writeln("    else if (a.starts_with(\"--cfire-fuzz-runs=\")) {");
-            writeln("        std::size_t v = 100;");
-            writeln("        auto sv = a.substr(18);");
-            writeln("        std::from_chars(sv.data(), sv.data() + sv.size(), v);");
-            writeln("        if (v > 0) fuzz_runs = v;");
-            writeln("    } else if (a.starts_with(\"--cfire-seed=\")) {");
-            writeln("        std::uint64_t s = 0;");
-            writeln("        auto sv = a.substr(13);");
-            writeln("        std::from_chars(sv.data(), sv.data() + sv.size(), s);");
-            writeln("        if (s > 0) fuzz_seed = s;");
-            writeln("    } else if (a.starts_with(\"--cfire-bench-time=\")) {");
-            writeln("        std::uint64_t ms = 200;");
-            writeln("        auto sv = a.substr(19);");
-            writeln("        std::from_chars(sv.data(), sv.data() + sv.size(), ms);");
-            writeln("        if (ms > 0) bench_time_ms = static_cast<double>(ms);");
-            writeln("    }");
-            writeln("}");
-            writeln("(void)bench_mode; (void)bench_time_ms; (void)fuzz_runs; (void)fuzz_seed;");
-            writeln("cfire::testing_detail::in_test_harness = true;");
-            if (used_core_.contains("sqlite")) {
-                writeln("#if defined(CFIRE_USE_SQLITE)");
-                writeln("{ unsigned char _sq_warm = 0; sqlite3_randomness(1, &_sq_warm); }");
-                writeln("#endif");
-            }
-            writeln("int passed_count = 0;");
-            writeln("int failed_count = 0;");
-            writeln("struct TestResultRecord { std::string name; bool passed; double duration_ms; std::string file; int line; std::string error; };");
-            writeln("std::vector<TestResultRecord> records;");
-            writeln("std::vector<cfire::testing_detail::BenchStats> bench_records;");
-            for (std::size_t i = 0; i < ast.tests.size(); ++i) {
-                const auto& td = ast.tests[i];
-                std::string t_name = escape_line_path(td.name);
-                if (td.is_bench) {
-                    writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", t_name));
-                    ++indent_;
-                    writeln(std::format("if (!json_mode) std::println(\"=== BENCH {}\");", t_name));
-                    writeln("cfire::testing_detail::current_test_failed = false;");
-                    writeln("cfire::testing_detail::failure_file.clear();");
-                    writeln("cfire::testing_detail::failure_line = 0;");
-                    writeln("cfire::testing_detail::failure_expr.clear();");
-                    writeln("cfire::testing_detail::failure_msg.clear();");
-                    writeln("auto start_t = std::chrono::steady_clock::now();");
-                    writeln("if (setjmp(cfire::testing_detail::test_env) == 0) {");
-                    writeln(std::format("    __cfire_bench_runner_{}(!bench_mode, bench_time_ms, json_mode, bench_records);", i));
-                    writeln("}");
-                    writeln("auto end_t = std::chrono::steady_clock::now();");
-                    writeln("double dur_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();");
-                    writeln("if (!cfire::testing_detail::current_test_failed) {");
-                    writeln("    passed_count++;");
-                    writeln(std::format("    if (!json_mode && !bench_mode) std::println(\"--- PASS: {}\");", t_name));
-                    writeln(std::format("    records.push_back({{\"{}\", true, dur_ms, \"\", 0, \"\"}});", t_name));
-                    writeln("} else {");
-                    writeln("    failed_count++;");
-                    writeln("    std::string fail_detail = cfire::testing_detail::failure_msg.empty() ? cfire::testing_detail::failure_expr : cfire::testing_detail::failure_msg;");
-                    writeln("    if (!json_mode) std::println(\"--- FAIL: " + t_name + " ({}:{}: {})\", cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail);");
-                    writeln(std::format("    records.push_back({{\"{}\", false, dur_ms, cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail}});", t_name));
-                    writeln("}");
-                    --indent_;
-                    writeln("}");
-                    continue;
-                }
-
-                writeln("if (!bench_mode) {");
-                ++indent_;
-                writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", t_name));
-                ++indent_;
-                writeln(std::format("if (!json_mode) std::println(\"=== RUN   {}\");", t_name));
-                writeln("cfire::testing_detail::current_test_failed = false;");
-                writeln("cfire::testing_detail::failure_file.clear();");
-                writeln("cfire::testing_detail::failure_line = 0;");
-                writeln("cfire::testing_detail::failure_expr.clear();");
-                writeln("cfire::testing_detail::failure_msg.clear();");
-                bool check_fd_leak = !stmts_reference_ident(td.body, "InitWindow") &&
-                                     !stmts_reference_ident(td.body, "run_webview_test") &&
-                                     !stmts_reference_ident(td.body, "keychain");
-                if (check_fd_leak) {
-                    for (const auto& fn : ast.functions) {
-                        if (!fn.receiver && stmts_reference_ident(td.body, fn.name)) {
-                            if (stmts_reference_ident(fn.body, "InitWindow") ||
-                                stmts_reference_ident(fn.body, "run_webview_test") ||
-                                stmts_reference_ident(fn.body, "keychain")) {
-                                check_fd_leak = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (check_fd_leak) {
-                    writeln("const std::size_t fds_before = cfire::testing_detail::count_open_fds();");
-                }
-                writeln("auto start_t = std::chrono::steady_clock::now();");
-                if (td.is_fuzz || !td.params.empty()) {
-                    writeln(std::format("__cfire_fuzz_runner_{}(fuzz_runs, fuzz_seed);", i));
-                } else {
-                    writeln("if (setjmp(cfire::testing_detail::test_env) == 0) {");
-                    writeln(std::format("    __cfire_test_{}();", i));
-                    writeln("}");
-                }
-                writeln("auto end_t = std::chrono::steady_clock::now();");
-                if (check_fd_leak) {
-                    writeln("const std::size_t fds_after = cfire::testing_detail::count_open_fds();");
-                    writeln("if (!cfire::testing_detail::current_test_failed && fds_before > 0 && fds_after > fds_before) {");
-                    writeln("    cfire::testing_detail::current_test_failed = true;");
-                    writeln(std::format("    cfire::testing_detail::failure_file = \"{}\";", escape_line_path(source_path_)));
-                    writeln(std::format("    cfire::testing_detail::failure_line = {};", td.line));
-                    writeln("    cfire::testing_detail::failure_expr = \"resource leak canary\";");
-                    writeln("    cfire::testing_detail::failure_msg = std::format(\"test leaked {} open file descriptor(s) (missing 'defer file.close()' or 'defer db.close()'?)\", fds_after - fds_before);");
-                    writeln("}");
-                }
-                writeln("double dur_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();");
-                writeln("bool test_pass = !cfire::testing_detail::current_test_failed;");
-                writeln("if (test_pass) {");
-                writeln("    passed_count++;");
-                writeln(std::format("    if (!json_mode) std::println(\"--- PASS: {}\");", t_name));
-                writeln(std::format("    records.push_back({{\"{}\", true, dur_ms, \"\", 0, \"\"}});", t_name));
-                writeln("} else {");
-                writeln("    failed_count++;");
-                writeln("    std::string fail_detail;");
-                writeln("    if (!cfire::testing_detail::failure_expr.empty() && !cfire::testing_detail::failure_msg.empty()) {");
-                writeln("        fail_detail = cfire::testing_detail::failure_expr + \" (\" + cfire::testing_detail::failure_msg + \")\";");
-                writeln("    } else if (!cfire::testing_detail::failure_expr.empty()) {");
-                writeln("        fail_detail = cfire::testing_detail::failure_expr;");
-                writeln("    } else {");
-                writeln("        fail_detail = cfire::testing_detail::failure_msg;");
-                writeln("    }");
-                writeln("    if (!json_mode) std::println(\"--- FAIL: " + t_name + " ({}:{}: {})\", cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail);");
-                writeln(std::format("    records.push_back({{\"{}\", false, dur_ms, cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail}});", t_name));
-                writeln("}");
-                --indent_;
-                writeln("}");
-                --indent_;
-                writeln("}");
-            }
-            for (std::size_t j = 0; j < auto_json_structs.size(); ++j) {
-                const auto& [sname, sline] = auto_json_structs[j];
-                std::string auto_name = std::format("[auto] json round-trip: {}", sname);
-                writeln("if (!bench_mode) {");
-                ++indent_;
-                writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", auto_name));
-                ++indent_;
-                writeln(std::format("if (!json_mode) std::println(\"=== RUN   {}\");", auto_name));
-                writeln("cfire::testing_detail::current_test_failed = false;");
-                writeln("cfire::testing_detail::failure_file.clear();");
-                writeln("cfire::testing_detail::failure_line = 0;");
-                writeln("cfire::testing_detail::failure_expr.clear();");
-                writeln("cfire::testing_detail::failure_msg.clear();");
-                writeln("auto start_t = std::chrono::steady_clock::now();");
-                writeln("if (setjmp(cfire::testing_detail::test_env) == 0) {");
-                writeln(std::format("    __cfire_auto_json_{}(fuzz_seed);", j));
-                writeln("}");
-                writeln("auto end_t = std::chrono::steady_clock::now();");
-                writeln("double dur_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();");
-                writeln("if (!cfire::testing_detail::current_test_failed) {");
-                writeln("    passed_count++;");
-                writeln(std::format("    if (!json_mode) std::println(\"--- PASS: {}\");", auto_name));
-                writeln(std::format("    records.push_back({{\"{}\", true, dur_ms, \"\", 0, \"\"}});", auto_name));
-                writeln("} else {");
-                writeln("    failed_count++;");
-                writeln("    std::string fail_detail = cfire::testing_detail::failure_expr + \" (\" + cfire::testing_detail::failure_msg + \")\";");
-                writeln("    if (!json_mode) std::println(\"--- FAIL: " + auto_name + " ({}:{}: {})\", cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail);");
-                writeln(std::format("    records.push_back({{\"{}\", false, dur_ms, cfire::testing_detail::failure_file, cfire::testing_detail::failure_line, fail_detail}});", auto_name));
-                writeln("}");
-                --indent_;
-                writeln("}");
-                --indent_;
-                writeln("}");
-            }
-            writeln("if (json_mode) {");
-            writeln("    auto escape_json = [](std::string_view s) -> std::string {");
-            writeln("        std::string out;");
-            writeln("        for (char c : s) {");
-            writeln("            if (c == '\"') out += \"\\\\\\\"\";");
-            writeln("            else if (c == '\\\\') out += \"\\\\\\\\\";");
-            writeln("            else if (c == '\\n') out += \"\\\\n\";");
-            writeln("            else out += c;");
-            writeln("        }");
-            writeln("        return out;");
-            writeln("    };");
-            writeln("    std::print(\"{{\\\"success\\\": {}, \\\"passed\\\": {}, \\\"failed\\\": {}, \\\"tests\\\": [\", (failed_count == 0 ? \"true\" : \"false\"), passed_count, failed_count);");
-            writeln("    for (std::size_t r = 0; r < records.size(); ++r) {");
-            writeln("        if (r > 0) std::print(\", \");");
-            writeln("        const auto& rec = records[r];");
-            writeln("        std::print(\"{{\\\"name\\\": \\\"{}\\\", \\\"status\\\": \\\"{}\\\", \\\"duration_ms\\\": {:.2f}, \\\"file\\\": \\\"{}\\\", \\\"line\\\": {}, \\\"error\\\": \\\"{}\\\"}}\", escape_json(rec.name), (rec.passed ? \"pass\" : \"fail\"), rec.duration_ms, escape_json(rec.file), rec.line, escape_json(rec.error));");
-            writeln("    }");
-            writeln("    std::print(\"], \\\"benchmarks\\\": [\");");
-            writeln("    for (std::size_t b = 0; b < bench_records.size(); ++b) {");
-            writeln("        if (b > 0) std::print(\", \");");
-            writeln("        const auto& br = bench_records[b];");
-            writeln("        std::print(\"{{\\\"name\\\": \\\"{}\\\", \\\"iters\\\": {}, \\\"min_ns\\\": {:.2f}, \\\"p50_ns\\\": {:.2f}, \\\"mean_ns\\\": {:.2f}, \\\"p99_ns\\\": {:.2f}, \\\"stddev_pct\\\": {:.2f}, \\\"ops_per_sec\\\": {:.1f}}}\", escape_json(br.name), br.total_iters, br.min_ns, br.p50_ns, br.mean_ns, br.p99_ns, br.stddev_pct, br.ops_per_sec);");
-            writeln("    }");
-            writeln("    std::println(\"]}}\");");
-            writeln("} else {");
-            writeln("    if (failed_count == 0) {");
-            writeln("        std::println(\"PASS ({} cfire tests succeeded)\", passed_count);");
-            writeln("    } else {");
-            writeln("        std::println(\"FAIL ({} of {} cfire tests failed)\", failed_count, (passed_count + failed_count));");
-            writeln("    }");
-            writeln("}");
-            writeln("return failed_count > 0 ? 1 : 0;");
-            --indent_;
-            writeln("}");
-        }
+        emit_test_runner(ast, has_user_main);
     }
 
-    void emit_test_decl(const TestDecl& td, std::size_t idx) {
-        if (td.line > 0) emit_line_directive(td.line);
-        cur_fn_ = std::format("__cfire_test_{}", idx);
-        defer_count_ = 0;
-        in_test_ = true;
-        in_fallible_void_ = false;
-        local_vars_.clear();
-        ptr_vars_.clear();
-        map_vars_.clear();
-        fixed_array_vars_.clear();
-
-        std::string param_sig;
-        for (std::size_t i = 0; i < td.params.size(); ++i) {
-            if (!param_sig.empty()) param_sig += ", ";
-            param_sig += std::format("{} {}", lower_param_type("in", td.params[i].type), td.params[i].name);
-            local_vars_.insert(td.params[i].name);
-        }
-        for (std::size_t i = 0; i < td.bench_variations.size(); ++i) {
-            if (!param_sig.empty()) param_sig += ", ";
-            param_sig += std::format("{} {}", lower_param_type("in", td.bench_variations[i].inferred_type), td.bench_variations[i].name);
-            local_vars_.insert(td.bench_variations[i].name);
-        }
-
-        writeln(std::format("inline void {}({}) {{", cur_fn_, param_sig));
-        ++indent_;
-        for (const auto& st : td.body) emit_stmt(st, false);
-        --indent_;
-        writeln("}");
-        in_test_ = false;
-        local_vars_.clear();
-        ptr_vars_.clear();
-        map_vars_.clear();
-        fixed_array_vars_.clear();
-
-        if (td.is_bench) {
-            writeln(std::format("inline void __cfire_bench_runner_{}(bool smoke_only, double budget_ms, bool json_mode, std::vector<cfire::testing_detail::BenchStats>& out_stats) {{", idx));
-            ++indent_;
-            std::string base_name = escape_line_path(td.name);
-            if (!td.bench_variations.empty()) {
-                for (std::size_t v = 0; v < td.bench_variations.size(); ++v) {
-                    const auto& bv = td.bench_variations[v];
-                    std::string elem_t = lower_owning_type(bv.inferred_type);
-                    std::string vals;
-                    for (std::size_t k = 0; k < bv.values.size(); ++k) {
-                        if (k > 0) vals += ", ";
-                        vals += emit_expr(bv.values[k]);
-                    }
-                    writeln(std::format("for (const {}& _bv_{} : std::vector<{}>{{{}}}) {{", elem_t, v, elem_t, vals));
-                    ++indent_;
-                }
-                std::string label_fmt = base_name;
-                std::string label_args;
-                std::string call_args;
-                for (std::size_t v = 0; v < td.bench_variations.size(); ++v) {
-                    label_fmt += std::format("/{}={{}}", td.bench_variations[v].name);
-                    if (!label_args.empty()) label_args += ", ";
-                    label_args += std::format("cfire::testing_detail::format_fuzz_arg(_bv_{})", v);
-                    if (!call_args.empty()) call_args += ", ";
-                    call_args += std::format("_bv_{}", v);
-                }
-                writeln(std::format("std::string _bname = std::format(\"{}\", {});", label_fmt, label_args));
-                writeln(std::format("auto _st = cfire::testing_detail::run_benchmark(_bname, [&]() {{ {}({}); }}, budget_ms, smoke_only);", cur_fn_, call_args));
-                writeln("out_stats.push_back(_st);");
-                writeln("if (!smoke_only && !json_mode) cfire::testing_detail::print_bench_row(_st);");
-                for (std::size_t v = 0; v < td.bench_variations.size(); ++v) {
-                    --indent_;
-                    writeln("}");
-                }
-            } else if (!td.params.empty()) {
-                for (std::size_t p = 0; p < td.params.size(); ++p) {
-                    std::string elem_t = lower_owning_type(td.params[p].type);
-                    if (td.params[p].type.name == "str") {
-                        writeln(std::format("for (const std::string& _bp_{} : std::vector<std::string>{{\"tiny\", \"medium_payload_string_64_bytes\", std::string(512, 'x')}}) {{", p));
-                    } else {
-                        writeln(std::format("for ({} _bp_{} : std::vector<{}>{{8, 64, 512, 4096}}) {{", elem_t, p, elem_t));
-                    }
-                    ++indent_;
-                }
-                std::string label_fmt = base_name;
-                std::string label_args;
-                std::string call_args;
-                for (std::size_t p = 0; p < td.params.size(); ++p) {
-                    label_fmt += std::format("/{}={{}}", td.params[p].name);
-                    if (!label_args.empty()) label_args += ", ";
-                    label_args += std::format("cfire::testing_detail::format_fuzz_arg(_bp_{})", p);
-                    if (!call_args.empty()) call_args += ", ";
-                    call_args += std::format("_bp_{}", p);
-                }
-                writeln(std::format("std::string _bname = std::format(\"{}\", {});", label_fmt, label_args));
-                writeln(std::format("auto _st = cfire::testing_detail::run_benchmark(_bname, [&]() {{ {}({}); }}, budget_ms, smoke_only);", cur_fn_, call_args));
-                writeln("out_stats.push_back(_st);");
-                writeln("if (!smoke_only && !json_mode) cfire::testing_detail::print_bench_row(_st);");
-                for (std::size_t p = 0; p < td.params.size(); ++p) {
-                    --indent_;
-                    writeln("}");
-                }
-            } else {
-                writeln(std::format("auto _st = cfire::testing_detail::run_benchmark(\"{}\", [&]() {{ {}(); }}, budget_ms, smoke_only);", base_name, cur_fn_));
-                writeln("out_stats.push_back(_st);");
-                writeln("if (!smoke_only && !json_mode) cfire::testing_detail::print_bench_row(_st);");
-            }
-            --indent_;
-            writeln("}");
-            return;
-        }
-
-        if (td.is_fuzz || !td.params.empty()) {
-            writeln(std::format("inline void __cfire_fuzz_runner_{}(std::size_t runs, std::uint64_t seed) {{", idx));
-            ++indent_;
-            writeln("cfire::testing_detail::FuzzRng rng(seed);");
-            writeln("for (std::size_t iter = 0; iter < runs; ++iter) {");
-            ++indent_;
-            std::string call_args;
-            for (std::size_t p = 0; p < td.params.size(); ++p) {
-                std::string p_cpp = lower_owning_type(td.params[p].type);
-                writeln(std::format("{} arg_{} = cfire::testing_detail::Arbitrary<{}>::generate(rng, iter);", p_cpp, p, p_cpp));
-                if (p > 0) call_args += ", ";
-                call_args += std::format("arg_{}", p);
-            }
-            writeln("if (setjmp(cfire::testing_detail::test_env) == 0) {");
-            writeln(std::format("    {}({});", cur_fn_, call_args));
-            writeln("} else {");
-            ++indent_;
-            writeln("std::string orig_file = cfire::testing_detail::failure_file;");
-            writeln("int orig_line = cfire::testing_detail::failure_line;");
-            writeln("std::string orig_expr = cfire::testing_detail::failure_expr;");
-            writeln("std::string orig_msg = cfire::testing_detail::failure_msg;");
-            if (!td.params.empty()) {
-                writeln("for (int shrink_round = 0; shrink_round < 128; ++shrink_round) {");
-                ++indent_;
-                writeln("bool shrunk_any = false;");
-                for (std::size_t p = 0; p < td.params.size(); ++p) {
-                    writeln(std::format("auto cands_{} = cfire::testing_detail::shrink_candidates(arg_{});", p, p));
-                    writeln(std::format("auto saved_{} = arg_{};", p, p));
-                    writeln(std::format("for (const auto& cand : cands_{}) {{", p));
-                    ++indent_;
-                    writeln(std::format("arg_{} = cand;", p));
-                    writeln("cfire::testing_detail::current_test_failed = false;");
-                    writeln("if (setjmp(cfire::testing_detail::test_env) == 0) {");
-                    writeln(std::format("    {}({});", cur_fn_, call_args));
-                    writeln(std::format("    arg_{} = saved_{};", p, p));
-                    writeln("} else {");
-                    writeln("    orig_file = cfire::testing_detail::failure_file;");
-                    writeln("    orig_line = cfire::testing_detail::failure_line;");
-                    writeln("    orig_expr = cfire::testing_detail::failure_expr;");
-                    writeln("    orig_msg = cfire::testing_detail::failure_msg;");
-                    writeln("    shrunk_any = true;");
-                    writeln("    break;");
-                    writeln("}");
-                    --indent_;
-                    writeln("}");
-                }
-                writeln("if (!shrunk_any) break;");
-                --indent_;
-                writeln("}");
-            }
-            std::string ce_fmt;
-            std::string ce_args;
-            for (std::size_t p = 0; p < td.params.size(); ++p) {
-                if (p > 0) {
-                    ce_fmt += ", ";
-                    ce_args += ", ";
-                }
-                ce_fmt += std::format("{}={{}}", td.params[p].name);
-                ce_args += std::format("cfire::testing_detail::format_fuzz_arg(arg_{})", p);
-            }
-            writeln("cfire::testing_detail::current_test_failed = true;");
-            writeln("cfire::testing_detail::failure_file = orig_file;");
-            writeln("cfire::testing_detail::failure_line = orig_line;");
-            writeln("cfire::testing_detail::failure_expr = orig_expr;");
-            if (!td.params.empty()) {
-                writeln(std::format("std::string ce_str = std::format(\"{}\", {});", ce_fmt, ce_args));
-                writeln("cfire::testing_detail::failure_msg = std::format(\"{} [shrunk counterexample after {} run(s): ({}) | reproduce: --seed {}]\", orig_msg, iter + 1, ce_str, seed);");
-            } else {
-                writeln("cfire::testing_detail::failure_msg = std::format(\"{} [failed at run {} | reproduce: --seed {}]\", orig_msg, iter + 1, seed);");
-            }
-            writeln("return;");
-            --indent_;
-            writeln("}");
-            --indent_;
-            writeln("}");
-            --indent_;
-            writeln("}");
-        }
-    }
+    void emit_test_runner(const FileAST& ast, bool has_user_main);
+    void emit_test_decl(const TestDecl& td, std::size_t idx);
 
     void emit_interface(const InterfaceDecl& iface) {
         writeln(std::format("// Interface '{}' -> C++20 concept", iface.name));
@@ -1062,240 +498,10 @@ public:
         --indent_;
         writeln("};");
 
-        writeln();
-        writeln("template <>");
-        writeln(std::format("struct cfire::reflect_struct<{}> {{", st.name));
-        ++indent_;
-        writeln(std::format("static constexpr std::string_view name = \"{}\";", st.name));
-        writeln(std::format("static constexpr std::size_t field_count = {};", st.fields.size()));
-        writeln("static constexpr std::array<std::string_view, " + std::to_string(st.fields.size()) + "> field_names = {");
-        ++indent_;
-        for (const auto& fld : st.fields) {
-            writeln(std::format("\"{}\",", fld.name));
-        }
-        --indent_;
-        writeln("};");
-        writeln("static constexpr std::array<std::string_view, " + std::to_string(st.fields.size()) + "> field_tags = {");
-        ++indent_;
-        for (const auto& fld : st.fields) {
-            writeln(std::format("R\"tag({})tag\",", fld.raw_tag));
-        }
-        --indent_;
-        writeln("};");
-        --indent_;
-        writeln("};");
-
-        bool can_emit_arbitrary = true;
-        for (const auto& fld : st.fields) {
-            if (fld.type.is_ptr || fld.type.is_mut_ptr || fld.type.is_borrow ||
-                fld.type.is_mut_borrow || fld.type.is_fn || !fld.type.smart_wrap.empty()) {
-                can_emit_arbitrary = false;
-                break;
-            }
-        }
-        if (can_emit_arbitrary) {
-            writeln();
-            writeln("template <>");
-            writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", st.name));
-            ++indent_;
-            writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng& rng, std::size_t iter) -> {} {{", st.name));
-            ++indent_;
-            writeln(std::format("{} out{{}};", st.name));
-            for (std::size_t fi = 0; fi < st.fields.size(); ++fi) {
-                std::string fname = sanitize_cpp_ident(st.fields[fi].name);
-                writeln(std::format("out.{} = cfire::testing_detail::Arbitrary<std::decay_t<decltype(out.{})>>::generate(rng, iter + {});",
-                    fname, fname, fi));
-            }
-            writeln("return out;");
-            --indent_;
-            writeln("}");
-            --indent_;
-            writeln("};");
-        }
-
-        auto it = cf_.struct_tags.find(st.name);
-        if (it == cf_.struct_tags.end()) return;
-        const auto& tags = it->second;
-
-        bool has_cli = false, has_json = false, has_desc = false, has_db = false;
-        for (const auto& t : tags) {
-            if (!t.cli_long.empty()) has_cli = true;
-            if (!t.json_key.empty()) has_json = true;
-            if (t.custom_tags.contains("desc")) has_desc = true;
-            if (!t.db_column.empty()) has_db = true;
-        }
-        (void)has_json; (void)has_desc;
-
-        if (has_cli && used_core_.contains("cli")) {
-            writeln();
-            writeln("template <>");
-            writeln(std::format("inline auto cfire::cli::try_parse<{}>(int argc, char** argv) -> std::optional<{}> {{", st.name, st.name));
-            ++indent_;
-            writeln(std::format("{} out{{}};", st.name));
-            writeln("cfire::cli::FlagReader reader(argc, argv);");
-            for (const auto& t : tags) {
-                if (!t.cli_long.empty()) {
-                    writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
-                }
-            }
-            writeln("if (reader.has_errors()) return std::nullopt;");
-            writeln("return out;");
-            --indent_;
-            writeln("}");
-
-            writeln();
-            writeln("template <>");
-            writeln(std::format("inline auto cfire::cli::parse<{}>(int argc, char** argv) -> {} {{", st.name, st.name));
-            ++indent_;
-            writeln(std::format("{} out{{}};", st.name));
-            writeln("cfire::cli::FlagReader reader(argc, argv);");
-            for (const auto& t : tags) {
-                if (!t.cli_long.empty()) {
-                    writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
-                }
-            }
-            writeln("return out;");
-            --indent_;
-            writeln("}");
-        }
-
-        if (can_emit_arbitrary && used_core_.contains("json")) {
-            writeln();
-            writeln("template <>");
-            writeln(std::format("inline auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
-            ++indent_;
-            writeln("(void)obj;");
-            writeln(std::format("{} out{{}};", st.name));
-            for (const auto& t : tags) {
-                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
-                std::string fname = sanitize_cpp_ident(t.field_name);
-                if (!jkey.empty()) {
-                    if (t.field_type.is_optional) {
-                        std::string inner_cpp = lower_raw_owning_type(t.field_type);
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_opt<{}>(obj, \"{}\"));", fname, inner_cpp, jkey));
-                    } else if (t.field_type.is_slice && t.field_type.elem_type) {
-                        std::string elem_cpp = lower_owning_type(*t.field_type.elem_type);
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_vec<{}>(obj, \"{}\"));", fname, elem_cpp, jkey));
-                    } else if (t.field_type.name == "str") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\"));", fname, jkey));
-                    } else if (t.field_type.name == "u64" || t.field_type.name == "usize") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\"));", fname, jkey));
-                    } else if (t.field_type.name == "i64" || t.field_type.name == "isize") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\"));", fname, jkey));
-                    } else if (t.field_type.name == "i32") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\"));", fname, jkey));
-                    } else if (t.field_type.name == "f64") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\"));", fname, jkey));
-                    } else if (t.field_type.name == "f32") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f32(obj, \"{}\"));", fname, jkey));
-                    } else if (t.field_type.name == "bool") {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\"));", fname, jkey));
-                    } else if (is_local_type(t.field_type.name)) {
-                        writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", fname, lower_raw_owning_type(t.field_type), jkey));
-                    }
-                }
-            }
-            writeln("return out;");
-            --indent_;
-            writeln("}");
-
-            writeln();
-            writeln("template <>");
-            writeln(std::format("inline auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", st.name, st.name));
-            ++indent_;
-            writeln("(void)val;");
-            writeln("std::string out = \"{\";");
-            bool first_j = true;
-            for (const auto& t : tags) {
-                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
-                std::string fname = sanitize_cpp_ident(t.field_name);
-                if (!jkey.empty()) {
-                    std::string prefix = first_j ? "" : ",";
-                    first_j = false;
-                    if (t.field_type.is_optional || t.field_type.is_slice || is_local_type(t.field_type.name)) {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::stringify(val.{}));", prefix, jkey, fname));
-                    } else if (t.field_type.name == "str") {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, jkey, fname));
-                    } else if (t.field_type.name == "bool") {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{} ? \"true\" : \"false\");", prefix, jkey, fname));
-                    } else {
-                        writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", val.{});", prefix, jkey, fname));
-                    }
-                }
-            }
-            writeln("out += \"}\";");
-            writeln("return out;");
-            --indent_;
-            writeln("}");
-
-            writeln();
-            writeln("template <>");
-            writeln(std::format("inline auto cfire::json::schema_struct<{}>() -> std::string {{", st.name));
-            ++indent_;
-            writeln("std::string props = \"{\";");
-            writeln("std::string req = \"[\";");
-            bool first_p = true;
-            bool first_r = true;
-            for (const auto& t : tags) {
-                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
-                if (jkey.empty()) continue;
-                std::string p_prefix = first_p ? "" : ",";
-                first_p = false;
-                std::string f_cpp = lower_raw_owning_type(t.field_type);
-                std::string desc_str;
-                if (auto dit = t.custom_tags.find("desc"); dit != t.custom_tags.end()) {
-                    desc_str = dit->second;
-                }
-                if (!desc_str.empty()) {
-                    writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::with_description(cfire::json::schema<{}>(), R\"desc({})desc\"));",
-                        p_prefix, jkey, f_cpp, desc_str));
-                } else {
-                    writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::schema<{}>());",
-                        p_prefix, jkey, f_cpp));
-                }
-                if (!t.field_type.is_optional) {
-                    std::string r_prefix = first_r ? "" : ",";
-                    first_r = false;
-                    writeln(std::format("req += \"{}\\\"{}\\\"\";", r_prefix, jkey));
-                }
-            }
-            writeln("props += \"}\";");
-            writeln("req += \"]\";");
-            writeln("return std::format(R\"({{\"type\":\"object\",\"properties\":{},\"required\":{},\"additionalProperties\":false}})\", props, req);");
-            --indent_;
-            writeln("}");
-        }
-
-        if (has_db && used_core_.contains("sqlite")) {
-            writeln();
-            writeln("template <>");
-            writeln(std::format("inline auto cfire::sqlite::map_row<{}>(sqlite3_stmt* stmt) -> {} {{", st.name, st.name));
-            ++indent_;
-            writeln(std::format("return {}{{", st.name));
-            ++indent_;
-            int col_idx = 0;
-            for (const auto& t : tags) {
-                if (!t.db_column.empty()) {
-                    std::string col_fn = "col_str";
-                    if (t.field_type.is_slice && t.field_type.elem_type) {
-                        if (t.field_type.elem_type->name == "f32") col_fn = "col_f32_vec";
-                        else if (t.field_type.elem_type->name == "byte") col_fn = "col_bytes";
-                        else if (t.field_type.elem_type->name == "u8") col_fn = "col_u8_vec";
-                    } else if (t.field_type.name == "u64" || t.field_type.name == "usize") col_fn = "col_u64";
-                    else if (t.field_type.name == "i64" || t.field_type.name == "isize") col_fn = "col_i64";
-                    else if (t.field_type.name == "i32") col_fn = "col_i32";
-                    else if (t.field_type.name == "f64") col_fn = "col_f64";
-                    else if (t.field_type.name == "f32") col_fn = "col_f32";
-                    else if (t.field_type.name == "bool") col_fn = "col_bool";
-                    writeln(std::format(".{} = cfire::sqlite::{}(stmt, {}),", sanitize_cpp_ident(t.field_name), col_fn, col_idx++));
-                }
-            }
-            --indent_;
-            writeln("};");
-            --indent_;
-            writeln("}");
-        }
+        emit_struct_reflection(st);
     }
+
+    void emit_struct_reflection(const StructDecl& st);
 
     [[nodiscard]] auto emitted_fn_symbol(const FnDecl& fn) const -> std::string {
         if (fn.receiver) return fn.receiver->type.name + "__" + fn.name;
@@ -1617,6 +823,23 @@ public:
         return false;
     }
 
+    void emit_try_unwrap_check(std::string_view tmp, int stmt_line, bool in_main) {
+        writeln(std::format("if (!{}.has_value()) {{", tmp));
+        ++indent_;
+        if (in_main) {
+            writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
+            writeln("return 1;");
+        } else if (in_test_) {
+            writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
+                tmp, escape_line_path(cf_.ast.path), stmt_line));
+            writeln("return;");
+        } else {
+            writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
+        }
+        --indent_;
+        writeln("}");
+    }
+
     void hoist_subexpr_tries(const ExprPtr& e, bool in_main, int stmt_line, bool is_top_handled = false) {
         if (!e) return;
         std::visit([&](const auto& ex) {
@@ -1657,20 +880,7 @@ public:
                     int id = ++try_count_;
                     std::string tmp = std::format("_try_{}", id);
                     writeln(std::format("auto {} = {};", tmp, emit_expr(ex.inner)));
-                    writeln(std::format("if (!{}.has_value()) {{", tmp));
-                    ++indent_;
-                    if (in_main) {
-                        writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", tmp));
-                        writeln("return 1;");
-                    } else if (in_test_) {
-                        writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                            tmp, escape_line_path(cf_.ast.path), stmt_line));
-                        writeln("return;");
-                    } else {
-                        writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
-                    }
-                    --indent_;
-                    writeln("}");
+                    emit_try_unwrap_check(tmp, stmt_line, in_main);
                     hoisted_tries_[e] = std::format("cfire::unwrap_val(std::move({}))", tmp);
                 }
             }
@@ -1678,16 +888,7 @@ public:
     }
 
     [[nodiscard]] auto is_core_ns_ident(std::string_view name) const -> bool {
-        return name == "fs" || name == "zstd" || name == "json" ||
-               name == "sqlite" || name == "blake3" || name == "net" || name == "cli" ||
-               name == "time" || name == "os" || name == "sync" || name == "str" ||
-               name == "math" || name == "rand" || name == "log" || name == "regex" ||
-               name == "collections" || name == "sort" || name == "unicode" ||
-               name == "base64" || name == "hex" || name == "csv" ||
-               name == "aes" || name == "hmac" || name == "sha256" ||
-               name == "sodium" || name == "keychain" || name == "ssh" || name == "webui" ||
-               name == "context" || name == "websocket" || name == "http" || name == "url" || name == "tls" ||
-               name == "audio" || name == "ai" ||
+        return cfire::modules::is_known_core_namespace(name) ||
                used_core_.contains(std::string(name));
     }
 
@@ -1733,6 +934,8 @@ public:
     }
 
     void emit_stmt(const StmtPtr& s, bool in_main);
+    void emit_or_handler_body(const OrExpr& or_ex, std::string_view tmp, bool in_main);
+    void emit_match_common(const ExprPtr& target, bool is_move, const std::vector<MatchArm>& arms, bool is_expr, bool in_main, std::ostringstream& sb);
     void emit_match_stmt(const MatchStmt& ms, bool in_main);
     void emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr);
     [[nodiscard]] auto emit_match_expr(const MatchExpr& me) -> std::string;
@@ -1983,6 +1186,8 @@ public:
 
 #include "codegen/stmt.hpp"
 #include "codegen/expr.hpp"
+#include "codegen/reflect.hpp"
+#include "codegen/test_runner.hpp"
 
 namespace cfire::frontend {
 

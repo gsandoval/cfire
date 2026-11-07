@@ -396,6 +396,73 @@ type BadBoolDefault struct {
 fn main() {}
 )", "cfire/INVALID-STRUCT-TAG", "bad_default_bool.cf");
 
+    // Lexical scope shadowing restoration & lexer/formatter brace-counting regressions
+    require_sema_error(R"(package main
+fn main() {
+    x := 1
+    if true {
+        mut x := 2
+        x = 3
+    }
+    x = 4
+}
+)", "cfire/ASSIGN-IMMUTABLE", "shadow_restore_immutable.cf");
+
+    {
+        auto shadow_ok_ast = cfire::frontend::parse_source("shadow_restore_mutable.cf", R"(package main
+fn main() {
+    mut x := 10
+    for x in 0..3 {
+        println("{}", x)
+    }
+    x = 20
+}
+)");
+        require(shadow_ok_ast.has_value(), "parse shadow_restore_mutable.cf");
+        if (shadow_ok_ast) {
+            auto checked = cfire::frontend::analyze(std::move(*shadow_ok_ast));
+            require(checked.has_value(), "outer mutable variable remains mutable after inner loop variable shadow exits");
+        }
+    }
+
+    {
+        auto cpp_brace_ast = cfire::frontend::parse_source("cpp_brace_comments.cf", R"(package main
+fn main() {
+    cpp {
+        // unmatched opening brace in line comment: {
+        /* unmatched closing brace in block comment: } */
+        const char* s = "braces in string: { }";
+        char c = '{';
+        (void)s;
+        (void)c;
+    }
+}
+)");
+        require(cpp_brace_ast.has_value(), "lexer cpp {} block ignores braces inside C++ comments, strings, and char literals");
+    }
+
+    {
+        std::string unformatted = R"(package main
+
+fn main() {
+    s := "escaped quote \"{\" inside string" // inline comment with unmatched {
+    cpp {
+        char ch = '{'; // C++ char literal brace
+        (void)ch;
+    }
+    if s != "" { // another { in comment
+        println("ok")
+    }
+}
+)";
+        auto formatted = cfire::fmt::format_source(unformatted, "fmt_comment_brace.cf");
+        require(formatted.has_value(), "format_source succeeds with braces in strings, cpp char literals, and inline comments");
+        if (formatted) {
+            require(formatted->contains("\n    if s != \"\" {"), "formatter preserves 4-space indent after inline comment and cpp char literal '{'");
+            require(formatted->contains("\n        println(\"ok\")\n    }\n}"), "formatter does not over-indent closing braces after comment braces");
+        }
+    }
+
     // SEC-02: CSPRNG (sha256::random_bytes / random_hex) & RFC 5869 HKDF-SHA256
     {
         auto r1 = cfire::sha256::random_bytes(32);

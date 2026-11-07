@@ -129,13 +129,7 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto hash_hex(std::span<const std::byte> data) -> std::string {
-    auto b = hash_bytes(data);
-    std::string hex;
-    hex.reserve(64);
-    for (std::byte byte_val : b) {
-        hex += std::format("{:02x}", static_cast<unsigned char>(byte_val));
-    }
-    return hex;
+    return cfire::detail::bytes_to_hex(hash_bytes(data));
 }
 
 [[nodiscard]] inline auto hash_hex(std::span<const std::uint8_t> data) -> std::string {
@@ -168,12 +162,7 @@ namespace detail {
     }
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256_Final(digest, &ctx);
-    std::string hex;
-    hex.reserve(64);
-    for (unsigned char b : digest) {
-        hex += std::format("{:02x}", b);
-    }
-    return hex;
+    return cfire::detail::bytes_to_hex(std::span<const unsigned char>(digest, CC_SHA256_DIGEST_LENGTH));
 #else
     std::string all_data((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     return hash_hex(std::as_bytes(std::span<const char>(all_data.data(), all_data.size())));
@@ -195,13 +184,7 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto random_hex(std::size_t n = 32) -> std::string {
-    auto b = random_bytes(n);
-    std::string hex;
-    hex.reserve(n * 2);
-    for (std::byte byte_val : b) {
-        hex += std::format("{:02x}", static_cast<unsigned char>(byte_val));
-    }
-    return hex;
+    return cfire::detail::bytes_to_hex(random_bytes(n));
 }
 
 } // namespace cfire::sha256
@@ -245,13 +228,7 @@ namespace cfire::hmac {
 }
 
 [[nodiscard]] inline auto sha256_hex(std::span<const std::byte> key, std::span<const std::byte> data) -> std::string {
-    auto b = sha256_bytes(key, data);
-    std::string hex;
-    hex.reserve(64);
-    for (std::byte byte_val : b) {
-        hex += std::format("{:02x}", static_cast<unsigned char>(byte_val));
-    }
-    return hex;
+    return cfire::detail::bytes_to_hex(sha256_bytes(key, data));
 }
 
 [[nodiscard]] inline auto sha256_hex(std::string_view key, std::string_view data) -> std::string {
@@ -339,13 +316,7 @@ namespace cfire::hmac {
     std::string_view info = "",
     std::size_t length = 32
 ) -> std::string {
-    auto okm = hkdf_sha256(ikm, salt, info, length);
-    std::string hex;
-    hex.reserve(okm.size() * 2);
-    for (std::byte b : okm) {
-        hex += std::format("{:02x}", static_cast<unsigned char>(b));
-    }
-    return hex;
+    return cfire::detail::bytes_to_hex(hkdf_sha256(ikm, salt, info, length));
 }
 
 [[nodiscard]] inline auto sha256_bytes(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::vector<std::byte> {

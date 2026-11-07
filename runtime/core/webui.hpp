@@ -14,6 +14,29 @@
 
 namespace cfire::webui {
 
+namespace detail {
+template <typename Fn, typename... Args>
+[[nodiscard]] inline auto invoke_and_marshal_rpc(Fn&& f, Args&&... args) -> std::expected<std::string, cfire::Error> {
+    using Ret = std::invoke_result_t<Fn, Args...>;
+    if constexpr (std::is_void_v<Ret>) {
+        std::forward<Fn>(f)(std::forward<Args>(args)...);
+        return std::string("null");
+    } else if constexpr (is_expected<Ret>::value) {
+        auto res = std::forward<Fn>(f)(std::forward<Args>(args)...);
+        if (!res) return std::unexpected(res.error());
+        using ValT = typename Ret::value_type;
+        if constexpr (std::is_void_v<ValT>) {
+            return std::string("null");
+        } else {
+            return cfire::json::stringify(*res);
+        }
+    } else {
+        auto res = std::forward<Fn>(f)(std::forward<Args>(args)...);
+        return cfire::json::stringify(res);
+    }
+}
+} // namespace detail
+
 class App {
 public:
     App() : state_(std::make_shared<detail::AppState>()) {
@@ -39,24 +62,7 @@ public:
                 std::string payload = params_json.empty() ? "{}" : std::string(params_json);
                 auto parsed = cfire::json::parse<ReqStruct>(payload);
                 if (!parsed) return std::unexpected(parsed.error());
-
-                using Ret = std::invoke_result_t<decltype(f)&, const ReqStruct&>;
-                if constexpr (std::is_void_v<Ret>) {
-                    f(*parsed);
-                    return std::string("null");
-                } else if constexpr (detail::is_expected<Ret>::value) {
-                    auto res = f(*parsed);
-                    if (!res) return std::unexpected(res.error());
-                    using ValT = typename Ret::value_type;
-                    if constexpr (std::is_void_v<ValT>) {
-                        return std::string("null");
-                    } else {
-                        return cfire::json::stringify(*res);
-                    }
-                } else {
-                    auto res = f(*parsed);
-                    return cfire::json::stringify(res);
-                }
+                return detail::invoke_and_marshal_rpc(f, *parsed);
             };
     }
 
@@ -66,42 +72,10 @@ public:
         state_->rpc_handlers[std::string(name)] =
             [f = std::forward<Fn>(fn)](std::string_view params_json) mutable -> std::expected<std::string, cfire::Error> {
                 if constexpr (std::is_invocable_v<decltype(f)&>) {
-                    using Ret = std::invoke_result_t<decltype(f)&>;
-                    if constexpr (std::is_void_v<Ret>) {
-                        f();
-                        return std::string("null");
-                    } else if constexpr (detail::is_expected<Ret>::value) {
-                        auto res = f();
-                        if (!res) return std::unexpected(res.error());
-                        using ValT = typename Ret::value_type;
-                        if constexpr (std::is_void_v<ValT>) {
-                            return std::string("null");
-                        } else {
-                            return cfire::json::stringify(*res);
-                        }
-                    } else {
-                        auto res = f();
-                        return cfire::json::stringify(res);
-                    }
+                    return detail::invoke_and_marshal_rpc(f);
                 } else {
                     std::string arg(params_json.empty() ? "{}" : params_json);
-                    using Ret = std::invoke_result_t<decltype(f)&, const std::string&>;
-                    if constexpr (std::is_void_v<Ret>) {
-                        f(arg);
-                        return std::string("null");
-                    } else if constexpr (detail::is_expected<Ret>::value) {
-                        auto res = f(arg);
-                        if (!res) return std::unexpected(res.error());
-                        using ValT = typename Ret::value_type;
-                        if constexpr (std::is_void_v<ValT>) {
-                            return std::string("null");
-                        } else {
-                            return cfire::json::stringify(*res);
-                        }
-                    } else {
-                        auto res = f(arg);
-                        return cfire::json::stringify(res);
-                    }
+                    return detail::invoke_and_marshal_rpc(f, arg);
                 }
             };
     }
@@ -137,26 +111,7 @@ public:
                         reply(std::unexpected(parsed.error()));
                         return;
                     }
-                    using Ret = std::invoke_result_t<decltype(*shared_fn)&, const ReqStruct&>;
-                    if constexpr (std::is_void_v<Ret>) {
-                        (*shared_fn)(*parsed);
-                        reply(std::string("null"));
-                    } else if constexpr (detail::is_expected<Ret>::value) {
-                        auto res = (*shared_fn)(*parsed);
-                        if (!res) {
-                            reply(std::unexpected(res.error()));
-                            return;
-                        }
-                        using ValT = typename Ret::value_type;
-                        if constexpr (std::is_void_v<ValT>) {
-                            reply(std::string("null"));
-                        } else {
-                            reply(cfire::json::stringify(*res));
-                        }
-                    } else {
-                        auto res = (*shared_fn)(*parsed);
-                        reply(cfire::json::stringify(res));
-                    }
+                    reply(detail::invoke_and_marshal_rpc(*shared_fn, *parsed));
                 }).detach();
             };
     }
@@ -170,47 +125,9 @@ public:
                 std::string payload = params_json.empty() ? "{}" : std::string(params_json);
                 std::thread([shared_fn, payload = std::move(payload), reply = std::move(reply)]() mutable {
                     if constexpr (std::is_invocable_v<decltype(*shared_fn)&>) {
-                        using Ret = std::invoke_result_t<decltype(*shared_fn)&>;
-                        if constexpr (std::is_void_v<Ret>) {
-                            (*shared_fn)();
-                            reply(std::string("null"));
-                        } else if constexpr (detail::is_expected<Ret>::value) {
-                            auto res = (*shared_fn)();
-                            if (!res) {
-                                reply(std::unexpected(res.error()));
-                                return;
-                            }
-                            using ValT = typename Ret::value_type;
-                            if constexpr (std::is_void_v<ValT>) {
-                                reply(std::string("null"));
-                            } else {
-                                reply(cfire::json::stringify(*res));
-                            }
-                        } else {
-                            auto res = (*shared_fn)();
-                            reply(cfire::json::stringify(res));
-                        }
+                        reply(detail::invoke_and_marshal_rpc(*shared_fn));
                     } else {
-                        using Ret = std::invoke_result_t<decltype(*shared_fn)&, const std::string&>;
-                        if constexpr (std::is_void_v<Ret>) {
-                            (*shared_fn)(payload);
-                            reply(std::string("null"));
-                        } else if constexpr (detail::is_expected<Ret>::value) {
-                            auto res = (*shared_fn)(payload);
-                            if (!res) {
-                                reply(std::unexpected(res.error()));
-                                return;
-                            }
-                            using ValT = typename Ret::value_type;
-                            if constexpr (std::is_void_v<ValT>) {
-                                reply(std::string("null"));
-                            } else {
-                                reply(cfire::json::stringify(*res));
-                            }
-                        } else {
-                            auto res = (*shared_fn)(payload);
-                            reply(cfire::json::stringify(res));
-                        }
+                        reply(detail::invoke_and_marshal_rpc(*shared_fn, payload));
                     }
                 }).detach();
             };
@@ -243,19 +160,7 @@ public:
     }
 
     void emit_bytes(std::string_view event, std::span<const std::byte> data) {
-        static constexpr char kBase64Table[] =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        std::string b64;
-        b64.reserve(((data.size() + 2) / 3) * 4);
-        for (std::size_t i = 0; i < data.size(); i += 3) {
-            std::uint32_t n = static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[i])) << 16;
-            if (i + 1 < data.size()) n |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[i + 1])) << 8;
-            if (i + 2 < data.size()) n |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[i + 2]));
-            b64.push_back(kBase64Table[(n >> 18) & 0x3F]);
-            b64.push_back(kBase64Table[(n >> 12) & 0x3F]);
-            b64.push_back((i + 1 < data.size()) ? kBase64Table[(n >> 6) & 0x3F] : '=');
-            b64.push_back((i + 2 < data.size()) ? kBase64Table[n & 0x3F] : '=');
-        }
+        std::string b64 = cfire::detail::base64_encode(data);
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
             state_->record_emitted(event, b64);
