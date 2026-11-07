@@ -193,6 +193,8 @@ struct StructDecl {
     std::string name{};
     std::vector<StructField> fields{};
     int line = 1;
+    std::string source_path{};
+    std::string package_name{};
 };
 
 struct EnumVariant {
@@ -205,6 +207,8 @@ struct EnumDecl {
     std::string name{};
     std::vector<EnumVariant> variants{};
     int line = 1;
+    std::string source_path{};
+    std::string package_name{};
 };
 
 struct InterfaceMethodSig {
@@ -519,6 +523,7 @@ struct FnDecl {
     std::vector<StmtPtr> body{};
     int line = 1;
     std::string package_name{};
+    std::string source_path{};
 };
 
 struct GlobalVarDecl {
@@ -529,6 +534,7 @@ struct GlobalVarDecl {
     bool was_var = false;
     int line = 1;
     std::string package_name{};
+    std::string source_path{};
 };
 
 struct BenchParamVariation {
@@ -546,6 +552,7 @@ struct TestDecl {
     bool is_bench = false;
     std::vector<ParamDecl> params{};
     std::vector<BenchParamVariation> bench_variations{};
+    std::string source_path{};
 };
 
 struct FileAST {

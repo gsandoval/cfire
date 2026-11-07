@@ -437,7 +437,28 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
     std::filesystem::remove_all(tmp_dir);
 
     if (code != 0) {
-        return std::unexpected(std::format("clang AST ingestion failed for {}: {}", header, json_dump));
+        std::string filtered;
+        std::size_t pos = 0;
+        while (pos < json_dump.size()) {
+            std::size_t nl = json_dump.find('\n', pos);
+            std::string_view line = (nl == std::string::npos)
+                ? std::string_view(json_dump).substr(pos)
+                : std::string_view(json_dump).substr(pos, nl - pos);
+            pos = (nl == std::string::npos) ? json_dump.size() : nl + 1;
+            std::string_view trimmed = line;
+            while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t' || trimmed.front() == '\r')) {
+                trimmed.remove_prefix(1);
+            }
+            if (trimmed.empty()) continue;
+            char first = trimmed.front();
+            if (first == '{' || first == '[' || first == '}' || first == ']' || first == '"') {
+                continue;
+            }
+            if (!filtered.empty()) filtered += '\n';
+            filtered += line;
+        }
+        if (filtered.empty()) filtered = json_dump;
+        return std::unexpected(std::format("clang AST ingestion failed for {}: {}", header, filtered));
     }
 
     HeaderIndex idx;

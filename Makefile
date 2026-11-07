@@ -1,5 +1,5 @@
 CXX      := clang++
-GIT_SHA  := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+GIT_SHA  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 LINUX_CXXFLAGS := $(if $(filter Linux,$(shell uname -s)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
 CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation -framework Security,-ldl -lpthread)
@@ -26,8 +26,9 @@ install: build
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/pkg
-	cp cfire $(DESTDIR)$(PREFIX)/bin/cfire
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/cfire
+	cp cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$
+	chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$
+	mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire
 	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
 	cp -R pkg/* $(DESTDIR)$(PREFIX)/share/cfire/pkg/
 	@echo "✓ Installed cfire to $(DESTDIR)$(PREFIX)/bin/cfire and runtime/pkg to $(DESTDIR)$(PREFIX)/share/cfire"

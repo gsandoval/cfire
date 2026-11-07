@@ -24,8 +24,9 @@ namespace cfire::webui::detail {
     return out;
 }
 
-inline void win32_clipboard_set(std::string_view text, bool concealed) {
-    if (!::OpenClipboard(nullptr)) return;
+inline void win32_clipboard_set(std::string_view text, bool concealed, HWND hwnd = nullptr) {
+    HWND owner = hwnd ? hwnd : ::GetActiveWindow();
+    if (!::OpenClipboard(owner)) return;
     ::EmptyClipboard();
     std::wstring w = utf8_to_wide(text);
     std::size_t bytes = (w.size() + 1) * sizeof(wchar_t);
@@ -61,6 +62,52 @@ inline void win32_clipboard_set(std::string_view text, bool concealed) {
         }
     }
     ::CloseClipboard();
+}
+
+[[nodiscard]] inline auto win32_open_file_dialog(std::string_view dialog_title, HWND owner = nullptr) -> std::string {
+    wchar_t file_buf[MAX_PATH] = {0};
+    std::wstring wtitle = utf8_to_wide(dialog_title);
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner ? owner : ::GetActiveWindow();
+    ofn.lpstrFile = file_buf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrTitle = wtitle.c_str();
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    if (::GetOpenFileNameW(&ofn)) {
+        return wide_to_utf8(file_buf);
+    }
+    return "";
+}
+
+[[nodiscard]] inline auto win32_save_file_dialog(std::string_view dialog_title, std::string_view default_name, HWND owner = nullptr) -> std::string {
+    wchar_t file_buf[MAX_PATH] = {0};
+    if (!default_name.empty()) {
+        std::wstring wdef = utf8_to_wide(default_name);
+        std::wcsncpy(file_buf, wdef.c_str(), MAX_PATH - 1);
+    }
+    std::wstring wtitle = utf8_to_wide(dialog_title);
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner ? owner : ::GetActiveWindow();
+    ofn.lpstrFile = file_buf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrTitle = wtitle.c_str();
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+    if (::GetSaveFileNameW(&ofn)) {
+        return wide_to_utf8(file_buf);
+    }
+    return "";
+}
+
+inline void win32_message_dialog(std::string_view dialog_title, std::string_view message, HWND owner = nullptr) {
+    std::wstring wtitle = utf8_to_wide(dialog_title);
+    std::wstring wmsg = utf8_to_wide(message);
+    ::MessageBoxW(owner ? owner : ::GetActiveWindow(), wmsg.c_str(), wtitle.c_str(), MB_OK | MB_ICONINFORMATION);
 }
 
 [[nodiscard]] inline auto win32_clipboard_get() -> std::string {
@@ -142,10 +189,59 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
         }
         case WM_CLOSE: {
             if (ctx && ctx->state) {
+                if (ctx->state->hide_on_close && !ctx->state->quit_requested.load(std::memory_order_relaxed)) {
+                    {
+                        std::lock_guard<std::recursive_mutex> lock(ctx->state->mtx);
+                        ctx->state->window_hidden = true;
+                    }
+                    ::ShowWindow(hwnd, SW_HIDE);
+                    ctx->state->record_emitted("window:close_requested", "{}");
+                    ctx->state->dispatch_event_internal("window:close_requested", "{}");
+                    ctx->state->eval_js("window.__cfire_event_dispatch(\"window:close_requested\", {});");
+                    return 0;
+                }
                 ctx->state->quit_requested.store(true, std::memory_order_relaxed);
             }
             ::DestroyWindow(hwnd);
             return 0;
+        }
+        case WM_APP + 1: {
+            if (ctx && ctx->state && (lParam == WM_RBUTTONUP || lParam == WM_LBUTTONUP)) {
+                HMENU hMenu = ::CreatePopupMenu();
+                if (hMenu) {
+                    std::vector<std::string> events;
+                    {
+                        std::lock_guard<std::recursive_mutex> lock(ctx->state->mtx);
+                        for (std::size_t i = 0; i < ctx->state->tray_items.size(); ++i) {
+                            const auto& titem = ctx->state->tray_items[i];
+                            if (titem.title == "-") {
+                                ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+                            } else {
+                                std::wstring wt = utf8_to_wide(titem.title);
+                                ::AppendMenuW(hMenu, MF_STRING, static_cast<UINT_PTR>(i + 1), wt.c_str());
+                            }
+                            events.push_back(titem.event);
+                        }
+                    }
+                    POINT pt{};
+                    ::GetCursorPos(&pt);
+                    ::SetForegroundWindow(hwnd);
+                    UINT cmd = static_cast<UINT>(::TrackPopupMenu(
+                        hMenu,
+                        TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+                        pt.x, pt.y, 0, hwnd, nullptr));
+                    ::DestroyMenu(hMenu);
+                    if (cmd >= 1 && cmd <= events.size()) {
+                        const std::string& ev = events[cmd - 1];
+                        ctx->state->record_emitted(ev, "{}");
+                        ctx->state->dispatch_event_internal(ev, "{}");
+                        std::string ev_escaped = cfire::json::escape_string(ev);
+                        ctx->state->eval_js(std::format("window.__cfire_event_dispatch(\"{}\", {{}});", ev_escaped));
+                    }
+                }
+                return 0;
+            }
+            break;
         }
         case WM_DESTROY: {
             if (ctx && ctx->state) {
@@ -207,6 +303,12 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     }
     ctx.hwnd = hwnd;
 
+#if !CFIRE_HAS_WEBVIEW2_HEADER
+    if (!offscreen_test) {
+        std::fprintf(stderr, "webui: WebView2 SDK header (<WebView2.h>) was not present at compile time; install the WebView2 SDK to render WebUI content on Windows.\n");
+    }
+#endif
+
     if (state_->dark_mode) {
         BOOL dark = TRUE;
         (void)::DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
@@ -221,8 +323,29 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         }
     }
 
+    NOTIFYICONDATAW nid{};
+    bool tray_added = false;
+    if (state_->has_tray) {
+        nid.cbSize = sizeof(NOTIFYICONDATAW);
+        nid.hWnd = hwnd;
+        nid.uID = 1;
+        nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        nid.uCallbackMessage = WM_APP + 1;
+        if (!state_->tray_icon_path.empty()) {
+            std::wstring wticon = utf8_to_wide(state_->tray_icon_path);
+            nid.hIcon = static_cast<HICON>(::LoadImageW(nullptr, wticon.c_str(), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE));
+        }
+        if (!nid.hIcon) {
+            nid.hIcon = ::LoadIconW(nullptr, MAKEINTRESOURCEW(32512)); // IDI_APPLICATION
+        }
+        std::wstring wtip = utf8_to_wide(state_->tray_tooltip.empty() ? state_->title : state_->tray_tooltip);
+        std::wcsncpy(nid.szTip, wtip.c_str(), (sizeof(nid.szTip) / sizeof(wchar_t)) - 1);
+        tray_added = (::Shell_NotifyIconW(NIM_ADD, &nid) != FALSE);
+    }
+
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->win32_hwnd = hwnd;
         state_->platform_set_title = [hwnd](const std::string& new_title) {
             std::wstring wt = utf8_to_wide(new_title);
             ::SetWindowTextW(hwnd, wt.c_str());
@@ -239,6 +362,13 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->platform_drag = [hwnd]() {
             ::ReleaseCapture();
             ::SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+        };
+        state_->platform_hide_window = [hwnd]() {
+            ::ShowWindow(hwnd, SW_HIDE);
+        };
+        state_->platform_show_window = [hwnd]() {
+            ::ShowWindow(hwnd, SW_SHOW);
+            ::SetForegroundWindow(hwnd);
         };
         state_->platform_quit = [hwnd, st = state_]() {
             st->quit_requested.store(true, std::memory_order_relaxed);
@@ -275,14 +405,20 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         }
     }
 
+    if (tray_added) {
+        ::Shell_NotifyIconW(NIM_DELETE, &nid);
+    }
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->win32_hwnd = nullptr;
         state_->platform_eval = nullptr;
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
         state_->platform_minimize = nullptr;
         state_->platform_maximize = nullptr;
         state_->platform_drag = nullptr;
+        state_->platform_hide_window = nullptr;
+        state_->platform_show_window = nullptr;
         state_->platform_quit = nullptr;
     }
     ::CoUninitialize();

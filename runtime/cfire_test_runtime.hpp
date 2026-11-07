@@ -1,5 +1,8 @@
 #pragma once
 // cfire_test_runtime.hpp — Test Harness, Fuzzing, Shrinking, Benchmarking & Assertion Runtime for cfire (.cf)
+#ifndef CFIRE_TEST_MODE
+#define CFIRE_TEST_MODE 1
+#endif
 
 #include <algorithm>
 #include <array>

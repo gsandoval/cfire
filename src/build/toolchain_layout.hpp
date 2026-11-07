@@ -14,7 +14,9 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -282,6 +284,55 @@ inline void query_pkg_config(
             }
         }
     }
+    std::string hdr;
+    std::string lib_flag;
+    std::string lib_stem;
+    if (pkg == "sqlite3") { hdr = "sqlite3.h"; lib_flag = "-lsqlite3"; lib_stem = "libsqlite3"; }
+    else if (pkg == "sqlcipher") { hdr = "sqlcipher/sqlite3.h"; lib_flag = "-lsqlcipher"; lib_stem = "libsqlcipher"; }
+    else if (pkg == "libsodium") { hdr = "sodium.h"; lib_flag = "-lsodium"; lib_stem = "libsodium"; }
+    else if (pkg == "libssh") { hdr = "libssh/libssh.h"; lib_flag = "-lssh"; lib_stem = "libssh"; }
+    else if (pkg == "libzstd") { hdr = "zstd.h"; lib_flag = "-lzstd"; lib_stem = "libzstd"; }
+    else if (pkg == "simdjson") { hdr = "simdjson.h"; lib_flag = "-lsimdjson"; lib_stem = "libsimdjson"; }
+
+    // 1. Prioritize user-local override in ~/.local/include + ~/.local/lib (CF-075)
+    std::error_code ec;
+    if (const char* home = std::getenv("HOME"); home && !hdr.empty()) {
+        std::filesystem::path local_root = std::filesystem::path(home) / ".local";
+        auto local_inc = local_root / "include" / hdr;
+        auto local_inc_alt = (pkg == "sqlcipher") ? (local_root / "include" / "sqlite3.h") : local_inc;
+        bool has_local_lib =
+            std::filesystem::exists(local_root / "lib" / (lib_stem + ".a"), ec) ||
+            std::filesystem::exists(local_root / "lib" / (lib_stem + ".so"), ec) ||
+            std::filesystem::exists(local_root / "lib" / (lib_stem + ".dylib"), ec);
+        if ((std::filesystem::exists(local_inc, ec) || std::filesystem::exists(local_inc_alt, ec)) && has_local_lib) {
+            if (pkg == "sqlcipher" && std::filesystem::exists(local_inc, ec)) {
+                cflags.push_back("-I" + (local_root / "include" / "sqlcipher").string());
+            }
+            cflags.push_back("-I" + (local_root / "include").string());
+            libs.push_back("-L" + (local_root / "lib").string());
+            libs.push_back(lib_flag);
+            return;
+        }
+        for (const auto& pc_rel : {local_root / "lib" / "pkgconfig", local_root / "share" / "pkgconfig"}) {
+            if (std::filesystem::is_directory(pc_rel, ec)) {
+                if (!pc_env.empty()) pc_env += ":";
+                pc_env += pc_rel.string();
+            }
+        }
+    }
+    if (pkg == "sqlcipher") {
+        for (const char* keg : {"/opt/homebrew/opt/sqlcipher/lib/pkgconfig", "/usr/local/opt/sqlcipher/lib/pkgconfig"}) {
+            if (std::filesystem::is_directory(keg, ec)) {
+                if (!pc_env.empty()) pc_env += ":";
+                pc_env += keg;
+            }
+        }
+    }
+    if (const char* existing_pc = std::getenv("PKG_CONFIG_PATH"); existing_pc && existing_pc[0] != '\0') {
+        if (!pc_env.empty()) pc_env += ":";
+        pc_env += existing_pc;
+    }
+
     std::string env_prefix = pc_env.empty() ? "" : ("PKG_CONFIG_PATH=" + bridge::shell_quote(pc_env) + " ");
     std::string cf_out = bridge::run_command_capture(env_prefix + "pkg-config --cflags " + qpkg + " 2>/dev/null", code);
     if (code == 0) {
@@ -294,24 +345,25 @@ inline void query_pkg_config(
         return;
     }
     // Fallback probe when pkg-config is unavailable or package has no .pc file
-    std::string hdr;
-    std::string lib_flag;
-    std::string lib_stem;
-    if (pkg == "sqlite3") { hdr = "sqlite3.h"; lib_flag = "-lsqlite3"; lib_stem = "libsqlite3"; }
-    else if (pkg == "sqlcipher") { hdr = "sqlcipher/sqlite3.h"; lib_flag = "-lsqlcipher"; lib_stem = "libsqlcipher"; }
-    else if (pkg == "libsodium") { hdr = "sodium.h"; lib_flag = "-lsodium"; lib_stem = "libsodium"; }
-    else if (pkg == "libssh") { hdr = "libssh/libssh.h"; lib_flag = "-lssh"; lib_stem = "libssh"; }
-    else if (pkg == "libzstd") { hdr = "zstd.h"; lib_flag = "-lzstd"; lib_stem = "libzstd"; }
-    else if (pkg == "simdjson") { hdr = "simdjson.h"; lib_flag = "-lsimdjson"; lib_stem = "libsimdjson"; }
     if (!hdr.empty()) {
         std::vector<std::string> prefixes;
+        if (const char* home = std::getenv("HOME")) {
+            prefixes.push_back((std::filesystem::path(home) / ".local").string());
+        }
         if (!install_root.empty()) prefixes.push_back(install_root.string());
+        if (pkg == "sqlcipher") {
+            prefixes.push_back("/opt/homebrew/opt/sqlcipher");
+            prefixes.push_back("/usr/local/opt/sqlcipher");
+        }
         prefixes.push_back("/opt/homebrew");
         prefixes.push_back("/usr/local");
         prefixes.push_back("/usr");
         for (const auto& prefix : prefixes) {
             std::filesystem::path inc_p = std::filesystem::path(prefix) / "include" / hdr;
-            if (std::filesystem::exists(inc_p)) {
+            if (std::filesystem::exists(inc_p, ec)) {
+                if (pkg == "sqlcipher") {
+                    cflags.push_back(std::string("-I") + prefix + "/include/sqlcipher");
+                }
                 if (prefix != "/usr") {
                     cflags.push_back(std::string("-I") + prefix + "/include");
                     libs.push_back(std::string("-L") + prefix + "/lib");

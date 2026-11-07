@@ -20,7 +20,8 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             bool supported = true;
             for (const auto& fld : st.fields) {
                 if (fld.type.is_ptr || fld.type.is_mut_ptr || fld.type.is_borrow ||
-                    fld.type.is_mut_borrow || fld.type.is_fn || !fld.type.smart_wrap.empty()) {
+                    fld.type.is_mut_borrow || fld.type.is_fn || !fld.type.smart_wrap.empty() ||
+                    !can_emit_json_field_type(fld.type)) {
                     supported = false;
                     break;
                 }
@@ -103,6 +104,16 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             writeln("{ unsigned char _sq_warm = 0; sqlite3_randomness(1, &_sq_warm); }");
             writeln("#endif");
         }
+        if (used_core_.contains("sodium")) {
+            writeln("(void)cfire::sodium::detail::ensure_init();");
+        }
+        bool has_cpp_import = false;
+        for (const auto& imp : ast.imports) {
+            if (imp.is_cpp) {
+                has_cpp_import = true;
+                break;
+            }
+        }
         writeln("int passed_count = 0;");
         writeln("int failed_count = 0;");
         writeln("struct TestResultRecord { std::string name; bool passed; double duration_ms; std::string file; int line; std::string error; };");
@@ -149,7 +160,8 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             writeln("cfire::testing_detail::failure_line = 0;");
             writeln("cfire::testing_detail::failure_expr.clear();");
             writeln("cfire::testing_detail::failure_msg.clear();");
-            bool check_fd_leak = !stmts_reference_ident(td.body, "InitWindow") &&
+            bool check_fd_leak = !has_cpp_import &&
+                                 !stmts_reference_ident(td.body, "InitWindow") &&
                                  !stmts_reference_ident(td.body, "run_webview_test") &&
                                  !stmts_reference_ident(td.body, "keychain");
             if (check_fd_leak) {
@@ -175,10 +187,11 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             }
             writeln("auto end_t = std::chrono::steady_clock::now();");
             if (check_fd_leak) {
+                std::string td_file = escape_line_path(td.source_path.empty() ? source_path_ : td.source_path);
                 writeln("const std::size_t fds_after = cfire::testing_detail::count_open_fds();");
                 writeln("if (!cfire::testing_detail::current_test_failed && fds_before > 0 && fds_after > fds_before) {");
                 writeln("    cfire::testing_detail::current_test_failed = true;");
-                writeln(std::format("    cfire::testing_detail::failure_file = \"{}\";", escape_line_path(source_path_)));
+                writeln(std::format("    cfire::testing_detail::failure_file = \"{}\";", td_file));
                 writeln(std::format("    cfire::testing_detail::failure_line = {};", td.line));
                 writeln("    cfire::testing_detail::failure_expr = \"resource leak canary\";");
                 writeln("    cfire::testing_detail::failure_msg = std::format(\"test leaked {} open file descriptor(s) (missing 'defer file.close()' or 'defer db.close()'?)\", fds_after - fds_before);");
@@ -278,6 +291,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
 }
 
 inline void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx) {
+    set_source_path(td.source_path);
     if (td.line > 0) emit_line_directive(td.line);
     cur_fn_ = std::format("__cfire_test_{}", idx);
     defer_count_ = 0;
@@ -285,6 +299,7 @@ inline void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx) {
     in_fallible_void_ = false;
     local_vars_.clear();
     ptr_vars_.clear();
+    smart_ptr_vars_.clear();
     map_vars_.clear();
     fixed_array_vars_.clear();
 

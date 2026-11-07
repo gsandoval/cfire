@@ -81,6 +81,14 @@ struct CheckItem {
     std::string_view header_name,
     std::string& detail_out
 ) -> bool {
+    if (const char* home = std::getenv("HOME")) {
+        std::filesystem::path loc_p = std::filesystem::path(home) / ".local" / "include" / header_name;
+        std::error_code ec;
+        if (std::filesystem::exists(loc_p, ec)) {
+            detail_out = loc_p.string() + " (~/.local override)";
+            return true;
+        }
+    }
     if (has_command("pkg-config")) {
         int rc = 0;
         auto ver = bridge::run_command_capture(std::format("pkg-config --modversion {} 2>/dev/null", pc_name), rc);
@@ -264,7 +272,31 @@ struct CheckItem {
     {
         std::string det;
         if (check_pkg_or_header("simdjson", "simdjson.h", det)) {
-            items.push_back({"Native Engine Libraries", "simdjson (`ext:json`, `ext:ai`)", "ok", det, ""});
+            bool sj_compat_err = false;
+            if (det.find("~/.local") == std::string::npos && has_command("pkg-config") && has_command("clang++")) {
+                int sj_rc = 0;
+                auto sj_ver = trim_str(bridge::run_command_capture("pkg-config --modversion simdjson 2>/dev/null", sj_rc));
+                int cl_rc = 0;
+                auto cl_ver = trim_str(bridge::run_command_capture("clang++ -dumpversion 2>/dev/null", cl_rc));
+                int cl_maj = 0;
+                if (auto dot = cl_ver.find('.'); dot != std::string::npos) {
+                    if (auto pmaj = cfire::detail::parse_int<int>(cl_ver.substr(0, dot))) cl_maj = *pmaj;
+                }
+                if (sj_rc == 0 && cl_maj >= 19 &&
+                    (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
+                    sj_compat_err = true;
+                    items.push_back({
+                        "Native Engine Libraries",
+                        "simdjson (`ext:json`, `ext:ai`)",
+                        "warn",
+                        std::format("{} is incompatible with Clang {} (requires simdjson >= 4.0)", det, cl_maj),
+                        "Install simdjson >= 4.0 into ~/.local/{include,lib} or upgrade libsimdjson-dev"
+                    });
+                }
+            }
+            if (!sj_compat_err) {
+                items.push_back({"Native Engine Libraries", "simdjson (`ext:json`, `ext:ai`)", "ok", det, ""});
+            }
         } else {
             items.push_back({
                 "Native Engine Libraries",
@@ -273,6 +305,36 @@ struct CheckItem {
                 "Not installed (using built-in zero-dependency JSON parser fallback; install simdjson for SIMD acceleration)",
                 pm == "brew" ? "brew install simdjson" :
                 (pm == "apt" ? "sudo apt-get install -y libsimdjson-dev" : "Run `cfire setup`")
+            });
+        }
+
+        det.clear();
+        if (check_pkg_or_header("libsodium", "sodium.h", det)) {
+            items.push_back({"Native Engine Libraries", "libsodium (`ext:crypto/sodium`)", "ok", det, ""});
+        } else {
+            items.push_back({
+                "Native Engine Libraries",
+                "libsodium (`ext:crypto/sodium`)",
+                "warn",
+                "Not installed (required when importing `ext:crypto/sodium`)",
+                pm == "brew" ? "brew install libsodium" :
+                (pm == "apt" ? "sudo apt-get install -y libsodium-dev" : "Install libsodium")
+            });
+        }
+
+        det.clear();
+        if (check_pkg_or_header("sqlcipher", "sqlcipher/sqlite3.h", det) ||
+            std::filesystem::exists("/opt/homebrew/opt/sqlcipher/include/sqlcipher/sqlite3.h")) {
+            if (det.empty()) det = "/opt/homebrew/opt/sqlcipher";
+            items.push_back({"Native Engine Libraries", "sqlcipher (`sqlite.open_encrypted`)", "ok", det, ""});
+        } else {
+            items.push_back({
+                "Native Engine Libraries",
+                "sqlcipher (`sqlite.open_encrypted`)",
+                "warn",
+                "Optional: SQLCipher not installed (needed for encrypted SQLite databases via `sqlite.open_encrypted`)",
+                pm == "brew" ? "brew install sqlcipher" :
+                (pm == "apt" ? "sudo apt-get install -y libsqlcipher-dev" : "Install sqlcipher")
             });
         }
 

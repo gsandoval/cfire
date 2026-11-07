@@ -55,8 +55,10 @@ inline auto mock_enabled_flag() -> std::atomic<bool>& {
 
 inline auto is_mock_mode() -> bool {
     if (mock_enabled_flag().load()) return true;
+#if defined(CFIRE_TEST_MODE)
     const char* env_h = std::getenv("CFIRE_HEADLESS_TEST");
     if (env_h && std::string_view(env_h) == "1") return true;
+#endif
 #if !CFIRE_LIBSSH_ACTIVE
     return true;
 #else

@@ -1,5 +1,8 @@
 #pragma once
 // tests/test_harness.hpp — Shared Conformance Test Harness & Declarations
+#ifndef CFIRE_TEST_MODE
+#define CFIRE_TEST_MODE 1
+#endif
 
 #include "../src/buildsys.hpp"
 #include "../src/docgen.hpp"

@@ -168,6 +168,21 @@ inline std::shared_ptr<AppState>& active_ios_state() {
 @end
 
 @implementation CfireWebUIWindowDelegate
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+    if (state && state->hide_on_close && !state->quit_requested.load(std::memory_order_relaxed)) {
+        {
+            std::lock_guard<std::recursive_mutex> lock(state->mtx);
+            state->window_hidden = true;
+        }
+        [sender orderOut:nil];
+        state->record_emitted("window:close_requested", "{}");
+        state->dispatch_event_internal("window:close_requested", "{}");
+        state->eval_js("window.__cfire_event_dispatch(\"window:close_requested\", {});");
+        return NO;
+    }
+    return YES;
+}
+
 - (void)windowWillClose:(NSNotification*)notification {
     (void)notification;
     if (state) {
@@ -451,6 +466,54 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             [NSApp setMainMenu:mainBar];
         }
 
+        // CF-082: System Tray / Menu Bar Icon (`NSStatusBar` / `NSStatusItem`)
+        NSStatusItem* statusItem = nil;
+        if (state_->has_tray) {
+            statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+            if (statusItem && statusItem.button) {
+                if (!state_->tray_tooltip.empty()) {
+                    NSString* nsTip = [NSString stringWithUTF8String:state_->tray_tooltip.c_str()];
+                    if (nsTip) [statusItem.button setToolTip:nsTip];
+                }
+                bool loaded_icon = false;
+                if (!state_->tray_icon_path.empty()) {
+                    NSString* nsTrayPath = [NSString stringWithUTF8String:state_->tray_icon_path.c_str()];
+                    if (nsTrayPath) {
+                        NSImage* trayImg = [[NSImage alloc] initWithContentsOfFile:nsTrayPath];
+                        if (trayImg) {
+                            [trayImg setSize:NSMakeSize(18, 18)];
+                            [trayImg setTemplate:YES];
+                            [statusItem.button setImage:trayImg];
+                            loaded_icon = true;
+                        }
+                    }
+                }
+                if (!loaded_icon) {
+                    NSString* nsTitle = [NSString stringWithUTF8String:state_->title.c_str()];
+                    [statusItem.button setTitle:(nsTitle && [nsTitle length] > 0) ? [nsTitle substringToIndex:1] : @"●"];
+                }
+            }
+            if (statusItem && !state_->tray_items.empty()) {
+                NSMenu* trayMenu = [[NSMenu alloc] init];
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                for (const auto& titem : state_->tray_items) {
+                    if (titem.title == "-") {
+                        [trayMenu addItem:[NSMenuItem separatorItem]];
+                        continue;
+                    }
+                    NSString* nsTitle = [NSString stringWithUTF8String:titem.title.c_str()];
+                    NSMenuItem* mi = [[NSMenuItem alloc]
+                        initWithTitle:(nsTitle ? nsTitle : @"Item")
+                               action:@selector(handleCustomMenuItem:)
+                        keyEquivalent:@""];
+                    [mi setTarget:menuTarget];
+                    [mi setRepresentedObject:[NSString stringWithUTF8String:titem.event.c_str()]];
+                    [trayMenu addItem:mi];
+                }
+                [statusItem setMenu:trayMenu];
+            }
+        }
+
         NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
         if (state_->frameless) {
@@ -570,6 +633,17 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                     if (ev) [window performWindowDragWithEvent:ev];
                 });
             };
+            state_->platform_hide_window = [window]() {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [window orderOut:nil];
+                });
+            };
+            state_->platform_show_window = [window]() {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [window makeKeyAndOrderFront:nil];
+                    [NSApp activateIgnoringOtherApps:YES];
+                });
+            };
             state_->platform_quit = [window]() {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [window close];
@@ -606,6 +680,9 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
         [NSApp run];
 
         [ucm removeScriptMessageHandlerForName:@"external"];
+        if (statusItem) {
+            [[NSStatusBar systemStatusBar] removeStatusItem:statusItem];
+        }
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
             state_->platform_eval = nullptr;
@@ -616,6 +693,8 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             state_->platform_maximize = nullptr;
             state_->platform_center = nullptr;
             state_->platform_drag = nullptr;
+            state_->platform_hide_window = nullptr;
+            state_->platform_show_window = nullptr;
             state_->platform_quit = nullptr;
         }
         if (activityToken) {
