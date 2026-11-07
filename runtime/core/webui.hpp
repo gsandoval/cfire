@@ -372,6 +372,74 @@ public:
         if (fn) fn();
     }
 
+    // --- System Tray / Menu Bar Icon & Hide-on-Close Lifecycle (`CF-082`) ---
+
+    void set_tray(std::string_view icon_path, std::string_view tooltip = "") {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->has_tray = true;
+        state_->tray_icon_path = std::string(icon_path);
+        state_->tray_tooltip = std::string(tooltip);
+    }
+
+    void add_tray_item(std::string_view title, std::string_view event) {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->has_tray = true;
+        state_->tray_items.push_back(detail::TrayItemSpec{
+            .title = std::string(title),
+            .event = std::string(event)
+        });
+    }
+
+    [[nodiscard]] auto has_tray() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->has_tray;
+    }
+
+    [[nodiscard]] auto tray_tooltip() const -> std::string {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->tray_tooltip;
+    }
+
+    [[nodiscard]] auto tray_items_count() const -> std::size_t {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->tray_items.size();
+    }
+
+    void hide_window() {
+        std::function<void()> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->window_hidden = true;
+            fn = state_->platform_hide_window;
+        }
+        if (fn) fn();
+    }
+
+    void show_window() {
+        std::function<void()> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->window_hidden = false;
+            fn = state_->platform_show_window;
+        }
+        if (fn) fn();
+    }
+
+    [[nodiscard]] auto is_window_hidden() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->window_hidden;
+    }
+
+    void set_hide_on_close(bool enabled) {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->hide_on_close = enabled;
+    }
+
+    [[nodiscard]] auto hide_on_close() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->hide_on_close;
+    }
+
     void quit() {
         state_->quit_requested.store(true, std::memory_order_relaxed);
         std::function<void()> fn;
@@ -388,12 +456,14 @@ public:
         quit();
     }
 
-    // --- Native OS Dialogs ---
+    // --- Native OS Dialogs (`CF-077`) ---
 
     [[nodiscard]] auto open_file_dialog(std::string_view dialog_title = "Open File") const -> std::string {
+#if defined(CFIRE_TEST_MODE)
         if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
             return "";
         }
+#endif
 #if defined(__APPLE__) && defined(__OBJC__) && !CFIRE_WEBUI_IOS
         NSOpenPanel* panel = [NSOpenPanel openPanel];
         [panel setTitle:[NSString stringWithUTF8String:std::string(dialog_title).c_str()]];
@@ -404,6 +474,34 @@ public:
             NSURL* url = [[panel URLs] firstObject];
             if (url && url.path) return std::string([url.path UTF8String]);
         }
+#elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        if (gtk_init_check(nullptr, nullptr)) {
+            GtkWidget* dialog = gtk_file_chooser_dialog_new(
+                std::string(dialog_title).c_str(),
+                nullptr,
+                GTK_FILE_CHOOSER_ACTION_OPEN,
+                "_Cancel", GTK_RESPONSE_CANCEL,
+                "_Open", GTK_RESPONSE_ACCEPT,
+                nullptr);
+            std::string chosen;
+            if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+                char* filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+                if (filename) {
+                    chosen = filename;
+                    g_free(filename);
+                }
+            }
+            gtk_widget_destroy(dialog);
+            while (gtk_events_pending()) gtk_main_iteration();
+            return chosen;
+        }
+#elif defined(_WIN32)
+        HWND owner = nullptr;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            owner = state_->win32_hwnd;
+        }
+        return detail::win32_open_file_dialog(dialog_title, owner);
 #else
         (void)dialog_title;
 #endif
@@ -411,9 +509,11 @@ public:
     }
 
     [[nodiscard]] auto save_file_dialog(std::string_view dialog_title = "Save File", std::string_view default_name = "") const -> std::string {
+#if defined(CFIRE_TEST_MODE)
         if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
             return "";
         }
+#endif
 #if defined(__APPLE__) && defined(__OBJC__) && !CFIRE_WEBUI_IOS
         NSSavePanel* panel = [NSSavePanel savePanel];
         [panel setTitle:[NSString stringWithUTF8String:std::string(dialog_title).c_str()]];
@@ -424,6 +524,38 @@ public:
             NSURL* url = [panel URL];
             if (url && url.path) return std::string([url.path UTF8String]);
         }
+#elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        if (gtk_init_check(nullptr, nullptr)) {
+            GtkWidget* dialog = gtk_file_chooser_dialog_new(
+                std::string(dialog_title).c_str(),
+                nullptr,
+                GTK_FILE_CHOOSER_ACTION_SAVE,
+                "_Cancel", GTK_RESPONSE_CANCEL,
+                "_Save", GTK_RESPONSE_ACCEPT,
+                nullptr);
+            gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+            if (!default_name.empty()) {
+                gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), std::string(default_name).c_str());
+            }
+            std::string chosen;
+            if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+                char* filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+                if (filename) {
+                    chosen = filename;
+                    g_free(filename);
+                }
+            }
+            gtk_widget_destroy(dialog);
+            while (gtk_events_pending()) gtk_main_iteration();
+            return chosen;
+        }
+#elif defined(_WIN32)
+        HWND owner = nullptr;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            owner = state_->win32_hwnd;
+        }
+        return detail::win32_save_file_dialog(dialog_title, default_name, owner);
 #else
         (void)dialog_title;
         (void)default_name;
@@ -432,15 +564,38 @@ public:
     }
 
     void message_dialog(std::string_view dialog_title, std::string_view message) const {
+#if defined(CFIRE_TEST_MODE)
         if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
             return;
         }
+#endif
 #if defined(__APPLE__) && defined(__OBJC__) && !CFIRE_WEBUI_IOS
         NSAlert* alert = [[NSAlert alloc] init];
         [alert setMessageText:[NSString stringWithUTF8String:std::string(dialog_title).c_str()]];
         [alert setInformativeText:[NSString stringWithUTF8String:std::string(message).c_str()]];
         [alert addButtonWithTitle:@"OK"];
         [alert runModal];
+#elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        if (gtk_init_check(nullptr, nullptr)) {
+            GtkWidget* dialog = gtk_message_dialog_new(
+                nullptr,
+                GTK_DIALOG_MODAL,
+                GTK_MESSAGE_INFO,
+                GTK_BUTTONS_OK,
+                "%s",
+                std::string(dialog_title).c_str());
+            gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", std::string(message).c_str());
+            gtk_dialog_run(GTK_DIALOG(dialog));
+            gtk_widget_destroy(dialog);
+            while (gtk_events_pending()) gtk_main_iteration();
+        }
+#elif defined(_WIN32)
+        HWND owner = nullptr;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            owner = state_->win32_hwnd;
+        }
+        detail::win32_message_dialog(dialog_title, message, owner);
 #else
         (void)dialog_title;
         (void)message;
@@ -450,16 +605,25 @@ public:
     // --- Native Clipboard & System Fonts (`CF-045`, `CF-053`) ---
 
     void clipboard_set(std::string_view text, bool concealed = false, std::int64_t clear_after_ms = 0) const {
+        bool is_headless = false;
+#if defined(CFIRE_TEST_MODE)
+        if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
+            is_headless = true;
+        }
+#endif
         std::uint64_t gen = 0;
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
-            state_->kv_state["__clipboard"] = std::string(text);
+            if (!state_->clipboard_fallback.empty()) {
+                volatile char* p = state_->clipboard_fallback.data();
+                for (std::size_t i = 0; i < state_->clipboard_fallback.size(); ++i) p[i] = 0;
+                state_->clipboard_fallback.clear();
+            }
+            if (is_headless) {
+                state_->clipboard_fallback = std::string(text);
+            }
             state_->last_clipboard_concealed = concealed;
             gen = ++state_->clipboard_generation;
-        }
-        bool is_headless = false;
-        if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
-            is_headless = true;
         }
 
 #if defined(__APPLE__) && defined(__OBJC__) && !CFIRE_WEBUI_IOS
@@ -478,13 +642,17 @@ public:
             savedChangeCount = [pb changeCount];
         }
 #elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
-        if (!is_headless && gtk_init_check(nullptr, nullptr)) {
-            GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-            if (cb) gtk_clipboard_set_text(cb, std::string(text).c_str(), static_cast<gint>(text.size()));
+        if (!is_headless) {
+            detail::linux_clipboard_set(text, concealed);
         }
 #elif defined(_WIN32)
         if (!is_headless) {
-            detail::win32_clipboard_set(text, concealed);
+            HWND owner = nullptr;
+            {
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                owner = state_->win32_hwnd;
+            }
+            detail::win32_clipboard_set(text, concealed, owner);
         }
 #endif
 
@@ -496,7 +664,11 @@ public:
                 {
                     std::lock_guard<std::recursive_mutex> lock(st->mtx);
                     if (st->clipboard_generation != gen) return;
-                    st->kv_state["__clipboard"] = "";
+                    if (!st->clipboard_fallback.empty()) {
+                        volatile char* p = st->clipboard_fallback.data();
+                        for (std::size_t i = 0; i < st->clipboard_fallback.size(); ++i) p[i] = 0;
+                        st->clipboard_fallback.clear();
+                    }
                     st->last_clipboard_concealed = false;
                 }
                 if (!is_headless) {
@@ -514,18 +686,26 @@ public:
                 {
                     std::lock_guard<std::recursive_mutex> lock(st->mtx);
                     if (st->clipboard_generation != gen) return;
-                    st->kv_state["__clipboard"] = "";
+                    if (!st->clipboard_fallback.empty()) {
+                        volatile char* p = st->clipboard_fallback.data();
+                        for (std::size_t i = 0; i < st->clipboard_fallback.size(); ++i) p[i] = 0;
+                        st->clipboard_fallback.clear();
+                    }
                     st->last_clipboard_concealed = false;
                 }
                 (void)is_headless;
 #if defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
-                if (!is_headless && gtk_init_check(nullptr, nullptr)) {
-                    GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-                    if (cb) gtk_clipboard_set_text(cb, "", 0);
+                if (!is_headless) {
+                    g_idle_add_full(G_PRIORITY_DEFAULT, detail::linux_idle_clear_clipboard, nullptr, nullptr);
                 }
 #elif defined(_WIN32)
                 if (!is_headless) {
-                    detail::win32_clipboard_set("", false);
+                    HWND owner = nullptr;
+                    {
+                        std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                        owner = st->win32_hwnd;
+                    }
+                    detail::win32_clipboard_set("", false, owner);
                 }
 #endif
             }).detach();
@@ -543,13 +723,12 @@ public:
     }
 
     [[nodiscard]] auto clipboard_get() const -> std::string {
+#if defined(CFIRE_TEST_MODE)
         if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
-            if (auto it = state_->kv_state.find("__clipboard"); it != state_->kv_state.end()) {
-                return it->second;
-            }
-            return "";
+            return state_->clipboard_fallback;
         }
+#endif
 #if defined(__APPLE__) && defined(__OBJC__) && !CFIRE_WEBUI_IOS
         NSPasteboard* pb = [NSPasteboard generalPasteboard];
         NSString* ns = [pb stringForType:NSPasteboardTypeString];
@@ -570,10 +749,6 @@ public:
         std::string wclip = detail::win32_clipboard_get();
         if (!wclip.empty()) return wclip;
 #endif
-        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
-        if (auto it = state_->kv_state.find("__clipboard"); it != state_->kv_state.end()) {
-            return it->second;
-        }
         return "";
     }
 
@@ -583,9 +758,19 @@ public:
         NSFontManager* fm = [NSFontManager sharedFontManager];
         NSArray<NSString*>* names = [fm availableFontNamesWithTraits:NSFixedPitchFontMask];
         if (names) {
+            std::set<std::string> unique_families;
             for (NSString* name in names) {
-                if (name) fonts.emplace_back([name UTF8String]);
+                if (!name) continue;
+                NSFont* font = [NSFont fontWithName:name size:12.0];
+                NSString* fam = font ? [font familyName] : name;
+                if (fam && [fam length] > 0) {
+                    const char* utf8 = [fam UTF8String];
+                    if (utf8 && utf8[0] != '.' && utf8[0] != '\0') {
+                        unique_families.emplace(utf8);
+                    }
+                }
             }
+            fonts.assign(unique_families.begin(), unique_families.end());
         }
 #elif defined(__linux__)
         FILE* fp = ::popen("fc-list :spacing=mono family 2>/dev/null", "r");

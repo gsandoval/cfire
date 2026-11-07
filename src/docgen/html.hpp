@@ -635,10 +635,20 @@ fn main() {
     out += "<div class=\"guide-shell\">\n";
     out += "  <aside class=\"guide-sidebar\">\n";
     out += "    <div class=\"sidebar-details\" id=\"ref-sidebar-details\">\n";
-    out += "      <button type=\"button\" class=\"sidebar-summary\" onclick=\"this.parentElement.classList.toggle('open')\">\n";
-    out += "        <span id=\"ref-mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Stdlib:</span> Overview &amp; Diagnostics</span>\n";
-    out += "        <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
-    out += "      </button>\n";
+    out += "      <div class=\"mobile-unified-bar\">\n";
+    out += "        <button type=\"button\" class=\"sidebar-summary\" onclick=\"document.getElementById('ref-sidebar-details').classList.toggle('open')\">\n";
+    out += "          <span id=\"ref-mobile-sidebar-label\"><span class=\"sidebar-summary-badge\">Stdlib</span> Overview</span>\n";
+    out += "          <span class=\"material-symbols-outlined sidebar-chevron\" aria-hidden=\"true\">expand_more</span>\n";
+    out += "        </button>\n";
+    out += "        <select class=\"mobile-topic-select\" id=\"ref-mobile-pane-select\" aria-label=\"Jump to module\" onchange=\"if(this.value)navigateToRefPane(this.value)\">\n";
+    out += std::format("          <option value=\"overview\">Overview ({} Modules)</option>\n", mods.size());
+    for (const auto& mod : mods) {
+        out += std::format("          <option value=\"mod-{}\">{} ({} fns)</option>\n", mod.ns_alias, mod.import_path, mod.functions.size());
+    }
+    out += std::format("          <option value=\"diagnostics\">Diagnostics ({} Rules)</option>\n", diags.size());
+    out += "        </select>\n";
+    out += "        <button type=\"button\" class=\"mobile-mode-btn\" id=\"ref-mobile-mode-cycle\" onclick=\"setRefMode(currentRefMode==='all'?'module':'all')\" title=\"Switch reading mode\">Module</button>\n";
+    out += "      </div>\n";
     out += "      <div class=\"sidebar-content\" id=\"sidebar-nav\">\n";
     out += "        <div style=\"position:relative; margin-bottom: 0.75rem;\">\n";
     out += "          <input type=\"text\" id=\"ref-filter\" class=\"search-input\" placeholder=\"Search APIs &amp; errors (⌘K)...\" oninput=\"filterRefNav(this.value)\" autocomplete=\"off\" />\n";
@@ -712,7 +722,7 @@ fn main() {
 )HTML", mods.size());
 
     // Pane 0: Categorized Overview Dashboard
-    out += std::format("      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-title=\"Overview (All {} Modules)\">\n", mods.size());
+    out += std::format("      <article class=\"ref-pane active\" id=\"ref-pane-overview\" data-pane-id=\"overview\" data-pane-short=\"Overview\" data-pane-title=\"Overview (All {} Modules)\">\n", mods.size());
     out += "        <h1>Standard Library &amp; Diagnostics Reference</h1>\n";
     out += std::format("        <p class=\"subtitle\" style=\"margin:0 0 1.5rem;\">{} modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> ({} zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> ({} opt-in networking, database, compression, audio, AI, and WebUI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> ({} bundled C/C++ engines) — plus {} semantic diagnostics, verified by <code>cfire doc --check</code>.</p>\n", mods.size(), core_count, ext_count, vendor_count, diags.size());
 
@@ -786,8 +796,8 @@ fn main() {
     for (std::size_t i = 0; i < mods.size(); ++i) {
         const auto& mod = mods[i];
         out += std::format(
-            "      <article class=\"ref-pane\" id=\"ref-pane-mod-{}\" data-pane-id=\"mod-{}\" data-pane-title=\"{} — {}\">\n",
-            mod.ns_alias, mod.ns_alias, mod.import_path, detail::html_escape(mod.title));
+            "      <article class=\"ref-pane\" id=\"ref-pane-mod-{}\" data-pane-id=\"mod-{}\" data-pane-short=\"{}\" data-pane-title=\"{} — {}\">\n",
+            mod.ns_alias, mod.ns_alias, mod.import_path, mod.import_path, detail::html_escape(mod.title));
         out += std::format("        <h2 id=\"mod-{}\" style=\"margin-top:0.25rem;\"><code>import \"{}\"</code> &mdash; {}</h2>\n",
             mod.ns_alias, mod.import_path, detail::html_escape(mod.title));
         out += std::format("        <p>{} <br/><small style=\"color:var(--muted)\">Auto-linked flags: <code>{}</code> &bull; Namespace: <code>{}.*</code> &bull; {} exported functions</small></p>\n",
@@ -847,7 +857,7 @@ fn main() {
     }
 
     // Diagnostics Pane
-    out += "      <article class=\"ref-pane\" id=\"ref-pane-diagnostics\" data-pane-id=\"diagnostics\" data-pane-title=\"Compiler Semantic Diagnostics\">\n";
+    out += "      <article class=\"ref-pane\" id=\"ref-pane-diagnostics\" data-pane-id=\"diagnostics\" data-pane-short=\"Diagnostics\" data-pane-title=\"Compiler Semantic Diagnostics\">\n";
     out += "        <h2 class=\"section-title\" id=\"diagnostics\" style=\"margin-top:0.25rem;\">Compiler Semantic Diagnostics</h2>\n";
     out += "        <p style=\"color:var(--muted); margin-bottom:1.25rem;\">Deterministic compile-time diagnostics emitted by the single-pass type and effect checker (<code>src/sema.hpp</code>).</p>\n";
     for (const auto& d : diags) {
@@ -896,14 +906,17 @@ function setRefMode(mode) {
   const vp = document.getElementById('ref-viewport');
   const btnMod = document.getElementById('btn-ref-module');
   const btnAll = document.getElementById('btn-ref-all');
+  const mobCycle = document.getElementById('ref-mobile-mode-cycle');
   if (currentRefMode === 'all') {
     if (vp) vp.classList.add('view-all-mode');
     if (btnAll) btnAll.classList.add('active');
     if (btnMod) btnMod.classList.remove('active');
+    if (mobCycle) mobCycle.textContent = 'All';
   } else {
     if (vp) vp.classList.remove('view-all-mode');
     if (btnMod) btnMod.classList.add('active');
     if (btnAll) btnAll.classList.remove('active');
+    if (mobCycle) mobCycle.textContent = 'Module';
     navigateToRefPane(activeRefPane, false);
   }
 }
@@ -922,13 +935,18 @@ function navigateToRefPane(paneId, pushHash = true) {
   if (navLink) navLink.classList.add('active');
 
   const paneTitle = target.getAttribute('data-pane-title') || paneId;
+  const paneShort = target.getAttribute('data-pane-short') || paneTitle;
   const crumb = document.getElementById('ref-active-crumb');
   if (crumb) {
     crumb.textContent = paneTitle;
   }
   const mobLabel = document.getElementById('ref-mobile-sidebar-label');
   if (mobLabel) {
-    mobLabel.innerHTML = '<span class="sidebar-summary-badge">Stdlib:</span> ' + paneTitle;
+    mobLabel.innerHTML = '<span class="sidebar-summary-badge">Stdlib</span> ' + paneShort;
+  }
+  const mobSel = document.getElementById('ref-mobile-pane-select');
+  if (mobSel) {
+    mobSel.value = paneId;
   }
   const mobDetails = document.getElementById('ref-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {

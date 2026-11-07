@@ -353,9 +353,10 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn read_all(path: str) -> []byte!` | `cfire::fs::read_all(path)` | Reads an entire binary file into a byte buffer. | `raw := try fs.read_all("input.bin")` |
-| `fn write_all(path: str, data: []byte) -> void!` | `cfire::fs::write_all(path, data)` | Writes a byte slice atomically to disk, creating parent directories if needed. | `try fs.write_all("out.bin", raw)` |
+| `fn write_all(path: str, data: []byte) -> void!` | `cfire::fs::write_all(path, data)` | Writes a byte slice or string to disk (truncating any existing file). | `try fs.write_all("out.bin", raw)` |
 | `fn read_text(path: str) -> str!` | `cfire::fs::read_text(path)` | Reads an entire UTF-8 text file into a `str`. | `txt := try fs.read_text("config.json")` |
 | `fn write_text(path: str, text: str) -> void!` | `cfire::fs::write_text(path, text)` | Writes a UTF-8 string to disk. | `try fs.write_text("hello.txt", "sapphire")` |
+| `fn rename(from: str, to: str) -> void!` | `cfire::fs::rename(from, to)` | Renames or moves a file or directory. | `try fs.rename("tmp.bin", "final.bin")` |
 | `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` | `cfire::fs::open(path, mode)` | Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle. | `mut f := try fs.open("log.txt", OpenMode::Append)` |
 | `fn (f: File) fd() -> i32` | `f.fd()` | Returns the underlying OS file descriptor (`-1` if closed). | `fd := f.fd()` |
 | `fn (mut f: File) read(mut buf: []byte) -> usize!` | `f.read(buf)` | Reads up to `buf.len()` bytes from the streaming file handle. | `n := try f.read(mut buf)` |
@@ -460,6 +461,7 @@ fn main() {
 | `fn getenv_opt(key: str) -> str?` | `cfire::os::getenv_opt(key)` | Reads environment variable `key`, returning `none` if unset. | `val := os.getenv_opt("API_KEY") or { return }` |
 | `fn setenv(key: str, value: str)` | `cfire::os::setenv(key, value)` | Sets environment variable `key` to `value` in the current process. | `os.setenv("MODE", "prod")` |
 | `fn cwd() -> str` | `cfire::os::cwd()` | Returns the current working directory path. | `dir := os.cwd()` |
+| `fn getpid() -> i64` | `cfire::os::getpid()` | Returns the process ID (PID) of the current process. | `pid := os.getpid()` |
 | `fn is_tty(fd: i32 = os.STDIN) -> bool` | `cfire::os::is_tty(fd)` | Returns `true` if file descriptor `fd` (defaulting to `os.STDIN`) refers to an interactive terminal. | `if os.is_tty(os.STDOUT) { ... }` |
 | `fn term_size(fd: i32 = os.STDIN) -> TermSize` | `cfire::os::term_size(fd)` | Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY. | `sz := os.term_size()` |
 | `fn make_raw(fd: i32 = os.STDIN) -> RawTerminal!` | `cfire::os::make_raw(fd)` | Places terminal file descriptor `fd` into raw mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit. | `raw := try os.make_raw()` |
@@ -950,10 +952,10 @@ fn main() {
 | `fn compress(input: []byte, level: i32 = 3) -> []byte!` | `cfire::zstd::compress(input, level)` | Compresses a byte slice into a Zstandard frame. | `blob := try zstd.compress(raw, level: 3)` |
 | `fn decompress(frame: []byte) -> []byte!` | `cfire::zstd::decompress(frame)` | Decompresses a Zstandard frame using the embedded frame content size. | `orig := try zstd.decompress(blob)` |
 
-### `ext:crypto/sodium` (`sodium`) — Memory-Hard Argon2id KDF & XChaCha20-Poly1305 AEAD
+### `ext:crypto/sodium` (`sodium`) — Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation & XChaCha20-Poly1305 AEAD
 
-- **Auto-Link Flags:** `-lsodium (or built-in fallback)`
-- **Overview:** Modern cryptographic primitives backed by `libsodium` (`crypto_pwhash` Argon2id password hashing and `crypto_aead_xchacha20poly1305_ietf` 192-bit nonce AEAD) with automatic portable C++23 fallback.
+- **Auto-Link Flags:** `-lsodium`
+- **Overview:** Modern cryptographic primitives backed by `libsodium` (`crypto_pwhash` Argon2id password hashing, `crypto_generichash` keyed/unkeyed BLAKE2b, `crypto_kdf_derive_from_key` subkey derivation, and `crypto_aead_xchacha20poly1305_ietf` 192-bit nonce AEAD).
 
 **Practical Example:**
 ```cf
@@ -977,6 +979,8 @@ fn main() {
 | `fn argon2id(password: str, salt: []byte, out_len: usize = 32, opslimit: u64 = 2, memlimit: usize = 67108864) -> []byte!` | `cfire::sodium::argon2id(password, salt, out_len, opslimit, memlimit)` | Derives a cryptographic key of `out_len` bytes from `password` and a 16-byte `salt` using Argon2id. | `key := try sodium.argon2id(master_pw, salt, 32)` |
 | `fn argon2id_str(password: str, opslimit: u64 = 2, memlimit: usize = 67108864) -> str!` | `cfire::sodium::argon2id_str(password, opslimit, memlimit)` | Hashes a password into a PHC-formatted `$argon2id$...` verification string. | `encoded := try sodium.argon2id_str(password)` |
 | `fn argon2id_verify(encoded: str, password: str) -> bool` | `cfire::sodium::argon2id_verify(encoded, password)` | Verifies a password against an encoded Argon2id hash string in constant time. | `ok := sodium.argon2id_verify(encoded, password)` |
+| `fn blake2b(input: []byte | str, out_len: usize = 32, key: []byte = []) -> []byte!` | `cfire::sodium::blake2b(input, out_len, key)` | Computes a keyed or unkeyed BLAKE2b hash (`crypto_generichash`) of `out_len` bytes (16..64). | `mac := try sodium.blake2b(payload, 32, key)` |
+| `fn derive_subkey(master_key: []byte, subkey_id: u64, context: str, out_len: usize = 32) -> []byte!` | `cfire::sodium::derive_subkey(master_key, subkey_id, context, out_len)` | Derives a domain-separated subkey of `out_len` bytes (16..64) from a 32-byte `master_key`, `subkey_id`, and 8-byte `context` (`crypto_kdf_derive_from_key`). | `sub := try sodium.derive_subkey(master_key, 1, "flintkdf", 32)` |
 | `fn xchacha20poly1305_encrypt(key: []byte, plaintext: []byte, aad: []byte = []) -> []byte!` | `cfire::sodium::xchacha20poly1305_encrypt(key, pt, aad)` | Encrypts `plaintext` with a 32-byte key using XChaCha20-Poly1305, returning `[24-byte random nonce || ciphertext || 16-byte Poly1305 tag]`. | `sealed := try sodium.xchacha20poly1305_encrypt(key, secret)` |
 | `fn xchacha20poly1305_decrypt(key: []byte, combined: []byte, aad: []byte = []) -> []byte!` | `cfire::sodium::xchacha20poly1305_decrypt(key, combined, aad)` | Authenticates and decrypts a `[24-byte nonce || ciphertext || 16-byte tag]` XChaCha20-Poly1305 payload. | `pt := try sodium.xchacha20poly1305_decrypt(key, sealed)` |
 | `fn random_bytes(n: usize) -> []byte` | `cfire::sodium::random_bytes(n)` | Generates `n` cryptographically secure random bytes (`randombytes_buf`). | `salt := sodium.random_bytes(16)` |
@@ -1465,6 +1469,11 @@ fn main() {
 | `fn (app: App) clipboard_get() -> str` | `app.clipboard_get()` | Reads current plain text from the native OS system clipboard. | `clip := app.clipboard_get()` |
 | `fn (app: App) monospace_fonts() -> []str` | `app.monospace_fonts()` | Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows). | `fonts := app.monospace_fonts()` |
 | `fn (mut app: App) set_icon(icon_path: str)` | `app.set_icon(icon_path)` | Sets the application window and dock/taskbar icon from a `.png`, `.icns`, or `.ico` file. | `app.set_icon("assets/icon.png")` |
+| `fn (mut app: App) set_tray(icon_path: str, tooltip: str = "")` | `app.set_tray(icon_path, tooltip)` | Configures a system tray / menu-bar status item (`NSStatusItem` on macOS, `GtkStatusIcon` on Linux, `Shell_NotifyIconW` on Windows). | `app.set_tray("assets/tray.png", "Flint")` |
+| `fn (mut app: App) add_tray_item(title: str, event: str)` | `app.add_tray_item(title, event)` | Appends a menu item to the system tray context menu that emits `event` to `app.on(event)` when clicked (or `"-"` for a separator). | `app.add_tray_item("Quick Connect", "tray:connect")` |
+| `fn (mut app: App) hide_window()` | `app.hide_window()` | Hides the native application window without terminating the process or system tray. | `app.hide_window()` |
+| `fn (mut app: App) show_window()` | `app.show_window()` | Restores and focuses a hidden or minimized native application window. | `app.show_window()` |
+| `fn (mut app: App) set_hide_on_close(enabled: bool)` | `app.set_hide_on_close(enabled)` | Intercepts the window close button (`windowShouldClose:` / `delete-event` / `WM_CLOSE`) to hide the window to the system tray instead of exiting. | `app.set_hide_on_close(true)` |
 | `fn (mut app: App) add_menu_item(menu: str, title: str, shortcut: str, event: str)` | `app.add_menu_item(menu, title, shortcut, event)` | Adds a custom menu item with keyboard shortcut to the application menu bar that emits `event` to `app.on(event)` when triggered. | `app.add_menu_item("Shell", "New Tab", "t", "menu:new_tab")` |
 | `fn (mut app: App) set_state(key: str, val: str)` | `app.set_state(key, val)` | Updates a reactive key-value state entry and broadcasts a `state:change` event (`{key, value}`) to the frontend. | `app.set_state("preset", "Warm Tape")` |
 | `fn (app: App) get_state(key: str) -> str` | `app.get_state(key)` | Reads the current string value for `key` from the application's state store. | `p := app.get_state("preset")` |

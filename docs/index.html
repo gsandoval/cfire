@@ -8,26 +8,71 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=swap" />
+  <script>(function(){try{var t=localStorage.getItem('cfire-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
   <style>
-:root {
+:root, [data-theme="light"] {
+    --bg: #FAFAFA;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F1F5F9;
+    --bg-code: #F8FAFC;
+    --bg-subtle: #F1F5F9;
+    --bg-pill-active: #FFF7ED;
+    --border: #E2E8F0;
+    --border-dark: #CBD5E1;
+    --border-active-pill: #FDBA74;
+    --text: #1E293B;
+    --text-bright: #0F172A;
+    --muted: #64748B;
+    --accent: #EA580C;
+    --accent-hover: #C2410C;
+    --accent-sapphire: #0284C7;
+    --accent-sapphire-hover: #0369A1;
+    --code-inline-bg: #F1F5F9;
+    --code-inline-fg: #C2410C;
+    --table-th-bg: #F1F5F9;
+    --table-hover-bg: #F8FAFC;
+    --ok: #16A34A;
+    --warn: #D97706;
+    --err: #DC2626;
+    --callout-note-bg: #F0F9FF;
+    --callout-tip-bg: #F0FDF4;
+    --callout-important-bg: #F5F3FF;
+    --callout-warn-bg: #FFFBEB;
+    --part-pill-bg: #FFF7ED;
+    --part-pill-border: #FDBA74;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+[data-theme="dark"] {
     --bg: #0D1117;
     --bg-card: #161B22;
     --bg-card-hover: #21262D;
     --bg-code: #090D12;
     --bg-subtle: #21262D;
+    --bg-pill-active: #27140B;
     --border: #30363D;
     --border-dark: #484F58;
+    --border-active-pill: #F97316;
     --text: #F0F6FC;
     --text-bright: #FFFFFF;
     --muted: #8B949E;
     --accent: #F97316;
     --accent-hover: #FB923C;
     --accent-sapphire: #38BDF8;
+    --accent-sapphire-hover: #7DD3FC;
+    --code-inline-bg: #1C2128;
+    --code-inline-fg: #F97316;
+    --table-th-bg: #1C2128;
+    --table-hover-bg: #1F242C;
     --ok: #3FB950;
     --warn: #D29922;
     --err: #F85149;
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --callout-note-bg: #0B1622;
+    --callout-tip-bg: #0A1C14;
+    --callout-important-bg: #171124;
+    --callout-warn-bg: #1E1606;
+    --part-pill-bg: #27140B;
+    --part-pill-border: #7C2D12;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 .material-symbols-outlined {
@@ -67,14 +112,14 @@ body {
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
-::selection { background: #F97316; color: #0D1117; }
+::selection { background: var(--accent); color: #FFFFFF; }
 a {
     color: var(--accent-sapphire);
     text-decoration: none;
     transition: color 0.15s ease, border-color 0.15s ease;
 }
 a:hover {
-    color: #7DD3FC;
+    color: var(--accent-sapphire-hover);
 }
 
 /* Crisp Technical Prose Links */
@@ -82,27 +127,27 @@ main a:not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand),
 .callout a {
     color: var(--accent-sapphire);
     text-decoration: none;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+    border-bottom: 1px solid var(--border-dark);
     font-weight: 500;
     transition: color 0.15s ease, border-bottom-color 0.15s ease;
 }
 main a:not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand):hover,
 .callout a:hover {
-    color: #7DD3FC;
-    border-bottom-color: #38BDF8;
+    color: var(--accent-sapphire-hover);
+    border-bottom-color: var(--accent-sapphire);
     text-decoration: none;
 }
 main a code {
     color: inherit;
-    border-color: rgba(56, 189, 248, 0.4);
-    background: #161B22;
+    border-color: var(--border-dark);
+    background: var(--code-inline-bg);
 }
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     width: 100%;
-    background: #0D1117;
+    background: var(--bg-card);
     border-bottom: 1px solid var(--border);
 }
 .navbar-inner {
@@ -128,19 +173,39 @@ main a code {
 .brand span.brand-text {
     font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text-bright);
 }
-.brand span.fire { color: #F97316; font-weight: 850; }
+.brand span.fire { color: var(--accent); font-weight: 850; }
 .brand-badge {
     font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
-    background: #21262D; border: 1px solid var(--border); color: #8B949E;
+    background: var(--bg-subtle); border: 1px solid var(--border); color: var(--muted);
     padding: 0.12rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
 }
-.nav-links { display: flex; align-items: center; gap: 1.25rem; font-size: 0.92rem; font-weight: 600; }
+.nav-links { display: flex; align-items: center; gap: 0.9rem; font-size: 0.92rem; font-weight: 600; }
 .nav-links a {
     color: var(--muted); transition: all 0.15s ease;
-    padding: 0.25rem 0.4rem; border-radius: 5px;
+    padding: 0.25rem 0.45rem; border-radius: 5px;
 }
-.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
-.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
+.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: var(--bg-subtle); }
+.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: var(--bg-subtle); }
+.btn-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--text) !important;
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    font-family: var(--font-mono);
+    padding: 0.32rem 0.6rem !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--bg-subtle) !important;
+    cursor: pointer;
+    transition: all 0.15s ease !important;
+}
+.btn-theme-toggle:hover {
+    color: var(--text-bright) !important;
+    background: var(--bg-card-hover) !important;
+    border-color: var(--border-dark) !important;
+}
 .btn-nav-github {
     display: inline-flex;
     align-items: center;
@@ -162,13 +227,13 @@ main a code {
     text-decoration: none !important;
 }
 .btn-nav-primary {
-    background: #F97316 !important; color: #0D1117 !important;
+    background: var(--accent) !important; color: #FFFFFF !important;
     padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
     text-decoration: none !important;
     border-bottom: none !important;
 }
-.btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
+.btn-nav-primary:hover { background: var(--accent-hover) !important; text-decoration: none !important; }
 
 /* Page container with robust bounds */
 .container {
@@ -414,8 +479,8 @@ h1.hero-title {
     align-items: center; gap: 0.5rem; text-decoration: none; cursor: pointer;
 }
 .btn:hover { text-decoration: none; }
-.btn-primary { background: #F97316; color: #0D1117; border-color: #F97316; font-weight: 700; }
-.btn-primary:hover { background: #FB923C; border-color: #FB923C; }
+.btn-primary { background: var(--accent); color: #FFFFFF; border-color: var(--accent); font-weight: 700; }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
 .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
@@ -461,7 +526,7 @@ h1.hero-title {
 .card:hover { border-color: var(--border-dark); }
 .card-num {
     font-family: var(--font-mono); font-size: 0.78rem; font-weight: 800;
-    color: #F97316; margin-bottom: 0.5rem; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase;
 }
 .card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text-bright); }
 .card p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin: 0; }
@@ -472,12 +537,12 @@ pre {
     border-radius: 8px; padding: 1.1rem 1.25rem; overflow-x: auto;
     max-width: 100%; min-width: 0; box-sizing: border-box;
     font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.65;
-    color: #F0F6FC; -webkit-overflow-scrolling: touch;
+    color: var(--text); -webkit-overflow-scrolling: touch;
 }
 code {
     font-family: var(--font-mono); font-size: 0.88em;
-    background: #1C2128; border: 1px solid var(--border);
-    padding: 0.12rem 0.35rem; border-radius: 4px; color: #F97316;
+    background: var(--code-inline-bg); border: 1px solid var(--border);
+    padding: 0.12rem 0.35rem; border-radius: 4px; color: var(--code-inline-fg);
     word-break: break-word;
 }
 pre code { background: none; border: none; padding: 0; color: inherit; word-break: normal; }
@@ -487,8 +552,8 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     margin-bottom: 0.45rem; display: flex; justify-content: space-between;
     align-items: center;
 }
-.code-header span.tag-cf { color: #38BDF8; }
-.code-header span.tag-cpp { color: #F59E0B; }
+.code-header span.tag-cf { color: var(--accent-sapphire); }
+.code-header span.tag-cpp { color: var(--accent); }
 .code-copy-btn {
     background: var(--bg-card);
     color: var(--muted);
@@ -583,8 +648,8 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     font-family: var(--font-mono);
     font-size: 0.68rem;
     font-weight: 800;
-    color: #F97316;
-    background: #21262D;
+    color: var(--accent);
+    background: var(--bg-subtle);
     border: 1px solid var(--border);
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
@@ -631,7 +696,7 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
 }
 .tab-btn:hover { color: var(--text-bright); border-color: var(--border-dark); }
 .tab-btn.active {
-    background: var(--bg-card-hover); color: var(--text-bright); border-color: #F97316;
+    background: var(--bg-pill-active); color: var(--accent); border-color: var(--border-active-pill); font-weight: 750;
 }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
@@ -660,7 +725,7 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.05em; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.35rem;
 }
-.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #3FB950; }
+.console-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 
 /* Robust Table System: Isolated Scrolling & Polished Mobile Experience */
 .table-wrap {
@@ -688,11 +753,11 @@ th, td {
     font-size: 0.9rem; vertical-align: top;
 }
 th {
-    background: #1C2128; color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
+    background: var(--table-th-bg); color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #1F242C; }
+tr:hover td { background: var(--table-hover-bg); }
 
 /* Subtle mobile scroll hint banner */
 .table-scroll-cue {
@@ -703,7 +768,7 @@ tr:hover td { background: #1F242C; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.4rem 0.85rem;
-    background: #1C2128;
+    background: var(--table-th-bg);
     border-bottom: 1px solid var(--border);
     text-align: right;
 }
@@ -719,7 +784,7 @@ tr:hover td { background: #1F242C; }
 .step-badge {
     display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
     font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
-    background: #21262D; color: #F97316; padding: 0.2rem 0.6rem; border-radius: 4px;
+    background: var(--bg-subtle); color: var(--accent); padding: 0.2rem 0.6rem; border-radius: 4px;
     border: 1px solid var(--border); margin-bottom: 0.75rem;
 }
 .step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text-bright); }
@@ -738,7 +803,7 @@ tr:hover td { background: #1F242C; }
 }
 .roadmap-num {
     font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.05em; color: #F97316; margin-bottom: 0.35rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.35rem;
 }
 .roadmap-card h4 { font-size: 1.05rem; color: var(--text-bright); margin-bottom: 0.35rem; font-weight: 700; }
 .roadmap-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; margin: 0; }
@@ -793,9 +858,9 @@ tr:hover td { background: #1F242C; }
     .nav-links::-webkit-scrollbar { display: none; }
     .nav-links a {
         white-space: nowrap; padding: 0.35rem 0.65rem; border-radius: 6px;
-        background: #161B22; font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
+        background: var(--bg-subtle); font-size: 0.82rem; color: var(--muted); flex-shrink: 0;
     }
-    .nav-links a.active { background: #21262D; color: var(--text-bright) !important; }
+    .nav-links a.active { background: var(--bg-card-hover); color: var(--text-bright) !important; }
     .btn-nav-primary {
         margin-left: auto; padding: 0.35rem 0.75rem !important;
         font-size: 0.8rem !important; flex-shrink: 0;
@@ -826,8 +891,8 @@ tr:hover td { background: #1F242C; }
         padding-bottom: 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.45rem;
     }
     .api-table-wrap td:first-child code {
-        font-weight: 700; font-size: 0.88rem; color: #F97316;
-        background: #21262D; border-color: var(--border); word-break: break-all;
+        font-weight: 700; font-size: 0.88rem; color: var(--code-inline-fg);
+        background: var(--code-inline-bg); border-color: var(--border); word-break: break-all;
         display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
     }
     .api-table-wrap td:nth-child(2)::before {
@@ -863,6 +928,10 @@ tr:hover td { background: #1F242C; }
       <a href="index.html" class="active">Overview</a>
       <a href="guide.html">Guide</a>
       <a href="reference.html">Stdlib</a>
+      <button type="button" class="btn-theme-toggle" id="theme-toggle-btn" onclick="toggleCfireTheme()" title="Switch Light / Dark theme" aria-label="Toggle Light or Dark theme">
+        <span class="material-symbols-outlined" id="theme-toggle-icon" style="font-size:0.95rem;" aria-hidden="true">light_mode</span>
+        <span id="theme-toggle-label">Light</span>
+      </button>
       <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -871,6 +940,23 @@ tr:hover td { background: #1F242C; }
     </div>
   </div>
 </nav>
+<script>
+function syncCfireThemeBtn() {
+  var t = document.documentElement.getAttribute('data-theme') || 'light';
+  var icon = document.getElementById('theme-toggle-icon');
+  var lbl = document.getElementById('theme-toggle-label');
+  if (icon) icon.textContent = (t === 'dark') ? 'dark_mode' : 'light_mode';
+  if (lbl) lbl.textContent = (t === 'dark') ? 'Dark' : 'Light';
+}
+function toggleCfireTheme() {
+  var cur = document.documentElement.getAttribute('data-theme') || 'light';
+  var next = (cur === 'dark') ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('cfire-theme', next); } catch(e) {}
+  syncCfireThemeBtn();
+}
+syncCfireThemeBtn();
+</script>
 
 <div class="container">
 
@@ -1098,6 +1184,7 @@ fn main() {
 
 struct Box;
 
+#line 3 &quot;snippet_intents.cf&quot;
 struct Box {
     std::int32_t value{};
 };
@@ -1198,6 +1285,7 @@ fn main() {
 
 struct Token;
 
+#line 3 &quot;snippet_patterns.cf&quot;
 struct Token {
     struct _Ident {
         std::string _0{};
@@ -1389,6 +1477,7 @@ fn main() {
 
 struct Metric;
 
+#line 5 &quot;snippet_json.cf&quot;
 struct Metric {
     std::string service{};
     double latency{};
@@ -1426,9 +1515,9 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;Metric&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;Metric, cfire::Error&gt; {
     (void)obj;
     Metric out{};
-    CFIRE_TRY_ASSIGN(out.service, cfire::json::get_str(obj, &quot;service&quot;));
-    CFIRE_TRY_ASSIGN(out.latency, cfire::json::get_f64(obj, &quot;latency_ms&quot;));
-    CFIRE_TRY_ASSIGN(out.healthy, cfire::json::get_bool(obj, &quot;healthy&quot;));
+    CFIRE_TRY_ASSIGN(out.service, cfire::json::get_str(obj, &quot;service&quot;, out.service));
+    CFIRE_TRY_ASSIGN(out.latency, cfire::json::get_f64(obj, &quot;latency_ms&quot;, out.latency));
+    CFIRE_TRY_ASSIGN(out.healthy, cfire::json::get_bool(obj, &quot;healthy&quot;, out.healthy));
     return out;
 }
 
@@ -1693,6 +1782,7 @@ fn main() {
 struct QueryPlan;
 struct DocEntry;
 
+#line 7 &quot;snippet_ai.cf&quot;
 struct QueryPlan {
     std::string Target{};
     std::int64_t TopK{};
@@ -1726,8 +1816,8 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;QueryPlan&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;QueryPlan, cfire::Error&gt; {
     (void)obj;
     QueryPlan out{};
-    CFIRE_TRY_ASSIGN(out.Target, cfire::json::get_str(obj, &quot;target&quot;));
-    CFIRE_TRY_ASSIGN(out.TopK, cfire::json::get_i64(obj, &quot;top_k&quot;));
+    CFIRE_TRY_ASSIGN(out.Target, cfire::json::get_str(obj, &quot;target&quot;, out.Target));
+    CFIRE_TRY_ASSIGN(out.TopK, cfire::json::get_i64(obj, &quot;top_k&quot;, out.TopK));
     return out;
 }
 
@@ -1754,6 +1844,7 @@ inline auto cfire::json::schema_struct&lt;QueryPlan&gt;() -&gt; std::string {
     return std::format(R&quot;({{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{},&quot;required&quot;:{},&quot;additionalProperties&quot;:false}})&quot;, props, req);
 }
 
+#line 12 &quot;snippet_ai.cf&quot;
 struct DocEntry {
     std::int64_t Id{};
     std::string Title{};
@@ -1791,9 +1882,9 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;DocEntry&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;DocEntry, cfire::Error&gt; {
     (void)obj;
     DocEntry out{};
-    CFIRE_TRY_ASSIGN(out.Id, cfire::json::get_i64(obj, &quot;Id&quot;));
-    CFIRE_TRY_ASSIGN(out.Title, cfire::json::get_str(obj, &quot;Title&quot;));
-    CFIRE_TRY_ASSIGN(out.Snippet, cfire::json::get_str(obj, &quot;Snippet&quot;));
+    CFIRE_TRY_ASSIGN(out.Id, cfire::json::get_i64(obj, &quot;Id&quot;, out.Id));
+    CFIRE_TRY_ASSIGN(out.Title, cfire::json::get_str(obj, &quot;Title&quot;, out.Title));
+    CFIRE_TRY_ASSIGN(out.Snippet, cfire::json::get_str(obj, &quot;Snippet&quot;, out.Snippet));
     return out;
 }
 
@@ -1965,6 +2056,7 @@ fn main() {
 struct GreetReq;
 struct GreetRes;
 
+#line 5 &quot;snippet_webui.cf&quot;
 struct GreetReq {
     std::string name{};
     std::int32_t count{};
@@ -1998,8 +2090,8 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;GreetReq&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;GreetReq, cfire::Error&gt; {
     (void)obj;
     GreetReq out{};
-    CFIRE_TRY_ASSIGN(out.name, cfire::json::get_str(obj, &quot;name&quot;));
-    CFIRE_TRY_ASSIGN(out.count, cfire::json::get_i32(obj, &quot;count&quot;));
+    CFIRE_TRY_ASSIGN(out.name, cfire::json::get_str(obj, &quot;name&quot;, out.name));
+    CFIRE_TRY_ASSIGN(out.count, cfire::json::get_i32(obj, &quot;count&quot;, out.count));
     return out;
 }
 
@@ -2026,6 +2118,7 @@ inline auto cfire::json::schema_struct&lt;GreetReq&gt;() -&gt; std::string {
     return std::format(R&quot;({{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{},&quot;required&quot;:{},&quot;additionalProperties&quot;:false}})&quot;, props, req);
 }
 
+#line 10 &quot;snippet_webui.cf&quot;
 struct GreetRes {
     std::string message{};
     std::int32_t count{};
@@ -2059,8 +2152,8 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;GreetRes&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;GreetRes, cfire::Error&gt; {
     (void)obj;
     GreetRes out{};
-    CFIRE_TRY_ASSIGN(out.message, cfire::json::get_str(obj, &quot;message&quot;));
-    CFIRE_TRY_ASSIGN(out.count, cfire::json::get_i32(obj, &quot;count&quot;));
+    CFIRE_TRY_ASSIGN(out.message, cfire::json::get_str(obj, &quot;message&quot;, out.message));
+    CFIRE_TRY_ASSIGN(out.count, cfire::json::get_i32(obj, &quot;count&quot;, out.count));
     return out;
 }
 

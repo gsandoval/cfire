@@ -57,7 +57,7 @@ public:
 
     SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf,
                   std::vector<std::string>& warnings, std::vector<std::string>& errors, bool resilient = false)
-        : path_(path), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient)
+        : path_(path), pkg_name_(fn.package_name), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient)
     {
         if (fn.receiver) {
             var_scope_depth_[fn.receiver->name] = 0;
@@ -80,7 +80,9 @@ public:
         }
         for (const auto& p : fn.params) {
             var_scope_depth_[p.name] = 0;
-            if (!p.type.name.empty()) {
+            if (!p.type.smart_wrap.empty() && p.type.elem_type && !p.type.elem_type->name.empty()) {
+                var_types_[p.name] = p.type.elem_type->name;
+            } else if (!p.type.name.empty()) {
                 var_types_[p.name] = p.type.name;
             }
             if (p.intent == "move") {
@@ -110,6 +112,12 @@ public:
             if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty() || p.type.is_optional) {
                 ptr_or_smart_vars_.insert(p.name);
                 ptr_null_state_[p.name] = p.type.is_optional ? NullState::MaybeNull : NullState::NonNull;
+            }
+            if (!p.type.smart_wrap.empty()) {
+                smart_ptr_vars_.insert(p.name);
+            }
+            if ((p.type.is_slice || p.type.is_array) && p.type.name == "byte") {
+                byte_slice_vars_.insert(p.name);
             }
         }
     }
@@ -405,10 +413,11 @@ public:
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
                     if (is_namespace_ident_sema(recv_id->name) && !is_ident_in_scope_sema(recv_id->name)) {
-                        if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt")) {
+                        if (recv_id->name == "os" && mem->field == "getenv_opt") {
                             return true;
                         }
-                        if (recv_id->name == "str" && (mem->field == "find" || mem->field == "rfind" ||
+                        if (recv_id->name == "str" && (
+                            mem->field == "find" ||
                             mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
                             mem->field == "parse_f64" || mem->field == "parse_bool")) {
                             return true;
@@ -438,6 +447,12 @@ public:
 
     [[nodiscard]] auto infer_expr_type_name_sema(const ExprPtr& e) const -> std::string {
         if (!e) return "";
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::String) return "str";
+            if (lit->kind == TokenKind::Int) return "i64";
+            if (lit->kind == TokenKind::Float) return "f64";
+            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
+        }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
             return st->type_name;
         }
@@ -452,9 +467,31 @@ public:
                 return it->second;
             }
         }
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (!mem->is_namespace && mem->object) {
+                std::string owner_t = infer_expr_type_name_sema(mem->object);
+                if (!owner_t.empty()) {
+                    if (auto sit = cf_.struct_tags.find(owner_t); sit != cf_.struct_tags.end()) {
+                        for (const auto& f : sit->second) {
+                            if (f.field_name == mem->field) {
+                                return f.field_type.name;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
                 if (cid->name == "readln") return "str";
+                if (cid->name == "make" && call->type_args.size() == 1) {
+                    if (!call->type_args[0].smart_wrap.empty() && call->type_args[0].elem_type) {
+                        return call->type_args[0].elem_type->name;
+                    }
+                    if (!call->type_args[0].name.empty()) {
+                        return call->type_args[0].name;
+                    }
+                }
                 if (cid->name == "[]byte" || cid->name == "[]u8" || cid->name == "str" ||
                     cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" ||
                     cid->name == "u8" || cid->name == "byte" || cid->name == "u16" || cid->name == "u32" ||
@@ -462,16 +499,91 @@ public:
                     cid->name == "f32" || cid->name == "f64" || cid->name == "bool") {
                     return cid->name;
                 }
+                if (!pkg_name_.empty()) {
+                    if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + cid->name); pit != cf_.fn_sigs.end()) {
+                        if (!pit->second.return_type.smart_wrap.empty() && pit->second.return_type.elem_type) {
+                            return pit->second.return_type.elem_type->name;
+                        }
+                        return pit->second.return_type.name;
+                    }
+                }
                 if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
+                    if (!it->second.return_type.smart_wrap.empty() && it->second.return_type.elem_type) {
+                        return it->second.return_type.elem_type->name;
+                    }
                     return it->second.return_type.name;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                    if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt" || mem->field == "cwd" || mem->field == "temp_dir")) {
+                        return "str";
+                    }
+                    if (recv_id->name == "fs" && mem->field == "read_text") {
+                        return "str";
+                    }
+                    if ((recv_id->name == "fs" && mem->field == "read_all") ||
+                        (recv_id->name == "hex" && mem->field == "decode") ||
+                        (recv_id->name == "base64" && mem->field == "decode") ||
+                        (recv_id->name == "rand" && mem->field == "bytes") ||
+                        (recv_id->name == "sodium" && (mem->field == "random_bytes" || mem->field == "argon2id" || mem->field == "blake2b" || mem->field == "derive_subkey" || mem->field == "xchacha20poly1305_encrypt" || mem->field == "xchacha20poly1305_decrypt"))) {
+                        return "[]byte";
+                    }
+                }
+                if (mem->field == "bytes" && call->args.empty()) {
+                    return "[]byte";
+                }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
+                    if (sig->return_type.is_slice && sig->return_type.name == "byte") return "[]byte";
                     return sig->return_type.name;
                 }
             }
         }
         return "";
+    }
+
+    [[nodiscard]] auto is_non_byte_int_or_u8_expr(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            return lit->kind == TokenKind::Int;
+        }
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            if (un->op == "-" || un->op == "+") {
+                return is_non_byte_int_or_u8_expr(un->operand);
+            }
+        }
+        std::string t = infer_expr_type_name_sema(e);
+        return t == "u8" || t == "i8" || t == "i16" || t == "i32" || t == "i64" ||
+               t == "u16" || t == "u32" || t == "u64" || t == "usize" || t == "isize" || t == "int";
+    }
+
+    [[nodiscard]] auto is_byte_slice_expr(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            return byte_slice_vars_.contains(id->name);
+        }
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (!mem->is_namespace && mem->object) {
+                std::string owner_t = infer_expr_type_name_sema(mem->object);
+                if (!owner_t.empty()) {
+                    if (auto sit = cf_.struct_tags.find(owner_t); sit != cf_.struct_tags.end()) {
+                        for (const auto& f : sit->second) {
+                            if (f.field_name == mem->field) {
+                                return (f.field_type.is_slice || f.field_type.is_array) && f.field_type.name == "byte";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return infer_expr_type_name_sema(e) == "[]byte";
+    }
+
+    [[nodiscard]] auto is_str_slice_expr(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
+            return infer_expr_type_name_sema(sl->object) == "str";
+        }
+        return false;
     }
 
     [[nodiscard]] auto infer_expr_null_state(const ExprPtr& e) const -> std::optional<NullState> {
@@ -570,8 +682,11 @@ public:
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) return extract_root_ident_sema(mem->object);
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) return extract_root_ident_sema(idx->object);
+        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) return extract_root_ident_sema(sl->object);
         if (const auto* call = std::get_if<CallExpr>(&e->node)) return extract_root_ident_sema(call->callee);
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) return extract_root_ident_sema(un->operand);
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) return extract_root_ident_sema(tr->inner);
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) return extract_root_ident_sema(or_ex->inner);
         if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
             auto l = extract_root_ident_sema(bin->left);
             return !l.empty() ? l : extract_root_ident_sema(bin->right);
@@ -653,7 +768,7 @@ public:
             for (const auto& ph : placeholders) {
                 if (auto parsed = parse_expr_snippet(path_, ph.expr_text, line)) {
                     std::string root = extract_root_ident_sema(parsed->expr);
-                    if (!root.empty() && is_ident_in_scope_sema(root)) {
+                    if (!root.empty() && (is_ident_in_scope_sema(root) || is_namespace_ident_sema(root))) {
                         if (auto r = check_expr(parsed->expr); !r) return r;
                     }
                 }
@@ -801,17 +916,45 @@ public:
         if (auto r = check_expr(call.callee); !r) return r;
         const FnDecl* target_sig = nullptr;
         if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
-            if (auto it = cf_.fn_sigs.find(id->name); it != cf_.fn_sigs.end()) {
-                target_sig = &it->second;
+            if ((id->name == "shared" || id->name == "own") && !is_ident_in_scope_sema(id->name)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: cannot call '{}' directly as a constructor; use 'make[{}[T]](...)' instead (cfire/INVALID-SMART-PTR-CTOR)",
+                    path_, line, col, id->name, id->name)); !r) return r;
+            }
+            if (!pkg_name_.empty()) {
+                if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + id->name); pit != cf_.fn_sigs.end()) {
+                    target_sig = &pit->second;
+                }
+            }
+            if (!target_sig) {
+                if (auto it = cf_.fn_sigs.find(id->name); it != cf_.fn_sigs.end()) {
+                    target_sig = &it->second;
+                }
             }
         } else if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
             const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+            if (mem->field == "find" || mem->field == "rfind") {
+                bool is_str_ns = (obj_id && obj_id->name == "str" && !is_ident_in_scope_sema(obj_id->name));
+                if (!is_str_ns && mem->object && infer_expr_type_name_sema(mem->object) == "str") {
+                    std::string_view canonical = (mem->field == "rfind") ? "last_index_of" : "index_of";
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: unknown str method '{}'; use '{}' instead (returns i64 index or -1) (cfire/UNKNOWN-METHOD)",
+                        path_, line, col, mem->field, canonical)); !r) return r;
+                }
+            }
             target_sig = resolve_member_call_sig(*mem);
             if (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") {
-                if (obj_id && imm_vars_.contains(obj_id->name)) {
+                if (obj_id && imm_vars_.contains(obj_id->name) && !smart_ptr_vars_.contains(obj_id->name)) {
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: cannot call mutating method '{}' on immutable variable '{}' (cfire/MUT-RECEIVER)",
                         path_, line, col, mem->field, obj_id->name)); !r) return r;
+                }
+            }
+            if (mem->field == "push" && !call.args.empty() && is_byte_slice_expr(mem->object)) {
+                if (is_non_byte_int_or_u8_expr(call.args[0].value)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: cannot push integer/u8 value into '[]byte' without explicit 'byte(...)' conversion (cfire/TYPE-MISMATCH)",
+                        path_, call.args[0].line, call.args[0].col)); !r) return r;
                 }
             }
             if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
@@ -877,6 +1020,23 @@ public:
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: parameter '{}' of {} requires explicit '{}' annotation at call-site ({})",
                         path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule)); !r) return r;
+                }
+                const auto& pt = target_sig->params[i].type;
+                if (pt.name == "str" && !pt.is_ptr && !pt.is_mut_ptr && !pt.is_slice && !pt.is_array && is_str_slice_expr(arg.value)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: cannot pass zero-copy '&str' slice view to owning 'str' parameter '{}' of '{}'; change parameter type to '&str' or convert explicitly with 'str(...)' (cfire/TYPE-MISMATCH)",
+                        path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name)); !r) return r;
+                }
+                if ((pt.is_slice || pt.is_array) && pt.name == "byte") {
+                    if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&arg.value->node)) {
+                        for (const auto& el : arr_lit->elements) {
+                            if (is_non_byte_int_or_u8_expr(el)) {
+                                if (auto r = emit_error(std::format(
+                                    "{}:{}:{}: cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion (cfire/TYPE-MISMATCH)",
+                                    path_, el->line, el->col)); !r) return r;
+                            }
+                        }
+                    }
                 }
             }
             if (auto pi = extract_path_info(arg.value)) {
@@ -1333,9 +1493,48 @@ public:
         // Check initializer expression before binding the new variable so `x := x + 1` reads outer `x` first
         if (auto r = check_expr(vd.init); !r) return r;
 
+        bool is_byte_slice = (vd.type && (vd.type->is_slice || vd.type->is_array) &&
+                              (vd.type->name == "byte" || (vd.type->elem_type && vd.type->elem_type->name == "byte"))) ||
+                             (!vd.type && is_byte_slice_expr(vd.init));
+        if (is_byte_slice && vd.init) {
+            if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&vd.init->node)) {
+                for (const auto& el : arr_lit->elements) {
+                    if (is_non_byte_int_or_u8_expr(el)) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion (cfire/TYPE-MISMATCH)",
+                            path_, el->line, el->col)); !r) return r;
+                    }
+                }
+            }
+        }
+
         auto src = extract_borrow_source(vd.init);
-        std::string inferred_t = (!vd.type || vd.type->name.empty()) ? infer_expr_type_name_sema(vd.init) : vd.type->name;
+        std::string inferred_t;
+        if (vd.type && !vd.type->smart_wrap.empty() && vd.type->elem_type && !vd.type->elem_type->name.empty()) {
+            inferred_t = vd.type->elem_type->name;
+        } else if (!vd.type || vd.type->name.empty()) {
+            inferred_t = infer_expr_type_name_sema(vd.init);
+        } else {
+            inferred_t = vd.type->name;
+        }
         bool is_opt_var = (vd.type && vd.type->is_optional) || (!vd.type && expr_returns_optional_sema(vd.init));
+        bool is_smart = (vd.type && !vd.type->smart_wrap.empty());
+        if (!is_smart && vd.init) {
+            const Expr* cur_init = vd.init;
+            if (const auto* tr = std::get_if<TryExpr>(&cur_init->node)) cur_init = tr->inner;
+            else if (const auto* or_ex = std::get_if<OrExpr>(&cur_init->node)) cur_init = or_ex->inner;
+            if (cur_init) {
+                if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
+                    if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node)) {
+                        if (cid->name == "make" && call_ex->type_args.size() == 1 && !call_ex->type_args[0].smart_wrap.empty()) {
+                            is_smart = true;
+                        } else if (auto fit = cf_.fn_sigs.find(cid->name); fit != cf_.fn_sigs.end() && !fit->second.return_type.smart_wrap.empty()) {
+                            is_smart = true;
+                        }
+                    }
+                }
+            }
+        }
         bool is_ptr_or_smart = (vd.type && (vd.type->is_ptr || vd.type->is_mut_ptr || !vd.type->smart_wrap.empty())) ||
                                is_ptr_or_smart_init(vd.init) || is_opt_var;
         auto init_ns = infer_expr_null_state(vd.init);
@@ -1343,6 +1542,10 @@ public:
         bind_scoped_var(vd.name, vd.is_mut);
         map_vars_.erase(vd.name);
         fixed_array_lens_.erase(vd.name);
+        if (is_byte_slice) byte_slice_vars_.insert(vd.name);
+        else byte_slice_vars_.erase(vd.name);
+        if (is_smart) smart_ptr_vars_.insert(vd.name);
+        else smart_ptr_vars_.erase(vd.name);
 
         if (vd.type) {
             if (vd.type->is_map) {
@@ -1433,6 +1636,17 @@ public:
             if (auto r = check_expr(as.target); !r) return r;
         }
         if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
+            if (byte_slice_vars_.contains(id->name) && as.value) {
+                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&as.value->node)) {
+                    for (const auto& el : arr_lit->elements) {
+                        if (is_non_byte_int_or_u8_expr(el)) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion (cfire/TYPE-MISMATCH)",
+                                path_, el->line, el->col)); !r) return r;
+                        }
+                    }
+                }
+            }
             if (imm_vars_.contains(id->name)) {
                 if (auto r = emit_error(std::format(
                     "{}:{}:{}: cannot assign to immutable variable '{}' (cfire/ASSIGN-IMMUTABLE)",
@@ -1471,6 +1685,13 @@ public:
                 }
             }
         } else {
+            if (const auto* idx = std::get_if<IndexExpr>(&as.target->node)) {
+                if (is_byte_slice_expr(idx->object) && is_non_byte_int_or_u8_expr(as.value)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:1: cannot assign integer/u8 value to '[]byte' element without explicit 'byte(...)' conversion (cfire/TYPE-MISMATCH)",
+                        path_, as.line)); !r) return r;
+                }
+            }
             if (as.op == "=") {
                 if (auto r = check_expr(as.target); !r) return r;
             }
@@ -1679,6 +1900,7 @@ public:
 
 private:
     std::string_view path_;
+    std::string pkg_name_{};
     const CheckedFile& cf_;
     std::vector<std::string>& warnings_;
     std::vector<std::string>& errors_;
@@ -1693,6 +1915,8 @@ private:
     std::unordered_map<std::string, InvalidatedLoan> invalidated_loans_{};
     std::unordered_set<std::string> active_loop_collections_{};
     std::unordered_set<std::string> ptr_or_smart_vars_{};
+    std::unordered_set<std::string> smart_ptr_vars_{};
+    std::unordered_set<std::string> byte_slice_vars_{};
     std::unordered_set<std::string> optional_vars_{};
     std::unordered_map<std::string, std::string> var_types_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
@@ -1708,12 +1932,22 @@ private:
 [[nodiscard]] inline auto analyze_resilient(FileAST ast) -> CheckedFile {
     CheckedFile cf;
 
+    // 0a. Check Module Imports (CF-006)
+    for (const auto& imp : ast.imports) {
+        if (!imp.is_cpp && (imp.path == "core:crypto/sodium" || imp.path == "core:sodium")) {
+            cf.errors.push_back(std::format(
+                "{}:{}:1: module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium' (cfire/INVALID-IMPORT)",
+                ast.path, imp.line, imp.path));
+        }
+    }
+
     // 0. Check Global / Package Variables
     for (const auto& gv : ast.global_vars) {
         if (gv.was_var) {
+            std::string_view gv_path = gv.source_path.empty() ? std::string_view(ast.path) : std::string_view(gv.source_path);
             cf.warnings.push_back(std::format(
                 "{}:{}:1: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
-                ast.path, gv.line));
+                gv_path, gv.line));
         }
     }
 
@@ -1727,6 +1961,7 @@ private:
 
     // 2. Index Struct Field Tags & Validate Tag Invariants (TEST-03a)
     for (const auto& st : ast.structs) {
+        std::string_view st_path = st.source_path.empty() ? std::string_view(ast.path) : std::string_view(st.source_path);
         std::vector<StructTagInfo> tags;
         std::unordered_map<std::string, std::string> seen_json_keys;
         std::unordered_map<std::string, std::string> seen_db_cols;
@@ -1755,7 +1990,7 @@ private:
                         if (auto prev = seen_cli_longs.find(info.cli_long); prev != seen_cli_longs.end()) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: duplicate cli flag '--{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, info.cli_long, st.name, fld.name, prev->second));
+                                st_path, fld.line, info.cli_long, st.name, fld.name, prev->second));
                         } else {
                             seen_cli_longs[info.cli_long] = fld.name;
                         }
@@ -1764,7 +1999,7 @@ private:
                         if (auto prev = seen_cli_shorts.find(info.cli_short); prev != seen_cli_shorts.end()) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: duplicate cli short flag '-{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, info.cli_short, st.name, fld.name, prev->second));
+                                st_path, fld.line, info.cli_short, st.name, fld.name, prev->second));
                         } else {
                             seen_cli_shorts[info.cli_short] = fld.name;
                         }
@@ -1778,7 +2013,7 @@ private:
                         if (auto prev = seen_json_keys.find(info.json_key); prev != seen_json_keys.end()) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: duplicate json tag key '{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, info.json_key, st.name, fld.name, prev->second));
+                                st_path, fld.line, info.json_key, st.name, fld.name, prev->second));
                         } else {
                             seen_json_keys[info.json_key] = fld.name;
                         }
@@ -1789,7 +2024,7 @@ private:
                         if (auto prev = seen_db_cols.find(info.db_column); prev != seen_db_cols.end()) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: duplicate {} column tag '{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, key, info.db_column, st.name, fld.name, prev->second));
+                                st_path, fld.line, key, info.db_column, st.name, fld.name, prev->second));
                         } else {
                             seen_db_cols[info.db_column] = fld.name;
                         }
@@ -1801,19 +2036,19 @@ private:
                         if (!cfire::detail::parse_int<std::int64_t>(dval)) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: invalid default tag value '{}' for integer field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, dval, st.name, fld.name, tname));
+                                st_path, fld.line, dval, st.name, fld.name, tname));
                         }
                     } else if (tname == "u8" || tname == "u16" || tname == "u32" || tname == "u64" || tname == "usize" || tname == "byte") {
                         if (dval.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(dval)) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: invalid default tag value '{}' for unsigned field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, dval, st.name, fld.name, tname));
+                                st_path, fld.line, dval, st.name, fld.name, tname));
                         }
                     } else if (tname == "bool") {
                         if (dval != "true" && dval != "false" && dval != "1" && dval != "0") {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: invalid default tag value '{}' for bool field '{}.{}' (expected 'true' or 'false') (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, dval, st.name, fld.name));
+                                st_path, fld.line, dval, st.name, fld.name));
                         }
                     } else if (tname == "f32" || tname == "f64") {
                         char* endp = nullptr;
@@ -1821,7 +2056,7 @@ private:
                         if (dval.empty() || endp != dval.c_str() + dval.size()) {
                             cf.errors.push_back(std::format(
                                 "{}:{}:1: invalid default tag value '{}' for float field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                ast.path, fld.line, dval, st.name, fld.name, tname));
+                                st_path, fld.line, dval, st.name, fld.name, tname));
                         }
                     }
                 }
@@ -1851,26 +2086,31 @@ private:
 
     // 4. Validate Function & Method Bodies
     for (const auto& fn : ast.functions) {
-        SemaFnChecker checker(ast.path, fn, cf, cf.warnings, cf.errors, true);
+        std::string_view fn_path = fn.source_path.empty() ? std::string_view(ast.path) : std::string_view(fn.source_path);
+        SemaFnChecker checker(fn_path, fn, cf, cf.warnings, cf.errors, true);
         for (const auto& st : fn.body) {
             (void)checker.check_stmt(st);
         }
         std::string fn_key = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
         for (const auto& [p_name, ln] : checker.last_read_line) {
             cf.last_use_move[fn_key + ":" + p_name] = ln;
+            if (!fn.package_name.empty() && !fn.receiver) {
+                cf.last_use_move[std::format("cfire_pkg_{}__{}:{}", fn.package_name, fn.name, p_name)] = ln;
+            }
         }
     }
 
     // 5. Validate Test, Fuzz, and Bench Declarations
     for (std::size_t idx = 0; idx < ast.tests.size(); ++idx) {
         const auto& td = ast.tests[idx];
+        std::string_view td_path = td.source_path.empty() ? std::string_view(ast.path) : std::string_view(td.source_path);
         FnDecl dummy_fn;
         dummy_fn.name = std::format("__cfire_test_{}", idx);
         dummy_fn.params = td.params;
         for (const auto& bv : td.bench_variations) {
             dummy_fn.params.push_back(ParamDecl{"in", bv.name, bv.inferred_type, bv.line, 1});
         }
-        SemaFnChecker checker(ast.path, dummy_fn, cf, cf.warnings, cf.errors, true);
+        SemaFnChecker checker(td_path, dummy_fn, cf, cf.warnings, cf.errors, true);
         for (const auto& bv : td.bench_variations) {
             for (const auto& vex : bv.values) {
                 (void)checker.check_expr(vex);

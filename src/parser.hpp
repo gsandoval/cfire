@@ -446,6 +446,7 @@ private:
             StructDecl st;
             st.name = name_tok->lexeme;
             st.line = start.line;
+            st.source_path = file_;
             while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
                 auto f_tok = expect(TokenKind::Ident);
                 if (!f_tok) return std::unexpected(f_tok.error());
@@ -460,9 +461,16 @@ private:
 
                 if (cur().kind == TokenKind::Assign) {
                     advance();
-                    auto def_val = parse_primary_expr();
-                    if (!def_val) return std::unexpected(def_val.error());
-                    field.default_val = std::move(*def_val);
+                    if (cur().kind == TokenKind::Minus) {
+                        Token m_tok = advance();
+                        auto inner_val = parse_primary_expr();
+                        if (!inner_val) return std::unexpected(inner_val.error());
+                        field.default_val = make_expr(UnaryExpr{"-", std::move(*inner_val)}, m_tok.line, m_tok.col);
+                    } else {
+                        auto def_val = parse_primary_expr();
+                        if (!def_val) return std::unexpected(def_val.error());
+                        field.default_val = std::move(*def_val);
+                    }
                 }
                 if (cur().kind == TokenKind::RawString) {
                     field.raw_tag = advance().lexeme;
@@ -486,6 +494,7 @@ private:
             EnumDecl en;
             en.name = name_tok->lexeme;
             en.line = start.line;
+            en.source_path = file_;
             while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
                 auto v_tok = expect(TokenKind::Ident);
                 if (!v_tok) return std::unexpected(v_tok.error());
@@ -743,6 +752,7 @@ private:
         FnDecl fn;
         fn.return_type = TypeRef{"void"};
         fn.line = start.line;
+        fn.source_path = file_;
 
         // Optional method receiver: `fn (s: Type)` or `fn (mut s: Type)`
         if (cur().kind == TokenKind::LParen) {
@@ -882,7 +892,7 @@ private:
 
         auto val = parse_expr();
         if (!val) return std::unexpected(val.error());
-        return GlobalVarDecl{name_tok->lexeme, is_mut, std::move(type_annot), std::move(*val), was_var, line};
+        return GlobalVarDecl{name_tok->lexeme, is_mut, std::move(type_annot), std::move(*val), was_var, line, "", file_};
     }
 
     [[nodiscard]] auto parse_test_decl() -> std::expected<TestDecl, std::string> {
@@ -895,6 +905,7 @@ private:
         td.line = start.line;
         td.is_fuzz = (start.lexeme == "fuzz");
         td.is_bench = (start.lexeme == "bench");
+        td.source_path = file_;
 
         if (cur().kind == TokenKind::DoublePipe) {
             advance(); // '||'
@@ -1116,21 +1127,27 @@ private:
                 if (!m || m->lexeme != "scope") {
                     return std::unexpected(std::format("{}:{}:{}: expected async.scope", file_, tok.line, tok.col));
                 }
-                if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
-                if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                ExprPtr workers = nullptr;
+                if (cur().kind == TokenKind::LParen) {
                     advance();
-                    advance();
+                    if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                        advance();
+                        advance();
+                    }
+                    auto w = parse_expr();
+                    if (!w) return std::unexpected(w.error());
+                    workers = std::move(*w);
+                    if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                } else {
+                    workers = make_expr(LiteralExpr{TokenKind::Int, "4"}, tok.line, tok.col);
                 }
-                auto workers = parse_expr();
-                if (!workers) return std::unexpected(workers.error());
-                if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
                 if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
                 auto scope_var = expect(TokenKind::Ident);
                 if (!scope_var) return std::unexpected(scope_var.error());
                 if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
                 auto body = parse_block();
                 if (!body) return std::unexpected(body.error());
-                return make_stmt(AsyncScopeStmt{std::move(*workers), scope_var->lexeme, std::move(*body), tok.line}, tok.line);
+                return make_stmt(AsyncScopeStmt{std::move(workers), scope_var->lexeme, std::move(*body), tok.line}, tok.line);
             }
             default:
                 break;
@@ -2078,6 +2095,7 @@ inline void append_doctests(std::string_view path, std::string_view src, FileAST
             if (dt_ast->arena) ast.child_arenas.push_back(dt_ast->arena);
             auto td = std::move(dt_ast->tests.front());
             td.line = blocks[b].start_line;
+            td.source_path = std::string(path);
             ast.tests.push_back(std::move(td));
         }
     }
@@ -2131,6 +2149,9 @@ struct InterpPlaceholder {
             bool in_quote = false;
             while (i < sv.size() && depth > 0) {
                 if (sv[i] == '\\' && i + 1 < sv.size()) {
+                    if (sv[i + 1] == '"') {
+                        in_quote = !in_quote;
+                    }
                     i += 2;
                     continue;
                 }
@@ -2152,7 +2173,17 @@ struct InterpPlaceholder {
                 }
                 // Ignore empty `{}` or format-specifier-only `{:02x}`
                 if (!raw_inner.empty() && raw_inner.front() != ':') {
-                    out.push_back(InterpPlaceholder{open_idx, i, std::string(raw_inner)});
+                    std::string expr_s;
+                    expr_s.reserve(raw_inner.size());
+                    for (std::size_t k = 0; k < raw_inner.size(); ++k) {
+                        if (raw_inner[k] == '\\' && k + 1 < raw_inner.size() && raw_inner[k + 1] == '"') {
+                            expr_s.push_back('"');
+                            ++k;
+                        } else {
+                            expr_s.push_back(raw_inner[k]);
+                        }
+                    }
+                    out.push_back(InterpPlaceholder{open_idx, i, std::move(expr_s)});
                 }
                 ++i;
                 continue;

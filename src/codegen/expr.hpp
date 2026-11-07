@@ -11,10 +11,10 @@ namespace cfire::frontend {
     std::vector<ExprSnippetResult> parsed_exprs;
     parsed_exprs.reserve(placeholders.size());
     for (const auto& ph : placeholders) {
-        auto parsed = parse_expr_snippet(cf_.ast.path, ph.expr_text, line);
+        auto parsed = parse_expr_snippet(source_path_, ph.expr_text, line);
         if (!parsed) return std::nullopt;
         std::string root = expr_root_ident(parsed->expr);
-        if (root.empty() || !is_ident_in_scope(root)) {
+        if (root.empty() || (!is_ident_in_scope(root) && !is_package_ident(root))) {
             return std::nullopt;
         }
         parsed_exprs.push_back(std::move(*parsed));
@@ -144,8 +144,14 @@ namespace cfire::frontend {
             }
             std::string obj = emit_expr(ex.object);
             if (const auto* id = std::get_if<IdentExpr>(&ex.object->node)) {
-                if (optional_vars_.contains(id->name) &&
-                    ex.field != "has_value" && ex.field != "value" && ex.field != "value_or" && ex.field != "reset") {
+                if ((optional_vars_.contains(id->name) || smart_ptr_vars_.contains(id->name)) &&
+                    ex.field != "has_value" && ex.field != "value" && ex.field != "value_or" &&
+                    ex.field != "reset" && ex.field != "get" && ex.field != "use_count") {
+                    obj = std::format("(*{})", obj);
+                }
+            } else if (const auto* sub_mem = std::get_if<MemberExpr>(&ex.object->node)) {
+                if (smart_ptr_field_names_.contains(sub_mem->field) &&
+                    ex.field != "reset" && ex.field != "get" && ex.field != "use_count") {
                     obj = std::format("(*{})", obj);
                 }
             }
@@ -326,7 +332,7 @@ namespace cfire::frontend {
         }
         if (id->name == "panic") {
             int line = call.callee ? call.callee->line : 0;
-            std::string escaped_file = escape_line_path(cf_.ast.path);
+            std::string escaped_file = escape_line_path(source_path_);
             if (call.args.empty()) {
                 return std::format("cfire::panic(\"explicit panic\", \"{}\", {})", escaped_file, line);
             }
@@ -348,7 +354,7 @@ namespace cfire::frontend {
                 else escaped_expr += ch;
             }
             int line = call.args[0].value ? call.args[0].value->line : 0;
-            std::string file_str = cf_.ast.path;
+            std::string file_str = source_path_;
             std::string escaped_file;
             for (char ch : file_str) {
                 if (ch == '\\') escaped_file += "\\\\";
@@ -362,7 +368,7 @@ namespace cfire::frontend {
         if (id->name == "assert" && !call.args.empty()) {
             std::string msg = (call.args.size() >= 2) ? emit_call_arg(call.args[1]) : "\"assertion failed\"";
             int line = call.args[0].value ? call.args[0].value->line : 0;
-            std::string file_str = cf_.ast.path;
+            std::string file_str = source_path_;
             std::string escaped_file;
             for (char ch : file_str) {
                 if (ch == '\\') escaped_file += "\\\\";
@@ -424,6 +430,9 @@ namespace cfire::frontend {
         }
         if (id->name == "bool" && call.args.size() == 1) {
             return std::format("cfire::bool_({})", emit_call_arg(call.args[0]));
+        }
+        if (id->name == "byte" && call.args.size() == 1) {
+            return std::format("cfire::byte({})", emit_call_arg(call.args[0]));
         }
         if (id->name == "str" && call.args.size() == 1) {
             return std::format("cfire::str_ctor({})", emit_call_arg(call.args[0]));
@@ -563,6 +572,17 @@ namespace cfire::frontend {
         }
 
         std::string obj = emit_expr(mem->object);
+        if (!is_ns_object && (mem->field == "index_of" || mem->field == "last_index_of" ||
+                              mem->field == "parse_i64" || mem->field == "parse_i32" ||
+                              mem->field == "parse_u64" || mem->field == "parse_f64" ||
+                              mem->field == "parse_bool")) {
+            used_core_.insert("str");
+            std::string args = obj;
+            for (const auto& a : call.args) {
+                args += ", " + emit_call_arg(a);
+            }
+            return std::format("cfire::str::{}({})", mem->field, args);
+        }
         if (mem->field == "push" && call.args.size() == 1) {
             return std::format("cfire::vec_push({}, {})", obj, emit_call_arg(call.args[0]));
         }
@@ -599,19 +619,27 @@ namespace cfire::frontend {
             sb << "})";
             return sb.str();
         }
-        if (mem->field == "spawn" && call.block_arg) {
-            std::ostringstream sb;
-            sb << std::format("{}.spawn([=]() mutable {{\n", obj);
-            ++indent_;
-            Emitter sub = make_sub_emitter(false);
-            for (const auto& st : call.block_arg->body) {
-                sub.emit_stmt(st, false);
+        if (mem->field == "spawn") {
+            const ClosureExpr* spawn_cl = nullptr;
+            if (call.block_arg) {
+                spawn_cl = &(*call.block_arg);
+            } else if (call.args.size() == 1 && call.args[0].value) {
+                spawn_cl = std::get_if<ClosureExpr>(&call.args[0].value->node);
             }
-            sb << sub.buf_.str();
-            --indent_;
-            for (int i = 0; i < indent_; ++i) sb << "    ";
-            sb << "})";
-            return sb.str();
+            if (spawn_cl) {
+                std::ostringstream sb;
+                sb << std::format("{}.spawn([=]() mutable {{\n", obj);
+                ++indent_;
+                Emitter sub = make_sub_emitter(false);
+                for (const auto& st : spawn_cl->body) {
+                    sub.emit_stmt(st, false);
+                }
+                sb << sub.buf_.str();
+                --indent_;
+                for (int i = 0; i < indent_; ++i) sb << "    ";
+                sb << "})";
+                return sb.str();
+            }
         }
     }
 

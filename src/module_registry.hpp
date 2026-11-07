@@ -65,9 +65,13 @@ struct ResolvedImport {
         info.core_keys = {"sqlite"};
         info.defines = {"#define CFIRE_USE_SQLITE 1"};
         info.link_tags = {"-lsqlite3"};
-    } else if (path == "core:crypto/sodium" || path == "core:sodium") {
+    } else if (raw_path == "ext:crypto/sodium" || raw_path == "ext:sodium") {
         info.core_keys = {"sodium"};
+        info.defines = {"#define CFIRE_USE_SODIUM 1"};
         info.link_tags = {"@pkg:libsodium"};
+    } else if (raw_path == "core:crypto/sodium" || raw_path == "core:sodium") {
+        info.is_core = false;
+        return info;
     } else if (path == "core:keychain" || path == "core:os/keychain") {
         info.core_keys = {"keychain"};
 #if defined(__APPLE__)

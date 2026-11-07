@@ -258,7 +258,7 @@ public:
 #if !defined(_WIN32)
         return static_cast<std::int32_t>(::fileno(fp_));
 #else
-        return -1;
+        return static_cast<std::int32_t>(::_fileno(fp_));
 #endif
     }
 

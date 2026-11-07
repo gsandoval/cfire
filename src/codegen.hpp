@@ -24,7 +24,14 @@ public:
 
     [[nodiscard]] auto emit_cpp() -> std::string {
         emit_file();
-        return buf_.str();
+        std::string out = buf_.str();
+        if ((used_core_.contains("str") || out.contains("cfire::str::")) && !out.contains("#include \"core/str.hpp\"")) {
+            std::string needle = "#include \"cfire_prelude.hpp\"\n";
+            if (auto pos = out.find(needle); pos != std::string::npos) {
+                out.insert(pos + needle.size(), "#include \"core/str.hpp\"\n");
+            }
+        }
+        return out;
     }
 
 public:
@@ -51,6 +58,8 @@ public:
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
     std::unordered_set<std::string> ptr_field_names_{};
+    std::unordered_set<std::string> smart_ptr_vars_{};
+    std::unordered_set<std::string> smart_ptr_field_names_{};
     std::unordered_set<std::string> optional_vars_{};
     std::unordered_set<std::string> map_vars_{};
     std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
@@ -82,6 +91,13 @@ public:
         return out;
     }
 
+    void set_source_path(std::string_view p) {
+        if (!p.empty() && p != source_path_) {
+            source_path_ = std::string(p);
+            last_source_line_ = -1;
+        }
+    }
+
     void emit_line_directive(int line) {
         if (line > 0 && line != last_source_line_ && !source_path_.empty()) {
             last_source_line_ = line;
@@ -94,6 +110,8 @@ public:
         sub.indent_ = indent_;
         sub.cur_fn_ = cur_fn_;
         sub.cur_pkg_ = cur_pkg_;
+        sub.source_path_ = source_path_;
+        sub.last_source_line_ = last_source_line_;
         sub.colliding_fn_names_ = colliding_fn_names_;
         sub.colliding_gv_names_ = colliding_gv_names_;
         sub.used_core_ = used_core_;
@@ -101,6 +119,8 @@ public:
         sub.local_vars_ = local_vars_;
         sub.ptr_vars_ = ptr_vars_;
         sub.ptr_field_names_ = ptr_field_names_;
+        sub.smart_ptr_vars_ = smart_ptr_vars_;
+        sub.smart_ptr_field_names_ = smart_ptr_field_names_;
         sub.optional_vars_ = optional_vars_;
         sub.map_vars_ = map_vars_;
         sub.fixed_array_vars_ = fixed_array_vars_;
@@ -134,6 +154,9 @@ public:
             for (const auto& fld : st.fields) {
                 if (fld.type.is_ptr || fld.type.is_mut_ptr) {
                     ptr_field_names_.insert(fld.name);
+                }
+                if (!fld.type.smart_wrap.empty()) {
+                    smart_ptr_field_names_.insert(fld.name);
                 }
             }
         }
@@ -396,10 +419,20 @@ public:
             }
             emit_function_forward_decl(fn);
         }
+        for (const auto& mname : emitted_method_fallbacks) {
+            writeln(std::format(
+                "template <typename T, typename... Args> inline auto cfire_method_{0}(const std::shared_ptr<T>& s, Args&&... a) -> decltype(auto) {{ return cfire_method_{0}(*s, std::forward<Args>(a)...); }}",
+                mname));
+            writeln(std::format(
+                "template <typename T, typename... Args> inline auto cfire_method_{0}(const std::unique_ptr<T>& s, Args&&... a) -> decltype(auto) {{ return cfire_method_{0}(*s, std::forward<Args>(a)...); }}",
+                mname));
+        }
         if (!ast.functions.empty()) writeln();
 
         // 5a. Emit Global / Package-level Variables
         for (const auto& gv : ast.global_vars) {
+            set_source_path(gv.source_path);
+            if (gv.line > 0) emit_line_directive(gv.line);
             cur_pkg_ = gv.package_name;
             std::string type_str = gv.type ? lower_owning_type(*gv.type) : "auto";
             std::string mut_str = gv.is_mut ? "" : "const ";
@@ -440,6 +473,8 @@ public:
     }
 
     void emit_enum(const EnumDecl& en) {
+        set_source_path(en.source_path);
+        if (en.line > 0) emit_line_directive(en.line);
         writeln(std::format("struct {} {{", en.name));
         ++indent_;
         std::vector<std::string> var_types;
@@ -480,6 +515,8 @@ public:
     }
 
     void emit_struct(const StructDecl& st) {
+        set_source_path(st.source_path);
+        if (st.line > 0) emit_line_directive(st.line);
         writeln(std::format("struct {} {{", st.name));
         ++indent_;
         for (const auto& fld : st.fields) {
@@ -548,18 +585,21 @@ public:
     }
 
     void emit_function(const FnDecl& fn) {
+        set_source_path(fn.source_path);
         if (fn.line > 0) emit_line_directive(fn.line);
         cur_pkg_ = fn.package_name;
         cur_fn_ = emitted_fn_symbol(fn);
         defer_count_ = 0;
         local_vars_.clear();
         ptr_vars_.clear();
+        smart_ptr_vars_.clear();
         optional_vars_.clear();
         map_vars_.clear();
         fixed_array_vars_.clear();
         if (fn.receiver) {
             local_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_ptr || fn.receiver->type.is_mut_ptr) ptr_vars_.insert(fn.receiver->name);
+            if (!fn.receiver->type.smart_wrap.empty()) smart_ptr_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_optional) optional_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_map) map_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_array && !fn.receiver->type.array_len.empty()) {
@@ -571,6 +611,7 @@ public:
         for (const auto& p : fn.params) {
             local_vars_.insert(p.name);
             if (p.type.is_ptr || p.type.is_mut_ptr) ptr_vars_.insert(p.name);
+            if (!p.type.smart_wrap.empty()) smart_ptr_vars_.insert(p.name);
             if (p.type.is_optional) optional_vars_.insert(p.name);
             if (p.type.is_map) map_vars_.insert(p.name);
             if (p.type.is_array && !p.type.array_len.empty()) {
@@ -614,6 +655,7 @@ public:
             in_main_ = false;
             local_vars_.clear();
             ptr_vars_.clear();
+            smart_ptr_vars_.clear();
             optional_vars_.clear();
             return;
         }
@@ -670,6 +712,7 @@ public:
         cur_pkg_.clear();
         local_vars_.clear();
         ptr_vars_.clear();
+        smart_ptr_vars_.clear();
         optional_vars_.clear();
 
         if (fn.receiver) {
@@ -831,7 +874,7 @@ public:
             writeln("return 1;");
         } else if (in_test_) {
             writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"try\");",
-                tmp, escape_line_path(cf_.ast.path), stmt_line));
+                tmp, escape_line_path(source_path_), stmt_line));
             writeln("return;");
         } else {
             writeln(std::format("return std::unexpected(std::move({}).error());", tmp));
@@ -907,7 +950,7 @@ public:
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                    if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt")) {
+                    if (recv_id->name == "os" && mem->field == "getenv_opt") {
                         return true;
                     }
                     if (recv_id->name == "cli" && mem->field == "try_parse") {
@@ -953,6 +996,24 @@ public:
         return false;
     }
 
+    [[nodiscard]] auto is_package_ident(const std::string& ident) const -> bool {
+        if (ident.empty()) return false;
+        std::string prefix = ident + ".";
+        for (const auto& [k, _] : cf_.fn_sigs) {
+            if (k.starts_with(prefix)) return true;
+        }
+        for (const auto& gv : cf_.ast.global_vars) {
+            if (gv.package_name == ident) return true;
+        }
+        for (const auto& st : cf_.ast.structs) {
+            if (st.package_name == ident) return true;
+        }
+        for (const auto& en : cf_.ast.enums) {
+            if (en.package_name == ident) return true;
+        }
+        return false;
+    }
+
     [[nodiscard]] auto is_ident_in_scope(const std::string& ident) const -> bool {
         if (local_vars_.contains(ident)) return true;
         if (cf_.fn_sigs.contains(ident)) return true;
@@ -989,8 +1050,11 @@ public:
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) return expr_root_ident(mem->object);
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) return expr_root_ident(idx->object);
+        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) return expr_root_ident(sl->object);
         if (const auto* call = std::get_if<CallExpr>(&e->node)) return expr_root_ident(call->callee);
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) return expr_root_ident(un->operand);
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) return expr_root_ident(tr->inner);
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) return expr_root_ident(or_ex->inner);
         if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
             auto l = expr_root_ident(bin->left);
             return !l.empty() ? l : expr_root_ident(bin->right);
@@ -1178,6 +1242,64 @@ public:
 
     [[nodiscard]] auto lower_return_type(const TypeRef& tr) const -> std::string {
         return lower_owning_type(tr);
+    }
+
+    [[nodiscard]] auto is_non_value_field_type(const TypeRef& tr, int depth = 0) const -> bool {
+        if (depth > 8) return true;
+        if (tr.is_ptr || tr.is_mut_ptr || tr.is_borrow ||
+            tr.is_mut_borrow || tr.is_fn || !tr.smart_wrap.empty()) {
+            return true;
+        }
+        if (tr.is_slice && tr.elem_type) return is_non_value_field_type(*tr.elem_type, depth + 1);
+        std::string n = tr.name;
+        if (n.starts_with("cpp::") || n.starts_with("webui.") || n.starts_with("webui::") ||
+            n.starts_with("sync.") || n.starts_with("sync::") ||
+            n.starts_with("sqlite.") || n.starts_with("sqlite::") ||
+            n.starts_with("ssh.") || n.starts_with("ssh::") ||
+            n.starts_with("fs.") || n.starts_with("fs::") ||
+            n.starts_with("net.") || n.starts_with("net::") ||
+            n.starts_with("http.") || n.starts_with("http::") ||
+            n == "App" || n == "Mutex" || n == "WaitGroup" || n == "Channel" ||
+            n == "Conn" || n == "Session" || n == "File" || n == "TcpConn" || n == "TcpListener") {
+            return true;
+        }
+        for (const auto& sub_st : cf_.ast.structs) {
+            if (sub_st.name == n) {
+                for (const auto& sf : sub_st.fields) {
+                    if (is_non_value_field_type(sf.type, depth + 1)) return true;
+                }
+                break;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto can_emit_json_field_type(const TypeRef& tr, int depth = 0) const -> bool {
+        if (depth > 8) return false;
+        if (is_non_value_field_type(tr, depth)) return false;
+        if (tr.is_map || tr.is_tuple || tr.is_array) return false;
+        if (tr.is_slice) return tr.elem_type && can_emit_json_field_type(*tr.elem_type, depth + 1);
+        if (tr.is_optional) {
+            TypeRef inner = tr;
+            inner.is_optional = false;
+            return can_emit_json_field_type(inner, depth + 1);
+        }
+        const std::string& n = tr.name;
+        if (n == "i8" || n == "i16" || n == "i32" || n == "i64" || n == "isize" ||
+            n == "u8" || n == "u16" || n == "u32" || n == "u64" || n == "usize" ||
+            n == "f32" || n == "f64" || n == "bool" || n == "str") {
+            return true;
+        }
+        if (cf_.enums.contains(n)) return true;
+        for (const auto& sub_st : cf_.ast.structs) {
+            if (sub_st.name == n) {
+                for (const auto& sf : sub_st.fields) {
+                    if (!can_emit_json_field_type(sf.type, depth + 1)) return false;
+                }
+                return true;
+            }
+        }
+        return false;
     }
 };
 

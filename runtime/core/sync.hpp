@@ -248,6 +248,10 @@ public:
         return state_->q.size();
     }
 
+    [[nodiscard]] auto size() const -> std::size_t {
+        return len();
+    }
+
     [[nodiscard]] auto recv_ctx(const context::Context& ctx) const -> std::expected<T, cfire::Error> {
         std::unique_lock<std::mutex> lk(state_->mu);
         if (ctx.is_cancelled()) {

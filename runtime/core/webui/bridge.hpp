@@ -58,8 +58,10 @@
 #define NOMINMAX 1
 #endif
 #include <windows.h>
+#include <commdlg.h>
 #include <dwmapi.h>
 #include <objbase.h>
+#include <shellapi.h>
 #endif
 
 #if defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
@@ -310,6 +312,11 @@ struct MenuItemSpec {
     std::string event{};
 };
 
+struct TrayItemSpec {
+    std::string title{};
+    std::string event{};
+};
+
 using RpcHandler = std::function<std::expected<std::string, cfire::Error>(std::string_view)>;
 using AsyncRpcHandler = std::function<void(std::string_view, std::function<void(std::expected<std::string, cfire::Error>)>)>;
 using EventCallback = std::function<void(const std::string&)>;
@@ -330,6 +337,12 @@ struct AppState {
     bool is_fullscreen{false};
     bool is_minimized{false};
     bool is_maximized{false};
+    bool hide_on_close{false};
+    bool window_hidden{false};
+    bool has_tray{false};
+    std::string tray_icon_path{};
+    std::string tray_tooltip{};
+    std::vector<TrayItemSpec> tray_items{};
     std::atomic<bool> quit_requested{false};
     std::atomic<bool> closed{false};
 
@@ -367,8 +380,13 @@ struct AppState {
     std::function<void()> platform_maximize{};
     std::function<void()> platform_center{};
     std::function<void()> platform_drag{};
+    std::function<void()> platform_hide_window{};
+    std::function<void()> platform_show_window{};
     std::function<void()> platform_quit{};
     std::function<void(const std::string&, std::function<void(bool)>)> platform_screenshot{};
+#if defined(_WIN32)
+    HWND win32_hwnd{nullptr};
+#endif
 
     AppState() = default;
 

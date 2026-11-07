@@ -134,7 +134,8 @@ struct DetectedIde {
         }
         if (!reason.empty()) {
             bool cfg = std::filesystem::exists(workspace_dir / ".mcp.json", ec) &&
-                       std::filesystem::exists(workspace_dir / ".lsp.json", ec);
+                       (std::filesystem::exists(workspace_dir / ".lsp.json", ec) ||
+                        std::filesystem::exists(workspace_dir / ".claude-plugin" / "plugin.json", ec));
             out.push_back({"claude", "Claude Code", reason, cfg});
         }
     }
@@ -458,71 +459,83 @@ struct DetectedIde {
 
     // 5. Claude Code (claude / claude-code)
     if (has_target("claude", targets)) {
-        std::string claude_mcp = std::format(R"({{
-  "mcpServers": {{
-    "cfire": {{
+        std::string claude_mcp = R"({
+  "mcpServers": {
+    "cfire": {
       "type": "stdio",
-      "command": "{}",
+      "command": "cfire",
       "args": ["mcp"]
-    }}
-  }}
-}}
-)", cfire_bin);
+    }
+  }
+}
+)";
         {
             std::ofstream m_ofs(repo_root / ".mcp.json", std::ios::trunc);
             m_ofs << claude_mcp;
         }
-        std::string claude_lsp = std::format(R"({{
-  "cfire": {{
-    "command": "{}",
+        std::string claude_lsp = R"({
+  "cfire": {
+    "command": "cfire",
     "args": ["lsp"],
     "transport": "stdio",
-    "extensionToLanguage": {{
+    "extensionToLanguage": {
       ".cf": "cfire"
-    }}
-  }}
-}}
-)", cfire_bin);
+    }
+  }
+}
+)";
         {
             std::ofstream l_ofs(repo_root / ".lsp.json", std::ios::trunc);
             l_ofs << claude_lsp;
         }
         auto claude_plugin_dir = repo_root / ".claude-plugin";
         std::filesystem::create_directories(claude_plugin_dir, ec);
-        std::string claude_plugin = std::format(R"({{
+        std::string claude_plugin = R"({
   "name": "cfire",
   "version": "1.3.0",
-  "description": "Official cfire (.cf) Language Server (LSP) and Compiler/Stdlib MCP plugin for Claude Code.",
-  "mcpServers": {{
-    "cfire": {{
-      "type": "stdio",
-      "command": "{}",
-      "args": ["mcp"]
-    }}
-  }},
-  "lspServers": {{
-    "cfire": {{
-      "command": "{}",
+  "description": "Official cfire (.cf) Language Server (LSP) plugin for Claude Code.",
+  "lspServers": {
+    "cfire": {
+      "command": "cfire",
       "args": ["lsp"],
       "transport": "stdio",
-      "extensionToLanguage": {{
+      "extensionToLanguage": {
         ".cf": "cfire"
-      }}
-    }}
-  }}
-}}
-)", cfire_bin, cfire_bin);
+      }
+    }
+  }
+}
+)";
         {
             std::ofstream p_ofs(claude_plugin_dir / "plugin.json", std::ios::trunc);
             p_ofs << claude_plugin;
+        }
+        std::string claude_marketplace = R"({
+  "name": "cfire",
+  "owner": {
+    "name": "Memo Sandoval"
+  },
+  "plugins": [
+    {
+      "name": "cfire",
+      "source": "./",
+      "description": "Official cfire (.cf) Language Server (LSP) plugin for Claude Code.",
+      "version": "1.3.0"
+    }
+  ]
+}
+)";
+        {
+            std::ofstream mp_ofs(claude_plugin_dir / "marketplace.json", std::ios::trunc);
+            mp_ofs << claude_marketplace;
         }
         auto claude_rules_dir = repo_root / ".claude" / "rules";
         std::filesystem::create_directories(claude_rules_dir, ec);
         {
             std::ofstream r_ofs(claude_rules_dir / "cfire.md", std::ios::trunc);
-            r_ofs << cfire_agent_rules_markdown(cfire_bin);
+            r_ofs << cfire_agent_rules_markdown("cfire");
         }
-        configured.push_back("Claude Code (.mcp.json + .lsp.json + .claude-plugin/plugin.json + .claude/rules/cfire.md)");
+        configured.push_back("Claude Code (.mcp.json + .lsp.json + .claude-plugin/plugin.json + .claude-plugin/marketplace.json + .claude/rules/cfire.md)");
     }
 
     // 6. OpenCode (opencode)

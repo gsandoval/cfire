@@ -116,7 +116,8 @@ fi
 INSTALL_BIN="${CFIRE_INSTALL_DIR:-$DEFAULT_BIN}"
 INSTALL_DATA="${CFIRE_DATA_DIR:-$DEFAULT_DATA}"
 BRANCH="${CFIRE_VERSION:-main}"
-TARBALL_URL="https://github.com/gsandoval/cfire/archive/refs/heads/${BRANCH}.tar.gz"
+TARBALL_URL="https://github.com/gsandoval/cfire/archive/${BRANCH}.tar.gz"
+RESOLVED_SHA=""
 
 printf "  - Target:       %b%s (%s)%b\n" "${BLUE}" "$PLATFORM" "$ARCH" "${RESET}"
 printf "  - Compiler:     %b%s%b\n" "${BLUE}" "$CXX" "${RESET}"
@@ -133,27 +134,45 @@ trap cleanup EXIT INT TERM
 if [ -n "$CFIRE_LOCAL_SRC" ] && [ -d "$CFIRE_LOCAL_SRC" ]; then
     printf "\n%b==> Copying cfire source from %s...%b\n" "${BOLD}" "$CFIRE_LOCAL_SRC" "${RESET}"
     cp -R "$CFIRE_LOCAL_SRC/src" "$CFIRE_LOCAL_SRC/runtime" "$CFIRE_LOCAL_SRC/Makefile" "$TMP_DIR/"
+    if command -v git >/dev/null 2>&1; then
+        RESOLVED_SHA="$(git -C "$CFIRE_LOCAL_SRC" rev-parse --short HEAD 2>/dev/null || true)"
+    fi
 else
     printf "\n%b==> Downloading cfire source from GitHub (%s)...%b\n" "${BOLD}" "$BRANCH" "${RESET}"
     if ! $DOWNLOAD_CMD "$TARBALL_URL" | tar -xz -C "$TMP_DIR" --strip-components=1; then
         printf "%b\n" "${RED}Error: Failed to download or unpack repository archive from ${TARBALL_URL}.${RESET}" >&2
         exit 1
     fi
+    if command -v git >/dev/null 2>&1; then
+        RESOLVED_SHA="$(git ls-remote https://github.com/gsandoval/cfire.git "$BRANCH" 2>/dev/null | awk 'NR==1 {print substr($1, 1, 7)}' || true)"
+    fi
+fi
+
+if [ -z "$RESOLVED_SHA" ]; then
+    case "$BRANCH" in
+        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+            RESOLVED_SHA="$(printf "%.7s" "$BRANCH")"
+            ;;
+        *)
+            RESOLVED_SHA="$BRANCH"
+            ;;
+    esac
 fi
 
 printf "%b==> Compiling cfire with %s...%b\n" "${BOLD}" "$CXX" "${RESET}"
-if ! make -C "$TMP_DIR" build CXX="$CXX" -j4 >/dev/null; then
+if ! make -C "$TMP_DIR" build CXX="$CXX" GIT_SHA="$RESOLVED_SHA" -j4 >/dev/null; then
     printf "%b\n" "${RED}Compilation failed. Retrying with verbose output...${RESET}" >&2
-    make -C "$TMP_DIR" build CXX="$CXX"
+    make -C "$TMP_DIR" build CXX="$CXX" GIT_SHA="$RESOLVED_SHA"
     exit 1
 fi
 
-# 4. Install binary and runtime headers
+# 4. Install binary and runtime headers (atomic temp-file + mv to prevent macOS SIGKILL code-signing cache invalidation)
 mkdir -p "$INSTALL_BIN"
 mkdir -p "$INSTALL_DATA/runtime"
 
-cp "$TMP_DIR/cfire" "$INSTALL_BIN/cfire"
-chmod 755 "$INSTALL_BIN/cfire"
+cp "$TMP_DIR/cfire" "$INSTALL_BIN/.cfire.tmp.$$"
+chmod 755 "$INSTALL_BIN/.cfire.tmp.$$"
+mv -f "$INSTALL_BIN/.cfire.tmp.$$" "$INSTALL_BIN/cfire"
 
 cp -R "$TMP_DIR/runtime/"* "$INSTALL_DATA/runtime/"
 

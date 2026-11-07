@@ -5,16 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stdlib &amp; Diagnostics Reference — cfire</title>
   <link rel="icon" type="image/png" href="assets/cfire_logo_emblem.png" />
+  <script>(function(){var t=localStorage.getItem('cfire-theme')||'light';document.documentElement.setAttribute('data-theme',t);})();</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=swap" />
   <style>
-:root {
+:root, [data-theme="light"] {
+    --bg: #F8FAFC;
+    --bg-nav: rgba(255, 255, 255, 0.96);
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F1F5F9;
+    --bg-code: #F1F5F9;
+    --bg-code-inline: #F1F5F9;
+    --bg-table-head: #F1F5F9;
+    --bg-table-hover: #F8FAFC;
+    --bg-subtle: #E2E8F0;
+    --bg-accent-tint: #FFF7ED;
+    --border-accent-tint: #FDBA74;
+    --bg-sapphire-tint: #F0F9FF;
+    --border-sapphire-tint: #BAE6FD;
+    --bg-tip-tint: #F0FDF4;
+    --bg-imp-tint: #F5F3FF;
+    --bg-warn-tint: #FFFBEB;
+    --bg-err-tint: #FEF2F2;
+    --bg-terminal: #F0FDF4;
+    --text-terminal: #14532D;
+    --bg-backdrop: rgba(15, 23, 42, 0.55);
+    --border: #E2E8F0;
+    --border-dark: #CBD5E1;
+    --text: #0F172A;
+    --text-bright: #020617;
+    --muted: #475569;
+    --accent: #EA580C;
+    --accent-hover: #C2410C;
+    --accent-contrast: #FFFFFF;
+    --accent-sapphire: #0284C7;
+    --accent-sapphire-hover: #0369A1;
+    --ok: #16A34A;
+    --warn: #D97706;
+    --err: #DC2626;
+    --purple: #7C3AED;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+[data-theme="dark"] {
     --bg: #0D1117;
+    --bg-nav: rgba(13, 17, 23, 0.96);
     --bg-card: #161B22;
     --bg-card-hover: #21262D;
     --bg-code: #090D12;
+    --bg-code-inline: #1C2128;
+    --bg-table-head: #1C2128;
+    --bg-table-hover: #1F242C;
     --bg-subtle: #21262D;
+    --bg-accent-tint: #27140B;
+    --border-accent-tint: #7C2D12;
+    --bg-sapphire-tint: #0B1622;
+    --border-sapphire-tint: #1E3A5F;
+    --bg-tip-tint: #0A1C14;
+    --bg-imp-tint: #171124;
+    --bg-warn-tint: #1E1606;
+    --bg-err-tint: #220B0E;
+    --bg-terminal: #070A0E;
+    --text-terminal: #D2F4DC;
+    --bg-backdrop: rgba(9, 13, 18, 0.82);
     --border: #30363D;
     --border-dark: #484F58;
     --text: #F0F6FC;
@@ -22,12 +76,13 @@
     --muted: #8B949E;
     --accent: #F97316;
     --accent-hover: #FB923C;
+    --accent-contrast: #0D1117;
     --accent-sapphire: #38BDF8;
+    --accent-sapphire-hover: #7DD3FC;
     --ok: #3FB950;
     --warn: #D29922;
     --err: #F85149;
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --purple: #A78BFA;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 .material-symbols-outlined {
@@ -67,14 +122,14 @@ body {
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
-::selection { background: #F97316; color: #0D1117; }
+::selection { background: var(--accent); color: var(--accent-contrast); }
 a {
     color: var(--accent-sapphire);
     text-decoration: none;
     transition: color 0.15s ease, border-color 0.15s ease;
 }
 a:hover {
-    color: #7DD3FC;
+    color: var(--accent-sapphire-hover);
 }
 
 /* Crisp Technical Prose Links */
@@ -83,34 +138,35 @@ main a:not(.pager-card):not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(
 .callout a {
     color: var(--accent-sapphire);
     text-decoration: none;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+    border-bottom: 1px solid var(--border-sapphire-tint);
     font-weight: 500;
     transition: color 0.15s ease, border-bottom-color 0.15s ease;
 }
 main a:not(.pager-card):not(.btn):not(.code-copy-btn):not(.sidebar-ch-link):not(.brand):hover,
 .chapter-pane a:not(.pager-card):not(.btn):not(.code-copy-btn):hover,
 .callout a:hover {
-    color: #7DD3FC;
-    border-bottom-color: #38BDF8;
+    color: var(--accent-sapphire-hover);
+    border-bottom-color: var(--accent-sapphire);
     text-decoration: none;
 }
 main a code, .chapter-pane a code {
     color: inherit;
-    border-color: rgba(56, 189, 248, 0.4);
-    background: #161B22;
+    border-color: var(--border-sapphire-tint);
+    background: var(--bg-code-inline);
 }
 
 /* Sticky Edge-to-Edge Navigation Bar */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     width: 100%;
-    background: #0D1117;
+    background: var(--bg-nav);
+    backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
 }
 .navbar-inner {
     max-width: 1120px;
     margin: 0 auto;
-    padding: 0.75rem 1.25rem;
+    padding: 0.7rem 1.25rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -128,21 +184,40 @@ main a code, .chapter-pane a code {
     width: 30px; height: 30px; object-fit: contain;
 }
 .brand span.brand-text {
-    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--text-bright);
+    font-size: 1.2rem; font-weight: 850; letter-spacing: -0.02em; color: var(--accent-sapphire);
 }
-.brand span.fire { color: #F97316; font-weight: 850; }
+.brand span.fire { color: var(--accent); font-weight: 850; }
 .brand-badge {
     font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
-    background: #21262D; border: 1px solid var(--border); color: #8B949E;
+    background: var(--bg-subtle); border: 1px solid var(--border); color: var(--muted);
     padding: 0.12rem 0.45rem; border-radius: 4px; margin-left: 0.25rem;
 }
-.nav-links { display: flex; align-items: center; gap: 1.25rem; font-size: 0.92rem; font-weight: 600; }
+.nav-links { display: flex; align-items: center; gap: 1rem; font-size: 0.9rem; font-weight: 600; }
 .nav-links a {
     color: var(--muted); transition: all 0.15s ease;
-    padding: 0.25rem 0.4rem; border-radius: 5px;
+    padding: 0.25rem 0.5rem; border-radius: 5px;
 }
-.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: #21262D; }
-.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: #21262D; }
+.nav-links a:hover { color: var(--text-bright); text-decoration: none; background: var(--bg-card-hover); }
+.nav-links a.active { color: var(--text-bright); text-decoration: none; font-weight: 750; background: var(--bg-subtle); }
+.btn-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--text) !important;
+    font-family: var(--font-mono);
+    font-size: 0.76rem !important;
+    font-weight: 700 !important;
+    padding: 0.32rem 0.6rem !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--bg-card) !important;
+    cursor: pointer;
+    transition: all 0.15s ease !important;
+}
+.btn-theme-toggle:hover {
+    background: var(--bg-card-hover) !important;
+    border-color: var(--border-dark) !important;
+}
 .btn-nav-github {
     display: inline-flex;
     align-items: center;
@@ -164,13 +239,13 @@ main a code, .chapter-pane a code {
     text-decoration: none !important;
 }
 .btn-nav-primary {
-    background: #F97316 !important; color: #0D1117 !important;
+    background: var(--accent) !important; color: var(--accent-contrast) !important;
     padding: 0.4rem 0.9rem !important; border-radius: 6px !important; font-size: 0.85rem !important; font-weight: 700 !important;
     transition: background 0.15s !important; border: none;
     text-decoration: none !important;
     border-bottom: none !important;
 }
-.btn-nav-primary:hover { background: #FB923C !important; text-decoration: none !important; }
+.btn-nav-primary:hover { background: var(--accent-hover) !important; text-decoration: none !important; }
 
 /* Page container with robust bounds */
 .container {
@@ -229,20 +304,20 @@ pre::-webkit-scrollbar {
 .guide-viewport::-webkit-scrollbar-track,
 .guide-toc-rail::-webkit-scrollbar-track,
 pre::-webkit-scrollbar-track {
-    background: #090D12;
+    background: var(--bg-code);
 }
 .guide-sidebar::-webkit-scrollbar-thumb,
 .guide-viewport::-webkit-scrollbar-thumb,
 .guide-toc-rail::-webkit-scrollbar-thumb,
 pre::-webkit-scrollbar-thumb {
-    background: #30363D;
+    background: var(--border);
     border-radius: 3px;
 }
 .guide-sidebar::-webkit-scrollbar-thumb:hover,
 .guide-viewport::-webkit-scrollbar-thumb:hover,
 .guide-toc-rail::-webkit-scrollbar-thumb:hover,
 pre::-webkit-scrollbar-thumb:hover {
-    background: #484F58;
+    background: var(--border-dark);
 }
 .guide-viewport {
     flex: 1;
@@ -302,7 +377,7 @@ pre::-webkit-scrollbar-thumb:hover {
     color: var(--border-dark);
 }
 .reader-breadcrumbs .current {
-    color: #F97316;
+    color: var(--accent);
     font-weight: 700;
 }
 .reader-mode-toggle {
@@ -328,7 +403,7 @@ pre::-webkit-scrollbar-thumb:hover {
     color: var(--text-bright);
 }
 .mode-btn.active {
-    background: #21262D;
+    background: var(--bg-subtle);
     color: var(--text-bright);
     font-weight: 700;
 }
@@ -362,9 +437,9 @@ pre::-webkit-scrollbar-thumb:hover {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.45rem;
-    margin: 1rem 0 1.5rem;
-    padding: 0.65rem 0.85rem;
+    gap: 0.4rem;
+    margin: 0.85rem 0 1.4rem;
+    padding: 0.55rem 0.75rem;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -382,9 +457,9 @@ pre::-webkit-scrollbar-thumb:hover {
     background: var(--bg-code);
     border: 1px solid var(--border);
     border-radius: 5px;
-    padding: 0.28rem 0.65rem;
+    padding: 0.25rem 0.6rem;
     font-family: var(--font-mono);
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     font-weight: 600;
     color: var(--muted);
     cursor: pointer;
@@ -398,7 +473,7 @@ pre::-webkit-scrollbar-thumb:hover {
     background: var(--bg-card-hover);
 }
 .topic-pill.active {
-    background: #27140B;
+    background: var(--bg-accent-tint);
     color: var(--accent);
     border-color: var(--accent) !important;
     font-weight: 700;
@@ -417,7 +492,7 @@ pre::-webkit-scrollbar-thumb:hover {
     display: block !important;
     padding-bottom: 1.5rem;
     margin-bottom: 1.75rem;
-    border-bottom: 1px dashed rgba(48, 54, 61, 0.65);
+    border-bottom: 1px dashed var(--border);
 }
 .chapter-View-mode .guide-topic:last-of-type {
     border-bottom: none;
@@ -431,7 +506,7 @@ details.lowering-drawer {
     margin: 1.15rem 0 1.5rem;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-left: 3px solid #F59E0B;
+    border-left: 3px solid var(--warn);
     border-radius: 7px;
     overflow: hidden;
 }
@@ -440,16 +515,16 @@ details.lowering-drawer > summary {
     font-family: var(--font-mono);
     font-size: 0.76rem;
     font-weight: 750;
-    color: #F59E0B;
+    color: var(--warn);
     cursor: pointer;
     user-select: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(245, 158, 11, 0.06);
+    background: var(--bg-warn-tint);
 }
 details.lowering-drawer > summary:hover {
-    background: rgba(245, 158, 11, 0.12);
+    background: var(--bg-card-hover);
 }
 details.lowering-drawer > .lowering-body {
     padding: 0.75rem 0.95rem 0.95rem;
@@ -457,7 +532,7 @@ details.lowering-drawer > .lowering-body {
 }
 .terminal-tray {
     margin: -0.5rem 0 1.5rem;
-    background: #070A0E;
+    background: var(--bg-terminal);
     border: 1px solid var(--border);
     border-left: 3px solid var(--ok);
     border-radius: 0 0 7px 7px;
@@ -479,7 +554,7 @@ details.lowering-drawer > .lowering-body {
     border: none;
     background: transparent;
     font-size: 0.8rem;
-    color: #D2F4DC;
+    color: var(--text-terminal);
 }
 
 /* Search Results Instant Dropdown */
@@ -707,7 +782,7 @@ details.lowering-drawer > .lowering-body {
     display: flex;
     justify-content: space-between;
     padding: 0.25rem 0;
-    border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+    border-bottom: 1px solid var(--border);
 }
 .rail-telemetry-row:last-child {
     border-bottom: none;
@@ -807,9 +882,9 @@ details.lowering-drawer > .lowering-body {
     font-family: var(--font-mono);
     font-size: 0.68rem;
     font-weight: 800;
-    color: #F97316;
-    background: #21262D;
-    border: 1px solid var(--border);
+    color: var(--accent);
+    background: var(--bg-accent-tint);
+    border: 1px solid var(--border-accent-tint);
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
     letter-spacing: 0.05em;
@@ -833,6 +908,7 @@ details.lowering-drawer > .lowering-body {
     font-size: 0.75rem;
     color: var(--accent-sapphire);
 }
+.mobile-unified-bar { display: none; }
 .sidebar-summary { display: none; }
 .sidebar h4 {
     font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
@@ -857,7 +933,7 @@ details.lowering-drawer > .lowering-body {
     box-sizing: border-box;
 }
 .nav-search-wrapper .search-input:focus {
-    border-color: #F97316;
+    border-color: var(--accent);
 }
 .nav-search-kbd {
     position: absolute;
@@ -868,7 +944,7 @@ details.lowering-drawer > .lowering-body {
     font-size: 0.65rem;
     font-weight: 700;
     color: var(--muted);
-    background: #21262D;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     padding: 0.08rem 0.35rem;
     border-radius: 3px;
@@ -878,18 +954,18 @@ details.lowering-drawer > .lowering-body {
 
 .sidebar-part-title {
     font-size: 0.72rem; font-weight: 850; text-transform: uppercase;
-    letter-spacing: 0.08em; color: #F97316; margin: 1.25rem 0 0.4rem;
+    letter-spacing: 0.08em; color: var(--accent); margin: 1.15rem 0 0.35rem;
     padding-left: 0.4rem;
 }
-.sidebar-chapter-list { list-style: none; margin-bottom: 0.75rem; }
-.sidebar-chapter-list .nav-item { margin-bottom: 0.2rem; }
+.sidebar-chapter-list { list-style: none; margin-bottom: 0.65rem; }
+.sidebar-chapter-list .nav-item { margin-bottom: 0.15rem; }
 
 .sidebar-ch-link {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.42rem 0.6rem;
+    padding: 0.38rem 0.6rem;
     border-radius: 5px;
     color: var(--muted);
     font-size: 0.84rem;
@@ -906,8 +982,8 @@ details.lowering-drawer > .lowering-body {
 }
 .sidebar-ch-link.active {
     color: var(--text-bright);
-    background: #21262D;
-    font-weight: 600;
+    background: var(--bg-card-hover);
+    font-weight: 650;
     border-left-color: var(--accent);
 }
 .sidebar-ch-link .ch-text {
@@ -918,61 +994,16 @@ details.lowering-drawer > .lowering-body {
 }
 .active-badge {
     font-family: var(--font-mono);
-    font-size: 0.6rem;
+    font-size: 0.58rem;
     font-weight: 800;
     color: var(--accent);
-    background: #27140B;
-    border: 1px solid #7C2D12;
-    padding: 0.08rem 0.35rem;
+    background: var(--bg-accent-tint);
+    border: 1px solid var(--border-accent-tint);
+    padding: 0.06rem 0.32rem;
     border-radius: 3px;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     flex-shrink: 0;
-}
-
-.subhead-list {
-    display: none;
-    list-style: none;
-    margin: 0.2rem 0 0.45rem 0.85rem;
-    padding-left: 0.65rem;
-    border-left: 1px solid var(--border);
-}
-.nav-item.is-active .subhead-list {
-    display: block;
-    animation: fadeIn 0.15s ease-in;
-}
-.subhead-list li { margin-bottom: 0.15rem; }
-.subhead-list a {
-    display: flex;
-    align-items: baseline;
-    gap: 0.45rem;
-    font-size: 0.78rem;
-    color: var(--muted);
-    padding: 0.18rem 0.35rem;
-    border-radius: 3px;
-    text-decoration: none !important;
-    border-bottom: none !important;
-    transition: color 0.15s ease;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.subhead-list a::before {
-    content: "•";
-    color: var(--border-dark);
-    font-size: 0.75rem;
-    flex-shrink: 0;
-}
-.subhead-list a:hover {
-    color: var(--text-bright);
-    text-decoration: none !important;
-}
-.subhead-list a.active-subhead {
-    color: var(--accent);
-    font-weight: 600;
-}
-.subhead-list a.active-subhead::before {
-    color: var(--accent);
 }
 
 .sidebar-footer-card {
@@ -1003,8 +1034,8 @@ details.lowering-drawer > .lowering-body {
     font-size: 0.65rem;
     font-weight: 750;
     color: var(--accent-sapphire);
-    background: #0B1622;
-    border: 1px solid #1E3A5F;
+    background: var(--bg-sapphire-tint);
+    border: 1px solid var(--border-sapphire-tint);
     padding: 0.12rem 0.4rem;
     border-radius: 4px;
 }
@@ -1059,7 +1090,7 @@ details.lowering-drawer > .lowering-body {
     box-sizing: border-box;
 }
 .search-input:focus {
-    border-color: #F97316;
+    border-color: var(--accent);
 }
 .sidebar ul { list-style: none; margin-bottom: 1.25rem; }
 .sidebar li { margin-bottom: 0.25rem; }
@@ -1073,7 +1104,7 @@ details.lowering-drawer > .lowering-body {
     background: var(--bg-card-hover); color: var(--text-bright); text-decoration: none;
 }
 .sidebar a.active {
-    background: var(--bg-card-hover); color: #F97316; font-weight: 700;
+    background: var(--bg-card-hover); color: var(--accent); font-weight: 700;
 }
 .sidebar a code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
 
@@ -1162,9 +1193,9 @@ main li > pre,
     font-weight: 850;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #F97316;
-    background: #27140B;
-    border: 1px solid #7C2D12;
+    color: var(--accent);
+    background: var(--bg-accent-tint);
+    border: 1px solid var(--border-accent-tint);
     padding: 0.15rem 0.55rem;
     border-radius: 4px;
     margin-bottom: 0.5rem;
@@ -1199,30 +1230,30 @@ main li > pre,
     line-height: 1.6;
 }
 .callout-note {
-    border-left-color: #38BDF8;
-    background: #0B1622;
+    border-left-color: var(--accent-sapphire);
+    background: var(--bg-sapphire-tint);
 }
-.callout-note .callout-title { color: #38BDF8; }
+.callout-note .callout-title { color: var(--accent-sapphire); }
 .callout-tip {
-    border-left-color: #3FB950;
-    background: #0A1C14;
+    border-left-color: var(--ok);
+    background: var(--bg-tip-tint);
 }
-.callout-tip .callout-title { color: #3FB950; }
+.callout-tip .callout-title { color: var(--ok); }
 .callout-important {
-    border-left-color: #A78BFA;
-    background: #171124;
+    border-left-color: var(--purple);
+    background: var(--bg-imp-tint);
 }
-.callout-important .callout-title { color: #A78BFA; }
+.callout-important .callout-title { color: var(--purple); }
 .callout-warning {
-    border-left-color: #F59E0B;
-    background: #1E1606;
+    border-left-color: var(--warn);
+    background: var(--bg-warn-tint);
 }
-.callout-warning .callout-title { color: #F59E0B; }
+.callout-warning .callout-title { color: var(--warn); }
 .callout-caution {
-    border-left-color: #F85149;
-    background: #220B0E;
+    border-left-color: var(--err);
+    background: var(--bg-err-tint);
 }
-.callout-caution .callout-title { color: #F85149; }
+.callout-caution .callout-title { color: var(--err); }
 
 /* Hero section */
 .hero { text-align: center; padding: 3rem 0.5rem 3.5rem; }
@@ -1230,7 +1261,7 @@ main li > pre,
     display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px;
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase;
-    background: var(--bg-card); border: 1px solid var(--border); color: #F97316;
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--accent);
     margin-bottom: 1.5rem;
 }
 h1.hero-title {
@@ -1249,8 +1280,8 @@ h1.hero-title {
     align-items: center; gap: 0.5rem; text-decoration: none; cursor: pointer;
 }
 .btn:hover { text-decoration: none; }
-.btn-primary { background: #F97316; color: #0D1117; border-color: #F97316; font-weight: 700; }
-.btn-primary:hover { background: #FB923C; border-color: #FB923C; }
+.btn-primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 700; }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
 .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
@@ -1296,7 +1327,7 @@ h1.hero-title {
 .card:hover { border-color: var(--border-dark); }
 .card-num {
     font-family: var(--font-mono); font-size: 0.78rem; font-weight: 800;
-    color: #F97316; margin-bottom: 0.5rem; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase;
 }
 .card h3 { font-size: 1.15rem; font-weight: 750; margin-bottom: 0.5rem; color: var(--text-bright); }
 .card p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin: 0; }
@@ -1307,12 +1338,12 @@ pre {
     border-radius: 8px; padding: 1.1rem 1.25rem; overflow-x: auto;
     max-width: 100%; min-width: 0; box-sizing: border-box;
     font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.65;
-    color: #F0F6FC; -webkit-overflow-scrolling: touch;
+    color: var(--text); -webkit-overflow-scrolling: touch;
 }
 code {
     font-family: var(--font-mono); font-size: 0.88em;
-    background: #1C2128; border: 1px solid var(--border);
-    padding: 0.12rem 0.35rem; border-radius: 4px; color: #F97316;
+    background: var(--bg-code-inline); border: 1px solid var(--border);
+    padding: 0.12rem 0.35rem; border-radius: 4px; color: var(--accent);
     word-break: break-word;
 }
 pre code { background: none; border: none; padding: 0; color: inherit; word-break: normal; }
@@ -1322,8 +1353,8 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     margin-bottom: 0.45rem; display: flex; justify-content: space-between;
     align-items: center;
 }
-.code-header span.tag-cf { color: #38BDF8; }
-.code-header span.tag-cpp { color: #F59E0B; }
+.code-header span.tag-cf { color: var(--accent-sapphire); }
+.code-header span.tag-cpp { color: var(--warn); }
 .code-copy-btn {
     background: var(--bg-card);
     color: var(--muted);
@@ -1357,7 +1388,7 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
 }
 .tab-btn:hover { color: var(--text-bright); border-color: var(--border-dark); }
 .tab-btn.active {
-    background: var(--bg-card-hover); color: var(--text-bright); border-color: #F97316;
+    background: var(--bg-card-hover); color: var(--text-bright); border-color: var(--accent);
 }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
@@ -1386,7 +1417,7 @@ pre code { background: none; border: none; padding: 0; color: inherit; word-brea
     font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.05em; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.35rem;
 }
-.console-dot { width: 7px; height: 7px; border-radius: 50%; background: #3FB950; }
+.console-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 
 /* Robust Table System: Isolated Scrolling & Polished Mobile Experience */
 .table-wrap {
@@ -1414,11 +1445,11 @@ th, td {
     font-size: 0.9rem; vertical-align: top;
 }
 th {
-    background: #1C2128; color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
+    background: var(--bg-table-head); color: var(--text-bright); font-weight: 750; font-size: 0.82rem;
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #1F242C; }
+tr:hover td { background: var(--bg-table-hover); }
 
 /* Subtle mobile scroll hint banner */
 .table-scroll-cue {
@@ -1429,7 +1460,7 @@ tr:hover td { background: #1F242C; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.4rem 0.85rem;
-    background: #1C2128;
+    background: var(--bg-table-head);
     border-bottom: 1px solid var(--border);
     text-align: right;
 }
@@ -1445,8 +1476,8 @@ tr:hover td { background: #1F242C; }
 .step-badge {
     display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
     font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
-    background: #21262D; color: #F97316; padding: 0.2rem 0.6rem; border-radius: 4px;
-    border: 1px solid var(--border); margin-bottom: 0.75rem;
+    background: var(--bg-accent-tint); color: var(--accent); padding: 0.2rem 0.6rem; border-radius: 4px;
+    border: 1px solid var(--border-accent-tint); margin-bottom: 0.75rem;
 }
 .step-card h4 { font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--text-bright); }
 .step-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 0.85rem; }
@@ -1464,7 +1495,7 @@ tr:hover td { background: #1F242C; }
 }
 .roadmap-num {
     font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.05em; color: #F97316; margin-bottom: 0.35rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.35rem;
 }
 .roadmap-card h4 { font-size: 1.05rem; color: var(--text-bright); margin-bottom: 0.35rem; font-weight: 700; }
 .roadmap-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; margin: 0; }
@@ -1487,8 +1518,8 @@ tr:hover td { background: #1F242C; }
 }
 .btn-toolbar-ai {
     background: var(--bg-card);
-    border: 1px solid #F97316;
-    color: #F97316;
+    border: 1px solid var(--accent);
+    color: var(--accent);
     padding: 0.3rem 0.65rem;
     border-radius: 6px;
     font-family: var(--font-mono);
@@ -1502,8 +1533,8 @@ tr:hover td { background: #1F242C; }
     white-space: nowrap;
 }
 .btn-toolbar-ai:hover {
-    background: #F97316;
-    color: #0D1117;
+    background: var(--accent);
+    color: var(--accent-contrast);
 }
 .btn-toolbar-share {
     background: var(--bg-card);
@@ -1531,7 +1562,7 @@ tr:hover td { background: #1F242C; }
 .ai-modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(9, 13, 18, 0.82);
+    background: var(--bg-backdrop);
     z-index: 250;
     display: none;
     align-items: center;
@@ -1559,7 +1590,7 @@ tr:hover td { background: #1F242C; }
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    background: #1C2128;
+    background: var(--bg-table-head);
 }
 .ai-modal-title {
     font-family: var(--font-mono);
@@ -1623,9 +1654,9 @@ tr:hover td { background: #1F242C; }
     border-color: var(--border-dark);
 }
 .ai-goal-pill.active {
-    background: #27140B;
-    border-color: #F97316;
-    color: #F97316;
+    background: var(--bg-accent-tint);
+    border-color: var(--accent);
+    color: var(--accent);
     font-weight: 700;
 }
 .ai-context-box {
@@ -1648,7 +1679,7 @@ tr:hover td { background: #1F242C; }
     user-select: none;
 }
 .ai-context-opt input[type="checkbox"] {
-    accent-color: #F97316;
+    accent-color: var(--accent);
     width: 15px;
     height: 15px;
     cursor: pointer;
@@ -1679,12 +1710,12 @@ tr:hover td { background: #1F242C; }
     outline: none;
 }
 .ai-prompt-preview:focus {
-    border-color: #F97316;
+    border-color: var(--accent);
 }
 .ai-modal-footer {
     padding: 0.75rem 1.1rem;
     border-top: 1px solid var(--border);
-    background: #1C2128;
+    background: var(--bg-table-head);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1712,9 +1743,9 @@ tr:hover td { background: #1F242C; }
     color: var(--text-bright);
 }
 .ai-btn-primary {
-    background: #F97316;
-    border: 1px solid #F97316;
-    color: #0D1117;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: var(--accent-contrast);
     padding: 0.48rem 1rem;
     border-radius: 6px;
     font-family: var(--font-mono);
@@ -1727,8 +1758,8 @@ tr:hover td { background: #1F242C; }
     margin-left: auto;
 }
 .ai-btn-primary:hover {
-    background: #FB923C;
-    border-color: #FB923C;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 
 @media (max-width: 1100px) {
@@ -1762,8 +1793,8 @@ tr:hover td { background: #1F242C; }
         border-right: none;
         border-bottom: 1px solid var(--border);
         margin-bottom: 0;
-        padding: 0.55rem 0.9rem;
-        background: rgba(13, 17, 23, 0.96);
+        padding: 0.45rem 0.75rem;
+        background: var(--bg-nav);
         backdrop-filter: blur(8px);
     }
     .guide-viewport {
@@ -1772,68 +1803,88 @@ tr:hover td { background: #1F242C; }
         display: block;
     }
     .guide-content-inner {
-        padding: 1.15rem 1rem 3.5rem;
+        padding: 1rem 1rem 3.5rem;
+    }
+    /* Unified 1-Line Mobile Sub-Header: [☰ Ch 1: Install & Setup ▾] [1.1 Toolchain ▾] [Paged] */
+    .mobile-unified-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        width: 100%;
     }
     .sidebar-summary {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 0.5rem;
-        width: 100%;
+        display: inline-flex; align-items: center; justify-content: space-between;
+        gap: 0.35rem;
+        flex: 1 1 0;
+        min-width: 0;
         text-align: left;
         font-family: var(--font-mono);
-        font-weight: 700; font-size: 0.82rem; cursor: pointer; color: var(--text-bright);
+        font-weight: 700; font-size: 0.75rem; cursor: pointer; color: var(--text-bright);
         user-select: none;
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 6px;
-        padding: 0.5rem 0.75rem;
+        padding: 0.38rem 0.55rem;
+    }
+    .sidebar-summary #mobile-sidebar-label,
+    .sidebar-summary #ref-mobile-sidebar-label {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
     }
     .sidebar-summary::-webkit-details-marker { display: none; }
     .sidebar-summary-badge {
-        color: #F97316;
+        color: var(--accent);
         font-weight: 800;
-        margin-right: 0.35rem;
+        margin-right: 0.25rem;
     }
-    .sidebar-chevron { font-size: 1rem; color: var(--muted); transition: transform 0.2s ease; flex-shrink: 0; }
+    .sidebar-chevron { font-size: 0.95rem; color: var(--muted); transition: transform 0.2s ease; flex-shrink: 0; }
+    .mobile-topic-select {
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: 46%;
+        background: var(--bg-accent-tint);
+        color: var(--accent);
+        border: 1px solid var(--border-accent-tint);
+        border-radius: 6px;
+        padding: 0.36rem 0.45rem;
+        font-family: var(--font-mono);
+        font-size: 0.73rem;
+        font-weight: 750;
+        cursor: pointer;
+        outline: none;
+        text-overflow: ellipsis;
+    }
+    .mobile-mode-btn {
+        flex-shrink: 0;
+        background: var(--bg-card);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.36rem 0.5rem;
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .mobile-mode-btn:hover {
+        color: var(--text-bright);
+        border-color: var(--border-dark);
+    }
     .sidebar-details:not(.open) .sidebar-content { display: none; }
     .sidebar-details.open .sidebar-content {
-        display: block; margin-top: 0.65rem; padding: 0.75rem;
+        display: block; margin-top: 0.55rem; padding: 0.75rem;
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 6px;
         max-height: 62vh; overflow-y: auto;
     }
     .sidebar-details.open .sidebar-chevron { transform: rotate(180deg); }
-    .reader-toolbar {
-        flex-wrap: wrap;
-        gap: 0.65rem;
-        padding-bottom: 0.85rem;
-        margin-bottom: 1.25rem;
-    }
-    .reader-breadcrumbs {
-        width: 100%;
-        flex-basis: 100%;
-        font-size: 0.74rem;
-    }
-    .toolbar-actions {
-        width: 100%;
-        justify-content: space-between;
-    }
-    .topic-pill-bar {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        padding: 0.5rem 0.65rem;
-        gap: 0.4rem;
-        margin: 0.75rem 0 1.25rem;
-    }
-    .topic-pill-bar::-webkit-scrollbar { display: none; }
-    .topic-pill-label { display: none; }
-    .topic-pill {
-        flex-shrink: 0;
-        white-space: nowrap;
-        padding: 0.32rem 0.7rem;
-    }
+    /* Eliminate duplicated breadcrumbs and subsection chip bar on mobile */
+    .reader-toolbar { display: none !important; }
+    .topic-pill-bar { display: none !important; }
     .grid-2 { grid-template-columns: 1fr; }
     .rosetta-mobile-toggle { display: flex; }
     .rosetta-pane-cpp { display: none; }
@@ -1855,9 +1906,9 @@ tr:hover td { background: #1F242C; }
     .nav-links::-webkit-scrollbar { display: none; }
     .nav-links a {
         white-space: nowrap; padding: 0.3rem 0.6rem; border-radius: 5px;
-        background: #161B22; font-size: 0.78rem; color: var(--muted); flex-shrink: 0;
+        background: var(--bg-card); border: 1px solid var(--border); font-size: 0.78rem; color: var(--muted); flex-shrink: 0;
     }
-    .nav-links a.active { background: #21262D; color: var(--text-bright) !important; }
+    .nav-links a.active { background: var(--bg-subtle); color: var(--text-bright) !important; }
     .btn-nav-primary {
         margin-left: auto; padding: 0.3rem 0.65rem !important;
         font-size: 0.76rem !important; flex-shrink: 0;
@@ -1917,8 +1968,8 @@ tr:hover td { background: #1F242C; }
         padding-bottom: 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.45rem;
     }
     .api-table-wrap td:first-child code {
-        font-weight: 700; font-size: 0.88rem; color: #F97316;
-        background: #21262D; border-color: var(--border); word-break: break-all;
+        font-weight: 700; font-size: 0.88rem; color: var(--accent);
+        background: var(--bg-code-inline); border-color: var(--border); word-break: break-all;
         display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
     }
     .api-table-wrap td:nth-child(2)::before {
@@ -1954,6 +2005,10 @@ tr:hover td { background: #1F242C; }
       <a href="index.html" class="">Overview</a>
       <a href="guide.html" class="">Guide</a>
       <a href="reference.html" class="active">Stdlib</a>
+      <button type="button" class="btn-theme-toggle" id="theme-toggle-btn" onclick="toggleCfireTheme()" title="Switch between Swiss Alabaster Light and Obsidian Dark themes">
+        <span class="material-symbols-outlined" id="theme-toggle-icon" style="font-size:0.95rem;color:var(--accent);" aria-hidden="true">light_mode</span>
+        <span id="theme-toggle-label">Light</span>
+      </button>
       <a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener" class="btn-nav-github">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 0.35rem;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -1962,13 +2017,84 @@ tr:hover td { background: #1F242C; }
     </div>
   </div>
 </nav>
+<script>
+function syncCfireThemeBtn() {
+  var t = document.documentElement.getAttribute('data-theme') || 'light';
+  var icon = document.getElementById('theme-toggle-icon');
+  var lbl = document.getElementById('theme-toggle-label');
+  if (icon && lbl) {
+    if (t === 'dark') {
+      icon.textContent = 'dark_mode';
+      icon.style.color = 'var(--accent-sapphire)';
+      lbl.textContent = 'Dark';
+    } else {
+      icon.textContent = 'light_mode';
+      icon.style.color = 'var(--accent)';
+      lbl.textContent = 'Light';
+    }
+  }
+}
+function toggleCfireTheme() {
+  var cur = document.documentElement.getAttribute('data-theme') || 'light';
+  var next = (cur === 'dark') ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('cfire-theme', next); } catch (e) {}
+  syncCfireThemeBtn();
+}
+syncCfireThemeBtn();
+</script>
 <div class="guide-shell">
   <aside class="guide-sidebar">
     <div class="sidebar-details" id="ref-sidebar-details">
-      <button type="button" class="sidebar-summary" onclick="this.parentElement.classList.toggle('open')">
-        <span id="ref-mobile-sidebar-label"><span class="sidebar-summary-badge">Stdlib:</span> Overview &amp; Diagnostics</span>
-        <span class="material-symbols-outlined sidebar-chevron" aria-hidden="true">expand_more</span>
-      </button>
+      <div class="mobile-unified-bar">
+        <button type="button" class="sidebar-summary" onclick="document.getElementById('ref-sidebar-details').classList.toggle('open')">
+          <span id="ref-mobile-sidebar-label"><span class="sidebar-summary-badge">Stdlib</span> Overview</span>
+          <span class="material-symbols-outlined sidebar-chevron" aria-hidden="true">expand_more</span>
+        </button>
+        <select class="mobile-topic-select" id="ref-mobile-pane-select" aria-label="Jump to module" onchange="if(this.value)navigateToRefPane(this.value)">
+          <option value="overview">Overview (38 Modules)</option>
+          <option value="mod-build">core:build (10 fns)</option>
+          <option value="mod-cli">core:cli (7 fns)</option>
+          <option value="mod-collections">core:collections (3 fns)</option>
+          <option value="mod-aes">core:crypto/aes (7 fns)</option>
+          <option value="mod-blake3">core:crypto/blake3 (1 fns)</option>
+          <option value="mod-hmac">core:crypto/hmac (5 fns)</option>
+          <option value="mod-sha256">core:crypto/sha256 (4 fns)</option>
+          <option value="mod-base64">core:encoding/base64 (4 fns)</option>
+          <option value="mod-csv">core:encoding/csv (4 fns)</option>
+          <option value="mod-hex">core:encoding/hex (4 fns)</option>
+          <option value="mod-fs">core:fs (23 fns)</option>
+          <option value="mod-log">core:log (6 fns)</option>
+          <option value="mod-math">core:math (4 fns)</option>
+          <option value="mod-os">core:os (23 fns)</option>
+          <option value="mod-rand">core:rand (4 fns)</option>
+          <option value="mod-regex">core:regex (3 fns)</option>
+          <option value="mod-sort">core:sort (2 fns)</option>
+          <option value="mod-str">core:str (24 fns)</option>
+          <option value="mod-sync">core:sync (13 fns)</option>
+          <option value="mod-context">core:sync/context (8 fns)</option>
+          <option value="mod-time">core:time (10 fns)</option>
+          <option value="mod-unicode">core:unicode (6 fns)</option>
+          <option value="mod-ai">ext:ai (38 fns)</option>
+          <option value="mod-audio">ext:audio (25 fns)</option>
+          <option value="mod-zstd">ext:compress/zstd (2 fns)</option>
+          <option value="mod-sodium">ext:crypto/sodium (9 fns)</option>
+          <option value="mod-sqlite">ext:db/sqlite (8 fns)</option>
+          <option value="mod-json">ext:json (6 fns)</option>
+          <option value="mod-keychain">ext:keychain (3 fns)</option>
+          <option value="mod-net">ext:net (14 fns)</option>
+          <option value="mod-http">ext:net/http (27 fns)</option>
+          <option value="mod-ssh">ext:net/ssh (23 fns)</option>
+          <option value="mod-tls">ext:net/tls (7 fns)</option>
+          <option value="mod-url">ext:net/url (3 fns)</option>
+          <option value="mod-websocket">ext:net/websocket (20 fns)</option>
+          <option value="mod-webui">ext:webui (51 fns)</option>
+          <option value="mod-rg">vendor:raygui (15 fns)</option>
+          <option value="mod-rl">vendor:raylib (24 fns)</option>
+          <option value="diagnostics">Diagnostics (21 Rules)</option>
+        </select>
+        <button type="button" class="mobile-mode-btn" id="ref-mobile-mode-cycle" onclick="setRefMode(currentRefMode==='all'?'module':'all')" title="Switch reading mode">Module</button>
+      </div>
       <div class="sidebar-content" id="sidebar-nav">
         <div style="position:relative; margin-bottom: 0.75rem;">
           <input type="text" id="ref-filter" class="search-input" placeholder="Search APIs &amp; errors (⌘K)..." oninput="filterRefNav(this.value)" autocomplete="off" />
@@ -1989,10 +2115,10 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-base64" id="nav-pane-mod-base64" onclick="navigateToRefPane('mod-base64'); return false;"><code>core:encoding/base64</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-csv" id="nav-pane-mod-csv" onclick="navigateToRefPane('mod-csv'); return false;"><code>core:encoding/csv</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-hex" id="nav-pane-mod-hex" onclick="navigateToRefPane('mod-hex'); return false;"><code>core:encoding/hex</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
-          <li class="nav-item"><a href="#mod-fs" id="nav-pane-mod-fs" onclick="navigateToRefPane('mod-fs'); return false;"><code>core:fs</code> <span style="color:var(--muted);font-size:0.75rem;">(22)</span></a></li>
+          <li class="nav-item"><a href="#mod-fs" id="nav-pane-mod-fs" onclick="navigateToRefPane('mod-fs'); return false;"><code>core:fs</code> <span style="color:var(--muted);font-size:0.75rem;">(23)</span></a></li>
           <li class="nav-item"><a href="#mod-log" id="nav-pane-mod-log" onclick="navigateToRefPane('mod-log'); return false;"><code>core:log</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
           <li class="nav-item"><a href="#mod-math" id="nav-pane-mod-math" onclick="navigateToRefPane('mod-math'); return false;"><code>core:math</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
-          <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(22)</span></a></li>
+          <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(23)</span></a></li>
           <li class="nav-item"><a href="#mod-rand" id="nav-pane-mod-rand" onclick="navigateToRefPane('mod-rand'); return false;"><code>core:rand</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-regex" id="nav-pane-mod-regex" onclick="navigateToRefPane('mod-regex'); return false;"><code>core:regex</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-sort" id="nav-pane-mod-sort" onclick="navigateToRefPane('mod-sort'); return false;"><code>core:sort</code> <span style="color:var(--muted);font-size:0.75rem;">(2)</span></a></li>
@@ -2007,7 +2133,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-ai" id="nav-pane-mod-ai" onclick="navigateToRefPane('mod-ai'); return false;"><code>ext:ai</code> <span style="color:var(--muted);font-size:0.75rem;">(38)</span></a></li>
           <li class="nav-item"><a href="#mod-audio" id="nav-pane-mod-audio" onclick="navigateToRefPane('mod-audio'); return false;"><code>ext:audio</code> <span style="color:var(--muted);font-size:0.75rem;">(25)</span></a></li>
           <li class="nav-item"><a href="#mod-zstd" id="nav-pane-mod-zstd" onclick="navigateToRefPane('mod-zstd'); return false;"><code>ext:compress/zstd</code> <span style="color:var(--muted);font-size:0.75rem;">(2)</span></a></li>
-          <li class="nav-item"><a href="#mod-sodium" id="nav-pane-mod-sodium" onclick="navigateToRefPane('mod-sodium'); return false;"><code>ext:crypto/sodium</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
+          <li class="nav-item"><a href="#mod-sodium" id="nav-pane-mod-sodium" onclick="navigateToRefPane('mod-sodium'); return false;"><code>ext:crypto/sodium</code> <span style="color:var(--muted);font-size:0.75rem;">(9)</span></a></li>
           <li class="nav-item"><a href="#mod-sqlite" id="nav-pane-mod-sqlite" onclick="navigateToRefPane('mod-sqlite'); return false;"><code>ext:db/sqlite</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-json" id="nav-pane-mod-json" onclick="navigateToRefPane('mod-json'); return false;"><code>ext:json</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
           <li class="nav-item"><a href="#mod-keychain" id="nav-pane-mod-keychain" onclick="navigateToRefPane('mod-keychain'); return false;"><code>ext:keychain</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
@@ -2017,7 +2143,7 @@ tr:hover td { background: #1F242C; }
           <li class="nav-item"><a href="#mod-tls" id="nav-pane-mod-tls" onclick="navigateToRefPane('mod-tls'); return false;"><code>ext:net/tls</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-url" id="nav-pane-mod-url" onclick="navigateToRefPane('mod-url'); return false;"><code>ext:net/url</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-websocket" id="nav-pane-mod-websocket" onclick="navigateToRefPane('mod-websocket'); return false;"><code>ext:net/websocket</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
-          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(46)</span></a></li>
+          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(51)</span></a></li>
         </ul>
         <h4 style="margin-top:1rem;">Vendor Libraries (2)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
@@ -2080,7 +2206,7 @@ tr:hover td { background: #1F242C; }
           </button>
         </div>
       </div>
-      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-title="Overview (All 38 Modules)">
+      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-short="Overview" data-pane-title="Overview (All 38 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
         <p class="subtitle" style="margin:0 0 1.5rem;">38 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (22 zero-dependency C++23 modules), <strong><code>ext:*</code> Domain Extensions</strong> (14 opt-in networking, database, compression, audio, AI, and WebUI modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ engines) — plus 21 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Strings, Unicode, Regex &amp; Containers</div>
@@ -2131,7 +2257,7 @@ tr:hover td { background: #1F242C; }
           <a href="#mod-fs" class="ref-mod-card" onclick="navigateToRefPane('mod-fs'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:fs</span>
-              <span class="ref-mod-card-count">22 fns</span>
+              <span class="ref-mod-card-count">23 fns</span>
             </div>
             <div class="ref-mod-card-title">Filesystem &amp; Zero-Copy Byte I/O</div>
             <div class="ref-mod-card-desc">Provides RAII file and directory utilities backed by <code>std::filesystem</code> and <code>std::vector&lt;std::byte&gt;</code>.</div>
@@ -2139,7 +2265,7 @@ tr:hover td { background: #1F242C; }
           <a href="#mod-os" class="ref-mod-card" onclick="navigateToRefPane('mod-os'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:os</span>
-              <span class="ref-mod-card-count">22 fns</span>
+              <span class="ref-mod-card-count">23 fns</span>
             </div>
             <div class="ref-mod-card-title">Environment, File Descriptors, Terminal, Pipes &amp; Subprocesses</div>
             <div class="ref-mod-card-desc">Process environment inspection, working directory queries, safe EINTR-resilient POSIX file descriptor operations (<code>STDIN</code>, <code>STDOUT</code>, <code>STDERR</code>, <code>fd_read</code>, <code>fd_write</code>, <code>fd_close</code>, <code>pipe</code>, <code>socketpair</code>, <code>poll_fd</code>), raw terminal control (<code>term_size</code>, <code>make_raw</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>).</div>
@@ -2345,7 +2471,7 @@ tr:hover td { background: #1F242C; }
           <a href="#mod-webui" class="ref-mod-card" onclick="navigateToRefPane('mod-webui'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">ext:webui</span>
-              <span class="ref-mod-card-count">46 fns</span>
+              <span class="ref-mod-card-count">51 fns</span>
             </div>
             <div class="ref-mod-card-title">Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</div>
             <div class="ref-mod-card-desc">Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge.</div>
@@ -2389,7 +2515,7 @@ tr:hover td { background: #1F242C; }
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-build" data-pane-id="mod-build" data-pane-title="core:build — Declarative Project &amp; Cross-Platform Build System (`build.cf`)">
+      <article class="ref-pane" id="ref-pane-mod-build" data-pane-id="mod-build" data-pane-short="core:build" data-pane-title="core:build — Declarative Project &amp; Cross-Platform Build System (`build.cf`)">
         <h2 id="mod-build" style="margin-top:0.25rem;"><code>import "core:build"</code> &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</h2>
         <p>Declarative build manifest module (<code>build.cf</code>) for configuring native, GUI, WebAssembly, and iOS executables (<code>build.Executable</code>), static/shared libraries (<code>build.Library</code>), pre-build codegen steps (<code>build.Step</code>), external CMake/Git dependencies (<code>build.CMake</code>, <code>build.GitDependency</code>), pkg-config/framework links, and compile-time host/target queries (<code>build.os()</code>, <code>build.arch()</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(compiler-integrated)</code> &bull; Namespace: <code>build.*</code> &bull; 10 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2436,7 +2562,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-cli" data-pane-id="mod-cli" data-pane-title="core:cli — Struct-Tag Command-Line Parser &amp; Interactive Prompts">
+      <article class="ref-pane" id="ref-pane-mod-cli" data-pane-id="mod-cli" data-pane-short="core:cli" data-pane-title="core:cli — Struct-Tag Command-Line Parser &amp; Interactive Prompts">
         <h2 id="mod-cli" style="margin-top:0.25rem;"><code>import "core:cli"</code> &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</h2>
         <p>Generates zero-boilerplate command-line flag parsers from struct field tags (<code>cli:&quot;--flag,help&quot;</code>), subcommand/positional argument helpers, and interactive terminal prompts. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>cli.*</code> &bull; 7 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2480,7 +2606,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-collections" data-pane-id="mod-collections" data-pane-title="core:collections — Generic Containers (Set, PriorityQueue, Deque)">
+      <article class="ref-pane" id="ref-pane-mod-collections" data-pane-id="mod-collections" data-pane-short="core:collections" data-pane-title="core:collections — Generic Containers (Set, PriorityQueue, Deque)">
         <h2 id="mod-collections" style="margin-top:0.25rem;"><code>import "core:collections"</code> &mdash; Generic Containers (Set, PriorityQueue, Deque)</h2>
         <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>collections.*</code> &bull; 3 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2527,7 +2653,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-aes" data-pane-id="mod-aes" data-pane-title="core:crypto/aes — NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD">
+      <article class="ref-pane" id="ref-pane-mod-aes" data-pane-id="mod-aes" data-pane-short="core:crypto/aes" data-pane-title="core:crypto/aes — NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD">
         <h2 id="mod-aes" style="margin-top:0.25rem;"><code>import "core:crypto/aes"</code> &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</h2>
         <p>Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(Header-only pure C++23)</code> &bull; Namespace: <code>aes.*</code> &bull; 7 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2573,7 +2699,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-blake3" data-pane-id="mod-blake3" data-pane-title="core:crypto/blake3 — Cryptographic 256-Bit Digest (Alias)">
+      <article class="ref-pane" id="ref-pane-mod-blake3" data-pane-id="mod-blake3" data-pane-short="core:crypto/blake3" data-pane-title="core:crypto/blake3 — Cryptographic 256-Bit Digest (Alias)">
         <h2 id="mod-blake3" style="margin-top:0.25rem;"><code>import "core:crypto/blake3"</code> &mdash; Cryptographic 256-Bit Digest (Alias)</h2>
         <p>Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for <code>core:crypto/sha256</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>blake3.*</code> &bull; 1 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2603,7 +2729,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-hmac" data-pane-id="mod-hmac" data-pane-title="core:crypto/hmac — RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256">
+      <article class="ref-pane" id="ref-pane-mod-hmac" data-pane-id="mod-hmac" data-pane-short="core:crypto/hmac" data-pane-title="core:crypto/hmac — RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256">
         <h2 id="mod-hmac" style="margin-top:0.25rem;"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</h2>
         <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>hmac.*</code> &bull; 5 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2643,7 +2769,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-sha256" data-pane-id="mod-sha256" data-pane-title="core:crypto/sha256 — Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG">
+      <article class="ref-pane" id="ref-pane-mod-sha256" data-pane-id="mod-sha256" data-pane-short="core:crypto/sha256" data-pane-title="core:crypto/sha256 — Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG">
         <h2 id="mod-sha256" style="margin-top:0.25rem;"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</h2>
         <p>Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>sha256.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2676,7 +2802,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-base64" data-pane-id="mod-base64" data-pane-title="core:encoding/base64 — RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding">
+      <article class="ref-pane" id="ref-pane-mod-base64" data-pane-id="mod-base64" data-pane-short="core:encoding/base64" data-pane-title="core:encoding/base64 — RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding">
         <h2 id="mod-base64" style="margin-top:0.25rem;"><code>import "core:encoding/base64"</code> &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</h2>
         <p>High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>base64.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2712,7 +2838,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-csv" data-pane-id="mod-csv" data-pane-title="core:encoding/csv — RFC 4180 CSV Parsing &amp; Stringification">
+      <article class="ref-pane" id="ref-pane-mod-csv" data-pane-id="mod-csv" data-pane-short="core:encoding/csv" data-pane-title="core:encoding/csv — RFC 4180 CSV Parsing &amp; Stringification">
         <h2 id="mod-csv" style="margin-top:0.25rem;"><code>import "core:encoding/csv"</code> &mdash; RFC 4180 CSV Parsing &amp; Stringification</h2>
         <p>RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>csv.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2751,7 +2877,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-hex" data-pane-id="mod-hex" data-pane-title="core:encoding/hex — Hexadecimal Encoding &amp; Decoding">
+      <article class="ref-pane" id="ref-pane-mod-hex" data-pane-id="mod-hex" data-pane-short="core:encoding/hex" data-pane-title="core:encoding/hex — Hexadecimal Encoding &amp; Decoding">
         <h2 id="mod-hex" style="margin-top:0.25rem;"><code>import "core:encoding/hex"</code> &mdash; Hexadecimal Encoding &amp; Decoding</h2>
         <p>Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>hex.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2787,9 +2913,9 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-fs" data-pane-id="mod-fs" data-pane-title="core:fs — Filesystem &amp; Zero-Copy Byte I/O">
+      <article class="ref-pane" id="ref-pane-mod-fs" data-pane-id="mod-fs" data-pane-short="core:fs" data-pane-title="core:fs — Filesystem &amp; Zero-Copy Byte I/O">
         <h2 id="mod-fs" style="margin-top:0.25rem;"><code>import "core:fs"</code> &mdash; Filesystem &amp; Zero-Copy Byte I/O</h2>
-        <p>Provides RAII file and directory utilities backed by <code>std::filesystem</code> and <code>std::vector&lt;std::byte&gt;</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>fs.*</code> &bull; 22 exported functions</small></p>
+        <p>Provides RAII file and directory utilities backed by <code>std::filesystem</code> and <code>std::vector&lt;std::byte&gt;</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>fs.*</code> &bull; 23 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2814,9 +2940,10 @@ fn main() {
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn read_all(path: str) -&gt; []byte!</code></td><td><code>cfire::fs::read_all(path)</code></td><td>Reads an entire binary file into a byte buffer.<br/><code>raw := try fs.read_all(&quot;input.bin&quot;)</code></td></tr>
-            <tr><td><code>fn write_all(path: str, data: []byte) -&gt; void!</code></td><td><code>cfire::fs::write_all(path, data)</code></td><td>Writes a byte slice atomically to disk, creating parent directories if needed.<br/><code>try fs.write_all(&quot;out.bin&quot;, raw)</code></td></tr>
+            <tr><td><code>fn write_all(path: str, data: []byte) -&gt; void!</code></td><td><code>cfire::fs::write_all(path, data)</code></td><td>Writes a byte slice or string to disk (truncating any existing file).<br/><code>try fs.write_all(&quot;out.bin&quot;, raw)</code></td></tr>
             <tr><td><code>fn read_text(path: str) -&gt; str!</code></td><td><code>cfire::fs::read_text(path)</code></td><td>Reads an entire UTF-8 text file into a <code>str</code>.<br/><code>txt := try fs.read_text(&quot;config.json&quot;)</code></td></tr>
             <tr><td><code>fn write_text(path: str, text: str) -&gt; void!</code></td><td><code>cfire::fs::write_text(path, text)</code></td><td>Writes a UTF-8 string to disk.<br/><code>try fs.write_text(&quot;hello.txt&quot;, &quot;sapphire&quot;)</code></td></tr>
+            <tr><td><code>fn rename(from: str, to: str) -&gt; void!</code></td><td><code>cfire::fs::rename(from, to)</code></td><td>Renames or moves a file or directory.<br/><code>try fs.rename(&quot;tmp.bin&quot;, &quot;final.bin&quot;)</code></td></tr>
             <tr><td><code>fn open(path: str, mode: OpenMode = OpenMode::Read) -&gt; File!</code></td><td><code>cfire::fs::open(path, mode)</code></td><td>Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.<br/><code>mut f := try fs.open(&quot;log.txt&quot;, OpenMode::Append)</code></td></tr>
             <tr><td><code>fn (f: File) fd() -&gt; i32</code></td><td><code>f.fd()</code></td><td>Returns the underlying OS file descriptor (<code>-1</code> if closed).<br/><code>fd := f.fd()</code></td></tr>
             <tr><td><code>fn (mut f: File) read(mut buf: []byte) -&gt; usize!</code></td><td><code>f.read(buf)</code></td><td>Reads up to <code>buf.len()</code> bytes from the streaming file handle.<br/><code>n := try f.read(mut buf)</code></td></tr>
@@ -2848,7 +2975,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-log" data-pane-id="mod-log" data-pane-title="core:log — Structured Leveled Logging">
+      <article class="ref-pane" id="ref-pane-mod-log" data-pane-id="mod-log" data-pane-short="core:log" data-pane-title="core:log — Structured Leveled Logging">
         <h2 id="mod-log" style="margin-top:0.25rem;"><code>import "core:log"</code> &mdash; Structured Leveled Logging</h2>
         <p>Leveled logging (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>) with structured key-value attributes and Text / JSON formatters. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>log.*</code> &bull; 6 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2887,7 +3014,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-math" data-pane-id="mod-math" data-pane-title="core:math — Numeric &amp; Floating-Point Utilities">
+      <article class="ref-pane" id="ref-pane-mod-math" data-pane-id="mod-math" data-pane-short="core:math" data-pane-title="core:math — Numeric &amp; Floating-Point Utilities">
         <h2 id="mod-math" style="margin-top:0.25rem;"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
         <p>Standard mathematical constants (<code>PI</code>, <code>E</code>) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>math.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -2920,9 +3047,9 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-os" data-pane-id="mod-os" data-pane-title="core:os — Environment, File Descriptors, Terminal, Pipes &amp; Subprocesses">
+      <article class="ref-pane" id="ref-pane-mod-os" data-pane-id="mod-os" data-pane-short="core:os" data-pane-title="core:os — Environment, File Descriptors, Terminal, Pipes &amp; Subprocesses">
         <h2 id="mod-os" style="margin-top:0.25rem;"><code>import "core:os"</code> &mdash; Environment, File Descriptors, Terminal, Pipes &amp; Subprocesses</h2>
-        <p>Process environment inspection, working directory queries, safe EINTR-resilient POSIX file descriptor operations (<code>STDIN</code>, <code>STDOUT</code>, <code>STDERR</code>, <code>fd_read</code>, <code>fd_write</code>, <code>fd_close</code>, <code>pipe</code>, <code>socketpair</code>, <code>poll_fd</code>), raw terminal control (<code>term_size</code>, <code>make_raw</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>os.*</code> &bull; 22 exported functions</small></p>
+        <p>Process environment inspection, working directory queries, safe EINTR-resilient POSIX file descriptor operations (<code>STDIN</code>, <code>STDOUT</code>, <code>STDERR</code>, <code>fd_read</code>, <code>fd_write</code>, <code>fd_close</code>, <code>pipe</code>, <code>socketpair</code>, <code>poll_fd</code>), raw terminal control (<code>term_size</code>, <code>make_raw</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>os.*</code> &bull; 23 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2945,6 +3072,7 @@ fn main() {
             <tr><td><code>fn getenv_opt(key: str) -&gt; str?</code></td><td><code>cfire::os::getenv_opt(key)</code></td><td>Reads environment variable <code>key</code>, returning <code>none</code> if unset.<br/><code>val := os.getenv_opt(&quot;API_KEY&quot;) or { return }</code></td></tr>
             <tr><td><code>fn setenv(key: str, value: str)</code></td><td><code>cfire::os::setenv(key, value)</code></td><td>Sets environment variable <code>key</code> to <code>value</code> in the current process.<br/><code>os.setenv(&quot;MODE&quot;, &quot;prod&quot;)</code></td></tr>
             <tr><td><code>fn cwd() -&gt; str</code></td><td><code>cfire::os::cwd()</code></td><td>Returns the current working directory path.<br/><code>dir := os.cwd()</code></td></tr>
+            <tr><td><code>fn getpid() -&gt; i64</code></td><td><code>cfire::os::getpid()</code></td><td>Returns the process ID (PID) of the current process.<br/><code>pid := os.getpid()</code></td></tr>
             <tr><td><code>fn is_tty(fd: i32 = os.STDIN) -&gt; bool</code></td><td><code>cfire::os::is_tty(fd)</code></td><td>Returns <code>true</code> if file descriptor <code>fd</code> (defaulting to <code>os.STDIN</code>) refers to an interactive terminal.<br/><code>if os.is_tty(os.STDOUT) { ... }</code></td></tr>
             <tr><td><code>fn term_size(fd: i32 = os.STDIN) -&gt; TermSize</code></td><td><code>cfire::os::term_size(fd)</code></td><td>Queries terminal dimensions (<code>cols</code>, <code>rows</code>) via <code>TIOCGWINSZ</code>, defaulting to 80x24 if not a TTY.<br/><code>sz := os.term_size()</code></td></tr>
             <tr><td><code>fn make_raw(fd: i32 = os.STDIN) -&gt; RawTerminal!</code></td><td><code>cfire::os::make_raw(fd)</code></td><td>Places terminal file descriptor <code>fd</code> into raw mode (<code>cfmakeraw</code>) and returns an RAII <code>RawTerminal</code> guard that restores <code>termios</code> on scope exit.<br/><code>raw := try os.make_raw()</code></td></tr>
@@ -2974,7 +3102,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-rand" data-pane-id="mod-rand" data-pane-title="core:rand — Thread-Local MT19937_64 &amp; CSPRNG Generator">
+      <article class="ref-pane" id="ref-pane-mod-rand" data-pane-id="mod-rand" data-pane-short="core:rand" data-pane-title="core:rand — Thread-Local MT19937_64 &amp; CSPRNG Generator">
         <h2 id="mod-rand" style="margin-top:0.25rem;"><code>import "core:rand"</code> &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</h2>
         <p>Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>rand.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3008,7 +3136,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-regex" data-pane-id="mod-regex" data-pane-title="core:regex — ECMAScript Regular Expressions">
+      <article class="ref-pane" id="ref-pane-mod-regex" data-pane-id="mod-regex" data-pane-short="core:regex" data-pane-title="core:regex — ECMAScript Regular Expressions">
         <h2 id="mod-regex" style="margin-top:0.25rem;"><code>import "core:regex"</code> &mdash; ECMAScript Regular Expressions</h2>
         <p>Pattern matching, group extraction, and text substitution backed by C++23 <code>&lt;regex&gt;</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>regex.*</code> &bull; 3 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3048,7 +3176,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-sort" data-pane-id="mod-sort" data-pane-title="core:sort — Slice Sorting &amp; Binary Search">
+      <article class="ref-pane" id="ref-pane-mod-sort" data-pane-id="mod-sort" data-pane-short="core:sort" data-pane-title="core:sort — Slice Sorting &amp; Binary Search">
         <h2 id="mod-sort" style="margin-top:0.25rem;"><code>import "core:sort"</code> &mdash; Slice Sorting &amp; Binary Search</h2>
         <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sort.*</code> &bull; 2 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3086,7 +3214,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-str" data-pane-id="mod-str" data-pane-title="core:str — UTF-8 String Manipulation">
+      <article class="ref-pane" id="ref-pane-mod-str" data-pane-id="mod-str" data-pane-short="core:str" data-pane-title="core:str — UTF-8 String Manipulation">
         <h2 id="mod-str" style="margin-top:0.25rem;"><code>import "core:str"</code> &mdash; UTF-8 String Manipulation</h2>
         <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>str.*</code> &bull; 24 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3141,7 +3269,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-sync" data-pane-id="mod-sync" data-pane-title="core:sync — Thread-Safe Typed Channels &amp; Mutexes">
+      <article class="ref-pane" id="ref-pane-mod-sync" data-pane-id="mod-sync" data-pane-short="core:sync" data-pane-title="core:sync — Thread-Safe Typed Channels &amp; Mutexes">
         <h2 id="mod-sync" style="margin-top:0.25rem;"><code>import "core:sync"</code> &mdash; Thread-Safe Typed Channels &amp; Mutexes</h2>
         <p>Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sync.*</code> &bull; 13 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3200,7 +3328,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-context" data-pane-id="mod-context" data-pane-title="core:sync/context — Cancellation Tokens &amp; Deadline Contexts">
+      <article class="ref-pane" id="ref-pane-mod-context" data-pane-id="mod-context" data-pane-short="core:sync/context" data-pane-title="core:sync/context — Cancellation Tokens &amp; Deadline Contexts">
         <h2 id="mod-context" style="margin-top:0.25rem;"><code>import "core:sync/context"</code> &mdash; Cancellation Tokens &amp; Deadline Contexts</h2>
         <p>Structured concurrency cancellation token and deadline propagation hierarchy (<code>core:sync/context</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>context.*</code> &bull; 8 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3243,7 +3371,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-time" data-pane-id="mod-time" data-pane-title="core:time — Time, Calendar Dates, Durations &amp; RFC 3339 Formatting">
+      <article class="ref-pane" id="ref-pane-mod-time" data-pane-id="mod-time" data-pane-short="core:time" data-pane-title="core:time — Time, Calendar Dates, Durations &amp; RFC 3339 Formatting">
         <h2 id="mod-time" style="margin-top:0.25rem;"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>
         <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by <code>std::chrono</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>time.*</code> &bull; 10 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3286,7 +3414,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-unicode" data-pane-id="mod-unicode" data-pane-title="core:unicode — UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation">
+      <article class="ref-pane" id="ref-pane-mod-unicode" data-pane-id="mod-unicode" data-pane-short="core:unicode" data-pane-title="core:unicode — UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation">
         <h2 id="mod-unicode" style="margin-top:0.25rem;"><code>import "core:unicode"</code> &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</h2>
         <p>RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>unicode.*</code> &bull; 6 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3330,7 +3458,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-ai" data-pane-id="mod-ai" data-pane-title="ext:ai — On-Device &amp; Cloud AI, Document Ingestion &amp; MCP">
+      <article class="ref-pane" id="ref-pane-mod-ai" data-pane-id="mod-ai" data-pane-short="ext:ai" data-pane-title="ext:ai — On-Device &amp; Cloud AI, Document Ingestion &amp; MCP">
         <h2 id="mod-ai" style="margin-top:0.25rem;"><code>import "ext:ai"</code> &mdash; On-Device &amp; Cloud AI, Document Ingestion &amp; MCP</h2>
         <p>Unified AI SDK supporting OpenAI, Anthropic Claude, Google Gemini, Ollama, vLLM/llama.cpp (<code>openai_compatible</code>), and Cross-Platform On-Device Intelligence (<code>NaturalLanguage</code>/<code>PDFKit</code>/<code>Vision</code> on Apple; dynamic <code>libtesseract</code>/<code>pdftotext</code> + pure C++23 decoders and AVX2/NEON SIMD on Linux/WASM), with compile-time structured outputs (<code>generate_struct[T]</code>, <code>generate_struct_from_file[T]</code>), multimodal file attachments (<code>user_with_file</code>, <code>ask_with_file</code>), zero-dependency document and slide extraction (<code>load_document</code>, <code>chunk_document</code> for <code>.pdf</code>, <code>.docx</code>, <code>.pptx</code>, <code>.xlsx</code>, <code>.odt</code>, <code>.odp</code>, <code>.ods</code>, <code>.epub</code>, <code>.html</code>, <code>.md</code>, <code>.csv</code>, images), on-device OCR (<code>ocr</code>), text and image embeddings (<code>embed</code>, <code>embed_image</code>), and a Model Context Protocol server (<code>McpServer</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS + AVX2/NEON SIMD + NaturalLanguage / PDFKit / Vision / Tesseract)</code> &bull; Namespace: <code>ai.*</code> &bull; 38 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3429,7 +3557,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-audio" data-pane-id="mod-audio" data-pane-title="ext:audio — Audio Engine, Polyphonic Mixer, Synth &amp; WAV">
+      <article class="ref-pane" id="ref-pane-mod-audio" data-pane-id="mod-audio" data-pane-short="ext:audio" data-pane-title="ext:audio — Audio Engine, Polyphonic Mixer, Synth &amp; WAV">
         <h2 id="mod-audio" style="margin-top:0.25rem;"><code>import "ext:audio"</code> &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</h2>
         <p>Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic <code>Sound</code> playback with pitch/pan/looping, and real-time float32 <code>Stream</code> DSP across macOS, iOS, WebAssembly, and Linux. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(AudioToolbox / WebAudio / ALSA)</code> &bull; Namespace: <code>audio.*</code> &bull; 25 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3498,7 +3626,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-zstd" data-pane-id="mod-zstd" data-pane-title="ext:compress/zstd — Native Zstandard Frame Compression">
+      <article class="ref-pane" id="ref-pane-mod-zstd" data-pane-id="mod-zstd" data-pane-short="ext:compress/zstd" data-pane-title="ext:compress/zstd — Native Zstandard Frame Compression">
         <h2 id="mod-zstd" style="margin-top:0.25rem;"><code>import "ext:compress/zstd"</code> &mdash; Native Zstandard Frame Compression</h2>
         <p>Hardware-accelerated Zstandard frame compression and decompression backed by native <code>libzstd</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lzstd</code> &bull; Namespace: <code>zstd.*</code> &bull; 2 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3531,13 +3659,13 @@ fn main() {
           </a>
           <a href="#mod-sodium" class="pager-card next" onclick="navigateToRefPane('mod-sodium'); return false;">
             <span class="pager-dir">Next Module (26/38) &rarr;</span>
-            <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF &amp; XChaCha20-Poly1305 AEAD</span>
+            <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-sodium" data-pane-id="mod-sodium" data-pane-title="ext:crypto/sodium — Memory-Hard Argon2id KDF &amp; XChaCha20-Poly1305 AEAD">
-        <h2 id="mod-sodium" style="margin-top:0.25rem;"><code>import "ext:crypto/sodium"</code> &mdash; Memory-Hard Argon2id KDF &amp; XChaCha20-Poly1305 AEAD</h2>
-        <p>Modern cryptographic primitives backed by <code>libsodium</code> (<code>crypto_pwhash</code> Argon2id password hashing and <code>crypto_aead_xchacha20poly1305_ietf</code> 192-bit nonce AEAD) with automatic portable C++23 fallback. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsodium (or built-in fallback)</code> &bull; Namespace: <code>sodium.*</code> &bull; 7 exported functions</small></p>
+      <article class="ref-pane" id="ref-pane-mod-sodium" data-pane-id="mod-sodium" data-pane-short="ext:crypto/sodium" data-pane-title="ext:crypto/sodium — Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD">
+        <h2 id="mod-sodium" style="margin-top:0.25rem;"><code>import "ext:crypto/sodium"</code> &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</h2>
+        <p>Modern cryptographic primitives backed by <code>libsodium</code> (<code>crypto_pwhash</code> Argon2id password hashing, <code>crypto_generichash</code> keyed/unkeyed BLAKE2b, <code>crypto_kdf_derive_from_key</code> subkey derivation, and <code>crypto_aead_xchacha20poly1305_ietf</code> 192-bit nonce AEAD). <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsodium</code> &bull; Namespace: <code>sodium.*</code> &bull; 9 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3558,6 +3686,8 @@ fn main() {
             <tr><td><code>fn argon2id(password: str, salt: []byte, out_len: usize = 32, opslimit: u64 = 2, memlimit: usize = 67108864) -&gt; []byte!</code></td><td><code>cfire::sodium::argon2id(password, salt, out_len, opslimit, memlimit)</code></td><td>Derives a cryptographic key of <code>out_len</code> bytes from <code>password</code> and a 16-byte <code>salt</code> using Argon2id.<br/><code>key := try sodium.argon2id(master_pw, salt, 32)</code></td></tr>
             <tr><td><code>fn argon2id_str(password: str, opslimit: u64 = 2, memlimit: usize = 67108864) -&gt; str!</code></td><td><code>cfire::sodium::argon2id_str(password, opslimit, memlimit)</code></td><td>Hashes a password into a PHC-formatted <code>$argon2id$...</code> verification string.<br/><code>encoded := try sodium.argon2id_str(password)</code></td></tr>
             <tr><td><code>fn argon2id_verify(encoded: str, password: str) -&gt; bool</code></td><td><code>cfire::sodium::argon2id_verify(encoded, password)</code></td><td>Verifies a password against an encoded Argon2id hash string in constant time.<br/><code>ok := sodium.argon2id_verify(encoded, password)</code></td></tr>
+            <tr><td><code>fn blake2b(input: []byte | str, out_len: usize = 32, key: []byte = []) -&gt; []byte!</code></td><td><code>cfire::sodium::blake2b(input, out_len, key)</code></td><td>Computes a keyed or unkeyed BLAKE2b hash (<code>crypto_generichash</code>) of <code>out_len</code> bytes (16..64).<br/><code>mac := try sodium.blake2b(payload, 32, key)</code></td></tr>
+            <tr><td><code>fn derive_subkey(master_key: []byte, subkey_id: u64, context: str, out_len: usize = 32) -&gt; []byte!</code></td><td><code>cfire::sodium::derive_subkey(master_key, subkey_id, context, out_len)</code></td><td>Derives a domain-separated subkey of <code>out_len</code> bytes (16..64) from a 32-byte <code>master_key</code>, <code>subkey_id</code>, and 8-byte <code>context</code> (<code>crypto_kdf_derive_from_key</code>).<br/><code>sub := try sodium.derive_subkey(master_key, 1, &quot;flintkdf&quot;, 32)</code></td></tr>
             <tr><td><code>fn xchacha20poly1305_encrypt(key: []byte, plaintext: []byte, aad: []byte = []) -&gt; []byte!</code></td><td><code>cfire::sodium::xchacha20poly1305_encrypt(key, pt, aad)</code></td><td>Encrypts <code>plaintext</code> with a 32-byte key using XChaCha20-Poly1305, returning <code>[24-byte random nonce || ciphertext || 16-byte Poly1305 tag]</code>.<br/><code>sealed := try sodium.xchacha20poly1305_encrypt(key, secret)</code></td></tr>
             <tr><td><code>fn xchacha20poly1305_decrypt(key: []byte, combined: []byte, aad: []byte = []) -&gt; []byte!</code></td><td><code>cfire::sodium::xchacha20poly1305_decrypt(key, combined, aad)</code></td><td>Authenticates and decrypts a <code>[24-byte nonce || ciphertext || 16-byte tag]</code> XChaCha20-Poly1305 payload.<br/><code>pt := try sodium.xchacha20poly1305_decrypt(key, sealed)</code></td></tr>
             <tr><td><code>fn random_bytes(n: usize) -&gt; []byte</code></td><td><code>cfire::sodium::random_bytes(n)</code></td><td>Generates <code>n</code> cryptographically secure random bytes (<code>randombytes_buf</code>).<br/><code>salt := sodium.random_bytes(16)</code></td></tr>
@@ -3575,7 +3705,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-sqlite" data-pane-id="mod-sqlite" data-pane-title="ext:db/sqlite — Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping">
+      <article class="ref-pane" id="ref-pane-mod-sqlite" data-pane-id="mod-sqlite" data-pane-short="ext:db/sqlite" data-pane-title="ext:db/sqlite — Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping">
         <h2 id="mod-sqlite" style="margin-top:0.25rem;"><code>import "ext:db/sqlite"</code> &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</h2>
         <p>RAII SQLite3 &amp; SQLCipher wrapper enabling <code>PRAGMA journal_mode=WAL</code>, <code>open_encrypted</code> full-database encryption, parameterized queries, <code>[]f32</code> embedding BLOB binding, built-in SQL vector similarity functions (<code>vec_cosine_similarity</code>, <code>vec_l2_distance</code>, <code>vec_dot</code>), dynamic extension loading (<code>sqlite-vec</code>), atomic transactions, and compile-time <code>sql:&quot;...&quot;</code> struct row mapping. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsqlite3 / -lsqlcipher</code> &bull; Namespace: <code>sqlite.*</code> &bull; 8 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3624,7 +3754,7 @@ fn main() {
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sodium" class="pager-card prev" onclick="navigateToRefPane('mod-sodium'); return false;">
             <span class="pager-dir">&larr; Previous Module (26/38)</span>
-            <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF &amp; XChaCha20-Poly1305 AEAD</span>
+            <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
           <a href="#mod-json" class="pager-card next" onclick="navigateToRefPane('mod-json'); return false;">
             <span class="pager-dir">Next Module (28/38) &rarr;</span>
@@ -3632,7 +3762,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-json" data-pane-id="mod-json" data-pane-title="ext:json — Compile-Time SIMD JSON Reflection &amp; Dynamic DOM">
+      <article class="ref-pane" id="ref-pane-mod-json" data-pane-id="mod-json" data-pane-short="ext:json" data-pane-title="ext:json — Compile-Time SIMD JSON Reflection &amp; Dynamic DOM">
         <h2 id="mod-json" style="margin-top:0.25rem;"><code>import "ext:json"</code> &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</h2>
         <p>Uses <code>json:&quot;...&quot;</code> struct tags (with automatic field-name fallback and <code>T?</code> optional field support) to emit specialized <code>simdjson::ondemand</code> parsers and fast <code>std::format</code> serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM <code>json.Value</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lsimdjson (or header-only)</code> &bull; Namespace: <code>json.*</code> &bull; 6 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3682,7 +3812,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-keychain" data-pane-id="mod-keychain" data-pane-title="ext:keychain — Native OS Credential Keychain &amp; Secret Service">
+      <article class="ref-pane" id="ref-pane-mod-keychain" data-pane-id="mod-keychain" data-pane-short="ext:keychain" data-pane-title="ext:keychain — Native OS Credential Keychain &amp; Secret Service">
         <h2 id="mod-keychain" style="margin-top:0.25rem;"><code>import "ext:keychain"</code> &mdash; Native OS Credential Keychain &amp; Secret Service</h2>
         <p>Cross-platform OS credential storage backed by <code>Security.framework</code> (<code>SecItemAdd</code> / <code>SecItemCopyMatching</code> / <code>SecItemDelete</code>) on macOS &amp; iOS, <code>libsecret</code> (<code>secret-tool</code>) on Linux, and Windows Credential Manager (<code>CredWriteA</code> / <code>CredReadA</code>) on Windows. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-framework Security (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)</code> &bull; Namespace: <code>keychain.*</code> &bull; 3 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3715,7 +3845,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-net" data-pane-id="mod-net" data-pane-title="ext:net — POSIX BSD TCP Sockets &amp; Loopback Networking">
+      <article class="ref-pane" id="ref-pane-mod-net" data-pane-id="mod-net" data-pane-short="ext:net" data-pane-title="ext:net — POSIX BSD TCP Sockets &amp; Loopback Networking">
         <h2 id="mod-net" style="margin-top:0.25rem;"><code>import "ext:net"</code> &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</h2>
         <p>RAII TCP client and listener sockets backed by BSD <code>AF_INET</code> sockets with non-blocking <code>poll</code> timeouts and automatic <code>AF_UNIX</code> <code>socketpair</code> loopback fallback inside sandboxes. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets)</code> &bull; Namespace: <code>net.*</code> &bull; 14 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3768,7 +3898,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-http" data-pane-id="mod-http" data-pane-title="ext:net/http — HTTP/1.1 &amp; HTTPS Client, Server &amp; Router">
+      <article class="ref-pane" id="ref-pane-mod-http" data-pane-id="mod-http" data-pane-short="ext:net/http" data-pane-title="ext:net/http — HTTP/1.1 &amp; HTTPS Client, Server &amp; Router">
         <h2 id="mod-http" style="margin-top:0.25rem;"><code>import "ext:net/http"</code> &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</h2>
         <p>RFC 9112 HTTP/1.1 &amp; HTTPS client (<code>get</code>, <code>post</code>, <code>request</code>), wire parser (<code>parse_request</code>), response serializer (<code>Response</code>), multi-mode HTTP/HTTPS server (<code>make_server</code>, <code>make_tls_server</code>), and request router (<code>make_router</code>) with integrated WebSocket route upgrade (<code>Router.ws</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code> &bull; Namespace: <code>http.*</code> &bull; 27 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3847,7 +3977,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-ssh" data-pane-id="mod-ssh" data-pane-title="ext:net/ssh — First-Class SSH Client, PTY, SFTP &amp; Port Forwarding">
+      <article class="ref-pane" id="ref-pane-mod-ssh" data-pane-id="mod-ssh" data-pane-short="ext:net/ssh" data-pane-title="ext:net/ssh — First-Class SSH Client, PTY, SFTP &amp; Port Forwarding">
         <h2 id="mod-ssh" style="margin-top:0.25rem;"><code>import "ext:net/ssh"</code> &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</h2>
         <p>SSHv2 client, interactive PTY terminal sessions, one-shot command execution, SFTP file transfers, and TCP port forwarding backed by <code>libssh</code> (<code>CFIRE_HAS_LIBSSH=1</code>) with deterministic loopback/mock support (<code>ssh.enable_mock_server()</code>) for headless testing. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lssh (libssh)</code> &bull; Namespace: <code>ssh.*</code> &bull; 23 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3914,7 +4044,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-tls" data-pane-id="mod-tls" data-pane-title="ext:net/tls — TLS 1.2 / 1.3 &amp; X.509 Certificate Engine">
+      <article class="ref-pane" id="ref-pane-mod-tls" data-pane-id="mod-tls" data-pane-short="ext:net/tls" data-pane-title="ext:net/tls — TLS 1.2 / 1.3 &amp; X.509 Certificate Engine">
         <h2 id="mod-tls" style="margin-top:0.25rem;"><code>import "ext:net/tls"</code> &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</h2>
         <p>Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(OpenSSL dynamic bridge)</code> &bull; Namespace: <code>tls.*</code> &bull; 7 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3959,7 +4089,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-url" data-pane-id="mod-url" data-pane-title="ext:net/url — RFC 3986 URL Parsing &amp; URL Encoding">
+      <article class="ref-pane" id="ref-pane-mod-url" data-pane-id="mod-url" data-pane-short="ext:net/url" data-pane-title="ext:net/url — RFC 3986 URL Parsing &amp; URL Encoding">
         <h2 id="mod-url" style="margin-top:0.25rem;"><code>import "ext:net/url"</code> &mdash; RFC 3986 URL Parsing &amp; URL Encoding</h2>
         <p>RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>url.*</code> &bull; 3 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -3995,7 +4125,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-websocket" data-pane-id="mod-websocket" data-pane-title="ext:net/websocket — RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server">
+      <article class="ref-pane" id="ref-pane-mod-websocket" data-pane-id="mod-websocket" data-pane-short="ext:net/websocket" data-pane-title="ext:net/websocket — RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server">
         <h2 id="mod-websocket" style="margin-top:0.25rem;"><code>import "ext:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</h2>
         <p>RFC 6455 full-duplex <code>ws://</code> and <code>wss://</code> WebSocket client (<code>connect</code>, <code>connect_insecure</code>), standalone server (<code>make_server</code>, <code>make_tls_server</code>, <code>make_tls_server_pem</code>), and connection upgrade handler (<code>upgrade</code>) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code> &bull; Namespace: <code>websocket.*</code> &bull; 20 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -4056,9 +4186,9 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-webui" data-pane-id="mod-webui" data-pane-title="ext:webui — Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework">
+      <article class="ref-pane" id="ref-pane-mod-webui" data-pane-id="mod-webui" data-pane-short="ext:webui" data-pane-title="ext:webui — Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework">
         <h2 id="mod-webui" style="margin-top:0.25rem;"><code>import "ext:webui"</code> &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</h2>
-        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 46 exported functions</small></p>
+        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 51 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -4126,6 +4256,11 @@ fn main() {
             <tr><td><code>fn (app: App) clipboard_get() -&gt; str</code></td><td><code>app.clipboard_get()</code></td><td>Reads current plain text from the native OS system clipboard.<br/><code>clip := app.clipboard_get()</code></td></tr>
             <tr><td><code>fn (app: App) monospace_fonts() -&gt; []str</code></td><td><code>app.monospace_fonts()</code></td><td>Enumerates installed system monospace font families (<code>NSFontManager</code> on macOS, <code>fc-list :spacing=mono</code> on Linux, <code>EnumFontFamiliesExW</code> on Windows).<br/><code>fonts := app.monospace_fonts()</code></td></tr>
             <tr><td><code>fn (mut app: App) set_icon(icon_path: str)</code></td><td><code>app.set_icon(icon_path)</code></td><td>Sets the application window and dock/taskbar icon from a <code>.png</code>, <code>.icns</code>, or <code>.ico</code> file.<br/><code>app.set_icon(&quot;assets/icon.png&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_tray(icon_path: str, tooltip: str = &quot;&quot;)</code></td><td><code>app.set_tray(icon_path, tooltip)</code></td><td>Configures a system tray / menu-bar status item (<code>NSStatusItem</code> on macOS, <code>GtkStatusIcon</code> on Linux, <code>Shell_NotifyIconW</code> on Windows).<br/><code>app.set_tray(&quot;assets/tray.png&quot;, &quot;Flint&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) add_tray_item(title: str, event: str)</code></td><td><code>app.add_tray_item(title, event)</code></td><td>Appends a menu item to the system tray context menu that emits <code>event</code> to <code>app.on(event)</code> when clicked (or <code>&quot;-&quot;</code> for a separator).<br/><code>app.add_tray_item(&quot;Quick Connect&quot;, &quot;tray:connect&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) hide_window()</code></td><td><code>app.hide_window()</code></td><td>Hides the native application window without terminating the process or system tray.<br/><code>app.hide_window()</code></td></tr>
+            <tr><td><code>fn (mut app: App) show_window()</code></td><td><code>app.show_window()</code></td><td>Restores and focuses a hidden or minimized native application window.<br/><code>app.show_window()</code></td></tr>
+            <tr><td><code>fn (mut app: App) set_hide_on_close(enabled: bool)</code></td><td><code>app.set_hide_on_close(enabled)</code></td><td>Intercepts the window close button (<code>windowShouldClose:</code> / <code>delete-event</code> / <code>WM_CLOSE</code>) to hide the window to the system tray instead of exiting.<br/><code>app.set_hide_on_close(true)</code></td></tr>
             <tr><td><code>fn (mut app: App) add_menu_item(menu: str, title: str, shortcut: str, event: str)</code></td><td><code>app.add_menu_item(menu, title, shortcut, event)</code></td><td>Adds a custom menu item with keyboard shortcut to the application menu bar that emits <code>event</code> to <code>app.on(event)</code> when triggered.<br/><code>app.add_menu_item(&quot;Shell&quot;, &quot;New Tab&quot;, &quot;t&quot;, &quot;menu:new_tab&quot;)</code></td></tr>
             <tr><td><code>fn (mut app: App) set_state(key: str, val: str)</code></td><td><code>app.set_state(key, val)</code></td><td>Updates a reactive key-value state entry and broadcasts a <code>state:change</code> event (<code>{key, value}</code>) to the frontend.<br/><code>app.set_state(&quot;preset&quot;, &quot;Warm Tape&quot;)</code></td></tr>
             <tr><td><code>fn (app: App) get_state(key: str) -&gt; str</code></td><td><code>app.get_state(key)</code></td><td>Reads the current string value for <code>key</code> from the application's state store.<br/><code>p := app.get_state(&quot;preset&quot;)</code></td></tr>
@@ -4169,7 +4304,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-rg" data-pane-id="mod-rg" data-pane-title="vendor:raygui — Raygui 4.0 Immediate-Mode GUI Controls">
+      <article class="ref-pane" id="ref-pane-mod-rg" data-pane-id="mod-rg" data-pane-short="vendor:raygui" data-pane-title="vendor:raygui — Raygui 4.0 Immediate-Mode GUI Controls">
         <h2 id="mod-rg" style="margin-top:0.25rem;"><code>import "vendor:raygui"</code> &mdash; Raygui 4.0 Immediate-Mode GUI Controls</h2>
         <p>Header-only immediate-mode GUI controls (<code>GuiWindowBox</code>, <code>GuiButton</code>, <code>GuiCheckBox</code>, <code>GuiSliderBar</code>, <code>GuiComboBox</code>, <code>GuiTextBox</code>) built on top of <code>vendor:raylib</code> with safe <code>mut str</code> (<code>&amp;mut my_str</code>) text box editing. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code> &bull; Namespace: <code>rg.*</code> &bull; 15 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -4231,7 +4366,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-rl" data-pane-id="mod-rl" data-pane-title="vendor:raylib — Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Math">
+      <article class="ref-pane" id="ref-pane-mod-rl" data-pane-id="mod-rl" data-pane-short="vendor:raylib" data-pane-title="vendor:raylib — Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Math">
         <h2 id="mod-rl" style="margin-top:0.25rem;"><code>import "vendor:raylib"</code> &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Math</h2>
         <p>Auto-linked C99/C++23 bindings for Raylib 5.0 (<code>&lt;raylib.h&gt;</code>, <code>&lt;raymath.h&gt;</code>, <code>&lt;rlgl.h&gt;</code>) with struct literal lowering (<code>rl.Vector2</code>, <code>rl.Rectangle</code>, <code>rl.Color</code>, <code>rl.Camera2D</code>) and automatic <code>str</code> to <code>const char*</code> coercion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lraylib</code> &bull; Namespace: <code>rl.*</code> &bull; 24 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
@@ -4300,7 +4435,7 @@ fn main() {
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-diagnostics" data-pane-id="diagnostics" data-pane-title="Compiler Semantic Diagnostics">
+      <article class="ref-pane" id="ref-pane-diagnostics" data-pane-id="diagnostics" data-pane-short="Diagnostics" data-pane-title="Compiler Semantic Diagnostics">
         <h2 class="section-title" id="diagnostics" style="margin-top:0.25rem;">Compiler Semantic Diagnostics</h2>
         <p style="color:var(--muted); margin-bottom:1.25rem;">Deterministic compile-time diagnostics emitted by the single-pass type and effect checker (<code>src/sema.hpp</code>).</p>
         <div class="card" id="diag-cfire/MUT-CALLSITE" style="margin-bottom:1.25rem;">
@@ -4806,14 +4941,17 @@ function setRefMode(mode) {
   const vp = document.getElementById('ref-viewport');
   const btnMod = document.getElementById('btn-ref-module');
   const btnAll = document.getElementById('btn-ref-all');
+  const mobCycle = document.getElementById('ref-mobile-mode-cycle');
   if (currentRefMode === 'all') {
     if (vp) vp.classList.add('view-all-mode');
     if (btnAll) btnAll.classList.add('active');
     if (btnMod) btnMod.classList.remove('active');
+    if (mobCycle) mobCycle.textContent = 'All';
   } else {
     if (vp) vp.classList.remove('view-all-mode');
     if (btnMod) btnMod.classList.add('active');
     if (btnAll) btnAll.classList.remove('active');
+    if (mobCycle) mobCycle.textContent = 'Module';
     navigateToRefPane(activeRefPane, false);
   }
 }
@@ -4832,13 +4970,18 @@ function navigateToRefPane(paneId, pushHash = true) {
   if (navLink) navLink.classList.add('active');
 
   const paneTitle = target.getAttribute('data-pane-title') || paneId;
+  const paneShort = target.getAttribute('data-pane-short') || paneTitle;
   const crumb = document.getElementById('ref-active-crumb');
   if (crumb) {
     crumb.textContent = paneTitle;
   }
   const mobLabel = document.getElementById('ref-mobile-sidebar-label');
   if (mobLabel) {
-    mobLabel.innerHTML = '<span class="sidebar-summary-badge">Stdlib:</span> ' + paneTitle;
+    mobLabel.innerHTML = '<span class="sidebar-summary-badge">Stdlib</span> ' + paneShort;
+  }
+  const mobSel = document.getElementById('ref-mobile-pane-select');
+  if (mobSel) {
+    mobSel.value = paneId;
   }
   const mobDetails = document.getElementById('ref-sidebar-details');
   if (mobDetails && window.innerWidth <= 840) {
