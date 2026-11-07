@@ -104,18 +104,21 @@ sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-d
 ```
 
 ### Understanding the Three Stdlib Namespaces (`core:*`, `ext:*`, `vendor:*`)
-One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 34 built-in modules into three explicit namespaces:
-- **`core:*` (Foundational Core — 21 Modules)**: Pure ISO C++23 header-only primitives (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:fs`, `core:os`, `core:time`, `core:math`, `core:rand`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:crypto/*`, `core:encoding/*`) with zero external C/OS library dependencies.
-- **`ext:*` (Domain & Platform Extensions — 11 Opt-In Modules)**: Domain engines (`ext:json`, `ext:compress/zstd`, `ext:db/sqlite`, `ext:net`, `ext:net/url`, `ext:net/tls`, `ext:net/http`, `ext:net/websocket`, `ext:audio`, `ext:ai`, `ext:webui`) that link native libraries only when imported—and include built-in portable fallbacks when an optional system library isn't installed.
+One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 38 built-in modules into three explicit namespaces based on external link requirements:
+- **`core:*` (Foundational & Platform Core — 30 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:crypto/*`) with zero external C library setup required.
+- **`ext:*` (Native C Libraries, WebUI & AI Extensions — 6 Opt-In Modules)**: Specialized domain engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported—and include built-in portable fallbacks when an optional system library isn't installed.
 - **`vendor:*` (Bundled Third-Party C/C++ Engines — 2 Modules)**: `vendor:raylib` and `vendor:raygui`.
 
-| Extension / Vendor Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
+| Core / Extension / Vendor Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
 | :--- | :--- | :--- | :--- |
-| `ext:json` | `libsimdjson` | `simdjson` | Bundled single-header `simdjson` implementation in `runtime/vendor/` |
+| `core:json` | `libsimdjson` | `simdjson` | Bundled single-header `simdjson` implementation in `runtime/vendor/` |
+| `core:net/tls` & `core:net/http` | `libssl` / `libcrypto` | `openssl` | Dynamic `dlopen("libssl")` on Desktop/Linux; Apple `Foundation` `NSURLConnection` on macOS/iOS; browser `XMLHttpRequest` on WASM |
+| `core:audio` | `CoreAudio` / `libasound2` | `alsa` | `AudioToolbox.framework` on macOS/iOS; dynamic `dlopen("libasound.so.2")` on Linux; `WebAudio` on WASM; deterministic software mixer in headless CI |
+| `core:keychain` | `Security.framework` / `libsecret` | `libsecret-1` | macOS `Security.framework`, Linux `secret-tool`, or AES-256-GCM fallback vault |
 | `ext:db/sqlite` | `libsqlite3` | `sqlite3` | System `libsqlite3` (pre-installed on macOS/iOS; in-memory/WASM shim on `--web`) |
 | `ext:compress/zstd` | `libzstd` | `libzstd` | Native `libcompression` (`COMPRESSION_LZFSE` / `ZLIB`) on Apple/iOS; RFC 1951 codec on WASM |
-| `ext:net/tls` & `ext:net/http` | `libssl` / `libcrypto` | `openssl` | Dynamic `dlopen("libssl")` on Desktop/Linux; Apple `Foundation` `NSURLConnection` on macOS/iOS; browser `XMLHttpRequest` on WASM |
-| `ext:audio` | `CoreAudio` / `libasound2` | `alsa` | `AudioToolbox.framework` on macOS/iOS; dynamic `dlopen("libasound.so.2")` on Linux; `WebAudio` on WASM; deterministic software mixer in headless CI |
+| `ext:crypto/sodium` | `libsodium` | `libsodium` | Pure C++23 ChaCha20-Poly1305 / Ed25519 / Argon2 fallback |
+| `ext:net/ssh` | `libssh` | `libssh` | OpenSSH `ssh` / `sftp` / `scp` subprocess bridge when `libssh` is absent |
 | `ext:ai` (OCR & PDF) | `Vision` / `libtesseract` / `pdftotext` | `tesseract` | `Vision.framework` & `PDFKit` on macOS/iOS; `dlopen("libtesseract.so.5")` & `pdftotext` on Linux; pure C++23 `/FlateDecode` PDF parser & PNG/JPEG metadata reader on all targets |
 | `ext:webui` | `WebKit.framework` / `webkit2gtk-4.1` | `webkit2gtk-4.1` | `WKWebView` + `Cocoa` on macOS, `WKWebView` + `UIKit` on iOS, `WebKitGTK` + `GTK3` on Linux, and deterministic headless RPC/Event dispatcher in CI |
 | `vendor:raylib` & `vendor:raygui` | Bundled in `runtime/` | None required | Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and `UIKit` + `OpenGLES3` on iOS |
@@ -130,7 +133,7 @@ cd emsdk && ./emsdk install latest && ./emsdk activate latest
 source ./emsdk_env.sh
 ```
 - **Running in the Browser**: `cfire run --web app.cf` compiles with `-std=c++23 -O2 -msimd128` and starts a local HTTP server (or runs via `node` for CLI targets).
-- **Web Profiles**: GUI applications importing `vendor:raylib` or `ext:audio` automatically select the `canvas` profile (HTML5 WebGL canvas + drag-and-drop `MEMFS` file staging); console applications select the `cli` profile.
+- **Web Profiles**: GUI applications importing `vendor:raylib` or `core:audio` automatically select the `canvas` profile (HTML5 WebGL canvas + drag-and-drop `MEMFS` file staging); console applications select the `cli` profile.
 
 #### Native iOS Simulator & Device (`--ios`)
 Building for iOS requires macOS with full Xcode installed so `xcrun` can resolve the `iphonesimulator` and `iphoneos` SDK sysroots:
@@ -798,15 +801,16 @@ In `cfire`, you attach backtick tags directly to your struct fields (or even lea
 
 | Tag Key | Consuming Modules | Example | What It Configures at Compile Time |
 | :--- | :--- | :--- | :--- |
-| `json` | `ext:json`, `ext:webui`, `ext:ai` | `` `json:"user_id"` `` | Maps the field to JSON key `"user_id"` in `json.parse[T]`, `json.stringify`, `app.bind[T]`, and `json.schema[T]()`. |
+| `json` | `core:json`, `ext:webui`, `ext:ai` | `` `json:"user_id"` `` | Maps the field to JSON key `"user_id"` in `json.parse[T]`, `json.stringify`, `app.bind[T]`, and `json.schema[T]()`. |
 | `sql` | `ext:db/sqlite` | `` `sql:"user_id"` `` | Maps SQLite result column `"user_id"` into the struct field during `db.query[T](sql, ...)`. |
 | `cli`, `env`, `default` | `core:cli` | `` `cli:"--port,-p" env:"PORT" default:"8080"` `` | Binds CLI flags, environment variable fallbacks, and default values in `cli.parse[T]()`. |
 | `desc` | `core:cli`, `ext:ai` | `` `desc:"Listen port"` `` | Populates `--help` text in `core:cli` and the `"description"` property in `json.schema[T]()` for LLM tool schemas. |
+| `validate` | `core:json`, `ext:ai` | `` `validate:"min=1,max=5"` `` | Emits JSON Schema constraints (`minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `enum`) in `json.schema[T]()` and enforces runtime bounds in `json.parse[T]()` (`min`, `max`, `min_len`, `max_len`, `non_empty`, `oneof=a|b|c`). |
 
 ```cfire
 package main
 
-import "ext:json"
+import "core:json"
 
 type UserRecord struct {
     Id:     i64  `json:"id"     sql:"id"     desc:"Unique user identifier"`
@@ -1567,7 +1571,7 @@ Testing shouldn't require installing a third-party test framework or maintaining
 
 - **Co-Located `test "name" { ... }` Blocks**: Stripped from production `cfire build` binaries; compiled into a fast test runner during `cfire test`.
 - **Executable Doc-Tests (`///`)**: Any fenced ```` ```cf ```` block inside a `///` doc-comment that calls `assert` or `assert_eq` is automatically extracted and run as part of `cfire test`.
-- **Automatic JSON Round-Trip Invariants**: Importing `ext:json` alongside JSON-tagged structs automatically synthesizes `[auto] json round-trip: <Struct>` tests across 16 arbitrary instances.
+- **Automatic JSON Round-Trip Invariants**: Importing `core:json` alongside JSON-tagged structs automatically synthesizes `[auto] json round-trip: <Struct>` tests across 16 arbitrary instances.
 - **File-Descriptor Leak Canary**: Every `test` and `fuzz` block snapshots open OS file descriptors before and after execution, failing immediately if a test leaks an unclosed file, socket, or SQLite handle (`missing 'defer file.close()'?`).
 
 ```cfire
@@ -1688,17 +1692,17 @@ Every compiler stage (`CF1xxx`–`CF5xxx`) and semantic safety rule (`cfire/*`) 
 ### One Networking Stack Across Desktop, iOS & WebAssembly
 Writing networking code in C++ usually forces you to choose between a heavyweight library that won't cross-compile to WebAssembly or iOS, and low-level POSIX sockets that don't speak HTTP, TLS 1.3, or WebSockets.
 
-The `ext:net` family gives you one API from raw TCP sockets up to HTTP routers, Server-Sent Events (SSE), and RFC 6455 WebSockets—negotiating the native OS transport automatically on each target:
+The `core:net` family gives you one API from raw TCP sockets up to HTTP routers, Server-Sent Events (SSE), and RFC 6455 WebSockets—negotiating the native OS transport automatically on each target:
 
 | Module | Primary Types | Desktop (macOS / Linux) | iOS (`--ios`) | Web (`--web`) | Restricted Sandbox Fallback |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `ext:net` | `TcpListener`, `TcpStream`, `SocketPair` | POSIX `socket` / `bind` / `connect` (`AF_INET`) | POSIX `socket` (`AF_INET`) | Unsupported (use HTTP/WS) | In-process shared-memory ring buffer for loopback (`127.0.0.1` / `localhost`) when `EPERM`/`EACCES` occurs |
-| `ext:net/url` | `Url` | Native zero-allocation RFC 3986 parser | Native RFC 3986 parser | Native RFC 3986 parser | Native RFC 3986 parser |
-| `ext:net/tls` | `TlsStream`, `TlsListener`, `PemPair` | Runtime `dlopen` of `libssl` / `libcrypto` (OpenSSL 1.3+) | Apple `Foundation` / `Network.framework` | Browser TLS stack | In-process TLS stream framing over loopback |
-| `ext:net/http` | `Client`, `Server`, `Router`, `Request`, `Response`, `SseEvent` | Native `ext:net` + `ext:net/tls` (with `curl` fallback for external HTTPS if OpenSSL is absent) | Native `NSURLSession` synchronous bridge for external HTTPS; native `ext:net` for local loopback | Browser `emscripten_fetch` synchronous XHR bridge | In-process router registry for `127.0.0.1` / `localhost` servers |
-| `ext:net/websocket` | `WebSocket`, `WsPair`, `WsServer`, `Frame` | RFC 6455 frame engine over `TcpStream` / `TlsStream` | RFC 6455 frame engine | RFC 6455 frame engine | In-memory `websocket.pair()` full-duplex channel |
+| `core:net` | `TcpListener`, `TcpStream`, `SocketPair` | POSIX `socket` / `bind` / `connect` (`AF_INET`) | POSIX `socket` (`AF_INET`) | Unsupported (use HTTP/WS) | In-process shared-memory ring buffer for loopback (`127.0.0.1` / `localhost`) when `EPERM`/`EACCES` occurs |
+| `core:net/url` | `Url` | Native zero-allocation RFC 3986 parser | Native RFC 3986 parser | Native RFC 3986 parser | Native RFC 3986 parser |
+| `core:net/tls` | `TlsStream`, `TlsListener`, `PemPair` | Runtime `dlopen` of `libssl` / `libcrypto` (OpenSSL 1.3+) | Apple `Foundation` / `Network.framework` | Browser TLS stack | In-process TLS stream framing over loopback |
+| `core:net/http` | `Client`, `Server`, `Router`, `Request`, `Response`, `SseEvent` | Native `core:net` + `core:net/tls` (with `curl` fallback for external HTTPS if OpenSSL is absent) | Native `NSURLSession` synchronous bridge for external HTTPS; native `core:net` for local loopback | Browser `emscripten_fetch` synchronous XHR bridge | In-process router registry for `127.0.0.1` / `localhost` servers |
+| `core:net/websocket` | `WebSocket`, `WsPair`, `WsServer`, `Frame` | RFC 6455 frame engine over `TcpStream` / `TlsStream` | RFC 6455 frame engine | RFC 6455 frame engine | In-memory `websocket.pair()` full-duplex channel |
 
-### Building an HTTP Router & Streaming SSE (`ext:net/http`)
+### Building an HTTP Router & Streaming SSE (`core:net/http`)
 Let's build an HTTP service with pre-dispatch middleware, parameterized routes (`/users/:id`), and a real-time Server-Sent Events (`/v1/stream`) endpoint. Notice how `router.dispatch(...)` lets you unit-test your entire routing table in memory before binding a live port via `http.make_server(0)`:
 
 | Function / Method | Signature | Description |
@@ -1715,7 +1719,7 @@ Let's build an HTTP service with pre-dispatch middleware, parameterized routes (
 ```cfire
 package main
 
-import "ext:net/http"
+import "core:net/http"
 
 fn main() -> void! {
     mut router := http.make_router()
@@ -1769,7 +1773,7 @@ Live GET status=200, body={"id":"99","format":"compact"}
 SSE events (2): token:{"chunk":"hello"}
 ```
 
-### Upgrading to WebSockets & Self-Signed TLS 1.3 (`ext:net/websocket`, `ext:net/tls`)
+### Upgrading to WebSockets & Self-Signed TLS 1.3 (`core:net/websocket`, `core:net/tls`)
 Need full-duplex framing or an encrypted local HTTPS server? Register a WebSocket route directly on your HTTP router with `router.ws("/path", ...)`, and synthesize an in-memory RSA-2048 X.509 certificate with `tls.generate_self_signed_pem("localhost")`—no external `openssl` shell scripts or temporary `.pem` files on disk required:
 
 | Function / Method | Signature | Description |
@@ -1784,9 +1788,9 @@ Need full-duplex framing or an encrypted local HTTPS server? Register a WebSocke
 ```cfire
 package main
 
-import "ext:net/http"
-import "ext:net/tls"
-import "ext:net/websocket"
+import "core:net/http"
+import "core:net/tls"
+import "core:net/websocket"
 
 fn main() -> void! {
     mut router := http.make_router()
@@ -1832,8 +1836,8 @@ HTTPS status=200, body=TLS-1.3-OK
 
 ## Chapter 14: JSON, SQLite, Zstd & Cryptography
 
-### Compile-Time JSON Serialization & Schema Synthesis (`ext:json`)
-Using the `cfire::reflect<T>` tables generated for every struct (Chapter 6), `ext:json` parses and serializes structs, slices, maps, and optional (`T?`) fields directly without building an intermediate DOM—unless you explicitly ask for `json.parse_dynamic(raw)`:
+### Compile-Time JSON Serialization & Schema Synthesis (`core:json`)
+Using the `cfire::reflect<T>` tables generated for every struct (Chapter 6), `core:json` parses and serializes structs, slices, maps, and optional (`T?`) fields directly without building an intermediate DOM—unless you explicitly ask for `json.parse_dynamic(raw)`:
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
@@ -1845,7 +1849,7 @@ Using the `cfire::reflect<T>` tables generated for every struct (Chapter 6), `ex
 ```cfire
 package main
 
-import "ext:json"
+import "core:json"
 
 type Metric struct {
     Name:  str   `json:"name"`
@@ -2059,8 +2063,8 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 
 ## Chapter 16: Audio Synthesis & Real-Time DSP
 
-### Lock-Free 64-Voice Mixer & Procedural Waveforms (`ext:audio`)
-`ext:audio` gives you a zero-dependency, 64-voice lock-free stereo `f32` audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (`Stream`), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:
+### Lock-Free 64-Voice Mixer & Procedural Waveforms (`core:audio`)
+`core:audio` gives you a zero-dependency, 64-voice lock-free stereo `f32` audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (`Stream`), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:
 
 | Target Platform | Hardware Backend | Mixer Architecture | Headless / CI Fallback |
 | :--- | :--- | :--- | :--- |
@@ -2081,7 +2085,7 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 ```cfire
 package main
 
-import "ext:audio"
+import "core:audio"
 import "core:fs"
 
 fn main() -> void! {
@@ -2133,10 +2137,11 @@ WAV bytes: 9644, frames: 2400, channels: 2, rms>=0: true
 | `ai.anthropic(api_key = "")` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | `/v1/messages`, SSE streaming, tool use, native image/PDF blocks |
 | `ai.gemini(api_key = "")` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` | `:generateContent`, `:streamGenerateContent`, `:embedContent`, `responseSchema`, `inlineData` |
 | `ai.ollama(host = "http://127.0.0.1:11434")` | `http://127.0.0.1:11434` | `OLLAMA_HOST` | Local `/v1/chat/completions` & `/api/embed` (vision, tools, structured JSON schema) |
-| `ai.apple()` | On-device (`NaturalLanguage` / `Vision`) | None (offline) | Apple `NLEmbedding`, `NLLanguageRecognizer`, `VNRecognizeTextRequest`, local synthesis |
+| `ai.local()` / `ai.apple()` | On-device (`NaturalLanguage` / `Vision` / `Tesseract` / SIMD) | None (offline) | Cross-platform on-device `NLEmbedding`/trigram embeddings, `NLLanguageRecognizer`/script classifier, `Vision`/`Tesseract` OCR, local synthesis |
+| `ai.mock(handler)` / `ai.mock_sequence(turns)` | In-memory deterministic test double | None (offline) | Offline unit testing for multi-turn `ai.Agent` tool loops and validation retries |
 
-### Schema-Typed Tool Calling & `generate_struct[T]`
-Because `cfire` reflects struct tags at compile time, you never hand-write JSON Schema strings for LLM tool definitions or structured output extraction. Pass any struct `T` to `ai.tool_def[T](name, desc)` or `client.generate_struct[T](model, prompt)`:
+### Schema-Typed Tool Calling, `validate:"..."` & `generate_struct[T]`
+Because `cfire` reflects struct tags at compile time, you never hand-write JSON Schema strings for LLM tool definitions or structured output extraction. Attach `validate:"..."` constraints (`min`, `max`, `min_len`, `max_len`, `non_empty`, `oneof=a|b|c`) and pass any struct `T` to `ai.tool_def[T](name, desc)`, `client.generate_struct[T](prompt)`, or `agent.run_struct[T](prompt)`:
 
 ```cfire
 package main
@@ -2157,13 +2162,12 @@ fn main() -> void! {
     weather_tool := ai.tool_def[WeatherLookup]("get_weather", "Fetches current weather for a city")
     println("Tool '{}' schema has city: {}", weather_tool.name, weather_tool.parameters_schema.contains("\"city\""))
 
-    client := ai.apple()
+    client := ai.local()
     ticket := try client.generate_struct[IncidentTicket](
-        "local",
         "Service=auth-gateway experienced p99 latency spike (severity 2)"
     )
     println("Structured ticket: service={}, severity={}", ticket.Service, ticket.Severity)
-    println("Lang(FR)={}, Lang(JA)={}", ai.detect_language("Bonjour le monde, comment allez-vous"), ai.detect_language("これは日本語のテストです"))
+    println("Lang(FR)={}, Lang(JA)={}", client.detect_language("Bonjour le monde, comment allez-vous"), client.detect_language("これは日本語のテストです"))
 }
 ```
 ```text
@@ -2174,7 +2178,7 @@ Lang(FR)=fr, Lang(JA)=ja
 ```
 
 ### Offline Document Ingestion & SIMD Vector RAG
-`ai.load_document(path)` and `ai.parse_document(bytes, filename)` extract structured sections (`[]DocumentSection { index, kind, title, text }`) from `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, and `.md` files using a built-in pure-C++23 DEFLATE/ZIP/XML/PDF parser. Combine `ai.chunk_document`, `ai.embed("local", ...)`, and `ext:db/sqlite` for an offline vector RAG pipeline:
+`ai.load_document(path)` and `ai.parse_document(bytes, filename)` extract structured sections (`[]DocumentSection { index, kind, title, text }`) from `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, and `.md` files using a built-in pure-C++23 DEFLATE/ZIP/XML/PDF parser. Combine `ai.chunk_document`, `client.embed(...)` (`ai.local()`), and `ext:db/sqlite` for an offline vector RAG pipeline:
 
 ```cfire
 package main
@@ -2193,16 +2197,17 @@ fn main() -> void! {
     doc     := try ai.parse_document(raw_doc.bytes(), "architecture.md")
     chunks  := ai.chunk_document(doc, 256, 32)
 
+    client := ai.local()
     mut db := try sqlite.open(":memory:")
     defer db.close()
     try db.exec("CREATE TABLE chunks (page_num INT, title TEXT, body TEXT, vec BLOB)")
 
     for ch in chunks {
-        v := try ai.embed("local", ch.text)
+        v := try client.embed(ch.text)
         try db.exec("INSERT INTO chunks VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, v)
     }
 
-    qvec := try ai.embed("local", "concurrent database WAL readers")
+    qvec := try client.embed("concurrent database WAL readers")
     hits := try db.query[RagHit](
         "SELECT page_num, title, vec_cosine_similarity(vec, ?1) AS score FROM chunks ORDER BY score DESC LIMIT 1",
         qvec
@@ -2244,6 +2249,57 @@ fn main() {
 ```text
 # Output:
 MCP JSON-RPC response contains SIMD: true
+```
+
+### Multi-Turn Agent Loops & Self-Correcting Validation (`ai.Agent`)
+Inspired by Pydantic AI, `ai.make_agent(client, model, system_prompt)` orchestrates multi-turn tool calls, shares tool registries with `ai.McpServer` via `agent.use_mcp(mcp)`, and automatically feeds `validate:"..."` or custom validator errors back to the model to self-correct (`run_struct[Out]`, `run_struct_validated[Out]`):
+
+```cfire
+package main
+
+import "ext:ai" as ai
+
+type MetricArgs struct {
+    Service: str `json:"service" validate:"non_empty"`
+}
+
+type HealthReport struct {
+    Service:  str `json:"service"  validate:"non_empty"`
+    Severity: i64 `json:"severity" validate:"min=1,max=5"`
+    Env:      str `json:"env"      validate:"oneof=dev|staging|prod"`
+}
+
+fn main() -> void! {
+    // Deterministic offline mock sequence:
+    // Turn 1: LLM calls tool `fetch_metrics`
+    // Turn 2: LLM returns invalid severity=9 (triggers self-correction retry!)
+    // Turn 3: LLM self-corrects to severity=2
+    mut step := 0
+    client := ai.mock(|msgs: []ai.Message, tools: []ai.Tool| -> ai.ChatResponse! {
+        step += 1
+        if step == 1 {
+            mut res := ai.ChatResponse{}
+            res.tool_calls.push(ai.ToolCall{id: "call_1", name: "fetch_metrics", arguments_json: "{\"service\":\"billing\"}"})
+            return res
+        }
+        if step == 2 {
+            return ai.ChatResponse{text: "{\"service\":\"billing\",\"severity\":9,\"env\":\"prod\"}"}
+        }
+        return ai.ChatResponse{text: "{\"service\":\"billing\",\"severity\":2,\"env\":\"prod\"}"}
+    })
+
+    mut agent := ai.make_agent(client, "mock-model", "You are an SRE assistant.")
+    agent.register_tool[MetricArgs]("fetch_metrics", "Fetches service telemetry", |args: MetricArgs| -> str! {
+        return "p99=420ms for {args.Service}"
+    })
+
+    report := try agent.run_struct[HealthReport]("Assess billing service health")
+    println("Agent report: service={}, severity={}, env={}, steps={}", report.Service, report.Severity, report.Env, step)
+}
+```
+```text
+# Output:
+Agent report: service=billing, severity=2, env=prod, steps=3
 ```
 
 ---
@@ -2452,15 +2508,15 @@ rpc={"reply":"studio!"} mime=text/html; charset=utf-8 webview_test=PASSED
 ## Chapter 19: Production Patterns, Cloud Services & Canonical Examples
 
 ### Blueprint: RAG + HTTP/JSON Microservice
-Let's pull `ext:db/sqlite` (WAL mode + SIMD vector search), `ext:ai` (local embeddings), `ext:json` (compile-time struct serialization), and `ext:net/http` (pattern-matched HTTP router) together into a single, zero-dependency microservice:
+Let's pull `ext:db/sqlite` (WAL mode + SIMD vector search), `ext:ai` (local embeddings), `core:json` (compile-time struct serialization), and `core:net/http` (pattern-matched HTTP router) together into a single, zero-dependency microservice:
 
 ```cfire
 package main
 
 import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
-import "ext:json" as json
-import "ext:net/http" as http
+import "core:json" as json
+import "core:net/http" as http
 
 type SearchRequest struct {
     Query: str `json:"query"`
@@ -2479,13 +2535,14 @@ fn main() -> void! {
     try db.exec("CREATE TABLE kb (title TEXT, body TEXT, vec BLOB)")
 
     docs := [
-        "Lock-Free Audio: ext:audio mixes 64 stereo f32 voices in real time.",
+        "Lock-Free Audio: core:audio mixes 64 stereo f32 voices in real time.",
         "Zero-Cost Safety: cfire lowers T! and T? to std::expected and std::optional.",
-        "TLS 1.3 & WebSockets: ext:net/http upgrades RFC 6455 connections natively."
+        "TLS 1.3 & WebSockets: core:net/http upgrades RFC 6455 connections natively."
     ]
+    client := ai.local()
     for d in docs {
         parts := d.split(": ")
-        vec   := try ai.embed("local", d)
+        vec   := try client.embed(d)
         try db.exec("INSERT INTO kb VALUES (?1, ?2, ?3)", parts[0], d, vec)
     }
 
@@ -2493,7 +2550,7 @@ fn main() -> void! {
     mut router := http.make_router()
     router.post("/v1/search", |req: http.Request| -> http.Response {
         q := json.parse[SearchRequest](req.body) or return http.Response.json(400, "{\"error\":\"invalid JSON\"}")
-        qvec := ai.embed("local", q.Query) or return http.Response.json(500, "{\"error\":\"embed failed\"}")
+        qvec := client.embed(q.Query) or return http.Response.json(500, "{\"error\":\"embed failed\"}")
         hits := db.query[SearchResult](
             "SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM kb ORDER BY score DESC LIMIT ?2",
             qvec, q.TopK
@@ -2552,7 +2609,7 @@ Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is
 | :--- | :--- | :--- | :--- |
 | [`examples/01-hello-core`](file:///Users/memo/Programming/cfire/examples/01-hello-core) | Hello Core & Defer | Mutability (`mut`), parameter intents (`in`, `mut`, `out`, `move`), `defer` scope guards, string interpolation | `cfire run examples/01-hello-core/main.cf` |
 | [`examples/02-log-compressor`](file:///Users/memo/Programming/cfire/examples/02-log-compressor) | Log Compressor | Declarative CLI flag parsing (`core:cli`), RFC 8878 Zstandard compression (`ext:compress/zstd`), `core:fs` | `cfire run examples/02-log-compressor/main.cf` |
-| [`examples/03-pkg-cache`](file:///Users/memo/Programming/cfire/examples/03-pkg-cache) | Package Cache | SQLite3 WAL transactions (`ext:db/sqlite`), compile-time JSON struct mapping (`ext:json`), SHA-256 (`core:crypto/sha256`) | `cfire run examples/03-pkg-cache/main.cf` |
+| [`examples/03-pkg-cache`](file:///Users/memo/Programming/cfire/examples/03-pkg-cache) | Package Cache | SQLite3 WAL transactions (`ext:db/sqlite`), compile-time JSON struct mapping (`core:json`), SHA-256 (`core:crypto/sha256`) | `cfire run examples/03-pkg-cache/main.cf` |
 | [`examples/04-async-workers`](file:///Users/memo/Programming/cfire/examples/04-async-workers) | Async Workers | Scoped thread pool concurrency (`async.scope`), disjoint slice writes, MPMC `Channel[T]` (`core:sync`) | `cfire run examples/04-async-workers/main.cf` |
 | [`examples/05-cmake-interop`](file:///Users/memo/Programming/cfire/examples/05-cmake-interop) | CMake Interop | Clang JSON AST ingestion (`import cpp "<zstd.h>"`), `build.CMake` native library orchestration | `cfire run examples/05-cmake-interop/main.cf` |
 | [`examples/06-raylib-viz`](file:///Users/memo/Programming/cfire/examples/06-raylib-viz) | Raylib Visualization | Hardware 2D graphics loop (`vendor:raylib`), 60 FPS particle & telemetry rendering (`--web` & `--ios` ready) | `cfire run examples/06-raylib-viz/main.cf` |
@@ -2560,12 +2617,12 @@ Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is
 | [`examples/08-multi-pkg-cc-build`](file:///Users/memo/Programming/cfire/examples/08-multi-pkg-cc-build) | Multi-Package Build | Multi-package `build.cf` orchestration, static archive compilation (`build.CC`) | `cfire run examples/08-multi-pkg-cc-build` |
 | [`examples/09-stdlib-test-pointers`](file:///Users/memo/Programming/cfire/examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`*T`, `^T`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
 | [`examples/10-cmake-and-make-deps`](file:///Users/memo/Programming/cfire/examples/10-cmake-and-make-deps) | Multi-Build Deps | Simultaneous `build.CMake` and `build.Make` external dependency orchestration in a single `build.cf` | `cfire run examples/10-cmake-and-make-deps` |
-| [`examples/11-http-server-router`](file:///Users/memo/Programming/cfire/examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`ext:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
+| [`examples/11-http-server-router`](file:///Users/memo/Programming/cfire/examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`core:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
 | [`examples/12-raygui-controls`](file:///Users/memo/Programming/cfire/examples/12-raygui-controls) | Raygui GUI Kit | Immediate-mode controls (`vendor:raygui`): checkboxes, sliders, progress bars, combo boxes, `&mut str` text boxes | `cfire run examples/12-raygui-controls/main.cf` |
-| [`examples/13-ios-native-ui`](file:///Users/memo/Programming/cfire/examples/13-ios-native-ui) | Native iOS UI | Zero-coordinate `GuiIos*` auto-layout kit (`examples/13-ios-native-ui/ui/kit.cf`), safe-area insets, real-time `ext:audio` metering (`--ios`, `--web`, desktop) | `cfire run --ios examples/13-ios-native-ui/main.cf` |
+| [`examples/13-ios-native-ui`](file:///Users/memo/Programming/cfire/examples/13-ios-native-ui) | Native iOS UI | Zero-coordinate `GuiIos*` auto-layout kit (`examples/13-ios-native-ui/ui/kit.cf`), safe-area insets, real-time `core:audio` metering (`--ios`, `--web`, desktop) | `cfire run --ios examples/13-ios-native-ui/main.cf` |
 | [`examples/14-ai-rag-sqlite`](file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |
 | [`examples/15-mcp-server`](file:///Users/memo/Programming/cfire/examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`ai.make_mcp_server`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
-| [`examples/16-audio-synth`](file:///Users/memo/Programming/cfire/examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`ext:audio`) | `cfire run examples/16-audio-synth/main.cf` |
+| [`examples/16-audio-synth`](file:///Users/memo/Programming/cfire/examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`core:audio`) | `cfire run examples/16-audio-synth/main.cf` |
 | [`examples/17-webui-studio`](file:///Users/memo/Programming/cfire/examples/17-webui-studio) | Hybrid WebUI Studio | Wails/Tauri-style native WebView (`ext:webui`), typed `app.bind[T]` JSON-RPC 2.0, `window.backend` ES6 Proxy, `app://localhost/` VFS, offscreen `WKWebView` test (`--ios` & desktop) | `cfire run examples/17-webui-studio/main.cf` |
 
 ### Further Reference & Module Index

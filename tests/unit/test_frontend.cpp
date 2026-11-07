@@ -419,8 +419,8 @@ fn main() {{
         ScopedTempDir tmp("cfire_core_ai");
         auto cf_path = tmp.file("ai_test.cf", R"CF(package main
 
-import "core:ai"
-import "core:db/sqlite"
+import "ext:ai"
+import "ext:db/sqlite"
 import "core:fs"
 import "core:json"
 import "core:net/http"
@@ -450,15 +450,16 @@ fn main() {
     assert(str.contains(schema, `"description":"Search query string"`), "schema field description")
     assert(str.contains(schema, `"required":["query","limit","exact"]`), "schema required fields")
 
-    // 2. RAG text chunking & language detection
+    // 2. RAG text chunking & language detection via stateful on-device Client
+    local_ai := ai.local()
     chunks := ai.chunk_text("First paragraph about systems programming.\n\nSecond paragraph about vector search and embeddings in SQLite.", 60, 12)
     assert(chunks.len() >= 2, "chunk_text splits into multiple chunks")
-    lang := ai.detect_language("Hello from the cfire systems language")
+    lang := local_ai.detect_language("Hello from the cfire systems language")
     assert(!lang.empty(), "detect_language returns non-empty code")
 
     // 3. Unified local embeddings + SQLite vector similarity search + []f32 column mapping
-    v_sys := try ai.embed("local", "C++23 systems programming memory safety and RAII")
-    v_sql := try ai.embed("local", "SQLite embedded vector similarity search and cosine distance")
+    v_sys := try local_ai.embed("C++23 systems programming memory safety and RAII")
+    v_sql := try local_ai.embed("SQLite embedded vector similarity search and cosine distance")
     assert(v_sys.len() >= 128, "embedding dimension >= 128")
     self_sim := ai.cosine_similarity(v_sql, v_sql)
     assert(self_sim > 0.99, "self cosine similarity ~ 1.0")
@@ -469,7 +470,7 @@ fn main() {
     try db.exec("INSERT INTO docs VALUES (?1, ?2)", "Systems", v_sys)
     try db.exec("INSERT INTO docs VALUES (?1, ?2)", "VectorDB", v_sql)
 
-    q_vec := try ai.embed("local", "vector search in sqlite cosine distance")
+    q_vec := try local_ai.embed("vector search in sqlite cosine distance")
     rows := try db.query[DocRow](
         "SELECT title, vec_cosine_similarity(vec, ?1) AS score, vec FROM docs ORDER BY score DESC",
         q_vec
@@ -614,9 +615,9 @@ fn main() {
         0x00, 0x00, 0x00, 0x00
     ]
     try fs.write_bytes("invoice.png", png_data)
-    ocr_txt := try ai.ocr("invoice.png")
+    ocr_txt := try local_ai.ocr("invoice.png")
     assert(str.contains(ocr_txt, "Invoice #4200"), "OCR extracted PNG text metadata")
-    img_vec := try ai.embed_image("local", "invoice.png")
+    img_vec := try local_ai.embed_image("invoice.png")
     try fs.remove("invoice.png")
     assert_eq(img_vec.len(), 384, "embed_image returns 384-dim normalized vector")
     assert(ai.cosine_similarity(img_vec, img_vec) > 0.99, "embed_image self similarity ~ 1.0")
@@ -640,8 +641,8 @@ fn main() {
     ]
     try fs.write_bytes("red.bmp", bmp_red)
     try fs.write_bytes("blue.bmp", bmp_blue)
-    red_vec := try ai.embed_image("local", "red.bmp")
-    blue_vec := try ai.embed_image("local", "blue.bmp")
+    red_vec := try local_ai.embed_image("red.bmp")
+    blue_vec := try local_ai.embed_image("blue.bmp")
     try fs.remove("red.bmp")
     try fs.remove("blue.bmp")
     assert(ai.cosine_similarity(red_vec, blue_vec) < 0.85, "pixel-decoded RGB moments distinguish red vs blue images")
@@ -653,13 +654,13 @@ fn main() {
         0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00
     ]
     try fs.write_bytes("green.ppm", ppm_green)
-    green_vec := try ai.embed_image("local", "green.ppm")
+    green_vec := try local_ai.embed_image("green.ppm")
     try fs.remove("green.ppm")
     assert_eq(green_vec.len(), 384, "PPM image embedded into 384-dim vector")
 
-    assert_eq(ai.detect_language("Hello world, the quick brown fox jumps with the dog"), "en", "detect_language English")
-    assert_eq(ai.detect_language("Hola mundo, el perro corre con la niña por el parque"), "es", "detect_language Spanish")
-    assert_eq(ai.detect_language("こんにちは世界"), "ja", "detect_language Japanese")
+    assert_eq(local_ai.detect_language("Hello world, the quick brown fox jumps with the dog"), "en", "detect_language English")
+    assert_eq(local_ai.detect_language("Hola mundo, el perro corre con la niña por el parque"), "es", "detect_language Spanish")
+    assert_eq(local_ai.detect_language("こんにちは世界"), "ja", "detect_language Japanese")
 
     // Verify multimodal client.stream with file attachment
     att_msg := try ai.user_with_file("Stream summary of slides", "deck.pptx")

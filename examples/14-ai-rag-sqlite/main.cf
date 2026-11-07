@@ -2,7 +2,7 @@ package main
 
 import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
-import "ext:json" as json
+import "core:json" as json
 
 type QueryPlan struct {
     Target: str `json:"target" desc:"Search target concept"`
@@ -27,7 +27,8 @@ fn main() {
     mut db := try sqlite.open(":memory:")
     try db.exec("CREATE TABLE corpus (id INTEGER PRIMARY KEY, title TEXT, snippet TEXT, embedding BLOB)")
 
-    // 3. Ingest documents and calculate deterministic local embeddings via ai.embed("local", ...)
+    // 3. Ingest documents and calculate deterministic local embeddings via ai.local()
+    client := ai.local()
     mut docs: []str
     docs.push("cfire lowers 1-to-1 to ISO C++23 with zero hidden runtime overhead.")
     docs.push("Model Context Protocol servers can be authored natively in cfire with typed tools.")
@@ -39,14 +40,14 @@ fn main() {
     titles.push("Audio DSP Engine")
 
     for i, doc in docs {
-        vec := try ai.embed("local", doc)
+        vec := try client.embed(doc)
         try db.exec("INSERT INTO corpus (id, title, snippet, embedding) VALUES (?1, ?2, ?3, ?4)",
             i + 1, titles[i], doc, vec)
     }
 
     // 4. Query using built-in vec_cosine_similarity SQL function
     query := "How does cfire generate modern C++23 code?"
-    qvec := try ai.embed("local", query)
+    qvec := try client.embed(query)
 
     results := try db.query[DocEntry](
         "SELECT id, title, snippet FROM corpus ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1",

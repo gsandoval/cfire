@@ -2374,24 +2374,27 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
   </section>
   <section class="guide-topic" id="topic-ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" data-topic-id="ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" data-topic-title="Understanding the Three Stdlib Namespaces (core:*, ext:*, vendor:*)" data-short-title="1.5 Stdlib Tiers">
 <h3 class="guide-heading" id="ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor"><span class="heading-hash">#</span><span class="heading-text">Understanding the Three Stdlib Namespaces (<code>core:*</code>, <code>ext:*</code>, <code>vendor:*</code>)</span></h3>
-<p>One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. <code>cfire</code> keeps dependency boundaries honest by organizing its 34 built-in modules into three explicit namespaces:</p>
+<p>One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. <code>cfire</code> keeps dependency boundaries honest by organizing its 38 built-in modules into three explicit namespaces based on external link requirements:</p>
 <ul>
-  <li><strong><code>core:*</code> (Foundational Core — 21 Modules)</strong>: Pure ISO C++23 header-only primitives (<code>core:str</code>, <code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:sort</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:crypto/*</code>, <code>core:encoding/*</code>) with zero external C/OS library dependencies.</li>
-  <li><strong><code>ext:*</code> (Domain &amp; Platform Extensions — 11 Opt-In Modules)</strong>: Domain engines (<code>ext:json</code>, <code>ext:compress/zstd</code>, <code>ext:db/sqlite</code>, <code>ext:net</code>, <code>ext:net/url</code>, <code>ext:net/tls</code>, <code>ext:net/http</code>, <code>ext:net/websocket</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>) that link native libraries only when imported—and include built-in portable fallbacks when an optional system library isn't installed.</li>
+  <li><strong><code>core:*</code> (Foundational &amp; Platform Core — 30 Modules)</strong>: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (<code>core:str</code>, <code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:sort</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:json</code>, <code>core:encoding/*</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:keychain</code>, <code>core:build</code>, <code>core:net</code>, <code>core:net/url</code>, <code>core:net/tls</code>, <code>core:net/http</code>, <code>core:net/websocket</code>, <code>core:audio</code>, <code>core:crypto/*</code>) with zero external C library setup required.</li>
+  <li><strong><code>ext:*</code> (Native C Libraries, WebUI &amp; AI Extensions — 6 Opt-In Modules)</strong>: Specialized domain engines (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported—and include built-in portable fallbacks when an optional system library isn't installed.</li>
   <li><strong><code>vendor:*</code> (Bundled Third-Party C/C++ Engines — 2 Modules)</strong>: <code>vendor:raylib</code> and <code>vendor:raygui</code>.</li>
 </ul>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
     <thead>
-      <tr><th>Extension / Vendor Module</th><th>Optional System Library</th><th><code>pkg-config</code> Name</th><th>Built-In Portable Fallback When Absent</th></tr>
+      <tr><th>Core / Extension / Vendor Module</th><th>Optional System Library</th><th><code>pkg-config</code> Name</th><th>Built-In Portable Fallback When Absent</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>ext:json</code></td><td><code>libsimdjson</code></td><td><code>simdjson</code></td><td>Bundled single-header <code>simdjson</code> implementation in <code>runtime/vendor/</code></td></tr>
+      <tr><td><code>core:json</code></td><td><code>libsimdjson</code></td><td><code>simdjson</code></td><td>Bundled single-header <code>simdjson</code> implementation in <code>runtime/vendor/</code></td></tr>
+      <tr><td><code>core:net/tls</code> &amp; <code>core:net/http</code></td><td><code>libssl</code> / <code>libcrypto</code></td><td><code>openssl</code></td><td>Dynamic <code>dlopen(&quot;libssl&quot;)</code> on Desktop/Linux; Apple <code>Foundation</code> <code>NSURLConnection</code> on macOS/iOS; browser <code>XMLHttpRequest</code> on WASM</td></tr>
+      <tr><td><code>core:audio</code></td><td><code>CoreAudio</code> / <code>libasound2</code></td><td><code>alsa</code></td><td><code>AudioToolbox.framework</code> on macOS/iOS; dynamic <code>dlopen(&quot;libasound.so.2&quot;)</code> on Linux; <code>WebAudio</code> on WASM; deterministic software mixer in headless CI</td></tr>
+      <tr><td><code>core:keychain</code></td><td><code>Security.framework</code> / <code>libsecret</code></td><td><code>libsecret-1</code></td><td>macOS <code>Security.framework</code>, Linux <code>secret-tool</code>, or AES-256-GCM fallback vault</td></tr>
       <tr><td><code>ext:db/sqlite</code></td><td><code>libsqlite3</code></td><td><code>sqlite3</code></td><td>System <code>libsqlite3</code> (pre-installed on macOS/iOS; in-memory/WASM shim on <code>--web</code>)</td></tr>
       <tr><td><code>ext:compress/zstd</code></td><td><code>libzstd</code></td><td><code>libzstd</code></td><td>Native <code>libcompression</code> (<code>COMPRESSION_LZFSE</code> / <code>ZLIB</code>) on Apple/iOS; RFC 1951 codec on WASM</td></tr>
-      <tr><td><code>ext:net/tls</code> &amp; <code>ext:net/http</code></td><td><code>libssl</code> / <code>libcrypto</code></td><td><code>openssl</code></td><td>Dynamic <code>dlopen(&quot;libssl&quot;)</code> on Desktop/Linux; Apple <code>Foundation</code> <code>NSURLConnection</code> on macOS/iOS; browser <code>XMLHttpRequest</code> on WASM</td></tr>
-      <tr><td><code>ext:audio</code></td><td><code>CoreAudio</code> / <code>libasound2</code></td><td><code>alsa</code></td><td><code>AudioToolbox.framework</code> on macOS/iOS; dynamic <code>dlopen(&quot;libasound.so.2&quot;)</code> on Linux; <code>WebAudio</code> on WASM; deterministic software mixer in headless CI</td></tr>
+      <tr><td><code>ext:crypto/sodium</code></td><td><code>libsodium</code></td><td><code>libsodium</code></td><td>Pure C++23 ChaCha20-Poly1305 / Ed25519 / Argon2 fallback</td></tr>
+      <tr><td><code>ext:net/ssh</code></td><td><code>libssh</code></td><td><code>libssh</code></td><td>OpenSSH <code>ssh</code> / <code>sftp</code> / <code>scp</code> subprocess bridge when <code>libssh</code> is absent</td></tr>
       <tr><td><code>ext:ai</code> (OCR &amp; PDF)</td><td><code>Vision</code> / <code>libtesseract</code> / <code>pdftotext</code></td><td><code>tesseract</code></td><td><code>Vision.framework</code> &amp; <code>PDFKit</code> on macOS/iOS; <code>dlopen(&quot;libtesseract.so.5&quot;)</code> &amp; <code>pdftotext</code> on Linux; pure C++23 <code>/FlateDecode</code> PDF parser &amp; PNG/JPEG metadata reader on all targets</td></tr>
       <tr><td><code>ext:webui</code></td><td><code>WebKit.framework</code> / <code>webkit2gtk-4.1</code></td><td><code>webkit2gtk-4.1</code></td><td><code>WKWebView</code> + <code>Cocoa</code> on macOS, <code>WKWebView</code> + <code>UIKit</code> on iOS, <code>WebKitGTK</code> + <code>GTK3</code> on Linux, and deterministic headless RPC/Event dispatcher in CI</td></tr>
       <tr><td><code>vendor:raylib</code> &amp; <code>vendor:raygui</code></td><td>Bundled in <code>runtime/</code></td><td>None required</td><td>Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and <code>UIKit</code> + <code>OpenGLES3</code> on iOS</td></tr>
@@ -2420,7 +2423,7 @@ source ./emsdk_env.sh
 </code></pre>
 <ul>
   <li><strong>Running in the Browser</strong>: <code>cfire run --web app.cf</code> compiles with <code>-std=c++23 -O2 -msimd128</code> and starts a local HTTP server (or runs via <code>node</code> for CLI targets).</li>
-  <li><strong>Web Profiles</strong>: GUI applications importing <code>vendor:raylib</code> or <code>ext:audio</code> automatically select the <code>canvas</code> profile (HTML5 WebGL canvas + drag-and-drop <code>MEMFS</code> file staging); console applications select the <code>cli</code> profile.</li>
+  <li><strong>Web Profiles</strong>: GUI applications importing <code>vendor:raylib</code> or <code>core:audio</code> automatically select the <code>canvas</code> profile (HTML5 WebGL canvas + drag-and-drop <code>MEMFS</code> file staging); console applications select the <code>cli</code> profile.</li>
 </ul>
 <h4 id="ch1-native-ios-simulator-device-ios">Native iOS Simulator &amp; Device (<code>--ios</code>)</h4>
 <p>Building for iOS requires macOS with full Xcode installed so <code>xcrun</code> can resolve the <code>iphonesimulator</code> and <code>iphoneos</code> SDK sysroots:</p>
@@ -3403,17 +3406,18 @@ fn main() {
       <tr><th>Tag Key</th><th>Consuming Modules</th><th>Example</th><th>What It Configures at Compile Time</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>json</code></td><td><code>ext:json</code>, <code>ext:webui</code>, <code>ext:ai</code></td><td><code></code> <code>json:&quot;user_id&quot;</code> <code></code></td><td>Maps the field to JSON key <code>&quot;user_id&quot;</code> in <code>json.parse[T]</code>, <code>json.stringify</code>, <code>app.bind[T]</code>, and <code>json.schema[T]()</code>.</td></tr>
+      <tr><td><code>json</code></td><td><code>core:json</code>, <code>ext:webui</code>, <code>ext:ai</code></td><td><code></code> <code>json:&quot;user_id&quot;</code> <code></code></td><td>Maps the field to JSON key <code>&quot;user_id&quot;</code> in <code>json.parse[T]</code>, <code>json.stringify</code>, <code>app.bind[T]</code>, and <code>json.schema[T]()</code>.</td></tr>
       <tr><td><code>sql</code></td><td><code>ext:db/sqlite</code></td><td><code></code> <code>sql:&quot;user_id&quot;</code> <code></code></td><td>Maps SQLite result column <code>&quot;user_id&quot;</code> into the struct field during <code>db.query[T](sql, ...)</code>.</td></tr>
       <tr><td><code>cli</code>, <code>env</code>, <code>default</code></td><td><code>core:cli</code></td><td><code></code> <code>cli:&quot;--port,-p&quot; env:&quot;PORT&quot; default:&quot;8080&quot;</code> <code></code></td><td>Binds CLI flags, environment variable fallbacks, and default values in <code>cli.parse[T]()</code>.</td></tr>
       <tr><td><code>desc</code></td><td><code>core:cli</code>, <code>ext:ai</code></td><td><code></code> <code>desc:&quot;Listen port&quot;</code> <code></code></td><td>Populates <code>--help</code> text in <code>core:cli</code> and the <code>&quot;description&quot;</code> property in <code>json.schema[T]()</code> for LLM tool schemas.</td></tr>
+      <tr><td><code>validate</code></td><td><code>core:json</code>, <code>ext:ai</code></td><td><code></code> <code>validate:&quot;min=1,max=5&quot;</code> <code></code></td><td>Emits JSON Schema constraints (<code>minimum</code>, <code>maximum</code>, <code>minLength</code>, <code>maxLength</code>, <code>minItems</code>, <code>maxItems</code>, <code>enum</code>) in <code>json.schema[T]()</code> and enforces runtime bounds in <code>json.parse[T]()</code> (<code>min</code>, <code>max</code>, <code>min_len</code>, <code>max_len</code>, <code>non_empty</code>, <code>oneof=a|b|c</code>).</td></tr>
     </tbody>
   </table>
 </div>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;ext:json&quot;
+import &quot;core:json&quot;
 
 type UserRecord struct {
     Id:     i64  `json:&quot;id&quot;     sql:&quot;id&quot;     desc:&quot;Unique user identifier&quot;`
@@ -4552,7 +4556,7 @@ fn main() {
 <ul>
   <li><strong>Co-Located <code>test &quot;name&quot; { ... }</code> Blocks</strong>: Stripped from production <code>cfire build</code> binaries; compiled into a fast test runner during <code>cfire test</code>.</li>
   <li><strong>Executable Doc-Tests (<code>///</code>)</strong>: Any fenced <code></code><code></code> <code></code><code>cf </code><code></code><code> block inside a </code>///<code> doc-comment that calls </code>assert<code> or </code>assert_eq<code> is automatically extracted and run as part of </code>cfire test`.</li>
-  <li><strong>Automatic JSON Round-Trip Invariants</strong>: Importing <code>ext:json</code> alongside JSON-tagged structs automatically synthesizes <code>[auto] json round-trip: &lt;Struct&gt;</code> tests across 16 arbitrary instances.</li>
+  <li><strong>Automatic JSON Round-Trip Invariants</strong>: Importing <code>core:json</code> alongside JSON-tagged structs automatically synthesizes <code>[auto] json round-trip: &lt;Struct&gt;</code> tests across 16 arbitrary instances.</li>
   <li><strong>File-Descriptor Leak Canary</strong>: Every <code>test</code> and <code>fuzz</code> block snapshots open OS file descriptors before and after execution, failing immediately if a test leaks an unclosed file, socket, or SQLite handle (<code>missing 'defer file.close()'?</code>).</li>
 </ul>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -4728,13 +4732,13 @@ cfire fix src/main.cf
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 13 (3)</span>
     <a href="#ch13-one-networking-stack-across-desktop-ios-webassembly" class="topic-pill active" data-topic-pill="ch13-one-networking-stack-across-desktop-ios-webassembly" title="One Networking Stack Across Desktop, iOS &amp; WebAssembly" onclick="navigateToSubhead('13', 'ch13-one-networking-stack-across-desktop-ios-webassembly'); return false;">13.1 Cross-Platform Net</a>
-    <a href="#ch13-building-an-http-router-streaming-sse-extnethttp" class="topic-pill" data-topic-pill="ch13-building-an-http-router-streaming-sse-extnethttp" title="Building an HTTP Router &amp; Streaming SSE (ext:net/http)" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-extnethttp'); return false;">13.2 HTTP &amp; SSE</a>
-    <a href="#ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" class="topic-pill" data-topic-pill="ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" title="Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (ext:net/websocket, ext:net/tls)" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls'); return false;">13.3 WebSockets &amp; TLS</a>
+    <a href="#ch13-building-an-http-router-streaming-sse-corenethttp" class="topic-pill" data-topic-pill="ch13-building-an-http-router-streaming-sse-corenethttp" title="Building an HTTP Router &amp; Streaming SSE (core:net/http)" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-corenethttp'); return false;">13.2 HTTP &amp; SSE</a>
+    <a href="#ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" class="topic-pill" data-topic-pill="ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" title="Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (core:net/websocket, core:net/tls)" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls'); return false;">13.3 WebSockets &amp; TLS</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch13-one-networking-stack-across-desktop-ios-webassembly" data-topic-id="ch13-one-networking-stack-across-desktop-ios-webassembly" data-topic-title="One Networking Stack Across Desktop, iOS &amp; WebAssembly" data-short-title="13.1 Cross-Platform Net">
 <h3 class="guide-heading" id="ch13-one-networking-stack-across-desktop-ios-webassembly"><span class="heading-hash">#</span><span class="heading-text">One Networking Stack Across Desktop, iOS &amp; WebAssembly</span><span class="heading-badge">wasm32-emscripten</span></h3>
 <p>Writing networking code in C++ usually forces you to choose between a heavyweight library that won't cross-compile to WebAssembly or iOS, and low-level POSIX sockets that don't speak HTTP, TLS 1.3, or WebSockets.</p>
-<p>The <code>ext:net</code> family gives you one API from raw TCP sockets up to HTTP routers, Server-Sent Events (SSE), and RFC 6455 WebSockets—negotiating the native OS transport automatically on each target:</p>
+<p>The <code>core:net</code> family gives you one API from raw TCP sockets up to HTTP routers, Server-Sent Events (SSE), and RFC 6455 WebSockets—negotiating the native OS transport automatically on each target:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -4742,11 +4746,11 @@ cfire fix src/main.cf
       <tr><th>Module</th><th>Primary Types</th><th>Desktop (macOS / Linux)</th><th>iOS (<code>--ios</code>)</th><th>Web (<code>--web</code>)</th><th>Restricted Sandbox Fallback</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>ext:net</code></td><td><code>TcpListener</code>, <code>TcpStream</code>, <code>SocketPair</code></td><td>POSIX <code>socket</code> / <code>bind</code> / <code>connect</code> (<code>AF_INET</code>)</td><td>POSIX <code>socket</code> (<code>AF_INET</code>)</td><td>Unsupported (use HTTP/WS)</td><td>In-process shared-memory ring buffer for loopback (<code>127.0.0.1</code> / <code>localhost</code>) when <code>EPERM</code>/<code>EACCES</code> occurs</td></tr>
-      <tr><td><code>ext:net/url</code></td><td><code>Url</code></td><td>Native zero-allocation RFC 3986 parser</td><td>Native RFC 3986 parser</td><td>Native RFC 3986 parser</td><td>Native RFC 3986 parser</td></tr>
-      <tr><td><code>ext:net/tls</code></td><td><code>TlsStream</code>, <code>TlsListener</code>, <code>PemPair</code></td><td>Runtime <code>dlopen</code> of <code>libssl</code> / <code>libcrypto</code> (OpenSSL 1.3+)</td><td>Apple <code>Foundation</code> / <code>Network.framework</code></td><td>Browser TLS stack</td><td>In-process TLS stream framing over loopback</td></tr>
-      <tr><td><code>ext:net/http</code></td><td><code>Client</code>, <code>Server</code>, <code>Router</code>, <code>Request</code>, <code>Response</code>, <code>SseEvent</code></td><td>Native <code>ext:net</code> + <code>ext:net/tls</code> (with <code>curl</code> fallback for external HTTPS if OpenSSL is absent)</td><td>Native <code>NSURLSession</code> synchronous bridge for external HTTPS; native <code>ext:net</code> for local loopback</td><td>Browser <code>emscripten_fetch</code> synchronous XHR bridge</td><td>In-process router registry for <code>127.0.0.1</code> / <code>localhost</code> servers</td></tr>
-      <tr><td><code>ext:net/websocket</code></td><td><code>WebSocket</code>, <code>WsPair</code>, <code>WsServer</code>, <code>Frame</code></td><td>RFC 6455 frame engine over <code>TcpStream</code> / <code>TlsStream</code></td><td>RFC 6455 frame engine</td><td>RFC 6455 frame engine</td><td>In-memory <code>websocket.pair()</code> full-duplex channel</td></tr>
+      <tr><td><code>core:net</code></td><td><code>TcpListener</code>, <code>TcpStream</code>, <code>SocketPair</code></td><td>POSIX <code>socket</code> / <code>bind</code> / <code>connect</code> (<code>AF_INET</code>)</td><td>POSIX <code>socket</code> (<code>AF_INET</code>)</td><td>Unsupported (use HTTP/WS)</td><td>In-process shared-memory ring buffer for loopback (<code>127.0.0.1</code> / <code>localhost</code>) when <code>EPERM</code>/<code>EACCES</code> occurs</td></tr>
+      <tr><td><code>core:net/url</code></td><td><code>Url</code></td><td>Native zero-allocation RFC 3986 parser</td><td>Native RFC 3986 parser</td><td>Native RFC 3986 parser</td><td>Native RFC 3986 parser</td></tr>
+      <tr><td><code>core:net/tls</code></td><td><code>TlsStream</code>, <code>TlsListener</code>, <code>PemPair</code></td><td>Runtime <code>dlopen</code> of <code>libssl</code> / <code>libcrypto</code> (OpenSSL 1.3+)</td><td>Apple <code>Foundation</code> / <code>Network.framework</code></td><td>Browser TLS stack</td><td>In-process TLS stream framing over loopback</td></tr>
+      <tr><td><code>core:net/http</code></td><td><code>Client</code>, <code>Server</code>, <code>Router</code>, <code>Request</code>, <code>Response</code>, <code>SseEvent</code></td><td>Native <code>core:net</code> + <code>core:net/tls</code> (with <code>curl</code> fallback for external HTTPS if OpenSSL is absent)</td><td>Native <code>NSURLSession</code> synchronous bridge for external HTTPS; native <code>core:net</code> for local loopback</td><td>Browser <code>emscripten_fetch</code> synchronous XHR bridge</td><td>In-process router registry for <code>127.0.0.1</code> / <code>localhost</code> servers</td></tr>
+      <tr><td><code>core:net/websocket</code></td><td><code>WebSocket</code>, <code>WsPair</code>, <code>WsServer</code>, <code>Frame</code></td><td>RFC 6455 frame engine over <code>TcpStream</code> / <code>TlsStream</code></td><td>RFC 6455 frame engine</td><td>RFC 6455 frame engine</td><td>In-memory <code>websocket.pair()</code> full-duplex channel</td></tr>
     </tbody>
   </table>
 </div>
@@ -4755,14 +4759,14 @@ cfire fix src/main.cf
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.4)</span>
         <strong class="pager-title">Complete 18-Rule cfire/* Safety &amp; Diagnostics Reference</strong>
       </a>
-      <a href="#ch13-building-an-http-router-streaming-sse-extnethttp" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-extnethttp'); return false;">
+      <a href="#ch13-building-an-http-router-streaming-sse-corenethttp" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-corenethttp'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 13.2) &rarr;</span>
-        <strong class="pager-title">Building an HTTP Router &amp; Streaming SSE (ext:net/http)</strong>
+        <strong class="pager-title">Building an HTTP Router &amp; Streaming SSE (core:net/http)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch13-building-an-http-router-streaming-sse-extnethttp" data-topic-id="ch13-building-an-http-router-streaming-sse-extnethttp" data-topic-title="Building an HTTP Router &amp; Streaming SSE (ext:net/http)" data-short-title="13.2 HTTP &amp; SSE">
-<h3 class="guide-heading" id="ch13-building-an-http-router-streaming-sse-extnethttp"><span class="heading-hash">#</span><span class="heading-text">Building an HTTP Router &amp; Streaming SSE (<code>ext:net/http</code>)</span></h3>
+  <section class="guide-topic" id="topic-ch13-building-an-http-router-streaming-sse-corenethttp" data-topic-id="ch13-building-an-http-router-streaming-sse-corenethttp" data-topic-title="Building an HTTP Router &amp; Streaming SSE (core:net/http)" data-short-title="13.2 HTTP &amp; SSE">
+<h3 class="guide-heading" id="ch13-building-an-http-router-streaming-sse-corenethttp"><span class="heading-hash">#</span><span class="heading-text">Building an HTTP Router &amp; Streaming SSE (<code>core:net/http</code>)</span></h3>
 <p>Let's build an HTTP service with pre-dispatch middleware, parameterized routes (<code>/users/:id</code>), and a real-time Server-Sent Events (<code>/v1/stream</code>) endpoint. Notice how <code>router.dispatch(...)</code> lets you unit-test your entire routing table in memory before binding a live port via <code>http.make_server(0)</code>:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
@@ -4785,7 +4789,7 @@ cfire fix src/main.cf
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;ext:net/http&quot;
+import &quot;core:net/http&quot;
 
 fn main() -&gt; void! {
     mut router := http.make_router()
@@ -4844,14 +4848,14 @@ SSE events (2): token:{&quot;chunk&quot;:&quot;hello&quot;}
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 13.1)</span>
         <strong class="pager-title">One Networking Stack Across Desktop, iOS &amp; WebAssembly</strong>
       </a>
-      <a href="#ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls'); return false;">
+      <a href="#ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 13.3) &rarr;</span>
-        <strong class="pager-title">Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (ext:net/websocket, ext:net/tls)</strong>
+        <strong class="pager-title">Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (core:net/websocket, core:net/tls)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" data-topic-id="ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" data-topic-title="Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (ext:net/websocket, ext:net/tls)" data-short-title="13.3 WebSockets &amp; TLS">
-<h3 class="guide-heading" id="ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls"><span class="heading-hash">#</span><span class="heading-text">Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (<code>ext:net/websocket</code>, <code>ext:net/tls</code>)</span></h3>
+  <section class="guide-topic" id="topic-ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" data-topic-id="ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" data-topic-title="Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (core:net/websocket, core:net/tls)" data-short-title="13.3 WebSockets &amp; TLS">
+<h3 class="guide-heading" id="ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls"><span class="heading-hash">#</span><span class="heading-text">Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (<code>core:net/websocket</code>, <code>core:net/tls</code>)</span></h3>
 <p>Need full-duplex framing or an encrypted local HTTPS server? Register a WebSocket route directly on your HTTP router with <code>router.ws(&quot;/path&quot;, ...)</code>, and synthesize an in-memory RSA-2048 X.509 certificate with <code>tls.generate_self_signed_pem(&quot;localhost&quot;)</code>—no external <code>openssl</code> shell scripts or temporary <code>.pem</code> files on disk required:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
@@ -4872,9 +4876,9 @@ SSE events (2): token:{&quot;chunk&quot;:&quot;hello&quot;}
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;ext:net/http&quot;
-import &quot;ext:net/tls&quot;
-import &quot;ext:net/websocket&quot;
+import &quot;core:net/http&quot;
+import &quot;core:net/tls&quot;
+import &quot;core:net/websocket&quot;
 
 fn main() -&gt; void! {
     mut router := http.make_router()
@@ -4917,13 +4921,13 @@ HTTPS status=200, body=TLS-1.3-OK
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch13-building-an-http-router-streaming-sse-extnethttp" class="pager-card pager-prev" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-extnethttp'); return false;">
+      <a href="#ch13-building-an-http-router-streaming-sse-corenethttp" class="pager-card pager-prev" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-corenethttp'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 13.2)</span>
-        <strong class="pager-title">Building an HTTP Router &amp; Streaming SSE (ext:net/http)</strong>
+        <strong class="pager-title">Building an HTTP Router &amp; Streaming SSE (core:net/http)</strong>
       </a>
-      <a href="#ch14-compile-time-json-serialization-schema-synthesis-extjson" class="pager-card pager-next" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-extjson'); return false;">
+      <a href="#ch14-compile-time-json-serialization-schema-synthesis-corejson" class="pager-card pager-next" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-corejson'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 14.1) &rarr;</span>
-        <strong class="pager-title">Compile-Time JSON Serialization &amp; Schema Synthesis (ext:json)</strong>
+        <strong class="pager-title">Compile-Time JSON Serialization &amp; Schema Synthesis (core:json)</strong>
       </a>
     </div>
   </section>
@@ -4945,13 +4949,13 @@ HTTPS status=200, body=TLS-1.3-OK
   </div>
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 14 (3)</span>
-    <a href="#ch14-compile-time-json-serialization-schema-synthesis-extjson" class="topic-pill active" data-topic-pill="ch14-compile-time-json-serialization-schema-synthesis-extjson" title="Compile-Time JSON Serialization &amp; Schema Synthesis (ext:json)" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-extjson'); return false;">14.1 JSON &amp; Schemas</a>
+    <a href="#ch14-compile-time-json-serialization-schema-synthesis-corejson" class="topic-pill active" data-topic-pill="ch14-compile-time-json-serialization-schema-synthesis-corejson" title="Compile-Time JSON Serialization &amp; Schema Synthesis (core:json)" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-corejson'); return false;">14.1 JSON &amp; Schemas</a>
     <a href="#ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite" class="topic-pill" data-topic-pill="ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite" title="Embedded SQLite WAL, Vector Search &amp; SQL Injection Safety (ext:db/sqlite)" onclick="navigateToSubhead('14', 'ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite'); return false;">14.2 SQLite &amp; Vectors</a>
     <a href="#ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing" class="topic-pill" data-topic-pill="ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing" title="Zstandard Compression, AES-256-GCM &amp; Cryptographic Hashing" onclick="navigateToSubhead('14', 'ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing'); return false;">14.3 Zstd, AES &amp; Hash</a>
   </div>
-  <section class="guide-topic active-topic" id="topic-ch14-compile-time-json-serialization-schema-synthesis-extjson" data-topic-id="ch14-compile-time-json-serialization-schema-synthesis-extjson" data-topic-title="Compile-Time JSON Serialization &amp; Schema Synthesis (ext:json)" data-short-title="14.1 JSON &amp; Schemas">
-<h3 class="guide-heading" id="ch14-compile-time-json-serialization-schema-synthesis-extjson"><span class="heading-hash">#</span><span class="heading-text">Compile-Time JSON Serialization &amp; Schema Synthesis (<code>ext:json</code>)</span></h3>
-<p>Using the <code>cfire::reflect&lt;T&gt;</code> tables generated for every struct (Chapter 6), <code>ext:json</code> parses and serializes structs, slices, maps, and optional (<code>T?</code>) fields directly without building an intermediate DOM—unless you explicitly ask for <code>json.parse_dynamic(raw)</code>:</p>
+  <section class="guide-topic active-topic" id="topic-ch14-compile-time-json-serialization-schema-synthesis-corejson" data-topic-id="ch14-compile-time-json-serialization-schema-synthesis-corejson" data-topic-title="Compile-Time JSON Serialization &amp; Schema Synthesis (core:json)" data-short-title="14.1 JSON &amp; Schemas">
+<h3 class="guide-heading" id="ch14-compile-time-json-serialization-schema-synthesis-corejson"><span class="heading-hash">#</span><span class="heading-text">Compile-Time JSON Serialization &amp; Schema Synthesis (<code>core:json</code>)</span></h3>
+<p>Using the <code>cfire::reflect&lt;T&gt;</code> tables generated for every struct (Chapter 6), <code>core:json</code> parses and serializes structs, slices, maps, and optional (<code>T?</code>) fields directly without building an intermediate DOM—unless you explicitly ask for <code>json.parse_dynamic(raw)</code>:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -4969,7 +4973,7 @@ HTTPS status=200, body=TLS-1.3-OK
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;ext:json&quot;
+import &quot;core:json&quot;
 
 type Metric struct {
     Name:  str   `json:&quot;name&quot;`
@@ -5001,9 +5005,9 @@ Dynamic lookup: name=cpu.load, tag[0]=prod
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" class="pager-card pager-prev" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls'); return false;">
+      <a href="#ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" class="pager-card pager-prev" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 13.3)</span>
-        <strong class="pager-title">Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (ext:net/websocket, ext:net/tls)</strong>
+        <strong class="pager-title">Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (core:net/websocket, core:net/tls)</strong>
       </a>
       <a href="#ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite" class="pager-card pager-next" onclick="navigateToSubhead('14', 'ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 14.2) &rarr;</span>
@@ -5076,9 +5080,9 @@ fn main() -&gt; void! {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch14-compile-time-json-serialization-schema-synthesis-extjson" class="pager-card pager-prev" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-extjson'); return false;">
+      <a href="#ch14-compile-time-json-serialization-schema-synthesis-corejson" class="pager-card pager-prev" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-corejson'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 14.1)</span>
-        <strong class="pager-title">Compile-Time JSON Serialization &amp; Schema Synthesis (ext:json)</strong>
+        <strong class="pager-title">Compile-Time JSON Serialization &amp; Schema Synthesis (core:json)</strong>
       </a>
       <a href="#ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing" class="pager-card pager-next" onclick="navigateToSubhead('14', 'ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 14.3) &rarr;</span>
@@ -5271,9 +5275,9 @@ cfire run --ios examples/13-ios-native-ui/main.cf
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 15.1)</span>
         <strong class="pager-title">Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (vendor:raylib, vendor:raygui)</strong>
       </a>
-      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" class="pager-card pager-next" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">
+      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="pager-card pager-next" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 16.1) &rarr;</span>
-        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)</strong>
+        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)</strong>
       </a>
     </div>
   </section>
@@ -5295,12 +5299,12 @@ cfire run --ios examples/13-ios-native-ui/main.cf
   </div>
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 16 (2)</span>
-    <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" class="topic-pill active" data-topic-pill="ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">16.1 64-Voice Mixer</a>
+    <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="topic-pill active" data-topic-pill="ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">16.1 64-Voice Mixer</a>
     <a href="#ch16-streaming-real-time-dsp-encoding-riffwav-files" class="topic-pill" data-topic-pill="ch16-streaming-real-time-dsp-encoding-riffwav-files" title="Streaming Real-Time DSP &amp; Encoding RIFF/WAV Files" onclick="navigateToSubhead('16', 'ch16-streaming-real-time-dsp-encoding-riffwav-files'); return false;">16.2 Real-Time DSP</a>
   </div>
-  <section class="guide-topic active-topic" id="topic-ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" data-topic-id="ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" data-topic-title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)" data-short-title="16.1 64-Voice Mixer">
-<h3 class="guide-heading" id="ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio"><span class="heading-hash">#</span><span class="heading-text">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (<code>ext:audio</code>)</span></h3>
-<p><code>ext:audio</code> gives you a zero-dependency, 64-voice lock-free stereo <code>f32</code> audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (<code>Stream</code>), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:</p>
+  <section class="guide-topic active-topic" id="topic-ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" data-topic-id="ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" data-topic-title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)" data-short-title="16.1 64-Voice Mixer">
+<h3 class="guide-heading" id="ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio"><span class="heading-hash">#</span><span class="heading-text">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (<code>core:audio</code>)</span></h3>
+<p><code>core:audio</code> gives you a zero-dependency, 64-voice lock-free stereo <code>f32</code> audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (<code>Stream</code>), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -5346,7 +5350,7 @@ cfire run --ios examples/13-ios-native-ui/main.cf
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;ext:audio&quot;
+import &quot;core:audio&quot;
 import &quot;core:fs&quot;
 
 fn main() -&gt; void! {
@@ -5386,9 +5390,9 @@ fn main() -&gt; void! {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" class="pager-card pager-prev" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">
+      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="pager-card pager-prev" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 16.1)</span>
-        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)</strong>
+        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)</strong>
       </a>
       <a href="#ch17-unified-cloud-on-device-inference-extai" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-unified-cloud-on-device-inference-extai'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 17.1) &rarr;</span>
@@ -5413,11 +5417,12 @@ fn main() -&gt; void! {
 <h2 id="chapter-17"><a id="ch17"></a>17. LLMs, Multimodal RAG &amp; MCP</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 17 (4)</span>
+    <span class="topic-pill-label">Ch 17 (5)</span>
     <a href="#ch17-unified-cloud-on-device-inference-extai" class="topic-pill active" data-topic-pill="ch17-unified-cloud-on-device-inference-extai" title="Unified Cloud &amp; On-Device Inference (ext:ai)" onclick="navigateToSubhead('17', 'ch17-unified-cloud-on-device-inference-extai'); return false;">17.1 Cloud &amp; Local AI</a>
-    <a href="#ch17-schema-typed-tool-calling-generate-structt" class="topic-pill" data-topic-pill="ch17-schema-typed-tool-calling-generate-structt" title="Schema-Typed Tool Calling &amp; generate_struct[T]" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-generate-structt'); return false;">17.2 Structured Tools</a>
+    <a href="#ch17-schema-typed-tool-calling-validate-generate-structt" class="topic-pill" data-topic-pill="ch17-schema-typed-tool-calling-validate-generate-structt" title="Schema-Typed Tool Calling, validate:&quot;...&quot; &amp; generate_struct[T]" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-validate-generate-structt'); return false;">17.2 Structured Tools</a>
     <a href="#ch17-offline-document-ingestion-simd-vector-rag" class="topic-pill" data-topic-pill="ch17-offline-document-ingestion-simd-vector-rag" title="Offline Document Ingestion &amp; SIMD Vector RAG" onclick="navigateToSubhead('17', 'ch17-offline-document-ingestion-simd-vector-rag'); return false;">17.3 Document RAG</a>
     <a href="#ch17-building-model-context-protocol-mcpserver-tools" class="topic-pill" data-topic-pill="ch17-building-model-context-protocol-mcpserver-tools" title="Building Model Context Protocol (McpServer) Tools" onclick="navigateToSubhead('17', 'ch17-building-model-context-protocol-mcpserver-tools'); return false;">17.4 MCP Servers</a>
+    <a href="#ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" class="topic-pill" data-topic-pill="ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" title="Multi-Turn Agent Loops &amp; Self-Correcting Validation (ai.Agent)" onclick="navigateToSubhead('17', 'ch17-multi-turn-agent-loops-self-correcting-validation-aiagent'); return false;">17.5 Multi-Turn Agent Loops..</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch17-unified-cloud-on-device-inference-extai" data-topic-id="ch17-unified-cloud-on-device-inference-extai" data-topic-title="Unified Cloud &amp; On-Device Inference (ext:ai)" data-short-title="17.1 Cloud &amp; Local AI">
 <h3 class="guide-heading" id="ch17-unified-cloud-on-device-inference-extai"><span class="heading-hash">#</span><span class="heading-text">Unified Cloud &amp; On-Device Inference (<code>ext:ai</code>)</span></h3>
@@ -5433,7 +5438,8 @@ fn main() -&gt; void! {
       <tr><td><code>ai.anthropic(api_key = &quot;&quot;)</code></td><td><code>https://api.anthropic.com/v1</code></td><td><code>ANTHROPIC_API_KEY</code></td><td><code>/v1/messages</code>, SSE streaming, tool use, native image/PDF blocks</td></tr>
       <tr><td><code>ai.gemini(api_key = &quot;&quot;)</code></td><td><code>https://generativelanguage.googleapis.com/v1beta</code></td><td><code>GEMINI_API_KEY</code></td><td><code>:generateContent</code>, <code>:streamGenerateContent</code>, <code>:embedContent</code>, <code>responseSchema</code>, <code>inlineData</code></td></tr>
       <tr><td><code>ai.ollama(host = &quot;http://127.0.0.1:11434&quot;)</code></td><td><code>http://127.0.0.1:11434</code></td><td><code>OLLAMA_HOST</code></td><td>Local <code>/v1/chat/completions</code> &amp; <code>/api/embed</code> (vision, tools, structured JSON schema)</td></tr>
-      <tr><td><code>ai.apple()</code></td><td>On-device (<code>NaturalLanguage</code> / <code>Vision</code>)</td><td>None (offline)</td><td>Apple <code>NLEmbedding</code>, <code>NLLanguageRecognizer</code>, <code>VNRecognizeTextRequest</code>, local synthesis</td></tr>
+      <tr><td><code>ai.local()</code> / <code>ai.apple()</code></td><td>On-device (<code>NaturalLanguage</code> / <code>Vision</code> / <code>Tesseract</code> / SIMD)</td><td>None (offline)</td><td>Cross-platform on-device <code>NLEmbedding</code>/trigram embeddings, <code>NLLanguageRecognizer</code>/script classifier, <code>Vision</code>/<code>Tesseract</code> OCR, local synthesis</td></tr>
+      <tr><td><code>ai.mock(handler)</code> / <code>ai.mock_sequence(turns)</code></td><td>In-memory deterministic test double</td><td>None (offline)</td><td>Offline unit testing for multi-turn <code>ai.Agent</code> tool loops and validation retries</td></tr>
     </tbody>
   </table>
 </div>
@@ -5442,15 +5448,15 @@ fn main() -&gt; void! {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 16.2)</span>
         <strong class="pager-title">Streaming Real-Time DSP &amp; Encoding RIFF/WAV Files</strong>
       </a>
-      <a href="#ch17-schema-typed-tool-calling-generate-structt" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-generate-structt'); return false;">
+      <a href="#ch17-schema-typed-tool-calling-validate-generate-structt" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-validate-generate-structt'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 17.2) &rarr;</span>
-        <strong class="pager-title">Schema-Typed Tool Calling &amp; generate_struct[T]</strong>
+        <strong class="pager-title">Schema-Typed Tool Calling, validate:&quot;...&quot; &amp; generate_struct[T]</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch17-schema-typed-tool-calling-generate-structt" data-topic-id="ch17-schema-typed-tool-calling-generate-structt" data-topic-title="Schema-Typed Tool Calling &amp; generate_struct[T]" data-short-title="17.2 Structured Tools">
-<h3 class="guide-heading" id="ch17-schema-typed-tool-calling-generate-structt"><span class="heading-hash">#</span><span class="heading-text">Schema-Typed Tool Calling &amp; <code>generate_struct[T]</code></span></h3>
-<p>Because <code>cfire</code> reflects struct tags at compile time, you never hand-write JSON Schema strings for LLM tool definitions or structured output extraction. Pass any struct <code>T</code> to <code>ai.tool_def[T](name, desc)</code> or <code>client.generate_struct[T](model, prompt)</code>:</p>
+  <section class="guide-topic" id="topic-ch17-schema-typed-tool-calling-validate-generate-structt" data-topic-id="ch17-schema-typed-tool-calling-validate-generate-structt" data-topic-title="Schema-Typed Tool Calling, validate:&quot;...&quot; &amp; generate_struct[T]" data-short-title="17.2 Structured Tools">
+<h3 class="guide-heading" id="ch17-schema-typed-tool-calling-validate-generate-structt"><span class="heading-hash">#</span><span class="heading-text">Schema-Typed Tool Calling, <code>validate:&quot;...&quot;</code> &amp; <code>generate_struct[T]</code></span></h3>
+<p>Because <code>cfire</code> reflects struct tags at compile time, you never hand-write JSON Schema strings for LLM tool definitions or structured output extraction. Attach <code>validate:&quot;...&quot;</code> constraints (<code>min</code>, <code>max</code>, <code>min_len</code>, <code>max_len</code>, <code>non_empty</code>, <code>oneof=a|b|c</code>) and pass any struct <code>T</code> to <code>ai.tool_def[T](name, desc)</code>, <code>client.generate_struct[T](prompt)</code>, or <code>agent.run_struct[T](prompt)</code>:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -5470,13 +5476,12 @@ fn main() -&gt; void! {
     weather_tool := ai.tool_def[WeatherLookup](&quot;get_weather&quot;, &quot;Fetches current weather for a city&quot;)
     println(&quot;Tool '{}' schema has city: {}&quot;, weather_tool.name, weather_tool.parameters_schema.contains(&quot;\&quot;city\&quot;&quot;))
 
-    client := ai.apple()
+    client := ai.local()
     ticket := try client.generate_struct[IncidentTicket](
-        &quot;local&quot;,
         &quot;Service=auth-gateway experienced p99 latency spike (severity 2)&quot;
     )
     println(&quot;Structured ticket: service={}, severity={}&quot;, ticket.Service, ticket.Severity)
-    println(&quot;Lang(FR)={}, Lang(JA)={}&quot;, ai.detect_language(&quot;Bonjour le monde, comment allez-vous&quot;), ai.detect_language(&quot;これは日本語のテストです&quot;))
+    println(&quot;Lang(FR)={}, Lang(JA)={}&quot;, client.detect_language(&quot;Bonjour le monde, comment allez-vous&quot;), client.detect_language(&quot;これは日本語のテストです&quot;))
 }
 </code></pre>
 <div class="terminal-tray">
@@ -5499,7 +5504,7 @@ Lang(FR)=fr, Lang(JA)=ja
   </section>
   <section class="guide-topic" id="topic-ch17-offline-document-ingestion-simd-vector-rag" data-topic-id="ch17-offline-document-ingestion-simd-vector-rag" data-topic-title="Offline Document Ingestion &amp; SIMD Vector RAG" data-short-title="17.3 Document RAG">
 <h3 class="guide-heading" id="ch17-offline-document-ingestion-simd-vector-rag"><span class="heading-hash">#</span><span class="heading-text">Offline Document Ingestion &amp; SIMD Vector RAG</span></h3>
-<p><code>ai.load_document(path)</code> and <code>ai.parse_document(bytes, filename)</code> extract structured sections (<code>[]DocumentSection { index, kind, title, text }</code>) from <code>.pdf</code>, <code>.docx</code>, <code>.pptx</code>, <code>.xlsx</code>, <code>.odt</code>, <code>.odp</code>, <code>.ods</code>, <code>.epub</code>, <code>.html</code>, <code>.csv</code>, and <code>.md</code> files using a built-in pure-C++23 DEFLATE/ZIP/XML/PDF parser. Combine <code>ai.chunk_document</code>, <code>ai.embed(&quot;local&quot;, ...)</code>, and <code>ext:db/sqlite</code> for an offline vector RAG pipeline:</p>
+<p><code>ai.load_document(path)</code> and <code>ai.parse_document(bytes, filename)</code> extract structured sections (<code>[]DocumentSection { index, kind, title, text }</code>) from <code>.pdf</code>, <code>.docx</code>, <code>.pptx</code>, <code>.xlsx</code>, <code>.odt</code>, <code>.odp</code>, <code>.ods</code>, <code>.epub</code>, <code>.html</code>, <code>.csv</code>, and <code>.md</code> files using a built-in pure-C++23 DEFLATE/ZIP/XML/PDF parser. Combine <code>ai.chunk_document</code>, <code>client.embed(...)</code> (<code>ai.local()</code>), and <code>ext:db/sqlite</code> for an offline vector RAG pipeline:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -5517,16 +5522,17 @@ fn main() -&gt; void! {
     doc     := try ai.parse_document(raw_doc.bytes(), &quot;architecture.md&quot;)
     chunks  := ai.chunk_document(doc, 256, 32)
 
+    client := ai.local()
     mut db := try sqlite.open(&quot;:memory:&quot;)
     defer db.close()
     try db.exec(&quot;CREATE TABLE chunks (page_num INT, title TEXT, body TEXT, vec BLOB)&quot;)
 
     for ch in chunks {
-        v := try ai.embed(&quot;local&quot;, ch.text)
+        v := try client.embed(ch.text)
         try db.exec(&quot;INSERT INTO chunks VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, v)
     }
 
-    qvec := try ai.embed(&quot;local&quot;, &quot;concurrent database WAL readers&quot;)
+    qvec := try client.embed(&quot;concurrent database WAL readers&quot;)
     hits := try db.query[RagHit](
         &quot;SELECT page_num, title, vec_cosine_similarity(vec, ?1) AS score FROM chunks ORDER BY score DESC LIMIT 1&quot;,
         qvec
@@ -5540,9 +5546,9 @@ fn main() -&gt; void! {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch17-schema-typed-tool-calling-generate-structt" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-generate-structt'); return false;">
+      <a href="#ch17-schema-typed-tool-calling-validate-generate-structt" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-validate-generate-structt'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.2)</span>
-        <strong class="pager-title">Schema-Typed Tool Calling &amp; generate_struct[T]</strong>
+        <strong class="pager-title">Schema-Typed Tool Calling, validate:&quot;...&quot; &amp; generate_struct[T]</strong>
       </a>
       <a href="#ch17-building-model-context-protocol-mcpserver-tools" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-building-model-context-protocol-mcpserver-tools'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 17.4) &rarr;</span>
@@ -5585,6 +5591,68 @@ fn main() {
       <a href="#ch17-offline-document-ingestion-simd-vector-rag" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-offline-document-ingestion-simd-vector-rag'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.3)</span>
         <strong class="pager-title">Offline Document Ingestion &amp; SIMD Vector RAG</strong>
+      </a>
+      <a href="#ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-multi-turn-agent-loops-self-correcting-validation-aiagent'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 17.5) &rarr;</span>
+        <strong class="pager-title">Multi-Turn Agent Loops &amp; Self-Correcting Validation (ai.Agent)</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" data-topic-id="ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" data-topic-title="Multi-Turn Agent Loops &amp; Self-Correcting Validation (ai.Agent)" data-short-title="17.5 Multi-Turn Agent Loops..">
+<h3 class="guide-heading" id="ch17-multi-turn-agent-loops-self-correcting-validation-aiagent"><span class="heading-hash">#</span><span class="heading-text">Multi-Turn Agent Loops &amp; Self-Correcting Validation (<code>ai.Agent</code>)</span></h3>
+<p>Inspired by Pydantic AI, <code>ai.make_agent(client, model, system_prompt)</code> orchestrates multi-turn tool calls, shares tool registries with <code>ai.McpServer</code> via <code>agent.use_mcp(mcp)</code>, and automatically feeds <code>validate:&quot;...&quot;</code> or custom validator errors back to the model to self-correct (<code>run_struct[Out]</code>, <code>run_struct_validated[Out]</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+import &quot;ext:ai&quot; as ai
+
+type MetricArgs struct {
+    Service: str `json:&quot;service&quot; validate:&quot;non_empty&quot;`
+}
+
+type HealthReport struct {
+    Service:  str `json:&quot;service&quot;  validate:&quot;non_empty&quot;`
+    Severity: i64 `json:&quot;severity&quot; validate:&quot;min=1,max=5&quot;`
+    Env:      str `json:&quot;env&quot;      validate:&quot;oneof=dev|staging|prod&quot;`
+}
+
+fn main() -&gt; void! {
+    // Deterministic offline mock sequence:
+    // Turn 1: LLM calls tool `fetch_metrics`
+    // Turn 2: LLM returns invalid severity=9 (triggers self-correction retry!)
+    // Turn 3: LLM self-corrects to severity=2
+    mut step := 0
+    client := ai.mock(|msgs: []ai.Message, tools: []ai.Tool| -&gt; ai.ChatResponse! {
+        step += 1
+        if step == 1 {
+            mut res := ai.ChatResponse{}
+            res.tool_calls.push(ai.ToolCall{id: &quot;call_1&quot;, name: &quot;fetch_metrics&quot;, arguments_json: &quot;{\&quot;service\&quot;:\&quot;billing\&quot;}&quot;})
+            return res
+        }
+        if step == 2 {
+            return ai.ChatResponse{text: &quot;{\&quot;service\&quot;:\&quot;billing\&quot;,\&quot;severity\&quot;:9,\&quot;env\&quot;:\&quot;prod\&quot;}&quot;}
+        }
+        return ai.ChatResponse{text: &quot;{\&quot;service\&quot;:\&quot;billing\&quot;,\&quot;severity\&quot;:2,\&quot;env\&quot;:\&quot;prod\&quot;}&quot;}
+    })
+
+    mut agent := ai.make_agent(client, &quot;mock-model&quot;, &quot;You are an SRE assistant.&quot;)
+    agent.register_tool[MetricArgs](&quot;fetch_metrics&quot;, &quot;Fetches service telemetry&quot;, |args: MetricArgs| -&gt; str! {
+        return &quot;p99=420ms for {args.Service}&quot;
+    })
+
+    report := try agent.run_struct[HealthReport](&quot;Assess billing service health&quot;)
+    println(&quot;Agent report: service={}, severity={}, env={}, steps={}&quot;, report.Service, report.Severity, report.Env, step)
+}
+</code></pre>
+<div class="terminal-tray">
+  <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
+  <pre><code>Agent report: service=billing, severity=2, env=prod, steps=3
+</code></pre>
+</div>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch17-building-model-context-protocol-mcpserver-tools" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-building-model-context-protocol-mcpserver-tools'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.4)</span>
+        <strong class="pager-title">Building Model Context Protocol (McpServer) Tools</strong>
       </a>
       <a href="#ch18-why-extwebui-architecture-zero-port-vfs-applocalhost" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-why-extwebui-architecture-zero-port-vfs-applocalhost'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 18.1) &rarr;</span>
@@ -5637,9 +5705,9 @@ cfire run examples/17-webui-studio/main.cf
 cfire run --ios examples/17-webui-studio/main.cf
 </code></pre>
     <div class="chapter-pager topic-pager">
-      <a href="#ch17-building-model-context-protocol-mcpserver-tools" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-building-model-context-protocol-mcpserver-tools'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.4)</span>
-        <strong class="pager-title">Building Model Context Protocol (McpServer) Tools</strong>
+      <a href="#ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" class="pager-card pager-prev" onclick="navigateToSubhead('17', 'ch17-multi-turn-agent-loops-self-correcting-validation-aiagent'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 17.5)</span>
+        <strong class="pager-title">Multi-Turn Agent Loops &amp; Self-Correcting Validation (ai.Agent)</strong>
       </a>
       <a href="#ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 18.2) &rarr;</span>
@@ -5914,14 +5982,14 @@ fn main() -&gt; void! {
   </div>
   <section class="guide-topic active-topic" id="topic-ch19-blueprint-rag-httpjson-microservice" data-topic-id="ch19-blueprint-rag-httpjson-microservice" data-topic-title="Blueprint: RAG + HTTP/JSON Microservice" data-short-title="19.1 RAG Microservice">
 <h3 class="guide-heading" id="ch19-blueprint-rag-httpjson-microservice"><span class="heading-hash">#</span><span class="heading-text">Blueprint: RAG + HTTP/JSON Microservice</span></h3>
-<p>Let's pull <code>ext:db/sqlite</code> (WAL mode + SIMD vector search), <code>ext:ai</code> (local embeddings), <code>ext:json</code> (compile-time struct serialization), and <code>ext:net/http</code> (pattern-matched HTTP router) together into a single, zero-dependency microservice:</p>
+<p>Let's pull <code>ext:db/sqlite</code> (WAL mode + SIMD vector search), <code>ext:ai</code> (local embeddings), <code>core:json</code> (compile-time struct serialization), and <code>core:net/http</code> (pattern-matched HTTP router) together into a single, zero-dependency microservice:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
 import &quot;ext:ai&quot; as ai
 import &quot;ext:db/sqlite&quot; as sqlite
-import &quot;ext:json&quot; as json
-import &quot;ext:net/http&quot; as http
+import &quot;core:json&quot; as json
+import &quot;core:net/http&quot; as http
 
 type SearchRequest struct {
     Query: str `json:&quot;query&quot;`
@@ -5940,13 +6008,14 @@ fn main() -&gt; void! {
     try db.exec(&quot;CREATE TABLE kb (title TEXT, body TEXT, vec BLOB)&quot;)
 
     docs := [
-        &quot;Lock-Free Audio: ext:audio mixes 64 stereo f32 voices in real time.&quot;,
+        &quot;Lock-Free Audio: core:audio mixes 64 stereo f32 voices in real time.&quot;,
         &quot;Zero-Cost Safety: cfire lowers T! and T? to std::expected and std::optional.&quot;,
-        &quot;TLS 1.3 &amp; WebSockets: ext:net/http upgrades RFC 6455 connections natively.&quot;
+        &quot;TLS 1.3 &amp; WebSockets: core:net/http upgrades RFC 6455 connections natively.&quot;
     ]
+    client := ai.local()
     for d in docs {
         parts := d.split(&quot;: &quot;)
-        vec   := try ai.embed(&quot;local&quot;, d)
+        vec   := try client.embed(d)
         try db.exec(&quot;INSERT INTO kb VALUES (?1, ?2, ?3)&quot;, parts[0], d, vec)
     }
 
@@ -5954,7 +6023,7 @@ fn main() -&gt; void! {
     mut router := http.make_router()
     router.post(&quot;/v1/search&quot;, |req: http.Request| -&gt; http.Response {
         q := json.parse[SearchRequest](req.body) or return http.Response.json(400, &quot;{\&quot;error\&quot;:\&quot;invalid JSON\&quot;}&quot;)
-        qvec := ai.embed(&quot;local&quot;, q.Query) or return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;embed failed\&quot;}&quot;)
+        qvec := client.embed(q.Query) or return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;embed failed\&quot;}&quot;)
         hits := db.query[SearchResult](
             &quot;SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM kb ORDER BY score DESC LIMIT ?2&quot;,
             qvec, q.TopK
@@ -6040,7 +6109,7 @@ fn main() -&gt; void! {
     <tbody>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/01-hello-core"><code>examples/01-hello-core</code></a></td><td>Hello Core &amp; Defer</td><td>Mutability (<code>mut</code>), parameter intents (<code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>), <code>defer</code> scope guards, string interpolation</td><td><code>cfire run examples/01-hello-core/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/02-log-compressor"><code>examples/02-log-compressor</code></a></td><td>Log Compressor</td><td>Declarative CLI flag parsing (<code>core:cli</code>), RFC 8878 Zstandard compression (<code>ext:compress/zstd</code>), <code>core:fs</code></td><td><code>cfire run examples/02-log-compressor/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/03-pkg-cache"><code>examples/03-pkg-cache</code></a></td><td>Package Cache</td><td>SQLite3 WAL transactions (<code>ext:db/sqlite</code>), compile-time JSON struct mapping (<code>ext:json</code>), SHA-256 (<code>core:crypto/sha256</code>)</td><td><code>cfire run examples/03-pkg-cache/main.cf</code></td></tr>
+      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/03-pkg-cache"><code>examples/03-pkg-cache</code></a></td><td>Package Cache</td><td>SQLite3 WAL transactions (<code>ext:db/sqlite</code>), compile-time JSON struct mapping (<code>core:json</code>), SHA-256 (<code>core:crypto/sha256</code>)</td><td><code>cfire run examples/03-pkg-cache/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/04-async-workers"><code>examples/04-async-workers</code></a></td><td>Async Workers</td><td>Scoped thread pool concurrency (<code>async.scope</code>), disjoint slice writes, MPMC <code>Channel[T]</code> (<code>core:sync</code>)</td><td><code>cfire run examples/04-async-workers/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/05-cmake-interop"><code>examples/05-cmake-interop</code></a></td><td>CMake Interop</td><td>Clang JSON AST ingestion (<code>import cpp &quot;&lt;zstd.h&gt;&quot;</code>), <code>build.CMake</code> native library orchestration</td><td><code>cfire run examples/05-cmake-interop/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/06-raylib-viz"><code>examples/06-raylib-viz</code></a></td><td>Raylib Visualization</td><td>Hardware 2D graphics loop (<code>vendor:raylib</code>), 60 FPS particle &amp; telemetry rendering (<code>--web</code> &amp; <code>--ios</code> ready)</td><td><code>cfire run examples/06-raylib-viz/main.cf</code></td></tr>
@@ -6048,12 +6117,12 @@ fn main() -&gt; void! {
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/08-multi-pkg-cc-build"><code>examples/08-multi-pkg-cc-build</code></a></td><td>Multi-Package Build</td><td>Multi-package <code>build.cf</code> orchestration, static archive compilation (<code>build.CC</code>)</td><td><code>cfire run examples/08-multi-pkg-cc-build</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/09-stdlib-test-pointers"><code>examples/09-stdlib-test-pointers</code></a></td><td>Stdlib &amp; Tests</td><td>Smart pointers (<code>*T</code>, <code>^T</code>), <code>test &quot;...&quot;</code> blocks, <code>core:testing</code> assertions</td><td><code>cfire test examples/09-stdlib-test-pointers/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/10-cmake-and-make-deps"><code>examples/10-cmake-and-make-deps</code></a></td><td>Multi-Build Deps</td><td>Simultaneous <code>build.CMake</code> and <code>build.Make</code> external dependency orchestration in a single <code>build.cf</code></td><td><code>cfire run examples/10-cmake-and-make-deps</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/11-http-server-router"><code>examples/11-http-server-router</code></a></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server (<code>ext:net/http</code>), fluent request router, URL <code>:param</code> &amp; query extraction</td><td><code>cfire run examples/11-http-server-router/main.cf</code></td></tr>
+      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/11-http-server-router"><code>examples/11-http-server-router</code></a></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server (<code>core:net/http</code>), fluent request router, URL <code>:param</code> &amp; query extraction</td><td><code>cfire run examples/11-http-server-router/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/12-raygui-controls"><code>examples/12-raygui-controls</code></a></td><td>Raygui GUI Kit</td><td>Immediate-mode controls (<code>vendor:raygui</code>): checkboxes, sliders, progress bars, combo boxes, <code>&amp;mut str</code> text boxes</td><td><code>cfire run examples/12-raygui-controls/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/13-ios-native-ui"><code>examples/13-ios-native-ui</code></a></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit (<code>examples/13-ios-native-ui/ui/kit.cf</code>), safe-area insets, real-time <code>ext:audio</code> metering (<code>--ios</code>, <code>--web</code>, desktop)</td><td><code>cfire run --ios examples/13-ios-native-ui/main.cf</code></td></tr>
+      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/13-ios-native-ui"><code>examples/13-ios-native-ui</code></a></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit (<code>examples/13-ios-native-ui/ui/kit.cf</code>), safe-area insets, real-time <code>core:audio</code> metering (<code>--ios</code>, <code>--web</code>, desktop)</td><td><code>cfire run --ios examples/13-ios-native-ui/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>ai.make_mcp_server</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>ext:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
+      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>core:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/17-webui-studio"><code>examples/17-webui-studio</code></a></td><td>Hybrid WebUI Studio</td><td>Wails/Tauri-style native WebView (<code>ext:webui</code>), typed <code>app.bind[T]</code> JSON-RPC 2.0, <code>window.backend</code> ES6 Proxy, <code>app://localhost/</code> VFS, offscreen <code>WKWebView</code> test (<code>--ios</code> &amp; desktop)</td><td><code>cfire run examples/17-webui-studio/main.cf</code></td></tr>
     </tbody>
   </table>
@@ -6201,13 +6270,13 @@ fn main() -&gt; void! {
     <div class="toc-chapter-group" id="toc-group-13" style="display: none;">
       <ul class="toc-list">
         <li><a href="#ch13-one-networking-stack-across-desktop-ios-webassembly" title="One Networking Stack Across Desktop, iOS &amp; WebAssembly" onclick="navigateToSubhead('13', 'ch13-one-networking-stack-across-desktop-ios-webassembly'); return false;">13.1 Cross-Platform Net</a></li>
-        <li><a href="#ch13-building-an-http-router-streaming-sse-extnethttp" title="Building an HTTP Router &amp; Streaming SSE (ext:net/http)" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-extnethttp'); return false;">13.2 HTTP &amp; SSE</a></li>
-        <li><a href="#ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls" title="Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (ext:net/websocket, ext:net/tls)" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-extnetwebsocket-extnettls'); return false;">13.3 WebSockets &amp; TLS</a></li>
+        <li><a href="#ch13-building-an-http-router-streaming-sse-corenethttp" title="Building an HTTP Router &amp; Streaming SSE (core:net/http)" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-corenethttp'); return false;">13.2 HTTP &amp; SSE</a></li>
+        <li><a href="#ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls" title="Upgrading to WebSockets &amp; Self-Signed TLS 1.3 (core:net/websocket, core:net/tls)" onclick="navigateToSubhead('13', 'ch13-upgrading-to-websockets-self-signed-tls-13-corenetwebsocket-corenettls'); return false;">13.3 WebSockets &amp; TLS</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-14" style="display: none;">
       <ul class="toc-list">
-        <li><a href="#ch14-compile-time-json-serialization-schema-synthesis-extjson" title="Compile-Time JSON Serialization &amp; Schema Synthesis (ext:json)" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-extjson'); return false;">14.1 JSON &amp; Schemas</a></li>
+        <li><a href="#ch14-compile-time-json-serialization-schema-synthesis-corejson" title="Compile-Time JSON Serialization &amp; Schema Synthesis (core:json)" onclick="navigateToSubhead('14', 'ch14-compile-time-json-serialization-schema-synthesis-corejson'); return false;">14.1 JSON &amp; Schemas</a></li>
         <li><a href="#ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite" title="Embedded SQLite WAL, Vector Search &amp; SQL Injection Safety (ext:db/sqlite)" onclick="navigateToSubhead('14', 'ch14-embedded-sqlite-wal-vector-search-sql-injection-safety-extdbsqlite'); return false;">14.2 SQLite &amp; Vectors</a></li>
         <li><a href="#ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing" title="Zstandard Compression, AES-256-GCM &amp; Cryptographic Hashing" onclick="navigateToSubhead('14', 'ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing'); return false;">14.3 Zstd, AES &amp; Hash</a></li>
       </ul>
@@ -6220,16 +6289,17 @@ fn main() -&gt; void! {
     </div>
     <div class="toc-chapter-group" id="toc-group-16" style="display: none;">
       <ul class="toc-list">
-        <li><a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">16.1 64-Voice Mixer</a></li>
+        <li><a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">16.1 64-Voice Mixer</a></li>
         <li><a href="#ch16-streaming-real-time-dsp-encoding-riffwav-files" title="Streaming Real-Time DSP &amp; Encoding RIFF/WAV Files" onclick="navigateToSubhead('16', 'ch16-streaming-real-time-dsp-encoding-riffwav-files'); return false;">16.2 Real-Time DSP</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-17" style="display: none;">
       <ul class="toc-list">
         <li><a href="#ch17-unified-cloud-on-device-inference-extai" title="Unified Cloud &amp; On-Device Inference (ext:ai)" onclick="navigateToSubhead('17', 'ch17-unified-cloud-on-device-inference-extai'); return false;">17.1 Cloud &amp; Local AI</a></li>
-        <li><a href="#ch17-schema-typed-tool-calling-generate-structt" title="Schema-Typed Tool Calling &amp; generate_struct[T]" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-generate-structt'); return false;">17.2 Structured Tools</a></li>
+        <li><a href="#ch17-schema-typed-tool-calling-validate-generate-structt" title="Schema-Typed Tool Calling, validate:&quot;...&quot; &amp; generate_struct[T]" onclick="navigateToSubhead('17', 'ch17-schema-typed-tool-calling-validate-generate-structt'); return false;">17.2 Structured Tools</a></li>
         <li><a href="#ch17-offline-document-ingestion-simd-vector-rag" title="Offline Document Ingestion &amp; SIMD Vector RAG" onclick="navigateToSubhead('17', 'ch17-offline-document-ingestion-simd-vector-rag'); return false;">17.3 Document RAG</a></li>
         <li><a href="#ch17-building-model-context-protocol-mcpserver-tools" title="Building Model Context Protocol (McpServer) Tools" onclick="navigateToSubhead('17', 'ch17-building-model-context-protocol-mcpserver-tools'); return false;">17.4 MCP Servers</a></li>
+        <li><a href="#ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" title="Multi-Turn Agent Loops &amp; Self-Correcting Validation (ai.Agent)" onclick="navigateToSubhead('17', 'ch17-multi-turn-agent-loops-self-correcting-validation-aiagent'); return false;">17.5 Multi-Turn Agent Loops..</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-18" style="display: none;">

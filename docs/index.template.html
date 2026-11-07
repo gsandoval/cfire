@@ -1069,11 +1069,11 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 21 zero-dependency C++23 primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:cli</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 11 opt-in domain packages (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 30 zero-setup C++23 &amp; baseline OS primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
         </p>
       </div>
       <div class="bento-footer">
-        <code>core:* (zero deps) &bull; ext:* (opt-in domain) &bull; vendor:* (C/C++ engines)</code>
+        <code>core:* (zero setup) &bull; ext:* (native C/AI/WebUI) &bull; vendor:* (C/C++ engines)</code>
       </div>
     </div>
 
@@ -1086,11 +1086,11 @@ syncCfireThemeBtn();
         </div>
         <h3>Opt-In AI Clients, Local Vectors &amp; MCP Tool Servers</h3>
         <p>
-          When imported, <code>ext:ai</code>, <code>ext:db/sqlite</code>, and <code>ext:json</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
+          When imported, <code>ext:ai</code>, <code>ext:db/sqlite</code>, and <code>core:json</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
         </p>
       </div>
       <div class="bento-footer">
-        <code>ext:ai &bull; ext:db/sqlite &bull; ext:json &bull; json.schema[T]()</code>
+        <code>ext:ai &bull; ext:db/sqlite &bull; core:json &bull; json.schema[T]()</code>
       </div>
     </div>
 
@@ -1185,7 +1185,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 21 zero-dep core modules + 11 opt-in domain extensions (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>) + 2 vendor engines.</td>
+          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 30 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>) + 2 vendor engines.</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -1304,12 +1304,12 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-13">
       <div class="roadmap-num">Chapter 13</div>
       <h4>HTTP, SSE, WebSockets &amp; TLS</h4>
-      <p>High-performance HTTP/1.1 client (<code>ext:net/http</code>), SSE streaming, routers, RFC 6455 WebSockets (<code>ext:net/websocket</code>), and TLS 1.3 (<code>ext:net/tls</code>).</p>
+      <p>High-performance HTTP/1.1 client (<code>core:net/http</code>), SSE streaming, routers, RFC 6455 WebSockets (<code>core:net/websocket</code>), and TLS 1.3 (<code>core:net/tls</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-14">
       <div class="roadmap-num">Chapter 14</div>
       <h4>JSON, SQLite, Zstd &amp; Cryptography</h4>
-      <p>Compile-time SIMD JSON (<code>ext:json</code>), embedded SQLite WAL with vector similarity (<code>ext:db/sqlite</code>), Zstandard (<code>ext:compress/zstd</code>), and <code>core:crypto/*</code>.</p>
+      <p>Compile-time SIMD JSON (<code>core:json</code>), embedded SQLite WAL with vector similarity (<code>ext:db/sqlite</code>), Zstandard (<code>ext:compress/zstd</code>), and <code>core:crypto/*</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-15">
       <div class="roadmap-num">Chapter 15</div>
@@ -1319,7 +1319,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-16">
       <div class="roadmap-num">Chapter 16</div>
       <h4>Audio Synthesis &amp; Real-Time DSP</h4>
-      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>ext:audio</code>).</p>
+      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>core:audio</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-17">
       <div class="roadmap-num">Chapter 17</div>

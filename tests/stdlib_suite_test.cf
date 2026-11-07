@@ -8,8 +8,8 @@ import "core:fs"
 import "core:str"
 import "core:unicode"
 import "ext:compress/zstd"
-import "ext:json"
-import "ext:net/url"
+import "core:json"
+import "core:net/url"
 
 type ConfigRecord struct {
     service:     str   `json:"service"`

@@ -245,7 +245,7 @@ public:
         bool any_json_tag = false;
         for (const auto& [sname, tags] : cf_.struct_tags) {
             for (const auto& t : tags) {
-                if (!t.json_key.empty() || t.custom_tags.contains("desc")) { any_json_tag = true; break; }
+                if (!t.json_key.empty() || t.custom_tags.contains("desc") || t.custom_tags.contains("validate")) { any_json_tag = true; break; }
             }
             if (any_json_tag) break;
         }
@@ -1174,6 +1174,7 @@ public:
             if (tr.name == "ai::ToolCall") return "cfire::ai::ToolCall";
             if (tr.name == "ai::ChatResponse") return "cfire::ai::ChatResponse";
             if (tr.name == "ai::McpServer") return "cfire::ai::McpServer";
+            if (tr.name == "ai::Agent") return "cfire::ai::Agent";
             if (tr.name == "webui::App" || (tr.name == "App" && used_core_.contains("webui"))) return "cfire::webui::App";
         }
         if (tr.name == "sync::Channel" && tr.elem_type) {

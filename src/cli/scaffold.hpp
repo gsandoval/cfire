@@ -404,7 +404,7 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
     auto_imports.insert("core:math");
     auto_imports.insert("core:time");
     auto_imports.insert("core:unicode");
-    auto_imports.insert("ext:json");
+    auto_imports.insert("core:json");
 
     for (std::size_t i = 0; i + 1 < tokens.size(); ++i) {
         if (tokens[i].kind == cfire::frontend::TokenKind::Ident &&

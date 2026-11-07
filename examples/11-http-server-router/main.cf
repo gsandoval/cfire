@@ -1,7 +1,7 @@
 package main
 
-import "ext:net/http"
-import "ext:json"
+import "core:net/http"
+import "core:json"
 
 type Item struct {
     id:   i64 `json:"id"`

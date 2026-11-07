@@ -6,8 +6,8 @@ import "core:os"
 import "core:sync"
 import "core:math"
 import "core:rand"
-import "ext:json"
-import "ext:net"
+import "core:json"
+import "core:net"
 
 type Metric struct {
     Service: str  `json:"service"`

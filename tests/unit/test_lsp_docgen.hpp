@@ -594,8 +594,8 @@ ok
 
         // 2. Verify codegen hygiene for AI + JSON + SQLite snippet (deduplicated defines/links, no unused headers)
         std::string ai_snip_cpp = cfire::doc::compile_snippet_to_cpp("test_ai_hygiene.cf", R"CF(package main
-import "core:ai" as ai
-import "core:db/sqlite" as sqlite
+import "ext:ai" as ai
+import "ext:db/sqlite" as sqlite
 import "core:json" as json
 fn main() {
     doc := try ai.parse_document("# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.", "arch.md")
@@ -649,8 +649,8 @@ fn main() {
             .assert_contains("fnv1a hash: 0x268ccafd", "Showcase Tab 5 output matches telemetry");
 
         run_cfire_source(R"CF(package main
-import "core:ai" as ai
-import "core:db/sqlite" as sqlite
+import "ext:ai" as ai
+import "ext:db/sqlite" as sqlite
 import "core:json" as json
 type QueryPlan struct {
     Target: str `json:"target" desc:"Search target concept"`
@@ -665,13 +665,14 @@ fn main() {
     schema := json.schema[QueryPlan]()
     doc := try ai.parse_document("# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.", "arch.md")
     chunks := ai.chunk_document(doc, 512, 64)
+    client := ai.local()
     mut db := try sqlite.open(":memory:")
     try db.exec("CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)")
     for ch in chunks {
-        vec := try ai.embed("local", ch.text)
+        vec := try client.embed(ch.text)
         try db.exec("INSERT INTO docs VALUES (?1, ?2, ?3, ?4)", ch.index, ch.title, ch.text, vec)
     }
-    qvec := try ai.embed("local", "modern C++23 compiler")
+    qvec := try client.embed("modern C++23 compiler")
     hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
     if hits.len() > 0 {
         println("Match [{}]: {}", hits[0].Title, hits[0].Snippet)
