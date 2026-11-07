@@ -232,6 +232,13 @@ inline constexpr std::int32_t STDERR = STDERR_FILENO;
 [[nodiscard]] inline auto fd_close(std::int32_t fd) -> std::expected<void, cfire::Error> {
     if (fd < 0) return cfire::make_error("cannot close negative file descriptor");
 #if defined(_WIN32)
+    SOCKET s = INVALID_SOCKET;
+    if (cfire::detail::take_win32_socket_fd(static_cast<int>(fd), s)) {
+        if (::closesocket(s) != 0) {
+            return cfire::make_error(std::format("fd_close({}) closesocket failed: {}", fd, ::WSAGetLastError()));
+        }
+        return {};
+    }
     if (::_close(static_cast<int>(fd)) != 0) {
         return cfire::make_error(std::format("fd_close({}) failed: {}", fd, std::strerror(errno)));
     }
@@ -643,6 +650,21 @@ private:
 [[nodiscard]] inline auto poll_fd(std::int32_t fd, std::int64_t timeout_ms = 0) noexcept -> bool {
     if (fd < 0) return false;
 #if defined(_WIN32)
+    SOCKET s = INVALID_SOCKET;
+    if (cfire::detail::lookup_win32_socket_fd(static_cast<int>(fd), s)) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        timeval tv{};
+        timeval* tvp = nullptr;
+        if (timeout_ms >= 0) {
+            tv.tv_sec = static_cast<long>(timeout_ms / 1000);
+            tv.tv_usec = static_cast<long>((timeout_ms % 1000) * 1000);
+            tvp = &tv;
+        }
+        int rc = ::select(0, &rfds, nullptr, nullptr, tvp);
+        return rc > 0;
+    }
     intptr_t osf = ::_get_osfhandle(static_cast<int>(fd));
     if (osf == -1) return false;
     HANDLE h = reinterpret_cast<HANDLE>(osf);
@@ -677,7 +699,13 @@ private:
 
 [[nodiscard]] inline auto socketpair() -> std::expected<std::vector<std::int32_t>, cfire::Error> {
 #if defined(_WIN32)
-    return pipe();
+    SOCKET pair[2]{INVALID_SOCKET, INVALID_SOCKET};
+    if (!cfire::detail::win32_create_socketpair(pair)) {
+        return cfire::make_error("win32 loopback socketpair failed");
+    }
+    int fd0 = cfire::detail::register_win32_socket_fd(pair[0]);
+    int fd1 = cfire::detail::register_win32_socket_fd(pair[1]);
+    return std::vector<std::int32_t>{fd0, fd1};
 #else
     int sv[2]{-1, -1};
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {

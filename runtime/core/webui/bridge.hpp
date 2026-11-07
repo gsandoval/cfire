@@ -53,7 +53,7 @@
 #include <webkit2/webkit2.h>
 #include <jsc/jsc.h>
 #endif
-#elif defined(_WIN32)
+#elif defined(_WIN32) && !defined(CFIRE_TEST_WIN32_BACKEND)
 #ifndef NOMINMAX
 #define NOMINMAX 1
 #endif
@@ -66,6 +66,10 @@
 
 #if defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
 #define CFIRE_HAS_LINUX_WEBKITGTK 1
+#endif
+
+#if defined(_WIN32) || defined(CFIRE_TEST_WIN32_BACKEND)
+#define CFIRE_HAS_WIN32_BACKEND 1
 #endif
 
 namespace cfire::webui {
@@ -384,7 +388,7 @@ struct AppState {
     std::function<void()> platform_show_window{};
     std::function<void()> platform_quit{};
     std::function<void(const std::string&, std::function<void(bool)>)> platform_screenshot{};
-#if defined(_WIN32)
+#if defined(CFIRE_HAS_WIN32_BACKEND)
     HWND win32_hwnd{nullptr};
 #endif
 

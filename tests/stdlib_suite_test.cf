@@ -61,7 +61,7 @@ test "ergonomics: range loops, indexed iteration, expression interpolation, and 
     formatted := format_indexed_list(words)
     assert_eq(formatted, "0:cfire,1:fuzz,2:bench")
 
-    tmp_path := "/tmp/cfire_stdlib_suite_defer.txt"
+    tmp_path := "cfire_stdlib_suite_defer.txt"
     defer {
         _ = fs.remove(tmp_path)
     }

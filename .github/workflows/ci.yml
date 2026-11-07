@@ -18,3 +18,39 @@ jobs:
 
       - name: Run Review Check Quality Gates
         run: make review-check
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 Clang64 Toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-make
+            mingw-w64-clang-x86_64-pkgconf
+            mingw-w64-clang-x86_64-simdjson
+            mingw-w64-clang-x86_64-zstd
+            mingw-w64-clang-x86_64-libsodium
+            mingw-w64-clang-x86_64-sqlite3
+
+      - name: Build cfire.exe on Windows
+        run: clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc src/main.cpp -o cfire.exe -lws2_32 -ladvapi32
+
+      - name: Verify cfire.exe Doctor, Formatting & Documentation Sync
+        run: |
+          ./cfire.exe --version
+          ./cfire.exe doctor
+          ./cfire.exe fmt --check examples/
+          ./cfire.exe doc --check
+
+      - name: Run Stdlib Conformance Suite on Windows
+        run: ./cfire.exe test tests/stdlib_suite_test.cf

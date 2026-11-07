@@ -84,13 +84,19 @@ private:
 
         std::size_t new_cap = std::max<std::size_t>(64 * 1024, size + align);
         void* mem = nullptr;
+#if !defined(_WIN32)
         if (::posix_memalign(&mem, std::max<std::size_t>(alignof(std::max_align_t), align), new_cap) != 0) {
             mem = std::malloc(new_cap);
         }
+#else
+        mem = std::malloc(new_cap);
+#endif
         uint8_t* new_data = static_cast<uint8_t*>(mem);
+        std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(new_data);
+        std::uintptr_t aligned_addr = (addr + (align - 1)) & ~static_cast<std::uintptr_t>(align - 1);
+        std::size_t aligned_offset = static_cast<std::size_t>(aligned_addr - addr);
         chunks_.push_back(Chunk{.data = new_data, .capacity = new_cap});
         current_chunk_ = chunks_.size() - 1;
-        std::size_t aligned_offset = (0 + (align - 1)) & ~(align - 1);
         current_offset_ = aligned_offset + size;
         return new_data + aligned_offset;
     }

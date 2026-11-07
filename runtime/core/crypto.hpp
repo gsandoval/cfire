@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <format>
+#include <random>
 #include <cstring>
 #include <cstdint>
 
@@ -174,6 +175,13 @@ namespace detail {
     if (n == 0) return buf;
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     ::arc4random_buf(buf.data(), n);
+#elif defined(_WIN32)
+    std::random_device rd;
+    for (std::size_t i = 0; i < n; i += sizeof(unsigned int)) {
+        unsigned int v = rd();
+        std::size_t chunk = std::min<std::size_t>(sizeof(unsigned int), n - i);
+        std::memcpy(buf.data() + i, &v, chunk);
+    }
 #else
     std::ifstream urand("/dev/urandom", std::ios::binary);
     if (urand) {
