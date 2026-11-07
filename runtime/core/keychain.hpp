@@ -27,6 +27,16 @@ inline auto memory_fallback_store() -> std::pair<std::mutex&, std::unordered_map
     return {mu, store};
 }
 
+inline auto posix_shell_quote(std::string_view s) -> std::string {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+    }
+    out += "'";
+    return out;
+}
+
 } // namespace detail
 
 [[nodiscard]] inline auto set(
@@ -80,12 +90,20 @@ inline auto memory_fallback_store() -> std::pair<std::mutex&, std::unordered_map
     OSStatus status = SecItemAdd(add_dict, nullptr);
     (void)status;
 #elif defined(__linux__) && !defined(PLATFORM_WEB)
-    // Optional best-effort sync with libsecret (`secret-tool`) when running in a desktop session
+    // Optional best-effort sync with libsecret (`secret-tool`) when running in a desktop session.
+    // Stream secret via stdin pipe so it never appears in shell command strings or /proc/<pid>/cmdline.
     if (!cfire::os::getenv("DBUS_SESSION_BUS_ADDRESS").empty()) {
+        std::string q_svc = detail::posix_shell_quote(service);
+        std::string q_acc = detail::posix_shell_quote(account);
         std::string cmd = std::format(
-            "printf '%s' '{}' | secret-tool store --label='{}' service '{}' account '{}' >/dev/null 2>&1",
-            secret, service, service, account);
-        (void)std::system(cmd.c_str());
+            "secret-tool store --label={} service {} account {} >/dev/null 2>&1",
+            q_svc, q_svc, q_acc);
+        if (FILE* pipe = ::popen(cmd.c_str(), "w")) {
+            if (!secret.empty()) {
+                (void)std::fwrite(secret.data(), 1, secret.size(), pipe);
+            }
+            (void)::pclose(pipe);
+        }
     }
 #elif defined(_WIN32)
     std::string target_name = std::format("{}/{}", service, account);
@@ -210,8 +228,8 @@ inline auto memory_fallback_store() -> std::pair<std::mutex&, std::unordered_map
 #elif defined(__linux__) && !defined(PLATFORM_WEB)
     if (!cfire::os::getenv("DBUS_SESSION_BUS_ADDRESS").empty()) {
         std::string cmd = std::format(
-            "secret-tool clear service '{}' account '{}' >/dev/null 2>&1",
-            service, account);
+            "secret-tool clear service {} account {} >/dev/null 2>&1",
+            detail::posix_shell_quote(service), detail::posix_shell_quote(account));
         (void)std::system(cmd.c_str());
     }
 #elif defined(_WIN32)

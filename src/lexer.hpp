@@ -67,8 +67,66 @@ namespace cfire::frontend {
                     advance(); // '{'
                     int depth = 1;
                     std::string cpp_buf;
+                    bool in_str = false;
+                    bool in_char = false;
+                    bool in_line_comment = false;
+                    bool in_block_comment = false;
                     while (i < n && depth > 0) {
                         char ch = advance();
+                        if (in_line_comment) {
+                            if (ch == '\n') in_line_comment = false;
+                            cpp_buf.push_back(ch);
+                            continue;
+                        }
+                        if (in_block_comment) {
+                            if (ch == '*' && i < n && peek() == '/') {
+                                cpp_buf.push_back(ch);
+                                cpp_buf.push_back(advance());
+                                in_block_comment = false;
+                                continue;
+                            }
+                            cpp_buf.push_back(ch);
+                            continue;
+                        }
+                        if (in_str) {
+                            cpp_buf.push_back(ch);
+                            if (ch == '\\' && i < n) {
+                                cpp_buf.push_back(advance());
+                            } else if (ch == '"') {
+                                in_str = false;
+                            }
+                            continue;
+                        }
+                        if (in_char) {
+                            cpp_buf.push_back(ch);
+                            if (ch == '\\' && i < n) {
+                                cpp_buf.push_back(advance());
+                            } else if (ch == '\'') {
+                                in_char = false;
+                            }
+                            continue;
+                        }
+                        if (ch == '/' && i < n && peek() == '/') {
+                            in_line_comment = true;
+                            cpp_buf.push_back(ch);
+                            continue;
+                        }
+                        if (ch == '/' && i < n && peek() == '*') {
+                            in_block_comment = true;
+                            cpp_buf.push_back(ch);
+                            cpp_buf.push_back(advance());
+                            continue;
+                        }
+                        if (ch == '"') {
+                            in_str = true;
+                            cpp_buf.push_back(ch);
+                            continue;
+                        }
+                        if (ch == '\'') {
+                            in_char = true;
+                            cpp_buf.push_back(ch);
+                            continue;
+                        }
                         if (ch == '{') {
                             ++depth;
                         } else if (ch == '}') {

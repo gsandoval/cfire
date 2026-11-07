@@ -428,9 +428,9 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
 
     std::string cmd = "clang++ -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
     for (const auto& f : cflags) {
-        cmd += " " + f;
+        cmd += " " + shell_quote(f);
     }
-    cmd += " " + tu_path.string();
+    cmd += " " + shell_quote(tu_path.string());
 
     int code = 0;
     std::string json_dump = run_command_capture(cmd, code);

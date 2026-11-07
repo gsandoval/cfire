@@ -17,7 +17,7 @@ TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
 all: build
 
-HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp)
+HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp)
 
 build: $(HEADERS)
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
@@ -93,4 +93,4 @@ bench: build .cfire_test_runner
 	./cfire bench pkg/raygui_ext/raygui_ext_test.cf
 
 clean:
-	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire tests/.cfire pkg/raygui_ext/.cfire cfire_cross_*
+	rm -rf cfire .cfire_test_runner $(TEST_OBJS) examples/*/.cfire tests/.cfire pkg/raygui_ext/.cfire cfire_cross_* cfire_wasm_gui_*

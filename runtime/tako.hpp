@@ -13,6 +13,7 @@
 #include <expected>
 #include <optional>
 #include <unordered_map>
+#include <mutex>
 #include <cstdint>
 #include <chrono>
 #include <cstdlib>
@@ -93,6 +94,7 @@ namespace cfire::tako {
 namespace detail {
 
 struct LocalStore {
+    std::recursive_mutex mtx;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> entities;
     std::unordered_map<std::string, std::unordered_map<std::string, std::pair<std::string, std::string>>> buckets;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> caches;
@@ -101,8 +103,10 @@ struct LocalStore {
     std::unordered_map<std::string, std::string> secrets;
     std::unordered_map<std::string, int64_t> counters;
     std::unordered_map<std::string, std::vector<double>> histograms;
+    std::vector<std::shared_ptr<void>> c_callbacks;
 
     void reset() {
+        std::lock_guard<std::recursive_mutex> lock(mtx);
         entities.clear();
         buckets.clear();
         caches.clear();
@@ -438,7 +442,11 @@ inline void register_entity(std::string_view name, std::string_view id_field, st
 template <typename Fn>
 inline void mount_json(std::string_view pattern, Fn&& fn, MountOpts opts = {}) {
 #ifdef CFIRE_HAS_LIBTAKO
-    auto* heap_fn = new std::function<std::expected<HttpRes, cfire::Error>(HttpReq)>(std::forward<Fn>(fn));
+    auto shared_fn = std::make_shared<std::function<std::expected<HttpRes, cfire::Error>(HttpReq)>>(std::forward<Fn>(fn));
+    {
+        std::lock_guard<std::recursive_mutex> lock(detail::local_store().mtx);
+        detail::local_store().c_callbacks.push_back(shared_fn);
+    }
     auto cb = +[](tako_http_req_t req, void* user_data) -> tako_buf_t {
         auto* fp = static_cast<std::function<std::expected<HttpRes, cfire::Error>(HttpReq)>*>(user_data);
         HttpReq hreq{
@@ -466,7 +474,7 @@ inline void mount_json(std::string_view pattern, Fn&& fn, MountOpts opts = {}) {
         if (res->body.size() > 0) std::memcpy(cData, res->body.data(), res->body.size());
         return tako_buf_t{.data = cData, .len = (int32_t)res->body.size(), .status = res->status, .err = nullptr};
     };
-    tako_c_mount_json(std::string(pattern).c_str(), cb, heap_fn, opts.require_auth ? 1 : 0, opts.policy.empty() ? nullptr : opts.policy.c_str(), opts.cache_sec);
+    tako_c_mount_json(std::string(pattern).c_str(), cb, shared_fn.get(), opts.require_auth ? 1 : 0, opts.policy.empty() ? nullptr : opts.policy.c_str(), opts.cache_sec);
 #else
     (void)pattern; (void)fn; (void)opts;
 #endif
@@ -474,13 +482,20 @@ inline void mount_json(std::string_view pattern, Fn&& fn, MountOpts opts = {}) {
 
 template <typename Fn>
 inline void register_worker(std::string_view var_name, std::string_view queue_name, Fn&& fn) {
-    detail::local_store().workers[std::string(queue_name)].push_back(
-        [f = std::forward<Fn>(fn)](uint64_t cid, std::string_view pay) -> std::expected<void, cfire::Error> {
-            return f(Ctx{.id = cid}, std::string(pay));
-        }
-    );
+    {
+        std::lock_guard<std::recursive_mutex> lock(detail::local_store().mtx);
+        detail::local_store().workers[std::string(queue_name)].push_back(
+            [f = std::forward<Fn>(fn)](uint64_t cid, std::string_view pay) -> std::expected<void, cfire::Error> {
+                return f(Ctx{.id = cid}, std::string(pay));
+            }
+        );
+    }
 #ifdef CFIRE_HAS_LIBTAKO
-    auto* heap_fn = new std::function<std::expected<void, cfire::Error>(Ctx, std::string)>(fn);
+    auto shared_fn = std::make_shared<std::function<std::expected<void, cfire::Error>(Ctx, std::string)>>(fn);
+    {
+        std::lock_guard<std::recursive_mutex> lock(detail::local_store().mtx);
+        detail::local_store().c_callbacks.push_back(shared_fn);
+    }
     auto cb = +[](uint64_t ctx_id, const char* payload, int32_t payload_len, void* user_data) -> tako_buf_t {
         auto* fp = static_cast<std::function<std::expected<void, cfire::Error>(Ctx, std::string)>*>(user_data);
         Ctx ctx{.id = ctx_id};
@@ -495,7 +510,7 @@ inline void register_worker(std::string_view var_name, std::string_view queue_na
         }
         return tako_buf_t{.data = nullptr, .len = 0, .status = 0, .err = nullptr};
     };
-    tako_c_register_worker(std::string(var_name).c_str(), std::string(queue_name).c_str(), cb, heap_fn);
+    tako_c_register_worker(std::string(var_name).c_str(), std::string(queue_name).c_str(), cb, shared_fn.get());
 #else
     (void)var_name;
 #endif
@@ -504,7 +519,11 @@ inline void register_worker(std::string_view var_name, std::string_view queue_na
 template <typename Fn>
 inline void register_cron(std::string_view var_name, std::string_view schedule, bool singleflight, Fn&& fn) {
 #ifdef CFIRE_HAS_LIBTAKO
-    auto* heap_fn = new std::function<std::expected<void, cfire::Error>(Ctx)>(std::forward<Fn>(fn));
+    auto shared_fn = std::make_shared<std::function<std::expected<void, cfire::Error>(Ctx)>>(std::forward<Fn>(fn));
+    {
+        std::lock_guard<std::recursive_mutex> lock(detail::local_store().mtx);
+        detail::local_store().c_callbacks.push_back(shared_fn);
+    }
     auto cb = +[](uint64_t ctx_id, void* user_data) -> tako_buf_t {
         auto* fp = static_cast<std::function<std::expected<void, cfire::Error>(Ctx)>*>(user_data);
         Ctx ctx{.id = ctx_id};
@@ -518,7 +537,7 @@ inline void register_cron(std::string_view var_name, std::string_view schedule, 
         }
         return tako_buf_t{.data = nullptr, .len = 0, .status = 0, .err = nullptr};
     };
-    tako_c_register_cron(std::string(var_name).c_str(), std::string(schedule).c_str(), singleflight ? 1 : 0, cb, heap_fn);
+    tako_c_register_cron(std::string(var_name).c_str(), std::string(schedule).c_str(), singleflight ? 1 : 0, cb, shared_fn.get());
 #else
     (void)var_name; (void)schedule; (void)singleflight; (void)fn;
 #endif

@@ -67,6 +67,7 @@ fn compute_visual_rows(font: rl.Font, body: str, max_row_w: f32, font_size: f32)
                 for seg_start < le {
                     mut seg_end := seg_start
                     mut last_space_byte: i32 = -1
+                    mut row_w: f32 = 0.0
                     for seg_end < le {
                         mut next_b: i32 = 0
                         _ = rl.GetCodepointNext(body[seg_end..].data(), &mut next_b)
@@ -76,9 +77,9 @@ fn compute_visual_rows(font: rl.Font, body: str, max_row_w: f32, font_size: f32)
                         if u8(body[seg_end]) == 32 {
                             last_space_byte = cand_end
                         }
-                        cand_sub := str(body[seg_start..cand_end])
-                        w_px := GuiMeasureTextAdvance(font, cand_sub, cand_sub.len(), font_size, 0.5)
-                        if w_px > max_row_w && seg_end > seg_start {
+                        cp_sub := str(body[seg_end..cand_end])
+                        row_w = row_w + GuiMeasureTextAdvance(font, cp_sub, cand_end - seg_end, font_size, 0.5)
+                        if row_w > max_row_w && seg_end > seg_start {
                             break
                         }
                         seg_end = cand_end

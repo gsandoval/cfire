@@ -148,51 +148,7 @@ public:
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
             headers["anthropic-dangerous-direct-browser-access"] = "true";
 #endif
-            std::string sys_str;
-            std::string msgs_json = "[";
-            bool first_m = true;
-            for (const auto& m : messages) {
-                if (m.role == "system") {
-                    if (!sys_str.empty()) sys_str += "\n";
-                    sys_str += m.content;
-                    continue;
-                }
-                if (!first_m) msgs_json += ",";
-                first_m = false;
-                if (m.attachments.empty()) {
-                    msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
-                        cfire::json::escape_string(m.role),
-                        cfire::json::escape_string(m.content));
-                } else {
-                    std::string blocks = "[";
-                    bool first_b = true;
-                    for (const auto& att : m.attachments) {
-                        if (!first_b) blocks += ",";
-                        first_b = false;
-                        if (att.mime_type.starts_with("image/")) {
-                            blocks += std::format(
-                                R"({{"type":"image","source":{{"type":"base64","media_type":"{}","data":"{}"}}}})",
-                                cfire::json::escape_string(att.mime_type),
-                                cfire::base64::encode(att.data));
-                        } else if (att.mime_type == "application/pdf") {
-                            blocks += std::format(
-                                R"({{"type":"document","source":{{"type":"base64","media_type":"application/pdf","data":"{}"}}}})",
-                                cfire::base64::encode(att.data));
-                        } else {
-                            std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
-                            blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
-                        }
-                    }
-                    if (!m.content.empty()) {
-                        if (!first_b) blocks += ",";
-                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
-                    }
-                    blocks += "]";
-                    msgs_json += std::format(R"({{"role":"{}","content":{}}})",
-                        cfire::json::escape_string(m.role), blocks);
-                }
-            }
-            msgs_json += "]";
+            auto [sys_str, msgs_json] = build_anthropic_messages(messages, "");
             body = std::format(R"({{"model":"{}","max_tokens":2048,"stream":true)", cfire::json::escape_string(model));
             if (!sys_str.empty()) {
                 body += std::format(R"(,"system":"{}")", cfire::json::escape_string(sys_str));
@@ -201,41 +157,7 @@ public:
         } else if (provider == Provider::Gemini) {
             url = std::format("{}/v1beta/models/{}:streamGenerateContent?alt=sse", base_url, model);
             headers["x-goog-api-key"] = api_key;
-            std::string sys_str;
-            std::string contents_json = "[";
-            bool first_c = true;
-            for (const auto& m : messages) {
-                if (m.role == "system") {
-                    if (!sys_str.empty()) sys_str += "\n";
-                    sys_str += m.content;
-                    continue;
-                }
-                if (!first_c) contents_json += ",";
-                first_c = false;
-                std::string g_role = (m.role == "assistant") ? "model" : "user";
-                std::string parts = "[";
-                bool first_p = true;
-                for (const auto& att : m.attachments) {
-                    if (!first_p) parts += ",";
-                    first_p = false;
-                    if (att.mime_type.starts_with("image/") || att.mime_type == "application/pdf" || att.mime_type.starts_with("audio/")) {
-                        parts += std::format(
-                            R"({{"inlineData":{{"mimeType":"{}","data":"{}"}}}})",
-                            cfire::json::escape_string(att.mime_type),
-                            cfire::base64::encode(att.data));
-                    } else {
-                        std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
-                        parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(doc_txt));
-                    }
-                }
-                if (!m.content.empty() || m.attachments.empty()) {
-                    if (!first_p) parts += ",";
-                    parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(m.content));
-                }
-                parts += "]";
-                contents_json += std::format(R"({{"role":"{}","parts":{}}})", g_role, parts);
-            }
-            contents_json += "]";
+            auto [sys_str, contents_json] = build_gemini_contents(messages, "");
             body = std::format(R"({{"contents":{})", contents_json);
             if (!sys_str.empty()) {
                 body += std::format(R"(,"systemInstruction":{{"parts":[{{"text":"{}"}}]}})",
@@ -248,47 +170,7 @@ public:
             if (!api_key.empty()) {
                 headers["Authorization"] = "Bearer " + api_key;
             }
-            std::string msgs_json = "[";
-            bool first_m = true;
-            for (const auto& m : messages) {
-                if (!first_m) msgs_json += ",";
-                first_m = false;
-                if (m.attachments.empty()) {
-                    msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
-                        cfire::json::escape_string(m.role),
-                        cfire::json::escape_string(m.content));
-                } else {
-                    std::string blocks = "[";
-                    bool first_b = true;
-                    if (!m.content.empty()) {
-                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
-                        first_b = false;
-                    }
-                    for (const auto& att : m.attachments) {
-                        if (!first_b) blocks += ",";
-                        first_b = false;
-                        if (att.mime_type.starts_with("image/")) {
-                            blocks += std::format(
-                                R"({{"type":"image_url","image_url":{{"url":"data:{};base64,{}"}}}})",
-                                cfire::json::escape_string(att.mime_type),
-                                cfire::base64::encode(att.data));
-                        } else if (!att.extracted_text.empty()) {
-                            std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
-                            blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
-                        } else {
-                            blocks += std::format(
-                                R"({{"type":"file","file":{{"filename":"{}","file_data":"data:{};base64,{}"}}}})",
-                                cfire::json::escape_string(att.filename),
-                                cfire::json::escape_string(att.mime_type),
-                                cfire::base64::encode(att.data));
-                        }
-                    }
-                    blocks += "]";
-                    msgs_json += std::format(R"({{"role":"{}","content":{}}})",
-                        cfire::json::escape_string(m.role), blocks);
-                }
-            }
-            msgs_json += "]";
+            std::string msgs_json = build_openai_messages(messages, "");
             body = std::format(
                 R"({{"model":"{}","stream":true,"messages":{}}})",
                 cfire::json::escape_string(model),
@@ -410,6 +292,153 @@ public:
     }
 
 private:
+    [[nodiscard]] static auto build_anthropic_messages(
+        const std::vector<Message>& messages,
+        std::string_view initial_system
+    ) -> std::pair<std::string, std::string> {
+        std::string sys_str(initial_system);
+        std::string msgs_json = "[";
+        bool first_m = true;
+        for (const auto& m : messages) {
+            if (m.role == "system") {
+                if (!sys_str.empty()) sys_str += "\n";
+                sys_str += m.content;
+                continue;
+            }
+            if (!first_m) msgs_json += ",";
+            first_m = false;
+            if (m.attachments.empty()) {
+                msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
+                    cfire::json::escape_string(m.role),
+                    cfire::json::escape_string(m.content));
+            } else {
+                std::string blocks = "[";
+                bool first_b = true;
+                for (const auto& att : m.attachments) {
+                    if (!first_b) blocks += ",";
+                    first_b = false;
+                    if (att.mime_type.starts_with("image/")) {
+                        blocks += std::format(
+                            R"({{"type":"image","source":{{"type":"base64","media_type":"{}","data":"{}"}}}})",
+                            cfire::json::escape_string(att.mime_type),
+                            cfire::base64::encode(att.data));
+                    } else if (att.mime_type == "application/pdf") {
+                        blocks += std::format(
+                            R"({{"type":"document","source":{{"type":"base64","media_type":"application/pdf","data":"{}"}}}})",
+                            cfire::base64::encode(att.data));
+                    } else {
+                        std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
+                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
+                    }
+                }
+                if (!m.content.empty()) {
+                    if (!first_b) blocks += ",";
+                    blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
+                }
+                blocks += "]";
+                msgs_json += std::format(R"({{"role":"{}","content":{}}})",
+                    cfire::json::escape_string(m.role), blocks);
+            }
+        }
+        msgs_json += "]";
+        return {std::move(sys_str), std::move(msgs_json)};
+    }
+
+    [[nodiscard]] static auto build_gemini_contents(
+        const std::vector<Message>& messages,
+        std::string_view initial_system
+    ) -> std::pair<std::string, std::string> {
+        std::string sys_str(initial_system);
+        std::string contents_json = "[";
+        bool first_c = true;
+        for (const auto& m : messages) {
+            if (m.role == "system") {
+                if (!sys_str.empty()) sys_str += "\n";
+                sys_str += m.content;
+                continue;
+            }
+            if (!first_c) contents_json += ",";
+            first_c = false;
+            std::string g_role = (m.role == "assistant") ? "model" : "user";
+            std::string parts = "[";
+            bool first_p = true;
+            for (const auto& att : m.attachments) {
+                if (!first_p) parts += ",";
+                first_p = false;
+                if (att.mime_type.starts_with("image/") || att.mime_type == "application/pdf" || att.mime_type.starts_with("audio/")) {
+                    parts += std::format(
+                        R"({{"inlineData":{{"mimeType":"{}","data":"{}"}}}})",
+                        cfire::json::escape_string(att.mime_type),
+                        cfire::base64::encode(att.data));
+                } else {
+                    std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
+                    parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(doc_txt));
+                }
+            }
+            if (!m.content.empty() || m.attachments.empty()) {
+                if (!first_p) parts += ",";
+                parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(m.content));
+            }
+            parts += "]";
+            contents_json += std::format(R"({{"role":"{}","parts":{}}})", g_role, parts);
+        }
+        contents_json += "]";
+        return {std::move(sys_str), std::move(contents_json)};
+    }
+
+    [[nodiscard]] static auto build_openai_messages(
+        const std::vector<Message>& messages,
+        std::string_view initial_system
+    ) -> std::string {
+        std::string msgs_json = "[";
+        bool first_m = true;
+        if (!initial_system.empty()) {
+            msgs_json += std::format(R"({{"role":"system","content":"{}"}})",
+                cfire::json::escape_string(initial_system));
+            first_m = false;
+        }
+        for (const auto& m : messages) {
+            if (!first_m) msgs_json += ",";
+            first_m = false;
+            if (m.attachments.empty()) {
+                msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
+                    cfire::json::escape_string(m.role),
+                    cfire::json::escape_string(m.content));
+            } else {
+                std::string blocks = "[";
+                bool first_b = true;
+                if (!m.content.empty()) {
+                    blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
+                    first_b = false;
+                }
+                for (const auto& att : m.attachments) {
+                    if (!first_b) blocks += ",";
+                    first_b = false;
+                    if (att.mime_type.starts_with("image/")) {
+                        blocks += std::format(
+                            R"({{"type":"image_url","image_url":{{"url":"data:{};base64,{}"}}}})",
+                            cfire::json::escape_string(att.mime_type),
+                            cfire::base64::encode(att.data));
+                    } else if (!att.extracted_text.empty()) {
+                        std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
+                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
+                    } else {
+                        blocks += std::format(
+                            R"({{"type":"file","file":{{"filename":"{}","file_data":"data:{};base64,{}"}}}})",
+                            cfire::json::escape_string(att.filename),
+                            cfire::json::escape_string(att.mime_type),
+                            cfire::base64::encode(att.data));
+                    }
+                }
+                blocks += "]";
+                msgs_json += std::format(R"({{"role":"{}","content":{}}})",
+                    cfire::json::escape_string(m.role), blocks);
+            }
+        }
+        msgs_json += "]";
+        return msgs_json;
+    }
+
     [[nodiscard]] auto chat_internal(
         std::string_view model,
         const std::vector<Message>& messages,
@@ -439,53 +468,7 @@ private:
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
             headers["anthropic-dangerous-direct-browser-access"] = "true";
 #endif
-
-            std::string sys_str(system_prompt);
-            std::string msgs_json = "[";
-            bool first_m = true;
-            for (const auto& m : messages) {
-                if (m.role == "system") {
-                    if (!sys_str.empty()) sys_str += "\n";
-                    sys_str += m.content;
-                    continue;
-                }
-                if (!first_m) msgs_json += ",";
-                first_m = false;
-                if (m.attachments.empty()) {
-                    msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
-                        cfire::json::escape_string(m.role),
-                        cfire::json::escape_string(m.content));
-                } else {
-                    std::string blocks = "[";
-                    bool first_b = true;
-                    for (const auto& att : m.attachments) {
-                        if (!first_b) blocks += ",";
-                        first_b = false;
-                        if (att.mime_type.starts_with("image/")) {
-                            blocks += std::format(
-                                R"({{"type":"image","source":{{"type":"base64","media_type":"{}","data":"{}"}}}})",
-                                cfire::json::escape_string(att.mime_type),
-                                cfire::base64::encode(att.data));
-                        } else if (att.mime_type == "application/pdf") {
-                            blocks += std::format(
-                                R"({{"type":"document","source":{{"type":"base64","media_type":"application/pdf","data":"{}"}}}})",
-                                cfire::base64::encode(att.data));
-                        } else {
-                            std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
-                            blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
-                        }
-                    }
-                    if (!m.content.empty()) {
-                        if (!first_b) blocks += ",";
-                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
-                    }
-                    blocks += "]";
-                    msgs_json += std::format(R"({{"role":"{}","content":{}}})",
-                        cfire::json::escape_string(m.role), blocks);
-                }
-            }
-            msgs_json += "]";
-
+            auto [sys_str, msgs_json] = build_anthropic_messages(messages, system_prompt);
             body = std::format(R"({{"model":"{}","max_tokens":4096)", cfire::json::escape_string(model));
             if (!sys_str.empty()) {
                 body += std::format(R"(,"system":"{}")", cfire::json::escape_string(sys_str));
@@ -511,42 +494,7 @@ private:
             url = std::format("{}/v1beta/models/{}:generateContent", base_url, model);
             headers["x-goog-api-key"] = api_key;
 
-            std::string sys_str(system_prompt);
-            std::string contents_json = "[";
-            bool first_c = true;
-            for (const auto& m : messages) {
-                if (m.role == "system") {
-                    if (!sys_str.empty()) sys_str += "\n";
-                    sys_str += m.content;
-                    continue;
-                }
-                if (!first_c) contents_json += ",";
-                first_c = false;
-                std::string g_role = (m.role == "assistant") ? "model" : "user";
-                std::string parts = "[";
-                bool first_p = true;
-                for (const auto& att : m.attachments) {
-                    if (!first_p) parts += ",";
-                    first_p = false;
-                    if (att.mime_type.starts_with("image/") || att.mime_type == "application/pdf" || att.mime_type.starts_with("audio/")) {
-                        parts += std::format(
-                            R"({{"inlineData":{{"mimeType":"{}","data":"{}"}}}})",
-                            cfire::json::escape_string(att.mime_type),
-                            cfire::base64::encode(att.data));
-                    } else {
-                        std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
-                        parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(doc_txt));
-                    }
-                }
-                if (!m.content.empty() || m.attachments.empty()) {
-                    if (!first_p) parts += ",";
-                    parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(m.content));
-                }
-                parts += "]";
-                contents_json += std::format(R"({{"role":"{}","parts":{}}})", g_role, parts);
-            }
-            contents_json += "]";
-
+            auto [sys_str, contents_json] = build_gemini_contents(messages, system_prompt);
             body = std::format(R"({{"contents":{})", contents_json);
             if (!sys_str.empty()) {
                 body += std::format(R"(,"systemInstruction":{{"parts":[{{"text":"{}"}}]}})",
@@ -574,53 +522,7 @@ private:
             if (!api_key.empty()) {
                 headers["Authorization"] = "Bearer " + api_key;
             }
-            std::string msgs_json = "[";
-            bool first_m = true;
-            if (!system_prompt.empty()) {
-                msgs_json += std::format(R"({{"role":"system","content":"{}"}})",
-                    cfire::json::escape_string(system_prompt));
-                first_m = false;
-            }
-            for (const auto& m : messages) {
-                if (!first_m) msgs_json += ",";
-                first_m = false;
-                if (m.attachments.empty()) {
-                    msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
-                        cfire::json::escape_string(m.role),
-                        cfire::json::escape_string(m.content));
-                } else {
-                    std::string blocks = "[";
-                    bool first_b = true;
-                    if (!m.content.empty()) {
-                        blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
-                        first_b = false;
-                    }
-                    for (const auto& att : m.attachments) {
-                        if (!first_b) blocks += ",";
-                        first_b = false;
-                        if (att.mime_type.starts_with("image/")) {
-                            blocks += std::format(
-                                R"({{"type":"image_url","image_url":{{"url":"data:{};base64,{}"}}}})",
-                                cfire::json::escape_string(att.mime_type),
-                                cfire::base64::encode(att.data));
-                        } else if (!att.extracted_text.empty()) {
-                            std::string doc_txt = std::format("[Attachment: {}]\n{}", att.filename, att.extracted_text);
-                            blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(doc_txt));
-                        } else {
-                            blocks += std::format(
-                                R"({{"type":"file","file":{{"filename":"{}","file_data":"data:{};base64,{}"}}}})",
-                                cfire::json::escape_string(att.filename),
-                                cfire::json::escape_string(att.mime_type),
-                                cfire::base64::encode(att.data));
-                        }
-                    }
-                    blocks += "]";
-                    msgs_json += std::format(R"({{"role":"{}","content":{}}})",
-                        cfire::json::escape_string(m.role), blocks);
-                }
-            }
-            msgs_json += "]";
-
+            std::string msgs_json = build_openai_messages(messages, system_prompt);
             body = std::format(R"({{"model":"{}","messages":{})", cfire::json::escape_string(model), msgs_json);
             if (!response_schema_json.empty()) {
                 body += std::format(

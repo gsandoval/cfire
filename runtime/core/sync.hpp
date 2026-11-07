@@ -22,7 +22,8 @@ struct ContextState {
     std::string reason{"cancelled"};
     mutable std::mutex mu{};
     mutable std::condition_variable cv{};
-    std::vector<std::function<void()>> callbacks{};
+    std::uint64_t next_cb_id = 1;
+    std::vector<std::pair<std::uint64_t, std::function<void()>>> callbacks{};
     std::thread timer_thread{};
     ~ContextState() {
         {
@@ -56,14 +57,23 @@ public:
         std::lock_guard<std::mutex> lk(state_->mu);
         return state_->reason;
     }
-    void on_cancel(std::function<void()> cb) const {
-        if (!state_ || !cb) return;
+    auto on_cancel(std::function<void()> cb) const -> std::uint64_t {
+        if (!state_ || !cb) return 0;
         std::lock_guard<std::mutex> lk(state_->mu);
         if (state_->cancelled.load(std::memory_order_relaxed)) {
             cb();
-            return;
+            return 0;
         }
-        state_->callbacks.push_back(std::move(cb));
+        std::uint64_t id = state_->next_cb_id++;
+        state_->callbacks.emplace_back(id, std::move(cb));
+        return id;
+    }
+    void remove_cancel_callback(std::uint64_t id) const {
+        if (!state_ || id == 0) return;
+        std::lock_guard<std::mutex> lk(state_->mu);
+        auto& cbs = state_->callbacks;
+        cbs.erase(std::remove_if(cbs.begin(), cbs.end(),
+            [id](const auto& kv) { return kv.first == id; }), cbs.end());
     }
     void wait() const {
         if (!state_) return;
@@ -111,7 +121,7 @@ private:
     Context child(child_state);
 
     auto do_cancel = [child_state](std::string_view reason) {
-        std::vector<std::function<void()>> to_run;
+        std::vector<std::pair<std::uint64_t, std::function<void()>>> to_run;
         {
             std::lock_guard<std::mutex> lk(child_state->mu);
             if (child_state->cancelled.exchange(true, std::memory_order_relaxed)) return;
@@ -119,12 +129,12 @@ private:
             to_run = std::move(child_state->callbacks);
         }
         child_state->cv.notify_all();
-        for (auto& cb : to_run) {
+        for (auto& [id, cb] : to_run) {
             if (cb) cb();
         }
     };
 
-    parent.on_cancel([do_cancel, parent] {
+    (void)parent.on_cancel([do_cancel, parent] {
         do_cancel(parent.reason());
     });
 
@@ -147,13 +157,13 @@ private:
         })) {
             return;
         }
-        std::vector<std::function<void()>> to_run;
+        std::vector<std::pair<std::uint64_t, std::function<void()>>> to_run;
         raw->cancelled.store(true, std::memory_order_relaxed);
         raw->reason = "deadline exceeded";
         to_run = std::move(raw->callbacks);
         lk.unlock();
         raw->cv.notify_all();
-        for (auto& cb : to_run) {
+        for (auto& [id, cb] : to_run) {
             if (cb) cb();
         }
     });
@@ -178,12 +188,20 @@ namespace cfire::sync {
 template <typename T>
 class Channel {
 public:
-    Channel() : state_(std::make_shared<State>()) {}
+    explicit Channel(std::size_t capacity = 0) : state_(std::make_shared<State>()) {
+        state_->capacity = capacity;
+    }
 
     void send(T val) const {
         std::unique_lock<std::mutex> lk(state_->mu);
+        if (state_->capacity > 0) {
+            state_->cv.wait(lk, [&] {
+                return state_->q.size() < state_->capacity || state_->closed;
+            });
+        }
+        if (state_->closed) return;
         state_->q.push(std::move(val));
-        state_->cv.notify_one();
+        state_->cv.notify_all();
     }
 
     [[nodiscard]] auto recv() const -> std::optional<T> {
@@ -194,6 +212,7 @@ public:
         }
         T val = std::move(state_->q.front());
         state_->q.pop();
+        state_->cv.notify_all();
         return val;
     }
 
@@ -204,6 +223,7 @@ public:
         }
         T val = std::move(state_->q.front());
         state_->q.pop();
+        state_->cv.notify_all();
         return val;
     }
 
@@ -219,6 +239,7 @@ public:
         }
         T val = std::move(state_->q.front());
         state_->q.pop();
+        state_->cv.notify_all();
         return val;
     }
 
@@ -233,11 +254,12 @@ public:
             return cfire::make_error("context cancelled: " + ctx.reason());
         }
         std::weak_ptr<State> weak_state = state_;
-        ctx.on_cancel([weak_state] {
+        std::uint64_t cb_id = ctx.on_cancel([weak_state] {
             if (auto st = weak_state.lock()) {
                 st->cv.notify_all();
             }
         });
+        auto cb_guard = cfire::scope_exit([&] { ctx.remove_cancel_callback(cb_id); });
         state_->cv.wait(lk, [&] {
             return !state_->q.empty() || state_->closed || ctx.is_cancelled();
         });
@@ -249,6 +271,7 @@ public:
         }
         T val = std::move(state_->q.front());
         state_->q.pop();
+        state_->cv.notify_all();
         return val;
     }
 
@@ -263,14 +286,15 @@ private:
         std::mutex mu{};
         std::condition_variable cv{};
         std::queue<T> q{};
+        std::size_t capacity = 0;
         bool closed = false;
     };
     std::shared_ptr<State> state_;
 };
 
 template <typename T>
-[[nodiscard]] inline auto make_channel([[maybe_unused]] std::size_t capacity = 0) -> Channel<T> {
-    return Channel<T>{};
+[[nodiscard]] inline auto make_channel(std::size_t capacity = 0) -> Channel<T> {
+    return Channel<T>{capacity};
 }
 
 class Mutex {

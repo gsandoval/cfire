@@ -130,138 +130,15 @@ template <typename T>
 // --- Hardware SIMD-Accelerated Vector Math (`cosine_similarity`, `l2_distance`, `dot_product`, `normalize`) ---
 
 [[nodiscard]] inline auto dot_product(std::span<const float> a, std::span<const float> b) noexcept -> float {
-    std::size_t n = std::min(a.size(), b.size());
-    std::size_t i = 0;
-    double sum = 0.0;
-#if defined(__AVX2__)
-    __m256 v_sum = _mm256_setzero_ps();
-    for (; i + 8 <= n; i += 8) {
-        v_sum = _mm256_add_ps(v_sum, _mm256_mul_ps(_mm256_loadu_ps(a.data() + i), _mm256_loadu_ps(b.data() + i)));
-    }
-    alignas(32) float tmp[8];
-    _mm256_store_ps(tmp, v_sum);
-    for (int k = 0; k < 8; ++k) sum += tmp[k];
-#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
-    float32x4_t v_sum = vdupq_n_f32(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        v_sum = vfmaq_f32(v_sum, vld1q_f32(a.data() + i), vld1q_f32(b.data() + i));
-    }
-    sum += static_cast<double>(vaddvq_f32(v_sum));
-#elif defined(__wasm_simd128__)
-    v128_t v_sum = wasm_f32x4_splat(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        v_sum = wasm_f32x4_add(v_sum, wasm_f32x4_mul(wasm_v128_load(a.data() + i), wasm_v128_load(b.data() + i)));
-    }
-    alignas(16) float tmp[4];
-    wasm_v128_store(tmp, v_sum);
-    for (int k = 0; k < 4; ++k) sum += tmp[k];
-#endif
-    for (; i < n; ++i) {
-        sum += static_cast<double>(a[i]) * static_cast<double>(b[i]);
-    }
-    return static_cast<float>(sum);
+    return static_cast<float>(cfire::detail::simd_dot_product(a, b));
 }
 
 [[nodiscard]] inline auto cosine_similarity(std::span<const float> a, std::span<const float> b) noexcept -> float {
-    std::size_t n = std::min(a.size(), b.size());
-    if (n == 0) return 0.0f;
-    std::size_t i = 0;
-    double dot = 0.0;
-    double na = 0.0;
-    double nb = 0.0;
-#if defined(__AVX2__)
-    __m256 v_dot = _mm256_setzero_ps();
-    __m256 v_na  = _mm256_setzero_ps();
-    __m256 v_nb  = _mm256_setzero_ps();
-    for (; i + 8 <= n; i += 8) {
-        __m256 va = _mm256_loadu_ps(a.data() + i);
-        __m256 vb = _mm256_loadu_ps(b.data() + i);
-        v_dot = _mm256_add_ps(v_dot, _mm256_mul_ps(va, vb));
-        v_na  = _mm256_add_ps(v_na,  _mm256_mul_ps(va, va));
-        v_nb  = _mm256_add_ps(v_nb,  _mm256_mul_ps(vb, vb));
-    }
-    alignas(32) float t_dot[8], t_na[8], t_nb[8];
-    _mm256_store_ps(t_dot, v_dot);
-    _mm256_store_ps(t_na,  v_na);
-    _mm256_store_ps(t_nb,  v_nb);
-    for (int k = 0; k < 8; ++k) { dot += t_dot[k]; na += t_na[k]; nb += t_nb[k]; }
-#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
-    float32x4_t v_dot = vdupq_n_f32(0.0f);
-    float32x4_t v_na  = vdupq_n_f32(0.0f);
-    float32x4_t v_nb  = vdupq_n_f32(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        float32x4_t va = vld1q_f32(a.data() + i);
-        float32x4_t vb = vld1q_f32(b.data() + i);
-        v_dot = vfmaq_f32(v_dot, va, vb);
-        v_na  = vfmaq_f32(v_na,  va, va);
-        v_nb  = vfmaq_f32(v_nb,  vb, vb);
-    }
-    dot += static_cast<double>(vaddvq_f32(v_dot));
-    na  += static_cast<double>(vaddvq_f32(v_na));
-    nb  += static_cast<double>(vaddvq_f32(v_nb));
-#elif defined(__wasm_simd128__)
-    v128_t v_dot = wasm_f32x4_splat(0.0f);
-    v128_t v_na  = wasm_f32x4_splat(0.0f);
-    v128_t v_nb  = wasm_f32x4_splat(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        v128_t va = wasm_v128_load(a.data() + i);
-        v128_t vb = wasm_v128_load(b.data() + i);
-        v_dot = wasm_f32x4_add(v_dot, wasm_f32x4_mul(va, vb));
-        v_na  = wasm_f32x4_add(v_na,  wasm_f32x4_mul(va, va));
-        v_nb  = wasm_f32x4_add(v_nb,  wasm_f32x4_mul(vb, vb));
-    }
-    alignas(16) float t_dot[4], t_na[4], t_nb[4];
-    wasm_v128_store(t_dot, v_dot);
-    wasm_v128_store(t_na,  v_na);
-    wasm_v128_store(t_nb,  v_nb);
-    for (int k = 0; k < 4; ++k) { dot += t_dot[k]; na += t_na[k]; nb += t_nb[k]; }
-#endif
-    for (; i < n; ++i) {
-        double va = static_cast<double>(a[i]);
-        double vb = static_cast<double>(b[i]);
-        dot += va * vb;
-        na += va * va;
-        nb += vb * vb;
-    }
-    double denom = std::sqrt(na) * std::sqrt(nb);
-    return denom > 1e-12 ? static_cast<float>(dot / denom) : 0.0f;
+    return static_cast<float>(cfire::detail::simd_cosine_similarity(a, b));
 }
 
 [[nodiscard]] inline auto l2_distance(std::span<const float> a, std::span<const float> b) noexcept -> float {
-    std::size_t n = std::min(a.size(), b.size());
-    std::size_t i = 0;
-    double sum_sq = 0.0;
-#if defined(__AVX2__)
-    __m256 v_sq = _mm256_setzero_ps();
-    for (; i + 8 <= n; i += 8) {
-        __m256 d = _mm256_sub_ps(_mm256_loadu_ps(a.data() + i), _mm256_loadu_ps(b.data() + i));
-        v_sq = _mm256_add_ps(v_sq, _mm256_mul_ps(d, d));
-    }
-    alignas(32) float tmp[8];
-    _mm256_store_ps(tmp, v_sq);
-    for (int k = 0; k < 8; ++k) sum_sq += tmp[k];
-#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
-    float32x4_t v_sq = vdupq_n_f32(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        float32x4_t d = vsubq_f32(vld1q_f32(a.data() + i), vld1q_f32(b.data() + i));
-        v_sq = vfmaq_f32(v_sq, d, d);
-    }
-    sum_sq += static_cast<double>(vaddvq_f32(v_sq));
-#elif defined(__wasm_simd128__)
-    v128_t v_sq = wasm_f32x4_splat(0.0f);
-    for (; i + 4 <= n; i += 4) {
-        v128_t d = wasm_f32x4_sub(wasm_v128_load(a.data() + i), wasm_v128_load(b.data() + i));
-        v_sq = wasm_f32x4_add(v_sq, wasm_f32x4_mul(d, d));
-    }
-    alignas(16) float tmp[4];
-    wasm_v128_store(tmp, v_sq);
-    for (int k = 0; k < 4; ++k) sum_sq += tmp[k];
-#endif
-    for (; i < n; ++i) {
-        double d = static_cast<double>(a[i]) - static_cast<double>(b[i]);
-        sum_sq += d * d;
-    }
-    return static_cast<float>(std::sqrt(sum_sq));
+    return static_cast<float>(cfire::detail::simd_l2_distance(a, b));
 }
 
 [[nodiscard]] inline auto normalize(std::span<const float> v) -> std::vector<float> {

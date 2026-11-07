@@ -161,6 +161,34 @@ struct StructField {
     }
 };
 
+[[nodiscard]] inline auto parse_struct_tags(std::string_view raw_tag)
+    -> std::vector<std::pair<std::string, std::string>> {
+    std::vector<std::pair<std::string, std::string>> out;
+    std::size_t i = 0;
+    const std::size_t n = raw_tag.size();
+    auto is_word = [](char c) noexcept {
+        return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    };
+    while (i < n) {
+        while (i < n && !is_word(raw_tag[i])) ++i;
+        if (i >= n) break;
+        std::size_t k_start = i;
+        while (i < n && is_word(raw_tag[i])) ++i;
+        std::string_view key = raw_tag.substr(k_start, i - k_start);
+        if (i + 1 < n && raw_tag[i] == ':' && raw_tag[i + 1] == '"') {
+            i += 2;
+            std::size_t v_start = i;
+            while (i < n && raw_tag[i] != '"') ++i;
+            if (i < n && raw_tag[i] == '"') {
+                std::string_view val = raw_tag.substr(v_start, i - v_start);
+                out.emplace_back(std::string(key), std::string(val));
+                ++i;
+            }
+        }
+    }
+    return out;
+}
+
 struct StructDecl {
     std::string name{};
     std::vector<StructField> fields{};

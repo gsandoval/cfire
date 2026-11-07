@@ -585,15 +585,7 @@ namespace cfire::frontend {
             std::ostringstream sb;
             sb << std::format("{}.tx([&](cfire::sqlite::Conn& {}) -> std::expected<void, cfire::Error> {{\n", obj, tx_param);
             ++indent_;
-            Emitter sub(cf_);
-            sub.indent_ = indent_;
-            sub.cur_fn_ = cur_fn_;
-            sub.used_core_ = used_core_;
-            sub.used_vendor_ = used_vendor_;
-            sub.local_vars_ = local_vars_;
-            sub.ptr_vars_ = ptr_vars_;
-            sub.map_vars_ = map_vars_;
-            sub.fixed_array_vars_ = fixed_array_vars_;
+            Emitter sub = make_sub_emitter(false);
             sub.local_vars_.insert(tx_param);
             sub.in_fallible_void_ = true;
             for (const auto& st : call.block_arg->body) {
@@ -611,15 +603,7 @@ namespace cfire::frontend {
             std::ostringstream sb;
             sb << std::format("{}.spawn([=]() mutable {{\n", obj);
             ++indent_;
-            Emitter sub(cf_);
-            sub.indent_ = indent_;
-            sub.cur_fn_ = cur_fn_;
-            sub.used_core_ = used_core_;
-            sub.used_vendor_ = used_vendor_;
-            sub.local_vars_ = local_vars_;
-            sub.ptr_vars_ = ptr_vars_;
-            sub.map_vars_ = map_vars_;
-            sub.fixed_array_vars_ = fixed_array_vars_;
+            Emitter sub = make_sub_emitter(false);
             for (const auto& st : call.block_arg->body) {
                 sub.emit_stmt(st, false);
             }
@@ -873,18 +857,8 @@ inline auto Emitter::analyze_closure_returns(
         }
     }
     ++indent_;
-    Emitter sub(cf_);
-    sub.indent_ = indent_;
-    sub.cur_fn_ = cur_fn_;
-    sub.used_core_ = used_core_;
-    sub.used_vendor_ = used_vendor_;
-    sub.local_vars_ = local_vars_;
-    sub.ptr_vars_ = ptr_vars_;
-    sub.map_vars_ = map_vars_;
-    sub.fixed_array_vars_ = fixed_array_vars_;
+    Emitter sub = make_sub_emitter(false);
     for (const auto& p : cl.params) sub.local_vars_.insert(p);
-    sub.in_main_ = false;
-    sub.in_test_ = false;
     sub.in_fallible_void_ = is_fallible_void;
     for (const auto& st : cl.body) {
         sub.emit_stmt(st, false);

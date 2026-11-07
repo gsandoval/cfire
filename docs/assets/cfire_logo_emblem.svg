@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 130" width="520" height="520">
+  <!-- 3D Extruded Obsidian-Navy Shell -->
+  <path d="
+M 38 7
+L 88 7
+L 114 33
+L 117 45
+L 93 49
+L 87 40
+L 96 60
+L 96 76
+L 114 80
+L 116 93
+L 96 121
+L 44 121
+L 16 93
+L 16 33
+Z
+" fill="#091326" stroke="#1E293B" stroke-width="1.8" stroke-linejoin="round"/>
+  <!-- Pure Flat Electric Sapphire Octagonal C (#38BDF8) -->
+  <path d="
+M 40 11
+L 85 11
+L 109 34
+L 111 41
+L 93 44
+L 86 31
+L 73 31
+L 65 17
+L 57 31
+L 48 31
+L 38 40
+L 38 83
+L 47 92
+L 80 92
+L 91 79
+L 109 83
+L 108 91
+L 87 113
+L 40 113
+L 20 90
+L 20 34
+Z
+" fill="#38BDF8"/>
+  <!-- Flat Ember Orange 3-Peak Flame (#F97316) + Flat Warm Amber Core (#FB923C) -->
+  <path d="
+M 44 86
+C 41 76, 42 64, 47 55
+L 50 63
+C 55 50, 61 36, 65 24
+C 70 37, 74 49, 73 61
+C 77 56, 80 52, 83 48
+C 88 56, 90 66, 88 75
+L 82 86
+L 77 77
+L 72 82
+L 63 61
+Z
+" fill="#F97316"/>
+  <path d="M 54 80 C 56 69, 61 54, 65 41 C 68 53, 71 64, 70 75 L 63 61 Z" fill="#FBBF24"/>
+</svg>

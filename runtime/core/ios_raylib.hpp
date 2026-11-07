@@ -926,7 +926,41 @@ RLAPI void InitWindow(int width, int height, const char *title) {
 
 RLAPI bool IsWindowReady(void) { return cfire::ios_rl::state().window_ready; }
 RLAPI bool WindowShouldClose(void) { return cfire::ios_rl::state().should_close; }
-RLAPI void CloseWindow(void) { cfire::ios_rl::state().window_ready = false; }
+RLAPI void CloseWindow(void) {
+    auto& s = cfire::ios_rl::state();
+#if defined(__OBJC__)
+    if (s.prog != 0) {
+        glDeleteProgram(s.prog);
+        s.prog = 0;
+    }
+    if (s.vbo != 0) {
+        glDeleteBuffers(1, &s.vbo);
+        s.vbo = 0;
+    }
+    if (s.vao != 0) {
+        glDeleteVertexArrays(1, &s.vao);
+        s.vao = 0;
+    }
+    if (s.white_tex != 0) {
+        glDeleteTextures(1, &s.white_tex);
+        s.white_tex = 0;
+    }
+    if (s.font_tex != 0) {
+        glDeleteTextures(1, &s.font_tex);
+        s.font_tex = 0;
+    }
+    if (s.fbo != 0) {
+        glDeleteFramebuffers(1, &s.fbo);
+        s.fbo = 0;
+    }
+    if (s.color_rbo != 0) {
+        glDeleteRenderbuffers(1, &s.color_rbo);
+        s.color_rbo = 0;
+    }
+#endif
+    s.batch.clear();
+    s.window_ready = false;
+}
 RLAPI void SetConfigFlags(unsigned int flags) { (void)flags; }
 RLAPI void SetWindowState(unsigned int flags) { (void)flags; }
 RLAPI void ClearWindowState(unsigned int flags) { (void)flags; }

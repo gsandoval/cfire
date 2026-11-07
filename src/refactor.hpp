@@ -223,8 +223,11 @@ struct RenameResult {
     }
 
     std::unordered_map<std::string, std::vector<Occurrence>> by_file;
+    std::unordered_set<std::string> seen_occ_keys;
     for (const auto& occ : occurrences_lsp) {
         std::string path = lsp::detail::uri_to_path(occ.uri);
+        std::string occ_key = std::format("{}:{}:{}", path, occ.line, occ.start_col);
+        if (!seen_occ_keys.insert(occ_key).second) continue;
         Occurrence o;
         o.file_path = path;
         o.line = occ.line + 1;

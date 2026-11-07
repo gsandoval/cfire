@@ -18,34 +18,7 @@ inline constexpr std::string_view kStdChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
 inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 [[nodiscard]] inline auto encode(std::span<const std::byte> data, bool url_safe = false) -> std::string {
-    std::string_view tbl = url_safe ? kUrlChars : kStdChars;
-    std::string out;
-    out.reserve(((data.size() + 2) / 3) * 4);
-    std::size_t i = 0;
-    while (i < data.size()) {
-        std::size_t remaining = data.size() - i;
-        std::uint32_t b0 = static_cast<std::uint8_t>(data[i]);
-        std::uint32_t b1 = (remaining > 1) ? static_cast<std::uint8_t>(data[i + 1]) : 0;
-        std::uint32_t b2 = (remaining > 2) ? static_cast<std::uint8_t>(data[i + 2]) : 0;
-        std::uint32_t triple = (b0 << 16) | (b1 << 8) | b2;
-
-        out.push_back(tbl[(triple >> 18) & 0x3F]);
-        out.push_back(tbl[(triple >> 12) & 0x3F]);
-        if (remaining > 1) {
-            out.push_back(tbl[(triple >> 6) & 0x3F]);
-        } else if (!url_safe) {
-            out.push_back('=');
-        }
-
-        if (remaining > 2) {
-            out.push_back(tbl[triple & 0x3F]);
-        } else if (!url_safe) {
-            out.push_back('=');
-        }
-
-        i += (remaining >= 3) ? 3 : remaining;
-    }
-    return out;
+    return cfire::detail::base64_encode(data, url_safe);
 }
 
 [[nodiscard]] inline auto encode(std::span<const std::uint8_t> data, bool url_safe = false) -> std::string {
@@ -131,15 +104,7 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
 namespace cfire::hex {
 
 [[nodiscard]] inline auto encode(std::span<const std::byte> data) -> std::string {
-    static constexpr char digits[] = "0123456789abcdef";
-    std::string out;
-    out.reserve(data.size() * 2);
-    for (std::byte b : data) {
-        auto val = static_cast<std::uint8_t>(b);
-        out.push_back(digits[(val >> 4) & 0x0F]);
-        out.push_back(digits[val & 0x0F]);
-    }
-    return out;
+    return cfire::detail::bytes_to_hex(data);
 }
 
 [[nodiscard]] inline auto encode(std::span<const std::uint8_t> data) -> std::string {
