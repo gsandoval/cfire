@@ -207,10 +207,10 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         std::filesystem::create_directories(tmp_cache, ec);
         if (!ec) {
             auto canon_cache = std::filesystem::canonical(tmp_cache, ec);
-            ::setenv("EM_CACHE", (!ec ? canon_cache : tmp_cache).c_str(), 1);
+            cfire::os::setenv("EM_CACHE", (!ec ? canon_cache : tmp_cache).string());
         } else if (const char* home = std::getenv("HOME")) {
             auto cache_dir = std::filesystem::path(home) / ".emscripten_cache";
-            ::setenv("EM_CACHE", cache_dir.c_str(), 1);
+            cfire::os::setenv("EM_CACHE", cache_dir.string());
         }
     }
     int rc = 0;

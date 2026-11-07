@@ -574,7 +574,11 @@ inline auto run_setup(
 ) -> int {
     std::println("==> cfire setup (v{}) — Configuring Toolchain & Dependencies", kCfireVersion);
     std::string pm = detect_pkg_manager();
+#if defined(_WIN32)
+    bool is_root = false;
+#else
     bool is_root = (::geteuid() == 0);
+#endif
     std::string sudo_prefix = is_root ? "" : (has_command("sudo") ? "sudo " : "");
 
     // 1. Install missing system libraries via platform package manager
@@ -725,9 +729,12 @@ inline auto run_install(
         std::println(stderr, "error: --portable requires a destination directory (e.g. `cfire install --portable ./dist/cfire`)");
         return 1;
     } else {
+#if !defined(_WIN32)
         if (::geteuid() == 0) {
             target_root = "/usr/local";
-        } else if (const char* home = std::getenv("HOME")) {
+        } else
+#endif
+        if (const char* home = std::getenv("HOME")) {
             target_root = std::filesystem::path(home) / ".local";
         } else {
             target_root = "/usr/local";

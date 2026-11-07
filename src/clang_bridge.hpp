@@ -11,6 +11,9 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
 
 namespace cfire::bridge {
 
@@ -29,6 +32,19 @@ struct HeaderIndex {
 };
 
 [[nodiscard]] inline auto shell_quote(std::string_view arg) -> std::string {
+#if defined(_WIN32)
+    std::string out = "\"";
+    out.reserve(arg.size() + 8);
+    for (char c : arg) {
+        if (c == '"') {
+            out += "\\\"";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('"');
+    return out;
+#else
     std::string out = "'";
     out.reserve(arg.size() + 8);
     for (char c : arg) {
@@ -40,11 +56,16 @@ struct HeaderIndex {
     }
     out.push_back('\'');
     return out;
+#endif
 }
 
 [[nodiscard]] inline auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string {
     std::string out;
-    FILE* pipe = popen((cmd + " 2>&1").c_str(), "r");
+#if defined(_WIN32)
+    FILE* pipe = ::_popen((cmd + " 2>&1").c_str(), "r");
+#else
+    FILE* pipe = ::popen((cmd + " 2>&1").c_str(), "r");
+#endif
     if (!pipe) {
         exit_code = -1;
         return "";
@@ -53,8 +74,12 @@ struct HeaderIndex {
     while (std::fgets(buf, sizeof(buf), pipe) != nullptr) {
         out.append(buf);
     }
-    int status = pclose(pipe);
+#if defined(_WIN32)
+    exit_code = ::_pclose(pipe);
+#else
+    int status = ::pclose(pipe);
     exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : status;
+#endif
     return out;
 }
 

@@ -12,7 +12,9 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 
 namespace cfire::mcp {
 

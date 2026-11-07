@@ -107,9 +107,10 @@ inline auto recv_exact(
     std::size_t received = 0;
     auto* ptr = static_cast<std::uint8_t*>(buf);
     while (received < len) {
+        int chunk = static_cast<int>(std::min<std::size_t>(len - received, 0x7fffffffU));
         ssize_t n = (tls && tls->ssl && tls->read_fn)
             ? tls->read_fn(tls->ssl, ptr + received, len - received)
-            : ::recv(fd, ptr + received, len - received, 0);
+            : ::recv(fd, reinterpret_cast<char*>(ptr + received), chunk, 0);
         if (n <= 0) return false;
         received += static_cast<std::size_t>(n);
     }
@@ -125,9 +126,10 @@ inline auto send_all(
     std::size_t sent_total = 0;
     const auto* ptr = static_cast<const std::uint8_t*>(buf);
     while (sent_total < len) {
+        int chunk = static_cast<int>(std::min<std::size_t>(len - sent_total, 0x7fffffffU));
         ssize_t n = (tls && tls->ssl && tls->write_fn)
             ? tls->write_fn(tls->ssl, ptr + sent_total, len - sent_total)
-            : ::send(fd, ptr + sent_total, len - sent_total, MSG_NOSIGNAL);
+            : ::send(fd, reinterpret_cast<const char*>(ptr + sent_total), chunk, MSG_NOSIGNAL);
         if (n <= 0) return false;
         sent_total += static_cast<std::size_t>(n);
     }
@@ -264,9 +266,7 @@ public:
         : fd_(fd), is_client_(is_client), tls_(std::move(tls)) {
         if (fd_ >= 0) {
             // Clear the 2-second HTTP header timeout so long-lived WebSocket connections do not time out when idle
-            timeval tv{.tv_sec = 0, .tv_usec = 0};
-            ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-            ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+            cfire::net::detail::set_sock_timeout_ms(fd_, 0);
 #ifdef SO_NOSIGPIPE
             int opt = 1;
             ::setsockopt(fd_, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
@@ -297,14 +297,7 @@ public:
     [[nodiscard]] auto max_frame_size() const noexcept -> std::size_t { return max_frame_size_; }
 
     void set_timeout_ms(int ms) noexcept {
-        if (fd_ < 0) return;
-        timeval tv{};
-        if (ms > 0) {
-            tv.tv_sec = ms / 1000;
-            tv.tv_usec = (ms % 1000) * 1000;
-        }
-        ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-        ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        cfire::net::detail::set_sock_timeout_ms(fd_, ms);
     }
 
     auto send_text(std::string_view msg) -> std::expected<void, cfire::Error> {
@@ -414,7 +407,7 @@ public:
             auto bytes = encode_frame(f, is_client_);
             (void)detail::send_all(sock, bytes.data(), bytes.size(), tls_);
             tls_.reset();
-            ::close(sock);
+            cfire::net::detail::close_sock(sock);
         }
     }
 
@@ -431,7 +424,7 @@ private:
 
 [[nodiscard]] inline auto pair() -> std::expected<std::pair<Conn, Conn>, cfire::Error> {
     int sv[2]{-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+    if (!cfire::net::detail::create_loopback_pair(sv)) {
         return cfire::make_error("socketpair failed");
     }
     return std::make_pair(Conn(sv[0], /*is_client=*/true), Conn(sv[1], /*is_client=*/false));

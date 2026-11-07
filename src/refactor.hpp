@@ -11,7 +11,9 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
