@@ -19,6 +19,37 @@ struct ResolvedImport {
     std::vector<std::string> link_tags{};
 };
 
+[[nodiscard]] inline auto canonical_import_for_wrong_prefix(std::string_view raw_path) -> std::string {
+    if (raw_path == "core:ai" || raw_path.starts_with("core:ai/")) return "ext:ai";
+    if (raw_path == "core:compress/zstd" || raw_path == "core:compress" || raw_path == "core:zstd" || raw_path.starts_with("core:compress/")) return "ext:compress/zstd";
+    if (raw_path == "core:crypto/sodium" || raw_path == "core:sodium") return "ext:crypto/sodium";
+    if (raw_path == "core:db/sqlite" || raw_path == "core:sqlite") return "ext:db/sqlite";
+    if (raw_path == "core:net/ssh" || raw_path == "core:ssh") return "ext:net/ssh";
+    if (raw_path == "core:webui") return "ext:webui";
+
+    if (raw_path.starts_with("ext:")) {
+        std::string tail(raw_path.substr(4));
+        if (tail == "ai" || tail.starts_with("ai/") ||
+            tail == "compress/zstd" || tail == "compress" || tail.starts_with("compress/") || tail == "zstd" ||
+            tail == "crypto/sodium" || tail == "sodium" ||
+            tail == "db/sqlite" || tail == "sqlite" ||
+            tail == "net/ssh" || tail == "ssh" ||
+            tail == "webui" || tail == "tako") {
+            return {};
+        }
+        if (tail == "url") return "core:net/url";
+        if (tail == "http") return "core:net/http";
+        if (tail == "tls") return "core:net/tls";
+        if (tail == "websocket") return "core:net/websocket";
+        if (tail == "os/keychain") return "core:keychain";
+        if (tail == "context") return "core:sync/context";
+        if (tail == "base64" || tail == "csv" || tail == "hex") return "core:encoding/" + tail;
+        if (tail == "aes" || tail == "blake3" || tail == "hmac" || tail == "sha256") return "core:crypto/" + tail;
+        return "core:" + tail;
+    }
+    return {};
+}
+
 [[nodiscard]] inline auto normalize_import_path(std::string_view raw_path) -> std::string {
     if (raw_path.starts_with("ext:")) {
         return "core:" + std::string(raw_path.substr(4));
@@ -29,6 +60,11 @@ struct ResolvedImport {
 [[nodiscard]] inline auto resolve_import(std::string_view raw_path) -> ResolvedImport {
     std::string path = normalize_import_path(raw_path);
     ResolvedImport info;
+
+    if (!canonical_import_for_wrong_prefix(raw_path).empty()) {
+        info.is_core = false;
+        return info;
+    }
 
     if (path == "vendor:raylib") {
         info.is_vendor = true;

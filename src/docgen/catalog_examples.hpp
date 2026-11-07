@@ -82,10 +82,10 @@ fn main() {
     println("Decompressed size: {} bytes", decompressed.len)
 })CF";
     }
-    if (mod == "ext:json") {
+    if (mod == "core:json") {
         return R"CF(package main
 
-import "ext:json"
+import "core:json"
 
 type ServiceMetric struct {
     service: str  `json:"service"`
@@ -199,10 +199,10 @@ fn main() {
     println("Blake3 256-bit digest: {}", hash)
 })CF";
     }
-    if (mod == "ext:net") {
+    if (mod == "core:net") {
         return R"CF(package main
 
-import "ext:net"
+import "core:net"
 
 fn main() {
     // 1. Bind loopback TCP listener on an ephemeral port (0)
@@ -220,10 +220,10 @@ fn main() {
     println("Server received payload: {}", msg)
 })CF";
     }
-    if (mod == "ext:net/url") {
+    if (mod == "core:net/url") {
         return R"CF(package main
 
-import "ext:net/url"
+import "core:net/url"
 
 fn main() {
     raw := "https://api.domain.com:8443/v1/search?q=systems+c%2B%2B&limit=25#results"
@@ -235,11 +235,11 @@ fn main() {
     println("Percent-encoded: {}", encoded)
 })CF";
     }
-    if (mod == "ext:net/http") {
+    if (mod == "core:net/http") {
         return R"CF(package main
 
-import "ext:net/http"
-import "ext:json"
+import "core:net/http"
+import "core:json"
 
 type HealthStatus struct {
     status: str `json:"status"`
@@ -269,11 +269,11 @@ fn main() {
     server.serve_in_background(router)
 })CF";
     }
-    if (mod == "ext:net/tls") {
+    if (mod == "core:net/tls") {
         return R"CF(package main
 
-import "ext:net/tls"
-import "ext:net/http"
+import "core:net/tls"
+import "core:net/http"
 
 fn main() {
     // 1. Generate an in-memory RSA-2048 X.509 self-signed certificate pair
@@ -289,10 +289,10 @@ fn main() {
     defer srv.stop()
 })CF";
     }
-    if (mod == "ext:net/websocket") {
+    if (mod == "core:net/websocket") {
         return R"CF(package main
 
-import "ext:net/websocket"
+import "core:net/websocket"
 
 fn main() {
     // 1. Start a standalone WebSocket server on an ephemeral port
@@ -592,10 +592,10 @@ fn main() {
     }
 })CF";
     }
-    if (mod == "ext:audio") {
+    if (mod == "core:audio") {
         return R"CF(package main
 
-import "ext:audio"
+import "core:audio"
 
 fn main() {
     try audio.init(48000, 2)
@@ -623,37 +623,38 @@ fn main() {
 
 import "ext:ai"
 import "ext:db/sqlite"
-import "ext:json"
+import "core:json"
 
 type SearchArgs struct {
-    query: str `json:"query" desc:"Semantic search query"`
-    limit: i32 `json:"limit" desc:"Maximum results to return"`
+    query: str `json:"query" desc:"Semantic search query" validate:"non_empty"`
+    limit: i32 `json:"limit" desc:"Maximum results to return" validate:"min=1,max=10"`
 }
 
 type DocHit struct {
-    title: str `sql:"title"`
-    score: f64 `sql:"score"`
+    title: str `sql:"title" json:"title"`
+    score: f64 `sql:"score" json:"score"`
 }
 
 fn main() {
-    // 1. Compile-time JSON Schema reflection for LLM tools & structured outputs
+    // 1. Compile-time JSON Schema reflection & validation constraints for LLM tools
     println("Tool schema: {}", json.schema[SearchArgs]())
 
     // 2. Parse & chunk structured documents (.pdf, .pptx, .docx, .odt, .epub, .md)
     doc := try ai.parse_document("# Systems Guide\nZero-overhead C++23 memory safety.\n# Vector SQLite\nEmbedded SIMD vector similarity search and RAG.", "guide.md")
     chunks := ai.chunk_document(doc, 256, 32)
 
-    // 3. Unified local on-device embeddings + SQLite SIMD vector similarity search
+    // 3. Stateful on-device AI client + SQLite SIMD vector similarity search
+    client := ai.local()
     mut db := try sqlite.open(":memory:")
     defer db.close()
     try db.exec("CREATE TABLE docs (title TEXT, vec BLOB)")
 
     for ch in chunks {
-        vec := try ai.embed("local", ch.text)
+        vec := try client.embed(ch.text)
         try db.exec("INSERT INTO docs VALUES (?1, ?2)", ch.title, vec)
     }
 
-    qvec := try ai.embed("local", "vector search in sqlite")
+    qvec := try client.embed("vector search in sqlite")
     hits := try db.query[DocHit](
         "SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM docs ORDER BY score DESC LIMIT 1",
         qvec
@@ -676,10 +677,10 @@ fn main() {
     println("Decrypted bytes: {}", opened.len)
 })CF";
     }
-    if (mod == "ext:keychain") {
+    if (mod == "core:keychain") {
         return R"CF(package main
 
-import "ext:keychain"
+import "core:keychain"
 
 fn main() {
     try keychain.set("dev.flint.ssh", "vault-key", "super-secret-token")
@@ -692,7 +693,7 @@ fn main() {
         return R"CF(package main
 
 import "ext:net/ssh"
-import "ext:keychain"
+import "core:keychain"
 
 fn main() {
     mut sess := try ssh.dial("10.0.0.12", 22, "deploy", 5000)

@@ -166,6 +166,39 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    if (d.code == "cfire/INVALID-IMPORT") {
+        std::string old_imp;
+        std::string new_imp;
+        if (auto p = d.message.find("module '"); p != std::string::npos) {
+            p += 8;
+            if (auto e = d.message.find('\'', p); e != std::string::npos) {
+                old_imp = d.message.substr(p, e - p);
+            }
+        }
+        if (auto p = d.message.find("imported as '"); p != std::string::npos) {
+            p += 13;
+            if (auto e = d.message.find('\'', p); e != std::string::npos) {
+                new_imp = d.message.substr(p, e - p);
+            }
+        }
+        if (!old_imp.empty() && !new_imp.empty() && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            std::string target_str = "\"" + old_imp + "\"";
+            if (auto pos = cur_ln.find(target_str); pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = std::format("Replace '{}' with '{}' (cfire/INVALID-IMPORT)", old_imp, new_imp);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(pos + target_str.size()) + 1;
+                edit.replacement = "\"" + new_imp + "\"";
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+                return;
+            }
+        }
+    }
+
     if (d.code == "cfire/NULL-DEREF") {
         std::string ptr_name;
         if (auto p = d.message.find("pointer '"); p != std::string::npos) {

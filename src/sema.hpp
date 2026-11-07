@@ -13,6 +13,22 @@
 
 namespace cfire::frontend {
 
+struct FieldValidationSpec {
+    bool has_rules = false;
+    bool has_min = false;
+    std::string min_raw{};
+    double min_num = 0.0;
+    bool has_max = false;
+    std::string max_raw{};
+    double max_num = 0.0;
+    bool has_min_len = false;
+    std::size_t min_len = 0;
+    bool has_max_len = false;
+    std::size_t max_len = 0;
+    bool non_empty = false;
+    std::vector<std::string> oneof{};
+};
+
 struct StructTagInfo {
     std::string field_name{};
     TypeRef field_type{};
@@ -21,6 +37,7 @@ struct StructTagInfo {
     std::string cli_help{};
     std::string json_key{};
     std::string db_column{};
+    FieldValidationSpec validation{};
     std::unordered_map<std::string, std::string> custom_tags{};
 };
 
@@ -532,6 +549,15 @@ public:
                 if (mem->field == "bytes" && call->args.empty()) {
                     return "[]byte";
                 }
+                if (mem->field == "ocr" || mem->field == "detect_language") {
+                    return "str";
+                }
+                if ((mem->field == "parse" || mem->field == "generate_struct" ||
+                     mem->field == "generate_struct_from_file" || mem->field == "run_struct" ||
+                     mem->field == "run_struct_validated") && call->type_args.size() == 1 &&
+                    !call->type_args[0].name.empty()) {
+                    return call->type_args[0].name;
+                }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
                     if (sig->return_type.is_slice && sig->return_type.name == "byte") return "[]byte";
                     return sig->return_type.name;
@@ -933,6 +959,12 @@ public:
             }
         } else if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
             const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+            if (obj_id && obj_id->name == "ai" && !is_ident_in_scope_sema("ai") &&
+                (mem->field == "embed" || mem->field == "embed_image" || mem->field == "ocr" || mem->field == "detect_language")) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: 'ai.{}' is a stateful Client method; construct a client first (e.g. 'client := ai.local()') and call 'client.{}(...)' (cfire/DEPRECATED-API)",
+                    path_, line, col, mem->field, mem->field)); !r) return r;
+            }
             if (mem->field == "find" || mem->field == "rfind") {
                 bool is_str_ns = (obj_id && obj_id->name == "str" && !is_ident_in_scope_sema(obj_id->name));
                 if (!is_str_ns && mem->object && infer_expr_type_name_sema(mem->object) == "str") {
@@ -1932,12 +1964,24 @@ private:
 [[nodiscard]] inline auto analyze_resilient(FileAST ast) -> CheckedFile {
     CheckedFile cf;
 
-    // 0a. Check Module Imports (CF-006)
+    // 0a. Check Module Imports (CF-006 / CF-086)
     for (const auto& imp : ast.imports) {
-        if (!imp.is_cpp && (imp.path == "core:crypto/sodium" || imp.path == "core:sodium")) {
-            cf.errors.push_back(std::format(
-                "{}:{}:1: module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium' (cfire/INVALID-IMPORT)",
-                ast.path, imp.line, imp.path));
+        if (!imp.is_cpp) {
+            if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(imp.path); !canon.empty()) {
+                if (canon == "ext:crypto/sodium") {
+                    cf.errors.push_back(std::format(
+                        "{}:{}:1: module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium' (cfire/INVALID-IMPORT)",
+                        ast.path, imp.line, imp.path));
+                } else if (canon.starts_with("ext:")) {
+                    cf.errors.push_back(std::format(
+                        "{}:{}:1: module '{}' requires a native extension engine and must be imported as '{}' (cfire/INVALID-IMPORT)",
+                        ast.path, imp.line, imp.path, canon));
+                } else {
+                    cf.errors.push_back(std::format(
+                        "{}:{}:1: module '{}' is part of the zero-setup core standard library and must be imported as '{}' (cfire/INVALID-IMPORT)",
+                        ast.path, imp.line, imp.path, canon));
+                }
+            }
         }
     }
 
@@ -2058,6 +2102,128 @@ private:
                                 "{}:{}:1: invalid default tag value '{}' for float field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
                                 st_path, fld.line, dval, st.name, fld.name, tname));
                         }
+                    }
+                } else if (key == "validate") {
+                    const std::string& tname = fld.type.name;
+                    bool is_int_type = (tname == "i8" || tname == "i16" || tname == "i32" || tname == "i64" || tname == "isize" || tname == "int");
+                    bool is_uint_type = (tname == "u8" || tname == "u16" || tname == "u32" || tname == "u64" || tname == "usize" || tname == "byte");
+                    bool is_float_type = (tname == "f32" || tname == "f64");
+                    bool is_num_type = is_int_type || is_uint_type || is_float_type;
+                    bool is_len_type = (tname == "str" || fld.type.is_slice);
+
+                    std::size_t rpos = 0;
+                    while (rpos <= val.size()) {
+                        auto comma = val.find(',', rpos);
+                        std::string r_tok = trim_str(comma == std::string::npos
+                            ? std::string_view(val).substr(rpos)
+                            : std::string_view(val).substr(rpos, comma - rpos));
+                        rpos = (comma == std::string::npos) ? (val.size() + 1) : (comma + 1);
+                        if (r_tok.empty()) continue;
+
+                        if (r_tok == "non_empty") {
+                            if (!is_len_type) {
+                                cf.errors.push_back(std::format(
+                                    "{}:{}:1: validate rule 'non_empty' on field '{}.{}' requires 'str' or slice type, got '{}' (cfire/INVALID-STRUCT-TAG)",
+                                    st_path, fld.line, st.name, fld.name, tname));
+                            } else {
+                                info.validation.non_empty = true;
+                                info.validation.has_rules = true;
+                            }
+                        } else if (r_tok.starts_with("min=") || r_tok.starts_with("max=")) {
+                            bool is_min = r_tok.starts_with("min=");
+                            std::string nstr = trim_str(std::string_view(r_tok).substr(4));
+                            if (!is_num_type) {
+                                cf.errors.push_back(std::format(
+                                    "{}:{}:1: validate rule '{}' on field '{}.{}' requires a numeric field type, got '{}' (cfire/INVALID-STRUCT-TAG)",
+                                    st_path, fld.line, r_tok, st.name, fld.name, tname));
+                            } else {
+                                char* endp = nullptr;
+                                double num = std::strtod(nstr.c_str(), &endp);
+                                bool valid_num = !nstr.empty() && endp == nstr.c_str() + nstr.size();
+                                if (is_int_type && !cfire::detail::parse_int<std::int64_t>(nstr)) valid_num = false;
+                                if (is_uint_type && (nstr.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(nstr))) valid_num = false;
+                                if (!valid_num) {
+                                    cf.errors.push_back(std::format(
+                                        "{}:{}:1: invalid numeric bound '{}' in validate tag on field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
+                                        st_path, fld.line, r_tok, st.name, fld.name, tname));
+                                } else {
+                                    info.validation.has_rules = true;
+                                    if (is_min) {
+                                        info.validation.has_min = true;
+                                        info.validation.min_raw = nstr;
+                                        info.validation.min_num = num;
+                                    } else {
+                                        info.validation.has_max = true;
+                                        info.validation.max_raw = nstr;
+                                        info.validation.max_num = num;
+                                    }
+                                }
+                            }
+                        } else if (r_tok.starts_with("min_len=") || r_tok.starts_with("max_len=")) {
+                            bool is_min_l = r_tok.starts_with("min_len=");
+                            std::string lstr = trim_str(std::string_view(r_tok).substr(8));
+                            if (!is_len_type) {
+                                cf.errors.push_back(std::format(
+                                    "{}:{}:1: validate rule '{}' on field '{}.{}' requires 'str' or slice type, got '{}' (cfire/INVALID-STRUCT-TAG)",
+                                    st_path, fld.line, r_tok, st.name, fld.name, tname));
+                            } else {
+                                auto parsed_len = (!lstr.starts_with('-')) ? cfire::detail::parse_int<std::uint64_t>(lstr) : std::nullopt;
+                                if (!parsed_len) {
+                                    cf.errors.push_back(std::format(
+                                        "{}:{}:1: invalid length bound '{}' in validate tag on field '{}.{}' (cfire/INVALID-STRUCT-TAG)",
+                                        st_path, fld.line, r_tok, st.name, fld.name));
+                                } else {
+                                    info.validation.has_rules = true;
+                                    if (is_min_l) {
+                                        info.validation.has_min_len = true;
+                                        info.validation.min_len = static_cast<std::size_t>(*parsed_len);
+                                    } else {
+                                        info.validation.has_max_len = true;
+                                        info.validation.max_len = static_cast<std::size_t>(*parsed_len);
+                                    }
+                                }
+                            }
+                        } else if (r_tok.starts_with("oneof=")) {
+                            std::string opts_str = trim_str(std::string_view(r_tok).substr(6));
+                            if (tname != "str") {
+                                cf.errors.push_back(std::format(
+                                    "{}:{}:1: validate rule '{}' on field '{}.{}' requires 'str' field type, got '{}' (cfire/INVALID-STRUCT-TAG)",
+                                    st_path, fld.line, r_tok, st.name, fld.name, tname));
+                            } else {
+                                std::vector<std::string> opts;
+                                std::size_t opos = 0;
+                                while (opos <= opts_str.size()) {
+                                    auto bar = opts_str.find('|', opos);
+                                    std::string item = trim_str(bar == std::string::npos
+                                        ? std::string_view(opts_str).substr(opos)
+                                        : std::string_view(opts_str).substr(opos, bar - opos));
+                                    opos = (bar == std::string::npos) ? (opts_str.size() + 1) : (bar + 1);
+                                    if (!item.empty()) opts.push_back(std::move(item));
+                                }
+                                if (opts.empty()) {
+                                    cf.errors.push_back(std::format(
+                                        "{}:{}:1: empty 'oneof=' option list in validate tag on field '{}.{}' (cfire/INVALID-STRUCT-TAG)",
+                                        st_path, fld.line, st.name, fld.name));
+                                } else {
+                                    info.validation.has_rules = true;
+                                    info.validation.oneof = std::move(opts);
+                                }
+                            }
+                        } else {
+                            cf.errors.push_back(std::format(
+                                "{}:{}:1: unknown validate tag rule '{}' on field '{}.{}' (expected min=, max=, min_len=, max_len=, non_empty, or oneof=) (cfire/INVALID-STRUCT-TAG)",
+                                st_path, fld.line, r_tok, st.name, fld.name));
+                        }
+                    }
+                    if (info.validation.has_min && info.validation.has_max && info.validation.min_num > info.validation.max_num) {
+                        cf.errors.push_back(std::format(
+                            "{}:{}:1: validate tag on field '{}.{}' has min ({}) > max ({}) (cfire/INVALID-STRUCT-TAG)",
+                            st_path, fld.line, st.name, fld.name, info.validation.min_raw, info.validation.max_raw));
+                    }
+                    if (info.validation.has_min_len && info.validation.has_max_len && info.validation.min_len > info.validation.max_len) {
+                        cf.errors.push_back(std::format(
+                            "{}:{}:1: validate tag on field '{}.{}' has min_len ({}) > max_len ({}) (cfire/INVALID-STRUCT-TAG)",
+                            st_path, fld.line, st.name, fld.name, info.validation.min_len, info.validation.max_len));
                     }
                 }
                 info.custom_tags[key] = val;

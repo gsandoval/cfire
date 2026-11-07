@@ -1091,11 +1091,11 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 21 zero-dependency C++23 primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:cli</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 11 opt-in domain packages (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 30 zero-setup C++23 &amp; baseline OS primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
         </p>
       </div>
       <div class="bento-footer">
-        <code>core:* (zero deps) &bull; ext:* (opt-in domain) &bull; vendor:* (C/C++ engines)</code>
+        <code>core:* (zero setup) &bull; ext:* (native C/AI/WebUI) &bull; vendor:* (C/C++ engines)</code>
       </div>
     </div>
 
@@ -1108,11 +1108,11 @@ syncCfireThemeBtn();
         </div>
         <h3>Opt-In AI Clients, Local Vectors &amp; MCP Tool Servers</h3>
         <p>
-          When imported, <code>ext:ai</code>, <code>ext:db/sqlite</code>, and <code>ext:json</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
+          When imported, <code>ext:ai</code>, <code>ext:db/sqlite</code>, and <code>core:json</code> provide a unified client for OpenAI, Anthropic, Gemini, and Ollama, local float32 embeddings, SQLite cosine similarity queries, and typed Model Context Protocol (MCP) servers backed by compile-time JSON schema reflection.
         </p>
       </div>
       <div class="bento-footer">
-        <code>ext:ai &bull; ext:db/sqlite &bull; ext:json &bull; json.schema[T]()</code>
+        <code>ext:ai &bull; ext:db/sqlite &bull; core:json &bull; json.schema[T]()</code>
       </div>
     </div>
 
@@ -1144,7 +1144,7 @@ syncCfireThemeBtn();
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
-    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>ext:audio</code>)</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>core:audio</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (<code>ext:ai</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-webui', this)">8. Hybrid WebUI (<code>ext:webui</code>)</button>
   </div>
@@ -1370,7 +1370,7 @@ auto main(int argc, char** argv) -&gt; int {
         <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>package main
 
-import &quot;ext:net/websocket&quot;
+import &quot;core:net/websocket&quot;
 import &quot;core:sync/context&quot;
 import &quot;core:time&quot;
 
@@ -1454,7 +1454,7 @@ auto main(int argc, char** argv) -&gt; int {
         <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>package main
 
-import &quot;ext:json&quot;
+import &quot;core:json&quot;
 
 type Metric struct {
     service: str  `json:&quot;service&quot;`
@@ -1647,7 +1647,7 @@ auto main(int argc, char** argv) -&gt; int {
         <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>package main
 
-import &quot;ext:audio&quot;
+import &quot;core:audio&quot;
 
 fn main() {
     try audio.init(48000, 2)
@@ -1730,7 +1730,7 @@ auto main(int argc, char** argv) -&gt; int {
 
 import &quot;ext:ai&quot; as ai
 import &quot;ext:db/sqlite&quot; as sqlite
-import &quot;ext:json&quot; as json
+import &quot;core:json&quot; as json
 
 type QueryPlan struct {
     Target: str `json:&quot;target&quot; desc:&quot;Search target concept&quot;`
@@ -1751,17 +1751,18 @@ fn main() {
     doc := try ai.parse_document(&quot;# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;, &quot;arch.md&quot;)
     chunks := ai.chunk_document(doc, 512, 64)
 
-    // 3. Embedded SQLite with AVX2/NEON SIMD vector similarity
+    // 3. Embedded SQLite with AVX2/NEON SIMD vector similarity &amp; stateful on-device Client
+    client := ai.local()
     mut db := try sqlite.open(&quot;:memory:&quot;)
     try db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;)
 
     for ch in chunks {
-        vec := try ai.embed(&quot;local&quot;, ch.text)
+        vec := try client.embed(ch.text)
         try db.exec(&quot;INSERT INTO docs VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec)
     }
 
     // 4. In-database semantic search
-    qvec := try ai.embed(&quot;local&quot;, &quot;modern C++23 compiler&quot;)
+    qvec := try client.embed(&quot;modern C++23 compiler&quot;)
     hits := try db.query[DocEntry](&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec)
     if hits.len() &gt; 0 {
         println(&quot;Match [{}]: {}&quot;, hits[0].Title, hits[0].Snippet)
@@ -1835,9 +1836,9 @@ template &lt;&gt;
 inline auto cfire::json::schema_struct&lt;QueryPlan&gt;() -&gt; std::string {
     std::string props = &quot;{&quot;;
     std::string req = &quot;[&quot;;
-    props += std::format(&quot;\&quot;target\&quot;:{}&quot;, cfire::json::with_description(cfire::json::schema&lt;std::string&gt;(), R&quot;desc(Search target concept)desc&quot;));
+    props += std::format(&quot;\&quot;target\&quot;:{}&quot;, cfire::json::with_schema_meta(cfire::json::schema&lt;std::string&gt;(), R&quot;desc(Search target concept)desc&quot;, R&quot;meta()meta&quot;));
     req += &quot;\&quot;target\&quot;&quot;;
-    props += std::format(&quot;,\&quot;top_k\&quot;:{}&quot;, cfire::json::with_description(cfire::json::schema&lt;std::int64_t&gt;(), R&quot;desc(Number of top results)desc&quot;));
+    props += std::format(&quot;,\&quot;top_k\&quot;:{}&quot;, cfire::json::with_schema_meta(cfire::json::schema&lt;std::int64_t&gt;(), R&quot;desc(Number of top results)desc&quot;, R&quot;meta()meta&quot;));
     req += &quot;,\&quot;top_k\&quot;&quot;;
     props += &quot;}&quot;;
     req += &quot;]&quot;;
@@ -1939,52 +1940,54 @@ auto main(int argc, char** argv) -&gt; int {
     #line 24 &quot;snippet_ai.cf&quot;
     auto chunks = cfire::ai::chunk_document(doc, 512, 64);
     #line 27 &quot;snippet_ai.cf&quot;
+    auto client = cfire::ai::local();
+    #line 28 &quot;snippet_ai.cf&quot;
     auto _try_2 = cfire::sqlite::open(&quot;:memory:&quot;);
     if (!_try_2.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
         return 1;
     }
     auto db = std::move(*_try_2);
-    #line 28 &quot;snippet_ai.cf&quot;
+    #line 29 &quot;snippet_ai.cf&quot;
     auto _try_v_3 = db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;);
     if (!_try_v_3.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_v_3.error().message());
         return 1;
     }
-    #line 30 &quot;snippet_ai.cf&quot;
+    #line 31 &quot;snippet_ai.cf&quot;
     for (const auto&amp; ch : chunks) {
-        #line 31 &quot;snippet_ai.cf&quot;
-        auto _try_4 = cfire::ai::embed(&quot;local&quot;, ch.text);
+        #line 32 &quot;snippet_ai.cf&quot;
+        auto _try_4 = client.embed(ch.text);
         if (!_try_4.has_value()) {
             std::println(stderr, &quot;Error: {}&quot;, _try_4.error().message());
             return 1;
         }
         auto vec = std::move(*_try_4);
-        #line 32 &quot;snippet_ai.cf&quot;
+        #line 33 &quot;snippet_ai.cf&quot;
         auto _try_v_5 = db.exec(&quot;INSERT INTO docs VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec);
         if (!_try_v_5.has_value()) {
             std::println(stderr, &quot;Error: {}&quot;, _try_v_5.error().message());
             return 1;
         }
     }
-    #line 36 &quot;snippet_ai.cf&quot;
-    auto _try_6 = cfire::ai::embed(&quot;local&quot;, &quot;modern C++23 compiler&quot;);
+    #line 37 &quot;snippet_ai.cf&quot;
+    auto _try_6 = client.embed(&quot;modern C++23 compiler&quot;);
     if (!_try_6.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_6.error().message());
         return 1;
     }
     auto qvec = std::move(*_try_6);
-    #line 37 &quot;snippet_ai.cf&quot;
+    #line 38 &quot;snippet_ai.cf&quot;
     auto _try_7 = db.query&lt;DocEntry&gt;(&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec);
     if (!_try_7.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_7.error().message());
         return 1;
     }
     auto hits = std::move(*_try_7);
-    #line 38 &quot;snippet_ai.cf&quot;
+    #line 39 &quot;snippet_ai.cf&quot;
     if (hits.size() &gt; 0) {
-        #line 39 &quot;snippet_ai.cf&quot;
-        (void)(std::println(&quot;Match [{}]: {}&quot;, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 39).Title, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 39).Snippet));
+        #line 40 &quot;snippet_ai.cf&quot;
+        (void)(std::println(&quot;Match [{}]: {}&quot;, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 40).Title, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 40).Snippet));
     }
     return 0;
 }
@@ -2300,7 +2303,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 21 zero-dep core modules + 11 opt-in domain extensions (<code>ext:json</code>, <code>ext:net/http</code>, <code>ext:db/sqlite</code>, <code>ext:audio</code>, <code>ext:ai</code>, <code>ext:webui</code>) + 2 vendor engines.</td>
+          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 30 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>) + 2 vendor engines.</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -2419,12 +2422,12 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-13">
       <div class="roadmap-num">Chapter 13</div>
       <h4>HTTP, SSE, WebSockets &amp; TLS</h4>
-      <p>High-performance HTTP/1.1 client (<code>ext:net/http</code>), SSE streaming, routers, RFC 6455 WebSockets (<code>ext:net/websocket</code>), and TLS 1.3 (<code>ext:net/tls</code>).</p>
+      <p>High-performance HTTP/1.1 client (<code>core:net/http</code>), SSE streaming, routers, RFC 6455 WebSockets (<code>core:net/websocket</code>), and TLS 1.3 (<code>core:net/tls</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-14">
       <div class="roadmap-num">Chapter 14</div>
       <h4>JSON, SQLite, Zstd &amp; Cryptography</h4>
-      <p>Compile-time SIMD JSON (<code>ext:json</code>), embedded SQLite WAL with vector similarity (<code>ext:db/sqlite</code>), Zstandard (<code>ext:compress/zstd</code>), and <code>core:crypto/*</code>.</p>
+      <p>Compile-time SIMD JSON (<code>core:json</code>), embedded SQLite WAL with vector similarity (<code>ext:db/sqlite</code>), Zstandard (<code>ext:compress/zstd</code>), and <code>core:crypto/*</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-15">
       <div class="roadmap-num">Chapter 15</div>
@@ -2434,7 +2437,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-16">
       <div class="roadmap-num">Chapter 16</div>
       <h4>Audio Synthesis &amp; Real-Time DSP</h4>
-      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>ext:audio</code>).</p>
+      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>core:audio</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-17">
       <div class="roadmap-num">Chapter 17</div>

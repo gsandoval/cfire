@@ -27,6 +27,8 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
     --indent_;
     writeln("};");
 
+    auto tags_it = cf_.struct_tags.find(st.name);
+
     bool can_emit_arbitrary = true;
     for (const auto& fld : st.fields) {
         if (is_non_value_field_type(fld.type, 0)) {
@@ -46,6 +48,38 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
             std::string fname = sanitize_cpp_ident(st.fields[fi].name);
             writeln(std::format("out.{} = cfire::testing_detail::Arbitrary<std::decay_t<decltype(out.{})>>::generate(rng, iter + {});",
                 fname, fname, fi));
+            if (tags_it != cf_.struct_tags.end() && fi < tags_it->second.size() && tags_it->second[fi].validation.has_rules) {
+                const auto& v = tags_it->second[fi].validation;
+                const auto& ftype = tags_it->second[fi].field_type;
+                std::string val_expr = ftype.is_optional ? ("(*out." + fname + ")") : ("out." + fname);
+                if (ftype.is_optional) {
+                    writeln(std::format("if (out.{}.has_value()) {{", fname));
+                    ++indent_;
+                }
+                if (v.has_min) {
+                    writeln(std::format("if ({0} < static_cast<std::decay_t<decltype({0})>>({1})) {0} = static_cast<std::decay_t<decltype({0})>>({1});", val_expr, v.min_raw));
+                }
+                if (v.has_max) {
+                    writeln(std::format("if ({0} > static_cast<std::decay_t<decltype({0})>>({1})) {0} = static_cast<std::decay_t<decltype({0})>>({1});", val_expr, v.max_raw));
+                }
+                if (!v.oneof.empty()) {
+                    writeln(std::format("{0} = \"{1}\";", val_expr, escape_unescaped_quotes(v.oneof.front())));
+                } else {
+                    std::size_t req_min_len = v.has_min_len ? v.min_len : (v.non_empty ? 1u : 0u);
+                    if (req_min_len > 0 && ftype.name == "str") {
+                        writeln(std::format("while ({0}.size() < {1}u) {0} += 'a';", val_expr, req_min_len));
+                    } else if (req_min_len > 0 && ftype.is_slice) {
+                        writeln(std::format("while ({0}.size() < {1}u) {0}.emplace_back();", val_expr, req_min_len));
+                    }
+                    if (v.has_max_len && (ftype.name == "str" || ftype.is_slice)) {
+                        writeln(std::format("if ({0}.size() > {1}u) {0}.resize({1}u);", val_expr, v.max_len));
+                    }
+                }
+                if (ftype.is_optional) {
+                    --indent_;
+                    writeln("}");
+                }
+            }
         }
         writeln("return out;");
         --indent_;
@@ -54,9 +88,8 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
         writeln("};");
     }
 
-    auto it = cf_.struct_tags.find(st.name);
-    if (it == cf_.struct_tags.end()) return;
-    const auto& tags = it->second;
+    if (tags_it == cf_.struct_tags.end()) return;
+    const auto& tags = tags_it->second;
 
     bool has_cli = false, has_json = false, has_desc = false, has_db = false;
     for (const auto& t : tags) {
@@ -157,6 +190,58 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
                 } else if (is_local_type(t.field_type.name)) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", fname, lower_raw_owning_type(t.field_type), jkey));
                 }
+                if (t.validation.has_rules) {
+                    const auto& v = t.validation;
+                    std::string val_expr = t.field_type.is_optional ? ("(*out." + fname + ")") : ("out." + fname);
+                    if (t.field_type.is_optional) {
+                        writeln(std::format("if (out.{}.has_value()) {{", fname));
+                        ++indent_;
+                    }
+                    if (v.has_min) {
+                        writeln(std::format(
+                            "if ({0} < static_cast<std::decay_t<decltype({0})>>({1})) return cfire::make_error(std::format(\"validation failed for field '{2}': value {{}} is less than min {1}\", {0}));",
+                            val_expr, v.min_raw, jkey));
+                    }
+                    if (v.has_max) {
+                        writeln(std::format(
+                            "if ({0} > static_cast<std::decay_t<decltype({0})>>({1})) return cfire::make_error(std::format(\"validation failed for field '{2}': value {{}} exceeds max {1}\", {0}));",
+                            val_expr, v.max_raw, jkey));
+                    }
+                    if (v.non_empty) {
+                        writeln(std::format(
+                            "if ({0}.empty()) return cfire::make_error(\"validation failed for field '{1}': must not be empty\");",
+                            val_expr, jkey));
+                    }
+                    if (v.has_min_len) {
+                        writeln(std::format(
+                            "if ({0}.size() < {1}u) return cfire::make_error(std::format(\"validation failed for field '{2}': length {{}} is less than min_len {1}\", {0}.size()));",
+                            val_expr, v.min_len, jkey));
+                    }
+                    if (v.has_max_len) {
+                        writeln(std::format(
+                            "if ({0}.size() > {1}u) return cfire::make_error(std::format(\"validation failed for field '{2}': length {{}} exceeds max_len {1}\", {0}.size()));",
+                            val_expr, v.max_len, jkey));
+                    }
+                    if (!v.oneof.empty()) {
+                        std::string cond;
+                        std::string allowed_list;
+                        for (std::size_t oi = 0; oi < v.oneof.size(); ++oi) {
+                            if (oi > 0) {
+                                cond += " && ";
+                                allowed_list += "|";
+                            }
+                            cond += std::format("({} != \"{}\")", val_expr, escape_unescaped_quotes(v.oneof[oi]));
+                            allowed_list += escape_unescaped_quotes(v.oneof[oi]);
+                        }
+                        writeln(std::format(
+                            "if ({0}) return cfire::make_error(std::format(\"validation failed for field '{1}': '{{}}' is not one of [{2}]\", {3}));",
+                            cond, jkey, allowed_list, val_expr));
+                    }
+                    if (t.field_type.is_optional) {
+                        --indent_;
+                        writeln("}");
+                    }
+                }
             }
         }
         writeln("return out;");
@@ -210,9 +295,35 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
             if (auto dit = t.custom_tags.find("desc"); dit != t.custom_tags.end()) {
                 desc_str = dit->second;
             }
-            if (!desc_str.empty()) {
-                writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::with_description(cfire::json::schema<{}>(), R\"desc({})desc\"));",
-                    p_prefix, jkey, f_cpp, desc_str));
+            std::string extra_schema;
+            if (t.validation.has_rules) {
+                const auto& v = t.validation;
+                auto append_kv = [&](std::string_view kv) {
+                    if (!extra_schema.empty()) extra_schema += ",";
+                    extra_schema += kv;
+                };
+                if (v.has_min) append_kv(std::format("\"minimum\":{}", v.min_raw));
+                if (v.has_max) append_kv(std::format("\"maximum\":{}", v.max_raw));
+                std::size_t eff_min_len = v.has_min_len ? v.min_len : (v.non_empty ? 1u : 0u);
+                if (eff_min_len > 0) {
+                    append_kv(std::format("\"{}\":{}", t.field_type.is_slice ? "minItems" : "minLength", eff_min_len));
+                }
+                if (v.has_max_len) {
+                    append_kv(std::format("\"{}\":{}", t.field_type.is_slice ? "maxItems" : "maxLength", v.max_len));
+                }
+                if (!v.oneof.empty()) {
+                    std::string enum_arr = "\"enum\":[";
+                    for (std::size_t oi = 0; oi < v.oneof.size(); ++oi) {
+                        if (oi > 0) enum_arr += ",";
+                        enum_arr += std::format("\"{}\"", escape_unescaped_quotes(v.oneof[oi]));
+                    }
+                    enum_arr += "]";
+                    append_kv(enum_arr);
+                }
+            }
+            if (!desc_str.empty() || !extra_schema.empty()) {
+                writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::with_schema_meta(cfire::json::schema<{}>(), R\"desc({})desc\", R\"meta({})meta\"));",
+                    p_prefix, jkey, f_cpp, desc_str, extra_schema));
             } else {
                 writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::schema<{}>());",
                     p_prefix, jkey, f_cpp));

@@ -11,7 +11,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             if (it == cf_.struct_tags.end()) continue;
             bool has_json_or_desc = false;
             for (const auto& t : it->second) {
-                if (!t.json_key.empty() || t.custom_tags.contains("desc")) {
+                if (!t.json_key.empty() || t.custom_tags.contains("desc") || t.custom_tags.contains("validate")) {
                     has_json_or_desc = true;
                     break;
                 }

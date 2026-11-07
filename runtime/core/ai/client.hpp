@@ -9,13 +9,40 @@ namespace cfire::ai {
 
 class Client {
 public:
-    Provider provider = Provider::OpenAI;
+    using MockHandler = std::function<std::expected<ChatResponse, cfire::Error>(
+        const std::vector<Message>&,
+        const std::vector<Tool>&
+    )>;
+
+    Provider provider = Provider::Local;
     std::string api_key{};
-    std::string base_url{};
+    std::string base_url{"local://on-device"};
+    std::string default_model{"local"};
+    std::shared_ptr<MockHandler> mock_handler_{};
 
     Client() = default;
-    Client(Provider p, std::string key, std::string url)
-        : provider(p), api_key(std::move(key)), base_url(std::move(url)) {}
+    Client(Provider p, std::string key, std::string url, std::string model = "local")
+        : provider(p), api_key(std::move(key)), base_url(std::move(url)), default_model(std::move(model)) {}
+    explicit Client(MockHandler handler)
+        : provider(Provider::Mock),
+          api_key(""),
+          base_url("mock://local"),
+          default_model("mock"),
+          mock_handler_(std::make_shared<MockHandler>(std::move(handler))) {}
+
+    auto set_model(std::string_view m) -> void {
+        default_model = std::string(m);
+    }
+
+    [[nodiscard]] auto model() const noexcept -> const std::string& {
+        return default_model;
+    }
+
+    [[nodiscard]] auto ask(
+        std::string_view prompt
+    ) const -> std::expected<std::string, cfire::Error> {
+        return ask(default_model, prompt, "");
+    }
 
     [[nodiscard]] auto ask(
         std::string_view model,
@@ -26,6 +53,13 @@ public:
         auto res = chat(model, msgs, system_prompt);
         if (!res) return std::unexpected(res.error());
         return res->text;
+    }
+
+    [[nodiscard]] auto ask_with_file(
+        std::string_view prompt,
+        const std::filesystem::path& file_path
+    ) const -> std::expected<std::string, cfire::Error> {
+        return ask_with_file(default_model, prompt, file_path, "");
     }
 
     [[nodiscard]] auto ask_with_file(
@@ -43,11 +77,24 @@ public:
     }
 
     [[nodiscard]] auto chat(
+        const std::vector<Message>& messages
+    ) const -> std::expected<ChatResponse, cfire::Error> {
+        return chat_internal(default_model, messages, {}, "", "");
+    }
+
+    [[nodiscard]] auto chat(
         std::string_view model,
         const std::vector<Message>& messages,
         std::string_view system_prompt = ""
     ) const -> std::expected<ChatResponse, cfire::Error> {
         return chat_internal(model, messages, {}, system_prompt, "");
+    }
+
+    [[nodiscard]] auto chat_with_tools(
+        const std::vector<Message>& messages,
+        const std::vector<Tool>& tools
+    ) const -> std::expected<ChatResponse, cfire::Error> {
+        return chat_internal(default_model, messages, tools, "", "");
     }
 
     [[nodiscard]] auto chat_with_tools(
@@ -61,19 +108,48 @@ public:
 
     template <typename T>
     [[nodiscard]] auto generate_struct(
+        std::string_view prompt
+    ) const -> std::expected<T, cfire::Error> {
+        return generate_struct<T>(default_model, prompt, "", 1);
+    }
+
+    template <typename T>
+    [[nodiscard]] auto generate_struct(
         std::string_view model,
         std::string_view prompt,
-        std::string_view system_prompt = ""
+        std::string_view system_prompt = "",
+        std::int32_t max_retries = 1
     ) const -> std::expected<T, cfire::Error> {
         std::string schema_str = cfire::json::schema<T>();
         std::vector<Message> msgs = { Message{.role = "user", .content = std::string(prompt)} };
-        auto res = chat_internal(model, msgs, {}, system_prompt, schema_str);
-        if (!res) return std::unexpected(res.error());
-        std::string clean_json = detail::strip_markdown_code_fence(res->text);
-        if (clean_json.empty() && !res->tool_calls.empty()) {
-            clean_json = res->tool_calls.front().arguments_json;
+        std::int32_t limit = std::max<std::int32_t>(0, max_retries);
+        for (std::int32_t attempt = 0; attempt <= limit; ++attempt) {
+            auto res = chat_internal(model, msgs, {}, system_prompt, schema_str);
+            if (!res) return std::unexpected(res.error());
+            std::string clean_json = detail::strip_markdown_code_fence(res->text);
+            if (clean_json.empty() && !res->tool_calls.empty()) {
+                clean_json = res->tool_calls.front().arguments_json;
+            }
+            auto parsed = cfire::json::parse<T>(clean_json);
+            if (parsed) return parsed;
+            if (attempt < limit) {
+                msgs.push_back(assistant(res->text.empty() ? clean_json : res->text));
+                msgs.push_back(user(std::format(
+                    "Validation failed: {}. Please respond with valid JSON matching the required schema.",
+                    parsed.error().message())));
+                continue;
+            }
+            return std::unexpected(parsed.error());
         }
-        return cfire::json::parse<T>(clean_json);
+        return cfire::make_error("generate_struct exhausted retries");
+    }
+
+    template <typename T>
+    [[nodiscard]] auto generate_struct_from_file(
+        std::string_view prompt,
+        const std::filesystem::path& file_path
+    ) const -> std::expected<T, cfire::Error> {
+        return generate_struct_from_file<T>(default_model, prompt, file_path, "", 1);
     }
 
     template <typename T>
@@ -81,19 +157,39 @@ public:
         std::string_view model,
         std::string_view prompt,
         const std::filesystem::path& file_path,
-        std::string_view system_prompt = ""
+        std::string_view system_prompt = "",
+        std::int32_t max_retries = 1
     ) const -> std::expected<T, cfire::Error> {
         auto m = user_with_file(std::string(prompt), file_path);
         if (!m) return std::unexpected(m.error());
         std::string schema_str = cfire::json::schema<T>();
         std::vector<Message> msgs = { std::move(*m) };
-        auto res = chat_internal(model, msgs, {}, system_prompt, schema_str);
-        if (!res) return std::unexpected(res.error());
-        std::string clean_json = detail::strip_markdown_code_fence(res->text);
-        if (clean_json.empty() && !res->tool_calls.empty()) {
-            clean_json = res->tool_calls.front().arguments_json;
+        std::int32_t limit = std::max<std::int32_t>(0, max_retries);
+        for (std::int32_t attempt = 0; attempt <= limit; ++attempt) {
+            auto res = chat_internal(model, msgs, {}, system_prompt, schema_str);
+            if (!res) return std::unexpected(res.error());
+            std::string clean_json = detail::strip_markdown_code_fence(res->text);
+            if (clean_json.empty() && !res->tool_calls.empty()) {
+                clean_json = res->tool_calls.front().arguments_json;
+            }
+            auto parsed = cfire::json::parse<T>(clean_json);
+            if (parsed) return parsed;
+            if (attempt < limit) {
+                msgs.push_back(assistant(res->text.empty() ? clean_json : res->text));
+                msgs.push_back(user(std::format(
+                    "Validation failed: {}. Please respond with valid JSON matching the required schema.",
+                    parsed.error().message())));
+                continue;
+            }
+            return std::unexpected(parsed.error());
         }
-        return cfire::json::parse<T>(clean_json);
+        return cfire::make_error("generate_struct_from_file exhausted retries");
+    }
+
+    [[nodiscard]] auto embed_image(
+        const std::filesystem::path& path
+    ) const -> std::expected<std::vector<float>, cfire::Error> {
+        return embed_image(default_model, path);
     }
 
     [[nodiscard]] auto embed_image(
@@ -101,6 +197,40 @@ public:
         const std::filesystem::path& path
     ) const -> std::expected<std::vector<float>, cfire::Error> {
         return cfire::ai::embed_image(model, path);
+    }
+
+    [[nodiscard]] auto ocr(
+        const std::filesystem::path& path
+    ) const -> std::expected<std::string, cfire::Error> {
+        if (provider == Provider::Local || api_key.empty()) {
+            return cfire::ai::ocr(path);
+        }
+        if (auto cloud_res = ask_with_file(default_model, "Extract all text from this image verbatim.", path)) {
+            return cloud_res;
+        }
+        return cfire::ai::ocr(path);
+    }
+
+    [[nodiscard]] auto detect_language(
+        std::string_view text
+    ) const -> std::string {
+        return cfire::ai::detect_language(text);
+    }
+
+    template <typename OnToken>
+    [[nodiscard]] auto stream(
+        std::string_view prompt,
+        OnToken&& on_token
+    ) const -> std::expected<std::string, cfire::Error> {
+        return stream(default_model, prompt, std::forward<OnToken>(on_token));
+    }
+
+    template <typename OnToken>
+    [[nodiscard]] auto stream(
+        const std::vector<Message>& messages,
+        OnToken&& on_token
+    ) const -> std::expected<std::string, cfire::Error> {
+        return stream(default_model, messages, std::forward<OnToken>(on_token));
     }
 
     template <typename OnToken>
@@ -130,6 +260,12 @@ public:
         OnToken&& on_token
     ) const -> std::expected<std::string, cfire::Error> {
         std::string last_prompt = messages.empty() ? "" : messages.back().content;
+        if (provider == Provider::Mock && mock_handler_) {
+            auto mres = (*mock_handler_)(messages, {});
+            if (!mres) return std::unexpected(mres.error());
+            on_token(mres->text);
+            return mres->text;
+        }
         if (provider == Provider::Apple) {
             std::string reply = std::format("[Apple On-Device AI ({})] {}", detect_language(last_prompt), last_prompt);
             on_token(reply);
@@ -225,10 +361,21 @@ public:
     }
 
     [[nodiscard]] auto embed(
+        std::string_view text
+    ) const -> std::expected<std::vector<float>, cfire::Error> {
+        return embed(default_model, text);
+    }
+
+    [[nodiscard]] auto embed(
         std::string_view model,
         std::string_view text
     ) const -> std::expected<std::vector<float>, cfire::Error> {
-        if (model == "local" || model == "apple" || model == "native" || provider == Provider::Apple) {
+        if (model.empty() || model == "local" || model == "apple" || model == "native" || provider == Provider::Local) {
+            std::string local_override = cfire::os::getenv("CFIRE_LOCAL_EMBED_MODEL", "");
+            if (!local_override.empty() && (model.empty() || model == "local")) {
+                Client oll(Provider::Ollama, "", "http://127.0.0.1:11434", local_override);
+                if (auto res = oll.embed(local_override, text)) return res;
+            }
             return detail::embed_apple_nl(text);
         }
 
@@ -307,7 +454,32 @@ private:
             }
             if (!first_m) msgs_json += ",";
             first_m = false;
-            if (m.attachments.empty()) {
+            if (m.role == "tool") {
+                msgs_json += std::format(
+                    R"({{"role":"user","content":[{{"type":"tool_result","tool_use_id":"{}","content":"{}","is_error":{}}}]}})",
+                    cfire::json::escape_string(m.tool_call_id),
+                    cfire::json::escape_string(m.content),
+                    m.is_error ? "true" : "false");
+            } else if (m.role == "assistant" && !m.tool_calls.empty()) {
+                std::string blocks = "[";
+                bool first_b = true;
+                if (!m.content.empty()) {
+                    blocks += std::format(R"({{"type":"text","text":"{}"}})", cfire::json::escape_string(m.content));
+                    first_b = false;
+                }
+                for (const auto& tc : m.tool_calls) {
+                    if (!first_b) blocks += ",";
+                    first_b = false;
+                    std::string args_obj = tc.arguments_json.empty() ? "{}" : tc.arguments_json;
+                    blocks += std::format(
+                        R"({{"type":"tool_use","id":"{}","name":"{}","input":{}}})",
+                        cfire::json::escape_string(tc.id),
+                        cfire::json::escape_string(tc.name),
+                        args_obj);
+                }
+                blocks += "]";
+                msgs_json += std::format(R"({{"role":"assistant","content":{}}})", blocks);
+            } else if (m.attachments.empty()) {
                 msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
                     cfire::json::escape_string(m.role),
                     cfire::json::escape_string(m.content));
@@ -359,6 +531,34 @@ private:
             }
             if (!first_c) contents_json += ",";
             first_c = false;
+            if (m.role == "tool") {
+                contents_json += std::format(
+                    R"({{"role":"user","parts":[{{"functionResponse":{{"name":"{}","response":{{"result":"{}","is_error":{}}}}}}}]}})",
+                    cfire::json::escape_string(m.tool_name),
+                    cfire::json::escape_string(m.content),
+                    m.is_error ? "true" : "false");
+                continue;
+            }
+            if (m.role == "assistant" && !m.tool_calls.empty()) {
+                std::string parts = "[";
+                bool first_p = true;
+                if (!m.content.empty()) {
+                    parts += std::format(R"({{"text":"{}"}})", cfire::json::escape_string(m.content));
+                    first_p = false;
+                }
+                for (const auto& tc : m.tool_calls) {
+                    if (!first_p) parts += ",";
+                    first_p = false;
+                    std::string args_obj = tc.arguments_json.empty() ? "{}" : tc.arguments_json;
+                    parts += std::format(
+                        R"({{"functionCall":{{"name":"{}","args":{}}}}})",
+                        cfire::json::escape_string(tc.name),
+                        args_obj);
+                }
+                parts += "]";
+                contents_json += std::format(R"({{"role":"model","parts":{}}})", parts);
+                continue;
+            }
             std::string g_role = (m.role == "assistant") ? "model" : "user";
             std::string parts = "[";
             bool first_p = true;
@@ -400,7 +600,29 @@ private:
         for (const auto& m : messages) {
             if (!first_m) msgs_json += ",";
             first_m = false;
-            if (m.attachments.empty()) {
+            if (m.role == "tool") {
+                msgs_json += std::format(
+                    R"({{"role":"tool","tool_call_id":"{}","content":"{}"}})",
+                    cfire::json::escape_string(m.tool_call_id),
+                    cfire::json::escape_string(m.content));
+            } else if (m.role == "assistant" && !m.tool_calls.empty()) {
+                std::string tc_arr = "[";
+                bool first_t = true;
+                for (const auto& tc : m.tool_calls) {
+                    if (!first_t) tc_arr += ",";
+                    first_t = false;
+                    tc_arr += std::format(
+                        R"({{"id":"{}","type":"function","function":{{"name":"{}","arguments":"{}"}}}})",
+                        cfire::json::escape_string(tc.id),
+                        cfire::json::escape_string(tc.name),
+                        cfire::json::escape_string(tc.arguments_json));
+                }
+                tc_arr += "]";
+                msgs_json += std::format(
+                    R"({{"role":"assistant","content":"{}","tool_calls":{}}})",
+                    cfire::json::escape_string(m.content),
+                    tc_arr);
+            } else if (m.attachments.empty()) {
                 msgs_json += std::format(R"({{"role":"{}","content":"{}"}})",
                     cfire::json::escape_string(m.role),
                     cfire::json::escape_string(m.content));
@@ -446,6 +668,9 @@ private:
         std::string_view system_prompt,
         std::string_view response_schema_json
     ) const -> std::expected<ChatResponse, cfire::Error> {
+        if (provider == Provider::Mock && mock_handler_) {
+            return (*mock_handler_)(messages, tools);
+        }
         if (provider == Provider::Apple) {
             std::string last_user;
             for (const auto& m : messages) {
@@ -631,37 +856,71 @@ private:
     }
 };
 
-// --- Provider Factory Constructors & Unified Top-Level `ai.embed(model, text)` ---
+// --- Provider Factory Constructors (`ai.local`, `ai.apple`, `ai.openai`, `ai.anthropic`, `ai.gemini`, `ai.ollama`, `ai.mock`) ---
 
-[[nodiscard]] inline auto openai(std::string_view api_key = "") -> Client {
-    std::string key = api_key.empty() ? cfire::os::getenv("OPENAI_API_KEY", "") : std::string(api_key);
-    return Client(Provider::OpenAI, std::move(key), "https://api.openai.com");
-}
-
-[[nodiscard]] inline auto anthropic(std::string_view api_key = "") -> Client {
-    std::string key = api_key.empty() ? cfire::os::getenv("ANTHROPIC_API_KEY", "") : std::string(api_key);
-    return Client(Provider::Anthropic, std::move(key), "https://api.anthropic.com");
-}
-
-[[nodiscard]] inline auto gemini(std::string_view api_key = "") -> Client {
-    std::string key = api_key.empty() ? cfire::os::getenv("GEMINI_API_KEY", "") : std::string(api_key);
-    return Client(Provider::Gemini, std::move(key), "https://generativelanguage.googleapis.com");
-}
-
-[[nodiscard]] inline auto ollama(std::string_view host = "http://127.0.0.1:11434") -> Client {
-    std::string url(host);
-    while (!url.empty() && url.back() == '/') url.pop_back();
-    return Client(Provider::Ollama, "", std::move(url));
-}
-
-[[nodiscard]] inline auto openai_compatible(std::string_view base_url, std::string_view api_key = "") -> Client {
-    std::string url(base_url);
-    while (!url.empty() && url.back() == '/') url.pop_back();
-    return Client(Provider::OpenAICompatible, std::string(api_key), std::move(url));
+[[nodiscard]] inline auto local() -> Client {
+    return Client(Provider::Local, "", "local://on-device", "local");
 }
 
 [[nodiscard]] inline auto apple() -> Client {
-    return Client(Provider::Apple, "", "apple://local");
+    return Client(Provider::Local, "", "apple://local", "local");
+}
+
+[[nodiscard]] inline auto openai(std::string_view api_key = "", std::string_view model = "gpt-4o-mini") -> Client {
+    std::string key = api_key.empty() ? cfire::os::getenv("OPENAI_API_KEY", "") : std::string(api_key);
+    return Client(Provider::OpenAI, std::move(key), "https://api.openai.com", std::string(model));
+}
+
+[[nodiscard]] inline auto anthropic(std::string_view api_key = "", std::string_view model = "claude-3-5-sonnet-latest") -> Client {
+    std::string key = api_key.empty() ? cfire::os::getenv("ANTHROPIC_API_KEY", "") : std::string(api_key);
+    return Client(Provider::Anthropic, std::move(key), "https://api.anthropic.com", std::string(model));
+}
+
+[[nodiscard]] inline auto gemini(std::string_view api_key = "", std::string_view model = "gemini-2.5-flash") -> Client {
+    std::string key = api_key.empty() ? cfire::os::getenv("GEMINI_API_KEY", "") : std::string(api_key);
+    return Client(Provider::Gemini, std::move(key), "https://generativelanguage.googleapis.com", std::string(model));
+}
+
+[[nodiscard]] inline auto ollama(std::string_view host = "http://127.0.0.1:11434", std::string_view model = "llama3.2") -> Client {
+    std::string url(host);
+    while (!url.empty() && url.back() == '/') url.pop_back();
+    return Client(Provider::Ollama, "", std::move(url), std::string(model));
+}
+
+[[nodiscard]] inline auto openai_compatible(std::string_view base_url, std::string_view api_key = "", std::string_view model = "default") -> Client {
+    std::string url(base_url);
+    while (!url.empty() && url.back() == '/') url.pop_back();
+    return Client(Provider::OpenAICompatible, std::string(api_key), std::move(url), std::string(model));
+}
+
+template <typename Fn>
+[[nodiscard]] inline auto mock(Fn&& handler) -> Client {
+    return Client([fn = std::forward<Fn>(handler)](
+        const std::vector<Message>& messages,
+        const std::vector<Tool>& tools
+    ) mutable -> std::expected<ChatResponse, cfire::Error> {
+        using Ret = std::invoke_result_t<decltype(fn)&, const std::vector<Message>&, const std::vector<Tool>&>;
+        if constexpr (detail::is_std_expected<std::decay_t<Ret>>::value) {
+            return fn(messages, tools);
+        } else {
+            return fn(messages, tools);
+        }
+    });
+}
+
+[[nodiscard]] inline auto mock_sequence(std::vector<ChatResponse> responses) -> Client {
+    auto idx = std::make_shared<std::size_t>(0);
+    auto seq = std::make_shared<std::vector<ChatResponse>>(std::move(responses));
+    return Client([idx, seq](
+        const std::vector<Message>&,
+        const std::vector<Tool>&
+    ) -> std::expected<ChatResponse, cfire::Error> {
+        if (seq->empty()) {
+            return cfire::make_error("ai.mock_sequence configured with empty response list");
+        }
+        std::size_t cur = (*idx < seq->size()) ? (*idx)++ : (seq->size() - 1);
+        return (*seq)[cur];
+    });
 }
 
 [[nodiscard]] inline auto embed(
@@ -682,149 +941,6 @@ private:
         return openai().embed(model, text);
     }
     return ollama().embed(model, text);
-}
-
-// --- Model Context Protocol (`MCP`) Server for Building Native AI Tools in `.cf` ---
-
-class McpServer {
-public:
-    using RawToolHandler = std::function<std::expected<std::string, cfire::Error>(std::string_view)>;
-
-    struct RegisteredTool {
-        Tool spec{};
-        RawToolHandler handler{};
-    };
-
-    McpServer() = default;
-    McpServer(std::string server_name, std::string server_version = "1.0.0")
-        : name_(std::move(server_name)), version_(std::move(server_version)) {}
-
-    void add_tool(std::string name, std::string description, std::string schema_json, RawToolHandler handler) {
-        tools_.push_back(RegisteredTool{
-            .spec = Tool{.name = std::move(name), .description = std::move(description), .schema_json = std::move(schema_json)},
-            .handler = std::move(handler)
-        });
-    }
-
-    template <typename ArgsStruct, typename Fn>
-    void register_tool(std::string name, std::string description, Fn&& fn) {
-        add_tool(
-            std::move(name),
-            std::move(description),
-            cfire::json::schema<ArgsStruct>(),
-            [f = std::forward<Fn>(fn)](std::string_view args_json) -> std::expected<std::string, cfire::Error> {
-                std::string payload = args_json.empty() ? "{}" : std::string(args_json);
-                auto parsed = cfire::json::parse<ArgsStruct>(payload);
-                if (!parsed) return std::unexpected(parsed.error());
-                if constexpr (std::is_same_v<std::invoke_result_t<decltype(f)&, const ArgsStruct&>, std::string>) {
-                    return f(*parsed);
-                } else {
-                    return f(*parsed);
-                }
-            });
-    }
-
-    [[nodiscard]] auto handle_jsonrpc(std::string_view line) const -> std::string {
-        auto req = cfire::json::parse_dynamic(line);
-        if (!req || !req->is_object()) {
-            return R"({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}})";
-        }
-
-        std::string id_raw = "null";
-        if (auto id_val = req->get("id")) {
-            id_raw = cfire::json::stringify_dynamic(*id_val, 0);
-        }
-
-        auto m_val = req->get("method");
-        if (!m_val || !m_val->is_string()) {
-            return std::format(R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32600,"message":"Invalid Request"}}}})", id_raw);
-        }
-        std::string method = std::string(m_val->as_str());
-
-        if (method.starts_with("notifications/")) {
-            return ""; // JSON-RPC notifications produce no response
-        }
-
-        if (method == "initialize") {
-            return std::format(
-                R"({{"jsonrpc":"2.0","id":{},"result":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{}}}},"serverInfo":{{"name":"{}","version":"{}"}}}}}})",
-                id_raw,
-                cfire::json::escape_string(name_),
-                cfire::json::escape_string(version_));
-        }
-
-        if (method == "ping") {
-            return std::format(R"({{"jsonrpc":"2.0","id":{},"result":{{}}}})", id_raw);
-        }
-
-        if (method == "tools/list") {
-            std::string list_json = "[";
-            for (std::size_t i = 0; i < tools_.size(); ++i) {
-                if (i > 0) list_json += ",";
-                list_json += std::format(
-                    R"({{"name":"{}","description":"{}","inputSchema":{}}})",
-                    cfire::json::escape_string(tools_[i].spec.name),
-                    cfire::json::escape_string(tools_[i].spec.description),
-                    tools_[i].spec.schema_json);
-            }
-            list_json += "]";
-            return std::format(R"({{"jsonrpc":"2.0","id":{},"result":{{"tools":{}}}}})", id_raw, list_json);
-        }
-
-        if (method == "tools/call") {
-            auto params = req->get("params");
-            if (!params || !params->is_object()) {
-                return std::format(R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32602,"message":"Missing params"}}}})", id_raw);
-            }
-            auto tname = params->get("name");
-            if (!tname || !tname->is_string()) {
-                return std::format(R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32602,"message":"Missing tool name"}}}})", id_raw);
-            }
-            std::string args_str = "{}";
-            if (auto args_val = params->get("arguments")) {
-                args_str = cfire::json::stringify_dynamic(*args_val, 0);
-            }
-            for (const auto& t : tools_) {
-                if (t.spec.name == tname->as_str()) {
-                    auto res = t.handler(args_str);
-                    if (!res) {
-                        return std::format(
-                            R"({{"jsonrpc":"2.0","id":{},"result":{{"content":[{{"type":"text","text":"{}"}}],"isError":true}}}})",
-                            id_raw,
-                            cfire::json::escape_string(res.error().message()));
-                    }
-                    return std::format(
-                        R"({{"jsonrpc":"2.0","id":{},"result":{{"content":[{{"type":"text","text":"{}"}}],"isError":false}}}})",
-                        id_raw,
-                        cfire::json::escape_string(*res));
-                }
-            }
-            return std::format(R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32601,"message":"Unknown tool"}}}})", id_raw);
-        }
-
-        return std::format(R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32601,"message":"Method not found"}}}})", id_raw);
-    }
-
-    auto serve_stdio() const -> int {
-        std::string line;
-        while (std::getline(std::cin, line)) {
-            if (line.empty()) continue;
-            std::string reply = handle_jsonrpc(line);
-            if (!reply.empty()) {
-                std::cout << reply << "\n" << std::flush;
-            }
-        }
-        return 0;
-    }
-
-private:
-    std::string name_ = "cfire-mcp-server";
-    std::string version_ = "1.0.0";
-    std::vector<RegisteredTool> tools_{};
-};
-
-[[nodiscard]] inline auto make_mcp_server(std::string name, std::string version = "1.0.0") -> McpServer {
-    return McpServer(std::move(name), std::move(version));
 }
 
 } // namespace cfire::ai

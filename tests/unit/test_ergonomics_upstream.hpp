@@ -153,7 +153,7 @@ test "power assert diff" {
         ScopedTempDir test_suite_tmp("cfire_native_test_fuzz_bench");
         auto suite_cf = test_suite_tmp.file("suite.cf", R"CF(package main
 
-import "ext:json"
+import "core:json"
 
 type Packet struct {
     Id:   i64  `json:"id"`
@@ -328,7 +328,7 @@ fn helper() -> i64 {
 
             auto upstream_cf = cf_tmp.file("upstream_suite.cf", R"CF(package main
 
-import "ext:json"
+import "core:json"
 import "ext:db/sqlite"
 import "core:str"
 import "core:fs"
@@ -750,12 +750,53 @@ fn main() {
                 require(exit3_res.exit_code == 3,
                         std::format("E2: expected cfire run os.exit(3) to return exit code 3, got {}", exit3_res.exit_code));
 
-                // 7. Upstream Round 3 Audit & Orthogonality Suite (CF-006..CF-085)
-                // CF-006 / CF-070: Reject `core:crypto/sodium` and `core:sodium` in Sema
+                // 7. Upstream Round 3 Audit & Orthogonality Suite (CF-006..CF-086)
+                // CF-006 / CF-070 / CF-086: Reject non-canonical core:* / ext:* prefixes in Sema and auto-fix via `cfire fix`
                 require_sema_error(R"(package main
 import "core:crypto/sodium"
 fn main() {}
 )", "cfire/INVALID-IMPORT", "bad_core_sodium.cf");
+
+                require_sema_error(R"(package main
+import "ext:json"
+fn main() {}
+)", "cfire/INVALID-IMPORT", "bad_ext_json.cf");
+
+                require_sema_error(R"(package main
+import "ext:net/http"
+fn main() {}
+)", "cfire/INVALID-IMPORT", "bad_ext_net_http.cf");
+
+                require_sema_error(R"(package main
+import "ext:audio"
+fn main() {}
+)", "cfire/INVALID-IMPORT", "bad_ext_audio.cf");
+
+                require_sema_error(R"(package main
+import "core:db/sqlite"
+fn main() {}
+)", "cfire/INVALID-IMPORT", "bad_core_sqlite.cf");
+
+                require_sema_error(R"(package main
+import "core:compress/zstd"
+fn main() {}
+)", "cfire/INVALID-IMPORT", "bad_core_zstd.cf");
+
+                {
+                    auto fix_imp_cf = cf_tmp.file("fix_invalid_imports.cf", R"CF(package main
+
+import "ext:json"
+import "core:db/sqlite"
+
+fn main() {}
+)CF");
+                    run_cfire(std::format("fix \"{}\"", fix_imp_cf.string()))
+                        .assert_ok("CF-086: cfire fix rewrites non-canonical core:/ext: imports");
+                    auto fixed_src = cfire::fs::read_text(fix_imp_cf).value_or("");
+                    require(fixed_src.contains("import \"core:json\"") && fixed_src.contains("import \"ext:db/sqlite\"") &&
+                            !fixed_src.contains("import \"ext:json\"") && !fixed_src.contains("import \"core:db/sqlite\""),
+                            std::format("CF-086: expected canonicalized imports after cfire fix, got:\n{}", fixed_src));
+                }
 
                 // CF-059: Reject `.find()` and `.rfind()` on `str` receivers with fix-it pointing to `index_of` / `last_index_of`
                 require_sema_error(R"(package main
@@ -822,7 +863,7 @@ fn make_rec() -> Record {
 
                 auto round3_cf = cf_tmp.file("round3/round3_suite.cf", R"CF(package main
 
-import "ext:json"
+import "core:json"
 import "core:os"
 import "core:sync"
 import "./pkga" as pa
@@ -944,6 +985,157 @@ test "cpp import exempts fd leak canary" {
                         has_cat_fn("ext:webui", "App.hide_window") && has_cat_fn("ext:webui", "App.show_window") &&
                         has_cat_fn("ext:webui", "App.set_hide_on_close"),
                         "Round 3 catalog entries present in stdlib_catalog");
+
+                // ── CF-087: Pydantic AI Capabilities (`validate:"..."`, `ai.Agent`, `ai.mock`, MCP tool sharing) ──
+                {
+                    // 1. Sema compile-time validation of `validate:"..."` struct tags
+                    require_sema_error(R"CF(package main
+type BadRange struct {
+    score: i64 `validate:"min=10,max=2"`
+}
+fn main() {}
+)CF", "cfire/INVALID-STRUCT-TAG", "bad_validate_range.cf");
+
+                    require_sema_error(R"CF(package main
+type BadType struct {
+    name: str `validate:"min=1"`
+}
+fn main() {}
+)CF", "cfire/INVALID-STRUCT-TAG", "bad_validate_type.cf");
+
+                    require_sema_error(R"CF(package main
+type BadEnum struct {
+    code: i64 `validate:"oneof=a|b"`
+}
+fn main() {}
+)CF", "cfire/INVALID-STRUCT-TAG", "bad_validate_enum.cf");
+
+                    // 2. End-to-end test of validate:"...", ai.Agent, ai.mock, MCP tool sharing, and self-correction loops
+                    auto cf087_test = cf_tmp.file("cf087_agent/agent_test.cf", R"CF(package main
+
+import "core:json"
+import "ext:ai"
+
+type TicketSpec struct {
+    Title:    str   `json:"title"    validate:"non_empty,max_len=40"`
+    Severity: i64   `json:"severity" validate:"min=1,max=5"`
+    Env:      str   `json:"env"      validate:"oneof=dev|staging|prod"`
+    Tags:     []str `json:"tags"     validate:"min_len=1,max_len=3"`
+}
+
+type LookupArgs struct {
+    Service: str `json:"service" validate:"non_empty"`
+}
+
+type ServiceInfo struct {
+    Owner:   str `json:"owner"`
+    Healthy: bool `json:"healthy"`
+}
+
+test "CF-087 validate struct tags and Agent self-correction" {
+    // 1. JSON Schema includes validation keywords
+    schema := json.schema[TicketSpec]()
+    assert(schema.contains("\"minimum\":1"))
+    assert(schema.contains("\"maximum\":5"))
+    assert(schema.contains("\"minLength\":1"))
+    assert(schema.contains("\"maxLength\":40"))
+    assert(schema.contains("\"enum\":[\"dev\",\"staging\",\"prod\"]"))
+
+    // 2. json.parse[T] enforces validate:"..." rules at runtime
+    valid_t := try json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":2,\"env\":\"prod\",\"tags\":[\"db\"]}")
+    assert_eq(valid_t.Title, "DB spike")
+    assert_eq(valid_t.Severity, 2)
+
+    bad_max := json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":9,\"env\":\"prod\",\"tags\":[\"db\"]}") or TicketSpec{Severity: -1}
+    assert_eq(bad_max.Severity, -1)
+
+    bad_enum := json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":2,\"env\":\"qa\",\"tags\":[\"db\"]}") or TicketSpec{Severity: -1}
+    assert_eq(bad_enum.Severity, -1)
+
+    // 3. Multi-turn Agent + MCP tool sharing + struct tool returns + self-correction
+    mut mcp := ai.make_mcp_server("ops-mcp", "1.0.0")
+    mcp.register_tool[LookupArgs]("lookup_service", "Lookup service metadata", |args: LookupArgs| -> ServiceInfo! {
+        return ServiceInfo{Owner: "team-" + args.Service, Healthy: false}
+    })
+
+    mut step := 0
+    client := ai.mock(|msgs: []ai.Message, tools: []ai.Tool| -> ai.ChatResponse! {
+        step += 1
+        assert_eq(tools.len(), 2)
+        if step == 1 {
+            // First try calling lookup_service with empty service (triggers tool validation retry!)
+            mut r1 := ai.ChatResponse{}
+            r1.tool_calls.push(ai.ToolCall{id: "c1", name: "lookup_service", arguments_json: "{\"service\":\"\"}"})
+            return r1
+        }
+        if step == 2 {
+            // Verify agent recorded error tool_result and now call with valid argument + action tool
+            assert(msgs[msgs.len() - 1].is_error)
+            mut r2 := ai.ChatResponse{}
+            r2.tool_calls.push(ai.ToolCall{id: "c2", name: "lookup_service", arguments_json: "{\"service\":\"payments\"}"})
+            r2.tool_calls.push(ai.ToolCall{id: "c3", name: "cluster_region", arguments_json: "{}"})
+            return r2
+        }
+        if step == 3 {
+            // Return JSON that violates custom validator (severity=4 when prod requires <= 2)
+            return ai.ChatResponse{text: "{\"title\":\"payments outage\",\"severity\":4,\"env\":\"prod\",\"tags\":[\"ops\"]}"}
+        }
+        // Self-corrected final JSON
+        return ai.ChatResponse{text: "{\"title\":\"payments outage\",\"severity\":1,\"env\":\"prod\",\"tags\":[\"ops\"]}"}
+    })
+
+    mut agent := ai.make_agent(client, "mock-llm", "You are an incident responder.")
+    agent.use_mcp(mcp)
+    agent.register_tool_action("cluster_region", "Returns active region", || -> str! {
+        return "us-east-1"
+    })
+
+    ticket := try agent.run_struct_validated[TicketSpec]("Triage payments", |t: TicketSpec| -> void! {
+        if t.Env == "prod" && t.Severity > 2 {
+            return error("prod incidents must have severity <= 2")
+        }
+    })
+    assert_eq(ticket.Title, "payments outage")
+    assert_eq(ticket.Severity, 1)
+    assert_eq(ticket.Env, "prod")
+    assert_eq(step, 4)
+    assert(agent.history().len() >= 6)
+
+    // 4. CF-088: Stateful ai.local() default_model, embed(text), and detect_language(text)
+    mut local_ai := ai.local()
+    assert_eq(local_ai.model(), "local")
+    vec := try local_ai.embed("stateful client embedding")
+    assert(vec.len() >= 128)
+    assert_eq(local_ai.detect_language("Bonjour tout le monde"), "fr")
+}
+)CF");
+                    run_cfire(std::format("test \"{}\"", cf087_test.string()))
+                        .assert_ok("CF-087: validate tags, Agent multi-turn tool loop, MCP tool sharing, and self-correction pass");
+
+                    require(has_cat_fn("ext:ai", "local") && has_cat_fn("ext:ai", "mock") &&
+                            has_cat_fn("ext:ai", "mock_sequence") && has_cat_fn("ext:ai", "make_agent") &&
+                            has_cat_fn("ext:ai", "Client.ocr") && has_cat_fn("ext:ai", "Client.detect_language") &&
+                            has_cat_fn("ext:ai", "Client.set_model") && has_cat_fn("ext:ai", "Client.model") &&
+                            !has_cat_fn("ext:ai", "embed") && !has_cat_fn("ext:ai", "ocr") &&
+                            has_cat_fn("ext:ai", "Agent.run") && has_cat_fn("ext:ai", "Agent.run_struct") &&
+                            has_cat_fn("ext:ai", "Agent.run_struct_validated") && has_cat_fn("ext:ai", "Agent.use_mcp"),
+                            "CF-087/CF-088: Agent, mock, and stateful Client catalog entries present in stdlib_catalog");
+
+                    // CF-088: Sema rejects top-level ai.embed, ai.embed_image, ai.ocr, ai.detect_language
+                    require_sema_error(R"CF(package main
+import "ext:ai"
+fn main() -> void! {
+    _ := try ai.embed("local", "hello")
+}
+)CF", "cfire/DEPRECATED-API", "deprecated_ai_embed.cf");
+
+                    require_sema_error(R"CF(package main
+import "ext:ai"
+fn main() -> void! {
+    _ := try ai.ocr("receipt.png")
+}
+)CF", "cfire/DEPRECATED-API", "deprecated_ai_ocr.cf");
+                }
             }
         }
     }

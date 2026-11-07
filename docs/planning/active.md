@@ -37,3 +37,9 @@ This workbench tracks the active 5-phase execution promoted from [`backlog.md`](
   - `CF-042`: Register `std::atexit` raw terminal restoration in `os.make_raw`.
   - `CF-054` & `CF-064`: Fix `fs.write_all` docs, document `fs.rename`, and add `os.getpid() -> i64`.
   - `CF-001.f,j` & `CF-010.a,b,cli,d,e,f,h,j,l,m`: Windows header and runtime correctness fixes.
+- [x] **Phase 6: `core:*` vs `ext:*` Taxonomy Realignment (`CF-086`)**
+  - `CF-086`: Flip `audio`, `json`, `keychain`, `net`, `net/http`, `net/tls`, `net/url`, and `net/websocket` to `core:*`; enforce strict canonical `core:*` / `ext:*` prefixes across all 38 modules (`cfire/INVALID-IMPORT` + `cfire fix`); update 6-category Reference Dashboard, docs, examples, and tests.
+- [x] **Phase 7: Pydantic AI Capabilities & `ext:ai` 6-Header Refactor (`CF-087`)**
+  - `CF-087`: Refactor `runtime/core/ai/` into 6 headers (`types.hpp`, `vectors.hpp`, `documents.hpp`, `vision.hpp`, `client.hpp`, `agent.hpp`); implement `ai.Agent` (`register_tool`, `register_tool_action`, `use_mcp`, `run`, `run_struct`, `run_struct_validated`), `ai.mock` / `ai.mock_sequence`, multi-turn tool call/result serialization, and compile-time `validate:"..."` struct tags (`min`, `max`, `min_len`, `max_len`, `non_empty`, `oneof`) in `core:json` + Sema/Codegen.
+- [x] **Phase 8: Uniform Stateful `ai.Client` Interface & `ai.local()` Provider Alignment (`CF-088`)**
+  - `CF-088`: Add `ai.local()` (`Provider::Local`) with `ai.apple()` alias, stateful `default_model` on `Client` (`set_model`, `model`), 1-arg `Client` methods (`embed(text)`, `embed_image(path)`, `ask(prompt)`, `generate_struct[T](prompt)`), `client.ocr(path)`, `client.detect_language(text)`, and Sema `cfire/DEPRECATED-API` enforcement on top-level `ai.embed`/`ai.embed_image`/`ai.ocr`/`ai.detect_language`.

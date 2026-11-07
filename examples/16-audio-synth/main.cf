@@ -1,6 +1,6 @@
 package main
 
-import "ext:audio"
+import "core:audio"
 import "core:fs"
 
 fn main() {

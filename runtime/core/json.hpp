@@ -469,6 +469,20 @@ template <typename T>
     return s;
 }
 
+[[nodiscard]] inline auto with_schema_meta(std::string s, std::string_view desc, std::string_view extra_props) -> std::string {
+    if ((desc.empty() && extra_props.empty()) || s.size() < 2 || s.back() != '}') return s;
+    s.pop_back();
+    if (!desc.empty()) {
+        s += std::format(R"(,"description":"{}")", escape_string(desc));
+    }
+    if (!extra_props.empty()) {
+        s += ",";
+        s += extra_props;
+    }
+    s += "}";
+    return s;
+}
+
 template <typename T>
 [[nodiscard]] auto parse(std::string_view payload) -> std::expected<T, cfire::Error> {
 #if !CFIRE_SIMDJSON_ACTIVE
