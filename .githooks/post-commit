@@ -1,0 +1,8 @@
+#!/bin/sh
+# .githooks/post-commit — Re-stamps local ./cfire binary with the newly created commit SHA
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+if [ -f Makefile ] && [ -f src/main.cpp ]; then
+    make -s build >/dev/null 2>&1 || true
+fi

@@ -21,6 +21,7 @@ all: build
 HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp)
 
 build: $(HEADERS)
+	@git config core.hooksPath .githooks 2>/dev/null || true
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
 
 install: build

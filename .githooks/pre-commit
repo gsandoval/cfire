@@ -1,0 +1,35 @@
+#!/bin/sh
+# .githooks/pre-commit — Automatically keeps VERSION, src/version.hpp, runtime stamps, and docs in sync on commit
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# 1. Ensure VERSION and src/version.hpp match
+FILE_VER="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+HDR_VER="$(sed -n 's/.*kVersion = "\([^"]*\)".*/\1/p' src/version.hpp | head -n 1)"
+
+if [ -n "$FILE_VER" ] && [ -n "$HDR_VER" ] && [ "$FILE_VER" != "$HDR_VER" ]; then
+    # If VERSION was staged, propagate VERSION -> src/version.hpp; otherwise src/version.hpp -> VERSION
+    if git diff --cached --name-only | grep -qx "VERSION"; then
+        sed "s/kVersion = \"[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\"/kVersion = \"${FILE_VER}\"/" src/version.hpp > src/version.hpp.tmp
+        mv -f src/version.hpp.tmp src/version.hpp
+        git add src/version.hpp
+    else
+        printf "%s\n" "$HDR_VER" > VERSION
+        git add VERSION
+    fi
+fi
+
+# 2. Build cfire and verify/auto-sync documentation & version manifests
+make -s build
+
+if ! ./cfire doc --check >/dev/null 2>&1; then
+    echo "==> [pre-commit] Synchronizing documentation and version manifests via ./cfire doc..."
+    ./cfire doc
+    git add VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/
+    ./cfire doc --check
+fi
+
+# 3. Verify canonical formatting of examples
+./cfire fmt --check examples/ >/dev/null
