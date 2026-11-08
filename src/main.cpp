@@ -861,7 +861,11 @@ auto main(int argc, char** argv) -> int {
                     if (!json_mode && suite_entries.size() > 1) {
                         std::println("==> Suite {}/{}: {}", idx + 1, suite_entries.size(), suite_file.string());
                     }
+#if defined(_WIN32)
+                    auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}.exe", ::getpid(), idx);
+#else
                     auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}", ::getpid(), idx);
+#endif
                     auto plan = cfire::build::build_native(suite_file, runtime_dir, tmp_bin, true, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
                     if (!plan) {
                         ++suite_failures;
@@ -906,7 +910,8 @@ auto main(int argc, char** argv) -> int {
                             }
                         }
                     } else {
-                        int rc = std::system(cmd.c_str());
+                        std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
+                        int rc = std::system(sys_cmd.c_str());
                         std::filesystem::remove(tmp_bin, test_ec);
                         if (rc != 0) ++suite_failures;
                     }
@@ -1064,7 +1069,8 @@ auto main(int argc, char** argv) -> int {
             for (const auto& arg : run_args) {
                 cmd += " " + cfire::bridge::shell_quote(arg);
             }
-            int rc = std::system(cmd.c_str());
+            std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
+            int rc = std::system(sys_cmd.c_str());
             return unwrap_system_exit_code(rc);
         }
 
@@ -1087,13 +1093,18 @@ auto main(int argc, char** argv) -> int {
             }
             if (plan->web_profile == "cli") {
                 int has_node = 0;
+#if defined(_WIN32)
+                (void)cfire::bridge::run_command_capture("where node 2>NUL", has_node);
+#else
                 (void)cfire::bridge::run_command_capture("which node 2>/dev/null", has_node);
+#endif
                 if (has_node == 0) {
                     std::string cmd = "node " + cfire::bridge::shell_quote(js_file.string());
                     for (const auto& arg : run_args) {
                         cmd += " " + cfire::bridge::shell_quote(arg);
                     }
-                    int rc = std::system(cmd.c_str());
+                    std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
+                    int rc = std::system(sys_cmd.c_str());
                     cleanup_wasm();
                     return unwrap_system_exit_code(rc);
                 }
@@ -1142,7 +1153,11 @@ auto main(int argc, char** argv) -> int {
             return *sim_res;
         }
 
+#if defined(_WIN32)
+        auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}.exe", sub, ::getpid());
+#else
         auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());
+#endif
         auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
         if (!plan) {
             std::println(stderr, "{}", plan.error());
@@ -1152,7 +1167,8 @@ auto main(int argc, char** argv) -> int {
         for (const auto& arg : run_args) {
             cmd += " " + cfire::bridge::shell_quote(arg);
         }
-        int rc = std::system(cmd.c_str());
+        std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
+        int rc = std::system(sys_cmd.c_str());
         std::filesystem::remove(tmp_bin);
         return unwrap_system_exit_code(rc);
     }

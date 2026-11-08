@@ -368,7 +368,11 @@ inline auto resolve_external_dep_source(
     if ((dep.driver == "Make" || dep.driver == "Autotools") &&
         (std::filesystem::exists(src_dir / "Makefile") || std::filesystem::exists(src_dir / "makefile"))) {
         int has_make = 0;
+#if defined(_WIN32)
+        (void)bridge::run_command_capture("where make", has_make);
+#else
         (void)bridge::run_command_capture("which make", has_make);
+#endif
         if (has_make == 0) {
             auto make_build_dir = cache_root / "make" / dep.name;
             std::filesystem::create_directories(make_build_dir);
@@ -401,7 +405,11 @@ inline auto resolve_external_dep_source(
     // 2B. If dep.driver == "CMake" and CMakeLists.txt exists and `cmake` binary is installed, run CMake build!
     if (dep.driver == "CMake" && std::filesystem::exists(src_dir / "CMakeLists.txt")) {
         int has_cmake = 0;
+#if defined(_WIN32)
+        (void)bridge::run_command_capture("where cmake", has_cmake);
+#else
         (void)bridge::run_command_capture("which cmake", has_cmake);
+#endif
         if (has_cmake == 0) {
             auto cmake_build_dir = cache_root / "cmake" / dep.name;
             std::filesystem::create_directories(cmake_build_dir);
@@ -426,7 +434,11 @@ inline auto resolve_external_dep_source(
     // 2C. If dep.driver == "Ninja" and build.ninja exists and `ninja` binary is installed, run Ninja build!
     if (dep.driver == "Ninja" && std::filesystem::exists(src_dir / "build.ninja")) {
         int has_ninja = 0;
+#if defined(_WIN32)
+        (void)bridge::run_command_capture("where ninja", has_ninja);
+#else
         (void)bridge::run_command_capture("which ninja", has_ninja);
+#endif
         if (has_ninja == 0) {
             int rc = 0;
             std::string out = bridge::run_command_capture(std::format("ninja -C \"{}\"", src_dir.string()), rc);

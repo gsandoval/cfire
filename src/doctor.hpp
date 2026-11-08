@@ -52,7 +52,11 @@ struct CheckItem {
 
 [[nodiscard]] inline auto has_command(std::string_view cmd) -> bool {
     int rc = 0;
+#if defined(_WIN32)
+    auto out = bridge::run_command_capture(std::format("where {}", cmd), rc);
+#else
     auto out = bridge::run_command_capture(std::format("command -v {} 2>/dev/null", cmd), rc);
+#endif
     return rc == 0 && !trim_str(out).empty();
 }
 
@@ -97,7 +101,15 @@ struct CheckItem {
             return true;
         }
     }
-    for (const auto* prefix : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+    if (const char* mp = std::getenv("MINGW_PREFIX"); mp && *mp) {
+        std::filesystem::path p = std::filesystem::path(mp) / "include" / header_name;
+        std::error_code ec;
+        if (std::filesystem::exists(p, ec)) {
+            detail_out = p.string();
+            return true;
+        }
+    }
+    for (const auto* prefix : {"/opt/homebrew/include", "/usr/local/include", "/usr/include", "/clang64/include", "C:/msys64/clang64/include"}) {
         std::filesystem::path p = std::filesystem::path(prefix) / header_name;
         std::error_code ec;
         if (std::filesystem::exists(p, ec)) {
@@ -117,10 +129,19 @@ struct CheckItem {
         if (has_command("clang++")) {
             std::string ver = command_version("clang++");
             int rc = 0;
+            std::error_code probe_ec;
+            auto probe_cpp = std::filesystem::temp_directory_path(probe_ec) / "cfire_doctor_probe.cpp";
+            {
+                std::ofstream pf(probe_cpp, std::ios::binary | std::ios::trunc);
+                pf << "#include <expected>\nint main() { return 0; }\n";
+            }
             (void)bridge::run_command_capture(
-                "printf '#include <expected>\\nint main(){return 0;}\\n' | clang++ -std=c++2b -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -x c++ - -fsyntax-only 2>/dev/null",
+                std::format(
+                    "clang++ -std=c++2b -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -fsyntax-only {}",
+                    bridge::shell_quote(probe_cpp.string())),
                 rc
             );
+            std::filesystem::remove(probe_cpp, probe_ec);
             if (rc == 0) {
                 items.push_back({
                     "Core Toolchain",

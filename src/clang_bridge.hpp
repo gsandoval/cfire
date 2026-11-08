@@ -59,12 +59,39 @@ struct HeaderIndex {
 #endif
 }
 
+[[nodiscard]] inline auto normalize_command_for_capture(std::string s) -> std::string {
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+    if (s.ends_with(" 2>/dev/null")) {
+        s.erase(s.size() - 12);
+    } else if (s.ends_with(" 2>&1")) {
+        s.erase(s.size() - 5);
+    }
+#if defined(_WIN32)
+    for (std::size_t pos = 0; (pos = s.find("/dev/null", pos)) != std::string::npos;) {
+        s.replace(pos, 9, "NUL");
+        pos += 3;
+    }
+#endif
+    return s;
+}
+
+[[nodiscard]] inline auto win32_quote_cmd(std::string full_cmd) -> std::string {
+#if defined(_WIN32)
+    if (!full_cmd.empty() && full_cmd.front() == '"') {
+        return "\"" + full_cmd + "\"";
+    }
+#endif
+    return full_cmd;
+}
+
 [[nodiscard]] inline auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string {
     std::string out;
+    std::string full_cmd = normalize_command_for_capture(cmd) + " 2>&1";
 #if defined(_WIN32)
-    FILE* pipe = ::_popen((cmd + " 2>&1").c_str(), "r");
+    std::string popen_cmd = win32_quote_cmd(std::move(full_cmd));
+    FILE* pipe = ::_popen(popen_cmd.c_str(), "r");
 #else
-    FILE* pipe = ::popen((cmd + " 2>&1").c_str(), "r");
+    FILE* pipe = ::popen(full_cmd.c_str(), "r");
 #endif
     if (!pipe) {
         exit_code = -1;
