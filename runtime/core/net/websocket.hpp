@@ -499,12 +499,12 @@ private:
     req += std::format("Sec-WebSocket-Key: {}\r\n", nonce);
     req += "Sec-WebSocket-Version: 13\r\n\r\n";
 
-    auto wr = tcp.write(req);
+    auto wr = tcp.write_text(req);
     if (!wr) return std::unexpected(wr.error());
 
     std::string resp_buf;
     while (!resp_buf.contains("\r\n\r\n")) {
-        auto chunk = tcp.read_str(1024);
+        auto chunk = tcp.read_text(1024);
         if (!chunk || chunk->empty()) return cfire::make_error("websocket handshake aborted by server");
         resp_buf += *chunk;
     }
@@ -608,14 +608,14 @@ public:
         auto req_res = cfire::http::read_http_request(conn);
         if (!req_res) {
             cfire::http::Response err_resp = cfire::http::Response::bad_request("400 Bad Request");
-            (void)conn.write(err_resp.to_http_wire());
+            (void)conn.write_text(err_resp.to_http_wire());
             return std::unexpected(req_res.error());
         }
 
         auto ws_res = upgrade(*req_res, conn);
         if (!ws_res) {
             cfire::http::Response err_resp = cfire::http::Response::bad_request(ws_res.error().message());
-            (void)conn.write(err_resp.to_http_wire());
+            (void)conn.write_text(err_resp.to_http_wire());
             return std::unexpected(ws_res.error());
         }
         return std::move(*ws_res);
@@ -660,13 +660,13 @@ private:
         auto req_res = cfire::http::read_http_request(conn);
         if (!req_res) {
             cfire::http::Response err_resp = cfire::http::Response::bad_request("400 Bad Request");
-            (void)conn.write(err_resp.to_http_wire());
+            (void)conn.write_text(err_resp.to_http_wire());
             return;
         }
         auto ws_res = upgrade(*req_res, conn);
         if (!ws_res) {
             cfire::http::Response err_resp = cfire::http::Response::bad_request(ws_res.error().message());
-            (void)conn.write(err_resp.to_http_wire());
+            (void)conn.write_text(err_resp.to_http_wire());
             return;
         }
         if constexpr (std::is_invocable_v<Handler, const cfire::http::Request&, Conn&>) {

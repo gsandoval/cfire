@@ -32,7 +32,7 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
         }
     }
 
-    std::unordered_set<std::string> builtins = {"println", "print", "eprintln", "eprint", "readln", "panic", "assert", "assert_eq", "assert_ne", "black_box", "make"};
+    std::unordered_set<std::string> builtins = {"println", "print", "eprintln", "eprint", "panic", "assert", "assert_eq", "assert_ne", "black_box", "make"};
     std::unordered_set<std::string> namespaces = {"cpp"};
     for (const auto& mod : cfire::doc::stdlib_catalog()) {
         namespaces.insert(mod.ns_alias);

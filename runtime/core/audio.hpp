@@ -856,13 +856,13 @@ inline void step_mixer(std::int32_t frames = 256) noexcept {
     -> std::expected<void, cfire::Error>
 {
     auto bytes = encode_wav(wave);
-    return cfire::fs::write_all(path, bytes);
+    return cfire::fs::write_bytes(path, bytes);
 }
 
 [[nodiscard]] inline auto load_wav(const std::filesystem::path& path)
     -> std::expected<Wave, cfire::Error>
 {
-    auto bytes = cfire::fs::read_all(path);
+    auto bytes = cfire::fs::read_bytes(path);
     if (!bytes) return std::unexpected(bytes.error());
     return decode_wav(*bytes);
 }

@@ -386,7 +386,7 @@ fn main() {
 ### `core:fs` (`fs`) — Filesystem & Zero-Copy Byte I/O
 
 - **Auto-Link Flags:** `(header-only)`
-- **Overview:** Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>`.
+- **Overview:** Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>` with strict `_bytes` / `_text` symmetry.
 
 **Practical Example:**
 ```cf
@@ -404,7 +404,7 @@ fn main() {
     mut file := try fs.open("service.log", fs.OpenMode::Append)
     defer file.close() // Closed deterministically on return
 
-    try file.write_str("[INFO] Worker subsystem initialized\n")
+    _ = try file.write_text("[INFO] Worker subsystem initialized\n")
     try file.flush()
     offset := try file.tell()
     println("Log stream offset: {} bytes", offset)
@@ -413,18 +413,30 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn read_all(path: str) -> []byte!` | `cfire::fs::read_all(path)` | Reads an entire binary file into a byte buffer. | `raw := try fs.read_all("input.bin")` |
-| `fn write_all(path: str, data: []byte) -> void!` | `cfire::fs::write_all(path, data)` | Writes a byte slice or string to disk (truncating any existing file). | `try fs.write_all("out.bin", raw)` |
+| `fn read_bytes(path: str) -> []byte!` | `cfire::fs::read_bytes(path)` | Reads an entire binary file into a byte buffer. | `raw := try fs.read_bytes("input.bin")` |
+| `fn write_bytes(path: str, data: []byte) -> void!` | `cfire::fs::write_bytes(path, data)` | Writes a byte slice to disk (truncating any existing file). | `try fs.write_bytes("out.bin", raw)` |
+| `fn append_bytes(path: str, data: []byte) -> void!` | `cfire::fs::append_bytes(path, data)` | Appends a byte slice to a file on disk (creating the file if it does not exist). | `try fs.append_bytes("out.bin", raw)` |
 | `fn read_text(path: str) -> str!` | `cfire::fs::read_text(path)` | Reads an entire UTF-8 text file into a `str`. | `txt := try fs.read_text("config.json")` |
 | `fn write_text(path: str, text: str) -> void!` | `cfire::fs::write_text(path, text)` | Writes a UTF-8 string to disk. | `try fs.write_text("hello.txt", "sapphire")` |
+| `fn append_text(path: str, text: str) -> void!` | `cfire::fs::append_text(path, text)` | Appends a UTF-8 string to a file on disk. | `try fs.append_text("app.log", "started\n")` |
 | `fn rename(from: str, to: str) -> void!` | `cfire::fs::rename(from, to)` | Renames or moves a file or directory. | `try fs.rename("tmp.bin", "final.bin")` |
+| `fn copy_file(from: str, to: str) -> void!` | `cfire::fs::copy_file(from, to)` | Copies a file from `from` to `to` (overwriting `to` if it exists). | `try fs.copy_file("a.bin", "b.bin")` |
+| `fn file_size(path: str) -> u64!` | `cfire::fs::file_size(path)` | Returns the size of a file in bytes. | `sz := try fs.file_size("input.bin")` |
 | `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` | `cfire::fs::open(path, mode)` | Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle. | `mut f := try fs.open("log.txt", OpenMode::Append)` |
 | `fn (f: File) fd() -> i32` | `f.fd()` | Returns the underlying OS file descriptor (`-1` if closed). | `fd := f.fd()` |
-| `fn (mut f: File) read(mut buf: []byte) -> usize!` | `f.read(buf)` | Reads up to `buf.len()` bytes from the streaming file handle. | `n := try f.read(mut buf)` |
-| `fn (mut f: File) read_bytes(max_bytes: usize = 4096) -> []byte!` | `f.read_bytes(max_bytes)` | Reads up to `max_bytes` from the file stream into a new byte slice. | `chunk := try f.read_bytes(4096)` |
-| `fn (mut f: File) read_line() -> str?` | `f.read_line()` | Reads the next line from the file stream, or `none` on EOF. | `line := f.read_line() or { return }` |
-| `fn (mut f: File) read_all() -> []byte!` | `f.read_all()` | Reads all remaining bytes from current file position to EOF. | `bytes := try f.read_all()` |
-| `fn (mut f: File) write(data: []byte | str) -> usize!` | `f.write(data)` | Writes a byte slice or UTF-8 string to the file stream. | `n := try f.write("header\n")` |
+| `fn (f: File) is_open() -> bool` | `f.is_open()` | Returns `true` if the file handle holds a valid open file descriptor. | `if f.is_open() { ... }` |
+| `fn (f: File) is_tty() -> bool` | `f.is_tty()` | Returns `true` if the file stream refers to an interactive terminal. | `if os.stdout().is_tty() { ... }` |
+| `fn (f: File) poll(timeout_ms: i64 = 0) -> bool` | `f.poll(timeout_ms)` | Polls the file stream for readability up to `timeout_ms` milliseconds (`EINTR`-safe). | `if r.poll(50) { ... }` |
+| `fn (mut f: File) read_into(mut buf: []byte) -> usize!` | `f.read_into(buf)` | Reads up to `buf.len()` bytes from the file stream into `buf`. | `n := try f.read_into(mut buf)` |
+| `fn (mut f: File) read_exact(exact_bytes: usize) -> []byte!` | `f.read_exact(exact_bytes)` | Reads exactly `exact_bytes` from the file stream or returns an error on premature EOF. | `hdr := try f.read_exact(8)` |
+| `fn (mut f: File) read_bytes(max_bytes: usize = 67108864) -> []byte!` | `f.read_bytes(max_bytes)` | Reads up to `max_bytes` from the file stream into a new byte slice. | `chunk := try f.read_bytes(4096)` |
+| `fn (mut f: File) read_text(max_bytes: usize = 67108864) -> str!` | `f.read_text(max_bytes)` | Reads up to `max_bytes` from the file stream as a UTF-8 string. | `body := try f.read_text()` |
+| `fn (mut f: File) read_bytes_until(delim: byte, max_bytes: usize = 65536) -> []byte!` | `f.read_bytes_until(delim, max_bytes)` | Reads bytes from the file stream up to and including `delim` (or `max_bytes`). | `frame := try f.read_bytes_until(byte(0))` |
+| `fn (mut f: File) read_text_until(delim: str, max_bytes: usize = 65536) -> str!` | `f.read_text_until(delim, max_bytes)` | Reads text from the file stream up to and including the first byte of `delim` (or `max_bytes`). | `line := try f.read_text_until("\n")` |
+| `fn (mut f: File) read_line(max_bytes: usize = 65536) -> str?` | `f.read_line(max_bytes)` | Reads the next line from the file stream (stripping `\r\n` / `\n`), or `none` on EOF. | `line := f.read_line() or { return }` |
+| `fn (mut f: File) read_lines() -> []str!` | `f.read_lines()` | Reads all remaining lines from the file stream into a string slice. | `lines := try f.read_lines()` |
+| `fn (mut f: File) write_bytes(data: []byte) -> usize!` | `f.write_bytes(data)` | Writes all bytes in `data` to the file stream, looping across partial writes and `EINTR`. | `n := try f.write_bytes(raw)` |
+| `fn (mut f: File) write_text(text: str) -> usize!` | `f.write_text(text)` | Writes a UTF-8 string to the file stream, looping across partial writes and `EINTR`. | `n := try f.write_text("header\n")` |
 | `fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!` | `f.seek(offset, whence)` | Seeks within file to offset from Start, Current, or End. | `pos := try f.seek(0, SeekWhence::Start)` |
 | `fn (mut f: File) tell() -> i64!` | `f.tell()` | Returns current byte offset within file stream. | `pos := try f.tell()` |
 | `fn (mut f: File) flush() -> void!` | `f.flush()` | Flushes buffered stream data to disk. | `try f.flush()` |
@@ -433,6 +445,8 @@ fn main() {
 | `fn basename(path: str) -> str` | `cfire::fs::basename(path)` | Returns file name portion of a filesystem path. | `name := fs.basename("/a/b/c.txt")` |
 | `fn extension(path: str) -> str` | `cfire::fs::extension(path)` | Returns file extension including leading dot. | `ext := fs.extension("main.cf")` |
 | `fn exists(path: str) -> bool` | `cfire::fs::exists(path)` | Returns `true` if the path exists on disk. | `if fs.exists("build.cf") { ... }` |
+| `fn is_dir(path: str) -> bool` | `cfire::fs::is_dir(path)` | Returns `true` if `path` exists and is a directory. | `if fs.is_dir("src") { ... }` |
+| `fn is_file(path: str) -> bool` | `cfire::fs::is_file(path)` | Returns `true` if `path` exists and is a regular file. | `if fs.is_file("build.cf") { ... }` |
 | `fn mkdir_all(path: str) -> void!` | `cfire::fs::mkdir_all(path)` | Recursively creates a directory and all parent directories. | `try fs.mkdir_all(".cfire/cache")` |
 | `fn remove(path: str) -> void!` | `cfire::fs::remove(path)` | Removes a file or directory tree recursively. | `try fs.remove("tmp_dir")` |
 | `fn list_dir(path: str) -> []str!` | `cfire::fs::list_dir(path)` | Lists sorted filenames inside a directory. | `entries := try fs.list_dir("examples")` |
@@ -563,7 +577,7 @@ fn main() {
 ### `core:net` (`net`) — POSIX BSD TCP Sockets & Loopback Networking
 
 - **Auto-Link Flags:** `(POSIX sockets)`
-- **Overview:** RAII TCP client and listener sockets backed by BSD `AF_INET` sockets with non-blocking `poll` timeouts and automatic `AF_UNIX` `socketpair` loopback fallback inside sandboxes.
+- **Overview:** RAII TCP client, listener, and connected socketpair handles backed by BSD `AF_INET` / `AF_UNIX` sockets with non-blocking `poll` timeouts and strict `_bytes` / `_text` I/O symmetry.
 
 **Practical Example:**
 ```cf
@@ -579,11 +593,11 @@ fn main() {
 
     // 2. Connect client TCP socket
     mut client := try net.connect_tcp("127.0.0.1", port)
-    _ := try client.write("PING\n")
+    _ := try client.write_text("PING\n")
 
     // 3. Accept incoming connection and read data
     mut conn := try ln.accept()
-    msg := try conn.read_str(max_bytes: 64)
+    msg := try conn.read_text(max_bytes: 64)
     println("Server received payload: {}", msg)
 }
 ```
@@ -595,12 +609,18 @@ fn main() {
 | `fn (ln: TcpListener) port() -> u16` | `ln.port()` | Returns the bound TCP port. | `p := ln.port()` |
 | `fn (mut ln: TcpListener) accept() -> TcpConn!` | `ln.accept()` | Accepts an incoming TCP connection with a safe poll timeout. | `mut conn := try ln.accept()` |
 | `fn connect_tcp(host: str, port: u16) -> TcpConn!` | `cfire::net::connect_tcp(host, port)` | Connects a `TcpConn` to `host:port`. | `mut c := try net.connect_tcp("127.0.0.1", p)` |
+| `fn socketpair() -> (TcpConn, TcpConn)!` | `cfire::net::socketpair()` | Creates a connected pair of full-duplex `TcpConn` stream sockets. | `(mut a, mut b) := try net.socketpair()` |
 | `fn (c: TcpConn) fd() -> i32` | `c.fd()` | Returns the underlying socket file descriptor (`-1` if closed). | `fd := conn.fd()` |
-| `fn (mut c: TcpConn) write(payload: []byte | str) -> usize!` | `c.write(payload)` | Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ := try c.write("PING")` |
-| `fn (mut c: TcpConn) read(mut buf: []byte) -> usize!` | `c.read(buf)` | Reads up to `buf.len()` bytes from the socket into `buf` (`EINTR`-safe). | `n := try conn.read(mut buf)` |
-| `fn (mut c: TcpConn) read_bytes(max_bytes: usize = 1024) -> []byte!` | `c.read_bytes(max_bytes)` | Reads up to `max_bytes` from the socket into a new byte slice. | `pkt := try conn.read_bytes(256)` |
+| `fn (c: TcpConn) is_open() -> bool` | `c.is_open()` | Returns `true` if the socket connection is open. | `if conn.is_open() { ... }` |
+| `fn (c: TcpConn) poll(timeout_ms: i64 = 0) -> bool` | `c.poll(timeout_ms)` | Polls the socket for readability up to `timeout_ms` milliseconds (`EINTR`-safe). | `if conn.poll(50) { ... }` |
+| `fn (mut c: TcpConn) write_bytes(payload: []byte) -> usize!` | `c.write_bytes(payload)` | Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ := try c.write_bytes(raw)` |
+| `fn (mut c: TcpConn) write_text(text: str) -> usize!` | `c.write_text(text)` | Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ := try c.write_text("PING\n")` |
+| `fn (mut c: TcpConn) read_into(mut buf: []byte) -> usize!` | `c.read_into(buf)` | Reads up to `buf.len()` bytes from the socket into `buf` (`EINTR`-safe). | `n := try conn.read_into(mut buf)` |
+| `fn (mut c: TcpConn) read_bytes(max_bytes: usize = 4096) -> []byte!` | `c.read_bytes(max_bytes)` | Reads up to `max_bytes` from the socket into a new byte slice. | `pkt := try conn.read_bytes(256)` |
 | `fn (mut c: TcpConn) read_exact(exact_bytes: usize) -> []byte!` | `c.read_exact(exact_bytes)` | Reads exactly `exact_bytes` from the socket or returns an error on premature EOF. | `hdr := try conn.read_exact(8)` |
-| `fn (mut c: TcpConn) read_str(max_bytes: usize = 1024) -> str!` | `c.read_str(max_bytes)` | Reads up to `max_bytes` from the socket as a string. | `msg := try conn.read_str(64)` |
+| `fn (mut c: TcpConn) read_text(max_bytes: usize = 4096) -> str!` | `c.read_text(max_bytes)` | Reads up to `max_bytes` from the socket as a UTF-8 string. | `msg := try conn.read_text(64)` |
+| `fn (mut c: TcpConn) read_bytes_until(delim: byte, max_bytes: usize = 65536) -> []byte!` | `c.read_bytes_until(delim, max_bytes)` | Reads bytes from the socket up to and including `delim` (or `max_bytes`). | `frame := try conn.read_bytes_until(byte(0))` |
+| `fn (mut c: TcpConn) read_text_until(delim: str, max_bytes: usize = 65536) -> str!` | `c.read_text_until(delim, max_bytes)` | Reads text from the socket up to and including the first byte of `delim` (or `max_bytes`). | `line := try conn.read_text_until("\n")` |
 | `fn (mut c: TcpConn) read_line(max_bytes: usize = 65536) -> str?` | `c.read_line(max_bytes)` | Reads a newline-delimited line up to `max_bytes` from the socket, or `none` on EOF. | `line := conn.read_line() or { return }` |
 | `fn (mut c: TcpConn) set_timeout_ms(ms: i32) -> void` | `c.set_timeout_ms(ms)` | Sets socket read/write timeout in milliseconds (`0` for blocking). | `conn.set_timeout_ms(5000)` |
 | `fn (mut c: TcpConn) close() -> void` | `c.close()` | Closes the TCP socket connection. | `conn.close()` |
@@ -794,10 +814,10 @@ fn main() {
 | `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void` | `s.serve_in_background(handler)` | Starts a background thread accepting and serving WebSocket connections. | `srv.serve_in_background(|mut ws| { ... })` |
 | `fn (mut s: Server) stop() -> void` | `s.stop()` | Stops the background WebSocket server thread. | `srv.stop()` |
 
-### `core:os` (`os`) — Environment, File Descriptors, Terminal, Pipes & Subprocesses
+### `core:os` (`os`) — Environment, Standard Streams, Terminal, Pipes & Subprocesses
 
 - **Auto-Link Flags:** `(header-only)`
-- **Overview:** Process environment inspection, working directory queries, safe EINTR-resilient POSIX file descriptor operations (`STDIN`, `STDOUT`, `STDERR`, `fd_read`, `fd_write`, `fd_close`, `pipe`, `socketpair`, `poll_fd`), raw terminal control (`term_size`, `make_raw`, `on_signal`), and subprocess execution (`command`, `exec_output`).
+- **Overview:** Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make_raw`, `on_signal`), and subprocess execution (`command`, `exec_output`).
 
 **Practical Example:**
 ```cf
@@ -824,20 +844,14 @@ fn main() {
 | `fn setenv(key: str, value: str)` | `cfire::os::setenv(key, value)` | Sets environment variable `key` to `value` in the current process. | `os.setenv("MODE", "prod")` |
 | `fn cwd() -> str` | `cfire::os::cwd()` | Returns the current working directory path. | `dir := os.cwd()` |
 | `fn getpid() -> i64` | `cfire::os::getpid()` | Returns the process ID (PID) of the current process. | `pid := os.getpid()` |
-| `fn is_tty(fd: i32 = os.STDIN) -> bool` | `cfire::os::is_tty(fd)` | Returns `true` if file descriptor `fd` (defaulting to `os.STDIN`) refers to an interactive terminal. | `if os.is_tty(os.STDOUT) { ... }` |
-| `fn term_size(fd: i32 = os.STDIN) -> TermSize` | `cfire::os::term_size(fd)` | Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY. | `sz := os.term_size()` |
-| `fn make_raw(fd: i32 = os.STDIN) -> RawTerminal!` | `cfire::os::make_raw(fd)` | Places terminal file descriptor `fd` into raw mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit. | `raw := try os.make_raw()` |
+| `fn stdin() -> File` | `cfire::os::stdin_file()` | Returns a non-owning `fs.File` stream handle wrapping standard input (FD 0). | `line := os.stdin().read_line() or { return }` |
+| `fn stdout() -> File` | `cfire::os::stdout_file()` | Returns a non-owning `fs.File` stream handle wrapping standard output (FD 1). | `_ = try os.stdout().write_text("ok\n")` |
+| `fn stderr() -> File` | `cfire::os::stderr_file()` | Returns a non-owning `fs.File` stream handle wrapping standard error (FD 2). | `_ = try os.stderr().write_text("warn\n")` |
+| `fn pipe() -> (File, File)!` | `cfire::os::pipe()` | Creates an OS pipe returning an owning `(reader, writer)` tuple of `fs.File` handles with `FD_CLOEXEC` enabled. | `(mut r, mut w) := try os.pipe()` |
+| `fn is_tty() -> bool` | `cfire::os::is_tty()` | Returns `true` if standard input refers to an interactive terminal (or call `.is_tty()` on any `fs.File`). | `if os.is_tty() { ... }` |
+| `fn term_size() -> TermSize` | `cfire::os::term_size()` | Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY. | `sz := os.term_size()` |
+| `fn make_raw() -> RawTerminal!` | `cfire::os::make_raw()` | Places standard input into raw terminal mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit. | `raw := try os.make_raw()` |
 | `fn on_signal(sig: i32, handler: fn(i32))` | `cfire::os::on_signal(sig, handler)` | Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`). | `os.on_signal(28, |sig| { println("resized: {}", sig) })` |
-| `fn fd_read(fd: i32, mut buf: []byte) -> usize!` | `cfire::os::fd_read(fd, buf)` | Reads up to `buf.len()` bytes from file descriptor `fd` with automatic `EINTR` retry. | `n := try os.fd_read(r_fd, mut buf)` |
-| `fn fd_read_bytes(fd: i32, max_bytes: usize = 4096) -> []byte!` | `cfire::os::fd_read_bytes(fd, max_bytes)` | Reads up to `max_bytes` from file descriptor `fd` into a new byte slice. | `chunk := try os.fd_read_bytes(r_fd, 1024)` |
-| `fn fd_write(fd: i32, data: []byte | str) -> usize!` | `cfire::os::fd_write(fd, data)` | Writes all bytes in `data` to file descriptor `fd`, looping across partial writes and `EINTR`. | `try os.fd_write(w_fd, "ping")` |
-| `fn fd_close(fd: i32) -> void!` | `cfire::os::fd_close(fd)` | Safely closes file descriptor `fd`. | `try os.fd_close(fd)` |
-| `fn pipe() -> []i32!` | `cfire::os::pipe()` | Creates an OS pipe `[read_fd, write_fd]` with `FD_CLOEXEC` enabled. | `fds := try os.pipe()` |
-| `fn socketpair() -> []i32!` | `cfire::os::socketpair()` | Creates a connected UNIX stream socket pair `[fd0, fd1]` with `FD_CLOEXEC` enabled. | `pair := try os.socketpair()` |
-| `fn poll_fd(fd: i32, timeout_ms: i64 = 0) -> bool` | `cfire::os::poll_fd(fd, timeout_ms)` | Polls file descriptor `fd` for readability up to `timeout_ms` milliseconds (`EINTR`-safe). | `if os.poll_fd(r_fd, 50) { ... }` |
-| `fn read_stdin(max_bytes: usize = 67108864) -> str!` | `cfire::os::read_stdin(max_bytes)` | Reads all remaining text from standard input up to `max_bytes` until EOF. | `all := try os.read_stdin()` |
-| `fn read_stdin_lines() -> []str!` | `cfire::os::read_stdin_lines()` | Reads all lines from standard input into a string slice. | `lines := try os.read_stdin_lines()` |
-| `fn read_stdin_bytes(max_bytes: usize = 67108864) -> []byte!` | `cfire::os::read_stdin_bytes(max_bytes)` | Reads all remaining raw bytes from standard input up to `max_bytes` until EOF. | `raw := try os.read_stdin_bytes()` |
 | `fn exec_output(cmd: str) -> str!` | `cfire::os::exec_output(cmd)` | Executes a shell command via `popen` and returns its captured stdout. | `out := try os.exec_output("uname -s")` |
 | `fn command(binary: str, args: []str) -> ExecResult!` | `cfire::os::command(binary, args)` | Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr. | `res := try os.command("git", ["status"])` |
 
@@ -1381,8 +1395,8 @@ fn main() {
 
     mut ch := try sess.open_pty("xterm-256color", 120, 36)
     defer ch.close()
-    _ = try ch.write("ls -la\n")
-    chunk := try ch.read(4096)
+    _ = try ch.write_text("ls -la\n")
+    chunk := try ch.read_text(4096)
     print(chunk)
 }
 ```
@@ -1401,14 +1415,18 @@ fn main() {
 | `fn (mut sess: Session) exec(command: str) -> ExecResult!` | `sess.exec(command)` | Executes a one-shot remote command and returns `ExecResult{exit_code, stdout, stderr}`. | `res := try sess.exec("uname -a")` |
 | `fn (mut sess: Session) open_pty(term: str = "xterm-256color", cols: i32 = 80, rows: i32 = 24) -> Channel!` | `sess.open_pty(term, cols, rows)` | Opens an interactive PTY shell channel with initial terminal type and dimensions. | `mut ch := try sess.open_pty("xterm-256color", 120, 36)` |
 | `fn (mut sess: Session) open_forward(remote_host: str, remote_port: u16, source_host: str = "127.0.0.1", local_port: u16 = 0) -> Channel!` | `sess.open_forward(remote_host, remote_port, source_host, local_port)` | Opens a direct TCP/IP port-forwarding channel (`ssh_channel_open_forward`). | `mut fwd := try sess.open_forward("127.0.0.1", 5432)` |
-| `fn (mut sess: Session) sftp_write_all(remote_path: str, data: str | []byte, mode: u32 = 0644) -> void!` | `sess.sftp_write_all(remote_path, data, mode)` | Uploads `data` to `remote_path` over SFTP. | `try sess.sftp_write_all("/remote/app.conf", cfg_text)` |
-| `fn (mut sess: Session) sftp_read_all(remote_path: str) -> str!` | `sess.sftp_read_all(remote_path)` | Downloads the contents of `remote_path` over SFTP. | `body := try sess.sftp_read_all("/remote/app.conf")` |
+| `fn (mut sess: Session) sftp_write_text(remote_path: str, text: str, mode: u32 = 0644) -> void!` | `sess.sftp_write_text(remote_path, text, mode)` | Uploads UTF-8 `text` to `remote_path` over SFTP. | `try sess.sftp_write_text("/remote/app.conf", cfg_text)` |
+| `fn (mut sess: Session) sftp_write_bytes(remote_path: str, data: []byte, mode: u32 = 0644) -> void!` | `sess.sftp_write_bytes(remote_path, data, mode)` | Uploads binary `data` to `remote_path` over SFTP. | `try sess.sftp_write_bytes("/remote/app.bin", raw_bytes)` |
+| `fn (mut sess: Session) sftp_read_text(remote_path: str) -> str!` | `sess.sftp_read_text(remote_path)` | Downloads the UTF-8 text contents of `remote_path` over SFTP. | `body := try sess.sftp_read_text("/remote/app.conf")` |
+| `fn (mut sess: Session) sftp_read_bytes(remote_path: str) -> []byte!` | `sess.sftp_read_bytes(remote_path)` | Downloads the raw binary bytes of `remote_path` over SFTP. | `raw := try sess.sftp_read_bytes("/remote/app.bin")` |
 | `fn (mut sess: Session) sftp_list_dir(remote_path: str) -> []SftpEntry!` | `sess.sftp_list_dir(remote_path)` | Lists directory entries in `remote_path` over SFTP. | `entries := try sess.sftp_list_dir("/remote")` |
 | `fn (mut sess: Session) sftp_mkdir(remote_path: str, mode: u32 = 0755) -> void!` | `sess.sftp_mkdir(remote_path, mode)` | Creates a remote directory over SFTP. | `try sess.sftp_mkdir("/remote/releases")` |
 | `fn (mut sess: Session) sftp_remove(remote_path: str) -> void!` | `sess.sftp_remove(remote_path)` | Removes a remote file over SFTP. | `try sess.sftp_remove("/remote/old.tmp")` |
 | `fn (mut sess: Session) close()` | `sess.close()` | Disconnects and frees the SSH session. | `defer sess.close()` |
-| `fn (mut ch: Channel) read(max_bytes: usize = 4096) -> str!` | `ch.read(max_bytes)` | Non-blockingly reads up to `max_bytes` from the SSH channel (`""` when no data is currently ready). | `chunk := try ch.read(4096)` |
-| `fn (mut ch: Channel) write(data: str | []byte) -> usize!` | `ch.write(data)` | Writes `data` into the SSH channel (e.g. PTY stdin). | `_ = try ch.write("ls -la\n")` |
+| `fn (mut ch: Channel) read_text(max_bytes: usize = 4096) -> str!` | `ch.read_text(max_bytes)` | Non-blockingly reads up to `max_bytes` of UTF-8 text from the SSH channel (`""` when no data is currently ready). | `chunk := try ch.read_text(4096)` |
+| `fn (mut ch: Channel) read_bytes(max_bytes: usize = 4096) -> []byte!` | `ch.read_bytes(max_bytes)` | Non-blockingly reads up to `max_bytes` of raw bytes from the SSH channel. | `raw := try ch.read_bytes(4096)` |
+| `fn (mut ch: Channel) write_text(text: str) -> usize!` | `ch.write_text(text)` | Writes UTF-8 `text` into the SSH channel (e.g. PTY stdin). | `_ = try ch.write_text("ls -la\n")` |
+| `fn (mut ch: Channel) write_bytes(data: []byte) -> usize!` | `ch.write_bytes(data)` | Writes binary `data` into the SSH channel. | `_ = try ch.write_bytes(raw)` |
 | `fn (mut ch: Channel) resize_pty(cols: i32, rows: i32) -> void!` | `ch.resize_pty(cols, rows)` | Dynamically resizes an open interactive PTY (`ssh_channel_change_pty_size`). | `try ch.resize_pty(140, 42)` |
 | `fn (ch: Channel) is_eof() -> bool` | `ch.is_eof()` | Returns `true` if the remote channel has reached EOF. | `if ch.is_eof() { break }` |
 | `fn (mut ch: Channel) close()` | `ch.close()` | Sends EOF and closes the SSH channel. | `defer ch.close()` |

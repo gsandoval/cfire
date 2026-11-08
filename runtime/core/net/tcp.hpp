@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <expected>
+#include <tuple>
 #include <unordered_map>
 #include <queue>
 #include <mutex>
@@ -130,6 +131,28 @@ inline void set_reuseaddr(int fd) noexcept {
 #endif
 }
 
+inline void register_loopback_port(std::uint16_t port) {
+    std::lock_guard<std::mutex> lk(loopback_mu);
+    (void)loopback_queues[port];
+}
+
+inline void unregister_loopback_port(std::uint16_t port) {
+    std::lock_guard<std::mutex> lk(loopback_mu);
+    auto it = loopback_queues.find(port);
+    if (it != loopback_queues.end()) {
+        while (!it->second.empty()) {
+            close_sock(it->second.front());
+            it->second.pop();
+        }
+        loopback_queues.erase(it);
+    }
+}
+
+[[nodiscard]] inline auto has_loopback_listener(std::uint16_t port) -> bool {
+    std::lock_guard<std::mutex> lk(loopback_mu);
+    return loopback_queues.contains(port);
+}
+
 inline void push_loopback_fd(std::uint16_t port, int fd) {
     std::lock_guard<std::mutex> lk(loopback_mu);
     loopback_queues[port].push(fd);
@@ -200,9 +223,14 @@ public:
         return *this;
     }
 
-    [[nodiscard]] auto fd() const noexcept -> int { return fd_; }
+    [[nodiscard]] auto fd() const noexcept -> std::int32_t { return static_cast<std::int32_t>(fd_); }
+    [[nodiscard]] auto is_open() const noexcept -> bool { return fd_ >= 0; }
     [[nodiscard]] auto release_fd() noexcept -> int { return std::exchange(fd_, -1); }
     [[nodiscard]] auto endpoint() const noexcept -> const std::string& { return endpoint_; }
+
+    [[nodiscard]] auto poll(std::int64_t timeout_ms = 0) const noexcept -> bool {
+        return detail::poll_sock_read(fd_, static_cast<int>(timeout_ms));
+    }
 
     void close() noexcept {
         tls_.reset();
@@ -221,17 +249,16 @@ public:
         detail::set_sock_timeout_ms(fd_, ms);
     }
 
-    [[nodiscard]] auto write(std::string_view payload) -> std::expected<std::size_t, cfire::Error> {
-        if (endpoint_.starts_with("down.")) {
-            return cfire::make_error("connection reset by peer");
-        }
+    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
         if (fd_ < 0) {
-            return payload.size();
+            return cfire::make_error("socket is closed");
         }
+        if (data.empty()) return std::size_t{0};
+        const auto* ptr = reinterpret_cast<const char*>(data.data());
         if (tls_ && tls_->ssl && tls_->write_fn) {
             std::size_t total = 0;
-            while (total < payload.size()) {
-                ssize_t n = tls_->write_fn(tls_->ssl, payload.data() + total, payload.size() - total);
+            while (total < data.size()) {
+                ssize_t n = tls_->write_fn(tls_->ssl, ptr + total, data.size() - total);
                 if (n <= 0) {
                     return cfire::make_error("tls socket write failed");
                 }
@@ -240,9 +267,9 @@ public:
             return total;
         }
         std::size_t total = 0;
-        while (total < payload.size()) {
-            int chunk = static_cast<int>(std::min<std::size_t>(payload.size() - total, 0x7fffffffU));
-            ssize_t sent = ::send(fd_, payload.data() + total, chunk, MSG_NOSIGNAL);
+        while (total < data.size()) {
+            int chunk = static_cast<int>(std::min<std::size_t>(data.size() - total, 0x7fffffffU));
+            ssize_t sent = ::send(fd_, ptr + total, chunk, MSG_NOSIGNAL);
             if (sent < 0) {
                 if (detail::is_sock_eintr()) continue;
                 return cfire::make_error("tcp socket send failed");
@@ -255,28 +282,16 @@ public:
         return total;
     }
 
-    [[nodiscard]] auto write(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
-        return write(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
-    }
-
-    [[nodiscard]] auto write(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
-        return write(std::as_bytes(data));
-    }
-
-    [[nodiscard]] auto write_str(std::string_view payload) -> std::expected<std::size_t, cfire::Error> {
-        return write(payload);
-    }
-
-    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
-        return write(data);
-    }
-
     [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
-        return write(std::as_bytes(data));
+        return write_bytes(std::as_bytes(data));
     }
 
-    [[nodiscard]] auto read(std::span<std::byte> buf) -> std::expected<std::size_t, cfire::Error> {
-        if (fd_ < 0) return std::size_t{0};
+    [[nodiscard]] auto write_text(std::string_view payload) -> std::expected<std::size_t, cfire::Error> {
+        return write_bytes(std::as_bytes(std::span(payload.data(), payload.size())));
+    }
+
+    [[nodiscard]] auto read_into(std::span<std::byte> buf) -> std::expected<std::size_t, cfire::Error> {
+        if (fd_ < 0) return cfire::make_error("socket is closed");
         if (buf.empty()) return std::size_t{0};
         if (tls_ && tls_->ssl && tls_->read_fn) {
             ssize_t n = tls_->read_fn(tls_->ssl, buf.data(), buf.size());
@@ -294,23 +309,25 @@ public:
         }
     }
 
-    [[nodiscard]] auto read(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
-        return read(std::as_writable_bytes(buf));
+    [[nodiscard]] auto read_into(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
+        return read_into(std::as_writable_bytes(buf));
     }
 
-    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 1024) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::byte>, cfire::Error> {
+        if (fd_ < 0) return cfire::make_error("socket is closed");
         std::vector<std::byte> buf(max_bytes);
-        auto n = read(std::span<std::byte>(buf));
+        auto n = read_into(std::span<std::byte>(buf));
         if (!n) return std::unexpected(n.error());
         buf.resize(*n);
         return buf;
     }
 
     [[nodiscard]] auto read_exact(std::size_t exact_bytes) -> std::expected<std::vector<std::byte>, cfire::Error> {
+        if (fd_ < 0) return cfire::make_error("socket is closed");
         std::vector<std::byte> buf(exact_bytes);
         std::size_t total = 0;
         while (total < exact_bytes) {
-            auto n = read(std::span<std::byte>(buf.data() + total, exact_bytes - total));
+            auto n = read_into(std::span<std::byte>(buf.data() + total, exact_bytes - total));
             if (!n) return std::unexpected(n.error());
             if (*n == 0) {
                 return cfire::make_error(std::format("unexpected EOF in read_exact (expected {} bytes, got {})", exact_bytes, total));
@@ -320,36 +337,72 @@ public:
         return buf;
     }
 
-    [[nodiscard]] auto read_str(std::size_t max_bytes = 1024) -> std::expected<std::string, cfire::Error> {
-        if (fd_ < 0) return std::string{};
+    [[nodiscard]] auto read_text(std::size_t max_bytes = 4096) -> std::expected<std::string, cfire::Error> {
+        if (fd_ < 0) return cfire::make_error("socket is closed");
         std::string buf(max_bytes, '\0');
-        auto n = read(std::as_writable_bytes(std::span(buf.data(), max_bytes)));
+        auto n = read_into(std::as_writable_bytes(std::span(buf.data(), max_bytes)));
         if (!n) return std::unexpected(n.error());
         buf.resize(*n);
         return buf;
     }
 
-    [[nodiscard]] auto read_line(std::size_t max_bytes = 65536) -> std::optional<std::string> {
-        if (fd_ < 0) return std::nullopt;
-        std::string out;
-        char c = '\0';
-        bool got_any = false;
+    [[nodiscard]] auto read_bytes_until(std::byte delim, std::size_t max_bytes = 65536)
+        -> std::expected<std::vector<std::byte>, cfire::Error>
+    {
+        if (fd_ < 0) return cfire::make_error("socket is closed");
+        std::vector<std::byte> out;
+        std::byte b{0};
         while (out.size() < max_bytes) {
             ssize_t n = 0;
             if (tls_ && tls_->ssl && tls_->read_fn) {
-                n = tls_->read_fn(tls_->ssl, &c, 1);
+                n = tls_->read_fn(tls_->ssl, &b, 1);
             } else {
-                while ((n = ::recv(fd_, &c, 1, 0)) < 0 && detail::is_sock_eintr()) {}
+                while ((n = ::recv(fd_, reinterpret_cast<char*>(&b), 1, 0)) < 0 && detail::is_sock_eintr()) {}
             }
-            if (n <= 0) break;
-            got_any = true;
-            if (c == '\n') {
-                if (!out.empty() && out.back() == '\r') out.pop_back();
-                break;
-            }
-            out.push_back(c);
+            if (n < 0) return cfire::make_error("tcp socket recv failed");
+            if (n == 0) break;
+            out.push_back(b);
+            if (b == delim) break;
         }
-        if (!got_any) return std::nullopt;
+        return out;
+    }
+
+    [[nodiscard]] auto read_bytes_until(std::uint8_t delim, std::size_t max_bytes = 65536)
+        -> std::expected<std::vector<std::byte>, cfire::Error>
+    {
+        return read_bytes_until(static_cast<std::byte>(delim), max_bytes);
+    }
+
+    [[nodiscard]] auto read_text_until(std::string_view delim, std::size_t max_bytes = 65536)
+        -> std::expected<std::string, cfire::Error>
+    {
+        if (fd_ < 0) return cfire::make_error("socket is closed");
+        if (delim.empty()) return cfire::make_error("read_text_until requires non-empty delimiter");
+        std::string out;
+        std::byte b{0};
+        while (out.size() < max_bytes) {
+            ssize_t n = 0;
+            if (tls_ && tls_->ssl && tls_->read_fn) {
+                n = tls_->read_fn(tls_->ssl, &b, 1);
+            } else {
+                while ((n = ::recv(fd_, reinterpret_cast<char*>(&b), 1, 0)) < 0 && detail::is_sock_eintr()) {}
+            }
+            if (n < 0) return cfire::make_error("tcp socket recv failed");
+            if (n == 0) break;
+            out.push_back(static_cast<char>(b));
+            if (out.ends_with(delim)) break;
+        }
+        return out;
+    }
+
+    [[nodiscard]] auto read_line(std::size_t max_bytes = 65536) -> std::optional<std::string> {
+        auto b = read_bytes_until(static_cast<std::byte>('\n'), max_bytes);
+        if (!b || b->empty()) return std::nullopt;
+        std::string out(reinterpret_cast<const char*>(b->data()), b->size());
+        if (!out.empty() && out.back() == '\n') {
+            out.pop_back();
+            if (!out.empty() && out.back() == '\r') out.pop_back();
+        }
         return out;
     }
 
@@ -361,16 +414,30 @@ private:
 
 class TcpListener {
 public:
-    TcpListener(int fd, std::uint16_t port) noexcept : fd_(fd), port_(port) {}
+    TcpListener(int fd, std::uint16_t port) noexcept : fd_(fd), port_(port), active_(true) {
+        if (port_ != 0) {
+            detail::register_loopback_port(port_);
+        }
+    }
     ~TcpListener() {
+        if (active_ && port_ != 0) {
+            detail::unregister_loopback_port(port_);
+        }
         if (fd_ >= 0) detail::close_sock(fd_);
     }
-    TcpListener(TcpListener&& o) noexcept : fd_(std::exchange(o.fd_, -1)), port_(o.port_) {}
+    TcpListener(TcpListener&& o) noexcept
+        : fd_(std::exchange(o.fd_, -1)),
+          port_(o.port_),
+          active_(std::exchange(o.active_, false)) {}
     auto operator=(TcpListener&& o) noexcept -> TcpListener& {
         if (this != &o) {
+            if (active_ && port_ != 0) {
+                detail::unregister_loopback_port(port_);
+            }
             if (fd_ >= 0) detail::close_sock(fd_);
             fd_ = std::exchange(o.fd_, -1);
             port_ = o.port_;
+            active_ = std::exchange(o.active_, false);
         }
         return *this;
     }
@@ -407,6 +474,7 @@ public:
 private:
     int fd_ = -1;
     std::uint16_t port_ = 0;
+    bool active_ = false;
 };
 
 [[nodiscard]] inline auto listen_tcp_addr(std::string_view host, std::uint16_t port = 0)
@@ -448,7 +516,7 @@ private:
 [[nodiscard]] inline auto connect_tcp(std::string_view host, std::uint16_t port)
     -> std::expected<TcpConn, cfire::Error>
 {
-    if (host.empty() || host.starts_with("unreachable")) {
+    if (host.empty() || port == 0) {
         return cfire::make_error(std::format("failed to connect to {}:{}", host, port));
     }
 
@@ -473,16 +541,30 @@ private:
         ::freeaddrinfo(res);
     }
 
-    if (host == "127.0.0.1" || host == "localhost") {
+    if ((host == "127.0.0.1" || host == "localhost") && detail::has_loopback_listener(port)) {
         int sv[2]{-1, -1};
         if (detail::create_loopback_pair(sv)) {
             detail::push_loopback_fd(port, sv[0]);
             return TcpConn(sv[1], host_str);
         }
-        return cfire::make_error(std::format("failed to connect to 127.0.0.1:{}", port));
     }
 
-    return TcpConn(-1, host_str);
+    return cfire::make_error(std::format("failed to connect to {}:{}", host, port));
+}
+
+[[nodiscard]] inline auto socketpair() -> std::expected<std::tuple<TcpConn, TcpConn>, cfire::Error> {
+    int sv[2]{-1, -1};
+    if (!detail::create_loopback_pair(sv)) {
+        return cfire::make_error("socketpair failed");
+    }
+#if !defined(_WIN32)
+    (void)::fcntl(sv[0], F_SETFD, FD_CLOEXEC);
+    (void)::fcntl(sv[1], F_SETFD, FD_CLOEXEC);
+#endif
+    return std::tuple<TcpConn, TcpConn>{
+        TcpConn(sv[0], "socketpair"),
+        TcpConn(sv[1], "socketpair")
+    };
 }
 
 } // namespace cfire::net

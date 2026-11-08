@@ -102,7 +102,7 @@ fn main() {
         .assert_contains("\"code\": \"cfire/ARITY-MISMATCH\"", "contains ARITY-MISMATCH code")
         .assert_contains("call to 'calc' expects 2 argument(s), got 1", "arity mismatch message specifies counts");
 
-    // 5. Test #line and backend type/symbol check (AGENT-P0-02)
+    // 5. Test frontend undeclared-ident and #line backend type check (AGENT-P0-02)
     auto undef_err_cf = tmp_ws.file("undef_err.cf", R"(package main
 
 fn main() {
@@ -111,9 +111,9 @@ fn main() {
 )");
     auto undef_res = run_cfire(std::format("check --json \"{}\"", undef_err_cf.string()));
     undef_res.assert_fail("undefined symbol fails check --json")
-        .assert_contains("\"code\": \"cfire/TYPE-ERROR\"", "reports TYPE-ERROR for undeclared identifier")
-        .assert_contains("\"line\": 4", "TYPE-ERROR points to line 4 of .cf file")
-        .assert_contains("completely_nonexistent_function", "TYPE-ERROR mentions undeclared function");
+        .assert_contains("\"code\": \"cfire/UNDECLARED-IDENT\"", "reports UNDECLARED-IDENT for undeclared identifier")
+        .assert_contains("\"line\": 4", "UNDECLARED-IDENT points to line 4 of .cf file")
+        .assert_contains("completely_nonexistent_function", "UNDECLARED-IDENT mentions undeclared function");
 
     auto undef_text = run_cfire(std::format("check \"{}\"", undef_err_cf.string()));
     undef_text.assert_fail("undefined symbol fails text cfire check")
@@ -231,7 +231,7 @@ fn main() {
         auto resp_chk = mcp_srv.handle_jsonrpc(std::format(
             R"({{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"cfire_check","arguments":{{"path":"{}"}}}}}})",
             cfire::lsp::detail::json_escape(bad_main_cf.string())));
-        require(resp_chk.contains("use of undeclared identifier") && resp_chk.contains("undeclared_symbol_in_main"),
+        require(resp_chk.contains("undeclared identifier") && resp_chk.contains("undeclared_symbol_in_main"),
             std::format("E1: MCP cfire_check catches undefined identifier inside fn main(): {}", resp_chk));
 
         // E7: Verify LSP 3.17 textDocument/implementation and Call Hierarchy (prepareCallHierarchy, incomingCalls, outgoingCalls)

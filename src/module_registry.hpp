@@ -124,7 +124,7 @@ struct ResolvedImport {
     } else if (path == "core:time") {
         info.core_keys = {"time"};
     } else if (path == "core:os") {
-        info.core_keys = {"os"};
+        info.core_keys = {"fs", "os"};
     } else if (path.starts_with("core:sync/") || path == "core:sync" || path == "core:context") {
         info.core_keys = {"sync"};
     } else if (path == "core:str") {

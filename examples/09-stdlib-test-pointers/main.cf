@@ -71,13 +71,13 @@ fn run_app() -> void! {
             mut client := net.connect_tcp("127.0.0.1", port) or err {
                 return
             }
-            _ := client.write("PING_CFIRE") or 0
+            _ := client.write_text("PING_CFIRE") or 0
             ch.send(777)
         }
     }
 
     mut server_conn := try listener.accept()
-    tcp_msg := try server_conn.read_str(64)
+    tcp_msg := try server_conn.read_text(64)
     ch_val := ch.recv() or 0
     elapsed := time.now_ms() - t0
 

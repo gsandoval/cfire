@@ -1,5 +1,6 @@
 CXX      := clang++
-GIT_SHA  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+CFIRE_VER := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo 0.10.0)
+GIT_SHA  ?= $(shell sh -c 'sha=$$(git rev-parse --short=7 HEAD 2>/dev/null) || { echo dev; exit 0; }; git diff --quiet --ignore-submodules HEAD 2>/dev/null && printf "%s" "$$sha" || printf "%s-dirty" "$$sha"')
 LINUX_CXXFLAGS := $(if $(filter Linux,$(shell uname -s)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
 CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation -framework Security,-ldl -lpthread)
@@ -13,7 +14,7 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: all build install uninstall doctor setup test test-unit test-stdlib test-e2e fuzz bench docs fmt review-check clean
+.PHONY: all build install uninstall doctor setup test test-unit test-stdlib test-e2e fuzz bench docs fmt review-check release clean
 
 all: build
 
@@ -30,8 +31,9 @@ install: build
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$
 	mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire
 	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
+	printf "%s %s\n" "$(CFIRE_VER)" "$(GIT_SHA)" > $(DESTDIR)$(PREFIX)/share/cfire/runtime/VERSION
 	cp -R pkg/* $(DESTDIR)$(PREFIX)/share/cfire/pkg/
-	@echo "✓ Installed cfire to $(DESTDIR)$(PREFIX)/bin/cfire and runtime/pkg to $(DESTDIR)$(PREFIX)/share/cfire"
+	@echo "✓ Installed cfire $(CFIRE_VER) ($(GIT_SHA)) to $(DESTDIR)$(PREFIX)/bin/cfire and runtime/pkg to $(DESTDIR)$(PREFIX)/share/cfire"
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/cfire
@@ -59,6 +61,10 @@ review-check: build
 	@echo "=== [3/3] Running Full Conformance Test Suite ==="
 	$(MAKE) test
 	@echo "✓ Conformance test suites passed"
+
+release:
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=x.y.z [FLAGS=--dry-run]"; exit 1; fi
+	./scripts/release.sh "$(VERSION)" $(FLAGS)
 
 docs: build
 	./cfire doc

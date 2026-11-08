@@ -166,6 +166,52 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    if (d.code == "cfire/UNHANDLED-RESULT") {
+        if (d.line > 0 && d.col > 0) {
+            FixItEdit edit;
+            edit.title = "Add 'try' before fallible call (cfire/UNHANDLED-RESULT)";
+            edit.start_line = d.line;
+            edit.start_col = d.col;
+            edit.end_line = d.line;
+            edit.end_col = d.col;
+            edit.replacement = "try ";
+            edit.is_preferred = true;
+            d.fixits.push_back(std::move(edit));
+        }
+        return;
+    }
+
+    if (d.code == "cfire/MISSING-IMPORT") {
+        std::string mod_path;
+        if (auto p = d.message.find("import \""); p != std::string::npos) {
+            p += 8;
+            if (auto e = d.message.find('"', p); e != std::string::npos) {
+                mod_path = d.message.substr(p, e - p);
+            }
+        }
+        if (!mod_path.empty()) {
+            int insert_line = 1;
+            for (std::size_t i = 0; i < lines.size(); ++i) {
+                std::string_view l = lines[i];
+                while (!l.empty() && std::isspace(static_cast<unsigned char>(l.front()))) l.remove_prefix(1);
+                if (l.starts_with("package ")) {
+                    insert_line = static_cast<int>(i) + 2;
+                    break;
+                }
+            }
+            FixItEdit edit;
+            edit.title = std::format("Import missing module '{}' (cfire/MISSING-IMPORT)", mod_path);
+            edit.start_line = insert_line;
+            edit.start_col = 1;
+            edit.end_line = insert_line;
+            edit.end_col = 1;
+            edit.replacement = std::format("import \"{}\"\n", mod_path);
+            edit.is_preferred = true;
+            d.fixits.push_back(std::move(edit));
+        }
+        return;
+    }
+
     if (d.code == "cfire/INVALID-IMPORT") {
         std::string old_imp;
         std::string new_imp;
@@ -197,6 +243,37 @@ inline void synthesize_fixits_for_diagnostic(
                 return;
             }
         }
+    }
+
+    if (d.code == "cfire/DEPRECATED-API") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            auto try_replace_token = [&](std::string_view from_tok, std::string_view to_tok) -> bool {
+                if (auto pos = cur_ln.find(from_tok); pos != std::string::npos) {
+                    FixItEdit edit;
+                    edit.title = std::format("Replace '{}' with '{}' (cfire/DEPRECATED-API)", from_tok, to_tok);
+                    edit.start_line = d.line;
+                    edit.start_col = static_cast<int>(pos) + 1;
+                    edit.end_line = d.line;
+                    edit.end_col = static_cast<int>(pos + from_tok.size()) + 1;
+                    edit.replacement = std::string(to_tok);
+                    edit.is_preferred = true;
+                    d.fixits.push_back(std::move(edit));
+                    return true;
+                }
+                return false;
+            };
+            if (d.message.contains("'fs.read_all'")) {
+                if (try_replace_token("fs.read_all", "fs.read_bytes")) return;
+            } else if (d.message.contains("'fs.write_all'")) {
+                if (try_replace_token("fs.write_all", "fs.write_bytes")) return;
+            } else if (d.message.contains("'.read_str'")) {
+                if (try_replace_token(".read_str", ".read_text")) return;
+            } else if (d.message.contains("'.write_str'")) {
+                if (try_replace_token(".write_str", ".write_text")) return;
+            }
+        }
+        return;
     }
 
     if (d.code == "cfire/NULL-DEREF") {
@@ -627,6 +704,81 @@ inline auto apply_fixits(
     }
     json += "]}";
     return json;
+}
+
+[[nodiscard]] inline auto humanize_cpp_compiler_output(std::string_view raw_out) -> std::string {
+    std::string s(raw_out);
+    auto replace_all = [](std::string& str, std::string_view from, std::string_view to) {
+        if (from.empty()) return;
+        std::size_t pos = 0;
+        while ((pos = str.find(from, pos)) != std::string::npos) {
+            str.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    };
+
+    replace_all(s, "std::__1::", "std::");
+    replace_all(s, "std::__cxx11::", "std::");
+    replace_all(s, "std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "std::string");
+    replace_all(s, "std::basic_string<char>", "std::string");
+    replace_all(s, "std::basic_string_view<char, std::char_traits<char>>", "std::string_view");
+    replace_all(s, "std::basic_string_view<char>", "std::string_view");
+    replace_all(s, "std::string_view", "&str");
+    replace_all(s, "std::string", "str");
+    replace_all(s, "std::int64_t", "i64");
+    replace_all(s, "std::int32_t", "i32");
+    replace_all(s, "std::int16_t", "i16");
+    replace_all(s, "std::int8_t", "i8");
+    replace_all(s, "std::uint64_t", "u64");
+    replace_all(s, "std::uint32_t", "u32");
+    replace_all(s, "std::uint16_t", "u16");
+    replace_all(s, "std::uint8_t", "u8");
+    replace_all(s, "std::size_t", "usize");
+    replace_all(s, "std::byte", "byte");
+    replace_all(s, "no member named 'size' in", "no member '.len' in");
+    replace_all(s, "does not provide a subscript operator", "does not support indexing '[i]'");
+
+    // Iteratively rewrite C++ container templates from innermost to outermost
+    for (int pass = 0; pass < 6; ++pass) {
+        bool changed = false;
+        auto rewrite_unary_template = [&](std::string_view prefix, std::string_view open_rep, std::string_view close_rep) {
+            std::size_t pos = 0;
+            while ((pos = s.find(prefix, pos)) != std::string::npos) {
+                std::size_t inner_start = pos + prefix.size();
+                int depth = 1;
+                std::size_t i = inner_start;
+                std::size_t comma_pos = std::string::npos;
+                while (i < s.size() && depth > 0) {
+                    if (s[i] == '<') ++depth;
+                    else if (s[i] == '>') --depth;
+                    else if (s[i] == ',' && depth == 1 && comma_pos == std::string::npos) {
+                        comma_pos = i;
+                    }
+                    if (depth > 0) ++i;
+                }
+                if (i < s.size() && depth == 0) {
+                    std::size_t inner_end = (comma_pos != std::string::npos) ? comma_pos : i;
+                    std::string inner = s.substr(inner_start, inner_end - inner_start);
+                    while (!inner.empty() && inner.back() == ' ') inner.pop_back();
+                    std::string rep = std::string(open_rep) + inner + std::string(close_rep);
+                    s.replace(pos, i - pos + 1, rep);
+                    changed = true;
+                } else {
+                    pos += prefix.size();
+                }
+            }
+        };
+        rewrite_unary_template("std::vector<", "[]", "");
+        rewrite_unary_template("std::span<const ", "&[]", "");
+        rewrite_unary_template("std::span<", "&mut []", "");
+        rewrite_unary_template("std::optional<", "", "?");
+        rewrite_unary_template("std::expected<", "", "!");
+        rewrite_unary_template("std::unique_ptr<", "own[", "]");
+        rewrite_unary_template("std::shared_ptr<", "shared[", "]");
+        if (!changed) break;
+    }
+
+    return s;
 }
 
 } // namespace cfire::diag

@@ -280,7 +280,6 @@ struct LocalBindingInfo {
     }
     if (const auto* call = std::get_if<CallExpr>(&e->node)) {
         if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
-            if (cid->name == "readln") return "str?";
             if (cid->name == "[]byte" || cid->name == "[]u8" || cid->name == "str" ||
                 cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" ||
                 cid->name == "u8" || cid->name == "byte" || cid->name == "u16" || cid->name == "u32" ||
@@ -321,6 +320,10 @@ struct LocalBindingInfo {
                                     }
                                     if (ret == "TcpListener!") return "net.TcpListener!";
                                     if (ret == "TcpConn!") return "net.TcpConn!";
+                                    if (ret == "File") return "fs.File";
+                                    if (ret == "File!") return "fs.File!";
+                                    if (ret == "(File, File)!") return "(fs.File, fs.File)!";
+                                    if (ret == "(TcpConn, TcpConn)!") return "(net.TcpConn, net.TcpConn)!";
                                     if (ret == "Conn!") return "sqlite.Conn!";
                                     if (ret == "Session!") return "ssh.Session!";
                                     if (ret == "Channel!") return "ssh.Channel!";
@@ -360,9 +363,14 @@ struct LocalBindingInfo {
                         if (mem->field == "port") return "u16";
                         if (mem->field == "accept") return "net.TcpConn!";
                     }
-                    if (rtype == "net.TcpConn" || rtype == "TcpConn") {
-                        if (mem->field == "write") return "usize!";
-                        if (mem->field == "read_str") return "str!";
+                    if (rtype == "net.TcpConn" || rtype == "TcpConn" || rtype == "fs.File" || rtype == "File") {
+                        if (mem->field == "write_bytes" || mem->field == "write_text" || mem->field == "read_into") return "usize!";
+                        if (mem->field == "read_bytes" || mem->field == "read_exact" || mem->field == "read_bytes_until") return "[]byte!";
+                        if (mem->field == "read_text" || mem->field == "read_text_until") return "str!";
+                        if (mem->field == "read_line") return "str?";
+                        if (mem->field == "read_lines") return "[]str!";
+                        if (mem->field == "is_open" || mem->field == "is_tty" || mem->field == "poll") return "bool";
+                        if (mem->field == "fd") return "i32";
                     }
                     if (rtype.starts_with("sync.Channel[") || rtype.starts_with("Channel[")) {
                         auto b1 = rtype.find('[');
@@ -392,7 +400,9 @@ struct LocalBindingInfo {
                         return "void";
                     }
                     if (rtype == "ssh.Session" || rtype == "Session") {
-                        if (mem->field == "host_key_fingerprint" || mem->field == "sftp_read_all") return (mem->field == "sftp_read_all") ? "str!" : "str";
+                        if (mem->field == "host_key_fingerprint") return "str";
+                        if (mem->field == "sftp_read_text") return "str!";
+                        if (mem->field == "sftp_read_bytes") return "[]byte!";
                         if (mem->field == "is_known_host") return "bool";
                         if (mem->field == "exec") return "ssh.ExecResult!";
                         if (mem->field == "open_pty" || mem->field == "open_forward") return "ssh.Channel!";
@@ -401,8 +411,9 @@ struct LocalBindingInfo {
                         return "void!";
                     }
                     if (rtype == "ssh.Channel" || rtype == "Channel") {
-                        if (mem->field == "read") return "str!";
-                        if (mem->field == "write") return "usize!";
+                        if (mem->field == "read_text") return "str!";
+                        if (mem->field == "read_bytes") return "[]byte!";
+                        if (mem->field == "write_text" || mem->field == "write_bytes") return "usize!";
                         if (mem->field == "is_eof") return "bool";
                         if (mem->field == "resize_pty") return "void!";
                         return "void";

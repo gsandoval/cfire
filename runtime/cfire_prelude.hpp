@@ -1,5 +1,7 @@
 #pragma once
 // cfire_prelude.hpp — Zero-overhead C++23 Runtime Prelude for cfire (.cf)
+// CFIRE_RUNTIME_VERSION: 0.10.0
+// CFIRE_RUNTIME_ARCHIVE_SHA: $Format:%h$
 
 #include <algorithm>
 #include <array>
@@ -42,7 +44,9 @@
 #endif
 #if !defined(_WIN32)
 #include <unistd.h>
+#include <fcntl.h>
 #if !defined(__EMSCRIPTEN__)
+#include <poll.h>
 #include <termios.h>
 #endif
 #else
@@ -797,6 +801,126 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
     return out;
 }
 
+[[nodiscard]] inline auto fd_read_exact(
+    int fd,
+    std::size_t exact_bytes
+) -> std::expected<std::vector<std::byte>, Error> {
+    if (fd < 0) return make_error("invalid file descriptor");
+    std::vector<std::byte> buf(exact_bytes);
+    std::size_t total = 0;
+    while (total < exact_bytes) {
+        auto n = fd_read(fd, std::span<std::byte>(buf.data() + total, exact_bytes - total));
+        if (!n) return std::unexpected(n.error());
+        if (*n == 0) {
+            return make_error(std::format("unexpected EOF in read_exact (expected {} bytes, got {})", exact_bytes, total));
+        }
+        total += *n;
+    }
+    return buf;
+}
+
+[[nodiscard]] inline auto fd_read_until(
+    int fd,
+    std::byte delim,
+    std::size_t max_bytes = 65536
+) -> std::expected<std::vector<std::byte>, Error> {
+    if (fd < 0) return make_error("invalid file descriptor");
+    std::vector<std::byte> out;
+    std::byte ch{0};
+    while (out.size() < max_bytes) {
+        auto n = fd_read(fd, std::span<std::byte>(&ch, 1));
+        if (!n) return std::unexpected(n.error());
+        if (*n == 0) break;
+        out.push_back(ch);
+        if (ch == delim) break;
+    }
+    return out;
+}
+
+[[nodiscard]] inline auto fd_close(int fd) -> std::expected<void, Error> {
+    if (fd < 0) return make_error("cannot close negative file descriptor");
+#if defined(_WIN32)
+    SOCKET s = INVALID_SOCKET;
+    if (take_win32_socket_fd(fd, s)) {
+        if (::closesocket(s) != 0) {
+            return make_error(std::format("fd_close({}) closesocket failed: {}", fd, ::WSAGetLastError()));
+        }
+        return {};
+    }
+    if (::_close(fd) != 0) {
+        return make_error(std::format("fd_close({}) failed: {}", fd, std::strerror(errno)));
+    }
+    return {};
+#else
+    while (::close(fd) != 0) {
+        if (errno == EINTR) continue;
+        return make_error(std::format("fd_close({}) failed: {}", fd, std::strerror(errno)));
+    }
+    return {};
+#endif
+}
+
+[[nodiscard]] inline auto fd_is_tty(int fd) noexcept -> bool {
+#if defined(_WIN32)
+    return fd >= 0 && ::_isatty(fd) != 0;
+#else
+    return fd >= 0 && ::isatty(fd) != 0;
+#endif
+}
+
+[[nodiscard]] inline auto fd_poll(int fd, std::int64_t timeout_ms = 0) noexcept -> bool {
+    if (fd < 0) return false;
+#if defined(_WIN32)
+    SOCKET s = INVALID_SOCKET;
+    if (lookup_win32_socket_fd(fd, s)) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        timeval tv{};
+        timeval* tvp = nullptr;
+        if (timeout_ms >= 0) {
+            tv.tv_sec = static_cast<long>(timeout_ms / 1000);
+            tv.tv_usec = static_cast<long>((timeout_ms % 1000) * 1000);
+            tvp = &tv;
+        }
+        int rc = ::select(0, &rfds, nullptr, nullptr, tvp);
+        return rc > 0;
+    }
+    intptr_t osf = ::_get_osfhandle(fd);
+    if (osf == -1) return false;
+    HANDLE h = reinterpret_cast<HANDLE>(osf);
+    if (::GetFileType(h) == FILE_TYPE_PIPE) {
+        auto start = std::chrono::steady_clock::now();
+        while (true) {
+            DWORD avail = 0;
+            if (!::PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr)) {
+                return true; // Pipe broken / EOF -> readable
+            }
+            if (avail > 0) return true;
+            if (timeout_ms == 0) return false;
+            if (timeout_ms > 0) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start).count();
+                if (elapsed >= timeout_ms) return false;
+            }
+            ::Sleep(1);
+        }
+    }
+    DWORD wait_ms = timeout_ms < 0 ? INFINITE : static_cast<DWORD>(timeout_ms);
+    return ::WaitForSingleObject(h, wait_ms) == WAIT_OBJECT_0;
+#elif defined(__EMSCRIPTEN__)
+    (void)timeout_ms;
+    return true;
+#else
+    struct pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    int rc = 0;
+    while ((rc = ::poll(&pfd, 1, static_cast<int>(timeout_ms))) < 0 && errno == EINTR) {}
+    return rc > 0 && (pfd.revents & (POLLIN | POLLHUP)) != 0;
+#endif
+}
+
 [[nodiscard]] inline auto fd_read_line(
     int fd,
     std::size_t max_bytes = 1024ULL * 1024ULL
@@ -885,23 +1009,6 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 }
 
 } // namespace detail
-
-// --- Built-in Console Line Input (`readln`) ---
-[[nodiscard]] inline auto readln(std::string_view prompt = "") -> std::optional<std::string> {
-#if !defined(_WIN32)
-    if (!prompt.empty()) {
-        std::fflush(stdout);
-        (void)detail::fd_write_all(STDOUT_FILENO, std::as_bytes(std::span(prompt.data(), prompt.size())));
-    }
-    return detail::fd_read_line(STDIN_FILENO);
-#else
-    if (!prompt.empty()) {
-        std::fflush(stdout);
-        (void)detail::fd_write_all(1, std::as_bytes(std::span(prompt.data(), prompt.size())));
-    }
-    return detail::fd_read_line(0);
-#endif
-}
 
 // --- High-Performance Zero-Allocation Exception-Free Integer Parsing (<charconv>) ---
 namespace detail {
@@ -1290,42 +1397,55 @@ void run_scope(std::size_t workers, F&& body) {
 
 template <typename E>
 decltype(auto) unwrap_val(E&& exp) {
-    if constexpr (std::is_void_v<typename std::decay_t<E>::value_type>) {
-        if (!exp.has_value()) {
-            std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
-            std::abort();
+    if constexpr (requires { exp.has_value(); }) {
+        if constexpr (std::is_void_v<typename std::decay_t<E>::value_type>) {
+            if (!exp.has_value()) {
+                std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
+                std::abort();
+            }
+            return;
+        } else {
+            if (!exp.has_value()) {
+                std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
+                std::abort();
+            }
+            return *std::forward<E>(exp);
         }
-        return;
     } else {
-        if (!exp.has_value()) {
-            std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
-            std::abort();
-        }
-        return *std::forward<E>(exp);
+        return std::forward<E>(exp);
     }
 }
 
 template <typename Exp>
 auto unwrap_or_default(Exp&& exp) {
-    using V = typename std::decay_t<Exp>::value_type;
-    if constexpr (std::is_void_v<V>) {
-        (void)exp;
-        return;
+    if constexpr (requires { exp.has_value(); }) {
+        using V = typename std::decay_t<Exp>::value_type;
+        if constexpr (std::is_void_v<V>) {
+            (void)exp;
+            return;
+        } else {
+            if (exp.has_value()) return std::move(*exp);
+            return V{};
+        }
     } else {
-        if (exp.has_value()) return std::move(*exp);
-        return V{};
+        return std::forward<Exp>(exp);
     }
 }
 
 template <typename Exp, typename U>
 auto unwrap_or(Exp&& exp, U&& fallback) {
-    using V = typename std::decay_t<Exp>::value_type;
-    if constexpr (std::is_void_v<V>) {
-        (void)exp;
-        return std::forward<U>(fallback);
+    if constexpr (requires { exp.has_value(); }) {
+        using V = typename std::decay_t<Exp>::value_type;
+        if constexpr (std::is_void_v<V>) {
+            (void)exp;
+            return std::forward<U>(fallback);
+        } else {
+            if (exp.has_value()) return std::move(*exp);
+            return static_cast<V>(std::forward<U>(fallback));
+        }
     } else {
-        if (exp.has_value()) return std::move(*exp);
-        return static_cast<V>(std::forward<U>(fallback));
+        (void)fallback;
+        return std::forward<Exp>(exp);
     }
 }
 
@@ -1488,7 +1608,6 @@ template <typename T>
 [[nodiscard]] inline auto str(const T& val) -> std::string {
     return cfire::str_ctor(val);
 }
-using cfire::readln;
 using cfire::i8;
 using cfire::i16;
 using cfire::i32;

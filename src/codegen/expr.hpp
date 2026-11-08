@@ -126,6 +126,9 @@ namespace cfire::frontend {
                     return ex.field;
                 }
                 if (is_core_ns_ident(id->name)) {
+                    if (id->name == "os" && (ex.field == "stdin" || ex.field == "stdout" || ex.field == "stderr")) {
+                        return std::format("cfire::os::{}_file", ex.field);
+                    }
                     return std::format("cfire::{}::{}", id->name, ex.field);
                 }
                 if (!is_ident_in_scope(id->name)) {
@@ -746,7 +749,7 @@ namespace cfire::frontend {
             }
         } else if (const auto* mem = std::get_if<MemberExpr>(&c->callee->node)) {
             if (mem->field == "stringify" || mem->field == "encode" || mem->field == "getenv" ||
-                mem->field == "read_str" || mem->field == "trim" || mem->field == "to_lower" ||
+                mem->field == "read_text" || mem->field == "read_text_until" || mem->field == "trim" || mem->field == "to_lower" ||
                 mem->field == "to_upper" || mem->field == "replace" || mem->field == "join") {
                 return "std::string";
             }

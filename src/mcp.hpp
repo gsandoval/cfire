@@ -153,7 +153,7 @@ inline auto parse_struct<cfire::mcp::TestInput>(simdjson::ondemand::object obj) 
 namespace cfire::mcp {
 
 [[nodiscard]] inline auto build_compiler_mcp_server(const std::filesystem::path& runtime_dir) -> cfire::ai::McpServer {
-    auto srv = cfire::ai::make_mcp_server("cfire-compiler", "0.2.0");
+    auto srv = cfire::ai::make_mcp_server("cfire-compiler", std::string(cfire::version::kVersion));
 
     srv.register_tool<EmptyInput>(
         "cfire_stdlib_list",

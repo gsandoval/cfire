@@ -352,6 +352,18 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 writeln(std::format("auto [{}] = std::move(*{});", names, tmp));
                 return;
             }
+            if (const auto* or_ex = std::get_if<OrExpr>(&st.init->node); or_ex && !or_ex->handler_body.empty()) {
+                int id = ++try_count_;
+                std::string tmp = std::format("_res_{}", id);
+                writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
+                writeln(std::format("if (!{}.has_value()) {{", tmp));
+                ++indent_;
+                emit_or_handler_body(*or_ex, tmp, in_main);
+                --indent_;
+                writeln("}");
+                writeln(std::format("auto [{}] = std::move(*{});", names, tmp));
+                return;
+            }
             writeln(std::format("auto [{}] = {};", names, emit_expr(st.init)));
         } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
             for (const auto& t : st.targets) {

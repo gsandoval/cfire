@@ -1,6 +1,7 @@
 #pragma once
 // src/buildsys.hpp — C++23 Unified Build System, Live CC/CMake Builder & Multi-Package Resolver
 
+#include "version.hpp"
 #include "build/toolchain_layout.hpp"
 #include "build/manifest.hpp"
 #include "build/deps.hpp"
@@ -738,6 +739,26 @@ namespace cfire::build {
     return "clang++";
 }
 
+[[nodiscard]] inline auto prelude_pch_path(
+    const std::filesystem::path& runtime_dir,
+    bool sanitize
+) -> std::filesystem::path {
+    std::error_code ec;
+    auto pch_dir = std::filesystem::temp_directory_path(ec) / "cfire_pch_cache";
+    auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
+    std::string cxx_bin = resolve_cxx_compiler();
+    std::string key = std::format("{}|{}|{}|{}",
+        (ec ? runtime_dir : can_rt).string(),
+        cxx_bin,
+        cfire::version::kVersion,
+        cfire::version::kGitSha);
+    std::size_t rt_hash = std::hash<std::string>{}(key);
+    std::string pch_name = std::format("cfire_prelude_{}_{:08x}.pch",
+        sanitize ? "san" : "opt",
+        static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
+    return pch_dir / pch_name;
+}
+
 [[nodiscard]] inline auto ensure_prelude_pch(
     const std::filesystem::path& runtime_dir,
     bool sanitize
@@ -746,15 +767,9 @@ namespace cfire::build {
     std::error_code ec;
     if (!std::filesystem::exists(prelude_hdr, ec)) return "";
 
-    auto pch_dir = std::filesystem::temp_directory_path() / "cfire_pch_cache";
-    std::filesystem::create_directories(pch_dir, ec);
-    auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
+    auto pch_path = prelude_pch_path(runtime_dir, sanitize);
+    std::filesystem::create_directories(pch_path.parent_path(), ec);
     std::string cxx_bin = resolve_cxx_compiler();
-    std::size_t rt_hash = std::hash<std::string>{}((ec ? runtime_dir : can_rt).string() + "|" + cxx_bin);
-    std::string pch_name = std::format("cfire_prelude_{}_{:08x}.pch",
-        sanitize ? "san" : "opt",
-        static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
-    auto pch_path = pch_dir / pch_name;
 
     bool needs_build = !std::filesystem::exists(pch_path, ec);
     if (!needs_build) {
@@ -828,7 +843,7 @@ namespace cfire::build {
     int rc = 0;
     auto output = bridge::run_command_capture(cmd, rc);
     if (rc != 0) {
-        return std::unexpected(output);
+        return std::unexpected(cfire::diag::humanize_cpp_compiler_output(output));
     }
     return {};
 }
@@ -1044,7 +1059,11 @@ namespace cfire::build {
     int exit_code = 0;
     std::string output = bridge::run_command_capture(cmd, exit_code);
     if (exit_code != 0) {
-        return std::unexpected(std::format("{} compilation failed:\n{}\nCommand: {}", compiler, output, cmd));
+        std::string clean_out = cfire::diag::humanize_cpp_compiler_output(output);
+        if (const char* verb = std::getenv("CFIRE_VERBOSE"); verb && std::string_view(verb) == "1") {
+            return std::unexpected(std::format("{} compilation failed:\n{}\nCommand: {}", compiler, clean_out, cmd));
+        }
+        return std::unexpected(std::format("compilation failed:\n{}", clean_out));
     }
 
     package_apple_app_bundles(cf_file, out_bin, plan);

@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src/cfire
-COPY Makefile ./
+COPY Makefile VERSION ./
 COPY src ./src
 COPY runtime ./runtime
 COPY examples ./examples

@@ -713,27 +713,38 @@ int main() {
         require(ch.try_recv().value_or(0) == 77, "CF-026: try_recv returns queued item");
         require(!ch.recv_timeout(5).has_value(), "CF-026: recv_timeout(5ms) on empty channel times out cleanly");
 
-        // CF-043: os::socketpair, os::pipe, os::fd_write, os::fd_read, os::fd_read_bytes, os::fd_close, and os::poll_fd
-        auto sp = cfire::os::socketpair();
-        require(sp.has_value(), "CF-043: os::socketpair()");
-        require(cfire::os::fd_write((*sp)[0], "X").value_or(0) == 1, "CF-043: os::fd_write on socketpair");
-        require(cfire::os::poll_fd((*sp)[1], 50), "CF-043: os::poll_fd detects readable socketpair");
-        auto sp_bytes = cfire::os::fd_read_bytes((*sp)[1], 16);
-        require(sp_bytes.has_value() && sp_bytes->size() == 1 && (*sp_bytes)[0] == std::byte{'X'},
-            "CF-043: os::fd_read_bytes on socketpair");
-        require(cfire::os::fd_close((*sp)[0]).has_value(), "CF-043: os::fd_close(sp[0])");
-        require(cfire::os::fd_close((*sp)[1]).has_value(), "CF-043: os::fd_close(sp[1])");
+        // CF-043 & CF-089: net::socketpair, os::pipe, os::stdin/stdout/stderr RAII handles, and fail-closed net::connect_tcp
+        auto sp = cfire::net::socketpair();
+        require(sp.has_value(), "CF-089: net::socketpair()");
+        auto& [sp_a, sp_b] = *sp;
+        require(sp_a.write_text("X\n").value_or(0) == 2, "CF-089: TcpConn::write_text on socketpair");
+        require(sp_b.poll(50), "CF-089: TcpConn::poll detects readable socketpair");
+        auto sp_line = sp_b.read_line();
+        require(sp_line.has_value() && *sp_line == "X", "CF-089: TcpConn::read_line on socketpair");
+        sp_a.close();
+        sp_b.close();
+        require(!sp_a.is_open() && !sp_b.is_open(), "CF-089: socketpair closed");
+        require(!sp_a.read_bytes(16).has_value(), "CF-089: reading from closed TcpConn returns error");
+        require(!cfire::net::connect_tcp("127.0.0.1", 59999).has_value(),
+            "CF-089: net::connect_tcp to non-listening loopback port fails closed with error");
 
         auto pp = cfire::os::pipe();
-        require(pp.has_value() && pp->size() == 2, "CF-043: os::pipe()");
-        require(cfire::os::fd_write((*pp)[1], "pipe-payload").value_or(0) == 12, "CF-043: os::fd_write on pipe");
-        require(cfire::os::fd_close((*pp)[1]).has_value(), "CF-043: os::fd_close(pipe write end)");
+        require(pp.has_value(), "CF-089: os::pipe() returns (fs::File, fs::File)");
+        auto& [pipe_r, pipe_w] = *pp;
+        require(pipe_w.write_text("pipe-payload").value_or(0) == 12, "CF-089: pipe writer write_text");
+        pipe_w.close();
         std::vector<std::byte> pipe_buf(32);
-        auto pipe_n = cfire::os::fd_read((*pp)[0], pipe_buf);
-        require(pipe_n.has_value() && *pipe_n == 12, "CF-043: os::fd_read on pipe");
+        auto pipe_n = pipe_r.read_into(pipe_buf);
+        require(pipe_n.has_value() && *pipe_n == 12, "CF-089: pipe reader read_into");
         pipe_buf.resize(*pipe_n);
-        require(cfire::to_str(pipe_buf) == "pipe-payload", "CF-043: pipe payload round-trip");
-        require(cfire::os::fd_close((*pp)[0]).has_value(), "CF-043: os::fd_close(pipe read end)");
+        require(cfire::to_str(pipe_buf) == "pipe-payload", "CF-089: pipe payload round-trip");
+        pipe_r.close();
+
+        {
+            auto out_f = cfire::os::stdout_file();
+            auto err_f = cfire::os::stderr_file();
+            require(out_f.fd() == 1 && err_f.fd() == 2, "CF-089: os::stdout_file/stderr_file non-owning FDs 1 and 2");
+        }
 
         // CF-002, CF-003, CF-028, CF-045, CF-046, CF-053: webui enhancements
         ScopedTempDir ui_tmp("cfire_webui_serve_dir");
@@ -813,20 +824,20 @@ int main() {
                 require(pty_res.has_value(), "CF-005: sess.open_pty succeeds");
                 if (pty_res) {
                     auto& pty = *pty_res;
-                    auto wn = pty.write("uptime\n");
-                    require(wn.has_value() && *wn == 7, "CF-005: pty.write");
+                    auto wn = pty.write_text("uptime\n");
+                    require(wn.has_value() && *wn == 7, "CF-005: pty.write_text");
                     require(pty.resize_pty(160, 50).has_value(), "CF-005: pty.resize_pty");
-                    auto out = pty.read(1024);
+                    auto out = pty.read_text(1024);
                     require(out.has_value() && out->contains("uptime") && out->contains("50;160t"),
-                        "CF-005: pty.read reflects interactive stream and resize");
+                        "CF-005: pty.read_text reflects interactive stream and resize");
                     pty.close();
                     require(pty.is_eof(), "CF-005: pty.is_eof after close");
                 }
 
                 require(sess.sftp_mkdir("/remote/etc").has_value(), "CF-005: sftp_mkdir");
-                require(sess.sftp_write_all("/remote/etc/app.conf", "port=8080\n").has_value(), "CF-005: sftp_write_all");
-                auto sftp_content = sess.sftp_read_all("/remote/etc/app.conf");
-                require(sftp_content.has_value() && *sftp_content == "port=8080\n", "CF-005: sftp_read_all round-trip");
+                require(sess.sftp_write_text("/remote/etc/app.conf", "port=8080\n").has_value(), "CF-005: sftp_write_text");
+                auto sftp_content = sess.sftp_read_text("/remote/etc/app.conf");
+                require(sftp_content.has_value() && *sftp_content == "port=8080\n", "CF-005: sftp_read_text round-trip");
                 auto dir_entries = sess.sftp_list_dir("/remote/etc");
                 require(dir_entries.has_value() && !dir_entries->empty() && (*dir_entries)[0].name == "app.conf",
                     "CF-005: sftp_list_dir");
@@ -846,9 +857,9 @@ int main() {
                 auto wf = cfire::fs::open(spath, cfire::fs::OpenMode::Write);
                 require(wf.has_value(), "UPSTREAM-02: fs::open for write");
                 require(wf->fd() >= 0, "UPSTREAM-02: File::fd() >= 0 while open");
-                require(!cfire::os::is_tty(wf->fd()), "UPSTREAM-02: regular file fd is not a tty");
-                require(wf->write("first line\n").has_value(), "UPSTREAM-02: File::write(1)");
-                require(wf->write("second line\n").has_value(), "UPSTREAM-02: File::write(2)");
+                require(!wf->is_tty(), "UPSTREAM-02: regular file fd is not a tty");
+                require(wf->write_text("first line\n").has_value(), "UPSTREAM-02: File::write_text(1)");
+                require(wf->write_text("second line\n").has_value(), "UPSTREAM-02: File::write_text(2)");
                 require(wf->flush().has_value(), "UPSTREAM-02: File::flush()");
             }
             {

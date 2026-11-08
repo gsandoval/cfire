@@ -68,13 +68,13 @@ type AuditLog struct {
     std::stringstream lsp_in;
     std::stringstream lsp_out;
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
-    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf","text":"package main\nimport \"core:fs\"\ntype Metric struct {\n    Service: str `json:\"service\"`\n    Count: i64\n}\nfn bump(mut x: i32) {\n    x += 1\n}\nfn main() {\n    m := Metric{Service: \"api\", Count: 1}\n    mut a: i32 = 5\n    bump(a)\n    _ := fs.read_all(m.Service)\n}\n"}}})");
+    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf","text":"package main\nimport \"core:fs\"\ntype Metric struct {\n    Service: str `json:\"service\"`\n    Count: i64\n}\nfn bump(mut x: i32) {\n    x += 1\n}\nfn main() {\n    m := Metric{Service: \"api\", Count: 1}\n    mut a: i32 = 5\n    bump(a)\n    _ := fs.read_bytes(m.Service)\n}\n"}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":14}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":12}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":12,"character":5}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":5,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"}}})");
-    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":6,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":24}}})");
-    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":7,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":23}}})");
+    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":6,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":26}}})");
+    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":7,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":25}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":8,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":12,"character":10}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":9,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"range":{"start":{"line":12,"character":9},"end":{"line":12,"character":10}}}})");
@@ -167,10 +167,10 @@ type AuditLog struct {
         "LSP initialize capabilities check");
     require(rpc_resp.contains("cfire/MUT-CALLSITE"),
         "LSP publishDiagnostics expected cfire/MUT-CALLSITE");
-    require(rpc_resp.contains("cfire::fs::read_all"),
-        "LSP hover on fs.read_all expected C++23 lowering");
-    require(rpc_resp.contains("\"label\":\"write_all\""),
-        "LSP completion on fs. expected write_all");
+    require(rpc_resp.contains("cfire::fs::read_bytes"),
+        "LSP hover on fs.read_bytes expected C++23 lowering");
+    require(rpc_resp.contains("\"label\":\"write_bytes\""),
+        "LSP completion on fs. expected write_bytes");
     require(rpc_resp.contains("\"line\":6"),
         "LSP go-to-definition on bump(a) expected line 6");
     require(rpc_resp.contains("Field `Metric.Service`") && rpc_resp.contains("std::string Service"),
@@ -184,7 +184,7 @@ type AuditLog struct {
     require(rpc_resp.contains("\"label\":\"x:\"") && rpc_resp.contains("\"kind\":2"),
         "LSP inlayHint expected parameter hint `x:` with kind:2 on bump(a) (IDE-EXT-01)");
     require(rpc_resp.contains("\"label\":\"path:\""),
-        "LSP inlayHint expected stdlib parameter hint `path:` on fs.read_all(m.Service) (IDE-EXT-01)");
+        "LSP inlayHint expected stdlib parameter hint `path:` on fs.read_bytes(m.Service) (IDE-EXT-01)");
     require(rpc_resp.contains("Insert 'mut ' at call site (cfire/MUT-CALLSITE)"),
         "LSP codeAction expected quickfix for cfire/MUT-CALLSITE");
     require(rpc_resp.contains("\"placeholder\":\"bump\""),
@@ -235,16 +235,16 @@ type AuditLog struct {
     require(rpc_resp.contains(R"({"jsonrpc":"2.0","id":31,"result":null})"),
         "LSP prepareRename on keyword fn expected null result (LSP-04)");
     require(rpc_resp.contains(R"("id":32)") &&
-            rpc_resp.contains(R"("label":"read_all")") &&
-            rpc_resp.contains(R"("insertText":"fs.read_all")") &&
+            rpc_resp.contains(R"("label":"read_bytes")") &&
+            rpc_resp.contains(R"("insertText":"fs.read_bytes")") &&
             rpc_resp.contains("core:fs (auto-import)") &&
             rpc_resp.contains(R"("additionalTextEdits":[)") &&
             rpc_resp.contains("import \\\"core:fs\\\""),
         "LSP auto-import completion for unimported stdlib module expected additionalTextEdits (LSP-05)");
     require(rpc_resp.contains(R"("id":33)") &&
-            rpc_resp.contains(R"("label":"read_all")") &&
-            rpc_resp.contains(R"("insertText":"fs.read_all")") &&
-            rpc_resp.contains("fs: fn read_all"),
+            rpc_resp.contains(R"("label":"read_bytes")") &&
+            rpc_resp.contains(R"("insertText":"fs.read_bytes")") &&
+            rpc_resp.contains("fs: fn read_bytes"),
         "LSP completion for already imported stdlib module expected no auto-import edit (LSP-05)");
     require(rpc_resp.contains(R"("id":34)") &&
             rpc_resp.contains("Fill missing match arms for 'Shape' (cfire/NON-EXHAUSTIVE-MATCH)") &&
@@ -495,10 +495,10 @@ fn main() {
 
         auto test_tmp_file = std::filesystem::temp_directory_path() / "cfire_io_test.bin";
         std::vector<std::byte> payload = {std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}};
-        auto w_res = cfire::fs::write_all(test_tmp_file, payload);
-        require(w_res.has_value(), "cfire::fs::write_all check");
-        auto r_res = cfire::fs::read_all(test_tmp_file);
-        require(r_res.has_value() && *r_res == payload, "cfire::fs::read_all check");
+        auto w_res = cfire::fs::write_bytes(test_tmp_file, payload);
+        require(w_res.has_value(), "cfire::fs::write_bytes check");
+        auto r_res = cfire::fs::read_bytes(test_tmp_file);
+        require(r_res.has_value() && *r_res == payload, "cfire::fs::read_bytes check");
         std::filesystem::remove(test_tmp_file);
 
         auto exec_res = cfire::os::exec_output("echo 'cfire_test'");
@@ -564,7 +564,7 @@ ok
         // Verify CLI --version, --help, and doctor --json
         run_cfire("--version")
             .assert_ok("cfire --version exits 0")
-            .assert_contains("cfire 0.9.5", "cfire --version reports version");
+            .assert_contains(std::format("cfire {}", cfire::version::kVersion), "cfire --version reports canonical kVersion");
         run_cfire("--help")
             .assert_ok("cfire --help exits 0")
             .assert_contains("doctor", "cfire --help lists doctor command")
@@ -572,7 +572,40 @@ ok
         run_cfire("doctor --json")
             .assert_ok("cfire doctor --json exits 0")
             .assert_contains("\"healthy\": true", "cfire doctor --json reports healthy")
+            .assert_contains("\"runtime_matched\": true", "cfire doctor --json reports runtime_matched")
             .assert_contains("\"runtime_dir\":", "cfire doctor --json reports runtime_dir");
+
+        // Verify runtime provenance skew detection (version and commit mismatch)
+        {
+            auto tmp_rt = std::filesystem::temp_directory_path() / "cfire_test_rt_prov";
+            std::error_code rt_ec;
+            std::filesystem::remove_all(tmp_rt, rt_ec);
+            std::filesystem::create_directories(tmp_rt, rt_ec);
+            {
+                std::ofstream ofs(tmp_rt / "cfire_prelude.hpp");
+                ofs << "#pragma once\n// CFIRE_RUNTIME_VERSION: " << cfire::version::kVersion << "\n";
+            }
+            auto prov_ok = cfire::version::read_runtime_provenance(tmp_rt);
+            require(prov_ok.matched, "read_runtime_provenance matches identical version");
+
+            {
+                std::ofstream ofs(tmp_rt / "VERSION");
+                ofs << "0.0.1 deadbeef\n";
+            }
+            auto prov_bad_ver = cfire::version::read_runtime_provenance(tmp_rt);
+            require(!prov_bad_ver.matched && prov_bad_ver.mismatch_reason.contains("v0.0.1"),
+                "read_runtime_provenance detects version mismatch in runtime/VERSION");
+
+            if (cfire::version::strip_dirty(cfire::version::kGitSha) != "dev") {
+                std::ofstream ofs(tmp_rt / "VERSION");
+                ofs << cfire::version::kVersion << " 0000000\n";
+                ofs.close();
+                auto prov_bad_sha = cfire::version::read_runtime_provenance(tmp_rt);
+                require(!prov_bad_sha.matched && prov_bad_sha.mismatch_reason.contains("0000000"),
+                    "read_runtime_provenance detects commit SHA mismatch in runtime/VERSION");
+            }
+            std::filesystem::remove_all(tmp_rt, rt_ec);
+        }
 
         // Verify review remediation invariants:
         // 1. No GNU statement expressions `({` or `std::exit(1)` in emitted showcase C++23
