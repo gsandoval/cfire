@@ -17,6 +17,13 @@ auto main(int argc, char** argv) -> int {
 
     if (sub == "--version" || sub == "-v" || sub == "version") {
         std::println("cfire {} ({}, ISO C++23 systems toolchain)", cfire::doctor::kCfireVersion, cfire::doctor::kCfireGitSha);
+        std::error_code ec;
+        if (!runtime_dir.empty() && std::filesystem::exists(runtime_dir / "cfire_prelude.hpp", ec)) {
+            auto prov = cfire::version::read_runtime_provenance(runtime_dir);
+            if (!prov.matched) {
+                std::println("warning: {} (at {})", prov.mismatch_reason, runtime_dir.string());
+            }
+        }
         return 0;
     }
 

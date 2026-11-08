@@ -159,10 +159,10 @@ public:
     Channel() = default;
     explicit Channel(std::shared_ptr<detail::ChannelState> st) : state_(std::move(st)) {}
 
-    [[nodiscard]] auto read(std::size_t max_bytes = 4096) -> std::expected<std::string, Error> {
-        if (!state_) return std::unexpected(Error("ssh.Channel.read: invalid channel"));
+    [[nodiscard]] auto read_text(std::size_t max_bytes = 4096) -> std::expected<std::string, Error> {
+        if (!state_) return std::unexpected(Error("ssh.Channel.read_text: invalid channel"));
         std::lock_guard<std::mutex> lock(state_->mtx);
-        if (!state_->open) return std::unexpected(Error("ssh.Channel.read: channel closed"));
+        if (!state_->open) return std::unexpected(Error("ssh.Channel.read_text: channel closed"));
 
         if (state_->is_mock) {
             if (state_->read_buffer.empty()) {
@@ -175,11 +175,11 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.read: null native channel"));
+        if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.read_text: null native channel"));
         std::string buf(max_bytes, '\0');
         int n = ssh_channel_read_nonblocking(state_->raw_channel, buf.data(), static_cast<uint32_t>(max_bytes), 0);
         if (n == SSH_ERROR) {
-            return std::unexpected(Error("ssh.Channel.read: ssh_channel_read_nonblocking failed"));
+            return std::unexpected(Error("ssh.Channel.read_text: ssh_channel_read_nonblocking failed"));
         }
         if (n <= 0) {
             if (ssh_channel_is_eof(state_->raw_channel)) state_->eof = true;
@@ -192,10 +192,17 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto write(std::string_view data) -> std::expected<std::size_t, Error> {
-        if (!state_) return std::unexpected(Error("ssh.Channel.write: invalid channel"));
+    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::byte>, Error> {
+        auto s = read_text(max_bytes);
+        if (!s) return std::unexpected(s.error());
+        auto sp = cfire::to_bytes(*s);
+        return std::vector<std::byte>(sp.begin(), sp.end());
+    }
+
+    [[nodiscard]] auto write_text(std::string_view data) -> std::expected<std::size_t, Error> {
+        if (!state_) return std::unexpected(Error("ssh.Channel.write_text: invalid channel"));
         std::lock_guard<std::mutex> lock(state_->mtx);
-        if (!state_->open) return std::unexpected(Error("ssh.Channel.write: channel closed"));
+        if (!state_->open) return std::unexpected(Error("ssh.Channel.write_text: channel closed"));
 
         if (state_->is_mock) {
             state_->read_buffer.append(data);
@@ -203,10 +210,10 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.write: null native channel"));
+        if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.write_text: null native channel"));
         int written = ssh_channel_write(state_->raw_channel, data.data(), static_cast<uint32_t>(data.size()));
         if (written == SSH_ERROR || written < 0) {
-            return std::unexpected(Error("ssh.Channel.write: ssh_channel_write failed"));
+            return std::unexpected(Error("ssh.Channel.write_text: ssh_channel_write failed"));
         }
         return static_cast<std::size_t>(written);
 #else
@@ -214,12 +221,12 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto write(std::span<const std::byte> data) -> std::expected<std::size_t, Error> {
-        return write(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, Error> {
+        return write_text(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
     }
 
-    [[nodiscard]] auto write(std::span<const std::uint8_t> data) -> std::expected<std::size_t, Error> {
-        return write(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+    [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, Error> {
+        return write_text(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
     }
 
     [[nodiscard]] auto resize_pty(std::int32_t cols, std::int32_t rows) -> std::expected<void, Error> {
@@ -563,11 +570,11 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto sftp_write_all(std::string_view remote_path, std::string_view data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
-        if (!state_) return std::unexpected(Error("ssh.Session.sftp_write_all: invalid session"));
+    [[nodiscard]] auto sftp_write_text(std::string_view remote_path, std::string_view data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
+        if (!state_) return std::unexpected(Error("ssh.Session.sftp_write_text: invalid session"));
         std::lock_guard<std::mutex> lock(state_->mtx);
         if (!state_->connected || !state_->authenticated) {
-            return std::unexpected(Error("ssh.Session.sftp_write_all: session not authenticated"));
+            return std::unexpected(Error("ssh.Session.sftp_write_text: session not authenticated"));
         }
 
         if (state_->is_mock) {
@@ -579,34 +586,34 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_write_all: failed to initialize SFTP subsystem"));
+        if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_write_text: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
         sftp_file f = sftp_open(state_->raw_sftp, rpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, static_cast<mode_t>(mode));
-        if (!f) return std::unexpected(Error(std::format("ssh.Session.sftp_write_all: failed to open '{}'", remote_path)));
+        if (!f) return std::unexpected(Error(std::format("ssh.Session.sftp_write_text: failed to open '{}'", remote_path)));
         ssize_t n = sftp_write(f, data.data(), data.size());
         sftp_close(f);
         if (n < 0 || static_cast<std::size_t>(n) != data.size()) {
-            return std::unexpected(Error("ssh.Session.sftp_write_all: incomplete SFTP write"));
+            return std::unexpected(Error("ssh.Session.sftp_write_text: incomplete SFTP write"));
         }
         return {};
 #else
-        return std::unexpected(Error("ssh.Session.sftp_write_all: libssh not compiled in"));
+        return std::unexpected(Error("ssh.Session.sftp_write_text: libssh not compiled in"));
 #endif
     }
 
-    [[nodiscard]] auto sftp_write_all(std::string_view remote_path, std::span<const std::byte> data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
-        return sftp_write_all(remote_path, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()), mode);
+    [[nodiscard]] auto sftp_write_bytes(std::string_view remote_path, std::span<const std::byte> data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
+        return sftp_write_text(remote_path, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()), mode);
     }
 
-    [[nodiscard]] auto sftp_write_all(std::string_view remote_path, std::span<const std::uint8_t> data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
-        return sftp_write_all(remote_path, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()), mode);
+    [[nodiscard]] auto sftp_write_bytes(std::string_view remote_path, std::span<const std::uint8_t> data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
+        return sftp_write_text(remote_path, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()), mode);
     }
 
-    [[nodiscard]] auto sftp_read_all(std::string_view remote_path) -> std::expected<std::string, Error> {
-        if (!state_) return std::unexpected(Error("ssh.Session.sftp_read_all: invalid session"));
+    [[nodiscard]] auto sftp_read_text(std::string_view remote_path) -> std::expected<std::string, Error> {
+        if (!state_) return std::unexpected(Error("ssh.Session.sftp_read_text: invalid session"));
         std::lock_guard<std::mutex> lock(state_->mtx);
         if (!state_->connected || !state_->authenticated) {
-            return std::unexpected(Error("ssh.Session.sftp_read_all: session not authenticated"));
+            return std::unexpected(Error("ssh.Session.sftp_read_text: session not authenticated"));
         }
 
         if (state_->is_mock) {
@@ -614,16 +621,16 @@ public:
             std::lock_guard<std::mutex> slock(srv.mtx);
             auto it = srv.sftp_files.find(std::string(remote_path));
             if (it == srv.sftp_files.end()) {
-                return std::unexpected(Error(std::format("ssh.Session.sftp_read_all: remote file '{}' not found", remote_path)));
+                return std::unexpected(Error(std::format("ssh.Session.sftp_read_text: remote file '{}' not found", remote_path)));
             }
             return it->second;
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_read_all: failed to initialize SFTP subsystem"));
+        if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_read_text: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
         sftp_file f = sftp_open(state_->raw_sftp, rpath.c_str(), O_RDONLY, 0);
-        if (!f) return std::unexpected(Error(std::format("ssh.Session.sftp_read_all: failed to open '{}'", remote_path)));
+        if (!f) return std::unexpected(Error(std::format("ssh.Session.sftp_read_text: failed to open '{}'", remote_path)));
         std::string out;
         char buf[8192];
         ssize_t n = 0;
@@ -631,11 +638,18 @@ public:
             out.append(buf, static_cast<std::size_t>(n));
         }
         sftp_close(f);
-        if (n < 0) return std::unexpected(Error("ssh.Session.sftp_read_all: read error"));
+        if (n < 0) return std::unexpected(Error("ssh.Session.sftp_read_text: read error"));
         return out;
 #else
-        return std::unexpected(Error("ssh.Session.sftp_read_all: libssh not compiled in"));
+        return std::unexpected(Error("ssh.Session.sftp_read_text: libssh not compiled in"));
 #endif
+    }
+
+    [[nodiscard]] auto sftp_read_bytes(std::string_view remote_path) -> std::expected<std::vector<std::byte>, Error> {
+        auto s = sftp_read_text(remote_path);
+        if (!s) return std::unexpected(s.error());
+        auto sp = cfire::to_bytes(*s);
+        return std::vector<std::byte>(sp.begin(), sp.end());
     }
 
     [[nodiscard]] auto sftp_list_dir(std::string_view remote_path) -> std::expected<std::vector<SftpEntry>, Error> {

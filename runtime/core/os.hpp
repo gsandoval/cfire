@@ -1,11 +1,13 @@
 #pragma once
 #include "../cfire_prelude.hpp"
+#include "fs.hpp"
 
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <expected>
+#include <tuple>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -176,83 +178,25 @@ struct ExecResult {
     [[nodiscard]] auto success() const noexcept -> bool { return exit_code == 0; }
 };
 
-// --- Safe File Descriptor Operations (`CF-024`, `CF-038`, `CF-043`, `CF-010`) ---
-inline constexpr std::int32_t STDIN = STDIN_FILENO;
-inline constexpr std::int32_t STDOUT = STDOUT_FILENO;
-inline constexpr std::int32_t STDERR = STDERR_FILENO;
+// --- Standard Streams & Safe Pipe Handles (`CF-089`) ---
+
+[[nodiscard]] inline auto stdin_file() noexcept -> cfire::fs::File {
+    return cfire::fs::File(STDIN_FILENO, false);
+}
+
+[[nodiscard]] inline auto stdout_file() noexcept -> cfire::fs::File {
+    return cfire::fs::File(STDOUT_FILENO, false);
+}
+
+[[nodiscard]] inline auto stderr_file() noexcept -> cfire::fs::File {
+    return cfire::fs::File(STDERR_FILENO, false);
+}
 
 [[nodiscard]] inline auto is_tty(std::int32_t fd = STDIN_FILENO) noexcept -> bool {
-#if defined(_WIN32)
-    return fd >= 0 && ::_isatty(static_cast<int>(fd)) != 0;
-#else
-    return fd >= 0 && ::isatty(fd) != 0;
-#endif
+    return cfire::detail::fd_is_tty(static_cast<int>(fd));
 }
 
-[[nodiscard]] inline auto fd_read(std::int32_t fd, std::span<std::byte> buf)
-    -> std::expected<std::size_t, cfire::Error>
-{
-    return cfire::detail::fd_read(static_cast<int>(fd), buf);
-}
-
-[[nodiscard]] inline auto fd_read(std::int32_t fd, std::span<std::uint8_t> buf)
-    -> std::expected<std::size_t, cfire::Error>
-{
-    return cfire::detail::fd_read(static_cast<int>(fd), std::as_writable_bytes(buf));
-}
-
-[[nodiscard]] inline auto fd_read_bytes(std::int32_t fd, std::size_t max_bytes = 4096)
-    -> std::expected<std::vector<std::byte>, cfire::Error>
-{
-    std::vector<std::byte> buf(max_bytes);
-    auto n = fd_read(fd, std::span<std::byte>(buf));
-    if (!n) return std::unexpected(n.error());
-    buf.resize(*n);
-    return buf;
-}
-
-[[nodiscard]] inline auto fd_write(std::int32_t fd, std::span<const std::byte> data)
-    -> std::expected<std::size_t, cfire::Error>
-{
-    return cfire::detail::fd_write_all(static_cast<int>(fd), data);
-}
-
-[[nodiscard]] inline auto fd_write(std::int32_t fd, std::span<const std::uint8_t> data)
-    -> std::expected<std::size_t, cfire::Error>
-{
-    return cfire::detail::fd_write_all(static_cast<int>(fd), std::as_bytes(data));
-}
-
-[[nodiscard]] inline auto fd_write(std::int32_t fd, std::string_view s)
-    -> std::expected<std::size_t, cfire::Error>
-{
-    return cfire::detail::fd_write_all(static_cast<int>(fd), std::as_bytes(std::span(s.data(), s.size())));
-}
-
-[[nodiscard]] inline auto fd_close(std::int32_t fd) -> std::expected<void, cfire::Error> {
-    if (fd < 0) return cfire::make_error("cannot close negative file descriptor");
-#if defined(_WIN32)
-    SOCKET s = INVALID_SOCKET;
-    if (cfire::detail::take_win32_socket_fd(static_cast<int>(fd), s)) {
-        if (::closesocket(s) != 0) {
-            return cfire::make_error(std::format("fd_close({}) closesocket failed: {}", fd, ::WSAGetLastError()));
-        }
-        return {};
-    }
-    if (::_close(static_cast<int>(fd)) != 0) {
-        return cfire::make_error(std::format("fd_close({}) failed: {}", fd, std::strerror(errno)));
-    }
-    return {};
-#else
-    while (::close(static_cast<int>(fd)) != 0) {
-        if (errno == EINTR) continue;
-        return cfire::make_error(std::format("fd_close({}) failed: {}", fd, std::strerror(errno)));
-    }
-    return {};
-#endif
-}
-
-[[nodiscard]] inline auto pipe() -> std::expected<std::vector<std::int32_t>, cfire::Error> {
+[[nodiscard]] inline auto pipe() -> std::expected<std::tuple<cfire::fs::File, cfire::fs::File>, cfire::Error> {
     int pfd[2]{-1, -1};
 #if defined(_WIN32)
     if (::_pipe(pfd, 4096, _O_BINARY | _O_NOINHERIT) != 0) {
@@ -265,32 +209,10 @@ inline constexpr std::int32_t STDERR = STDERR_FILENO;
     (void)::fcntl(pfd[0], F_SETFD, FD_CLOEXEC);
     (void)::fcntl(pfd[1], F_SETFD, FD_CLOEXEC);
 #endif
-    return std::vector<std::int32_t>{pfd[0], pfd[1]};
-}
-
-[[nodiscard]] inline auto read_stdin_bytes(std::size_t max_bytes = 64ULL * 1024ULL * 1024ULL)
-    -> std::expected<std::vector<std::byte>, cfire::Error>
-{
-    if (max_bytes == 0) {
-        max_bytes = 64ULL * 1024ULL * 1024ULL;
-    }
-    return cfire::detail::fd_read_all_bounded(STDIN_FILENO, max_bytes);
-}
-
-[[nodiscard]] inline auto read_stdin(std::size_t max_bytes = 64ULL * 1024ULL * 1024ULL)
-    -> std::expected<std::string, cfire::Error>
-{
-    auto b = read_stdin_bytes(max_bytes);
-    if (!b) return std::unexpected(b.error());
-    return std::string(reinterpret_cast<const char*>(b->data()), b->size());
-}
-
-[[nodiscard]] inline auto read_stdin_lines() -> std::expected<std::vector<std::string>, cfire::Error> {
-    std::vector<std::string> lines;
-    while (auto line = cfire::detail::fd_read_line(STDIN_FILENO)) {
-        lines.push_back(std::move(*line));
-    }
-    return lines;
+    return std::tuple<cfire::fs::File, cfire::fs::File>{
+        cfire::fs::File(pfd[0], true),
+        cfire::fs::File(pfd[1], true)
+    };
 }
 
 [[nodiscard]] inline auto command(std::string_view binary, std::span<const std::string> args = {})
@@ -644,76 +566,6 @@ private:
         return cfire::make_error("tcsetattr failed");
     }
     return RawTerminal(fd, orig);
-#endif
-}
-
-[[nodiscard]] inline auto poll_fd(std::int32_t fd, std::int64_t timeout_ms = 0) noexcept -> bool {
-    if (fd < 0) return false;
-#if defined(_WIN32)
-    SOCKET s = INVALID_SOCKET;
-    if (cfire::detail::lookup_win32_socket_fd(static_cast<int>(fd), s)) {
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(s, &rfds);
-        timeval tv{};
-        timeval* tvp = nullptr;
-        if (timeout_ms >= 0) {
-            tv.tv_sec = static_cast<long>(timeout_ms / 1000);
-            tv.tv_usec = static_cast<long>((timeout_ms % 1000) * 1000);
-            tvp = &tv;
-        }
-        int rc = ::select(0, &rfds, nullptr, nullptr, tvp);
-        return rc > 0;
-    }
-    intptr_t osf = ::_get_osfhandle(static_cast<int>(fd));
-    if (osf == -1) return false;
-    HANDLE h = reinterpret_cast<HANDLE>(osf);
-    if (::GetFileType(h) == FILE_TYPE_PIPE) {
-        auto start = std::chrono::steady_clock::now();
-        while (true) {
-            DWORD avail = 0;
-            if (!::PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr)) {
-                return true; // Pipe broken / EOF -> readable
-            }
-            if (avail > 0) return true;
-            if (timeout_ms == 0) return false;
-            if (timeout_ms > 0) {
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - start).count();
-                if (elapsed >= timeout_ms) return false;
-            }
-            ::Sleep(1);
-        }
-    }
-    DWORD wait_ms = timeout_ms < 0 ? INFINITE : static_cast<DWORD>(timeout_ms);
-    return ::WaitForSingleObject(h, wait_ms) == WAIT_OBJECT_0;
-#else
-    struct pollfd pfd{};
-    pfd.fd = fd;
-    pfd.events = POLLIN;
-    int rc = 0;
-    while ((rc = ::poll(&pfd, 1, static_cast<int>(timeout_ms))) < 0 && errno == EINTR) {}
-    return rc > 0 && (pfd.revents & (POLLIN | POLLHUP)) != 0;
-#endif
-}
-
-[[nodiscard]] inline auto socketpair() -> std::expected<std::vector<std::int32_t>, cfire::Error> {
-#if defined(_WIN32)
-    SOCKET pair[2]{INVALID_SOCKET, INVALID_SOCKET};
-    if (!cfire::detail::win32_create_socketpair(pair)) {
-        return cfire::make_error("win32 loopback socketpair failed");
-    }
-    int fd0 = cfire::detail::register_win32_socket_fd(pair[0]);
-    int fd1 = cfire::detail::register_win32_socket_fd(pair[1]);
-    return std::vector<std::int32_t>{fd0, fd1};
-#else
-    int sv[2]{-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
-        return cfire::make_error("socketpair failed");
-    }
-    (void)::fcntl(sv[0], F_SETFD, FD_CLOEXEC);
-    (void)::fcntl(sv[1], F_SETFD, FD_CLOEXEC);
-    return std::vector<std::int32_t>{sv[0], sv[1]};
 #endif
 }
 

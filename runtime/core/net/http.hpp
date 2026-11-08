@@ -396,7 +396,7 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
     std::size_t header_end = std::string::npos;
 
     for (int attempt = 0; attempt < 100; ++attempt) {
-        auto chunk = conn.read_str(4096);
+        auto chunk = conn.read_text(4096);
         if (chunk && !chunk->empty()) {
             raw.append(*chunk);
             header_end = raw.find("\r\n\r\n");
@@ -435,7 +435,7 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
 
     while (req.body.size() < content_len) {
         std::size_t to_read = std::min<std::size_t>(4096, content_len - req.body.size());
-        auto chunk = conn.read_str(to_read);
+        auto chunk = conn.read_text(to_read);
         if (!chunk || chunk->empty()) break;
         req.body.append(*chunk);
     }
@@ -683,12 +683,12 @@ namespace detail {
         req += body;
     }
 
-    auto wr = conn.write(req);
+    auto wr = conn.write_text(req);
     if (!wr) return std::unexpected(wr.error());
 
     std::string full_response;
     for (;;) {
-        auto chunk = conn.read_str(4096);
+        auto chunk = conn.read_text(4096);
         if (!chunk || chunk->empty()) break;
         full_response.append(*chunk);
     }
@@ -864,13 +864,13 @@ template <typename Callback>
     req += "\r\n";
     req += body;
 
-    if (auto wr = conn.write(req); !wr) return std::unexpected(wr.error());
+    if (auto wr = conn.write_text(req); !wr) return std::unexpected(wr.error());
 
     std::string raw_buf;
     std::size_t hdr_end = std::string::npos;
     std::size_t body_offset = 0;
     for (;;) {
-        auto chunk = conn.read_str(4096);
+        auto chunk = conn.read_text(4096);
         if (!chunk || chunk->empty()) break;
         raw_buf.append(*chunk);
         hdr_end = raw_buf.find("\r\n\r\n");
@@ -895,7 +895,7 @@ template <typename Callback>
 
     if (res.status_code >= 400) {
         for (;;) {
-            auto chunk = conn.read_str(4096);
+            auto chunk = conn.read_text(4096);
             if (!chunk || chunk->empty()) break;
             stream_buf.append(*chunk);
         }
@@ -969,7 +969,7 @@ template <typename Callback>
 
     process_raw();
     while (!stop_flag) {
-        auto chunk = conn.read_str(4096);
+        auto chunk = conn.read_text(4096);
         if (!chunk || chunk->empty()) break;
         stream_buf.append(*chunk);
         process_raw();
@@ -1075,14 +1075,14 @@ public:
                 for (const auto& mw : middlewares_) {
                     auto early = mw(req);
                     if (early.has_value()) {
-                        (void)conn.write(early->to_http_wire());
+                        (void)conn.write_text(early->to_http_wire());
                         return true;
                     }
                 }
                 auto ws_res = cfire::websocket::upgrade(req, conn);
                 if (!ws_res) {
                     Response err_resp = Response::bad_request(ws_res.error().message());
-                    (void)conn.write(err_resp.to_http_wire());
+                    (void)conn.write_text(err_resp.to_http_wire());
                     return true;
                 }
                 ws_route.handler(req, *ws_res);
@@ -1320,7 +1320,7 @@ private:
         auto req_res = read_http_request(conn);
         if (!req_res) {
             Response err_resp = Response::bad_request("400 Bad Request");
-            (void)conn.write(err_resp.to_http_wire());
+            (void)conn.write_text(err_resp.to_http_wire());
             return;
         }
         if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
@@ -1329,7 +1329,7 @@ private:
             }
         }
         Response resp = handler(*req_res);
-        (void)conn.write(resp.to_http_wire());
+        (void)conn.write_text(resp.to_http_wire());
     }
 
     cfire::net::TcpListener listener_;

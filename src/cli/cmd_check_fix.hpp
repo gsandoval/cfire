@@ -53,6 +53,7 @@ namespace cfire::cli {
 
                 // 1. Missing stdlib imports
                 auto import_fixes = cfire::diag::detect_missing_stdlib_imports(pres.ast, lines);
+                bool has_batch_import_fix = !import_fixes.empty();
                 for (auto& f : import_fixes) {
                     pass_edits.push_back(std::move(f));
                 }
@@ -68,6 +69,7 @@ namespace cfire::cli {
                 }
                 for (const auto& err : chk.errors) {
                     auto d = cfire::diag::parse_diagnostic_string(err, fpath.string(), "error", "cfire/SEMA-ERROR");
+                    if (has_batch_import_fix && d.code == "cfire/MISSING-IMPORT") continue;
                     cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
                     for (auto& fix : d.fixits) {
                         if (fix.is_preferred) pass_edits.push_back(std::move(fix));

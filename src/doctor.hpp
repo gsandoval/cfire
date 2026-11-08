@@ -1,6 +1,7 @@
 #pragma once
 // src/doctor.hpp — Environment Diagnostics (`cfire doctor`) & Dependency Bootstrapper (`cfire setup`)
 
+#include "version.hpp"
 #include "buildsys.hpp"
 #include "lsp/ide_setup.hpp"
 #include "../runtime/cfire_prelude.hpp"
@@ -18,12 +19,8 @@
 
 namespace cfire::doctor {
 
-inline constexpr std::string_view kCfireVersion = "0.9.5";
-#ifdef CFIRE_GIT_SHA
-inline constexpr std::string_view kCfireGitSha = CFIRE_GIT_SHA;
-#else
-inline constexpr std::string_view kCfireGitSha = "dev";
-#endif
+inline constexpr std::string_view kCfireVersion = cfire::version::kVersion;
+inline constexpr std::string_view kCfireGitSha = cfire::version::kGitSha;
 
 struct CheckItem {
     std::string category;
@@ -198,13 +195,24 @@ struct CheckItem {
             mode_label = "User Home";
         }
         if (std::filesystem::exists(prelude, ec) && std::filesystem::exists(stdlib_hdr, ec)) {
-            items.push_back({
-                "Core Toolchain",
-                "cfire Runtime Headers",
-                "ok",
-                std::format("{} [{}]", runtime_dir.string(), mode_label),
-                ""
-            });
+            auto prov = cfire::version::read_runtime_provenance(runtime_dir);
+            if (prov.matched) {
+                items.push_back({
+                    "Core Toolchain",
+                    "cfire Runtime Headers",
+                    "ok",
+                    std::format("{} [{}] v{} ({})", runtime_dir.string(), mode_label, prov.version, prov.commit),
+                    ""
+                });
+            } else {
+                items.push_back({
+                    "Core Toolchain",
+                    "cfire Runtime Headers",
+                    "warn",
+                    std::format("{} [{}] ({})", runtime_dir.string(), mode_label, prov.mismatch_reason),
+                    "Run `cfire install` or `make install` to synchronize runtime headers with the cfire binary"
+                });
+            }
         } else {
             items.push_back({
                 "Core Toolchain",
@@ -219,10 +227,8 @@ struct CheckItem {
     // Precompiled header (PCH) cache check
     {
         std::error_code ec;
-        auto pch_dir = std::filesystem::temp_directory_path(ec) / "cfire_pch_cache";
-        auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
-        std::size_t rt_hash = std::hash<std::string>{}((ec ? runtime_dir : can_rt).string());
-        auto pch_file = pch_dir / std::format("cfire_prelude_opt_{:08x}.pch", static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
+        auto pch_file = build::prelude_pch_path(runtime_dir, false);
+        auto pch_dir = pch_file.parent_path();
         if (std::filesystem::exists(pch_file, ec)) {
             items.push_back({
                 "Core Toolchain",
@@ -532,9 +538,13 @@ inline auto run_doctor(const std::filesystem::path& runtime_dir, bool json_mode)
     }
 
     if (json_mode) {
+        auto prov = cfire::version::read_runtime_provenance(runtime_dir);
         std::string out = "{\n";
         out += std::format("  \"version\": \"{}\",\n", kCfireVersion);
         out += std::format("  \"commit\": \"{}\",\n", kCfireGitSha);
+        out += std::format("  \"runtime_version\": \"{}\",\n", json::escape_string(prov.version));
+        out += std::format("  \"runtime_commit\": \"{}\",\n", json::escape_string(prov.commit));
+        out += std::format("  \"runtime_matched\": {},\n", prov.matched ? "true" : "false");
         out += std::format("  \"runtime_dir\": \"{}\",\n", json::escape_string(runtime_dir.string()));
         out += std::format("  \"ok_count\": {},\n", ok_count);
         out += std::format("  \"warn_count\": {},\n", warn_count);
@@ -814,6 +824,12 @@ inline auto run_install(
         if (ec) {
             std::println(stderr, "error copying runtime headers to '{}': {}", dest_rt.string(), ec.message());
             return 1;
+        }
+    }
+    {
+        std::ofstream ver_ofs(dest_rt / "VERSION", std::ios::trunc);
+        if (ver_ofs) {
+            ver_ofs << std::format("{} {}\n", kCfireVersion, kCfireGitSha);
         }
     }
 

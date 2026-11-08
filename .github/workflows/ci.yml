@@ -43,7 +43,9 @@ jobs:
             mingw-w64-clang-x86_64-sqlite3
 
       - name: Build cfire.exe on Windows
-        run: clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -Iruntime -Isrc src/main.cpp -o cfire.exe -lws2_32 -ladvapi32
+        run: |
+          GIT_SHA=$(git rev-parse --short=7 HEAD)
+          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"${GIT_SHA}\" -Iruntime -Isrc src/main.cpp -o cfire.exe -lws2_32 -ladvapi32
 
       - name: Verify cfire.exe Doctor, Formatting & Documentation Sync
         run: |

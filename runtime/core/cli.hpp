@@ -79,18 +79,15 @@ template <typename T>
     return out;
 }
 
-[[nodiscard]] inline auto prompt(std::string_view message) -> std::expected<std::string, cfire::Error> {
-    if (auto line = cfire::readln(message)) {
-        return std::move(*line);
+[[nodiscard]] inline auto prompt(std::string_view message = "") -> std::optional<std::string> {
+    if (!message.empty()) {
+        (void)cfire::detail::fd_write_all(2, std::as_bytes(std::span(message.data(), message.size())));
     }
-    return cfire::make_error("EOF while reading prompt");
+    return cfire::detail::fd_read_line(0);
 }
 
-[[nodiscard]] inline auto prompt_password(std::string_view message) -> std::expected<std::string, cfire::Error> {
-    if (auto line = cfire::detail::readln_noecho(message)) {
-        return std::move(*line);
-    }
-    return cfire::make_error("EOF while reading password prompt");
+[[nodiscard]] inline auto prompt_password(std::string_view message = "") -> std::optional<std::string> {
+    return cfire::detail::readln_noecho(message);
 }
 
 class FlagReader {

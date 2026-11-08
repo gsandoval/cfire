@@ -2,7 +2,6 @@
 #include "../cfire_prelude.hpp"
 
 #include "time.hpp"
-#include <iostream>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -76,14 +75,14 @@ namespace detail {
                 out += "\"";
             }
             out += "}\n";
-            std::cerr << out;
+            (void)cfire::detail::fd_write_all(2, std::as_bytes(std::span(out.data(), out.size())));
         } else {
             std::string out = std::format("{}[{}]\033[0m {} - {}", level_color(l), level_str(l), ts, msg);
             for (const auto& [k, v] : attrs) {
                 out += std::format(" {}={}", k, v);
             }
             out += "\n";
-            std::cerr << out;
+            (void)cfire::detail::fd_write_all(2, std::as_bytes(std::span(out.data(), out.size())));
         }
     }
 } // namespace detail

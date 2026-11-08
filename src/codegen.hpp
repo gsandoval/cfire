@@ -942,9 +942,6 @@ public:
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
-                if (cid->name == "readln") {
-                    return true;
-                }
                 if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
                     return it->second.return_type.is_optional;
                 }
@@ -953,7 +950,8 @@ public:
                     if (recv_id->name == "os" && mem->field == "getenv_opt") {
                         return true;
                     }
-                    if (recv_id->name == "cli" && mem->field == "try_parse") {
+                    if (recv_id->name == "cli" &&
+                        (mem->field == "try_parse" || mem->field == "prompt" || mem->field == "prompt_password")) {
                         return true;
                     }
                     if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
@@ -968,7 +966,7 @@ public:
                 if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
                     mem->field == "parse_f64" || mem->field == "parse_bool" ||
                     mem->field == "try_recv" || mem->field == "recv_timeout" ||
-                    mem->field == "getenv_opt") {
+                    mem->field == "getenv_opt" || mem->field == "read_line") {
                     return true;
                 }
             }
@@ -1159,8 +1157,11 @@ public:
             if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
             if (tr.name == "tls::ServerContext" || tr.name == "ServerContext") return "cfire::tls::ServerContext";
             if (tr.name == "tls::CertKeyPair" || tr.name == "CertKeyPair") return "cfire::tls::CertKeyPair";
-            if (tr.name == "net::TcpConn" || tr.name == "TcpConn") return "cfire::net::TcpConn";
-            if (tr.name == "net::TcpListener" || tr.name == "TcpListener") return "cfire::net::TcpListener";
+            if (tr.name == "fs::File" || tr.name == "fs.File" || (tr.name == "File" && used_core_.contains("fs"))) return "cfire::fs::File";
+            if (tr.name == "net::TcpConn" || tr.name == "net.TcpConn" || tr.name == "TcpConn") return "cfire::net::TcpConn";
+            if (tr.name == "net::TcpListener" || tr.name == "net.TcpListener" || tr.name == "TcpListener") return "cfire::net::TcpListener";
+            if (tr.name == "ssh::Channel" || tr.name == "ssh.Channel") return "cfire::ssh::Channel";
+            if (tr.name == "ssh::Session" || tr.name == "ssh.Session") return "cfire::ssh::Session";
             if (tr.name == "audio::Wave") return "cfire::audio::Wave";
             if (tr.name == "audio::Sound") return "cfire::audio::Sound";
             if (tr.name == "audio::Stream") return "cfire::audio::Stream";

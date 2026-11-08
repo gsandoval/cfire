@@ -488,6 +488,218 @@ fn main() {
             "hkdf_sha256 matches RFC 5869 Test Case 1 exact vector (SEC-02)");
     }
 
+    // Frontend Sema & Diagnostics for Fallible Results, Stdlib Catalog, String Interpolation & Humanized C++ Fallback
+    {
+        // 1. os.stdin().read_lines() returns []str! and works with try, .len, [i], and string interpolation
+        auto aoc_ast = cfire::frontend::parse_source("day1_01.cf", R"(package main
+import "core:os"
+fn main() -> void! {
+    lines := try os.stdin().read_lines()
+    for i in 0..lines.len {
+        println("message {lines[i]}")
+    }
+}
+)");
+        require(aoc_ast.has_value(), "parse day1_01.cf with os.stdin().read_lines()");
+        if (aoc_ast) {
+            auto checked = cfire::frontend::analyze(std::move(*aoc_ast));
+            require(checked.has_value(), "sema accepts os.stdin().read_lines() with try, .len, and [i]");
+        }
+
+        // 1b. CF-089: Sema rejects deprecated I/O APIs with cfire/DEPRECATED-API and synthesizes fix-its
+        require_sema_error(R"(package main
+fn main() {
+    ln := readln("> ") or ""
+    println("{}", ln)
+}
+)", "cfire/DEPRECATED-API", "dep_readln.cf");
+
+        require_sema_error(R"(package main
+import "core:fs"
+fn main() -> void! {
+    _ := try fs.read_all("a.bin")
+}
+)", "cfire/DEPRECATED-API", "dep_fs_read_all.cf");
+
+        require_sema_error(R"(package main
+import "core:fs"
+fn main() -> void! {
+    try fs.write_all("a.bin", []byte("x"))
+}
+)", "cfire/DEPRECATED-API", "dep_fs_write_all.cf");
+
+        require_sema_error(R"(package main
+import "core:os"
+fn main() {
+    lines := os.read_stdin_lines()
+    println("{}", lines.len)
+}
+)", "cfire/DEPRECATED-API", "dep_os_read_stdin_lines.cf");
+
+        require_sema_error(R"(package main
+import "core:os"
+fn main() -> void! {
+    _ := try os.socketpair()
+}
+)", "cfire/DEPRECATED-API", "dep_os_socketpair.cf");
+
+        require_sema_error(R"(package main
+import "core:fs"
+fn main() -> void! {
+    mut f := try fs.open("a.txt", fs.OpenMode::Write)
+    _ := try f.write_str("hello")
+}
+)", "cfire/DEPRECATED-API", "dep_file_write_str.cf");
+
+        require_sema_error(R"(package main
+import "core:net"
+fn main() -> void! {
+    (mut a, mut b) := try net.socketpair()
+    _ := try a.write("hi")
+    _ := try b.read_str(16)
+}
+)", "cfire/DEPRECATED-API", "dep_tcp_write_read_str.cf");
+
+        {
+            std::string dep_src = "package main\nimport \"core:fs\"\nfn main() -> void! {\n    _ := try fs.read_all(\"a.bin\")\n}\n";
+            auto lines = cfire::diag::split_lines(dep_src);
+            auto sd = cfire::diag::parse_diagnostic_string(
+                "dep.cf:4:14: error: 'fs.read_all' has been renamed to 'fs.read_bytes' (or 'fs.read_text' for UTF-8 strings) (cfire/DEPRECATED-API)",
+                "dep.cf");
+            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            require(!sd.fixits.empty() && sd.fixits[0].replacement == "fs.read_bytes",
+                "synthesizes 'fs.read_bytes' replacement fix-it for cfire/DEPRECATED-API on fs.read_all");
+        }
+
+        // 2. cfire/UNHANDLED-RESULT on un-unwrapped fallible user & stdlib calls + 'try ' fix-it synthesis
+        require_sema_error(R"(package main
+import "core:fs"
+fn main() {
+    content := fs.read_text("input.txt")
+    println("{}", content)
+}
+)", "cfire/UNHANDLED-RESULT", "unhandled_stdlib_result.cf");
+
+        require_sema_error(R"(package main
+fn compute() -> []str! {
+    return ["a", "b"]
+}
+fn main() {
+    lines := compute()
+    println("{}", lines.len)
+}
+)", "cfire/UNHANDLED-RESULT", "unhandled_user_result.cf");
+
+        {
+            std::string unhandled_src = "package main\nimport \"core:fs\"\nfn main() -> void! {\n    s := fs.read_text(\"a.txt\")\n}\n";
+            auto lines = cfire::diag::split_lines(unhandled_src);
+            auto sd = cfire::diag::parse_diagnostic_string(
+                "unhandled.cf:4:10: error: call to 'fs.read_text' returns fallible type 'str!' which must be handled with 'try' or 'or' (cfire/UNHANDLED-RESULT)",
+                "unhandled.cf");
+            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            require(!sd.fixits.empty() && sd.fixits[0].replacement == "try ",
+                "synthesizes 'try ' insertion fix-it for cfire/UNHANDLED-RESULT");
+        }
+
+        // 3. cfire/MISSING-IMPORT when calling stdlib module without import
+        require_sema_error(R"(package main
+fn main() {
+    args := os.args()
+    println("{}", args.len)
+}
+)", "cfire/MISSING-IMPORT", "missing_os_import.cf");
+
+        // 4. cfire/UNKNOWN-STDLIB-FN with edit-distance suggestion
+        {
+            auto typo_ast = cfire::frontend::parse_source("typo_stdlib.cf", R"(package main
+import "core:os"
+fn main() {
+    val := os.geten("PATH")
+    println("{}", val)
+}
+)");
+            require(typo_ast.has_value(), "parse typo_stdlib.cf");
+            if (typo_ast) {
+                auto checked = cfire::frontend::analyze(std::move(*typo_ast));
+                require(!checked.has_value() && checked.error().contains("cfire/UNKNOWN-STDLIB-FN") &&
+                        checked.error().contains("did you mean 'os.getenv'"),
+                        "cfire/UNKNOWN-STDLIB-FN suggests closest stdlib function 'os.getenv'");
+            }
+        }
+
+        // 5. cfire/ARITY-MISMATCH on stdlib calls
+        require_sema_error(R"(package main
+import "core:os"
+fn main() {
+    args := os.args("unexpected_arg")
+    println("{}", args.len)
+}
+)", "cfire/ARITY-MISMATCH", "stdlib_arity_mismatch.cf");
+
+        // 6. cfire/UNWRAPPED-OPTIONAL on .len and [i] access on optional T?
+        require_sema_error(R"(package main
+fn maybe_lines() -> []str? {
+    return none
+}
+fn main() {
+    lines := maybe_lines()
+    println("{}", lines.len)
+}
+)", "cfire/UNWRAPPED-OPTIONAL", "opt_len_unwrapped.cf");
+
+        require_sema_error(R"(package main
+fn maybe_lines() -> []str? {
+    return none
+}
+fn main() {
+    lines := maybe_lines()
+    println("{}", lines[0])
+}
+)", "cfire/UNWRAPPED-OPTIONAL", "opt_index_unwrapped.cf");
+
+        // 7. cfire/INVALID-MEMBER and cfire/INVALID-INDEX on scalar primitives
+        require_sema_error(R"(package main
+fn main() {
+    count := 42
+    println("{}", count.len)
+}
+)", "cfire/INVALID-MEMBER", "scalar_invalid_member.cf");
+
+        require_sema_error(R"(package main
+fn main() {
+    count := 42
+    println("{}", count[0])
+}
+)", "cfire/INVALID-INDEX", "scalar_invalid_index.cf");
+
+        // 8. cfire/INVALID-INTERPOLATION and cfire/UNDECLARED-IDENT inside string interpolation
+        require_sema_error(R"(package main
+fn main() {
+    println("bad {1 + }")
+}
+)", "cfire/INVALID-INTERPOLATION", "bad_interp_syntax.cf");
+
+        require_sema_error(R"(package main
+fn main() {
+    println("val={undeclared_var}")
+}
+)", "cfire/UNDECLARED-IDENT", "bad_interp_ident.cf");
+
+        // 9. Fallback C++ compiler output humanization (std::expected -> T!, std::vector<std::string> -> []str, .size -> .len)
+        {
+            std::string raw_clang_err =
+                "day1_01.cf:7:23: error: no member named 'size' in 'std::expected<std::vector<std::string>, cfire::Error>'\n"
+                "day1_01.cf:8:28: error: type 'std::expected<std::vector<std::string>, cfire::Error>' does not provide a subscript operator\n";
+            std::string humanized = cfire::diag::humanize_cpp_compiler_output(raw_clang_err);
+            require(humanized.contains("no member '.len' in '[]str!'"),
+                "humanize_cpp_compiler_output rewrites std::expected<std::vector<std::string>, cfire::Error> and .size to []str! and .len");
+            require(humanized.contains("type '[]str!' does not support indexing '[i]'"),
+                "humanize_cpp_compiler_output rewrites subscript operator diagnostic to cfire syntax");
+            require(!humanized.contains("std::expected") && !humanized.contains("std::vector"),
+                "humanize_cpp_compiler_output strips lowered C++ std:: types");
+        }
+    }
+
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");
 }
 

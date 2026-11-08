@@ -40,7 +40,7 @@ fn main() {
     mut file := try fs.open("service.log", fs.OpenMode::Append)
     defer file.close() // Closed deterministically on return
 
-    try file.write_str("[INFO] Worker subsystem initialized\n")
+    _ = try file.write_text("[INFO] Worker subsystem initialized\n")
     try file.flush()
     offset := try file.tell()
     println("Log stream offset: {} bytes", offset)
@@ -212,11 +212,11 @@ fn main() {
 
     // 2. Connect client TCP socket
     mut client := try net.connect_tcp("127.0.0.1", port)
-    _ := try client.write("PING\n")
+    _ := try client.write_text("PING\n")
 
     // 3. Accept incoming connection and read data
     mut conn := try ln.accept()
-    msg := try conn.read_str(max_bytes: 64)
+    msg := try conn.read_text(max_bytes: 64)
     println("Server received payload: {}", msg)
 })CF";
     }
@@ -710,8 +710,8 @@ fn main() {
 
     mut ch := try sess.open_pty("xterm-256color", 120, 36)
     defer ch.close()
-    _ = try ch.write("ls -la\n")
-    chunk := try ch.read(4096)
+    _ = try ch.write_text("ls -la\n")
+    chunk := try ch.read_text(4096)
     print(chunk)
 })CF";
     }

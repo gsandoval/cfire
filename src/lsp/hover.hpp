@@ -75,11 +75,6 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
                    "Formats and writes text to `stderr` without a trailing newline. Powered by ISO C++23 `std::print(stderr, ...)`.\n\n"
                    "**Example:**\n```cf\neprint(\"Warning: \")\n```";
         }
-        if (sym.name == "readln") {
-            return "### Built-in Function `readln(prompt)`\n```cf\nreadln(prompt: str = \"\") -> str?\n```\n"
-                   "Optionally prints `prompt` to `stdout` (flushed) and reads a single line from `stdin` without the trailing newline (`\\n` / `\\r\\n`), returning `none` on EOF.\n\n"
-                   "**Example:**\n```cf\nline := readln(\"> \") or { return }\n```";
-        }
         if (sym.name == "panic") {
             return "### Built-in Function `panic(msg)`\n```cf\npanic(msg: str) -> void\n```\n"
                    "Aborts the current process immediately with a formatted error message to `stderr`.\n\n"

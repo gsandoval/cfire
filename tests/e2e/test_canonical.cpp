@@ -664,9 +664,9 @@ fn main() {
     rg.GuiTextBox(rl.Rectangle{x: 10.0, y: 10.0, width: 120.0, height: 28.0}, &mut pilot, 32, true)
     s := SaveState{Pilot: pilot, Score: 42}
     raw := json.stringify(s)
-    r1 := fs.write_all("save.json", raw)
-    r2 := zstd.compress("hello ios")
-    r3 := sqlite.open("game.db")
+    _ = fs.write_text("save.json", raw)
+    _ = zstd.compress("hello ios")
+    _ = sqlite.open("game.db")
 }
 )";
     }

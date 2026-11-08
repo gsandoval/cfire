@@ -588,13 +588,13 @@ test "ssh e2e session and pty" {
 
     mut ch := try sess.open_pty("xterm-256color", 120, 36)
     defer ch.close()
-    _ = try ch.write("echo pty-ok\n")
+    _ = try ch.write_text("echo pty-ok\n")
     try ch.resize_pty(132, 42)
-    chunk := try ch.read(1024)
+    chunk := try ch.read_text(1024)
     assert(chunk.contains("pty-ok"))
 
-    try sess.sftp_write_all("/tmp/hello.txt", "sftp-data")
-    got := try sess.sftp_read_all("/tmp/hello.txt")
+    try sess.sftp_write_text("/tmp/hello.txt", "sftp-data")
+    got := try sess.sftp_read_text("/tmp/hello.txt")
     assert_eq(got, "sftp-data")
 }
 )CF");
@@ -602,13 +602,14 @@ test "ssh e2e session and pty" {
                     .assert_ok("CF-005: ext:net/ssh .cf compilation and execution passes")
                     .assert_contains("PASS: ssh e2e session and pty", "CF-005 test block passed");
 
-                // 4. LSP & Sema type inference for `[]byte(x)`, `[]u8(x)`, `str(x)`, `readln()`, and `OrExpr` on `T?`
+                // 4. LSP & Sema type inference for `[]byte(x)`, `[]u8(x)`, `str(x)`, `cli.prompt()`, and `OrExpr` on `T?`
                 auto inf_ast = cfire::frontend::parse_source("infer_test.cf", R"CF(package main
+import "core:cli"
 fn main() {
     b := []byte("abc")
     u := []u8("abc")
     s := str(b)
-    ln := readln("> ") or "fallback"
+    ln := cli.prompt("> ") or "fallback"
 }
 )CF");
                 require(inf_ast.has_value(), "UPSTREAM-03: parse infer_test.cf");
@@ -627,7 +628,7 @@ fn main() {
                 require(vd_s && cfire::lsp::detail::infer_expr_cf_type(vd_s->init, *inf_ast, ws_ctx, env_map) == "str",
                         "UPSTREAM-03: infer_expr_cf_type(str(b)) == str");
                 require(vd_ln && cfire::lsp::detail::infer_expr_cf_type(vd_ln->init, *inf_ast, ws_ctx, env_map) == "str",
-                        "UPSTREAM-03: infer_expr_cf_type(readln() or \"fallback\") unwraps str? to str");
+                        "UPSTREAM-03: infer_expr_cf_type(cli.prompt() or \"fallback\") unwraps str? to str");
 
                 // 5. Catalog, MCP, and LLM Reference Completeness Invariant Check
                 auto has_cat_fn = [](std::string_view mod_path, std::string_view fn_name) -> bool {
@@ -648,6 +649,7 @@ fn main() {
                         "UPSTREAM-03: core:crypto/hmac pbkdf2_sha256 in stdlib_catalog");
                 require(has_cat_fn("core:os", "args") && has_cat_fn("core:os", "exit") && has_cat_fn("core:os", "getenv_opt") &&
                         has_cat_fn("core:os", "term_size") && has_cat_fn("core:os", "make_raw") && has_cat_fn("core:os", "on_signal") &&
+                        has_cat_fn("core:os", "stdin") && has_cat_fn("core:os", "pipe") &&
                         !has_cat_fn("core:os", "read_line"),
                         "UPSTREAM-03: core:os functions in stdlib_catalog (and removed read_line absent)");
                 require(has_cat_fn("core:str", "parse_i64") && has_cat_fn("core:str", "parse_f64") && has_cat_fn("core:str", "parse_bool") && has_cat_fn("core:str", "find"),
@@ -662,13 +664,13 @@ fn main() {
                         "UPSTREAM-03: ext:webui async/binary/clipboard/secret/icon/menu/fonts in stdlib_catalog");
                 require(has_cat_fn("ext:net/ssh", "dial") && has_cat_fn("ext:net/ssh", "Session.auth_publickey_mem") &&
                         has_cat_fn("ext:net/ssh", "Session.open_pty") && has_cat_fn("ext:net/ssh", "Channel.resize_pty") &&
-                        has_cat_fn("ext:net/ssh", "Session.sftp_write_all") && has_cat_fn("ext:net/ssh", "Session.open_forward"),
+                        has_cat_fn("ext:net/ssh", "Session.sftp_write_text") && has_cat_fn("ext:net/ssh", "Session.open_forward"),
                         "CF-005: ext:net/ssh functions in stdlib_catalog");
 
                 std::string llm_ref = cfire::doc::generate_llm_reference();
-                require(llm_ref.contains("[]byte(s_or_slice)") && llm_ref.contains("readln(prompt: str = \"\") -> str?") &&
+                require(llm_ref.contains("[]byte(s_or_slice)") && llm_ref.contains("fn stdin() -> File") &&
                         llm_ref.contains("cfire/OPTIONAL-OR-ERR") && !llm_ref.contains("`bytes`, `[]byte`"),
-                        "UPSTREAM-03: generate_llm_reference includes canonical []byte(x), readln, and OPTIONAL-OR-ERR");
+                        "UPSTREAM-03: generate_llm_reference includes canonical []byte(x), os.stdin(), and OPTIONAL-OR-ERR");
 
                 // 6. Follow-up Upstream Review Fixes (CF-027 & E1..E7)
                 // E3: Reserved parameter-intent keywords `out`, `move`, and `mut` as variable names emit actionable diagnostic
@@ -1135,6 +1137,114 @@ fn main() -> void! {
     _ := try ai.ocr("receipt.png")
 }
 )CF", "cfire/DEPRECATED-API", "deprecated_ai_ocr.cf");
+
+                    // ── CF-089: Unified I/O Architecture (fs, os, net, cli, ssh) & Auto-Fix Verification ──
+                    {
+                        auto cf089_test = cf_tmp.file("cf089_io/io_suite_test.cf", R"CF(package main
+
+import "core:fs"
+import "core:net"
+import "core:os"
+
+fn can_connect_unlistening() -> bool {
+    _ := net.connect_tcp("127.0.0.1", 59997) or err {
+        return false
+    }
+    return true
+}
+
+test "CF-089 unified fs, os.pipe, net.socketpair, and fail-closed tcp" {
+    // 1. One-shot core:fs text & bytes symmetry + metadata helpers
+    try fs.write_text("io_t.txt", "alpha")
+    try fs.append_text("io_t.txt", "-beta")
+    assert(fs.is_file("io_t.txt"))
+    assert(!fs.is_dir("io_t.txt"))
+    assert_eq(try fs.file_size("io_t.txt"), u64(10))
+    assert_eq(try fs.read_text("io_t.txt"), "alpha-beta")
+
+    try fs.copy_file("io_t.txt", "io_t_copy.txt")
+    try fs.append_bytes("io_t_copy.txt", []byte("!"))
+    raw_b := try fs.read_bytes("io_t_copy.txt")
+    assert_eq(str(raw_b), "alpha-beta!")
+    try fs.remove("io_t.txt")
+    try fs.remove("io_t_copy.txt")
+
+    // 2. Streaming fs.File symmetry
+    mut f := try fs.open("stream_io.txt", fs.OpenMode::Write)
+    assert(!f.is_tty())
+    _ = try f.write_text("hdr:hello\nline2\n")
+    _ = try f.write_bytes([]byte("line3"))
+    try f.flush()
+    f.close()
+
+    mut rf := try fs.open("stream_io.txt", fs.OpenMode::Read)
+    hdr := try rf.read_text_until(":", 32)
+    assert_eq(hdr, "hdr:")
+    ex := try rf.read_exact(5)
+    assert_eq(str(ex), "hello")
+    _ = rf.read_line()
+    l2 := rf.read_line() or ""
+    assert_eq(l2, "line2")
+    l3 := rf.read_line() or ""
+    assert_eq(l3, "line3")
+    assert(rf.read_line() == none)
+    rf.close()
+    try fs.remove("stream_io.txt")
+
+    // 3. RAII os.pipe() returning (fs.File, fs.File)! and os.stdout()/stderr()
+    assert_eq(os.stdout().fd(), 1)
+    assert_eq(os.stderr().fd(), 2)
+    (mut pr, mut pw) := try os.pipe()
+    _ = try pw.write_text("pipe-line-1\npipe-line-2\n")
+    pw.close()
+    assert(pr.poll(20))
+    plines := try pr.read_lines()
+    pr.close()
+    assert_eq(plines.len(), 2)
+    assert_eq(plines[0], "pipe-line-1")
+    assert_eq(plines[1], "pipe-line-2")
+
+    // 4. RAII net.socketpair() returning (net.TcpConn, net.TcpConn)! & fail-closed connect_tcp
+    (mut sa, mut sb) := try net.socketpair()
+    _ = try sa.write_text("PING:42\n")
+    assert(sb.poll(20))
+    prefix := try sb.read_bytes_until(byte(58), 16)
+    assert_eq(str(prefix), "PING:")
+    rest := sb.read_line() or ""
+    assert_eq(rest, "42")
+    sa.close()
+    sb.close()
+    assert(!sa.is_open())
+
+    assert(!can_connect_unlistening())
+}
+)CF");
+                        run_cfire(std::format("test \"{}\"", cf089_test.string()))
+                            .assert_ok("CF-089: unified fs, os.pipe, net.socketpair, and fail-closed tcp pass");
+
+                        auto fix_io_cf = cf_tmp.file("cf089_io/fix_io.cf", R"CF(package main
+
+import "core:fs"
+import "core:net"
+
+fn demo(mut f: fs.File, mut c: net.TcpConn) -> void! {
+    _ := try fs.read_all("a.bin")
+    try fs.write_all("a.bin", []byte("x"))
+    _ := try f.write_str("hi")
+    _ := try c.read_str(64)
+}
+
+fn main() {}
+)CF");
+                        run_cfire(std::format("fix \"{}\"", fix_io_cf.string()))
+                            .assert_ok("CF-089: cfire fix rewrites deprecated I/O calls");
+                        auto fixed_io_src = cfire::fs::read_text(fix_io_cf).value_or("");
+                        require(fixed_io_src.contains("fs.read_bytes(\"a.bin\")") &&
+                                fixed_io_src.contains("fs.write_bytes(\"a.bin\"") &&
+                                fixed_io_src.contains("f.write_text(\"hi\")") &&
+                                fixed_io_src.contains("c.read_text(64)"),
+                                std::format("CF-089: expected auto-fixed I/O methods, got:\n{}", fixed_io_src));
+                    }
                 }
             }
         }

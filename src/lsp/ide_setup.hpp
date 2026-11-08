@@ -490,41 +490,41 @@ struct DetectedIde {
         }
         auto claude_plugin_dir = repo_root / ".claude-plugin";
         std::filesystem::create_directories(claude_plugin_dir, ec);
-        std::string claude_plugin = R"({
+        std::string claude_plugin = std::format(R"({{
   "name": "cfire",
-  "version": "1.3.0",
+  "version": "{}",
   "description": "Official cfire (.cf) Language Server (LSP) plugin for Claude Code.",
-  "lspServers": {
-    "cfire": {
+  "lspServers": {{
+    "cfire": {{
       "command": "cfire",
       "args": ["lsp"],
       "transport": "stdio",
-      "extensionToLanguage": {
+      "extensionToLanguage": {{
         ".cf": "cfire"
-      }
-    }
-  }
-}
-)";
+      }}
+    }}
+  }}
+}}
+)", cfire::version::kVersion);
         {
             std::ofstream p_ofs(claude_plugin_dir / "plugin.json", std::ios::trunc);
             p_ofs << claude_plugin;
         }
-        std::string claude_marketplace = R"({
+        std::string claude_marketplace = std::format(R"({{
   "name": "cfire",
-  "owner": {
+  "owner": {{
     "name": "Memo Sandoval"
-  },
+  }},
   "plugins": [
-    {
+    {{
       "name": "cfire",
       "source": "./",
       "description": "Official cfire (.cf) Language Server (LSP) plugin for Claude Code.",
-      "version": "1.3.0"
-    }
+      "version": "{}"
+    }}
   ]
-}
-)";
+}}
+)", cfire::version::kVersion);
         {
             std::ofstream mp_ofs(claude_plugin_dir / "marketplace.json", std::ios::trunc);
             mp_ofs << claude_marketplace;

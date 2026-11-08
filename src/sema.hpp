@@ -62,6 +62,376 @@ struct CheckedFile {
     return std::string(sv);
 }
 
+struct StdParamInfo {
+    std::string name{};
+    std::string intent{"in"};
+    std::string type_str{};
+    bool has_default = false;
+    bool is_variadic = false;
+};
+
+struct StdFnSigInfo {
+    std::string name{};
+    std::string module_import{};
+    std::string ns_alias{};
+    bool has_receiver = false;
+    std::string receiver_type{};
+    std::string receiver_intent{"in"};
+    std::vector<StdParamInfo> params{};
+    std::size_t min_args = 0;
+    std::size_t max_args = 0;
+    std::string return_type{};
+    bool is_fallible = false;
+    bool is_optional = false;
+    std::string unwrapped_return_type{};
+};
+
+struct StdlibCatalogIndex {
+    std::unordered_map<std::string, std::string> ns_to_import{}; // "os" -> "core:os"
+    std::unordered_map<std::string, std::unordered_map<std::string, StdFnSigInfo>> ns_fns{}; // "os" -> ("read_stdin_lines" -> sig)
+    std::unordered_map<std::string, std::unordered_set<std::string>> ns_types_and_consts{}; // "os" -> {"ExecResult", "STDIN", ...}
+    std::unordered_map<std::string, StdFnSigInfo> receiver_methods{}; // "fs.File.read_str" or "File.read_str" -> sig
+    std::unordered_map<std::string, StdFnSigInfo> unambiguous_methods{}; // "read_str" -> sig
+
+    [[nodiscard]] static auto parse_cf_sig(
+        std::string_view mod_import,
+        std::string_view ns,
+        std::string_view fn_name,
+        std::string_view cf_sig
+    ) -> std::optional<StdFnSigInfo> {
+        std::string_view s = cf_sig;
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
+        if (!s.starts_with("fn ")) return std::nullopt;
+        s.remove_prefix(3);
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
+
+        StdFnSigInfo info;
+        info.name = std::string(fn_name);
+        info.module_import = std::string(mod_import);
+        info.ns_alias = std::string(ns);
+
+        if (!s.empty() && s.front() == '(') {
+            auto rp = s.find(')');
+            if (rp != std::string_view::npos) {
+                std::string_view recv_sv = s.substr(1, rp - 1);
+                info.has_receiver = true;
+                if (recv_sv.starts_with("mut ")) {
+                    info.receiver_intent = "mut";
+                    recv_sv.remove_prefix(4);
+                }
+                if (auto col = recv_sv.find(':'); col != std::string_view::npos) {
+                    std::string rtype = trim_str(recv_sv.substr(col + 1));
+                    if (auto br = rtype.find('['); br != std::string::npos) rtype.erase(br);
+                    info.receiver_type = std::move(rtype);
+                }
+                s.remove_prefix(rp + 1);
+            }
+        }
+        if (auto dot = fn_name.find('.'); dot != std::string_view::npos) {
+            std::string_view prefix = fn_name.substr(0, dot);
+            if (prefix != "Response" && prefix != "Duration") {
+                info.has_receiver = true;
+                if (info.receiver_type.empty()) info.receiver_type = std::string(prefix);
+            }
+        }
+
+        // Find parameter list '(' ... ')'
+        int bracket_depth = 0;
+        std::size_t lp = std::string_view::npos;
+        for (std::size_t i = 0; i < s.size(); ++i) {
+            if (s[i] == '[') ++bracket_depth;
+            else if (s[i] == ']') --bracket_depth;
+            else if (s[i] == '(' && bracket_depth == 0) {
+                lp = i;
+                break;
+            }
+        }
+        if (lp == std::string_view::npos) return std::nullopt;
+
+        int paren_depth = 0;
+        std::size_t rp = std::string_view::npos;
+        for (std::size_t i = lp; i < s.size(); ++i) {
+            if (s[i] == '(') ++paren_depth;
+            else if (s[i] == ')') {
+                --paren_depth;
+                if (paren_depth == 0) {
+                    rp = i;
+                    break;
+                }
+            }
+        }
+        if (rp == std::string_view::npos) return std::nullopt;
+
+        std::string_view params_sv = s.substr(lp + 1, rp - lp - 1);
+        std::string_view tail_sv = s.substr(rp + 1);
+        if (auto arrow = tail_sv.find("->"); arrow != std::string_view::npos) {
+            info.return_type = trim_str(tail_sv.substr(arrow + 2));
+            if (info.return_type.ends_with('!')) {
+                info.is_fallible = true;
+                info.unwrapped_return_type = info.return_type.substr(0, info.return_type.size() - 1);
+            } else if (info.return_type.ends_with('?')) {
+                info.is_optional = true;
+                info.unwrapped_return_type = info.return_type.substr(0, info.return_type.size() - 1);
+            } else {
+                info.unwrapped_return_type = info.return_type;
+            }
+        }
+
+        // Split parameters at top-level commas
+        std::size_t p_start = 0;
+        int p_depth = 0;
+        bool in_q = false;
+        for (std::size_t i = 0; i <= params_sv.size(); ++i) {
+            if (i < params_sv.size()) {
+                char c = params_sv[i];
+                if (c == '"' && (i == 0 || params_sv[i - 1] != '\\')) in_q = !in_q;
+                else if (!in_q) {
+                    if (c == '(' || c == '[' || c == '{') ++p_depth;
+                    else if (c == ')' || c == ']' || c == '}') --p_depth;
+                }
+            }
+            if ((i == params_sv.size() || (params_sv[i] == ',' && p_depth == 0 && !in_q))) {
+                std::string p_tok = trim_str(params_sv.substr(p_start, i - p_start));
+                p_start = i + 1;
+                if (p_tok.empty()) continue;
+
+                StdParamInfo pinfo;
+                if (p_tok.contains("...")) {
+                    pinfo.is_variadic = true;
+                }
+                // Check for top-level '=' default
+                int d_depth = 0;
+                bool d_q = false;
+                std::size_t eq_pos = std::string::npos;
+                for (std::size_t k = 0; k < p_tok.size(); ++k) {
+                    char c = p_tok[k];
+                    if (c == '"' && (k == 0 || p_tok[k - 1] != '\\')) d_q = !d_q;
+                    else if (!d_q) {
+                        if (c == '(' || c == '[' || c == '{') ++d_depth;
+                        else if (c == ')' || c == ']' || c == '}') --d_depth;
+                        else if (c == '=' && d_depth == 0) {
+                            eq_pos = k;
+                            break;
+                        }
+                    }
+                }
+                if (eq_pos != std::string::npos) {
+                    pinfo.has_default = true;
+                    p_tok = trim_str(std::string_view(p_tok).substr(0, eq_pos));
+                }
+                if (auto col = p_tok.find(':'); col != std::string::npos) {
+                    std::string lhs = trim_str(std::string_view(p_tok).substr(0, col));
+                    pinfo.type_str = trim_str(std::string_view(p_tok).substr(col + 1));
+                    if (lhs.starts_with("mut ")) {
+                        pinfo.intent = "mut";
+                        pinfo.name = trim_str(std::string_view(lhs).substr(4));
+                    } else if (lhs.starts_with("move ")) {
+                        pinfo.intent = "move";
+                        pinfo.name = trim_str(std::string_view(lhs).substr(5));
+                    } else if (lhs.starts_with("out ")) {
+                        pinfo.intent = "out";
+                        pinfo.name = trim_str(std::string_view(lhs).substr(4));
+                    } else {
+                        if (lhs.starts_with("...")) lhs.erase(0, 3);
+                        pinfo.name = std::move(lhs);
+                    }
+                } else {
+                    pinfo.name = std::move(p_tok);
+                }
+                info.params.push_back(std::move(pinfo));
+            }
+        }
+
+        bool any_variadic = false;
+        std::size_t min_c = 0;
+        for (const auto& p : info.params) {
+            if (p.is_variadic) any_variadic = true;
+            else if (!p.has_default) ++min_c;
+        }
+        info.min_args = min_c;
+        info.max_args = any_variadic ? static_cast<std::size_t>(1024) : info.params.size();
+
+        // Runtime parity overrides:
+        if (ns == "cli" && fn_name == "parse") {
+            info.is_fallible = false;
+        }
+        if (ns == "ai" && fn_name == "Client.ask") {
+            info.min_args = 1;
+            info.max_args = 3;
+        }
+        if (ns == "ai" && fn_name == "Client.embed") {
+            info.min_args = 1;
+            info.max_args = 2;
+        }
+        return info;
+    }
+
+    void register_fn(std::string_view mod_import, std::string_view ns, std::string_view fn_name, std::string_view cf_sig) {
+        auto parsed = parse_cf_sig(mod_import, ns, fn_name, cf_sig);
+        if (!parsed) {
+            ns_types_and_consts[std::string(ns)].insert(std::string(fn_name));
+            return;
+        }
+        if (parsed->has_receiver) {
+            auto dot = fn_name.find('.');
+            std::string short_m = (dot != std::string_view::npos) ? std::string(fn_name.substr(dot + 1)) : std::string(fn_name);
+            receiver_methods[std::string(ns) + "." + std::string(fn_name)] = *parsed;
+            receiver_methods[std::string(fn_name)] = *parsed;
+            if (parsed->receiver_type == "Db") {
+                receiver_methods["sqlite.Database." + short_m] = *parsed;
+                receiver_methods["Database." + short_m] = *parsed;
+            }
+            unambiguous_methods.try_emplace(short_m, *parsed);
+            if (!parsed->receiver_type.empty()) {
+                ns_types_and_consts[std::string(ns)].insert(parsed->receiver_type);
+            }
+        } else {
+            ns_fns[std::string(ns)][std::string(fn_name)] = std::move(*parsed);
+        }
+    }
+
+    StdlibCatalogIndex() {
+        for (const auto& mod : cfire::doc::stdlib_catalog()) {
+            ns_to_import[mod.ns_alias] = mod.import_path;
+            for (const auto& fn : mod.functions) {
+                register_fn(mod.import_path, mod.ns_alias, fn.name, fn.cf_sig);
+            }
+        }
+        // Additional runtime functions, types, and constants present in runtime headers:
+        register_fn("core:os", "os", "exec", "fn exec(cmd: str) -> str!");
+        for (const char* t : {"ExecResult", "TermSize", "RawTerminal"}) {
+            ns_types_and_consts["os"].insert(t);
+        }
+        for (const char* t : {"OpenMode", "SeekWhence", "File"}) {
+            ns_types_and_consts["fs"].insert(t);
+        }
+        register_fn("core:crypto/aes", "aes", "decrypt_gcm_str", "fn decrypt_gcm_str(key: []byte, nonce: []byte, ct: []byte, tag: []byte, aad: []byte = []) -> str!");
+        ns_types_and_consts["aes"].insert("GcmResult");
+        register_fn("core:crypto/hmac", "hmac", "sha256_bytes", "fn sha256_bytes(key: []byte, data: []byte) -> []byte");
+        register_fn("core:crypto/sha256", "sha256", "hash_file_hex", "fn hash_file_hex(path: str) -> str!");
+        register_fn("core:math", "math", "sqrt_f64", "fn sqrt_f64(x: f64) -> f64");
+        for (const char* t : {"PI", "E"}) {
+            ns_types_and_consts["math"].insert(t);
+        }
+        register_fn("core:str", "str", "replace_all", "fn replace_all(s: str, from: str, to: str) -> str");
+        register_fn("core:str", "str", "bytes", "fn bytes(s: str) -> []byte");
+        register_fn("core:time", "time", "duration_nanos", "fn duration_nanos(n: i64) -> Duration");
+        register_fn("core:time", "time", "duration_micros", "fn duration_micros(us: i64) -> Duration");
+        register_fn("core:time", "time", "duration_minutes", "fn duration_minutes(m: i64) -> Duration");
+        register_fn("core:time", "time", "duration_hours", "fn duration_hours(h: i64) -> Duration");
+        register_fn("core:time", "time", "from_unix_seconds", "fn from_unix_seconds(sec: i64) -> Time");
+        for (const char* t : {"Duration", "Time"}) {
+            ns_types_and_consts["time"].insert(t);
+        }
+        register_fn("core:sync", "sync", "new_mutex", "fn new_mutex() -> Mutex");
+        if (auto it = ns_fns["sync"].find("make_channel"); it != ns_fns["sync"].end()) {
+            it->second.max_args = 1;
+        }
+        if (auto it = ns_fns["cli"].find("parse"); it != ns_fns["cli"].end()) {
+            it->second.min_args = 0;
+            it->second.max_args = 1;
+        }
+        if (auto it = ns_fns["cli"].find("try_parse"); it != ns_fns["cli"].end()) {
+            it->second.min_args = 0;
+            it->second.max_args = 1;
+        }
+        for (const char* t : {"Channel", "Mutex"}) {
+            ns_types_and_consts["sync"].insert(t);
+        }
+        register_fn("core:sort", "sort", "slice_by", "fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)");
+        register_fn("ext:ai", "ai", "create_zip", "fn create_zip(entries: map[str]str) -> []byte");
+        for (const char* t : {"Provider", "Client", "Agent", "Document", "Message", "Tool", "Chunk"}) {
+            ns_types_and_consts["ai"].insert(t);
+        }
+        register_fn("ext:webui", "webui", "clipboard_get", "fn clipboard_get() -> str");
+        register_fn("ext:webui", "webui", "clipboard_set", "fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)");
+        register_fn("ext:webui", "webui", "clipboard_set_secret", "fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)");
+        register_fn("ext:webui", "webui", "monospace_fonts", "fn monospace_fonts() -> []str");
+        ns_types_and_consts["webui"].insert("App");
+        for (const char* t : {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"}) {
+            ns_types_and_consts["audio"].insert(t);
+        }
+        for (const char* t : {"Level", "Format"}) {
+            ns_types_and_consts["log"].insert(t);
+        }
+        for (const char* t : {"Db", "Database", "Stmt", "Statement", "Row"}) {
+            ns_types_and_consts["sqlite"].insert(t);
+        }
+        for (const char* t : {"Request", "Response", "Router", "HttpServer", "Server", "SseEvent"}) {
+            ns_types_and_consts["http"].insert(t);
+        }
+        for (const char* t : {"Url"}) {
+            ns_types_and_consts["url"].insert(t);
+        }
+        for (const char* t : {"Conn", "Server", "Message"}) {
+            ns_types_and_consts["websocket"].insert(t);
+        }
+        for (const char* t : {"Session", "Channel", "ExecResult"}) {
+            ns_types_and_consts["ssh"].insert(t);
+        }
+        for (const char* t : {"CC", "CMake", "Make", "Git", "Archive", "Command", "Executable", "Library", "Step", "PkgConfig", "Link", "Include", "Tako"}) {
+            ns_types_and_consts["build"].insert(t);
+        }
+    }
+
+    [[nodiscard]] static auto instance() -> const StdlibCatalogIndex& {
+        static const StdlibCatalogIndex idx;
+        return idx;
+    }
+
+    [[nodiscard]] auto has_namespace(std::string_view ns) const -> bool {
+        return ns_to_import.contains(std::string(ns));
+    }
+
+    [[nodiscard]] auto find_ns_fn(std::string_view ns, std::string_view fn) const -> const StdFnSigInfo* {
+        if (auto it = ns_fns.find(std::string(ns)); it != ns_fns.end()) {
+            if (auto fit = it->second.find(std::string(fn)); fit != it->second.end()) {
+                return &fit->second;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] auto is_known_ns_member(std::string_view ns, std::string_view member) const -> bool {
+        if (find_ns_fn(ns, member) != nullptr) return true;
+        if (auto it = ns_types_and_consts.find(std::string(ns)); it != ns_types_and_consts.end()) {
+            if (it->second.contains(std::string(member))) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto edit_distance(std::string_view a, std::string_view b) -> std::size_t {
+        std::vector<std::size_t> dp(b.size() + 1);
+        for (std::size_t j = 0; j <= b.size(); ++j) dp[j] = j;
+        for (std::size_t i = 1; i <= a.size(); ++i) {
+            std::size_t prev = dp[0];
+            dp[0] = i;
+            for (std::size_t j = 1; j <= b.size(); ++j) {
+                std::size_t temp = dp[j];
+                std::size_t cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
+                dp[j] = std::min({dp[j] + 1, dp[j - 1] + 1, prev + cost});
+                prev = temp;
+            }
+        }
+        return dp[b.size()];
+    }
+
+    [[nodiscard]] auto suggest_closest_fn(std::string_view ns, std::string_view typo) const -> std::string {
+        auto it = ns_fns.find(std::string(ns));
+        if (it == ns_fns.end()) return "";
+        std::string best;
+        std::size_t best_dist = 4;
+        for (const auto& [fname, _] : it->second) {
+            std::size_t d = edit_distance(typo, fname);
+            if (d < best_dist) {
+                best_dist = d;
+                best = fname;
+            }
+        }
+        return best;
+    }
+};
+
 
 class SemaFnChecker {
 public:
@@ -72,10 +442,29 @@ public:
         int line = 1;
     };
 
+    [[nodiscard]] static auto is_scalar_primitive_type_name(std::string_view t) -> bool {
+        return t == "i8" || t == "i16" || t == "i32" || t == "i64" || t == "isize" || t == "int" ||
+               t == "u8" || t == "u16" || t == "u32" || t == "u64" || t == "usize" || t == "uint" ||
+               t == "byte" || t == "f32" || t == "f64" || t == "bool";
+    }
+
+    [[nodiscard]] static auto is_scalar_primitive_typeref(const TypeRef& t) -> bool {
+        return !t.is_slice && !t.is_array && !t.is_map && !t.is_ptr && !t.is_mut_ptr &&
+               t.smart_wrap.empty() && !t.is_tuple && !t.is_fn && !t.is_optional && !t.is_fallible &&
+               is_scalar_primitive_type_name(t.name);
+    }
+
     SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf,
                   std::vector<std::string>& warnings, std::vector<std::string>& errors, bool resilient = false)
-        : path_(path), pkg_name_(fn.package_name), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient)
+        : path_(path), pkg_name_(fn.package_name), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient),
+          fn_is_fallible_(fn.return_type.is_fallible || fn.name == "main" || fn.name.starts_with("__cfire_test_"))
     {
+        for (const auto& imp : cf_.ast.imports) {
+            if (imp.is_cpp) {
+                has_cpp_imports_ = true;
+                break;
+            }
+        }
         if (fn.receiver) {
             var_scope_depth_[fn.receiver->name] = 0;
             if (!fn.receiver->type.name.empty()) {
@@ -102,6 +491,9 @@ public:
             } else if (!p.type.name.empty()) {
                 var_types_[p.name] = p.type.name;
             }
+            if (is_scalar_primitive_typeref(p.type)) {
+                scalar_primitive_vars_.insert(p.name);
+            }
             if (p.intent == "move") {
                 move_params_.insert(p.name);
             }
@@ -125,6 +517,12 @@ public:
             }
             if (p.type.is_optional) {
                 optional_vars_.insert(p.name);
+            }
+            if (p.type.is_fallible) {
+                fallible_vars_.insert(p.name);
+            }
+            if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty()) {
+                raw_or_smart_ptr_vars_.insert(p.name);
             }
             if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty() || p.type.is_optional) {
                 ptr_or_smart_vars_.insert(p.name);
@@ -364,14 +762,29 @@ public:
             std::string_view tail = (slash == std::string::npos) ? std::string_view(imp.path) : std::string_view(imp.path).substr(slash + 1);
             if (tail == name) return true;
         }
+        for (const auto& fn : cf_.ast.functions) {
+            if (!fn.package_name.empty() && fn.package_name == name) return true;
+        }
+        for (const auto& st : cf_.ast.structs) {
+            if (!st.package_name.empty() && st.package_name == name) return true;
+        }
+        for (const auto& en : cf_.ast.enums) {
+            if (!en.package_name.empty() && en.package_name == name) return true;
+        }
+        for (const auto& gv : cf_.ast.global_vars) {
+            if (!gv.package_name.empty() && gv.package_name == name) return true;
+        }
         return false;
     }
 
     [[nodiscard]] static auto is_common_stdlib_method_sema(std::string_view name) -> bool {
-        return name == "open" || name == "close" || name == "fd" || name == "read" || name == "read_bytes" ||
-               name == "read_exact" || name == "read_str" || name == "read_line" ||
-               name == "read_all" || name == "write" ||
-               name == "write_str" || name == "write_bytes" || name == "flush" || name == "seek" ||
+        return name == "open" || name == "close" || name == "fd" || name == "is_open" || name == "is_tty" ||
+               name == "poll" || name == "read" || name == "read_into" || name == "read_bytes" ||
+               name == "read_exact" || name == "read_text" || name == "read_bytes_until" ||
+               name == "read_text_until" || name == "read_str" || name == "read_line" ||
+               name == "read_lines" || name == "read_all" || name == "write" ||
+               name == "write_text" || name == "write_str" || name == "write_bytes" ||
+               name == "flush" || name == "seek" ||
                name == "tell" || name == "size" || name == "len" || name == "empty" ||
                name == "clear" || name == "push" || name == "pop" || name == "get" || name == "set" ||
                name == "contains" || name == "keys" || name == "values" || name == "erase" ||
@@ -421,9 +834,6 @@ public:
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
-                if (cid->name == "readln") {
-                    return true;
-                }
                 if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
                     return it->second.return_type.is_optional && !it->second.return_type.is_fallible;
                 }
@@ -439,7 +849,8 @@ public:
                             mem->field == "parse_f64" || mem->field == "parse_bool")) {
                             return true;
                         }
-                        if (recv_id->name == "cli" && mem->field == "try_parse") {
+                        if (recv_id->name == "cli" &&
+                            (mem->field == "try_parse" || mem->field == "prompt" || mem->field == "prompt_password")) {
                             return true;
                         }
                         if (const auto* sig = resolve_member_call_sig(*mem)) {
@@ -451,7 +862,7 @@ public:
                 if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
                     mem->field == "parse_f64" || mem->field == "parse_bool" ||
                     mem->field == "try_recv" || mem->field == "recv_timeout" ||
-                    mem->field == "getenv_opt") {
+                    mem->field == "getenv_opt" || mem->field == "read_line") {
                     return true;
                 }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
@@ -500,7 +911,6 @@ public:
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
-                if (cid->name == "readln") return "str";
                 if (cid->name == "make" && call->type_args.size() == 1) {
                     if (!call->type_args[0].smart_wrap.empty() && call->type_args[0].elem_type) {
                         return call->type_args[0].elem_type->name;
@@ -538,12 +948,28 @@ public:
                     if (recv_id->name == "fs" && mem->field == "read_text") {
                         return "str";
                     }
-                    if ((recv_id->name == "fs" && mem->field == "read_all") ||
+                    if ((recv_id->name == "fs" && mem->field == "read_bytes") ||
                         (recv_id->name == "hex" && mem->field == "decode") ||
                         (recv_id->name == "base64" && mem->field == "decode") ||
                         (recv_id->name == "rand" && mem->field == "bytes") ||
                         (recv_id->name == "sodium" && (mem->field == "random_bytes" || mem->field == "argon2id" || mem->field == "blake2b" || mem->field == "derive_subkey" || mem->field == "xchacha20poly1305_encrypt" || mem->field == "xchacha20poly1305_decrypt"))) {
                         return "[]byte";
+                    }
+                    if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(recv_id->name, mem->field)) {
+                        if (std_sig->unwrapped_return_type == "[]byte") return "[]byte";
+                        if (!std_sig->unwrapped_return_type.empty() && std_sig->unwrapped_return_type != "void" &&
+                            !std_sig->unwrapped_return_type.starts_with('[') && !std_sig->unwrapped_return_type.starts_with('&') &&
+                            !std_sig->unwrapped_return_type.starts_with("map[") && !std_sig->unwrapped_return_type.starts_with("own[") &&
+                            !std_sig->unwrapped_return_type.starts_with("shared[") && !std_sig->unwrapped_return_type.starts_with("tuple[") &&
+                            !std_sig->unwrapped_return_type.starts_with('(') &&
+                            std_sig->unwrapped_return_type != "T") {
+                            return std_sig->unwrapped_return_type;
+                        }
+                    }
+                    if (!is_ident_in_scope_sema(recv_id->name)) {
+                        if (auto fit = cf_.fn_sigs.find(mem->field); fit != cf_.fn_sigs.end()) {
+                            return fit->second.return_type.name;
+                        }
                     }
                 }
                 if (mem->field == "bytes" && call->args.empty()) {
@@ -561,6 +987,21 @@ public:
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
                     if (sig->return_type.is_slice && sig->return_type.name == "byte") return "[]byte";
                     return sig->return_type.name;
+                }
+                if (mem->object) {
+                    std::string recv_t = infer_expr_type_name_sema(mem->object);
+                    if (!recv_t.empty()) {
+                        const auto& idx = StdlibCatalogIndex::instance();
+                        if (auto mit = idx.receiver_methods.find(recv_t + "." + mem->field); mit != idx.receiver_methods.end()) {
+                            return mit->second.unwrapped_return_type;
+                        }
+                        if (auto dcol = recv_t.find("::"); dcol != std::string::npos) {
+                            std::string norm_t = recv_t.substr(0, dcol) + "." + recv_t.substr(dcol + 2);
+                            if (auto mit = idx.receiver_methods.find(norm_t + "." + mem->field); mit != idx.receiver_methods.end()) {
+                                return mit->second.unwrapped_return_type;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -691,14 +1132,213 @@ public:
         return false;
     }
 
+    [[nodiscard]] static auto expr_start_loc(const ExprPtr& e) -> std::pair<int, int> {
+        if (!e) return {1, 1};
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (call->callee) return expr_start_loc(call->callee);
+        }
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (mem->object) return expr_start_loc(mem->object);
+        }
+        if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
+            if (idx->object) return expr_start_loc(idx->object);
+        }
+        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
+            if (sl->object) return expr_start_loc(sl->object);
+        }
+        if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            if (bin->left) return expr_start_loc(bin->left);
+        }
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->inner) return expr_start_loc(or_ex->inner);
+        }
+        return {e->line, e->col};
+    }
+
+    [[nodiscard]] static auto format_type_ref_sema(const TypeRef& t) -> std::string {
+        std::string s;
+        if (t.is_borrow) s += "&";
+        else if (t.is_mut_borrow) s += "&mut ";
+        else if (t.is_ptr) s += "*";
+        else if (t.is_mut_ptr) s += "*mut ";
+        if (t.is_slice) s += "[]";
+        else if (t.is_array) s += "[" + t.array_len + "]";
+        if (t.is_tuple) {
+            s += "(";
+            for (std::size_t i = 0; i < t.tuple_types.size(); ++i) {
+                if (i > 0) s += ", ";
+                s += format_type_ref_sema(t.tuple_types[i]);
+            }
+            s += ")";
+        } else if (!t.smart_wrap.empty() && t.elem_type) {
+            s += t.smart_wrap + "[" + format_type_ref_sema(*t.elem_type) + "]";
+        } else {
+            s += t.name.empty() ? "void" : t.name;
+        }
+        if (t.is_optional) s += "?";
+        if (t.is_fallible) s += "!";
+        return s;
+    }
+
+    [[nodiscard]] auto is_stdlib_ns_imported(std::string_view ns) const -> bool {
+        if (ns == "build" || ns == "testing" || ns == "cpp") return true;
+        const auto& idx = StdlibCatalogIndex::instance();
+        auto mod_it = idx.ns_to_import.find(std::string(ns));
+        std::string_view expected_mod = (mod_it != idx.ns_to_import.end()) ? std::string_view(mod_it->second) : std::string_view{};
+        for (const auto& imp : cf_.ast.imports) {
+            if (!imp.alias.empty() && imp.alias == ns) return true;
+            if (!expected_mod.empty() && imp.path == expected_mod) return true;
+            auto colon = imp.path.rfind(':');
+            auto slash = imp.path.rfind('/');
+            std::size_t sep = std::string::npos;
+            if (colon != std::string::npos && slash != std::string::npos) sep = std::max(colon, slash);
+            else if (colon != std::string::npos) sep = colon;
+            else sep = slash;
+            std::string_view tail = (sep == std::string::npos) ? std::string_view(imp.path) : std::string_view(imp.path).substr(sep + 1);
+            if (tail == ns) return true;
+            if (ns == "rl" && tail == "raylib") return true;
+            if (ns == "rg" && tail == "raygui") return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto check_stdlib_ns_imported(std::string_view ns, int line, int col) -> std::expected<void, std::string> {
+        const auto& idx = StdlibCatalogIndex::instance();
+        if (!idx.has_namespace(ns) || is_ident_in_scope_sema(std::string(ns))) return {};
+        if (is_stdlib_ns_imported(ns)) return {};
+        if (reported_missing_imports_.contains(std::string(ns))) return {};
+        reported_missing_imports_.insert(std::string(ns));
+        std::string mod_path = idx.ns_to_import.at(std::string(ns));
+        return emit_error(std::format(
+            "{}:{}:{}: module '{}' is not imported; add 'import \"{}\"' (cfire/MISSING-IMPORT)",
+            path_, line, col, ns, mod_path));
+    }
+
     [[nodiscard]] auto is_ident_in_scope_sema(const std::string& ident) const -> bool {
         if (local_defined_vars_.contains(ident) || mut_vars_.contains(ident) ||
             imm_vars_.contains(ident) || move_params_.contains(ident)) {
             return true;
         }
         if (cf_.fn_sigs.contains(ident)) return true;
+        if (!pkg_name_.empty() && cf_.fn_sigs.contains(pkg_name_ + "." + ident)) return true;
         for (const auto& gv : cf_.ast.global_vars) {
             if (gv.name == ident) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto is_builtin_ident_sema(std::string_view name) -> bool {
+        return name == "_" || name == "break" || name == "continue" ||
+               name == "nullptr" || name == "null" ||
+               name == "println" || name == "print" || name == "eprintln" || name == "eprint" ||
+               name == "format" || name == "readln" || name == "input" || name == "black_box" ||
+               name == "panic" || name == "assert" ||
+               name == "assert_eq" || name == "assert_ne" || name == "assert_true" || name == "assert_false" ||
+               name == "assert_err" || name == "assert_ok" || name == "error" || name == "make" ||
+               name == "len" || name == "cap" || name == "append" || name == "copy" || name == "delete" ||
+               name == "close" || name == "exit" || name == "some" || name == "none" || name == "ok" ||
+               name == "err" || name == "own" || name == "shared" || name == "async" ||
+               name == "i8" || name == "i16" || name == "i32" || name == "i64" || name == "isize" || name == "int" ||
+               name == "u8" || name == "u16" || name == "u32" || name == "u64" || name == "usize" || name == "uint" ||
+               name == "byte" || name == "f32" || name == "f64" || name == "bool" || name == "str" ||
+               name == "char" || name == "rune" || name == "void" || name == "any" ||
+               name == "c_int" || name == "c_char" || name == "c_void" || name == "c_long" ||
+               name == "c_ulong" || name == "c_float" || name == "c_double" ||
+               name.starts_with("[]") || name.starts_with("[") || name.starts_with("map[") ||
+               name.starts_with("*") || name.starts_with("&");
+    }
+
+    [[nodiscard]] auto is_known_identifier_sema(const std::string& name) const -> bool {
+        if (name.empty() || is_builtin_ident_sema(name)) return true;
+        if (is_ident_in_scope_sema(name)) return true;
+        if (is_namespace_ident_sema(name)) return true;
+        if (cf_.struct_tags.contains(name) || cf_.enums.contains(name) || cf_.variant_to_enum.contains(name)) return true;
+        if (cf_.cpp_fn_params.contains(name)) return true;
+        for (const auto& st : cf_.ast.structs) {
+            if (st.name == name) return true;
+        }
+        // Check compound names like `Shape.Circle`, `audio.Waveform::Sine`, `Waveform::Sine`, `http.Response`
+        auto dot = name.find('.');
+        auto dcol = name.find("::");
+        std::size_t sep = std::min(dot, dcol);
+        if (sep != std::string::npos) {
+            std::string prefix = name.substr(0, sep);
+            if (is_known_identifier_sema(prefix)) return true;
+            if (prefix == "Waveform" || prefix == "SfxPreset" || prefix == "OpenMode" ||
+                prefix == "SeekWhence" || prefix == "Level" || prefix == "Format" || prefix == "Provider") {
+                return true;
+            }
+            if (dcol != std::string::npos) {
+                std::string suffix = name.substr(dcol + 2);
+                if (cf_.variant_to_enum.contains(suffix)) return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto expr_returns_fallible_sema(const ExprPtr& e, std::string* out_callee = nullptr, std::string* out_ret = nullptr) const -> bool {
+        if (!e) return false;
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                const FnDecl* sig = nullptr;
+                if (!pkg_name_.empty()) {
+                    if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + cid->name); pit != cf_.fn_sigs.end()) {
+                        sig = &pit->second;
+                    }
+                }
+                if (!sig) {
+                    if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
+                        sig = &it->second;
+                    }
+                }
+                if (sig && sig->return_type.is_fallible) {
+                    if (out_callee) *out_callee = cid->name;
+                    if (out_ret) *out_ret = format_type_ref_sema(sig->return_type);
+                    return true;
+                }
+            } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                const auto& idx = StdlibCatalogIndex::instance();
+                if (obj_id && idx.has_namespace(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
+                    if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field)) {
+                        if (sfn->is_fallible) {
+                            if (out_callee) *out_callee = obj_id->name + "." + mem->field;
+                            if (out_ret) *out_ret = sfn->return_type;
+                            return true;
+                        }
+                    }
+                }
+                if (const auto* sig = resolve_member_call_sig(*mem)) {
+                    if (sig->return_type.is_fallible) {
+                        if (out_callee) *out_callee = mem->field;
+                        if (out_ret) *out_ret = format_type_ref_sema(sig->return_type);
+                        return true;
+                    }
+                }
+                if (obj_id) {
+                    if (auto vt = var_types_.find(obj_id->name); vt != var_types_.end()) {
+                        if (auto mit = idx.receiver_methods.find(vt->second + "." + mem->field); mit != idx.receiver_methods.end()) {
+                            if (mit->second.is_fallible) {
+                                if (out_callee) *out_callee = obj_id->name + "." + mem->field;
+                                if (out_ret) *out_ret = mit->second.return_type;
+                                return true;
+                            }
+                        }
+                    }
+                }
+                if (mem->object) {
+                    std::string recv_t = infer_expr_type_name_sema(mem->object);
+                    if (!recv_t.empty()) {
+                        if (auto mit = idx.receiver_methods.find(recv_t + "." + mem->field); mit != idx.receiver_methods.end()) {
+                            if (mit->second.is_fallible) {
+                                if (out_callee) *out_callee = mem->field;
+                                if (out_ret) *out_ret = mit->second.return_type;
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
         }
         return false;
     }
@@ -723,7 +1363,20 @@ public:
     [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string> {
         if (!e) return {};
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
-            return record_var_read(id->name, e->line, e->col);
+            if (auto r = record_var_read(id->name, e->line, e->col); !r) return r;
+            auto dot = id->name.find('.');
+            auto dcol = id->name.find("::");
+            std::size_t sep = std::min(dot, dcol);
+            if (sep != std::string::npos) {
+                std::string prefix = id->name.substr(0, sep);
+                if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return r;
+            }
+            if (!has_cpp_imports_ && !seen_cpp_block_ && !is_known_identifier_sema(id->name)) {
+                return emit_error(std::format(
+                    "{}:{}:{}: undeclared identifier '{}' (cfire/UNDECLARED-IDENT)",
+                    path_, e->line, e->col, id->name));
+            }
+            return {};
         }
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
             return check_literal_expr(*lit, e->line);
@@ -747,12 +1400,21 @@ public:
             return {};
         }
         if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            if (tr->inner) unwrapped_exprs_.insert(tr->inner);
             return check_expr(tr->inner);
         }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->inner) unwrapped_exprs_.insert(or_ex->inner);
             return check_or_expr(*or_ex, e->line, e->col);
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
+            auto dot = st->type_name.find('.');
+            auto dcol = st->type_name.find("::");
+            std::size_t sep = std::min(dot, dcol);
+            if (sep != std::string::npos) {
+                std::string prefix = st->type_name.substr(0, sep);
+                if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return r;
+            }
             for (const auto& f : st->fields) {
                 if (auto r = check_expr(f.value); !r) return r;
             }
@@ -771,6 +1433,8 @@ public:
             return {};
         }
         if (const auto* cl = std::get_if<ClosureExpr>(&e->node)) {
+            ++in_closure_depth_;
+            auto cl_guard = cfire::scope_exit([this] { --in_closure_depth_; });
             ScopeGuard sg(*this);
             for (std::size_t i = 0; i < cl->params.size(); ++i) {
                 bool is_mut = (i < cl->param_intents.size()) &&
@@ -780,7 +1444,7 @@ public:
             return check_block_stmts(cl->body);
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
-            return check_call_expr(*call, e->line, e->col);
+            return check_call_expr(*call, e->line, e->col, e);
         }
         if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
             return check_match_common(me->target, me->is_move, me->arms, me->line, me->col, true);
@@ -788,16 +1452,48 @@ public:
         return {};
     }
 
+    [[nodiscard]] static auto is_likely_interpolation_placeholder(std::string_view sv, const InterpPlaceholder& ph) -> bool {
+        if (ph.start_pos + 1 >= sv.size()) return false;
+        char first_raw = sv[ph.start_pos + 1];
+        if (std::isspace(static_cast<unsigned char>(first_raw))) return false;
+        if (!(std::isalnum(static_cast<unsigned char>(first_raw)) || first_raw == '_' || first_raw == '(' || first_raw == '*')) {
+            return false;
+        }
+        // Exclude JSON/CSS/code blocks containing ';' or single ':'
+        bool in_q = false;
+        for (std::size_t i = 0; i < ph.expr_text.size(); ++i) {
+            char c = ph.expr_text[i];
+            if (c == '"' && (i == 0 || ph.expr_text[i - 1] != '\\')) in_q = !in_q;
+            else if (!in_q) {
+                if (c == ';') return false;
+                if (c == ':') {
+                    bool is_dcol = (i + 1 < ph.expr_text.size() && ph.expr_text[i + 1] == ':') ||
+                                   (i > 0 && ph.expr_text[i - 1] == ':');
+                    if (!is_dcol) return false;
+                }
+            }
+        }
+        // Exclude pure integer regex quantifiers like `\d{4}`
+        bool all_digits = !ph.expr_text.empty() && std::ranges::all_of(ph.expr_text, [](unsigned char c) {
+            return std::isdigit(c) || c == ',';
+        });
+        if (all_digits) return false;
+        return true;
+    }
+
     [[nodiscard]] auto check_literal_expr(const LiteralExpr& lit, int line) -> std::expected<void, std::string> {
         if (lit.kind == TokenKind::String && lit.value.contains('{')) {
             auto placeholders = scan_interpolation_placeholders(lit.value);
             for (const auto& ph : placeholders) {
-                if (auto parsed = parse_expr_snippet(path_, ph.expr_text, line)) {
-                    std::string root = extract_root_ident_sema(parsed->expr);
-                    if (!root.empty() && (is_ident_in_scope_sema(root) || is_namespace_ident_sema(root))) {
-                        if (auto r = check_expr(parsed->expr); !r) return r;
-                    }
+                if (!is_likely_interpolation_placeholder(lit.value, ph)) continue;
+                auto parsed = parse_expr_snippet(path_, ph.expr_text, line);
+                if (!parsed) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:1: invalid expression '{}' in string interpolation (cfire/INVALID-INTERPOLATION)",
+                        path_, line, ph.expr_text)); !r) return r;
+                    continue;
                 }
+                if (auto r = check_expr(parsed->expr); !r) return r;
             }
         }
         return {};
@@ -844,9 +1540,44 @@ public:
     }
 
     [[nodiscard]] auto check_member_expr(const MemberExpr& mem, int line, int col) -> std::expected<void, std::string> {
+        if (mem.object) {
+            if (const auto* obj_id = std::get_if<IdentExpr>(&mem.object->node)) {
+                if (auto r = check_stdlib_ns_imported(obj_id->name, mem.object->line > 0 ? mem.object->line : line, mem.object->col > 0 ? mem.object->col : col); !r) return r;
+                if (obj_id->name == "os" && !is_ident_in_scope_sema("os") &&
+                    (mem.field == "STDIN" || mem.field == "STDOUT" || mem.field == "STDERR")) {
+                    std::string lower_fn = mem.field;
+                    for (char& c : lower_fn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    return emit_error(std::format(
+                        "{}:{}:{}: 'os.{}' has been replaced by 'os.{}()' returning an RAII 'fs.File' stream handle (cfire/DEPRECATED-API)",
+                        path_, line, col, mem.field, lower_fn));
+                }
+                if (!is_ident_in_scope_sema(obj_id->name) && !is_namespace_ident_sema(obj_id->name) &&
+                    cf_.fn_sigs.contains(mem.field)) {
+                    return {};
+                }
+            }
+        }
         if (auto r = check_expr(mem.object); !r) return r;
         if (!mem.is_namespace && mem.object) {
             if (const auto* id = std::get_if<IdentExpr>(&mem.object->node)) {
+                if (optional_vars_.contains(id->name) && !raw_or_smart_ptr_vars_.contains(id->name) &&
+                    (mem.field == "len" || mem.field == "empty" || mem.field == "data")) {
+                    return emit_error(std::format(
+                        "{}:{}:{}: cannot access '.{}' on optional value '{}' without unwrapping; use 'or' to provide a fallback (cfire/UNWRAPPED-OPTIONAL)",
+                        path_, line, col, mem.field, id->name));
+                }
+                if (fallible_vars_.contains(id->name) && !reported_unhandled_vars_.contains(id->name) &&
+                    mem.field != "has_value" && mem.field != "value" && mem.field != "value_or" && mem.field != "error") {
+                    return emit_error(std::format(
+                        "{}:{}:{}: cannot access '.{}' on fallible result '{}' without unwrapping with 'try' or 'or' (cfire/UNHANDLED-RESULT)",
+                        path_, line, col, mem.field, id->name));
+                }
+                if (scalar_primitive_vars_.contains(id->name) && mem.field == "len") {
+                    std::string tname = var_types_.contains(id->name) ? var_types_.at(id->name) : "primitive";
+                    return emit_error(std::format(
+                        "{}:{}:{}: primitive type '{}' has no member '.{}' (cfire/INVALID-MEMBER)",
+                        path_, line, col, tname, mem.field));
+                }
                 if (ptr_or_smart_vars_.contains(id->name) &&
                     mem.field != "reset" && mem.field != "get" &&
                     mem.field != "has_value" && mem.field != "value_or") {
@@ -863,6 +1594,11 @@ public:
                         }
                     }
                 }
+            } else if (expr_returns_optional_sema(mem.object) &&
+                       mem.field != "has_value" && mem.field != "value" && mem.field != "value_or") {
+                return emit_error(std::format(
+                    "{}:{}:{}: cannot access '.{}' on optional value without unwrapping; use 'or' to provide a fallback (cfire/UNWRAPPED-OPTIONAL)",
+                    path_, line, col, mem.field));
             }
         }
         return {};
@@ -874,8 +1610,30 @@ public:
 
         bool is_map_obj = false;
         const IdentExpr* obj_id = idx.object ? std::get_if<IdentExpr>(&idx.object->node) : nullptr;
-        if (obj_id && map_vars_.contains(obj_id->name)) {
-            is_map_obj = true;
+        if (obj_id) {
+            if (optional_vars_.contains(obj_id->name)) {
+                return emit_error(std::format(
+                    "{}:{}:{}: cannot index into optional value '{}' without unwrapping; use 'or' to provide a fallback (cfire/UNWRAPPED-OPTIONAL)",
+                    path_, line, col, obj_id->name));
+            }
+            if (fallible_vars_.contains(obj_id->name) && !reported_unhandled_vars_.contains(obj_id->name)) {
+                return emit_error(std::format(
+                    "{}:{}:{}: cannot index into fallible result '{}' without unwrapping with 'try' or 'or' (cfire/UNHANDLED-RESULT)",
+                    path_, line, col, obj_id->name));
+            }
+            if (scalar_primitive_vars_.contains(obj_id->name)) {
+                std::string tname = var_types_.contains(obj_id->name) ? var_types_.at(obj_id->name) : "primitive";
+                return emit_error(std::format(
+                    "{}:{}:{}: cannot index into non-indexable primitive type '{}' (cfire/INVALID-INDEX)",
+                    path_, line, col, tname));
+            }
+            if (map_vars_.contains(obj_id->name)) {
+                is_map_obj = true;
+            }
+        } else if (idx.object && expr_returns_optional_sema(idx.object)) {
+            return emit_error(std::format(
+                "{}:{}:{}: cannot index into optional value without unwrapping; use 'or' to provide a fallback (cfire/UNWRAPPED-OPTIONAL)",
+                path_, line, col));
         }
         if (!is_map_obj && idx.index) {
             if (const auto* un_idx = std::get_if<UnaryExpr>(&idx.index->node)) {
@@ -938,10 +1696,18 @@ public:
         return {};
     }
 
-    [[nodiscard]] auto check_call_expr(const CallExpr& call, int line, int col) -> std::expected<void, std::string> {
+    [[nodiscard]] auto check_call_expr(const CallExpr& call, int line, int col, const ExprPtr& self_expr = nullptr) -> std::expected<void, std::string> {
         if (auto r = check_expr(call.callee); !r) return r;
         const FnDecl* target_sig = nullptr;
+        const StdFnSigInfo* std_sig = nullptr;
+        const auto& catalog_idx = StdlibCatalogIndex::instance();
+
         if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
+            if ((id->name == "readln" || id->name == "input") && !is_ident_in_scope_sema(id->name)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: builtin '{}' has been removed; use 'cli.prompt(...)' for interactive prompts or 'os.stdin().read_line()' for stdin streams (cfire/DEPRECATED-API)",
+                    path_, line, col, id->name)); !r) return r;
+            }
             if ((id->name == "shared" || id->name == "own") && !is_ident_in_scope_sema(id->name)) {
                 if (auto r = emit_error(std::format(
                     "{}:{}:{}: cannot call '{}' directly as a constructor; use 'make[{}[T]](...)' instead (cfire/INVALID-SMART-PTR-CTOR)",
@@ -965,6 +1731,37 @@ public:
                     "{}:{}:{}: 'ai.{}' is a stateful Client method; construct a client first (e.g. 'client := ai.local()') and call 'client.{}(...)' (cfire/DEPRECATED-API)",
                     path_, line, col, mem->field, mem->field)); !r) return r;
             }
+            if (obj_id && obj_id->name == "fs" && !is_ident_in_scope_sema("fs")) {
+                if (mem->field == "read_all") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'fs.read_all' has been renamed to 'fs.read_bytes' (or 'fs.read_text' for UTF-8 strings) (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                } else if (mem->field == "write_all") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'fs.write_all' has been renamed to 'fs.write_bytes' (or 'fs.write_text' for UTF-8 strings) (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                }
+            }
+            if (obj_id && obj_id->name == "os" && !is_ident_in_scope_sema("os")) {
+                if (mem->field == "read_stdin" || mem->field == "read_stdin_bytes" || mem->field == "read_stdin_lines") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'os.{}' has been replaced by 'os.stdin().read_text()', 'os.stdin().read_bytes()', or 'os.stdin().read_lines()' (cfire/DEPRECATED-API)",
+                        path_, line, col, mem->field)); !r) return r;
+                } else if (mem->field == "fd_read" || mem->field == "fd_read_bytes" || mem->field == "fd_write" ||
+                           mem->field == "fd_close" || mem->field == "poll_fd") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'os.{}' has been removed; use methods on 'fs.File' ('os.stdin()', 'os.stdout()', 'os.stderr()', 'os.pipe()') or 'net.TcpConn' (cfire/DEPRECATED-API)",
+                        path_, line, col, mem->field)); !r) return r;
+                } else if (mem->field == "socketpair") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'os.socketpair' has been moved to 'net.socketpair() -> (net.TcpConn, net.TcpConn)!' (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                } else if (mem->field == "is_tty" && !call.args.empty()) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'os.is_tty(fd)' no longer accepts a raw FD; use 'os.is_tty()' for stdin or call '.is_tty()' on an 'fs.File' handle (e.g. 'os.stdout().is_tty()') (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                }
+            }
             if (mem->field == "find" || mem->field == "rfind") {
                 bool is_str_ns = (obj_id && obj_id->name == "str" && !is_ident_in_scope_sema(obj_id->name));
                 if (!is_str_ns && mem->object && infer_expr_type_name_sema(mem->object) == "str") {
@@ -975,6 +1772,74 @@ public:
                 }
             }
             target_sig = resolve_member_call_sig(*mem);
+            if (!target_sig && (!obj_id || !catalog_idx.has_namespace(obj_id->name) || is_ident_in_scope_sema(obj_id->name))) {
+                if (mem->field == "read_str") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: '.read_str' has been renamed to '.read_text' (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                } else if (mem->field == "write_str") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: '.write_str' has been renamed to '.write_text' (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                } else if (mem->field == "sftp_read_all") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: '.sftp_read_all' has been renamed to '.sftp_read_text' or '.sftp_read_bytes' (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                } else if (mem->field == "sftp_write_all") {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: '.sftp_write_all' has been renamed to '.sftp_write_text' or '.sftp_write_bytes' (cfire/DEPRECATED-API)",
+                        path_, line, col)); !r) return r;
+                }
+                std::string recv_t = mem->object ? infer_expr_type_name_sema(mem->object) : "";
+                bool is_stream_handle = (recv_t == "File" || recv_t == "fs.File" || recv_t == "fs::File" ||
+                                         recv_t == "TcpConn" || recv_t == "net.TcpConn" || recv_t == "net::TcpConn" ||
+                                         recv_t == "ssh.Channel" || recv_t == "ssh::Channel" ||
+                                         (recv_t == "Channel" && is_stdlib_ns_imported("ssh")));
+                if (is_stream_handle) {
+                    if (mem->field == "read_all") {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: '.read_all' on File has been replaced by '.read_bytes()' or '.read_text()' (cfire/DEPRECATED-API)",
+                            path_, line, col)); !r) return r;
+                    } else if (mem->field == "read") {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: '.read' has been replaced by explicit '.read_bytes', '.read_text', or '.read_into' (cfire/DEPRECATED-API)",
+                            path_, line, col)); !r) return r;
+                    } else if (mem->field == "write") {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: '.write' has been replaced by explicit '.write_bytes' or '.write_text' (cfire/DEPRECATED-API)",
+                            path_, line, col)); !r) return r;
+                    }
+                }
+            }
+            if (!target_sig && obj_id) {
+                if (catalog_idx.has_namespace(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
+                    std_sig = catalog_idx.find_ns_fn(obj_id->name, mem->field);
+                    if (!std_sig && obj_id->name != "rl" && obj_id->name != "rg" &&
+                        !catalog_idx.is_known_ns_member(obj_id->name, mem->field)) {
+                        std::string sugg = catalog_idx.suggest_closest_fn(obj_id->name, mem->field);
+                        std::string hint = sugg.empty() ? "" : std::format("; did you mean '{}.{}'?", obj_id->name, sugg);
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: unknown function '{}.{}' in module '{}'{} (cfire/UNKNOWN-STDLIB-FN)",
+                            path_, line, col, obj_id->name, mem->field, catalog_idx.ns_to_import.at(obj_id->name), hint)); !r) return r;
+                    }
+                } else if (auto dot = obj_id->name.find('.'); dot != std::string::npos) {
+                    std::string ns_part = obj_id->name.substr(0, dot);
+                    std::string type_part = obj_id->name.substr(dot + 1);
+                    if (catalog_idx.has_namespace(ns_part) && !is_ident_in_scope_sema(ns_part)) {
+                        std_sig = catalog_idx.find_ns_fn(ns_part, type_part + "." + mem->field);
+                    }
+                }
+            }
+            if (!target_sig && !std_sig && mem->object) {
+                std::string recv_t = infer_expr_type_name_sema(mem->object);
+                if (recv_t == "File" || recv_t == "fs.File" || recv_t == "fs::File" ||
+                    recv_t == "TcpConn" || recv_t == "net.TcpConn" || recv_t == "net::TcpConn") {
+                    std::string norm_t = (recv_t.ends_with("File")) ? "File" : "TcpConn";
+                    if (auto mit = catalog_idx.receiver_methods.find(norm_t + "." + mem->field); mit != catalog_idx.receiver_methods.end()) {
+                        std_sig = &mit->second;
+                    }
+                }
+            }
             if (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") {
                 if (obj_id && imm_vars_.contains(obj_id->name) && !smart_ptr_vars_.contains(obj_id->name)) {
                     if (auto r = emit_error(std::format(
@@ -1019,6 +1884,29 @@ public:
                 if (auto r = emit_error(std::format(
                     "{}:{}:{}: call to '{}' expects {} argument(s), got {} (cfire/ARITY-MISMATCH)",
                     path_, line, col, target_sig->name, target_sig->params.size(), actual_args)); !r) return r;
+            }
+        } else if (std_sig) {
+            std::size_t actual_args = call.args.size() + (call.block_arg ? 1 : 0);
+            if (actual_args < std_sig->min_args || actual_args > std_sig->max_args) {
+                std::string exp_str = (std_sig->min_args == std_sig->max_args)
+                    ? std::format("{}", std_sig->min_args)
+                    : (std_sig->max_args >= 512
+                        ? std::format("at least {}", std_sig->min_args)
+                        : std::format("{}..{}", std_sig->min_args, std_sig->max_args));
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: call to '{}.{}' expects {} argument(s), got {} (cfire/ARITY-MISMATCH)",
+                    path_, line, col, std_sig->ns_alias, std_sig->name, exp_str, actual_args)); !r) return r;
+            }
+        }
+
+        if (self_expr && !unwrapped_exprs_.contains(self_expr)) {
+            std::string fallible_callee;
+            std::string fallible_ret;
+            if (expr_returns_fallible_sema(self_expr, &fallible_callee, &fallible_ret)) {
+                auto [start_ln, start_col] = expr_start_loc(self_expr);
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: fallible call to '{}' returns '{}' and must be handled with 'try' or 'or' (cfire/UNHANDLED-RESULT)",
+                    path_, start_ln, start_col, fallible_callee, fallible_ret)); !r) return r;
             }
         }
 
@@ -1070,6 +1958,16 @@ public:
                         }
                     }
                 }
+            } else if (std_sig && i < std_sig->params.size()) {
+                const auto& expected = std_sig->params[i].intent;
+                if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
+                    std::string_view rule = (expected == "out")
+                        ? "cfire/OUT-CALLSITE"
+                        : (expected == "move" ? "cfire/MOVE-CALLSITE" : "cfire/MUT-CALLSITE");
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: parameter '{}' of {}.{} requires explicit '{}' annotation at call-site ({})",
+                        path_, arg.line, arg.col, std_sig->params[i].name, std_sig->ns_alias, std_sig->name, expected, rule)); !r) return r;
+                }
             }
             if (auto pi = extract_path_info(arg.value)) {
                 bool is_mut_or_out = (arg.intent == "mut" || arg.intent == "out");
@@ -1116,6 +2014,8 @@ public:
             }
         }
         if (call.block_arg) {
+            ++in_closure_depth_;
+            auto cl_guard = cfire::scope_exit([this] { --in_closure_depth_; });
             ScopeGuard sg(*this);
             for (std::size_t i = 0; i < call.block_arg->params.size(); ++i) {
                 bool is_mut = (i < call.block_arg->param_intents.size()) &&
@@ -1348,7 +2248,11 @@ public:
         bool was_imm{false};
         std::optional<std::string> var_type{};
         bool was_optional{false};
+        bool was_fallible{false};
+        bool was_reported_unhandled{false};
+        bool was_scalar_primitive{false};
         bool was_ptr_or_smart{false};
+        bool was_raw_or_smart_ptr{false};
         std::optional<NullState> null_state{};
         std::optional<std::size_t> fixed_array_len{};
         bool was_map{false};
@@ -1385,8 +2289,20 @@ public:
                 if (st.was_optional) checker.optional_vars_.insert(name);
                 else checker.optional_vars_.erase(name);
 
+                if (st.was_fallible) checker.fallible_vars_.insert(name);
+                else checker.fallible_vars_.erase(name);
+
+                if (st.was_reported_unhandled) checker.reported_unhandled_vars_.insert(name);
+                else checker.reported_unhandled_vars_.erase(name);
+
+                if (st.was_scalar_primitive) checker.scalar_primitive_vars_.insert(name);
+                else checker.scalar_primitive_vars_.erase(name);
+
                 if (st.was_ptr_or_smart) checker.ptr_or_smart_vars_.insert(name);
                 else checker.ptr_or_smart_vars_.erase(name);
+
+                if (st.was_raw_or_smart_ptr) checker.raw_or_smart_ptr_vars_.insert(name);
+                else checker.raw_or_smart_ptr_vars_.erase(name);
 
                 if (st.null_state) checker.ptr_null_state_[name] = *st.null_state;
                 else checker.ptr_null_state_.erase(name);
@@ -1424,7 +2340,11 @@ public:
         st.was_imm = imm_vars_.contains(name);
         if (auto it = var_types_.find(name); it != var_types_.end()) st.var_type = it->second;
         st.was_optional = optional_vars_.contains(name);
+        st.was_fallible = fallible_vars_.contains(name);
+        st.was_reported_unhandled = reported_unhandled_vars_.contains(name);
+        st.was_scalar_primitive = scalar_primitive_vars_.contains(name);
         st.was_ptr_or_smart = ptr_or_smart_vars_.contains(name);
+        st.was_raw_or_smart_ptr = raw_or_smart_ptr_vars_.contains(name);
         if (auto it = ptr_null_state_.find(name); it != ptr_null_state_.end()) st.null_state = it->second;
         if (auto it = fixed_array_lens_.find(name); it != fixed_array_lens_.end()) st.fixed_array_len = it->second;
         st.was_map = map_vars_.contains(name);
@@ -1471,6 +2391,10 @@ public:
 
     [[nodiscard]] auto check_stmt(const StmtPtr& s) -> std::expected<void, std::string> {
         if (!s) return {};
+        if (std::holds_alternative<CppBlockStmt>(s->node)) {
+            seen_cpp_block_ = true;
+            return {};
+        }
         if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
             return check_var_decl_stmt(*vd);
         }
@@ -1522,6 +2446,9 @@ public:
                 }
             }
         }
+        if (vd.init && (vd.name == "_" || (vd.type && vd.type->is_fallible))) {
+            unwrapped_exprs_.insert(vd.init);
+        }
         // Check initializer expression before binding the new variable so `x := x + 1` reads outer `x` first
         if (auto r = check_expr(vd.init); !r) return r;
 
@@ -1550,6 +2477,8 @@ public:
             inferred_t = vd.type->name;
         }
         bool is_opt_var = (vd.type && vd.type->is_optional) || (!vd.type && expr_returns_optional_sema(vd.init));
+        bool is_fallible_var = (vd.type && vd.type->is_fallible);
+        bool init_was_unhandled_fallible = (!vd.type && vd.name != "_" && expr_returns_fallible_sema(vd.init));
         bool is_smart = (vd.type && !vd.type->smart_wrap.empty());
         if (!is_smart && vd.init) {
             const Expr* cur_init = vd.init;
@@ -1567,8 +2496,44 @@ public:
                 }
             }
         }
-        bool is_ptr_or_smart = (vd.type && (vd.type->is_ptr || vd.type->is_mut_ptr || !vd.type->smart_wrap.empty())) ||
-                               is_ptr_or_smart_init(vd.init) || is_opt_var;
+        bool is_raw_or_smart_ptr = (vd.type && (vd.type->is_ptr || vd.type->is_mut_ptr || !vd.type->smart_wrap.empty())) ||
+                                   is_ptr_or_smart_init(vd.init);
+        bool is_ptr_or_smart = is_raw_or_smart_ptr || is_opt_var;
+        bool is_scalar_prim = false;
+        if (vd.type) {
+            is_scalar_prim = is_scalar_primitive_typeref(*vd.type);
+        } else if (!is_opt_var && !is_fallible_var && !init_was_unhandled_fallible && !is_raw_or_smart_ptr && !is_byte_slice && vd.init) {
+            if (const auto* lit = std::get_if<LiteralExpr>(&vd.init->node)) {
+                is_scalar_prim = (lit->kind == TokenKind::Int || lit->kind == TokenKind::Float ||
+                                  lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse);
+            } else if (std::holds_alternative<BinaryExpr>(vd.init->node) || std::holds_alternative<UnaryExpr>(vd.init->node)) {
+                is_scalar_prim = is_scalar_primitive_type_name(inferred_t);
+            } else {
+                const Expr* cur_init = vd.init;
+                if (const auto* tr = std::get_if<TryExpr>(&cur_init->node)) cur_init = tr->inner;
+                else if (const auto* or_ex = std::get_if<OrExpr>(&cur_init->node)) cur_init = or_ex->inner;
+                if (cur_init) {
+                    if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
+                        if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node)) {
+                            if (auto fit = cf_.fn_sigs.find(cid->name); fit != cf_.fn_sigs.end()) {
+                                TypeRef rt = fit->second.return_type;
+                                rt.is_fallible = false;
+                                rt.is_optional = false;
+                                is_scalar_prim = is_scalar_primitive_typeref(rt);
+                            } else if (is_scalar_primitive_type_name(cid->name)) {
+                                is_scalar_prim = true;
+                            }
+                        } else if (const auto* mem = std::get_if<MemberExpr>(&call_ex->callee->node)) {
+                            if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                                if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(recv_id->name, mem->field)) {
+                                    is_scalar_prim = is_scalar_primitive_type_name(std_sig->unwrapped_return_type);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         auto init_ns = infer_expr_null_state(vd.init);
 
         bind_scoped_var(vd.name, vd.is_mut);
@@ -1578,6 +2543,14 @@ public:
         else byte_slice_vars_.erase(vd.name);
         if (is_smart) smart_ptr_vars_.insert(vd.name);
         else smart_ptr_vars_.erase(vd.name);
+        if (is_fallible_var) fallible_vars_.insert(vd.name);
+        else fallible_vars_.erase(vd.name);
+        if (init_was_unhandled_fallible) reported_unhandled_vars_.insert(vd.name);
+        else reported_unhandled_vars_.erase(vd.name);
+        if (is_raw_or_smart_ptr) raw_or_smart_ptr_vars_.insert(vd.name);
+        else raw_or_smart_ptr_vars_.erase(vd.name);
+        if (is_scalar_prim) scalar_primitive_vars_.insert(vd.name);
+        else scalar_primitive_vars_.erase(vd.name);
 
         if (vd.type) {
             if (vd.type->is_map) {
@@ -1641,9 +2614,38 @@ public:
     }
 
     [[nodiscard]] auto check_destructure_var_decl_stmt(const DestructureVarDeclStmt& dvs) -> std::expected<void, std::string> {
+        if (dvs.init) {
+            if (const auto* or_ex = std::get_if<OrExpr>(&dvs.init->node); or_ex && !or_ex->handler_body.empty()) {
+                if (!block_diverges(or_ex->handler_body)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: destructuring declaration from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
+                        path_, dvs.line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
+                }
+            }
+        }
         if (auto r = check_expr(dvs.init); !r) return r;
+        std::string elem_type;
+        if (dvs.init) {
+            const Expr* inner = dvs.init;
+            if (const auto* tr = std::get_if<TryExpr>(&inner->node)) inner = tr->inner;
+            else if (const auto* orex = std::get_if<OrExpr>(&inner->node)) inner = orex->inner;
+            if (inner) {
+                if (const auto* call = std::get_if<CallExpr>(&inner->node)) {
+                    if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                        if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                            if (obj_id->name == "os" && mem->field == "pipe") elem_type = "File";
+                            else if (obj_id->name == "net" && mem->field == "socketpair") elem_type = "TcpConn";
+                            else if (obj_id->name == "websocket" && mem->field == "pair") elem_type = "websocket.Conn";
+                        }
+                    }
+                }
+            }
+        }
         for (const auto& [name, is_mut] : dvs.bindings) {
             bind_scoped_var(name, is_mut);
+            if (!elem_type.empty()) {
+                var_types_[name] = elem_type;
+            }
         }
         return {};
     }
@@ -1655,6 +2657,13 @@ public:
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: assignment from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
                         path_, as.line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
+                }
+            }
+        }
+        if (as.value && as.target) {
+            if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
+                if (id->name == "_" || fallible_vars_.contains(id->name)) {
+                    unwrapped_exprs_.insert(as.value);
                 }
             }
         }
@@ -1750,6 +2759,7 @@ public:
 
     [[nodiscard]] auto check_defer_stmt(const DeferStmt& df) -> std::expected<void, std::string> {
         if (df.call) {
+            unwrapped_exprs_.insert(df.call);
             return check_expr(df.call);
         }
         ++in_defer_depth_;
@@ -1763,6 +2773,9 @@ public:
             if (auto r = emit_error(std::format(
                 "{}:{}:1: cannot use 'return' inside a 'defer {{ ... }}' block (cfire/RETURN-IN-DEFER)",
                 path_, rt.line)); !r) return r;
+        }
+        if (rt.value && (fn_is_fallible_ || in_closure_depth_ > 0)) {
+            unwrapped_exprs_.insert(rt.value);
         }
         if (auto r = check_expr(rt.value); !r) return r;
         if (rt.value) {
@@ -1938,18 +2951,28 @@ private:
     std::vector<std::string>& errors_;
     bool resilient_{false};
     std::vector<std::string> fallback_errors_{};
+    bool fn_is_fallible_{false};
+    bool has_cpp_imports_{false};
+    bool seen_cpp_block_{false};
     int scope_depth_{1};
     int in_defer_depth_{0};
+    int in_closure_depth_{0};
     std::vector<std::unordered_map<std::string, SavedVarDeclState>*> scope_stack_{};
+    std::unordered_set<const Expr*> unwrapped_exprs_{};
     std::unordered_map<std::string, int> var_scope_depth_{};
     std::unordered_set<std::string> local_defined_vars_{};
     std::unordered_map<std::string, std::string> borrow_origin_{};
     std::unordered_map<std::string, InvalidatedLoan> invalidated_loans_{};
     std::unordered_set<std::string> active_loop_collections_{};
     std::unordered_set<std::string> ptr_or_smart_vars_{};
+    std::unordered_set<std::string> raw_or_smart_ptr_vars_{};
     std::unordered_set<std::string> smart_ptr_vars_{};
     std::unordered_set<std::string> byte_slice_vars_{};
     std::unordered_set<std::string> optional_vars_{};
+    std::unordered_set<std::string> fallible_vars_{};
+    std::unordered_set<std::string> reported_unhandled_vars_{};
+    std::unordered_set<std::string> scalar_primitive_vars_{};
+    std::unordered_set<std::string> reported_missing_imports_{};
     std::unordered_map<std::string, std::string> var_types_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
     std::unordered_map<std::string, std::size_t> fixed_array_lens_{};
@@ -1963,32 +2986,33 @@ private:
 
 [[nodiscard]] inline auto analyze_resilient(FileAST ast) -> CheckedFile {
     CheckedFile cf;
+    cf.ast = std::move(ast);
 
     // 0a. Check Module Imports (CF-006 / CF-086)
-    for (const auto& imp : ast.imports) {
+    for (const auto& imp : cf.ast.imports) {
         if (!imp.is_cpp) {
             if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(imp.path); !canon.empty()) {
                 if (canon == "ext:crypto/sodium") {
                     cf.errors.push_back(std::format(
                         "{}:{}:1: module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium' (cfire/INVALID-IMPORT)",
-                        ast.path, imp.line, imp.path));
+                        cf.ast.path, imp.line, imp.path));
                 } else if (canon.starts_with("ext:")) {
                     cf.errors.push_back(std::format(
                         "{}:{}:1: module '{}' requires a native extension engine and must be imported as '{}' (cfire/INVALID-IMPORT)",
-                        ast.path, imp.line, imp.path, canon));
+                        cf.ast.path, imp.line, imp.path, canon));
                 } else {
                     cf.errors.push_back(std::format(
                         "{}:{}:1: module '{}' is part of the zero-setup core standard library and must be imported as '{}' (cfire/INVALID-IMPORT)",
-                        ast.path, imp.line, imp.path, canon));
+                        cf.ast.path, imp.line, imp.path, canon));
                 }
             }
         }
     }
 
     // 0. Check Global / Package Variables
-    for (const auto& gv : ast.global_vars) {
+    for (const auto& gv : cf.ast.global_vars) {
         if (gv.was_var) {
-            std::string_view gv_path = gv.source_path.empty() ? std::string_view(ast.path) : std::string_view(gv.source_path);
+            std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
             cf.warnings.push_back(std::format(
                 "{}:{}:1: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
                 gv_path, gv.line));
@@ -1996,7 +3020,7 @@ private:
     }
 
     // 1. Index Enums and their Variants
-    for (const auto& en : ast.enums) {
+    for (const auto& en : cf.ast.enums) {
         cf.enums[en.name] = en;
         for (const auto& v : en.variants) {
             cf.variant_to_enum[v.name] = en.name;
@@ -2004,8 +3028,8 @@ private:
     }
 
     // 2. Index Struct Field Tags & Validate Tag Invariants (TEST-03a)
-    for (const auto& st : ast.structs) {
-        std::string_view st_path = st.source_path.empty() ? std::string_view(ast.path) : std::string_view(st.source_path);
+    for (const auto& st : cf.ast.structs) {
+        std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
         std::vector<StructTagInfo> tags;
         std::unordered_map<std::string, std::string> seen_json_keys;
         std::unordered_map<std::string, std::string> seen_db_cols;
@@ -2234,7 +3258,7 @@ private:
     }
 
     // 3. Index Functions & Methods
-    for (const auto& fn : ast.functions) {
+    for (const auto& fn : cf.ast.functions) {
         if (fn.receiver) {
             std::string key = fn.receiver->type.name + "::" + fn.name;
             cf.methods[key] = fn;
@@ -2251,8 +3275,8 @@ private:
     }
 
     // 4. Validate Function & Method Bodies
-    for (const auto& fn : ast.functions) {
-        std::string_view fn_path = fn.source_path.empty() ? std::string_view(ast.path) : std::string_view(fn.source_path);
+    for (const auto& fn : cf.ast.functions) {
+        std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
         SemaFnChecker checker(fn_path, fn, cf, cf.warnings, cf.errors, true);
         for (const auto& st : fn.body) {
             (void)checker.check_stmt(st);
@@ -2267,9 +3291,9 @@ private:
     }
 
     // 5. Validate Test, Fuzz, and Bench Declarations
-    for (std::size_t idx = 0; idx < ast.tests.size(); ++idx) {
-        const auto& td = ast.tests[idx];
-        std::string_view td_path = td.source_path.empty() ? std::string_view(ast.path) : std::string_view(td.source_path);
+    for (std::size_t idx = 0; idx < cf.ast.tests.size(); ++idx) {
+        const auto& td = cf.ast.tests[idx];
+        std::string_view td_path = td.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(td.source_path);
         FnDecl dummy_fn;
         dummy_fn.name = std::format("__cfire_test_{}", idx);
         dummy_fn.params = td.params;
@@ -2287,7 +3311,6 @@ private:
         }
     }
 
-    cf.ast = std::move(ast);
     return cf;
 }
 

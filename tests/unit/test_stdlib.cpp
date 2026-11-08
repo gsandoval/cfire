@@ -1132,8 +1132,8 @@ void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem:
     if (file_res) {
         auto& f = *file_res;
         require(f.is_open(), "file is open");
-        auto w1 = f.write_str("Hello Streaming World!\nLine 2.");
-        require(w1.has_value() && *w1 > 0, "file.write_str");
+        auto w1 = f.write_text("Hello Streaming World!\nLine 2.");
+        require(w1.has_value() && *w1 > 0, "file.write_text");
         auto fl = f.flush();
         require(fl.has_value(), "file.flush");
         f.close();
@@ -1153,20 +1153,42 @@ void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem:
         require(s1.has_value() && *s1 == 6, "file.seek Start");
 
         std::vector<uint8_t> chunk(9);
-        auto n_read = f.read(chunk);
-        require(n_read.has_value() && *n_read == 9, "file.read 9 bytes");
+        auto n_read = f.read_into(chunk);
+        require(n_read.has_value() && *n_read == 9, "file.read_into 9 bytes");
         std::string word(reinterpret_cast<const char*>(chunk.data()), chunk.size());
         require(word == "Streaming", "file chunk content matches");
 
-        // Seek back to start and read_all
+        // Seek back to start and read_bytes
         auto s0 = f.seek(0, cfire::fs::SeekWhence::Start);
         require(s0.has_value() && *s0 == 0, "file.seek to 0");
-        auto all_bytes = f.read_all();
-        require(all_bytes.has_value(), "file.read_all");
+        auto all_bytes = f.read_bytes();
+        require(all_bytes.has_value(), "file.read_bytes");
         std::string all_str(reinterpret_cast<const char*>(all_bytes->data()), all_bytes->size());
-        require(all_str == "Hello Streaming World!\nLine 2.", "file.read_all content matches");
+        require(all_str == "Hello Streaming World!\nLine 2.", "file.read_bytes content matches");
+
+        // Seek to start and test read_exact, read_text_until, read_lines
+        (void)f.seek(0, cfire::fs::SeekWhence::Start);
+        auto exact5 = f.read_exact(5);
+        require(exact5.has_value() && cfire::to_str(*exact5) == "Hello", "file.read_exact(5) == Hello");
+        auto until_nl = f.read_text_until("\n");
+        require(until_nl.has_value() && *until_nl == " Streaming World!\n", "file.read_text_until('\\n')");
+        (void)f.seek(0, cfire::fs::SeekWhence::Start);
+        auto lines = f.read_lines();
+        require(lines.has_value() && lines->size() == 2 && (*lines)[0] == "Hello Streaming World!" && (*lines)[1] == "Line 2.",
+            "file.read_lines() returns 2 lines");
         f.close();
     }
+
+    // 3. Test one-shot fs helpers: is_file, is_dir, file_size, append_text, append_bytes, copy_file
+    require(cfire::fs::is_file(tmp_file), "fs.is_file(tmp_file)");
+    require(!cfire::fs::is_dir(tmp_file), "!fs.is_dir(tmp_file)");
+    require(cfire::fs::is_dir(std::filesystem::temp_directory_path()), "fs.is_dir(temp_directory_path)");
+    require(cfire::fs::append_text(tmp_file, "\nLine 3.").has_value(), "fs.append_text");
+    auto copy_path = std::filesystem::temp_directory_path() / "cfire_stream_copy.txt";
+    require(cfire::fs::copy_file(tmp_file, copy_path).has_value(), "fs.copy_file");
+    auto sz = cfire::fs::file_size(copy_path);
+    require(sz.has_value() && *sz == 38, "fs.file_size matches appended length");
+    std::filesystem::remove(copy_path);
     std::filesystem::remove(tmp_file);
     std::println("--- PASS: test_filesystem_streaming_and_paths");
 }

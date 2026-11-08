@@ -134,8 +134,12 @@ trap cleanup EXIT INT TERM
 if [ -n "$CFIRE_LOCAL_SRC" ] && [ -d "$CFIRE_LOCAL_SRC" ]; then
     printf "\n%b==> Copying cfire source from %s...%b\n" "${BOLD}" "$CFIRE_LOCAL_SRC" "${RESET}"
     cp -R "$CFIRE_LOCAL_SRC/src" "$CFIRE_LOCAL_SRC/runtime" "$CFIRE_LOCAL_SRC/Makefile" "$TMP_DIR/"
+    [ -f "$CFIRE_LOCAL_SRC/VERSION" ] && cp "$CFIRE_LOCAL_SRC/VERSION" "$TMP_DIR/"
     if command -v git >/dev/null 2>&1; then
-        RESOLVED_SHA="$(git -C "$CFIRE_LOCAL_SRC" rev-parse --short HEAD 2>/dev/null || true)"
+        RESOLVED_SHA="$(git -C "$CFIRE_LOCAL_SRC" rev-parse --short=7 HEAD 2>/dev/null || true)"
+        if [ -n "$RESOLVED_SHA" ] && ! git -C "$CFIRE_LOCAL_SRC" diff --quiet --ignore-submodules HEAD 2>/dev/null; then
+            RESOLVED_SHA="${RESOLVED_SHA}-dirty"
+        fi
     fi
 else
     printf "\n%b==> Downloading cfire source from GitHub (%s)...%b\n" "${BOLD}" "$BRANCH" "${RESET}"
@@ -143,7 +147,15 @@ else
         printf "%b\n" "${RED}Error: Failed to download or unpack repository archive from ${TARBALL_URL}.${RESET}" >&2
         exit 1
     fi
-    if command -v git >/dev/null 2>&1; then
+    # 1. Prefer commit SHA embedded by GitHub `git archive` via .gitattributes export-subst
+    if [ -f "$TMP_DIR/src/version.hpp" ]; then
+        ARCHIVE_SHA="$(sed -n 's/.*kArchiveGitSha = "\([^"$]*\)".*/\1/p' "$TMP_DIR/src/version.hpp" | head -n 1)"
+        if [ -n "$ARCHIVE_SHA" ] && [ "$ARCHIVE_SHA" != "dev" ]; then
+            RESOLVED_SHA="$ARCHIVE_SHA"
+        fi
+    fi
+    # 2. Fallback to git ls-remote if export-subst was not expanded
+    if [ -z "$RESOLVED_SHA" ] && command -v git >/dev/null 2>&1; then
         RESOLVED_SHA="$(git ls-remote https://github.com/gsandoval/cfire.git "$BRANCH" 2>/dev/null | awk 'NR==1 {print substr($1, 1, 7)}' || true)"
     fi
 fi
@@ -175,6 +187,8 @@ chmod 755 "$INSTALL_BIN/.cfire.tmp.$$"
 mv -f "$INSTALL_BIN/.cfire.tmp.$$" "$INSTALL_BIN/cfire"
 
 cp -R "$TMP_DIR/runtime/"* "$INSTALL_DATA/runtime/"
+INSTALLED_VER="$(tr -d '[:space:]' < "$TMP_DIR/VERSION" 2>/dev/null || sed -n 's/.*kVersion = "\([^"]*\)".*/\1/p' "$TMP_DIR/src/version.hpp" | head -n 1)"
+[ -n "$INSTALLED_VER" ] && printf "%s %s\n" "$INSTALLED_VER" "$RESOLVED_SHA" > "$INSTALL_DATA/runtime/VERSION"
 
 # 5. Verify installation & run doctor/setup
 if "$INSTALL_BIN/cfire" --version >/dev/null 2>&1; then

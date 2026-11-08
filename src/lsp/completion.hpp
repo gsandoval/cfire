@@ -299,7 +299,6 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
     append_item("print", 3, "print(args...)", "Prints formatted arguments to standard output without trailing newline.");
     append_item("eprintln", 3, "eprintln(args...)", "Prints formatted arguments followed by a newline to standard error.");
     append_item("eprint", 3, "eprint(args...)", "Prints formatted arguments to standard error without trailing newline.");
-    append_item("readln", 3, "readln(prompt: str = \"\") -> str?", "Reads a single line from standard input without trailing newline, or none on EOF.");
     append_item("panic", 3, "panic(message: str)", "Terminates the program immediately with an error message.");
     append_item("assert", 3, "assert(cond: bool, msg: str = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).");
     append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: str = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.");

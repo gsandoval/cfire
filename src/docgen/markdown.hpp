@@ -1569,7 +1569,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
 - Built-in Prelude Functions & Type Constructors:
   - Standard Output & Error: `println(fmt, ...)` / `print(fmt, ...)` (`stdout`), `eprintln(fmt, ...)` / `eprint(fmt, ...)` (`stderr`)
-  - Interactive Line Input: `readln(prompt: str = "") -> str?` (reads one line from `stdin` or returns `none` on EOF; for no-echo password entry use `cli.prompt_password(...)` from `core:cli`)
+  - Interactive Terminal Input: `cli.prompt(message: str = "") -> str?` and `cli.prompt_password(message: str = "") -> str?` (`core:cli`); or stream directly from `os.stdin().read_line() -> str?` (`core:os`)
   - Assertions: `assert(cond)`, `assert_eq(a, b)`, `assert_ne(a, b)`, `panic(msg)`
   - Canonical Type Constructors (`T(x)`, no `as` keyword):
     - Scalar conversions: `i8(x)`, `i16(x)`, `i32(x)`, `i64(x)`, `isize(x)`, `u8(x)`, `byte(x)`, `u16(x)`, `u32(x)`, `u64(x)`, `usize(x)`, `f32(x)`, `f64(x)`, `bool(x)`
