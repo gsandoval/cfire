@@ -274,13 +274,12 @@ inline void query_pkg_config(
 ) {
     int code = 0;
     std::string qpkg = bridge::shell_quote(pkg);
-    std::string pc_env;
+    std::vector<std::string> extra_pc_dirs;
     if (!install_root.empty()) {
         std::error_code ec;
         for (const auto& pc_rel : {install_root / "lib" / "pkgconfig", install_root / "share" / "pkgconfig"}) {
             if (std::filesystem::is_directory(pc_rel, ec)) {
-                if (!pc_env.empty()) pc_env += ":";
-                pc_env += pc_rel.string();
+                extra_pc_dirs.push_back(pc_rel.string());
             }
         }
     }
@@ -315,31 +314,28 @@ inline void query_pkg_config(
         }
         for (const auto& pc_rel : {local_root / "lib" / "pkgconfig", local_root / "share" / "pkgconfig"}) {
             if (std::filesystem::is_directory(pc_rel, ec)) {
-                if (!pc_env.empty()) pc_env += ":";
-                pc_env += pc_rel.string();
+                extra_pc_dirs.push_back(pc_rel.string());
             }
         }
     }
     if (pkg == "sqlcipher") {
         for (const char* keg : {"/opt/homebrew/opt/sqlcipher/lib/pkgconfig", "/usr/local/opt/sqlcipher/lib/pkgconfig"}) {
             if (std::filesystem::is_directory(keg, ec)) {
-                if (!pc_env.empty()) pc_env += ":";
-                pc_env += keg;
+                extra_pc_dirs.push_back(keg);
             }
         }
     }
-    if (const char* existing_pc = std::getenv("PKG_CONFIG_PATH"); existing_pc && existing_pc[0] != '\0') {
-        if (!pc_env.empty()) pc_env += ":";
-        pc_env += existing_pc;
-    }
 
-    std::string env_prefix = pc_env.empty() ? "" : ("PKG_CONFIG_PATH=" + bridge::shell_quote(pc_env) + " ");
-    std::string cf_out = bridge::run_command_capture(env_prefix + "pkg-config --cflags " + qpkg + " 2>/dev/null", code);
+    std::string pc_args;
+    for (const auto& d : extra_pc_dirs) {
+        pc_args += " --with-path=" + bridge::shell_quote(d);
+    }
+    std::string cf_out = bridge::run_command_capture("pkg-config" + pc_args + " --cflags " + qpkg + " 2>/dev/null", code);
     if (code == 0) {
         for (auto& f : split_ws(cf_out)) cflags.push_back(std::move(f));
     }
     int lb_code = 0;
-    std::string lb_out = bridge::run_command_capture(env_prefix + "pkg-config --libs " + qpkg + " 2>/dev/null", lb_code);
+    std::string lb_out = bridge::run_command_capture("pkg-config" + pc_args + " --libs " + qpkg + " 2>/dev/null", lb_code);
     if (lb_code == 0 && !lb_out.empty()) {
         for (auto& l : split_ws(lb_out)) libs.push_back(std::move(l));
         return;
@@ -350,6 +346,9 @@ inline void query_pkg_config(
         if (const char* home = std::getenv("HOME")) {
             prefixes.push_back((std::filesystem::path(home) / ".local").string());
         }
+        if (const char* mp = std::getenv("MINGW_PREFIX"); mp && *mp) {
+            prefixes.push_back(mp);
+        }
         if (!install_root.empty()) prefixes.push_back(install_root.string());
         if (pkg == "sqlcipher") {
             prefixes.push_back("/opt/homebrew/opt/sqlcipher");
@@ -358,6 +357,8 @@ inline void query_pkg_config(
         prefixes.push_back("/opt/homebrew");
         prefixes.push_back("/usr/local");
         prefixes.push_back("/usr");
+        prefixes.push_back("/clang64");
+        prefixes.push_back("C:/msys64/clang64");
         for (const auto& prefix : prefixes) {
             std::filesystem::path inc_p = std::filesystem::path(prefix) / "include" / hdr;
             if (std::filesystem::exists(inc_p, ec)) {

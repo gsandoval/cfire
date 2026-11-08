@@ -153,7 +153,19 @@ typedef enum {
     KEY_O = 79, KEY_P = 80, KEY_Q = 81, KEY_R = 82, KEY_S = 83, KEY_T = 84, KEY_U = 85,
     KEY_V = 86, KEY_W = 87, KEY_X = 88, KEY_Y = 89, KEY_Z = 90,
     KEY_SPACE = 32, KEY_ESCAPE = 256, KEY_ENTER = 257, KEY_TAB = 258, KEY_BACKSPACE = 259,
-    KEY_INSERT = 260, KEY_DELETE = 261, KEY_RIGHT = 262, KEY_LEFT = 263, KEY_DOWN = 264, KEY_UP = 265
+    KEY_INSERT = 260, KEY_DELETE = 261, KEY_RIGHT = 262, KEY_LEFT = 263, KEY_DOWN = 264, KEY_UP = 265,
+    KEY_PAGE_UP = 266, KEY_PAGE_DOWN = 267, KEY_HOME = 268, KEY_END = 269,
+    KEY_CAPS_LOCK = 280, KEY_SCROLL_LOCK = 281, KEY_NUM_LOCK = 282, KEY_PRINT_SCREEN = 283, KEY_PAUSE = 284,
+    KEY_F1 = 290, KEY_F2 = 291, KEY_F3 = 292, KEY_F4 = 293, KEY_F5 = 294, KEY_F6 = 295,
+    KEY_F7 = 296, KEY_F8 = 297, KEY_F9 = 298, KEY_F10 = 299, KEY_F11 = 300, KEY_F12 = 301,
+    KEY_KP_0 = 320, KEY_KP_1 = 321, KEY_KP_2 = 322, KEY_KP_3 = 323, KEY_KP_4 = 324,
+    KEY_KP_5 = 325, KEY_KP_6 = 326, KEY_KP_7 = 327, KEY_KP_8 = 328, KEY_KP_9 = 329,
+    KEY_KP_DECIMAL = 330, KEY_KP_DIVIDE = 331, KEY_KP_MULTIPLY = 332,
+    KEY_KP_SUBTRACT = 333, KEY_KP_ADD = 334, KEY_KP_ENTER = 335, KEY_KP_EQUAL = 336,
+    KEY_LEFT_SHIFT = 340, KEY_LEFT_CONTROL = 341, KEY_LEFT_ALT = 342, KEY_LEFT_SUPER = 343,
+    KEY_RIGHT_SHIFT = 344, KEY_RIGHT_CONTROL = 345, KEY_RIGHT_ALT = 346, KEY_RIGHT_SUPER = 347,
+    KEY_KB_MENU = 348,
+    KEY_LEFT_BRACKET = 91, KEY_BACKSLASH = 92, KEY_RIGHT_BRACKET = 93, KEY_GRAVE = 96
 } KeyboardKey;
 
 #define MOUSE_LEFT_BUTTON   MOUSE_BUTTON_LEFT
@@ -163,8 +175,35 @@ typedef enum {
 typedef enum {
     MOUSE_BUTTON_LEFT    = 0,
     MOUSE_BUTTON_RIGHT   = 1,
-    MOUSE_BUTTON_MIDDLE  = 2
+    MOUSE_BUTTON_MIDDLE  = 2,
+    MOUSE_BUTTON_SIDE    = 3,
+    MOUSE_BUTTON_EXTRA   = 4,
+    MOUSE_BUTTON_FORWARD = 5,
+    MOUSE_BUTTON_BACK    = 6
 } MouseButton;
+
+typedef enum {
+    MOUSE_CURSOR_DEFAULT       = 0,
+    MOUSE_CURSOR_ARROW         = 1,
+    MOUSE_CURSOR_IBEAM         = 2,
+    MOUSE_CURSOR_CROSSHAIR     = 3,
+    MOUSE_CURSOR_POINTING_HAND = 4,
+    MOUSE_CURSOR_RESIZE_EW     = 5,
+    MOUSE_CURSOR_RESIZE_NS     = 6,
+    MOUSE_CURSOR_RESIZE_NWSE   = 7,
+    MOUSE_CURSOR_RESIZE_NESW   = 8,
+    MOUSE_CURSOR_RESIZE_ALL    = 9,
+    MOUSE_CURSOR_NOT_ALLOWED   = 10
+} MouseCursor;
+
+typedef enum {
+    TEXTURE_FILTER_POINT           = 0,
+    TEXTURE_FILTER_BILINEAR        = 1,
+    TEXTURE_FILTER_TRILINEAR       = 2,
+    TEXTURE_FILTER_ANISOTROPIC_4X  = 3,
+    TEXTURE_FILTER_ANISOTROPIC_8X  = 4,
+    TEXTURE_FILTER_ANISOTROPIC_16X = 5
+} TextureFilter;
 
 typedef enum {
     BLEND_ALPHA = 0,
@@ -242,6 +281,7 @@ struct State {
     bool key_down[512]{};
     bool key_pressed[512]{};
     std::vector<int> char_queue{};
+    std::string clipboard_text{};
     bool keyboard_visible = false;
     bool keyboard_requested_this_frame = false;
 
@@ -1167,6 +1207,10 @@ RLAPI bool IsKeyPressed(int key) {
     if (key < 0 || key >= 512) return false;
     return cfire::ios_rl::state().key_pressed[key];
 }
+RLAPI bool IsKeyPressedRepeat(int key) {
+    (void)key;
+    return false;
+}
 RLAPI bool IsKeyDown(int key) {
     if (key < 0 || key >= 512) return false;
     return cfire::ios_rl::state().key_down[key];
@@ -1181,6 +1225,38 @@ RLAPI int GetCharPressed(void) {
     return c;
 }
 RLAPI void SetExitKey(int key) { (void)key; }
+RLAPI void SetMouseCursor(int cursor) { (void)cursor; }
+
+RLAPI void SetClipboardText(const char *text) {
+    auto& s = cfire::ios_rl::state();
+    s.clipboard_text = text ? text : "";
+#if defined(__OBJC__)
+    if (text) {
+        [UIPasteboard generalPasteboard].string = [NSString stringWithUTF8String:text];
+    }
+#endif
+}
+
+RLAPI const char *GetClipboardText(void) {
+    auto& s = cfire::ios_rl::state();
+#if defined(__OBJC__)
+    NSString *pb = [UIPasteboard generalPasteboard].string;
+    if (pb) {
+        s.clipboard_text = [pb UTF8String];
+    }
+#endif
+    return s.clipboard_text.c_str();
+}
+
+RLAPI bool FileExists(const char *fileName) {
+    if (!fileName || !*fileName) return false;
+    FILE *f = std::fopen(fileName, "rb");
+    if (f) {
+        std::fclose(f);
+        return true;
+    }
+    return false;
+}
 
 RLAPI bool IsMouseButtonPressed(int button) {
     if (button < 0 || button >= 3) return false;
@@ -1418,6 +1494,120 @@ RLAPI void DrawTriangle(Vector2 v1, Vector2 v2, Vector2 v3, Color color) {
 //----------------------------------------------------------------------------------
 
 RLAPI Font GetFontDefault(void) { return cfire::ios_rl::state().default_font; }
+
+RLAPI Font LoadFontFromMemory(const char *fileType, const unsigned char *fileData, int dataSize, int fontSize, int *codepoints, int codepointCount) {
+    (void)fileType;
+    if (!fileData || dataSize <= 0) return Font{};
+    auto& s = cfire::ios_rl::state();
+    int count = (codepointCount > 0) ? codepointCount : 95;
+    int base_sz = (fontSize > 0) ? fontSize : 20;
+    Font f{};
+    f.baseSize = base_sz;
+    f.glyphCount = count;
+    f.glyphPadding = 4;
+    f.texture = Texture2D{s.font_tex ? s.font_tex : 1u, 1024, 512, 1, 7};
+    f.recs = static_cast<Rectangle*>(std::calloc(static_cast<std::size_t>(count), sizeof(Rectangle)));
+    f.glyphs = static_cast<GlyphInfo*>(std::calloc(static_cast<std::size_t>(count), sizeof(GlyphInfo)));
+    int adv = std::max(1, static_cast<int>(static_cast<float>(base_sz) * 0.58f + 0.5f));
+    for (int i = 0; i < count; ++i) {
+        if (f.glyphs) {
+            f.glyphs[i].value = (codepoints && i < codepointCount) ? codepoints[i] : (32 + i);
+            f.glyphs[i].advanceX = adv;
+        }
+        if (f.recs) {
+            f.recs[i] = Rectangle{0.0f, 0.0f, static_cast<float>(adv), static_cast<float>(base_sz)};
+        }
+    }
+    return f;
+}
+
+RLAPI Font LoadFontEx(const char *fileName, int fontSize, int *codepoints, int codepointCount) {
+    if (!FileExists(fileName)) return Font{};
+    const unsigned char dummy = 1;
+    return LoadFontFromMemory(".ttf", &dummy, 1, fontSize, codepoints, codepointCount);
+}
+
+RLAPI void UnloadFont(Font font) {
+    if (font.recs) std::free(font.recs);
+    if (font.glyphs) std::free(font.glyphs);
+}
+
+RLAPI void GenTextureMipmaps(Texture2D *texture) {
+    if (texture && texture->mipmaps < 1) texture->mipmaps = 1;
+}
+
+RLAPI void SetTextureFilter(Texture2D texture, int filter) {
+    (void)texture;
+    (void)filter;
+}
+
+RLAPI int GetGlyphIndex(Font font, int codepoint) {
+    if (font.glyphs && font.glyphCount > 0) {
+        for (int i = 0; i < font.glyphCount; ++i) {
+            if (font.glyphs[i].value == codepoint) return i;
+        }
+        return 0;
+    }
+    if (codepoint >= 32 && codepoint <= 126) return codepoint - 32;
+    return 0;
+}
+
+RLAPI int GetCodepointNext(const char *text, int *codepointSize) {
+    if (!text || !*text) {
+        if (codepointSize) *codepointSize = 0;
+        return 0x3f;
+    }
+    const auto *p = reinterpret_cast<const unsigned char *>(text);
+    unsigned char b0 = p[0];
+    if (b0 < 0x80) {
+        if (codepointSize) *codepointSize = 1;
+        return static_cast<int>(b0);
+    }
+    if ((b0 & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) {
+        if (codepointSize) *codepointSize = 2;
+        return ((b0 & 0x1F) << 6) | (p[1] & 0x3F);
+    }
+    if ((b0 & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+        if (codepointSize) *codepointSize = 3;
+        return ((b0 & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+    }
+    if ((b0 & 0xF8) == 0xF0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
+        if (codepointSize) *codepointSize = 4;
+        return ((b0 & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+    }
+    if (codepointSize) *codepointSize = 1;
+    return 0x3f;
+}
+
+RLAPI const char *CodepointToUTF8(int codepoint, int *utf8Size) {
+    static char utf8[6]{};
+    std::memset(utf8, 0, sizeof(utf8));
+    int size = 0;
+    if (codepoint <= 0x7F && codepoint >= 0) {
+        utf8[0] = static_cast<char>(codepoint);
+        size = 1;
+    } else if (codepoint <= 0x7FF && codepoint >= 0) {
+        utf8[0] = static_cast<char>(((codepoint >> 6) & 0x1F) | 0xC0);
+        utf8[1] = static_cast<char>((codepoint & 0x3F) | 0x80);
+        size = 2;
+    } else if (codepoint <= 0xFFFF && codepoint >= 0) {
+        utf8[0] = static_cast<char>(((codepoint >> 12) & 0x0F) | 0xE0);
+        utf8[1] = static_cast<char>(((codepoint >> 6) & 0x3F) | 0x80);
+        utf8[2] = static_cast<char>((codepoint & 0x3F) | 0x80);
+        size = 3;
+    } else if (codepoint <= 0x10FFFF && codepoint >= 0) {
+        utf8[0] = static_cast<char>(((codepoint >> 18) & 0x07) | 0xF0);
+        utf8[1] = static_cast<char>(((codepoint >> 12) & 0x3F) | 0x80);
+        utf8[2] = static_cast<char>(((codepoint >> 6) & 0x3F) | 0x80);
+        utf8[3] = static_cast<char>((codepoint & 0x3F) | 0x80);
+        size = 4;
+    } else {
+        utf8[0] = '?';
+        size = 1;
+    }
+    if (utf8Size) *utf8Size = size;
+    return utf8;
+}
 
 namespace cfire::ios_rl {
 inline auto fold_utf8_char(const unsigned char*& p) noexcept -> unsigned char {

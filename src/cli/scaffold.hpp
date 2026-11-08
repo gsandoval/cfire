@@ -73,7 +73,7 @@ void print_usage() {
 }
 
 [[nodiscard]] auto is_ignored_walk_dir(const std::filesystem::path& p) -> bool {
-    std::string s = p.string();
+    std::string s = p.generic_string();
     return s.contains("/.cfire") || s.contains("/.tako") || s.contains("/.git") || s.contains("/dist") ||
            s.contains("/vendor") || s.contains("/node_modules") || s.contains("/ejected_cpp");
 }
@@ -572,16 +572,20 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
             out << wrapped_cf;
         }
 
+#if defined(_WIN32)
+        auto eval_bin = tmp_dir / "eval_bin.exe";
+#else
         auto eval_bin = tmp_dir / "eval_bin";
+#endif
         auto plan = cfire::build::build_native(cf_file, runtime_dir, eval_bin, false, false);
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;
         }
 
-        std::string eval_cmd = cfire::bridge::shell_quote(eval_bin.string());
+        std::string eval_cmd = cfire::bridge::win32_quote_cmd(cfire::bridge::shell_quote(eval_bin.string()));
         int rc = std::system(eval_cmd.c_str());
-        return rc == 0 ? 0 : (rc >> 8 != 0 ? rc >> 8 : 1);
+        return unwrap_system_exit_code(rc);
 }
 
 [[nodiscard]] inline auto run_refactor_subcommand(int argc, char** argv) -> int {

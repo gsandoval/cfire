@@ -214,8 +214,15 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         }
     }
     int rc = 0;
+#if defined(_WIN32)
+    auto which_out = bridge::run_command_capture("where em++", rc);
+#else
     auto which_out = bridge::run_command_capture("which em++ 2>/dev/null", rc);
+#endif
     if (rc == 0 && !which_out.empty()) {
+        if (auto nl = which_out.find('\n'); nl != std::string::npos) {
+            which_out.resize(nl);
+        }
         while (!which_out.empty() && (which_out.back() == '\n' || which_out.back() == '\r' || which_out.back() == ' ')) {
             which_out.pop_back();
         }

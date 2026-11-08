@@ -575,10 +575,16 @@ namespace cfire::build {
                     plan.ldflags.insert(plan.ldflags.end(), {"-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11"});
 #endif
                 } else {
-                    plan.cflags.push_back("-DCFIRE_RAYLIB_FALLBACK=1");
+                    bool already_has_fallback = false;
+                    for (const auto& cf : plan.cflags) {
+                        if (cf == "-DCFIRE_RAYLIB_FALLBACK=1") already_has_fallback = true;
+                    }
+                    if (!already_has_fallback) {
+                        plan.cflags.push_back("-DCFIRE_RAYLIB_FALLBACK=1");
 #if defined(__APPLE__)
-                    plan.ldflags.insert(plan.ldflags.end(), {"-framework", "AudioToolbox", "-framework", "CoreFoundation"});
+                        plan.ldflags.insert(plan.ldflags.end(), {"-framework", "AudioToolbox", "-framework", "CoreFoundation"});
 #endif
+                    }
                 }
                 } // !is_wasm
             }
@@ -591,8 +597,12 @@ namespace cfire::build {
                         auto loc_inc = std::filesystem::path(std::getenv("HOME")) / ".local" / "include" / "sodium.h";
                         if (std::filesystem::exists(loc_inc)) found_sodium = true;
                     }
+                    if (!found_sodium && std::getenv("MINGW_PREFIX")) {
+                        auto mp_inc = std::filesystem::path(std::getenv("MINGW_PREFIX")) / "include" / "sodium.h";
+                        if (std::filesystem::exists(mp_inc)) found_sodium = true;
+                    }
                     if (!found_sodium) {
-                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include", "/clang64/include", "C:/msys64/clang64/include"}) {
                             if (std::filesystem::exists(std::filesystem::path(inc_dir) / "sodium.h")) {
                                 found_sodium = true;
                                 break;
