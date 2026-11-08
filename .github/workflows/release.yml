@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semantic version to release (e.g. 0.10.1)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,30 +23,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify Tag Matches VERSION & Build Toolchain
+      - name: Bump Version & Push Tag (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          TAG_VER="${GITHUB_REF_NAME#v}"
+          RAW_VER="${{ inputs.version }}"
+          CLEAN_VER="${RAW_VER#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ./scripts/release.sh "${CLEAN_VER}"
+          git push origin HEAD:main "v${CLEAN_VER}"
+
+      - name: Resolve Release Version & Verify Tag Matches VERSION
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_VER="${{ inputs.version }}"
+            TAG_VER="${RAW_VER#v}"
+          else
+            TAG_VER="${GITHUB_REF_NAME#v}"
+          fi
           FILE_VER="$(tr -d '[:space:]' < VERSION)"
           if [ "$TAG_VER" != "$FILE_VER" ]; then
-            echo "error: git tag (${TAG_VER}) does not match VERSION file (${FILE_VER})" >&2
+            echo "error: release version (${TAG_VER}) does not match VERSION file (${FILE_VER})" >&2
             exit 1
           fi
+          echo "version=${TAG_VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${TAG_VER}" >> "$GITHUB_OUTPUT"
           make build
           ./cfire --version
           ./cfire --version | grep -F "cfire ${TAG_VER} ($(git rev-parse --short=7 HEAD),"
 
       - name: Run Review Check Quality Gates
+        if: github.event_name != 'workflow_dispatch'
         run: make review-check
 
       - name: Package Portable Release Bundle (macOS arm64)
         run: |
-          TAG_VER="${GITHUB_REF_NAME#v}"
+          TAG_VER="${{ steps.meta.outputs.version }}"
           ./cfire install --portable "./dist/cfire-v${TAG_VER}-macos-arm64"
           tar -czf "cfire-v${TAG_VER}-macos-arm64.tar.gz" -C ./dist "cfire-v${TAG_VER}-macos-arm64"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.meta.outputs.tag }}
           generate_release_notes: true
           files: |
             cfire-v*-macos-arm64.tar.gz
