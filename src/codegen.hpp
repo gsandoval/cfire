@@ -912,6 +912,19 @@ public:
             } else if constexpr (std::is_same_v<T, OrExpr>) {
                 hoist_subexpr_tries(ex.inner, in_main, stmt_line, false);
                 hoist_subexpr_tries(ex.fallback_val, in_main, stmt_line, false);
+                if (!ex.handler_body.empty() && !is_top_handled) {
+                    int id = ++try_count_;
+                    std::string tmp = std::format("_res_{}", id);
+                    writeln(std::format("auto {} = {};", tmp, emit_expr(ex.inner)));
+                    writeln(std::format("if (!{}.has_value()) {{", tmp));
+                    ++indent_;
+                    emit_or_handler_body(ex, tmp, in_main);
+                    --indent_;
+                    writeln("}");
+                    hoisted_tries_[e] = std::format("cfire::unwrap_val(std::move({}))", tmp);
+                }
+            } else if constexpr (std::is_same_v<T, MatchExpr>) {
+                hoist_subexpr_tries(ex.target, in_main, stmt_line, false);
             } else if constexpr (std::is_same_v<T, CallExpr>) {
                 hoist_subexpr_tries(ex.callee, in_main, stmt_line, false);
                 for (const auto& a : ex.args) {

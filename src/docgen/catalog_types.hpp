@@ -898,6 +898,83 @@ struct DiagnosticDoc {
             "Struct reflection tags (`json:\"...\"`, `sql:\"...\"`, `db:\"...\"`, `cli:\"...\"`, `default:\"...\"`) are validated at compile time. Duplicate `json`, `sql`/`db`, or `cli` flag names across fields of the same struct, or `default:\"...\"` literals that cannot parse into the field's numeric or boolean type, are rejected at compile time.",
             "type Config struct {\n    Port: i64 `json:\"port\" default:\"not_a_number\"`\n    Alt:  i64 `json:\"port\"` // ERROR [cfire/INVALID-STRUCT-TAG]\n}",
             "type Config struct {\n    Port: i64 `json:\"port\" default:\"8080\"`\n    Alt:  i64 `json:\"alt_port\"` // OK\n}"
+        },
+        {
+            "cfire/REDUNDANT-TRY",
+            "Redundant `try` on Non-Fallible Expression",
+            "`try` propagates errors from fallible `T!` (`std::expected<T, cfire::Error>`) expressions. Applying `try` to a plain value, literal, or non-fallible function call has no effect and is rejected at compile time.",
+            "fn add(a: i32, b: i32) -> i32 { return a + b }\nfn main() {\n    x := try add(1, 2) // ERROR [cfire/REDUNDANT-TRY]\n}",
+            "fn add(a: i32, b: i32) -> i32 { return a + b }\nfn main() {\n    x := add(1, 2) // OK\n}"
+        },
+        {
+            "cfire/TRY-ON-OPTIONAL",
+            "Using `try` on Optional `T?` Instead of `or`",
+            "`try` only propagates fallible `T!` errors. Optional `T?` values represent absence (`none`) without an error payload and must be unwrapped using `or fallback` or `or { ... }`.",
+            "fn main() {\n    n := try \"42\".parse_i64() // ERROR [cfire/TRY-ON-OPTIONAL]\n}",
+            "fn main() {\n    n := \"42\".parse_i64() or 0 // OK\n}"
+        },
+        {
+            "cfire/TRY-IN-NON-FALLIBLE-FN",
+            "`try` Inside Non-Fallible Function",
+            "Functions that use `try` (other than `main` and `test`/`fuzz`/`bench` blocks) must declare a fallible `T!` or `void!` return type so propagated errors can be returned to the caller.",
+            "fn load() -> str {\n    return try fs.read_text(\"config.json\") // ERROR [cfire/TRY-IN-NON-FALLIBLE-FN]\n}",
+            "fn load() -> str! {\n    return try fs.read_text(\"config.json\") // OK\n}"
+        },
+        {
+            "cfire/TRY-IN-DEFER",
+            "`try` Inside `defer` Block",
+            "`defer` blocks run inside an RAII scope-exit destructor and cannot propagate errors out of the enclosing function with `try`. Handle errors explicitly with `or` inside `defer`.",
+            "fn write_log(mut f: fs.File) -> void! {\n    defer {\n        try f.flush() // ERROR [cfire/TRY-IN-DEFER]\n    }\n}",
+            "fn write_log(mut f: fs.File) -> void! {\n    defer {\n        f.flush() or err { eprintln(\"flush failed: {}\", err.message()) } // OK\n    }\n}"
+        },
+        {
+            "cfire/INVALID-TRY-CONTEXT",
+            "`try` Inside Short-Circuit Operand or `for` Condition",
+            "Hoisting `try` before a statement would eagerly evaluate the right-hand side of `&&` / `||` or evaluate a `for <cond> { ... }` loop condition only once before the loop. Hoist the `try` into a separate statement or use `or fallback`.",
+            "if ready && (try check_remote()) { // ERROR [cfire/INVALID-TRY-CONTEXT]\n}",
+            "if ready {\n    if try check_remote() { ... } // OK\n}"
+        },
+        {
+            "cfire/REDUNDANT-OR",
+            "Redundant `or` on Non-Fallible, Non-Optional Expression",
+            "`or` provides fallback values or diverging recovery blocks for fallible `T!` and optional `T?` expressions. Using `or` on a plain value or non-fallible call has no effect and is rejected at compile time.",
+            "x := (1 + 2) or 0 // ERROR [cfire/REDUNDANT-OR]",
+            "x := 1 + 2 // OK"
+        },
+        {
+            "cfire/INVALID-OR-BLOCK-CONTEXT",
+            "Block `or { ... }` Inside Short-Circuit Operand or `for` Condition",
+            "Block-form `or { ... }` cannot be hoisted out of the right-hand side of `&&` / `||` or a `for <cond> { ... }` condition without breaking short-circuit or per-iteration evaluation. Use value fallback `or fallback` or hoist into a statement.",
+            "if ok && (parse_flag() or { return }) { // ERROR [cfire/INVALID-OR-BLOCK-CONTEXT]\n}",
+            "if ok && (parse_flag() or false) { // OK\n}"
+        },
+        {
+            "cfire/REDUNDANT-CALLSITE-INTENT",
+            "Redundant `mut` or `out` Annotation on `in` Parameter",
+            "Call-site `mut` and `out` annotations are only valid when the target parameter is declared `mut` or `out`. Writing `mut` or `out` on a read-only `in` parameter misleads readers into thinking the call mutates the argument.",
+            "fn show(x: i32) { println(\"{}\", x) }\nfn main() {\n    mut a := 10\n    show(mut a) // ERROR [cfire/REDUNDANT-CALLSITE-INTENT]\n}",
+            "fn show(x: i32) { println(\"{}\", x) }\nfn main() {\n    mut a := 10\n    show(a) // OK\n}"
+        },
+        {
+            "cfire/INVALID-MOVE",
+            "No-Op `move` on Rvalue or Scalar `Copy` Variable",
+            "`move` transfers ownership of an owned variable (`str`, `[]T`, `map[K]V`, `own[T]`, structs/enums). Applying `move` to a temporary rvalue/literal (`move 42`, `move foo()`) or to a scalar `Copy` primitive (`i32`, `f64`, `bool`) when not required by a `move` parameter has no effect and is rejected.",
+            "mut count := 10\ny := move count // ERROR [cfire/INVALID-MOVE]",
+            "mut buf := \"hello\"\ny := move buf // OK: transfers ownership of non-Copy 'str'"
+        },
+        {
+            "cfire/BREAK-OUTSIDE-LOOP",
+            "`break` or `continue` Outside of a `for` Loop",
+            "`break` and `continue` are only valid inside the body of a `for` loop (and cannot cross closure or `defer` boundaries).",
+            "fn helper() {\n    break // ERROR [cfire/BREAK-OUTSIDE-LOOP]\n}",
+            "fn helper() {\n    for i in 0..10 {\n        if i == 5 { break } // OK\n    }\n}"
+        },
+        {
+            "cfire/NO-EFFECT-STMT",
+            "Pure Expression Statement With No Side Effects",
+            "Standalone expression statements must perform an effect (such as a function/method call, `try`, `or { ... }`, `match`, `break`, or `continue`). Pure expressions like `x == 1` or `a + b` as statements discard their result and are rejected.",
+            "mut x := 0\nx == 1 // ERROR [cfire/NO-EFFECT-STMT]: did you mean '=' assignment?",
+            "mut x := 0\nx = 1 // OK"
         }
     };
     return diags;

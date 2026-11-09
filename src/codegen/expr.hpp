@@ -794,36 +794,67 @@ inline auto Emitter::analyze_closure_returns(
     bool& has_val_ret,
     std::string& val_ret_cpp
 ) const -> void {
+    auto scan_expr = [&](auto& self, const ExprPtr& e) -> void {
+        if (!e) return;
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            has_fallible = true;
+            self(self, tr->inner);
+        } else if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            self(self, or_ex->inner);
+            self(self, or_ex->fallback_val);
+            if (!or_ex->handler_body.empty()) {
+                analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
+            }
+        } else if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            self(self, un->operand);
+        } else if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            self(self, bin->left);
+            self(self, bin->right);
+        } else if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            self(self, mem->object);
+        } else if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
+            self(self, idx->object);
+            self(self, idx->index);
+        } else if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
+            self(self, sl->object);
+            self(self, sl->start);
+            self(self, sl->end);
+        } else if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
+            for (const auto& f : st->fields) self(self, f.value);
+        } else if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
+            for (const auto& el : arr->elements) self(self, el);
+        } else if (const auto* tup = std::get_if<TupleExpr>(&e->node)) {
+            for (const auto& el : tup->elements) self(self, el);
+        } else if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            self(self, call->callee);
+            for (const auto& a : call->args) self(self, a.value);
+        } else if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            self(self, me->target);
+        }
+    };
+
     for (const auto& s : stmts) {
         if (!s) continue;
         if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
-            if (vd->init && std::holds_alternative<TryExpr>(vd->init->node)) has_fallible = true;
-            if (vd->init) {
-                if (const auto* or_ex = std::get_if<OrExpr>(&vd->init->node); or_ex && !or_ex->handler_body.empty()) {
-                    analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-                }
-            }
+            scan_expr(scan_expr, vd->init);
             if (vd->type) {
                 local_types[vd->name] = lower_owning_type(*vd->type);
             } else if (vd->init) {
                 std::string t = infer_closure_expr_cpp_type(vd->init, local_types);
                 if (!t.empty()) local_types[vd->name] = t;
             }
+        } else if (const auto* dvs = std::get_if<DestructureVarDeclStmt>(&s->node)) {
+            scan_expr(scan_expr, dvs->init);
         } else if (const auto* as = std::get_if<AssignStmt>(&s->node)) {
-            if (as->value && std::holds_alternative<TryExpr>(as->value->node)) has_fallible = true;
-            if (as->value) {
-                if (const auto* or_ex = std::get_if<OrExpr>(&as->value->node); or_ex && !or_ex->handler_body.empty()) {
-                    analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-                }
-            }
+            scan_expr(scan_expr, as->target);
+            scan_expr(scan_expr, as->value);
+        } else if (const auto* das = std::get_if<DestructureAssignStmt>(&s->node)) {
+            for (const auto& t : das->targets) scan_expr(scan_expr, t);
+            scan_expr(scan_expr, das->value);
         } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
-            if (es->expr && std::holds_alternative<TryExpr>(es->expr->node)) has_fallible = true;
-            if (es->expr) {
-                if (const auto* or_ex = std::get_if<OrExpr>(&es->expr->node); or_ex && !or_ex->handler_body.empty()) {
-                    analyze_closure_returns(or_ex->handler_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
-                }
-            }
+            scan_expr(scan_expr, es->expr);
         } else if (const auto* rs = std::get_if<ReturnStmt>(&s->node)) {
+            scan_expr(scan_expr, rs->value);
             if (rs->value) {
                 bool is_err_call = false;
                 if (const auto* c = std::get_if<CallExpr>(&rs->value->node)) {
@@ -842,11 +873,15 @@ inline auto Emitter::analyze_closure_returns(
                 }
             }
         } else if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
+            scan_expr(scan_expr, ifs->cond);
             analyze_closure_returns(ifs->then_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
             analyze_closure_returns(ifs->else_body, local_types, has_fallible, has_val_ret, val_ret_cpp);
         } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
+            scan_expr(scan_expr, fs->iter_expr);
+            scan_expr(scan_expr, fs->range_end);
             analyze_closure_returns(fs->body, local_types, has_fallible, has_val_ret, val_ret_cpp);
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
+            scan_expr(scan_expr, ms->target);
             for (const auto& arm : ms->arms) {
                 analyze_closure_returns(arm.body, local_types, has_fallible, has_val_ret, val_ret_cpp);
             }

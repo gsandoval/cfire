@@ -2068,3 +2068,202 @@ type Config struct {
 }
 ```
 
+### `[cfire/REDUNDANT-TRY]` — Redundant `try` on Non-Fallible Expression
+
+`try` propagates errors from fallible `T!` (`std::expected<T, cfire::Error>`) expressions. Applying `try` to a plain value, literal, or non-fallible function call has no effect and is rejected at compile time.
+
+**Rejected (`.cf`):**
+```cf
+fn add(a: i32, b: i32) -> i32 { return a + b }
+fn main() {
+    x := try add(1, 2) // ERROR [cfire/REDUNDANT-TRY]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn add(a: i32, b: i32) -> i32 { return a + b }
+fn main() {
+    x := add(1, 2) // OK
+}
+```
+
+### `[cfire/TRY-ON-OPTIONAL]` — Using `try` on Optional `T?` Instead of `or`
+
+`try` only propagates fallible `T!` errors. Optional `T?` values represent absence (`none`) without an error payload and must be unwrapped using `or fallback` or `or { ... }`.
+
+**Rejected (`.cf`):**
+```cf
+fn main() {
+    n := try "42".parse_i64() // ERROR [cfire/TRY-ON-OPTIONAL]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn main() {
+    n := "42".parse_i64() or 0 // OK
+}
+```
+
+### `[cfire/TRY-IN-NON-FALLIBLE-FN]` — `try` Inside Non-Fallible Function
+
+Functions that use `try` (other than `main` and `test`/`fuzz`/`bench` blocks) must declare a fallible `T!` or `void!` return type so propagated errors can be returned to the caller.
+
+**Rejected (`.cf`):**
+```cf
+fn load() -> str {
+    return try fs.read_text("config.json") // ERROR [cfire/TRY-IN-NON-FALLIBLE-FN]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn load() -> str! {
+    return try fs.read_text("config.json") // OK
+}
+```
+
+### `[cfire/TRY-IN-DEFER]` — `try` Inside `defer` Block
+
+`defer` blocks run inside an RAII scope-exit destructor and cannot propagate errors out of the enclosing function with `try`. Handle errors explicitly with `or` inside `defer`.
+
+**Rejected (`.cf`):**
+```cf
+fn write_log(mut f: fs.File) -> void! {
+    defer {
+        try f.flush() // ERROR [cfire/TRY-IN-DEFER]
+    }
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn write_log(mut f: fs.File) -> void! {
+    defer {
+        f.flush() or err { eprintln("flush failed: {}", err.message()) } // OK
+    }
+}
+```
+
+### `[cfire/INVALID-TRY-CONTEXT]` — `try` Inside Short-Circuit Operand or `for` Condition
+
+Hoisting `try` before a statement would eagerly evaluate the right-hand side of `&&` / `||` or evaluate a `for <cond> { ... }` loop condition only once before the loop. Hoist the `try` into a separate statement or use `or fallback`.
+
+**Rejected (`.cf`):**
+```cf
+if ready && (try check_remote()) { // ERROR [cfire/INVALID-TRY-CONTEXT]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+if ready {
+    if try check_remote() { ... } // OK
+}
+```
+
+### `[cfire/REDUNDANT-OR]` — Redundant `or` on Non-Fallible, Non-Optional Expression
+
+`or` provides fallback values or diverging recovery blocks for fallible `T!` and optional `T?` expressions. Using `or` on a plain value or non-fallible call has no effect and is rejected at compile time.
+
+**Rejected (`.cf`):**
+```cf
+x := (1 + 2) or 0 // ERROR [cfire/REDUNDANT-OR]
+```
+
+**Accepted (`.cf`):**
+```cf
+x := 1 + 2 // OK
+```
+
+### `[cfire/INVALID-OR-BLOCK-CONTEXT]` — Block `or { ... }` Inside Short-Circuit Operand or `for` Condition
+
+Block-form `or { ... }` cannot be hoisted out of the right-hand side of `&&` / `||` or a `for <cond> { ... }` condition without breaking short-circuit or per-iteration evaluation. Use value fallback `or fallback` or hoist into a statement.
+
+**Rejected (`.cf`):**
+```cf
+if ok && (parse_flag() or { return }) { // ERROR [cfire/INVALID-OR-BLOCK-CONTEXT]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+if ok && (parse_flag() or false) { // OK
+}
+```
+
+### `[cfire/REDUNDANT-CALLSITE-INTENT]` — Redundant `mut` or `out` Annotation on `in` Parameter
+
+Call-site `mut` and `out` annotations are only valid when the target parameter is declared `mut` or `out`. Writing `mut` or `out` on a read-only `in` parameter misleads readers into thinking the call mutates the argument.
+
+**Rejected (`.cf`):**
+```cf
+fn show(x: i32) { println("{}", x) }
+fn main() {
+    mut a := 10
+    show(mut a) // ERROR [cfire/REDUNDANT-CALLSITE-INTENT]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn show(x: i32) { println("{}", x) }
+fn main() {
+    mut a := 10
+    show(a) // OK
+}
+```
+
+### `[cfire/INVALID-MOVE]` — No-Op `move` on Rvalue or Scalar `Copy` Variable
+
+`move` transfers ownership of an owned variable (`str`, `[]T`, `map[K]V`, `own[T]`, structs/enums). Applying `move` to a temporary rvalue/literal (`move 42`, `move foo()`) or to a scalar `Copy` primitive (`i32`, `f64`, `bool`) when not required by a `move` parameter has no effect and is rejected.
+
+**Rejected (`.cf`):**
+```cf
+mut count := 10
+y := move count // ERROR [cfire/INVALID-MOVE]
+```
+
+**Accepted (`.cf`):**
+```cf
+mut buf := "hello"
+y := move buf // OK: transfers ownership of non-Copy 'str'
+```
+
+### `[cfire/BREAK-OUTSIDE-LOOP]` — `break` or `continue` Outside of a `for` Loop
+
+`break` and `continue` are only valid inside the body of a `for` loop (and cannot cross closure or `defer` boundaries).
+
+**Rejected (`.cf`):**
+```cf
+fn helper() {
+    break // ERROR [cfire/BREAK-OUTSIDE-LOOP]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn helper() {
+    for i in 0..10 {
+        if i == 5 { break } // OK
+    }
+}
+```
+
+### `[cfire/NO-EFFECT-STMT]` — Pure Expression Statement With No Side Effects
+
+Standalone expression statements must perform an effect (such as a function/method call, `try`, `or { ... }`, `match`, `break`, or `continue`). Pure expressions like `x == 1` or `a + b` as statements discard their result and are rejected.
+
+**Rejected (`.cf`):**
+```cf
+mut x := 0
+x == 1 // ERROR [cfire/NO-EFFECT-STMT]: did you mean '=' assignment?
+```
+
+**Accepted (`.cf`):**
+```cf
+mut x := 0
+x = 1 // OK
+```
+

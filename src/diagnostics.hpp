@@ -166,6 +166,49 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    if (d.code == "cfire/REDUNDANT-TRY") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            std::size_t search_from = (d.col > 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size())
+                ? static_cast<std::size_t>(d.col - 1)
+                : 0;
+            if (auto pos = cur_ln.find("try ", search_from); pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = "Remove redundant 'try ' (cfire/REDUNDANT-TRY)";
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(pos) + 5;
+                edit.replacement = "";
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/REDUNDANT-CALLSITE-INTENT") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            std::size_t search_from = (d.col > 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size())
+                ? static_cast<std::size_t>(d.col - 1)
+                : 0;
+            std::string_view kw = d.message.contains("redundant 'out'") ? "out " : "mut ";
+            if (auto pos = cur_ln.find(kw, search_from); pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = std::format("Remove redundant '{}' at call site (cfire/REDUNDANT-CALLSITE-INTENT)", kw);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(pos + kw.size()) + 1;
+                edit.replacement = "";
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+            }
+        }
+        return;
+    }
+
     if (d.code == "cfire/UNHANDLED-RESULT") {
         if (d.line > 0 && d.col > 0) {
             FixItEdit edit;
