@@ -18,8 +18,9 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
         using T = std::decay_t<decltype(st)>;
         if constexpr (std::is_same_v<T, VarDeclStmt>) {
             if (st.init) {
-                bool top_try = std::holds_alternative<TryExpr>(st.init->node);
-                hoist_subexpr_tries(st.init, in_main, s->line, top_try);
+                bool top_handled = std::holds_alternative<TryExpr>(st.init->node) ||
+                    (std::holds_alternative<OrExpr>(st.init->node) && !std::get<OrExpr>(st.init->node).handler_body.empty());
+                hoist_subexpr_tries(st.init, in_main, s->line, top_handled);
             }
             local_vars_.insert(st.name);
             if ((st.type && st.type->is_optional) || (!st.type && expr_returns_optional(st.init))) {
@@ -131,7 +132,9 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
         } else if constexpr (std::is_same_v<T, AssignStmt>) {
             hoist_subexpr_tries(st.target, in_main, s->line, false);
             bool top_try = st.value && std::holds_alternative<TryExpr>(st.value->node);
-            hoist_subexpr_tries(st.value, in_main, s->line, top_try);
+            bool top_or_block = st.value && std::holds_alternative<OrExpr>(st.value->node) &&
+                                !std::get<OrExpr>(st.value->node).handler_body.empty();
+            hoist_subexpr_tries(st.value, in_main, s->line, top_try || top_or_block);
             std::string lhs = emit_expr(st.target);
             if (lhs == "_") {
                 if (const auto* try_ex = std::get_if<TryExpr>(&st.value->node)) {
@@ -140,6 +143,10 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                         return;
                     }
                     writeln(std::format("CFIRE_TRY({});", emit_expr(try_ex->inner)));
+                    return;
+                }
+                if (const auto* or_ex = std::get_if<OrExpr>(&st.value->node); or_ex && !or_ex->handler_body.empty()) {
+                    hoist_subexpr_tries(st.value, in_main, s->line, false);
                     return;
                 }
                 writeln(std::format("(void){};", emit_expr(st.value)));
@@ -310,8 +317,9 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     return;
                 }
             }
-            bool top_try = st.expr && std::holds_alternative<TryExpr>(st.expr->node);
-            hoist_subexpr_tries(st.expr, in_main, s->line, top_try);
+            bool top_handled = st.expr && (std::holds_alternative<TryExpr>(st.expr->node) ||
+                (std::holds_alternative<OrExpr>(st.expr->node) && !std::get<OrExpr>(st.expr->node).handler_body.empty()));
+            hoist_subexpr_tries(st.expr, in_main, s->line, top_handled);
             if (const auto* try_ex = std::get_if<TryExpr>(&st.expr->node)) {
                 if (in_main || in_test_) {
                     int id = ++try_count_;
@@ -336,8 +344,9 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             writeln(std::format("(void)({});", emit_expr(st.expr)));
         } else if constexpr (std::is_same_v<T, DestructureVarDeclStmt>) {
-            bool top_try = st.init && std::holds_alternative<TryExpr>(st.init->node);
-            hoist_subexpr_tries(st.init, in_main, s->line, top_try);
+            bool top_handled = st.init && (std::holds_alternative<TryExpr>(st.init->node) ||
+                (std::holds_alternative<OrExpr>(st.init->node) && !std::get<OrExpr>(st.init->node).handler_body.empty()));
+            hoist_subexpr_tries(st.init, in_main, s->line, top_handled);
             std::string names;
             for (std::size_t i = 0; i < st.bindings.size(); ++i) {
                 if (i > 0) names += ", ";

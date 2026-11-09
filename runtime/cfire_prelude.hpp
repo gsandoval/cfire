@@ -1397,55 +1397,53 @@ void run_scope(std::size_t workers, F&& body) {
 
 template <typename E>
 decltype(auto) unwrap_val(E&& exp) {
-    if constexpr (requires { exp.has_value(); }) {
-        if constexpr (std::is_void_v<typename std::decay_t<E>::value_type>) {
-            if (!exp.has_value()) {
+    static_assert(requires { exp.has_value(); }, "cfire::unwrap_val requires an optional (T?) or fallible (T!) value");
+    if constexpr (std::is_void_v<typename std::decay_t<E>::value_type>) {
+        if (!exp.has_value()) {
+            if constexpr (requires { exp.error().message(); }) {
                 std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
-                std::abort();
+            } else {
+                std::println(stderr, "panic: unwrap_val called on empty optional (none)");
             }
-            return;
-        } else {
-            if (!exp.has_value()) {
-                std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
-                std::abort();
-            }
-            return *std::forward<E>(exp);
+            std::abort();
         }
+        return;
     } else {
-        return std::forward<E>(exp);
+        if (!exp.has_value()) {
+            if constexpr (requires { exp.error().message(); }) {
+                std::println(stderr, "panic: unwrap_val called on unexpected error: {}", exp.error().message());
+            } else {
+                std::println(stderr, "panic: unwrap_val called on empty optional (none)");
+            }
+            std::abort();
+        }
+        return *std::forward<E>(exp);
     }
 }
 
 template <typename Exp>
 auto unwrap_or_default(Exp&& exp) {
-    if constexpr (requires { exp.has_value(); }) {
-        using V = typename std::decay_t<Exp>::value_type;
-        if constexpr (std::is_void_v<V>) {
-            (void)exp;
-            return;
-        } else {
-            if (exp.has_value()) return std::move(*exp);
-            return V{};
-        }
+    static_assert(requires { exp.has_value(); }, "cfire::unwrap_or_default requires an optional (T?) or fallible (T!) value");
+    using V = typename std::decay_t<Exp>::value_type;
+    if constexpr (std::is_void_v<V>) {
+        (void)exp;
+        return;
     } else {
-        return std::forward<Exp>(exp);
+        if (exp.has_value()) return std::move(*exp);
+        return V{};
     }
 }
 
 template <typename Exp, typename U>
 auto unwrap_or(Exp&& exp, U&& fallback) {
-    if constexpr (requires { exp.has_value(); }) {
-        using V = typename std::decay_t<Exp>::value_type;
-        if constexpr (std::is_void_v<V>) {
-            (void)exp;
-            return std::forward<U>(fallback);
-        } else {
-            if (exp.has_value()) return std::move(*exp);
-            return static_cast<V>(std::forward<U>(fallback));
-        }
+    static_assert(requires { exp.has_value(); }, "cfire::unwrap_or requires an optional (T?) or fallible (T!) value");
+    using V = typename std::decay_t<Exp>::value_type;
+    if constexpr (std::is_void_v<V>) {
+        (void)exp;
+        return std::forward<U>(fallback);
     } else {
-        (void)fallback;
-        return std::forward<Exp>(exp);
+        if (exp.has_value()) return std::move(*exp);
+        return static_cast<V>(std::forward<U>(fallback));
     }
 }
 

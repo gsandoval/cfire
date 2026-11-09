@@ -456,7 +456,8 @@ public:
 
     SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf,
                   std::vector<std::string>& warnings, std::vector<std::string>& errors, bool resilient = false)
-        : path_(path), pkg_name_(fn.package_name), cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient),
+        : path_(path), pkg_name_(fn.package_name), fn_name_(fn.name), fn_ret_str_(format_type_ref_sema(fn.return_type)),
+          cf_(cf), warnings_(warnings), errors_(errors), resilient_(resilient),
           fn_is_fallible_(fn.return_type.is_fallible || fn.name == "main" || fn.name.starts_with("__cfire_test_"))
     {
         for (const auto& imp : cf_.ast.imports) {
@@ -520,6 +521,10 @@ public:
             }
             if (p.type.is_fallible) {
                 fallible_vars_.insert(p.name);
+            }
+            if (p.type.is_fn && p.type.fn_ret) {
+                if (p.type.fn_ret->is_fallible) fn_ret_fallible_vars_.insert(p.name);
+                if (p.type.fn_ret->is_optional) fn_ret_optional_vars_.insert(p.name);
             }
             if (p.type.is_ptr || p.type.is_mut_ptr || !p.type.smart_wrap.empty()) {
                 raw_or_smart_ptr_vars_.insert(p.name);
@@ -829,17 +834,52 @@ public:
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
             return optional_vars_.contains(id->name);
         }
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            return lit->kind == TokenKind::KwNone;
+        }
         if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
             return expr_returns_optional_sema(tr->inner);
         }
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (!mem->is_namespace && mem->object) {
+                std::string owner_t = infer_expr_type_name_sema(mem->object);
+                if (!owner_t.empty()) {
+                    for (const auto& st : cf_.ast.structs) {
+                        if (st.name == owner_t) {
+                            for (const auto& fld : st.fields) {
+                                if (fld.name == mem->field) {
+                                    return fld.type.is_optional && !fld.type.is_fallible;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (cid->name == "some" || cid->name == "readln" || cid->name == "input") {
+                    return true;
+                }
+                if (fn_ret_optional_vars_.contains(cid->name)) {
+                    return true;
+                }
+                if (!pkg_name_.empty()) {
+                    if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + cid->name); pit != cf_.fn_sigs.end()) {
+                        return pit->second.return_type.is_optional && !pit->second.return_type.is_fallible;
+                    }
+                }
                 if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
                     return it->second.return_type.is_optional && !it->second.return_type.is_fallible;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                const auto& idx = StdlibCatalogIndex::instance();
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                    if (is_namespace_ident_sema(recv_id->name) && !is_ident_in_scope_sema(recv_id->name)) {
+                    if ((is_namespace_ident_sema(recv_id->name) || idx.has_namespace(recv_id->name)) &&
+                        !is_ident_in_scope_sema(recv_id->name)) {
+                        if (const auto* sfn = idx.find_ns_fn(recv_id->name, mem->field)) {
+                            if (sfn->is_optional) return true;
+                        }
                         if (recv_id->name == "os" && mem->field == "getenv_opt") {
                             return true;
                         }
@@ -863,6 +903,12 @@ public:
                     mem->field == "parse_f64" || mem->field == "parse_bool" ||
                     mem->field == "try_recv" || mem->field == "recv_timeout" ||
                     mem->field == "getenv_opt" || mem->field == "read_line") {
+                    return true;
+                }
+                if (mem->field == "get" && call->args.size() == 1 && !call->block_arg) {
+                    return true;
+                }
+                if (mem->field == "recv" && call->args.empty()) {
                     return true;
                 }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
@@ -1296,6 +1342,11 @@ public:
                     if (out_ret) *out_ret = format_type_ref_sema(sig->return_type);
                     return true;
                 }
+                if (fn_ret_fallible_vars_.contains(cid->name)) {
+                    if (out_callee) *out_callee = cid->name;
+                    if (out_ret) *out_ret = "T!";
+                    return true;
+                }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
                 const auto& idx = StdlibCatalogIndex::instance();
@@ -1343,6 +1394,183 @@ public:
         return false;
     }
 
+    [[nodiscard]] auto is_expr_fallible_for_unwrap_sema(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (std::holds_alternative<TryExpr>(e->node) || std::holds_alternative<OrExpr>(e->node)) {
+            return false;
+        }
+        if (expr_returns_fallible_sema(e)) return true;
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            return fallible_vars_.contains(id->name);
+        }
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (!mem->is_namespace && mem->object) {
+                std::string owner_t = infer_expr_type_name_sema(mem->object);
+                if (!owner_t.empty()) {
+                    for (const auto& st : cf_.ast.structs) {
+                        if (st.name == owner_t) {
+                            for (const auto& fld : st.fields) {
+                                if (fld.name == mem->field) return fld.type.is_fallible;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (cid->name == "ok" || cid->name == "err" || cid->name == "error" || cid->name == "Err") {
+                    return true;
+                }
+                if (fn_ret_fallible_vars_.contains(cid->name)) {
+                    return true;
+                }
+                if ((has_cpp_imports_ || seen_cpp_block_) && !is_known_identifier_sema(cid->name)) {
+                    return true;
+                }
+                return false;
+            }
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                const auto& idx = StdlibCatalogIndex::instance();
+                const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (obj_id && !is_ident_in_scope_sema(obj_id->name)) {
+                    if (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg") {
+                        return true;
+                    }
+                    if ((obj_id->name == "fs" && (mem->field == "read_all" || mem->field == "write_all")) ||
+                        (obj_id->name == "os" && mem->field == "socketpair")) {
+                        return true;
+                    }
+                    if (idx.has_namespace(obj_id->name)) {
+                        if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field)) {
+                            return sfn->is_fallible;
+                        }
+                        return false;
+                    }
+                }
+                if (const auto* sig = resolve_member_call_sig(*mem)) {
+                    return sig->return_type.is_fallible;
+                }
+                if (mem->field == "read_str" || mem->field == "write_str" ||
+                    mem->field == "read_all" || mem->field == "read" || mem->field == "write" ||
+                    mem->field == "call_rpc" || mem->field == "run_webview_test" ||
+                    mem->field == "generate_struct" || mem->field == "generate_struct_from_file" ||
+                    mem->field == "run_struct" || mem->field == "run_struct_validated" ||
+                    mem->field == "embed" || mem->field == "embed_image" ||
+                    mem->field == "ocr" || mem->field == "detect_language" ||
+                    mem->field == "stream" || mem->field == "ask" || mem->field == "tx") {
+                    return true;
+                }
+                if (auto uit = idx.unambiguous_methods.find(mem->field); uit != idx.unambiguous_methods.end()) {
+                    if (uit->second.is_fallible) return true;
+                }
+                std::string dot_suffix = "." + mem->field;
+                for (const auto& [k, minfo] : idx.receiver_methods) {
+                    if (k.ends_with(dot_suffix) && minfo.is_fallible) return true;
+                }
+                std::string col_suffix = "::" + mem->field;
+                for (const auto& [k, mdecl] : cf_.methods) {
+                    if (k.ends_with(col_suffix) && mdecl.return_type.is_fallible) return true;
+                }
+                if (has_cpp_imports_ || seen_cpp_block_) return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto is_expr_optional_for_unwrap_sema(const ExprPtr& e) const -> bool {
+        if (!e) return false;
+        if (std::holds_alternative<TryExpr>(e->node) || std::holds_alternative<OrExpr>(e->node)) {
+            return false;
+        }
+        if (expr_returns_optional_sema(e)) return true;
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if ((has_cpp_imports_ || seen_cpp_block_) && !is_known_identifier_sema(cid->name)) {
+                    return true;
+                }
+                return false;
+            }
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                const auto& idx = StdlibCatalogIndex::instance();
+                const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (obj_id && !is_ident_in_scope_sema(obj_id->name)) {
+                    if (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg") {
+                        return true;
+                    }
+                    if (idx.has_namespace(obj_id->name)) {
+                        if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field)) {
+                            return sfn->is_optional;
+                        }
+                        return false;
+                    }
+                }
+                if (const auto* sig = resolve_member_call_sig(*mem)) {
+                    return sig->return_type.is_optional && !sig->return_type.is_fallible;
+                }
+                if (auto uit = idx.unambiguous_methods.find(mem->field); uit != idx.unambiguous_methods.end()) {
+                    if (uit->second.is_optional) return true;
+                }
+                std::string dot_suffix = "." + mem->field;
+                for (const auto& [k, minfo] : idx.receiver_methods) {
+                    if (k.ends_with(dot_suffix) && minfo.is_optional) return true;
+                }
+                std::string col_suffix = "::" + mem->field;
+                for (const auto& [k, mdecl] : cf_.methods) {
+                    if (k.ends_with(col_suffix) && mdecl.return_type.is_optional) return true;
+                }
+                if (has_cpp_imports_ || seen_cpp_block_) return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto validate_move_operand(
+        const ExprPtr& operand,
+        bool required_by_sig,
+        int line,
+        int col
+    ) -> std::expected<void, std::string> {
+        if (!operand) return {};
+        if (std::holds_alternative<UnaryExpr>(operand->node)) {
+            return emit_error(std::format(
+                "{}:{}:{}: cannot use 'move' on temporary or unary expression; 'move' only applies to owned variables (cfire/INVALID-MOVE)",
+                path_, line, col));
+        }
+        auto pi = extract_path_info(operand);
+        if (!pi) {
+            return emit_error(std::format(
+                "{}:{}:{}: cannot use 'move' on temporary or literal expression; 'move' only applies to owned variables (cfire/INVALID-MOVE)",
+                path_, line, col));
+        }
+        if (pi->path == pi->root && scalar_primitive_vars_.contains(pi->root) && !required_by_sig) {
+            std::string tname = var_types_.contains(pi->root) ? var_types_.at(pi->root) : "primitive";
+            return emit_error(std::format(
+                "{}:{}:{}: 'move' has no effect on Copy primitive variable '{}' of type '{}' (cfire/INVALID-MOVE)",
+                path_, line, col, pi->root, tname));
+        }
+        return {};
+    }
+
+    [[nodiscard]] static auto is_effectful_stmt_expr(const ExprPtr& e) -> bool {
+        if (!e) return true;
+        if (std::holds_alternative<CallExpr>(e->node) ||
+            std::holds_alternative<MatchExpr>(e->node)) {
+            return true;
+        }
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            return is_effectful_stmt_expr(tr->inner);
+        }
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            return is_effectful_stmt_expr(or_ex->inner) || !or_ex->handler_body.empty();
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            return id->name == "break" || id->name == "continue";
+        }
+        return false;
+    }
+
     [[nodiscard]] static auto extract_root_ident_sema(const ExprPtr& e) -> std::string {
         if (!e) return "";
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
@@ -1363,6 +1591,14 @@ public:
     [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string> {
         if (!e) return {};
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (id->name == "break" || id->name == "continue") {
+                if (loop_depth_ == 0) {
+                    return emit_error(std::format(
+                        "{}:{}:{}: '{}' cannot be used outside of a 'for' loop (cfire/BREAK-OUTSIDE-LOOP)",
+                        path_, e->line, e->col, id->name));
+                }
+                return {};
+            }
             if (auto r = record_var_read(id->name, e->line, e->col); !r) return r;
             auto dot = id->name.find('.');
             auto dcol = id->name.find("::");
@@ -1401,11 +1637,11 @@ public:
         }
         if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
             if (tr->inner) unwrapped_exprs_.insert(tr->inner);
-            return check_expr(tr->inner);
+            return check_try_expr(*tr, e->line, e->col);
         }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
             if (or_ex->inner) unwrapped_exprs_.insert(or_ex->inner);
-            return check_or_expr(*or_ex, e->line, e->col);
+            return check_or_expr(*or_ex, e->line, e->col, e);
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
             auto dot = st->type_name.find('.');
@@ -1434,7 +1670,15 @@ public:
         }
         if (const auto* cl = std::get_if<ClosureExpr>(&e->node)) {
             ++in_closure_depth_;
-            auto cl_guard = cfire::scope_exit([this] { --in_closure_depth_; });
+            int saved_loop_depth = loop_depth_;
+            int saved_invalid_unwrap = in_invalid_unwrap_context_;
+            loop_depth_ = 0;
+            in_invalid_unwrap_context_ = 0;
+            auto cl_guard = cfire::scope_exit([this, saved_loop_depth, saved_invalid_unwrap] {
+                --in_closure_depth_;
+                loop_depth_ = saved_loop_depth;
+                in_invalid_unwrap_context_ = saved_invalid_unwrap;
+            });
             ScopeGuard sg(*this);
             for (std::size_t i = 0; i < cl->params.size(); ++i) {
                 bool is_mut = (i < cl->param_intents.size()) &&
@@ -1448,6 +1692,40 @@ public:
         }
         if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
             return check_match_common(me->target, me->is_move, me->arms, me->line, me->col, true);
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto check_try_expr(const TryExpr& tr, int line, int col) -> std::expected<void, std::string> {
+        if (in_defer_depth_ > 0) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: cannot use 'try' inside a 'defer' block; handle errors explicitly with 'or' (cfire/TRY-IN-DEFER)",
+                path_, line, col)); !r) return r;
+        } else if (!fn_is_fallible_ && in_closure_depth_ == 0) {
+            std::string ret_desc = fn_ret_str_.empty() ? "void" : fn_ret_str_;
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: cannot use 'try' in non-fallible function '{}' (returns '{}'); mark return type with '!' or handle error with 'or' (cfire/TRY-IN-NON-FALLIBLE-FN)",
+                path_, line, col, fn_name_.empty() ? "<anonymous>" : fn_name_, ret_desc)); !r) return r;
+        }
+        if (in_invalid_unwrap_context_ > 0) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: cannot use 'try' inside short-circuit operand or 'for' loop condition; hoist into a statement or use 'or fallback' (cfire/INVALID-TRY-CONTEXT)",
+                path_, line, col)); !r) return r;
+        }
+        std::size_t errors_before = errors_.size();
+        if (auto r = check_expr(tr.inner); !r) return r;
+        if (errors_.size() == errors_before && !has_cpp_imports_ && !seen_cpp_block_) {
+            if (!is_expr_fallible_for_unwrap_sema(tr.inner)) {
+                if (is_expr_optional_for_unwrap_sema(tr.inner)) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: cannot use 'try' on optional 'T?' value; 'try' only propagates fallible 'T!' errors — use 'or fallback' or 'or {{ ... }}' instead (cfire/TRY-ON-OPTIONAL)",
+                        path_, line, col)); !r) return r;
+                } else {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'try' used on non-fallible expression; remove 'try' (cfire/REDUNDANT-TRY)",
+                        path_, line, col)); !r) return r;
+                }
+            }
         }
         return {};
     }
@@ -1502,6 +1780,7 @@ public:
     [[nodiscard]] auto check_unary_expr(const UnaryExpr& un, int line, int col) -> std::expected<void, std::string> {
         if (auto r = check_expr(un.operand); !r) return r;
         if (un.op == "move") {
+            if (auto r = validate_move_operand(un.operand, false, line, col); !r) return r;
             if (auto pi = extract_path_info(un.operand)) {
                 if (auto r = check_not_iterated_collection(pi->root, line, col); !r) return r;
                 moved_at_line_[pi->root] = line;
@@ -1530,7 +1809,13 @@ public:
 
     [[nodiscard]] auto check_binary_expr(const BinaryExpr& bin, int line, int col) -> std::expected<void, std::string> {
         if (auto r = check_expr(bin.left); !r) return r;
-        if (auto r = check_expr(bin.right); !r) return r;
+        if (bin.op == "&&" || bin.op == "||") {
+            ++in_invalid_unwrap_context_;
+            auto guard = cfire::scope_exit([this] { --in_invalid_unwrap_context_; });
+            if (auto r = check_expr(bin.right); !r) return r;
+        } else {
+            if (auto r = check_expr(bin.right); !r) return r;
+        }
         if ((bin.op == "/" || bin.op == "%") && is_const_zero_expr(bin.right)) {
             return emit_error(std::format(
                 "{}:{}:{}: division or modulo by constant zero (cfire/DIVIDE-BY-ZERO)",
@@ -1676,17 +1961,34 @@ public:
         return {};
     }
 
-    [[nodiscard]] auto check_or_expr(const OrExpr& or_ex, int line, int col) -> std::expected<void, std::string> {
+    [[nodiscard]] auto check_or_expr(const OrExpr& or_ex, int line, int col, const ExprPtr& self_expr = nullptr) -> std::expected<void, std::string> {
+        std::size_t errors_before = errors_.size();
         if (auto r = check_expr(or_ex.inner); !r) return r;
-        if (!or_ex.err_var.empty() && expr_returns_optional_sema(or_ex.inner)) {
+        bool is_opt = is_expr_optional_for_unwrap_sema(or_ex.inner);
+        bool is_fall = is_expr_fallible_for_unwrap_sema(or_ex.inner);
+        if (!or_ex.err_var.empty() && is_opt && !is_fall) {
             if (auto r = emit_error(std::format(
                 "{}:{}:{}: cannot bind error variable '{}' on optional 'T?' in 'or' block; use 'or {{ ... }}' or 'or fallback' instead (cfire/OPTIONAL-OR-ERR)",
                 path_, line, col, or_ex.err_var)); !r) return r;
+        } else if (errors_.size() == errors_before && !has_cpp_imports_ && !seen_cpp_block_ && !is_fall && !is_opt) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: 'or' used on non-fallible, non-optional expression; remove 'or' fallback (cfire/REDUNDANT-OR)",
+                path_, line, col)); !r) return r;
         }
         if (or_ex.fallback_val) {
             if (auto r = check_expr(or_ex.fallback_val); !r) return r;
         }
         if (!or_ex.handler_body.empty()) {
+            if (in_invalid_unwrap_context_ > 0) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: cannot use block 'or {{ ... }}' inside short-circuit operand or 'for' loop condition; hoist into a statement or use 'or fallback' (cfire/INVALID-OR-BLOCK-CONTEXT)",
+                    path_, line, col)); !r) return r;
+            }
+            if ((!self_expr || !discarded_or_exprs_.contains(self_expr)) && !block_diverges(or_ex.handler_body)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: block 'or {} {{ ... }}' must definitely diverge with return or panic, otherwise unwrapping empty value causes undefined behavior (cfire/NON-DIVERGING-OR-BLOCK)",
+                    path_, line, col, or_ex.err_var.empty() ? "err" : or_ex.err_var)); !r) return r;
+            }
             ScopeGuard sg(*this);
             if (!or_ex.err_var.empty()) {
                 bind_scoped_var(or_ex.err_var, false);
@@ -1931,8 +2233,10 @@ public:
                     path_, arg.line, arg.col));
             }
             if (auto r = check_expr(arg.value); !r) return r;
+            bool expected_is_move = false;
             if (target_sig && i < target_sig->params.size()) {
                 const auto& expected = target_sig->params[i].intent;
+                expected_is_move = (expected == "move");
                 if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
                     std::string_view rule = (expected == "out")
                         ? "cfire/OUT-CALLSITE"
@@ -1940,6 +2244,10 @@ public:
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: parameter '{}' of {} requires explicit '{}' annotation at call-site ({})",
                         path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, expected, rule)); !r) return r;
+                } else if (expected == "in" && (arg.intent == "mut" || arg.intent == "out")) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: parameter '{}' of '{}' has 'in' intent; remove redundant '{}' annotation at call-site (cfire/REDUNDANT-CALLSITE-INTENT)",
+                        path_, arg.line, arg.col, target_sig->params[i].name, target_sig->name, arg.intent)); !r) return r;
                 }
                 const auto& pt = target_sig->params[i].type;
                 if (pt.name == "str" && !pt.is_ptr && !pt.is_mut_ptr && !pt.is_slice && !pt.is_array && is_str_slice_expr(arg.value)) {
@@ -1960,6 +2268,7 @@ public:
                 }
             } else if (std_sig && i < std_sig->params.size()) {
                 const auto& expected = std_sig->params[i].intent;
+                expected_is_move = (expected == "move");
                 if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
                     std::string_view rule = (expected == "out")
                         ? "cfire/OUT-CALLSITE"
@@ -1967,7 +2276,30 @@ public:
                     if (auto r = emit_error(std::format(
                         "{}:{}:{}: parameter '{}' of {}.{} requires explicit '{}' annotation at call-site ({})",
                         path_, arg.line, arg.col, std_sig->params[i].name, std_sig->ns_alias, std_sig->name, expected, rule)); !r) return r;
+                } else if (expected == "in" && (arg.intent == "mut" || arg.intent == "out")) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: parameter '{}' of '{}.{}' has 'in' intent; remove redundant '{}' annotation at call-site (cfire/REDUNDANT-CALLSITE-INTENT)",
+                        path_, arg.line, arg.col, std_sig->params[i].name, std_sig->ns_alias, std_sig->name, arg.intent)); !r) return r;
                 }
+            } else if ((arg.intent == "mut" || arg.intent == "out") && call.callee) {
+                if (const auto* cid = std::get_if<IdentExpr>(&call.callee->node)) {
+                    if (!is_ident_in_scope_sema(cid->name) &&
+                        (cid->name == "print" || cid->name == "println" || cid->name == "assert" ||
+                         cid->name == "len" || cid->name == "cap" || cid->name == "str" ||
+                         cid->name == "int" || cid->name == "i8" || cid->name == "i16" ||
+                         cid->name == "i32" || cid->name == "i64" || cid->name == "isize" ||
+                         cid->name == "u8" || cid->name == "u16" || cid->name == "u32" ||
+                         cid->name == "u64" || cid->name == "usize" || cid->name == "byte" ||
+                         cid->name == "f32" || cid->name == "f64" || cid->name == "bool" ||
+                         cid->name == "make" || cid->name == "panic" || cid->name == "exit")) {
+                        if (auto r = emit_error(std::format(
+                            "{}:{}:{}: builtin '{}' takes read-only 'in' arguments; remove redundant '{}' annotation at call-site (cfire/REDUNDANT-CALLSITE-INTENT)",
+                            path_, arg.line, arg.col, cid->name, arg.intent)); !r) return r;
+                    }
+                }
+            }
+            if (arg.intent == "move") {
+                if (auto r = validate_move_operand(arg.value, expected_is_move, arg.line, arg.col); !r) return r;
             }
             if (auto pi = extract_path_info(arg.value)) {
                 bool is_mut_or_out = (arg.intent == "mut" || arg.intent == "out");
@@ -2015,7 +2347,15 @@ public:
         }
         if (call.block_arg) {
             ++in_closure_depth_;
-            auto cl_guard = cfire::scope_exit([this] { --in_closure_depth_; });
+            int saved_loop_depth = loop_depth_;
+            int saved_invalid_unwrap = in_invalid_unwrap_context_;
+            loop_depth_ = 0;
+            in_invalid_unwrap_context_ = 0;
+            auto cl_guard = cfire::scope_exit([this, saved_loop_depth, saved_invalid_unwrap] {
+                --in_closure_depth_;
+                loop_depth_ = saved_loop_depth;
+                in_invalid_unwrap_context_ = saved_invalid_unwrap;
+            });
             ScopeGuard sg(*this);
             for (std::size_t i = 0; i < call.block_arg->params.size(); ++i) {
                 bool is_mut = (i < call.block_arg->param_intents.size()) &&
@@ -2037,6 +2377,7 @@ public:
     ) -> std::expected<void, std::string> {
         if (auto r = check_expr(target); !r) return r;
         if (is_move && target) {
+            if (auto r = validate_move_operand(target, false, line, col); !r) return r;
             if (auto pi = extract_path_info(target)) {
                 if (auto r = check_not_iterated_collection(pi->root, line, col); !r) return r;
                 moved_at_line_[pi->root] = line;
@@ -2079,7 +2420,7 @@ public:
             }
             ScopeGuard sg(*this);
             bind_match_arm_vars(arm);
-            if (auto r = check_block_stmts(arm.body); !r) return r;
+            if (auto r = check_block_stmts(arm.body, is_expr_match); !r) return r;
         }
 
         if (!has_wildcard && !enum_name.empty()) {
@@ -2214,13 +2555,18 @@ public:
         if (!s) return false;
         if (std::holds_alternative<ReturnStmt>(s->node)) return true;
         if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
-            if (const auto* call = std::get_if<CallExpr>(&es->expr->node)) {
-                if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
-                    if (id->name == "panic" || id->name == "exit") return true;
-                } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                    if (mem->field == "exit" && mem->object) {
-                        if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                            if (obj_id->name == "os") return true;
+            if (es->expr) {
+                if (const auto* id = std::get_if<IdentExpr>(&es->expr->node)) {
+                    if (id->name == "break" || id->name == "continue") return true;
+                }
+                if (const auto* call = std::get_if<CallExpr>(&es->expr->node)) {
+                    if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
+                        if (id->name == "panic" || id->name == "exit") return true;
+                    } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                        if (mem->field == "exit" && mem->object) {
+                            if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node)) {
+                                if (obj_id->name == "os") return true;
+                            }
                         }
                     }
                 }
@@ -2382,9 +2728,15 @@ public:
         }
     }
 
-    [[nodiscard]] auto check_block_stmts(const std::vector<StmtPtr>& stmts) -> std::expected<void, std::string> {
-        for (const auto& b : stmts) {
-            if (auto r = check_stmt(b); !r) return r;
+    [[nodiscard]] auto check_block_stmts(const std::vector<StmtPtr>& stmts, bool tail_is_value = false) -> std::expected<void, std::string> {
+        for (std::size_t i = 0; i < stmts.size(); ++i) {
+            if (tail_is_value && i + 1 == stmts.size() && stmts[i]) {
+                if (const auto* es = std::get_if<ExprStmt>(&stmts[i]->node)) {
+                    if (auto r = check_expr(es->expr); !r) return r;
+                    continue;
+                }
+            }
+            if (auto r = check_stmt(stmts[i]); !r) return r;
         }
         return {};
     }
@@ -2426,7 +2778,26 @@ public:
             return check_async_scope_stmt(*sc);
         }
         if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
-            return check_expr(es->expr);
+            if (es->expr) {
+                if (const auto* or_ex = std::get_if<OrExpr>(&es->expr->node); or_ex && !or_ex->handler_body.empty()) {
+                    discarded_or_exprs_.insert(es->expr);
+                }
+            }
+            std::size_t errors_before = errors_.size();
+            if (auto r = check_expr(es->expr); !r) return r;
+            if (errors_.size() == errors_before && es->expr && !is_effectful_stmt_expr(es->expr)) {
+                auto [ln, col] = expr_start_loc(es->expr);
+                if (ln <= 0) ln = s->line;
+                if (const auto* bin = std::get_if<BinaryExpr>(&es->expr->node); bin && bin->op == "==") {
+                    return emit_error(std::format(
+                        "{}:{}:{}: equality comparison '==' statement has no effect; did you mean '=' assignment? (cfire/NO-EFFECT-STMT)",
+                        path_, ln, col));
+                }
+                return emit_error(std::format(
+                    "{}:{}:{}: expression statement has no effect; assign the result or call a function (cfire/NO-EFFECT-STMT)",
+                    path_, ln, col));
+            }
+            return {};
         }
         return {};
     }
@@ -2436,15 +2807,6 @@ public:
             warnings_.push_back(std::format(
                 "{}:{}:{}: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
                 path_, vd.line, vd.col));
-        }
-        if (vd.init) {
-            if (const auto* or_ex = std::get_if<OrExpr>(&vd.init->node); or_ex && !or_ex->handler_body.empty()) {
-                if (!block_diverges(or_ex->handler_body)) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: block 'or {} {{ ... }}' must definitely diverge with return or panic, otherwise unwrapping empty value causes undefined behavior (cfire/NON-DIVERGING-OR-BLOCK)",
-                        path_, vd.line, vd.col, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
-                }
-            }
         }
         if (vd.init && (vd.name == "_" || (vd.type && vd.type->is_fallible))) {
             unwrapped_exprs_.insert(vd.init);
@@ -2551,6 +2913,15 @@ public:
         else raw_or_smart_ptr_vars_.erase(vd.name);
         if (is_scalar_prim) scalar_primitive_vars_.insert(vd.name);
         else scalar_primitive_vars_.erase(vd.name);
+        if (vd.type && vd.type->is_fn && vd.type->fn_ret) {
+            if (vd.type->fn_ret->is_fallible) fn_ret_fallible_vars_.insert(vd.name);
+            else fn_ret_fallible_vars_.erase(vd.name);
+            if (vd.type->fn_ret->is_optional) fn_ret_optional_vars_.insert(vd.name);
+            else fn_ret_optional_vars_.erase(vd.name);
+        } else {
+            fn_ret_fallible_vars_.erase(vd.name);
+            fn_ret_optional_vars_.erase(vd.name);
+        }
 
         if (vd.type) {
             if (vd.type->is_map) {
@@ -2614,15 +2985,6 @@ public:
     }
 
     [[nodiscard]] auto check_destructure_var_decl_stmt(const DestructureVarDeclStmt& dvs) -> std::expected<void, std::string> {
-        if (dvs.init) {
-            if (const auto* or_ex = std::get_if<OrExpr>(&dvs.init->node); or_ex && !or_ex->handler_body.empty()) {
-                if (!block_diverges(or_ex->handler_body)) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: destructuring declaration from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
-                        path_, dvs.line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
-                }
-            }
-        }
         if (auto r = check_expr(dvs.init); !r) return r;
         std::string elem_type;
         if (dvs.init) {
@@ -2651,15 +3013,6 @@ public:
     }
 
     [[nodiscard]] auto check_assign_stmt(const AssignStmt& as) -> std::expected<void, std::string> {
-        if (as.value) {
-            if (const auto* or_ex = std::get_if<OrExpr>(&as.value->node); or_ex && !or_ex->handler_body.empty()) {
-                if (!block_diverges(or_ex->handler_body)) {
-                    if (auto r = emit_error(std::format(
-                        "{}:{}:{}: assignment from 'or {} {{ ... }}' must definitely diverge with return or panic (cfire/NON-DIVERGING-OR-BLOCK)",
-                        path_, as.line, 1, or_ex->err_var.empty() ? "err" : or_ex->err_var)); !r) return r;
-                }
-            }
-        }
         if (as.value && as.target) {
             if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
                 if (id->name == "_" || fallible_vars_.contains(id->name)) {
@@ -2763,7 +3116,12 @@ public:
             return check_expr(df.call);
         }
         ++in_defer_depth_;
-        auto defer_guard = cfire::scope_exit([this] { --in_defer_depth_; });
+        int saved_loop_depth = loop_depth_;
+        loop_depth_ = 0;
+        auto defer_guard = cfire::scope_exit([this, saved_loop_depth] {
+            --in_defer_depth_;
+            loop_depth_ = saved_loop_depth;
+        });
         ScopeGuard sg(*this);
         return check_block_stmts(df.body);
     }
@@ -2890,9 +3248,15 @@ public:
     }
 
     [[nodiscard]] auto check_for_stmt(const ForStmt& fs) -> std::expected<void, std::string> {
-        if (auto r = check_expr(fs.iter_expr); !r) return r;
-        if (fs.range_end) {
-            if (auto r = check_expr(fs.range_end); !r) return r;
+        if (fs.item_var.empty()) {
+            ++in_invalid_unwrap_context_;
+            auto guard = cfire::scope_exit([this] { --in_invalid_unwrap_context_; });
+            if (auto r = check_expr(fs.iter_expr); !r) return r;
+        } else {
+            if (auto r = check_expr(fs.iter_expr); !r) return r;
+            if (fs.range_end) {
+                if (auto r = check_expr(fs.range_end); !r) return r;
+            }
         }
         auto pre_loop_moves = moved_at_line_;
         auto pre_loop_loans = invalidated_loans_;
@@ -2909,6 +3273,8 @@ public:
             if (!locked_col.empty()) active_loop_collections_.erase(locked_col);
         });
         {
+            ++loop_depth_;
+            auto loop_guard = cfire::scope_exit([this] { --loop_depth_; });
             ScopeGuard sg(*this);
             if (!fs.index_var.empty()) {
                 bind_scoped_var(fs.index_var, false);
@@ -2946,6 +3312,8 @@ public:
 private:
     std::string_view path_;
     std::string pkg_name_{};
+    std::string fn_name_{};
+    std::string fn_ret_str_{};
     const CheckedFile& cf_;
     std::vector<std::string>& warnings_;
     std::vector<std::string>& errors_;
@@ -2957,8 +3325,11 @@ private:
     int scope_depth_{1};
     int in_defer_depth_{0};
     int in_closure_depth_{0};
+    int loop_depth_{0};
+    int in_invalid_unwrap_context_{0};
     std::vector<std::unordered_map<std::string, SavedVarDeclState>*> scope_stack_{};
     std::unordered_set<const Expr*> unwrapped_exprs_{};
+    std::unordered_set<const Expr*> discarded_or_exprs_{};
     std::unordered_map<std::string, int> var_scope_depth_{};
     std::unordered_set<std::string> local_defined_vars_{};
     std::unordered_map<std::string, std::string> borrow_origin_{};
@@ -2970,6 +3341,8 @@ private:
     std::unordered_set<std::string> byte_slice_vars_{};
     std::unordered_set<std::string> optional_vars_{};
     std::unordered_set<std::string> fallible_vars_{};
+    std::unordered_set<std::string> fn_ret_fallible_vars_{};
+    std::unordered_set<std::string> fn_ret_optional_vars_{};
     std::unordered_set<std::string> reported_unhandled_vars_{};
     std::unordered_set<std::string> scalar_primitive_vars_{};
     std::unordered_set<std::string> reported_missing_imports_{};
@@ -3296,6 +3669,7 @@ private:
         std::string_view td_path = td.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(td.source_path);
         FnDecl dummy_fn;
         dummy_fn.name = std::format("__cfire_test_{}", idx);
+        dummy_fn.return_type.is_fallible = true;
         dummy_fn.params = td.params;
         for (const auto& bv : td.bench_variations) {
             dummy_fn.params.push_back(ParamDecl{"in", bv.name, bv.inferred_type, bv.line, 1});

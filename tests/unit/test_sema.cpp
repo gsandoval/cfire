@@ -698,6 +698,258 @@ fn main() {
             require(!humanized.contains("std::expected") && !humanized.contains("std::vector"),
                 "humanize_cpp_compiler_output strips lowered C++ std:: types");
         }
+
+        // 10. Misplaced / No-op Token Enforcement (try, or, mut/out, move, break/continue, no-effect stmt)
+        // 10a. cfire/REDUNDANT-TRY on non-fallible expression & call + auto-fixer
+        require_sema_error(R"(package main
+fn main() -> void! {
+    x := try (1 + 2)
+    println("{}", x)
+}
+)", "cfire/REDUNDANT-TRY", "redundant_try_expr.cf");
+
+        require_sema_error(R"(package main
+fn plain() -> i32 { return 7 }
+fn main() -> void! {
+    x := try plain()
+    println("{}", x)
+}
+)", "cfire/REDUNDANT-TRY", "redundant_try_call.cf");
+
+        {
+            std::string red_try_src = "package main\nfn main() -> void! {\n    x := try (1 + 2)\n}\n";
+            auto lines = cfire::diag::split_lines(red_try_src);
+            auto sd = cfire::diag::parse_diagnostic_string(
+                "red_try.cf:3:10: error: 'try' has no effect on non-fallible expression of type 'i32'; remove 'try' (cfire/REDUNDANT-TRY)",
+                "red_try.cf");
+            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            require(!sd.fixits.empty() && sd.fixits[0].replacement.empty() && sd.fixits[0].end_col - sd.fixits[0].start_col == 4,
+                "synthesizes 'try ' removal fix-it for cfire/REDUNDANT-TRY");
+        }
+
+        // 10b. cfire/TRY-ON-OPTIONAL on T? expression
+        require_sema_error(R"(package main
+fn maybe_num() -> i32? { return none }
+fn main() -> void! {
+    x := try maybe_num()
+    println("{}", x)
+}
+)", "cfire/TRY-ON-OPTIONAL", "try_on_optional.cf");
+
+        // 10c. cfire/TRY-IN-NON-FALLIBLE-FN
+        require_sema_error(R"(package main
+fn fallible() -> i32! { return 1 }
+fn helper() -> i32 {
+    return try fallible()
+}
+fn main() {
+    println("{}", helper())
+}
+)", "cfire/TRY-IN-NON-FALLIBLE-FN", "try_in_non_fallible_fn.cf");
+
+        // 10d. cfire/TRY-IN-DEFER
+        require_sema_error(R"(package main
+fn fallible() -> i32! { return 1 }
+fn main() -> void! {
+    defer {
+        _ := try fallible()
+    }
+}
+)", "cfire/TRY-IN-DEFER", "try_in_defer.cf");
+
+        // 10e. cfire/INVALID-TRY-CONTEXT on short-circuit RHS and while-loop header
+        require_sema_error(R"(package main
+fn check() -> bool! { return true }
+fn main() -> void! {
+    ok := true
+    if ok && (try check()) {
+        println("yes")
+    }
+}
+)", "cfire/INVALID-TRY-CONTEXT", "try_in_short_circuit_rhs.cf");
+
+        require_sema_error(R"(package main
+fn check() -> bool! { return false }
+fn main() -> void! {
+    for (try check()) {
+        break
+    }
+}
+)", "cfire/INVALID-TRY-CONTEXT", "try_in_while_cond.cf");
+
+        // 10f. cfire/REDUNDANT-OR on neither-fallible-nor-optional LHS
+        require_sema_error(R"(package main
+fn main() {
+    x := (1 + 2) or 0
+    println("{}", x)
+}
+)", "cfire/REDUNDANT-OR", "redundant_or_value.cf");
+
+        require_sema_error(R"(package main
+fn plain() -> i32 { return 5 }
+fn main() {
+    x := plain() or { return }
+    println("{}", x)
+}
+)", "cfire/REDUNDANT-OR", "redundant_or_block.cf");
+
+        // 10g. cfire/INVALID-OR-BLOCK-CONTEXT on short-circuit RHS and while-loop header
+        require_sema_error(R"(package main
+fn check() -> bool! { return true }
+fn main() {
+    ok := true
+    if ok && (check() or { return }) {
+        println("yes")
+    }
+}
+)", "cfire/INVALID-OR-BLOCK-CONTEXT", "or_block_in_short_circuit_rhs.cf");
+
+        require_sema_error(R"(package main
+fn check() -> bool! { return false }
+fn main() {
+    for (check() or { break }) {
+        break
+    }
+}
+)", "cfire/INVALID-OR-BLOCK-CONTEXT", "or_block_in_while_cond.cf");
+
+        // 10h. cfire/REDUNDANT-CALLSITE-INTENT on 'mut'/'out' passed to 'in' parameter + auto-fixer
+        require_sema_error(R"(package main
+fn read_only(x: i32) -> i32 { return x + 1 }
+fn main() {
+    mut v := 10
+    println("{}", read_only(mut v))
+}
+)", "cfire/REDUNDANT-CALLSITE-INTENT", "redundant_callsite_mut.cf");
+
+        require_sema_error(R"(package main
+fn main() {
+    mut v := 10
+    println("{}", mut v)
+}
+)", "cfire/REDUNDANT-CALLSITE-INTENT", "redundant_builtin_mut.cf");
+
+        {
+            std::string red_mut_src = "package main\nfn read_only(x: i32) -> i32 { return x }\nfn main() {\n    mut v := 10\n    _ := read_only(mut v)\n}\n";
+            auto lines = cfire::diag::split_lines(red_mut_src);
+            auto sd = cfire::diag::parse_diagnostic_string(
+                "red_mut.cf:5:20: error: call-site 'mut' annotation has no effect on 'in' parameter 1 of 'read_only'; remove 'mut' (cfire/REDUNDANT-CALLSITE-INTENT)",
+                "red_mut.cf");
+            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            require(!sd.fixits.empty() && sd.fixits[0].replacement.empty() && sd.fixits[0].end_col - sd.fixits[0].start_col == 4,
+                "synthesizes 'mut ' removal fix-it for cfire/REDUNDANT-CALLSITE-INTENT");
+        }
+
+        // 10i. cfire/INVALID-MOVE on rvalue literals, temporary expressions, and scalar Copy variables
+        require_sema_error(R"(package main
+fn main() {
+    x := move 42
+    println("{}", x)
+}
+)", "cfire/INVALID-MOVE", "move_on_literal.cf");
+
+        require_sema_error(R"(package main
+fn main() {
+    mut a := 1
+    mut b := 2
+    x := move (a + b)
+    println("{}", x)
+}
+)", "cfire/INVALID-MOVE", "move_on_rvalue_expr.cf");
+
+        require_sema_error(R"(package main
+fn main() {
+    mut n := 42
+    y := move n
+    println("{}", y)
+}
+)", "cfire/INVALID-MOVE", "move_on_copy_scalar.cf");
+
+        // 10j. cfire/BREAK-OUTSIDE-LOOP at function scope, inside defer, and inside closure inside loop
+        require_sema_error(R"(package main
+fn main() {
+    break
+}
+)", "cfire/BREAK-OUTSIDE-LOOP", "break_at_fn_scope.cf");
+
+        require_sema_error(R"(package main
+fn main() {
+    for i in 0..3 {
+        defer {
+            continue
+        }
+        println("{}", i)
+    }
+}
+)", "cfire/BREAK-OUTSIDE-LOOP", "continue_inside_defer_in_loop.cf");
+
+        // 10k. cfire/NO-EFFECT-STMT on pure expression statements (including == typo for =)
+        {
+            auto eq_ast = cfire::frontend::parse_source("eq_stmt.cf", R"(package main
+fn main() {
+    mut x := 1
+    x == 2
+    println("{}", x)
+}
+)");
+            require(eq_ast.has_value(), "parse eq_stmt.cf");
+            if (eq_ast) {
+                auto checked = cfire::frontend::analyze(std::move(*eq_ast));
+                require(!checked.has_value() &&
+                        checked.error().contains("cfire/NO-EFFECT-STMT") &&
+                        checked.error().contains("did you mean '=' assignment?"),
+                        "cfire/NO-EFFECT-STMT flags 'x == 2' with assignment hint");
+            }
+        }
+
+        require_sema_error(R"(package main
+fn main() {
+    a := 10
+    b := 20
+    a + b
+}
+)", "cfire/NO-EFFECT-STMT", "arith_no_effect_stmt.cf");
+
+        // 10l. E2E verification of generalized sub-expression hoisting for 'try' and block-form 'or { ... }'
+        run_cfire_source(R"(package main
+
+fn get_num(x: i32) -> i32! {
+    if x < 0 {
+        return error("neg")
+    }
+    return x * 10
+}
+
+fn check_flag(b: bool) -> bool! {
+    return b
+}
+
+fn get_items() -> []i32! {
+    return [1, 2, 3]
+}
+
+fn compute_sum() -> i32! {
+    mut total := (try get_num(2)) + (try get_num(3))
+    if (try check_flag(true)) {
+        for item in (try get_items()) {
+            total += item
+        }
+    }
+    return total + (try get_num(1))
+}
+
+fn main() -> void! {
+    val := try compute_sum()
+    mut fallback_acc := 0
+    for i in -1..3 {
+        v := (get_num(i) or { continue }) + 5
+        fallback_acc += v
+    }
+    println("val={} acc={}", val, fallback_acc)
+}
+)", "cfire_subexpr_try_or_hoist")
+            .assert_ok("sub-expression try and block-form or hoisting compiles and exits 0")
+            .assert_contains("val=66 acc=45", "sub-expression try and block-form or produces expected runtime values");
     }
 
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");

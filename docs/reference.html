@@ -2091,7 +2091,7 @@ syncCfireThemeBtn();
           <option value="mod-webui">ext:webui (51 fns)</option>
           <option value="mod-rg">vendor:raygui (15 fns)</option>
           <option value="mod-rl">vendor:raylib (24 fns)</option>
-          <option value="diagnostics">Diagnostics (21 Rules)</option>
+          <option value="diagnostics">Diagnostics (32 Rules)</option>
         </select>
         <button type="button" class="mobile-mode-btn" id="ref-mobile-mode-cycle" onclick="setRefMode(currentRefMode==='all'?'module':'all')" title="Switch reading mode">Module</button>
       </div>
@@ -2150,7 +2150,7 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#mod-rg" id="nav-pane-mod-rg" onclick="navigateToRefPane('mod-rg'); return false;"><code>vendor:raygui</code> <span style="color:var(--muted);font-size:0.75rem;">(15)</span></a></li>
           <li class="nav-item"><a href="#mod-rl" id="nav-pane-mod-rl" onclick="navigateToRefPane('mod-rl'); return false;"><code>vendor:raylib</code> <span style="color:var(--muted);font-size:0.75rem;">(24)</span></a></li>
         </ul>
-        <h4 style="margin-top:1.25rem;">Diagnostics (21)</h4>
+        <h4 style="margin-top:1.25rem;">Diagnostics (32)</h4>
         <ul class="sidebar-diag-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#diag-cfire/MUT-CALLSITE" id="nav-diag-cfire/MUT-CALLSITE" onclick="navigateToRefDiag('diag-cfire/MUT-CALLSITE'); return false;"><code>cfire/MUT-CALLSITE</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/IMMUTABLE-MUT-ARG" id="nav-diag-cfire/IMMUTABLE-MUT-ARG" onclick="navigateToRefDiag('diag-cfire/IMMUTABLE-MUT-ARG'); return false;"><code>cfire/IMMUTABLE-MUT-ARG</code></a></li>
@@ -2173,6 +2173,17 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#diag-cfire/SHELL-INJECTION-RISK" id="nav-diag-cfire/SHELL-INJECTION-RISK" onclick="navigateToRefDiag('diag-cfire/SHELL-INJECTION-RISK'); return false;"><code>cfire/SHELL-INJECTION-RISK</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/RETURN-IN-DEFER" id="nav-diag-cfire/RETURN-IN-DEFER" onclick="navigateToRefDiag('diag-cfire/RETURN-IN-DEFER'); return false;"><code>cfire/RETURN-IN-DEFER</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/INVALID-STRUCT-TAG" id="nav-diag-cfire/INVALID-STRUCT-TAG" onclick="navigateToRefDiag('diag-cfire/INVALID-STRUCT-TAG'); return false;"><code>cfire/INVALID-STRUCT-TAG</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/REDUNDANT-TRY" id="nav-diag-cfire/REDUNDANT-TRY" onclick="navigateToRefDiag('diag-cfire/REDUNDANT-TRY'); return false;"><code>cfire/REDUNDANT-TRY</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/TRY-ON-OPTIONAL" id="nav-diag-cfire/TRY-ON-OPTIONAL" onclick="navigateToRefDiag('diag-cfire/TRY-ON-OPTIONAL'); return false;"><code>cfire/TRY-ON-OPTIONAL</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/TRY-IN-NON-FALLIBLE-FN" id="nav-diag-cfire/TRY-IN-NON-FALLIBLE-FN" onclick="navigateToRefDiag('diag-cfire/TRY-IN-NON-FALLIBLE-FN'); return false;"><code>cfire/TRY-IN-NON-FALLIBLE-FN</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/TRY-IN-DEFER" id="nav-diag-cfire/TRY-IN-DEFER" onclick="navigateToRefDiag('diag-cfire/TRY-IN-DEFER'); return false;"><code>cfire/TRY-IN-DEFER</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/INVALID-TRY-CONTEXT" id="nav-diag-cfire/INVALID-TRY-CONTEXT" onclick="navigateToRefDiag('diag-cfire/INVALID-TRY-CONTEXT'); return false;"><code>cfire/INVALID-TRY-CONTEXT</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/REDUNDANT-OR" id="nav-diag-cfire/REDUNDANT-OR" onclick="navigateToRefDiag('diag-cfire/REDUNDANT-OR'); return false;"><code>cfire/REDUNDANT-OR</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/INVALID-OR-BLOCK-CONTEXT" id="nav-diag-cfire/INVALID-OR-BLOCK-CONTEXT" onclick="navigateToRefDiag('diag-cfire/INVALID-OR-BLOCK-CONTEXT'); return false;"><code>cfire/INVALID-OR-BLOCK-CONTEXT</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/REDUNDANT-CALLSITE-INTENT" id="nav-diag-cfire/REDUNDANT-CALLSITE-INTENT" onclick="navigateToRefDiag('diag-cfire/REDUNDANT-CALLSITE-INTENT'); return false;"><code>cfire/REDUNDANT-CALLSITE-INTENT</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/INVALID-MOVE" id="nav-diag-cfire/INVALID-MOVE" onclick="navigateToRefDiag('diag-cfire/INVALID-MOVE'); return false;"><code>cfire/INVALID-MOVE</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/BREAK-OUTSIDE-LOOP" id="nav-diag-cfire/BREAK-OUTSIDE-LOOP" onclick="navigateToRefDiag('diag-cfire/BREAK-OUTSIDE-LOOP'); return false;"><code>cfire/BREAK-OUTSIDE-LOOP</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/NO-EFFECT-STMT" id="nav-diag-cfire/NO-EFFECT-STMT" onclick="navigateToRefDiag('diag-cfire/NO-EFFECT-STMT'); return false;"><code>cfire/NO-EFFECT-STMT</code></a></li>
         </ul>
         <div class="toc-quick-links" style="margin-top: 1.25rem;">
           <h4>Quick Links</h4>
@@ -2208,7 +2219,7 @@ syncCfireThemeBtn();
       </div>
       <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-short="Overview" data-pane-title="Overview (All 38 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">38 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (30 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (6 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ graphics engines) — plus 21 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">38 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (30 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (6 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ graphics engines) — plus 32 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Text, Containers, Math &amp; Data Formats</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
@@ -2531,12 +2542,12 @@ syncCfireThemeBtn();
             <div class="ref-mod-card-desc">Header-only immediate-mode GUI controls (<code>GuiWindowBox</code>, <code>GuiButton</code>, <code>GuiCheckBox</code>, <code>GuiSliderBar</code>, <code>GuiComboBox</code>, <code>GuiTextBox</code>) built on top of <code>vendor:raylib</code> with safe <code>mut str</code> (<code>&amp;mut my_str</code>) text box editing.</div>
           </a>
         </div>
-        <div class="ref-category-title">Compiler Semantic Diagnostics (21 Rules)</div>
+        <div class="ref-category-title">Compiler Semantic Diagnostics (32 Rules)</div>
         <div class="ref-category-grid">
           <a href="#diagnostics" class="ref-mod-card" onclick="navigateToRefPane('diagnostics'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">cfire/* Rules</span>
-              <span class="ref-mod-card-count">21 rules</span>
+              <span class="ref-mod-card-count">32 rules</span>
             </div>
             <div class="ref-mod-card-title">Compiler Semantic Diagnostics Catalog</div>
             <div class="ref-mod-card-desc">Rejected vs. Accepted <code>.cf</code> side-by-side verification rules enforced by the semantic checker.</div>
@@ -4502,7 +4513,7 @@ fn main() {
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
             <span class="pager-dir">Diagnostics Reference &rarr;</span>
-            <span class="pager-title">21 Semantic Verification Rules</span>
+            <span class="pager-title">32 Semantic Verification Rules</span>
           </a>
         </nav>
       </article>
@@ -4791,6 +4802,139 @@ x := 100 / denom // OK</code></pre></div>
     Port: i64 `json:&quot;port&quot; default:&quot;8080&quot;`
     Alt:  i64 `json:&quot;alt_port&quot;` // OK
 }</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/REDUNDANT-TRY" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/REDUNDANT-TRY]</code> &mdash; Redundant <code>try</code> on Non-Fallible Expression</h3>
+          <p style="margin-bottom:0.85rem;"><code>try</code> propagates errors from fallible <code>T!</code> (<code>std::expected&lt;T, cfire::Error&gt;</code>) expressions. Applying <code>try</code> to a plain value, literal, or non-fallible function call has no effect and is rejected at compile time.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn add(a: i32, b: i32) -&gt; i32 { return a + b }
+fn main() {
+    x := try add(1, 2) // ERROR [cfire/REDUNDANT-TRY]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn add(a: i32, b: i32) -&gt; i32 { return a + b }
+fn main() {
+    x := add(1, 2) // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/TRY-ON-OPTIONAL" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/TRY-ON-OPTIONAL]</code> &mdash; Using <code>try</code> on Optional <code>T?</code> Instead of <code>or</code></h3>
+          <p style="margin-bottom:0.85rem;"><code>try</code> only propagates fallible <code>T!</code> errors. Optional <code>T?</code> values represent absence (<code>none</code>) without an error payload and must be unwrapped using <code>or fallback</code> or <code>or { ... }</code>.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn main() {
+    n := try &quot;42&quot;.parse_i64() // ERROR [cfire/TRY-ON-OPTIONAL]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn main() {
+    n := &quot;42&quot;.parse_i64() or 0 // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/TRY-IN-NON-FALLIBLE-FN" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/TRY-IN-NON-FALLIBLE-FN]</code> &mdash; <code>try</code> Inside Non-Fallible Function</h3>
+          <p style="margin-bottom:0.85rem;">Functions that use <code>try</code> (other than <code>main</code> and <code>test</code>/<code>fuzz</code>/<code>bench</code> blocks) must declare a fallible <code>T!</code> or <code>void!</code> return type so propagated errors can be returned to the caller.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn load() -&gt; str {
+    return try fs.read_text(&quot;config.json&quot;) // ERROR [cfire/TRY-IN-NON-FALLIBLE-FN]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn load() -&gt; str! {
+    return try fs.read_text(&quot;config.json&quot;) // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/TRY-IN-DEFER" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/TRY-IN-DEFER]</code> &mdash; <code>try</code> Inside <code>defer</code> Block</h3>
+          <p style="margin-bottom:0.85rem;"><code>defer</code> blocks run inside an RAII scope-exit destructor and cannot propagate errors out of the enclosing function with <code>try</code>. Handle errors explicitly with <code>or</code> inside <code>defer</code>.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn write_log(mut f: fs.File) -&gt; void! {
+    defer {
+        try f.flush() // ERROR [cfire/TRY-IN-DEFER]
+    }
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn write_log(mut f: fs.File) -&gt; void! {
+    defer {
+        f.flush() or err { eprintln(&quot;flush failed: {}&quot;, err.message()) } // OK
+    }
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/INVALID-TRY-CONTEXT" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/INVALID-TRY-CONTEXT]</code> &mdash; <code>try</code> Inside Short-Circuit Operand or <code>for</code> Condition</h3>
+          <p style="margin-bottom:0.85rem;">Hoisting <code>try</code> before a statement would eagerly evaluate the right-hand side of <code>&amp;&amp;</code> / <code>||</code> or evaluate a <code>for &lt;cond&gt; { ... }</code> loop condition only once before the loop. Hoist the <code>try</code> into a separate statement or use <code>or fallback</code>.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>if ready &amp;&amp; (try check_remote()) { // ERROR [cfire/INVALID-TRY-CONTEXT]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>if ready {
+    if try check_remote() { ... } // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/REDUNDANT-OR" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/REDUNDANT-OR]</code> &mdash; Redundant <code>or</code> on Non-Fallible, Non-Optional Expression</h3>
+          <p style="margin-bottom:0.85rem;"><code>or</code> provides fallback values or diverging recovery blocks for fallible <code>T!</code> and optional <code>T?</code> expressions. Using <code>or</code> on a plain value or non-fallible call has no effect and is rejected at compile time.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>x := (1 + 2) or 0 // ERROR [cfire/REDUNDANT-OR]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>x := 1 + 2 // OK</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/INVALID-OR-BLOCK-CONTEXT" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/INVALID-OR-BLOCK-CONTEXT]</code> &mdash; Block <code>or { ... }</code> Inside Short-Circuit Operand or <code>for</code> Condition</h3>
+          <p style="margin-bottom:0.85rem;">Block-form <code>or { ... }</code> cannot be hoisted out of the right-hand side of <code>&amp;&amp;</code> / <code>||</code> or a <code>for &lt;cond&gt; { ... }</code> condition without breaking short-circuit or per-iteration evaluation. Use value fallback <code>or fallback</code> or hoist into a statement.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>if ok &amp;&amp; (parse_flag() or { return }) { // ERROR [cfire/INVALID-OR-BLOCK-CONTEXT]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>if ok &amp;&amp; (parse_flag() or false) { // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/REDUNDANT-CALLSITE-INTENT" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/REDUNDANT-CALLSITE-INTENT]</code> &mdash; Redundant <code>mut</code> or <code>out</code> Annotation on <code>in</code> Parameter</h3>
+          <p style="margin-bottom:0.85rem;">Call-site <code>mut</code> and <code>out</code> annotations are only valid when the target parameter is declared <code>mut</code> or <code>out</code>. Writing <code>mut</code> or <code>out</code> on a read-only <code>in</code> parameter misleads readers into thinking the call mutates the argument.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn show(x: i32) { println(&quot;{}&quot;, x) }
+fn main() {
+    mut a := 10
+    show(mut a) // ERROR [cfire/REDUNDANT-CALLSITE-INTENT]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn show(x: i32) { println(&quot;{}&quot;, x) }
+fn main() {
+    mut a := 10
+    show(a) // OK
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/INVALID-MOVE" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/INVALID-MOVE]</code> &mdash; No-Op <code>move</code> on Rvalue or Scalar <code>Copy</code> Variable</h3>
+          <p style="margin-bottom:0.85rem;"><code>move</code> transfers ownership of an owned variable (<code>str</code>, <code>[]T</code>, <code>map[K]V</code>, <code>own[T]</code>, structs/enums). Applying <code>move</code> to a temporary rvalue/literal (<code>move 42</code>, <code>move foo()</code>) or to a scalar <code>Copy</code> primitive (<code>i32</code>, <code>f64</code>, <code>bool</code>) when not required by a <code>move</code> parameter has no effect and is rejected.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut count := 10
+y := move count // ERROR [cfire/INVALID-MOVE]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut buf := &quot;hello&quot;
+y := move buf // OK: transfers ownership of non-Copy 'str'</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/BREAK-OUTSIDE-LOOP" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/BREAK-OUTSIDE-LOOP]</code> &mdash; <code>break</code> or <code>continue</code> Outside of a <code>for</code> Loop</h3>
+          <p style="margin-bottom:0.85rem;"><code>break</code> and <code>continue</code> are only valid inside the body of a <code>for</code> loop (and cannot cross closure or <code>defer</code> boundaries).</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn helper() {
+    break // ERROR [cfire/BREAK-OUTSIDE-LOOP]
+}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn helper() {
+    for i in 0..10 {
+        if i == 5 { break } // OK
+    }
+}</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/NO-EFFECT-STMT" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/NO-EFFECT-STMT]</code> &mdash; Pure Expression Statement With No Side Effects</h3>
+          <p style="margin-bottom:0.85rem;">Standalone expression statements must perform an effect (such as a function/method call, <code>try</code>, <code>or { ... }</code>, <code>match</code>, <code>break</code>, or <code>continue</code>). Pure expressions like <code>x == 1</code> or <code>a + b</code> as statements discard their result and are rejected.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut x := 0
+x == 1 // ERROR [cfire/NO-EFFECT-STMT]: did you mean '=' assignment?</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut x := 0
+x = 1 // OK</code></pre></div>
           </div>
         </div>
         <nav class="chapter-pager" aria-label="Module Pagination">
