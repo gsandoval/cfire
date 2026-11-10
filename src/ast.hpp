@@ -198,8 +198,14 @@ struct StructField {
     return out;
 }
 
+struct TypeParam {
+    std::string name{};
+    std::string constraint{}; // optional interface/concept name `T: Hasher`
+};
+
 struct StructDecl {
     std::string name{};
+    std::vector<TypeParam> type_params{};
     std::vector<StructField> fields{};
     int line = 1;
     std::string source_path{};
@@ -214,6 +220,7 @@ struct EnumVariant {
 
 struct EnumDecl {
     std::string name{};
+    std::vector<TypeParam> type_params{};
     std::vector<EnumVariant> variants{};
     int line = 1;
     std::string source_path{};
@@ -230,11 +237,6 @@ struct InterfaceDecl {
     std::string name{};
     std::vector<InterfaceMethodSig> methods{};
     int line = 1;
-};
-
-struct TypeParam {
-    std::string name{};
-    std::string constraint{}; // optional interface/concept name `T: Hasher`
 };
 
 struct ReceiverDecl {
@@ -405,6 +407,19 @@ struct TupleExpr {
     std::vector<ExprPtr> elements{};
 };
 
+struct MatchPattern {
+    std::string enum_prefix{};
+    std::string variant_name{};
+    std::vector<std::string> bindings{};
+    std::string literal_val{};
+    bool is_slice_pattern = false;
+    std::vector<std::string> slice_head{};
+    std::string slice_rest{};
+    bool slice_has_rest = false;
+    std::vector<std::string> slice_tail{};
+    int line = 1;
+};
+
 struct MatchArm {
     std::string enum_prefix{}; // optional `Shape::`
     std::string variant_name{};
@@ -417,6 +432,8 @@ struct MatchArm {
     std::string slice_rest{}; // e.g. "tail" in "..tail", or empty if no rest or ".._"
     bool slice_has_rest = false;
     std::vector<std::string> slice_tail{};
+
+    std::vector<MatchPattern> patterns{}; // all patterns in this arm (including or-patterns)
 
     std::vector<StmtPtr> body{};
     int line = 1;

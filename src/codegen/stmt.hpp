@@ -566,19 +566,27 @@ inline void Emitter::emit_match_common(
         write_ln(std::format("const auto& _target = {};", target_expr));
         bool first = true;
         for (const auto& arm : arms) {
-            if (arm.variant_name == "_" && arm.literal_val.empty()) {
+            std::vector<MatchPattern> pats = arm.patterns.empty()
+                ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                : arm.patterns;
+            if (pats.size() == 1 && pats[0].variant_name == "_" && pats[0].literal_val.empty()) {
                 write_ln("else {");
                 ++indent_;
                 emit_arm(arm.body);
                 --indent_;
                 write_ln("}");
             } else {
-                std::string pat = !arm.literal_val.empty() ? arm.literal_val : arm.variant_name;
+                std::string cond;
+                for (std::size_t pi = 0; pi < pats.size(); ++pi) {
+                    if (pi > 0) cond += " || ";
+                    std::string pat = !pats[pi].literal_val.empty() ? pats[pi].literal_val : pats[pi].variant_name;
+                    cond += std::format("_target == {}", pat);
+                }
                 if (first) {
-                    write_ln(std::format("if (_target == {}) {{", pat));
+                    write_ln(std::format("if ({}) {{", cond));
                     first = false;
                 } else {
-                    write_ln(std::format("else if (_target == {}) {{", pat));
+                    write_ln(std::format("else if ({}) {{", cond));
                 }
                 ++indent_;
                 emit_arm(arm.body);
@@ -603,27 +611,32 @@ inline void Emitter::emit_match_common(
     write_ln("std::visit(cfire::overloaded{");
     ++indent_;
     for (const auto& arm : arms) {
-        if (arm.variant_name == "_") {
-            write_ln(std::format("[&]({}){}{{", is_rvalue ? "auto&&" : "const auto&", ret_arrow));
-        } else {
-            if (is_rvalue) {
-                write_ln(std::format("[&]({}::_{}&& _m){}{{", enum_name, arm.variant_name, ret_arrow));
+        std::vector<MatchPattern> pats = arm.patterns.empty()
+            ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+            : arm.patterns;
+        for (const auto& pat : pats) {
+            if (pat.variant_name == "_") {
+                write_ln(std::format("[&]({}){}{{", is_rvalue ? "auto&&" : "const auto&", ret_arrow));
             } else {
-                write_ln(std::format("[&](const {}::_{}& _m){}{{", enum_name, arm.variant_name, ret_arrow));
+                if (is_rvalue) {
+                    write_ln(std::format("[&]({}::_{}&& _m){}{{", enum_name, pat.variant_name, ret_arrow));
+                } else {
+                    write_ln(std::format("[&](const {}::_{}& _m){}{{", enum_name, pat.variant_name, ret_arrow));
+                }
             }
-        }
-        ++indent_;
-        for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
-            local_vars_.insert(arm.bindings[i]);
-            if (is_rvalue) {
-                write_ln(std::format("auto&& {} = std::move(_m._{});", arm.bindings[i], i));
-            } else {
-                write_ln(std::format("const auto& {} = _m._{};", arm.bindings[i], i));
+            ++indent_;
+            for (std::size_t i = 0; i < pat.bindings.size(); ++i) {
+                local_vars_.insert(pat.bindings[i]);
+                if (is_rvalue) {
+                    write_ln(std::format("auto&& {} = std::move(_m._{});", pat.bindings[i], i));
+                } else {
+                    write_ln(std::format("const auto& {} = _m._{};", pat.bindings[i], i));
+                }
             }
+            emit_arm(arm.body);
+            --indent_;
+            write_ln("},");
         }
-        emit_arm(arm.body);
-        --indent_;
-        write_ln("},");
     }
     --indent_;
     if (is_rvalue) {

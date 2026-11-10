@@ -828,10 +828,67 @@ json={"id":7,"email":"dev@cfire.io","active":true}
 has_desc=true
 ```
 
-### Algebraic Enums, Slice Patterns & Exhaustive `match`
-Enums in `cfire` can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to `std::variant<...>`). When you `match` on an enum or a slice, the compiler verifies two things before emitting C++23:
+### Generic Structs & Algebraic Enums
+In addition to generic functions, `cfire` allows you to declare generic structs and enums with type parameters and optional interface constraints (`[T]` or `[T: Constraint]`):
+
+```cfire
+package main
+
+type Box[T] struct {
+    Item: T
+}
+
+type Outcome[T, E] enum {
+    Success(T),
+    Failure(E),
+}
+
+fn main() {
+    b := Box[str]{Item: "hello generic world"}
+    res := Outcome[i32, str]::Success(42)
+    println("boxed={} ok={}", b.Item, match res {
+        Outcome::Success(val) => val,
+        Outcome::Failure(err) => -1,
+    })
+}
+```
+
+### Algebraic Enums, Or-Patterns, Slice Patterns & Exhaustive `match`
+Enums in `cfire` can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to `std::variant<...>`). When you `match` on an enum, string, or slice, the compiler verifies:
 1. **Exhaustiveness (`cfire/NON-EXHAUSTIVE-MATCH`)**: Every variant of an enum must be handled (or covered by a `_ =>` wildcard arm).
 2. **Reachability (`cfire/UNREACHABLE-MATCH-ARM`)**: No arm can be shadowed by an earlier duplicate variant, wildcard, or broader slice rest pattern (`[head, ..tail]`).
+3. **Or-Patterns (`|`)**: You can match multiple alternative values or variants in a single arm (`"GET" | "HEAD" =>`, `Event::Connected | Event::Disconnected =>`).
+
+#### Best Practices: Prefer Enums Over Integer Constants
+A common anti-pattern in systems programming is defining clusters of integer constants for state machines or modes (e.g. `VIEW_LOGIN = 0`, `VIEW_DASHBOARD = 1`, `VIEW_SETTINGS = 2`). This sacrifices compile-time exhaustiveness checking and makes refactoring error-prone.
+
+The `cfire` semantic analyzer actively detects clusters of 3+ identically prefixed integer constants and emits a `cfire/PREFER-ENUM` diagnostic with an automatic LSP quick-fix code action to refactor them into an `enum`. Prefer using enums or strings directly with `match`:
+
+```cfire
+package main
+
+type HttpMethod enum {
+    Get,
+    Post,
+    Put,
+    Delete,
+}
+
+fn is_idempotent(m: HttpMethod) -> bool {
+    return match m {
+        HttpMethod::Get | HttpMethod::Put | HttpMethod::Delete => true,
+        HttpMethod::Post                                       => false,
+    }
+}
+
+fn route(path: str) -> str {
+    return match path {
+        "/" | "/index" | "/home" => "landing",
+        "/about"                 => "about",
+        _                        => "404",
+    }
+}
+```
 
 ```cfire
 package main

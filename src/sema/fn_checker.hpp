@@ -2559,6 +2559,32 @@ public:
                 }
             }
         }
+        bool is_foreign_call = false;
+        if (const auto* cid = std::get_if<IdentExpr>(&call.callee->node)) {
+            if (cid->name.starts_with("cpp::") || cid->name.starts_with("cpp.") || cf_.cpp_fn_params.contains(cid->name)) {
+                is_foreign_call = true;
+            }
+        } else if (const auto* cmem = std::get_if<MemberExpr>(&call.callee->node)) {
+            const auto* obj_id = cmem->object ? std::get_if<IdentExpr>(&cmem->object->node) : nullptr;
+            if (obj_id && (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg")) {
+                is_foreign_call = true;
+            }
+        }
+        if (is_foreign_call) {
+            // CF-124 / F9: foreign C++ calls invalidate loans and null facts of arguments passed
+            for (const auto& a : call.args) {
+                if (!a.value) continue;
+                if (auto pi = extract_path_info(a.value)) {
+                    invalidate_loans_for_owner(pi->root, "invalidated by foreign C++ call", line);
+                    if (auto it = ptr_null_state_.find(pi->root); it != ptr_null_state_.end()) {
+                        it->second = NullState::MaybeNull;
+                    }
+                    if (borrow_origin_.contains(pi->root)) {
+                        invalidated_loans_[pi->root] = InvalidatedLoan{"loan invalidated by foreign C++ call", line};
+                    }
+                }
+            }
+        }
         bool is_spawn_call = false;
         if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
             if (mem->field == "spawn") is_spawn_call = true;
@@ -2652,12 +2678,17 @@ public:
         bool has_wildcard = false;
 
         for (const auto& arm : arms) {
-            if (arm.variant_name == "_") {
-                has_wildcard = true;
-            } else {
-                covered.insert(arm.variant_name);
-                if (enum_name.empty() && !arm.enum_prefix.empty() && cf_.enums.contains(arm.enum_prefix)) {
-                    enum_name = arm.enum_prefix;
+            std::vector<MatchPattern> pats = arm.patterns.empty()
+                ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                : arm.patterns;
+            for (const auto& pat : pats) {
+                if (pat.variant_name == "_") {
+                    has_wildcard = true;
+                } else {
+                    covered.insert(pat.variant_name);
+                    if (enum_name.empty() && !pat.enum_prefix.empty() && cf_.enums.contains(pat.enum_prefix)) {
+                        enum_name = pat.enum_prefix;
+                    }
                 }
             }
             ScopeGuard sg(*this);
@@ -2668,23 +2699,28 @@ public:
         if (!enum_name.empty()) {
             if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
                 for (const auto& arm : arms) {
-                    if (arm.variant_name != "_" && arm.literal_val.empty() && !arm.is_slice_pattern) {
-                        if (!arm.enum_prefix.empty() && arm.enum_prefix != enum_name) {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:1: variant pattern '{}::{}' does not match target enum '{}' (cfire/TYPE-MISMATCH)",
-                                path_, arm.line, arm.enum_prefix, arm.variant_name, enum_name)); !r) return r;
-                        }
-                        bool found_var = false;
-                        for (const auto& v : eit->second.variants) {
-                            if (v.name == arm.variant_name) {
-                                found_var = true;
-                                break;
+                    std::vector<MatchPattern> pats = arm.patterns.empty()
+                        ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                        : arm.patterns;
+                    for (const auto& pat : pats) {
+                        if (pat.variant_name != "_" && pat.literal_val.empty() && !pat.is_slice_pattern) {
+                            if (!pat.enum_prefix.empty() && pat.enum_prefix != enum_name) {
+                                if (auto r = emit_error(std::format(
+                                    "{}:{}:1: variant pattern '{}::{}' does not match target enum '{}' (cfire/TYPE-MISMATCH)",
+                                    path_, pat.line, pat.enum_prefix, pat.variant_name, enum_name)); !r) return r;
                             }
-                        }
-                        if (!found_var) {
-                            if (auto r = emit_error(std::format(
-                                "{}:{}:{}: unknown variant '{}' for enum '{}' (cfire/UNKNOWN-ENUM-VARIANT)",
-                                path_, arm.line, 1, arm.variant_name, enum_name)); !r) return r;
+                            bool found_var = false;
+                            for (const auto& v : eit->second.variants) {
+                                if (v.name == pat.variant_name) {
+                                    found_var = true;
+                                    break;
+                                }
+                            }
+                            if (!found_var) {
+                                if (auto r = emit_error(std::format(
+                                    "{}:{}:{}: unknown variant '{}' for enum '{}' (cfire/UNKNOWN-ENUM-VARIANT)",
+                                    path_, pat.line, 1, pat.variant_name, enum_name)); !r) return r;
+                            }
                         }
                     }
                 }
@@ -2799,22 +2835,25 @@ public:
                 seen_wildcard = true;
                 continue;
             }
-            if (!arm.literal_val.empty()) {
-                if (seen_literals.contains(arm.literal_val)) {
-                    return emit_error(std::format(
-                        "{}:{}:{}: unreachable match arm #{}: duplicate literal pattern '{}' (cfire/UNREACHABLE-MATCH-ARM)",
-                        path_, match_line, match_col, idx + 1, arm.literal_val));
+            std::vector<MatchPattern> pats = arm.patterns.empty()
+                ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                : arm.patterns;
+            for (const auto& pat : pats) {
+                if (!pat.literal_val.empty()) {
+                    if (seen_literals.contains(pat.literal_val)) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: unreachable match arm #{}: duplicate literal pattern '{}' (cfire/UNREACHABLE-MATCH-ARM)",
+                            path_, match_line, match_col, idx + 1, pat.literal_val));
+                    }
+                    seen_literals.insert(pat.literal_val);
+                } else if (!pat.variant_name.empty() && pat.variant_name != "_") {
+                    if (seen_variants.contains(pat.variant_name)) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: unreachable match arm #{}: duplicate variant pattern '{}' (cfire/UNREACHABLE-MATCH-ARM)",
+                            path_, match_line, match_col, idx + 1, pat.variant_name));
+                    }
+                    seen_variants.insert(pat.variant_name);
                 }
-                seen_literals.insert(arm.literal_val);
-                continue;
-            }
-            if (!arm.variant_name.empty()) {
-                if (seen_variants.contains(arm.variant_name)) {
-                    return emit_error(std::format(
-                        "{}:{}:{}: unreachable match arm #{}: duplicate variant pattern '{}' (cfire/UNREACHABLE-MATCH-ARM)",
-                        path_, match_line, match_col, idx + 1, arm.variant_name));
-                }
-                seen_variants.insert(arm.variant_name);
             }
         }
         return {};
@@ -3089,6 +3128,16 @@ public:
         if (!s) return {};
         if (std::holds_alternative<CppBlockStmt>(s->node)) {
             seen_cpp_block_ = true;
+            // CF-124 / F9: Foreign C++ blocks can arbitrarily mutate pointees and alias memory.
+            // Invalidate all active loans and demote NonNull facts to MaybeNull.
+            for (const auto& [borrower, orig] : borrow_origin_) {
+                invalidated_loans_[borrower] = InvalidatedLoan{"loan invalidated by foreign cpp block", s ? s->line : 1};
+            }
+            for (auto& [var, state] : ptr_null_state_) {
+                if (state == NullState::NonNull) {
+                    state = NullState::MaybeNull;
+                }
+            }
             return {};
         }
         if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {

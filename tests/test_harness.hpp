@@ -216,6 +216,7 @@ void test_multiline_lambda_source_mapping_cf114(const std::filesystem::path& rt_
 void test_interned_typeid_lattice_and_diagnostics_cf116(const std::filesystem::path& rt_dir);
 void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir);
 void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir);
+void test_phase3_advanced_language_and_safety(const std::filesystem::path& rt_dir);
 void test_negative_parser_corpus_and_fuzz_runtime(const std::filesystem::path& rt_dir);
 
 // Granular Stdlib Intent Suites

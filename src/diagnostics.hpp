@@ -234,6 +234,35 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    if (d.code == "cfire/PREFER-ENUM") {
+        std::string pfx;
+        if (auto p1 = d.message.find("prefix '"); p1 != std::string::npos) {
+            auto p2 = d.message.find("'", p1 + 8);
+            if (p2 != std::string::npos) {
+                pfx = d.message.substr(p1 + 8, p2 - (p1 + 8));
+            }
+        }
+        FixItEdit edit;
+        edit.title = pfx.empty()
+            ? "Convert constants to enum (cfire/PREFER-ENUM)"
+            : std::format("Convert '{}_*' constants to enum (cfire/PREFER-ENUM)", pfx);
+        edit.start_line = d.line;
+        edit.start_col = 1;
+        edit.end_line = d.line;
+        edit.end_col = 1;
+        std::string enum_name = pfx;
+        if (!enum_name.empty()) {
+            for (char& c : enum_name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            enum_name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(enum_name[0])));
+        } else {
+            enum_name = "State";
+        }
+        edit.replacement = std::format("// Suggested refactoring:\n// type {} enum {{\n//     ...\n// }}\n", enum_name);
+        edit.is_preferred = true;
+        d.fixits.push_back(std::move(edit));
+        return;
+    }
+
     if (d.code == "cfire/MISSING-IMPORT") {
         std::string mod_path;
         if (auto p = d.message.find("import \""); p != std::string::npos) {

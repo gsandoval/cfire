@@ -2480,6 +2480,144 @@ void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir
     std::println("--- PASS: test_unified_diagnostics_pipeline (CF-118)");
 }
 
+void test_phase3_advanced_language_and_safety([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_phase3_advanced_language_and_safety (CF-121 - CF-124)");
+
+    // 1. CF-121: Generic struct and enum declaration AST parsing and codegen
+    {
+        const std::string gen_src = R"CF(package main
+type Box[T] struct {
+    Val: T
+}
+type Outcome[T, E] enum {
+    Success(T),
+    Failure(E),
+}
+fn main() {}
+)CF";
+        auto ast = cfire::frontend::parse_source("generic_decl.cf", gen_src);
+        require(ast.has_value(), "parse generic struct and enum succeeds (CF-121)");
+        require(!ast->structs.empty() && ast->structs[0].type_params.size() == 1, "struct Box has 1 type param T");
+        require(ast->structs[0].type_params[0].name == "T", "type param name is T");
+        require(!ast->enums.empty() && ast->enums[0].type_params.size() == 2, "enum Outcome has 2 type params T, E");
+        require(ast->enums[0].type_params[0].name == "T" && ast->enums[0].type_params[1].name == "E", "type params are T and E");
+    }
+
+    // 2. CF-122: Or-patterns in match execution and exhaustiveness
+    run_cfire_source(R"CF(package main
+
+fn check_code(code: int) -> str {
+    return match code {
+        200 | 201 | 204 => "ok",
+        400 | 401 | 404 => "client_err",
+        500 | 502 | 503 => "server_err",
+        _ => "other",
+    }
+}
+
+fn check_cmd(cmd: str) -> str {
+    return match cmd {
+        "start" | "run" | "launch" => "exec",
+        "stop" | "halt" | "kill" => "term",
+        _ => "unknown",
+    }
+}
+
+fn main() {
+    assert(check_code(200) == "ok", "status 200 matches or-pattern")
+    assert(check_code(201) == "ok", "status 201 matches or-pattern")
+    assert(check_code(404) == "client_err", "status 404 matches or-pattern")
+    assert(check_code(502) == "server_err", "status 502 matches or-pattern")
+    assert(check_code(999) == "other", "wildcard arm matches")
+
+    assert(check_cmd("run") == "exec", "run matches exec")
+    assert(check_cmd("halt") == "term", "halt matches term")
+    assert(check_cmd("help") == "unknown", "help matches wildcard")
+
+    println("phase3 or-pattern match verified")
+}
+)CF", "phase3_match_or_test")
+        .assert_ok("or-patterns in match execute cleanly (CF-122)")
+        .assert_contains("phase3 or-pattern match verified", "confirmation received");
+
+    // CF-122 Sema Negative: Duplicate literal in or-arm triggers cfire/UNREACHABLE-MATCH-ARM
+    require_sema_error(R"(package main
+fn main() {
+    x := 10
+    match x {
+        1 | 1 => { println("dup") }
+        _ => {}
+    }
+}
+)", "cfire/UNREACHABLE-MATCH-ARM");
+
+    // 3. CF-123: Lint clusters of 3+ integer constants with identical prefix (cfire/PREFER-ENUM) + FixIt
+    {
+        const std::string const_src = R"CF(package main
+STATE_INIT := 0
+STATE_RUNNING := 1
+STATE_STOPPED := 2
+
+fn main() {}
+)CF";
+        cfire::analysis::CheckOptions opts;
+        opts.runtime_dir = rt_dir;
+        auto diags = cfire::analysis::check_source("state_consts.cf", const_src, opts);
+        bool found_prefer_enum = false;
+        for (const auto& d : diags) {
+            if (d.code == "cfire/PREFER-ENUM") {
+                found_prefer_enum = true;
+                require(!d.fixits.empty(), "cfire/PREFER-ENUM has attached fixit");
+                if (!d.fixits.empty()) {
+                    require(d.fixits[0].replacement.find("type State enum") != std::string::npos, "fixit suggests type State enum");
+                }
+            }
+        }
+        require(found_prefer_enum, "emitted cfire/PREFER-ENUM for STATE_* cluster (CF-123)");
+    }
+
+    // 4. CF-124: cpp {} blocks and foreign C++ calls invalidate loans and null facts (F9)
+    // 4a. cpp {} invalidates active loan
+    require_sema_error(R"(package main
+fn main() {
+    mut x := 10
+    p := &x
+    cpp {
+        // foreign modification
+    }
+    y := *p
+}
+)", "cfire/USE-AFTER-FREE");
+
+    // 4b. cpp {} invalidates NonNull fact, demoting to MaybeNull (requiring null check before dereference)
+    require_sema_error(R"(package main
+fn test_cpp_null(ptr: *int) {
+    if ptr != none {
+        cpp {
+            // foreign code can mutate ptr
+        }
+        val := *ptr
+    }
+}
+fn main() {}
+)", "cfire/NULL-DEREF");
+
+    // 4c. foreign C++ call invalidates NonNull fact on argument
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn test_foreign_null(ptr: *int) {
+    if ptr != none {
+        cpp::printf("%p\n", ptr)
+        val := *ptr
+    }
+}
+fn main() {}
+)", "cfire/NULL-DEREF");
+
+    std::println("--- PASS: test_phase3_advanced_language_and_safety (CF-121 - CF-124)");
+}
+
+
 
 
 

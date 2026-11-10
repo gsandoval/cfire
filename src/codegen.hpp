@@ -362,10 +362,36 @@ public:
 
         // Forward declare all structs & enums so recursive shared_ptr/pointers work
         for (const auto& en : ast.enums) {
-            writeln(std::format("struct {};", en.name));
+            if (!en.type_params.empty()) {
+                std::string tparams;
+                for (std::size_t i = 0; i < en.type_params.size(); ++i) {
+                    if (i > 0) tparams += ", ";
+                    if (!en.type_params[i].constraint.empty()) {
+                        tparams += std::format("{} {}", en.type_params[i].constraint, en.type_params[i].name);
+                    } else {
+                        tparams += std::format("typename {}", en.type_params[i].name);
+                    }
+                }
+                writeln(std::format("template <{}> struct {};", tparams, en.name));
+            } else {
+                writeln(std::format("struct {};", en.name));
+            }
         }
         for (const auto& st : ast.structs) {
-            writeln(std::format("struct {};", st.name));
+            if (!st.type_params.empty()) {
+                std::string tparams;
+                for (std::size_t i = 0; i < st.type_params.size(); ++i) {
+                    if (i > 0) tparams += ", ";
+                    if (!st.type_params[i].constraint.empty()) {
+                        tparams += std::format("{} {}", st.type_params[i].constraint, st.type_params[i].name);
+                    } else {
+                        tparams += std::format("typename {}", st.type_params[i].name);
+                    }
+                }
+                writeln(std::format("template <{}> struct {};", tparams, st.name));
+            } else {
+                writeln(std::format("struct {};", st.name));
+            }
         }
         if (!ast.structs.empty() || !ast.enums.empty()) writeln();
 
@@ -511,6 +537,18 @@ public:
     void emit_enum(const EnumDecl& en) {
         set_source_path(en.source_path);
         if (en.line > 0) emit_line_directive(en.line);
+        if (!en.type_params.empty()) {
+            std::string tparams;
+            for (std::size_t i = 0; i < en.type_params.size(); ++i) {
+                if (i > 0) tparams += ", ";
+                if (!en.type_params[i].constraint.empty()) {
+                    tparams += std::format("{} {}", en.type_params[i].constraint, en.type_params[i].name);
+                } else {
+                    tparams += std::format("typename {}", en.type_params[i].name);
+                }
+            }
+            writeln(std::format("template <{}>", tparams));
+        }
         writeln(std::format("struct {} {{", en.name));
         ++indent_;
         std::vector<std::string> var_types;
@@ -609,8 +647,23 @@ public:
         writeln("};");
 
         writeln();
-        writeln("template <>");
-        writeln(std::format("struct std::formatter<{}> : std::formatter<std::string_view> {{", en.name));
+        if (!en.type_params.empty()) {
+            std::string tparams;
+            std::string targs;
+            for (std::size_t i = 0; i < en.type_params.size(); ++i) {
+                if (i > 0) {
+                    tparams += ", ";
+                    targs += ", ";
+                }
+                tparams += std::format("typename {}", en.type_params[i].name);
+                targs += en.type_params[i].name;
+            }
+            writeln(std::format("template <{}>", tparams));
+            writeln(std::format("struct std::formatter<{}<{}> > : std::formatter<std::string_view> {{", en.name, targs));
+        } else {
+            writeln("template <>");
+            writeln(std::format("struct std::formatter<{}> : std::formatter<std::string_view> {{", en.name));
+        }
         writeln(std::format("    auto format(const {}& e, std::format_context& ctx) const {{", en.name));
         writeln("        return std::formatter<std::string_view>::format(e.to_string(), ctx);");
         writeln("    }");
@@ -622,6 +675,18 @@ public:
     void emit_struct(const StructDecl& st) {
         set_source_path(st.source_path);
         if (st.line > 0) emit_line_directive(st.line);
+        if (!st.type_params.empty()) {
+            std::string tparams;
+            for (std::size_t i = 0; i < st.type_params.size(); ++i) {
+                if (i > 0) tparams += ", ";
+                if (!st.type_params[i].constraint.empty()) {
+                    tparams += std::format("{} {}", st.type_params[i].constraint, st.type_params[i].name);
+                } else {
+                    tparams += std::format("typename {}", st.type_params[i].name);
+                }
+            }
+            writeln(std::format("template <{}>", tparams));
+        }
         writeln(std::format("struct {} {{", st.name));
         ++indent_;
         for (const auto& fld : st.fields) {
