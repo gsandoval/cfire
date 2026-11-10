@@ -5,8 +5,22 @@ namespace cfire::frontend {
 
 inline void Emitter::emit_struct_reflection(const StructDecl& st) {
     writeln();
-    writeln("template <>");
-    writeln(std::format("struct cfire::reflect_struct<{}> {{", st.name));
+    if (!st.type_params.empty()) {
+        std::string tparams, targs;
+        for (std::size_t i = 0; i < st.type_params.size(); ++i) {
+            if (i > 0) {
+                tparams += ", ";
+                targs += ", ";
+            }
+            tparams += "typename " + st.type_params[i].name;
+            targs += st.type_params[i].name;
+        }
+        writeln(std::format("template <{}>", tparams));
+        writeln(std::format("struct cfire::reflect_struct<{}<{}> > {{", st.name, targs));
+    } else {
+        writeln("template <>");
+        writeln(std::format("struct cfire::reflect_struct<{}> {{", st.name));
+    }
     ++indent_;
     writeln(std::format("static constexpr std::string_view name = \"{}\";", st.name));
     writeln(std::format("static constexpr std::size_t field_count = {};", st.fields.size()));
@@ -29,7 +43,7 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
 
     auto tags_it = cf_.struct_tags.find(st.name);
 
-    bool can_emit_arbitrary = true;
+    bool can_emit_arbitrary = st.type_params.empty();
     for (const auto& fld : st.fields) {
         if (is_non_value_field_type(fld.type, 0)) {
             can_emit_arbitrary = false;
@@ -392,8 +406,22 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
 
 inline void Emitter::emit_enum_reflection(const EnumDecl& en) {
     writeln();
-    writeln("template <>");
-    writeln(std::format("struct cfire::reflect_enum<{}> {{", en.name));
+    if (!en.type_params.empty()) {
+        std::string tparams, targs;
+        for (std::size_t i = 0; i < en.type_params.size(); ++i) {
+            if (i > 0) {
+                tparams += ", ";
+                targs += ", ";
+            }
+            tparams += "typename " + en.type_params[i].name;
+            targs += en.type_params[i].name;
+        }
+        writeln(std::format("template <{}>", tparams));
+        writeln(std::format("struct cfire::reflect_enum<{}<{}> > {{", en.name, targs));
+    } else {
+        writeln("template <>");
+        writeln(std::format("struct cfire::reflect_enum<{}> {{", en.name));
+    }
     ++indent_;
     writeln("static constexpr bool is_enum = true;");
     writeln(std::format("static constexpr std::string_view name = \"{}\";", en.name));
@@ -411,7 +439,7 @@ inline void Emitter::emit_enum_reflection(const EnumDecl& en) {
     --indent_;
     writeln("};");
 
-    bool is_plain = std::all_of(en.variants.begin(), en.variants.end(), [](const auto& v) { return v.payload_types.empty(); });
+    bool is_plain = en.type_params.empty() && std::all_of(en.variants.begin(), en.variants.end(), [](const auto& v) { return v.payload_types.empty(); });
     if (is_plain && !en.variants.empty()) {
         writeln();
         writeln("template <>");
@@ -425,7 +453,7 @@ inline void Emitter::emit_enum_reflection(const EnumDecl& en) {
         writeln("};");
     }
 
-    if (used_core_.contains("json")) {
+    if (en.type_params.empty() && used_core_.contains("json")) {
         writeln();
         writeln("template <>");
         writeln(std::format("inline auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", en.name, en.name));

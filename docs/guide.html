@@ -3333,11 +3333,12 @@ fn main() {
 <h2 id="chapter-6"><a id="ch6"></a>6. Structs, Tags, Enums &amp; Interfaces</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 6 (4)</span>
+    <span class="topic-pill-label">Ch 6 (5)</span>
     <a href="#ch6-structs-default-field-values-receiver-methods" class="topic-pill active" data-topic-pill="ch6-structs-default-field-values-receiver-methods" title="Structs, Default Field Values &amp; Receiver Methods" onclick="navigateToSubhead('6', 'ch6-structs-default-field-values-receiver-methods'); return false;">6.1 Structs &amp; Methods</a>
     <a href="#ch6-compile-time-struct-tags-json-sql-cli-desc" class="topic-pill" data-topic-pill="ch6-compile-time-struct-tags-json-sql-cli-desc" title="Compile-Time Struct Tags (json, sql, cli, desc)" onclick="navigateToSubhead('6', 'ch6-compile-time-struct-tags-json-sql-cli-desc'); return false;">6.2 Struct Tags</a>
-    <a href="#ch6-algebraic-enums-slice-patterns-exhaustive-match" class="topic-pill" data-topic-pill="ch6-algebraic-enums-slice-patterns-exhaustive-match" title="Algebraic Enums, Slice Patterns &amp; Exhaustive match" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-slice-patterns-exhaustive-match'); return false;">6.3 Enums &amp; Match</a>
-    <a href="#ch6-structural-interfaces-c20-concept-lowering" class="topic-pill" data-topic-pill="ch6-structural-interfaces-c20-concept-lowering" title="Structural Interfaces &amp; C++20 concept Lowering" onclick="navigateToSubhead('6', 'ch6-structural-interfaces-c20-concept-lowering'); return false;">6.4 Interfaces</a>
+    <a href="#ch6-generic-structs-algebraic-enums" class="topic-pill" data-topic-pill="ch6-generic-structs-algebraic-enums" title="Generic Structs &amp; Algebraic Enums" onclick="navigateToSubhead('6', 'ch6-generic-structs-algebraic-enums'); return false;">6.3 Generic Structs &amp; ..</a>
+    <a href="#ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" class="topic-pill" data-topic-pill="ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" title="Algebraic Enums, Or-Patterns, Slice Patterns &amp; Exhaustive match" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match'); return false;">6.4 Algebraic Enums, Or-Pa..</a>
+    <a href="#ch6-structural-interfaces-c20-concept-lowering" class="topic-pill" data-topic-pill="ch6-structural-interfaces-c20-concept-lowering" title="Structural Interfaces &amp; C++20 concept Lowering" onclick="navigateToSubhead('6', 'ch6-structural-interfaces-c20-concept-lowering'); return false;">6.5 Interfaces</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch6-structs-default-field-values-receiver-methods" data-topic-id="ch6-structs-default-field-values-receiver-methods" data-topic-title="Structs, Default Field Values &amp; Receiver Methods" data-short-title="6.1 Structs &amp; Methods">
 <h3 class="guide-heading" id="ch6-structs-default-field-values-receiver-methods"><span class="heading-hash">#</span><span class="heading-text">Structs, Default Field Values &amp; Receiver Methods</span></h3>
@@ -3440,19 +3441,83 @@ has_desc=true
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.1)</span>
         <strong class="pager-title">Structs, Default Field Values &amp; Receiver Methods</strong>
       </a>
-      <a href="#ch6-algebraic-enums-slice-patterns-exhaustive-match" class="pager-card pager-next" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-slice-patterns-exhaustive-match'); return false;">
+      <a href="#ch6-generic-structs-algebraic-enums" class="pager-card pager-next" onclick="navigateToSubhead('6', 'ch6-generic-structs-algebraic-enums'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 6.3) &rarr;</span>
-        <strong class="pager-title">Algebraic Enums, Slice Patterns &amp; Exhaustive match</strong>
+        <strong class="pager-title">Generic Structs &amp; Algebraic Enums</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch6-algebraic-enums-slice-patterns-exhaustive-match" data-topic-id="ch6-algebraic-enums-slice-patterns-exhaustive-match" data-topic-title="Algebraic Enums, Slice Patterns &amp; Exhaustive match" data-short-title="6.3 Enums &amp; Match">
-<h3 class="guide-heading" id="ch6-algebraic-enums-slice-patterns-exhaustive-match"><span class="heading-hash">#</span><span class="heading-text">Algebraic Enums, Slice Patterns &amp; Exhaustive <code>match</code></span></h3>
-<p>Enums in <code>cfire</code> can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to <code>std::variant&lt;...&gt;</code>). When you <code>match</code> on an enum or a slice, the compiler verifies two things before emitting C++23:</p>
+  <section class="guide-topic" id="topic-ch6-generic-structs-algebraic-enums" data-topic-id="ch6-generic-structs-algebraic-enums" data-topic-title="Generic Structs &amp; Algebraic Enums" data-short-title="6.3 Generic Structs &amp; ..">
+<h3 class="guide-heading" id="ch6-generic-structs-algebraic-enums"><span class="heading-hash">#</span><span class="heading-text">Generic Structs &amp; Algebraic Enums</span></h3>
+<p>In addition to generic functions, <code>cfire</code> allows you to declare generic structs and enums with type parameters and optional interface constraints (<code>[T]</code> or <code>[T: Constraint]</code>):</p>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+type Box[T] struct {
+    Item: T
+}
+
+type Outcome[T, E] enum {
+    Success(T),
+    Failure(E),
+}
+
+fn main() {
+    b := Box[str]{Item: &quot;hello generic world&quot;}
+    res := Outcome[i32, str]::Success(42)
+    println(&quot;boxed={} ok={}&quot;, b.Item, match res {
+        Outcome::Success(val) =&gt; val,
+        Outcome::Failure(err) =&gt; -1,
+    })
+}
+</code></pre>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch6-compile-time-struct-tags-json-sql-cli-desc" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-compile-time-struct-tags-json-sql-cli-desc'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.2)</span>
+        <strong class="pager-title">Compile-Time Struct Tags (json, sql, cli, desc)</strong>
+      </a>
+      <a href="#ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" class="pager-card pager-next" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 6.4) &rarr;</span>
+        <strong class="pager-title">Algebraic Enums, Or-Patterns, Slice Patterns &amp; Exhaustive match</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" data-topic-id="ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" data-topic-title="Algebraic Enums, Or-Patterns, Slice Patterns &amp; Exhaustive match" data-short-title="6.4 Algebraic Enums, Or-Pa..">
+<h3 class="guide-heading" id="ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match"><span class="heading-hash">#</span><span class="heading-text">Algebraic Enums, Or-Patterns, Slice Patterns &amp; Exhaustive <code>match</code></span></h3>
+<p>Enums in <code>cfire</code> can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to <code>std::variant&lt;...&gt;</code>). When you <code>match</code> on an enum, string, or slice, the compiler verifies:</p>
 <ol>
   <li><strong>Exhaustiveness (<code>cfire/NON-EXHAUSTIVE-MATCH</code>)</strong>: Every variant of an enum must be handled (or covered by a <code>_ =&gt;</code> wildcard arm).</li>
   <li><strong>Reachability (<code>cfire/UNREACHABLE-MATCH-ARM</code>)</strong>: No arm can be shadowed by an earlier duplicate variant, wildcard, or broader slice rest pattern (<code>[head, ..tail]</code>).</li>
+  <li><strong>Or-Patterns (<code>|</code>)</strong>: You can match multiple alternative values or variants in a single arm (<code>&quot;GET&quot; | &quot;HEAD&quot; =&gt;</code>, <code>Event::Connected | Event::Disconnected =&gt;</code>).</li>
 </ol>
+<h4 id="ch6-best-practices-prefer-enums-over-integer-constants">Best Practices: Prefer Enums Over Integer Constants</h4>
+<p>A common anti-pattern in systems programming is defining clusters of integer constants for state machines or modes (e.g. <code>VIEW_LOGIN = 0</code>, <code>VIEW_DASHBOARD = 1</code>, <code>VIEW_SETTINGS = 2</code>). This sacrifices compile-time exhaustiveness checking and makes refactoring error-prone.</p>
+<p>The <code>cfire</code> semantic analyzer actively detects clusters of 3+ identically prefixed integer constants and emits a <code>cfire/PREFER-ENUM</code> diagnostic with an automatic LSP quick-fix code action to refactor them into an <code>enum</code>. Prefer using enums or strings directly with <code>match</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+type HttpMethod enum {
+    Get,
+    Post,
+    Put,
+    Delete,
+}
+
+fn is_idempotent(m: HttpMethod) -&gt; bool {
+    return match m {
+        HttpMethod::Get | HttpMethod::Put | HttpMethod::Delete =&gt; true,
+        HttpMethod::Post                                       =&gt; false,
+    }
+}
+
+fn route(path: str) -&gt; str {
+    return match path {
+        &quot;/&quot; | &quot;/index&quot; | &quot;/home&quot; =&gt; &quot;landing&quot;,
+        &quot;/about&quot;                 =&gt; &quot;about&quot;,
+        _                        =&gt; &quot;404&quot;,
+    }
+}
+</code></pre>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -3493,17 +3558,17 @@ fn main() {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch6-compile-time-struct-tags-json-sql-cli-desc" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-compile-time-struct-tags-json-sql-cli-desc'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.2)</span>
-        <strong class="pager-title">Compile-Time Struct Tags (json, sql, cli, desc)</strong>
+      <a href="#ch6-generic-structs-algebraic-enums" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-generic-structs-algebraic-enums'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.3)</span>
+        <strong class="pager-title">Generic Structs &amp; Algebraic Enums</strong>
       </a>
       <a href="#ch6-structural-interfaces-c20-concept-lowering" class="pager-card pager-next" onclick="navigateToSubhead('6', 'ch6-structural-interfaces-c20-concept-lowering'); return false;">
-        <span class="pager-label">NEXT TOPIC (CH 6.4) &rarr;</span>
+        <span class="pager-label">NEXT TOPIC (CH 6.5) &rarr;</span>
         <strong class="pager-title">Structural Interfaces &amp; C++20 concept Lowering</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch6-structural-interfaces-c20-concept-lowering" data-topic-id="ch6-structural-interfaces-c20-concept-lowering" data-topic-title="Structural Interfaces &amp; C++20 concept Lowering" data-short-title="6.4 Interfaces">
+  <section class="guide-topic" id="topic-ch6-structural-interfaces-c20-concept-lowering" data-topic-id="ch6-structural-interfaces-c20-concept-lowering" data-topic-title="Structural Interfaces &amp; C++20 concept Lowering" data-short-title="6.5 Interfaces">
 <h3 class="guide-heading" id="ch6-structural-interfaces-c20-concept-lowering"><span class="heading-hash">#</span><span class="heading-text">Structural Interfaces &amp; C++20 <code>concept</code> Lowering</span></h3>
 <p>Interfaces in <code>cfire</code> are structural: any <code>struct</code> that implements the required methods satisfies the interface automatically without an <code>implements</code> keyword. When you constrain a generic function with <code>[T: Measurable]</code>, <code>cfire</code> lowers the interface directly to a zero-overhead C++20 <code>concept</code>—no <code>vtable</code> pointer indirection or heap allocation required:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -3537,9 +3602,9 @@ fn main() {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch6-algebraic-enums-slice-patterns-exhaustive-match" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-slice-patterns-exhaustive-match'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.3)</span>
-        <strong class="pager-title">Algebraic Enums, Slice Patterns &amp; Exhaustive match</strong>
+      <a href="#ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.4)</span>
+        <strong class="pager-title">Algebraic Enums, Or-Patterns, Slice Patterns &amp; Exhaustive match</strong>
       </a>
       <a href="#ch7-separating-errors-from-absence-t-vs-t" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-separating-errors-from-absence-t-vs-t'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 7.1) &rarr;</span>
@@ -3589,7 +3654,7 @@ fn main() {
 </div>
     <div class="chapter-pager topic-pager">
       <a href="#ch6-structural-interfaces-c20-concept-lowering" class="pager-card pager-prev" onclick="navigateToSubhead('6', 'ch6-structural-interfaces-c20-concept-lowering'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.4)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 6.5)</span>
         <strong class="pager-title">Structural Interfaces &amp; C++20 concept Lowering</strong>
       </a>
       <a href="#ch7-propagating-errors-with-try-and-recovering-with-or" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-propagating-errors-with-try-and-recovering-with-or'); return false;">
@@ -6218,8 +6283,9 @@ fn main() -&gt; void! {
       <ul class="toc-list">
         <li><a href="#ch6-structs-default-field-values-receiver-methods" title="Structs, Default Field Values &amp; Receiver Methods" onclick="navigateToSubhead('6', 'ch6-structs-default-field-values-receiver-methods'); return false;">6.1 Structs &amp; Methods</a></li>
         <li><a href="#ch6-compile-time-struct-tags-json-sql-cli-desc" title="Compile-Time Struct Tags (json, sql, cli, desc)" onclick="navigateToSubhead('6', 'ch6-compile-time-struct-tags-json-sql-cli-desc'); return false;">6.2 Struct Tags</a></li>
-        <li><a href="#ch6-algebraic-enums-slice-patterns-exhaustive-match" title="Algebraic Enums, Slice Patterns &amp; Exhaustive match" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-slice-patterns-exhaustive-match'); return false;">6.3 Enums &amp; Match</a></li>
-        <li><a href="#ch6-structural-interfaces-c20-concept-lowering" title="Structural Interfaces &amp; C++20 concept Lowering" onclick="navigateToSubhead('6', 'ch6-structural-interfaces-c20-concept-lowering'); return false;">6.4 Interfaces</a></li>
+        <li><a href="#ch6-generic-structs-algebraic-enums" title="Generic Structs &amp; Algebraic Enums" onclick="navigateToSubhead('6', 'ch6-generic-structs-algebraic-enums'); return false;">6.3 Generic Structs &amp; ..</a></li>
+        <li><a href="#ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match" title="Algebraic Enums, Or-Patterns, Slice Patterns &amp; Exhaustive match" onclick="navigateToSubhead('6', 'ch6-algebraic-enums-or-patterns-slice-patterns-exhaustive-match'); return false;">6.4 Algebraic Enums, Or-Pa..</a></li>
+        <li><a href="#ch6-structural-interfaces-c20-concept-lowering" title="Structural Interfaces &amp; C++20 concept Lowering" onclick="navigateToSubhead('6', 'ch6-structural-interfaces-c20-concept-lowering'); return false;">6.5 Interfaces</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-7" style="display: none;">

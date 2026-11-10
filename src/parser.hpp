@@ -440,11 +440,32 @@ private:
         auto name_tok = expect(TokenKind::Ident);
         if (!name_tok) return std::unexpected(name_tok.error());
 
+        // Optional generic type parameters: `type Box[T: Bound] struct` or `type Result[T, E] enum`
+        std::vector<TypeParam> type_params;
+        if (cur().kind == TokenKind::LBracket) {
+            advance(); // '['
+            while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                auto tp_name = expect(TokenKind::Ident);
+                if (!tp_name) return std::unexpected(tp_name.error());
+                TypeParam tp{tp_name->lexeme, ""};
+                if (cur().kind == TokenKind::Colon) {
+                    advance();
+                    auto c_name = expect(TokenKind::Ident);
+                    if (!c_name) return std::unexpected(c_name.error());
+                    tp.constraint = c_name->lexeme;
+                }
+                type_params.push_back(std::move(tp));
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+        }
+
         if (cur().kind == TokenKind::KwStruct) {
             advance(); // 'struct'
             if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
             StructDecl st;
             st.name = name_tok->lexeme;
+            st.type_params = std::move(type_params);
             st.line = start.line;
             st.source_path = file_;
             while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
@@ -493,6 +514,7 @@ private:
             if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
             EnumDecl en;
             en.name = name_tok->lexeme;
+            en.type_params = std::move(type_params);
             en.line = start.line;
             en.source_path = file_;
             while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
@@ -1396,30 +1418,30 @@ private:
 
     [[nodiscard]] auto parse_match_arms() -> std::expected<std::vector<MatchArm>, std::string> {
         std::vector<MatchArm> arms;
-        while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
-            MatchArm arm;
+        auto parse_single_pattern = [&]() -> std::expected<MatchPattern, std::string> {
+            MatchPattern pat;
             if (cur().kind == TokenKind::LBracket) {
                 Token lb = advance(); // '['
-                arm.is_slice_pattern = true;
-                arm.line = lb.line;
+                pat.is_slice_pattern = true;
+                pat.line = lb.line;
                 bool in_tail = false;
                 while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
                     if (cur().kind == TokenKind::DotDot) {
                         advance(); // '..'
-                        arm.slice_has_rest = true;
+                        pat.slice_has_rest = true;
                         if (cur().kind == TokenKind::Ident) {
                             std::string rest_id = advance().lexeme;
                             if (rest_id != "_") {
-                                arm.slice_rest = rest_id;
+                                pat.slice_rest = rest_id;
                             }
                         }
                         in_tail = true;
                     } else if (cur().kind == TokenKind::Ident) {
                         std::string id = advance().lexeme;
                         if (in_tail) {
-                            arm.slice_tail.push_back(id);
+                            pat.slice_tail.push_back(id);
                         } else {
-                            arm.slice_head.push_back(id);
+                            pat.slice_head.push_back(id);
                         }
                     } else {
                         return std::unexpected(std::format("{}:{}: unexpected token in slice pattern", cur().line, cur().col));
@@ -1432,25 +1454,25 @@ private:
                 if (cur().kind == TokenKind::Minus) {
                     Token m = advance();
                     Token num = advance();
-                    arm.line = m.line;
-                    arm.literal_val = "-" + num.lexeme;
+                    pat.line = m.line;
+                    pat.literal_val = "-" + num.lexeme;
                 } else if (cur().kind == TokenKind::String) {
                     Token s = advance();
-                    arm.line = s.line;
-                    arm.literal_val = std::format("\"{}\"", s.lexeme);
+                    pat.line = s.line;
+                    pat.literal_val = std::format("\"{}\"", s.lexeme);
                 } else if (cur().kind == TokenKind::RawString) {
                     Token s = advance();
-                    arm.line = s.line;
-                    arm.literal_val = std::format("R\"({})\"", s.lexeme);
+                    pat.line = s.line;
+                    pat.literal_val = std::format("R\"({})\"", s.lexeme);
                 } else {
                     Token num = advance();
-                    arm.line = num.line;
-                    arm.literal_val = num.lexeme;
+                    pat.line = num.line;
+                    pat.literal_val = num.lexeme;
                 }
             } else {
                 auto v_tok = expect(TokenKind::Ident);
                 if (!v_tok) return std::unexpected(v_tok.error());
-                arm.line = v_tok->line;
+                pat.line = v_tok->line;
                 if (cur().kind == TokenKind::DoubleColon || cur().kind == TokenKind::Dot) {
                     Token sep = advance();
                     auto sub_tok = expect(TokenKind::Ident);
@@ -1460,10 +1482,10 @@ private:
                             "{}:{}:{}: '.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}') (cfire/DEPRECATED-SEPARATOR)",
                             file_, sep.line, sep.col, v_tok->lexeme, sub_tok->lexeme));
                     }
-                    arm.enum_prefix = v_tok->lexeme;
-                    arm.variant_name = sub_tok->lexeme;
+                    pat.enum_prefix = v_tok->lexeme;
+                    pat.variant_name = sub_tok->lexeme;
                 } else {
-                    arm.variant_name = v_tok->lexeme;
+                    pat.variant_name = v_tok->lexeme;
                 }
 
                 if (cur().kind == TokenKind::LParen) {
@@ -1471,12 +1493,40 @@ private:
                     while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
                         auto b_tok = expect(TokenKind::Ident);
                         if (!b_tok) return std::unexpected(b_tok.error());
-                        arm.bindings.push_back(b_tok->lexeme);
+                        pat.bindings.push_back(b_tok->lexeme);
                         if (cur().kind == TokenKind::Comma) advance();
                     }
                     if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
                 }
             }
+            return pat;
+        };
+
+        while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+            std::vector<MatchPattern> patterns;
+            auto first_pat = parse_single_pattern();
+            if (!first_pat) return std::unexpected(first_pat.error());
+            patterns.push_back(std::move(*first_pat));
+
+            while (cur().kind == TokenKind::Pipe) {
+                advance(); // '|'
+                auto next_pat = parse_single_pattern();
+                if (!next_pat) return std::unexpected(next_pat.error());
+                patterns.push_back(std::move(*next_pat));
+            }
+
+            MatchArm arm;
+            arm.line = patterns[0].line;
+            arm.enum_prefix = patterns[0].enum_prefix;
+            arm.variant_name = patterns[0].variant_name;
+            arm.bindings = patterns[0].bindings;
+            arm.literal_val = patterns[0].literal_val;
+            arm.is_slice_pattern = patterns[0].is_slice_pattern;
+            arm.slice_head = patterns[0].slice_head;
+            arm.slice_rest = patterns[0].slice_rest;
+            arm.slice_has_rest = patterns[0].slice_has_rest;
+            arm.slice_tail = patterns[0].slice_tail;
+            arm.patterns = std::move(patterns);
 
             if (auto fa = expect(TokenKind::FatArrow); !fa) return std::unexpected(fa.error());
             if (cur().kind == TokenKind::LBrace) {

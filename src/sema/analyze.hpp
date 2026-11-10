@@ -122,6 +122,36 @@ namespace cfire::frontend {
         }
     }
 
+    // CF-123: Lint clusters of 3+ identically prefixed integer constants (VIEW_*, MODE_*)
+    struct PrefixConstInfo {
+        std::string source_path;
+        int line = 1;
+        std::vector<std::string> const_names;
+    };
+    std::unordered_map<std::string, PrefixConstInfo> prefix_clusters;
+    for (const auto& gv : cf.ast.global_vars) {
+        if (gv.is_mut || !gv.value) continue;
+        const auto* lit = std::get_if<LiteralExpr>(&gv.value->node);
+        if (!lit || lit->kind != TokenKind::Int) continue;
+        auto us = gv.name.find('_');
+        if (us != std::string::npos && us > 0) {
+            std::string pfx = gv.name.substr(0, us);
+            auto& entry = prefix_clusters[pfx];
+            if (entry.const_names.empty()) {
+                entry.source_path = gv.source_path.empty() ? cf.ast.path : gv.source_path;
+                entry.line = gv.line;
+            }
+            entry.const_names.push_back(gv.name);
+        }
+    }
+    for (const auto& [pfx, info] : prefix_clusters) {
+        if (info.const_names.size() >= 3) {
+            cf.warnings.push_back(std::format(
+                "{}:{}:1: warning: cluster of {} related integer constants with prefix '{}' detected; prefer an enum instead (cfire/PREFER-ENUM)",
+                info.source_path, info.line, info.const_names.size(), pfx));
+        }
+    }
+
     for (const auto& fn : cf.ast.functions) {
         std::string fn_path = fn.source_path.empty() ? cf.ast.path : fn.source_path;
         if (fn.receiver) {
