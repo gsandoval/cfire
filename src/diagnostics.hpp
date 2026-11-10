@@ -310,10 +310,165 @@ inline void synthesize_fixits_for_diagnostic(
                 if (try_replace_token("fs.read_all", "fs.read_bytes")) return;
             } else if (d.message.contains("'fs.write_all'")) {
                 if (try_replace_token("fs.write_all", "fs.write_bytes")) return;
+            } else if (d.message.contains("'os.read_stdin_lines'")) {
+                if (try_replace_token("os.read_stdin_lines", "try os.stdin().read_lines")) return;
+            } else if (d.message.contains("'os.read_stdin_bytes'")) {
+                if (try_replace_token("os.read_stdin_bytes", "try os.stdin().read_bytes")) return;
+            } else if (d.message.contains("'os.read_stdin'")) {
+                if (try_replace_token("os.read_stdin", "try os.stdin().read_text")) return;
             } else if (d.message.contains("'.read_str'")) {
                 if (try_replace_token(".read_str", ".read_text")) return;
             } else if (d.message.contains("'.write_str'")) {
                 if (try_replace_token(".write_str", ".write_text")) return;
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/DEPRECATED-VAR") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (auto vpos = cur_ln.find("var "); vpos != std::string::npos) {
+                FixItEdit edit;
+                edit.start_line = d.line;
+                edit.end_line = d.line;
+                edit.is_preferred = true;
+                if (cur_ln.substr(vpos).starts_with("var mut ")) {
+                    edit.title = "Replace 'var mut' with 'mut' (cfire/DEPRECATED-VAR)";
+                    edit.start_col = static_cast<int>(vpos) + 1;
+                    edit.end_col = static_cast<int>(vpos + 8) + 1;
+                    edit.replacement = "mut ";
+                    d.fixits.push_back(std::move(edit));
+                    return;
+                } else if (auto eq_pos = cur_ln.find(" = ", vpos); eq_pos != std::string::npos && cur_ln.find(':', vpos) > eq_pos) {
+                    edit.title = "Replace 'var x = ...' with 'x := ...' (cfire/DEPRECATED-VAR)";
+                    edit.start_col = static_cast<int>(vpos) + 1;
+                    edit.end_col = static_cast<int>(cur_ln.size()) + 1;
+                    std::string line_tail = cur_ln.substr(vpos + 4);
+                    if (auto eq_in_tail = line_tail.find(" = "); eq_in_tail != std::string::npos) {
+                        line_tail.replace(eq_in_tail, 3, " := ");
+                    }
+                    edit.replacement = line_tail;
+                    d.fixits.push_back(std::move(edit));
+                    return;
+                } else {
+                    edit.title = "Remove 'var' keyword (cfire/DEPRECATED-VAR)";
+                    edit.start_col = static_cast<int>(vpos) + 1;
+                    edit.end_col = static_cast<int>(vpos + 4) + 1;
+                    edit.replacement = "";
+                    d.fixits.push_back(std::move(edit));
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/DEPRECATED-DISCARD") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (auto pos = cur_ln.find(":="); pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = "Replace ':=' with '=' for discard (cfire/DEPRECATED-DISCARD)";
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(pos + 2) + 1;
+                edit.replacement = "=";
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+                return;
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/DEPRECATED-IN-PARAM") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (auto pos = cur_ln.find("in "); pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = "Remove redundant 'in' parameter intent (cfire/DEPRECATED-IN-PARAM)";
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(pos + 3) + 1;
+                edit.replacement = "";
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+                return;
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/DEPRECATED-INTENT-POS") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (auto mpos = cur_ln.find(": mut "); mpos != std::string::npos) {
+                auto id_end = cur_ln.rfind(' ', mpos);
+                auto id_start = (id_end == std::string::npos) ? 0 : id_end + 1;
+                if (id_end == std::string::npos) {
+                    auto p_start = cur_ln.rfind('(', mpos);
+                    id_start = (p_start == std::string::npos) ? 0 : p_start + 1;
+                }
+                while (id_start < mpos && (cur_ln[id_start] == ' ' || cur_ln[id_start] == '(' || cur_ln[id_start] == ',')) ++id_start;
+                std::string pname = cur_ln.substr(id_start, mpos - id_start);
+                FixItEdit edit;
+                edit.title = std::format("Move 'mut' before parameter name: 'mut {}:' (cfire/DEPRECATED-INTENT-POS)", pname);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(id_start) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(mpos + 6) + 1;
+                edit.replacement = "mut " + pname + ": ";
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+                return;
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/DEPRECATED-SEPARATOR") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) {
+                auto dot_pos = cur_ln.rfind('.', static_cast<std::size_t>(d.col - 1));
+                if (dot_pos == std::string::npos) dot_pos = cur_ln.find('.', static_cast<std::size_t>(d.col - 1));
+                if (dot_pos != std::string::npos) {
+                    FixItEdit edit;
+                    edit.title = "Replace '.' with '::' for enum variant (cfire/DEPRECATED-SEPARATOR)";
+                    edit.start_line = d.line;
+                    edit.start_col = static_cast<int>(dot_pos) + 1;
+                    edit.end_line = d.line;
+                    edit.end_col = static_cast<int>(dot_pos + 1) + 1;
+                    edit.replacement = "::";
+                    edit.is_preferred = true;
+                    d.fixits.push_back(std::move(edit));
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/REDUNDANT-DEREF") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (auto pos = cur_ln.find("(*"); pos != std::string::npos) {
+                if (auto end_p = cur_ln.find(").", pos); end_p != std::string::npos) {
+                    std::string id = cur_ln.substr(pos + 2, end_p - (pos + 2));
+                    FixItEdit edit;
+                    edit.title = std::format("Replace '(*{}).' with '{}.' (cfire/REDUNDANT-DEREF)", id, id);
+                    edit.start_line = d.line;
+                    edit.start_col = static_cast<int>(pos) + 1;
+                    edit.end_line = d.line;
+                    edit.end_col = static_cast<int>(end_p + 2) + 1;
+                    edit.replacement = id + ".";
+                    edit.is_preferred = true;
+                    d.fixits.push_back(std::move(edit));
+                    return;
+                }
             }
         }
         return;
@@ -778,8 +933,50 @@ inline auto apply_fixits(
     replace_all(s, "std::uint8_t", "u8");
     replace_all(s, "std::size_t", "usize");
     replace_all(s, "std::byte", "byte");
+    replace_all(s, "cfire::fs::File", "fs.File");
+    replace_all(s, "cfire::io::File", "fs.File");
+    replace_all(s, "cfire::net::TcpConn", "net.TcpConn");
+    replace_all(s, "cfire::net::TcpStream", "net.TcpConn");
+    replace_all(s, "cfire::net::TcpListener", "net.TcpListener");
+    replace_all(s, "std::unexpected<cfire::Error>", "error(...)");
+    replace_all(s, "std::unexpected<Error>", "error(...)");
+    replace_all(s, "cfire::make_error", "error(...)");
+    replace_all(s, "cfire::Error", "Error");
+    replace_all(s, "cfire::unwrap_or", "'or' fallback");
+    replace_all(s, "cfire::unwrap_val", "'try' unwrap");
+    replace_all(s, "cfire::try_unwrap", "'try' unwrap");
+    replace_all(s, "cfire::slice", "slice '[a..b]'");
+    replace_all(s, "cfire::index_at", "index '[i]'");
     replace_all(s, "no member named 'size' in", "no member '.len' in");
     replace_all(s, "does not provide a subscript operator", "does not support indexing '[i]'");
+
+    // Strip Clang ` (aka '...')` type alias annotations
+    {
+        std::size_t apos = 0;
+        while ((apos = s.find(" (aka '", apos)) != std::string::npos) {
+            auto end_pos = s.find("')", apos + 7);
+            if (end_pos != std::string::npos && end_pos - apos < 160) {
+                s.erase(apos, (end_pos + 2) - apos);
+            } else {
+                apos += 7;
+            }
+        }
+    }
+
+    // Rewrite `.cfire/gen/<stem>.cpp` paths back to `<stem>.cf`
+    {
+        std::size_t gpos = 0;
+        while ((gpos = s.find(".cfire/gen/", gpos)) != std::string::npos) {
+            auto end_pos = s.find(".cpp:", gpos);
+            if (end_pos != std::string::npos && end_pos - gpos < 128) {
+                std::string stem = s.substr(gpos + 11, end_pos - (gpos + 11));
+                if (stem.ends_with("_test")) stem.erase(stem.size() - 5);
+                s.replace(gpos, (end_pos + 4) - gpos, stem + ".cf");
+            } else {
+                gpos += 11;
+            }
+        }
+    }
 
     // Iteratively rewrite C++ container templates from innermost to outermost
     for (int pass = 0; pass < 6; ++pass) {
@@ -819,6 +1016,71 @@ inline auto apply_fixits(
         rewrite_unary_template("std::unique_ptr<", "own[", "]");
         rewrite_unary_template("std::shared_ptr<", "shared[", "]");
         if (!changed) break;
+    }
+
+    // Collapse C++ runtime header template instantiation errors onto the originating `.cf:line:col` call site
+    auto is_runtime_hdr_line = [](std::string_view ln) -> bool {
+        return ln.contains("cfire_prelude.hpp:") ||
+               ln.contains("cfire_core_stdlib.hpp:") ||
+               ln.contains("cfire_test_runtime.hpp:") ||
+               ln.contains("/runtime/core/");
+    };
+    if (s.contains("cfire_prelude.hpp:") || s.contains("cfire_core_stdlib.hpp:") ||
+        s.contains("cfire_test_runtime.hpp:") || s.contains("/runtime/core/")) {
+        auto raw_lines = split_lines(s);
+        std::vector<std::string> out_lines;
+        std::vector<bool> skip_line(raw_lines.size(), false);
+        for (std::size_t idx = 0; idx < raw_lines.size(); ++idx) {
+            if (skip_line[idx]) continue;
+            const std::string& ln = raw_lines[idx];
+            if (ln.starts_with("In file included from ") &&
+                (ln.contains("<built-in>") || ln.contains("cfire_prelude.hpp") || ln.contains("/runtime/"))) {
+                continue;
+            }
+            if (is_runtime_hdr_line(ln) && ln.contains(": error: ")) {
+                auto err_pos = ln.find(": error: ");
+                std::string err_msg = ln.substr(err_pos + 9);
+                std::string cf_loc_prefix;
+                for (std::size_t j = idx + 1; j < raw_lines.size() && j <= idx + 12; ++j) {
+                    const std::string& nln = raw_lines[j];
+                    if (auto note_pos = nln.find(": note: in instantiation of "); note_pos != std::string::npos) {
+                        std::string_view prefix_sv(nln.data(), note_pos);
+                        if (prefix_sv.contains(".cf:")) {
+                            cf_loc_prefix = std::string(prefix_sv);
+                            skip_line[j] = true;
+                            // Also skip snippet lines immediately following the note or runtime error
+                            for (std::size_t k = idx + 1; k < raw_lines.size(); ++k) {
+                                if (k == j) continue;
+                                std::string_view kl = raw_lines[k];
+                                while (!kl.empty() && kl.front() == ' ') kl.remove_prefix(1);
+                                if (kl.starts_with("|") || (!kl.empty() && std::isdigit(static_cast<unsigned char>(kl.front())) && raw_lines[k].contains(" | "))) {
+                                    skip_line[k] = true;
+                                } else if (is_runtime_hdr_line(raw_lines[k]) && raw_lines[k].contains(": note:")) {
+                                    skip_line[k] = true;
+                                } else if (k > j) {
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (!cf_loc_prefix.empty()) {
+                    if (!err_msg.contains("cfire/")) {
+                        err_msg += " (cfire/TYPE-ERROR)";
+                    }
+                    out_lines.push_back(std::format("{}: error: {}", cf_loc_prefix, err_msg));
+                    continue;
+                }
+            }
+            out_lines.push_back(ln);
+        }
+        std::string rebuilt;
+        for (std::size_t i = 0; i < out_lines.size(); ++i) {
+            if (i > 0) rebuilt += '\n';
+            rebuilt += out_lines[i];
+        }
+        s = std::move(rebuilt);
     }
 
     return s;

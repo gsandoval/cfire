@@ -1,0 +1,30 @@
+package main
+
+fn test_branches(x: i32) -> str {
+    if x > 10 {
+        return "greater"
+    } else if x == 10 {
+        return "equal"
+    } else {
+        return "less"
+    }
+}
+
+fn test_loops() -> i32 {
+    mut sum := 0
+    for i in 0..5 {
+        sum += i
+    }
+    mut j := 0
+    for j < 3 {
+        j += 1
+    }
+    return sum + j
+}
+
+fn main() {
+    defer println("cleanup completed")
+    val := test_branches(15)
+    total := test_loops()
+    println("val: {}, total: {}", val, total)
+}

@@ -3,6 +3,7 @@
 
 #include "ast.hpp"
 #include "diagnostics.hpp"
+#include "module_registry.hpp"
 #include "parser.hpp"
 #include <expected>
 #include <format>
@@ -41,20 +42,491 @@ struct StructTagInfo {
     std::unordered_map<std::string, std::string> custom_tags{};
 };
 
+enum class TypeKind : uint8_t {
+    Unknown = 0,
+    Never,
+    Void,
+    Bool,
+    Int8, Int16, Int32, Int64,
+    Uint8, Uint16, Uint32, Uint64,
+    Isize, Usize,
+    Float32, Float64,
+    Str,
+    Byte,
+    NominalStruct,
+    NominalEnum,
+    Interface,
+    Slice,
+    Array,
+    Map,
+    Optional,
+    Fallible,
+    Own,
+    Shared,
+    Borrow,
+    MutBorrow,
+    RawPtr,
+    MutPtr,
+    Tuple,
+    Function
+};
+
+struct TypeId {
+    uint32_t index{0};
+
+    [[nodiscard]] constexpr bool is_unknown() const noexcept { return index == 0; }
+    [[nodiscard]] constexpr bool is_valid() const noexcept { return index != 0; }
+    [[nodiscard]] constexpr bool is_never() const noexcept { return index == 1; }
+    [[nodiscard]] constexpr bool is_void() const noexcept { return index == 2; }
+
+    constexpr bool operator==(const TypeId& o) const noexcept = default;
+    constexpr auto operator<=>(const TypeId& o) const noexcept = default;
+
+    static constexpr TypeId Unknown() noexcept { return TypeId{0}; }
+    static constexpr TypeId Never() noexcept { return TypeId{1}; }
+    static constexpr TypeId Void() noexcept { return TypeId{2}; }
+    static constexpr TypeId Bool() noexcept { return TypeId{3}; }
+    static constexpr TypeId Int8() noexcept { return TypeId{4}; }
+    static constexpr TypeId Int16() noexcept { return TypeId{5}; }
+    static constexpr TypeId Int32() noexcept { return TypeId{6}; }
+    static constexpr TypeId Int64() noexcept { return TypeId{7}; }
+    static constexpr TypeId Uint8() noexcept { return TypeId{8}; }
+    static constexpr TypeId Uint16() noexcept { return TypeId{9}; }
+    static constexpr TypeId Uint32() noexcept { return TypeId{10}; }
+    static constexpr TypeId Uint64() noexcept { return TypeId{11}; }
+    static constexpr TypeId Isize() noexcept { return TypeId{12}; }
+    static constexpr TypeId Usize() noexcept { return TypeId{13}; }
+    static constexpr TypeId Float32() noexcept { return TypeId{14}; }
+    static constexpr TypeId Float64() noexcept { return TypeId{15}; }
+    static constexpr TypeId Str() noexcept { return TypeId{16}; }
+    static constexpr TypeId Byte() noexcept { return TypeId{17}; }
+};
+
+struct TypeDesc {
+    TypeKind kind{TypeKind::Unknown};
+    std::string name{};
+    std::string package_name{};
+    TypeId elem_type{TypeId::Unknown()};
+    TypeId key_type{TypeId::Unknown()};
+    std::vector<TypeId> param_types{};
+    TypeId ret_type{TypeId::Unknown()};
+    std::size_t array_len{0};
+};
+
+class TypeTable {
+public:
+    TypeTable() {
+        types_.reserve(64);
+        types_.push_back(TypeDesc{TypeKind::Unknown, "unknown"});
+        types_.push_back(TypeDesc{TypeKind::Never, "never"});
+        types_.push_back(TypeDesc{TypeKind::Void, "void"});
+        types_.push_back(TypeDesc{TypeKind::Bool, "bool"});
+        types_.push_back(TypeDesc{TypeKind::Int8, "i8"});
+        types_.push_back(TypeDesc{TypeKind::Int16, "i16"});
+        types_.push_back(TypeDesc{TypeKind::Int32, "i32"});
+        types_.push_back(TypeDesc{TypeKind::Int64, "i64"});
+        types_.push_back(TypeDesc{TypeKind::Uint8, "u8"});
+        types_.push_back(TypeDesc{TypeKind::Uint16, "u16"});
+        types_.push_back(TypeDesc{TypeKind::Uint32, "u32"});
+        types_.push_back(TypeDesc{TypeKind::Uint64, "u64"});
+        types_.push_back(TypeDesc{TypeKind::Isize, "isize"});
+        types_.push_back(TypeDesc{TypeKind::Usize, "usize"});
+        types_.push_back(TypeDesc{TypeKind::Float32, "f32"});
+        types_.push_back(TypeDesc{TypeKind::Float64, "f64"});
+        types_.push_back(TypeDesc{TypeKind::Str, "str"});
+        types_.push_back(TypeDesc{TypeKind::Byte, "byte"});
+
+        for (uint32_t i = 0; i < types_.size(); ++i) {
+            name_to_id_[types_[i].name] = TypeId{i};
+        }
+        name_to_id_["int"] = TypeId::Int64();
+        name_to_id_["uint"] = TypeId::Uint64();
+        name_to_id_["bool_"] = TypeId::Bool();
+    }
+
+    [[nodiscard]] auto get(TypeId id) const -> const TypeDesc& {
+        if (id.index >= types_.size()) return types_[0];
+        return types_[id.index];
+    }
+
+    [[nodiscard]] auto to_string(TypeId id) const -> std::string {
+        return get(id).name;
+    }
+
+    [[nodiscard]] auto intern(TypeDesc desc) const -> TypeId {
+        if (!desc.name.empty()) {
+            if (auto it = name_to_id_.find(desc.name); it != name_to_id_.end()) {
+                return it->second;
+            }
+        }
+        uint32_t next_id = static_cast<uint32_t>(types_.size());
+        if (desc.name.empty()) {
+            desc.name = format_desc(desc);
+        }
+        name_to_id_[desc.name] = TypeId{next_id};
+        types_.push_back(std::move(desc));
+        return TypeId{next_id};
+    }
+
+    [[nodiscard]] auto from_name(std::string_view name) const -> TypeId {
+        if (name.empty()) return TypeId::Unknown();
+        std::string n(name);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) {
+            return it->second;
+        }
+        if (n.starts_with("[]")) {
+            TypeId elem = from_name(n.substr(2));
+            return make_slice(elem);
+        }
+        if (n.ends_with('?')) {
+            TypeId inner = from_name(n.substr(0, n.size() - 1));
+            return make_optional(inner);
+        }
+        if (n.ends_with('!')) {
+            TypeId inner = from_name(n.substr(0, n.size() - 1));
+            return make_fallible(inner);
+        }
+        if (n.starts_with("&mut ")) {
+            TypeId inner = from_name(n.substr(5));
+            return make_mut_borrow(inner);
+        }
+        if (n.starts_with('&')) {
+            TypeId inner = from_name(n.substr(1));
+            return make_borrow(inner);
+        }
+        if (n.starts_with("*mut ")) {
+            TypeId inner = from_name(n.substr(5));
+            return make_mut_ptr(inner);
+        }
+        if (n.starts_with('*')) {
+            TypeId inner = from_name(n.substr(1));
+            return make_raw_ptr(inner);
+        }
+        if (n.starts_with("own[") && n.ends_with(']')) {
+            TypeId inner = from_name(n.substr(4, n.size() - 5));
+            return make_own(inner);
+        }
+        if (n.starts_with("shared[") && n.ends_with(']')) {
+            TypeId inner = from_name(n.substr(7, n.size() - 8));
+            return make_shared(inner);
+        }
+        TypeDesc d;
+        d.kind = TypeKind::NominalStruct;
+        d.name = n;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto from_typeref(const TypeRef& tr) const -> TypeId {
+        if (tr.is_fallible) {
+            TypeRef inner = tr;
+            inner.is_fallible = false;
+            return make_fallible(from_typeref(inner));
+        }
+        if (tr.is_optional) {
+            TypeRef inner = tr;
+            inner.is_optional = false;
+            return make_optional(from_typeref(inner));
+        }
+        if (tr.is_slice) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name.starts_with("[]") ? tr.name.substr(2) : tr.name);
+            return make_slice(elem);
+        }
+        if (tr.is_array) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
+            std::size_t len = 0;
+            if (!tr.array_len.empty()) {
+                try { len = std::stoul(tr.array_len); } catch (...) {}
+            }
+            return make_array(elem, len);
+        }
+        if (tr.is_map) {
+            TypeId k = tr.key_type ? from_typeref(*tr.key_type) : TypeId::Str();
+            TypeId v = tr.elem_type ? from_typeref(*tr.elem_type) : TypeId::Unknown();
+            return make_map(k, v);
+        }
+        if (!tr.smart_wrap.empty()) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
+            if (tr.smart_wrap == "own") return make_own(elem);
+            if (tr.smart_wrap == "shared") return make_shared(elem);
+        }
+        if (tr.is_borrow) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
+            return make_borrow(elem);
+        }
+        if (tr.is_mut_borrow) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
+            return make_mut_borrow(elem);
+        }
+        if (tr.is_ptr) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
+            return make_raw_ptr(elem);
+        }
+        if (tr.is_mut_ptr) {
+            TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
+            return make_mut_ptr(elem);
+        }
+        return from_name(tr.name);
+    }
+
+    [[nodiscard]] auto make_slice(TypeId elem) const -> TypeId {
+        std::string n = "[]" + to_string(elem);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Slice;
+        d.name = n;
+        d.elem_type = elem;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_array(TypeId elem, std::size_t len) const -> TypeId {
+        std::string n = std::format("[{}]{}", len, to_string(elem));
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Array;
+        d.name = n;
+        d.elem_type = elem;
+        d.array_len = len;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_map(TypeId key, TypeId val) const -> TypeId {
+        std::string n = std::format("map[{}]{}", to_string(key), to_string(val));
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Map;
+        d.name = n;
+        d.key_type = key;
+        d.elem_type = val;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_optional(TypeId base) const -> TypeId {
+        if (base.is_unknown()) return TypeId::Unknown();
+        std::string n = to_string(base) + "?";
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Optional;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_fallible(TypeId base) const -> TypeId {
+        if (base.is_unknown()) return TypeId::Unknown();
+        std::string n = to_string(base) + "!";
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Fallible;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_own(TypeId base) const -> TypeId {
+        std::string n = std::format("own[{}]", to_string(base));
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Own;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_shared(TypeId base) const -> TypeId {
+        std::string n = std::format("shared[{}]", to_string(base));
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Shared;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_borrow(TypeId base) const -> TypeId {
+        std::string n = "&" + to_string(base);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Borrow;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_mut_borrow(TypeId base) const -> TypeId {
+        std::string n = "&mut " + to_string(base);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::MutBorrow;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_raw_ptr(TypeId base) const -> TypeId {
+        std::string n = "*" + to_string(base);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::RawPtr;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto make_mut_ptr(TypeId base) const -> TypeId {
+        std::string n = "*mut " + to_string(base);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::MutPtr;
+        d.name = n;
+        d.elem_type = base;
+        return intern(std::move(d));
+    }
+
+    [[nodiscard]] auto unwrap_optional(TypeId id) const -> TypeId {
+        const auto& d = get(id);
+        if (d.kind == TypeKind::Optional) return d.elem_type;
+        return id;
+    }
+
+    [[nodiscard]] auto unwrap_fallible(TypeId id) const -> TypeId {
+        const auto& d = get(id);
+        if (d.kind == TypeKind::Fallible) return d.elem_type;
+        return id;
+    }
+
+    [[nodiscard]] auto is_numeric(TypeId id) const -> bool {
+        const auto& d = get(id);
+        return d.kind == TypeKind::Int8 || d.kind == TypeKind::Int16 || d.kind == TypeKind::Int32 ||
+               d.kind == TypeKind::Int64 || d.kind == TypeKind::Uint8 || d.kind == TypeKind::Uint16 ||
+               d.kind == TypeKind::Uint32 || d.kind == TypeKind::Uint64 || d.kind == TypeKind::Isize ||
+               d.kind == TypeKind::Usize || d.kind == TypeKind::Float32 || d.kind == TypeKind::Float64 ||
+               d.kind == TypeKind::Byte;
+    }
+
+    [[nodiscard]] auto is_integer(TypeId id) const -> bool {
+        const auto& d = get(id);
+        return d.kind == TypeKind::Int8 || d.kind == TypeKind::Int16 || d.kind == TypeKind::Int32 ||
+               d.kind == TypeKind::Int64 || d.kind == TypeKind::Uint8 || d.kind == TypeKind::Uint16 ||
+               d.kind == TypeKind::Uint32 || d.kind == TypeKind::Uint64 || d.kind == TypeKind::Isize ||
+               d.kind == TypeKind::Usize || d.kind == TypeKind::Byte;
+    }
+
+    [[nodiscard]] auto is_float(TypeId id) const -> bool {
+        const auto& d = get(id);
+        return d.kind == TypeKind::Float32 || d.kind == TypeKind::Float64;
+    }
+
+    [[nodiscard]] auto is_assignable(TypeId dest, TypeId src) const -> bool {
+        if (dest == src) return true;
+        if (src.is_never()) return true;
+        if (dest.is_unknown() || src.is_unknown()) return false;
+        const auto& dest_d = get(dest);
+        const auto& src_d = get(src);
+        if (dest_d.kind == TypeKind::Optional && (dest_d.elem_type == src || is_assignable(dest_d.elem_type, src))) return true;
+        if (is_integer(dest) && is_integer(src)) return true;
+        if (is_float(dest) && is_numeric(src)) return true;
+        if (dest == make_borrow_const(TypeId::Str()) && src == TypeId::Str()) return true;
+        if (dest_d.kind == TypeKind::Borrow && dest_d.elem_type == src) return true;
+        if (dest_d.kind == TypeKind::Slice && src_d.kind == TypeKind::Array && dest_d.elem_type == src_d.elem_type) return true;
+        // Pointer and borrow coercion:
+        // &T, &mut T, *mut T, or *T can initialize/assign to *T
+        if (dest_d.kind == TypeKind::RawPtr) {
+            if ((src_d.kind == TypeKind::Borrow || src_d.kind == TypeKind::MutBorrow ||
+                 src_d.kind == TypeKind::RawPtr || src_d.kind == TypeKind::MutPtr) &&
+                (dest_d.elem_type == src_d.elem_type || dest_d.elem_type.is_unknown() || src_d.elem_type.is_unknown() ||
+                 (is_integer(dest_d.elem_type) && is_integer(src_d.elem_type)))) {
+                return true;
+            }
+        }
+        // &mut T or *mut T can initialize/assign to *mut T
+        if (dest_d.kind == TypeKind::MutPtr) {
+            if ((src_d.kind == TypeKind::MutBorrow || src_d.kind == TypeKind::MutPtr) &&
+                (dest_d.elem_type == src_d.elem_type || dest_d.elem_type.is_unknown() || src_d.elem_type.is_unknown() ||
+                 (is_integer(dest_d.elem_type) && is_integer(src_d.elem_type)))) {
+                return true;
+            }
+        }
+        // &mut T can initialize/assign where &T is expected
+        if (dest_d.kind == TypeKind::Borrow && src_d.kind == TypeKind::MutBorrow &&
+            (dest_d.elem_type == src_d.elem_type || dest_d.elem_type.is_unknown() || src_d.elem_type.is_unknown() ||
+             (is_integer(dest_d.elem_type) && is_integer(src_d.elem_type)))) {
+            return true;
+        }
+        return false;
+    }
+
+private:
+    [[nodiscard]] auto make_borrow_const(TypeId base) const -> TypeId {
+        std::string n = "&" + to_string(base);
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        return TypeId::Unknown();
+    }
+
+    std::string format_desc(const TypeDesc& d) const {
+        if (!d.name.empty()) return d.name;
+        switch (d.kind) {
+            case TypeKind::Slice: return "[]" + to_string(d.elem_type);
+            case TypeKind::Array: return std::format("[{}]{}", d.array_len, to_string(d.elem_type));
+            case TypeKind::Map: return std::format("map[{}]{}", to_string(d.key_type), to_string(d.elem_type));
+            case TypeKind::Optional: return to_string(d.elem_type) + "?";
+            case TypeKind::Fallible: return to_string(d.elem_type) + "!";
+            case TypeKind::Own: return std::format("own[{}]", to_string(d.elem_type));
+            case TypeKind::Shared: return std::format("shared[{}]", to_string(d.elem_type));
+            case TypeKind::Borrow: return "&" + to_string(d.elem_type);
+            case TypeKind::MutBorrow: return "&mut " + to_string(d.elem_type);
+            case TypeKind::RawPtr: return "*" + to_string(d.elem_type);
+            case TypeKind::MutPtr: return "*mut " + to_string(d.elem_type);
+            default: return "unknown";
+        }
+    }
+
+    mutable std::vector<TypeDesc> types_{};
+    mutable std::unordered_map<std::string, TypeId> name_to_id_{};
+};
+
 struct CheckedFile {
     FileAST ast{};
+    TypeTable type_table{};
     std::unordered_map<std::string, FnDecl> fn_sigs{};
     std::unordered_map<std::string, FnDecl> methods{};     // "Type::method" -> FnDecl
     std::unordered_map<std::string, std::string> method_owner{}; // "method" -> "Type" (primary owner for single-owner methods)
     std::unordered_map<std::string, std::unordered_set<std::string>> method_owners{}; // "method" -> set of "Type"s
     std::unordered_map<std::string, EnumDecl> enums{};     // "EnumName" -> EnumDecl
     std::unordered_map<std::string, std::string> variant_to_enum{}; // "VariantName" -> "EnumName"
+    std::unordered_set<std::string> ambiguous_variants{};
+    std::unordered_set<std::string> colliding_fn_names{};
+    std::unordered_set<std::string> colliding_gv_names{};
     std::unordered_map<std::string, std::vector<StructTagInfo>> struct_tags{};
-    std::unordered_map<std::string, int> last_use_move{}; // "fnName:varName" -> line
+    std::unordered_map<std::string, uint64_t> last_use_move{}; // "fnName:varName" -> expr_id
     std::unordered_map<std::string, std::vector<std::string>> cpp_fn_params{}; // C/C++ fn -> param QualTypes
+    std::unordered_set<std::string> interfaces{};
     std::vector<std::string> warnings{};
     std::vector<std::string> errors{};
 };
+
+[[nodiscard]] inline auto find_interface_in_slice(const TypeRef& tr, const std::unordered_set<std::string>& ifaces) -> std::optional<std::string> {
+    if ((tr.is_slice || tr.is_array) && tr.elem_type) {
+        if (ifaces.contains(tr.elem_type->name)) {
+            return tr.elem_type->name;
+        }
+        if (auto nested = find_interface_in_slice(*tr.elem_type, ifaces)) {
+            return nested;
+        }
+    }
+    if (tr.elem_type) {
+        if (auto nested = find_interface_in_slice(*tr.elem_type, ifaces)) return nested;
+    }
+    if (tr.key_type) {
+        if (auto nested = find_interface_in_slice(*tr.key_type, ifaces)) return nested;
+    }
+    for (const auto& ta : tr.type_args) {
+        if (auto nested = find_interface_in_slice(ta, ifaces)) return nested;
+    }
+    for (const auto& tt : tr.tuple_types) {
+        if (auto nested = find_interface_in_slice(tt, ifaces)) return nested;
+    }
+    return std::nullopt;
+}
 
 [[nodiscard]] inline auto trim_str(std::string_view sv) -> std::string {
     while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) sv.remove_prefix(1);
@@ -293,84 +765,24 @@ struct StdlibCatalogIndex {
     StdlibCatalogIndex() {
         for (const auto& mod : cfire::doc::stdlib_catalog()) {
             ns_to_import[mod.ns_alias] = mod.import_path;
+            for (const auto& a : mod.aliases) {
+                auto colon = a.rfind(':');
+                auto slash = a.rfind('/');
+                std::size_t sep = std::string::npos;
+                if (colon != std::string::npos && slash != std::string::npos) sep = std::max(colon, slash);
+                else if (colon != std::string::npos) sep = colon;
+                else sep = slash;
+                std::string alias_ns = (sep == std::string::npos) ? a : a.substr(sep + 1);
+                if (!ns_to_import.contains(alias_ns)) {
+                    ns_to_import[alias_ns] = a;
+                }
+            }
+            for (const auto& t : mod.types) {
+                ns_types_and_consts[mod.ns_alias].insert(t);
+            }
             for (const auto& fn : mod.functions) {
                 register_fn(mod.import_path, mod.ns_alias, fn.name, fn.cf_sig);
             }
-        }
-        // Additional runtime functions, types, and constants present in runtime headers:
-        register_fn("core:os", "os", "exec", "fn exec(cmd: str) -> str!");
-        for (const char* t : {"ExecResult", "TermSize", "RawTerminal"}) {
-            ns_types_and_consts["os"].insert(t);
-        }
-        for (const char* t : {"OpenMode", "SeekWhence", "File"}) {
-            ns_types_and_consts["fs"].insert(t);
-        }
-        register_fn("core:crypto/aes", "aes", "decrypt_gcm_str", "fn decrypt_gcm_str(key: []byte, nonce: []byte, ct: []byte, tag: []byte, aad: []byte = []) -> str!");
-        ns_types_and_consts["aes"].insert("GcmResult");
-        register_fn("core:crypto/hmac", "hmac", "sha256_bytes", "fn sha256_bytes(key: []byte, data: []byte) -> []byte");
-        register_fn("core:crypto/sha256", "sha256", "hash_file_hex", "fn hash_file_hex(path: str) -> str!");
-        register_fn("core:math", "math", "sqrt_f64", "fn sqrt_f64(x: f64) -> f64");
-        for (const char* t : {"PI", "E"}) {
-            ns_types_and_consts["math"].insert(t);
-        }
-        register_fn("core:str", "str", "replace_all", "fn replace_all(s: str, from: str, to: str) -> str");
-        register_fn("core:str", "str", "bytes", "fn bytes(s: str) -> []byte");
-        register_fn("core:time", "time", "duration_nanos", "fn duration_nanos(n: i64) -> Duration");
-        register_fn("core:time", "time", "duration_micros", "fn duration_micros(us: i64) -> Duration");
-        register_fn("core:time", "time", "duration_minutes", "fn duration_minutes(m: i64) -> Duration");
-        register_fn("core:time", "time", "duration_hours", "fn duration_hours(h: i64) -> Duration");
-        register_fn("core:time", "time", "from_unix_seconds", "fn from_unix_seconds(sec: i64) -> Time");
-        for (const char* t : {"Duration", "Time"}) {
-            ns_types_and_consts["time"].insert(t);
-        }
-        register_fn("core:sync", "sync", "new_mutex", "fn new_mutex() -> Mutex");
-        if (auto it = ns_fns["sync"].find("make_channel"); it != ns_fns["sync"].end()) {
-            it->second.max_args = 1;
-        }
-        if (auto it = ns_fns["cli"].find("parse"); it != ns_fns["cli"].end()) {
-            it->second.min_args = 0;
-            it->second.max_args = 1;
-        }
-        if (auto it = ns_fns["cli"].find("try_parse"); it != ns_fns["cli"].end()) {
-            it->second.min_args = 0;
-            it->second.max_args = 1;
-        }
-        for (const char* t : {"Channel", "Mutex"}) {
-            ns_types_and_consts["sync"].insert(t);
-        }
-        register_fn("core:sort", "sort", "slice_by", "fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)");
-        register_fn("ext:ai", "ai", "create_zip", "fn create_zip(entries: map[str]str) -> []byte");
-        for (const char* t : {"Provider", "Client", "Agent", "Document", "Message", "Tool", "Chunk"}) {
-            ns_types_and_consts["ai"].insert(t);
-        }
-        register_fn("ext:webui", "webui", "clipboard_get", "fn clipboard_get() -> str");
-        register_fn("ext:webui", "webui", "clipboard_set", "fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)");
-        register_fn("ext:webui", "webui", "clipboard_set_secret", "fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)");
-        register_fn("ext:webui", "webui", "monospace_fonts", "fn monospace_fonts() -> []str");
-        ns_types_and_consts["webui"].insert("App");
-        for (const char* t : {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"}) {
-            ns_types_and_consts["audio"].insert(t);
-        }
-        for (const char* t : {"Level", "Format"}) {
-            ns_types_and_consts["log"].insert(t);
-        }
-        for (const char* t : {"Db", "Database", "Stmt", "Statement", "Row"}) {
-            ns_types_and_consts["sqlite"].insert(t);
-        }
-        for (const char* t : {"Request", "Response", "Router", "HttpServer", "Server", "SseEvent"}) {
-            ns_types_and_consts["http"].insert(t);
-        }
-        for (const char* t : {"Url"}) {
-            ns_types_and_consts["url"].insert(t);
-        }
-        for (const char* t : {"Conn", "Server", "Message"}) {
-            ns_types_and_consts["websocket"].insert(t);
-        }
-        for (const char* t : {"Session", "Channel", "ExecResult"}) {
-            ns_types_and_consts["ssh"].insert(t);
-        }
-        for (const char* t : {"CC", "CMake", "Make", "Git", "Archive", "Command", "Executable", "Library", "Step", "PkgConfig", "Link", "Include", "Tako"}) {
-            ns_types_and_consts["build"].insert(t);
         }
     }
 
@@ -467,9 +879,20 @@ public:
             }
         }
         if (fn.receiver) {
+            param_names_.insert(fn.receiver->name);
             var_scope_depth_[fn.receiver->name] = 0;
             if (!fn.receiver->type.name.empty()) {
                 var_types_[fn.receiver->name] = fn.receiver->type.name;
+            }
+            if (fn.receiver->has_explicit_in) {
+                errors_.push_back(std::format(
+                    "{}:{}:{}: explicit 'in' receiver intent is deprecated; omit 'in' (cfire/DEPRECATED-IN-PARAM)",
+                    path_, fn.receiver->line, fn.receiver->col));
+            }
+            if (fn.receiver->has_deprecated_mut_pos) {
+                errors_.push_back(std::format(
+                    "{}:{}:{}: '(s: mut T)' receiver placement is deprecated; use '(mut s: T)' instead (cfire/DEPRECATED-INTENT-POS)",
+                    path_, fn.receiver->line, fn.receiver->col));
             }
             if (fn.receiver->intent == "mut") {
                 mut_vars_.insert(fn.receiver->name);
@@ -486,6 +909,7 @@ public:
             }
         }
         for (const auto& p : fn.params) {
+            param_names_.insert(p.name);
             var_scope_depth_[p.name] = 0;
             if (!p.type.smart_wrap.empty() && p.type.elem_type && !p.type.elem_type->name.empty()) {
                 var_types_[p.name] = p.type.elem_type->name;
@@ -498,9 +922,19 @@ public:
             if (p.intent == "move") {
                 move_params_.insert(p.name);
             }
+            if (p.has_explicit_in) {
+                errors_.push_back(std::format(
+                    "{}:{}:{}: explicit 'in' parameter intent is deprecated; omit 'in' (parameters are immutable by default) (cfire/DEPRECATED-IN-PARAM)",
+                    path_, p.line, p.col));
+            }
+            if (p.has_deprecated_mut_pos) {
+                errors_.push_back(std::format(
+                    "{}:{}:{}: 'x: mut T' parameter placement is deprecated; use 'mut x: T' instead (cfire/DEPRECATED-INTENT-POS)",
+                    path_, p.line, p.col));
+            }
             if (p.intent == "out") {
-                warnings_.push_back(std::format(
-                    "{}:{}:{}: warning: 'out' parameter is deprecated; use multi-return tuple '(T1, T2)' instead (cfire/DEPRECATED-OUT-PARAM)",
+                errors_.push_back(std::format(
+                    "{}:{}:{}: 'out' parameter is deprecated; use multi-return tuple '(T1, T2)' instead (cfire/DEPRECATED-OUT-PARAM)",
                     path_, p.line, p.col));
             }
             if (p.intent == "mut" || p.intent == "out") {
@@ -545,7 +979,8 @@ public:
     SemaFnChecker(std::string_view path, const FnDecl& fn, const CheckedFile& cf, std::vector<std::string>& warnings)
         : SemaFnChecker(path, fn, cf, warnings, fallback_errors_, false) {}
 
-    std::unordered_map<std::string, int> last_read_line{};
+    std::unordered_map<std::string, uint64_t> last_read_expr_id{};
+    std::unordered_set<std::string> read_in_loop_{};
 
     [[nodiscard]] auto emit_error(std::string msg) -> std::expected<void, std::string> {
         if (resilient_) {
@@ -574,7 +1009,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] auto record_var_read(const std::string& name, int line, int col)
+    [[nodiscard]] auto record_var_read(const std::string& name, int line, int col, uint64_t expr_id = 0)
         -> std::expected<void, std::string>
     {
         if (auto it = moved_at_line_.find(name); it != moved_at_line_.end()) {
@@ -588,7 +1023,14 @@ public:
                 path_, line, col, name, it->second.reason));
         }
         if (move_params_.contains(name)) {
-            last_read_line[name] = line;
+            if (loop_depth_ == 0) {
+                if (!read_in_loop_.contains(name)) {
+                    last_read_expr_id[name] = expr_id;
+                }
+            } else {
+                read_in_loop_.insert(name);
+                last_read_expr_id.erase(name);
+            }
         }
         return {};
     }
@@ -700,7 +1142,7 @@ public:
             }
         }
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
-            return ptr_or_smart_vars_.contains(id->name);
+            return ptr_or_smart_vars_.contains(id->name) || smart_ptr_vars_.contains(id->name) || raw_or_smart_ptr_vars_.contains(id->name);
         }
         return false;
     }
@@ -758,7 +1200,7 @@ public:
             name == "aes" || name == "hmac" || name == "sha256" ||
             name == "sodium" || name == "keychain" || name == "ssh" || name == "webui" ||
             name == "context" || name == "websocket" || name == "http" || name == "url" || name == "tls" ||
-            name == "audio" || name == "ai" || name == "cpp" || name == "testing") {
+            name == "audio" || name == "ai" || name == "cpp" || name == "testing" || name == "tako") {
             return true;
         }
         for (const auto& imp : cf_.ast.imports) {
@@ -840,6 +1282,12 @@ public:
         if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
             return expr_returns_optional_sema(tr->inner);
         }
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->fallback_val) {
+                return expr_returns_optional_sema(or_ex->fallback_val);
+            }
+            return false;
+        }
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
             if (!mem->is_namespace && mem->object) {
                 std::string owner_t = infer_expr_type_name_sema(mem->object);
@@ -857,8 +1305,20 @@ public:
             }
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (mem->object && (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string")) {
+                    if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
+                        if (cf_.enums.contains(id->name)) return true;
+                    } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                        if (cf_.enums.contains(sub_mem->field)) return true;
+                    }
+                }
+            }
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
                 if (cid->name == "some" || cid->name == "readln" || cid->name == "input") {
+                    return true;
+                }
+                if (cid->name.ends_with("::from_i32") || cid->name.ends_with("::from_i64") || cid->name.ends_with("::from_string")) {
                     return true;
                 }
                 if (fn_ret_optional_vars_.contains(cid->name)) {
@@ -873,6 +1333,15 @@ public:
                     return it->second.return_type.is_optional && !it->second.return_type.is_fallible;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string") {
+                    if (mem->object) {
+                        if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
+                            if (cf_.enums.contains(id->name)) return true;
+                        } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                            if (cf_.enums.contains(sub_mem->field)) return true;
+                        }
+                    }
+                }
                 const auto& idx = StdlibCatalogIndex::instance();
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
                     if ((is_namespace_ident_sema(recv_id->name) || idx.has_namespace(recv_id->name)) &&
@@ -940,8 +1409,26 @@ public:
             if (auto it = var_types_.find(id->name); it != var_types_.end()) {
                 return it->second;
             }
+            if (auto vit = cf_.variant_to_enum.find(id->name); vit != cf_.variant_to_enum.end()) {
+                return vit->second;
+            }
+            if (auto pos = id->name.find("::"); pos != std::string::npos) {
+                std::string prefix = id->name.substr(0, pos);
+                if (cf_.enums.contains(prefix)) return prefix;
+            }
+            if (auto pos = id->name.find('.'); pos != std::string::npos) {
+                std::string prefix = id->name.substr(0, pos);
+                if (cf_.enums.contains(prefix)) return prefix;
+            }
         }
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (mem->object) {
+                if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
+                    if (cf_.enums.contains(id->name)) return id->name;
+                } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                    if (cf_.enums.contains(sub_mem->field)) return sub_mem->field;
+                }
+            }
             if (!mem->is_namespace && mem->object) {
                 std::string owner_t = infer_expr_type_name_sema(mem->object);
                 if (!owner_t.empty()) {
@@ -957,6 +1444,17 @@ public:
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (auto pos = cid->name.find("::"); pos != std::string::npos) {
+                    std::string prefix = cid->name.substr(0, pos);
+                    if (cf_.enums.contains(prefix)) return prefix;
+                }
+                if (auto pos = cid->name.find('.'); pos != std::string::npos) {
+                    std::string prefix = cid->name.substr(0, pos);
+                    if (cf_.enums.contains(prefix)) return prefix;
+                }
+                if (auto vit = cf_.variant_to_enum.find(cid->name); vit != cf_.variant_to_enum.end()) {
+                    return vit->second;
+                }
                 if (cid->name == "make" && call->type_args.size() == 1) {
                     if (!call->type_args[0].smart_wrap.empty() && call->type_args[0].elem_type) {
                         return call->type_args[0].elem_type->name;
@@ -987,6 +1485,13 @@ public:
                     return it->second.return_type.name;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (mem->object) {
+                    if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
+                        if (cf_.enums.contains(id->name)) return id->name;
+                    } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                        if (cf_.enums.contains(sub_mem->field)) return sub_mem->field;
+                    }
+                }
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
                     if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt" || mem->field == "cwd" || mem->field == "temp_dir")) {
                         return "str";
@@ -1015,6 +1520,17 @@ public:
                     if (!is_ident_in_scope_sema(recv_id->name)) {
                         if (auto fit = cf_.fn_sigs.find(mem->field); fit != cf_.fn_sigs.end()) {
                             return fit->second.return_type.name;
+                        }
+                    }
+                } else if (mem->object) {
+                    if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                        if (const auto* sub_id = std::get_if<IdentExpr>(&sub_mem->object->node)) {
+                            if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
+                                if (std_sig->unwrapped_return_type == "[]byte") return "[]byte";
+                                if (!std_sig->unwrapped_return_type.empty() && std_sig->unwrapped_return_type != "void") {
+                                    return std_sig->unwrapped_return_type;
+                                }
+                            }
                         }
                     }
                 }
@@ -1052,6 +1568,105 @@ public:
             }
         }
         return "";
+    }
+
+    [[nodiscard]] auto infer_expr_type_id_sema(const ExprPtr& e) const -> TypeId {
+        if (!e) return TypeId::Unknown();
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return TypeId::Str();
+            if (lit->kind == TokenKind::Int) return TypeId::Int64();
+            if (lit->kind == TokenKind::Float) return TypeId::Float64();
+            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return TypeId::Bool();
+            return TypeId::Unknown();
+        }
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            TypeId op_t = infer_expr_type_id_sema(un->operand);
+            if (un->op == "!" || un->op == "not") return TypeId::Bool();
+            if (un->op == "&") return cf_.type_table.make_borrow(op_t);
+            if (un->op == "&mut") return cf_.type_table.make_mut_borrow(op_t);
+            if (un->op == "*") {
+                const auto& d = cf_.type_table.get(op_t);
+                if (d.elem_type.is_valid()) return d.elem_type;
+            }
+            return op_t;
+        }
+        if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
+            if (bin->op == "==" || bin->op == "!=" || bin->op == "<" || bin->op == "<=" ||
+                bin->op == ">" || bin->op == ">=" || bin->op == "&&" || bin->op == "||") {
+                return TypeId::Bool();
+            }
+            TypeId lt = infer_expr_type_id_sema(bin->left);
+            TypeId rt = infer_expr_type_id_sema(bin->right);
+            if (bin->op == "+" && (lt == TypeId::Str() || rt == TypeId::Str())) {
+                return TypeId::Str();
+            }
+            if (lt.is_valid() && !lt.is_unknown()) return lt;
+            if (rt.is_valid() && !rt.is_unknown()) return rt;
+            return TypeId::Unknown();
+        }
+        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
+            TypeId obj_t = infer_expr_type_id_sema(sl->object);
+            if (obj_t == TypeId::Str()) return cf_.type_table.from_name("&str");
+            const auto& d = cf_.type_table.get(obj_t);
+            if (d.kind == TypeKind::Slice || d.kind == TypeKind::Array) {
+                return cf_.type_table.make_slice(d.elem_type);
+            }
+            return TypeId::Unknown();
+        }
+        if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
+            TypeId obj_t = infer_expr_type_id_sema(idx->object);
+            if (obj_t == TypeId::Str()) return TypeId::Byte();
+            const auto& d = cf_.type_table.get(obj_t);
+            if (d.kind == TypeKind::Slice || d.kind == TypeKind::Array) return d.elem_type;
+            if (d.kind == TypeKind::Map) return d.elem_type;
+            return TypeId::Unknown();
+        }
+        if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            for (const auto& arm : me->arms) {
+                if (!arm.body.empty()) {
+                    if (const auto* expr_st = std::get_if<ExprStmt>(&arm.body.back()->node)) {
+                        TypeId t = infer_expr_type_id_sema(expr_st->expr);
+                        if (t.is_valid() && !t.is_unknown()) return t;
+                    }
+                }
+            }
+        }
+        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr) {
+                    if (const auto* sfn = StdlibCatalogIndex::instance().find_ns_fn(obj_id->name, mem->field)) {
+                        if (!sfn->unwrapped_return_type.empty() && sfn->unwrapped_return_type != "void") {
+                            return cf_.type_table.from_name(sfn->unwrapped_return_type);
+                        }
+                    }
+                    if (auto it = var_types_.find(obj_id->name); it != var_types_.end()) {
+                        std::string recv_t = it->second;
+                        if (auto dot = recv_t.rfind('.'); dot != std::string::npos) recv_t = recv_t.substr(dot + 1);
+                        if (auto mit = StdlibCatalogIndex::instance().receiver_methods.find(recv_t + "." + mem->field);
+                            mit != StdlibCatalogIndex::instance().receiver_methods.end()) {
+                            if (!mit->second.unwrapped_return_type.empty() && mit->second.unwrapped_return_type != "void") {
+                                return cf_.type_table.from_name(mit->second.unwrapped_return_type);
+                            }
+                        }
+                    }
+                } else if (mem->object) {
+                    if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                        if (const auto* sub_id = std::get_if<IdentExpr>(&sub_mem->object->node)) {
+                            if (const auto* sfn = StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
+                                if (!sfn->unwrapped_return_type.empty() && sfn->unwrapped_return_type != "void") {
+                                    return cf_.type_table.from_name(sfn->unwrapped_return_type);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        std::string n = infer_expr_type_name_sema(e);
+        if (!n.empty()) {
+            return cf_.type_table.from_name(n);
+        }
+        return TypeId::Unknown();
     }
 
     [[nodiscard]] auto is_non_byte_int_or_u8_expr(const ExprPtr& e) const -> bool {
@@ -1207,9 +1822,23 @@ public:
         else if (t.is_mut_borrow) s += "&mut ";
         else if (t.is_ptr) s += "*";
         else if (t.is_mut_ptr) s += "*mut ";
-        if (t.is_slice) s += "[]";
-        else if (t.is_array) s += "[" + t.array_len + "]";
-        if (t.is_tuple) {
+        if (t.is_slice) {
+            s += "[]";
+            if (t.elem_type) {
+                s += format_type_ref_sema(*t.elem_type);
+            } else if (t.name.starts_with("[]")) {
+                s += t.name.substr(2);
+            } else {
+                s += t.name.empty() ? "void" : t.name;
+            }
+        } else if (t.is_array) {
+            s += "[" + t.array_len + "]";
+            if (t.elem_type) {
+                s += format_type_ref_sema(*t.elem_type);
+            } else {
+                s += t.name.empty() ? "void" : t.name;
+            }
+        } else if (t.is_tuple) {
             s += "(";
             for (std::size_t i = 0; i < t.tuple_types.size(); ++i) {
                 if (i > 0) s += ", ";
@@ -1218,6 +1847,19 @@ public:
             s += ")";
         } else if (!t.smart_wrap.empty() && t.elem_type) {
             s += t.smart_wrap + "[" + format_type_ref_sema(*t.elem_type) + "]";
+        } else if (!t.type_args.empty()) {
+            s += t.name.empty() ? "void" : t.name;
+            s += "[";
+            for (std::size_t i = 0; i < t.type_args.size(); ++i) {
+                if (i > 0) s += ", ";
+                s += format_type_ref_sema(t.type_args[i]);
+            }
+            s += "]";
+        } else if (t.elem_type && (t.is_ptr || t.is_mut_ptr || t.is_borrow || t.is_mut_borrow)) {
+            s += format_type_ref_sema(*t.elem_type);
+        } else if (t.elem_type) {
+            s += t.name.empty() ? "void" : t.name;
+            s += "[" + format_type_ref_sema(*t.elem_type) + "]";
         } else {
             s += t.name.empty() ? "void" : t.name;
         }
@@ -1322,8 +1964,267 @@ public:
         return false;
     }
 
+    [[nodiscard]] auto is_vendor_alias_sema(std::string_view name) const -> bool {
+        if (name == "rl" || name == "rg") return true;
+        for (const auto& imp : cf_.ast.imports) {
+            if (imp.alias == name && imp.path.starts_with("vendor:")) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto resolve_ident(const std::string& name) const -> std::optional<Resolution> {
+        Resolution res;
+        // 1. Function parameter
+        if (param_names_.contains(name)) {
+            res.kind = SymbolKind::Param;
+            res.canonical_name = sanitize_cpp_ident(name);
+            res.is_mut = mut_vars_.contains(name);
+            res.is_optional = optional_vars_.contains(name);
+            res.is_smart_ptr = smart_ptr_vars_.contains(name);
+            res.is_raw_ptr = raw_or_smart_ptr_vars_.contains(name) && !smart_ptr_vars_.contains(name);
+            if (auto it = var_types_.find(name); it != var_types_.end()) {
+                res.type_name = it->second;
+            }
+            return res;
+        }
+        // 2. Local variable
+        if (local_defined_vars_.contains(name) || mut_vars_.contains(name) || imm_vars_.contains(name)) {
+            res.kind = SymbolKind::Local;
+            res.canonical_name = sanitize_cpp_ident(name);
+            res.is_mut = mut_vars_.contains(name);
+            res.is_optional = optional_vars_.contains(name);
+            res.is_smart_ptr = smart_ptr_vars_.contains(name);
+            res.is_raw_ptr = raw_or_smart_ptr_vars_.contains(name) && !smart_ptr_vars_.contains(name);
+            if (auto it = var_types_.find(name); it != var_types_.end()) {
+                res.type_name = it->second;
+            }
+            return res;
+        }
+        // 3. Enum Variant
+        if (auto vit = cf_.variant_to_enum.find(name); vit != cf_.variant_to_enum.end()) {
+            res.kind = SymbolKind::EnumVariant;
+            res.owner_type = vit->second;
+            res.canonical_name = name;
+            res.type_name = vit->second;
+            return res;
+        }
+        // 4. Struct
+        if (!pkg_name_.empty()) {
+            for (const auto& st : cf_.ast.structs) {
+                std::string st_pkg = st.package_name.empty() ? cf_.ast.package_name : st.package_name;
+                if (st.name == name && st_pkg == pkg_name_) {
+                    res.kind = SymbolKind::Struct;
+                    res.canonical_name = st.name;
+                    res.type_name = st.name;
+                    res.package_name = st.package_name;
+                    return res;
+                }
+            }
+        }
+        for (const auto& st : cf_.ast.structs) {
+            if (st.name == name) {
+                res.kind = SymbolKind::Struct;
+                res.canonical_name = st.name;
+                res.type_name = st.name;
+                res.package_name = st.package_name;
+                return res;
+            }
+        }
+        // 5. Enum
+        if (cf_.enums.contains(name)) {
+            res.kind = SymbolKind::Struct;
+            res.canonical_name = name;
+            res.type_name = name;
+            return res;
+        }
+        // 6. Global variable
+        if (!pkg_name_.empty()) {
+            for (const auto& gv : cf_.ast.global_vars) {
+                std::string gv_pkg = gv.package_name.empty() ? cf_.ast.package_name : gv.package_name;
+                if (gv.name == name && gv_pkg == pkg_name_) {
+                    res.kind = SymbolKind::Global;
+                    res.package_name = gv.package_name;
+                    res.type_name = gv.type ? gv.type->name : "";
+                    if (!gv.package_name.empty() && cf_.colliding_gv_names.contains(gv.name)) {
+                        res.canonical_name = std::format("cfire_pkg_{}__{}", gv.package_name, sanitize_cpp_ident(gv.name));
+                    } else {
+                        res.canonical_name = sanitize_cpp_ident(gv.name);
+                    }
+                    return res;
+                }
+            }
+        }
+        for (const auto& gv : cf_.ast.global_vars) {
+            if (gv.name == name) {
+                res.kind = SymbolKind::Global;
+                res.package_name = gv.package_name;
+                res.type_name = gv.type ? gv.type->name : "";
+                if (!gv.package_name.empty() && cf_.colliding_gv_names.contains(gv.name)) {
+                    res.canonical_name = std::format("cfire_pkg_{}__{}", gv.package_name, sanitize_cpp_ident(gv.name));
+                } else {
+                    res.canonical_name = sanitize_cpp_ident(gv.name);
+                }
+                return res;
+            }
+        }
+        // 7. Function
+        if (!pkg_name_.empty()) {
+            if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + name); pit != cf_.fn_sigs.end()) {
+                res.kind = SymbolKind::Function;
+                res.package_name = pit->second.package_name;
+                if (!pit->second.package_name.empty() && cf_.colliding_fn_names.contains(pit->second.name)) {
+                    res.canonical_name = std::format("cfire_pkg_{}__{}", pit->second.package_name, sanitize_cpp_ident(pit->second.name));
+                } else {
+                    res.canonical_name = sanitize_cpp_ident(pit->second.name);
+                }
+                return res;
+            }
+        }
+        if (auto it = cf_.fn_sigs.find(name); it != cf_.fn_sigs.end()) {
+            res.kind = SymbolKind::Function;
+            res.package_name = it->second.package_name;
+            if (!it->second.package_name.empty() && cf_.colliding_fn_names.contains(it->second.name)) {
+                res.canonical_name = std::format("cfire_pkg_{}__{}", it->second.package_name, sanitize_cpp_ident(it->second.name));
+            } else {
+                res.canonical_name = sanitize_cpp_ident(it->second.name);
+            }
+            return res;
+        }
+        // 8. CoreNamespace or Vendor
+        if (is_namespace_ident_sema(name) || is_vendor_alias_sema(name) || name == "cpp") {
+            res.kind = SymbolKind::CoreNamespace;
+            res.canonical_name = name;
+            return res;
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] auto resolve_member(const MemberExpr& mem) const -> std::optional<Resolution> {
+        Resolution res;
+        if (!mem.object) return std::nullopt;
+
+        // 1. If object is an IdentExpr
+        if (const auto* id = std::get_if<IdentExpr>(&mem.object->node)) {
+            // Foreign FFI prefix "cpp"
+            if (id->name == "cpp") {
+                res.kind = SymbolKind::CoreNamespace;
+                res.canonical_name = mem.field;
+                return res;
+            }
+            // Vendor alias
+            if (is_vendor_alias_sema(id->name)) {
+                res.kind = SymbolKind::Function;
+                res.canonical_name = mem.field;
+                return res;
+            }
+            // Enum variant: Shape::Circle or Shape.Circle
+            if (cf_.enums.contains(id->name)) {
+                res.kind = SymbolKind::EnumVariant;
+                res.owner_type = id->name;
+                res.canonical_name = std::format("{}::{}", id->name, mem.field);
+                res.type_name = id->name;
+                return res;
+            }
+            // If id is NOT a local/param variable, check core namespace and packages
+            if (!param_names_.contains(id->name) && !local_defined_vars_.contains(id->name) &&
+                !mut_vars_.contains(id->name) && !imm_vars_.contains(id->name)) {
+                std::string pkg_qualified = id->name + "." + mem.field;
+                if (auto it = cf_.fn_sigs.find(pkg_qualified); it != cf_.fn_sigs.end()) {
+                    res.kind = SymbolKind::Function;
+                    res.package_name = id->name;
+                    if (cf_.colliding_fn_names.contains(mem.field)) {
+                        res.canonical_name = std::format("cfire_pkg_{}__{}", id->name, sanitize_cpp_ident(mem.field));
+                    } else {
+                        res.canonical_name = sanitize_cpp_ident(mem.field);
+                    }
+                    return res;
+                }
+                for (const auto& gv : cf_.ast.global_vars) {
+                    if (gv.name == mem.field && gv.package_name == id->name) {
+                        res.kind = SymbolKind::Global;
+                        res.package_name = id->name;
+                        res.type_name = gv.type ? gv.type->name : "";
+                        if (cf_.colliding_gv_names.contains(mem.field)) {
+                            res.canonical_name = std::format("cfire_pkg_{}__{}", id->name, sanitize_cpp_ident(mem.field));
+                        } else {
+                            res.canonical_name = sanitize_cpp_ident(mem.field);
+                        }
+                        return res;
+                    }
+                }
+                if (is_namespace_ident_sema(id->name)) {
+                    res.kind = SymbolKind::CoreNamespace;
+                    std::string actual_ns = id->name;
+                    for (const auto& imp : cf_.ast.imports) {
+                        if (imp.alias == id->name) {
+                            auto colon = imp.path.rfind(':');
+                            auto slash = imp.path.rfind('/');
+                            std::size_t sep = std::string::npos;
+                            if (colon != std::string::npos && slash != std::string::npos) sep = std::max(colon, slash);
+                            else if (colon != std::string::npos) sep = colon;
+                            else sep = slash;
+                            actual_ns = (sep == std::string::npos) ? imp.path : imp.path.substr(sep + 1);
+                            break;
+                        }
+                    }
+                    if (actual_ns == "os" && (mem.field == "stdin" || mem.field == "stdout" || mem.field == "stderr")) {
+                        res.canonical_name = std::format("cfire::os::{}_file", mem.field);
+                    } else {
+                        res.canonical_name = std::format("cfire::{}::{}", actual_ns, mem.field);
+                    }
+                    return res;
+                }
+            }
+        }
+
+        // 2. Struct fields and methods
+        std::string owner_type = infer_expr_type_name_sema(mem.object);
+        if (!owner_type.empty()) {
+            if (auto sit = cf_.struct_tags.find(owner_type); sit != cf_.struct_tags.end()) {
+                for (const auto& f : sit->second) {
+                    if (f.field_name == mem.field) {
+                        res.kind = SymbolKind::Field;
+                        res.owner_type = owner_type;
+                        res.canonical_name = sanitize_cpp_ident(mem.field);
+                        res.type_name = f.field_type.name;
+                        res.is_optional = f.field_type.is_optional;
+                        res.is_smart_ptr = !f.field_type.smart_wrap.empty();
+                        res.is_raw_ptr = f.field_type.is_ptr || f.field_type.is_mut_ptr;
+                        if (const auto* oid = std::get_if<IdentExpr>(&mem.object->node)) {
+                            if (smart_ptr_vars_.contains(oid->name) || raw_or_smart_ptr_vars_.contains(oid->name) || optional_vars_.contains(oid->name)) {
+                                res.is_auto_deref = true;
+                            }
+                        }
+                        return res;
+                    }
+                }
+            }
+            if (cf_.methods.contains(owner_type + "::" + mem.field) || cf_.methods.contains(owner_type + "." + mem.field)) {
+                res.kind = SymbolKind::Method;
+                res.owner_type = owner_type;
+                res.canonical_name = std::format("cfire_method_{}", mem.field);
+                return res;
+            }
+        }
+
+        // 3. User method across types
+        if (cf_.method_owners.contains(mem.field) || cf_.method_owner.contains(mem.field)) {
+            res.kind = SymbolKind::Method;
+            res.canonical_name = std::format("cfire_method_{}", mem.field);
+            return res;
+        }
+
+        return std::nullopt;
+    }
+
     [[nodiscard]] auto expr_returns_fallible_sema(const ExprPtr& e, std::string* out_callee = nullptr, std::string* out_ret = nullptr) const -> bool {
         if (!e) return false;
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->fallback_val) {
+                return expr_returns_fallible_sema(or_ex->fallback_val, out_callee, out_ret);
+            }
+            return false;
+        }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
                 const FnDecl* sig = nullptr;
@@ -1396,7 +2297,13 @@ public:
 
     [[nodiscard]] auto is_expr_fallible_for_unwrap_sema(const ExprPtr& e) const -> bool {
         if (!e) return false;
-        if (std::holds_alternative<TryExpr>(e->node) || std::holds_alternative<OrExpr>(e->node)) {
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->fallback_val) {
+                return is_expr_fallible_for_unwrap_sema(or_ex->fallback_val);
+            }
+            return false;
+        }
+        if (std::holds_alternative<TryExpr>(e->node)) {
             return false;
         }
         if (expr_returns_fallible_sema(e)) return true;
@@ -1426,7 +2333,9 @@ public:
                 if (fn_ret_fallible_vars_.contains(cid->name)) {
                     return true;
                 }
-                if ((has_cpp_imports_ || seen_cpp_block_) && !is_known_identifier_sema(cid->name)) {
+                if (cid->name.starts_with("cpp::") || cid->name.starts_with("cpp.") ||
+                    cid->name.starts_with("rl::") || cid->name.starts_with("rg::") ||
+                    cf_.cpp_fn_params.contains(cid->name)) {
                     return true;
                 }
                 return false;
@@ -1481,13 +2390,21 @@ public:
 
     [[nodiscard]] auto is_expr_optional_for_unwrap_sema(const ExprPtr& e) const -> bool {
         if (!e) return false;
-        if (std::holds_alternative<TryExpr>(e->node) || std::holds_alternative<OrExpr>(e->node)) {
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->fallback_val) {
+                return is_expr_optional_for_unwrap_sema(or_ex->fallback_val);
+            }
+            return false;
+        }
+        if (std::holds_alternative<TryExpr>(e->node)) {
             return false;
         }
         if (expr_returns_optional_sema(e)) return true;
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
-                if ((has_cpp_imports_ || seen_cpp_block_) && !is_known_identifier_sema(cid->name)) {
+                if (cid->name.starts_with("cpp::") || cid->name.starts_with("cpp.") ||
+                    cid->name.starts_with("rl::") || cid->name.starts_with("rg::") ||
+                    cf_.cpp_fn_params.contains(cid->name)) {
                     return true;
                 }
                 return false;
@@ -1590,7 +2507,9 @@ public:
 
     [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string> {
         if (!e) return {};
-        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+        if (auto* id = std::get_if<IdentExpr>(&e->node)) {
+            id->resolution = resolve_ident(id->name);
+            if (id->name == "_") return {};
             if (id->name == "break" || id->name == "continue") {
                 if (loop_depth_ == 0) {
                     return emit_error(std::format(
@@ -1599,7 +2518,7 @@ public:
                 }
                 return {};
             }
-            if (auto r = record_var_read(id->name, e->line, e->col); !r) return r;
+            if (auto r = record_var_read(id->name, e->line, e->col, e->id); !r) return r;
             auto dot = id->name.find('.');
             auto dcol = id->name.find("::");
             std::size_t sep = std::min(dot, dcol);
@@ -1607,7 +2526,7 @@ public:
                 std::string prefix = id->name.substr(0, sep);
                 if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return r;
             }
-            if (!has_cpp_imports_ && !seen_cpp_block_ && !is_known_identifier_sema(id->name)) {
+            if (!is_known_identifier_sema(id->name)) {
                 return emit_error(std::format(
                     "{}:{}:{}: undeclared identifier '{}' (cfire/UNDECLARED-IDENT)",
                     path_, e->line, e->col, id->name));
@@ -1623,8 +2542,10 @@ public:
         if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
             return check_binary_expr(*bin, e->line, e->col);
         }
-        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
-            return check_member_expr(*mem, e->line, e->col);
+        if (auto* mem = std::get_if<MemberExpr>(&e->node)) {
+            if (auto r = check_member_expr(*mem, e->line, e->col); !r) return r;
+            mem->resolution = resolve_member(*mem);
+            return {};
         }
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
             return check_index_expr(*idx, e->line, e->col);
@@ -1641,6 +2562,9 @@ public:
         }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
             if (or_ex->inner) unwrapped_exprs_.insert(or_ex->inner);
+            if (unwrapped_exprs_.contains(e) && or_ex->fallback_val) {
+                unwrapped_exprs_.insert(or_ex->fallback_val);
+            }
             return check_or_expr(*or_ex, e->line, e->col, e);
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
@@ -1672,10 +2596,20 @@ public:
             ++in_closure_depth_;
             int saved_loop_depth = loop_depth_;
             int saved_invalid_unwrap = in_invalid_unwrap_context_;
+            int saved_escaping_entry_scope = escaping_closure_entry_scope_;
+            bool was_escaping = cl->is_escaping;
+            if (was_escaping) {
+                ++in_escaping_closure_depth_;
+                escaping_closure_entry_scope_ = scope_depth_;
+            }
             loop_depth_ = 0;
             in_invalid_unwrap_context_ = 0;
-            auto cl_guard = cfire::scope_exit([this, saved_loop_depth, saved_invalid_unwrap] {
+            auto cl_guard = cfire::scope_exit([this, saved_loop_depth, saved_invalid_unwrap, was_escaping, saved_escaping_entry_scope] {
                 --in_closure_depth_;
+                if (was_escaping) {
+                    --in_escaping_closure_depth_;
+                    escaping_closure_entry_scope_ = saved_escaping_entry_scope;
+                }
                 loop_depth_ = saved_loop_depth;
                 in_invalid_unwrap_context_ = saved_invalid_unwrap;
             });
@@ -1687,8 +2621,16 @@ public:
             }
             return check_block_stmts(cl->body);
         }
-        if (const auto* call = std::get_if<CallExpr>(&e->node)) {
-            return check_call_expr(*call, e->line, e->col, e);
+        if (auto* call = std::get_if<CallExpr>(&e->node)) {
+            if (auto r = check_call_expr(*call, e->line, e->col, e); !r) return r;
+            if (call->callee) {
+                if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                    call->resolution = cid->resolution;
+                } else if (const auto* cmem = std::get_if<MemberExpr>(&call->callee->node)) {
+                    call->resolution = cmem->resolution;
+                }
+            }
+            return {};
         }
         if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
             return check_match_common(me->target, me->is_move, me->arms, me->line, me->col, true);
@@ -1714,7 +2656,7 @@ public:
         }
         std::size_t errors_before = errors_.size();
         if (auto r = check_expr(tr.inner); !r) return r;
-        if (errors_.size() == errors_before && !has_cpp_imports_ && !seen_cpp_block_) {
+        if (errors_.size() == errors_before) {
             if (!is_expr_fallible_for_unwrap_sema(tr.inner)) {
                 if (is_expr_optional_for_unwrap_sema(tr.inner)) {
                     if (auto r = emit_error(std::format(
@@ -1759,19 +2701,28 @@ public:
         return true;
     }
 
-    [[nodiscard]] auto check_literal_expr(const LiteralExpr& lit, int line) -> std::expected<void, std::string> {
+    [[nodiscard]] auto check_literal_expr(const LiteralExpr& lit, int line, int col = 1) -> std::expected<void, std::string> {
         if (lit.kind == TokenKind::String && lit.value.contains('{')) {
+            lit.interp_snippets.clear();
             auto placeholders = scan_interpolation_placeholders(lit.value);
             for (const auto& ph : placeholders) {
                 if (!is_likely_interpolation_placeholder(lit.value, ph)) continue;
-                auto parsed = parse_expr_snippet(path_, ph.expr_text, line);
+                int expr_col = std::max(1, col) + 1 + static_cast<int>(ph.expr_offset);
+                auto parsed = parse_expr_snippet(path_, ph.expr_text, line, expr_col);
                 if (!parsed) {
                     if (auto r = emit_error(std::format(
-                        "{}:{}:1: invalid expression '{}' in string interpolation (cfire/INVALID-INTERPOLATION)",
-                        path_, line, ph.expr_text)); !r) return r;
+                        "{}:{}:{}: invalid expression '{}' in string interpolation (cfire/INVALID-INTERPOLATION)",
+                        path_, line, expr_col, ph.expr_text)); !r) return r;
                     continue;
                 }
-                if (auto r = check_expr(parsed->expr); !r) return r;
+                if (!ph.expr_text.empty() && std::isdigit(static_cast<unsigned char>(ph.expr_text.front()))) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: ambiguous string interpolation '{{{}}}'; expressions starting with a number literal must be parenthesized as '{{({})}}' to distinguish from positional format arguments (cfire/AMBIGUOUS-INTERPOLATION)",
+                        path_, line, expr_col, ph.expr_text, ph.expr_text)); !r) return r;
+                    continue;
+                }
+                lit.interp_snippets.push_back(std::move(*parsed));
+                if (auto r = check_expr(lit.interp_snippets.back().expr); !r) return r;
             }
         }
         return {};
@@ -1821,11 +2772,62 @@ public:
                 "{}:{}:{}: division or modulo by constant zero (cfire/DIVIDE-BY-ZERO)",
                 path_, line, col));
         }
+        // CF-116: Type compatibility check for binary expressions
+        if (!has_cpp_imports_) {
+            TypeId lt = infer_expr_type_id_sema(bin.left);
+            TypeId rt = infer_expr_type_id_sema(bin.right);
+            if (lt.is_valid() && rt.is_valid() && !lt.is_unknown() && !rt.is_unknown()) {
+                if (bin.op == "+") {
+                    if (lt == TypeId::Str() || rt == TypeId::Str()) {
+                        if (lt != rt) {
+                            return emit_error(std::format(
+                                "{}:{}:{}: cannot concatenate '{}' and '{}' with '+' without explicit conversion (cfire/TYPE-MISMATCH)",
+                                path_, line, col, cf_.type_table.to_string(lt), cf_.type_table.to_string(rt)));
+                        }
+                    } else if (lt == TypeId::Bool() || rt == TypeId::Bool() || !cf_.type_table.is_numeric(lt) || !cf_.type_table.is_numeric(rt)) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: binary operator '+' cannot be applied to expressions of type '{}' and '{}' (cfire/TYPE-MISMATCH)",
+                            path_, line, col, cf_.type_table.to_string(lt), cf_.type_table.to_string(rt)));
+                    }
+                } else if (bin.op == "-" || bin.op == "*" || bin.op == "/" || bin.op == "%") {
+                    if (lt == TypeId::Str() || rt == TypeId::Str() || lt == TypeId::Bool() || rt == TypeId::Bool()) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: binary operator '{}' cannot be applied to expressions of type '{}' and '{}' (cfire/TYPE-MISMATCH)",
+                            path_, line, col, bin.op, cf_.type_table.to_string(lt), cf_.type_table.to_string(rt)));
+                    }
+                } else if (bin.op == "&" || bin.op == "|" || bin.op == "^" || bin.op == "<<" || bin.op == ">>") {
+                    if (!cf_.type_table.is_integer(lt) || !cf_.type_table.is_integer(rt)) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: bitwise operator '{}' requires integer operands, got '{}' and '{}' (cfire/TYPE-MISMATCH)",
+                            path_, line, col, bin.op, cf_.type_table.to_string(lt), cf_.type_table.to_string(rt)));
+                    }
+                } else if (bin.op == "<" || bin.op == "<=" || bin.op == ">" || bin.op == ">=") {
+                    bool l_num = cf_.type_table.is_numeric(lt);
+                    bool r_num = cf_.type_table.is_numeric(rt);
+                    if ((l_num && !r_num) || (!l_num && r_num) || (lt == TypeId::Str() && rt != TypeId::Str()) || (lt != TypeId::Str() && rt == TypeId::Str())) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: comparison operator '{}' cannot compare expressions of type '{}' and '{}' (cfire/TYPE-MISMATCH)",
+                            path_, line, col, bin.op, cf_.type_table.to_string(lt), cf_.type_table.to_string(rt)));
+                    }
+                }
+            }
+        }
         return {};
     }
 
     [[nodiscard]] auto check_member_expr(const MemberExpr& mem, int line, int col) -> std::expected<void, std::string> {
         if (mem.object) {
+            if (const auto* un = std::get_if<UnaryExpr>(&mem.object->node)) {
+                if (un->op == "*" && un->operand) {
+                    if (const auto* id = std::get_if<IdentExpr>(&un->operand->node)) {
+                        if (smart_ptr_vars_.contains(id->name)) {
+                            return emit_error(std::format(
+                                "{}:{}:{}: explicit dereference '(*{}).{}' is redundant on smart pointer '{}'; use '{}.{}' directly (cfire/REDUNDANT-DEREF)",
+                                path_, line, col, id->name, mem.field, id->name, id->name, mem.field));
+                        }
+                    }
+                }
+            }
             if (const auto* obj_id = std::get_if<IdentExpr>(&mem.object->node)) {
                 if (auto r = check_stdlib_ns_imported(obj_id->name, mem.object->line > 0 ? mem.object->line : line, mem.object->col > 0 ? mem.object->col : col); !r) return r;
                 if (obj_id->name == "os" && !is_ident_in_scope_sema("os") &&
@@ -1844,6 +2846,25 @@ public:
         }
         if (auto r = check_expr(mem.object); !r) return r;
         if (!mem.is_namespace && mem.object) {
+            if (const auto* obj_id = std::get_if<IdentExpr>(&mem.object->node)) {
+                if (cf_.enums.contains(obj_id->name)) {
+                    if (mem.field != "from_i32" && mem.field != "from_i64" && mem.field != "from_string") {
+                        return emit_error(std::format(
+                            "{}:{}:{}: '.' is not a valid separator for enum variant '{}'; use '::' (e.g. '{}::{}') (cfire/DEPRECATED-SEPARATOR)",
+                            path_, line, col, mem.field, obj_id->name, mem.field));
+                    }
+                }
+            } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem.object->node)) {
+                if (cf_.enums.contains(sub_mem->field) ||
+                    sub_mem->field == "Level" || sub_mem->field == "OpenMode" || sub_mem->field == "Waveform" ||
+                    sub_mem->field == "SfxPreset" || sub_mem->field == "SeekWhence" || sub_mem->field == "Provider" ||
+                    sub_mem->field == "Format") {
+                    std::string pkg = std::holds_alternative<IdentExpr>(sub_mem->object->node) ? std::get<IdentExpr>(sub_mem->object->node).name : "";
+                    return emit_error(std::format(
+                        "{}:{}:{}: '.' is not a valid separator for enum variant '{}'; use '::' (e.g. '{}.{}::{}') (cfire/DEPRECATED-SEPARATOR)",
+                        path_, line, col, mem.field, pkg, sub_mem->field, mem.field));
+                }
+            }
             if (const auto* id = std::get_if<IdentExpr>(&mem.object->node)) {
                 if (optional_vars_.contains(id->name) && !raw_or_smart_ptr_vars_.contains(id->name) &&
                     (mem.field == "len" || mem.field == "empty" || mem.field == "data")) {
@@ -1963,6 +2984,10 @@ public:
 
     [[nodiscard]] auto check_or_expr(const OrExpr& or_ex, int line, int col, const ExprPtr& self_expr = nullptr) -> std::expected<void, std::string> {
         std::size_t errors_before = errors_.size();
+        if (self_expr && unwrapped_exprs_.contains(self_expr)) {
+            if (or_ex.inner) unwrapped_exprs_.insert(or_ex.inner);
+            if (or_ex.fallback_val) unwrapped_exprs_.insert(or_ex.fallback_val);
+        }
         if (auto r = check_expr(or_ex.inner); !r) return r;
         bool is_opt = is_expr_optional_for_unwrap_sema(or_ex.inner);
         bool is_fall = is_expr_fallible_for_unwrap_sema(or_ex.inner);
@@ -1970,7 +2995,7 @@ public:
             if (auto r = emit_error(std::format(
                 "{}:{}:{}: cannot bind error variable '{}' on optional 'T?' in 'or' block; use 'or {{ ... }}' or 'or fallback' instead (cfire/OPTIONAL-OR-ERR)",
                 path_, line, col, or_ex.err_var)); !r) return r;
-        } else if (errors_.size() == errors_before && !has_cpp_imports_ && !seen_cpp_block_ && !is_fall && !is_opt) {
+        } else if (errors_.size() == errors_before && !is_fall && !is_opt) {
             if (auto r = emit_error(std::format(
                 "{}:{}:{}: 'or' used on non-fallible, non-optional expression; remove 'or' fallback (cfire/REDUNDANT-OR)",
                 path_, line, col)); !r) return r;
@@ -2004,7 +3029,22 @@ public:
         const StdFnSigInfo* std_sig = nullptr;
         const auto& catalog_idx = StdlibCatalogIndex::instance();
 
+        for (const auto& ta : call.type_args) {
+            if (auto iface = find_interface_in_slice(ta, cf_.interfaces)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
+                    path_, line, col, *iface)); !r) return r;
+            }
+        }
+
         if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
+            if ((id->name == "error" || id->name == "Err") && !is_ident_in_scope_sema(id->name)) {
+                if (call.args.empty() || call.args.size() > 2) {
+                    if (auto r = emit_error(std::format(
+                        "{}:{}:{}: 'error' requires 1 or 2 arguments (message [, code]); got {} (cfire/WRONG-ARG-COUNT)",
+                        path_, line, col, call.args.size())); !r) return r;
+                }
+            }
             if ((id->name == "readln" || id->name == "input") && !is_ident_in_scope_sema(id->name)) {
                 if (auto r = emit_error(std::format(
                     "{}:{}:{}: builtin '{}' has been removed; use 'cli.prompt(...)' for interactive prompts or 'os.stdin().read_line()' for stdin streams (cfire/DEPRECATED-API)",
@@ -2228,9 +3268,9 @@ public:
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             const auto& arg = call.args[i];
             if (arg.intent == "out") {
-                warnings_.push_back(std::format(
-                    "{}:{}:{}: warning: 'out' call-site annotation is deprecated; use multi-return tuple destructuring instead (cfire/DEPRECATED-OUT-PARAM)",
-                    path_, arg.line, arg.col));
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: 'out' call-site annotation is deprecated; use multi-return tuple destructuring instead (cfire/DEPRECATED-OUT-PARAM)",
+                    path_, arg.line, arg.col)); !r) return r;
             }
             if (auto r = check_expr(arg.value); !r) return r;
             bool expected_is_move = false;
@@ -2345,14 +3385,37 @@ public:
                 }
             }
         }
+        bool is_spawn_call = false;
+        if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
+            if (mem->field == "spawn") is_spawn_call = true;
+        }
+        if (is_spawn_call) {
+            for (const auto& a : call.args) {
+                if (a.value) {
+                    if (auto* cl = std::get_if<ClosureExpr>(&a.value->node)) {
+                        cl->is_escaping = true;
+                    }
+                }
+            }
+        }
         if (call.block_arg) {
+            bool was_escaping = call.block_arg->is_escaping || is_spawn_call;
+            int saved_escaping_entry_scope = escaping_closure_entry_scope_;
+            if (was_escaping) {
+                ++in_escaping_closure_depth_;
+                escaping_closure_entry_scope_ = scope_depth_;
+            }
             ++in_closure_depth_;
             int saved_loop_depth = loop_depth_;
             int saved_invalid_unwrap = in_invalid_unwrap_context_;
             loop_depth_ = 0;
             in_invalid_unwrap_context_ = 0;
-            auto cl_guard = cfire::scope_exit([this, saved_loop_depth, saved_invalid_unwrap] {
+            auto cl_guard = cfire::scope_exit([this, saved_loop_depth, saved_invalid_unwrap, was_escaping, saved_escaping_entry_scope] {
                 --in_closure_depth_;
+                if (was_escaping) {
+                    --in_escaping_closure_depth_;
+                    escaping_closure_entry_scope_ = saved_escaping_entry_scope;
+                }
                 loop_depth_ = saved_loop_depth;
                 in_invalid_unwrap_context_ = saved_invalid_unwrap;
             });
@@ -2404,6 +3467,13 @@ public:
         }
 
         std::string enum_name;
+        std::string target_t;
+        if (target) {
+            target_t = infer_expr_type_name_sema(target);
+            if (cf_.enums.contains(target_t)) {
+                enum_name = target_t;
+            }
+        }
         std::unordered_set<std::string> covered;
         bool has_wildcard = false;
 
@@ -2412,10 +3482,8 @@ public:
                 has_wildcard = true;
             } else {
                 covered.insert(arm.variant_name);
-                if (!arm.enum_prefix.empty()) {
+                if (enum_name.empty() && !arm.enum_prefix.empty() && cf_.enums.contains(arm.enum_prefix)) {
                     enum_name = arm.enum_prefix;
-                } else if (auto vit = cf_.variant_to_enum.find(arm.variant_name); vit != cf_.variant_to_enum.end()) {
-                    enum_name = vit->second;
                 }
             }
             ScopeGuard sg(*this);
@@ -2423,17 +3491,44 @@ public:
             if (auto r = check_block_stmts(arm.body, is_expr_match); !r) return r;
         }
 
-        if (!has_wildcard && !enum_name.empty()) {
+        if (!enum_name.empty()) {
             if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
-                for (const auto& v : eit->second.variants) {
-                    if (!covered.contains(v.name)) {
-                        if (auto r = emit_error(std::format(
-                            "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
-                            path_, line, col, enum_name, v.name)); !r) return r;
+                for (const auto& arm : arms) {
+                    if (arm.variant_name != "_" && arm.literal_val.empty() && !arm.is_slice_pattern) {
+                        if (!arm.enum_prefix.empty() && arm.enum_prefix != enum_name) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:1: variant pattern '{}::{}' does not match target enum '{}' (cfire/TYPE-MISMATCH)",
+                                path_, arm.line, arm.enum_prefix, arm.variant_name, enum_name)); !r) return r;
+                        }
+                        bool found_var = false;
+                        for (const auto& v : eit->second.variants) {
+                            if (v.name == arm.variant_name) {
+                                found_var = true;
+                                break;
+                            }
+                        }
+                        if (!found_var) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: unknown variant '{}' for enum '{}' (cfire/UNKNOWN-ENUM-VARIANT)",
+                                path_, arm.line, 1, arm.variant_name, enum_name)); !r) return r;
+                        }
+                    }
+                }
+                if (!has_wildcard) {
+                    for (const auto& v : eit->second.variants) {
+                        if (!covered.contains(v.name)) {
+                            if (auto r = emit_error(std::format(
+                                "{}:{}:{}: non-exhaustive match on enum '{}': missing variant '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
+                                path_, line, col, enum_name, v.name)); !r) return r;
+                        }
                     }
                 }
             }
-        } else if (is_expr_match && (is_slice_match || is_primitive_match || enum_name.empty()) && !has_wildcard) {
+        } else if ((is_primitive_match || is_scalar_primitive_type_name(target_t) || target_t == "str") && !has_wildcard) {
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: match on '{}' must have an exhaustive wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
+                path_, line, col, target_t.empty() ? "primitive scalar" : target_t)); !r) return r;
+        } else if (is_expr_match && !has_wildcard) {
             if (!is_slice_match || !is_slice_exhaustively_covered(arms)) {
                 if (auto r = emit_error(std::format(
                     "{}:{}:{}: match expression must have a wildcard '_' fallback arm (cfire/NON-EXHAUSTIVE-MATCH)",
@@ -2551,9 +3646,41 @@ public:
         return {};
     }
 
-    [[nodiscard]] static auto stmt_diverges(const StmtPtr& s) -> bool {
+    [[nodiscard]] static auto stmt_has_break(const StmtPtr& s) -> bool {
+        if (!s) return false;
+        if (std::holds_alternative<BreakStmt>(s->node)) return true;
+        if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
+            if (es->expr) {
+                if (const auto* id = std::get_if<IdentExpr>(&es->expr->node)) {
+                    if (id->name == "break") return true;
+                }
+            }
+        }
+        if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
+            if (block_has_break(ifs->then_body) || block_has_break(ifs->else_body)) return true;
+        }
+        if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
+            for (const auto& arm : ms->arms) {
+                if (block_has_break(arm.body)) return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto block_has_break(const std::vector<StmtPtr>& body) -> bool {
+        for (const auto& s : body) {
+            if (stmt_has_break(s)) return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] static auto stmt_diverges(const StmtPtr& s, const CheckedFile* cf = nullptr) -> bool {
         if (!s) return false;
         if (std::holds_alternative<ReturnStmt>(s->node)) return true;
+        if (std::holds_alternative<BreakStmt>(s->node) || std::holds_alternative<ContinueStmt>(s->node)) return true;
+        if (const auto* as = std::get_if<AsyncScopeStmt>(&s->node)) {
+            return block_diverges(as->body, cf);
+        }
         if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
             if (es->expr) {
                 if (const auto* id = std::get_if<IdentExpr>(&es->expr->node)) {
@@ -2573,16 +3700,59 @@ public:
             }
         }
         if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
-            if (!ifs->else_body.empty() && block_diverges(ifs->then_body) && block_diverges(ifs->else_body)) {
+            if (!ifs->else_body.empty() && block_diverges(ifs->then_body, cf) && block_diverges(ifs->else_body, cf)) {
                 return true;
+            }
+        }
+        if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
+            bool is_infinite = false;
+            if (fs->item_var.empty()) {
+                if (!fs->iter_expr) {
+                    is_infinite = true;
+                } else if (const auto* lit = std::get_if<LiteralExpr>(&fs->iter_expr->node)) {
+                    if (lit->kind == TokenKind::KwTrue) is_infinite = true;
+                }
+            }
+            if (is_infinite && !block_has_break(fs->body)) {
+                return true;
+            }
+        }
+        if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
+            if (!ms->arms.empty()) {
+                bool all_diverge = true;
+                bool has_wildcard = false;
+                std::unordered_set<std::string> arm_variants;
+                for (const auto& arm : ms->arms) {
+                    if (arm.variant_name == "_") has_wildcard = true;
+                    else arm_variants.insert(arm.variant_name);
+                    if (!block_diverges(arm.body, cf)) {
+                        all_diverge = false;
+                    }
+                }
+                if (all_diverge) {
+                    if (has_wildcard) return true;
+                    if (cf) {
+                        for (const auto& [ename, edef] : cf->enums) {
+                            if (edef.variants.empty()) continue;
+                            bool all_found = true;
+                            for (const auto& v : edef.variants) {
+                                if (!arm_variants.contains(v.name)) {
+                                    all_found = false;
+                                    break;
+                                }
+                            }
+                            if (all_found) return true;
+                        }
+                    }
+                }
             }
         }
         return false;
     }
 
-    [[nodiscard]] static auto block_diverges(const std::vector<StmtPtr>& body) -> bool {
+    [[nodiscard]] static auto block_diverges(const std::vector<StmtPtr>& body, const CheckedFile* cf = nullptr) -> bool {
         for (const auto& s : body) {
-            if (stmt_diverges(s)) return true;
+            if (stmt_diverges(s, cf)) return true;
         }
         return false;
     }
@@ -2765,6 +3935,22 @@ public:
         if (const auto* rt = std::get_if<ReturnStmt>(&s->node)) {
             return check_return_stmt(*rt);
         }
+        if (const auto* bs = std::get_if<BreakStmt>(&s->node)) {
+            if (loop_depth_ == 0) {
+                return emit_error(std::format(
+                    "{}:{}:1: 'break' cannot be used outside of a 'for' loop (cfire/BREAK-OUTSIDE-LOOP)",
+                    path_, bs->line));
+            }
+            return {};
+        }
+        if (const auto* cs = std::get_if<ContinueStmt>(&s->node)) {
+            if (loop_depth_ == 0) {
+                return emit_error(std::format(
+                    "{}:{}:1: 'continue' cannot be used outside of a 'for' loop (cfire/BREAK-OUTSIDE-LOOP)",
+                    path_, cs->line));
+            }
+            return {};
+        }
         if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
             return check_if_stmt(*ifs);
         }
@@ -2804,9 +3990,16 @@ public:
 
     [[nodiscard]] auto check_var_decl_stmt(const VarDeclStmt& vd) -> std::expected<void, std::string> {
         if (vd.was_var) {
-            warnings_.push_back(std::format(
-                "{}:{}:{}: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
-                path_, vd.line, vd.col));
+            if (auto r = emit_error(std::format(
+                "{}:{}:{}: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
+                path_, vd.line, vd.col)); !r) return r;
+        }
+        if (vd.type) {
+            if (auto iface = find_interface_in_slice(*vd.type, cf_.interfaces)) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
+                    path_, vd.line, vd.col, *iface)); !r) return r;
+            }
         }
         if (vd.init && (vd.name == "_" || (vd.type && vd.type->is_fallible))) {
             unwrapped_exprs_.insert(vd.init);
@@ -2829,14 +4022,43 @@ public:
             }
         }
 
+        // CF-116: Type compatibility check for declared type vs initializer
+        if (vd.type && vd.init && !has_cpp_imports_) {
+            TypeId dest_t = cf_.type_table.from_typeref(*vd.type);
+            TypeId src_t = infer_expr_type_id_sema(vd.init);
+            if (dest_t.is_valid() && src_t.is_valid() && !dest_t.is_unknown() && !src_t.is_unknown()) {
+                std::string dest_str = cf_.type_table.to_string(dest_t);
+                std::string src_str = cf_.type_table.to_string(src_t);
+                if (dest_str.find("cpp::") == std::string::npos &&
+                    src_str.find("cpp::") == std::string::npos &&
+                    !cf_.type_table.is_assignable(dest_t, src_t)) {
+                    if (vd.type->name == "str" && src_t == cf_.type_table.from_name("&str")) {
+                        // Handled elsewhere with specific hint
+                    } else if (!is_byte_slice) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: cannot initialize variable '{}' of type '{}' with expression of type '{}' (cfire/TYPE-MISMATCH)",
+                            path_, vd.line, vd.col, vd.name, dest_str, src_str));
+                    }
+                }
+            }
+        }
+        if (!vd.type && vd.name != "_" && vd.init && !has_cpp_imports_) {
+            TypeId src_t = infer_expr_type_id_sema(vd.init);
+            if (src_t.is_unknown() && !std::holds_alternative<LiteralExpr>(vd.init->node)) {
+                warnings_.push_back(std::format(
+                    "{}:{}:{}: could not infer concrete type for variable '{}'; expression has unknown type (cfire/UNKNOWN-TYPE)",
+                    path_, vd.line, vd.col, vd.name));
+            }
+        }
+
         auto src = extract_borrow_source(vd.init);
         std::string inferred_t;
         if (vd.type && !vd.type->smart_wrap.empty() && vd.type->elem_type && !vd.type->elem_type->name.empty()) {
             inferred_t = vd.type->elem_type->name;
-        } else if (!vd.type || vd.type->name.empty()) {
-            inferred_t = infer_expr_type_name_sema(vd.init);
+        } else if (vd.type) {
+            inferred_t = format_type_ref_sema(*vd.type);
         } else {
-            inferred_t = vd.type->name;
+            inferred_t = infer_expr_type_name_sema(vd.init);
         }
         bool is_opt_var = (vd.type && vd.type->is_optional) || (!vd.type && expr_returns_optional_sema(vd.init));
         bool is_fallible_var = (vd.type && vd.type->is_fallible);
@@ -2847,7 +4069,9 @@ public:
             if (const auto* tr = std::get_if<TryExpr>(&cur_init->node)) cur_init = tr->inner;
             else if (const auto* or_ex = std::get_if<OrExpr>(&cur_init->node)) cur_init = or_ex->inner;
             if (cur_init) {
-                if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
+                if (const auto* id = std::get_if<IdentExpr>(&cur_init->node)) {
+                    if (smart_ptr_vars_.contains(id->name)) is_smart = true;
+                } else if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
                     if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node)) {
                         if (cid->name == "make" && call_ex->type_args.size() == 1 && !call_ex->type_args[0].smart_wrap.empty()) {
                             is_smart = true;
@@ -3030,6 +4254,15 @@ public:
             if (auto r = check_expr(as.target); !r) return r;
         }
         if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
+            if (id->name == "_") return {};
+            if (in_escaping_closure_depth_ > 0) {
+                auto sit = var_scope_depth_.find(id->name);
+                if (sit != var_scope_depth_.end() && sit->second <= escaping_closure_entry_scope_) {
+                    return emit_error(std::format(
+                        "{}:{}:1: cannot mutate captured outer variable '{}' inside escaping closure; escaping closures capture by value (cfire/ESCAPING-CAPTURE-MUT)",
+                        path_, as.line, id->name));
+                }
+            }
             if (byte_slice_vars_.contains(id->name) && as.value) {
                 if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&as.value->node)) {
                     for (const auto& el : arr_lit->elements) {
@@ -3090,6 +4323,22 @@ public:
                 if (auto r = check_expr(as.target); !r) return r;
             }
         }
+        // CF-116: Type compatibility check for assignment
+        if (as.target && as.value && as.op == "=" && !has_cpp_imports_) {
+            TypeId dest_t = infer_expr_type_id_sema(as.target);
+            TypeId src_t = infer_expr_type_id_sema(as.value);
+            if (dest_t.is_valid() && src_t.is_valid() && !dest_t.is_unknown() && !src_t.is_unknown()) {
+                std::string dest_str = cf_.type_table.to_string(dest_t);
+                std::string src_str = cf_.type_table.to_string(src_t);
+                if (dest_str.find("cpp::") == std::string::npos &&
+                    src_str.find("cpp::") == std::string::npos &&
+                    !cf_.type_table.is_assignable(dest_t, src_t)) {
+                    return emit_error(std::format(
+                        "{}:{}:1: cannot assign expression of type '{}' to target of type '{}' (cfire/TYPE-MISMATCH)",
+                        path_, as.line, src_str, dest_str));
+                }
+            }
+        }
         return {};
     }
 
@@ -3132,6 +4381,11 @@ public:
                 "{}:{}:1: cannot use 'return' inside a 'defer {{ ... }}' block (cfire/RETURN-IN-DEFER)",
                 path_, rt.line)); !r) return r;
         }
+        if (rt.value) {
+            if (auto* cl = std::get_if<ClosureExpr>(&rt.value->node)) {
+                cl->is_escaping = true;
+            }
+        }
         if (rt.value && (fn_is_fallible_ || in_closure_depth_ > 0)) {
             unwrapped_exprs_.insert(rt.value);
         }
@@ -3143,6 +4397,28 @@ public:
                     if (auto r = emit_error(std::format(
                         "{}:{}:1: cannot return pointer/view borrowing local variable '{}' (cfire/DANGLING-RETURN)",
                         path_, rt.line, *src)); !r) return r;
+                }
+            }
+        }
+        // CF-116: Type compatibility check for return statement
+        if (rt.value && !fn_ret_str_.empty() && fn_ret_str_ != "void" && !has_cpp_imports_ && in_closure_depth_ == 0) {
+            TypeId ret_t = cf_.type_table.from_name(fn_ret_str_);
+            TypeId val_t = infer_expr_type_id_sema(rt.value);
+            if (ret_t.is_valid() && val_t.is_valid() && !ret_t.is_unknown() && !val_t.is_unknown()) {
+                std::string ret_str = cf_.type_table.to_string(ret_t);
+                std::string val_str = cf_.type_table.to_string(val_t);
+                if (fn_ret_str_.find("cpp::") == std::string::npos &&
+                    ret_str.find("cpp::") == std::string::npos &&
+                    val_str.find("cpp::") == std::string::npos) {
+                    bool ok = cf_.type_table.is_assignable(ret_t, val_t);
+                    if (!ok && fn_is_fallible_) {
+                        ok = cf_.type_table.is_assignable(cf_.type_table.unwrap_fallible(ret_t), val_t);
+                    }
+                    if (!ok) {
+                        return emit_error(std::format(
+                            "{}:{}:1: return type mismatch: function '{}' expects '{}', got '{}' (cfire/TYPE-MISMATCH)",
+                            path_, rt.line, fn_name_, fn_ret_str_, val_str));
+                    }
                 }
             }
         }
@@ -3325,6 +4601,8 @@ private:
     int scope_depth_{1};
     int in_defer_depth_{0};
     int in_closure_depth_{0};
+    int in_escaping_closure_depth_{0};
+    int escaping_closure_entry_scope_{0};
     int loop_depth_{0};
     int in_invalid_unwrap_context_{0};
     std::vector<std::unordered_map<std::string, SavedVarDeclState>*> scope_stack_{};
@@ -3352,6 +4630,7 @@ private:
     std::unordered_set<std::string> map_vars_{};
     std::unordered_map<std::string, int> moved_at_line_{};
     std::unordered_set<std::string> move_params_{};
+    std::unordered_set<std::string> param_names_{};
     std::unordered_set<std::string> mut_vars_{};
     std::unordered_set<std::string> imm_vars_{};
 };
@@ -3361,7 +4640,7 @@ private:
     CheckedFile cf;
     cf.ast = std::move(ast);
 
-    // 0a. Check Module Imports (CF-006 / CF-086)
+    // 0a. Check Module Imports (CF-006 / CF-086 / CF-105)
     for (const auto& imp : cf.ast.imports) {
         if (!imp.is_cpp) {
             if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(imp.path); !canon.empty()) {
@@ -3378,6 +4657,20 @@ private:
                         "{}:{}:1: module '{}' is part of the zero-setup core standard library and must be imported as '{}' (cfire/INVALID-IMPORT)",
                         cf.ast.path, imp.line, imp.path, canon));
                 }
+            } else if (!imp.path.starts_with("./") && !imp.path.starts_with("../") && !imp.path.ends_with(".cf") && !cfire::modules::is_known_module(imp.path)) {
+                std::string best_match;
+                std::size_t best_dist = 5;
+                for (std::string_view km : cfire::modules::known_module_paths()) {
+                    std::size_t d = StdlibCatalogIndex::edit_distance(imp.path, km);
+                    if (d < best_dist) {
+                        best_dist = d;
+                        best_match = std::string(km);
+                    }
+                }
+                std::string hint = best_match.empty() ? "" : std::format("; did you mean '{}'?", best_match);
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: unknown module '{}'{} (cfire/UNKNOWN-MODULE)",
+                    cf.ast.path, imp.line, imp.path, hint));
             }
         }
     }
@@ -3386,17 +4679,172 @@ private:
     for (const auto& gv : cf.ast.global_vars) {
         if (gv.was_var) {
             std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
-            cf.warnings.push_back(std::format(
-                "{}:{}:1: warning: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
+            cf.errors.push_back(std::format(
+                "{}:{}:1: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
                 gv_path, gv.line));
         }
     }
 
-    // 1. Index Enums and their Variants
+    // 0b. Check Duplicate Symbol Declarations (CF-104)
+    struct DeclLocation {
+        std::string path;
+        int line = 1;
+        int col = 1;
+    };
+    std::unordered_map<std::string, DeclLocation> declared_types;
+    std::unordered_map<std::string, DeclLocation> declared_functions;
+    std::unordered_map<std::string, DeclLocation> declared_methods;
+    std::unordered_map<std::string, DeclLocation> declared_globals;
+
+    for (const auto& st : cf.ast.structs) {
+        std::string st_path = st.source_path.empty() ? cf.ast.path : st.source_path;
+        if (auto it = declared_types.find(st.name); it != declared_types.end()) {
+            cf.errors.push_back(std::format(
+                "{}:{}:1: duplicate declaration of type '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
+                st_path, st.line, st.name, it->second.path, it->second.line));
+        } else {
+            declared_types[st.name] = DeclLocation{st_path, st.line, 1};
+        }
+    }
+
+    for (const auto& en : cf.ast.enums) {
+        std::string en_path = en.source_path.empty() ? cf.ast.path : en.source_path;
+        if (auto it = declared_types.find(en.name); it != declared_types.end()) {
+            cf.errors.push_back(std::format(
+                "{}:{}:1: duplicate declaration of type '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
+                en_path, en.line, en.name, it->second.path, it->second.line));
+        } else {
+            declared_types[en.name] = DeclLocation{en_path, en.line, 1};
+        }
+
+        std::unordered_map<std::string, DeclLocation> seen_variants;
+        for (const auto& v : en.variants) {
+            if (auto vit = seen_variants.find(v.name); vit != seen_variants.end()) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: duplicate declaration of enum variant '{}.{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
+                    en_path, v.line, en.name, v.name, vit->second.path, vit->second.line));
+            } else {
+                seen_variants[v.name] = DeclLocation{en_path, v.line, 1};
+            }
+        }
+    }
+
+    for (const auto& gv : cf.ast.global_vars) {
+        std::string gv_path = gv.source_path.empty() ? cf.ast.path : gv.source_path;
+        std::string pkg = gv.package_name.empty() ? cf.ast.package_name : gv.package_name;
+        std::string gv_key = pkg + "::" + gv.name;
+        if (auto it = declared_globals.find(gv_key); it != declared_globals.end()) {
+            cf.errors.push_back(std::format(
+                "{}:{}:1: duplicate declaration of variable '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
+                gv_path, gv.line, gv.name, it->second.path, it->second.line));
+        } else {
+            declared_globals[gv_key] = DeclLocation{gv_path, gv.line, 1};
+        }
+    }
+
+    for (const auto& fn : cf.ast.functions) {
+        std::string fn_path = fn.source_path.empty() ? cf.ast.path : fn.source_path;
+        if (fn.receiver) {
+            std::string m_key = fn.receiver->type.name + "." + fn.name;
+            if (auto it = declared_methods.find(m_key); it != declared_methods.end()) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: duplicate declaration of method '{}.{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
+                    fn_path, fn.line, fn.receiver->type.name, fn.name, it->second.path, it->second.line));
+            } else {
+                declared_methods[m_key] = DeclLocation{fn_path, fn.line, 1};
+            }
+        } else {
+            std::string pkg = fn.package_name.empty() ? cf.ast.package_name : fn.package_name;
+            std::string fn_key = pkg + "::" + fn.name;
+            if (auto it = declared_functions.find(fn_key); it != declared_functions.end()) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: duplicate declaration of function '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
+                    fn_path, fn.line, fn.name, it->second.path, it->second.line));
+            } else {
+                declared_functions[fn_key] = DeclLocation{fn_path, fn.line, 1};
+            }
+        }
+    }
+
+    // 1. Index Interfaces and Enums
+    for (const auto& iface : cf.ast.interfaces) {
+        cf.interfaces.insert(iface.name);
+    }
     for (const auto& en : cf.ast.enums) {
         cf.enums[en.name] = en;
         for (const auto& v : en.variants) {
+            if (cf.variant_to_enum.contains(v.name)) {
+                cf.ambiguous_variants.insert(v.name);
+            }
             cf.variant_to_enum[v.name] = en.name;
+        }
+    }
+
+    // Populate type table with user-defined structs and enums (CF-116)
+    for (const auto& st : cf.ast.structs) {
+        TypeDesc d;
+        d.kind = TypeKind::NominalStruct;
+        d.name = st.name;
+        d.package_name = st.package_name;
+        (void)cf.type_table.intern(std::move(d));
+    }
+    for (const auto& en : cf.ast.enums) {
+        TypeDesc d;
+        d.kind = TypeKind::NominalEnum;
+        d.name = en.name;
+        d.package_name = en.package_name;
+        (void)cf.type_table.intern(std::move(d));
+    }
+
+    std::unordered_map<std::string, std::size_t> fn_counts_sema;
+    for (const auto& fn : cf.ast.functions) {
+        if (!fn.receiver) fn_counts_sema[fn.name]++;
+    }
+    for (const auto& [name, count] : fn_counts_sema) {
+        if (count > 1) cf.colliding_fn_names.insert(name);
+    }
+    std::unordered_map<std::string, std::size_t> gv_counts_sema;
+    for (const auto& gv : cf.ast.global_vars) {
+        gv_counts_sema[gv.name]++;
+    }
+    for (const auto& [name, count] : gv_counts_sema) {
+        if (count > 1) cf.colliding_gv_names.insert(name);
+    }
+
+    // Validate no dynamic slices or arrays of structural interfaces (CF-108)
+    for (const auto& st : cf.ast.structs) {
+        std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
+        for (const auto& fld : st.fields) {
+            if (auto iface = find_interface_in_slice(fld.type, cf.interfaces)) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
+                    st_path, fld.line, *iface));
+            }
+        }
+    }
+    for (const auto& fn : cf.ast.functions) {
+        std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
+        for (const auto& p : fn.params) {
+            if (auto iface = find_interface_in_slice(p.type, cf.interfaces)) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:{}: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
+                    fn_path, p.line, p.col, *iface));
+            }
+        }
+        if (auto iface = find_interface_in_slice(fn.return_type, cf.interfaces)) {
+            cf.errors.push_back(std::format(
+                "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
+                fn_path, fn.line, *iface));
+        }
+    }
+    for (const auto& gv : cf.ast.global_vars) {
+        if (gv.type) {
+            std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
+            if (auto iface = find_interface_in_slice(*gv.type, cf.interfaces)) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
+                    gv_path, gv.line, *iface));
+            }
         }
     }
 
@@ -3647,6 +5095,25 @@ private:
         }
     }
 
+    // 3b. Resolve Global Variables & Struct Default Value Expressions (CF-115)
+    {
+        FnDecl gv_dummy_fn;
+        gv_dummy_fn.name = "__cfire_global_init";
+        SemaFnChecker gv_checker(cf.ast.path, gv_dummy_fn, cf, cf.warnings, cf.errors, true);
+        for (const auto& gv : cf.ast.global_vars) {
+            if (gv.value) {
+                (void)gv_checker.check_expr(gv.value);
+            }
+        }
+        for (const auto& st : cf.ast.structs) {
+            for (const auto& fld : st.fields) {
+                if (fld.default_val) {
+                    (void)gv_checker.check_expr(fld.default_val);
+                }
+            }
+        }
+    }
+
     // 4. Validate Function & Method Bodies
     for (const auto& fn : cf.ast.functions) {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
@@ -3654,11 +5121,18 @@ private:
         for (const auto& st : fn.body) {
             (void)checker.check_stmt(st);
         }
+        if (!fn.return_type.name.empty() && fn.return_type.name != "void" && fn.name != "main") {
+            if (!SemaFnChecker::block_diverges(fn.body, &cf)) {
+                cf.errors.push_back(std::format(
+                    "{}:{}:1: missing return statement on all execution paths in function '{}' returning '{}' (cfire/MISSING-RETURN)",
+                    fn_path, fn.line, fn.name, fn.return_type.name));
+            }
+        }
         std::string fn_key = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
-        for (const auto& [p_name, ln] : checker.last_read_line) {
-            cf.last_use_move[fn_key + ":" + p_name] = ln;
+        for (const auto& [p_name, eid] : checker.last_read_expr_id) {
+            cf.last_use_move[fn_key + ":" + p_name] = eid;
             if (!fn.package_name.empty() && !fn.receiver) {
-                cf.last_use_move[std::format("cfire_pkg_{}__{}:{}", fn.package_name, fn.name, p_name)] = ln;
+                cf.last_use_move[std::format("cfire_pkg_{}__{}:{}", fn.package_name, fn.name, p_name)] = eid;
             }
         }
     }

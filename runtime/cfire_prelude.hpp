@@ -61,6 +61,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 #if !__has_include(<print>)
@@ -125,6 +126,87 @@ inline auto operator+(std::string_view lhs, const char* rhs) -> std::string {
     res.append(rhs);
     return res;
 }
+
+// Allow comparison between smart pointers, raw pointers, optionals, and `none`
+namespace cfire {
+struct None_t {
+    constexpr operator std::nullopt_t() const noexcept { return std::nullopt; }
+    template <typename T>
+    constexpr operator std::optional<T>() const noexcept { return std::nullopt; }
+    template <typename T>
+    constexpr operator T*() const noexcept { return nullptr; }
+    template <typename T>
+    constexpr operator std::shared_ptr<T>() const noexcept { return nullptr; }
+    template <typename T>
+    constexpr operator std::unique_ptr<T>() const noexcept { return nullptr; }
+    constexpr auto operator==(std::nullopt_t) const noexcept -> bool { return true; }
+    constexpr auto operator!=(std::nullopt_t) const noexcept -> bool { return false; }
+};
+inline constexpr None_t none{};
+
+[[noreturn]] inline void panic(std::string_view msg) {
+    std::println(stderr, "panic: {}", msg);
+    std::abort();
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto div(A a, B b) {
+    if constexpr (std::is_integral_v<A> && std::is_integral_v<B>) {
+        if (b == 0) [[unlikely]] {
+            cfire::panic("division by zero");
+        }
+    }
+    return a / b;
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto mod(A a, B b) {
+    if (b == 0) [[unlikely]] {
+        cfire::panic("division by zero");
+    }
+    return a % b;
+}
+} // namespace cfire
+
+using cfire::none;
+using cfire::None_t;
+using cfire::panic;
+
+template <typename T>
+inline auto operator==(const std::shared_ptr<T>& ptr, cfire::None_t) noexcept -> bool { return ptr == nullptr; }
+template <typename T>
+inline auto operator!=(const std::shared_ptr<T>& ptr, cfire::None_t) noexcept -> bool { return ptr != nullptr; }
+template <typename T>
+inline auto operator==(cfire::None_t, const std::shared_ptr<T>& ptr) noexcept -> bool { return ptr == nullptr; }
+template <typename T>
+inline auto operator!=(cfire::None_t, const std::shared_ptr<T>& ptr) noexcept -> bool { return ptr != nullptr; }
+
+template <typename T>
+inline auto operator==(const std::unique_ptr<T>& ptr, cfire::None_t) noexcept -> bool { return ptr == nullptr; }
+template <typename T>
+inline auto operator!=(const std::unique_ptr<T>& ptr, cfire::None_t) noexcept -> bool { return ptr != nullptr; }
+template <typename T>
+inline auto operator==(cfire::None_t, const std::unique_ptr<T>& ptr) noexcept -> bool { return ptr == nullptr; }
+template <typename T>
+inline auto operator!=(cfire::None_t, const std::unique_ptr<T>& ptr) noexcept -> bool { return ptr != nullptr; }
+
+template <typename T>
+inline auto operator==(T* ptr, cfire::None_t) noexcept -> bool { return ptr == nullptr; }
+template <typename T>
+inline auto operator!=(T* ptr, cfire::None_t) noexcept -> bool { return ptr != nullptr; }
+template <typename T>
+inline auto operator==(cfire::None_t, T* ptr) noexcept -> bool { return ptr == nullptr; }
+template <typename T>
+inline auto operator!=(cfire::None_t, T* ptr) noexcept -> bool { return ptr != nullptr; }
+
+template <typename T>
+inline auto operator==(const std::optional<T>& opt, cfire::None_t) noexcept -> bool { return !opt.has_value(); }
+template <typename T>
+inline auto operator!=(const std::optional<T>& opt, cfire::None_t) noexcept -> bool { return opt.has_value(); }
+template <typename T>
+inline auto operator==(cfire::None_t, const std::optional<T>& opt) noexcept -> bool { return !opt.has_value(); }
+template <typename T>
+inline auto operator!=(cfire::None_t, const std::optional<T>& opt) noexcept -> bool { return opt.has_value(); }
 
 // Allow comparison between smart pointers and `none` (std::nullopt)
 template <typename T>
@@ -200,27 +282,29 @@ namespace cfire {
 // --- Error Type for T! (std::expected<T, cfire::Error>) ---
 class Error {
 public:
-    Error(std::string msg) : msg_(std::move(msg)) {}
-    Error(std::string_view msg) : msg_(msg) {}
-    Error(const char* msg) : msg_(msg) {}
+    Error(std::string msg, int code = 0) : msg_(std::move(msg)), code_(code) {}
+    Error(std::string_view msg, int code = 0) : msg_(msg), code_(code) {}
+    Error(const char* msg, int code = 0) : msg_(msg ? msg : ""), code_(code) {}
     [[nodiscard]] auto message() const noexcept -> const std::string& { return msg_; }
+    [[nodiscard]] auto code() const noexcept -> int { return code_; }
     [[nodiscard]] auto size() const noexcept -> std::size_t { return msg_.size(); }
     [[nodiscard]] auto data() const noexcept -> const char* { return msg_.data(); }
     [[nodiscard]] auto c_str() const noexcept -> const char* { return msg_.c_str(); }
 private:
     std::string msg_;
+    int code_ = 0;
 };
 
-[[nodiscard]] inline auto make_error(std::string msg) -> std::unexpected<Error> {
-    return std::unexpected<Error>(Error(std::move(msg)));
+[[nodiscard]] inline auto make_error(std::string msg, int code = 0) -> std::unexpected<Error> {
+    return std::unexpected<Error>(Error(std::move(msg), code));
 }
 
-[[nodiscard]] inline auto make_error(std::string_view msg) -> std::unexpected<Error> {
-    return std::unexpected<Error>(Error(std::string(msg)));
+[[nodiscard]] inline auto make_error(std::string_view msg, int code = 0) -> std::unexpected<Error> {
+    return std::unexpected<Error>(Error(std::string(msg), code));
 }
 
-[[nodiscard]] inline auto make_error(const char* msg) -> std::unexpected<Error> {
-    return std::unexpected<Error>(Error(msg ? std::string(msg) : std::string{}));
+[[nodiscard]] inline auto make_error(const char* msg, int code = 0) -> std::unexpected<Error> {
+    return std::unexpected<Error>(Error(msg ? std::string(msg) : std::string{}, code));
 }
 
 [[nodiscard]] inline auto make_error(Error err) -> std::unexpected<Error> {
@@ -229,6 +313,48 @@ private:
 
 [[nodiscard]] inline auto make_error(std::unexpected<Error> err) -> std::unexpected<Error> {
     return err;
+}
+
+[[nodiscard]] inline auto error(std::string msg, int code = 0) -> std::unexpected<Error> {
+    return make_error(std::move(msg), code);
+}
+
+[[nodiscard]] inline auto error(std::string_view msg, int code = 0) -> std::unexpected<Error> {
+    return make_error(msg, code);
+}
+
+[[nodiscard]] inline auto error(const char* msg, int code = 0) -> std::unexpected<Error> {
+    return make_error(msg, code);
+}
+
+// --- Runtime-evaluated format / print fallback for non-literal format strings ---
+template <typename... Args>
+inline void runtime_println(std::string_view fmt, Args&&... args) {
+    std::string s = std::vformat(fmt, std::make_format_args(args...));
+    std::println("{}", s);
+}
+
+template <typename... Args>
+inline void runtime_println(std::FILE* stream, std::string_view fmt, Args&&... args) {
+    std::string s = std::vformat(fmt, std::make_format_args(args...));
+    std::println(stream, "{}", s);
+}
+
+template <typename... Args>
+inline void runtime_print(std::string_view fmt, Args&&... args) {
+    std::string s = std::vformat(fmt, std::make_format_args(args...));
+    std::print("{}", s);
+}
+
+template <typename... Args>
+inline void runtime_print(std::FILE* stream, std::string_view fmt, Args&&... args) {
+    std::string s = std::vformat(fmt, std::make_format_args(args...));
+    std::print(stream, "{}", s);
+}
+
+template <typename... Args>
+inline auto runtime_format(std::string_view fmt, Args&&... args) -> std::string {
+    return std::vformat(fmt, std::make_format_args(args...));
 }
 
 // --- Overloaded Visitor Helper for `match` on Tagged Enums (`std::variant`) ---
@@ -606,6 +732,12 @@ inline void vec_push(std::vector<T>& vec, U&& val) {
     } else {
         vec.push_back(std::forward<U>(val));
     }
+}
+
+template <typename C, typename U>
+requires requires(C& c, U&& u) { c.push(std::forward<U>(u)); }
+inline void vec_push(C& c, U&& val) {
+    c.push(std::forward<U>(val));
 }
 
 template <typename T>
@@ -1013,6 +1145,19 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 // --- High-Performance Zero-Allocation Exception-Free Integer Parsing (<charconv>) ---
 namespace detail {
 
+#if defined(_WIN32)
+struct Win32ConsoleAndStdioInit {
+    Win32ConsoleAndStdioInit() noexcept {
+        ::SetConsoleOutputCP(CP_UTF8);
+        ::SetConsoleCP(CP_UTF8);
+        (void)::_setmode(0, _O_BINARY);
+        (void)::_setmode(1, _O_BINARY);
+        (void)::_setmode(2, _O_BINARY);
+    }
+};
+inline Win32ConsoleAndStdioInit g_win32_console_and_stdio_init{};
+#endif
+
 inline auto process_args_storage() -> std::vector<std::string>& {
     static std::vector<std::string> s_args;
     return s_args;
@@ -1021,6 +1166,25 @@ inline auto process_args_storage() -> std::vector<std::string>& {
 inline void set_process_args(int argc, char** argv) {
     auto& out = process_args_storage();
     out.clear();
+#if defined(_WIN32)
+    // argv from main() on Windows is encoded in the legacy ANSI codepage. Read the UTF-16
+    // command line via CommandLineToArgvW(GetCommandLineW()) and convert each arg to UTF-8.
+    int wargc = 0;
+    if (LPWSTR* wargv = ::CommandLineToArgvW(::GetCommandLineW(), &wargc)) {
+        out.reserve(static_cast<std::size_t>(wargc));
+        for (int i = 0; i < wargc; ++i) {
+            int wlen = static_cast<int>(::wcslen(wargv[i]));
+            int len = ::WideCharToMultiByte(CP_UTF8, 0, wargv[i], wlen, nullptr, 0, nullptr, nullptr);
+            std::string a(static_cast<std::size_t>(len > 0 ? len : 0), '\0');
+            if (len > 0) {
+                ::WideCharToMultiByte(CP_UTF8, 0, wargv[i], wlen, a.data(), len, nullptr, nullptr);
+            }
+            out.push_back(std::move(a));
+        }
+        ::LocalFree(wargv);
+        return;
+    }
+#endif
     if (argc > 0 && argv) {
         out.reserve(static_cast<std::size_t>(argc));
         for (int i = 0; i < argc; ++i) {
@@ -1438,7 +1602,10 @@ template <typename Exp, typename U>
 auto unwrap_or(Exp&& exp, U&& fallback) {
     static_assert(requires { exp.has_value(); }, "cfire::unwrap_or requires an optional (T?) or fallible (T!) value");
     using V = typename std::decay_t<Exp>::value_type;
-    if constexpr (std::is_void_v<V>) {
+    if constexpr (requires { fallback.has_value(); }) {
+        if (exp.has_value()) return std::forward<Exp>(exp);
+        return std::forward<U>(fallback);
+    } else if constexpr (std::is_void_v<V>) {
         (void)exp;
         return std::forward<U>(fallback);
     } else {
@@ -1458,12 +1625,23 @@ struct reflect_struct {
     static constexpr std::size_t field_count = 0;
 };
 
+template <typename T>
+struct reflect_enum {
+    static constexpr bool is_enum = false;
+    static constexpr std::string_view name = "";
+    static constexpr std::size_t variant_count = 0;
+};
+
 // --- Built-in Numeric & Primitive Type Conversion Constructors (LANG-P0-01) ---
 template <typename T>
 concept CfireScalarCastable =
     std::is_arithmetic_v<std::remove_cvref_t<T>> ||
     std::is_same_v<std::remove_cvref_t<T>, std::byte> ||
-    std::is_enum_v<std::remove_cvref_t<T>>;
+    std::is_enum_v<std::remove_cvref_t<T>> ||
+    reflect_enum<std::remove_cvref_t<T>>::is_enum ||
+    requires(const std::remove_cvref_t<T>& v) {
+        { v.to_i32() } -> std::convertible_to<std::int32_t>;
+    };
 
 template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto i8(T val) noexcept -> std::int8_t {
@@ -1632,6 +1810,15 @@ struct std::formatter<E, CharT> : std::formatter<std::underlying_type_t<E>, Char
     auto format(E e, FormatContext& ctx) const {
         return std::formatter<std::underlying_type_t<E>, CharT>::format(
             static_cast<std::underlying_type_t<E>>(e), ctx);
+    }
+};
+
+// --- Formatter specialization for cfire::Error ---
+template <typename CharT>
+struct std::formatter<cfire::Error, CharT> : std::formatter<std::string, CharT> {
+    template <typename FormatContext>
+    auto format(const cfire::Error& e, FormatContext& ctx) const {
+        return std::formatter<std::string, CharT>::format(e.message(), ctx);
     }
 };
 

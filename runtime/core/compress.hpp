@@ -167,6 +167,28 @@ namespace cfire::zstd {
 {
     return compress(std::as_bytes(std::span<const char>(src.data(), src.size())), level);
 }
+[[nodiscard]] inline auto compress_str(std::string_view src, std::int32_t level = 3) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    return compress(src, level);
+}
+
+[[nodiscard]] inline auto decompress_str(std::span<const std::byte> src, std::size_t max_output_bytes = 64 * 1024 * 1024) -> std::expected<std::string, cfire::Error> {
+    auto res = decompress(src, max_output_bytes);
+    if (!res) return std::unexpected(res.error());
+    return std::string(reinterpret_cast<const char*>(res->data()), res->size());
+}
+
+[[nodiscard]] inline auto decompress_str(std::span<const std::uint8_t> src, std::size_t max_output_bytes = 64 * 1024 * 1024) -> std::expected<std::string, cfire::Error> {
+    return decompress_str(std::span<const std::byte>(reinterpret_cast<const std::byte*>(src.data()), src.size()), max_output_bytes);
+}
+
+[[nodiscard]] inline auto decompress_str(const std::vector<std::byte>& src, std::size_t max_output_bytes = 64 * 1024 * 1024) -> std::expected<std::string, cfire::Error> {
+    return decompress_str(std::span<const std::byte>(src.data(), src.size()), max_output_bytes);
+}
+
+[[nodiscard]] inline auto decompress_str(const std::vector<std::uint8_t>& src, std::size_t max_output_bytes = 64 * 1024 * 1024) -> std::expected<std::string, cfire::Error> {
+    return decompress_str(std::span<const std::byte>(reinterpret_cast<const std::byte*>(src.data()), src.size()), max_output_bytes);
+}
+
 } // namespace cfire::zstd
 #endif // PLATFORM_IOS / PLATFORM_WEB
 #endif // CFIRE_USE_ZSTD

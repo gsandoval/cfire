@@ -494,6 +494,19 @@ struct CheckItem {
             });
         }
 #endif
+#if !defined(_WIN32)
+        std::string mingw_cxx = build::resolve_cxx_compiler("x86_64-w64-mingw32");
+        bool has_mingw_cross = (mingw_cxx != "clang++") || has_command("x86_64-w64-mingw32-g++");
+        if (has_mingw_cross) {
+            items.push_back({
+                "Cross-Platform Targets",
+                "Windows Cross-Compiler (`--target x86_64-w64-mingw32`)",
+                "ok",
+                std::format("MinGW-w64 cross-toolchain ready ({})", mingw_cxx != "clang++" ? mingw_cxx : "x86_64-w64-mingw32-g++"),
+                ""
+            });
+        }
+#endif
     }
 
     // --- 5. IDE & AI Agent Integrations (LSP & MCP) ---

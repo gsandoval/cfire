@@ -1,0 +1,22 @@
+package main
+
+fn divide_mod(a: i64, b: i64) -> (i64, i64) {
+    return (a / b, a % b)
+}
+
+fn append_value(mut list: []i32, val: i32) {
+    list.push(val)
+}
+
+fn consume_payload(move payload: str) -> usize {
+    return payload.len()
+}
+
+fn main() {
+    (q, r) := divide_mod(23, 5)
+    mut nums: []i32 = [1, 2]
+    append_value(mut nums, 3)
+    msg := "temporary buffer"
+    len := consume_payload(move msg)
+    println("q: {}, r: {}, nums_len: {}, len: {}", q, r, nums.len(), len)
+}

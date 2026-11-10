@@ -285,6 +285,31 @@ public:
         state_->cv.notify_all();
     }
 
+    struct ChannelIterator {
+        const Channel* ch{nullptr};
+        mutable std::optional<T> cur{};
+
+        bool operator==(std::default_sentinel_t) const noexcept {
+            return !cur.has_value();
+        }
+        const T& operator*() const noexcept {
+            return *cur;
+        }
+        ChannelIterator& operator++() {
+            if (ch) cur = ch->recv();
+            return *this;
+        }
+    };
+
+    [[nodiscard]] auto begin() const -> ChannelIterator {
+        return ChannelIterator{this, recv()};
+    }
+
+    [[nodiscard]] auto end() const noexcept -> std::default_sentinel_t {
+        return std::default_sentinel;
+    }
+
+
 private:
     struct State {
         std::mutex mu{};

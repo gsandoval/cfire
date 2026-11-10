@@ -1,0 +1,5 @@
+package main
+
+fn bad_keyword_var() {
+    break := 10
+}

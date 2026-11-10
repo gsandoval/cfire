@@ -1,0 +1,5 @@
+package main
+
+fn bad_string() {
+    s := "unterminated string literal without closing quote
+}

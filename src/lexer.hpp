@@ -193,6 +193,24 @@ namespace cfire::frontend {
                 if (ch == '.') is_float = true;
                 num.push_back(ch);
             }
+            if (i < n && (peek() == 'e' || peek() == 'E')) {
+                char next1 = peek(1);
+                char next2 = peek(2);
+                bool has_exp = std::isdigit(static_cast<unsigned char>(next1)) ||
+                    ((next1 == '+' || next1 == '-') && std::isdigit(static_cast<unsigned char>(next2)));
+                if (has_exp) {
+                    is_float = true;
+                    num.push_back(advance()); // 'e' or 'E'
+                    if (peek() == '+' || peek() == '-') {
+                        num.push_back(advance());
+                    }
+                    while (i < n && (std::isdigit(static_cast<unsigned char>(peek())) || peek() == '_')) {
+                        char ch = advance();
+                        if (ch == '_') continue;
+                        num.push_back(ch);
+                    }
+                }
+            }
             tokens.push_back(Token{is_float ? TokenKind::Float : TokenKind::Int, std::move(num), start_line, start_col});
             continue;
         }
@@ -250,7 +268,7 @@ namespace cfire::frontend {
                         continue;
                     }
                     char next_c = peek(1);
-                    if (interp_depth > 0 || std::isalpha(static_cast<unsigned char>(next_c)) ||
+                    if (interp_depth > 0 || std::isalnum(static_cast<unsigned char>(next_c)) ||
                         next_c == '_' || next_c == '(' || next_c == '*' || next_c == '&' || next_c == '!') {
                         ++interp_depth;
                     }

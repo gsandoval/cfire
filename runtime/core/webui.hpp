@@ -324,8 +324,13 @@ public:
     }
 
     void set_dark_mode(bool dark) {
-        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
-        state_->dark_mode = dark;
+        std::function<void(bool)> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->dark_mode = dark;
+            fn = state_->platform_set_dark_mode;
+        }
+        if (fn) fn(dark);
     }
 
     void set_always_on_top(bool on_top) {
@@ -829,8 +834,13 @@ public:
         return "";
     }
 
-    [[nodiscard]] auto emitted_events_count(std::string_view event) const -> std::int64_t {
+    [[nodiscard]] auto emitted_events_count(std::string_view event = "") const -> std::int64_t {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        if (event.empty()) {
+            std::int64_t total = 0;
+            for (const auto& [_, hist] : state_->emitted_history) total += hist.size();
+            return total;
+        }
         if (auto it = state_->emitted_history.find(std::string(event)); it != state_->emitted_history.end()) {
             return static_cast<std::int64_t>(it->second.size());
         }
@@ -843,6 +853,11 @@ public:
             return it->second.back();
         }
         return "";
+    }
+
+    [[nodiscard]] auto last_emitted_topic() const -> std::string {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->last_emitted_topic;
     }
 
     // --- Offscreen / Automated Live WebView Test Runner ---

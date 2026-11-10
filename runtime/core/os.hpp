@@ -80,8 +80,9 @@ inline void setenv(std::string_view key, std::string_view val) {
 #endif
 }
 
-[[nodiscard]] inline auto cwd() -> std::filesystem::path {
-    return std::filesystem::current_path();
+[[nodiscard]] inline auto cwd() -> std::string {
+    auto u8 = std::filesystem::current_path().u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
 [[nodiscard]] inline auto getpid() noexcept -> std::int64_t {

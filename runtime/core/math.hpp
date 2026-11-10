@@ -5,6 +5,9 @@
 #include <random>
 #include <cstdint>
 #include <algorithm>
+#include <optional>
+#include <limits>
+#include <type_traits>
 
 namespace cfire::math {
 
@@ -16,6 +19,101 @@ namespace cfire::math {
 }
 [[nodiscard]] inline auto clamp_f64(double v, double lo, double hi) noexcept -> double {
     return std::clamp(v, lo, hi);
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto checked_add(A a, B b) noexcept -> std::optional<std::common_type_t<A, B>> {
+    using T = std::common_type_t<A, B>;
+    T res;
+    if (__builtin_add_overflow(static_cast<T>(a), static_cast<T>(b), &res)) return std::nullopt;
+    return res;
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto checked_sub(A a, B b) noexcept -> std::optional<std::common_type_t<A, B>> {
+    using T = std::common_type_t<A, B>;
+    T res;
+    if (__builtin_sub_overflow(static_cast<T>(a), static_cast<T>(b), &res)) return std::nullopt;
+    return res;
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto checked_mul(A a, B b) noexcept -> std::optional<std::common_type_t<A, B>> {
+    using T = std::common_type_t<A, B>;
+    T res;
+    if (__builtin_mul_overflow(static_cast<T>(a), static_cast<T>(b), &res)) return std::nullopt;
+    return res;
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto wrapping_add(A a, B b) noexcept -> std::common_type_t<A, B> {
+    using T = std::common_type_t<A, B>;
+    using U = std::make_unsigned_t<T>;
+    return static_cast<T>(static_cast<U>(a) + static_cast<U>(b));
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto wrapping_sub(A a, B b) noexcept -> std::common_type_t<A, B> {
+    using T = std::common_type_t<A, B>;
+    using U = std::make_unsigned_t<T>;
+    return static_cast<T>(static_cast<U>(a) - static_cast<U>(b));
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto wrapping_mul(A a, B b) noexcept -> std::common_type_t<A, B> {
+    using T = std::common_type_t<A, B>;
+    using U = std::make_unsigned_t<T>;
+    return static_cast<T>(static_cast<U>(a) * static_cast<U>(b));
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto saturating_add(A a_in, B b_in) noexcept -> std::common_type_t<A, B> {
+    using T = std::common_type_t<A, B>;
+    T a = static_cast<T>(a_in);
+    T b = static_cast<T>(b_in);
+    T res;
+    if (__builtin_add_overflow(a, b, &res)) {
+        if constexpr (std::is_signed_v<T>) {
+            return (b > 0) ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+        } else {
+            return std::numeric_limits<T>::max();
+        }
+    }
+    return res;
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto saturating_sub(A a_in, B b_in) noexcept -> std::common_type_t<A, B> {
+    using T = std::common_type_t<A, B>;
+    T a = static_cast<T>(a_in);
+    T b = static_cast<T>(b_in);
+    T res;
+    if (__builtin_sub_overflow(a, b, &res)) {
+        if constexpr (std::is_signed_v<T>) {
+            return (b < 0) ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+        } else {
+            return std::numeric_limits<T>::min();
+        }
+    }
+    return res;
+}
+
+template <typename A, typename B>
+[[nodiscard]] constexpr auto saturating_mul(A a_in, B b_in) noexcept -> std::common_type_t<A, B> {
+    using T = std::common_type_t<A, B>;
+    T a = static_cast<T>(a_in);
+    T b = static_cast<T>(b_in);
+    T res;
+    if (__builtin_mul_overflow(a, b, &res)) {
+        if constexpr (std::is_signed_v<T>) {
+            return ((a > 0 && b > 0) || (a < 0 && b < 0))
+                ? std::numeric_limits<T>::max()
+                : std::numeric_limits<T>::min();
+        } else {
+            return std::numeric_limits<T>::max();
+        }
+    }
+    return res;
 }
 
 } // namespace cfire::math

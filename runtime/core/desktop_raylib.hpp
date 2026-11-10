@@ -34,6 +34,53 @@ inline auto user_config_flags() noexcept -> unsigned int& {
     return flags;
 }
 
+inline auto headless_window_active() noexcept -> bool& {
+    static bool active = false;
+    return active;
+}
+
+inline auto should_use_headless_window() noexcept -> bool {
+#if defined(CFIRE_TEST_MODE)
+    return true;
+#else
+    if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
+        return true;
+    }
+#if defined(__linux__)
+    const char* disp = std::getenv("DISPLAY");
+    const char* wayland = std::getenv("WAYLAND_DISPLAY");
+    if ((!disp || !*disp) && (!wayland || !*wayland)) {
+        return true;
+    }
+#endif
+    return false;
+#endif
+}
+
+inline auto rasterize_font_cpu_only(
+    const unsigned char* fileData,
+    int dataSize,
+    int fontSize,
+    int* codepoints,
+    int codepointCount
+) -> Font {
+    Font font{};
+    font.baseSize = fontSize;
+    font.glyphCount = (codepointCount > 0) ? codepointCount : 95;
+    font.glyphPadding = 4;
+    font.glyphs = ::LoadFontData(fileData, dataSize, fontSize, codepoints, font.glyphCount, FONT_DEFAULT);
+    if (font.glyphs != nullptr) {
+        Image atlas = ::GenImageFontAtlas(font.glyphs, &font.recs, font.glyphCount, fontSize, font.glyphPadding, 0);
+        font.texture.id = 1;
+        font.texture.width = atlas.width;
+        font.texture.height = atlas.height;
+        font.texture.mipmaps = 1;
+        font.texture.format = atlas.format;
+        ::UnloadImage(atlas);
+    }
+    return font;
+}
+
 #if defined(__APPLE__) && !defined(PLATFORM_IOS)
 
 struct TextCacheKey {
@@ -295,6 +342,10 @@ inline void __cfire_SetConfigFlags(unsigned int flags) {
 }
 
 inline void __cfire_InitWindow(int width, int height, const char* title) {
+    if (cfire::desktop_rl::should_use_headless_window()) {
+        cfire::desktop_rl::headless_window_active() = true;
+        return;
+    }
     unsigned int flags = cfire::desktop_rl::user_config_flags() | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT;
     ::SetConfigFlags(flags);
     ::InitWindow(width <= 0 ? 393 : width, height <= 0 ? 852 : height, title);
@@ -319,13 +370,58 @@ inline void __cfire_InitWindow(int width, int height, const char* title) {
 #endif
 }
 
+inline bool __cfire_IsWindowReady(void) {
+    return cfire::desktop_rl::headless_window_active() || ::IsWindowReady();
+}
+
 inline void __cfire_CloseWindow(void) {
+    if (cfire::desktop_rl::headless_window_active()) {
+        cfire::desktop_rl::headless_window_active() = false;
+        if (!::IsWindowReady()) return;
+    }
 #if defined(__APPLE__) && !defined(PLATFORM_IOS)
     cfire::desktop_rl::CoreTextCache::instance().clear_gpu_resources();
 #elif defined(__linux__)
     cfire::desktop_rl::LinuxFontCache::instance().clear_gpu_resources();
 #endif
     ::CloseWindow();
+}
+
+inline Font __cfire_LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize, int fontSize, int* codepoints, int codepointCount) {
+    if (cfire::desktop_rl::headless_window_active() && !::IsWindowReady()) {
+        (void)fileType;
+        return cfire::desktop_rl::rasterize_font_cpu_only(fileData, dataSize, fontSize, codepoints, codepointCount);
+    }
+    return ::LoadFontFromMemory(fileType, fileData, dataSize, fontSize, codepoints, codepointCount);
+}
+
+inline Font __cfire_LoadFontEx(const char* fileName, int fontSize, int* codepoints, int codepointCount) {
+    if (cfire::desktop_rl::headless_window_active() && !::IsWindowReady()) {
+        int dataSize = 0;
+        unsigned char* fileData = ::LoadFileData(fileName, &dataSize);
+        if (!fileData) return Font{};
+        Font f = cfire::desktop_rl::rasterize_font_cpu_only(fileData, dataSize, fontSize, codepoints, codepointCount);
+        ::UnloadFileData(fileData);
+        return f;
+    }
+    return ::LoadFontEx(fileName, fontSize, codepoints, codepointCount);
+}
+
+inline void __cfire_GenTextureMipmaps(Texture2D* texture) {
+    if (cfire::desktop_rl::headless_window_active() && !::IsWindowReady()) {
+        if (texture) texture->mipmaps = 4;
+        return;
+    }
+    ::GenTextureMipmaps(texture);
+}
+
+inline void __cfire_SetTextureFilter(Texture2D texture, int filter) {
+    if (cfire::desktop_rl::headless_window_active() && !::IsWindowReady()) {
+        (void)texture;
+        (void)filter;
+        return;
+    }
+    ::SetTextureFilter(texture, filter);
 }
 
 inline int __cfire_MeasureText(const char* text, int fontSize) {
@@ -400,7 +496,12 @@ inline void __cfire_DrawText(const char* text, int posX, int posY, int fontSize,
 
 #define SetConfigFlags __cfire_SetConfigFlags
 #define InitWindow __cfire_InitWindow
+#define IsWindowReady __cfire_IsWindowReady
 #define CloseWindow __cfire_CloseWindow
+#define LoadFontFromMemory __cfire_LoadFontFromMemory
+#define LoadFontEx __cfire_LoadFontEx
+#define GenTextureMipmaps __cfire_GenTextureMipmaps
+#define SetTextureFilter __cfire_SetTextureFilter
 #define MeasureText __cfire_MeasureText
 #define DrawText __cfire_DrawText
 

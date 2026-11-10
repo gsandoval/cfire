@@ -68,6 +68,14 @@ namespace cfire::lsp::detail {
             inner += lower_type_preview(t.tuple_types[i]);
         }
         base = std::format("std::tuple<{}>", inner);
+    } else if (!t.type_args.empty()) {
+        std::string inner;
+        for (std::size_t i = 0; i < t.type_args.size(); ++i) {
+            if (i > 0) inner += ", ";
+            inner += lower_type_preview(t.type_args[i]);
+        }
+        std::string raw = map_cf_named_type_to_cpp(t.name, false);
+        base = std::format("{}<{}>", raw, inner);
     } else {
         base = map_cf_named_type_to_cpp(t.name, borrow);
     }
@@ -142,6 +150,8 @@ struct LocalBindingInfo {
 
 [[nodiscard]] inline auto strip_wrappers(std::string t) -> std::string {
     while (t.ends_with("!") || t.ends_with("?")) t.pop_back();
+    if (t.starts_with("&mut ")) t = t.substr(5);
+    else if (t.starts_with("&")) t = t.substr(1);
     if (t.starts_with("own[") && t.ends_with("]")) return t.substr(4, t.size() - 5);
     if (t.starts_with("shared[") && t.ends_with("]")) return t.substr(7, t.size() - 8);
     if (t.starts_with("*mut ")) return t.substr(5);
@@ -149,13 +159,46 @@ struct LocalBindingInfo {
     return t;
 }
 
-// Resolves a potentially chained qualifier (e.g. `m_out` or `order.customer` or `(*owned_box)`) to its `.cf` struct/type name
+[[nodiscard]] inline auto infer_expr_cf_type(
+    const cfire::frontend::ExprPtr& e,
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::unordered_map<std::string, LocalBindingInfo>& env
+) -> std::string;
+
+// Resolves a potentially chained qualifier (e.g. `m_out`, `order.customer`, `os.stdin()`, `(*owned_box)`) to its `.cf` struct/type name
 [[nodiscard]] inline auto resolve_qualifier_type(
     std::string_view qualifier,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
     const std::unordered_map<std::string, LocalBindingInfo>& env
 ) -> std::string {
+    while (!qualifier.empty() && (qualifier.front() == ' ' || qualifier.front() == '\t')) qualifier.remove_prefix(1);
+    while (!qualifier.empty() && (qualifier.back() == ' ' || qualifier.back() == '\t')) qualifier.remove_suffix(1);
+    if (qualifier.starts_with("try ")) {
+        qualifier.remove_prefix(4);
+        while (!qualifier.empty() && (qualifier.front() == ' ' || qualifier.front() == '\t')) qualifier.remove_prefix(1);
+    }
+    if (qualifier.starts_with("(*") && qualifier.ends_with(")") && qualifier.size() > 3) {
+        qualifier = qualifier.substr(2, qualifier.size() - 3);
+    }
+
+    if (qualifier.find('(') != std::string_view::npos || qualifier.find('[') != std::string_view::npos) {
+        std::string wrapped = std::format("package __lsp\nfn __q() {{\n    __tmp := {}\n}}\n", qualifier);
+        if (auto q_ast = cfire::frontend::parse_source("<qualifier>", wrapped)) {
+            if (!q_ast->functions.empty() && !q_ast->functions[0].body.empty()) {
+                if (const auto* vd = std::get_if<cfire::frontend::VarDeclStmt>(&q_ast->functions[0].body[0]->node)) {
+                    if (vd->init) {
+                        std::string inferred = strip_wrappers(infer_expr_cf_type(vd->init, ast, ws, env));
+                        if (!inferred.empty() && inferred != "auto") {
+                            return inferred;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     std::vector<std::string> parts;
     std::size_t start = 0;
     while (start < qualifier.size()) {
@@ -356,80 +399,140 @@ struct LocalBindingInfo {
                 for (const auto& en : ast.enums) {
                     if (en.name == mid->name) return en.name;
                 }
-                // 5. Check receiver methods (`listener.accept()`, `server_conn.read_str()`, `ch.recv()`, user methods)
-                if (auto vit = env.find(mid->name); vit != env.end()) {
-                    std::string rtype = strip_wrappers(vit->second.cf_type);
-                    if (rtype == "net.TcpListener" || rtype == "TcpListener") {
-                        if (mem->field == "port") return "u16";
-                        if (mem->field == "accept") return "net.TcpConn!";
-                    }
-                    if (rtype == "net.TcpConn" || rtype == "TcpConn" || rtype == "fs.File" || rtype == "File") {
-                        if (mem->field == "write_bytes" || mem->field == "write_text" || mem->field == "read_into") return "usize!";
-                        if (mem->field == "read_bytes" || mem->field == "read_exact" || mem->field == "read_bytes_until") return "[]byte!";
-                        if (mem->field == "read_text" || mem->field == "read_text_until") return "str!";
-                        if (mem->field == "read_line") return "str?";
-                        if (mem->field == "read_lines") return "[]str!";
-                        if (mem->field == "is_open" || mem->field == "is_tty" || mem->field == "poll") return "bool";
-                        if (mem->field == "fd") return "i32";
-                    }
-                    if (rtype.starts_with("sync.Channel[") || rtype.starts_with("Channel[")) {
-                        auto b1 = rtype.find('[');
-                        auto b2 = rtype.rfind(']');
-                        std::string elem = (b1 != std::string::npos && b2 != std::string::npos)
-                            ? rtype.substr(b1 + 1, b2 - b1 - 1) : "auto";
-                        if (mem->field == "recv") return elem + "!";
-                        return "void";
-                    }
-                    if (rtype == "sqlite.Conn" || rtype == "Conn") {
-                        if (mem->field == "query" && !call->type_args.empty()) {
-                            return "[]" + cfire::fmt::format_type_ref(call->type_args[0]) + "!";
-                        }
-                        return "void!";
-                    }
-                    if (rtype == "webui.App" || rtype == "App") {
-                        if (mem->field == "get_state" || mem->field == "open_file_dialog" ||
-                            mem->field == "save_file_dialog" || mem->field == "last_emitted_payload" ||
-                            mem->field == "clipboard_get") {
-                            return "str";
-                        }
-                        if (mem->field == "call_rpc") return "str!";
-                        if (mem->field == "emitted_events_count") return "i64";
-                        if (mem->field == "run_webview_test") return "bool!";
-                        if (mem->field == "is_clipboard_concealed") return "bool";
-                        if (mem->field == "monospace_fonts") return "[]str";
-                        return "void";
-                    }
-                    if (rtype == "ssh.Session" || rtype == "Session") {
-                        if (mem->field == "host_key_fingerprint") return "str";
-                        if (mem->field == "sftp_read_text") return "str!";
-                        if (mem->field == "sftp_read_bytes") return "[]byte!";
-                        if (mem->field == "is_known_host") return "bool";
-                        if (mem->field == "exec") return "ssh.ExecResult!";
-                        if (mem->field == "open_pty" || mem->field == "open_forward") return "ssh.Channel!";
-                        if (mem->field == "sftp_list_dir") return "[]ssh.SftpEntry!";
-                        if (mem->field == "close") return "void";
-                        return "void!";
-                    }
-                    if (rtype == "ssh.Channel" || rtype == "Channel") {
-                        if (mem->field == "read_text") return "str!";
-                        if (mem->field == "read_bytes") return "[]byte!";
-                        if (mem->field == "write_text" || mem->field == "write_bytes") return "usize!";
-                        if (mem->field == "is_eof") return "bool";
-                        if (mem->field == "resize_pty") return "void!";
-                        return "void";
-                    }
-                    if (mem->field == "size") return "usize";
+            }
+            // 5. Check receiver methods (`os.stdin().read_lines()`, `listener.accept()`, `s.trim()`, `ch.recv()`, user methods)
+            std::string rtype = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env));
+            if (!rtype.empty() && rtype != "auto") {
+                if (rtype == "str") {
+                    if (mem->field == "len" || mem->field == "size") return "usize";
                     if (mem->field == "empty") return "bool";
-                    for (const auto& fn : ast.functions) {
-                        if (fn.receiver && fn.receiver->type.name == rtype && fn.name == mem->field) {
-                            return cfire::fmt::format_type_ref(fn.return_type);
+                    if (mem->field == "bytes") return "[]byte";
+                    if (mem->field == "data" || mem->field == "data_ptr" || mem->field == "byte_ptr" || mem->field == "byte_ptr_at") {
+                        return "*c_char";
+                    }
+                    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                        if (mod.import_path == "core:str") {
+                            for (const auto& sfn : mod.functions) {
+                                if (sfn.name == mem->field) {
+                                    if (auto arrow = sfn.cf_sig.find("-> "); arrow != std::string::npos) {
+                                        return sfn.cf_sig.substr(arrow + 3);
+                                    }
+                                    return "void";
+                                }
+                            }
                         }
                     }
-                    for (const auto& pkg : ws.local_packages) {
-                        for (const auto& fn : pkg.ast.functions) {
-                            if (fn.receiver && fn.receiver->type.name == rtype && fn.name == mem->field) {
-                                return cfire::fmt::format_type_ref(fn.return_type);
+                }
+                if (rtype.starts_with("[]") || rtype.starts_with("[")) {
+                    if (mem->field == "len" || mem->field == "size" || mem->field == "capacity") return "usize";
+                    if (mem->field == "empty") return "bool";
+                    if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" || mem->field == "reserve") return "void";
+                    if (mem->field == "data" || mem->field == "data_ptr") {
+                        auto rb = rtype.find(']');
+                        std::string elem = (rb != std::string::npos) ? rtype.substr(rb + 1) : "u8";
+                        return "*" + elem;
+                    }
+                }
+                if (rtype.starts_with("map[")) {
+                    if (mem->field == "len" || mem->field == "size") return "usize";
+                    if (mem->field == "empty" || mem->field == "has") return "bool";
+                    if (mem->field == "remove" || mem->field == "clear") return "void";
+                }
+                if (rtype == "net.TcpListener" || rtype == "TcpListener") {
+                    if (mem->field == "port") return "u16";
+                    if (mem->field == "accept") return "net.TcpConn!";
+                }
+                if (rtype == "net.TcpConn" || rtype == "TcpConn" || rtype == "fs.File" || rtype == "File") {
+                    if (mem->field == "write_bytes" || mem->field == "write_text" || mem->field == "write_line" || mem->field == "read_into") return "usize!";
+                    if (mem->field == "read_bytes" || mem->field == "read_exact" || mem->field == "read_bytes_until") return "[]byte!";
+                    if (mem->field == "read_text" || mem->field == "read_text_until") return "str!";
+                    if (mem->field == "read_line") return "str?";
+                    if (mem->field == "read_lines") return "[]str!";
+                    if (mem->field == "is_open" || mem->field == "is_tty" || mem->field == "poll") return "bool";
+                    if (mem->field == "fd") return "i32";
+                    if (mem->field == "seek" || mem->field == "tell") return "i64!";
+                    if (mem->field == "flush") return "void!";
+                    if (mem->field == "close" || mem->field == "set_timeout_ms") return "void";
+                }
+                if (rtype.starts_with("sync.Channel[") || rtype.starts_with("Channel[")) {
+                    auto b1 = rtype.find('[');
+                    auto b2 = rtype.rfind(']');
+                    std::string elem = (b1 != std::string::npos && b2 != std::string::npos)
+                        ? rtype.substr(b1 + 1, b2 - b1 - 1) : "auto";
+                    if (mem->field == "recv") return elem + "!";
+                    return "void";
+                }
+                if (rtype == "sqlite.Conn" || rtype == "Conn") {
+                    if (mem->field == "query" && !call->type_args.empty()) {
+                        return "[]" + cfire::fmt::format_type_ref(call->type_args[0]) + "!";
+                    }
+                    return "void!";
+                }
+                if (rtype == "webui.App" || rtype == "App") {
+                    if (mem->field == "get_state" || mem->field == "open_file_dialog" ||
+                        mem->field == "save_file_dialog" || mem->field == "last_emitted_payload" ||
+                        mem->field == "clipboard_get") {
+                        return "str";
+                    }
+                    if (mem->field == "call_rpc") return "str!";
+                    if (mem->field == "emitted_events_count") return "i64";
+                    if (mem->field == "run_webview_test") return "bool!";
+                    if (mem->field == "is_clipboard_concealed") return "bool";
+                    if (mem->field == "monospace_fonts") return "[]str";
+                    return "void";
+                }
+                if (rtype == "ssh.Session" || rtype == "Session") {
+                    if (mem->field == "host_key_fingerprint") return "str";
+                    if (mem->field == "sftp_read_text") return "str!";
+                    if (mem->field == "sftp_read_bytes") return "[]byte!";
+                    if (mem->field == "is_known_host") return "bool";
+                    if (mem->field == "exec") return "ssh.ExecResult!";
+                    if (mem->field == "open_pty" || mem->field == "open_forward") return "ssh.Channel!";
+                    if (mem->field == "sftp_list_dir") return "[]ssh.SftpEntry!";
+                    if (mem->field == "close") return "void";
+                    return "void!";
+                }
+                if (rtype == "ssh.Channel" || rtype == "Channel") {
+                    if (mem->field == "read_text") return "str!";
+                    if (mem->field == "read_bytes") return "[]byte!";
+                    if (mem->field == "write_text" || mem->field == "write_bytes") return "usize!";
+                    if (mem->field == "is_eof") return "bool";
+                    if (mem->field == "resize_pty") return "void!";
+                    return "void";
+                }
+                if (mem->field == "size") return "usize";
+                if (mem->field == "empty") return "bool";
+                if (mem->field == "clone") return rtype;
+                for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                    for (const auto& sfn : mod.functions) {
+                        if (auto dot = sfn.name.find('.'); dot != std::string::npos) {
+                            std::string htype = sfn.name.substr(0, dot);
+                            std::string mname = sfn.name.substr(dot + 1);
+                            if ((rtype == htype || rtype == mod.ns_alias + "." + htype || rtype.starts_with("sync." + htype)) &&
+                                mname == mem->field) {
+                                if (auto arrow = sfn.cf_sig.find("-> "); arrow != std::string::npos) {
+                                    std::string ret = sfn.cf_sig.substr(arrow + 3);
+                                    if (ret == "File") return "fs.File";
+                                    if (ret == "File!") return "fs.File!";
+                                    if (ret == "TcpConn!") return "net.TcpConn!";
+                                    if (ret == "TcpListener!") return "net.TcpListener!";
+                                    return ret;
+                                }
+                                return "void";
                             }
+                        }
+                    }
+                }
+                for (const auto& fn : ast.functions) {
+                    if (fn.receiver && fn.receiver->type.name == rtype && fn.name == mem->field) {
+                        return cfire::fmt::format_type_ref(fn.return_type);
+                    }
+                }
+                for (const auto& pkg : ws.local_packages) {
+                    for (const auto& fn : pkg.ast.functions) {
+                        if (fn.receiver && (fn.receiver->type.name == rtype || pkg.alias + "." + fn.receiver->type.name == rtype) &&
+                            fn.name == mem->field) {
+                            return cfire::fmt::format_type_ref(fn.return_type);
                         }
                     }
                 }

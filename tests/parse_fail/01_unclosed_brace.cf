@@ -1,0 +1,6 @@
+package main
+
+fn broken_brace() {
+    x := 1
+    if x > 0 {
+        y := 2

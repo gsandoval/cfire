@@ -221,7 +221,12 @@ public:
     template <typename F>
     [[nodiscard]] auto tx(F&& fn) -> std::expected<void, cfire::Error> {
         CFIRE_TRY(exec("BEGIN IMMEDIATE"));
-        auto res = fn(*this);
+        std::expected<void, cfire::Error> res;
+        if constexpr (std::is_invocable_v<F, Conn&>) {
+            res = fn(*this);
+        } else {
+            res = fn();
+        }
         if (!res.has_value()) {
             (void)exec("ROLLBACK");
             return res;

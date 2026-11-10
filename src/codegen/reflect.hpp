@@ -102,10 +102,27 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
 
     if (has_cli && used_core_.contains("cli")) {
         writeln();
+        auto emit_cli_defaults = [&]() {
+            for (const auto& t : tags) {
+                if (auto dit = t.custom_tags.find("default"); dit != t.custom_tags.end()) {
+                    std::string fname = sanitize_cpp_ident(t.field_name);
+                    const std::string& dval = dit->second;
+                    if (t.field_type.name == "str") {
+                        writeln(std::format("out.{} = \"{}\";", fname, escape_unescaped_quotes(dval)));
+                    } else if (t.field_type.name == "bool") {
+                        writeln(std::format("out.{} = {};", fname, (dval == "true" || dval == "1") ? "true" : "false"));
+                    } else if (!dval.empty()) {
+                        writeln(std::format("out.{} = static_cast<{}>({});", fname, lower_raw_owning_type(t.field_type), dval));
+                    }
+                }
+            }
+        };
+
         writeln("template <>");
         writeln(std::format("inline auto cfire::cli::try_parse<{}>(int argc, char** argv) -> std::optional<{}> {{", st.name, st.name));
         ++indent_;
         writeln(std::format("{} out{{}};", st.name));
+        emit_cli_defaults();
         writeln("cfire::cli::FlagReader reader(argc, argv);");
         for (const auto& t : tags) {
             if (!t.cli_long.empty()) {
@@ -122,6 +139,7 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
         writeln(std::format("inline auto cfire::cli::parse<{}>(int argc, char** argv) -> {} {{", st.name, st.name));
         ++indent_;
         writeln(std::format("{} out{{}};", st.name));
+        emit_cli_defaults();
         writeln("cfire::cli::FlagReader reader(argc, argv);");
         for (const auto& t : tags) {
             if (!t.cli_long.empty()) {
@@ -368,6 +386,61 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
         --indent_;
         writeln("};");
         --indent_;
+        writeln("}");
+    }
+}
+
+inline void Emitter::emit_enum_reflection(const EnumDecl& en) {
+    writeln();
+    writeln("template <>");
+    writeln(std::format("struct cfire::reflect_enum<{}> {{", en.name));
+    ++indent_;
+    writeln("static constexpr bool is_enum = true;");
+    writeln(std::format("static constexpr std::string_view name = \"{}\";", en.name));
+    writeln(std::format("static constexpr std::size_t variant_count = {};", en.variants.size()));
+    writeln(std::format("static constexpr std::array<std::string_view, {}> variant_names = {{", en.variants.size()));
+    ++indent_;
+    for (const auto& v : en.variants) {
+        writeln(std::format("\"{}\",", v.name));
+    }
+    --indent_;
+    writeln("};");
+    writeln(std::format("static auto from_string(std::string_view s) -> std::optional<{}> {{", en.name));
+    writeln(std::format("    return {}::from_string(s);", en.name));
+    writeln("}");
+    --indent_;
+    writeln("};");
+
+    bool is_plain = std::all_of(en.variants.begin(), en.variants.end(), [](const auto& v) { return v.payload_types.empty(); });
+    if (is_plain && !en.variants.empty()) {
+        writeln();
+        writeln("template <>");
+        writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", en.name));
+        ++indent_;
+        writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng&, std::size_t iter) -> {} {{", en.name));
+        writeln(std::format("    auto opt = {}::from_i32(static_cast<std::int32_t>(iter % {}));", en.name, en.variants.size()));
+        writeln(std::format("    return opt ? *opt : {}::{}();", en.name, en.variants[0].name));
+        writeln("}");
+        --indent_;
+        writeln("};");
+    }
+
+    if (used_core_.contains("json")) {
+        writeln();
+        writeln("template <>");
+        writeln(std::format("inline auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", en.name, en.name));
+        writeln("    return std::format(\"\\\"{}\\\"\", val.to_string());");
+        writeln("}");
+
+        writeln();
+        writeln("template <>");
+        writeln(std::format("inline auto cfire::json::schema_struct<{}>() -> std::string {{", en.name));
+        std::string enum_list;
+        for (std::size_t i = 0; i < en.variants.size(); ++i) {
+            if (i > 0) enum_list += ",";
+            enum_list += std::format("\"{}\"", en.variants[i].name);
+        }
+        writeln(std::format("    return R\"({{\"type\":\"string\",\"enum\":[{}]}})\";", enum_list));
         writeln("}");
     }
 }

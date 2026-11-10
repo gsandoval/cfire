@@ -6,6 +6,23 @@
 
 using namespace cfire::cli;
 
+namespace {
+inline auto levenshtein_dist(std::string_view s1, std::string_view s2) -> std::size_t {
+    std::vector<std::size_t> v0(s2.size() + 1);
+    std::vector<std::size_t> v1(s2.size() + 1);
+    for (std::size_t i = 0; i <= s2.size(); ++i) v0[i] = i;
+    for (std::size_t i = 0; i < s1.size(); ++i) {
+        v1[0] = i + 1;
+        for (std::size_t j = 0; j < s2.size(); ++j) {
+            std::size_t cost = (s1[i] == s2[j]) ? 0 : 1;
+            v1[j + 1] = std::min({v1[j] + 1, v0[j + 1] + 1, v0[j] + cost});
+        }
+        v0 = v1;
+    }
+    return v0[s2.size()];
+}
+}
+
 auto main(int argc, char** argv) -> int {
     if (argc < 2) {
         print_usage();
@@ -30,6 +47,14 @@ auto main(int argc, char** argv) -> int {
     if (sub == "--help" || sub == "-h" || sub == "help") {
         print_usage();
         return 0;
+    }
+    for (int i = 2; i < argc; ++i) {
+        std::string_view a = argv[i];
+        if (a == "--") break;
+        if (a == "--help" || a == "-h") {
+            print_usage();
+            return 0;
+        }
     }
 
     if (sub == "init" || sub == "new") {
@@ -364,6 +389,14 @@ auto main(int argc, char** argv) -> int {
             after_dashdash = true;
             continue;
         }
+        if (arg == "--debug") {
+            cfire::build::g_debug_mode = true;
+            continue;
+        }
+        if (arg == "--profile") {
+            cfire::build::g_profile_mode = true;
+            continue;
+        }
         if (arg == "--sanitize") {
             sanitize = true;
             continue;
@@ -562,6 +595,35 @@ auto main(int argc, char** argv) -> int {
             extra_includes.emplace_back(arg.substr(10));
             continue;
         }
+        if (arg.starts_with("-") && arg != "-" && arg != "--") {
+            static const std::vector<std::string_view> kKnownFlags = {
+                "--release", "-r", "--debug", "-g", "--sanitize", "--test", "--bench",
+                "--fuzz-runs", "--seed", "--bench-time", "--filter",
+                "--output", "-o", "--icon", "--name", "--app-name",
+                "--web-profile", "--subsystem", "--no-open", "--open",
+                "--port", "-p", "--target", "--sysroot", "--link-lib", "--include",
+                "--verbose", "-v", "--help", "-h", "--dump-cpp", "--dump-ast", "--check"
+            };
+            std::string_view flag_name = arg;
+            if (auto eq = flag_name.find('='); eq != std::string_view::npos) {
+                flag_name = flag_name.substr(0, eq);
+            }
+            std::string_view best_match;
+            std::size_t best_dist = 4;
+            for (auto kf : kKnownFlags) {
+                auto d = levenshtein_dist(flag_name, kf);
+                if (d < best_dist) {
+                    best_dist = d;
+                    best_match = kf;
+                }
+            }
+            if (!best_match.empty()) {
+                std::println(stderr, "error: unrecognized flag '{}'; did you mean '{}'?", arg, best_match);
+            } else {
+                std::println(stderr, "error: unrecognized flag '{}'", arg);
+            }
+            return 1;
+        }
         if (target.empty()) {
             target = arg;
         } else {
@@ -610,6 +672,9 @@ auto main(int argc, char** argv) -> int {
         if (!res) {
             std::println(stderr, "{}", res.error());
             return 1;
+        }
+        for (const auto& w : res->second.warnings) {
+            std::println(stderr, "{}", w);
         }
         std::print("{}", res->first);
         return 0;
@@ -686,6 +751,9 @@ auto main(int argc, char** argv) -> int {
                             } else {
                                 out_bin_path = candidate;
                             }
+                            if (cfire::build::is_windows_target(effective_triple) && out_bin_path.extension() != ".exe") {
+                                out_bin_path += ".exe";
+                            }
                         }
                     }
 
@@ -746,7 +814,7 @@ auto main(int argc, char** argv) -> int {
                 out_bin = (std::filesystem::path(out_bin) / target.stem().string()).string();
             }
         }
-        if (!target_triple.empty() && (target_triple.find("windows") != std::string::npos || target_triple.find("win32") != std::string::npos || target_triple.find("msvc") != std::string::npos)) {
+        if (cfire::build::is_windows_target(target_triple)) {
             if (!out_bin.ends_with(".exe")) out_bin += ".exe";
         }
         if (target_triple.starts_with("wasm")) {
@@ -868,11 +936,8 @@ auto main(int argc, char** argv) -> int {
                     if (!json_mode && suite_entries.size() > 1) {
                         std::println("==> Suite {}/{}: {}", idx + 1, suite_entries.size(), suite_file.string());
                     }
-#if defined(_WIN32)
-                    auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}.exe", ::getpid(), idx);
-#else
-                    auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}", ::getpid(), idx);
-#endif
+                    const char* bin_ext = cfire::build::is_windows_target(target_triple) ? ".exe" : "";
+                    auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}{}", ::getpid(), idx, bin_ext);
                     auto plan = cfire::build::build_native(suite_file, runtime_dir, tmp_bin, true, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
                     if (!plan) {
                         ++suite_failures;
@@ -1160,11 +1225,8 @@ auto main(int argc, char** argv) -> int {
             return *sim_res;
         }
 
-#if defined(_WIN32)
-        auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}.exe", sub, ::getpid());
-#else
-        auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}", sub, ::getpid());
-#endif
+        const char* bin_ext = cfire::build::is_windows_target(target_triple) ? ".exe" : "";
+        auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}{}", sub, ::getpid(), bin_ext);
         auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
         if (!plan) {
             std::println(stderr, "{}", plan.error());

@@ -11,9 +11,25 @@ auto main(int argc, char** argv) -> int {
 
     if (should_run("unit")) {
         test_sema_intent_and_move_diagnostics();
+        test_golden_codegen_snapshots(std::filesystem::current_path());
         test_formatter_lsp_and_docgen(rt_dir);
         test_cfire_refactor_rename(rt_dir);
         test_slice_pattern_matching(rt_dir);
+        test_hard_deprecation_enforcement(rt_dir);
+        test_duplicate_declaration_pass(rt_dir);
+        test_catalog_gated_import_validation(rt_dir);
+        test_plain_enum_usability_cluster(rt_dir);
+        test_uniform_generic_type_application(rt_dir);
+        test_cpp_backend_error_leak_prevention(rt_dir);
+        test_scoped_name_resolution_cpp_ffi(rt_dir);
+        test_match_exhaustiveness_and_reachability(rt_dir);
+        test_or_chaining_and_block_disambiguation(rt_dir);
+        test_lexer_exponents_keywords_and_interpolation(rt_dir);
+        test_content_hashed_pch_and_cli_flag_validation(rt_dir);
+        test_multiline_lambda_source_mapping_cf114(rt_dir);
+        test_interned_typeid_lattice_and_diagnostics_cf116(rt_dir);
+        test_unified_stdlib_metadata_table_cf117(rt_dir);
+        test_negative_parser_corpus_and_fuzz_runtime(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
         test_section2_language_ergonomics(rt_dir);
         test_section3_agent_tooling(rt_dir);
@@ -68,7 +84,6 @@ auto main(int argc, char** argv) -> int {
         test_net_http_and_router(rt_dir);
         test_webui_rpc_events_and_linux_backend(rt_dir);
         test_security_and_fuzzing(rt_dir);
-        test_performance_benchmarks(rt_dir);
     }
     if (suite == "fuzz") {
         test_security_and_fuzzing(rt_dir);

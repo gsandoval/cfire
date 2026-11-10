@@ -270,7 +270,8 @@ inline void query_pkg_config(
     const std::string& pkg,
     std::vector<std::string>& cflags,
     std::vector<std::string>& libs,
-    const std::filesystem::path& install_root = {}
+    const std::filesystem::path& install_root = {},
+    bool static_link = false
 ) {
     int code = 0;
     std::string qpkg = bridge::shell_quote(pkg);
@@ -330,12 +331,13 @@ inline void query_pkg_config(
     for (const auto& d : extra_pc_dirs) {
         pc_args += " --with-path=" + bridge::shell_quote(d);
     }
-    std::string cf_out = bridge::run_command_capture("pkg-config" + pc_args + " --cflags " + qpkg + " 2>/dev/null", code);
+    std::string static_flag = static_link ? " --static" : "";
+    std::string cf_out = bridge::run_command_capture("pkg-config" + pc_args + static_flag + " --cflags " + qpkg + " 2>/dev/null", code);
     if (code == 0) {
         for (auto& f : split_ws(cf_out)) cflags.push_back(std::move(f));
     }
     int lb_code = 0;
-    std::string lb_out = bridge::run_command_capture("pkg-config" + pc_args + " --libs " + qpkg + " 2>/dev/null", lb_code);
+    std::string lb_out = bridge::run_command_capture("pkg-config" + pc_args + static_flag + " --libs " + qpkg + " 2>/dev/null", lb_code);
     if (lb_code == 0 && !lb_out.empty()) {
         for (auto& l : split_ws(lb_out)) libs.push_back(std::move(l));
         return;

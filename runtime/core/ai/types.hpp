@@ -63,6 +63,7 @@ struct Tool {
     std::string name{};
     std::string description{};
     std::string schema_json = R"({"type":"object","properties":{},"additionalProperties":false})";
+    std::string parameters_schema{};
 };
 
 struct ToolCall {
@@ -198,10 +199,12 @@ template <typename R>
 
 template <typename T>
 [[nodiscard]] inline auto tool_def(std::string name, std::string description) -> Tool {
+    std::string s = cfire::json::schema<T>();
     return Tool{
         .name = std::move(name),
         .description = std::move(description),
-        .schema_json = cfire::json::schema<T>()
+        .schema_json = s,
+        .parameters_schema = s
     };
 }
 

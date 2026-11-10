@@ -2,6 +2,7 @@
 #include "../../src/mcp.hpp"
 #include "test_lsp_docgen.hpp"
 #include "test_ergonomics_upstream.hpp"
+#include "test_golden_codegen.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");

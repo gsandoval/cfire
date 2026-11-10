@@ -1,0 +1,5 @@
+package main
+
+fn broken_type() {
+    mut list: Array[i32 = []
+}

@@ -44,9 +44,9 @@ fn describe_scene[T: Renderable](item: T) {
 
 fn main() {
     mut scene := Scene{Title: "CAD Viewport"}
-    scene.register_shape("circle_main", Shape.Circle(10.0))
-    scene.register_shape("rect_panel", Shape.Rect(5.0, 8.0))
-    scene.register_shape("empty_slot", Shape.Empty)
+    scene.register_shape("circle_main", Shape::Circle(10.0))
+    scene.register_shape("rect_panel", Shape::Rect(5.0, 8.0))
+    scene.register_shape("empty_slot", Shape::Empty)
 
     c_area := scene.query_area("circ") or -1.0
     r_area := scene.query_area("rect") or -1.0

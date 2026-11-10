@@ -96,14 +96,22 @@ struct Value {
         return std::nullopt;
     }
 
-    [[nodiscard]] auto operator[](std::string_view key) const -> Value {
-        if (auto v = get(key)) return *v;
-        return Value{};
+    [[nodiscard]] auto operator[](std::string_view key) const -> const Value& {
+        static const Value null_val{};
+        if (const auto* o = std::get_if<Object>(&data)) {
+            for (const auto& [k, v] : *o) {
+                if (k == key) return v;
+            }
+        }
+        return null_val;
     }
 
-    [[nodiscard]] auto operator[](std::size_t index) const -> Value {
-        if (auto v = at(index)) return *v;
-        return Value{};
+    [[nodiscard]] auto operator[](std::size_t index) const -> const Value& {
+        static const Value null_val{};
+        if (const auto* a = std::get_if<Array>(&data)) {
+            if (index < a->size()) return (*a)[index];
+        }
+        return null_val;
     }
 
     [[nodiscard]] auto size() const noexcept -> std::size_t {
@@ -446,7 +454,9 @@ template <typename T>
     using D = std::decay_t<T>;
     if constexpr (detail::is_std_optional<D>::value) {
         return schema<typename D::value_type>();
-    } else if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
+    } else if constexpr (cfire::reflect_enum<D>::is_enum) {
+        return schema_struct<D>();
+    } else if constexpr (std::is_convertible_v<const T&, std::string_view> || std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
         return R"({"type":"string"})";
     } else if constexpr (std::is_same_v<D, bool>) {
         return R"({"type":"boolean"})";
@@ -486,7 +496,21 @@ template <typename T>
 template <typename T>
 [[nodiscard]] auto parse(std::string_view payload) -> std::expected<T, cfire::Error> {
 #if !CFIRE_SIMDJSON_ACTIVE
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (cfire::reflect_enum<T>::is_enum) {
+        auto dyn = parse_dynamic(payload);
+        if (!dyn) return std::unexpected(dyn.error());
+        std::string_view str_val;
+        if (dyn->is_string()) {
+            str_val = dyn->as_str();
+        } else {
+            return cfire::make_error("expected json string for enum");
+        }
+        auto parsed = T::from_string(str_val);
+        if (!parsed) {
+            return cfire::make_error(std::format("invalid enum variant '{}' for enum '{}'", str_val, cfire::reflect_enum<T>::name));
+        }
+        return *parsed;
+    } else if constexpr (std::is_same_v<T, std::string>) {
         if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
             auto dyn = parse_dynamic(payload);
             if (dyn && dyn->is_string()) return std::string(dyn->as_str());
@@ -520,7 +544,20 @@ template <typename T>
         return parse_struct<T>(obj);
     }
 #else
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (cfire::reflect_enum<T>::is_enum) {
+        std::string_view trimmed = payload;
+        while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t' || trimmed.front() == '\r' || trimmed.front() == '\n')) trimmed.remove_prefix(1);
+        while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t' || trimmed.back() == '\r' || trimmed.back() == '\n')) trimmed.remove_suffix(1);
+        if (trimmed.size() >= 2 && trimmed.front() == '"' && trimmed.back() == '"') {
+            trimmed.remove_prefix(1);
+            trimmed.remove_suffix(1);
+        }
+        auto parsed = T::from_string(trimmed);
+        if (!parsed) {
+            return cfire::make_error(std::format("invalid enum variant '{}' for enum '{}'", trimmed, cfire::reflect_enum<T>::name));
+        }
+        return *parsed;
+    } else if constexpr (std::is_same_v<T, std::string>) {
         if (payload.size() >= 2 && payload.front() == '"' && payload.back() == '"') {
             auto dyn = parse_dynamic(payload);
             if (dyn && dyn->is_string()) return std::string(dyn->as_str());
@@ -575,8 +612,10 @@ template <typename T>
     using D = std::decay_t<T>;
     if constexpr (detail::is_std_optional<D>::value) {
         return val.has_value() ? stringify(*val) : "null";
-    } else if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
-        return std::format("\"{}\"", escape_string(val));
+    } else if constexpr (cfire::reflect_enum<D>::is_enum) {
+        return std::format("\"{}\"", val.to_string());
+    } else if constexpr (std::is_convertible_v<const T&, std::string_view> || std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view> || std::is_same_v<D, const char*>) {
+        return std::format("\"{}\"", escape_string(std::string_view(val)));
     } else if constexpr (std::is_same_v<D, bool>) {
         return val ? "true" : "false";
     } else if constexpr (std::is_arithmetic_v<D>) {
@@ -675,11 +714,23 @@ template <typename Sub>
     auto f = obj[key];
     if (f.error() == simdjson::NO_SUCH_FIELD) return Sub{};
     if (!f.error() && f.value().is_null()) return Sub{};
-    auto sub = f.get_object();
-    if (sub.error()) {
-        return cfire::make_error(std::format("missing or invalid object field '{}'", key));
+    if constexpr (cfire::reflect_enum<Sub>::is_enum) {
+        auto s = f.get_string();
+        if (s.error()) {
+            return cfire::make_error(std::format("missing or invalid string for enum field '{}'", key));
+        }
+        auto parsed = Sub::from_string(s.value());
+        if (!parsed) {
+            return cfire::make_error(std::format("invalid enum variant '{}' for field '{}'", std::string_view(s.value()), key));
+        }
+        return *parsed;
+    } else {
+        auto sub = f.get_object();
+        if (sub.error()) {
+            return cfire::make_error(std::format("missing or invalid object field '{}'", key));
+        }
+        return parse_struct<Sub>(sub.value());
     }
-    return parse_struct<Sub>(sub.value());
 }
 
 [[nodiscard]] inline auto get_bool(simdjson::ondemand::object& obj, std::string_view key, bool def = false)
@@ -707,7 +758,13 @@ template <typename Elem>
     }
     std::vector<Elem> out;
     for (auto elem : arr.value()) {
-        if constexpr (std::is_same_v<Elem, std::string>) {
+        if constexpr (cfire::reflect_enum<Elem>::is_enum) {
+            auto sv = elem.get_string();
+            if (sv.error()) return cfire::make_error(std::format("invalid enum string in array field '{}'", key));
+            auto parsed = Elem::from_string(sv.value());
+            if (!parsed) return cfire::make_error(std::format("invalid enum variant '{}' in array field '{}'", std::string_view(sv.value()), key));
+            out.push_back(std::move(*parsed));
+        } else if constexpr (std::is_same_v<Elem, std::string>) {
             auto sv = elem.get_string();
             if (sv.error()) return cfire::make_error(std::format("invalid string in array field '{}'", key));
             out.emplace_back(sv.value());
@@ -742,7 +799,13 @@ template <typename T>
     if (f.error() == simdjson::NO_SUCH_FIELD) return std::optional<T>{std::nullopt};
     if (f.error()) return cfire::make_error(std::format("invalid optional field '{}'", key));
     if (f.value().is_null()) return std::optional<T>{std::nullopt};
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (cfire::reflect_enum<T>::is_enum) {
+        auto res = f.get_string();
+        if (res.error()) return std::nullopt;
+        auto parsed = T::from_string(res.value());
+        if (!parsed) return cfire::make_error(std::format("invalid enum variant '{}' for field '{}'", std::string_view(res.value()), key));
+        return std::optional<T>{*parsed};
+    } else if constexpr (std::is_same_v<T, std::string>) {
         auto res = f.get_string();
         if (res.error()) return cfire::make_error(std::format("invalid optional string field '{}'", key));
         return std::optional<T>{std::string(res.value())};
@@ -823,9 +886,18 @@ template <typename Sub>
     if (!obj.val) return Sub{};
     auto v = obj.val->get(key);
     if (!v || v->is_null()) return Sub{};
-    if (!v->is_object()) return cfire::make_error(std::format("missing or invalid object field '{}'", key));
-    simdjson::ondemand::object sub_obj{&(*v)};
-    return parse_struct<Sub>(sub_obj);
+    if constexpr (cfire::reflect_enum<Sub>::is_enum) {
+        if (!v->is_string()) return cfire::make_error(std::format("missing or invalid string for enum field '{}'", key));
+        auto parsed = Sub::from_string(v->as_str());
+        if (!parsed) {
+            return cfire::make_error(std::format("invalid enum variant '{}' for field '{}'", v->as_str(), key));
+        }
+        return *parsed;
+    } else {
+        if (!v->is_object()) return cfire::make_error(std::format("missing or invalid object field '{}'", key));
+        simdjson::ondemand::object sub_obj{&(*v)};
+        return parse_struct<Sub>(sub_obj);
+    }
 }
 [[nodiscard]] inline auto get_bool(simdjson::ondemand::object& obj, std::string_view key, bool def = false)
     -> std::expected<bool, cfire::Error> {
@@ -844,7 +916,12 @@ template <typename Elem>
     if (!v->is_array()) return cfire::make_error(std::format("missing or invalid array field '{}'", key));
     std::vector<Elem> out;
     for (const auto& elem : v->as_array()) {
-        if constexpr (std::is_same_v<Elem, std::string>) {
+        if constexpr (cfire::reflect_enum<Elem>::is_enum) {
+            if (!elem.is_string()) return cfire::make_error(std::format("invalid enum string in array field '{}'", key));
+            auto parsed = Elem::from_string(elem.as_str());
+            if (!parsed) return cfire::make_error(std::format("invalid enum variant '{}' in array field '{}'", elem.as_str(), key));
+            out.push_back(std::move(*parsed));
+        } else if constexpr (std::is_same_v<Elem, std::string>) {
             if (!elem.is_string()) return cfire::make_error(std::format("invalid string in array field '{}'", key));
             out.emplace_back(elem.as_str());
         } else if constexpr (std::is_same_v<Elem, bool>) {
@@ -874,7 +951,12 @@ template <typename T>
     if (!obj.val) return std::optional<T>{std::nullopt};
     auto v = obj.val->get(key);
     if (!v || v->is_null()) return std::optional<T>{std::nullopt};
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (cfire::reflect_enum<T>::is_enum) {
+        if (!v->is_string()) return cfire::make_error(std::format("invalid optional string field '{}'", key));
+        auto parsed = T::from_string(v->as_str());
+        if (!parsed) return cfire::make_error(std::format("invalid enum variant '{}' for field '{}'", v->as_str(), key));
+        return std::optional<T>{*parsed};
+    } else if constexpr (std::is_same_v<T, std::string>) {
         if (!v->is_string()) return cfire::make_error(std::format("invalid optional string field '{}'", key));
         return std::optional<T>{std::string(v->as_str())};
     } else if constexpr (std::is_same_v<T, bool>) {

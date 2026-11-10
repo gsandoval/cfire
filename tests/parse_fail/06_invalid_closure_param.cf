@@ -1,0 +1,5 @@
+package main
+
+fn bad_closure() {
+    cl := |x i32| { return x }
+}

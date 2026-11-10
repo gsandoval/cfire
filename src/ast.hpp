@@ -2,11 +2,13 @@
 // src/ast.hpp — C++23 AST Definitions for cfire (.cf)
 
 #include "lexer.hpp"
+#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <new>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -126,6 +128,7 @@ struct TypeRef {
     bool is_map = false;
     std::shared_ptr<TypeRef> key_type = nullptr;
     std::shared_ptr<TypeRef> elem_type = nullptr;
+    std::vector<TypeRef> type_args{}; // CF-107: Uniform first-class multi-argument generic type application
     bool is_fallible = false; // T!
     bool is_optional = false; // T?
     bool is_mut_ptr = false;  // *mut T
@@ -238,6 +241,10 @@ struct ReceiverDecl {
     std::string intent = "in"; // "in" or "mut"
     std::string name{};
     TypeRef type{};
+    bool has_explicit_in = false;
+    bool has_deprecated_mut_pos = false;
+    int line = 1;
+    int col = 1;
 };
 
 struct ParamDecl {
@@ -246,17 +253,69 @@ struct ParamDecl {
     TypeRef type{};
     int line = 1;
     int col = 1;
+    bool has_explicit_in = false;
+    bool has_deprecated_mut_pos = false;
 };
+
+// --- Semantic Resolution & Symbol Kinds (CF-115) ---
+
+enum class SymbolKind {
+    Local,
+    Param,
+    Global,
+    Function,
+    Struct,
+    EnumVariant,
+    Field,
+    Method,
+    Package,
+    CoreNamespace
+};
+
+struct Resolution {
+    SymbolKind kind = SymbolKind::Local;
+    std::string canonical_name{};   // e.g. "cfire::os::stdin_file", "cfire_pkg_foo__bar", "cfire_method_baz"
+    std::string type_name{};        // inferred or declared type name
+    std::string owner_type{};       // for Field, Method, EnumVariant (e.g. "Point", "Shape")
+    std::string package_name{};     // for package-scoped symbols
+    bool is_mut = false;
+    bool is_optional = false;
+    bool is_smart_ptr = false;
+    bool is_raw_ptr = false;
+    bool is_auto_deref = false;     // true if access requires auto-deref (*obj)
+};
+
+[[nodiscard]] inline auto sanitize_cpp_ident(std::string_view id) -> std::string {
+    static const std::unordered_set<std::string_view> kCppReserved = {
+        "short", "long", "signed", "unsigned", "class", "template", "operator",
+        "export", "delete", "new", "private", "protected", "public", "virtual",
+        "override", "final", "typename", "namespace", "using", "this", "throw",
+        "catch", "union", "goto", "register", "volatile", "friend", "explicit",
+        "mutable", "inline", "constexpr", "consteval", "constinit", "co_await",
+        "co_return", "co_yield", "concept", "requires", "stdout", "stderr", "stdin"
+    };
+    if (kCppReserved.contains(id)) {
+        return std::string(id) + "_cf_";
+    }
+    return std::string(id);
+}
 
 // --- Expressions ---
 
 struct IdentExpr {
     std::string name{};
+    std::optional<Resolution> resolution{};
+};
+
+struct ExprSnippetResult {
+    std::shared_ptr<AstArena> arena;
+    ExprPtr expr = nullptr;
 };
 
 struct LiteralExpr {
     TokenKind kind = TokenKind::Int;
     std::string value{};
+    mutable std::vector<ExprSnippetResult> interp_snippets{};
 };
 
 struct UnaryExpr {
@@ -274,6 +333,7 @@ struct MemberExpr {
     ExprPtr object{};
     std::string field{};
     bool is_namespace = false; // `::`
+    std::optional<Resolution> resolution{};
 };
 
 struct IndexExpr {
@@ -294,6 +354,7 @@ struct StructLitField {
 
 struct StructLitExpr {
     std::string type_name{};
+    std::vector<TypeRef> type_args{};
     std::vector<StructLitField> fields{};
 };
 
@@ -307,6 +368,7 @@ struct ClosureExpr {
     std::vector<std::optional<TypeRef>> param_types{};
     std::optional<TypeRef> return_type{};
     bool is_async = false;
+    bool is_escaping = false;
     std::vector<StmtPtr> body{};
 };
 
@@ -323,6 +385,7 @@ struct CallExpr {
     std::vector<TypeRef> type_args{};
     std::vector<CallArg> args{};
     std::optional<ClosureExpr> block_arg{};
+    std::optional<Resolution> resolution{};
 };
 
 struct TryExpr {
@@ -382,22 +445,26 @@ using ExprVariant = std::variant<
     TupleExpr,
     MatchExpr>;
 
+inline std::atomic<uint64_t> g_expr_id_seq{1};
+
 struct Expr {
     ExprVariant node;
     int line = 1;
     int col = 1;
+    uint64_t id = 0;
 
     Expr() = default;
-    Expr(ExprVariant n, int l, int c) : node(std::move(n)), line(l), col(c) {}
+    Expr(ExprVariant n, int l, int c, uint64_t i = 0) : node(std::move(n)), line(l), col(c), id(i) {}
 };
 
 template <typename T>
 [[nodiscard]] inline auto make_expr(T&& v, int line, int col) -> ExprPtr {
+    uint64_t nid = g_expr_id_seq.fetch_add(1, std::memory_order_relaxed);
     if (g_current_arena) {
-        return g_current_arena->alloc<Expr>(ExprVariant{std::forward<T>(v)}, line, col);
+        return g_current_arena->alloc<Expr>(ExprVariant{std::forward<T>(v)}, line, col, nid);
     }
     static thread_local AstArena fallback_arena;
-    return fallback_arena.alloc<Expr>(ExprVariant{std::forward<T>(v)}, line, col);
+    return fallback_arena.alloc<Expr>(ExprVariant{std::forward<T>(v)}, line, col, nid);
 }
 
 // --- Statements ---
@@ -427,6 +494,14 @@ struct DeferStmt {
 
 struct ReturnStmt {
     ExprPtr value = nullptr;
+    int line = 1;
+};
+
+struct BreakStmt {
+    int line = 1;
+};
+
+struct ContinueStmt {
     int line = 1;
 };
 
@@ -491,6 +566,8 @@ using StmtVariant = std::variant<
     AssignStmt,
     DeferStmt,
     ReturnStmt,
+    BreakStmt,
+    ContinueStmt,
     IfStmt,
     ForStmt,
     MatchStmt,

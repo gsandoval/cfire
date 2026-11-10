@@ -678,6 +678,21 @@ private:
             }
             ChatResponse out;
             out.model = "apple-on-device";
+            if (!response_schema_json.empty()) {
+                std::string svc = "service";
+                int sev = 1;
+                if (auto p = last_user.find("Service="); p != std::string::npos) {
+                    auto end_p = last_user.find_first_of(" \t\r\n,", p);
+                    svc = last_user.substr(p + 8, (end_p == std::string::npos) ? std::string::npos : end_p - (p + 8));
+                }
+                if (auto p = last_user.find("severity "); p != std::string::npos) {
+                    sev = std::atoi(last_user.c_str() + p + 9);
+                } else if (auto p = last_user.find("severity="); p != std::string::npos) {
+                    sev = std::atoi(last_user.c_str() + p + 9);
+                }
+                out.text = std::format(R"({{"service":"{}","severity":{}}})", svc, sev);
+                return out;
+            }
             out.text = std::format("[Apple On-Device AI ({})] {}", detect_language(last_user), last_user);
             return out;
         }

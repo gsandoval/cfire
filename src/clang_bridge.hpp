@@ -1,7 +1,9 @@
 #pragma once
 // src/clang_bridge.hpp — C++23 Clang AST Header Ingestor, ParmVarDecl Extractor & Persistent Cache
 
+#include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -11,8 +13,11 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <process.h>
+#else
 #include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace cfire::bridge {
@@ -108,6 +113,71 @@ struct HeaderIndex {
     exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : status;
 #endif
     return out;
+}
+
+[[nodiscard]] inline auto run_argv_capture(const std::vector<std::string>& argv, int& exit_code) -> std::string {
+    if (argv.empty()) {
+        exit_code = -1;
+        return "";
+    }
+#if defined(_WIN32)
+    std::string cmd;
+    for (const auto& a : argv) {
+        if (!cmd.empty()) cmd += " ";
+        cmd += "\"" + a + "\"";
+    }
+    return run_command_capture(cmd, exit_code);
+#else
+    int pipefd[2];
+    if (::pipe(pipefd) != 0) {
+        exit_code = -1;
+        return "";
+    }
+
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        exit_code = -1;
+        return "";
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        ::dup2(pipefd[1], STDOUT_FILENO);
+        ::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> c_argv;
+        c_argv.reserve(argv.size() + 1);
+        for (const auto& a : argv) {
+            c_argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        c_argv.push_back(nullptr);
+
+        ::execvp(c_argv[0], c_argv.data());
+        ::_exit(127);
+    }
+
+    ::close(pipefd[1]);
+    std::string out;
+    char buf[4096];
+    ssize_t n;
+    while ((n = ::read(pipefd[0], buf, sizeof(buf))) > 0) {
+        out.append(buf, static_cast<std::size_t>(n));
+    }
+    ::close(pipefd[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            exit_code = -1;
+            return out;
+        }
+    }
+    exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : status);
+    return out;
+#endif
 }
 
 [[nodiscard]] inline auto hash_key(std::string_view sv) noexcept -> std::uint64_t {
@@ -373,22 +443,42 @@ inline void extract_clang_json_symbols(std::string_view sv, std::unordered_map<s
     parser.parse(out);
 }
 
+[[nodiscard]] inline auto next_ast_salt() noexcept -> std::pair<long, std::uint64_t> {
+    static std::atomic<std::uint64_t> s_seq{0};
+#if defined(_WIN32)
+    long pid = static_cast<long>(::_getpid());
+#else
+    long pid = static_cast<long>(::getpid());
+#endif
+    return {pid, ++s_seq};
+}
+
 inline void save_cached_index(const std::filesystem::path& cache_file, const HeaderIndex& idx) {
-    std::filesystem::create_directories(cache_file.parent_path());
-    std::ofstream out(cache_file, std::ios::binary | std::ios::trunc);
-    for (const auto& [key, sym] : idx.symbols) {
-        out << key << "\t" << sym.name << "\t" << sym.kind << "\t" << sym.return_type;
-        for (const auto& pt : sym.param_types) {
-            out << "\t" << pt;
-        }
-        out << "\n";
-        for (const auto& ov : sym.overloads) {
-            out << key << "\t" << ov.name << "\t" << ov.kind << "\t" << ov.return_type;
-            for (const auto& pt : ov.param_types) {
+    std::error_code ec;
+    std::filesystem::create_directories(cache_file.parent_path(), ec);
+    auto [pid, seq] = next_ast_salt();
+    auto tmp_file = std::filesystem::path(cache_file.string() + std::format(".tmp.{}.{}", pid, seq));
+    {
+        std::ofstream out(tmp_file, std::ios::binary | std::ios::trunc);
+        for (const auto& [key, sym] : idx.symbols) {
+            out << key << "\t" << sym.name << "\t" << sym.kind << "\t" << sym.return_type;
+            for (const auto& pt : sym.param_types) {
                 out << "\t" << pt;
             }
             out << "\n";
+            for (const auto& ov : sym.overloads) {
+                out << key << "\t" << ov.name << "\t" << ov.kind << "\t" << ov.return_type;
+                for (const auto& pt : ov.param_types) {
+                    out << "\t" << pt;
+                }
+                out << "\n";
+            }
         }
+    }
+    std::filesystem::rename(tmp_file, cache_file, ec);
+    if (ec) {
+        std::filesystem::copy_file(tmp_file, cache_file, std::filesystem::copy_options::overwrite_existing, ec);
+        std::filesystem::remove(tmp_file, ec);
     }
 }
 
@@ -442,13 +532,26 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
 [[nodiscard]] inline auto inspect_header(
     std::string_view header,
     const std::vector<std::string>& cflags,
-    const std::filesystem::path& cache_dir = {}
+    const std::filesystem::path& cache_dir = {},
+    std::string_view cxx_compiler = ""
 ) -> std::expected<HeaderIndex, std::string> {
     std::string clean_hdr(header);
     while (!clean_hdr.empty() && (clean_hdr.front() == '<' || clean_hdr.front() == '"')) clean_hdr.erase(clean_hdr.begin());
     while (!clean_hdr.empty() && (clean_hdr.back() == '>' || clean_hdr.back() == '"')) clean_hdr.pop_back();
 
-    std::string key_str = "v3:" + clean_hdr;
+    std::string clang_bin = !cxx_compiler.empty() ? std::string(cxx_compiler) : std::string{};
+    if (clang_bin.empty()) {
+        if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
+            clang_bin = env_cxx;
+        } else {
+            clang_bin = "clang++";
+        }
+    }
+    if (clang_bin.find("g++") != std::string::npos && clang_bin.find("clang") == std::string::npos) {
+        clang_bin = "clang++";
+    }
+
+    std::string key_str = "v3:" + clean_hdr + "|cc:" + clang_bin;
     for (const auto& f : cflags) {
         key_str += "|" + f;
         // Include mtime if local -I directory contains this header
@@ -469,8 +572,11 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
         }
     }
 
-    auto tmp_dir = std::filesystem::temp_directory_path() / std::format("cfire_clang_ast_{}", hash_key(key_str));
-    std::filesystem::create_directories(tmp_dir);
+    auto [pid, seq] = next_ast_salt();
+    std::error_code tmp_ec;
+    auto tmp_dir = std::filesystem::temp_directory_path(tmp_ec) /
+                   std::format("cfire_clang_ast_{}_{}_{}", hash_key(key_str), pid, seq);
+    std::filesystem::create_directories(tmp_dir, tmp_ec);
     auto tu_path = tmp_dir / "tu.cpp";
 
     {
@@ -478,15 +584,26 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
         out << std::format("#include <{}>\n", clean_hdr);
     }
 
-    std::string cmd = "clang++ -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
-    for (const auto& f : cflags) {
-        cmd += " " + shell_quote(f);
-    }
-    cmd += " " + shell_quote(tu_path.string());
+    auto build_ast_cmd = [&](std::string_view bin) {
+        std::string c = std::string(bin) + " -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
+        for (const auto& f : cflags) {
+            c += " " + shell_quote(f);
+        }
+        c += " " + shell_quote(tu_path.string());
+        return c;
+    };
 
     int code = 0;
-    std::string json_dump = run_command_capture(cmd, code);
-    std::filesystem::remove_all(tmp_dir);
+    std::string json_dump = run_command_capture(build_ast_cmd(clang_bin), code);
+    if (code != 0 && clang_bin != "clang++") {
+        int fallback_code = 0;
+        std::string fallback_dump = run_command_capture(build_ast_cmd("clang++"), fallback_code);
+        if (fallback_code == 0) {
+            code = 0;
+            json_dump = std::move(fallback_dump);
+        }
+    }
+    std::filesystem::remove_all(tmp_dir, tmp_ec);
 
     if (code != 0) {
         std::string filtered;

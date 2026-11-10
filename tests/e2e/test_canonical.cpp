@@ -478,11 +478,10 @@ void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
         .assert_ok("cfire emit-cpp --target exit 0 (BS-EXT-02)")
         .assert_contains("auto main(", "emit-cpp contains main (BS-EXT-02)");
 
-    // 3. Windows target resolution (*_windows.cf file selection & Win32 linker flags)
+    // 3. Windows target resolution (*_windows.cf / *_unix.cf file selection & Win32 linker flags)
     ScopedTempDir win_tmp("cfire_win_cross");
     (void)win_tmp.file("plat_windows.cf", "package main\nfn target_os_tag() -> str { return \"win32-target\" }\n");
-    (void)win_tmp.file("plat_darwin.cf", "package main\nfn target_os_tag() -> str { return \"darwin-target\" }\n");
-    (void)win_tmp.file("plat_linux.cf", "package main\nfn target_os_tag() -> str { return \"linux-target\" }\n");
+    (void)win_tmp.file("plat_unix.cf", "package main\nfn target_os_tag() -> str { return \"unix-target\" }\n");
     auto win_main = win_tmp.file("main.cf", R"(package main
 import "core:os"
 import "core:fs"
@@ -495,30 +494,59 @@ import "ext:webui"
 fn main() {
     tag := target_os_tag()
     pid := os.getpid()
+    cwd := os.cwd()
     key := aes.generate_key()
     app := webui.new_app("Win32 Cross", 800, 600)
     app.set_hide_on_close(true)
-    println("{tag}:{pid}:{key.len()}")
+    app.set_dark_mode(false)
+    app.center()
+    app.fullscreen()
+    app.emit("ping", "pong")
+    println("{tag}:{pid}:{cwd.len()}:{key.len()}")
 }
 )");
 
-    for (const char* triple : {"x86_64-pc-windows-gnu", "x86_64-pc-windows-msvc"}) {
+    require(cfire::build::is_windows_target("x86_64-w64-mingw32"), "is_windows_target(x86_64-w64-mingw32)");
+    require(!cfire::build::is_windows_target("wasm32-unknown-emscripten"), "!is_windows_target(wasm32)");
+    auto make_plan = [](std::string_view t) {
+        cfire::build::BuildPlan p{};
+        p.target_triple = std::string(t);
+        return p;
+    };
+    require(!cfire::build::is_platform_file_enabled("foo_unix.cf", make_plan("x86_64-w64-mingw32")), "_unix excluded on Windows target");
+    require(!cfire::build::is_platform_file_enabled("foo_unix.cf", make_plan("wasm32-unknown-emscripten")), "_unix excluded on WASM target");
+    require(cfire::build::is_platform_file_enabled("foo_unix.cf", make_plan("x86_64-unknown-linux-gnu")), "_unix enabled on Linux target");
+    require(cfire::build::is_platform_file_enabled("foo_wasm.cf", make_plan("wasm32-unknown-emscripten")), "_wasm enabled on WASM target");
+    require(!cfire::build::is_platform_file_enabled("foo_wasm.cf", make_plan("x86_64-w64-mingw32")), "_wasm excluded on Windows target");
+
+    run_cfire("build --help")
+        .assert_ok("cfire build --help exits 0 (NW-03)")
+        .assert_contains("Usage:", "cfire build --help prints usage");
+
+    for (const char* triple : {"x86_64-pc-windows-gnu", "x86_64-pc-windows-msvc", "x86_64-w64-mingw32"}) {
         auto win_emit = cfire::build::analyze_and_emit(win_main, rt_dir, false, false, triple);
         require(win_emit.has_value(), std::format("analyze_and_emit for {}", triple));
         if (win_emit) {
-            require(win_emit->first.contains("\"win32-target\"") && !win_emit->first.contains("\"darwin-target\""),
-                std::format("{} selects *_windows.cf and excludes *_darwin.cf", triple));
+            require(win_emit->first.contains("\"win32-target\"") && !win_emit->first.contains("\"unix-target\""),
+                std::format("{} selects *_windows.cf and excludes *_unix.cf", triple));
             bool has_ws2 = false;
             bool has_comdlg = false;
+            bool has_shlwapi = false;
+            bool has_shell32 = false;
+            bool has_static = false;
             for (const auto& lf : win_emit->second.ldflags) {
                 if (lf == "-lws2_32") has_ws2 = true;
                 if (lf == "-lcomdlg32") has_comdlg = true;
+                if (lf == "-lshlwapi") has_shlwapi = true;
+                if (lf == "-lshell32") has_shell32 = true;
+                if (lf == "-static") has_static = true;
             }
-            require(has_ws2 && has_comdlg, std::format("{} includes -lws2_32 and -lcomdlg32 linker flags", triple));
+            require(has_ws2 && has_comdlg && has_shlwapi && has_shell32 && has_static,
+                std::format("{} includes -lws2_32, -lcomdlg32, -lshlwapi, -lshell32, and -static linker flags", triple));
         }
     }
 
-    // 4. Real MinGW-w64 cross-compilation & PE32+ .exe linking when x86_64-w64-mingw32-g++ is available
+    // 4. Real MinGW-w64 cross-compilation & PE32+ .exe linking (including PNG->ICO windres resource & self-contained WebView2 COM)
     int has_mingw = 0;
     (void)cfire::bridge::run_command_capture("which x86_64-w64-mingw32-g++ 2>/dev/null", has_mingw);
     if (has_mingw == 0) {
@@ -531,10 +559,25 @@ fn main() {
                 std::ofstream ofs(cpp_path);
                 ofs << win_emit->first;
             }
+            // Write a valid 1x1 PNG icon to verify wrap_png_as_ico + compile_windows_icon via windres
+            auto png_path = win_tmp.path / "icon.png";
+            {
+                static constexpr std::uint8_t kMinPng[] = {
+                    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                    0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x20,
+                    0x08, 0x06, 0x00, 0x00, 0x00, 0x73, 0x7A, 0x7A, 0xF4,
+                    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+                };
+                std::ofstream pofs(png_path, std::ios::binary);
+                pofs.write(reinterpret_cast<const char*>(kMinPng), sizeof(kMinPng));
+            }
+            auto res_obj = cfire::build::compile_windows_icon(png_path, exe_path, "x86_64-w64-mingw32");
+            std::string res_arg = res_obj.empty() ? "" : std::format(" \"{}\"", res_obj);
             std::string cmd = std::format(
-                "x86_64-w64-mingw32-g++ -std=c++23 -O2 -Wall -Wextra -I\"{}\" -I\"{}\" \"{}\" -o \"{}\" "
-                "-lws2_32 -ladvapi32 -luser32 -lgdi32 -lshell32 -lole32 -ldwmapi -lcomdlg32 -lstdc++exp",
-                rt_dir.string(), (rt_dir / "vendor").string(), cpp_path.string(), exe_path.string());
+                "x86_64-w64-mingw32-g++ -std=c++23 -O2 -Wall -Wextra -I\"{}\" -I\"{}\" \"{}\" -o \"{}\"{} "
+                "-lws2_32 -ladvapi32 -luser32 -lgdi32 -lshell32 -lole32 -ldwmapi -lcomdlg32 -lshlwapi -lstdc++exp",
+                rt_dir.string(), (rt_dir / "vendor").string(), cpp_path.string(), exe_path.string(), res_arg);
             int mrc = 0;
             std::string mout = cfire::bridge::run_command_capture(cmd, mrc);
             require(mrc == 0 && std::filesystem::exists(exe_path),

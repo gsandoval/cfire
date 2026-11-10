@@ -253,6 +253,13 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         state_->platform_set_size = [window](std::int32_t w, std::int32_t h) {
             gtk_window_resize(GTK_WINDOW(window), w, h);
         };
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        state_->platform_set_dark_mode = [](bool dark) {
+            if (GtkSettings* settings = gtk_settings_get_default()) {
+                g_object_set(settings, "gtk-application-prefer-dark-theme", dark ? TRUE : FALSE, nullptr);
+            }
+        };
+#endif
         state_->platform_fullscreen = [window, st = state_]() {
             if (st->is_fullscreen) gtk_window_fullscreen(GTK_WINDOW(window));
             else gtk_window_unfullscreen(GTK_WINDOW(window));
@@ -291,6 +298,7 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         state_->platform_eval = nullptr;
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
+        state_->platform_set_dark_mode = nullptr;
         state_->platform_fullscreen = nullptr;
         state_->platform_minimize = nullptr;
         state_->platform_maximize = nullptr;

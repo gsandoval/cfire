@@ -16,7 +16,7 @@ fn main() { msg := "secret"; consume(move msg); println("{}", msg) }
     require_sema_error(R"(package main
 type Shape enum { Circle(f64), Rect(f64, f64), Empty }
 fn main() {
-    s := Shape.Circle(1.0)
+    s := Shape::Circle(1.0)
     match s {
         Circle(r) => { println("{}", r) }
         Rect(w, h) => { println("{}", w) }
@@ -33,7 +33,7 @@ fn main() { imm_c := Counter{Val: 0}; imm_c.inc() }
     require_sema_error(R"(package main
 fn write_out(out target: i32) { target = 42 }
 fn main() { mut v: i32 = 0; write_out(v) }
-)", "cfire/OUT-CALLSITE", "out_callsite.cf");
+)", "cfire/DEPRECATED-OUT-PARAM", "out_callsite.cf");
 
     require_sema_error(R"(package main
 fn mutate_val(mut target: i32) { target += 1 }
@@ -61,7 +61,7 @@ fn main() {}
     require_sema_error(R"(package main
 type Token enum { Ident(str), Eof }
 fn main() {
-    t := Token.Eof
+    t := Token::Eof
     match t {
         Ident(s) => { println("{}", s) }
         Ident(s2) => { println("{}", s2) }
@@ -517,7 +517,7 @@ fn main() {
         require_sema_error(R"(package main
 import "core:fs"
 fn main() -> void! {
-    _ := try fs.read_all("a.bin")
+    _ = try fs.read_all("a.bin")
 }
 )", "cfire/DEPRECATED-API", "dep_fs_read_all.cf");
 
@@ -539,7 +539,7 @@ fn main() {
         require_sema_error(R"(package main
 import "core:os"
 fn main() -> void! {
-    _ := try os.socketpair()
+    _ = try os.socketpair()
 }
 )", "cfire/DEPRECATED-API", "dep_os_socketpair.cf");
 
@@ -547,7 +547,7 @@ fn main() -> void! {
 import "core:fs"
 fn main() -> void! {
     mut f := try fs.open("a.txt", fs.OpenMode::Write)
-    _ := try f.write_str("hello")
+    _ = try f.write_str("hello")
 }
 )", "cfire/DEPRECATED-API", "dep_file_write_str.cf");
 
@@ -555,13 +555,13 @@ fn main() -> void! {
 import "core:net"
 fn main() -> void! {
     (mut a, mut b) := try net.socketpair()
-    _ := try a.write("hi")
-    _ := try b.read_str(16)
+    _ = try a.write("hi")
+    _ = try b.read_str(16)
 }
 )", "cfire/DEPRECATED-API", "dep_tcp_write_read_str.cf");
 
         {
-            std::string dep_src = "package main\nimport \"core:fs\"\nfn main() -> void! {\n    _ := try fs.read_all(\"a.bin\")\n}\n";
+            std::string dep_src = "package main\nimport \"core:fs\"\nfn main() -> void! {\n    _ = try fs.read_all(\"a.bin\")\n}\n";
             auto lines = cfire::diag::split_lines(dep_src);
             auto sd = cfire::diag::parse_diagnostic_string(
                 "dep.cf:4:14: error: 'fs.read_all' has been renamed to 'fs.read_bytes' (or 'fs.read_text' for UTF-8 strings) (cfire/DEPRECATED-API)",
@@ -697,6 +697,14 @@ fn main() {
                 "humanize_cpp_compiler_output rewrites subscript operator diagnostic to cfire syntax");
             require(!humanized.contains("std::expected") && !humanized.contains("std::vector"),
                 "humanize_cpp_compiler_output strips lowered C++ std:: types");
+
+            std::string raw_gen_err =
+                "/tmp/proj/.cfire/gen/day1_01.cpp:39:12: error: no matching function for call to 'cfire::slice' on 'cfire::fs::File'\n";
+            std::string humanized_gen = cfire::diag::humanize_cpp_compiler_output(raw_gen_err);
+            require(humanized_gen.contains("day1_01.cf:39:12:") &&
+                    humanized_gen.contains("slice '[a..b]'") &&
+                    humanized_gen.contains("fs.File"),
+                "humanize_cpp_compiler_output rewrites .cfire/gen/<stem>.cpp path and cfire:: internals");
         }
 
         // 10. Misplaced / No-op Token Enforcement (try, or, mut/out, move, break/continue, no-effect stmt)
@@ -752,7 +760,7 @@ fn main() {
 fn fallible() -> i32! { return 1 }
 fn main() -> void! {
     defer {
-        _ := try fallible()
+        _ = try fallible()
     }
 }
 )", "cfire/TRY-IN-DEFER", "try_in_defer.cf");
@@ -830,10 +838,10 @@ fn main() {
 )", "cfire/REDUNDANT-CALLSITE-INTENT", "redundant_builtin_mut.cf");
 
         {
-            std::string red_mut_src = "package main\nfn read_only(x: i32) -> i32 { return x }\nfn main() {\n    mut v := 10\n    _ := read_only(mut v)\n}\n";
+            std::string red_mut_src = "package main\nfn read_only(x: i32) -> i32 { return x }\nfn main() {\n    mut v := 10\n    _ = read_only(mut v)\n}\n";
             auto lines = cfire::diag::split_lines(red_mut_src);
             auto sd = cfire::diag::parse_diagnostic_string(
-                "red_mut.cf:5:20: error: call-site 'mut' annotation has no effect on 'in' parameter 1 of 'read_only'; remove 'mut' (cfire/REDUNDANT-CALLSITE-INTENT)",
+                "red_mut.cf:5:19: error: call-site 'mut' annotation has no effect on 'in' parameter 1 of 'read_only'; remove 'mut' (cfire/REDUNDANT-CALLSITE-INTENT)",
                 "red_mut.cf");
             cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
             require(!sd.fixits.empty() && sd.fixits[0].replacement.empty() && sd.fixits[0].end_col - sd.fixits[0].start_col == 4,
@@ -951,6 +959,141 @@ fn main() -> void! {
             .assert_ok("sub-expression try and block-form or hoisting compiles and exits 0")
             .assert_contains("val=66 acc=45", "sub-expression try and block-form or produces expected runtime values");
     }
+
+    // CF-099: Missing-return divergence check
+    require_sema_error(R"(package main
+fn incomplete_ret(x: i32) -> i32 {
+    if x > 0 {
+        return 1
+    }
+}
+fn main() {}
+)", "cfire/MISSING-RETURN", "missing_return_if.cf");
+
+    require_sema_error(R"(package main
+fn loop_with_break() -> i32 {
+    for {
+        break
+    }
+}
+fn main() {}
+)", "cfire/MISSING-RETURN", "missing_return_break.cf");
+
+    // CF-097: Escaping closure capture semantics and mutation diagnostic
+    require_sema_error(R"(package main
+fn test_esc() {
+    mut total := 0
+    async.scope |scope| {
+        scope.spawn || {
+            total += 5
+        }
+    }
+}
+fn main() {}
+)", "cfire/ESCAPING-CAPTURE-MUT", "esc_capture_mut.cf");
+
+    require_sema_ok(R"(package main
+fn test_esc_ok() {
+    mut total := 0
+    ptr := &mut total
+    async.scope |scope| {
+        scope.spawn || {
+            *ptr += 5
+        }
+    }
+}
+fn make_adder(base: i32) -> fn(i32) -> i32 {
+    return |x: i32| -> i32 { return base + x }
+}
+fn main() {}
+)", "esc_capture_ok.cf");
+
+    require_sema_ok(R"(package main
+fn infinite_loop() -> i32 {
+    for {
+        // diverges
+    }
+}
+fn full_if(x: i32) -> i32 {
+    if x > 0 { return 1 } else { return 0 }
+}
+fn main() {}
+)", "valid_return_divergence.cf");
+
+    // CF-100: Expr-node-keyed move tracking and CFG loop move suppression
+    run_cfire_source(R"(package main
+
+fn pair_str(a: str, b: str) -> str {
+    return a + ":" + b
+}
+
+fn test_same_line(move s: str) -> str {
+    return pair_str(s, s)
+}
+
+fn test_loop_no_move(move s: str) -> str {
+    mut res := ""
+    for i in 0..3 {
+        res += s + "-"
+    }
+    return res
+}
+
+fn main() {
+    mut s1 := "hello"
+    val1 := test_same_line(move s1)
+    println("same_line={}", val1)
+    mut s2 := "item"
+    val2 := test_loop_no_move(move s2)
+    println("loop={}", val2)
+}
+)", "test_cf100_move")
+        .assert_ok("CF-100 expr-node move compiles and exits 0")
+        .assert_contains("same_line=hello:hello", "first argument on same line preserved")
+        .assert_contains("loop=item-item-item-", "loop iterations never moved automatically");
+
+    // CF-098: Defined Integer Overflow, Wrapping & Saturation Semantics
+    run_cfire_source(R"(package main
+
+import "core:math"
+
+fn main() {
+    max_i64 := 9223372036854775807
+    sat := math.saturating_add(max_i64, 100)
+    wrap := math.wrapping_add(max_i64, 1)
+    chk1 := math.checked_add(max_i64, 1)
+    chk2 := math.checked_add(10, 20)
+
+    has_chk1 := chk1 != none
+    println("sat={}", sat)
+    println("wrap={}", wrap)
+    println("has_chk1={}", has_chk1)
+    println("chk2={}", chk2 or 0)
+}
+)", "test_cf098_math")
+        .assert_ok("CF-098 math overflow compiles and exits 0")
+        .assert_contains("sat=9223372036854775807", "saturating add clamps to max i64")
+        .assert_contains("wrap=-9223372036854775808", "wrapping add wraps to min i64")
+        .assert_contains("has_chk1=false", "checked add returns none on overflow")
+        .assert_contains("chk2=30", "checked add succeeds within bounds");
+
+    // CF-097: Escaping closure retains captured state by value
+    run_cfire_source(R"(package main
+
+fn make_adder(base: i32) -> fn(i32) -> i32 {
+    return |x: i32| -> i32 {
+        return base + x
+    }
+}
+
+fn main() {
+    add5 := make_adder(5)
+    res := add5(10)
+    println("add5_res={}", res)
+}
+)", "test_cf097_closure")
+        .assert_ok("CF-097 escaping closure compiles and exits 0")
+        .assert_contains("add5_res=15", "returned closure retains captured state by value");
 
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");
 }
@@ -1070,5 +1213,1209 @@ fn main() {
 
     std::println("--- PASS: test_slice_pattern_matching");
 }
+
+void test_hard_deprecation_enforcement([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_hard_deprecation_enforcement (CF-103)");
+
+    // 1. var declarations produce hard error cfire/DEPRECATED-VAR
+    require_sema_error(R"(package main
+fn main() {
+    var x = 10
+}
+)", "cfire/DEPRECATED-VAR", "dep_var.cf");
+
+    // 2. out parameter intent produces hard error cfire/DEPRECATED-OUT-PARAM
+    require_sema_error(R"(package main
+fn compute(out total: i32) {
+    total = 42
+}
+fn main() {}
+)", "cfire/DEPRECATED-OUT-PARAM", "dep_out_decl.cf");
+
+    // 3. out call-site annotation produces hard error cfire/DEPRECATED-OUT-PARAM
+    require_sema_error(R"(package main
+fn compute(mut total: i32) {}
+fn main() {
+    mut res := 0
+    compute(out res)
+}
+)", "cfire/DEPRECATED-OUT-PARAM", "dep_out_call.cf");
+
+    // 4. x: mut T produces hard error cfire/DEPRECATED-INTENT-POS
+    require_sema_error(R"(package main
+fn update(x: mut i32) {
+    x = x + 1
+}
+fn main() {}
+)", "cfire/DEPRECATED-INTENT-POS", "dep_mut_pos.cf");
+
+    // 5. explicit in intent produces hard error cfire/DEPRECATED-IN-PARAM
+    require_sema_error(R"(package main
+fn inspect(in x: i32) {}
+fn main() {}
+)", "cfire/DEPRECATED-IN-PARAM", "dep_in_param.cf");
+
+    // 6. make(own[T], v) produces hard error cfire/INVALID-SMART-PTR-CTOR
+    {
+        auto ast_res = cfire::frontend::parse_source("dep_make_smart.cf", R"(package main
+type Box struct {
+    val: i32
+}
+fn main() {
+    b := make(own[Box], Box{val: 42})
+}
+)");
+        require(!ast_res.has_value(), "make(own[T], ...) rejected at parse time (CF-103)");
+        if (!ast_res) {
+            require(ast_res.error().contains("cfire/INVALID-SMART-PTR-CTOR"),
+                "expected cfire/INVALID-SMART-PTR-CTOR, got: " + ast_res.error());
+        }
+    }
+
+    // 7. _ := discard produces hard error cfire/DEPRECATED-DISCARD
+    {
+        auto ast_res = cfire::frontend::parse_source("dep_discard.cf", R"(package main
+fn main() {
+    _ := 42
+}
+)");
+        require(!ast_res.has_value(), "_ := rejected at parse time (CF-103)");
+        if (!ast_res) {
+            require(ast_res.error().contains("cfire/DEPRECATED-DISCARD"),
+                "expected cfire/DEPRECATED-DISCARD, got: " + ast_res.error());
+        }
+    }
+
+    // 8. Type.Variant produces hard error cfire/DEPRECATED-SEPARATOR
+    require_sema_error(R"(package main
+type Color enum {
+    Red,
+    Green,
+    Blue
+}
+fn main() {
+    c := Color.Red
+}
+)", "cfire/DEPRECATED-SEPARATOR", "dep_enum_dot.cf");
+
+    // 9. (*p).Field on smart pointers produces hard error cfire/REDUNDANT-DEREF
+    require_sema_error(R"(package main
+type Box struct {
+    val: i32
+}
+fn main() {
+    b := make[own[Box]](Box{val: 42})
+    _ = (*b).val
+}
+)", "cfire/REDUNDANT-DEREF", "dep_smart_deref.cf");
+
+    // 10. Test cfire fix automated repair of deprecations
+    {
+        ScopedTempDir tmp_fix("cfire_dep_fix");
+        auto f = tmp_fix.file("repair.cf", R"(package main
+
+type Box struct {
+    val: i32
+}
+
+type Status enum {
+    Active,
+    Idle
+}
+
+fn worker(in x: i32) {
+    _ = x
+}
+
+fn main() {
+    _ := 10
+    b := make[own[Box]](Box{val: 42})
+    v := (*b).val
+    st := Status.Active
+}
+)");
+        auto fix_res = run_cfire(std::format("fix '{}'", f.string()));
+        fix_res.assert_ok("cfire fix applies deprecation repairs (CF-103)");
+        auto chk_res = run_cfire(std::format("check '{}'", f.string()));
+        chk_res.assert_ok("repaired file passes cfire check cleanly (CF-103)");
+    }
+
+    std::println("--- PASS: test_hard_deprecation_enforcement (CF-103)");
+}
+
+void test_duplicate_declaration_pass([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_duplicate_declaration_pass (CF-104)");
+
+    // 1. Duplicate free functions in package
+    require_sema_error(R"(package main
+fn calculate(x: i32) -> i32 { return x * 2; }
+fn calculate(y: i32) -> i32 { return y + 1; }
+fn main() {}
+)", "cfire/DUPLICATE-DECLARATION", "dup_fn.cf");
+
+    // 2. Duplicate methods on the same type
+    require_sema_error(R"(package main
+type Point struct { x: i32 }
+fn (p: Point) length() -> i32 { return p.x; }
+fn (p: Point) length() -> i32 { return p.x; }
+fn main() {}
+)", "cfire/DUPLICATE-DECLARATION", "dup_method.cf");
+
+    // 3. Duplicate structs
+    require_sema_error(R"(package main
+type Config struct { timeout: i32 }
+type Config struct { port: i32 }
+fn main() {}
+)", "cfire/DUPLICATE-DECLARATION", "dup_struct.cf");
+
+    // 4. Duplicate enums or struct/enum collision
+    require_sema_error(R"(package main
+type Mode enum { Fast, Slow }
+type Mode struct { rate: i32 }
+fn main() {}
+)", "cfire/DUPLICATE-DECLARATION", "dup_type_collision.cf");
+
+    // 5. Duplicate enum variants in same enum
+    require_sema_error(R"(package main
+type Level enum { Low, Medium, Low }
+fn main() {}
+)", "cfire/DUPLICATE-DECLARATION", "dup_variant.cf");
+
+    // 6. Duplicate global variables
+    require_sema_error(R"(package main
+TIMEOUT := 5000
+TIMEOUT := 10000
+fn main() {}
+)", "cfire/DUPLICATE-DECLARATION", "dup_global.cf");
+
+    // 7. Enum variant collisions across different enums scoped properly without false positives
+    run_cfire_source(R"(package main
+
+type TaskState enum {
+    Pending,
+    Done
+}
+
+type JobState enum {
+    Pending,
+    Running,
+    Done
+}
+
+fn check_task(t: TaskState) -> str {
+    return match t {
+        Pending => "task_pending",
+        Done => "task_done",
+    }
+}
+
+fn main() {
+    println(check_task(TaskState::Pending))
+}
+)", "enum_scope_test")
+        .assert_ok("cross-enum variant matching succeeds when scoped to target enum (CF-104)")
+        .assert_contains("task_pending", "evaluates correct arm");
+
+    // 8. Unknown enum variant diagnostic
+    require_sema_error(R"(package main
+type Direction enum { North, South }
+fn get_heading(d: Direction) -> i32 {
+    return match d {
+        North => 1,
+        South => 2,
+        East => 3,
+    }
+}
+fn main() {}
+)", "cfire/UNKNOWN-ENUM-VARIANT", "unknown_variant.cf");
+
+    std::println("--- PASS: test_duplicate_declaration_pass (CF-104)");
+}
+
+void test_catalog_gated_import_validation([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_catalog_gated_import_validation (CF-105)");
+
+    // 1. Unknown standard library import with typo suggests closest module (CF-105)
+    require_sema_error(R"(package main
+import "core:tyme"
+fn main() {}
+)", "cfire/UNKNOWN-MODULE", "unknown_mod_tyme.cf");
+
+    // Verify the error text contains the suggestion
+    {
+        auto ast = cfire::frontend::parse_source("tyme.cf", "package main\nimport \"core:tyme\"\nfn main() {}\n");
+        require(ast.has_value(), "parse tyme.cf");
+        if (ast) {
+            auto chk = cfire::frontend::analyze_resilient(std::move(*ast));
+            require(!chk.errors.empty(), "emits error for unknown module core:tyme");
+            if (!chk.errors.empty()) {
+                require(chk.errors[0].contains("unknown module 'core:tyme'"), "contains 'unknown module 'core:tyme''");
+                require(chk.errors[0].contains("did you mean 'core:time'?"), "contains suggestion 'did you mean 'core:time'?'");
+                require(chk.errors[0].contains("(cfire/UNKNOWN-MODULE)"), "contains error code cfire/UNKNOWN-MODULE");
+            }
+        }
+    }
+
+    // 2. Unknown ext import with typo suggests closest module
+    {
+        auto ast = cfire::frontend::parse_source("sqllite.cf", "package main\nimport \"ext:sqllite\"\nfn main() {}\n");
+        require(ast.has_value(), "parse sqllite.cf");
+        if (ast) {
+            auto chk = cfire::frontend::analyze_resilient(std::move(*ast));
+            require(!chk.errors.empty(), "emits error for unknown module ext:sqllite");
+            if (!chk.errors.empty()) {
+                require(chk.errors[0].contains("unknown module 'ext:sqllite'"), "contains 'unknown module 'ext:sqllite''");
+                require(chk.errors[0].contains("(cfire/UNKNOWN-MODULE)"), "contains error code cfire/UNKNOWN-MODULE");
+            }
+        }
+    }
+
+    // 3. Valid canonical core and ext imports pass validation without error
+    {
+        auto ast = cfire::frontend::parse_source("valid.cf", "package main\nimport \"core:time\"\nimport \"core:fs\"\nimport \"ext:db/sqlite\"\nfn main() {}\n");
+        require(ast.has_value(), "parse valid.cf");
+        if (ast) {
+            auto chk = cfire::frontend::analyze(std::move(*ast));
+            require(chk.has_value(), "valid imports pass catalog validation");
+        }
+    }
+
+    std::println("--- PASS: test_catalog_gated_import_validation (CF-105)");
+}
+
+void test_plain_enum_usability_cluster([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_plain_enum_usability_cluster (CF-106)");
+
+    run_cfire_source(R"CF(package main
+
+import "core:json"
+
+type Color enum {
+    Red
+    Green
+    Blue
+}
+
+type Item struct {
+    name: str
+    color: Color
+}
+
+fn main() {
+    c1 := Color::Red
+    c2 := Color::Green
+    c3 := Color::Red
+
+    // 1. Equality and inequality
+    assert(c1 == c3, "c1 == c3")
+    assert(c1 != c2, "c1 != c2")
+    assert(c1 == Color::Red, "c1 == Color::Red")
+    assert(c2 == Color::Green, "c2 == Color::Green")
+
+    // 2. String conversion & interpolation
+    s := str(c1)
+    assert_eq(s, "Red")
+    assert_eq(c2.to_string(), "Green")
+    println("{c1}")
+    println("Color is {c2}")
+
+    // 3. Integer casting & static factories
+    i := i32(c2)
+    assert_eq(i, 1)
+    i_blue := i32(Color::Blue)
+    assert_eq(i_blue, 2)
+
+    c_opt := Color.from_i32(0)
+    assert(c_opt != none, "c_opt is some")
+    assert((c_opt or Color::Blue) == Color::Red, "c_opt is Red")
+
+    c_from_str := Color.from_string("Blue")
+    assert(c_from_str != none, "c_from_str is some")
+    assert((c_from_str or Color::Red) == Color::Blue, "c_from_str is Blue")
+
+    c_invalid := Color.from_i32(99)
+    assert(c_invalid == none, "invalid idx is none")
+    c_invalid_str := Color.from_string("Purple")
+    assert(c_invalid_str == none, "invalid string is none")
+
+    // 4. JSON serialization & parsing
+    raw_json := json.stringify(c2)
+    assert_eq(raw_json, "\"Green\"")
+
+    parsed_color := try json.parse[Color]("\"Blue\"")
+    assert(parsed_color == Color::Blue, "parsed Blue")
+
+    // 5. In struct reflection
+    item := Item{name: "Widget", color: Color::Green}
+    item_json := json.stringify(item)
+    assert(item_json.contains("\"color\":\"Green\""), "struct json contains color")
+
+    parsed_item := try json.parse[Item](item_json)
+    assert_eq(parsed_item.name, "Widget")
+    assert(parsed_item.color == Color::Green, "parsed item color is Green")
+}
+)CF", "enum_cluster_test")
+        .assert_ok("plain enum usability cluster runs and passes all assertions (CF-106)")
+        .assert_contains("Red", "prints interpolated enum")
+        .assert_contains("Color is Green", "prints formatted enum string");
+
+    std::println("--- PASS: test_plain_enum_usability_cluster (CF-106)");
+}
+
+void test_uniform_generic_type_application([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_uniform_generic_type_application (CF-107)");
+
+    run_cfire_source(R"CF(package main
+
+import "core:collections"
+
+fn make_pair(a: i32, b: str) -> cpp::std::pair[i32, str] {
+    return make[cpp::std::pair[i32, str]](a, b)
+}
+
+fn inspect_set(s: collections.Set[str]) -> usize {
+    return s.size()
+}
+
+fn main() {
+    // 1. Generic Set
+    mut s := collections.Set[str]{}
+    s.insert("apple")
+    s.insert("banana")
+    assert(s.contains("apple"), "set contains apple")
+    assert(!s.contains("cherry"), "set does not contain cherry")
+    assert(s.size() == usize(2), "set size is 2")
+    assert(inspect_set(s) == usize(2), "function takes Set[str] parameter")
+
+    // 2. Generic Deque
+    mut dq := collections.Deque[i64]{}
+    dq.push_back(100)
+    dq.push_front(50)
+    assert(dq.size() == usize(2), "deque size is 2")
+    v1 := dq.pop_front()
+    assert(v1 == 50, "deque pop_front is 50")
+    v2 := dq.pop_back()
+    assert(v2 == 100, "deque pop_back is 100")
+    assert(dq.empty(), "deque is empty")
+
+    // 3. Generic PriorityQueue
+    mut pq := collections.PriorityQueue[i32]{}
+    pq.push(10)
+    pq.push(30)
+    pq.push(20)
+    assert(pq.size() == usize(3), "pq size is 3")
+    assert(pq.top() == 30, "pq top is 30")
+
+    // 4. Multi-argument generic C++ type application
+    p := make_pair(42, "galaxy")
+    assert(p.first == 42, "pair.first is 42")
+    assert(p.second == "galaxy", "pair.second is galaxy")
+
+    p2 := cpp::std::pair[i32, str](100, "stars")
+    assert(p2.first == 100, "p2.first is 100")
+    assert(p2.second == "stars", "p2.second is stars")
+
+    println("uniform generic application passed")
+}
+)CF", "generic_type_app_test")
+        .assert_ok("uniform generic type application passes all assertions (CF-107)")
+        .assert_contains("uniform generic application passed", "prints confirmation output");
+
+    std::println("--- PASS: test_uniform_generic_type_application (CF-107)");
+}
+
+void test_cpp_backend_error_leak_prevention([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_cpp_backend_error_leak_prevention (CF-108)");
+
+    // 1. Verify 2-argument error("msg", code) compiles, runs, and exposes .message() and .code()
+    run_cfire_source(R"CF(package main
+
+fn fail_with_code(code: i32) -> i32! {
+    if code != 0 {
+        return error("entity not found", 404)
+    }
+    return 100
+}
+
+fn main() {
+    res := fail_with_code(1) or err {
+        assert(err.message() == "entity not found", "error message matches")
+        assert(err.code() == 404, "error code matches")
+        println("error with code handled: {} (code {})", err.message(), err.code())
+        return
+    }
+    assert(false, "expected error branch")
+}
+)CF", "error_code_test")
+        .assert_ok("2-argument error(msg, code) compiles and executes correctly (CF-108)")
+        .assert_contains("error with code handled: entity not found (code 404)", "prints error details");
+
+    // 2. Sema negative test: error() with 0 arguments or >2 arguments
+    require_sema_error(R"(package main
+fn bad_err() -> i32! {
+    return error()
+}
+fn main() {}
+)", "cfire/WRONG-ARG-COUNT", "error_zero_args.cf");
+
+    require_sema_error(R"(package main
+fn bad_err() -> i32! {
+    return error("msg", 1, 2)
+}
+fn main() {}
+)", "cfire/WRONG-ARG-COUNT", "error_three_args.cf");
+
+    // 3. Sema negative test: dynamic slice or array of interface ([]Interface)
+    require_sema_error(R"(package main
+type Shape interface {
+    area() -> f64
+}
+fn main() {
+    mut shapes: []Shape = []
+}
+)", "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", "slice_of_interface_var.cf");
+
+    require_sema_error(R"(package main
+type Shape interface {
+    area() -> f64
+}
+type Canvas struct {
+    shapes: []Shape
+}
+fn main() {}
+)", "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", "slice_of_interface_struct.cf");
+
+    require_sema_error(R"(package main
+type Shape interface {
+    area() -> f64
+}
+fn render(shapes: []Shape) {}
+fn main() {}
+)", "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", "slice_of_interface_fn_param.cf");
+
+    require_sema_error(R"(package main
+type Shape interface {
+    area() -> f64
+}
+fn get_shapes() -> []Shape {
+    return []
+}
+fn main() {}
+)", "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", "slice_of_interface_fn_ret.cf");
+
+    // 4. Runtime string passed as format string to println, print, format
+    run_cfire_source(R"CF(package main
+
+fn main() {
+    fmt_str := "value is {} and label is {}"
+    println(fmt_str, 42, "star")
+    print(fmt_str, 99, "planet")
+    println()
+    formatted := format(fmt_str, 123, "moon")
+    assert(formatted == "value is 123 and label is moon", "runtime format string matches")
+    println("runtime formatting passed")
+}
+)CF", "runtime_fmt_test")
+        .assert_ok("runtime string format in println and format executes cleanly (CF-108)")
+        .assert_contains("value is 42 and label is star", "runtime println works")
+        .assert_contains("runtime formatting passed", "assert passed");
+
+    // 5. Channel range-for iteration
+    run_cfire_source(R"CF(package main
+import "core:sync"
+
+fn main() {
+    ch := sync.make_channel[i64](5)
+    ch.send(10)
+    ch.send(20)
+    ch.send(30)
+    ch.close()
+
+    mut sum := 0
+    for val in ch {
+        sum += val
+    }
+    assert(sum == 60, "channel range-for accumulated values")
+    println("channel range iteration passed")
+}
+)CF", "channel_range_test")
+        .assert_ok("channel range-for iteration executes cleanly (CF-108)")
+        .assert_contains("channel range iteration passed", "channel test output");
+
+    std::println("--- PASS: test_cpp_backend_error_leak_prevention (CF-108)");
+}
+
+void test_scoped_name_resolution_cpp_ffi([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_scoped_name_resolution_cpp_ffi (CF-109)");
+
+    // 1. Sema Negative: File with import cpp still checks pure cfire variables and catches typos
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+
+fn test_typo() {
+    val := 42
+    result := val + typo_variable
+}
+fn main() {}
+)", "cfire/UNDECLARED-IDENT", "cpp_ffi_typo.cf");
+
+    // 2. Sema Negative: File with import cpp catches redundant try on non-fallible expression
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+
+fn compute() -> i32 { return 10 }
+
+fn test_redundant() -> void! {
+    x := try compute()
+}
+fn main() {}
+)", "cfire/REDUNDANT-TRY", "cpp_ffi_redundant_try.cf");
+
+    // 3. Sema Negative: File with import cpp catches redundant or on non-fallible expression
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+
+fn compute() -> i32 { return 10 }
+
+fn test_redundant_or() {
+    x := compute() or 0
+}
+fn main() {}
+)", "cfire/REDUNDANT-OR", "cpp_ffi_redundant_or.cf");
+
+    // 4. Conformance Positive: File with import cpp resolves cpp:: symbols and pure cfire variables
+    run_cfire_source(R"CF(package main
+import cpp "<cstdio>"
+
+fn add_pure(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+fn main() {
+    pure_res := add_pure(15, 25)
+    assert(pure_res == 40, "pure cfire function call succeeds")
+
+    cpp::printf("printf from import cpp: %d\n", pure_res)
+    println("scoped resolution with cpp ffi passed")
+}
+)CF", "cpp_ffi_resolution_test")
+        .assert_ok("import cpp file with pure cfire and cpp:: calls compiles and runs (CF-109)")
+        .assert_contains("printf from import cpp: 40", "cpp::printf output verified")
+        .assert_contains("scoped resolution with cpp ffi passed", "completion output verified");
+
+    std::println("--- PASS: test_scoped_name_resolution_cpp_ffi (CF-109)");
+}
+
+void test_match_exhaustiveness_and_reachability([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_match_exhaustiveness_and_reachability (CF-110)");
+
+    // 1. Sema Negative: Statement match on string without wildcard fallback triggers cfire/NON-EXHAUSTIVE-MATCH
+    require_sema_error(R"(package main
+fn classify(s: str) {
+    match s {
+        "apple" => { println("fruit") }
+        "carrot" => { println("vegetable") }
+    }
+}
+fn main() {}
+)", "cfire/NON-EXHAUSTIVE-MATCH", "match_stmt_str_no_wildcard.cf");
+
+    // 2. Sema Negative: Statement match on integer without wildcard fallback triggers cfire/NON-EXHAUSTIVE-MATCH
+    require_sema_error(R"(package main
+fn classify_int(n: i32) {
+    match n {
+        1 => { println("one") }
+        2 => { println("two") }
+    }
+}
+fn main() {}
+)", "cfire/NON-EXHAUSTIVE-MATCH", "match_stmt_int_no_wildcard.cf");
+
+    // 3. Sema Negative: Duplicate enum variant triggers cfire/UNREACHABLE-MATCH-ARM
+    require_sema_error(R"(package main
+type Color enum { Red, Green, Blue }
+fn test_dup(c: Color) {
+    match c {
+        Color::Red => { println("red") }
+        Color::Red => { println("duplicate red") }
+        _ => {}
+    }
+}
+fn main() {}
+)", "cfire/UNREACHABLE-MATCH-ARM", "match_duplicate_variant.cf");
+
+    // 4. Sema Negative: Unknown/misspelled enum variant even with wildcard triggers cfire/UNKNOWN-ENUM-VARIANT
+    require_sema_error(R"(package main
+type Color enum { Red, Green, Blue }
+fn test_typo(c: Color) {
+    match c {
+        Redd => { println("typo") }
+        _ => {}
+    }
+}
+fn main() {}
+)", "cfire/UNKNOWN-ENUM-VARIANT", "match_typo_variant_with_wildcard.cf");
+
+    // 5. Conformance Positive: Match statement on string with wildcard executes cleanly
+    run_cfire_source(R"CF(package main
+
+fn classify(s: str) -> str {
+    mut res := ""
+    match s {
+        "apple" => { res = "fruit" }
+        "carrot" => { res = "vegetable" }
+        _ => { res = "unknown" }
+    }
+    return res
+}
+
+fn main() {
+    assert(classify("apple") == "fruit", "matches apple")
+    assert(classify("carrot") == "vegetable", "matches carrot")
+    assert(classify("rock") == "unknown", "matches wildcard")
+    println("match statement exhaustiveness passed")
+}
+)CF", "match_stmt_str_test")
+        .assert_ok("statement match on string with wildcard executes cleanly (CF-110)")
+        .assert_contains("match statement exhaustiveness passed", "test completion confirmed");
+
+    std::println("--- PASS: test_match_exhaustiveness_and_reachability (CF-110)");
+}
+
+void test_or_chaining_and_block_disambiguation([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_or_chaining_and_block_disambiguation (CF-111)");
+
+    // 1. Sema Negative: Redundant 'or' on non-fallible expression triggers cfire/REDUNDANT-OR
+    require_sema_error(R"(package main
+fn main() {
+    x := 42
+    y := x or 10
+}
+)", "cfire/REDUNDANT-OR", "redundant_or_non_fallible.cf");
+
+    // 2. Parser Negative: Naked anonymous struct literal in 'if' condition is rejected
+    {
+        std::string naked_src = "package main\nfn main() {\n    if true && { x: 1 } {\n        println(\"naked struct literal in if head\")\n    }\n}\n";
+        auto ast = cfire::frontend::parse_source("naked_struct_lit_in_if.cf", naked_src);
+        require(!ast.has_value() && ast.error().contains("unexpected '{' in expression"),
+            "naked struct literal in if head rejected with unexpected '{' error");
+    }
+
+    // 3. Conformance Positive: Left-associative chained 'or' and struct literal fallback
+    run_cfire_source(R"CF(package main
+
+type Point struct {
+    x: int
+    y: int
+}
+
+fn try_parse(s: str) -> int! {
+    if s == "bad" {
+        return error("parse error")
+    }
+    if s == "42" {
+        return 42
+    }
+    if s == "100" {
+        return 100
+    }
+    return error("unknown number")
+}
+
+fn test_chained_fallback() -> int {
+    // Left-associative: (try_parse("bad") or try_parse("bad2")) or 77
+    val := try_parse("bad") or try_parse("bad2") or 77
+    return val
+}
+
+fn test_chained_first_hit() -> int {
+    val := try_parse("42") or try_parse("100") or 999
+    return val
+}
+
+fn test_chained_second_hit() -> int {
+    val := try_parse("bad") or try_parse("100") or 999
+    return val
+}
+
+fn test_chained_block_handler() -> int {
+    val := try_parse("bad") or try_parse("bad2") or err {
+        return -1
+    }
+    return val
+}
+
+fn get_point(fail: bool) -> Point! {
+    if fail {
+        return error("no point")
+    }
+    return Point{ x: 10, y: 20 }
+}
+
+fn test_struct_lit_fallback() -> Point {
+    // Disambiguates struct literal fallback outside if head
+    p := get_point(true) or Point{ x: 99, y: 88 }
+    return p
+}
+
+fn test_if_or_err_handler(fail: bool) -> int {
+    mut result := 0
+    mut arg := "42"
+    if fail {
+        arg = "bad"
+    }
+    if (try_parse(arg) or err { result = -10; return result }) == 42 {
+        result = 1
+    }
+    return result
+}
+
+fn main() {
+    assert(test_chained_fallback() == 77, "chains to final non-fallible fallback")
+    assert(test_chained_first_hit() == 42, "short-circuits on first hit")
+    assert(test_chained_second_hit() == 100, "chains through to second hit")
+    assert(test_chained_block_handler() == -1, "executes chained block error handler")
+
+    p := test_struct_lit_fallback()
+    assert(p.x == 99 && p.y == 88, "parses struct literal fallback cleanly")
+
+    assert(test_if_or_err_handler(false) == 1, "handles non-error in if condition")
+    assert(test_if_or_err_handler(true) == -10, "handles error in if condition")
+
+    println("or chaining and block disambiguation passed")
+}
+)CF", "or_chaining_disambiguation_test")
+        .assert_ok("chained or and struct literal disambiguation execute cleanly (CF-111)")
+        .assert_contains("or chaining and block disambiguation passed", "test completion confirmed");
+
+    std::println("--- PASS: test_or_chaining_and_block_disambiguation (CF-111)");
+}
+
+void test_lexer_exponents_keywords_and_interpolation([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_lexer_exponents_keywords_and_interpolation (CF-112)");
+
+    // 1. Parser Negative: 'break' and 'continue' are reserved keywords and cannot be variable names
+    {
+        std::string break_var_src = "package main\nfn main() {\n    break := 1\n}\n";
+        auto ast = cfire::frontend::parse_source("break_var.cf", break_var_src);
+        require(!ast.has_value(), "declaring variable named 'break' is rejected as a syntax error");
+    }
+    {
+        std::string cont_var_src = "package main\nfn main() {\n    continue := 2\n}\n";
+        auto ast = cfire::frontend::parse_source("cont_var.cf", cont_var_src);
+        require(!ast.has_value(), "declaring variable named 'continue' is rejected as a syntax error");
+    }
+
+    // 2. Sema Negative: 'break' outside for loop triggers cfire/BREAK-OUTSIDE-LOOP
+    require_sema_error(R"(package main
+fn main() {
+    break
+}
+)", "cfire/BREAK-OUTSIDE-LOOP", "break_outside_loop.cf");
+
+    // 3. Sema Negative: 'continue' outside for loop triggers cfire/BREAK-OUTSIDE-LOOP
+    require_sema_error(R"(package main
+fn main() {
+    continue
+}
+)", "cfire/BREAK-OUTSIDE-LOOP", "continue_outside_loop.cf");
+
+    // 4. Sema Negative: Ambiguous string interpolation starting with a number literal triggers cfire/AMBIGUOUS-INTERPOLATION
+    require_sema_error(R"(package main
+fn main() {
+    msg := "{1+2}"
+}
+)", "cfire/AMBIGUOUS-INTERPOLATION", "ambiguous_interp.cf");
+
+    // 5. Conformance Positive: Scientific floats, break/continue in loop, parenthesized interpolation, positional formats
+    run_cfire_source(R"CF(package main
+
+fn test_scientific_floats() -> bool {
+    a := 1e9
+    b := 2.5e-3
+    c := 1E+6
+    assert(a == 1000000000.0, "1e9 == 1e9")
+    assert(b > 0.0024 && b < 0.0026, "2.5e-3 in range")
+    assert(c == 1000000.0, "1E+6 == 1000000")
+    return true
+}
+
+fn test_break_and_continue() -> int {
+    mut sum := 0
+    for i in 0..10 {
+        if i == 2 {
+            continue
+        }
+        if i == 6 {
+            break
+        }
+        sum += i
+    }
+    // Expected sum: 0 + 1 + 3 + 4 + 5 = 13
+    return sum
+}
+
+fn test_interpolation_and_positional() -> bool {
+    // Parenthesized expression interpolation
+    calc := "result is {(1 + 2)}"
+    assert(calc == "result is 3", "parenthesized interpolation works")
+
+    // Named variable interpolation
+    x := 42
+    named := "x is {x}"
+    assert(named == "x is 42", "named variable interpolation works")
+
+    return true
+}
+
+fn main() {
+    assert(test_scientific_floats(), "scientific floats pass")
+    assert(test_break_and_continue() == 13, "break and continue in loop execute correctly")
+    assert(test_interpolation_and_positional(), "interpolations pass")
+
+    println("lexer exponents keywords and interpolation passed")
+}
+)CF", "cf112_conformance_test")
+        .assert_ok("CF-112 features execute cleanly")
+        .assert_contains("lexer exponents keywords and interpolation passed", "test completion confirmed");
+
+    std::println("--- PASS: test_lexer_exponents_keywords_and_interpolation (CF-112)");
+}
+
+void test_content_hashed_pch_and_cli_flag_validation([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_content_hashed_pch_and_cli_flag_validation (CF-113)");
+
+    // 1. Verify argv command execution directly without shell interpretation
+    {
+        int exit_code = 0;
+        auto out = cfire::bridge::run_argv_capture({"echo", "cfire_argv_test_ok"}, exit_code);
+        require(exit_code == 0, "run_argv_capture succeeds on valid command");
+        require(out.find("cfire_argv_test_ok") != std::string::npos, "run_argv_capture captures output correctly");
+    }
+
+    // 2. Verify unknown CLI flags produce actionable typo suggestions via Levenshtein distance
+    {
+        int ec = 0;
+        auto out = cfire::bridge::run_command_capture("./cfire build --relase main.cf 2>&1", ec);
+        require(ec != 0, "mistyped flag --relase fails with non-zero exit code");
+        require(out.find("did you mean '--release'?") != std::string::npos,
+            "mistyped flag suggests '--release'");
+    }
+    {
+        int ec = 0;
+        auto out = cfire::bridge::run_command_capture("./cfire build --targt wasm main.cf 2>&1", ec);
+        require(ec != 0, "mistyped flag --targt fails with non-zero exit code");
+        require(out.find("did you mean '--target'?") != std::string::npos,
+            "mistyped flag suggests '--target'");
+    }
+    {
+        int ec = 0;
+        auto out = cfire::bridge::run_command_capture("./cfire build --totally-unrecognized-xyz main.cf 2>&1", ec);
+        require(ec != 0, "unrecognized flag fails with non-zero exit code");
+        require(out.find("unrecognized flag '--totally-unrecognized-xyz'") != std::string::npos,
+            "unrecognized flag produces clean error without crash");
+    }
+
+    // 3. Verify user-private PCH cache exists and has content hash tag
+    {
+        std::error_code ec;
+#if !defined(_WIN32)
+        auto uid = ::getuid();
+        auto pch_dir = std::filesystem::temp_directory_path(ec) / std::format("cfire-{}-pch", uid);
+        require(std::filesystem::exists(pch_dir, ec), "user-private PCH cache directory exists");
+#endif
+    }
+
+    std::println("--- PASS: test_content_hashed_pch_and_cli_flag_validation (CF-113)");
+}
+
+void test_multiline_lambda_source_mapping_cf114([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_multiline_lambda_source_mapping (CF-114)");
+
+    // 1. Verify #line directive re-emission following a multi-line closure
+    {
+        std::string src = 
+            "package main\n"                         // 1
+            "\n"                                     // 2
+            "fn test_multiline_lambda() -> i32 {\n"  // 3
+            "    cl := |x: i32| -> i32 {\n"          // 4
+            "        y := x * 2\n"                   // 5
+            "        z := y + 3\n"                   // 6
+            "        return z\n"                     // 7
+            "    }\n"                                // 8
+            "    res := cl(10)\n"                    // 9
+            "    return res\n"                       // 10
+            "}\n";                                   // 11
+
+        auto parse_res = cfire::frontend::parse_source("test_cl.cf", src);
+        require(parse_res.has_value(), "parse test_cl.cf succeeds");
+        auto check_res = cfire::frontend::analyze(std::move(*parse_res));
+        require(check_res.has_value(), "analyze test_cl.cf succeeds");
+
+        std::string cpp = cfire::frontend::emit_cpp(*check_res, false);
+        // Verify #line directives inside closure
+        require(cpp.find("#line 4 \"test_cl.cf\"") != std::string::npos, "emits #line 4 for closure assignment");
+        require(cpp.find("#line 5 \"test_cl.cf\"") != std::string::npos, "emits #line 5 inside closure");
+        require(cpp.find("#line 6 \"test_cl.cf\"") != std::string::npos, "emits #line 6 inside closure");
+        require(cpp.find("#line 7 \"test_cl.cf\"") != std::string::npos, "emits #line 7 inside closure");
+        // Crucial CF-114 check: ensure #line 9 is emitted for the statement following the multi-line closure
+        require(cpp.find("#line 9 \"test_cl.cf\"") != std::string::npos, "emits #line 9 following multi-line closure");
+        require(cpp.find("#line 10 \"test_cl.cf\"") != std::string::npos, "emits #line 10 for return statement");
+    }
+
+    // 2. Verify #line directive re-emission following hoisted try unwrap checks
+    {
+        std::string src =
+            "package main\n"                         // 1
+            "\n"                                     // 2
+            "fn try_op() -> i32! { return 5 }\n"     // 3
+            "\n"                                     // 4
+            "fn test_subexpr_try() -> i32! {\n"      // 5
+            "    val := (try try_op()) + 10\n"       // 6
+            "    final_res := val * 2\n"             // 7
+            "    return final_res\n"                 // 8
+            "}\n";                                   // 9
+
+        auto parse_res = cfire::frontend::parse_source("test_try.cf", src);
+        require(parse_res.has_value(), "parse test_try.cf succeeds");
+        auto check_res = cfire::frontend::analyze(std::move(*parse_res));
+        require(check_res.has_value(), "analyze test_try.cf succeeds");
+
+        std::string cpp = cfire::frontend::emit_cpp(*check_res, false);
+        // The hoisted try check should be followed by re-emitting #line 6 before the assignment
+        require(cpp.find("#line 6 \"test_try.cf\"") != std::string::npos, "emits #line 6 for hoisted subexpr try");
+        require(cpp.find("#line 7 \"test_try.cf\"") != std::string::npos, "emits #line 7 for statement following hoisted try");
+    }
+
+    // 3. Verify synthetic line directive resets attribution to <cfire-synthetic>
+    {
+        cfire::frontend::CheckedFile dummy_cf;
+        cfire::frontend::Emitter emitter(dummy_cf, false);
+        emitter.set_source_path("some_file.cf");
+        emitter.emit_synthetic_line_directive();
+        std::string out = emitter.emit_cpp();
+        require(out.find("#line 1 \"<cfire-synthetic>\"") != std::string::npos,
+            "emit_synthetic_line_directive produces synthetic line marker");
+    }
+
+    // 4. Conformance Positive: Multiline closures and hoisted tries run accurately
+    run_cfire_source(R"CF(package main
+
+fn fallible_square(n: i32) -> i32! {
+    return n * n
+}
+
+fn compute() -> i32! {
+    cl := |a: i32| -> i32 {
+        step1 := a + 1
+        step2 := step1 * 2
+        return step2
+    }
+    val := cl(3)
+    res := (try fallible_square(val)) + 10
+    return res
+}
+
+fn main() {
+    ans := compute() or 0
+    assert(ans == 74, "multiline lambda and try unwrap line mappings executed accurately")
+    println("cf114 line mapping test completed")
+}
+)CF", "cf114_conformance_test")
+        .assert_ok("CF-114 features execute cleanly")
+        .assert_contains("cf114 line mapping test completed", "test completion confirmed");
+
+    std::println("--- PASS: test_multiline_lambda_source_mapping (CF-114)");
+}
+
+void test_interned_typeid_lattice_and_diagnostics_cf116([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_interned_typeid_lattice_and_diagnostics (CF-116)");
+
+    // 1. Interned TypeId Lattice canonicalization and assignability
+    {
+        cfire::frontend::TypeTable tt;
+        auto id_i32 = cfire::frontend::TypeId::Int32();
+        auto id_i64 = cfire::frontend::TypeId::Int64();
+        auto id_str = cfire::frontend::TypeId::Str();
+
+        require(id_i32.is_valid() && !id_i32.is_unknown(), "i32 is valid non-unknown TypeId");
+        require(tt.to_string(id_i32) == "i32", "i32 string representation matches");
+        require(tt.to_string(id_str) == "str", "str string representation matches");
+
+        auto slice_1 = tt.make_slice(id_i32);
+        auto slice_2 = tt.make_slice(id_i32);
+        require(slice_1 == slice_2, "make_slice canonicalizes TypeId");
+        require(tt.from_name("[]i32") == slice_1, "from_name('[]i32') resolves to interned slice TypeId");
+
+        auto opt_1 = tt.make_optional(id_i32);
+        auto opt_2 = tt.make_optional(id_i32);
+        require(opt_1 == opt_2, "make_optional canonicalizes TypeId");
+        require(tt.unwrap_optional(opt_1) == id_i32, "unwrap_optional recovers base element TypeId");
+
+        auto fal_1 = tt.make_fallible(id_i32);
+        require(tt.unwrap_fallible(fal_1) == id_i32, "unwrap_fallible recovers base element TypeId");
+
+        require(tt.is_assignable(id_i64, id_i32), "integer types are assignable");
+        require(!tt.is_assignable(id_str, id_i32), "str and i32 are not assignable");
+        require(tt.is_assignable(opt_1, id_i32), "optional is assignable from base element");
+    }
+
+    // 2. Negative Verification: Type mismatch on variable assignment triggers cfire/TYPE-MISMATCH
+    require_sema_error(R"(package main
+fn main() {
+    mut x: i32 = 10
+    x = "invalid string"
+}
+)", "cfire/TYPE-MISMATCH", "type_mismatch_assign.cf");
+
+    // 3. Negative Verification: Type mismatch on variable declaration triggers cfire/TYPE-MISMATCH
+    require_sema_error(R"(package main
+fn main() {
+    x: i32 = "invalid string"
+}
+)", "cfire/TYPE-MISMATCH", "type_mismatch_init.cf");
+
+    // 4. Negative Verification: Type mismatch on return statement triggers cfire/TYPE-MISMATCH
+    require_sema_error(R"(package main
+fn bad_return() -> i32 {
+    return "invalid return"
+}
+fn main() {}
+)", "cfire/TYPE-MISMATCH", "type_mismatch_return.cf");
+
+    // 5. Negative Verification: Binary operator operand mismatch triggers cfire/TYPE-MISMATCH
+    require_sema_error(R"(package main
+fn main() {
+    x := 10 + true
+}
+)", "cfire/TYPE-MISMATCH", "type_mismatch_binary.cf");
+
+    // 6. Conformance Positive: Type-safe execution across complex types and fallible returns
+    run_cfire_source(R"CF(package main
+
+type Item struct {
+    id: i32
+    label: str
+}
+
+fn fetch_item(n: i32) -> Item! {
+    return Item{id: n, label: "widget"}
+}
+
+fn process_slice(items: []Item) -> i32 {
+    mut sum: i32 = 0
+    for it in items {
+        sum += it.id
+    }
+    return sum
+}
+
+fn main() {
+    it1 := try fetch_item(40)
+    it2 := try fetch_item(2)
+    mut list: []Item = [it1, it2]
+    total := process_slice(list)
+    assert(total == 42, "type-checked struct slice operations executed accurately")
+    println("cf116 interned type system test completed")
+}
+)CF", "cf116_conformance_test")
+        .assert_ok("CF-116 features execute cleanly")
+        .assert_contains("cf116 interned type system test completed", "test completion confirmed");
+
+    std::println("--- PASS: test_interned_typeid_lattice_and_diagnostics (CF-116)");
+}
+
+void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir) {
+    (void)rt_dir;
+    std::println("=== RUN   test_unified_stdlib_metadata_table (CF-117)");
+
+    const auto& catalog = cfire::doc::stdlib_catalog();
+    require(catalog.size() >= 39, "stdlib_catalog contains at least 39 modules");
+
+    // Verify all module paths are unique and sorted
+    for (size_t i = 1; i < catalog.size(); ++i) {
+        require(catalog[i - 1].import_path < catalog[i].import_path,
+                std::format("catalog modules strictly sorted: {} < {}", catalog[i - 1].import_path, catalog[i].import_path));
+    }
+
+    // Verify module_registry queries match catalog exactly
+    const auto known_paths = cfire::modules::known_module_paths();
+    require(known_paths.size() >= catalog.size(), "known_module_paths contains all catalog modules and aliases");
+    for (size_t i = 0; i < catalog.size(); ++i) {
+        require(cfire::modules::is_known_module(catalog[i].import_path), "is_known_module matches catalog");
+    }
+
+    // Check core and vendor namespaces
+    require(cfire::modules::is_known_core_namespace("os"), "os is known core namespace");
+    require(cfire::modules::is_known_core_namespace("build"), "build is known core namespace (bug CF-117 fixed)");
+    require(cfire::modules::is_known_core_namespace("time"), "time is known core namespace");
+    require(cfire::modules::is_known_core_namespace("aes"), "aes is known core namespace");
+    require(cfire::modules::is_known_core_namespace("webui"), "webui is known core namespace");
+
+    // Check resolve_import
+    auto resolved_aes = cfire::modules::resolve_import("core:crypto/aes");
+    require(resolved_aes.is_core, "core:crypto/aes is core");
+    require(!resolved_aes.core_keys.empty() && resolved_aes.core_keys[0] == "crypto", "core:crypto/aes core key is crypto");
+
+    auto resolved_build = cfire::modules::resolve_import("core:build");
+    require(resolved_build.is_core, "core:build is core");
+    require(!resolved_build.core_keys.empty() && resolved_build.core_keys[0] == "buildsys", "core:build core key is buildsys");
+
+    // Check StdlibCatalogIndex
+    cfire::frontend::StdlibCatalogIndex cat_idx;
+    require(cat_idx.has_namespace("os"), "cat_idx knows os");
+    require(cat_idx.has_namespace("aes"), "cat_idx knows aes");
+    require(cat_idx.has_namespace("build"), "cat_idx knows build");
+
+    require(cat_idx.ns_to_import.at("aes") == "core:crypto/aes", "cat_idx resolves aes to core:crypto/aes");
+    require(cat_idx.ns_to_import.at("build") == "core:build", "cat_idx resolves build to core:build");
+
+    require(cat_idx.is_known_ns_member("http", "Response"), "cat_idx knows http.Response");
+    require(cat_idx.is_known_ns_member("time", "Duration"), "cat_idx knows time.Duration");
+    require(cat_idx.is_known_ns_member("json", "JsonValue"), "cat_idx knows json.JsonValue");
+    require(cat_idx.is_known_ns_member("sync", "Mutex"), "cat_idx knows sync.Mutex");
+
+    auto fn_resp_text = cat_idx.find_ns_fn("http", "Response.text");
+    require(fn_resp_text != nullptr, "cat_idx has http.Response.text");
+    if (fn_resp_text) {
+        require(fn_resp_text->return_type == "Response", "http.Response.text returns Response");
+    }
+
+    auto fn_getenv = cat_idx.find_ns_fn("os", "getenv");
+    require(fn_getenv != nullptr, "cat_idx has os.getenv");
+    if (fn_getenv) {
+        require(fn_getenv->return_type == "str", "os.getenv returns str");
+    }
+
+    // Verify end-to-end execution with multiple stdlib modules derived from catalog
+    run_cfire_source(R"CF(package main
+
+import "core:os"
+import "core:time"
+import "core:math"
+import "core:str"
+
+fn main() {
+    start := time.now()
+    _ = start
+    sq := math.sqrt(16.0)
+    assert(sq == 4.0, "math.sqrt returned 4.0")
+    rep := str.replace_all("banana", "a", "o")
+    assert(rep == "bonono", "str.replace_all executed correctly")
+    home := os.getenv("NONEXISTENT_VAR_12345", "fallback_val")
+    assert(home == "fallback_val", "os.getenv fallback")
+    println("cf117 metadata catalog unification test verified")
+}
+)CF", "cf117_stdlib_catalog_test")
+        .assert_ok("CF-117 test executes cleanly")
+        .assert_contains("cf117 metadata catalog unification test verified", "CF-117 verified output");
+
+    std::println("--- PASS: test_unified_stdlib_metadata_table (CF-117)");
+}
+
+
+
+
+
 
 

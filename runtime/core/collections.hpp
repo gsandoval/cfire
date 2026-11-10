@@ -75,6 +75,11 @@ public:
         return pq_.top();
     }
 
+    [[nodiscard]] auto top() const -> T {
+        if (pq_.empty()) cfire::panic("PriorityQueue::top() called on empty queue", "", 0);
+        return pq_.top();
+    }
+
     auto pop() -> std::optional<T> {
         if (pq_.empty()) return std::nullopt;
         T val = std::move(const_cast<T&>(pq_.top()));
@@ -115,15 +120,15 @@ public:
         deq_.push_front(std::move(val));
     }
 
-    auto pop_back() -> std::optional<T> {
-        if (deq_.empty()) return std::nullopt;
+    auto pop_back() -> T {
+        if (deq_.empty()) return T{};
         T val = std::move(deq_.back());
         deq_.pop_back();
         return val;
     }
 
-    auto pop_front() -> std::optional<T> {
-        if (deq_.empty()) return std::nullopt;
+    auto pop_front() -> T {
+        if (deq_.empty()) return T{};
         T val = std::move(deq_.front());
         deq_.pop_front();
         return val;
@@ -165,13 +170,18 @@ inline void slice_by(std::vector<T>& s, Pred&& comp) {
     std::ranges::sort(s, std::forward<Pred>(comp));
 }
 
-template <typename T>
-[[nodiscard]] inline auto binary_search(std::span<const T> s, const T& val) -> std::optional<std::size_t> {
+template <typename T, typename U = T>
+[[nodiscard]] inline auto binary_search(std::span<const T> s, const U& val) -> std::optional<std::size_t> {
     auto it = std::ranges::lower_bound(s, val);
     if (it != s.end() && *it == val) {
         return static_cast<std::size_t>(std::distance(s.begin(), it));
     }
     return std::nullopt;
+}
+
+template <typename T, typename U = T>
+[[nodiscard]] inline auto binary_search(const std::vector<T>& s, const U& val) -> std::optional<std::size_t> {
+    return binary_search(std::span<const T>(s.data(), s.size()), val);
 }
 
 } // namespace cfire::sort

@@ -373,12 +373,14 @@ struct AppState {
 
     std::size_t max_history_entries{256};
     std::unordered_map<std::string, std::vector<std::string>> emitted_history{};
+    std::string last_emitted_topic{};
     std::vector<std::string> eval_history{};
     std::string clipboard_fallback{};
 
     std::function<void(const std::string&)> platform_eval{};
     std::function<void(const std::string&)> platform_set_title{};
     std::function<void(std::int32_t, std::int32_t)> platform_set_size{};
+    std::function<void(bool)> platform_set_dark_mode{};
     std::function<void()> platform_fullscreen{};
     std::function<void()> platform_minimize{};
     std::function<void()> platform_maximize{};
@@ -396,6 +398,7 @@ struct AppState {
 
     void record_emitted(std::string_view event, const std::string& payload) {
         std::lock_guard<std::recursive_mutex> lock(mtx);
+        last_emitted_topic = std::string(event);
         auto& vec = emitted_history[std::string(event)];
         if (max_history_entries > 0 && vec.size() >= max_history_entries) {
             vec.erase(vec.begin());

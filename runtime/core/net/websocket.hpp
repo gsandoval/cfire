@@ -418,6 +418,8 @@ private:
     std::size_t max_frame_size_ = kDefaultMaxFrameSize;
 };
 
+using WebSocket = Conn;
+
 [[nodiscard]] inline auto from_fd(int fd, bool is_client = true) -> Conn {
     return Conn(fd, is_client);
 }

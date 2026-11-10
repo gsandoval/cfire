@@ -72,7 +72,14 @@ using namespace cfire::frontend;
             }
             raw_name = std::move(normalized);
         }
-        if (!t.is_borrow && !t.is_mut_borrow && t.elem_type) {
+        if (!t.is_borrow && !t.is_mut_borrow && !t.type_args.empty()) {
+            std::string targs;
+            for (std::size_t i = 0; i < t.type_args.size(); ++i) {
+                if (i > 0) targs += ", ";
+                targs += format_type_ref(t.type_args[i]);
+            }
+            base = std::format("{}[{}]", raw_name, targs);
+        } else if (!t.is_borrow && !t.is_mut_borrow && t.elem_type) {
             base = std::format("{}[{}]", raw_name, format_type_ref(*t.elem_type));
         } else {
             base = std::move(raw_name);
@@ -177,6 +184,38 @@ struct StructFieldLine {
     std::string comment;
 };
 
+[[nodiscard]] inline auto find_comment_start(std::string_view s) -> std::string_view::size_type {
+    bool in_str = false;
+    bool in_tag = false;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        if (in_str) {
+            if (c == '\\' && i + 1 < s.size()) {
+                ++i;
+            } else if (c == '"') {
+                in_str = false;
+            }
+            continue;
+        }
+        if (in_tag) {
+            if (c == '`') in_tag = false;
+            continue;
+        }
+        if (c == '"') {
+            in_str = true;
+            continue;
+        }
+        if (c == '`') {
+            in_tag = true;
+            continue;
+        }
+        if (c == '/' && i + 1 < s.size() && s[i + 1] == '/') {
+            return i;
+        }
+    }
+    return std::string_view::npos;
+}
+
 [[nodiscard]] inline auto try_parse_struct_field_line(const std::string& trimmed, StructFieldLine& out) -> bool {
     if (trimmed.empty() || trimmed == "}") return false;
     if (trimmed.starts_with("//")) {
@@ -192,8 +231,8 @@ struct StructFieldLine {
     std::string rest = trim_ws(std::string_view(trimmed).substr(colon + 1));
     std::string tag;
     std::string comment;
-    // Check if a comment starts before any backtick tag
-    auto cpos = rest.find("//");
+    // Check if a comment starts before any backtick tag (string-aware)
+    auto cpos = find_comment_start(rest);
     auto b1 = rest.find('`');
     if (b1 != std::string::npos && (cpos == std::string::npos || b1 < cpos)) {
         auto b2 = rest.find('`', b1 + 1);
@@ -415,6 +454,18 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         out += "\n";
     }
 
+    // Token-stream invariance check (CF-096): verify non-whitespace tokens match identically
+    auto orig_toks = cfire::frontend::tokenize(filename, src);
+    auto fmt_toks = cfire::frontend::tokenize(filename, out);
+    if (!orig_toks || !fmt_toks || orig_toks->size() != fmt_toks->size()) {
+        return std::unexpected("formatter roundtrip verification failed: token stream count mismatch");
+    }
+    for (std::size_t ti = 0; ti < orig_toks->size(); ++ti) {
+        if ((*orig_toks)[ti].kind != (*fmt_toks)[ti].kind || (*orig_toks)[ti].lexeme != (*fmt_toks)[ti].lexeme) {
+            return std::unexpected(std::format("formatter roundtrip verification failed: token mismatch at token index {}", ti));
+        }
+    }
+
     // Post-format AST verification invariant: never return formatted code that fails to parse or alters declaration counts
     auto verify_ast = parse_source(filename, out);
     if (!verify_ast ||
@@ -432,7 +483,11 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
 [[nodiscard]] inline auto format_range(std::string_view src, int start_line, int end_line, std::string_view filename = "<input>")
     -> std::expected<std::string, std::string>
 {
-    (void)filename;
+    if (src.empty()) return "";
+    auto ast_check = parse_source(filename, src);
+    if (!ast_check) {
+        return std::unexpected(std::format("cannot format range on unparseable source: {}", ast_check.error()));
+    }
     std::vector<std::string> raw_lines;
     {
         std::istringstream iss{std::string(src)};
@@ -489,6 +544,7 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
     }
 
     int changed_count = 0;
+    std::string first_error;
     for (const auto& f : files) {
         std::ifstream ifs(f);
         std::stringstream ss;
@@ -497,7 +553,8 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
 
         auto formatted = format_source(orig, f.string());
         if (!formatted) {
-            return std::unexpected(formatted.error());
+            if (first_error.empty()) first_error = std::format("{}: {}", f.string(), formatted.error());
+            continue;
         }
         if (to_stdout) {
             std::print("{}", *formatted);
@@ -506,10 +563,25 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         if (*formatted != orig) {
             ++changed_count;
             if (!check_only) {
-                std::ofstream ofs(f, std::ios::trunc);
-                ofs << *formatted;
+                auto tmp = f;
+                tmp += ".cffmt.tmp";
+                {
+                    std::ofstream ofs(tmp, std::ios::trunc | std::ios::binary);
+                    ofs << *formatted;
+                }
+                std::error_code rename_ec;
+                std::filesystem::rename(tmp, f, rename_ec);
+                if (rename_ec) {
+                    std::filesystem::remove(tmp, rename_ec);
+                    if (first_error.empty()) {
+                        first_error = std::format("failed to atomic write {}: {}", f.string(), rename_ec.message());
+                    }
+                }
             }
         }
+    }
+    if (!first_error.empty()) {
+        return std::unexpected(first_error);
     }
     return changed_count;
 }

@@ -54,6 +54,7 @@ public:
     int try_count_ = 0;
     std::unordered_set<std::string> used_core_{};
     std::unordered_map<std::string, std::string> used_vendor_{};
+    std::unordered_map<std::string, std::string> core_aliases_{};
     std::vector<std::string> active_async_scopes_{};
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
@@ -64,6 +65,7 @@ public:
     std::unordered_set<std::string> map_vars_{};
     std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
     std::unordered_map<std::string, std::string> loop_index_to_col_{};
+    std::unordered_map<std::string, std::string> var_types_{};
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
     [[nodiscard]] static auto sanitize_cpp_ident(std::string_view id) -> std::string {
@@ -105,6 +107,17 @@ public:
         }
     }
 
+    void reset_line_directive() {
+        last_source_line_ = -1;
+    }
+
+    void emit_synthetic_line_directive() {
+        if (!source_path_.empty()) {
+            writeln("#line 1 \"<cfire-synthetic>\"");
+            last_source_line_ = -1;
+        }
+    }
+
     [[nodiscard]] auto make_sub_emitter(bool inherit_return_context = true) const -> Emitter {
         Emitter sub(cf_, test_mode_);
         sub.indent_ = indent_;
@@ -116,6 +129,7 @@ public:
         sub.colliding_gv_names_ = colliding_gv_names_;
         sub.used_core_ = used_core_;
         sub.used_vendor_ = used_vendor_;
+        sub.core_aliases_ = core_aliases_;
         sub.local_vars_ = local_vars_;
         sub.ptr_vars_ = ptr_vars_;
         sub.ptr_field_names_ = ptr_field_names_;
@@ -125,6 +139,7 @@ public:
         sub.map_vars_ = map_vars_;
         sub.fixed_array_vars_ = fixed_array_vars_;
         sub.loop_index_to_col_ = loop_index_to_col_;
+        sub.var_types_ = var_types_;
         if (inherit_return_context) {
             sub.in_main_ = in_main_;
             sub.in_test_ = in_test_;
@@ -165,6 +180,16 @@ public:
             auto resolved = cfire::modules::resolve_import(imp.path);
             for (const auto& ck : resolved.core_keys) {
                 used_core_.insert(ck);
+            }
+            if (resolved.is_core && !imp.alias.empty()) {
+                auto colon = imp.path.rfind(':');
+                auto slash = imp.path.rfind('/');
+                std::size_t sep = std::string::npos;
+                if (colon != std::string::npos && slash != std::string::npos) sep = std::max(colon, slash);
+                else if (colon != std::string::npos) sep = colon;
+                else sep = slash;
+                std::string tail = (sep == std::string::npos) ? imp.path : imp.path.substr(sep + 1);
+                core_aliases_[imp.alias] = tail;
             }
             if (resolved.is_vendor) {
                 std::string alias = imp.alias.empty() ? resolved.vendor_key : imp.alias;
@@ -230,6 +255,16 @@ public:
             }
             for (const auto& lt : resolved.link_tags) {
                 add_unique(link_tags, lt);
+            }
+            if (resolved.is_core && !imp.alias.empty()) {
+                auto colon = imp.path.rfind(':');
+                auto slash = imp.path.rfind('/');
+                std::size_t sep = std::string::npos;
+                if (colon != std::string::npos && slash != std::string::npos) sep = std::max(colon, slash);
+                else if (colon != std::string::npos) sep = colon;
+                else sep = slash;
+                std::string tail = (sep == std::string::npos) ? imp.path : imp.path.substr(sep + 1);
+                core_aliases_[imp.alias] = tail;
             }
             if (resolved.is_vendor) {
                 std::string alias = imp.alias.empty() ? resolved.vendor_key : imp.alias;
@@ -368,6 +403,7 @@ public:
             }
             if (tr.elem_type) self(self, *tr.elem_type, deps);
             if (tr.key_type) self(self, *tr.key_type, deps);
+            for (const auto& ta : tr.type_args) self(self, ta, deps);
             for (const auto& tt : tr.tuple_types) self(self, tt, deps);
         };
 
@@ -484,6 +520,7 @@ public:
             for (std::size_t i = 0; i < v.payload_types.size(); ++i) {
                 writeln(std::format("{} _{}{{}};", lower_owning_type(v.payload_types[i]), i));
             }
+            writeln(std::format("bool operator==(const _{}&) const = default;", v.name));
             --indent_;
             writeln("};");
             var_types.push_back("_" + v.name);
@@ -495,6 +532,33 @@ public:
             vlist += var_types[i];
         }
         writeln(std::format("std::variant<{}> _v;", vlist));
+        writeln(std::format("bool operator==(const {}&) const = default;", en.name));
+
+        // Explicit integer conversion operators
+        writeln("explicit operator std::int8_t() const noexcept { return static_cast<std::int8_t>(_v.index()); }");
+        writeln("explicit operator std::int16_t() const noexcept { return static_cast<std::int16_t>(_v.index()); }");
+        writeln("explicit operator std::int32_t() const noexcept { return static_cast<std::int32_t>(_v.index()); }");
+        writeln("explicit operator std::int64_t() const noexcept { return static_cast<std::int64_t>(_v.index()); }");
+        writeln("explicit operator std::uint8_t() const noexcept { return static_cast<std::uint8_t>(_v.index()); }");
+        writeln("explicit operator std::uint16_t() const noexcept { return static_cast<std::uint16_t>(_v.index()); }");
+        writeln("explicit operator std::uint32_t() const noexcept { return static_cast<std::uint32_t>(_v.index()); }");
+        writeln("explicit operator std::uint64_t() const noexcept { return static_cast<std::uint64_t>(_v.index()); }");
+        writeln("explicit operator std::size_t() const noexcept { return _v.index(); }");
+        writeln("explicit operator std::ptrdiff_t() const noexcept { return static_cast<std::ptrdiff_t>(_v.index()); }");
+        writeln("[[nodiscard]] auto to_i32() const noexcept -> std::int32_t { return static_cast<std::int32_t>(_v.index()); }");
+        writeln("[[nodiscard]] auto to_i64() const noexcept -> std::int64_t { return static_cast<std::int64_t>(_v.index()); }");
+
+        // String representation
+        writeln("[[nodiscard]] auto to_string() const -> std::string_view {");
+        ++indent_;
+        writeln("switch (_v.index()) {");
+        for (std::size_t i = 0; i < en.variants.size(); ++i) {
+            writeln(std::format("case {}: return \"{}\";", i, en.variants[i].name));
+        }
+        writeln("default: return \"\";");
+        writeln("}");
+        --indent_;
+        writeln("}");
 
         // Emit static variant constructors (`Shape::Circle(r)`, `Shape::Empty()`)
         for (const auto& v : en.variants) {
@@ -510,8 +574,49 @@ public:
             writeln(std::format("[[nodiscard]] static auto {}({}) -> {} {{ return {}{{_{}{{{}}}}}; }}",
                 v.name, params, en.name, en.name, v.name, args));
         }
+
+        // Static factory from integer
+        writeln(std::format("[[nodiscard]] static auto from_i32(std::int32_t val) -> std::optional<{}> {{", en.name));
+        ++indent_;
+        writeln("switch (val) {");
+        for (std::size_t i = 0; i < en.variants.size(); ++i) {
+            if (en.variants[i].payload_types.empty()) {
+                writeln(std::format("case {}: return {}();", i, en.variants[i].name));
+            }
+        }
+        writeln("default: return std::nullopt;");
+        writeln("}");
+        --indent_;
+        writeln("}");
+
+        writeln(std::format("[[nodiscard]] static auto from_i64(std::int64_t val) -> std::optional<{}> {{", en.name));
+        writeln(std::format("    return from_i32(static_cast<std::int32_t>(val));"));
+        writeln("}");
+
+        // Static factory from string
+        writeln(std::format("[[nodiscard]] static auto from_string(std::string_view s) -> std::optional<{}> {{", en.name));
+        ++indent_;
+        for (const auto& v : en.variants) {
+            if (v.payload_types.empty()) {
+                writeln(std::format("if (s == \"{}\") return {}();", v.name, v.name));
+            }
+        }
+        writeln("return std::nullopt;");
+        --indent_;
+        writeln("}");
+
         --indent_;
         writeln("};");
+
+        writeln();
+        writeln("template <>");
+        writeln(std::format("struct std::formatter<{}> : std::formatter<std::string_view> {{", en.name));
+        writeln(std::format("    auto format(const {}& e, std::format_context& ctx) const {{", en.name));
+        writeln("        return std::formatter<std::string_view>::format(e.to_string(), ctx);");
+        writeln("    }");
+        writeln("};");
+
+        emit_enum_reflection(en);
     }
 
     void emit_struct(const StructDecl& st) {
@@ -539,6 +644,7 @@ public:
     }
 
     void emit_struct_reflection(const StructDecl& st);
+    void emit_enum_reflection(const EnumDecl& en);
 
     [[nodiscard]] auto emitted_fn_symbol(const FnDecl& fn) const -> std::string {
         if (fn.receiver) return fn.receiver->type.name + "__" + fn.name;
@@ -596,8 +702,10 @@ public:
         optional_vars_.clear();
         map_vars_.clear();
         fixed_array_vars_.clear();
+        var_types_.clear();
         if (fn.receiver) {
             local_vars_.insert(fn.receiver->name);
+            var_types_[fn.receiver->name] = fn.receiver->type.name;
             if (fn.receiver->type.is_ptr || fn.receiver->type.is_mut_ptr) ptr_vars_.insert(fn.receiver->name);
             if (!fn.receiver->type.smart_wrap.empty()) smart_ptr_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_optional) optional_vars_.insert(fn.receiver->name);
@@ -610,6 +718,7 @@ public:
         }
         for (const auto& p : fn.params) {
             local_vars_.insert(p.name);
+            var_types_[p.name] = p.type.name;
             if (p.type.is_ptr || p.type.is_mut_ptr) ptr_vars_.insert(p.name);
             if (!p.type.smart_wrap.empty()) smart_ptr_vars_.insert(p.name);
             if (p.type.is_optional) optional_vars_.insert(p.name);
@@ -881,6 +990,7 @@ public:
         }
         --indent_;
         writeln("}");
+        last_source_line_ = -1;
     }
 
     void hoist_subexpr_tries(const ExprPtr& e, bool in_main, int stmt_line, bool is_top_handled = false) {
@@ -922,6 +1032,7 @@ public:
                     --indent_;
                     writeln("}");
                     hoisted_tries_[e] = std::format("cfire::unwrap_val(std::move({}))", tmp);
+                    last_source_line_ = -1;
                 }
             } else if constexpr (std::is_same_v<T, MatchExpr>) {
                 hoist_subexpr_tries(ex.target, in_main, stmt_line, false);
@@ -938,6 +1049,7 @@ public:
                     writeln(std::format("auto {} = {};", tmp, emit_expr(ex.inner)));
                     emit_try_unwrap_check(tmp, stmt_line, in_main);
                     hoisted_tries_[e] = std::format("cfire::unwrap_val(std::move({}))", tmp);
+                    last_source_line_ = -1;
                 }
             }
         }, e->node);
@@ -945,7 +1057,8 @@ public:
 
     [[nodiscard]] auto is_core_ns_ident(std::string_view name) const -> bool {
         return cfire::modules::is_known_core_namespace(name) ||
-               used_core_.contains(std::string(name));
+               used_core_.contains(std::string(name)) ||
+               core_aliases_.contains(std::string(name));
     }
 
     [[nodiscard]] auto expr_returns_optional(const ExprPtr& e) const -> bool {
@@ -960,21 +1073,27 @@ public:
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                    if (recv_id->name == "os" && mem->field == "getenv_opt") {
-                        return true;
-                    }
-                    if (recv_id->name == "cli" &&
-                        (mem->field == "try_parse" || mem->field == "prompt" || mem->field == "prompt_password")) {
-                        return true;
+                    if (const auto* sfn = cfire::frontend::StdlibCatalogIndex::instance().find_ns_fn(recv_id->name, mem->field)) {
+                        if (sfn->is_optional) return true;
                     }
                     if (auto it = cf_.fn_sigs.find(recv_id->name + "." + mem->field); it != cf_.fn_sigs.end()) {
                         return it->second.return_type.is_optional;
+                    }
+                } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
+                    if (const auto* sub_id = std::get_if<IdentExpr>(&sub_mem->object->node)) {
+                        if (const auto* sfn = cfire::frontend::StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
+                            if (sfn->is_optional) return true;
+                        }
                     }
                 }
                 if (auto oit = cf_.method_owner.find(mem->field); oit != cf_.method_owner.end()) {
                     if (auto mit = cf_.methods.find(oit->second + "::" + mem->field); mit != cf_.methods.end()) {
                         return mit->second.return_type.is_optional;
                     }
+                }
+                if (auto uit = cfire::frontend::StdlibCatalogIndex::instance().unambiguous_methods.find(mem->field);
+                    uit != cfire::frontend::StdlibCatalogIndex::instance().unambiguous_methods.end()) {
+                    if (uit->second.is_optional) return true;
                 }
                 if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
                     mem->field == "parse_f64" || mem->field == "parse_bool" ||
@@ -1087,7 +1206,7 @@ public:
         bool& has_val_ret,
         std::string& val_ret_cpp
     ) const -> void;
-    [[nodiscard]] auto emit_closure(const ClosureExpr& cl) -> std::string;
+    [[nodiscard]] auto emit_closure(const ClosureExpr& cl, int expr_line = -1) -> std::string;
     [[nodiscard]] auto emit_call_arg(const CallArg& a) -> std::string;
 
     [[nodiscard]] auto lower_raw_owning_type(const TypeRef& tr) const -> std::string {
@@ -1161,7 +1280,7 @@ public:
         if (!is_local_type(tr.name)) {
             if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
             if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
-            if (tr.name == "websocket::Conn" || tr.name == "Conn") return "cfire::websocket::Conn";
+            if (tr.name == "websocket::Conn" || tr.name == "Conn" || tr.name == "websocket::WebSocket" || tr.name == "websocket.WebSocket" || tr.name == "WebSocket") return "cfire::websocket::Conn";
             if (tr.name == "websocket::Server") return "cfire::websocket::Server";
             if (tr.name == "http::Request" || tr.name == "Request") return "cfire::http::Request";
             if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
@@ -1191,20 +1310,36 @@ public:
             if (tr.name == "ai::Agent") return "cfire::ai::Agent";
             if (tr.name == "webui::App" || (tr.name == "App" && used_core_.contains("webui"))) return "cfire::webui::App";
         }
-        if (tr.name == "sync::Channel" && tr.elem_type) {
-            return std::format("cfire::sync::Channel<{}>", lower_owning_type(*tr.elem_type));
-        }
         std::string clean = tr.name;
         if (clean.starts_with("cpp::")) clean.erase(0, 5);
         if (auto col_pos = clean.find("::"); col_pos != std::string::npos) {
             std::string mod = clean.substr(0, col_pos);
             std::string rest = clean.substr(col_pos + 2);
+            if (auto it = core_aliases_.find(mod); it != core_aliases_.end()) {
+                mod = it->second;
+            }
             if (used_core_.contains(mod)) {
-                return std::format("cfire::{}::{}", mod, rest);
+                clean = std::format("cfire::{}::{}", mod, rest);
+            } else if (is_local_type(rest) || is_vendor_alias(mod)) {
+                clean = rest;
             }
-            if (is_local_type(rest) || is_vendor_alias(mod)) {
-                return rest;
+        } else {
+            if (clean == "Channel" && used_core_.contains("sync")) {
+                clean = "cfire::sync::Channel";
+            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "Deque") && used_core_.contains("collections")) {
+                clean = std::format("cfire::collections::{}", clean);
             }
+        }
+        if (!tr.type_args.empty()) {
+            std::string args;
+            for (std::size_t i = 0; i < tr.type_args.size(); ++i) {
+                if (i > 0) args += ", ";
+                args += lower_owning_type(tr.type_args[i]);
+            }
+            return std::format("{}<{}>", clean, args);
+        }
+        if (tr.elem_type) {
+            return std::format("{}<{}>", clean, lower_owning_type(*tr.elem_type));
         }
         return clean;
     }

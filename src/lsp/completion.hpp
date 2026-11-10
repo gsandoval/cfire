@@ -75,6 +75,120 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
 
     auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
 
+    bool has_following_paren = false;
+    if (line >= 0 && static_cast<std::size_t>(line) < lines.size()) {
+        const std::string& cur_ln = lines[static_cast<std::size_t>(line)];
+        int check_col = std::max(character, sym.end_col);
+        if (check_col >= 0 && static_cast<std::size_t>(check_col) < cur_ln.size() &&
+            cur_ln[static_cast<std::size_t>(check_col)] == '(') {
+            has_following_paren = true;
+        }
+    }
+
+    auto make_fn_decl_snippet = [&](std::string_view base_name, const cfire::frontend::FnDecl& fn) -> std::pair<std::string, int> {
+        if (!client_snippet_support_ || has_following_paren) {
+            return {std::string(base_name), 1};
+        }
+        if (fn.params.empty()) {
+            return {std::format("{}()$0", base_name), 2};
+        }
+        std::string args_snip;
+        for (std::size_t i = 0; i < fn.params.size(); ++i) {
+            if (i > 0) args_snip += ", ";
+            const auto& p = fn.params[i];
+            std::string prefix;
+            if (p.intent == "mut" || p.intent == "move" || p.intent == "out") {
+                prefix = p.intent + " ";
+            }
+            args_snip += std::format("{}${{{}:{}}}", prefix, i + 1, p.name);
+        }
+        return {std::format("{}({})$0", base_name, args_snip), 2};
+    };
+
+    auto make_sig_snippet = [&](std::string_view base_name, std::string_view cf_sig, bool skip_first_param = false) -> std::pair<std::string, int> {
+        if (!client_snippet_support_ || has_following_paren) {
+            return {std::string(base_name), 1};
+        }
+        std::string_view s = cf_sig;
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
+        if (s.starts_with("fn ")) {
+            s.remove_prefix(3);
+            while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
+        }
+        // Skip optional receiver `(mut f: File)` before method name
+        if (!s.empty() && s.front() == '(') {
+            int depth = 1;
+            s.remove_prefix(1);
+            while (!s.empty() && depth > 0) {
+                if (s.front() == '(') ++depth;
+                else if (s.front() == ')') --depth;
+                s.remove_prefix(1);
+            }
+        }
+        auto lp = s.find('(');
+        if (lp == std::string_view::npos) {
+            return {std::format("{}()$0", base_name), 2};
+        }
+        std::size_t rp = lp + 1;
+        int pdepth = 1;
+        while (rp < s.size() && pdepth > 0) {
+            if (s[rp] == '(') ++pdepth;
+            else if (s[rp] == ')') --pdepth;
+            if (pdepth > 0) ++rp;
+        }
+        std::string_view plist = (rp > lp + 1) ? s.substr(lp + 1, rp - lp - 1) : std::string_view{};
+        std::vector<std::string> raw_params;
+        std::size_t pstart = 0;
+        int d = 0;
+        for (std::size_t i = 0; i < plist.size(); ++i) {
+            char c = plist[i];
+            if (c == '(' || c == '[') ++d;
+            else if (c == ')' || c == ']') --d;
+            else if (c == ',' && d == 0) {
+                raw_params.push_back(cfire::fmt::detail::trim_ws(plist.substr(pstart, i - pstart)));
+                pstart = i + 1;
+            }
+        }
+        if (pstart < plist.size()) {
+            std::string tail = cfire::fmt::detail::trim_ws(plist.substr(pstart));
+            if (!tail.empty()) raw_params.push_back(std::move(tail));
+        }
+        if (skip_first_param && !raw_params.empty()) {
+            raw_params.erase(raw_params.begin());
+        }
+
+        std::string args_snip;
+        std::size_t tab_idx = 1;
+        for (const auto& rp_str : raw_params) {
+            std::string_view p = rp_str;
+            // Skip optional parameters with default values (`= ...`) or variadic `...`
+            if (p.find('=') != std::string_view::npos || p.starts_with("...")) {
+                continue;
+            }
+            std::string prefix;
+            for (std::string_view kw : {"mut ", "move ", "out ", "in "}) {
+                if (p.starts_with(kw)) {
+                    if (kw != "in ") prefix = std::string(kw);
+                    p.remove_prefix(kw.size());
+                    break;
+                }
+            }
+            while (!p.empty() && (p.front() == ' ' || p.front() == '\t')) p.remove_prefix(1);
+            auto colon = p.find(':');
+            if (colon != std::string_view::npos) {
+                p = p.substr(0, colon);
+            }
+            while (!p.empty() && (p.back() == ' ' || p.back() == '\t')) p.remove_suffix(1);
+            if (p.empty()) continue;
+            if (!args_snip.empty()) args_snip += ", ";
+            args_snip += std::format("{}${{{}:{}}}", prefix, tab_idx++, p);
+        }
+        if (args_snip.empty()) {
+            return {std::format("{}()$0", base_name), 2};
+        }
+        return {std::format("{}({})$0", base_name, args_snip), 2};
+    };
+
     auto is_module_imported = [&](std::string_view import_path, std::string_view alias) -> bool {
         if (ast_res) {
             for (const auto& imp : ast_res->imports) {
@@ -104,8 +218,27 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
                     if (!imported) {
                         fn_doc += std::format("\n\n*Selecting this will automatically insert `import \"{}\"`.*", mod.import_path);
                     }
-                    append_item(fn.name, 3, fn_detail, fn_doc, fn.name, 1, fn.name, add_edit);
+                    auto [ins, fmt] = make_sig_snippet(fn.name, fn.cf_sig);
+                    append_item(fn.name, 3, fn_detail, fn_doc, ins, fmt, fn.name, add_edit);
                 }
+                if (mod.ns_alias == "log") {
+                    append_item("Level", 13 /* Enum */, "type Level enum { Debug, Info, Warn, Error }",
+                        "Log severity threshold enum (C++23: cfire::log::Level)", "Level", 1, "Level", add_edit);
+                    append_item("Format", 13 /* Enum */, "type Format enum { Text, Json }",
+                        "Log output format enum (C++23: cfire::log::Format)", "Format", 1, "Format", add_edit);
+                }
+            }
+        }
+        if (sym.qualifier == "log.Level" || sym.qualifier == "log::Level" || sym.qualifier == "Level") {
+            for (const char* v : {"Debug", "Info", "Warn", "Error"}) {
+                append_item(v, 20 /* EnumMember */, std::format("log.Level.{}", v),
+                    std::format("Severity level {} (C++23: cfire::log::Level::{})", v, v));
+            }
+        }
+        if (sym.qualifier == "log.Format" || sym.qualifier == "log::Format" || sym.qualifier == "Format") {
+            for (const char* v : {"Text", "Json"}) {
+                append_item(v, 20 /* EnumMember */, std::format("log.Format.{}", v),
+                    std::format("Output format {} (C++23: cfire::log::Format::{})", v, v));
             }
         }
         // 2. Check imported local `.cf` package symbols (`checksum.`)
@@ -115,7 +248,8 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
                 for (const auto& fn : pkg.ast.functions) {
                     std::string doc = detail::extract_leading_doc_comments(pkg_lines, fn.line);
                     if (doc.empty()) doc = detail::lower_fn_preview(fn);
-                    append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc);
+                    auto [ins, fmt] = make_fn_decl_snippet(fn.name, fn);
+                    append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc, ins, fmt);
                 }
                 for (const auto& st : pkg.ast.structs) {
                     std::string doc = detail::extract_leading_doc_comments(pkg_lines, st.line);
@@ -133,12 +267,21 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
         if (sym.qualifier == "cpp") {
             for (const auto& [cname, csym] : ws.cpp_symbols) {
                 std::string params_str;
+                std::string snip_args;
                 for (std::size_t i = 0; i < csym.param_types.size(); ++i) {
-                    if (i > 0) params_str += ", ";
+                    if (i > 0) {
+                        params_str += ", ";
+                        snip_args += ", ";
+                    }
                     params_str += csym.param_types[i];
+                    snip_args += std::format("${{{}:arg{}}}", i + 1, i + 1);
                 }
+                std::string ins = (!client_snippet_support_ || has_following_paren)
+                    ? cname
+                    : (csym.param_types.empty() ? std::format("{}()$0", cname) : std::format("{}({})$0", cname, snip_args));
+                int fmt = (!client_snippet_support_ || has_following_paren) ? 1 : 2;
                 append_item(cname, 3, std::format("{}({}) -> {}", cname, params_str, detail::cpp_return_to_cf(csym.return_type)),
-                    std::format("Native C/C++ symbol from <{}>", ws.cpp_symbol_header[cname]));
+                    std::format("Native C/C++ symbol from <{}>", ws.cpp_symbol_header[cname]), ins, fmt);
             }
         }
         // 4. Check local variable / chained field type for struct fields, user methods, and stdlib handle methods!
@@ -147,14 +290,24 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
             std::string rtype = detail::resolve_qualifier_type(sym.qualifier, *ast_res, ws, env);
             if (rtype == "str") {
                 append_item("len", 10, "usize", "Length in bytes (lowers to .size())");
-                append_item("empty", 2, "fn empty() -> bool", "Returns true if empty");
-                append_item("data", 2, "fn data() -> *const c_char", "Returns raw pointer to null-terminated UTF-8 C string (lowers to .data())");
-                append_item("bytes", 2, "fn bytes() -> []byte", "Returns safe byte slice view over UTF-8 bytes (lowers to cfire::to_bytes())");
+                {
+                    auto [ins, fmt] = make_sig_snippet("empty", "fn empty() -> bool");
+                    append_item("empty", 2, "fn empty() -> bool", "Returns true if empty", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("data", "fn data() -> *const c_char");
+                    append_item("data", 2, "fn data() -> *const c_char", "Returns raw pointer to null-terminated UTF-8 C string (lowers to .data())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("bytes", "fn bytes() -> []byte");
+                    append_item("bytes", 2, "fn bytes() -> []byte", "Returns safe byte slice view over UTF-8 bytes (lowers to cfire::to_bytes())", ins, fmt);
+                }
                 for (const auto& mod : cfire::doc::stdlib_catalog()) {
                     if (mod.import_path == "core:str") {
                         for (const auto& fn : mod.functions) {
                             if (!fn.name.contains('.')) {
-                                append_item(fn.name, 2, fn.cf_sig, fn.summary);
+                                auto [ins, fmt] = make_sig_snippet(fn.name, fn.cf_sig, true);
+                                append_item(fn.name, 2, fn.cf_sig, fn.summary, ins, fmt);
                             }
                         }
                     }
@@ -162,13 +315,34 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
             }
             if (rtype.starts_with("[")) {
                 append_item("len", 10, "usize", "Length in elements (lowers to .size())");
-                append_item("data", 2, "fn data() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())");
-                append_item("data_ptr", 2, "fn data_ptr() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())");
-                append_item("empty", 2, "fn empty() -> bool", "Returns true if empty (lowers to .empty())");
-                append_item("push", 2, "fn push(elem: T) -> void", "Appends element to vector (lowers to .push_back())");
-                append_item("pop", 2, "fn pop() -> void", "Removes last element from vector (lowers to .pop_back())");
-                append_item("capacity", 2, "fn capacity() -> usize", "Allocated storage capacity of the vector (lowers to .capacity())");
-                append_item("clear", 2, "fn clear() -> void", "Erases all elements from vector (lowers to .clear())");
+                {
+                    auto [ins, fmt] = make_sig_snippet("data", "fn data() -> *T");
+                    append_item("data", 2, "fn data() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("data_ptr", "fn data_ptr() -> *T");
+                    append_item("data_ptr", 2, "fn data_ptr() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("empty", "fn empty() -> bool");
+                    append_item("empty", 2, "fn empty() -> bool", "Returns true if empty (lowers to .empty())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("push", "fn push(elem: T) -> void");
+                    append_item("push", 2, "fn push(elem: T) -> void", "Appends element to vector (lowers to .push_back())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("pop", "fn pop() -> void");
+                    append_item("pop", 2, "fn pop() -> void", "Removes last element from vector (lowers to .pop_back())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("capacity", "fn capacity() -> usize");
+                    append_item("capacity", 2, "fn capacity() -> usize", "Allocated storage capacity of the vector (lowers to .capacity())", ins, fmt);
+                }
+                {
+                    auto [ins, fmt] = make_sig_snippet("clear", "fn clear() -> void");
+                    append_item("clear", 2, "fn clear() -> void", "Erases all elements from vector (lowers to .clear())", ins, fmt);
+                }
             }
             auto add_struct_fields = [&](const std::vector<cfire::frontend::StructDecl>& structs) {
                 for (const auto& st : structs) {
@@ -188,13 +362,15 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
             // User methods on `rtype`
             for (const auto& fn : ast_res->functions) {
                 if (fn.receiver && fn.receiver->type.name == rtype) {
-                    append_item(fn.name, 2, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn));
+                    auto [ins, fmt] = make_fn_decl_snippet(fn.name, fn);
+                    append_item(fn.name, 2, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn), ins, fmt);
                 }
             }
             for (const auto& pkg : ws.local_packages) {
                 for (const auto& fn : pkg.ast.functions) {
                     if (fn.receiver && fn.receiver->type.name == rtype) {
-                        append_item(fn.name, 2, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn));
+                        auto [ins, fmt] = make_fn_decl_snippet(fn.name, fn);
+                        append_item(fn.name, 2, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn), ins, fmt);
                     }
                 }
             }
@@ -206,14 +382,15 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
                     }
                 }
             }
-            // Stdlib handle methods (`TcpListener.`, `TcpConn.`, `Channel.`, `Conn.`)
+            // Stdlib handle methods (`File.`, `TcpListener.`, `TcpConn.`, `Channel.`, `Conn.`)
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
                 for (const auto& fn : mod.functions) {
                     if (auto dot = fn.name.find('.'); dot != std::string::npos) {
                         std::string htype = fn.name.substr(0, dot);
                         std::string mname = fn.name.substr(dot + 1);
                         if (rtype == htype || rtype == mod.ns_alias + "." + htype || rtype.starts_with("sync." + htype)) {
-                            append_item(mname, 2, fn.cf_sig, fn.summary);
+                            auto [ins, fmt] = make_sig_snippet(mname, fn.cf_sig);
+                            append_item(mname, 2, fn.cf_sig, fn.summary, ins, fmt);
                         }
                     }
                 }
@@ -238,7 +415,8 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
         for (const auto& fn : ast_res->functions) {
             std::string doc = detail::extract_leading_doc_comments(lines, fn.line);
             if (doc.empty()) doc = detail::lower_fn_preview(fn);
-            append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc);
+            auto [ins, fmt] = make_fn_decl_snippet(fn.name, fn);
+            append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc, ins, fmt);
         }
         for (const auto& st : ast_res->structs) {
             std::string doc = detail::extract_leading_doc_comments(lines, st.line);
@@ -257,7 +435,8 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
                     if (fn.receiver) continue;
                     std::string doc = detail::extract_leading_doc_comments(pkg_lines, fn.line);
                     if (doc.empty()) doc = detail::lower_fn_preview(fn);
-                    append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc);
+                    auto [ins, fmt] = make_fn_decl_snippet(fn.name, fn);
+                    append_item(fn.name, 3, cfire::fmt::format_fn_signature(fn), doc, ins, fmt);
                 }
                 for (const auto& st : pkg.ast.structs) {
                     std::string doc = detail::extract_leading_doc_comments(pkg_lines, st.line);
@@ -290,25 +469,45 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
                 fn_doc += std::format("\n\n*Selecting this will automatically insert `import \"{}\"`.*", mod.import_path);
             }
             std::string filter = fn.name + " " + call_name;
-            append_item(fn.name, 3, fn_detail, fn_doc, call_name, 1, filter, add_edit);
+            auto [ins, fmt] = make_sig_snippet(call_name, fn.cf_sig);
+            append_item(fn.name, 3, fn_detail, fn_doc, ins, fmt, filter, add_edit);
         }
     }
 
     // Built-in functions, type constructors, and directives
-    append_item("println", 3, "println(args...)", "Prints formatted arguments followed by a newline to standard output.");
-    append_item("print", 3, "print(args...)", "Prints formatted arguments to standard output without trailing newline.");
-    append_item("eprintln", 3, "eprintln(args...)", "Prints formatted arguments followed by a newline to standard error.");
-    append_item("eprint", 3, "eprint(args...)", "Prints formatted arguments to standard error without trailing newline.");
-    append_item("panic", 3, "panic(message: str)", "Terminates the program immediately with an error message.");
-    append_item("assert", 3, "assert(cond: bool, msg: str = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).");
-    append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: str = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.");
-    append_item("assert_ne", 3, "assert_ne(left: T, right: T, msg: str = \"\")", "Verifies left != right with single evaluation and [left, right] value diff reporting.");
-    append_item("[]byte", 3, "[]byte(val: str | []u8) -> []byte", "Constructs an owning byte slice ([]byte) from a string or slice.");
-    append_item("[]u8", 3, "[]u8(val: str | []byte) -> []u8", "Constructs an owning u8 slice ([]u8) from a string or byte slice.");
-    append_item("str", 3, "str(val: []byte | []u8 | scalar) -> str", "Constructs a UTF-8 string from a byte/u8 slice or scalar value.");
-    append_item("byte", 3, "byte(val: integer) -> byte", "Constructs a std::byte value from an integer.");
-    append_item("black_box", 3, "black_box(val: T) -> T", "Compiler optimization barrier for benchmarks inside bench \"...\" blocks.");
-    append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.");
+    {
+        auto builtin_snip = [&](std::string_view name, std::string_view sig) {
+            return make_sig_snippet(name, sig);
+        };
+        auto [s_println, f_println] = builtin_snip("println", "fn println(fmt: str)");
+        append_item("println", 3, "println(args...)", "Prints formatted arguments followed by a newline to standard output.", s_println, f_println);
+        auto [s_print, f_print] = builtin_snip("print", "fn print(fmt: str)");
+        append_item("print", 3, "print(args...)", "Prints formatted arguments to standard output without trailing newline.", s_print, f_print);
+        auto [s_eprintln, f_eprintln] = builtin_snip("eprintln", "fn eprintln(fmt: str)");
+        append_item("eprintln", 3, "eprintln(args...)", "Prints formatted arguments followed by a newline to standard error.", s_eprintln, f_eprintln);
+        auto [s_eprint, f_eprint] = builtin_snip("eprint", "fn eprint(fmt: str)");
+        append_item("eprint", 3, "eprint(args...)", "Prints formatted arguments to standard error without trailing newline.", s_eprint, f_eprint);
+        auto [s_panic, f_panic] = builtin_snip("panic", "fn panic(message: str)");
+        append_item("panic", 3, "panic(message: str)", "Terminates the program immediately with an error message.", s_panic, f_panic);
+        auto [s_assert, f_assert] = builtin_snip("assert", "fn assert(cond: bool, msg: str = \"\")");
+        append_item("assert", 3, "assert(cond: bool, msg: str = \"\")", "Aborts execution if condition evaluates to false (formats [left, right] value diffs).", s_assert, f_assert);
+        auto [s_assert_eq, f_assert_eq] = builtin_snip("assert_eq", "fn assert_eq(left: T, right: T, msg: str = \"\")");
+        append_item("assert_eq", 3, "assert_eq(left: T, right: T, msg: str = \"\")", "Verifies left == right with single evaluation and [left, right] value diff reporting.", s_assert_eq, f_assert_eq);
+        auto [s_assert_ne, f_assert_ne] = builtin_snip("assert_ne", "fn assert_ne(left: T, right: T, msg: str = \"\")");
+        append_item("assert_ne", 3, "assert_ne(left: T, right: T, msg: str = \"\")", "Verifies left != right with single evaluation and [left, right] value diff reporting.", s_assert_ne, f_assert_ne);
+        auto [s_bvec, f_bvec] = builtin_snip("[]byte", "fn []byte(val: str)");
+        append_item("[]byte", 3, "[]byte(val: str | []u8) -> []byte", "Constructs an owning byte slice ([]byte) from a string or slice.", s_bvec, f_bvec);
+        auto [s_uvec, f_uvec] = builtin_snip("[]u8", "fn []u8(val: str)");
+        append_item("[]u8", 3, "[]u8(val: str | []byte) -> []u8", "Constructs an owning u8 slice ([]u8) from a string or byte slice.", s_uvec, f_uvec);
+        auto [s_str, f_str] = builtin_snip("str", "fn str(val: Any)");
+        append_item("str", 3, "str(val: []byte | []u8 | scalar) -> str", "Constructs a UTF-8 string from a byte/u8 slice or scalar value.", s_str, f_str);
+        auto [s_byte, f_byte] = builtin_snip("byte", "fn byte(val: i64)");
+        append_item("byte", 3, "byte(val: integer) -> byte", "Constructs a std::byte value from an integer.", s_byte, f_byte);
+        auto [s_bb, f_bb] = builtin_snip("black_box", "fn black_box(val: T)");
+        append_item("black_box", 3, "black_box(val: T) -> T", "Compiler optimization barrier for benchmarks inside bench \"...\" blocks.", s_bb, f_bb);
+        auto [s_make, f_make] = builtin_snip("make", "fn make(type_or_args: T)");
+        append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.", s_make, f_make);
+    }
     append_item("@pkg", 14, "@pkg(\"libname\")", "Specifies system package / pkg-config dependency for C/C++ header import.");
 
     // Core language constructs & snippets (LSP-01)

@@ -43,6 +43,19 @@ type AuditLog struct {
         std::format("expected struct with standalone comment to format identically without duplicating header, got:\n{}",
             fmt_comment.value_or("<error>")));
 
+    // CF-096: Formatter string-awareness (URL with // and trailing comment) and token invariance
+    std::string struct_with_url_cf = R"(package main
+
+type Config struct {
+    url:      str = "http://x.com"
+    endpoint: str = "https://api.example.com/v1" // api base
+}
+)";
+    auto fmt_url = cfire::fmt::format_source(struct_with_url_cf, "config.cf");
+    require(fmt_url.has_value() && *fmt_url == struct_with_url_cf,
+        std::format("expected struct with URL default and comment to format identically, got:\n{}",
+            fmt_url.value_or("<error>")));
+
     // Test format_range (LSP-10): only selected lines are formatted with proper block indentation
     std::string range_cf =
         "package main\n\n"
@@ -68,7 +81,7 @@ type AuditLog struct {
     std::stringstream lsp_in;
     std::stringstream lsp_out;
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
-    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf","text":"package main\nimport \"core:fs\"\ntype Metric struct {\n    Service: str `json:\"service\"`\n    Count: i64\n}\nfn bump(mut x: i32) {\n    x += 1\n}\nfn main() {\n    m := Metric{Service: \"api\", Count: 1}\n    mut a: i32 = 5\n    bump(a)\n    _ := fs.read_bytes(m.Service)\n}\n"}}})");
+    lsp_in << rpc_frame(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf","text":"package main\nimport \"core:fs\"\ntype Metric struct {\n    Service: str `json:\"service\"`\n    Count: i64\n}\nfn bump(mut x: i32) {\n    x += 1\n}\nfn main() {\n    m := Metric{Service: \"api\", Count: 1}\n    mut a: i32 = 5\n    bump(a)\n    _ = fs.read_bytes(m.Service)\n}\n"}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":14}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":13,"character":12}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":12,"character":5}}})");
@@ -236,14 +249,15 @@ type AuditLog struct {
         "LSP prepareRename on keyword fn expected null result (LSP-04)");
     require(rpc_resp.contains(R"("id":32)") &&
             rpc_resp.contains(R"("label":"read_bytes")") &&
-            rpc_resp.contains(R"("insertText":"fs.read_bytes")") &&
+            rpc_resp.contains(R"("insertText":"fs.read_bytes(${1:path})$0")") &&
+            rpc_resp.contains(R"("insertTextFormat":2)") &&
             rpc_resp.contains("core:fs (auto-import)") &&
             rpc_resp.contains(R"("additionalTextEdits":[)") &&
             rpc_resp.contains("import \\\"core:fs\\\""),
         "LSP auto-import completion for unimported stdlib module expected additionalTextEdits (LSP-05)");
     require(rpc_resp.contains(R"("id":33)") &&
             rpc_resp.contains(R"("label":"read_bytes")") &&
-            rpc_resp.contains(R"("insertText":"fs.read_bytes")") &&
+            rpc_resp.contains(R"("insertText":"fs.read_bytes(${1:path})$0")") &&
             rpc_resp.contains("fs: fn read_bytes"),
         "LSP completion for already imported stdlib module expected no auto-import edit (LSP-05)");
     require(rpc_resp.contains(R"("id":34)") &&
@@ -451,6 +465,66 @@ fn main() {
                 w_resp.contains(R"("label":"Channel")") &&
                 w_resp.contains(R"("label":"Gain")"),
             "LSP completion on req. inside app.bind[TrackMix] block expected struct fields Channel and Gain (WEBUI-P0-06)");
+    }
+
+    // 2f. Chained method completion (`try os.stdin().`), `: []str` inlay hints on chained calls, parameter snippets, and onTypeFormatting
+    {
+        cfire::lsp::Server chain_srv;
+        std::stringstream c_in;
+        std::stringstream c_out;
+
+        std::string chain_src = R"(package main
+import "core:os"
+import "core:str"
+
+fn main() {
+    lines := try os.stdin().read_lines()
+    for line in lines {
+    v := str.
+    }
+    x := try os.stdin().
+}
+)";
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
+        c_in << rpc_frame(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"text":"{}","uri":"file:///tmp/chain_lsp.cf","languageId":"cfire","version":1}}}}}})",
+            cfire::lsp::detail::json_escape(chain_src)));
+        // 501: completion on `try os.stdin().` at line 9, character 24
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":501,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":9,"character":24}}})");
+        // 502: completion on `str.` at line 7, character 13
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":502,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":7,"character":13}}})");
+        // 503: inlayHint for `lines := try os.stdin().read_lines()` -> `: []str`
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":503,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"}}})");
+        // 504: hover on `line` in `for line in lines` at line 6, character 9 -> `line: str`
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":504,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":6,"character":9}}})");
+        // 505: onTypeFormatting on `\n` after `for line in lines {` (line 7, character 0)
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":505,"method":"textDocument/onTypeFormatting","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":7,"character":0},"ch":"\n"}})");
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":506,"method":"shutdown","params":null})");
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","method":"exit","params":null})");
+
+        chain_srv.handle_stream(c_in, c_out);
+        std::string c_resp = c_out.str();
+
+        require(c_resp.contains(R"("documentOnTypeFormattingProvider")"),
+            "LSP initialize advertises documentOnTypeFormattingProvider");
+        require(c_resp.contains(R"("id":501)") &&
+                c_resp.contains(R"("label":"read_lines")") &&
+                c_resp.contains(R"("insertText":"read_lines()$0")") &&
+                c_resp.contains(R"("label":"read_text")"),
+            "LSP second-level completion on 'try os.stdin().' returns fs.File methods with snippet tabstops");
+        require(c_resp.contains(R"("id":502)") &&
+                c_resp.contains(R"("label":"parse_i32")") &&
+                c_resp.contains(R"("insertText":"parse_i32(${1:s})$0")"),
+            "LSP completion on 'str.' emits parameter tabstop snippet for parse_i32");
+        require(c_resp.contains(R"("id":503)") &&
+                c_resp.contains(R"("label":": []str")"),
+            "LSP inlayHint infers ': []str' for 'lines := try os.stdin().read_lines()'");
+        require(c_resp.contains(R"("id":504)") &&
+                c_resp.contains("line: str"),
+            "LSP hover infers 'line: str' for 'for line in lines' where lines is []str");
+        require(c_resp.contains(R"("id":505)") &&
+                c_resp.contains(R"("newText":"        ")"),
+            "LSP onTypeFormatting on newline after 'for line in lines {' indents by 8 spaces");
     }
 
     auto ide_res = cfire::lsp::configure_ide(rt_dir.parent_path(), "zed");
@@ -813,6 +887,20 @@ test "counter sibling test" {
                 outline_resp.contains("counter sibling test") &&
                 !outline_resp.contains("should_not_appear"),
             std::format("MCP-01b: expected cfire_outline to include interface/test and skip .tako, got: {}", outline_resp));
+
+        // CF-095: MCP security — argv exec without shell injection and isolated eval
+        std::string eval_req = R"JSON({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cfire_eval","arguments":{"code":"println(\"mcp-secure-eval-ok\")"}}})JSON";
+        std::string eval_resp = mcp_srv.handle_jsonrpc(eval_req);
+        require(eval_resp.contains("mcp-secure-eval-ok"),
+            std::format("CF-095: expected cfire_eval to run cleanly and output 'mcp-secure-eval-ok', got: {}", eval_resp));
+
+        std::string test_inject_req = std::format(
+            R"JSON({{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"cfire_test","arguments":{{"path":"{}","filter":"$(echo injected)"}}}}}})JSON",
+            cfire::lsp::detail::json_escape(sync_tmp.path.string()));
+        std::string test_inject_resp = mcp_srv.handle_jsonrpc(test_inject_req);
+        // The literal filter `$(echo injected)` must NOT be expanded by a shell
+        require(!test_inject_resp.contains("injected"),
+            std::format("CF-095: expected direct argv execution to prevent shell expansion, got: {}", test_inject_resp));
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");
@@ -893,6 +981,127 @@ fn main() {
     run_cfire(std::format("refactor rename \"{}:3:4\" multiply_two --json", util_cf.string()))
         .assert_ok("cross-pkg rename exit 0 (TOOL-03)")
         .assert_contains("\"files_modified\": 2", "cross-pkg modified 2 files (TOOL-03)");
+
+    // 7. String interpolation format specifiers ("{expr:spec}"), core:log ergonomics, and LSP/MCP symbol intelligence inside "{...}"
+    {
+        // 7a. End-to-end execution of "{expr:spec}" format specifiers + core:log non-string attributes + log.Level.Debug
+        run_cfire_source(R"(package main
+import "core:log"
+
+fn scale_val(x: f64, factor: f64) -> f64 {
+    return x * factor
+}
+
+fn main() {
+    pi := 3.14159265
+    mask := 255
+    css := "{color: red}"
+    msg := "pi={scale_val(pi, 2.0):.2f} hex=0x{mask:04x} css={css}"
+    println("{}", msg)
+
+    log.set_level(log.Level::Debug)
+    log.set_format(log.Format::Text)
+    assert_eq(log.get_level(), log.Level::Debug, "log.Level::Debug equals log.Level::Debug")
+    log.info("request handled {mask:02x}", "port", 8080, "ok", true)
+}
+)", "interp_fmt_and_log")
+            .assert_ok("interp format specifiers and core:log non-string attrs compile and run")
+            .assert_contains("pi=6.28 hex=0x00ff css={color: red}", "inline format specifiers .2f and 04x + unsplit CSS literal")
+            .assert_contains("port=8080", "core:log formats integer attribute via cfire::str_ctor")
+            .assert_contains("ok=true", "core:log formats boolean attribute via cfire::str_ctor");
+
+        // 7b. LSP Hover, Definition, References, Semantic Tokens, Inlay Hints, Call Hierarchy, Completion & MCP inside "{...}"
+        ScopedTempDir interp_tmp("cfire_interp_lsp_mcp");
+        auto interp_cf = interp_tmp.file("interp.cf", R"CF(package main
+import "core:log"
+
+fn compute_metric(base: f64, weight: f64) -> f64 {
+    return base * weight
+}
+
+fn run_demo() {
+    sample_val := 12.3456
+    summary := "plain sample_val metric={compute_metric(sample_val, 1.5):.2f}"
+    log.set_level(log.Level::Debug)
+    log.info("status={sample_val:.1f}", "count", 42)
+    println("{}", summary)
+}
+)CF");
+
+        cfire::lsp::Server srv;
+        std::string uri = cfire::lsp::detail::path_to_uri(interp_cf);
+
+        // Line 9 (0-based): `    summary := "plain sample_val metric={compute_metric(sample_val, 1.5):.2f}"`
+        // Plain word "sample_val" inside string literal outside `{...}` is at col 22 -> must NOT trigger variable hover
+        std::string plain_hover = srv.compute_hover(uri, 9, 24);
+        require(!plain_hover.contains("Local Binding"),
+            std::format("plain word inside string literal outside {{...}} must not trigger symbol hover, got: {}", plain_hover));
+
+        // Inside `{compute_metric(sample_val, 1.5):.2f}`:
+        // `compute_metric` starts at col 41 (0-based), `sample_val` inside call starts at col 56 (0-based)
+        std::string fn_hover = srv.compute_hover(uri, 9, 44);
+        require(fn_hover.contains("compute_metric"),
+            std::format("hover on function call inside '{{...}}' replacement string resolves compute_metric, got: {}", fn_hover));
+
+        std::string var_hover = srv.compute_hover(uri, 9, 58);
+        require(var_hover.contains("sample_val") && var_hover.contains("f64"),
+            std::format("hover on variable inside '{{...}}' replacement string resolves sample_val: f64, got: {}", var_hover));
+
+        std::string var_def = srv.compute_definition(uri, 9, 58);
+        require(var_def.contains("\"line\":8"),
+            std::format("go-to-definition on sample_val inside '{{...}}' resolves to line 8 (0-based), got: {}", var_def));
+
+        // References on `sample_val` (declared on line 8, used in `{compute_metric(sample_val, 1.5):.2f}` on line 9 and `{sample_val:.1f}` on line 11)
+        // Note: plain `sample_val` outside `{...}` on line 9 is ignored because it's inside the string literal!
+        auto occs = srv.find_symbol_occurrences(uri, 9, 58, "sample_val", "");
+        require(occs.size() == 3,
+            std::format("find_symbol_occurrences for sample_val finds declaration + 2 interpolated uses (ignoring plain string text), got {}", occs.size()));
+
+        // Inlay hints inside `{compute_metric(sample_val, 1.5):.2f}` should include `base:` and `weight:`
+        std::string inlay = srv.compute_inlay_hints(uri);
+        require(inlay.contains("base:") && inlay.contains("weight:"),
+            std::format("inlay hints resolve parameter labels inside '{{...}}' replacement string, got: {}", inlay));
+
+        // Semantic tokens split the interpolated string and highlight `compute_metric` and `sample_val`
+        std::string sem_toks = srv.compute_semantic_tokens(uri);
+        require(sem_toks.contains(",14,0") && sem_toks.contains(",6,0"),
+            std::format("semantic tokens emit operator (14) for braces and property (6) for :.2f format spec, got: {}", sem_toks));
+
+        // Hover & Completion on `log.Level.Debug` (line 10, col 29)
+        std::string lvl_hover = srv.compute_hover(uri, 10, 29);
+        require(lvl_hover.contains("log.Level.Debug") && lvl_hover.contains("cfire::log::Level::Debug"),
+            std::format("hover on log.Level.Debug resolves enum variant documentation, got: {}", lvl_hover));
+
+        std::string lvl_comp = srv.compute_completions(uri, 10, 28);
+        require(lvl_comp.contains("\"label\":\"Debug\"") && lvl_comp.contains("\"label\":\"Info\""),
+            std::format("completion on log.Level. offers Debug/Info/Warn/Error, got: {}", lvl_comp));
+
+        // MCP `cfire_inspect` on `sample_val` inside `{compute_metric(sample_val, 1.5):.2f}` (1-based line 10, col 59)
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir);
+        std::string inspect_req = std::format(
+            R"({{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{{"name":"cfire_inspect","arguments":{{"target":"{}:10:59"}}}}}})",
+            cfire::lsp::detail::json_escape(interp_cf.string()));
+        std::string inspect_resp = mcp_srv.handle_jsonrpc(inspect_req);
+        require(inspect_resp.contains("sample_val") &&
+                inspect_resp.contains("String Interpolation Context") &&
+                inspect_resp.contains(":.2f") &&
+                inspect_resp.contains("References (3)"),
+            std::format("MCP cfire_inspect reports hover, interpolation context, format spec, and references, got: {}", inspect_resp));
+
+        // MCP `cfire_rename` on `sample_val` inside `{...}` (1-based line 10, col 59) -> `measured_val`
+        std::string rename_req = std::format(
+            R"({{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{{"name":"cfire_rename","arguments":{{"target":"{}:10:59","new_name":"measured_val"}}}}}})",
+            cfire::lsp::detail::json_escape(interp_cf.string()));
+        std::string rename_resp = mcp_srv.handle_jsonrpc(rename_req);
+        require(rename_resp.contains("Renamed `sample_val` -> `measured_val` (3 occurrence(s)"),
+            std::format("MCP cfire_rename renames symbol across declaration and '{{...}}' replacement strings, got: {}", rename_resp));
+
+        auto updated_txt = cfire::build::read_file_text(interp_cf).value_or("");
+        require(updated_txt.contains("measured_val := 12.3456") &&
+                updated_txt.contains("plain sample_val metric={compute_metric(measured_val, 1.5):.2f}") &&
+                updated_txt.contains("status={measured_val:.1f}"),
+            std::format("MCP cfire_rename updated declaration and both '{{...}}' interpolations while preserving plain string text, got:\n{}", updated_txt));
+    }
 
     std::println("--- PASS: test_cfire_refactor_rename");
 }

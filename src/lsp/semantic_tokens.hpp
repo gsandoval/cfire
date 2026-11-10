@@ -121,44 +121,31 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
     raw_tokens.reserve(toks->size());
 
     using namespace cfire::frontend;
-    for (const auto& t : *toks) {
-        if (t.kind == TokenKind::Eof) continue;
-
+    auto classify_and_push_non_string = [&](const Token& t) {
+        if (t.kind == TokenKind::Eof) return;
         int line_0 = std::max(0, t.line - 1);
         int col_0 = std::max(0, t.col - 1);
 
         if (t.kind == TokenKind::CppBlock) {
             raw_tokens.push_back(RawToken{line_0, col_0, 9, 10 /* keyword */, 0});
-            continue;
+            return;
         }
-
-        if (t.kind == TokenKind::String) {
-            int len = static_cast<int>(t.lexeme.size() + 2);
-            raw_tokens.push_back(RawToken{line_0, col_0, len, 12 /* string */, 0});
-            continue;
-        }
-
         if (t.kind == TokenKind::RawString) {
             int len = static_cast<int>(t.lexeme.size() + 2);
             int type = (t.lexeme.contains(':') ? 6 /* property */ : 12 /* string */);
             raw_tokens.push_back(RawToken{line_0, col_0, len, type, 0});
-            continue;
+            return;
         }
-
         if (t.kind == TokenKind::Int || t.kind == TokenKind::Float) {
             raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 13 /* number */, 0});
-            continue;
+            return;
         }
-
-        // Keyword modifiers: mut, move, in, out, async
         if (t.kind == TokenKind::KwMut || t.kind == TokenKind::KwMove ||
             t.kind == TokenKind::KwIn || t.kind == TokenKind::KwOut ||
             t.kind == TokenKind::KwAsync) {
             raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 11 /* modifier */, 0});
-            continue;
+            return;
         }
-
-        // General keywords
         if (t.kind == TokenKind::KwPackage || t.kind == TokenKind::KwImport ||
             t.kind == TokenKind::KwType || t.kind == TokenKind::KwStruct ||
             t.kind == TokenKind::KwEnum || t.kind == TokenKind::KwInterface ||
@@ -166,15 +153,14 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
             t.kind == TokenKind::KwIf || t.kind == TokenKind::KwElse ||
             t.kind == TokenKind::KwFor || t.kind == TokenKind::KwMatch ||
             t.kind == TokenKind::KwReturn || t.kind == TokenKind::KwDefer ||
+            t.kind == TokenKind::KwBreak || t.kind == TokenKind::KwContinue ||
             t.kind == TokenKind::KwTry || t.kind == TokenKind::KwOr ||
             t.kind == TokenKind::KwTrue || t.kind == TokenKind::KwFalse ||
             t.kind == TokenKind::KwNone || t.kind == TokenKind::KwMap ||
             t.kind == TokenKind::KwAs) {
             raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 10 /* keyword */, 0});
-            continue;
+            return;
         }
-
-        // Multi-char & relational operators
         if (t.kind == TokenKind::ColonEq || t.kind == TokenKind::PlusEq ||
             t.kind == TokenKind::MinusEq || t.kind == TokenKind::StarEq ||
             t.kind == TokenKind::SlashEq || t.kind == TokenKind::PercentEq ||
@@ -189,9 +175,8 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
             t.kind == TokenKind::FatArrow || t.kind == TokenKind::DoubleColon ||
             t.kind == TokenKind::DotDot || t.kind == TokenKind::DotDotEq) {
             raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 14 /* operator */, 0});
-            continue;
+            return;
         }
-
         if (t.kind == TokenKind::Ident || t.kind == TokenKind::KwCpp) {
             int len = static_cast<int>(t.lexeme.size());
             if (t.col == 1 && (t.lexeme == "fuzz" || t.lexeme == "bench")) {
@@ -221,8 +206,75 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
             } else {
                 raw_tokens.push_back(RawToken{line_0, col_0, len, 5 /* variable */, 4 /* readonly */});
             }
+            return;
+        }
+    };
+
+    for (const auto& t : *toks) {
+        if (t.kind == TokenKind::Eof) continue;
+
+        int line_0 = std::max(0, t.line - 1);
+        int col_0 = std::max(0, t.col - 1);
+
+        if (t.kind == TokenKind::String) {
+            auto placeholders = scan_interpolation_placeholders(t.lexeme);
+            if (placeholders.empty()) {
+                int len = static_cast<int>(t.lexeme.size() + 2);
+                raw_tokens.push_back(RawToken{line_0, col_0, len, 12 /* string */, 0});
+            } else {
+                // Split string into literal segments, '{' / '}' operators, and inner expression tokens
+                int seg_start_col_0 = col_0; // includes opening '"'
+                std::size_t prev_lex_idx = 0;
+                for (const auto& ph : placeholders) {
+                    int open_brace_col_0 = col_0 + 1 + static_cast<int>(ph.start_pos);
+                    int seg_len = open_brace_col_0 - seg_start_col_0;
+                    if (seg_len > 0) {
+                        raw_tokens.push_back(RawToken{line_0, seg_start_col_0, seg_len, 12 /* string */, 0});
+                    }
+                    // '{'
+                    raw_tokens.push_back(RawToken{line_0, open_brace_col_0, 1, 14 /* operator */, 0});
+                    // Inner expression tokens
+                    if (auto sub_toks = tokenize(detail::uri_to_path(uri), ph.expr_text)) {
+                        int base_col_1 = t.col + 1 + static_cast<int>(ph.expr_offset);
+                        for (auto sub_t : *sub_toks) {
+                            if (sub_t.kind == TokenKind::Eof) continue;
+                            if (sub_t.line == 1) {
+                                sub_t.col = base_col_1 + (sub_t.col - 1);
+                            }
+                            sub_t.line = t.line + (sub_t.line - 1);
+                            if (sub_t.kind == TokenKind::String) {
+                                int slen = static_cast<int>(sub_t.lexeme.size() + 2);
+                                raw_tokens.push_back(RawToken{std::max(0, sub_t.line - 1), std::max(0, sub_t.col - 1), slen, 12 /* string */, 0});
+                            } else {
+                                classify_and_push_non_string(sub_t);
+                            }
+                        }
+                    }
+                    // Optional ':fmt_spec'
+                    int close_brace_col_0 = col_0 + 1 + static_cast<int>(ph.end_pos);
+                    if (!ph.fmt_spec.empty()) {
+                        int spec_len = static_cast<int>(ph.fmt_spec.size() + 1); // includes ':'
+                        int spec_col_0 = close_brace_col_0 - spec_len;
+                        if (spec_col_0 > open_brace_col_0) {
+                            raw_tokens.push_back(RawToken{line_0, spec_col_0, spec_len, 6 /* property */, 0});
+                        }
+                    }
+                    // '}'
+                    raw_tokens.push_back(RawToken{line_0, close_brace_col_0, 1, 14 /* operator */, 0});
+                    seg_start_col_0 = close_brace_col_0 + 1;
+                    prev_lex_idx = ph.end_pos + 1;
+                }
+                int closing_quote_end_col_0 = col_0 + static_cast<int>(t.lexeme.size() + 2);
+                int tail_len = closing_quote_end_col_0 - seg_start_col_0;
+                if (tail_len > 0) {
+                    raw_tokens.push_back(RawToken{line_0, seg_start_col_0, tail_len, 12 /* string */, 0});
+                }
+                (void)prev_lex_idx;
+            }
             continue;
         }
+
+        classify_and_push_non_string(t);
     }
 
     // Relative delta encoding per LSP 3.17 specification
