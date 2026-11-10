@@ -2,6 +2,7 @@
 // src/mcp.hpp — Built-In Model Context Protocol (MCP) Server for the `cfire` Toolchain (`cfire mcp`)
 
 #include "../runtime/core/ai.hpp"
+#include "analysis.hpp"
 #include "buildsys.hpp"
 #include "diagnostics.hpp"
 #include "docgen.hpp"
@@ -399,96 +400,38 @@ namespace cfire::mcp {
         "cfire_check",
         "Type-check cfire (.cf) inline code or a workspace file/directory path, verify memory safety & parameter intents, and validate C++23 codegen with fix-it suggestions.",
         [runtime_dir](CheckInput in) -> std::expected<std::string, cfire::Error> {
-            auto check_single_cf = [&](const std::filesystem::path& cf_file, std::string_view src_override = "") -> std::optional<std::string> {
-                std::string fname = cf_file.filename().string();
-                bool is_test_f = fname.ends_with("_test.cf") || fname == "test.cf";
-                auto res = cfire::build::analyze_and_emit(cf_file, runtime_dir, true, is_test_f);
-                if (!res) {
-                    std::string src = src_override.empty()
-                        ? cfire::build::read_file_text(cf_file).value_or("")
-                        : std::string(src_override);
-                    auto lines = cfire::diag::split_lines(src);
-                    auto sd = cfire::diag::parse_diagnostic_string(res.error(), cf_file.string());
-                    cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
-                    std::string out_msg = res.error();
-                    for (const auto& fx : sd.fixits) {
-                        out_msg += std::format("\n  fix-it (line {}:{}): {}", fx.start_line, fx.start_col, fx.title);
-                    }
-                    return out_msg;
-                }
-                auto syntax_ok = cfire::build::verify_cpp_syntax_only(cf_file, res->first, res->second, runtime_dir);
-                if (!syntax_ok) {
-                    return syntax_ok.error();
-                }
-                return std::nullopt;
-            };
+            cfire::analysis::CheckOptions opts;
+            opts.runtime_dir = runtime_dir;
 
+            std::vector<cfire::analysis::Diagnostic> diags;
             if (!in.code.empty()) {
-                auto tmp_dir = std::filesystem::temp_directory_path() / std::format("cfire_mcp_check_{}", ::getpid());
-                std::error_code ec;
-                std::filesystem::create_directories(tmp_dir, ec);
-                auto cf_file = tmp_dir / "snippet.cf";
                 std::string src = in.code;
                 if (src.find("package ") == std::string::npos) {
                     src = "package main\n\nfn main() {\n" + src + "\n}\n";
                 }
-                {
-                    std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);
-                    out << src;
+                diags = cfire::analysis::check_source("snippet.cf", src, opts);
+            } else {
+                std::filesystem::path target_path = in.path.empty() ? "." : in.path;
+                std::error_code ec;
+                if (!std::filesystem::exists(target_path, ec)) {
+                    return cfire::make_error(std::format("path '{}' not found", target_path.string()));
                 }
-                auto err = check_single_cf(cf_file, src);
-                std::filesystem::remove_all(tmp_dir, ec);
-                if (err) return std::format("Diagnostics:\n{}", *err);
+                diags = cfire::analysis::check_path(target_path, opts);
+            }
+
+            if (diags.empty()) {
                 return "OK (0 errors)";
             }
 
-            std::filesystem::path target_path = in.path.empty() ? "." : in.path;
-            std::error_code ec;
-            if (!std::filesystem::exists(target_path, ec)) {
-                return cfire::make_error(std::format("path '{}' not found", target_path.string()));
-            }
-            if (!std::filesystem::is_directory(target_path, ec)) {
-                if (auto err = check_single_cf(target_path)) {
-                    return std::format("Diagnostics:\n{}", *err);
-                }
-                return "OK (0 errors)";
-            }
-
-            std::vector<std::filesystem::path> targets;
-            std::set<std::filesystem::path> seen_dirs;
-            for (auto it = std::filesystem::recursive_directory_iterator(target_path, ec);
-                 it != std::filesystem::recursive_directory_iterator();
-                 it.increment(ec)) {
-                if (ec) break;
-                if (it->is_directory(ec)) {
-                    if (is_ignored_mcp_dir(it->path().filename().string())) {
-                        it.disable_recursion_pending();
-                    }
-                    continue;
-                }
-                if (it->is_regular_file(ec) && it->path().extension() == ".cf") {
-                    if (it->path().filename() == "build.cf") continue;
-                    auto parent_dir = std::filesystem::weakly_canonical(it->path().parent_path(), ec);
-                    std::string fn = it->path().filename().string();
-                    bool is_test_f = fn.ends_with("_test.cf") || fn == "test.cf";
-                    if (is_test_f || !seen_dirs.contains(parent_dir)) {
-                        if (!is_test_f) seen_dirs.insert(parent_dir);
-                        targets.push_back(it->path());
-                    }
+            std::string out_msg;
+            for (const auto& d : diags) {
+                if (!out_msg.empty()) out_msg += "\n";
+                out_msg += std::format("{}:{}:{}: {}: {} ({})", d.file, d.line, d.col, d.severity, d.message, d.code);
+                for (const auto& fx : d.fixits) {
+                    out_msg += std::format("\n  fix-it (line {}:{}): {}", fx.start_line, fx.start_col, fx.title);
                 }
             }
-            std::sort(targets.begin(), targets.end());
-            std::string all_diags;
-            for (const auto& t : targets) {
-                if (auto err = check_single_cf(t)) {
-                    if (!all_diags.empty()) all_diags += "\n";
-                    all_diags += *err;
-                }
-            }
-            if (!all_diags.empty()) {
-                return std::format("Diagnostics:\n{}", all_diags);
-            }
-            return "OK (0 errors)";
+            return std::format("Diagnostics:\n{}", out_msg);
         }
     );
 

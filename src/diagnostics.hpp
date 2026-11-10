@@ -30,11 +30,16 @@ struct StructuredDiagnostic {
     std::string file{};
     int line = 1;       // 1-based
     int col = 1;        // 1-based
-    std::string severity{}; // "error" | "warning"
+    int end_line = 1;   // 1-based
+    int end_col = 1;    // 1-based
+    std::string severity{}; // "error" | "warning" | "info"
     std::string code{};     // e.g. "cfire/MUT-CALLSITE"
     std::string message{};  // clean message without redundant "<file>:<line>:<col>: " prefix
+    std::string source{"cfire"};
     std::vector<FixItEdit> fixits{};
 };
+
+using Diagnostic = StructuredDiagnostic;
 
 [[nodiscard]] inline auto json_escape(std::string_view s) -> std::string {
     return cfire::detail::json_escape(s);
@@ -52,6 +57,9 @@ struct StructuredDiagnostic {
     d.code = std::string(default_code);
     d.line = 1;
     d.col = 1;
+    d.end_line = 1;
+    d.end_col = 1;
+    d.source = "cfire";
 
     std::size_t c1 = std::string_view::npos;
     if (!default_file.empty() && err_str.starts_with(default_file)) {
@@ -71,6 +79,8 @@ struct StructuredDiagnostic {
                     d.file = std::string(err_str.substr(0, c1));
                     d.line = *parsed_line;
                     d.col = *parsed_col;
+                    d.end_line = *parsed_line;
+                    d.end_col = *parsed_col + 1;
 
                     std::string_view rest = err_str.substr(c3 + 1);
                     while (!rest.empty() && std::isspace(static_cast<unsigned char>(rest.front()))) {
@@ -737,8 +747,8 @@ inline void synthesize_fixits_for_diagnostic(
         if (i > 0) json += ", ";
         const auto& d = diags[i];
         json += std::format(
-            "{{\"file\": \"{}\", \"line\": {}, \"col\": {}, \"severity\": \"{}\", \"code\": \"{}\", \"message\": \"{}\", \"fixits\": [",
-            json_escape(d.file), d.line, d.col, json_escape(d.severity), json_escape(d.code), json_escape(d.message));
+            "{{\"file\": \"{}\", \"line\": {}, \"col\": {}, \"end_line\": {}, \"end_col\": {}, \"severity\": \"{}\", \"code\": \"{}\", \"source\": \"{}\", \"message\": \"{}\", \"fixits\": [",
+            json_escape(d.file), d.line, d.col, d.end_line, d.end_col, json_escape(d.severity), json_escape(d.code), json_escape(d.source), json_escape(d.message));
 
         for (std::size_t j = 0; j < d.fixits.size(); ++j) {
             if (j > 0) json += ", ";
@@ -751,6 +761,16 @@ inline void synthesize_fixits_for_diagnostic(
     }
     json += "]}";
     return json;
+}
+
+[[nodiscard]] inline auto serialize_diagnostics_json(
+    const std::vector<StructuredDiagnostic>& diags
+) -> std::string {
+    bool ok = true;
+    for (const auto& d : diags) {
+        if (d.severity == "error") { ok = false; break; }
+    }
+    return serialize_diagnostics_json("", ok, diags);
 }
 
 inline auto detect_missing_stdlib_imports(

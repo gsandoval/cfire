@@ -29,6 +29,7 @@ auto main(int argc, char** argv) -> int {
         test_multiline_lambda_source_mapping_cf114(rt_dir);
         test_interned_typeid_lattice_and_diagnostics_cf116(rt_dir);
         test_unified_stdlib_metadata_table_cf117(rt_dir);
+        test_unified_diagnostics_pipeline_cf118(rt_dir);
         test_negative_parser_corpus_and_fuzz_runtime(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
         test_section2_language_ergonomics(rt_dir);
