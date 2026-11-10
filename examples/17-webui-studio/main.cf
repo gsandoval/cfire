@@ -161,5 +161,5 @@ fuzz "compute_track_mix invariants hold across arbitrary fader inputs" |ch: i32,
 bench "studio RPC set_track dispatch throughput" {
     mut app := configure_studio_app()
     defer app.close()
-    _ := try app.call_rpc("set_track", "{\"channel\":1,\"gain_db\":-3.0,\"muted\":false}")
+    _ = try app.call_rpc("set_track", "{\"channel\":1,\"gain_db\":-3.0,\"muted\":false}")
 }

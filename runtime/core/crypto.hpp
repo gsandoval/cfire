@@ -264,6 +264,10 @@ namespace cfire::hmac {
     return diff == 0;
 }
 
+[[nodiscard]] inline auto verify(std::string_view key, std::string_view data, std::string_view mac) -> bool {
+    return equal(sha256_hex(key, data), mac);
+}
+
 // RFC 5869 HMAC-based Extract-and-Expand Key Derivation Function (HKDF-SHA256)
 [[nodiscard]] inline auto hkdf_sha256(
     std::span<const std::byte> ikm,
@@ -844,6 +848,15 @@ inline void compute_ghash_tag(
     std::span<const std::uint8_t> aad = {}
 ) -> std::expected<std::vector<std::byte>, cfire::Error> {
     return decrypt_gcm(std::as_bytes(key), std::as_bytes(nonce), std::as_bytes(ciphertext), std::as_bytes(tag), std::as_bytes(aad));
+}
+
+[[nodiscard]] inline auto decrypt_gcm(
+    std::span<const std::byte> key,
+    std::span<const std::byte> nonce,
+    const GcmResult& result,
+    std::span<const std::byte> aad = {}
+) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    return decrypt_gcm(key, nonce, result.ciphertext, result.tag, aad);
 }
 
 // High-level OS CSPRNG Key Generation & Combined Nonce+Ciphertext+Tag AES-256-GCM (`CF-006`)

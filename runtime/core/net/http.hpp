@@ -78,6 +78,7 @@ namespace detail {
 
 struct Response {
     int status_code = 200;
+    int status = 200;
     std::string status_text{"OK"};
     std::unordered_map<std::string, std::string> headers{};
     std::string body{};
@@ -119,6 +120,7 @@ struct Response {
     static auto text(int code, std::string_view payload) -> Response {
         Response r;
         r.status_code = code;
+        r.status = code;
         r.status_text = status_text_for_code(code);
         r.headers["content-type"] = "text/plain; charset=utf-8";
         r.body = std::string(payload);
@@ -128,6 +130,7 @@ struct Response {
     static auto json(int code, std::string_view json_str) -> Response {
         Response r;
         r.status_code = code;
+        r.status = code;
         r.status_text = status_text_for_code(code);
         r.headers["content-type"] = "application/json";
         r.body = std::string(json_str);
@@ -137,6 +140,7 @@ struct Response {
     static auto html(int code, std::string_view html_content) -> Response {
         Response r;
         r.status_code = code;
+        r.status = code;
         r.status_text = status_text_for_code(code);
         r.headers["content-type"] = "text/html; charset=utf-8";
         r.body = std::string(html_content);
@@ -146,6 +150,7 @@ struct Response {
     static auto redirect(std::string_view location, int code = 302) -> Response {
         Response r;
         r.status_code = code;
+        r.status = code;
         r.status_text = status_text_for_code(code);
         r.headers["location"] = detail::strip_crlf(location);
         r.body = "";
@@ -273,6 +278,7 @@ inline auto parse_response(std::string_view raw) -> std::expected<Response, cfir
                     ? line.substr(sp1 + 1, sp2 - (sp1 + 1))
                     : line.substr(sp1 + 1);
                 res.status_code = cfire::detail::parse_int<int>(code_sv).value_or(0);
+                res.status = res.status_code;
                 if (sp2 != std::string_view::npos) {
                     res.status_text = std::string(line.substr(sp2 + 1));
                 }
@@ -534,7 +540,10 @@ namespace detail {
     Response out;
     if (urlResp) {
         long code = reinterpret_cast<FnLong>(msg_send)(urlResp, sel_reg("statusCode"));
-        if (code > 0) out.status_code = static_cast<int>(code);
+        if (code > 0) {
+            out.status_code = static_cast<int>(code);
+            out.status = out.status_code;
+        }
         out.status_text = status_text_for_code(out.status_code);
     }
     if (respData) {
@@ -618,6 +627,7 @@ namespace detail {
         : 200;
     Response res;
     res.status_code = status_code;
+    res.status = status_code;
     res.status_text = status_text_for_code(status_code);
     res.body = (nl != std::string::npos) ? combined.substr(nl + 1) : std::move(combined);
     return res;
@@ -982,6 +992,16 @@ template <typename Callback>
 #endif
 }
 
+template <typename Callback>
+[[nodiscard]] inline auto post_sse(
+    std::string_view url_str,
+    std::string_view body,
+    Callback&& on_event,
+    bool verify_peer = true
+) -> std::expected<Response, cfire::Error> {
+    return post_sse(url_str, body, std::unordered_map<std::string, std::string>{}, std::forward<Callback>(on_event), verify_peer);
+}
+
 class Router {
 public:
     using Handler = std::function<Response(const Request&)>;
@@ -1005,6 +1025,19 @@ public:
 
     auto use(Middleware mw) -> Router& {
         middlewares_.push_back(std::move(mw));
+        return *this;
+    }
+
+    template <typename F>
+        requires std::is_invocable_r_v<int, F, const Request&> || std::is_invocable_r_v<int, F, Request&>
+    auto use(F&& fn) -> Router& {
+        middlewares_.push_back([f = std::forward<F>(fn)](Request& req) -> std::optional<Response> {
+            int code = f(req);
+            if (code != 0) {
+                return Response::text(code, status_text_for_code(code));
+            }
+            return std::nullopt;
+        });
         return *this;
     }
 
@@ -1093,6 +1126,29 @@ public:
     }
 
     [[nodiscard]] auto dispatch(Request req) const -> Response {
+        std::size_t qm = req.path.find('?');
+        if (qm != std::string::npos) {
+            std::string qstr = req.path.substr(qm + 1);
+            req.path = req.path.substr(0, qm);
+            if (req.raw_query.empty()) {
+                req.raw_query = qstr;
+            }
+            std::string_view qsv = qstr;
+            std::size_t pos = 0;
+            while (pos < qsv.size()) {
+                std::size_t next_amp = qsv.find('&', pos);
+                if (next_amp == std::string_view::npos) next_amp = qsv.size();
+                std::string_view pair = qsv.substr(pos, next_amp - pos);
+                std::size_t eq = pair.find('=');
+                if (eq != std::string_view::npos) {
+                    req.query_params[cfire::url::decode(pair.substr(0, eq))] = cfire::url::decode(pair.substr(eq + 1));
+                } else if (!pair.empty()) {
+                    req.query_params[cfire::url::decode(pair)] = "";
+                }
+                pos = next_amp + 1;
+            }
+        }
+
         for (const auto& mw : middlewares_) {
             auto early = mw(req);
             if (early.has_value()) {
@@ -1130,6 +1186,7 @@ public:
         if (path_matched_any_method && !allowed_methods.empty()) {
             Response resp = Response::text(405, "405 Method Not Allowed");
             resp.status_code = 405;
+            resp.status = 405;
             resp.status_text = "Method Not Allowed";
             std::string allow_hdr;
             for (std::size_t i = 0; i < allowed_methods.size(); ++i) {

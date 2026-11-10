@@ -103,8 +103,8 @@ fn main() {
     increment(mut b, 2)
     
     // Explicit unique ownership:
-    p := make(own[Box], Box{ value: 100 })
-    println("b={} p={}", b.value, (*p).value)
+    p := make[own[Box]](Box{ value: 100 })
+    println("b={} p={}", b.value, p.value)
 })";
     std::string snip1_cpp = compile_snippet_to_cpp("snippet_intents.cf", snip1_cf);
 
@@ -1198,7 +1198,8 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
                     expected_guide_ver, expected_guide_gen));
             }
             if (std::filesystem::exists(repo_root / "VERSION")) {
-                auto ver_txt = cfire::version::trim_sv(read_all_str(repo_root / "VERSION"));
+                std::string raw_ver = read_all_str(repo_root / "VERSION");
+                auto ver_txt = cfire::version::trim_sv(raw_ver);
                 if (ver_txt != cfire::version::kVersion) {
                     return std::unexpected(std::format(
                         "Documentation audit failure: VERSION file ('{}') does not match kVersion ('{}').",

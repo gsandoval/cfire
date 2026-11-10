@@ -1,5 +1,11 @@
 #pragma once
 
+#include "core/tako.hpp"
+#include "core/net/tcp.hpp"
+#include "core/ai/doc_zip_deflate.hpp"
+#include "parser.hpp"
+#include <fcntl.h>
+
 void test_agent_tooling_outline_and_json([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_agent_tooling_outline_and_json");
     ScopedTempDir tmp_ws("cfire_tool");
@@ -118,6 +124,20 @@ fn main() {
     auto undef_text = run_cfire(std::format("check \"{}\"", undef_err_cf.string()));
     undef_text.assert_fail("undefined symbol fails text cfire check")
         .assert_contains("undef_err.cf:4:", "text check error points to .cf file and line 4");
+
+    // CF-102: Terminal Warning Visibility in human check mode
+    auto warn_cf = tmp_ws.file("warn_test.cf", R"(package main
+import "core:os"
+
+fn main() {
+    target := "foo"
+    _ = os.exec("{target}")
+}
+)");
+    auto warn_check = run_cfire(std::format("check \"{}\"", warn_cf.string()));
+    warn_check.assert_ok("human cfire check exits 0 on warning (CF-102)")
+        .assert_contains("warning: dynamic string interpolation/concatenation in 'os.exec'", "warning output rendered to stderr (CF-102)")
+        .assert_contains("checked (0 errors, 1 warning)", "summary line reports warning count (CF-102)");
 
     // 6. Test doc --llm & doc --check (AGENT-P0-04)
     auto llm_res = run_cfire("doc --llm");
@@ -1049,4 +1069,188 @@ fn main() {
     }
 
     std::println("--- PASS: test_performance_benchmarks");
+}
+
+void test_negative_parser_corpus_and_fuzz_runtime([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_negative_parser_corpus_and_fuzz_runtime (CF-131)");
+
+    // 1. Negative Parser Corpus: Verify syntax error recovery on 10 malformed programs
+    {
+        auto parse_fail_dir = std::filesystem::path("tests/parse_fail");
+        if (!std::filesystem::exists(parse_fail_dir)) {
+            parse_fail_dir = rt_dir.parent_path() / "tests" / "parse_fail";
+        }
+        require(std::filesystem::exists(parse_fail_dir), "tests/parse_fail directory exists");
+
+        std::vector<std::string> fail_cases = {
+            "01_unclosed_brace.cf",
+            "02_missing_type_bracket.cf",
+            "03_invalid_loan_intent.cf",
+            "04_reserved_keyword_var.cf",
+            "05_malformed_match_arm.cf",
+            "06_invalid_closure_param.cf",
+            "07_unclosed_string.cf",
+            "08_misplaced_top_level_stmt.cf",
+            "09_missing_fn_return_arrow.cf",
+            "10_invalid_float_exponent.cf"
+        };
+
+        for (const auto& fname : fail_cases) {
+            auto fpath = parse_fail_dir / fname;
+            auto content = cfire::fs::read_text(fpath);
+            require(content.has_value(), std::format("read negative parse test file: {}", fname));
+            if (!content) continue;
+
+            auto parse_res = cfire::frontend::parse_source(fname, *content);
+            require(!parse_res.has_value(), std::format("parser cleanly rejects invalid file: {}", fname));
+            if (!parse_res) {
+                require(!parse_res.error().empty(), std::format("parser returns diagnostic message for {}", fname));
+            }
+        }
+    }
+
+    // 2. Tako Cloud SDK In-Memory Runtime
+    {
+        auto& store = cfire::tako::detail::local_store();
+        store.reset();
+
+        // Entity operations
+        {
+            std::lock_guard<std::recursive_mutex> lock(store.mtx);
+            store.entities["users"]["u1"] = R"({"id":"u1","name":"alice"})";
+            require(store.entities["users"].contains("u1"), "tako entity store put");
+            require(store.entities["users"]["u1"].find("alice") != std::string::npos, "tako entity payload verification");
+            store.entities["users"].erase("u1");
+            require(!store.entities["users"].contains("u1"), "tako entity store delete");
+        }
+
+        // Bucket operations
+        {
+            std::lock_guard<std::recursive_mutex> lock(store.mtx);
+            store.buckets["avatars"]["u1.png"] = {"PNG_DATA", "image/png"};
+            require(store.buckets["avatars"].contains("u1.png"), "tako bucket store put");
+            require(store.buckets["avatars"]["u1.png"].second == "image/png", "tako bucket content type");
+            store.buckets["avatars"].erase("u1.png");
+            require(!store.buckets["avatars"].contains("u1.png"), "tako bucket delete");
+        }
+
+        // Cache operations
+        {
+            std::lock_guard<std::recursive_mutex> lock(store.mtx);
+            store.caches["session"]["sess_123"] = "valid";
+            require(store.caches["session"]["sess_123"] == "valid", "tako cache store get");
+            store.caches["session"].erase("sess_123");
+            require(!store.caches["session"].contains("sess_123"), "tako cache store delete");
+        }
+
+        // Queue publish / drain
+        {
+            std::lock_guard<std::recursive_mutex> lock(store.mtx);
+            store.queues["emails"].push_back("msg_1");
+            store.queues["emails"].push_back("msg_2");
+            require(store.queues["emails"].size() == 2, "tako queue publish size");
+            std::string popped = store.queues["emails"].front();
+            store.queues["emails"].erase(store.queues["emails"].begin());
+            require(popped == "msg_1", "tako queue fifo order");
+            require(store.queues["emails"].size() == 1, "tako queue remaining size");
+        }
+
+        // Secrets & Metrics
+        {
+            std::lock_guard<std::recursive_mutex> lock(store.mtx);
+            store.secrets["API_KEY"] = "secret_value_xyz";
+            require(store.secrets["API_KEY"] == "secret_value_xyz", "tako secret get");
+            store.counters["requests_total"] += 5;
+            require(store.counters["requests_total"] == 5, "tako counter metric inc");
+            store.histograms["latency_ms"].push_back(12.5);
+            require(!store.histograms["latency_ms"].empty(), "tako histogram observe");
+        }
+    }
+
+    // 3. TCP Loopback Stream and Socketpair
+    {
+        auto pair_res = cfire::net::socketpair();
+        require(pair_res.has_value(), "cfire::net::socketpair creation succeeds");
+        if (pair_res) {
+            auto& [c1, c2] = *pair_res;
+            require(c1.is_open() && c2.is_open(), "socketpair endpoints are open");
+
+            std::string msg = "cfire_tcp_packet_stream_test";
+            auto wres = c1.write_text(msg);
+            require(wres.has_value(), "c1 writes message successfully");
+
+            auto rres = c2.read_exact(msg.size());
+            require(rres.has_value(), "c2 reads exact message bytes");
+            if (rres) {
+                std::string rstr(reinterpret_cast<const char*>(rres->data()), rres->size());
+                require(rstr == msg, "socketpair data integrity matches");
+            }
+            c1.close();
+            c2.close();
+            require(!c1.is_open() && !c2.is_open(), "socketpair closed cleanly");
+        }
+    }
+
+    // 4. Zero-Dependency DEFLATE, ZIP and XML Utilities
+    {
+        // XML unescaping
+        std::string unesc = cfire::ai::detail::xml_unescape("&lt;book id=&quot;1&quot;&gt;Tom &amp; Jerry&lt;/book&gt;");
+        require(unesc == "<book id=\"1\">Tom & Jerry</book>", "xml_unescape handles XML entities");
+
+        // XML text extraction
+        std::string xml = "<w:p><w:t>Hello</w:t><w:t> </w:t><w:t>World</w:t></w:p>";
+        std::string extracted = cfire::ai::detail::extract_xml_text_runs(xml, "w:t");
+        require(extracted.find("Hello") != std::string::npos && extracted.find("World") != std::string::npos,
+            "extract_xml_text_runs extracts text runs");
+
+        // CRC32 check
+        std::uint32_t crc = cfire::ai::detail::crc32_bytes("123456789");
+        require(crc == 0xcbf43926, "crc32 standard check value");
+
+        // Inflate resilience on truncated/corrupt payload
+        const std::byte corrupt_bytes[] = {std::byte{0x78}, std::byte{0x9c}, std::byte{0xff}, std::byte{0x00}};
+        auto dec = cfire::ai::detail::inflate_raw(corrupt_bytes);
+        (void)dec; // Must not crash / throw
+
+        // Zip extraction resilience on invalid headers
+        auto zip_res = cfire::ai::detail::extract_zip_entries(corrupt_bytes);
+        require(zip_res.empty(), "extract_zip_entries returns empty map on malformed payload");
+    }
+
+    // 5. Standalone LibFuzzer Smoke Harness
+    {
+        std::vector<std::string> adversarial_inputs = {
+            "",
+            "\0",
+            "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":123,\"method\":\"test\"}",
+            "http://example.com:8080/path?key=val%20test#hash",
+            "fn main() { return 1 + 2 }"
+        };
+
+        for (const auto& sample : adversarial_inputs) {
+            // Parser fuzz check
+            auto p_res = cfire::frontend::parse_source("fuzz_sample.cf", sample);
+            (void)p_res;
+
+            // HTTP parse check
+            auto h_res = cfire::http::parse_request(sample);
+            (void)h_res;
+
+            // URL parse check
+            auto u_res = cfire::url::parse(sample);
+            (void)u_res;
+
+            // JSON-RPC key extraction check
+            auto s_res = cfire::lsp::detail::extract_json_string(sample, "method");
+            (void)s_res;
+
+            // Deflate check
+            auto b_span = std::as_bytes(std::span(sample.data(), sample.size()));
+            auto d_res = cfire::ai::detail::inflate_raw(b_span);
+            (void)d_res;
+        }
+    }
+
+    std::println("--- PASS: test_negative_parser_corpus_and_fuzz_runtime (CF-131)");
 }

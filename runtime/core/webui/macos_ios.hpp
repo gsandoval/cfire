@@ -607,6 +607,15 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                     [window setContentSize:NSMakeSize(w, h)];
                 });
             };
+            state_->platform_set_dark_mode = [window](bool dark) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (dark) {
+                        [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
+                    } else {
+                        [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameAqua]];
+                    }
+                });
+            };
             state_->platform_fullscreen = [window]() {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [window toggleFullScreen:nil];

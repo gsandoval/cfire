@@ -110,7 +110,7 @@ template <typename... Args>
     if constexpr (sizeof...(Args) >= 2) {
         attrs.reserve(sizeof...(Args) / 2);
         auto add_pairs = [&]<typename Self, typename K, typename V, typename... Rest>(Self& self, K&& k, V&& v, Rest&&... rest) {
-            attrs.emplace_back(std::string(std::forward<K>(k)), std::string(std::forward<V>(v)));
+            attrs.emplace_back(cfire::str_ctor(std::forward<K>(k)), cfire::str_ctor(std::forward<V>(v)));
             if constexpr (sizeof...(rest) >= 2) {
                 self(self, std::forward<Rest>(rest)...);
             }

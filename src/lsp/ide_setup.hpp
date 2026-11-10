@@ -255,6 +255,141 @@ struct DetectedIde {
 }
 
 // Configures Editor LSP & AI Agent MCP integrations (VS Code, Cursor, Windsurf, Antigravity, Claude Code, Zed, Neovim, CLion)
+inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext_dir) {
+    std::error_code ec;
+    std::filesystem::create_directories(ext_dir / "syntaxes", ec);
+
+    {
+        std::ofstream p_ofs(ext_dir / "package.json", std::ios::trunc);
+        p_ofs << R"cfjson({
+  "name": "cfire-lang",
+  "publisher": "cfire",
+  "version": "0.2.0",
+  "displayName": "cfire Language Support",
+  "description": "Syntax highlighting, bracket matching, and block auto-indentation for cfire (.cf)",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "cfire",
+        "aliases": ["cfire", "cf"],
+        "extensions": [".cf"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cfire",
+        "scopeName": "source.cfire",
+        "path": "./syntaxes/cfire.tmLanguage.json"
+      }
+    ]
+  }
+}
+)cfjson";
+    }
+
+    {
+        std::ofstream lc_ofs(ext_dir / "language-configuration.json", std::ios::trunc);
+        lc_ofs << R"cfjson({
+  "comments": {
+    "lineComment": "//",
+    "blockComment": ["/*", "*/"]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"", "notIn": ["string"] },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
+    { "open": "`", "close": "`", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["\"", "\""],
+    ["'", "'"],
+    ["`", "`"]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^((?!\\/\\/).)*(\\{[^}\"'`]*|\\([^)\"'`]*|\\[[^\\]\"'`]*)$",
+    "decreaseIndentPattern": "^\\s*[}\\])]"
+  }
+}
+)cfjson";
+    }
+
+    {
+        std::ofstream tm_ofs(ext_dir / "syntaxes" / "cfire.tmLanguage.json", std::ios::trunc);
+        tm_ofs << R"cfjson({
+  "scopeName": "source.cfire",
+  "name": "cfire",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.cfire", "match": "//.*$" },
+        { "name": "comment.block.cfire", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cfire",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.cfire", "match": "\\\\." }
+          ]
+        },
+        { "name": "string.quoted.other.raw.cfire", "begin": "`", "end": "`" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.cfire",
+          "match": "\\b(package|import|fn|return|if|else|for|in|match|try|or|defer|break|continue|async|test|fuzz|bench|type|struct|enum|interface|mut|move|out)\\b"
+        },
+        {
+          "name": "constant.language.cfire",
+          "match": "\\b(true|false|none|some|ok|err)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.cfire",
+          "match": "\\b(i8|i16|i32|i64|isize|int|u8|u16|u32|u64|usize|uint|byte|f32|f64|bool|str|char|rune|void|any|own|shared|map)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.cfire", "match": "\\b0x[0-9a-fA-F_]+\\b|\\b[0-9][0-9_]*(\\.[0-9_]+)?\\b" }
+      ]
+    }
+  }
+}
+)cfjson";
+    }
+}
+
 [[nodiscard]] inline auto configure_ide(
     const std::filesystem::path& repo_root,
     std::string_view editor_input = "auto",
@@ -309,7 +444,7 @@ struct DetectedIde {
     std::error_code ec;
 
     // 1. VS Code (and shared .vscode/settings.json for Cursor / Windsurf)
-    if (has_target("vscode", targets) || has_target("cursor", targets) || has_target("windsurf", targets)) {
+    if (has_target("vscode", targets) || has_target("cursor", targets) || has_target("windsurf", targets) || has_target("antigravity", targets)) {
         auto vscode_dir = repo_root / ".vscode";
         std::filesystem::create_directories(vscode_dir, ec);
         std::string vs_settings = std::format(R"({{
@@ -318,7 +453,9 @@ struct DetectedIde {
   }},
   "[cfire]": {{
     "editor.defaultFormatter": "cfire",
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.autoIndent": "full"
   }},
   "cfire.lsp.path": "{}",
   "cfire.lsp.arguments": ["lsp"],
@@ -331,7 +468,18 @@ struct DetectedIde {
         }
         {
             std::ofstream e_ofs(vscode_dir / "extensions.json", std::ios::trunc);
-            e_ofs << "{\n  \"recommendations\": []\n}\n";
+            e_ofs << "{\n  \"recommendations\": [\"cfire.cfire-lang\"]\n}\n";
+        }
+        write_cfire_vscode_extension_bundle(vscode_dir / "extensions" / "cfire.cfire-lang");
+        if (global_scope) {
+            if (const char* home = std::getenv("HOME")) {
+                std::filesystem::path h(home);
+                for (const char* ext_root : {".vscode/extensions", ".antigravity/extensions", ".cursor/extensions"}) {
+                    if (std::filesystem::exists(h / ext_root, ec)) {
+                        write_cfire_vscode_extension_bundle(h / ext_root / "cfire.cfire-lang-0.2.0");
+                    }
+                }
+            }
         }
         std::string vs_mcp = std::format(R"({{
   "servers": {{
@@ -348,7 +496,7 @@ struct DetectedIde {
             m_ofs << vs_mcp;
         }
         if (has_target("vscode", targets)) {
-            configured.push_back("VS Code (.vscode/settings.json + .vscode/mcp.json)");
+            configured.push_back("VS Code (.vscode/settings.json + .vscode/mcp.json + .vscode/extensions/cfire.cfire-lang)");
         }
     }
 
@@ -584,21 +732,21 @@ args = ["mcp"]
     if (has_target("zed", targets)) {
         std::string zed_settings = std::format(R"({{
   "file_types": {{
-    "Go": ["cf"]
+    "Rust": ["cf"]
   }},
   "inlay_hints": {{
     "enabled": true
   }},
   "languages": {{
-    "Go": {{
+    "Rust": {{
       "tab_size": 4,
       "formatter": "language_server",
       "format_on_save": "on",
-      "language_servers": ["gopls"]
+      "language_servers": ["rust-analyzer"]
     }}
   }},
   "lsp": {{
-    "gopls": {{
+    "rust-analyzer": {{
       "binary": {{
         "path": "{}",
         "arguments": ["lsp"]

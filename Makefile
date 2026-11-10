@@ -14,23 +14,23 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: all build install uninstall doctor setup test test-unit test-stdlib test-e2e fuzz bench docs fmt review-check release clean
+.PHONY: all build hooks install uninstall doctor setup test test-unit test-stdlib test-e2e test-guide test-asan fuzz bench docs fmt review-check release clean
 
 all: build
 
 HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp)
 
 build: $(HEADERS)
-	@git config core.hooksPath .githooks 2>/dev/null || true
 	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
+
+hooks:
+	@git config core.hooksPath .githooks
 
 install: build
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/pkg
-	cp cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$
-	mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire
+	cp cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire
 	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
 	printf "%s %s\n" "$(CFIRE_VER)" "$(GIT_SHA)" > $(DESTDIR)$(PREFIX)/share/cfire/runtime/VERSION
 	cp -R pkg/* $(DESTDIR)$(PREFIX)/share/cfire/pkg/
@@ -79,6 +79,7 @@ test: build .cfire_test_runner
 	./cfire test tests/stdlib_suite_test.cf
 	./cfire test pkg/raygui_ext/raygui_ext_test.cf
 	./cfire doc --check
+	$(MAKE) test-guide
 
 test-unit: build .cfire_test_runner
 	./.cfire_test_runner unit
@@ -89,6 +90,18 @@ test-stdlib: build .cfire_test_runner
 
 test-e2e: build .cfire_test_runner
 	./.cfire_test_runner e2e
+
+test-guide: build
+	python3 scripts/run_guide_tests.py
+
+ASAN_CXXFLAGS := -std=c++2b -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
+ASAN_LDFLAGS  := -fsanitize=address,undefined $(LDFLAGS)
+
+test-asan: build
+	@echo "=== Building & Running Unit Suites under AddressSanitizer & UndefinedBehaviorSanitizer ==="
+	$(CXX) $(ASAN_CXXFLAGS) $(TEST_SRCS) $(ASAN_LDFLAGS) -o .cfire_test_runner_asan
+	./.cfire_test_runner_asan unit
+	rm -f .cfire_test_runner_asan
 
 fuzz: build .cfire_test_runner
 	./.cfire_test_runner fuzz

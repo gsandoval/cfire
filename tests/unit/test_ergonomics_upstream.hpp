@@ -1127,14 +1127,14 @@ test "CF-087 validate struct tags and Agent self-correction" {
                     require_sema_error(R"CF(package main
 import "ext:ai"
 fn main() -> void! {
-    _ := try ai.embed("local", "hello")
+    _ = try ai.embed("local", "hello")
 }
 )CF", "cfire/DEPRECATED-API", "deprecated_ai_embed.cf");
 
                     require_sema_error(R"CF(package main
 import "ext:ai"
 fn main() -> void! {
-    _ := try ai.ocr("receipt.png")
+    _ = try ai.ocr("receipt.png")
 }
 )CF", "cfire/DEPRECATED-API", "deprecated_ai_ocr.cf");
 
@@ -1147,7 +1147,7 @@ import "core:net"
 import "core:os"
 
 fn can_connect_unlistening() -> bool {
-    _ := net.connect_tcp("127.0.0.1", 59997) or err {
+    _ = net.connect_tcp("127.0.0.1", 59997) or err {
         return false
     }
     return true
@@ -1228,10 +1228,10 @@ import "core:fs"
 import "core:net"
 
 fn demo(mut f: fs.File, mut c: net.TcpConn) -> void! {
-    _ := try fs.read_all("a.bin")
+    _ = try fs.read_all("a.bin")
     try fs.write_all("a.bin", []byte("x"))
-    _ := try f.write_str("hi")
-    _ := try c.read_str(64)
+    _ = try f.write_str("hi")
+    _ = try c.read_str(64)
 }
 
 fn main() {}

@@ -2052,43 +2052,44 @@ syncCfireThemeBtn();
           <span class="material-symbols-outlined sidebar-chevron" aria-hidden="true">expand_more</span>
         </button>
         <select class="mobile-topic-select" id="ref-mobile-pane-select" aria-label="Jump to module" onchange="if(this.value)navigateToRefPane(this.value)">
-          <option value="overview">Overview (38 Modules)</option>
+          <option value="overview">Overview (39 Modules)</option>
           <option value="mod-audio">core:audio (25 fns)</option>
           <option value="mod-build">core:build (10 fns)</option>
           <option value="mod-cli">core:cli (7 fns)</option>
           <option value="mod-collections">core:collections (3 fns)</option>
-          <option value="mod-aes">core:crypto/aes (7 fns)</option>
+          <option value="mod-aes">core:crypto/aes (8 fns)</option>
           <option value="mod-blake3">core:crypto/blake3 (1 fns)</option>
-          <option value="mod-hmac">core:crypto/hmac (5 fns)</option>
-          <option value="mod-sha256">core:crypto/sha256 (4 fns)</option>
+          <option value="mod-hmac">core:crypto/hmac (7 fns)</option>
+          <option value="mod-sha256">core:crypto/sha256 (5 fns)</option>
           <option value="mod-base64">core:encoding/base64 (4 fns)</option>
           <option value="mod-csv">core:encoding/csv (4 fns)</option>
           <option value="mod-hex">core:encoding/hex (4 fns)</option>
           <option value="mod-fs">core:fs (37 fns)</option>
           <option value="mod-json">core:json (6 fns)</option>
           <option value="mod-keychain">core:keychain (3 fns)</option>
-          <option value="mod-log">core:log (6 fns)</option>
-          <option value="mod-math">core:math (4 fns)</option>
+          <option value="mod-log">core:log (8 fns)</option>
+          <option value="mod-math">core:math (14 fns)</option>
           <option value="mod-net">core:net (20 fns)</option>
           <option value="mod-http">core:net/http (27 fns)</option>
           <option value="mod-tls">core:net/tls (7 fns)</option>
           <option value="mod-url">core:net/url (3 fns)</option>
           <option value="mod-websocket">core:net/websocket (20 fns)</option>
-          <option value="mod-os">core:os (17 fns)</option>
+          <option value="mod-os">core:os (18 fns)</option>
           <option value="mod-rand">core:rand (4 fns)</option>
           <option value="mod-regex">core:regex (3 fns)</option>
-          <option value="mod-sort">core:sort (2 fns)</option>
-          <option value="mod-str">core:str (24 fns)</option>
-          <option value="mod-sync">core:sync (13 fns)</option>
+          <option value="mod-sort">core:sort (3 fns)</option>
+          <option value="mod-str">core:str (26 fns)</option>
+          <option value="mod-sync">core:sync (14 fns)</option>
           <option value="mod-context">core:sync/context (8 fns)</option>
-          <option value="mod-time">core:time (10 fns)</option>
+          <option value="mod-tako">core:tako (8 fns)</option>
+          <option value="mod-time">core:time (15 fns)</option>
           <option value="mod-unicode">core:unicode (6 fns)</option>
-          <option value="mod-ai">ext:ai (55 fns)</option>
-          <option value="mod-zstd">ext:compress/zstd (2 fns)</option>
+          <option value="mod-ai">ext:ai (56 fns)</option>
+          <option value="mod-zstd">ext:compress/zstd (4 fns)</option>
           <option value="mod-sodium">ext:crypto/sodium (9 fns)</option>
           <option value="mod-sqlite">ext:db/sqlite (8 fns)</option>
           <option value="mod-ssh">ext:net/ssh (27 fns)</option>
-          <option value="mod-webui">ext:webui (51 fns)</option>
+          <option value="mod-webui">ext:webui (55 fns)</option>
           <option value="mod-rg">vendor:raygui (15 fns)</option>
           <option value="mod-rl">vendor:raylib (24 fns)</option>
           <option value="diagnostics">Diagnostics (32 Rules)</option>
@@ -2101,49 +2102,50 @@ syncCfireThemeBtn();
           <div id="ref-search-results" class="search-results-dropdown"></div>
         </div>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0; margin-bottom: 0.75rem;">
-          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 38 Modules)</strong></a></li>
+          <li class="nav-item"><a href="#overview" id="nav-pane-overview" class="active" onclick="navigateToRefPane('overview'); return false;"><strong>Overview (All 39 Modules)</strong></a></li>
         </ul>
-        <h4>Foundational Core (30)</h4>
+        <h4>Foundational Core (31)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#mod-audio" id="nav-pane-mod-audio" onclick="navigateToRefPane('mod-audio'); return false;"><code>core:audio</code> <span style="color:var(--muted);font-size:0.75rem;">(25)</span></a></li>
           <li class="nav-item"><a href="#mod-build" id="nav-pane-mod-build" onclick="navigateToRefPane('mod-build'); return false;"><code>core:build</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
           <li class="nav-item"><a href="#mod-cli" id="nav-pane-mod-cli" onclick="navigateToRefPane('mod-cli'); return false;"><code>core:cli</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-collections" id="nav-pane-mod-collections" onclick="navigateToRefPane('mod-collections'); return false;"><code>core:collections</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
-          <li class="nav-item"><a href="#mod-aes" id="nav-pane-mod-aes" onclick="navigateToRefPane('mod-aes'); return false;"><code>core:crypto/aes</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
+          <li class="nav-item"><a href="#mod-aes" id="nav-pane-mod-aes" onclick="navigateToRefPane('mod-aes'); return false;"><code>core:crypto/aes</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-blake3" id="nav-pane-mod-blake3" onclick="navigateToRefPane('mod-blake3'); return false;"><code>core:crypto/blake3</code> <span style="color:var(--muted);font-size:0.75rem;">(1)</span></a></li>
-          <li class="nav-item"><a href="#mod-hmac" id="nav-pane-mod-hmac" onclick="navigateToRefPane('mod-hmac'); return false;"><code>core:crypto/hmac</code> <span style="color:var(--muted);font-size:0.75rem;">(5)</span></a></li>
-          <li class="nav-item"><a href="#mod-sha256" id="nav-pane-mod-sha256" onclick="navigateToRefPane('mod-sha256'); return false;"><code>core:crypto/sha256</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
+          <li class="nav-item"><a href="#mod-hmac" id="nav-pane-mod-hmac" onclick="navigateToRefPane('mod-hmac'); return false;"><code>core:crypto/hmac</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
+          <li class="nav-item"><a href="#mod-sha256" id="nav-pane-mod-sha256" onclick="navigateToRefPane('mod-sha256'); return false;"><code>core:crypto/sha256</code> <span style="color:var(--muted);font-size:0.75rem;">(5)</span></a></li>
           <li class="nav-item"><a href="#mod-base64" id="nav-pane-mod-base64" onclick="navigateToRefPane('mod-base64'); return false;"><code>core:encoding/base64</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-csv" id="nav-pane-mod-csv" onclick="navigateToRefPane('mod-csv'); return false;"><code>core:encoding/csv</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-hex" id="nav-pane-mod-hex" onclick="navigateToRefPane('mod-hex'); return false;"><code>core:encoding/hex</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-fs" id="nav-pane-mod-fs" onclick="navigateToRefPane('mod-fs'); return false;"><code>core:fs</code> <span style="color:var(--muted);font-size:0.75rem;">(37)</span></a></li>
           <li class="nav-item"><a href="#mod-json" id="nav-pane-mod-json" onclick="navigateToRefPane('mod-json'); return false;"><code>core:json</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
           <li class="nav-item"><a href="#mod-keychain" id="nav-pane-mod-keychain" onclick="navigateToRefPane('mod-keychain'); return false;"><code>core:keychain</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
-          <li class="nav-item"><a href="#mod-log" id="nav-pane-mod-log" onclick="navigateToRefPane('mod-log'); return false;"><code>core:log</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
-          <li class="nav-item"><a href="#mod-math" id="nav-pane-mod-math" onclick="navigateToRefPane('mod-math'); return false;"><code>core:math</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
+          <li class="nav-item"><a href="#mod-log" id="nav-pane-mod-log" onclick="navigateToRefPane('mod-log'); return false;"><code>core:log</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
+          <li class="nav-item"><a href="#mod-math" id="nav-pane-mod-math" onclick="navigateToRefPane('mod-math'); return false;"><code>core:math</code> <span style="color:var(--muted);font-size:0.75rem;">(14)</span></a></li>
           <li class="nav-item"><a href="#mod-net" id="nav-pane-mod-net" onclick="navigateToRefPane('mod-net'); return false;"><code>core:net</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
           <li class="nav-item"><a href="#mod-http" id="nav-pane-mod-http" onclick="navigateToRefPane('mod-http'); return false;"><code>core:net/http</code> <span style="color:var(--muted);font-size:0.75rem;">(27)</span></a></li>
           <li class="nav-item"><a href="#mod-tls" id="nav-pane-mod-tls" onclick="navigateToRefPane('mod-tls'); return false;"><code>core:net/tls</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-url" id="nav-pane-mod-url" onclick="navigateToRefPane('mod-url'); return false;"><code>core:net/url</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-websocket" id="nav-pane-mod-websocket" onclick="navigateToRefPane('mod-websocket'); return false;"><code>core:net/websocket</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
-          <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(17)</span></a></li>
+          <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(18)</span></a></li>
           <li class="nav-item"><a href="#mod-rand" id="nav-pane-mod-rand" onclick="navigateToRefPane('mod-rand'); return false;"><code>core:rand</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-regex" id="nav-pane-mod-regex" onclick="navigateToRefPane('mod-regex'); return false;"><code>core:regex</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
-          <li class="nav-item"><a href="#mod-sort" id="nav-pane-mod-sort" onclick="navigateToRefPane('mod-sort'); return false;"><code>core:sort</code> <span style="color:var(--muted);font-size:0.75rem;">(2)</span></a></li>
-          <li class="nav-item"><a href="#mod-str" id="nav-pane-mod-str" onclick="navigateToRefPane('mod-str'); return false;"><code>core:str</code> <span style="color:var(--muted);font-size:0.75rem;">(24)</span></a></li>
-          <li class="nav-item"><a href="#mod-sync" id="nav-pane-mod-sync" onclick="navigateToRefPane('mod-sync'); return false;"><code>core:sync</code> <span style="color:var(--muted);font-size:0.75rem;">(13)</span></a></li>
+          <li class="nav-item"><a href="#mod-sort" id="nav-pane-mod-sort" onclick="navigateToRefPane('mod-sort'); return false;"><code>core:sort</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
+          <li class="nav-item"><a href="#mod-str" id="nav-pane-mod-str" onclick="navigateToRefPane('mod-str'); return false;"><code>core:str</code> <span style="color:var(--muted);font-size:0.75rem;">(26)</span></a></li>
+          <li class="nav-item"><a href="#mod-sync" id="nav-pane-mod-sync" onclick="navigateToRefPane('mod-sync'); return false;"><code>core:sync</code> <span style="color:var(--muted);font-size:0.75rem;">(14)</span></a></li>
           <li class="nav-item"><a href="#mod-context" id="nav-pane-mod-context" onclick="navigateToRefPane('mod-context'); return false;"><code>core:sync/context</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
-          <li class="nav-item"><a href="#mod-time" id="nav-pane-mod-time" onclick="navigateToRefPane('mod-time'); return false;"><code>core:time</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
+          <li class="nav-item"><a href="#mod-tako" id="nav-pane-mod-tako" onclick="navigateToRefPane('mod-tako'); return false;"><code>core:tako</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
+          <li class="nav-item"><a href="#mod-time" id="nav-pane-mod-time" onclick="navigateToRefPane('mod-time'); return false;"><code>core:time</code> <span style="color:var(--muted);font-size:0.75rem;">(15)</span></a></li>
           <li class="nav-item"><a href="#mod-unicode" id="nav-pane-mod-unicode" onclick="navigateToRefPane('mod-unicode'); return false;"><code>core:unicode</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
         </ul>
         <h4 style="margin-top:1rem;">Domain Extensions (6)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
-          <li class="nav-item"><a href="#mod-ai" id="nav-pane-mod-ai" onclick="navigateToRefPane('mod-ai'); return false;"><code>ext:ai</code> <span style="color:var(--muted);font-size:0.75rem;">(55)</span></a></li>
-          <li class="nav-item"><a href="#mod-zstd" id="nav-pane-mod-zstd" onclick="navigateToRefPane('mod-zstd'); return false;"><code>ext:compress/zstd</code> <span style="color:var(--muted);font-size:0.75rem;">(2)</span></a></li>
+          <li class="nav-item"><a href="#mod-ai" id="nav-pane-mod-ai" onclick="navigateToRefPane('mod-ai'); return false;"><code>ext:ai</code> <span style="color:var(--muted);font-size:0.75rem;">(56)</span></a></li>
+          <li class="nav-item"><a href="#mod-zstd" id="nav-pane-mod-zstd" onclick="navigateToRefPane('mod-zstd'); return false;"><code>ext:compress/zstd</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-sodium" id="nav-pane-mod-sodium" onclick="navigateToRefPane('mod-sodium'); return false;"><code>ext:crypto/sodium</code> <span style="color:var(--muted);font-size:0.75rem;">(9)</span></a></li>
           <li class="nav-item"><a href="#mod-sqlite" id="nav-pane-mod-sqlite" onclick="navigateToRefPane('mod-sqlite'); return false;"><code>ext:db/sqlite</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-ssh" id="nav-pane-mod-ssh" onclick="navigateToRefPane('mod-ssh'); return false;"><code>ext:net/ssh</code> <span style="color:var(--muted);font-size:0.75rem;">(27)</span></a></li>
-          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(51)</span></a></li>
+          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(55)</span></a></li>
         </ul>
         <h4 style="margin-top:1rem;">Vendor Libraries (2)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
@@ -2204,12 +2206,12 @@ syncCfireThemeBtn();
           <span>/</span>
           <a href="#overview" onclick="navigateToRefPane('overview'); return false;">Stdlib Reference</a>
           <span>/</span>
-          <span class="crumb-current" id="ref-active-crumb">Overview (All 38 Modules)</span>
+          <span class="crumb-current" id="ref-active-crumb">Overview (All 39 Modules)</span>
         </div>
         <div class="toolbar-actions">
           <div class="reader-mode-toggle" role="group" aria-label="Reference Reading Mode">
             <button type="button" class="mode-btn active" id="btn-ref-module" onclick="setRefMode('module')" title="Single-module focused view">Module View</button>
-            <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (38)</button>
+            <button type="button" class="mode-btn" id="btn-ref-all" onclick="setRefMode('all')" title="Continuous all-modules view">View All (39)</button>
           </div>
           <button type="button" class="btn-toolbar-ai" onclick="openAiModal()" title="Generate context-rich AI prompt for this module">
             <span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">auto_awesome</span>
@@ -2217,15 +2219,15 @@ syncCfireThemeBtn();
           </button>
         </div>
       </div>
-      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-short="Overview" data-pane-title="Overview (All 38 Modules)">
+      <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-short="Overview" data-pane-title="Overview (All 39 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">38 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (30 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (6 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ graphics engines) — plus 32 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">39 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (31 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (6 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (2 bundled C/C++ graphics engines) — plus 32 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Text, Containers, Math &amp; Data Formats</div>
         <div class="ref-category-grid">
           <a href="#mod-str" class="ref-mod-card" onclick="navigateToRefPane('mod-str'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:str</span>
-              <span class="ref-mod-card-count">24 fns</span>
+              <span class="ref-mod-card-count">26 fns</span>
             </div>
             <div class="ref-mod-card-title">UTF-8 String Manipulation</div>
             <div class="ref-mod-card-desc">Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion.</div>
@@ -2257,7 +2259,7 @@ syncCfireThemeBtn();
           <a href="#mod-sort" class="ref-mod-card" onclick="navigateToRefPane('mod-sort'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:sort</span>
-              <span class="ref-mod-card-count">2 fns</span>
+              <span class="ref-mod-card-count">3 fns</span>
             </div>
             <div class="ref-mod-card-title">Slice Sorting &amp; Binary Search</div>
             <div class="ref-mod-card-desc">In-place sorting algorithms and binary search on slices.</div>
@@ -2265,7 +2267,7 @@ syncCfireThemeBtn();
           <a href="#mod-math" class="ref-mod-card" onclick="navigateToRefPane('mod-math'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:math</span>
-              <span class="ref-mod-card-count">4 fns</span>
+              <span class="ref-mod-card-count">14 fns</span>
             </div>
             <div class="ref-mod-card-title">Numeric &amp; Floating-Point Utilities</div>
             <div class="ref-mod-card-desc">Standard mathematical constants (<code>PI</code>, <code>E</code>) and numeric clamping/transcendental functions.</div>
@@ -2324,7 +2326,7 @@ syncCfireThemeBtn();
           <a href="#mod-os" class="ref-mod-card" onclick="navigateToRefPane('mod-os'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:os</span>
-              <span class="ref-mod-card-count">17 fns</span>
+              <span class="ref-mod-card-count">18 fns</span>
             </div>
             <div class="ref-mod-card-title">Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</div>
             <div class="ref-mod-card-desc">Process environment inspection, working directory queries, standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make_raw</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>).</div>
@@ -2332,7 +2334,7 @@ syncCfireThemeBtn();
           <a href="#mod-time" class="ref-mod-card" onclick="navigateToRefPane('mod-time'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:time</span>
-              <span class="ref-mod-card-count">10 fns</span>
+              <span class="ref-mod-card-count">15 fns</span>
             </div>
             <div class="ref-mod-card-title">Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</div>
             <div class="ref-mod-card-desc">High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by <code>std::chrono</code>.</div>
@@ -2340,7 +2342,7 @@ syncCfireThemeBtn();
           <a href="#mod-sync" class="ref-mod-card" onclick="navigateToRefPane('mod-sync'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:sync</span>
-              <span class="ref-mod-card-count">13 fns</span>
+              <span class="ref-mod-card-count">14 fns</span>
             </div>
             <div class="ref-mod-card-title">Thread-Safe Typed Channels &amp; Mutexes</div>
             <div class="ref-mod-card-desc">Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>).</div>
@@ -2364,10 +2366,10 @@ syncCfireThemeBtn();
           <a href="#mod-log" class="ref-mod-card" onclick="navigateToRefPane('mod-log'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:log</span>
-              <span class="ref-mod-card-count">6 fns</span>
+              <span class="ref-mod-card-count">8 fns</span>
             </div>
             <div class="ref-mod-card-title">Structured Leveled Logging</div>
-            <div class="ref-mod-card-desc">Leveled logging (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>) with structured key-value attributes and Text / JSON formatters.</div>
+            <div class="ref-mod-card-desc">Leveled logging (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>) with <code>Level</code> (<code>Debug</code>, <code>Info</code>, <code>Warn</code>, <code>Error</code>), <code>Format</code> (<code>Text</code>, <code>Json</code>), and structured key-value attributes.</div>
           </a>
           <a href="#mod-keychain" class="ref-mod-card" onclick="navigateToRefPane('mod-keychain'); return false;">
             <div class="ref-mod-card-head">
@@ -2442,7 +2444,7 @@ syncCfireThemeBtn();
           <a href="#mod-aes" class="ref-mod-card" onclick="navigateToRefPane('mod-aes'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:crypto/aes</span>
-              <span class="ref-mod-card-count">7 fns</span>
+              <span class="ref-mod-card-count">8 fns</span>
             </div>
             <div class="ref-mod-card-title">NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</div>
             <div class="ref-mod-card-desc">Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).</div>
@@ -2458,7 +2460,7 @@ syncCfireThemeBtn();
           <a href="#mod-hmac" class="ref-mod-card" onclick="navigateToRefPane('mod-hmac'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:crypto/hmac</span>
-              <span class="ref-mod-card-count">5 fns</span>
+              <span class="ref-mod-card-count">7 fns</span>
             </div>
             <div class="ref-mod-card-title">RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</div>
             <div class="ref-mod-card-desc">Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys.</div>
@@ -2466,7 +2468,7 @@ syncCfireThemeBtn();
           <a href="#mod-sha256" class="ref-mod-card" onclick="navigateToRefPane('mod-sha256'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:crypto/sha256</span>
-              <span class="ref-mod-card-count">4 fns</span>
+              <span class="ref-mod-card-count">5 fns</span>
             </div>
             <div class="ref-mod-card-title">Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</div>
             <div class="ref-mod-card-desc">Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>).</div>
@@ -2477,7 +2479,7 @@ syncCfireThemeBtn();
           <a href="#mod-ai" class="ref-mod-card" onclick="navigateToRefPane('mod-ai'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">ext:ai</span>
-              <span class="ref-mod-card-count">55 fns</span>
+              <span class="ref-mod-card-count">56 fns</span>
             </div>
             <div class="ref-mod-card-title">On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</div>
             <div class="ref-mod-card-desc">Unified AI SDK built around stateful <code>Client</code> and <code>Agent</code> objects supporting Cross-Platform On-Device Intelligence (<code>ai.local()</code> / <code>ai.apple()</code>: <code>NaturalLanguage</code>/<code>PDFKit</code>/<code>Vision</code> on Apple; dynamic <code>libtesseract</code>/<code>pdftotext</code> + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (<code>ai.openai()</code>), Anthropic Claude (<code>ai.anthropic()</code>), Google Gemini (<code>ai.gemini()</code>), Ollama (<code>ai.ollama()</code>), vLLM/llama.cpp (<code>ai.openai_compatible()</code>), and deterministic offline mocks (<code>ai.mock()</code>, <code>ai.mock_sequence()</code>), with multi-turn tool-calling agents (<code>Agent</code>, <code>make_agent</code>), self-correcting structured outputs (<code>Client.generate_struct[T]</code>, <code>Agent.run_struct[T]</code>, <code>Agent.run_struct_validated[T]</code>) backed by compile-time <code>validate:&quot;...&quot;</code> struct tags, stateful client embeddings/OCR/language recognition (<code>Client.embed</code>, <code>Client.embed_image</code>, <code>Client.ocr</code>, <code>Client.detect_language</code>), pure stateless document parsers (<code>load_document</code>, <code>chunk_document</code>), SIMD vector math (<code>cosine_similarity</code>, <code>l2_distance</code>, <code>dot_product</code>, <code>normalize</code>), and a Model Context Protocol server (<code>McpServer</code>) that shares tool definitions with <code>Agent</code> (<code>use_mcp</code>).</div>
@@ -2485,7 +2487,7 @@ syncCfireThemeBtn();
           <a href="#mod-zstd" class="ref-mod-card" onclick="navigateToRefPane('mod-zstd'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">ext:compress/zstd</span>
-              <span class="ref-mod-card-count">2 fns</span>
+              <span class="ref-mod-card-count">4 fns</span>
             </div>
             <div class="ref-mod-card-title">Native Zstandard Frame Compression</div>
             <div class="ref-mod-card-desc">Hardware-accelerated Zstandard frame compression and decompression backed by native <code>libzstd</code>.</div>
@@ -2517,7 +2519,7 @@ syncCfireThemeBtn();
           <a href="#mod-webui" class="ref-mod-card" onclick="navigateToRefPane('mod-webui'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">ext:webui</span>
-              <span class="ref-mod-card-count">51 fns</span>
+              <span class="ref-mod-card-count">55 fns</span>
             </div>
             <div class="ref-mod-card-title">Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</div>
             <div class="ref-mod-card-desc">Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge.</div>
@@ -2622,10 +2624,10 @@ fn main() {
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#overview" class="pager-card prev" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">&larr; Overview</span>
-            <span class="pager-title">All 38 Standard Library Modules</span>
+            <span class="pager-title">All 39 Standard Library Modules</span>
           </a>
           <a href="#mod-build" class="pager-card next" onclick="navigateToRefPane('mod-build'); return false;">
-            <span class="pager-dir">Next Module (2/38) &rarr;</span>
+            <span class="pager-dir">Next Module (2/39) &rarr;</span>
             <span class="pager-title">core:build &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</span>
           </a>
         </nav>
@@ -2668,11 +2670,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-audio" class="pager-card prev" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">&larr; Previous Module (1/38)</span>
+            <span class="pager-dir">&larr; Previous Module (1/39)</span>
             <span class="pager-title">core:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
           </a>
           <a href="#mod-cli" class="pager-card next" onclick="navigateToRefPane('mod-cli'); return false;">
-            <span class="pager-dir">Next Module (3/38) &rarr;</span>
+            <span class="pager-dir">Next Module (3/39) &rarr;</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</span>
           </a>
         </nav>
@@ -2701,8 +2703,8 @@ fn main() {
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
-            <tr><td><code>fn parse[T](args: []str?) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses CLI flags (<code>str</code>, <code>i64</code>, <code>i32</code>, <code>f64</code>, <code>bool</code>) into a tagged struct <code>T</code>.<br/><code>args := try cli.parse[Args]()</code></td></tr>
-            <tr><td><code>fn try_parse[T]() -&gt; T?</code></td><td><code>cfire::cli::try_parse&lt;T&gt;(argc, argv)</code></td><td>Parses and validates CLI flags into a tagged struct <code>T</code>, returning <code>none</code> if any numeric flag argument is invalid.<br/><code>args := cli.try_parse[Args]() or { return }</code></td></tr>
+            <tr><td><code>fn parse[T](args: []str = []) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses CLI flags (<code>str</code>, <code>i64</code>, <code>i32</code>, <code>f64</code>, <code>bool</code>) into a tagged struct <code>T</code>.<br/><code>args := try cli.parse[Args]()</code></td></tr>
+            <tr><td><code>fn try_parse[T](args: []str = []) -&gt; T?</code></td><td><code>cfire::cli::try_parse&lt;T&gt;(argc, argv)</code></td><td>Parses and validates CLI flags into a tagged struct <code>T</code>, returning <code>none</code> if any numeric flag argument is invalid.<br/><code>args := cli.try_parse[Args]() or { return }</code></td></tr>
             <tr><td><code>fn args() -&gt; []str</code></td><td><code>cfire::cli::args()</code></td><td>Returns the raw command-line arguments passed to the process (excluding <code>argv[0]</code>).<br/><code>raw := cli.args()</code></td></tr>
             <tr><td><code>fn subcommand() -&gt; str</code></td><td><code>cfire::cli::subcommand()</code></td><td>Returns the first non-flag positional argument (subcommand name) or <code>&quot;&quot;</code> if none.<br/><code>cmd := cli.subcommand()</code></td></tr>
             <tr><td><code>fn positional() -&gt; []str</code></td><td><code>cfire::cli::positional()</code></td><td>Returns all non-flag positional arguments passed on the command line.<br/><code>files := cli.positional()</code></td></tr>
@@ -2712,11 +2714,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-build" class="pager-card prev" onclick="navigateToRefPane('mod-build'); return false;">
-            <span class="pager-dir">&larr; Previous Module (2/38)</span>
+            <span class="pager-dir">&larr; Previous Module (2/39)</span>
             <span class="pager-title">core:build &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</span>
           </a>
           <a href="#mod-collections" class="pager-card next" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">Next Module (4/38) &rarr;</span>
+            <span class="pager-dir">Next Module (4/39) &rarr;</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, Deque)</span>
           </a>
         </nav>
@@ -2759,18 +2761,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-cli" class="pager-card prev" onclick="navigateToRefPane('mod-cli'); return false;">
-            <span class="pager-dir">&larr; Previous Module (3/38)</span>
+            <span class="pager-dir">&larr; Previous Module (3/39)</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</span>
           </a>
           <a href="#mod-aes" class="pager-card next" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">Next Module (5/38) &rarr;</span>
+            <span class="pager-dir">Next Module (5/39) &rarr;</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-aes" data-pane-id="mod-aes" data-pane-short="core:crypto/aes" data-pane-title="core:crypto/aes — NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD">
         <h2 id="mod-aes" style="margin-top:0.25rem;"><code>import "core:crypto/aes"</code> &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</h2>
-        <p>Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(Header-only pure C++23)</code> &bull; Namespace: <code>aes.*</code> &bull; 7 exported functions</small></p>
+        <p>Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(Header-only pure C++23)</code> &bull; Namespace: <code>aes.*</code> &bull; 8 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2801,15 +2803,16 @@ fn main() {
             <tr><td><code>fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -&gt; []byte!</code></td><td><code>cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)</code></td><td>Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.<br/><code>pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)</code></td></tr>
             <tr><td><code>fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -&gt; []byte!</code></td><td><code>cfire::aes::encrypt_ctr(key, iv, pt)</code></td><td>Encrypts plaintext using AES-256-CTR mode.<br/><code>ct := try aes.encrypt_ctr(key, iv, pt)</code></td></tr>
             <tr><td><code>fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -&gt; []byte!</code></td><td><code>cfire::aes::decrypt_ctr(key, iv, ct)</code></td><td>Decrypts ciphertext using AES-256-CTR mode.<br/><code>pt := try aes.decrypt_ctr(key, iv, ct)</code></td></tr>
+            <tr><td><code>fn decrypt_gcm_str(key: []byte, nonce: []byte, ct: []byte, tag: []byte, aad: []byte = []) -&gt; str!</code></td><td><code>cfire::aes::decrypt_gcm_str(key, nonce, ct, tag, aad)</code></td><td>Decrypts an authenticated AES-GCM ciphertext and validates the tag, returning a UTF-8 string.<br/><code>pt := try aes.decrypt_gcm_str(key, nonce, ct, tag)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-collections" class="pager-card prev" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">&larr; Previous Module (4/38)</span>
+            <span class="pager-dir">&larr; Previous Module (4/39)</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, Deque)</span>
           </a>
           <a href="#mod-blake3" class="pager-card next" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">Next Module (6/38) &rarr;</span>
+            <span class="pager-dir">Next Module (6/39) &rarr;</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
         </nav>
@@ -2835,18 +2838,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-aes" class="pager-card prev" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">&larr; Previous Module (5/38)</span>
+            <span class="pager-dir">&larr; Previous Module (5/39)</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
           <a href="#mod-hmac" class="pager-card next" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">Next Module (7/38) &rarr;</span>
+            <span class="pager-dir">Next Module (7/39) &rarr;</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-hmac" data-pane-id="mod-hmac" data-pane-short="core:crypto/hmac" data-pane-title="core:crypto/hmac — RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256">
         <h2 id="mod-hmac" style="margin-top:0.25rem;"><code>import "core:crypto/hmac"</code> &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</h2>
-        <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>hmac.*</code> &bull; 5 exported functions</small></p>
+        <p>Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>hmac.*</code> &bull; 7 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2867,6 +2870,8 @@ fn main() {
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn sha256_hex(key: str, data: str) -&gt; str</code></td><td><code>cfire::hmac::sha256_hex(key, data)</code></td><td>Returns a 64-character lowercase hex HMAC-SHA256 digest.<br/><code>sig := hmac.sha256_hex(secret, payload)</code></td></tr>
+            <tr><td><code>fn sha256_bytes(key: []byte, data: []byte) -&gt; []byte</code></td><td><code>cfire::crypto::hmac_sha256(key, data)</code></td><td>Computes HMAC-SHA256 over raw byte slices.<br/><code>mac := hmac.sha256_bytes(key, data)</code></td></tr>
+            <tr><td><code>fn verify(key: str, data: str, mac: str) -&gt; bool</code></td><td><code>cfire::hmac::verify(key, data, mac)</code></td><td>Verifies in constant time whether <code>mac</code> matches the computed HMAC-SHA256 hex digest of <code>data</code> under <code>key</code>.<br/><code>valid := hmac.verify(secret, payload, mac)</code></td></tr>
             <tr><td><code>fn equal(a: str, b: str) -&gt; bool</code></td><td><code>cfire::hmac::equal(a, b)</code></td><td>Performs a constant-time equality check on two MAC digests to prevent timing attacks.<br/><code>ok := hmac.equal(sig1, sig2)</code></td></tr>
             <tr><td><code>fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -&gt; []byte</code></td><td><code>cfire::hmac::hkdf_sha256(ikm, salt, info, length)</code></td><td>Derives cryptographic key material of <code>length</code> bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand.<br/><code>key := hmac.hkdf_sha256(ikm, salt, info, 32)</code></td></tr>
             <tr><td><code>fn hkdf_sha256_hex(ikm: str, salt: str = &quot;&quot;, info: str = &quot;&quot;, length: usize = 32) -&gt; str</code></td><td><code>cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)</code></td><td>Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.<br/><code>khex := hmac.hkdf_sha256_hex(secret, &quot;salt&quot;, &quot;ctx&quot;, 32)</code></td></tr>
@@ -2875,18 +2880,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-blake3" class="pager-card prev" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">&larr; Previous Module (6/38)</span>
+            <span class="pager-dir">&larr; Previous Module (6/39)</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
           <a href="#mod-sha256" class="pager-card next" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">Next Module (8/38) &rarr;</span>
+            <span class="pager-dir">Next Module (8/39) &rarr;</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-sha256" data-pane-id="mod-sha256" data-pane-short="core:crypto/sha256" data-pane-title="core:crypto/sha256 — Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG">
         <h2 id="mod-sha256" style="margin-top:0.25rem;"><code>import "core:crypto/sha256"</code> &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</h2>
-        <p>Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>sha256.*</code> &bull; 4 exported functions</small></p>
+        <p>Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(CommonCrypto / built-in)</code> &bull; Namespace: <code>sha256.*</code> &bull; 5 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2904,15 +2909,16 @@ fn main() {
             <tr><td><code>fn hash_bytes(data: []byte) -&gt; []byte</code></td><td><code>cfire::sha256::hash_bytes(data)</code></td><td>Returns 32-byte binary SHA-256 digest of <code>data</code>.<br/><code>b := sha256.hash_bytes(raw)</code></td></tr>
             <tr><td><code>fn random_bytes(n: usize) -&gt; []byte</code></td><td><code>cfire::sha256::random_bytes(n)</code></td><td>Generates <code>n</code> cryptographically secure random bytes from the OS CSPRNG.<br/><code>nonce := sha256.random_bytes(12)</code></td></tr>
             <tr><td><code>fn random_hex(n: usize = 32) -&gt; str</code></td><td><code>cfire::sha256::random_hex(n)</code></td><td>Generates <code>n</code> cryptographically secure random bytes encoded as a <code>2*n</code>-character lowercase hex string.<br/><code>token := sha256.random_hex(16)</code></td></tr>
+            <tr><td><code>fn hash_file_hex(path: str) -&gt; str!</code></td><td><code>cfire::sha256::hash_file_hex(path)</code></td><td>Computes the hex-encoded SHA-256 digest of a file on disk.<br/><code>h := try sha256.hash_file_hex(&quot;file.bin&quot;)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hmac" class="pager-card prev" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">&larr; Previous Module (7/38)</span>
+            <span class="pager-dir">&larr; Previous Module (7/39)</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</span>
           </a>
           <a href="#mod-base64" class="pager-card next" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">Next Module (9/38) &rarr;</span>
+            <span class="pager-dir">Next Module (9/39) &rarr;</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
         </nav>
@@ -2944,11 +2950,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sha256" class="pager-card prev" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">&larr; Previous Module (8/38)</span>
+            <span class="pager-dir">&larr; Previous Module (8/39)</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
           <a href="#mod-csv" class="pager-card next" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">Next Module (10/38) &rarr;</span>
+            <span class="pager-dir">Next Module (10/39) &rarr;</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
         </nav>
@@ -2983,11 +2989,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-base64" class="pager-card prev" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">&larr; Previous Module (9/38)</span>
+            <span class="pager-dir">&larr; Previous Module (9/39)</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
           <a href="#mod-hex" class="pager-card next" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">Next Module (11/38) &rarr;</span>
+            <span class="pager-dir">Next Module (11/39) &rarr;</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
         </nav>
@@ -3019,11 +3025,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-csv" class="pager-card prev" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">&larr; Previous Module (10/38)</span>
+            <span class="pager-dir">&larr; Previous Module (10/39)</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
           <a href="#mod-fs" class="pager-card next" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">Next Module (12/38) &rarr;</span>
+            <span class="pager-dir">Next Module (12/39) &rarr;</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
         </nav>
@@ -3095,11 +3101,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hex" class="pager-card prev" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (11/38)</span>
+            <span class="pager-dir">&larr; Previous Module (11/39)</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
           <a href="#mod-json" class="pager-card next" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">Next Module (13/38) &rarr;</span>
+            <span class="pager-dir">Next Module (13/39) &rarr;</span>
             <span class="pager-title">core:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
         </nav>
@@ -3145,11 +3151,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-fs" class="pager-card prev" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">&larr; Previous Module (12/38)</span>
+            <span class="pager-dir">&larr; Previous Module (12/39)</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
           <a href="#mod-keychain" class="pager-card next" onclick="navigateToRefPane('mod-keychain'); return false;">
-            <span class="pager-dir">Next Module (14/38) &rarr;</span>
+            <span class="pager-dir">Next Module (14/39) &rarr;</span>
             <span class="pager-title">core:keychain &mdash; Native OS Credential Keychain &amp; Secret Service</span>
           </a>
         </nav>
@@ -3178,18 +3184,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-json" class="pager-card prev" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">&larr; Previous Module (13/38)</span>
+            <span class="pager-dir">&larr; Previous Module (13/39)</span>
             <span class="pager-title">core:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
           <a href="#mod-log" class="pager-card next" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">Next Module (15/38) &rarr;</span>
+            <span class="pager-dir">Next Module (15/39) &rarr;</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-log" data-pane-id="mod-log" data-pane-short="core:log" data-pane-title="core:log — Structured Leveled Logging">
         <h2 id="mod-log" style="margin-top:0.25rem;"><code>import "core:log"</code> &mdash; Structured Leveled Logging</h2>
-        <p>Leveled logging (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>) with structured key-value attributes and Text / JSON formatters. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>log.*</code> &bull; 6 exported functions</small></p>
+        <p>Leveled logging (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>) with <code>Level</code> (<code>Debug</code>, <code>Info</code>, <code>Warn</code>, <code>Error</code>), <code>Format</code> (<code>Text</code>, <code>Json</code>), and structured key-value attributes. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>log.*</code> &bull; 8 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3207,28 +3213,30 @@ fn main() {
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
-            <tr><td><code>fn set_level(l: Level)</code></td><td><code>cfire::log::set_level(l)</code></td><td>Sets the minimum logging severity threshold.<br/><code>log.set_level(log.Level::Debug)</code></td></tr>
-            <tr><td><code>fn set_format(f: Format)</code></td><td><code>cfire::log::set_format(f)</code></td><td>Sets the log output format (Text or Json).<br/><code>log.set_format(log.Format::Json)</code></td></tr>
-            <tr><td><code>fn debug(msg: str, ...attrs: str)</code></td><td><code>cfire::log::debug(msg, ...)</code></td><td>Logs a debug message with optional key-value attribute pairs.<br/><code>log.debug(&quot;cache miss&quot;, &quot;key&quot;, &quot;user:1&quot;)</code></td></tr>
-            <tr><td><code>fn info(msg: str, ...attrs: str)</code></td><td><code>cfire::log::info(msg, ...)</code></td><td>Logs an informational message with optional key-value attribute pairs.<br/><code>log.info(&quot;server listening&quot;, &quot;port&quot;, &quot;8080&quot;)</code></td></tr>
-            <tr><td><code>fn warn(msg: str, ...attrs: str)</code></td><td><code>cfire::log::warn(msg, ...)</code></td><td>Logs a warning message with optional key-value attribute pairs.<br/><code>log.warn(&quot;rate limit reached&quot;, &quot;client&quot;, ip)</code></td></tr>
-            <tr><td><code>fn error(msg: str, ...attrs: str)</code></td><td><code>cfire::log::error(msg, ...)</code></td><td>Logs an error message with optional key-value attribute pairs.<br/><code>log.error(&quot;database connection failed&quot;, &quot;db&quot;, name)</code></td></tr>
+            <tr><td><code>fn set_level(l: Level)</code></td><td><code>cfire::log::set_level(l)</code></td><td>Sets the minimum logging severity threshold (<code>log.Level::Debug</code>, <code>Info</code>, <code>Warn</code>, <code>Error</code>).<br/><code>log.set_level(log.Level::Debug)</code></td></tr>
+            <tr><td><code>fn get_level() -&gt; Level</code></td><td><code>cfire::log::get_level()</code></td><td>Returns the current minimum logging severity threshold.<br/><code>lvl := log.get_level()</code></td></tr>
+            <tr><td><code>fn set_format(f: Format)</code></td><td><code>cfire::log::set_format(f)</code></td><td>Sets the log output format (<code>log.Format::Text</code> or <code>log.Format::Json</code>).<br/><code>log.set_format(log.Format::Json)</code></td></tr>
+            <tr><td><code>fn get_format() -&gt; Format</code></td><td><code>cfire::log::get_format()</code></td><td>Returns the current log output format.<br/><code>fmt := log.get_format()</code></td></tr>
+            <tr><td><code>fn debug(msg: str, ...attrs: any)</code></td><td><code>cfire::log::debug(msg, ...)</code></td><td>Logs a debug message with optional key-value attribute pairs.<br/><code>log.debug(&quot;cache miss&quot;, &quot;key&quot;, &quot;user:1&quot;)</code></td></tr>
+            <tr><td><code>fn info(msg: str, ...attrs: any)</code></td><td><code>cfire::log::info(msg, ...)</code></td><td>Logs an informational message with optional key-value attribute pairs.<br/><code>log.info(&quot;server listening&quot;, &quot;port&quot;, 8080)</code></td></tr>
+            <tr><td><code>fn warn(msg: str, ...attrs: any)</code></td><td><code>cfire::log::warn(msg, ...)</code></td><td>Logs a warning message with optional key-value attribute pairs.<br/><code>log.warn(&quot;rate limit reached&quot;, &quot;client&quot;, ip)</code></td></tr>
+            <tr><td><code>fn error(msg: str, ...attrs: any)</code></td><td><code>cfire::log::error(msg, ...)</code></td><td>Logs an error message with optional key-value attribute pairs.<br/><code>log.error(&quot;database connection failed&quot;, &quot;db&quot;, name)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-keychain" class="pager-card prev" onclick="navigateToRefPane('mod-keychain'); return false;">
-            <span class="pager-dir">&larr; Previous Module (14/38)</span>
+            <span class="pager-dir">&larr; Previous Module (14/39)</span>
             <span class="pager-title">core:keychain &mdash; Native OS Credential Keychain &amp; Secret Service</span>
           </a>
           <a href="#mod-math" class="pager-card next" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">Next Module (16/38) &rarr;</span>
+            <span class="pager-dir">Next Module (16/39) &rarr;</span>
             <span class="pager-title">core:math &mdash; Numeric &amp; Floating-Point Utilities</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-math" data-pane-id="mod-math" data-pane-short="core:math" data-pane-title="core:math — Numeric &amp; Floating-Point Utilities">
         <h2 id="mod-math" style="margin-top:0.25rem;"><code>import "core:math"</code> &mdash; Numeric &amp; Floating-Point Utilities</h2>
-        <p>Standard mathematical constants (<code>PI</code>, <code>E</code>) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>math.*</code> &bull; 4 exported functions</small></p>
+        <p>Standard mathematical constants (<code>PI</code>, <code>E</code>) and numeric clamping/transcendental functions. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>math.*</code> &bull; 14 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3245,16 +3253,26 @@ fn main() {
             <tr><td><code>fn clamp_i64(val: i64, lo: i64, hi: i64) -&gt; i64</code></td><td><code>cfire::math::clamp_i64(val, lo, hi)</code></td><td>Clamps a 64-bit integer to <code>[lo, hi]</code>.<br/><code>c := math.clamp_i64(x, 0, 100)</code></td></tr>
             <tr><td><code>fn clamp_f64(val: f64, lo: f64, hi: f64) -&gt; f64</code></td><td><code>cfire::math::clamp_f64(val, lo, hi)</code></td><td>Clamps a 64-bit float to <code>[lo, hi]</code>.<br/><code>c := math.clamp_f64(v, 0.0, 1.0)</code></td></tr>
             <tr><td><code>fn sqrt(x: f64) -&gt; f64</code></td><td><code>cfire::math::sqrt(x)</code></td><td>Computes square root.<br/><code>r := math.sqrt(16.0)</code></td></tr>
+            <tr><td><code>fn sqrt_f64(x: f64) -&gt; f64</code></td><td><code>cfire::math::sqrt(x)</code></td><td>Computes square root of a 64-bit float.<br/><code>r := math.sqrt_f64(16.0)</code></td></tr>
             <tr><td><code>fn abs_f64(x: f64) -&gt; f64</code></td><td><code>cfire::math::abs_f64(x)</code></td><td>Computes absolute value of a <code>f64</code>.<br/><code>a := math.abs_f64(-3.5)</code></td></tr>
+            <tr><td><code>fn checked_add(a: i64, b: i64) -&gt; i64?</code></td><td><code>cfire::math::checked_add(a, b)</code></td><td>Adds two integers, returning <code>none</code> on overflow.<br/><code>res := math.checked_add(x, y)</code></td></tr>
+            <tr><td><code>fn checked_sub(a: i64, b: i64) -&gt; i64?</code></td><td><code>cfire::math::checked_sub(a, b)</code></td><td>Subtracts two integers, returning <code>none</code> on overflow.<br/><code>res := math.checked_sub(x, y)</code></td></tr>
+            <tr><td><code>fn checked_mul(a: i64, b: i64) -&gt; i64?</code></td><td><code>cfire::math::checked_mul(a, b)</code></td><td>Multiplies two integers, returning <code>none</code> on overflow.<br/><code>res := math.checked_mul(x, y)</code></td></tr>
+            <tr><td><code>fn wrapping_add(a: i64, b: i64) -&gt; i64</code></td><td><code>cfire::math::wrapping_add(a, b)</code></td><td>Adds two integers with well-defined two's-complement wrapping.<br/><code>res := math.wrapping_add(x, y)</code></td></tr>
+            <tr><td><code>fn wrapping_sub(a: i64, b: i64) -&gt; i64</code></td><td><code>cfire::math::wrapping_sub(a, b)</code></td><td>Subtracts two integers with well-defined two's-complement wrapping.<br/><code>res := math.wrapping_sub(x, y)</code></td></tr>
+            <tr><td><code>fn wrapping_mul(a: i64, b: i64) -&gt; i64</code></td><td><code>cfire::math::wrapping_mul(a, b)</code></td><td>Multiplies two integers with well-defined two's-complement wrapping.<br/><code>res := math.wrapping_mul(x, y)</code></td></tr>
+            <tr><td><code>fn saturating_add(a: i64, b: i64) -&gt; i64</code></td><td><code>cfire::math::saturating_add(a, b)</code></td><td>Adds two integers, saturating at min/max numeric bounds.<br/><code>res := math.saturating_add(x, y)</code></td></tr>
+            <tr><td><code>fn saturating_sub(a: i64, b: i64) -&gt; i64</code></td><td><code>cfire::math::saturating_sub(a, b)</code></td><td>Subtracts two integers, saturating at min/max numeric bounds.<br/><code>res := math.saturating_sub(x, y)</code></td></tr>
+            <tr><td><code>fn saturating_mul(a: i64, b: i64) -&gt; i64</code></td><td><code>cfire::math::saturating_mul(a, b)</code></td><td>Multiplies two integers, saturating at min/max numeric bounds.<br/><code>res := math.saturating_mul(x, y)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-log" class="pager-card prev" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">&larr; Previous Module (15/38)</span>
+            <span class="pager-dir">&larr; Previous Module (15/39)</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
           <a href="#mod-net" class="pager-card next" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">Next Module (17/38) &rarr;</span>
+            <span class="pager-dir">Next Module (17/39) &rarr;</span>
             <span class="pager-title">core:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
         </nav>
@@ -3275,7 +3293,7 @@ fn main() {
 
     // 2. Connect client TCP socket
     mut client := try net.connect_tcp(&quot;127.0.0.1&quot;, port)
-    _ := try client.write_text(&quot;PING\n&quot;)
+    _ = try client.write_text(&quot;PING\n&quot;)
 
     // 3. Accept incoming connection and read data
     mut conn := try ln.accept()
@@ -3294,8 +3312,8 @@ fn main() {
             <tr><td><code>fn (c: TcpConn) fd() -&gt; i32</code></td><td><code>c.fd()</code></td><td>Returns the underlying socket file descriptor (<code>-1</code> if closed).<br/><code>fd := conn.fd()</code></td></tr>
             <tr><td><code>fn (c: TcpConn) is_open() -&gt; bool</code></td><td><code>c.is_open()</code></td><td>Returns <code>true</code> if the socket connection is open.<br/><code>if conn.is_open() { ... }</code></td></tr>
             <tr><td><code>fn (c: TcpConn) poll(timeout_ms: i64 = 0) -&gt; bool</code></td><td><code>c.poll(timeout_ms)</code></td><td>Polls the socket for readability up to <code>timeout_ms</code> milliseconds (<code>EINTR</code>-safe).<br/><code>if conn.poll(50) { ... }</code></td></tr>
-            <tr><td><code>fn (mut c: TcpConn) write_bytes(payload: []byte) -&gt; usize!</code></td><td><code>c.write_bytes(payload)</code></td><td>Writes all bytes in <code>payload</code> to the TCP/TLS connection, looping across partial sends and <code>EINTR</code>.<br/><code>_ := try c.write_bytes(raw)</code></td></tr>
-            <tr><td><code>fn (mut c: TcpConn) write_text(text: str) -&gt; usize!</code></td><td><code>c.write_text(text)</code></td><td>Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and <code>EINTR</code>.<br/><code>_ := try c.write_text(&quot;PING\n&quot;)</code></td></tr>
+            <tr><td><code>fn (mut c: TcpConn) write_bytes(payload: []byte) -&gt; usize!</code></td><td><code>c.write_bytes(payload)</code></td><td>Writes all bytes in <code>payload</code> to the TCP/TLS connection, looping across partial sends and <code>EINTR</code>.<br/><code>_ = try c.write_bytes(raw)</code></td></tr>
+            <tr><td><code>fn (mut c: TcpConn) write_text(text: str) -&gt; usize!</code></td><td><code>c.write_text(text)</code></td><td>Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and <code>EINTR</code>.<br/><code>_ = try c.write_text(&quot;PING\n&quot;)</code></td></tr>
             <tr><td><code>fn (mut c: TcpConn) read_into(mut buf: []byte) -&gt; usize!</code></td><td><code>c.read_into(buf)</code></td><td>Reads up to <code>buf.len()</code> bytes from the socket into <code>buf</code> (<code>EINTR</code>-safe).<br/><code>n := try conn.read_into(mut buf)</code></td></tr>
             <tr><td><code>fn (mut c: TcpConn) read_bytes(max_bytes: usize = 4096) -&gt; []byte!</code></td><td><code>c.read_bytes(max_bytes)</code></td><td>Reads up to <code>max_bytes</code> from the socket into a new byte slice.<br/><code>pkt := try conn.read_bytes(256)</code></td></tr>
             <tr><td><code>fn (mut c: TcpConn) read_exact(exact_bytes: usize) -&gt; []byte!</code></td><td><code>c.read_exact(exact_bytes)</code></td><td>Reads exactly <code>exact_bytes</code> from the socket or returns an error on premature EOF.<br/><code>hdr := try conn.read_exact(8)</code></td></tr>
@@ -3309,11 +3327,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-math" class="pager-card prev" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">&larr; Previous Module (16/38)</span>
+            <span class="pager-dir">&larr; Previous Module (16/39)</span>
             <span class="pager-title">core:math &mdash; Numeric &amp; Floating-Point Utilities</span>
           </a>
           <a href="#mod-http" class="pager-card next" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">Next Module (18/38) &rarr;</span>
+            <span class="pager-dir">Next Module (18/39) &rarr;</span>
             <span class="pager-title">core:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
         </nav>
@@ -3388,11 +3406,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-net" class="pager-card prev" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">&larr; Previous Module (17/38)</span>
+            <span class="pager-dir">&larr; Previous Module (17/39)</span>
             <span class="pager-title">core:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
           <a href="#mod-tls" class="pager-card next" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">Next Module (19/38) &rarr;</span>
+            <span class="pager-dir">Next Module (19/39) &rarr;</span>
             <span class="pager-title">core:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
         </nav>
@@ -3433,11 +3451,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-http" class="pager-card prev" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">&larr; Previous Module (18/38)</span>
+            <span class="pager-dir">&larr; Previous Module (18/39)</span>
             <span class="pager-title">core:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
           <a href="#mod-url" class="pager-card next" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">Next Module (20/38) &rarr;</span>
+            <span class="pager-dir">Next Module (20/39) &rarr;</span>
             <span class="pager-title">core:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
         </nav>
@@ -3469,11 +3487,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-tls" class="pager-card prev" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">&larr; Previous Module (19/38)</span>
+            <span class="pager-dir">&larr; Previous Module (19/39)</span>
             <span class="pager-title">core:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
           <a href="#mod-websocket" class="pager-card next" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">Next Module (21/38) &rarr;</span>
+            <span class="pager-dir">Next Module (21/39) &rarr;</span>
             <span class="pager-title">core:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
         </nav>
@@ -3530,18 +3548,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-url" class="pager-card prev" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">&larr; Previous Module (20/38)</span>
+            <span class="pager-dir">&larr; Previous Module (20/39)</span>
             <span class="pager-title">core:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
           <a href="#mod-os" class="pager-card next" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">Next Module (22/38) &rarr;</span>
+            <span class="pager-dir">Next Module (22/39) &rarr;</span>
             <span class="pager-title">core:os &mdash; Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-os" data-pane-id="mod-os" data-pane-short="core:os" data-pane-title="core:os — Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses">
         <h2 id="mod-os" style="margin-top:0.25rem;"><code>import "core:os"</code> &mdash; Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</h2>
-        <p>Process environment inspection, working directory queries, standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make_raw</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>os.*</code> &bull; 17 exported functions</small></p>
+        <p>Process environment inspection, working directory queries, standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make_raw</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>os.*</code> &bull; 18 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3574,16 +3592,17 @@ fn main() {
             <tr><td><code>fn make_raw() -&gt; RawTerminal!</code></td><td><code>cfire::os::make_raw()</code></td><td>Places standard input into raw terminal mode (<code>cfmakeraw</code>) and returns an RAII <code>RawTerminal</code> guard that restores <code>termios</code> on scope exit.<br/><code>raw := try os.make_raw()</code></td></tr>
             <tr><td><code>fn on_signal(sig: i32, handler: fn(i32))</code></td><td><code>cfire::os::on_signal(sig, handler)</code></td><td>Registers a callback handler for POSIX signal <code>sig</code> (e.g., <code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGWINCH</code>).<br/><code>os.on_signal(28, |sig| { println(&quot;resized: {}&quot;, sig) })</code></td></tr>
             <tr><td><code>fn exec_output(cmd: str) -&gt; str!</code></td><td><code>cfire::os::exec_output(cmd)</code></td><td>Executes a shell command via <code>popen</code> and returns its captured stdout.<br/><code>out := try os.exec_output(&quot;uname -s&quot;)</code></td></tr>
+            <tr><td><code>fn exec(cmd: str) -&gt; str!</code></td><td><code>cfire::os::exec_output(cmd)</code></td><td>Executes a shell command via <code>popen</code> and returns its captured stdout.<br/><code>out := try os.exec(&quot;uname -s&quot;)</code></td></tr>
             <tr><td><code>fn command(binary: str, args: []str) -&gt; ExecResult!</code></td><td><code>cfire::os::command(binary, args)</code></td><td>Spawns a subprocess with explicit argument list via <code>posix_spawnp</code> (zero shell injection risk) and captures stdout/stderr.<br/><code>res := try os.command(&quot;git&quot;, [&quot;status&quot;])</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-websocket" class="pager-card prev" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">&larr; Previous Module (21/38)</span>
+            <span class="pager-dir">&larr; Previous Module (21/39)</span>
             <span class="pager-title">core:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
           <a href="#mod-rand" class="pager-card next" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">Next Module (23/38) &rarr;</span>
+            <span class="pager-dir">Next Module (23/39) &rarr;</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
         </nav>
@@ -3613,11 +3632,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-os" class="pager-card prev" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">&larr; Previous Module (22/38)</span>
+            <span class="pager-dir">&larr; Previous Module (22/39)</span>
             <span class="pager-title">core:os &mdash; Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</span>
           </a>
           <a href="#mod-regex" class="pager-card next" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">Next Module (24/38) &rarr;</span>
+            <span class="pager-dir">Next Module (24/39) &rarr;</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
         </nav>
@@ -3653,18 +3672,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rand" class="pager-card prev" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">&larr; Previous Module (23/38)</span>
+            <span class="pager-dir">&larr; Previous Module (23/39)</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
           <a href="#mod-sort" class="pager-card next" onclick="navigateToRefPane('mod-sort'); return false;">
-            <span class="pager-dir">Next Module (25/38) &rarr;</span>
+            <span class="pager-dir">Next Module (25/39) &rarr;</span>
             <span class="pager-title">core:sort &mdash; Slice Sorting &amp; Binary Search</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-sort" data-pane-id="mod-sort" data-pane-short="core:sort" data-pane-title="core:sort — Slice Sorting &amp; Binary Search">
         <h2 id="mod-sort" style="margin-top:0.25rem;"><code>import "core:sort"</code> &mdash; Slice Sorting &amp; Binary Search</h2>
-        <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sort.*</code> &bull; 2 exported functions</small></p>
+        <p>In-place sorting algorithms and binary search on slices. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sort.*</code> &bull; 3 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3687,22 +3706,23 @@ fn main() {
           <tbody>
             <tr><td><code>fn slice(mut s: []T)</code></td><td><code>cfire::sort::slice(s)</code></td><td>Sorts a slice in ascending order in-place.<br/><code>sort.slice(mut numbers)</code></td></tr>
             <tr><td><code>fn binary_search(s: []T, val: T) -&gt; i64?</code></td><td><code>cfire::sort::binary_search(s, val)</code></td><td>Performs binary search on a sorted slice.<br/><code>idx := sort.binary_search(numbers, 42)</code></td></tr>
+            <tr><td><code>fn slice_by(mut s: []T, cmp: fn(T, T) -&gt; bool)</code></td><td><code>cfire::sort::slice_by(s, cmp)</code></td><td>Sorts slice <code>s</code> in-place using custom comparator <code>cmp</code>.<br/><code>sort.slice_by(mut items, |a, b| a &lt; b)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-regex" class="pager-card prev" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (24/38)</span>
+            <span class="pager-dir">&larr; Previous Module (24/39)</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
           <a href="#mod-str" class="pager-card next" onclick="navigateToRefPane('mod-str'); return false;">
-            <span class="pager-dir">Next Module (26/38) &rarr;</span>
+            <span class="pager-dir">Next Module (26/39) &rarr;</span>
             <span class="pager-title">core:str &mdash; UTF-8 String Manipulation</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-str" data-pane-id="mod-str" data-pane-short="core:str" data-pane-title="core:str — UTF-8 String Manipulation">
         <h2 id="mod-str" style="margin-top:0.25rem;"><code>import "core:str"</code> &mdash; UTF-8 String Manipulation</h2>
-        <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>str.*</code> &bull; 24 exported functions</small></p>
+        <p>Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>str.*</code> &bull; 26 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3725,6 +3745,8 @@ fn main() {
             <tr><td><code>fn ends_with(s: str, suffix: str) -&gt; bool</code></td><td><code>cfire::str::ends_with(s, suffix)</code></td><td>Returns <code>true</code> if <code>s</code> ends with <code>suffix</code>.<br/><code>if str.ends_with(f, &quot;.cf&quot;) { ... }</code></td></tr>
             <tr><td><code>fn contains(s: str, needle: str) -&gt; bool</code></td><td><code>cfire::str::contains(s, needle)</code></td><td>Returns <code>true</code> if <code>s</code> contains <code>needle</code>.<br/><code>if str.contains(s, &quot;fire&quot;) { ... }</code></td></tr>
             <tr><td><code>fn replace(s: str, from: str, to: str) -&gt; str</code></td><td><code>cfire::str::replace(s, from, to)</code></td><td>Replaces all occurrences of <code>from</code> in <code>s</code> with <code>to</code>.<br/><code>r := str.replace(s, &quot;old&quot;, &quot;new&quot;)</code></td></tr>
+            <tr><td><code>fn replace_all(s: str, from: str, to: str) -&gt; str</code></td><td><code>cfire::str::replace_all(s, from, to)</code></td><td>Replaces all occurrences of <code>from</code> with <code>to</code> in <code>s</code>.<br/><code>r := str.replace_all(&quot;a-b-c&quot;, &quot;-&quot;, &quot;_&quot;)</code></td></tr>
+            <tr><td><code>fn bytes(s: str) -&gt; []byte</code></td><td><code>cfire::str::to_bytes(s)</code></td><td>Returns the UTF-8 bytes of string <code>s</code> as a byte slice.<br/><code>b := str.bytes(&quot;hello&quot;)</code></td></tr>
             <tr><td><code>fn to_upper(s: str) -&gt; str</code></td><td><code>cfire::str::to_upper(s)</code></td><td>Converts ASCII characters to uppercase.<br/><code>u := str.to_upper(&quot;cfire&quot;)</code></td></tr>
             <tr><td><code>fn to_lower(s: str) -&gt; str</code></td><td><code>cfire::str::to_lower(s)</code></td><td>Converts ASCII characters to lowercase.<br/><code>l := str.to_lower(&quot;CFIRE&quot;)</code></td></tr>
             <tr><td><code>fn index_of(s: str, substr: str, start_pos: usize = 0) -&gt; i64</code></td><td><code>cfire::str::index_of(s, substr, start_pos)</code></td><td>Finds first occurrence of <code>substr</code> in <code>s</code> starting at <code>start_pos</code>; returns index or -1.<br/><code>idx := str.index_of(path, &quot;.&quot;)</code></td></tr>
@@ -3746,18 +3768,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sort" class="pager-card prev" onclick="navigateToRefPane('mod-sort'); return false;">
-            <span class="pager-dir">&larr; Previous Module (25/38)</span>
+            <span class="pager-dir">&larr; Previous Module (25/39)</span>
             <span class="pager-title">core:sort &mdash; Slice Sorting &amp; Binary Search</span>
           </a>
           <a href="#mod-sync" class="pager-card next" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">Next Module (27/38) &rarr;</span>
+            <span class="pager-dir">Next Module (27/39) &rarr;</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels &amp; Mutexes</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-sync" data-pane-id="mod-sync" data-pane-short="core:sync" data-pane-title="core:sync — Thread-Safe Typed Channels &amp; Mutexes">
         <h2 id="mod-sync" style="margin-top:0.25rem;"><code>import "core:sync"</code> &mdash; Thread-Safe Typed Channels &amp; Mutexes</h2>
-        <p>Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sync.*</code> &bull; 13 exported functions</small></p>
+        <p>Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sync.*</code> &bull; 14 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3788,7 +3810,8 @@ fn main() {
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
-            <tr><td><code>fn make_channel[T]() -&gt; Channel[T]</code></td><td><code>cfire::sync::make_channel&lt;T&gt;()</code></td><td>Creates a new shared, thread-safe channel of element type <code>T</code>.<br/><code>ch := sync.make_channel[i64]()</code></td></tr>
+            <tr><td><code>fn make_channel[T](capacity: usize = 0) -&gt; Channel[T]</code></td><td><code>cfire::sync::make_channel&lt;T&gt;()</code></td><td>Creates a new shared, thread-safe channel of element type <code>T</code>.<br/><code>ch := sync.make_channel[i64]()</code></td></tr>
+            <tr><td><code>fn new_mutex() -&gt; Mutex</code></td><td><code>cfire::sync::Mutex()</code></td><td>Constructs a new mutual exclusion lock.<br/><code>m := sync.new_mutex()</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) send(val: T)</code></td><td><code>ch.send(val)</code></td><td>Sends a value into the channel and wakes one waiting receiver.<br/><code>ch.send(42)</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) recv() -&gt; T!</code></td><td><code>ch.recv()</code></td><td>Blocks until a value is available or returns an error if the channel is closed and empty.<br/><code>v := ch.recv() or 0</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) try_recv() -&gt; T?</code></td><td><code>ch.try_recv()</code></td><td>Attempts a non-blocking receive from the channel, returning <code>none</code> immediately if the queue is empty.<br/><code>v := ch.try_recv() or { return }</code></td></tr>
@@ -3805,11 +3828,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-str" class="pager-card prev" onclick="navigateToRefPane('mod-str'); return false;">
-            <span class="pager-dir">&larr; Previous Module (26/38)</span>
+            <span class="pager-dir">&larr; Previous Module (26/39)</span>
             <span class="pager-title">core:str &mdash; UTF-8 String Manipulation</span>
           </a>
           <a href="#mod-context" class="pager-card next" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">Next Module (28/38) &rarr;</span>
+            <span class="pager-dir">Next Module (28/39) &rarr;</span>
             <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
         </nav>
@@ -3848,18 +3871,57 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sync" class="pager-card prev" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">&larr; Previous Module (27/38)</span>
+            <span class="pager-dir">&larr; Previous Module (27/39)</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels &amp; Mutexes</span>
           </a>
+          <a href="#mod-tako" class="pager-card next" onclick="navigateToRefPane('mod-tako'); return false;">
+            <span class="pager-dir">Next Module (29/39) &rarr;</span>
+            <span class="pager-title">core:tako &mdash; Tako Cloud SDK Primitives (S3, SQS)</span>
+          </a>
+        </nav>
+      </article>
+      <article class="ref-pane" id="ref-pane-mod-tako" data-pane-id="mod-tako" data-pane-short="core:tako" data-pane-title="core:tako — Tako Cloud SDK Primitives (S3, SQS)">
+        <h2 id="mod-tako" style="margin-top:0.25rem;"><code>import "core:tako"</code> &mdash; Tako Cloud SDK Primitives (S3, SQS)</h2>
+        <p>Cloud primitives and storage compatibility services (<code>core:tako</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>tako.*</code> &bull; 8 exported functions</small></p>
+        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
+        <pre><code>package main
+
+import &quot;core:tako&quot; as tk
+
+fn main() -&gt; void! {
+    mut s3 := tk.NewS3Service()
+    try s3.CreateBucket(&quot;data&quot;)
+    _ = try s3.PutObject(&quot;data&quot;, &quot;item.json&quot;, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;, &quot;application/json&quot;)
+    obj := try s3.GetObject(&quot;data&quot;, &quot;item.json&quot;)
+    println(&quot;Stored payload: {}&quot;, obj.Body)
+}</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+          <tbody>
+            <tr><td><code>fn NewS3Service() -&gt; S3Service</code></td><td><code>cfire::tako::NewS3Service()</code></td><td>Creates an S3 compatible storage service client.<br/><code>s3 := tako.NewS3Service()</code></td></tr>
+            <tr><td><code>fn NewSQSService() -&gt; SQSService</code></td><td><code>cfire::tako::NewSQSService()</code></td><td>Creates an SQS compatible message queue service client.<br/><code>sqs := tako.NewSQSService()</code></td></tr>
+            <tr><td><code>fn (mut s: S3Service) CreateBucket(name: str) -&gt; void!</code></td><td><code>s.CreateBucket(name)</code></td><td>Creates a storage bucket.<br/><code>try s3.CreateBucket(&quot;b&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -&gt; str!</code></td><td><code>s.PutObject(bucket, key, data, content_type)</code></td><td>Uploads an object and returns its ETag.<br/><code>etag := try s3.PutObject(&quot;b&quot;, &quot;k&quot;, &quot;d&quot;, &quot;text/plain&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: S3Service) GetObject(bucket: str, key: str) -&gt; S3Object!</code></td><td><code>s.GetObject(bucket, key)</code></td><td>Downloads an object from storage.<br/><code>obj := try s3.GetObject(&quot;b&quot;, &quot;k&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -&gt; str!</code></td><td><code>s.CreateQueue(name, fifo)</code></td><td>Creates a message queue and returns its URL.<br/><code>q := try sqs.CreateQueue(&quot;q&quot;, true)</code></td></tr>
+            <tr><td><code>fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = &quot;&quot;, dedup: str = &quot;&quot;) -&gt; str!</code></td><td><code>s.SendMessage(queue_url, body, group, dedup)</code></td><td>Publishes a message to the queue.<br/><code>id := try sqs.SendMessage(q, &quot;body&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -&gt; []SQSMessage!</code></td><td><code>s.ReceiveMessages(queue_url, max_messages)</code></td><td>Receives available messages from the queue.<br/><code>msgs := try sqs.ReceiveMessages(q, 1)</code></td></tr>
+          </tbody>
+        </table></div>
+        <nav class="chapter-pager" aria-label="Module Pagination">
+          <a href="#mod-context" class="pager-card prev" onclick="navigateToRefPane('mod-context'); return false;">
+            <span class="pager-dir">&larr; Previous Module (28/39)</span>
+            <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
+          </a>
           <a href="#mod-time" class="pager-card next" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">Next Module (29/38) &rarr;</span>
+            <span class="pager-dir">Next Module (30/39) &rarr;</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-time" data-pane-id="mod-time" data-pane-short="core:time" data-pane-title="core:time — Time, Calendar Dates, Durations &amp; RFC 3339 Formatting">
         <h2 id="mod-time" style="margin-top:0.25rem;"><code>import "core:time"</code> &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</h2>
-        <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by <code>std::chrono</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>time.*</code> &bull; 10 exported functions</small></p>
+        <p>High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by <code>std::chrono</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>time.*</code> &bull; 15 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3886,16 +3948,21 @@ fn main() {
             <tr><td><code>fn parse_rfc3339(s: str) -&gt; Time!</code></td><td><code>cfire::time::parse_rfc3339(s)</code></td><td>Parses an RFC 3339 / ISO 8601 timestamp string into a <code>Time</code> instant.<br/><code>t := try time.parse_rfc3339(&quot;2026-10-18T12:00:00Z&quot;)</code></td></tr>
             <tr><td><code>fn duration_seconds(s: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_seconds(s)</code></td><td>Constructs a typed <code>Duration</code> representing <code>s</code> seconds.<br/><code>d := time.duration_seconds(5)</code></td></tr>
             <tr><td><code>fn duration_millis(ms: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_millis(ms)</code></td><td>Constructs a typed <code>Duration</code> representing <code>ms</code> milliseconds.<br/><code>d := time.duration_millis(250)</code></td></tr>
+            <tr><td><code>fn duration_nanos(n: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_nanos(n)</code></td><td>Constructs a Duration from nanoseconds.<br/><code>d := time.duration_nanos(1000)</code></td></tr>
+            <tr><td><code>fn duration_micros(us: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_micros(us)</code></td><td>Constructs a Duration from microseconds.<br/><code>d := time.duration_micros(500)</code></td></tr>
+            <tr><td><code>fn duration_minutes(m: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_minutes(m)</code></td><td>Constructs a Duration from minutes.<br/><code>d := time.duration_minutes(5)</code></td></tr>
+            <tr><td><code>fn duration_hours(h: i64) -&gt; Duration</code></td><td><code>cfire::time::duration_hours(h)</code></td><td>Constructs a Duration from hours.<br/><code>d := time.duration_hours(2)</code></td></tr>
+            <tr><td><code>fn from_unix_seconds(sec: i64) -&gt; Time</code></td><td><code>cfire::time::from_unix_seconds(sec)</code></td><td>Constructs a Time instant from Unix epoch seconds.<br/><code>t := time.from_unix_seconds(1700000000)</code></td></tr>
             <tr><td><code>fn sleep(d: Duration)</code></td><td><code>cfire::time::sleep(d)</code></td><td>Sleeps the current thread for duration <code>d</code>.<br/><code>time.sleep(time.duration_millis(50))</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-context" class="pager-card prev" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">&larr; Previous Module (28/38)</span>
-            <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
+          <a href="#mod-tako" class="pager-card prev" onclick="navigateToRefPane('mod-tako'); return false;">
+            <span class="pager-dir">&larr; Previous Module (29/39)</span>
+            <span class="pager-title">core:tako &mdash; Tako Cloud SDK Primitives (S3, SQS)</span>
           </a>
           <a href="#mod-unicode" class="pager-card next" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">Next Module (30/38) &rarr;</span>
+            <span class="pager-dir">Next Module (31/39) &rarr;</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
         </nav>
@@ -3935,18 +4002,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-time" class="pager-card prev" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">&larr; Previous Module (29/38)</span>
+            <span class="pager-dir">&larr; Previous Module (30/39)</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
           <a href="#mod-ai" class="pager-card next" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">Next Module (31/38) &rarr;</span>
+            <span class="pager-dir">Next Module (32/39) &rarr;</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-ai" data-pane-id="mod-ai" data-pane-short="ext:ai" data-pane-title="ext:ai — On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP">
         <h2 id="mod-ai" style="margin-top:0.25rem;"><code>import "ext:ai"</code> &mdash; On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</h2>
-        <p>Unified AI SDK built around stateful <code>Client</code> and <code>Agent</code> objects supporting Cross-Platform On-Device Intelligence (<code>ai.local()</code> / <code>ai.apple()</code>: <code>NaturalLanguage</code>/<code>PDFKit</code>/<code>Vision</code> on Apple; dynamic <code>libtesseract</code>/<code>pdftotext</code> + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (<code>ai.openai()</code>), Anthropic Claude (<code>ai.anthropic()</code>), Google Gemini (<code>ai.gemini()</code>), Ollama (<code>ai.ollama()</code>), vLLM/llama.cpp (<code>ai.openai_compatible()</code>), and deterministic offline mocks (<code>ai.mock()</code>, <code>ai.mock_sequence()</code>), with multi-turn tool-calling agents (<code>Agent</code>, <code>make_agent</code>), self-correcting structured outputs (<code>Client.generate_struct[T]</code>, <code>Agent.run_struct[T]</code>, <code>Agent.run_struct_validated[T]</code>) backed by compile-time <code>validate:&quot;...&quot;</code> struct tags, stateful client embeddings/OCR/language recognition (<code>Client.embed</code>, <code>Client.embed_image</code>, <code>Client.ocr</code>, <code>Client.detect_language</code>), pure stateless document parsers (<code>load_document</code>, <code>chunk_document</code>), SIMD vector math (<code>cosine_similarity</code>, <code>l2_distance</code>, <code>dot_product</code>, <code>normalize</code>), and a Model Context Protocol server (<code>McpServer</code>) that shares tool definitions with <code>Agent</code> (<code>use_mcp</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS + AVX2/NEON SIMD + NaturalLanguage / PDFKit / Vision / Tesseract)</code> &bull; Namespace: <code>ai.*</code> &bull; 55 exported functions</small></p>
+        <p>Unified AI SDK built around stateful <code>Client</code> and <code>Agent</code> objects supporting Cross-Platform On-Device Intelligence (<code>ai.local()</code> / <code>ai.apple()</code>: <code>NaturalLanguage</code>/<code>PDFKit</code>/<code>Vision</code> on Apple; dynamic <code>libtesseract</code>/<code>pdftotext</code> + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (<code>ai.openai()</code>), Anthropic Claude (<code>ai.anthropic()</code>), Google Gemini (<code>ai.gemini()</code>), Ollama (<code>ai.ollama()</code>), vLLM/llama.cpp (<code>ai.openai_compatible()</code>), and deterministic offline mocks (<code>ai.mock()</code>, <code>ai.mock_sequence()</code>), with multi-turn tool-calling agents (<code>Agent</code>, <code>make_agent</code>), self-correcting structured outputs (<code>Client.generate_struct[T]</code>, <code>Agent.run_struct[T]</code>, <code>Agent.run_struct_validated[T]</code>) backed by compile-time <code>validate:&quot;...&quot;</code> struct tags, stateful client embeddings/OCR/language recognition (<code>Client.embed</code>, <code>Client.embed_image</code>, <code>Client.ocr</code>, <code>Client.detect_language</code>), pure stateless document parsers (<code>load_document</code>, <code>chunk_document</code>), SIMD vector math (<code>cosine_similarity</code>, <code>l2_distance</code>, <code>dot_product</code>, <code>normalize</code>), and a Model Context Protocol server (<code>McpServer</code>) that shares tool definitions with <code>Agent</code> (<code>use_mcp</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS + AVX2/NEON SIMD + NaturalLanguage / PDFKit / Vision / Tesseract)</code> &bull; Namespace: <code>ai.*</code> &bull; 56 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -4048,22 +4115,23 @@ fn main() {
             <tr><td><code>fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -&gt; R!)</code></td><td><code>s.register_tool_action(name, description, handler)</code></td><td>Registers a parameterless MCP tool.<br/><code>mcp.register_tool_action(&quot;status&quot;, &quot;Server status&quot;, || { return &quot;ready&quot; })</code></td></tr>
             <tr><td><code>fn (mut s: McpServer) handle_jsonrpc(req_json: str) -&gt; str</code></td><td><code>s.handle_jsonrpc(req_json)</code></td><td>Processes a single MCP JSON-RPC 2.0 request (<code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>, <code>ping</code>) and returns the JSON-RPC response string.<br/><code>resp := mcp.handle_jsonrpc(line)</code></td></tr>
             <tr><td><code>fn (mut s: McpServer) serve_stdio() -&gt; i32</code></td><td><code>s.serve_stdio()</code></td><td>Runs the MCP JSON-RPC 2.0 server loop over <code>stdin</code>/<code>stdout</code>.<br/><code>mcp.serve_stdio()</code></td></tr>
+            <tr><td><code>fn create_zip(entries: map[str]str) -&gt; []byte</code></td><td><code>cfire::ai::create_zip(entries)</code></td><td>Constructs an in-memory zip archive from filename-content pairs.<br/><code>z := ai.create_zip(entries)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-unicode" class="pager-card prev" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">&larr; Previous Module (30/38)</span>
+            <span class="pager-dir">&larr; Previous Module (31/39)</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
           <a href="#mod-zstd" class="pager-card next" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">Next Module (32/38) &rarr;</span>
+            <span class="pager-dir">Next Module (33/39) &rarr;</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-zstd" data-pane-id="mod-zstd" data-pane-short="ext:compress/zstd" data-pane-title="ext:compress/zstd — Native Zstandard Frame Compression">
         <h2 id="mod-zstd" style="margin-top:0.25rem;"><code>import "ext:compress/zstd"</code> &mdash; Native Zstandard Frame Compression</h2>
-        <p>Hardware-accelerated Zstandard frame compression and decompression backed by native <code>libzstd</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lzstd</code> &bull; Namespace: <code>zstd.*</code> &bull; 2 exported functions</small></p>
+        <p>Hardware-accelerated Zstandard frame compression and decompression backed by native <code>libzstd</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-lzstd</code> &bull; Namespace: <code>zstd.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -4084,16 +4152,18 @@ fn main() {
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn compress(input: []byte, level: i32 = 3) -&gt; []byte!</code></td><td><code>cfire::zstd::compress(input, level)</code></td><td>Compresses a byte slice into a Zstandard frame.<br/><code>blob := try zstd.compress(raw, level: 3)</code></td></tr>
+            <tr><td><code>fn compress_str(input: str, level: i32 = 3) -&gt; []byte!</code></td><td><code>cfire::zstd::compress_str(input, level)</code></td><td>Compresses a string into a Zstandard frame.<br/><code>blob := try zstd.compress_str(s, 3)</code></td></tr>
             <tr><td><code>fn decompress(frame: []byte) -&gt; []byte!</code></td><td><code>cfire::zstd::decompress(frame)</code></td><td>Decompresses a Zstandard frame using the embedded frame content size.<br/><code>orig := try zstd.decompress(blob)</code></td></tr>
+            <tr><td><code>fn decompress_str(frame: []byte) -&gt; str!</code></td><td><code>cfire::zstd::decompress_str(frame)</code></td><td>Decompresses a Zstandard frame into a UTF-8 string.<br/><code>orig := try zstd.decompress_str(blob)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-ai" class="pager-card prev" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">&larr; Previous Module (31/38)</span>
+            <span class="pager-dir">&larr; Previous Module (32/39)</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</span>
           </a>
           <a href="#mod-sodium" class="pager-card next" onclick="navigateToRefPane('mod-sodium'); return false;">
-            <span class="pager-dir">Next Module (33/38) &rarr;</span>
+            <span class="pager-dir">Next Module (34/39) &rarr;</span>
             <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
         </nav>
@@ -4131,11 +4201,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-zstd" class="pager-card prev" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">&larr; Previous Module (32/38)</span>
+            <span class="pager-dir">&larr; Previous Module (33/39)</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
           <a href="#mod-sqlite" class="pager-card next" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">Next Module (34/38) &rarr;</span>
+            <span class="pager-dir">Next Module (35/39) &rarr;</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</span>
           </a>
         </nav>
@@ -4188,11 +4258,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sodium" class="pager-card prev" onclick="navigateToRefPane('mod-sodium'); return false;">
-            <span class="pager-dir">&larr; Previous Module (33/38)</span>
+            <span class="pager-dir">&larr; Previous Module (34/39)</span>
             <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
           <a href="#mod-ssh" class="pager-card next" onclick="navigateToRefPane('mod-ssh'); return false;">
-            <span class="pager-dir">Next Module (35/38) &rarr;</span>
+            <span class="pager-dir">Next Module (36/39) &rarr;</span>
             <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
           </a>
         </nav>
@@ -4259,18 +4329,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sqlite" class="pager-card prev" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">&larr; Previous Module (34/38)</span>
+            <span class="pager-dir">&larr; Previous Module (35/39)</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</span>
           </a>
           <a href="#mod-webui" class="pager-card next" onclick="navigateToRefPane('mod-webui'); return false;">
-            <span class="pager-dir">Next Module (36/38) &rarr;</span>
+            <span class="pager-dir">Next Module (37/39) &rarr;</span>
             <span class="pager-title">ext:webui &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-webui" data-pane-id="mod-webui" data-pane-short="ext:webui" data-pane-title="ext:webui — Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework">
         <h2 id="mod-webui" style="margin-top:0.25rem;"><code>import "ext:webui"</code> &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</h2>
-        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 51 exported functions</small></p>
+        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 55 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -4373,15 +4443,19 @@ fn main() {
             <tr><td><code>fn (mut app: App) run()</code></td><td><code>app.run()</code></td><td>Launches the native OS window and WebView event loop (<code>NSWindow</code>+<code>WKWebView</code> on macOS, <code>UIWindow</code>+<code>WKWebView</code> on iOS, <code>GtkWindow</code>+<code>WebKitGTK</code> on Linux).<br/><code>app.run()</code></td></tr>
             <tr><td><code>fn (mut app: App) quit()</code></td><td><code>app.quit()</code></td><td>Requests termination of the native WebView event loop.<br/><code>app.quit()</code></td></tr>
             <tr><td><code>fn (mut app: App) close()</code></td><td><code>app.close()</code></td><td>Deterministic RAII cleanup handle for <code>defer app.close()</code>.<br/><code>defer app.close()</code></td></tr>
+            <tr><td><code>fn clipboard_get() -&gt; str</code></td><td><code>cfire::webui::clipboard_get()</code></td><td>Reads plaintext from the system clipboard.<br/><code>t := webui.clipboard_get()</code></td></tr>
+            <tr><td><code>fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)</code></td><td><code>cfire::webui::clipboard_set(text, concealed, clear_after_ms)</code></td><td>Writes plaintext to the system clipboard with optional auto-clear timeout.<br/><code>webui.clipboard_set(&quot;secret&quot;, true, 10000)</code></td></tr>
+            <tr><td><code>fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)</code></td><td><code>cfire::webui::clipboard_set_secret(text, clear_after_ms)</code></td><td>Writes sensitive secret to the clipboard and schedules automatic clearing.<br/><code>webui.clipboard_set_secret(&quot;pass&quot;)</code></td></tr>
+            <tr><td><code>fn monospace_fonts() -&gt; []str</code></td><td><code>cfire::webui::monospace_fonts()</code></td><td>Returns a list of platform-installed monospaced font family names.<br/><code>fonts := webui.monospace_fonts()</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-ssh" class="pager-card prev" onclick="navigateToRefPane('mod-ssh'); return false;">
-            <span class="pager-dir">&larr; Previous Module (35/38)</span>
+            <span class="pager-dir">&larr; Previous Module (36/39)</span>
             <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
           </a>
           <a href="#mod-rg" class="pager-card next" onclick="navigateToRefPane('mod-rg'); return false;">
-            <span class="pager-dir">Next Module (37/38) &rarr;</span>
+            <span class="pager-dir">Next Module (38/39) &rarr;</span>
             <span class="pager-title">vendor:raygui &mdash; Raygui 4.0 Immediate-Mode GUI Controls</span>
           </a>
         </nav>
@@ -4439,11 +4513,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-webui" class="pager-card prev" onclick="navigateToRefPane('mod-webui'); return false;">
-            <span class="pager-dir">&larr; Previous Module (36/38)</span>
+            <span class="pager-dir">&larr; Previous Module (37/39)</span>
             <span class="pager-title">ext:webui &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</span>
           </a>
           <a href="#mod-rl" class="pager-card next" onclick="navigateToRefPane('mod-rl'); return false;">
-            <span class="pager-dir">Next Module (38/38) &rarr;</span>
+            <span class="pager-dir">Next Module (39/39) &rarr;</span>
             <span class="pager-title">vendor:raylib &mdash; Raylib 5.0 2D/3D Graphics, Audio, Input &amp; Math</span>
           </a>
         </nav>
@@ -4508,7 +4582,7 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rg" class="pager-card prev" onclick="navigateToRefPane('mod-rg'); return false;">
-            <span class="pager-dir">&larr; Previous Module (37/38)</span>
+            <span class="pager-dir">&larr; Previous Module (38/39)</span>
             <span class="pager-title">vendor:raygui &mdash; Raygui 4.0 Immediate-Mode GUI Controls</span>
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
@@ -4944,7 +5018,7 @@ x = 1 // OK</code></pre></div>
           </a>
           <a href="#overview" class="pager-card next" onclick="navigateToRefPane('overview'); return false;">
             <span class="pager-dir">Back to Overview &rarr;</span>
-            <span class="pager-title">All 38 Standard Library Modules</span>
+            <span class="pager-title">All 39 Standard Library Modules</span>
           </a>
         </nav>
       </article>

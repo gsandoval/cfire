@@ -45,3 +45,43 @@ This workbench tracks the active 5-phase execution promoted from [`backlog.md`](
   - `CF-088`: Add `ai.local()` (`Provider::Local`) with `ai.apple()` alias, stateful `default_model` on `Client` (`set_model`, `model`), 1-arg `Client` methods (`embed(text)`, `embed_image(path)`, `ask(prompt)`, `generate_struct[T](prompt)`), `client.ocr(path)`, `client.detect_language(text)`, and Sema `cfire/DEPRECATED-API` enforcement on top-level `ai.embed`/`ai.embed_image`/`ai.ocr`/`ai.detect_language`.
 - [x] **Phase 9: Unified I/O Architecture (`stdin`/`stdout`, Files, Pipes & Sockets) (`CF-089`)**
   - `CF-089`: Enforce strict `_bytes` / `_text` symmetry across `core:fs`, `fs.File`, `net.TcpConn`, and `ssh.Channel`; add `read_into`, `read_exact`, `read_bytes_until`, and `read_text_until`; replace raw `os.fd_*`, `os.read_stdin*`, and global `readln`/`input` with RAII `fs.File` / `net.TcpConn` handles (`os.stdin()`, `os.stdout()`, `os.stderr()`, `os.pipe() -> (File, File)!`, `net.socketpair() -> (TcpConn, TcpConn)!`, `.poll()`, `.is_tty()`); fix `cli.prompt`/`cli.prompt_password` (`-> str?`); make `core:net` fail-closed; and enforce Sema `cfire/DEPRECATED-API` fix-its.
+- [x] **Phase 10: Windows Parity, Self-Contained WebView2 & Toolchain Polish (`CF-090` / `CF-001.a–e,g`)**
+  - `W-01` / `W-02` / `W-04` / `W-08` / `W-13`: Auto-discover `<triple>-clang++`, pass `CFIRE_CXX` to `import cpp`, target-based `.exe` suffix, automatic `-static` + `pkg-config --static` on Windows, `*_unix.cf` / `*_wasm.cf` platform filtering, and `.ico`/`.png` resource embedding via `windres`.
+  - `W-03` / `W-05` / `W-11` / `W-14` / `NW-06`: Return UTF-8 `str` from `os.cwd()`, set `_O_BINARY` + `CP_UTF8` on Windows stdio, read UTF-8 `os.args()` via `CommandLineToArgvW`, support `AF_UNIX` reparse points in `fs.exists()`, and support string literals in `json.stringify` / `app.emit`.
+  - `W-06` / `W-09` / `W-10` / `W-12` / `W-15` / `NW-05`: Self-contained `ICoreWebView2` COM host in `windows_webview2.hpp` with inline fallback COM declarations and built-in Registry/loader resolution, PNG support in `set_icon`/`set_tray`, 32K buffer in Win32 file dialogs, and live `set_dark_mode` across macOS/Win32/GTK + Win32 `center`/`fullscreen`.
+  - `W-07` / `NW-01` / `NW-02` / `NW-03` / `NW-04`: Fix Windows CI `git` step, single-subshell `make install`, move `git config core.hooksPath` to `make hooks`, support `cfire <subcommand> --help`, and PID-salt `clang_bridge.hpp` temp directories.
+- [x] **Phase 11: Regression Net & Safety Core (`CF-091` – `CF-101`)**
+  - [x] `CF-091`: GUIDE Doc-Test Runner & Specification Alignment (39/39 blocks verified in `make test-guide`)
+  - [x] `CF-092`: Golden Codegen Snapshot & `#line` Verification Suite (5/5 golden snapshots with `#line` fidelity)
+  - [x] `CF-093`: Multi-Platform CI Matrix & Sanitizer Hardening (`make test-asan` passing cleanly, Ubuntu CI workflow)
+  - [x] `CF-094`: Conformance Test Suite Hygiene & Determinism (bench quarantined from test, mkdtemp ScopedTempDir, deleted dead conformance_test.cpp)
+  - [x] `CF-095`: MCP Server Security, Process Isolation & Resource Limits (posix_spawnp vector execution, resource limits)
+  - [x] `CF-096`: Code Formatter String-Awareness & AST-Level Round-Trip (lexer string literal preservation, struct default tags protected)
+  - [x] `CF-097`: Closure & Spawn Capture Semantics (Escaping Copies, Non-Escaping Borrows)
+  - [x] `CF-098`: Defined Integer Overflow, Shift & Division Semantics (`-fwrapv`, PCH flag parity, div-by-zero panics)
+  - [x] `CF-099`: Control-Flow Divergence & Missing-Return Semantic Verification (`cfire/MISSING-RETURN`)
+  - [x] `CF-100`: Expr-Node-Keyed Move Tracking & CFG Loop Safety (`Expr*`-keyed move tracker)
+  - [x] `CF-101`: Codegen Namespace Guard Hotfix (`local_vars_` namespace collision protection)
+- [x] **Phase 12: Compiler Diagnostics & Deprecations (`CF-102` – `CF-114`, `CF-131`)**
+  - [x] `CF-102`: Terminal Warning Visibility
+  - [x] `CF-103`: Hard Deprecation Error Enforcement
+  - [x] `CF-104`: Duplicate Declaration Pass
+  - [x] `CF-105`: Catalog-Gated Import Validation
+  - [x] `CF-106`: Plain Enum Usability Cluster
+  - [x] `CF-107`: Uniform First-Class Multi-Argument Generic Type Application
+  - [x] `CF-108`: C++ Backend Error Leak Prevention
+  - [x] `CF-109`: Foreign C/C++ Package Namespace Resolution
+  - [x] `CF-110`: Match Exhaustiveness Gaps
+  - [x] `CF-111`: Left-Associative Match Arm Expression Pattern Chaining
+  - [x] `CF-112`: Scientific Notation Floating-Point Literals & Keyword Expansion
+  - [x] `CF-113`: Content-Hashed Precompiled Headers & Idempotent Preprocessor Invocation
+  - [x] `CF-114`: Lambda & Closure `#line` Directive Accuracy
+  - [x] `CF-131`: Negative Parser Corpus, LibFuzzer Targets & Runtime Coverage
+- [ ] **Phase 13: Resolved & Typed AST (`CF-115` – `CF-120`)**
+  - [x] `CF-115`: Semantic AST Resolution Pass & Codegen Decoupling
+  - [ ] `CF-116`: Interned TypeId Lattice & Explicit Unknown-Type Diagnostics
+  - [ ] `CF-117`: Unified Generated Standard Library Metadata Table
+  - [ ] `CF-118`: Unified Diagnostic Pipeline across CLI, LSP & MCP
+  - [ ] `CF-119`: Scope-Sound Semantic Workspace Refactoring
+  - [ ] `CF-120`: Compiler Modularization & High-Complexity Function Decomposition
+

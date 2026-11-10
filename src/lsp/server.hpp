@@ -1,6 +1,7 @@
 #pragma once
 // src/lsp/server.hpp — Full-Featured Language Server Protocol (LSP 3.17) Server (`cfire::lsp::Server`)
 
+#include "../buildsys.hpp"
 #include "../diagnostics.hpp"
 #include "json_rpc.hpp"
 #include <algorithm>
@@ -140,7 +141,7 @@ public:
             }
             std::string id = id_opt.value_or("1");
             std::string resp = std::format(
-                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"textDocumentSync":1,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"{}"}}}}}})",
+                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"textDocumentSync":1,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentOnTypeFormattingProvider":{{"firstTriggerCharacter":"\n","moreTriggerCharacter":["}}"]}},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"{}"}}}}}})",
                 id, cfire::version::kVersion);
             send_rpc(out, resp);
             return true;
@@ -371,6 +372,18 @@ public:
             return true;
         }
 
+        if (method == "textDocument/onTypeFormatting") {
+            std::string id = id_opt.value_or("1");
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            std::size_t pos_idx = detail::find_json_key(msg, "position");
+            int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            std::string ch = detail::extract_json_string(msg, "ch").value_or("\n");
+            std::string edits_json = compute_on_type_formatting(uri, line, character, ch);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, edits_json));
+            return true;
+        }
+
         if (method == "textDocument/semanticTokens/full") {
             std::string id = id_opt.value_or("1");
             auto uri = detail::extract_json_string(msg, "uri").value_or("");
@@ -590,8 +603,6 @@ public:
     auto get_or_parse_ast(const std::string& uri, const std::string& text, int line = -1, int col = -1)
         -> std::pair<std::optional<cfire::frontend::FileAST>, detail::WorkspaceContext>
     {
-        (void)line;
-        (void)col;
         std::string path = detail::uri_to_path(uri);
         auto pres = cfire::frontend::parse_source_resilient(path, text);
         if (pres.ok()) {
@@ -601,18 +612,32 @@ public:
             return {pres.ast, ws};
         }
 
-        // Recovery 1: If file has trailing dot(s) or colons, patch them with placeholders
+        // Recovery 1: If file has trailing dot(s) or colons (either at cursor or end-of-line), patch them with placeholders
         {
             auto lines = detail::split_lines(text);
             bool modified = false;
-            for (auto& ln : lines) {
+            for (std::size_t li = 0; li < lines.size(); ++li) {
+                auto& ln = lines[li];
                 auto end_pos = ln.find_last_not_of(" \t\r\n");
                 if (end_pos != std::string::npos) {
                     if (ln[end_pos] == '.') {
                         ln.insert(end_pos + 1, "__cfire_placeholder__");
                         modified = true;
+                        continue;
                     } else if (end_pos >= 1 && ln[end_pos] == ':' && ln[end_pos - 1] == ':') {
                         ln.insert(end_pos + 1, "__cfire_placeholder__");
+                        modified = true;
+                        continue;
+                    }
+                }
+                if (line >= 0 && static_cast<std::size_t>(line) == li &&
+                    col > 0 && static_cast<std::size_t>(col) <= ln.size()) {
+                    char prev = ln[static_cast<std::size_t>(col - 1)];
+                    bool next_non_ident = (static_cast<std::size_t>(col) == ln.size()) ||
+                        (!std::isalnum(static_cast<unsigned char>(ln[static_cast<std::size_t>(col)])) &&
+                         ln[static_cast<std::size_t>(col)] != '_');
+                    if (prev == '.' && next_non_ident) {
+                        ln.insert(static_cast<std::size_t>(col), "__cfire_placeholder__");
                         modified = true;
                     }
                 }
@@ -646,7 +671,7 @@ public:
         return {std::nullopt, {}};
     }
 
-    auto compute_diagnostics_for_doc(const std::string& uri, const std::string& text) -> std::vector<detail::DiagnosticEntry> {
+    auto compute_diagnostics_for_doc(const std::string& uri, const std::string& text, bool allow_cpp_fallback = false) -> std::vector<detail::DiagnosticEntry> {
         using namespace cfire::frontend;
         std::vector<detail::DiagnosticEntry> entries;
         std::string file_path = detail::uri_to_path(uri);
@@ -689,6 +714,29 @@ public:
             for (const auto& warn : checked.warnings) {
                 entries.push_back(parse_err(warn, "cfire/WARNING", 2));
             }
+            if (allow_cpp_fallback && checked.errors.empty() && !file_path.empty() && debounce_duration_.count() >= 50) {
+                auto layout = cfire::build::locate_toolchain_layout(nullptr);
+                if (!layout.runtime_dir.empty()) {
+                    bool is_test_f = file_path.ends_with("_test.cf");
+                    std::string cpp_code = cfire::frontend::emit_cpp(checked, is_test_f);
+                    cfire::build::BuildPlan plan;
+                    plan.entry_file = file_path;
+                    plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + layout.runtime_dir.string()};
+                    std::error_code ec;
+                    if (std::filesystem::is_directory(layout.runtime_dir / "vendor", ec)) {
+                        plan.cflags.push_back("-I" + (layout.runtime_dir / "vendor").string());
+                    }
+                    auto syntax_check = cfire::build::verify_cpp_syntax_only(file_path, cpp_code, plan, layout.runtime_dir);
+                    if (!syntax_check) {
+                        auto clang_lines = cfire::diag::split_lines(syntax_check.error());
+                        for (const auto& cl : clang_lines) {
+                            if (cl.contains(": error:")) {
+                                entries.push_back(parse_err(cl, "cfire/TYPE-ERROR", 1));
+                            }
+                        }
+                    }
+                }
+            }
         }
         {
             std::lock_guard<std::mutex> lock(diag_store_mutex_);
@@ -698,7 +746,7 @@ public:
     }
 
     void run_and_publish_diagnostics(const std::string& uri, const std::string& text) {
-        auto entries = compute_diagnostics_for_doc(uri, text);
+        auto entries = compute_diagnostics_for_doc(uri, text, true);
         std::string diags_json = "[";
         for (std::size_t i = 0; i < entries.size(); ++i) {
             if (i > 0) diags_json += ",";
@@ -968,6 +1016,60 @@ public:
         return std::format(
             R"([{{"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":{}}}}},"newText":"{}"}}])",
             start_line, end_line, end_char, detail::json_escape(*formatted));
+    }
+
+    auto compute_on_type_formatting(const std::string& uri, int line, int character, std::string_view ch) -> std::string {
+        (void)character;
+        if (line < 0) return "[]";
+        std::string text = get_doc_text(uri);
+        auto lines = detail::split_lines(text);
+        while (static_cast<std::size_t>(line) >= lines.size()) {
+            lines.emplace_back("");
+        }
+
+        int indent = 0;
+        bool in_raw_string = false;
+        for (int i = 0; i < line; ++i) {
+            const std::string& raw = lines[static_cast<std::size_t>(i)];
+            if (in_raw_string) {
+                auto close_bt = raw.find('`');
+                if (close_bt != std::string::npos) {
+                    in_raw_string = false;
+                    int net_delta = cfire::fmt::detail::scan_line_brace_delta(raw, close_bt + 1, in_raw_string);
+                    indent = std::max(0, indent + net_delta);
+                }
+                continue;
+            }
+            std::string trimmed = cfire::fmt::detail::trim_ws(raw);
+            if (trimmed.empty()) continue;
+            int net_delta = cfire::fmt::detail::scan_line_brace_delta(trimmed, 0, in_raw_string);
+            indent = std::max(0, indent + net_delta);
+        }
+        if (in_raw_string) return "[]";
+
+        const std::string& cur_ln = lines[static_cast<std::size_t>(line)];
+        int ws_len = 0;
+        while (ws_len < static_cast<int>(cur_ln.size()) &&
+               (cur_ln[static_cast<std::size_t>(ws_len)] == ' ' || cur_ln[static_cast<std::size_t>(ws_len)] == '\t')) {
+            ++ws_len;
+        }
+        std::string trimmed = cfire::fmt::detail::trim_ws(cur_ln);
+        int leading_close = 0;
+        for (char c : trimmed) {
+            if (c == '}' || c == ')' || c == ']') ++leading_close;
+            else break;
+        }
+        if (ch == "}" && leading_close == 0) {
+            return "[]";
+        }
+        int target_indent = std::max(0, indent - leading_close);
+        std::string target_ws(static_cast<std::size_t>(target_indent * 4), ' ');
+        if (cur_ln.substr(0, static_cast<std::size_t>(ws_len)) == target_ws) {
+            return "[]";
+        }
+        return std::format(
+            R"([{{"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":{}}}}},"newText":"{}"}}])",
+            line, line, ws_len, detail::json_escape(target_ws));
     }
 };
 

@@ -135,6 +135,7 @@ constexpr int WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START = 0;
 struct GtkWidget {};
 struct GtkWindow {};
 struct GtkContainer {};
+struct GtkSettings {};
 struct GInputStream { std::string data; };
 struct WebKitURISchemeRequest { std::string path; std::string finished_body; std::string finished_mime; };
 struct WebKitUserContentManager {};
@@ -201,6 +202,11 @@ inline void gtk_window_unfullscreen(GtkWindow*) {}
 inline void gtk_window_iconify(GtkWindow*) {}
 inline void gtk_window_maximize(GtkWindow*) {}
 inline void gtk_window_unmaximize(GtkWindow*) {}
+inline GtkSettings* gtk_settings_get_default() {
+    static GtkSettings s_settings{};
+    return &s_settings;
+}
+inline void g_object_set(gpointer, const char*, ...) {}
 inline void g_signal_connect(gpointer, const char*, GCallback, gpointer) {}
 inline WebKitWebContext* webkit_web_context_get_default() { return nullptr; }
 inline void webkit_web_context_register_uri_scheme(WebKitWebContext*, const char*, WebKitURISchemeRequestCallback cb, gpointer ud, GDestroyNotify) {
@@ -260,6 +266,7 @@ int main() {
 
 using BOOL = int;
 using UINT = unsigned int;
+using LONG = long;
 using DWORD = unsigned long;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
@@ -302,7 +309,10 @@ constexpr UINT MB_ICONINFORMATION = 0x40;
 constexpr unsigned char FIXED_PITCH = 1;
 constexpr DWORD TRUETYPE_FONTTYPE = 0x4;
 constexpr unsigned char DEFAULT_CHARSET = 1;
+constexpr int GWL_STYLE = -16;
 constexpr int GWLP_USERDATA = -21;
+constexpr int SM_CXSCREEN = 0;
+constexpr int SM_CYSCREEN = 1;
 
 constexpr UINT WM_CREATE = 1;
 constexpr UINT WM_DESTROY = 2;
@@ -321,8 +331,11 @@ constexpr int SW_SHOW = 5;
 constexpr int SW_MINIMIZE = 6;
 constexpr int SW_MAXIMIZE = 3;
 constexpr int SW_RESTORE = 9;
+constexpr UINT SWP_NOSIZE = 1;
 constexpr UINT SWP_NOMOVE = 2;
 constexpr UINT SWP_NOZORDER = 4;
+constexpr UINT SWP_FRAMECHANGED = 0x20;
+const HWND HWND_TOP = nullptr;
 constexpr WPARAM HTCAPTION = 2;
 
 constexpr UINT MF_SEPARATOR = 0x800;
@@ -387,9 +400,11 @@ struct WNDCLASSEXW {
     UINT style;
     WNDPROC lpfnWndProc;
     HINSTANCE hInstance;
+    HICON hIcon;
     HCURSOR hCursor;
     HBRUSH hbrBackground;
     const wchar_t* lpszClassName;
+    HICON hIconSm;
 };
 struct NOTIFYICONDATAW {
     DWORD cbSize;
@@ -505,6 +520,8 @@ inline int EnumFontFamiliesExW(HDC, LOGFONTW*, FONTENUMPROCW cb, LPARAM lParam, 
     return 1;
 }
 
+inline LONG GetWindowLongW(HWND, int) { return static_cast<LONG>(WS_OVERLAPPEDWINDOW); }
+inline LONG SetWindowLongW(HWND, int, LONG v) { return v; }
 inline LONG_PTR GetWindowLongPtrW(HWND, int) { return g_wnd_userdata; }
 inline LONG_PTR SetWindowLongPtrW(HWND, int, LONG_PTR v) {
     LONG_PTR old = g_wnd_userdata;
@@ -514,6 +531,13 @@ inline LONG_PTR SetWindowLongPtrW(HWND, int, LONG_PTR v) {
 inline BOOL GetClientRect(HWND, RECT* r) {
     if (r) *r = RECT{0, 0, 960, 640};
     return TRUE;
+}
+inline BOOL GetWindowRect(HWND, RECT* r) {
+    if (r) *r = RECT{100, 100, 1060, 740};
+    return TRUE;
+}
+inline int GetSystemMetrics(int idx) {
+    return idx == SM_CXSCREEN ? 1920 : 1080;
 }
 inline BOOL ShowWindow(HWND, int cmd) { g_last_show_cmd = cmd; return TRUE; }
 inline BOOL DestroyWindow(HWND hwnd) {
@@ -631,8 +655,14 @@ int main() {
     int tray_show_count = 0;
     app.on("window:close_requested", [&]() { ++close_req_count; });
     app.on("tray:show", [&]() { ++tray_show_count; });
+    app.emit("ping", "pong");
+    if (app.last_emitted_payload("ping") != "\"pong\"") return 13;
 
     app.run_win32_webview2(true, 100);
+    app.set_dark_mode(false);
+    app.center();
+    app.fullscreen();
+    app.fullscreen();
 
     if (g_tray_add_calls != 1 || g_tray_del_calls != 1) return 10;
     if (close_req_count != 1 || !app.is_window_hidden() || g_last_show_cmd != SW_HIDE) return 11;

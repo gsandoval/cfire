@@ -19,6 +19,28 @@ jobs:
       - name: Run Review Check Quality Gates
         run: make review-check
 
+      - name: Run AddressSanitizer & UndefinedBehaviorSanitizer
+        run: make test-asan
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libraylib-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+
+      - name: Build cfire Toolchain
+        run: make build
+
+      - name: Run Review Check Quality Gates
+        run: make review-check
+
   windows:
     runs-on: windows-latest
     defaults:
@@ -43,9 +65,11 @@ jobs:
             mingw-w64-clang-x86_64-sqlite3
 
       - name: Build cfire.exe on Windows
+        env:
+          GITHUB_SHA: ${{ github.sha }}
         run: |
-          GIT_SHA=$(git rev-parse --short=7 HEAD)
-          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"${GIT_SHA}\" -Iruntime -Isrc src/main.cpp -o cfire.exe -lws2_32 -ladvapi32
+          GIT_SHA="${GITHUB_SHA::7}"
+          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"${GIT_SHA}\" -Iruntime -Isrc src/main.cpp -o cfire.exe -lws2_32 -ladvapi32 -lshell32
 
       - name: Verify cfire.exe Doctor, Formatting & Documentation Sync
         run: |

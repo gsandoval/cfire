@@ -1,0 +1,7 @@
+package main
+
+fn bad_match(x: i32) {
+    match x {
+        1 = { println("one") }
+    }
+}

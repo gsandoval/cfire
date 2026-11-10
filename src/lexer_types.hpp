@@ -41,6 +41,8 @@ enum class TokenKind : int {
     KwMatch,
     KwDefer,
     KwReturn,
+    KwBreak,
+    KwContinue,
     KwTry,
     KwOr,
     KwTest,
@@ -142,6 +144,8 @@ struct Token {
         case TokenKind::KwMatch: return "match";
         case TokenKind::KwDefer: return "defer";
         case TokenKind::KwReturn: return "return";
+        case TokenKind::KwBreak: return "break";
+        case TokenKind::KwContinue: return "continue";
         case TokenKind::KwTry: return "try";
         case TokenKind::KwOr: return "or";
         case TokenKind::KwTest: return "test";
@@ -225,6 +229,8 @@ inline const std::unordered_map<std::string_view, TokenKind>& keyword_map() {
         {"match", TokenKind::KwMatch},
         {"defer", TokenKind::KwDefer},
         {"return", TokenKind::KwReturn},
+        {"break", TokenKind::KwBreak},
+        {"continue", TokenKind::KwContinue},
         {"try", TokenKind::KwTry},
         {"or", TokenKind::KwOr},
         {"test", TokenKind::KwTest},

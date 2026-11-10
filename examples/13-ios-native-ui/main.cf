@@ -85,14 +85,14 @@ fn main() {
                 if ctx.toggle_row("Push Alerts", "Notify on threshold breach", mut notifications) {
                     tap_sfx.play()
                 }
-                if ctx.segmented_row("Performance Profile", "Eco;Balanced;Turbo", mut perf_profile) {
+                if ctx.segmented_row("Performance Profile", "Eco;Balanced;Turbo", mut perf_profile) >= 0 {
                     tap_sfx.play()
                 }
             }
 
             ctx.section("THERMAL & IDENTITY") || {
-                _ := ctx.slider_row("Target Temp", mut target_temp, 60.0, 85.0, " F")
-                _ := ctx.text_field_row("Device Name", mut device_name, 28)
+                _ = ctx.slider_row("Target Temp", mut target_temp, 60.0, 85.0, " F")
+                _ = ctx.text_field_row("Device Name", mut device_name, 28)
             }
 
             if ctx.button("Sync Telemetry ({sync_count})", false) {
@@ -108,7 +108,7 @@ fn main() {
                 if ctx.toggle_row("Background Cloud Sync", "Upload snapshots every 60s", mut auto_sync) {
                     tap_sfx.play()
                 }
-                _ := ctx.slider_row("DSP Buffer", mut buffer_ms, 4.0, 64.0, " ms")
+                _ = ctx.slider_row("DSP Buffer", mut buffer_ms, 4.0, 64.0, " ms")
             }
 
             if ctx.button("Reset Counters", true) {
@@ -127,7 +127,7 @@ fn main() {
             }
         }
 
-        if ctx.tab_bar("Dashboard;Diagnostics;About", mut active_tab) {
+        if ctx.tab_bar("Dashboard;Diagnostics;About", mut active_tab) >= 0 {
             tap_sfx.play()
         }
 

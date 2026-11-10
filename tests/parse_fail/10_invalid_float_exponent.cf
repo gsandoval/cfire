@@ -1,0 +1,5 @@
+package main
+
+fn bad_exponent() {
+    val := 1e+
+}

@@ -726,13 +726,28 @@ private:
             }
             if (cur().kind == TokenKind::LBracket) {
                 advance();
-                auto inner = parse_type_ref();
-                if (!inner) return std::unexpected(inner.error());
+                while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                    auto inner = parse_type_ref();
+                    if (!inner) return std::unexpected(inner.error());
+                    tr.type_args.push_back(std::move(*inner));
+                    if (cur().kind == TokenKind::Comma) {
+                        advance();
+                    } else if (cur().kind != TokenKind::RBracket) {
+                        return std::unexpected(std::format("{}:{}:{}: expected ',' or ']' in type arguments",
+                            file_, cur().line, cur().col));
+                    }
+                }
                 if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
                 if (tr.name == "own" || tr.name == "shared") {
                     tr.smart_wrap = tr.name;
                 }
-                tr.elem_type = std::make_shared<TypeRef>(std::move(*inner));
+                if (!tr.type_args.empty()) {
+                    tr.elem_type = std::make_shared<TypeRef>(tr.type_args[0]);
+                    if (tr.type_args.size() == 2) {
+                        tr.key_type = std::make_shared<TypeRef>(tr.type_args[0]);
+                        tr.elem_type = std::make_shared<TypeRef>(tr.type_args[1]);
+                    }
+                }
             }
         }
 
@@ -759,15 +774,19 @@ private:
             advance(); // '('
             ReceiverDecl recv;
             if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwIn) {
+                if (cur().kind == TokenKind::KwIn) recv.has_explicit_in = true;
                 recv.intent = advance().lexeme;
             }
             auto r_name = expect(TokenKind::Ident);
             if (!r_name) return std::unexpected(r_name.error());
             recv.name = r_name->lexeme;
+            recv.line = r_name->line;
+            recv.col = r_name->col;
             if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
             if (cur().kind == TokenKind::KwMut) {
                 advance();
                 recv.intent = "mut";
+                recv.has_deprecated_mut_pos = true;
             }
             auto r_type = parse_type_ref();
             if (!r_type) return std::unexpected(r_type.error());
@@ -803,8 +822,13 @@ private:
 
         while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
             std::string intent = "in";
+            bool explicit_in = false;
+            bool deprecated_mut_pos = false;
             switch (cur().kind) {
                 case TokenKind::KwIn:
+                    explicit_in = true;
+                    intent = advance().lexeme;
+                    break;
                 case TokenKind::KwMut:
                 case TokenKind::KwOut:
                 case TokenKind::KwMove:
@@ -819,6 +843,7 @@ private:
             if (cur().kind == TokenKind::KwMut) {
                 advance();
                 intent = "mut";
+                deprecated_mut_pos = true;
             }
             auto t_ref = parse_type_ref();
             if (!t_ref) return std::unexpected(t_ref.error());
@@ -828,6 +853,8 @@ private:
                 .type = std::move(*t_ref),
                 .line = p_tok->line,
                 .col = p_tok->col,
+                .has_explicit_in = explicit_in,
+                .has_deprecated_mut_pos = deprecated_mut_pos,
             });
             if (cur().kind == TokenKind::Comma) advance();
         }
@@ -1056,6 +1083,14 @@ private:
                 if (!val) return std::unexpected(val.error());
                 return make_stmt(ReturnStmt{std::move(*val), tok.line}, tok.line);
             }
+            case TokenKind::KwBreak: {
+                advance();
+                return make_stmt(BreakStmt{tok.line}, tok.line);
+            }
+            case TokenKind::KwContinue: {
+                advance();
+                return make_stmt(ContinueStmt{tok.line}, tok.line);
+            }
             case TokenKind::KwIf:
                 return parse_if_stmt();
             case TokenKind::KwFor:
@@ -1233,6 +1268,11 @@ private:
         if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
             Token id_tok = advance();
             advance(); // ':='
+            if (id_tok.lexeme == "_") {
+                return std::unexpected(std::format(
+                    "{}:{}:{}: '_ :=' is deprecated; use '_ =' to discard values without declaring a binding (cfire/DEPRECATED-DISCARD)",
+                    file_, id_tok.line, id_tok.col));
+            }
             auto init = parse_expr();
             if (!init) return std::unexpected(init.error());
             return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::nullopt, std::move(*init), /*was_var=*/false, id_tok.line, id_tok.col}, id_tok.line);
@@ -1412,9 +1452,14 @@ private:
                 if (!v_tok) return std::unexpected(v_tok.error());
                 arm.line = v_tok->line;
                 if (cur().kind == TokenKind::DoubleColon || cur().kind == TokenKind::Dot) {
-                    advance();
+                    Token sep = advance();
                     auto sub_tok = expect(TokenKind::Ident);
                     if (!sub_tok) return std::unexpected(sub_tok.error());
+                    if (sep.kind == TokenKind::Dot) {
+                        return std::unexpected(std::format(
+                            "{}:{}:{}: '.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}') (cfire/DEPRECATED-SEPARATOR)",
+                            file_, sep.line, sep.col, v_tok->lexeme, sub_tok->lexeme));
+                    }
                     arm.enum_prefix = v_tok->lexeme;
                     arm.variant_name = sub_tok->lexeme;
                 } else {
@@ -1486,27 +1531,55 @@ private:
     [[nodiscard]] auto parse_or_expr() -> std::expected<ExprPtr, std::string> {
         auto left = parse_binary_expr();
         if (!left) return std::unexpected(left.error());
-        if (cur().kind == TokenKind::KwOr) {
+        while (cur().kind == TokenKind::KwOr) {
             Token or_tok = advance();
+            if (cur().kind == TokenKind::KwBreak) {
+                Token btok = advance();
+                std::vector<StmtPtr> body;
+                body.push_back(make_stmt(BreakStmt{btok.line}, btok.line));
+                left = make_expr(OrExpr{std::move(*left), "", std::move(body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            if (cur().kind == TokenKind::KwContinue) {
+                Token ctok = advance();
+                std::vector<StmtPtr> body;
+                body.push_back(make_stmt(ContinueStmt{ctok.line}, ctok.line));
+                left = make_expr(OrExpr{std::move(*left), "", std::move(body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            if (cur().kind == TokenKind::KwReturn) {
+                Token rtok = advance();
+                ExprPtr ret_val = nullptr;
+                if (cur().kind != TokenKind::Semicolon && cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                    auto rv = parse_expr();
+                    if (!rv) return std::unexpected(rv.error());
+                    ret_val = std::move(*rv);
+                }
+                std::vector<StmtPtr> body;
+                body.push_back(make_stmt(ReturnStmt{std::move(ret_val), rtok.line}, rtok.line));
+                left = make_expr(OrExpr{std::move(*left), "", std::move(body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
             if (cur().kind == TokenKind::LBrace) {
                 auto body = parse_block();
                 if (!body) return std::unexpected(body.error());
-                return make_expr(OrExpr{std::move(*left), "", std::move(*body), nullptr}, or_tok.line, or_tok.col);
+                left = make_expr(OrExpr{std::move(*left), "", std::move(*body), nullptr}, or_tok.line, or_tok.col);
+                break;
             }
-            bool is_struct_lit_fallback = (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace) &&
-                !cur().lexeme.empty() &&
-                std::isupper(static_cast<unsigned char>(cur().lexeme[0])) &&
+            bool is_struct_lit_fallback = allow_struct_lit_ &&
+                (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace) &&
                 (peek(2).kind == TokenKind::RBrace ||
-                 (peek(2).kind == TokenKind::Ident && peek(3).kind == TokenKind::Colon));
+                 ((peek(2).kind == TokenKind::Ident || peek(2).kind == TokenKind::String) && peek(3).kind == TokenKind::Colon));
             if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace && !is_struct_lit_fallback) {
                 std::string err_var = advance().lexeme;
                 auto body = parse_block();
                 if (!body) return std::unexpected(body.error());
-                return make_expr(OrExpr{std::move(*left), std::move(err_var), std::move(*body), nullptr}, or_tok.line, or_tok.col);
+                left = make_expr(OrExpr{std::move(*left), std::move(err_var), std::move(*body), nullptr}, or_tok.line, or_tok.col);
+                break;
             }
             auto fb = parse_binary_expr();
             if (!fb) return std::unexpected(fb.error());
-            return make_expr(OrExpr{std::move(*left), "", {}, std::move(*fb)}, or_tok.line, or_tok.col);
+            left = make_expr(OrExpr{std::move(*left), "", {}, std::move(*fb)}, or_tok.line, or_tok.col);
         }
         return left;
     }
@@ -1742,6 +1815,12 @@ private:
             id && id->name == "make" &&
             (cur().kind == TokenKind::LBracket || cur().kind == TokenKind::KwMap ||
              (cur().kind == TokenKind::Ident && (cur().lexeme == "own" || cur().lexeme == "shared") && peek(1).kind == TokenKind::LBracket))) {
+            if (call.type_args.empty() && cur().kind == TokenKind::Ident && (cur().lexeme == "own" || cur().lexeme == "shared")) {
+                std::string smart_kind = cur().lexeme;
+                return std::unexpected(std::format(
+                    "{}:{}:{}: smart pointer construction requires type arguments: write 'make[{}[T]](...)' instead of 'make({}[T], ...)' (cfire/INVALID-SMART-PTR-CTOR)",
+                    file_, cur().line, cur().col, smart_kind, smart_kind));
+            }
             auto tref = parse_type_ref();
             if (!tref) return std::unexpected(tref.error());
             call.type_args.push_back(std::move(*tref));
@@ -1804,7 +1883,12 @@ private:
                 } else {
                     cl.param_types.push_back(std::nullopt);
                 }
-                if (cur().kind == TokenKind::Comma) advance();
+                if (cur().kind == TokenKind::Comma) {
+                    advance();
+                } else if (cur().kind != TokenKind::Pipe) {
+                    return std::unexpected(std::format("{}:{}:{}: expected ',' or '|' in closure parameter list, got '{}'",
+                        file_, cur().line, cur().col, cur().lexeme));
+                }
             }
             if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
         }
@@ -1867,38 +1951,91 @@ private:
             case TokenKind::KwCpp: {
                 advance();
                 std::string name = tok.lexeme;
-                while (cur().kind == TokenKind::DoubleColon ||
-                       (cur().kind == TokenKind::Dot && peek(1).kind == TokenKind::Ident &&
-                        !peek(1).lexeme.empty() && peek(1).lexeme[0] >= 'A' && peek(1).lexeme[0] <= 'Z' &&
-                        (peek(2).kind == TokenKind::LBrace || peek(2).kind == TokenKind::Dot))) {
-                    auto sep = advance();
-                    auto next_id = expect(TokenKind::Ident);
-                    if (!next_id) return std::unexpected(next_id.error());
-                    name += (sep.kind == TokenKind::DoubleColon ? "::" : ".") + next_id->lexeme;
-                }
-                if (allow_struct_lit_ && cur().kind == TokenKind::LBrace && !name.empty() &&
-                    (name.contains("::") || (name.contains(".") && name.substr(name.rfind('.') + 1)[0] >= 'A' && name.substr(name.rfind('.') + 1)[0] <= 'Z') || (name[0] >= 'A' && name[0] <= 'Z'))) {
-                    advance(); // '{'
-                    StructLitExpr st;
-                    st.type_name = std::move(name);
-                    while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
-                        std::string fn_name;
-                        if (cur().kind == TokenKind::Ident ||
-                            (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
-                            fn_name = advance().lexeme;
+
+                // CF-115 / Q3: Only merge type paths when immediately constructing a struct literal.
+                // General dot and double-colon expressions are parsed uniformly as MemberExpr.
+                if (allow_struct_lit_) {
+                    std::size_t look = pos_;
+                    std::string full_name = name;
+                    while (look < tokens_.size() && (tokens_[look].kind == TokenKind::Dot || tokens_[look].kind == TokenKind::DoubleColon)) {
+                        std::string sep_str = (tokens_[look].kind == TokenKind::DoubleColon) ? "::" : ".";
+                        if (look + 1 < tokens_.size() && (tokens_[look + 1].kind == TokenKind::Ident ||
+                            (tokens_[look + 1].kind >= TokenKind::KwPackage && tokens_[look + 1].kind <= TokenKind::KwNone))) {
+                            full_name += sep_str + tokens_[look + 1].lexeme;
+                            look += 2;
                         } else {
-                            auto fn = expect(TokenKind::Ident);
-                            if (!fn) return std::unexpected(fn.error());
-                            fn_name = fn->lexeme;
+                            break;
                         }
-                        if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
-                        auto fv = parse_expr();
-                        if (!fv) return std::unexpected(fv.error());
-                        st.fields.push_back(StructLitField{std::move(fn_name), std::move(*fv)});
-                        if (cur().kind == TokenKind::Comma) advance();
                     }
-                    if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
-                    return make_expr(std::move(st), tok.line, tok.col);
+                    bool is_struct_lit = false;
+                    std::vector<TypeRef> type_args;
+                    if (look < tokens_.size()) {
+                        if (tokens_[look].kind == TokenKind::LBrace) {
+                            std::string last_segment = full_name;
+                            if (auto s_pos = last_segment.rfind("::"); s_pos != std::string::npos) last_segment = last_segment.substr(s_pos + 2);
+                            else if (auto d_pos = last_segment.rfind('.'); d_pos != std::string::npos) last_segment = last_segment.substr(d_pos + 1);
+                            if (!last_segment.empty() && (last_segment[0] >= 'A' && last_segment[0] <= 'Z')) {
+                                is_struct_lit = true;
+                            }
+                        } else if (tokens_[look].kind == TokenKind::LBracket) {
+                            int depth = 0;
+                            std::size_t k = look;
+                            while (k < tokens_.size()) {
+                                if (tokens_[k].kind == TokenKind::LBracket) ++depth;
+                                else if (tokens_[k].kind == TokenKind::RBracket) {
+                                    --depth;
+                                    if (depth == 0) {
+                                        if (k + 1 < tokens_.size() && tokens_[k + 1].kind == TokenKind::LBrace) {
+                                            is_struct_lit = true;
+                                        }
+                                        break;
+                                    }
+                                } else if (tokens_[k].kind == TokenKind::Semicolon || tokens_[k].kind == TokenKind::Eof || tokens_[k].kind == TokenKind::RBrace) {
+                                    break;
+                                }
+                                ++k;
+                            }
+                        }
+                    }
+                    if (is_struct_lit) {
+                        name = full_name;
+                        pos_ = look;
+                        if (cur().kind == TokenKind::LBracket) {
+                            advance(); // '['
+                            while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                                auto targ = parse_type_ref();
+                                if (!targ) return std::unexpected(targ.error());
+                                type_args.push_back(std::move(*targ));
+                                if (cur().kind == TokenKind::Comma) advance();
+                                else if (cur().kind != TokenKind::RBracket) {
+                                    return std::unexpected(std::format("{}:{}:{}: expected ',' or ']' in type arguments", file_, cur().line, cur().col));
+                                }
+                            }
+                            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                        }
+                        if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+                        StructLitExpr st;
+                        st.type_name = std::move(name);
+                        st.type_args = std::move(type_args);
+                        while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                            std::string fn_name;
+                            if (cur().kind == TokenKind::Ident ||
+                                (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
+                                fn_name = advance().lexeme;
+                            } else {
+                                auto fn = expect(TokenKind::Ident);
+                                if (!fn) return std::unexpected(fn.error());
+                                fn_name = fn->lexeme;
+                            }
+                            if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
+                            auto fv = parse_expr();
+                            if (!fv) return std::unexpected(fv.error());
+                            st.fields.push_back(StructLitField{std::move(fn_name), std::move(*fv)});
+                            if (cur().kind == TokenKind::Comma) advance();
+                        }
+                        if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+                        return make_expr(std::move(st), tok.line, tok.col);
+                    }
                 }
                 return make_expr(IdentExpr{std::move(name)}, tok.line, tok.col);
             }
@@ -2101,12 +2238,7 @@ inline void append_doctests(std::string_view path, std::string_view src, FileAST
     }
 }
 
-struct ExprSnippetResult {
-    std::shared_ptr<AstArena> arena;
-    ExprPtr expr = nullptr;
-};
-
-[[nodiscard]] inline auto parse_expr_snippet(std::string_view path, std::string_view src, int base_line = 1)
+[[nodiscard]] inline auto parse_expr_snippet(std::string_view path, std::string_view src, int base_line = 1, int base_col = 1)
     -> std::expected<ExprSnippetResult, std::string>
 {
     auto arena = std::make_shared<AstArena>();
@@ -2116,6 +2248,9 @@ struct ExprSnippetResult {
         return std::unexpected(toks.error());
     }
     for (auto& t : *toks) {
+        if (t.line == 1) {
+            t.col += (base_col - 1);
+        }
         t.line += (base_line - 1);
     }
     Parser p(std::string(path), std::move(*toks), false);
@@ -2127,10 +2262,63 @@ struct ExprSnippetResult {
 }
 
 struct InterpPlaceholder {
-    std::size_t start_pos = 0; // index of '{' in string
-    std::size_t end_pos = 0;   // index of '}' in string (inclusive)
-    std::string expr_text{};   // trimmed expression inside '{...}'
+    std::size_t start_pos = 0;   // index of '{' in string
+    std::size_t end_pos = 0;     // index of '}' in string (inclusive)
+    std::size_t expr_offset = 0; // index of first char of expr_text in string
+    std::string expr_text{};     // trimmed expression inside '{...}' (before optional ':fmt_spec')
+    std::string fmt_spec{};      // optional std::format specifier (without leading ':')
 };
+
+[[nodiscard]] inline auto is_valid_std_format_spec(std::string_view spec) noexcept -> bool {
+    if (spec.empty()) return false;
+    // Reject leading space unless it is a fill character immediately followed by an alignment specifier (<, >, ^)
+    if (spec.front() == ' ' && (spec.size() < 2 || (spec[1] != '<' && spec[1] != '>' && spec[1] != '^'))) {
+        return false;
+    }
+    std::size_t pos = 0;
+    // 1. Optional [fill]align
+    if (spec.size() >= 2 && (spec[1] == '<' || spec[1] == '>' || spec[1] == '^') &&
+        spec[0] != '{' && spec[0] != '}') {
+        pos += 2;
+    } else if (spec[0] == '<' || spec[0] == '>' || spec[0] == '^') {
+        pos += 1;
+    }
+    // 2. Optional sign (+, -)
+    if (pos < spec.size() && (spec[pos] == '+' || spec[pos] == '-')) {
+        ++pos;
+    }
+    // 3. Optional '#'
+    if (pos < spec.size() && spec[pos] == '#') {
+        ++pos;
+    }
+    // 4. Optional '0'
+    if (pos < spec.size() && spec[pos] == '0') {
+        ++pos;
+    }
+    // 5. Optional width (digits)
+    while (pos < spec.size() && std::isdigit(static_cast<unsigned char>(spec[pos]))) {
+        ++pos;
+    }
+    // 6. Optional .precision
+    if (pos < spec.size() && spec[pos] == '.') {
+        ++pos;
+        if (pos >= spec.size() || !std::isdigit(static_cast<unsigned char>(spec[pos]))) {
+            return false;
+        }
+        while (pos < spec.size() && std::isdigit(static_cast<unsigned char>(spec[pos]))) {
+            ++pos;
+        }
+    }
+    // 7. Optional type specifier
+    if (pos < spec.size()) {
+        constexpr std::string_view kTypes = "bBcdeEfFgGopPsxXaA?";
+        if (kTypes.find(spec[pos]) == std::string_view::npos) {
+            return false;
+        }
+        ++pos;
+    }
+    return pos == spec.size();
+}
 
 [[nodiscard]] inline auto scan_interpolation_placeholders(std::string_view sv)
     -> std::vector<InterpPlaceholder>
@@ -2164,26 +2352,76 @@ struct InterpPlaceholder {
                 if (depth > 0) ++i;
             }
             if (i < sv.size() && depth == 0) {
-                std::string_view raw_inner = sv.substr(open_idx + 1, i - open_idx - 1);
-                while (!raw_inner.empty() && std::isspace(static_cast<unsigned char>(raw_inner.front()))) {
-                    raw_inner.remove_prefix(1);
+                std::size_t raw_start = open_idx + 1;
+                std::size_t raw_end = i;
+                while (raw_start < raw_end && std::isspace(static_cast<unsigned char>(sv[raw_start]))) {
+                    ++raw_start;
                 }
-                while (!raw_inner.empty() && std::isspace(static_cast<unsigned char>(raw_inner.back()))) {
-                    raw_inner.remove_suffix(1);
+                while (raw_end > raw_start && std::isspace(static_cast<unsigned char>(sv[raw_end - 1]))) {
+                    --raw_end;
                 }
+                std::string_view raw_inner = sv.substr(raw_start, raw_end - raw_start);
                 // Ignore empty `{}` or format-specifier-only `{:02x}`
                 if (!raw_inner.empty() && raw_inner.front() != ':') {
-                    std::string expr_s;
-                    expr_s.reserve(raw_inner.size());
+                    std::string fmt_spec;
+                    // Check for a top-level single ':' separating expr and format specifier
+                    int p_depth = 0;
+                    bool inner_quote = false;
+                    std::size_t split_colon = std::string_view::npos;
                     for (std::size_t k = 0; k < raw_inner.size(); ++k) {
-                        if (raw_inner[k] == '\\' && k + 1 < raw_inner.size() && raw_inner[k + 1] == '"') {
-                            expr_s.push_back('"');
+                        char ch = raw_inner[k];
+                        if (ch == '\\' && k + 1 < raw_inner.size()) {
+                            if (raw_inner[k + 1] == '"') inner_quote = !inner_quote;
                             ++k;
-                        } else {
-                            expr_s.push_back(raw_inner[k]);
+                            continue;
+                        }
+                        if (ch == '"') {
+                            inner_quote = !inner_quote;
+                        } else if (!inner_quote) {
+                            if (ch == '(' || ch == '[' || ch == '{') ++p_depth;
+                            else if (ch == ')' || ch == ']' || ch == '}') --p_depth;
+                            else if (ch == ':' && p_depth == 0) {
+                                bool is_double = (k + 1 < raw_inner.size() && raw_inner[k + 1] == ':') ||
+                                                 (k > 0 && raw_inner[k - 1] == ':');
+                                if (!is_double) {
+                                    split_colon = k;
+                                }
+                            }
                         }
                     }
-                    out.push_back(InterpPlaceholder{open_idx, i, std::move(expr_s)});
+                    if (split_colon != std::string_view::npos && split_colon > 0) {
+                        std::string_view cand_spec = raw_inner.substr(split_colon + 1);
+                        if (is_valid_std_format_spec(cand_spec)) {
+                            fmt_spec = std::string(cand_spec);
+                            raw_inner = raw_inner.substr(0, split_colon);
+                            while (!raw_inner.empty() && std::isspace(static_cast<unsigned char>(raw_inner.back()))) {
+                                raw_inner.remove_suffix(1);
+                            }
+                        }
+                    }
+
+                    // Positional format check: pure digits `{0}` or `{0:spec}` are positional arguments
+                    bool is_positional_idx = !raw_inner.empty() && std::ranges::all_of(raw_inner, [](unsigned char c) {
+                        return std::isdigit(c);
+                    });
+                    if (is_positional_idx) {
+                        ++i;
+                        continue;
+                    }
+
+                    if (!raw_inner.empty()) {
+                        std::string expr_s;
+                        expr_s.reserve(raw_inner.size());
+                        for (std::size_t k = 0; k < raw_inner.size(); ++k) {
+                            if (raw_inner[k] == '\\' && k + 1 < raw_inner.size() && raw_inner[k + 1] == '"') {
+                                expr_s.push_back('"');
+                                ++k;
+                            } else {
+                                expr_s.push_back(raw_inner[k]);
+                            }
+                        }
+                        out.push_back(InterpPlaceholder{open_idx, i, raw_start, std::move(expr_s), std::move(fmt_spec)});
+                    }
                 }
                 ++i;
                 continue;

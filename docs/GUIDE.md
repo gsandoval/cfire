@@ -431,13 +431,13 @@ In C++, local variables are mutable by default (`int x = 10;`) and numeric types
 
 `cfire` flips both defaults:
 1. **Immutable by Default (`:=`)**: Declaring `count := 42` emits `const std::int64_t count = 42;`. You only mark a variable `mut` when its state genuinely changes over time.
-2. **Explicit Numeric Conversions (`i32(x)`, `f64(x)`, or `x as T`)**: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using either clean constructor-style calls (`f64(count)`, `f32(x)`, `i32(y)`, `u8(b)`, `byte(b)`, `usize(n)`) or the `as` operator (`count as f64`).
+2. **Explicit Numeric Conversions (`i32(x)`, `f64(x)`)**: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using clean constructor-style calls (`f64(count)`, `f32(x)`, `i32(y)`, `u8(b)`, `byte(b)`, `usize(n)`).
 3. **Native String Interpolation**: Every double-quoted string (`"..."`) supports `{expr}` interpolation directly—including arbitrary expressions and format specifiers like `"{scaled:.2f}"` or `"{mask:04x}"`—without needing a `f"..."` prefix.
 
 ```cfire
 package main
 
-const MAX_RETRIES: i32 = 5
+MAX_RETRIES: i32 = 5
 
 fn main() {
     // 1. Immutable inferred bindings (lower to 'const' in C++23)
@@ -476,7 +476,7 @@ All scalar types have explicit bit widths, deterministic zero values (`mut x: i3
 | `u16`, `u32`, `u64` | `u16(x)`, `u32(x)`, `u64(x)` | Unsigned 16/32/64-bit integers | `0` | `std::uint16_t` .. `std::uint64_t` |
 | `usize`, `isize` | `usize(x)`, `isize(x)` | Pointer-sized unsigned / signed integers | `0` | `std::size_t`, `std::ptrdiff_t` |
 | `f32`, `f64` | `f32(x)`, `f64(x)` | IEEE-754 single & double precision (`f64` default) | `0.0` | `float`, `double` |
-| `bool` | `bool_(x)` / `x as bool` | Logical boolean (`true` / `false`) | `false` | `bool` |
+| `bool` | `bool(x)` | Logical boolean (`true` / `false`) | `false` | `bool` |
 | `str` | `"{x}"` / `str(x)` | Owned UTF-8 text buffer (`&str` borrows as `std::string_view`) | `""` | `std::string` |
 
 ### Working with Slices (`[]T`), Fixed Arrays (`[N]T`) & Maps (`map[K]V`)
@@ -571,8 +571,8 @@ When you need indirection or heap allocation, `cfire` separates **owning smart p
 
 | Syntax | Creation Expression | Ownership & Mutation Semantics | Emitted ISO C++23 Type |
 | :--- | :--- | :--- | :--- |
-| `^T` / `own[T]` | `make(own[T], val)` / `new(T)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
-| `shared[T]` | `make(shared[T], val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
+| `own[T]` | `make[own[T]](val)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
+| `shared[T]` | `make[shared[T]](val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
 | `&T` / `&mut T` | `&x` / `&mut x` | Non-owning immutable or mutable borrow (`&str` -> `std::string_view`) | `const T&` / `T*` |
 | `*T` | `&x` or foreign C pointer | Non-owning pointer; requires null check (`if p != none`) before deref | `T*` |
 | `*mut T` | `&mut x` | Rebindable pointer to a mutable target; supports `*p = val` and `*p += 1` | `T*` |
@@ -589,10 +589,10 @@ type Packet struct {
 
 fn main() {
     // 1. Unique heap ownership (std::unique_ptr<Packet>)
-    unique_pkt := make(own[Packet], Packet{Sequence: 1, Payload: "SYN"})
+    unique_pkt := make[own[Packet]](Packet{Sequence: 1, Payload: "SYN"})
 
     // 2. Shared reference-counted ownership (std::shared_ptr<Packet>)
-    shared_pkt := make(shared[Packet], Packet{Sequence: 2, Payload: "ACK"})
+    shared_pkt := make[shared[Packet]](Packet{Sequence: 2, Payload: "ACK"})
     shared_clone := shared_pkt
 
     // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
@@ -604,7 +604,7 @@ fn main() {
     *cursor = 99
 
     println("seq1={} seq2={} a={} b={}",
-        (*unique_pkt).Sequence, (*shared_clone).Sequence, a, b)
+        unique_pkt.Sequence, shared_clone.Sequence, a, b)
 }
 ```
 ```text
@@ -619,13 +619,12 @@ seq1=1 seq2=2 a=15 b=99
 ### Seeing Every Mutation & Move at the Call Site
 If you have ever hunted down a bug in C++ where a helper function quietly modified a struct via a non-`const` reference (`void process(Config& cfg)`), you know the frustration: the function signature is buried in another file, and the call site (`process(cfg)`) looks completely read-only.
 
-In `cfire`, parameters are read-only (`in`) by default. Whenever a function mutates an argument in place (`mut`), writes an output value (`out`), or takes ownership (`move`), **both the function declaration and the call site must state that intent**:
+In `cfire`, parameters are immutable references by default. Whenever a function mutates an argument in place (`mut`) or takes ownership (`move`), **both the function declaration and the call site must state that intent**:
 
 | Intent Modifier | Default? | Callee Access | Mandatory Call-Site Marker | Emitted ISO C++23 Lowering |
 | :--- | :---: | :--- | :--- | :--- |
-| `in` (or omitted) | **Yes** | Read-only | None (`f(x)`) | Scalars by `const T`; structs/slices/maps by `const T&`; `&str` by `std::string_view` |
+| *(omitted)* | **Yes** | Read-only borrow | None (`f(x)`) | Scalars by `const T`; structs/slices/maps by `const T&`; `&str` by `std::string_view` |
 | `mut` | No | Read-write in place | `mut` (`f(mut x)`) | `T&` parameter; caller variable must be declared `mut` |
-| `out` | No | Write-to output | `out` (`f(out x)`) | `T&` parameter; initializes or overwrites `x` in place |
 | `move` | No | Takes ownership | `move` (`f(move x)`) | `T` parameter with `std::move(x)` at call site; invalidates `x` in caller scope |
 
 ```cfire
@@ -635,8 +634,8 @@ type Buffer struct {
     Entries: []str
 }
 
-// 1. 'in' intent (default): read-only borrow (const Buffer&)
-fn entry_count(in buf: Buffer) -> usize {
+// 1. Immutable reference (default): read-only borrow (const Buffer&)
+fn entry_count(buf: Buffer) -> usize {
     return buf.Entries.len()
 }
 
@@ -647,14 +646,12 @@ fn append_entry(prefix: &str, mut buf: Buffer, move msg: str) -> usize {
     return buf.Entries.len()
 }
 
-// 3. 'out' intent and multiple return values (tuple)
-fn summarize(in buf: Buffer, out first_item: str) -> (usize, bool) {
+// 3. Multi-return tuple: returns count, success flag, and first entry
+fn summarize(buf: Buffer) -> (usize, bool, str) {
     if buf.Entries.len() > 0 {
-        first_item = buf.Entries[0]
-        return (buf.Entries.len(), true)
+        return (buf.Entries.len(), true, buf.Entries[0])
     }
-    first_item = "<empty>"
-    return (0, false)
+    return (0, false, "<empty>")
 }
 
 fn main() {
@@ -662,10 +659,9 @@ fn main() {
     payload := "handshake verified"
 
     // Call site documents that 'log' is mutated and 'payload' is moved:
-    _ := append_entry("NET", mut log, move payload)
+    _ = append_entry("NET", mut log, move payload)
 
-    mut head := ""
-    (total, ok) := summarize(log, out head)
+    (total, ok, head) := summarize(log)
     println("count={} total={} ok={} head={}", entry_count(log), total, ok, head)
 }
 ```
@@ -683,7 +679,7 @@ When a function's last parameter is a callback (`fn(...)`), you can pass a pipe-
 ```cfire
 package main
 
-fn for_each_above[T](items: []T, threshold: T, visit: fn(T)) {
+fn for_each_above(items: []i32, threshold: i32, visit: fn(i32)) {
     for x in items {
         if x >= threshold {
             visit(x)
@@ -742,10 +738,10 @@ If you tried to read `view[0]` *after* `nums.push(40)`, the compiler immediately
 | `cfire/MOVE-CALLSITE` | Calling a `move` parameter without writing `move` at the call site. | Write `f(move x)` to confirm ownership transfer. |
 | `cfire/IMMUTABLE-MUT-ARG` | Passing an immutable binding (`x := ...`) to a `mut` or `out` parameter. | Declare `mut x := ...`. |
 | `cfire/MUT-RECEIVER` | Calling a `fn (mut s: T)` method on an immutable struct variable. | Declare `mut s := ...`. |
-| `cfire/MUT-ALIAS` | Passing the same variable twice in one call when at least one arg is `mut`/`out`. | Pass distinct variables (`transfer(mut a, mut b)`). |
-| `cfire/USE-AFTER-MOVE` | Reading a variable after `move x` transferred ownership on an earlier path. | Read before `move x`, or pass by `in`/`mut` borrow. |
+| `cfire/MUT-ALIAS` | Passing the same variable twice in one call when at least one arg is `mut`. | Pass distinct variables (`transfer(mut a, mut b)`). |
+| `cfire/USE-AFTER-MOVE` | Reading a variable after `move x` transferred ownership on an earlier path. | Read before `move x`, or pass by `mut` borrow. |
 | `cfire/USE-AFTER-FREE` | Reading a pointer/view (`&x`, `.data()`, `.byte_ptr()`, `s[a..b]`) after `.push()`, `.clear()`, `move`, or reassignment mutated the owner. | Finish reading the view before mutating the container, or re-slice after `.push()`. |
-| `cfire/DANGLING-POINTER` | Assigning the address of an inner-scope variable (`ptr = &local`) to an outer pointer. | Keep the pointee in the outer scope or allocate with `make(own[T], ...)`. |
+| `cfire/DANGLING-POINTER` | Assigning the address of an inner-scope variable (`ptr = &local`) to an outer pointer. | Keep the pointee in the outer scope or allocate with `make[own[T]](...)`. |
 | `cfire/DANGLING-RETURN` | Returning a pointer or view (`&local`, `local.data()`) to stack-local storage. | Return an owned value (`T`, `str`, `[]T`) or `own[T]` instead. |
 | `cfire/ITERATOR-INVALIDATION` | Mutating a collection (`.push()`, `.clear()`, `.remove()`, `move`) inside `for x in col`. | Collect mutations in a separate slice and apply them after the loop. |
 
@@ -1013,8 +1009,8 @@ fn inspect_session(maybe_ptr: *Session) -> i32 {
 }
 
 fn main() {
-    s := new(Session{ id: 42 })
-    println("active={} empty={}", inspect_session(s), inspect_session(none))
+    s := Session{ id: 42 }
+    println("active={} empty={}", inspect_session(&s), inspect_session(none))
 }
 ```
 ```text
@@ -1052,7 +1048,7 @@ fn main() {
         return
     }
     text := try fs.read_text("/tmp/cfire_guide_defer.log")
-    _ := fs.remove("/tmp/cfire_guide_defer.log")
+    _ = fs.remove("/tmp/cfire_guide_defer.log")
     print("{}", text)
 }
 ```
@@ -1174,14 +1170,14 @@ fn main() {
     sort.slice(mut latencies)
     idx := sort.binary_search(latencies, 19) or -1
 
-    mut pq := collections.PriorityQueue[i64]{}
+    mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
 
-    mut dq := collections.Deque[str]{}
+    mut dq: collections.Deque[str]
     dq.push_back("worker-1")
     dq.push_front("leader-0")
 
-    mut seen := collections.Set[str]{}
+    mut seen: collections.Set[str]
     seen.insert("us-east")
     seen.insert("eu-west")
 
@@ -1289,15 +1285,15 @@ type ServerFlags struct {
     Workers: i32 `cli:"--workers" default:"4"         desc:"Worker thread count"`
 }
 
-fn main() -> void! {
-    flags := try cli.parse[ServerFlags](["--port", "8088", "--workers", "8"])
+fn main() {
+    flags := cli.parse[ServerFlags](["--port", "8088", "--workers", "8"])
     log.set_format(log.Format::Json)
     log.info("server configured", "host", flags.Host, "port", "{flags.Port}", "workers", "{flags.Workers}")
 }
 ```
 ```text
 # Output:
-{"time":"2026-11-01T12:00:00Z","level":"INFO","msg":"server configured","host":"127.0.0.1","port":"8088","workers":"8"}
+"level":"INFO","msg":"server configured","host":"127.0.0.1","port":"8088","workers":"8"
 ```
 
 ---
@@ -1337,8 +1333,8 @@ fn run_parallel_shards(shard_count: usize, scale: i32) -> []i32 {
 }
 
 fn main() {
-    out := run_parallel_shards(4, 10)
-    println("shards=[{}, {}, {}, {}]", out[0], out[1], out[2], out[3])
+    shards := run_parallel_shards(4, 10)
+    println("shards=[{}, {}, {}, {}]", shards[0], shards[1], shards[2], shards[3])
 }
 ```
 ```text
@@ -1366,19 +1362,17 @@ fn main() {
     ch := sync.make_channel[i64]()
     mut total: i64 = 0
 
-    async.scope(workers: 2) |scope| {
+    async.scope(workers: 1) |scope| {
         scope.spawn || {
             for i in 1..=4 {
                 ch.send(i * 10)
             }
             ch.close()
         }
+    }
 
-        scope.spawn || {
-            for val in ch {
-                total += val
-            }
-        }
+    for val in ch {
+        total += val
     }
 
     println("channel_sum={}", total)
@@ -1429,7 +1423,7 @@ fn main() {
 ```
 ```text
 # Output:
-cancelled=true result= aborted:timeout
+cancelled=true result= aborted:deadline exceeded
 ```
 
 ---
@@ -1760,8 +1754,8 @@ fn main() -> void! {
     println("Live GET status={}, body={}", live.status, live.body)
 
     // 3. Consume SSE stream in real time
-    mut chunks := []str{}
-    try http.post_sse(base + "/v1/stream", "{}", map[str]str{}, |ev: http.SseEvent| -> bool {
+    mut chunks: []str = []
+    try http.post_sse(base + "/v1/stream", "{}", |ev: http.SseEvent| -> bool {
         chunks.push(ev.event + ":" + ev.data)
         return ev.data != "[DONE]"
     })
@@ -1797,7 +1791,8 @@ import "core:net/websocket"
 fn main() -> void! {
     mut router := http.make_router()
     router.ws("/ws/echo", |req: http.Request, mut ws: websocket.WebSocket| {
-        if msg := ws.recv_text() {
+        msg := ws.recv_text() or ""
+        if msg != "" {
             _ = ws.send_text("echo:" + msg)
         }
         _ = ws.close()
@@ -1819,7 +1814,7 @@ fn main() -> void! {
         tls_router.get("/secure", |req: http.Request| -> http.Response {
             return http.Response.text(200, "TLS-1.3-OK")
         })
-        mut tls_srv := try http.make_tls_server_pem(pem.cert_pem, pem.key_pem, 0)
+        mut tls_srv := try http.make_tls_server_pem(0, pem.cert_pem, pem.key_pem)
         defer tls_srv.stop()
         tls_srv.serve_in_background(tls_router)
 
@@ -1871,7 +1866,7 @@ fn main() -> void! {
     println("Schema has properties: {}", schema.contains("\"properties\""))
 
     dom := try json.parse_dynamic(raw)
-    println("Dynamic lookup: name={}, tag[0]={}", dom.get("name").as_str(), dom.get("tags").at(0).as_str())
+    println("Dynamic lookup: name={}, tag[0]={}", dom["name"].as_str(), dom["tags"][0].as_str())
 }
 ```
 ```text
@@ -1913,15 +1908,18 @@ fn main() -> void! {
 
     try db.exec("CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, embedding BLOB)")
 
+    v1: []f32 = [0.95, 0.05, 0.0]
+    v2: []f32 = [0.10, 0.90, 0.0]
+    v3: []f32 = [0.85, 0.15, 0.0]
     // Atomic transaction inserting 3 normalized 3D embeddings as IEEE-754 f32 BLOBs
     try db.tx(|| -> void! {
-        try db.exec("INSERT INTO docs (title, embedding) VALUES (?1, ?2)", "Kernel Scheduler", []f32{0.95, 0.05, 0.0})
-        try db.exec("INSERT INTO docs (title, embedding) VALUES (?1, ?2)", "HTTP Router",      []f32{0.10, 0.90, 0.0})
-        try db.exec("INSERT INTO docs (title, embedding) VALUES (?1, ?2)", "SQLite WAL Engine", []f32{0.85, 0.15, 0.0})
+        try db.exec("INSERT INTO docs (title, embedding) VALUES (?1, ?2)", "Kernel Scheduler", v1)
+        try db.exec("INSERT INTO docs (title, embedding) VALUES (?1, ?2)", "HTTP Router",      v2)
+        try db.exec("INSERT INTO docs (title, embedding) VALUES (?1, ?2)", "SQLite WAL Engine", v3)
     })
 
     // Query top-2 nearest documents using the built-in SIMD vec_cosine_similarity SQL function
-    query_vec := []f32{1.0, 0.0, 0.0}
+    query_vec: []f32 = [1.0, 0.0, 0.0]
     hits := try db.query[DocHit](
         "SELECT id, title, vec_cosine_similarity(embedding, ?1) AS score FROM docs ORDER BY score DESC LIMIT 2",
         query_vec
@@ -1965,14 +1963,12 @@ fn main() -> void! {
     restored   := try zstd.decompress_str(compressed)
     println("Zstd round-trip match: {} (frame={} bytes)", restored == payload, compressed.len())
 
-    key_arr := sha256.hash("master-secret-passphrase")
-    mut key := []byte{}
-    for b in key_arr { key.push(b) }
+    key := sha256.hash_bytes("master-secret-passphrase")
     nonce := try hex.decode("000102030405060708090a0b")
     aad   := try hex.decode("feedface")
 
     ciphertext := try aes.encrypt_gcm(key, nonce, compressed, aad)
-    decrypted  := try aes.decrypt_gcm(key, nonce, ciphertext, aad)
+    decrypted  := try aes.decrypt_gcm(key, nonce, ciphertext.ciphertext, ciphertext.tag, aad)
     final_str  := try zstd.decompress_str(decrypted)
 
     mac := hmac.sha256_hex("webhook-secret", final_str)
@@ -1981,7 +1977,7 @@ fn main() -> void! {
 ```
 ```text
 # Output:
-Zstd round-trip match: true (frame=77 bytes)
+Zstd round-trip match: true (frame=73 bytes)
 AES-GCM + Zstd verified: true, HMAC valid: true
 ```
 
@@ -2502,7 +2498,7 @@ fn main() -> void! {
 ```
 ```text
 # Output:
-rpc={"reply":"studio!"} mime=text/html; charset=utf-8 webview_test=PASSED
+rpc="{\"reply\":\"studio!\"}" mime=text/html; charset=utf-8 webview_test=PASSED
 ```
 
 ---
@@ -2519,6 +2515,7 @@ import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
 import "core:json" as json
 import "core:net/http" as http
+import "core:str" as str
 
 type SearchRequest struct {
     Query: str `json:"query"`
@@ -2543,7 +2540,7 @@ fn main() -> void! {
     ]
     client := ai.local()
     for d in docs {
-        parts := d.split(": ")
+        parts := str.split(d, ": ")
         vec   := try client.embed(d)
         try db.exec("INSERT INTO kb VALUES (?1, ?2, ?3)", parts[0], d, vec)
     }
@@ -2551,12 +2548,12 @@ fn main() -> void! {
     // 2. Attach an HTTP JSON endpoint querying SQLite SIMD vector similarity
     mut router := http.make_router()
     router.post("/v1/search", |req: http.Request| -> http.Response {
-        q := json.parse[SearchRequest](req.body) or return http.Response.json(400, "{\"error\":\"invalid JSON\"}")
-        qvec := client.embed(q.Query) or return http.Response.json(500, "{\"error\":\"embed failed\"}")
+        q := json.parse[SearchRequest](req.body) or { return http.Response.json(400, "{\"error\":\"invalid JSON\"}") }
+        qvec := client.embed(q.Query) or { return http.Response.json(500, "{\"error\":\"embed failed\"}") }
         hits := db.query[SearchResult](
             "SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM kb ORDER BY score DESC LIMIT ?2",
             qvec, q.TopK
-        ) or return http.Response.json(500, "{\"error\":\"query failed\"}")
+        ) or { return http.Response.json(500, "{\"error\":\"query failed\"}") }
         return http.Response.json(200, json.stringify(hits))
     })
 

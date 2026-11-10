@@ -50,6 +50,61 @@ template <typename T>
     return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
 }
 
+template <typename T>
+[[nodiscard]] inline auto try_parse(std::initializer_list<const char*> args) -> std::optional<T> {
+    std::vector<char*> ptrs;
+    std::vector<std::string> copy;
+    copy.reserve(args.size() + 1);
+    copy.push_back("cfire_app");
+    for (const char* s : args) copy.emplace_back(s);
+    for (auto& s : copy) ptrs.push_back(s.data());
+    return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
+}
+
+template <typename T>
+[[nodiscard]] inline auto try_parse(std::initializer_list<std::string_view> args) -> std::optional<T> {
+    std::vector<char*> ptrs;
+    std::vector<std::string> copy;
+    copy.reserve(args.size() + 1);
+    copy.push_back("cfire_app");
+    for (std::string_view s : args) copy.emplace_back(s);
+    for (auto& s : copy) ptrs.push_back(s.data());
+    return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
+}
+
+template <typename T>
+[[nodiscard]] inline auto parse(std::span<const std::string> args) -> T {
+    std::vector<char*> ptrs;
+    std::vector<std::string> copy;
+    copy.reserve(args.size() + 1);
+    copy.push_back("cfire_app");
+    for (const auto& s : args) copy.push_back(s);
+    for (auto& s : copy) ptrs.push_back(s.data());
+    return parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
+}
+
+template <typename T>
+[[nodiscard]] inline auto parse(std::initializer_list<const char*> args) -> T {
+    std::vector<char*> ptrs;
+    std::vector<std::string> copy;
+    copy.reserve(args.size() + 1);
+    copy.push_back("cfire_app");
+    for (const char* s : args) copy.emplace_back(s);
+    for (auto& s : copy) ptrs.push_back(s.data());
+    return parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
+}
+
+template <typename T>
+[[nodiscard]] inline auto parse(std::initializer_list<std::string_view> args) -> T {
+    std::vector<char*> ptrs;
+    std::vector<std::string> copy;
+    copy.reserve(args.size() + 1);
+    copy.push_back("cfire_app");
+    for (std::string_view s : args) copy.emplace_back(s);
+    for (auto& s : copy) ptrs.push_back(s.data());
+    return parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
+}
+
 [[nodiscard]] inline auto args() -> std::vector<std::string> {
     return cfire::detail::process_args_storage();
 }
@@ -110,44 +165,14 @@ public:
         }
     }
 
-    void bind(std::string_view long_flag, std::string_view short_flag, std::int32_t& target) {
+    template <std::integral IntT>
+        requires (!std::is_same_v<IntT, bool>)
+    void bind(std::string_view long_flag, std::string_view short_flag, IntT& target) {
         if (auto val = find_val(long_flag, short_flag)) {
-            if (auto parsed = cfire::detail::parse_int<std::int32_t>(*val)) {
+            if (auto parsed = cfire::detail::parse_int<IntT>(*val)) {
                 target = *parsed;
             } else {
-                errors_.push_back(std::format("invalid i32 value '{}' for flag '{}'", *val, long_flag));
-            }
-        }
-    }
-
-    void bind(std::string_view long_flag, std::string_view short_flag, std::int64_t& target) {
-        if (auto val = find_val(long_flag, short_flag)) {
-            if (auto parsed = cfire::detail::parse_int<std::int64_t>(*val)) {
-                target = *parsed;
-            } else {
-                errors_.push_back(std::format("invalid i64 value '{}' for flag '{}'", *val, long_flag));
-            }
-        }
-    }
-
-    void bind(std::string_view long_flag, std::string_view short_flag, std::uint64_t& target) {
-        if (auto val = find_val(long_flag, short_flag)) {
-            if (auto parsed = cfire::detail::parse_int<std::uint64_t>(*val)) {
-                target = *parsed;
-            } else {
-                errors_.push_back(std::format("invalid u64 value '{}' for flag '{}'", *val, long_flag));
-            }
-        }
-    }
-
-    template <typename U = std::size_t>
-        requires (std::is_same_v<U, std::size_t> && !std::is_same_v<U, std::uint64_t>)
-    void bind(std::string_view long_flag, std::string_view short_flag, U& target) {
-        if (auto val = find_val(long_flag, short_flag)) {
-            if (auto parsed = cfire::detail::parse_int<U>(*val)) {
-                target = *parsed;
-            } else {
-                errors_.push_back(std::format("invalid usize value '{}' for flag '{}'", *val, long_flag));
+                errors_.push_back(std::format("invalid integer value '{}' for flag '{}'", *val, long_flag));
             }
         }
     }

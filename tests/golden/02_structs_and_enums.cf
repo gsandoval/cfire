@@ -1,0 +1,35 @@
+package main
+
+import "core:json"
+import "core:cli"
+
+type Config struct {
+    Host: str `cli:"--host,-h" default:"127.0.0.1" json:"host"`
+    Port: u16 `cli:"--port,-p" default:"8080"      json:"port"`
+}
+
+type Shape enum {
+    Circle(f64),
+    Rectangle(f64, f64),
+}
+
+fn area(s: Shape) -> f64 {
+    mut res: f64 = 0.0
+    match s {
+        Circle(r) => {
+            res = 3.1415926535 * r * r
+        }
+        Rectangle(w, h) => {
+            res = w * h
+        }
+    }
+    return res
+}
+
+fn main() {
+    c := Config{Host: "localhost", Port: 9000}
+    c_json := json.stringify(c)
+    s := Shape::Circle(2.5)
+    a := area(s)
+    println("config: {}, area: {:.2f}", c_json, a)
+}

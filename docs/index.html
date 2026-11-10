@@ -974,7 +974,7 @@ syncCfireThemeBtn();
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 38 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 39 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -1005,7 +1005,7 @@ syncCfireThemeBtn();
     </div>
     <div class="stat-pill">
       <div class="stat-val">Core + Ext</div>
-      <div class="stat-lbl">38 Tiered Stdlib Modules</div>
+      <div class="stat-lbl">39 Tiered Stdlib Modules</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">cfire eject</div>
@@ -1174,8 +1174,8 @@ fn main() {
     increment(mut b, 2)
     
     // Explicit unique ownership:
-    p := make(own[Box], Box{ value: 100 })
-    println(&quot;b={} p={}&quot;, b.value, (*p).value)
+    p := make[own[Box]](Box{ value: 100 })
+    println(&quot;b={} p={}&quot;, b.value, p.value)
 }</code></pre>
       </div>
       <div class="rosetta-pane-cpp">
@@ -1289,16 +1289,75 @@ struct Token;
 struct Token {
     struct _Ident {
         std::string _0{};
+        bool operator==(const _Ident&amp;) const = default;
     };
     struct _Number {
         std::int64_t _0{};
+        bool operator==(const _Number&amp;) const = default;
     };
     struct _Eof {
+        bool operator==(const _Eof&amp;) const = default;
     };
     std::variant&lt;_Ident, _Number, _Eof&gt; _v;
+    bool operator==(const Token&amp;) const = default;
+    explicit operator std::int8_t() const noexcept { return static_cast&lt;std::int8_t&gt;(_v.index()); }
+    explicit operator std::int16_t() const noexcept { return static_cast&lt;std::int16_t&gt;(_v.index()); }
+    explicit operator std::int32_t() const noexcept { return static_cast&lt;std::int32_t&gt;(_v.index()); }
+    explicit operator std::int64_t() const noexcept { return static_cast&lt;std::int64_t&gt;(_v.index()); }
+    explicit operator std::uint8_t() const noexcept { return static_cast&lt;std::uint8_t&gt;(_v.index()); }
+    explicit operator std::uint16_t() const noexcept { return static_cast&lt;std::uint16_t&gt;(_v.index()); }
+    explicit operator std::uint32_t() const noexcept { return static_cast&lt;std::uint32_t&gt;(_v.index()); }
+    explicit operator std::uint64_t() const noexcept { return static_cast&lt;std::uint64_t&gt;(_v.index()); }
+    explicit operator std::size_t() const noexcept { return _v.index(); }
+    explicit operator std::ptrdiff_t() const noexcept { return static_cast&lt;std::ptrdiff_t&gt;(_v.index()); }
+    [[nodiscard]] auto to_i32() const noexcept -&gt; std::int32_t { return static_cast&lt;std::int32_t&gt;(_v.index()); }
+    [[nodiscard]] auto to_i64() const noexcept -&gt; std::int64_t { return static_cast&lt;std::int64_t&gt;(_v.index()); }
+    [[nodiscard]] auto to_string() const -&gt; std::string_view {
+        switch (_v.index()) {
+        case 0: return &quot;Ident&quot;;
+        case 1: return &quot;Number&quot;;
+        case 2: return &quot;Eof&quot;;
+        default: return &quot;&quot;;
+        }
+    }
     [[nodiscard]] static auto Ident(std::string a0) -&gt; Token { return Token{_Ident{std::move(a0)}}; }
     [[nodiscard]] static auto Number(std::int64_t a0) -&gt; Token { return Token{_Number{std::move(a0)}}; }
     [[nodiscard]] static auto Eof() -&gt; Token { return Token{_Eof{}}; }
+    [[nodiscard]] static auto from_i32(std::int32_t val) -&gt; std::optional&lt;Token&gt; {
+        switch (val) {
+        case 2: return Eof();
+        default: return std::nullopt;
+        }
+    }
+    [[nodiscard]] static auto from_i64(std::int64_t val) -&gt; std::optional&lt;Token&gt; {
+        return from_i32(static_cast&lt;std::int32_t&gt;(val));
+    }
+    [[nodiscard]] static auto from_string(std::string_view s) -&gt; std::optional&lt;Token&gt; {
+        if (s == &quot;Eof&quot;) return Eof();
+        return std::nullopt;
+    }
+};
+
+template &lt;&gt;
+struct std::formatter&lt;Token&gt; : std::formatter&lt;std::string_view&gt; {
+    auto format(const Token&amp; e, std::format_context&amp; ctx) const {
+        return std::formatter&lt;std::string_view&gt;::format(e.to_string(), ctx);
+    }
+};
+
+template &lt;&gt;
+struct cfire::reflect_enum&lt;Token&gt; {
+    static constexpr bool is_enum = true;
+    static constexpr std::string_view name = &quot;Token&quot;;
+    static constexpr std::size_t variant_count = 3;
+    static constexpr std::array&lt;std::string_view, 3&gt; variant_names = {
+        &quot;Ident&quot;,
+        &quot;Number&quot;,
+        &quot;Eof&quot;,
+    };
+    static auto from_string(std::string_view s) -&gt; std::optional&lt;Token&gt; {
+        return Token::from_string(s);
+    }
 };
 
 [[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string;
@@ -1401,7 +1460,7 @@ auto main(int argc, char** argv) -&gt; int {
     #line 9 &quot;snippet_net.cf&quot;
     auto [ctx, cancel] = cfire::context::with_timeout(bg, 500);
     #line 10 &quot;snippet_net.cf&quot;
-    auto _defer_1 = cfire::scope_exit([&amp;] { cancel(&quot;done&quot;); });
+    auto _defer_1 = cfire::scope_exit([&amp;] { (void)(cancel(&quot;done&quot;)); });
     #line 12 &quot;snippet_net.cf&quot;
     auto _try_1 = cfire::websocket::pair();
     if (!_try_1.has_value()) {
@@ -1552,7 +1611,7 @@ inline auto cfire::json::schema_struct&lt;Metric&gt;() -&gt; std::string {
 auto main(int argc, char** argv) -&gt; int {
     cfire::detail::set_process_args(argc, argv);
     #line 12 &quot;snippet_json.cf&quot;
-    auto payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
+    std::string payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
     #line 13 &quot;snippet_json.cf&quot;
     auto _try_1 = cfire::json::parse&lt;Metric&gt;(payload);
     if (!_try_1.has_value()) {
@@ -1666,7 +1725,8 @@ fn main() {
       </div>
       <div class="rosetta-pane-cpp">
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-        <pre><code>#include &quot;cfire_prelude.hpp&quot;
+        <pre><code>// @cfire-link: -framework AudioToolbox -framework CoreFoundation
+#include &quot;cfire_prelude.hpp&quot;
 #include &quot;core/audio.hpp&quot;
 
 
@@ -1680,7 +1740,7 @@ auto main(int argc, char** argv) -&gt; int {
         return 1;
     }
     #line 7 &quot;snippet_audio.cf&quot;
-    auto _defer_1 = cfire::scope_exit([&amp;] { cfire::audio::close(); });
+    auto _defer_1 = cfire::scope_exit([&amp;] { (void)(cfire::audio::close()); });
     #line 10 &quot;snippet_audio.cf&quot;
     auto sfx = cfire::audio::load_sound_from_wave(cfire::audio::gen_sfx(cfire::audio::SfxPreset::Coin));
     #line 11 &quot;snippet_audio.cf&quot;
@@ -2190,7 +2250,7 @@ auto main(int argc, char** argv) -&gt; int {
     #line 16 &quot;snippet_webui.cf&quot;
     auto app = cfire::webui::new_app(&quot;cfire Studio&quot;, 960, 640);
     #line 17 &quot;snippet_webui.cf&quot;
-    auto _defer_1 = cfire::scope_exit([&amp;] { app.close(); });
+    auto _defer_1 = cfire::scope_exit([&amp;] { (void)(app.close()); });
     #line 18 &quot;snippet_webui.cf&quot;
     (void)(app.serve_dir(&quot;./ui&quot;));
     #line 20 &quot;snippet_webui.cf&quot;

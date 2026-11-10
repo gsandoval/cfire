@@ -132,8 +132,8 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn parse[T](args: []str?) -> T!` | `cfire::cli::parse<T>(argc, argv)` | Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`. | `args := try cli.parse[Args]()` |
-| `fn try_parse[T]() -> T?` | `cfire::cli::try_parse<T>(argc, argv)` | Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid. | `args := cli.try_parse[Args]() or { return }` |
+| `fn parse[T](args: []str = []) -> T!` | `cfire::cli::parse<T>(argc, argv)` | Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`. | `args := try cli.parse[Args]()` |
+| `fn try_parse[T](args: []str = []) -> T?` | `cfire::cli::try_parse<T>(argc, argv)` | Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid. | `args := cli.try_parse[Args]() or { return }` |
 | `fn args() -> []str` | `cfire::cli::args()` | Returns the raw command-line arguments passed to the process (excluding `argv[0]`). | `raw := cli.args()` |
 | `fn subcommand() -> str` | `cfire::cli::subcommand()` | Returns the first non-flag positional argument (subcommand name) or `""` if none. | `cmd := cli.subcommand()` |
 | `fn positional() -> []str` | `cfire::cli::positional()` | Returns all non-flag positional arguments passed on the command line. | `files := cli.positional()` |
@@ -216,6 +216,7 @@ fn main() {
 | `fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -> []byte!` | `cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)` | Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered. | `pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)` |
 | `fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -> []byte!` | `cfire::aes::encrypt_ctr(key, iv, pt)` | Encrypts plaintext using AES-256-CTR mode. | `ct := try aes.encrypt_ctr(key, iv, pt)` |
 | `fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -> []byte!` | `cfire::aes::decrypt_ctr(key, iv, ct)` | Decrypts ciphertext using AES-256-CTR mode. | `pt := try aes.decrypt_ctr(key, iv, ct)` |
+| `fn decrypt_gcm_str(key: []byte, nonce: []byte, ct: []byte, tag: []byte, aad: []byte = []) -> str!` | `cfire::aes::decrypt_gcm_str(key, nonce, ct, tag, aad)` | Decrypts an authenticated AES-GCM ciphertext and validates the tag, returning a UTF-8 string. | `pt := try aes.decrypt_gcm_str(key, nonce, ct, tag)` |
 
 ### `core:crypto/blake3` (`blake3`) — Cryptographic 256-Bit Digest (Alias)
 
@@ -266,6 +267,8 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn sha256_hex(key: str, data: str) -> str` | `cfire::hmac::sha256_hex(key, data)` | Returns a 64-character lowercase hex HMAC-SHA256 digest. | `sig := hmac.sha256_hex(secret, payload)` |
+| `fn sha256_bytes(key: []byte, data: []byte) -> []byte` | `cfire::crypto::hmac_sha256(key, data)` | Computes HMAC-SHA256 over raw byte slices. | `mac := hmac.sha256_bytes(key, data)` |
+| `fn verify(key: str, data: str, mac: str) -> bool` | `cfire::hmac::verify(key, data, mac)` | Verifies in constant time whether `mac` matches the computed HMAC-SHA256 hex digest of `data` under `key`. | `valid := hmac.verify(secret, payload, mac)` |
 | `fn equal(a: str, b: str) -> bool` | `cfire::hmac::equal(a, b)` | Performs a constant-time equality check on two MAC digests to prevent timing attacks. | `ok := hmac.equal(sig1, sig2)` |
 | `fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -> []byte` | `cfire::hmac::hkdf_sha256(ikm, salt, info, length)` | Derives cryptographic key material of `length` bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand. | `key := hmac.hkdf_sha256(ikm, salt, info, 32)` |
 | `fn hkdf_sha256_hex(ikm: str, salt: str = "", info: str = "", length: usize = 32) -> str` | `cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)` | Derives a hex-encoded key string using RFC 5869 HKDF-SHA256. | `khex := hmac.hkdf_sha256_hex(secret, "salt", "ctx", 32)` |
@@ -295,6 +298,7 @@ fn main() {
 | `fn hash_bytes(data: []byte) -> []byte` | `cfire::sha256::hash_bytes(data)` | Returns 32-byte binary SHA-256 digest of `data`. | `b := sha256.hash_bytes(raw)` |
 | `fn random_bytes(n: usize) -> []byte` | `cfire::sha256::random_bytes(n)` | Generates `n` cryptographically secure random bytes from the OS CSPRNG. | `nonce := sha256.random_bytes(12)` |
 | `fn random_hex(n: usize = 32) -> str` | `cfire::sha256::random_hex(n)` | Generates `n` cryptographically secure random bytes encoded as a `2*n`-character lowercase hex string. | `token := sha256.random_hex(16)` |
+| `fn hash_file_hex(path: str) -> str!` | `cfire::sha256::hash_file_hex(path)` | Computes the hex-encoded SHA-256 digest of a file on disk. | `h := try sha256.hash_file_hex("file.bin")` |
 
 ### `core:encoding/base64` (`base64`) — RFC 4648 Base64 & URL-Safe Encoding/Decoding
 
@@ -521,7 +525,7 @@ fn main() {
 ### `core:log` (`log`) — Structured Leveled Logging
 
 - **Auto-Link Flags:** `(header-only)`
-- **Overview:** Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.
+- **Overview:** Leveled logging (`debug`, `info`, `warn`, `error`) with `Level` (`Debug`, `Info`, `Warn`, `Error`), `Format` (`Text`, `Json`), and structured key-value attributes.
 
 **Practical Example:**
 ```cf
@@ -542,12 +546,14 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn set_level(l: Level)` | `cfire::log::set_level(l)` | Sets the minimum logging severity threshold. | `log.set_level(log.Level::Debug)` |
-| `fn set_format(f: Format)` | `cfire::log::set_format(f)` | Sets the log output format (Text or Json). | `log.set_format(log.Format::Json)` |
-| `fn debug(msg: str, ...attrs: str)` | `cfire::log::debug(msg, ...)` | Logs a debug message with optional key-value attribute pairs. | `log.debug("cache miss", "key", "user:1")` |
-| `fn info(msg: str, ...attrs: str)` | `cfire::log::info(msg, ...)` | Logs an informational message with optional key-value attribute pairs. | `log.info("server listening", "port", "8080")` |
-| `fn warn(msg: str, ...attrs: str)` | `cfire::log::warn(msg, ...)` | Logs a warning message with optional key-value attribute pairs. | `log.warn("rate limit reached", "client", ip)` |
-| `fn error(msg: str, ...attrs: str)` | `cfire::log::error(msg, ...)` | Logs an error message with optional key-value attribute pairs. | `log.error("database connection failed", "db", name)` |
+| `fn set_level(l: Level)` | `cfire::log::set_level(l)` | Sets the minimum logging severity threshold (`log.Level::Debug`, `Info`, `Warn`, `Error`). | `log.set_level(log.Level::Debug)` |
+| `fn get_level() -> Level` | `cfire::log::get_level()` | Returns the current minimum logging severity threshold. | `lvl := log.get_level()` |
+| `fn set_format(f: Format)` | `cfire::log::set_format(f)` | Sets the log output format (`log.Format::Text` or `log.Format::Json`). | `log.set_format(log.Format::Json)` |
+| `fn get_format() -> Format` | `cfire::log::get_format()` | Returns the current log output format. | `fmt := log.get_format()` |
+| `fn debug(msg: str, ...attrs: any)` | `cfire::log::debug(msg, ...)` | Logs a debug message with optional key-value attribute pairs. | `log.debug("cache miss", "key", "user:1")` |
+| `fn info(msg: str, ...attrs: any)` | `cfire::log::info(msg, ...)` | Logs an informational message with optional key-value attribute pairs. | `log.info("server listening", "port", 8080)` |
+| `fn warn(msg: str, ...attrs: any)` | `cfire::log::warn(msg, ...)` | Logs a warning message with optional key-value attribute pairs. | `log.warn("rate limit reached", "client", ip)` |
+| `fn error(msg: str, ...attrs: any)` | `cfire::log::error(msg, ...)` | Logs an error message with optional key-value attribute pairs. | `log.error("database connection failed", "db", name)` |
 
 ### `core:math` (`math`) — Numeric & Floating-Point Utilities
 
@@ -572,7 +578,17 @@ fn main() {
 | `fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64` | `cfire::math::clamp_i64(val, lo, hi)` | Clamps a 64-bit integer to `[lo, hi]`. | `c := math.clamp_i64(x, 0, 100)` |
 | `fn clamp_f64(val: f64, lo: f64, hi: f64) -> f64` | `cfire::math::clamp_f64(val, lo, hi)` | Clamps a 64-bit float to `[lo, hi]`. | `c := math.clamp_f64(v, 0.0, 1.0)` |
 | `fn sqrt(x: f64) -> f64` | `cfire::math::sqrt(x)` | Computes square root. | `r := math.sqrt(16.0)` |
+| `fn sqrt_f64(x: f64) -> f64` | `cfire::math::sqrt(x)` | Computes square root of a 64-bit float. | `r := math.sqrt_f64(16.0)` |
 | `fn abs_f64(x: f64) -> f64` | `cfire::math::abs_f64(x)` | Computes absolute value of a `f64`. | `a := math.abs_f64(-3.5)` |
+| `fn checked_add(a: i64, b: i64) -> i64?` | `cfire::math::checked_add(a, b)` | Adds two integers, returning `none` on overflow. | `res := math.checked_add(x, y)` |
+| `fn checked_sub(a: i64, b: i64) -> i64?` | `cfire::math::checked_sub(a, b)` | Subtracts two integers, returning `none` on overflow. | `res := math.checked_sub(x, y)` |
+| `fn checked_mul(a: i64, b: i64) -> i64?` | `cfire::math::checked_mul(a, b)` | Multiplies two integers, returning `none` on overflow. | `res := math.checked_mul(x, y)` |
+| `fn wrapping_add(a: i64, b: i64) -> i64` | `cfire::math::wrapping_add(a, b)` | Adds two integers with well-defined two's-complement wrapping. | `res := math.wrapping_add(x, y)` |
+| `fn wrapping_sub(a: i64, b: i64) -> i64` | `cfire::math::wrapping_sub(a, b)` | Subtracts two integers with well-defined two's-complement wrapping. | `res := math.wrapping_sub(x, y)` |
+| `fn wrapping_mul(a: i64, b: i64) -> i64` | `cfire::math::wrapping_mul(a, b)` | Multiplies two integers with well-defined two's-complement wrapping. | `res := math.wrapping_mul(x, y)` |
+| `fn saturating_add(a: i64, b: i64) -> i64` | `cfire::math::saturating_add(a, b)` | Adds two integers, saturating at min/max numeric bounds. | `res := math.saturating_add(x, y)` |
+| `fn saturating_sub(a: i64, b: i64) -> i64` | `cfire::math::saturating_sub(a, b)` | Subtracts two integers, saturating at min/max numeric bounds. | `res := math.saturating_sub(x, y)` |
+| `fn saturating_mul(a: i64, b: i64) -> i64` | `cfire::math::saturating_mul(a, b)` | Multiplies two integers, saturating at min/max numeric bounds. | `res := math.saturating_mul(x, y)` |
 
 ### `core:net` (`net`) — POSIX BSD TCP Sockets & Loopback Networking
 
@@ -593,7 +609,7 @@ fn main() {
 
     // 2. Connect client TCP socket
     mut client := try net.connect_tcp("127.0.0.1", port)
-    _ := try client.write_text("PING\n")
+    _ = try client.write_text("PING\n")
 
     // 3. Accept incoming connection and read data
     mut conn := try ln.accept()
@@ -613,8 +629,8 @@ fn main() {
 | `fn (c: TcpConn) fd() -> i32` | `c.fd()` | Returns the underlying socket file descriptor (`-1` if closed). | `fd := conn.fd()` |
 | `fn (c: TcpConn) is_open() -> bool` | `c.is_open()` | Returns `true` if the socket connection is open. | `if conn.is_open() { ... }` |
 | `fn (c: TcpConn) poll(timeout_ms: i64 = 0) -> bool` | `c.poll(timeout_ms)` | Polls the socket for readability up to `timeout_ms` milliseconds (`EINTR`-safe). | `if conn.poll(50) { ... }` |
-| `fn (mut c: TcpConn) write_bytes(payload: []byte) -> usize!` | `c.write_bytes(payload)` | Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ := try c.write_bytes(raw)` |
-| `fn (mut c: TcpConn) write_text(text: str) -> usize!` | `c.write_text(text)` | Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ := try c.write_text("PING\n")` |
+| `fn (mut c: TcpConn) write_bytes(payload: []byte) -> usize!` | `c.write_bytes(payload)` | Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ = try c.write_bytes(raw)` |
+| `fn (mut c: TcpConn) write_text(text: str) -> usize!` | `c.write_text(text)` | Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and `EINTR`. | `_ = try c.write_text("PING\n")` |
 | `fn (mut c: TcpConn) read_into(mut buf: []byte) -> usize!` | `c.read_into(buf)` | Reads up to `buf.len()` bytes from the socket into `buf` (`EINTR`-safe). | `n := try conn.read_into(mut buf)` |
 | `fn (mut c: TcpConn) read_bytes(max_bytes: usize = 4096) -> []byte!` | `c.read_bytes(max_bytes)` | Reads up to `max_bytes` from the socket into a new byte slice. | `pkt := try conn.read_bytes(256)` |
 | `fn (mut c: TcpConn) read_exact(exact_bytes: usize) -> []byte!` | `c.read_exact(exact_bytes)` | Reads exactly `exact_bytes` from the socket or returns an error on premature EOF. | `hdr := try conn.read_exact(8)` |
@@ -853,6 +869,7 @@ fn main() {
 | `fn make_raw() -> RawTerminal!` | `cfire::os::make_raw()` | Places standard input into raw terminal mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit. | `raw := try os.make_raw()` |
 | `fn on_signal(sig: i32, handler: fn(i32))` | `cfire::os::on_signal(sig, handler)` | Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`). | `os.on_signal(28, |sig| { println("resized: {}", sig) })` |
 | `fn exec_output(cmd: str) -> str!` | `cfire::os::exec_output(cmd)` | Executes a shell command via `popen` and returns its captured stdout. | `out := try os.exec_output("uname -s")` |
+| `fn exec(cmd: str) -> str!` | `cfire::os::exec_output(cmd)` | Executes a shell command via `popen` and returns its captured stdout. | `out := try os.exec("uname -s")` |
 | `fn command(binary: str, args: []str) -> ExecResult!` | `cfire::os::command(binary, args)` | Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr. | `res := try os.command("git", ["status"])` |
 
 ### `core:rand` (`rand`) — Thread-Local MT19937_64 & CSPRNG Generator
@@ -942,6 +959,7 @@ fn main() {
 |---|---|---|---|
 | `fn slice(mut s: []T)` | `cfire::sort::slice(s)` | Sorts a slice in ascending order in-place. | `sort.slice(mut numbers)` |
 | `fn binary_search(s: []T, val: T) -> i64?` | `cfire::sort::binary_search(s, val)` | Performs binary search on a sorted slice. | `idx := sort.binary_search(numbers, 42)` |
+| `fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)` | `cfire::sort::slice_by(s, cmp)` | Sorts slice `s` in-place using custom comparator `cmp`. | `sort.slice_by(mut items, |a, b| a < b)` |
 
 ### `core:str` (`str`) — UTF-8 String Manipulation
 
@@ -972,6 +990,8 @@ fn main() {
 | `fn ends_with(s: str, suffix: str) -> bool` | `cfire::str::ends_with(s, suffix)` | Returns `true` if `s` ends with `suffix`. | `if str.ends_with(f, ".cf") { ... }` |
 | `fn contains(s: str, needle: str) -> bool` | `cfire::str::contains(s, needle)` | Returns `true` if `s` contains `needle`. | `if str.contains(s, "fire") { ... }` |
 | `fn replace(s: str, from: str, to: str) -> str` | `cfire::str::replace(s, from, to)` | Replaces all occurrences of `from` in `s` with `to`. | `r := str.replace(s, "old", "new")` |
+| `fn replace_all(s: str, from: str, to: str) -> str` | `cfire::str::replace_all(s, from, to)` | Replaces all occurrences of `from` with `to` in `s`. | `r := str.replace_all("a-b-c", "-", "_")` |
+| `fn bytes(s: str) -> []byte` | `cfire::str::to_bytes(s)` | Returns the UTF-8 bytes of string `s` as a byte slice. | `b := str.bytes("hello")` |
 | `fn to_upper(s: str) -> str` | `cfire::str::to_upper(s)` | Converts ASCII characters to uppercase. | `u := str.to_upper("cfire")` |
 | `fn to_lower(s: str) -> str` | `cfire::str::to_lower(s)` | Converts ASCII characters to lowercase. | `l := str.to_lower("CFIRE")` |
 | `fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64` | `cfire::str::index_of(s, substr, start_pos)` | Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1. | `idx := str.index_of(path, ".")` |
@@ -1027,7 +1047,8 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn make_channel[T]() -> Channel[T]` | `cfire::sync::make_channel<T>()` | Creates a new shared, thread-safe channel of element type `T`. | `ch := sync.make_channel[i64]()` |
+| `fn make_channel[T](capacity: usize = 0) -> Channel[T]` | `cfire::sync::make_channel<T>()` | Creates a new shared, thread-safe channel of element type `T`. | `ch := sync.make_channel[i64]()` |
+| `fn new_mutex() -> Mutex` | `cfire::sync::Mutex()` | Constructs a new mutual exclusion lock. | `m := sync.new_mutex()` |
 | `fn (ch: Channel[T]) send(val: T)` | `ch.send(val)` | Sends a value into the channel and wakes one waiting receiver. | `ch.send(42)` |
 | `fn (ch: Channel[T]) recv() -> T!` | `ch.recv()` | Blocks until a value is available or returns an error if the channel is closed and empty. | `v := ch.recv() or 0` |
 | `fn (ch: Channel[T]) try_recv() -> T?` | `ch.try_recv()` | Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty. | `v := ch.try_recv() or { return }` |
@@ -1076,6 +1097,37 @@ fn main() {
 | `fn (ctx: Context) wait()` | `ctx.wait()` | Blocks until the Context is cancelled or its deadline expires. | `ctx.wait()` |
 | `fn (ctx: Context) wait_for(ms: i64) -> bool` | `ctx.wait_for(ms)` | Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled. | `cancelled := ctx.wait_for(100)` |
 
+### `core:tako` (`tako`) — Tako Cloud SDK Primitives (S3, SQS)
+
+- **Auto-Link Flags:** `(header-only)`
+- **Overview:** Cloud primitives and storage compatibility services (`core:tako`).
+
+**Practical Example:**
+```cf
+package main
+
+import "core:tako" as tk
+
+fn main() -> void! {
+    mut s3 := tk.NewS3Service()
+    try s3.CreateBucket("data")
+    _ = try s3.PutObject("data", "item.json", "{\"status\":\"ok\"}", "application/json")
+    obj := try s3.GetObject("data", "item.json")
+    println("Stored payload: {}", obj.Body)
+}
+```
+
+| `.cf` Signature | Lowered C++23 | Description | Example |
+|---|---|---|---|
+| `fn NewS3Service() -> S3Service` | `cfire::tako::NewS3Service()` | Creates an S3 compatible storage service client. | `s3 := tako.NewS3Service()` |
+| `fn NewSQSService() -> SQSService` | `cfire::tako::NewSQSService()` | Creates an SQS compatible message queue service client. | `sqs := tako.NewSQSService()` |
+| `fn (mut s: S3Service) CreateBucket(name: str) -> void!` | `s.CreateBucket(name)` | Creates a storage bucket. | `try s3.CreateBucket("b")` |
+| `fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!` | `s.PutObject(bucket, key, data, content_type)` | Uploads an object and returns its ETag. | `etag := try s3.PutObject("b", "k", "d", "text/plain")` |
+| `fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!` | `s.GetObject(bucket, key)` | Downloads an object from storage. | `obj := try s3.GetObject("b", "k")` |
+| `fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!` | `s.CreateQueue(name, fifo)` | Creates a message queue and returns its URL. | `q := try sqs.CreateQueue("q", true)` |
+| `fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = "", dedup: str = "") -> str!` | `s.SendMessage(queue_url, body, group, dedup)` | Publishes a message to the queue. | `id := try sqs.SendMessage(q, "body")` |
+| `fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!` | `s.ReceiveMessages(queue_url, max_messages)` | Receives available messages from the queue. | `msgs := try sqs.ReceiveMessages(q, 1)` |
+
 ### `core:time` (`time`) — Time, Calendar Dates, Durations & RFC 3339 Formatting
 
 - **Auto-Link Flags:** `(header-only)`
@@ -1109,6 +1161,11 @@ fn main() {
 | `fn parse_rfc3339(s: str) -> Time!` | `cfire::time::parse_rfc3339(s)` | Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant. | `t := try time.parse_rfc3339("2026-10-18T12:00:00Z")` |
 | `fn duration_seconds(s: i64) -> Duration` | `cfire::time::duration_seconds(s)` | Constructs a typed `Duration` representing `s` seconds. | `d := time.duration_seconds(5)` |
 | `fn duration_millis(ms: i64) -> Duration` | `cfire::time::duration_millis(ms)` | Constructs a typed `Duration` representing `ms` milliseconds. | `d := time.duration_millis(250)` |
+| `fn duration_nanos(n: i64) -> Duration` | `cfire::time::duration_nanos(n)` | Constructs a Duration from nanoseconds. | `d := time.duration_nanos(1000)` |
+| `fn duration_micros(us: i64) -> Duration` | `cfire::time::duration_micros(us)` | Constructs a Duration from microseconds. | `d := time.duration_micros(500)` |
+| `fn duration_minutes(m: i64) -> Duration` | `cfire::time::duration_minutes(m)` | Constructs a Duration from minutes. | `d := time.duration_minutes(5)` |
+| `fn duration_hours(h: i64) -> Duration` | `cfire::time::duration_hours(h)` | Constructs a Duration from hours. | `d := time.duration_hours(2)` |
+| `fn from_unix_seconds(sec: i64) -> Time` | `cfire::time::from_unix_seconds(sec)` | Constructs a Time instant from Unix epoch seconds. | `t := time.from_unix_seconds(1700000000)` |
 | `fn sleep(d: Duration)` | `cfire::time::sleep(d)` | Sleeps the current thread for duration `d`. | `time.sleep(time.duration_millis(50))` |
 
 ### `core:unicode` (`unicode`) — UTF-8 Decoding, Rune Counting & Unicode Manipulation
@@ -1255,6 +1312,7 @@ fn main() {
 | `fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)` | `s.register_tool_action(name, description, handler)` | Registers a parameterless MCP tool. | `mcp.register_tool_action("status", "Server status", || { return "ready" })` |
 | `fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str` | `s.handle_jsonrpc(req_json)` | Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string. | `resp := mcp.handle_jsonrpc(line)` |
 | `fn (mut s: McpServer) serve_stdio() -> i32` | `s.serve_stdio()` | Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`. | `mcp.serve_stdio()` |
+| `fn create_zip(entries: map[str]str) -> []byte` | `cfire::ai::create_zip(entries)` | Constructs an in-memory zip archive from filename-content pairs. | `z := ai.create_zip(entries)` |
 
 ### `ext:compress/zstd` (`zstd`) — Native Zstandard Frame Compression
 
@@ -1283,7 +1341,9 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn compress(input: []byte, level: i32 = 3) -> []byte!` | `cfire::zstd::compress(input, level)` | Compresses a byte slice into a Zstandard frame. | `blob := try zstd.compress(raw, level: 3)` |
+| `fn compress_str(input: str, level: i32 = 3) -> []byte!` | `cfire::zstd::compress_str(input, level)` | Compresses a string into a Zstandard frame. | `blob := try zstd.compress_str(s, 3)` |
 | `fn decompress(frame: []byte) -> []byte!` | `cfire::zstd::decompress(frame)` | Decompresses a Zstandard frame using the embedded frame content size. | `orig := try zstd.decompress(blob)` |
+| `fn decompress_str(frame: []byte) -> str!` | `cfire::zstd::decompress_str(frame)` | Decompresses a Zstandard frame into a UTF-8 string. | `orig := try zstd.decompress_str(blob)` |
 
 ### `ext:crypto/sodium` (`sodium`) — Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation & XChaCha20-Poly1305 AEAD
 
@@ -1540,6 +1600,10 @@ fn main() {
 | `fn (mut app: App) run()` | `app.run()` | Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux). | `app.run()` |
 | `fn (mut app: App) quit()` | `app.quit()` | Requests termination of the native WebView event loop. | `app.quit()` |
 | `fn (mut app: App) close()` | `app.close()` | Deterministic RAII cleanup handle for `defer app.close()`. | `defer app.close()` |
+| `fn clipboard_get() -> str` | `cfire::webui::clipboard_get()` | Reads plaintext from the system clipboard. | `t := webui.clipboard_get()` |
+| `fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)` | `cfire::webui::clipboard_set(text, concealed, clear_after_ms)` | Writes plaintext to the system clipboard with optional auto-clear timeout. | `webui.clipboard_set("secret", true, 10000)` |
+| `fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)` | `cfire::webui::clipboard_set_secret(text, clear_after_ms)` | Writes sensitive secret to the clipboard and schedules automatic clearing. | `webui.clipboard_set_secret("pass")` |
+| `fn monospace_fonts() -> []str` | `cfire::webui::monospace_fonts()` | Returns a list of platform-installed monospaced font family names. | `fonts := webui.monospace_fonts()` |
 
 ### `vendor:raygui` (`rg`) — Raygui 4.0 Immediate-Mode GUI Controls
 

@@ -212,7 +212,7 @@ fn main() {
 
     // 2. Connect client TCP socket
     mut client := try net.connect_tcp("127.0.0.1", port)
-    _ := try client.write_text("PING\n")
+    _ = try client.write_text("PING\n")
 
     // 3. Accept incoming connection and read data
     mut conn := try ln.accept()
@@ -762,6 +762,19 @@ fn main() {
     }
 
     app.run()
+})CF";
+    }
+    if (mod == "core:tako") {
+        return R"CF(package main
+
+import "core:tako" as tk
+
+fn main() -> void! {
+    mut s3 := tk.NewS3Service()
+    try s3.CreateBucket("data")
+    _ = try s3.PutObject("data", "item.json", "{\"status\":\"ok\"}", "application/json")
+    obj := try s3.GetObject("data", "item.json")
+    println("Stored payload: {}", obj.Body)
 })CF";
     }
     if (mod == "vendor:raygui") {

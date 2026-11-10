@@ -13,6 +13,25 @@ namespace cfire::build {
     return false;
 }
 
+[[nodiscard]] inline auto is_wasm_target(std::string_view target) noexcept -> bool {
+    return target == "wasm" || target == "web" || target.find("wasm") != std::string_view::npos;
+}
+
+// True when the binary being built runs on Windows: an explicit Windows/mingw triple, or no
+// triple on a Windows host. Decides host-independent properties such as the `.exe` suffix.
+[[nodiscard]] inline auto is_windows_target(std::string_view target) noexcept -> bool {
+    if (target.find("windows") != std::string_view::npos ||
+        target.find("win32") != std::string_view::npos ||
+        target.find("mingw") != std::string_view::npos) {
+        return true;
+    }
+#if defined(_WIN32)
+    return target.empty();
+#else
+    return false;
+#endif
+}
+
 [[nodiscard]] inline auto is_platform_file_enabled(
     const std::filesystem::path& p,
     const BuildPlan& plan
@@ -23,28 +42,26 @@ namespace cfire::build {
     }
     bool is_apple = false;
     bool is_linux = false;
-    bool is_windows = false;
+    bool is_windows = is_windows_target(plan.target_triple);
+    bool is_wasm = is_wasm_target(plan.target_triple);
     if (!plan.target_triple.empty()) {
         is_apple = plan.target_triple.find("apple") != std::string::npos ||
                    plan.target_triple.find("darwin") != std::string::npos ||
                    plan.target_triple.find("macos") != std::string::npos;
         is_linux = plan.target_triple.find("linux") != std::string::npos;
-        is_windows = plan.target_triple.find("windows") != std::string::npos ||
-                     plan.target_triple.find("mingw") != std::string::npos ||
-                     plan.target_triple.find("win32") != std::string::npos;
     } else {
 #if defined(__APPLE__)
         is_apple = true;
 #elif defined(__linux__)
         is_linux = true;
-#elif defined(_WIN32)
-        is_windows = true;
 #endif
     }
     if (stem.ends_with("_darwin") || stem.ends_with("_macos")) return is_apple && !plan.is_ios;
     if (stem.ends_with("_ios")) return plan.is_ios;
     if (stem.ends_with("_linux")) return is_linux;
     if (stem.ends_with("_windows")) return is_windows;
+    if (stem.ends_with("_wasm")) return is_wasm;
+    if (stem.ends_with("_unix")) return !is_windows && !is_wasm;
     return true;
 }
 
@@ -322,6 +339,7 @@ namespace cfire::build {
             tr.name = resolve_type_name(tr.name, cur_pkg);
             if (tr.elem_type) self(self, *tr.elem_type, cur_pkg);
             if (tr.key_type) self(self, *tr.key_type, cur_pkg);
+            for (auto& ta : tr.type_args) self(self, ta, cur_pkg);
             for (auto& tt : tr.tuple_types) self(self, tt, cur_pkg);
         };
 
@@ -362,6 +380,7 @@ namespace cfire::build {
                     self(self, rewrite_stmts, ex.end, cur_pkg);
                 } else if constexpr (std::is_same_v<T, frontend::StructLitExpr>) {
                     ex.type_name = resolve_type_name(ex.type_name, cur_pkg);
+                    for (auto& ta : ex.type_args) rewrite_tref(rewrite_tref, ta, cur_pkg);
                     for (auto& f : ex.fields) self(self, rewrite_stmts, f.value, cur_pkg);
                 } else if constexpr (std::is_same_v<T, frontend::ArrayLitExpr> || std::is_same_v<T, frontend::TupleExpr>) {
                     for (auto& el : ex.elements) self(self, rewrite_stmts, el, cur_pkg);

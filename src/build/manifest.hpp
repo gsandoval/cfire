@@ -69,6 +69,7 @@ struct ParsedBuildCf {
 struct BuildPlan {
     std::string entry_file{};
     std::string generated_cpp{};
+    std::vector<std::string> warnings{};
     std::vector<std::string> local_cf_packages{};
     std::vector<std::string> auto_linked{};
     std::vector<std::string> pkg_config_deps{};

@@ -2188,7 +2188,7 @@ syncCfireThemeBtn();
       </ul>
         <a href="reference.html" class="sidebar-footer-card">
           <span class="sfc-title">Stdlib Reference</span>
-          <span class="sfc-badge">38 MODULES</span>
+          <span class="sfc-badge">39 MODULES</span>
         </a>
       </div>
     </div>
@@ -2886,13 +2886,13 @@ var App = build.Executable(&quot;service-app&quot;, {
 <p><code>cfire</code> flips both defaults:</p>
 <ol>
   <li><strong>Immutable by Default (<code>:=</code>)</strong>: Declaring <code>count := 42</code> emits <code>const std::int64_t count = 42;</code>. You only mark a variable <code>mut</code> when its state genuinely changes over time.</li>
-  <li><strong>Explicit Numeric Conversions (<code>i32(x)</code>, <code>f64(x)</code>, or <code>x as T</code>)</strong>: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using either clean constructor-style calls (<code>f64(count)</code>, <code>f32(x)</code>, <code>i32(y)</code>, <code>u8(b)</code>, <code>byte(b)</code>, <code>usize(n)</code>) or the <code>as</code> operator (<code>count as f64</code>).</li>
+  <li><strong>Explicit Numeric Conversions (<code>i32(x)</code>, <code>f64(x)</code>)</strong>: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using clean constructor-style calls (<code>f64(count)</code>, <code>f32(x)</code>, <code>i32(y)</code>, <code>u8(b)</code>, <code>byte(b)</code>, <code>usize(n)</code>).</li>
   <li><strong>Native String Interpolation</strong>: Every double-quoted string (<code>&quot;...&quot;</code>) supports <code>{expr}</code> interpolation directly—including arbitrary expressions and format specifiers like <code>&quot;{scaled:.2f}&quot;</code> or <code>&quot;{mask:04x}&quot;</code>—without needing a <code>f&quot;...&quot;</code> prefix.</li>
 </ol>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-const MAX_RETRIES: i32 = 5
+MAX_RETRIES: i32 = 5
 
 fn main() {
     // 1. Immutable inferred bindings (lower to 'const' in C++23)
@@ -2935,7 +2935,7 @@ fn main() {
       <tr><td><code>u16</code>, <code>u32</code>, <code>u64</code></td><td><code>u16(x)</code>, <code>u32(x)</code>, <code>u64(x)</code></td><td>Unsigned 16/32/64-bit integers</td><td><code>0</code></td><td><code>std::uint16_t</code> .. <code>std::uint64_t</code></td></tr>
       <tr><td><code>usize</code>, <code>isize</code></td><td><code>usize(x)</code>, <code>isize(x)</code></td><td>Pointer-sized unsigned / signed integers</td><td><code>0</code></td><td><code>std::size_t</code>, <code>std::ptrdiff_t</code></td></tr>
       <tr><td><code>f32</code>, <code>f64</code></td><td><code>f32(x)</code>, <code>f64(x)</code></td><td>IEEE-754 single &amp; double precision (<code>f64</code> default)</td><td><code>0.0</code></td><td><code>float</code>, <code>double</code></td></tr>
-      <tr><td><code>bool</code></td><td><code>bool_(x)</code> / <code>x as bool</code></td><td>Logical boolean (<code>true</code> / <code>false</code>)</td><td><code>false</code></td><td><code>bool</code></td></tr>
+      <tr><td><code>bool</code></td><td><code>bool(x)</code></td><td>Logical boolean (<code>true</code> / <code>false</code>)</td><td><code>false</code></td><td><code>bool</code></td></tr>
       <tr><td><code>str</code></td><td><code>&quot;{x}&quot;</code> / <code>str(x)</code></td><td>Owned UTF-8 text buffer (<code>&amp;str</code> borrows as <code>std::string_view</code>)</td><td><code>&quot;&quot;</code></td><td><code>std::string</code></td></tr>
     </tbody>
   </table>
@@ -3070,8 +3070,8 @@ fn main() {
       <tr><th>Syntax</th><th>Creation Expression</th><th>Ownership &amp; Mutation Semantics</th><th>Emitted ISO C++23 Type</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>^T</code> / <code>own[T]</code></td><td><code>make(own[T], val)</code> / <code>new(T)</code></td><td>Unique RAII heap ownership; movable, never implicitly copied</td><td><code>std::unique_ptr&lt;T&gt;</code></td></tr>
-      <tr><td><code>shared[T]</code></td><td><code>make(shared[T], val)</code></td><td>Atomic reference-counted shared heap ownership</td><td><code>std::shared_ptr&lt;T&gt;</code></td></tr>
+      <tr><td><code>own[T]</code></td><td><code>make[own[T]](val)</code></td><td>Unique RAII heap ownership; movable, never implicitly copied</td><td><code>std::unique_ptr&lt;T&gt;</code></td></tr>
+      <tr><td><code>shared[T]</code></td><td><code>make[shared[T]](val)</code></td><td>Atomic reference-counted shared heap ownership</td><td><code>std::shared_ptr&lt;T&gt;</code></td></tr>
       <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>&amp;x</code> / <code>&amp;mut x</code></td><td>Non-owning immutable or mutable borrow (<code>&amp;str</code> -&gt; <code>std::string_view</code>)</td><td><code>const T&amp;</code> / <code>T*</code></td></tr>
       <tr><td><code>*T</code></td><td><code>&amp;x</code> or foreign C pointer</td><td>Non-owning pointer; requires null check (<code>if p != none</code>) before deref</td><td><code>T*</code></td></tr>
       <tr><td><code>*mut T</code></td><td><code>&amp;mut x</code></td><td>Rebindable pointer to a mutable target; supports <code>*p = val</code> and <code>*p += 1</code></td><td><code>T*</code></td></tr>
@@ -3089,10 +3089,10 @@ type Packet struct {
 
 fn main() {
     // 1. Unique heap ownership (std::unique_ptr&lt;Packet&gt;)
-    unique_pkt := make(own[Packet], Packet{Sequence: 1, Payload: &quot;SYN&quot;})
+    unique_pkt := make[own[Packet]](Packet{Sequence: 1, Payload: &quot;SYN&quot;})
 
     // 2. Shared reference-counted ownership (std::shared_ptr&lt;Packet&gt;)
-    shared_pkt := make(shared[Packet], Packet{Sequence: 2, Payload: &quot;ACK&quot;})
+    shared_pkt := make[shared[Packet]](Packet{Sequence: 2, Payload: &quot;ACK&quot;})
     shared_clone := shared_pkt
 
     // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
@@ -3104,7 +3104,7 @@ fn main() {
     *cursor = 99
 
     println(&quot;seq1={} seq2={} a={} b={}&quot;,
-        (*unique_pkt).Sequence, (*shared_clone).Sequence, a, b)
+        unique_pkt.Sequence, shared_clone.Sequence, a, b)
 }
 </code></pre>
 <div class="terminal-tray">
@@ -3148,7 +3148,7 @@ fn main() {
   <section class="guide-topic active-topic" id="topic-ch5-seeing-every-mutation-move-at-the-call-site" data-topic-id="ch5-seeing-every-mutation-move-at-the-call-site" data-topic-title="Seeing Every Mutation &amp; Move at the Call Site" data-short-title="5.1 Call-Site Intent">
 <h3 class="guide-heading" id="ch5-seeing-every-mutation-move-at-the-call-site"><span class="heading-hash">#</span><span class="heading-text">Seeing Every Mutation &amp; Move at the Call Site</span></h3>
 <p>If you have ever hunted down a bug in C++ where a helper function quietly modified a struct via a non-<code>const</code> reference (<code>void process(Config&amp; cfg)</code>), you know the frustration: the function signature is buried in another file, and the call site (<code>process(cfg)</code>) looks completely read-only.</p>
-<p>In <code>cfire</code>, parameters are read-only (<code>in</code>) by default. Whenever a function mutates an argument in place (<code>mut</code>), writes an output value (<code>out</code>), or takes ownership (<code>move</code>), <strong>both the function declaration and the call site must state that intent</strong>:</p>
+<p>In <code>cfire</code>, parameters are immutable references by default. Whenever a function mutates an argument in place (<code>mut</code>) or takes ownership (<code>move</code>), <strong>both the function declaration and the call site must state that intent</strong>:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3156,9 +3156,8 @@ fn main() {
       <tr><th>Intent Modifier</th><th>Default?</th><th>Callee Access</th><th>Mandatory Call-Site Marker</th><th>Emitted ISO C++23 Lowering</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>in</code> (or omitted)</td><td><strong>Yes</strong></td><td>Read-only</td><td>None (<code>f(x)</code>)</td><td>Scalars by <code>const T</code>; structs/slices/maps by <code>const T&amp;</code>; <code>&amp;str</code> by <code>std::string_view</code></td></tr>
+      <tr><td><em>(omitted)</em></td><td><strong>Yes</strong></td><td>Read-only borrow</td><td>None (<code>f(x)</code>)</td><td>Scalars by <code>const T</code>; structs/slices/maps by <code>const T&amp;</code>; <code>&amp;str</code> by <code>std::string_view</code></td></tr>
       <tr><td><code>mut</code></td><td>No</td><td>Read-write in place</td><td><code>mut</code> (<code>f(mut x)</code>)</td><td><code>T&amp;</code> parameter; caller variable must be declared <code>mut</code></td></tr>
-      <tr><td><code>out</code></td><td>No</td><td>Write-to output</td><td><code>out</code> (<code>f(out x)</code>)</td><td><code>T&amp;</code> parameter; initializes or overwrites <code>x</code> in place</td></tr>
       <tr><td><code>move</code></td><td>No</td><td>Takes ownership</td><td><code>move</code> (<code>f(move x)</code>)</td><td><code>T</code> parameter with <code>std::move(x)</code> at call site; invalidates <code>x</code> in caller scope</td></tr>
     </tbody>
   </table>
@@ -3170,8 +3169,8 @@ type Buffer struct {
     Entries: []str
 }
 
-// 1. 'in' intent (default): read-only borrow (const Buffer&amp;)
-fn entry_count(in buf: Buffer) -&gt; usize {
+// 1. Immutable reference (default): read-only borrow (const Buffer&amp;)
+fn entry_count(buf: Buffer) -&gt; usize {
     return buf.Entries.len()
 }
 
@@ -3182,14 +3181,12 @@ fn append_entry(prefix: &amp;str, mut buf: Buffer, move msg: str) -&gt; usize {
     return buf.Entries.len()
 }
 
-// 3. 'out' intent and multiple return values (tuple)
-fn summarize(in buf: Buffer, out first_item: str) -&gt; (usize, bool) {
+// 3. Multi-return tuple: returns count, success flag, and first entry
+fn summarize(buf: Buffer) -&gt; (usize, bool, str) {
     if buf.Entries.len() &gt; 0 {
-        first_item = buf.Entries[0]
-        return (buf.Entries.len(), true)
+        return (buf.Entries.len(), true, buf.Entries[0])
     }
-    first_item = &quot;&lt;empty&gt;&quot;
-    return (0, false)
+    return (0, false, &quot;&lt;empty&gt;&quot;)
 }
 
 fn main() {
@@ -3197,10 +3194,9 @@ fn main() {
     payload := &quot;handshake verified&quot;
 
     // Call site documents that 'log' is mutated and 'payload' is moved:
-    _ := append_entry(&quot;NET&quot;, mut log, move payload)
+    _ = append_entry(&quot;NET&quot;, mut log, move payload)
 
-    mut head := &quot;&quot;
-    (total, ok) := summarize(log, out head)
+    (total, ok, head) := summarize(log)
     println(&quot;count={} total={} ok={} head={}&quot;, entry_count(log), total, ok, head)
 }
 </code></pre>
@@ -3230,7 +3226,7 @@ fn main() {
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-fn for_each_above[T](items: []T, threshold: T, visit: fn(T)) {
+fn for_each_above(items: []i32, threshold: i32, visit: fn(i32)) {
     for x in items {
         if x &gt;= threshold {
             visit(x)
@@ -3300,10 +3296,10 @@ fn main() {
       <tr><td><code>cfire/MOVE-CALLSITE</code></td><td>Calling a <code>move</code> parameter without writing <code>move</code> at the call site.</td><td>Write <code>f(move x)</code> to confirm ownership transfer.</td></tr>
       <tr><td><code>cfire/IMMUTABLE-MUT-ARG</code></td><td>Passing an immutable binding (<code>x := ...</code>) to a <code>mut</code> or <code>out</code> parameter.</td><td>Declare <code>mut x := ...</code>.</td></tr>
       <tr><td><code>cfire/MUT-RECEIVER</code></td><td>Calling a <code>fn (mut s: T)</code> method on an immutable struct variable.</td><td>Declare <code>mut s := ...</code>.</td></tr>
-      <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable twice in one call when at least one arg is <code>mut</code>/<code>out</code>.</td><td>Pass distinct variables (<code>transfer(mut a, mut b)</code>).</td></tr>
-      <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading a variable after <code>move x</code> transferred ownership on an earlier path.</td><td>Read before <code>move x</code>, or pass by <code>in</code>/<code>mut</code> borrow.</td></tr>
+      <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable twice in one call when at least one arg is <code>mut</code>.</td><td>Pass distinct variables (<code>transfer(mut a, mut b)</code>).</td></tr>
+      <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading a variable after <code>move x</code> transferred ownership on an earlier path.</td><td>Read before <code>move x</code>, or pass by <code>mut</code> borrow.</td></tr>
       <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Reading a pointer/view (<code>&amp;x</code>, <code>.data()</code>, <code>.byte_ptr()</code>, <code>s[a..b]</code>) after <code>.push()</code>, <code>.clear()</code>, <code>move</code>, or reassignment mutated the owner.</td><td>Finish reading the view before mutating the container, or re-slice after <code>.push()</code>.</td></tr>
-      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Assigning the address of an inner-scope variable (<code>ptr = &amp;local</code>) to an outer pointer.</td><td>Keep the pointee in the outer scope or allocate with <code>make(own[T], ...)</code>.</td></tr>
+      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Assigning the address of an inner-scope variable (<code>ptr = &amp;local</code>) to an outer pointer.</td><td>Keep the pointee in the outer scope or allocate with <code>make[own[T]](...)</code>.</td></tr>
       <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Returning a pointer or view (<code>&amp;local</code>, <code>local.data()</code>) to stack-local storage.</td><td>Return an owned value (<code>T</code>, <code>str</code>, <code>[]T</code>) or <code>own[T]</code> instead.</td></tr>
       <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Mutating a collection (<code>.push()</code>, <code>.clear()</code>, <code>.remove()</code>, <code>move</code>) inside <code>for x in col</code>.</td><td>Collect mutations in a separate slice and apply them after the loop.</td></tr>
     </tbody>
@@ -3701,8 +3697,8 @@ fn inspect_session(maybe_ptr: *Session) -&gt; i32 {
 }
 
 fn main() {
-    s := new(Session{ id: 42 })
-    println(&quot;active={} empty={}&quot;, inspect_session(s), inspect_session(none))
+    s := Session{ id: 42 }
+    println(&quot;active={} empty={}&quot;, inspect_session(&amp;s), inspect_session(none))
 }
 </code></pre>
 <div class="terminal-tray">
@@ -3751,7 +3747,7 @@ fn main() {
         return
     }
     text := try fs.read_text(&quot;/tmp/cfire_guide_defer.log&quot;)
-    _ := fs.remove(&quot;/tmp/cfire_guide_defer.log&quot;)
+    _ = fs.remove(&quot;/tmp/cfire_guide_defer.log&quot;)
     print(&quot;{}&quot;, text)
 }
 </code></pre>
@@ -3944,14 +3940,14 @@ fn main() {
     sort.slice(mut latencies)
     idx := sort.binary_search(latencies, 19) or -1
 
-    mut pq := collections.PriorityQueue[i64]{}
+    mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
 
-    mut dq := collections.Deque[str]{}
+    mut dq: collections.Deque[str]
     dq.push_back(&quot;worker-1&quot;)
     dq.push_front(&quot;leader-0&quot;)
 
-    mut seen := collections.Set[str]{}
+    mut seen: collections.Set[str]
     seen.insert(&quot;us-east&quot;)
     seen.insert(&quot;eu-west&quot;)
 
@@ -4125,15 +4121,15 @@ type ServerFlags struct {
     Workers: i32 `cli:&quot;--workers&quot; default:&quot;4&quot;         desc:&quot;Worker thread count&quot;`
 }
 
-fn main() -&gt; void! {
-    flags := try cli.parse[ServerFlags]([&quot;--port&quot;, &quot;8088&quot;, &quot;--workers&quot;, &quot;8&quot;])
+fn main() {
+    flags := cli.parse[ServerFlags]([&quot;--port&quot;, &quot;8088&quot;, &quot;--workers&quot;, &quot;8&quot;])
     log.set_format(log.Format::Json)
     log.info(&quot;server configured&quot;, &quot;host&quot;, flags.Host, &quot;port&quot;, &quot;{flags.Port}&quot;, &quot;workers&quot;, &quot;{flags.Workers}&quot;)
 }
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
-  <pre><code>{&quot;time&quot;:&quot;2026-11-01T12:00:00Z&quot;,&quot;level&quot;:&quot;INFO&quot;,&quot;msg&quot;:&quot;server configured&quot;,&quot;host&quot;:&quot;127.0.0.1&quot;,&quot;port&quot;:&quot;8088&quot;,&quot;workers&quot;:&quot;8&quot;}
+  <pre><code>&quot;level&quot;:&quot;INFO&quot;,&quot;msg&quot;:&quot;server configured&quot;,&quot;host&quot;:&quot;127.0.0.1&quot;,&quot;port&quot;:&quot;8088&quot;,&quot;workers&quot;:&quot;8&quot;
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
@@ -4203,8 +4199,8 @@ fn run_parallel_shards(shard_count: usize, scale: i32) -&gt; []i32 {
 }
 
 fn main() {
-    out := run_parallel_shards(4, 10)
-    println(&quot;shards=[{}, {}, {}, {}]&quot;, out[0], out[1], out[2], out[3])
+    shards := run_parallel_shards(4, 10)
+    println(&quot;shards=[{}, {}, {}, {}]&quot;, shards[0], shards[1], shards[2], shards[3])
 }
 </code></pre>
 <div class="terminal-tray">
@@ -4250,19 +4246,17 @@ fn main() {
     ch := sync.make_channel[i64]()
     mut total: i64 = 0
 
-    async.scope(workers: 2) |scope| {
+    async.scope(workers: 1) |scope| {
         scope.spawn || {
             for i in 1..=4 {
                 ch.send(i * 10)
             }
             ch.close()
         }
+    }
 
-        scope.spawn || {
-            for val in ch {
-                total += val
-            }
-        }
+    for val in ch {
+        total += val
     }
 
     println(&quot;channel_sum={}&quot;, total)
@@ -4331,7 +4325,7 @@ fn main() {
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
-  <pre><code>cancelled=true result= aborted:timeout
+  <pre><code>cancelled=true result= aborted:deadline exceeded
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
@@ -4830,8 +4824,8 @@ fn main() -&gt; void! {
     println(&quot;Live GET status={}, body={}&quot;, live.status, live.body)
 
     // 3. Consume SSE stream in real time
-    mut chunks := []str{}
-    try http.post_sse(base + &quot;/v1/stream&quot;, &quot;{}&quot;, map[str]str{}, |ev: http.SseEvent| -&gt; bool {
+    mut chunks: []str = []
+    try http.post_sse(base + &quot;/v1/stream&quot;, &quot;{}&quot;, |ev: http.SseEvent| -&gt; bool {
         chunks.push(ev.event + &quot;:&quot; + ev.data)
         return ev.data != &quot;[DONE]&quot;
     })
@@ -4885,7 +4879,8 @@ import &quot;core:net/websocket&quot;
 fn main() -&gt; void! {
     mut router := http.make_router()
     router.ws(&quot;/ws/echo&quot;, |req: http.Request, mut ws: websocket.WebSocket| {
-        if msg := ws.recv_text() {
+        msg := ws.recv_text() or &quot;&quot;
+        if msg != &quot;&quot; {
             _ = ws.send_text(&quot;echo:&quot; + msg)
         }
         _ = ws.close()
@@ -4907,7 +4902,7 @@ fn main() -&gt; void! {
         tls_router.get(&quot;/secure&quot;, |req: http.Request| -&gt; http.Response {
             return http.Response.text(200, &quot;TLS-1.3-OK&quot;)
         })
-        mut tls_srv := try http.make_tls_server_pem(pem.cert_pem, pem.key_pem, 0)
+        mut tls_srv := try http.make_tls_server_pem(0, pem.cert_pem, pem.key_pem)
         defer tls_srv.stop()
         tls_srv.serve_in_background(tls_router)
 
@@ -4995,7 +4990,7 @@ fn main() -&gt; void! {
     println(&quot;Schema has properties: {}&quot;, schema.contains(&quot;\&quot;properties\&quot;&quot;))
 
     dom := try json.parse_dynamic(raw)
-    println(&quot;Dynamic lookup: name={}, tag[0]={}&quot;, dom.get(&quot;name&quot;).as_str(), dom.get(&quot;tags&quot;).at(0).as_str())
+    println(&quot;Dynamic lookup: name={}, tag[0]={}&quot;, dom[&quot;name&quot;].as_str(), dom[&quot;tags&quot;][0].as_str())
 }
 </code></pre>
 <div class="terminal-tray">
@@ -5056,15 +5051,18 @@ fn main() -&gt; void! {
 
     try db.exec(&quot;CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, embedding BLOB)&quot;)
 
+    v1: []f32 = [0.95, 0.05, 0.0]
+    v2: []f32 = [0.10, 0.90, 0.0]
+    v3: []f32 = [0.85, 0.15, 0.0]
     // Atomic transaction inserting 3 normalized 3D embeddings as IEEE-754 f32 BLOBs
     try db.tx(|| -&gt; void! {
-        try db.exec(&quot;INSERT INTO docs (title, embedding) VALUES (?1, ?2)&quot;, &quot;Kernel Scheduler&quot;, []f32{0.95, 0.05, 0.0})
-        try db.exec(&quot;INSERT INTO docs (title, embedding) VALUES (?1, ?2)&quot;, &quot;HTTP Router&quot;,      []f32{0.10, 0.90, 0.0})
-        try db.exec(&quot;INSERT INTO docs (title, embedding) VALUES (?1, ?2)&quot;, &quot;SQLite WAL Engine&quot;, []f32{0.85, 0.15, 0.0})
+        try db.exec(&quot;INSERT INTO docs (title, embedding) VALUES (?1, ?2)&quot;, &quot;Kernel Scheduler&quot;, v1)
+        try db.exec(&quot;INSERT INTO docs (title, embedding) VALUES (?1, ?2)&quot;, &quot;HTTP Router&quot;,      v2)
+        try db.exec(&quot;INSERT INTO docs (title, embedding) VALUES (?1, ?2)&quot;, &quot;SQLite WAL Engine&quot;, v3)
     })
 
     // Query top-2 nearest documents using the built-in SIMD vec_cosine_similarity SQL function
-    query_vec := []f32{1.0, 0.0, 0.0}
+    query_vec: []f32 = [1.0, 0.0, 0.0]
     hits := try db.query[DocHit](
         &quot;SELECT id, title, vec_cosine_similarity(embedding, ?1) AS score FROM docs ORDER BY score DESC LIMIT 2&quot;,
         query_vec
@@ -5126,14 +5124,12 @@ fn main() -&gt; void! {
     restored   := try zstd.decompress_str(compressed)
     println(&quot;Zstd round-trip match: {} (frame={} bytes)&quot;, restored == payload, compressed.len())
 
-    key_arr := sha256.hash(&quot;master-secret-passphrase&quot;)
-    mut key := []byte{}
-    for b in key_arr { key.push(b) }
+    key := sha256.hash_bytes(&quot;master-secret-passphrase&quot;)
     nonce := try hex.decode(&quot;000102030405060708090a0b&quot;)
     aad   := try hex.decode(&quot;feedface&quot;)
 
     ciphertext := try aes.encrypt_gcm(key, nonce, compressed, aad)
-    decrypted  := try aes.decrypt_gcm(key, nonce, ciphertext, aad)
+    decrypted  := try aes.decrypt_gcm(key, nonce, ciphertext.ciphertext, ciphertext.tag, aad)
     final_str  := try zstd.decompress_str(decrypted)
 
     mac := hmac.sha256_hex(&quot;webhook-secret&quot;, final_str)
@@ -5142,7 +5138,7 @@ fn main() -&gt; void! {
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
-  <pre><code>Zstd round-trip match: true (frame=77 bytes)
+  <pre><code>Zstd round-trip match: true (frame=73 bytes)
 AES-GCM + Zstd verified: true, HMAC valid: true
 </code></pre>
 </div>
@@ -5945,7 +5941,7 @@ fn main() -&gt; void! {
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
-  <pre><code>rpc={&quot;reply&quot;:&quot;studio!&quot;} mime=text/html; charset=utf-8 webview_test=PASSED
+  <pre><code>rpc=&quot;{\&quot;reply\&quot;:\&quot;studio!\&quot;}&quot; mime=text/html; charset=utf-8 webview_test=PASSED
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
@@ -5992,6 +5988,7 @@ import &quot;ext:ai&quot; as ai
 import &quot;ext:db/sqlite&quot; as sqlite
 import &quot;core:json&quot; as json
 import &quot;core:net/http&quot; as http
+import &quot;core:str&quot; as str
 
 type SearchRequest struct {
     Query: str `json:&quot;query&quot;`
@@ -6016,7 +6013,7 @@ fn main() -&gt; void! {
     ]
     client := ai.local()
     for d in docs {
-        parts := d.split(&quot;: &quot;)
+        parts := str.split(d, &quot;: &quot;)
         vec   := try client.embed(d)
         try db.exec(&quot;INSERT INTO kb VALUES (?1, ?2, ?3)&quot;, parts[0], d, vec)
     }
@@ -6024,12 +6021,12 @@ fn main() -&gt; void! {
     // 2. Attach an HTTP JSON endpoint querying SQLite SIMD vector similarity
     mut router := http.make_router()
     router.post(&quot;/v1/search&quot;, |req: http.Request| -&gt; http.Response {
-        q := json.parse[SearchRequest](req.body) or return http.Response.json(400, &quot;{\&quot;error\&quot;:\&quot;invalid JSON\&quot;}&quot;)
-        qvec := client.embed(q.Query) or return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;embed failed\&quot;}&quot;)
+        q := json.parse[SearchRequest](req.body) or { return http.Response.json(400, &quot;{\&quot;error\&quot;:\&quot;invalid JSON\&quot;}&quot;) }
+        qvec := client.embed(q.Query) or { return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;embed failed\&quot;}&quot;) }
         hits := db.query[SearchResult](
             &quot;SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM kb ORDER BY score DESC LIMIT ?2&quot;,
             qvec, q.TopK
-        ) or return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;query failed\&quot;}&quot;)
+        ) or { return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;query failed\&quot;}&quot;) }
         return http.Response.json(200, json.stringify(hits))
     })
 
@@ -6153,7 +6150,7 @@ fn main() -&gt; void! {
       </a>
       <a href="reference.html" class="pager-card pager-next">
         <span class="pager-label">NEXT &rarr;</span>
-        <strong class="pager-title">Stdlib Reference (38 Modules)</strong>
+        <strong class="pager-title">Stdlib Reference (39 Modules)</strong>
       </a>
     </div>
   </section>
@@ -6164,7 +6161,7 @@ fn main() -&gt; void! {
     </a>
     <a href="reference.html" class="pager-card pager-next">
       <span class="pager-label">NEXT &rarr;</span>
-      <strong class="pager-title">Stdlib Reference (38 Modules)</strong>
+      <strong class="pager-title">Stdlib Reference (39 Modules)</strong>
     </a>
   </div>
 </article>
@@ -6359,7 +6356,7 @@ fn main() -&gt; void! {
   <div class="toc-quick-links">
     <div class="toc-header">QUICK LINKS</div>
     <ul class="toc-list">
-      <li><a href="reference.html">Stdlib Catalog (38 Modules) &rarr;</a></li>
+      <li><a href="reference.html">Stdlib Catalog (39 Modules) &rarr;</a></li>
       <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
       <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
       <li><a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub Repository &rarr;</a></li>

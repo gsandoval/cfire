@@ -20,3 +20,5 @@
 .idea/
 *.swp
 *.tmp
+*.dSYM
+__pycache__/

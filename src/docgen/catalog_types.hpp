@@ -12,6 +12,7 @@ struct StdFnDoc {
     std::string cpp_lowering;
     std::string summary;
     std::string example;
+    std::vector<std::size_t> escaping_param_indices{};
 };
 
 struct StdModuleDoc {
@@ -21,6 +22,17 @@ struct StdModuleDoc {
     std::string link_flags;
     std::string overview;
     std::vector<StdFnDoc> functions;
+
+    // Authoritative unified metadata for compilation, sema, module registry & codegen:
+    std::string header_path{};
+    std::string core_key{};
+    std::vector<std::string> extra_core_keys{};
+    std::vector<std::string> types{};
+    std::vector<std::string> defines{};
+    std::vector<std::string> link_tags{};
+    std::vector<std::string> aliases{};
+    bool is_vendor = false;
+    std::vector<std::string> implied_vendors{};
 };
 
 struct DiagnosticDoc {
@@ -31,8 +43,206 @@ struct DiagnosticDoc {
     std::string good_example;
 };
 
+inline void apply_module_metadata(StdModuleDoc& m) {
+    if (m.import_path == "core:audio") {
+        m.header_path = "core/audio.hpp";
+        m.core_key = "audio";
+        m.types = {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"};
+#if defined(__APPLE__)
+        m.link_tags = {"-framework AudioToolbox", "-framework CoreFoundation"};
+#endif
+    } else if (m.import_path == "core:build") {
+        m.core_key = "buildsys";
+        m.header_path = "core/buildsys.hpp";
+        m.defines = {"-DCFIRE_CORE_BUILDSYS=1"};
+        m.aliases = {"core:buildsys"};
+        m.types = {"CC", "CMake", "Make", "Git", "Archive", "Command", "Executable", "Library", "Step", "PkgConfig", "Link", "Include", "Tako", "Target", "StepTarget"};
+    } else if (m.import_path == "core:cli") {
+        m.header_path = "core/cli.hpp";
+        m.core_key = "cli";
+        m.types = {"Parser", "Flag", "Arg"};
+    } else if (m.import_path == "core:collections") {
+        m.header_path = "core/collections.hpp";
+        m.core_key = "collections";
+        m.types = {"Vec", "Map", "Set", "Deque", "Heap", "PriorityQueue"};
+    } else if (m.import_path == "core:crypto/aes") {
+        m.header_path = "core/crypto.hpp";
+        m.core_key = "crypto";
+        m.types = {"GcmResult"};
+        m.aliases = {"core:aes"};
+    } else if (m.import_path == "core:crypto/blake3") {
+        m.header_path = "core/crypto.hpp";
+        m.core_key = "crypto";
+        m.aliases = {"core:blake3"};
+    } else if (m.import_path == "core:crypto/hmac") {
+        m.header_path = "core/crypto.hpp";
+        m.core_key = "crypto";
+        m.aliases = {"core:hmac"};
+    } else if (m.import_path == "core:crypto/sha256") {
+        m.header_path = "core/crypto.hpp";
+        m.core_key = "crypto";
+        m.aliases = {"core:sha256", "core:crypto"};
+    } else if (m.import_path == "core:encoding/base64") {
+        m.header_path = "core/encoding.hpp";
+        m.core_key = "encoding";
+        m.aliases = {"core:base64"};
+    } else if (m.import_path == "core:encoding/csv") {
+        m.header_path = "core/encoding.hpp";
+        m.core_key = "encoding";
+        m.aliases = {"core:csv"};
+    } else if (m.import_path == "core:encoding/hex") {
+        m.header_path = "core/encoding.hpp";
+        m.core_key = "encoding";
+        m.aliases = {"core:hex", "core:encoding"};
+    } else if (m.import_path == "core:fs") {
+        m.header_path = "core/fs.hpp";
+        m.core_key = "fs";
+        m.types = {"OpenMode", "SeekWhence", "File"};
+    } else if (m.import_path == "core:json") {
+        m.header_path = "core/json.hpp";
+        m.core_key = "json";
+        m.types = {"JsonDoc", "JsonValue", "Doc"};
+        m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
+        m.link_tags = {"-lsimdjson"};
+    } else if (m.import_path == "core:keychain") {
+        m.header_path = "core/keychain.hpp";
+        m.core_key = "keychain";
+        m.aliases = {"core:os/keychain"};
+#if defined(__APPLE__)
+        m.link_tags = {"-framework Security", "-framework CoreFoundation"};
+#endif
+    } else if (m.import_path == "core:log") {
+        m.header_path = "core/log.hpp";
+        m.core_key = "log";
+        m.types = {"Level", "Format"};
+    } else if (m.import_path == "core:math") {
+        m.header_path = "core/math.hpp";
+        m.core_key = "math";
+        m.types = {"PI", "E"};
+    } else if (m.import_path == "core:net") {
+        m.header_path = "core/net.hpp";
+        m.core_key = "net";
+        m.types = {"TcpListener", "TcpConn"};
+    } else if (m.import_path == "core:net/http") {
+        m.header_path = "core/net.hpp";
+        m.core_key = "net";
+        m.types = {"Request", "Response", "Router", "HttpServer", "Server", "SseEvent"};
+        m.aliases = {"core:http"};
+    } else if (m.import_path == "core:net/tls") {
+        m.header_path = "core/net.hpp";
+        m.core_key = "net";
+        m.types = {"ServerContext"};
+        m.aliases = {"core:tls"};
+    } else if (m.import_path == "core:net/url") {
+        m.header_path = "core/net.hpp";
+        m.core_key = "net";
+        m.types = {"Url"};
+        m.aliases = {"core:url"};
+    } else if (m.import_path == "core:net/websocket") {
+        m.header_path = "core/net.hpp";
+        m.core_key = "net";
+        m.types = {"Conn", "Server", "Message"};
+        m.aliases = {"core:websocket"};
+    } else if (m.import_path == "core:os") {
+        m.header_path = "core/os.hpp";
+        m.core_key = "os";
+        m.extra_core_keys = {"fs"};
+        m.types = {"ExecResult", "TermSize", "RawTerminal", "STDIN", "STDOUT", "STDERR"};
+    } else if (m.import_path == "core:rand") {
+        m.header_path = "core/math.hpp";
+        m.core_key = "math";
+    } else if (m.import_path == "core:regex") {
+        m.header_path = "core/regex.hpp";
+        m.core_key = "regex";
+        m.types = {"Pattern", "Match"};
+    } else if (m.import_path == "core:sort") {
+        m.header_path = "core/collections.hpp";
+        m.core_key = "collections";
+    } else if (m.import_path == "core:str") {
+        m.header_path = "core/str.hpp";
+        m.core_key = "str";
+        m.types = {"StringBuilder"};
+    } else if (m.import_path == "core:sync") {
+        m.header_path = "core/sync.hpp";
+        m.core_key = "sync";
+        m.types = {"Mutex", "Channel", "WaitGroup", "CondVar", "AtomicInt", "Context", "Atomic"};
+    } else if (m.import_path == "core:sync/context") {
+        m.header_path = "core/sync.hpp";
+        m.core_key = "sync";
+        m.types = {"Context"};
+        m.aliases = {"core:context"};
+    } else if (m.import_path == "core:tako") {
+        m.header_path = "core/tako.hpp";
+        m.core_key = "tako";
+        m.extra_core_keys = {"json"};
+        m.types = {"Tako"};
+        m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
+        m.link_tags = {"-lsimdjson"};
+        m.aliases = {"ext:tako"};
+    } else if (m.import_path == "core:time") {
+        m.header_path = "core/time.hpp";
+        m.core_key = "time";
+        m.types = {"DateTime", "Duration", "Time"};
+    } else if (m.import_path == "core:unicode") {
+        m.header_path = "core/unicode.hpp";
+        m.core_key = "unicode";
+        m.types = {"Rune"};
+    } else if (m.import_path == "ext:ai") {
+        m.header_path = "core/ai.hpp";
+        m.core_key = "ai";
+        m.types = {"Provider", "Client", "Agent", "Document", "Message", "Tool", "Chunk", "McpServer", "ExtractedBug", "ToolArgs", "ZipEntry"};
+        m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
+        m.link_tags = {"-lsimdjson"};
+        m.aliases = {"ext:ai/agent", "ext:ai/client", "ext:ai/documents", "ext:ai/vectors", "ext:ai/vision"};
+    } else if (m.import_path == "ext:compress/zstd") {
+        m.header_path = "core/compress.hpp";
+        m.core_key = "compress";
+        m.defines = {"#define CFIRE_USE_ZSTD 1"};
+        m.link_tags = {"-lzstd"};
+        m.aliases = {"ext:compress", "ext:zstd", "core:compress", "core:zstd", "core:compress/zstd"};
+    } else if (m.import_path == "ext:crypto/sodium") {
+        m.header_path = "core/sodium.hpp";
+        m.core_key = "sodium";
+        m.defines = {"#define CFIRE_USE_SODIUM 1"};
+        m.link_tags = {"@pkg:libsodium"};
+        m.aliases = {"ext:sodium", "core:sodium", "core:crypto/sodium"};
+    } else if (m.import_path == "ext:db/sqlite") {
+        m.header_path = "core/sqlite.hpp";
+        m.core_key = "sqlite";
+        m.types = {"Db", "Database", "Stmt", "Statement", "Row", "Conn"};
+        m.defines = {"#define CFIRE_USE_SQLITE 1"};
+        m.link_tags = {"-lsqlite3"};
+        m.aliases = {"ext:sqlite", "core:sqlite", "core:db/sqlite"};
+    } else if (m.import_path == "ext:net/ssh") {
+        m.header_path = "core/ssh.hpp";
+        m.core_key = "ssh";
+        m.types = {"Session", "Channel", "ExecResult"};
+        m.link_tags = {"@pkg:libssh"};
+        m.aliases = {"ext:ssh", "core:ssh", "core:net/ssh"};
+    } else if (m.import_path == "ext:webui") {
+        m.header_path = "core/webui.hpp";
+        m.core_key = "webui";
+        m.extra_core_keys = {"json"};
+        m.types = {"App"};
+        m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
+        m.link_tags = {"-lsimdjson"};
+        m.aliases = {"core:webui"};
+    } else if (m.import_path == "vendor:raygui") {
+        m.header_path = "vendor/raygui.h";
+        m.is_vendor = true;
+        m.link_tags = {"-lraylib"};
+        m.implied_vendors = {"raylib"};
+    } else if (m.import_path == "vendor:raylib") {
+        m.header_path = "vendor/raylib.h";
+        m.is_vendor = true;
+        m.types = {"Color", "Rectangle", "Vector2"};
+        m.link_tags = {"-lraylib"};
+    }
+}
+
 [[nodiscard]] inline auto stdlib_catalog() -> const std::vector<StdModuleDoc>& {
-    static const std::vector<StdModuleDoc> catalog = {
+    static const std::vector<StdModuleDoc> catalog = []() {
+        std::vector<StdModuleDoc> cat = {
         {
             "core:audio", "audio", "Audio Engine, Polyphonic Mixer, Synth & WAV", "(AudioToolbox / WebAudio / ALSA)",
             "Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.",
@@ -84,8 +294,8 @@ struct DiagnosticDoc {
             "core:cli", "cli", "Struct-Tag Command-Line Parser & Interactive Prompts", "(header-only)",
             "Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:\"--flag,help\"`), subcommand/positional argument helpers, and interactive terminal prompts.",
             {
-                {"parse", "fn parse[T](args: []str?) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"},
-                {"try_parse", "fn try_parse[T]() -> T?", "cfire::cli::try_parse<T>(argc, argv)", "Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid.", "args := cli.try_parse[Args]() or { return }"},
+                {"parse", "fn parse[T](args: []str = []) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"},
+                {"try_parse", "fn try_parse[T](args: []str = []) -> T?", "cfire::cli::try_parse<T>(argc, argv)", "Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid.", "args := cli.try_parse[Args]() or { return }"},
                 {"args", "fn args() -> []str", "cfire::cli::args()", "Returns the raw command-line arguments passed to the process (excluding `argv[0]`).", "raw := cli.args()"},
                 {"subcommand", "fn subcommand() -> str", "cfire::cli::subcommand()", "Returns the first non-flag positional argument (subcommand name) or `\"\"` if none.", "cmd := cli.subcommand()"},
                 {"positional", "fn positional() -> []str", "cfire::cli::positional()", "Returns all non-flag positional arguments passed on the command line.", "files := cli.positional()"},
@@ -112,7 +322,8 @@ struct DiagnosticDoc {
                 {"encrypt_gcm", "fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -> GcmResult!", "cfire::aes::encrypt_gcm(key, nonce, pt, aad)", "Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.", "res := try aes.encrypt_gcm(key, nonce, secret, aad)"},
                 {"decrypt_gcm", "fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -> []byte!", "cfire::aes::decrypt_gcm(key, nonce, ct, tag, aad)", "Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.", "pt := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)"},
                 {"encrypt_ctr", "fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -> []byte!", "cfire::aes::encrypt_ctr(key, iv, pt)", "Encrypts plaintext using AES-256-CTR mode.", "ct := try aes.encrypt_ctr(key, iv, pt)"},
-                {"decrypt_ctr", "fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -> []byte!", "cfire::aes::decrypt_ctr(key, iv, ct)", "Decrypts ciphertext using AES-256-CTR mode.", "pt := try aes.decrypt_ctr(key, iv, ct)"}
+                {"decrypt_ctr", "fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -> []byte!", "cfire::aes::decrypt_ctr(key, iv, ct)", "Decrypts ciphertext using AES-256-CTR mode.", "pt := try aes.decrypt_ctr(key, iv, ct)"},
+                {"decrypt_gcm_str", "fn decrypt_gcm_str(key: []byte, nonce: []byte, ct: []byte, tag: []byte, aad: []byte = []) -> str!", "cfire::aes::decrypt_gcm_str(key, nonce, ct, tag, aad)", "Decrypts an authenticated AES-GCM ciphertext and validates the tag, returning a UTF-8 string.", "pt := try aes.decrypt_gcm_str(key, nonce, ct, tag)"}
             }
         },
         {
@@ -127,6 +338,8 @@ struct DiagnosticDoc {
             "Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys.",
             {
                 {"sha256_hex", "fn sha256_hex(key: str, data: str) -> str", "cfire::hmac::sha256_hex(key, data)", "Returns a 64-character lowercase hex HMAC-SHA256 digest.", "sig := hmac.sha256_hex(secret, payload)"},
+                {"sha256_bytes", "fn sha256_bytes(key: []byte, data: []byte) -> []byte", "cfire::crypto::hmac_sha256(key, data)", "Computes HMAC-SHA256 over raw byte slices.", "mac := hmac.sha256_bytes(key, data)"},
+                {"verify", "fn verify(key: str, data: str, mac: str) -> bool", "cfire::hmac::verify(key, data, mac)", "Verifies in constant time whether `mac` matches the computed HMAC-SHA256 hex digest of `data` under `key`.", "valid := hmac.verify(secret, payload, mac)"},
                 {"equal", "fn equal(a: str, b: str) -> bool", "cfire::hmac::equal(a, b)", "Performs a constant-time equality check on two MAC digests to prevent timing attacks.", "ok := hmac.equal(sig1, sig2)"},
                 {"hkdf_sha256", "fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -> []byte", "cfire::hmac::hkdf_sha256(ikm, salt, info, length)", "Derives cryptographic key material of `length` bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand.", "key := hmac.hkdf_sha256(ikm, salt, info, 32)"},
                 {"hkdf_sha256_hex", "fn hkdf_sha256_hex(ikm: str, salt: str = \"\", info: str = \"\", length: usize = 32) -> str", "cfire::hmac::hkdf_sha256_hex(ikm, salt, info, length)", "Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.", "khex := hmac.hkdf_sha256_hex(secret, \"salt\", \"ctx\", 32)"},
@@ -140,7 +353,8 @@ struct DiagnosticDoc {
                 {"hash_hex", "fn hash_hex(data: []byte) -> str", "cfire::sha256::hash_hex(data)", "Returns a 64-character lowercase hex digest of `data`.", "digest := sha256.hash_hex(raw)"},
                 {"hash_bytes", "fn hash_bytes(data: []byte) -> []byte", "cfire::sha256::hash_bytes(data)", "Returns 32-byte binary SHA-256 digest of `data`.", "b := sha256.hash_bytes(raw)"},
                 {"random_bytes", "fn random_bytes(n: usize) -> []byte", "cfire::sha256::random_bytes(n)", "Generates `n` cryptographically secure random bytes from the OS CSPRNG.", "nonce := sha256.random_bytes(12)"},
-                {"random_hex", "fn random_hex(n: usize = 32) -> str", "cfire::sha256::random_hex(n)", "Generates `n` cryptographically secure random bytes encoded as a `2*n`-character lowercase hex string.", "token := sha256.random_hex(16)"}
+                {"random_hex", "fn random_hex(n: usize = 32) -> str", "cfire::sha256::random_hex(n)", "Generates `n` cryptographically secure random bytes encoded as a `2*n`-character lowercase hex string.", "token := sha256.random_hex(16)"},
+                {"hash_file_hex", "fn hash_file_hex(path: str) -> str!", "cfire::sha256::hash_file_hex(path)", "Computes the hex-encoded SHA-256 digest of a file on disk.", "h := try sha256.hash_file_hex(\"file.bin\")"}
             }
         },
         {
@@ -239,14 +453,16 @@ struct DiagnosticDoc {
         },
         {
             "core:log", "log", "Structured Leveled Logging", "(header-only)",
-            "Leveled logging (`debug`, `info`, `warn`, `error`) with structured key-value attributes and Text / JSON formatters.",
+            "Leveled logging (`debug`, `info`, `warn`, `error`) with `Level` (`Debug`, `Info`, `Warn`, `Error`), `Format` (`Text`, `Json`), and structured key-value attributes.",
             {
-                {"set_level", "fn set_level(l: Level)", "cfire::log::set_level(l)", "Sets the minimum logging severity threshold.", "log.set_level(log.Level::Debug)"},
-                {"set_format", "fn set_format(f: Format)", "cfire::log::set_format(f)", "Sets the log output format (Text or Json).", "log.set_format(log.Format::Json)"},
-                {"debug", "fn debug(msg: str, ...attrs: str)", "cfire::log::debug(msg, ...)", "Logs a debug message with optional key-value attribute pairs.", "log.debug(\"cache miss\", \"key\", \"user:1\")"},
-                {"info", "fn info(msg: str, ...attrs: str)", "cfire::log::info(msg, ...)", "Logs an informational message with optional key-value attribute pairs.", "log.info(\"server listening\", \"port\", \"8080\")"},
-                {"warn", "fn warn(msg: str, ...attrs: str)", "cfire::log::warn(msg, ...)", "Logs a warning message with optional key-value attribute pairs.", "log.warn(\"rate limit reached\", \"client\", ip)"},
-                {"error", "fn error(msg: str, ...attrs: str)", "cfire::log::error(msg, ...)", "Logs an error message with optional key-value attribute pairs.", "log.error(\"database connection failed\", \"db\", name)"}
+                {"set_level", "fn set_level(l: Level)", "cfire::log::set_level(l)", "Sets the minimum logging severity threshold (`log.Level::Debug`, `Info`, `Warn`, `Error`).", "log.set_level(log.Level::Debug)"},
+                {"get_level", "fn get_level() -> Level", "cfire::log::get_level()", "Returns the current minimum logging severity threshold.", "lvl := log.get_level()"},
+                {"set_format", "fn set_format(f: Format)", "cfire::log::set_format(f)", "Sets the log output format (`log.Format::Text` or `log.Format::Json`).", "log.set_format(log.Format::Json)"},
+                {"get_format", "fn get_format() -> Format", "cfire::log::get_format()", "Returns the current log output format.", "fmt := log.get_format()"},
+                {"debug", "fn debug(msg: str, ...attrs: any)", "cfire::log::debug(msg, ...)", "Logs a debug message with optional key-value attribute pairs.", "log.debug(\"cache miss\", \"key\", \"user:1\")"},
+                {"info", "fn info(msg: str, ...attrs: any)", "cfire::log::info(msg, ...)", "Logs an informational message with optional key-value attribute pairs.", "log.info(\"server listening\", \"port\", 8080)"},
+                {"warn", "fn warn(msg: str, ...attrs: any)", "cfire::log::warn(msg, ...)", "Logs a warning message with optional key-value attribute pairs.", "log.warn(\"rate limit reached\", \"client\", ip)"},
+                {"error", "fn error(msg: str, ...attrs: any)", "cfire::log::error(msg, ...)", "Logs an error message with optional key-value attribute pairs.", "log.error(\"database connection failed\", \"db\", name)"}
             }
         },
         {
@@ -256,7 +472,17 @@ struct DiagnosticDoc {
                 {"clamp_i64", "fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64", "cfire::math::clamp_i64(val, lo, hi)", "Clamps a 64-bit integer to `[lo, hi]`.", "c := math.clamp_i64(x, 0, 100)"},
                 {"clamp_f64", "fn clamp_f64(val: f64, lo: f64, hi: f64) -> f64", "cfire::math::clamp_f64(val, lo, hi)", "Clamps a 64-bit float to `[lo, hi]`.", "c := math.clamp_f64(v, 0.0, 1.0)"},
                 {"sqrt", "fn sqrt(x: f64) -> f64", "cfire::math::sqrt(x)", "Computes square root.", "r := math.sqrt(16.0)"},
-                {"abs_f64", "fn abs_f64(x: f64) -> f64", "cfire::math::abs_f64(x)", "Computes absolute value of a `f64`.", "a := math.abs_f64(-3.5)"}
+                {"sqrt_f64", "fn sqrt_f64(x: f64) -> f64", "cfire::math::sqrt(x)", "Computes square root of a 64-bit float.", "r := math.sqrt_f64(16.0)"},
+                {"abs_f64", "fn abs_f64(x: f64) -> f64", "cfire::math::abs_f64(x)", "Computes absolute value of a `f64`.", "a := math.abs_f64(-3.5)"},
+                {"checked_add", "fn checked_add(a: i64, b: i64) -> i64?", "cfire::math::checked_add(a, b)", "Adds two integers, returning `none` on overflow.", "res := math.checked_add(x, y)"},
+                {"checked_sub", "fn checked_sub(a: i64, b: i64) -> i64?", "cfire::math::checked_sub(a, b)", "Subtracts two integers, returning `none` on overflow.", "res := math.checked_sub(x, y)"},
+                {"checked_mul", "fn checked_mul(a: i64, b: i64) -> i64?", "cfire::math::checked_mul(a, b)", "Multiplies two integers, returning `none` on overflow.", "res := math.checked_mul(x, y)"},
+                {"wrapping_add", "fn wrapping_add(a: i64, b: i64) -> i64", "cfire::math::wrapping_add(a, b)", "Adds two integers with well-defined two's-complement wrapping.", "res := math.wrapping_add(x, y)"},
+                {"wrapping_sub", "fn wrapping_sub(a: i64, b: i64) -> i64", "cfire::math::wrapping_sub(a, b)", "Subtracts two integers with well-defined two's-complement wrapping.", "res := math.wrapping_sub(x, y)"},
+                {"wrapping_mul", "fn wrapping_mul(a: i64, b: i64) -> i64", "cfire::math::wrapping_mul(a, b)", "Multiplies two integers with well-defined two's-complement wrapping.", "res := math.wrapping_mul(x, y)"},
+                {"saturating_add", "fn saturating_add(a: i64, b: i64) -> i64", "cfire::math::saturating_add(a, b)", "Adds two integers, saturating at min/max numeric bounds.", "res := math.saturating_add(x, y)"},
+                {"saturating_sub", "fn saturating_sub(a: i64, b: i64) -> i64", "cfire::math::saturating_sub(a, b)", "Subtracts two integers, saturating at min/max numeric bounds.", "res := math.saturating_sub(x, y)"},
+                {"saturating_mul", "fn saturating_mul(a: i64, b: i64) -> i64", "cfire::math::saturating_mul(a, b)", "Multiplies two integers, saturating at min/max numeric bounds.", "res := math.saturating_mul(x, y)"}
             }
         },
         {
@@ -272,8 +498,8 @@ struct DiagnosticDoc {
                 {"TcpConn.fd", "fn (c: TcpConn) fd() -> i32", "c.fd()", "Returns the underlying socket file descriptor (`-1` if closed).", "fd := conn.fd()"},
                 {"TcpConn.is_open", "fn (c: TcpConn) is_open() -> bool", "c.is_open()", "Returns `true` if the socket connection is open.", "if conn.is_open() { ... }"},
                 {"TcpConn.poll", "fn (c: TcpConn) poll(timeout_ms: i64 = 0) -> bool", "c.poll(timeout_ms)", "Polls the socket for readability up to `timeout_ms` milliseconds (`EINTR`-safe).", "if conn.poll(50) { ... }"},
-                {"TcpConn.write_bytes", "fn (mut c: TcpConn) write_bytes(payload: []byte) -> usize!", "c.write_bytes(payload)", "Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`.", "_ := try c.write_bytes(raw)"},
-                {"TcpConn.write_text", "fn (mut c: TcpConn) write_text(text: str) -> usize!", "c.write_text(text)", "Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and `EINTR`.", "_ := try c.write_text(\"PING\\n\")"},
+                {"TcpConn.write_bytes", "fn (mut c: TcpConn) write_bytes(payload: []byte) -> usize!", "c.write_bytes(payload)", "Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`.", "_ = try c.write_bytes(raw)"},
+                {"TcpConn.write_text", "fn (mut c: TcpConn) write_text(text: str) -> usize!", "c.write_text(text)", "Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and `EINTR`.", "_ = try c.write_text(\"PING\\n\")"},
                 {"TcpConn.read_into", "fn (mut c: TcpConn) read_into(mut buf: []byte) -> usize!", "c.read_into(buf)", "Reads up to `buf.len()` bytes from the socket into `buf` (`EINTR`-safe).", "n := try conn.read_into(mut buf)"},
                 {"TcpConn.read_bytes", "fn (mut c: TcpConn) read_bytes(max_bytes: usize = 4096) -> []byte!", "c.read_bytes(max_bytes)", "Reads up to `max_bytes` from the socket into a new byte slice.", "pkt := try conn.read_bytes(256)"},
                 {"TcpConn.read_exact", "fn (mut c: TcpConn) read_exact(exact_bytes: usize) -> []byte!", "c.read_exact(exact_bytes)", "Reads exactly `exact_bytes` from the socket or returns an error on premature EOF.", "hdr := try conn.read_exact(8)"},
@@ -386,6 +612,7 @@ struct DiagnosticDoc {
                 {"make_raw", "fn make_raw() -> RawTerminal!", "cfire::os::make_raw()", "Places standard input into raw terminal mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit.", "raw := try os.make_raw()"},
                 {"on_signal", "fn on_signal(sig: i32, handler: fn(i32))", "cfire::os::on_signal(sig, handler)", "Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`).", "os.on_signal(28, |sig| { println(\"resized: {}\", sig) })"},
                 {"exec_output", "fn exec_output(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec_output(\"uname -s\")"},
+                {"exec", "fn exec(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec(\"uname -s\")"},
                 {"command", "fn command(binary: str, args: []str) -> ExecResult!", "cfire::os::command(binary, args)", "Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.", "res := try os.command(\"git\", [\"status\"])"}
             }
         },
@@ -413,7 +640,8 @@ struct DiagnosticDoc {
             "In-place sorting algorithms and binary search on slices.",
             {
                 {"slice", "fn slice(mut s: []T)", "cfire::sort::slice(s)", "Sorts a slice in ascending order in-place.", "sort.slice(mut numbers)"},
-                {"binary_search", "fn binary_search(s: []T, val: T) -> i64?", "cfire::sort::binary_search(s, val)", "Performs binary search on a sorted slice.", "idx := sort.binary_search(numbers, 42)"}
+                {"binary_search", "fn binary_search(s: []T, val: T) -> i64?", "cfire::sort::binary_search(s, val)", "Performs binary search on a sorted slice.", "idx := sort.binary_search(numbers, 42)"},
+                {"slice_by", "fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)", "cfire::sort::slice_by(s, cmp)", "Sorts slice `s` in-place using custom comparator `cmp`.", "sort.slice_by(mut items, |a, b| a < b)"}
             }
         },
         {
@@ -427,6 +655,8 @@ struct DiagnosticDoc {
                 {"ends_with", "fn ends_with(s: str, suffix: str) -> bool", "cfire::str::ends_with(s, suffix)", "Returns `true` if `s` ends with `suffix`.", "if str.ends_with(f, \".cf\") { ... }"},
                 {"contains", "fn contains(s: str, needle: str) -> bool", "cfire::str::contains(s, needle)", "Returns `true` if `s` contains `needle`.", "if str.contains(s, \"fire\") { ... }"},
                 {"replace", "fn replace(s: str, from: str, to: str) -> str", "cfire::str::replace(s, from, to)", "Replaces all occurrences of `from` in `s` with `to`.", "r := str.replace(s, \"old\", \"new\")"},
+                {"replace_all", "fn replace_all(s: str, from: str, to: str) -> str", "cfire::str::replace_all(s, from, to)", "Replaces all occurrences of `from` with `to` in `s`.", "r := str.replace_all(\"a-b-c\", \"-\", \"_\")"},
+                {"bytes", "fn bytes(s: str) -> []byte", "cfire::str::to_bytes(s)", "Returns the UTF-8 bytes of string `s` as a byte slice.", "b := str.bytes(\"hello\")"},
                 {"to_upper", "fn to_upper(s: str) -> str", "cfire::str::to_upper(s)", "Converts ASCII characters to uppercase.", "u := str.to_upper(\"cfire\")"},
                 {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"},
                 {"index_of", "fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64", "cfire::str::index_of(s, substr, start_pos)", "Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.", "idx := str.index_of(path, \".\")"},
@@ -450,7 +680,8 @@ struct DiagnosticDoc {
             "core:sync", "sync", "Thread-Safe Typed Channels & Mutexes", "(header-only)",
             "Go-style typed MPSC/MPMC channels (`Channel[T]`) with non-blocking and timeout receives, plus movable mutual exclusion locks (`Mutex`).",
             {
-                {"make_channel", "fn make_channel[T]() -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
+                {"make_channel", "fn make_channel[T](capacity: usize = 0) -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
+                {"new_mutex", "fn new_mutex() -> Mutex", "cfire::sync::Mutex()", "Constructs a new mutual exclusion lock.", "m := sync.new_mutex()"},
                 {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
                 {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
                 {"Channel.try_recv", "fn (ch: Channel[T]) try_recv() -> T?", "ch.try_recv()", "Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty.", "v := ch.try_recv() or { return }"},
@@ -480,6 +711,20 @@ struct DiagnosticDoc {
             }
         },
         {
+            "core:tako", "tako", "Tako Cloud SDK Primitives (S3, SQS)", "(header-only)",
+            "Cloud primitives and storage compatibility services (`core:tako`).",
+            {
+                {"NewS3Service", "fn NewS3Service() -> S3Service", "cfire::tako::NewS3Service()", "Creates an S3 compatible storage service client.", "s3 := tako.NewS3Service()"},
+                {"NewSQSService", "fn NewSQSService() -> SQSService", "cfire::tako::NewSQSService()", "Creates an SQS compatible message queue service client.", "sqs := tako.NewSQSService()"},
+                {"S3Service.CreateBucket", "fn (mut s: S3Service) CreateBucket(name: str) -> void!", "s.CreateBucket(name)", "Creates a storage bucket.", "try s3.CreateBucket(\"b\")"},
+                {"S3Service.PutObject", "fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!", "s.PutObject(bucket, key, data, content_type)", "Uploads an object and returns its ETag.", "etag := try s3.PutObject(\"b\", \"k\", \"d\", \"text/plain\")"},
+                {"S3Service.GetObject", "fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!", "s.GetObject(bucket, key)", "Downloads an object from storage.", "obj := try s3.GetObject(\"b\", \"k\")"},
+                {"SQSService.CreateQueue", "fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!", "s.CreateQueue(name, fifo)", "Creates a message queue and returns its URL.", "q := try sqs.CreateQueue(\"q\", true)"},
+                {"SQSService.SendMessage", "fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = \"\", dedup: str = \"\") -> str!", "s.SendMessage(queue_url, body, group, dedup)", "Publishes a message to the queue.", "id := try sqs.SendMessage(q, \"body\")"},
+                {"SQSService.ReceiveMessages", "fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!", "s.ReceiveMessages(queue_url, max_messages)", "Receives available messages from the queue.", "msgs := try sqs.ReceiveMessages(q, 1)"}
+            }
+        },
+        {
             "core:time", "time", "Time, Calendar Dates, Durations & RFC 3339 Formatting", "(header-only)",
             "High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.",
             {
@@ -492,6 +737,11 @@ struct DiagnosticDoc {
                 {"parse_rfc3339", "fn parse_rfc3339(s: str) -> Time!", "cfire::time::parse_rfc3339(s)", "Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.", "t := try time.parse_rfc3339(\"2026-10-18T12:00:00Z\")"},
                 {"duration_seconds", "fn duration_seconds(s: i64) -> Duration", "cfire::time::duration_seconds(s)", "Constructs a typed `Duration` representing `s` seconds.", "d := time.duration_seconds(5)"},
                 {"duration_millis", "fn duration_millis(ms: i64) -> Duration", "cfire::time::duration_millis(ms)", "Constructs a typed `Duration` representing `ms` milliseconds.", "d := time.duration_millis(250)"},
+                {"duration_nanos", "fn duration_nanos(n: i64) -> Duration", "cfire::time::duration_nanos(n)", "Constructs a Duration from nanoseconds.", "d := time.duration_nanos(1000)"},
+                {"duration_micros", "fn duration_micros(us: i64) -> Duration", "cfire::time::duration_micros(us)", "Constructs a Duration from microseconds.", "d := time.duration_micros(500)"},
+                {"duration_minutes", "fn duration_minutes(m: i64) -> Duration", "cfire::time::duration_minutes(m)", "Constructs a Duration from minutes.", "d := time.duration_minutes(5)"},
+                {"duration_hours", "fn duration_hours(h: i64) -> Duration", "cfire::time::duration_hours(h)", "Constructs a Duration from hours.", "d := time.duration_hours(2)"},
+                {"from_unix_seconds", "fn from_unix_seconds(sec: i64) -> Time", "cfire::time::from_unix_seconds(sec)", "Constructs a Time instant from Unix epoch seconds.", "t := time.from_unix_seconds(1700000000)"},
                 {"sleep", "fn sleep(d: Duration)", "cfire::time::sleep(d)", "Sleeps the current thread for duration `d`.", "time.sleep(time.duration_millis(50))"}
             }
         },
@@ -565,7 +815,8 @@ struct DiagnosticDoc {
                 {"McpServer.register_tool", "fn (mut s: McpServer) register_tool[T](name: str, description: str, handler: fn(T) -> R!)", "s.register_tool<T>(name, description, handler)", "Registers an MCP tool whose input schema is derived from `T` (`json.schema[T]()`) and whose handler may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`.", "mcp.register_tool[Query](\"search\", \"Search docs\", |q| { return \"ok\" })"},
                 {"McpServer.register_tool_action", "fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)", "s.register_tool_action(name, description, handler)", "Registers a parameterless MCP tool.", "mcp.register_tool_action(\"status\", \"Server status\", || { return \"ready\" })"},
                 {"McpServer.handle_jsonrpc", "fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str", "s.handle_jsonrpc(req_json)", "Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.", "resp := mcp.handle_jsonrpc(line)"},
-                {"McpServer.serve_stdio", "fn (mut s: McpServer) serve_stdio() -> i32", "s.serve_stdio()", "Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.", "mcp.serve_stdio()"}
+                {"McpServer.serve_stdio", "fn (mut s: McpServer) serve_stdio() -> i32", "s.serve_stdio()", "Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.", "mcp.serve_stdio()"},
+                {"create_zip", "fn create_zip(entries: map[str]str) -> []byte", "cfire::ai::create_zip(entries)", "Constructs an in-memory zip archive from filename-content pairs.", "z := ai.create_zip(entries)"}
             }
         },
         {
@@ -573,7 +824,9 @@ struct DiagnosticDoc {
             "Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.",
             {
                 {"compress", "fn compress(input: []byte, level: i32 = 3) -> []byte!", "cfire::zstd::compress(input, level)", "Compresses a byte slice into a Zstandard frame.", "blob := try zstd.compress(raw, level: 3)"},
-                {"decompress", "fn decompress(frame: []byte) -> []byte!", "cfire::zstd::decompress(frame)", "Decompresses a Zstandard frame using the embedded frame content size.", "orig := try zstd.decompress(blob)"}
+                {"compress_str", "fn compress_str(input: str, level: i32 = 3) -> []byte!", "cfire::zstd::compress_str(input, level)", "Compresses a string into a Zstandard frame.", "blob := try zstd.compress_str(s, 3)"},
+                {"decompress", "fn decompress(frame: []byte) -> []byte!", "cfire::zstd::decompress(frame)", "Decompresses a Zstandard frame using the embedded frame content size.", "orig := try zstd.decompress(blob)"},
+                {"decompress_str", "fn decompress_str(frame: []byte) -> str!", "cfire::zstd::decompress_str(frame)", "Decompresses a Zstandard frame into a UTF-8 string.", "orig := try zstd.decompress_str(blob)"}
             }
         },
         {
@@ -692,7 +945,11 @@ struct DiagnosticDoc {
                 {"App.run_webview_test", "fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!", "app.run_webview_test(timeout_ms)", "Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached.", "ok := try app.run_webview_test(3000)"},
                 {"App.run", "fn (mut app: App) run()", "app.run()", "Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux).", "app.run()"},
                 {"App.quit", "fn (mut app: App) quit()", "app.quit()", "Requests termination of the native WebView event loop.", "app.quit()"},
-                {"App.close", "fn (mut app: App) close()", "app.close()", "Deterministic RAII cleanup handle for `defer app.close()`.", "defer app.close()"}
+                {"App.close", "fn (mut app: App) close()", "app.close()", "Deterministic RAII cleanup handle for `defer app.close()`.", "defer app.close()"},
+                {"clipboard_get", "fn clipboard_get() -> str", "cfire::webui::clipboard_get()", "Reads plaintext from the system clipboard.", "t := webui.clipboard_get()"},
+                {"clipboard_set", "fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)", "cfire::webui::clipboard_set(text, concealed, clear_after_ms)", "Writes plaintext to the system clipboard with optional auto-clear timeout.", "webui.clipboard_set(\"secret\", true, 10000)"},
+                {"clipboard_set_secret", "fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)", "cfire::webui::clipboard_set_secret(text, clear_after_ms)", "Writes sensitive secret to the clipboard and schedules automatic clearing.", "webui.clipboard_set_secret(\"pass\")"},
+                {"monospace_fonts", "fn monospace_fonts() -> []str", "cfire::webui::monospace_fonts()", "Returns a list of platform-installed monospaced font family names.", "fonts := webui.monospace_fonts()"}
             }
         },
         {
@@ -747,6 +1004,11 @@ struct DiagnosticDoc {
             }
         }
     };
+        for (auto& m : cat) {
+            apply_module_metadata(m);
+        }
+        return cat;
+    }();
     return catalog;
 }
 

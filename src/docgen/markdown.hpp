@@ -1556,7 +1556,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
 ## Grammar & Syntax Rules
 - Package: `package <name>` (canonical entry: `package main`)
   - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
-  - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
+  - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_windows.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
 - Imports:
   - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:json"`, `import "core:net/http"`, `import "core:audio"`, `import "core:keychain"`)
   - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)

@@ -282,22 +282,45 @@ namespace cfire::cli {
                 int lsp_col = std::max(0, *pcol - 1);
                 std::string hover_md = srv.compute_hover(uri, lsp_line, lsp_col);
                 std::string def_json = srv.compute_definition(uri, lsp_line, lsp_col);
+                std::string refs_json = srv.compute_references(uri, lsp_line, lsp_col);
+                cfire::lsp::detail::StringInterpolationSpan interp_span{};
+                if (auto raw_txt = cfire::build::read_file_text(abs_p)) {
+                    auto lines = cfire::lsp::detail::split_lines(*raw_txt);
+                    if (static_cast<std::size_t>(lsp_line) < lines.size()) {
+                        interp_span = cfire::lsp::detail::find_string_interpolation_span_at(lines[static_cast<std::size_t>(lsp_line)], lsp_col);
+                    }
+                }
 
                 if (json_mode) {
-                    std::println("{{\"target\": \"{}\", \"file\": \"{}\", \"line\": {}, \"col\": {}, \"hover\": \"{}\", \"definition\": {}}}",
+                    std::string interp_json = interp_span.in_interp_expr
+                        ? std::format("{{\"expr\": \"{}\", \"format_spec\": \"{}\"}}",
+                            cfire::diag::json_escape(interp_span.expr_text),
+                            cfire::diag::json_escape(interp_span.fmt_spec))
+                        : "null";
+                    std::println("{{\"target\": \"{}\", \"file\": \"{}\", \"line\": {}, \"col\": {}, \"hover\": \"{}\", \"definition\": {}, \"references\": {}, \"interpolation\": {}}}",
                         cfire::diag::json_escape(target_str),
                         cfire::diag::json_escape(req_file),
                         *pline,
                         *pcol,
                         cfire::diag::json_escape(hover_md),
-                        def_json.empty() ? "null" : def_json);
+                        def_json.empty() ? "null" : def_json,
+                        refs_json.empty() ? "[]" : refs_json,
+                        interp_json);
                 } else {
                     std::println("Target: {}:{}:{}", req_file, *pline, *pcol);
                     if (!hover_md.empty()) {
                         std::println("\n{}", hover_md);
                     }
+                    if (interp_span.in_interp_expr) {
+                        std::println("\nInterpolation: {{{}{}}}",
+                            interp_span.expr_text,
+                            interp_span.fmt_spec.empty() ? "" : (":" + interp_span.fmt_spec));
+                    }
                     if (def_json != "null" && !def_json.empty()) {
                         std::println("\nDefinition:\n{}", def_json);
+                    }
+                    if (refs_json != "[]" && !refs_json.empty()) {
+                        std::println("\nReferences:\n{}", refs_json);
                     }
                 }
                 return 0;
@@ -305,6 +328,22 @@ namespace cfire::cli {
         }
 
         // Form 3: `core:<mod>` / `ext:<mod>` / `vendor:<mod>` or `<mod>.<symbol>`
+        if (target_str == "log.Level" || target_str == "log::Level") {
+            if (json_mode) {
+                std::println("{{\"module\": \"log\", \"import_path\": \"core:log\", \"name\": \"Level\", \"signature\": \"type Level enum {{ Debug, Info, Warn, Error }}\", \"doc\": \"Minimum severity threshold for structured logging (cfire::log::Level)\"}}");
+            } else {
+                std::println("### Enum `log.Level` (`core:log`)\n```cf\ntype Level enum {{\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}}\n```\n**Lowered C++23:** `cfire::log::Level`");
+            }
+            return 0;
+        }
+        if (target_str == "log.Format" || target_str == "log::Format") {
+            if (json_mode) {
+                std::println("{{\"module\": \"log\", \"import_path\": \"core:log\", \"name\": \"Format\", \"signature\": \"type Format enum {{ Text, Json }}\", \"doc\": \"Output sink format for structured logging (cfire::log::Format)\"}}");
+            } else {
+                std::println("### Enum `log.Format` (`core:log`)\n```cf\ntype Format enum {{\n    Text = 0\n    Json = 1\n}}\n```\n**Lowered C++23:** `cfire::log::Format`");
+            }
+            return 0;
+        }
         const auto& catalog = cfire::doc::stdlib_catalog();
         auto matches_mod_path = [](const cfire::doc::StdModuleDoc& m, std::string_view q) -> bool {
             if (m.ns_alias == q || m.import_path == q ||

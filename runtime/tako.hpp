@@ -1401,6 +1401,76 @@ inline std::string role(std::string_view r) { return std::string(r); }
 inline std::string require_role(std::string_view r) { return std::string(r); }
 inline std::string auth(auto&&... /*providers*/) { return "auth"; }
 
+struct S3Object {
+    std::string Body{};
+    std::string ContentType{};
+    std::string ETag{};
+};
+
+struct S3Service {
+    std::unordered_map<std::string, std::unordered_map<std::string, S3Object>> buckets{};
+
+    auto CreateBucket(std::string_view name) -> std::expected<void, cfire::Error> {
+        buckets[std::string(name)] = {};
+        return {};
+    }
+
+    auto PutObject(std::string_view bucket, std::string_view key, std::string_view data, std::string_view content_type) -> std::expected<std::string, cfire::Error> {
+        std::string etag = "\"etag-mock-" + std::to_string(data.size()) + "\"";
+        buckets[std::string(bucket)][std::string(key)] = S3Object{
+            .Body = std::string(data),
+            .ContentType = std::string(content_type),
+            .ETag = etag
+        };
+        return etag;
+    }
+
+    auto GetObject(std::string_view bucket, std::string_view key) -> std::expected<S3Object, cfire::Error> {
+        auto b_it = buckets.find(std::string(bucket));
+        if (b_it == buckets.end()) return cfire::make_error("bucket not found");
+        auto k_it = b_it->second.find(std::string(key));
+        if (k_it == b_it->second.end()) return cfire::make_error("key not found");
+        return k_it->second;
+    }
+};
+
+struct SQSMessage {
+    std::string MessageId{};
+    std::string Body{};
+};
+
+struct SQSService {
+    std::unordered_map<std::string, std::vector<SQSMessage>> queues{};
+
+    auto CreateQueue(std::string_view name, bool = false) -> std::expected<std::string, cfire::Error> {
+        std::string url = "https://sqs.mock.internal/123456789012/" + std::string(name);
+        queues[url] = {};
+        return url;
+    }
+
+    auto SendMessage(std::string_view queue_url, std::string_view body, std::string_view = "", std::string_view = "") -> std::expected<std::string, cfire::Error> {
+        auto it = queues.find(std::string(queue_url));
+        if (it == queues.end()) queues[std::string(queue_url)] = {};
+        std::string msg_id = "msg-" + std::to_string(queues[std::string(queue_url)].size() + 1);
+        queues[std::string(queue_url)].push_back(SQSMessage{ .MessageId = msg_id, .Body = std::string(body) });
+        return msg_id;
+    }
+
+    auto ReceiveMessages(std::string_view queue_url, int max_messages = 1) -> std::expected<std::vector<SQSMessage>, cfire::Error> {
+        auto it = queues.find(std::string(queue_url));
+        if (it == queues.end() || it->second.empty()) return std::vector<SQSMessage>{};
+        std::vector<SQSMessage> out;
+        for (int i = 0; i < max_messages && !it->second.empty(); ++i) {
+            out.push_back(std::move(it->second.front()));
+            it->second.erase(it->second.begin());
+        }
+        return out;
+    }
+};
+
+inline auto NewS3Service() -> S3Service { return S3Service{}; }
+inline auto NewSQSService() -> SQSService { return SQSService{}; }
+
 } // namespace cfire::tako
 
 namespace cfire::core {

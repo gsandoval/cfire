@@ -149,6 +149,35 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
                     mod.import_path, mod.ns_alias, mod.overview, mod.link_flags, fns_list);
             }
         }
+        // Check `core:log` enum types (`log.Level`, `log.Format`) and their variants
+        if ((sym.qualifier == "log" && sym.name == "Level") || (sym.qualifier.empty() && sym.name == "Level")) {
+            return "### Enum `log.Level` (`core:log`)\n```cf\ntype Level enum {\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}\n```\n"
+                   "**Lowered C++23:** `cfire::log::Level` (`uint8_t`)\n\n"
+                   "Minimum severity threshold for structured logging (`log.set_level(log.Level.Debug)` or `log.set_level(log.Level::Debug)`).";
+        }
+        if ((sym.qualifier == "log" && sym.name == "Format") || (sym.qualifier.empty() && sym.name == "Format")) {
+            return "### Enum `log.Format` (`core:log`)\n```cf\ntype Format enum {\n    Text = 0\n    Json = 1\n}\n```\n"
+                   "**Lowered C++23:** `cfire::log::Format` (`uint8_t`)\n\n"
+                   "Output sink format for structured logging (`log.set_format(log.Format.Json)` or `log.set_format(log.Format::Text)`).";
+        }
+        if (sym.qualifier == "log.Level" || sym.qualifier == "log::Level" || sym.qualifier == "Level") {
+            if (sym.name == "Debug" || sym.name == "Info" || sym.name == "Warn" || sym.name == "Error") {
+                return std::format(
+                    "### Enum Variant `log.Level.{}` (`core:log`)\n```cf\nlog.Level.{}\n```\n"
+                    "**Lowered C++23:** `cfire::log::Level::{}`\n\n"
+                    "Pass to `log.set_level(log.Level.{})` to filter structured log output.",
+                    sym.name, sym.name, sym.name, sym.name);
+            }
+        }
+        if (sym.qualifier == "log.Format" || sym.qualifier == "log::Format" || sym.qualifier == "Format") {
+            if (sym.name == "Text" || sym.name == "Json") {
+                return std::format(
+                    "### Enum Variant `log.Format.{}` (`core:log`)\n```cf\nlog.Format.{}\n```\n"
+                    "**Lowered C++23:** `cfire::log::Format::{}`\n\n"
+                    "Pass to `log.set_format(log.Format.{})` to configure structured log emission.",
+                    sym.name, sym.name, sym.name, sym.name);
+            }
+        }
     }
 
     auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);

@@ -459,13 +459,14 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
             }
         }
 
-        if (auto toks = cfire::frontend::tokenize(detail::uri_to_path(uri), text)) {
-            for (std::size_t i = 0; i < toks->size(); ++i) {
-                const auto& t = (*toks)[i];
+        if (auto raw_toks = cfire::frontend::tokenize(detail::uri_to_path(uri), text)) {
+            auto toks = detail::expand_tokens_with_interpolations(detail::uri_to_path(uri), *raw_toks);
+            for (std::size_t i = 0; i < toks.size(); ++i) {
+                const auto& t = toks[i];
                 if (t.line < start_line) continue;
                 if (t.line > end_line) break;
                 if (t.kind == cfire::frontend::TokenKind::Ident && t.lexeme == target_name) {
-                    bool preceded_by_dot = (i > 0 && (*toks)[i - 1].kind == cfire::frontend::TokenKind::Dot);
+                    bool preceded_by_dot = (i > 0 && toks[i - 1].kind == cfire::frontend::TokenKind::Dot);
                     if (!preceded_by_dot) {
                         int ln = std::max(0, t.line - 1);
                         int sc = std::max(0, t.col - 1);
@@ -508,8 +509,9 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
     for (const auto& doc_uri : all_cf_files) {
         std::string doc_text = get_doc_text(doc_uri);
         auto doc_ast_res = cfire::frontend::parse_source(detail::uri_to_path(doc_uri), doc_text);
-        auto doc_toks = cfire::frontend::tokenize(detail::uri_to_path(doc_uri), doc_text);
-        if (!doc_toks) continue;
+        auto raw_doc_toks = cfire::frontend::tokenize(detail::uri_to_path(doc_uri), doc_text);
+        if (!raw_doc_toks) continue;
+        auto doc_toks = detail::expand_tokens_with_interpolations(detail::uri_to_path(doc_uri), *raw_doc_toks);
 
         bool same_pkg = (doc_uri == defining_uri) || (doc_ast_res && !defining_pkg_name.empty() && doc_ast_res->package_name == defining_pkg_name);
         std::optional<std::string> import_alias;
@@ -528,13 +530,13 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
             continue;
         }
 
-        for (std::size_t i = 0; i < doc_toks->size(); ++i) {
-            const auto& t = (*doc_toks)[i];
+        for (std::size_t i = 0; i < doc_toks.size(); ++i) {
+            const auto& t = doc_toks[i];
             if (t.kind != cfire::frontend::TokenKind::Ident || t.lexeme != target_name) {
                 continue;
             }
 
-            bool preceded_by_dot = (i > 0 && (*doc_toks)[i - 1].kind == cfire::frontend::TokenKind::Dot);
+            bool preceded_by_dot = (i > 0 && doc_toks[i - 1].kind == cfire::frontend::TokenKind::Dot);
 
             if (same_pkg) {
                 if (!preceded_by_dot || is_field) {
@@ -544,8 +546,8 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
                     refs.push_back(TokenOccurrence{doc_uri, ln, sc, ec});
                 }
             } else if (import_alias.has_value()) {
-                if (i >= 2 && (*doc_toks)[i - 1].kind == cfire::frontend::TokenKind::Dot &&
-                    (*doc_toks)[i - 2].lexeme == *import_alias) {
+                if (i >= 2 && doc_toks[i - 1].kind == cfire::frontend::TokenKind::Dot &&
+                    doc_toks[i - 2].lexeme == *import_alias) {
                     int ln = std::max(0, t.line - 1);
                     int sc = std::max(0, t.col - 1);
                     int ec = sc + static_cast<int>(t.lexeme.size());

@@ -30,13 +30,22 @@ inline void require(bool cond, std::string_view msg) {
     }
 }
 
-// RAII Hermetic Test Directory (thread-safe and PID-isolated)
+// RAII Hermetic Test Directory (thread-safe, mkdtemp-backed, and PID-isolated)
 struct ScopedTempDir {
     std::filesystem::path path;
 
     explicit ScopedTempDir(std::string_view prefix = "cfire_test") {
         static std::atomic<std::uint64_t> s_id{0};
-        path = std::filesystem::temp_directory_path() / std::format("{}_{}_{}", prefix, ::getpid(), s_id++);
+        auto base = std::filesystem::temp_directory_path() / std::format("{}_{}_{}_XXXXXX", prefix, ::getpid(), s_id++);
+        std::string tmpl = base.string();
+#if !defined(_WIN32)
+        char* res = ::mkdtemp(tmpl.data());
+        if (res != nullptr) {
+            path = std::filesystem::path(res);
+            return;
+        }
+#endif
+        path = tmpl;
         std::error_code ec;
         std::filesystem::create_directories(path, ec);
     }
@@ -132,7 +141,14 @@ inline auto compile_and_run_cpp(std::string_view cpp_source, const std::filesyst
     return RunResult{.exit_code = run_rc, .output = std::move(run_out)};
 }
 
-inline void require_sema_error(std::string_view src, std::string_view expected_diag, std::string_view filename = "test.cf") {
+inline void require_sema_error(
+    std::string_view src,
+    std::string_view expected_diag,
+    std::string_view filename = "test.cf",
+    int expected_line = -1,
+    int expected_col = -1,
+    int expected_diag_count = -1
+) {
     auto ast = cfire::frontend::parse_source(filename, src);
     require(ast.has_value(), std::format("parse {}", filename));
     if (!ast) return;
@@ -141,6 +157,28 @@ inline void require_sema_error(std::string_view src, std::string_view expected_d
     if (!checked) {
         require(checked.error().contains(expected_diag),
             std::format("expected diagnostic {}, got: {}", expected_diag, checked.error()));
+        if (expected_line > 0) {
+            std::string line_tag = std::format(":{}:", expected_line);
+            require(checked.error().contains(line_tag),
+                std::format("expected line {} in diagnostic, got: {}", expected_line, checked.error()));
+        }
+        if (expected_col > 0) {
+            std::string col_tag = std::format(":{}:", expected_col);
+            require(checked.error().contains(col_tag),
+                std::format("expected col {} in diagnostic, got: {}", expected_col, checked.error()));
+        }
+        if (expected_diag_count > 0) {
+            std::size_t count = 0;
+            std::size_t pos = 0;
+            while ((pos = checked.error().find(filename, pos)) != std::string::npos) {
+                ++count;
+                pos += filename.size();
+            }
+            if (count > 0) {
+                require(static_cast<int>(count) >= expected_diag_count,
+                    std::format("expected at least {} diagnostics, got {}", expected_diag_count, count));
+            }
+        }
     }
 }
 
@@ -154,6 +192,7 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
 
 // Frontend Suites
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir);
+void test_golden_codegen_snapshots(const std::filesystem::path& repo_root);
 void test_cfire_refactor_rename(const std::filesystem::path& rt_dir);
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir);
 void test_section2_language_ergonomics(const std::filesystem::path& rt_dir);
@@ -161,6 +200,21 @@ void test_section2_language_ergonomics(const std::filesystem::path& rt_dir);
 // Sema Suites
 void test_sema_intent_and_move_diagnostics();
 void test_slice_pattern_matching(const std::filesystem::path& rt_dir);
+void test_hard_deprecation_enforcement(const std::filesystem::path& rt_dir);
+void test_duplicate_declaration_pass(const std::filesystem::path& rt_dir);
+void test_catalog_gated_import_validation(const std::filesystem::path& rt_dir);
+void test_plain_enum_usability_cluster(const std::filesystem::path& rt_dir);
+void test_uniform_generic_type_application(const std::filesystem::path& rt_dir);
+void test_cpp_backend_error_leak_prevention(const std::filesystem::path& rt_dir);
+void test_scoped_name_resolution_cpp_ffi(const std::filesystem::path& rt_dir);
+void test_match_exhaustiveness_and_reachability(const std::filesystem::path& rt_dir);
+void test_or_chaining_and_block_disambiguation(const std::filesystem::path& rt_dir);
+void test_lexer_exponents_keywords_and_interpolation(const std::filesystem::path& rt_dir);
+void test_content_hashed_pch_and_cli_flag_validation(const std::filesystem::path& rt_dir);
+void test_multiline_lambda_source_mapping_cf114(const std::filesystem::path& rt_dir);
+void test_interned_typeid_lattice_and_diagnostics_cf116(const std::filesystem::path& rt_dir);
+void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir);
+void test_negative_parser_corpus_and_fuzz_runtime(const std::filesystem::path& rt_dir);
 
 // Granular Stdlib Intent Suites
 void test_crypto_sha256_and_csprng(const std::filesystem::path& rt_dir);

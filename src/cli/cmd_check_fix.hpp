@@ -58,7 +58,16 @@ namespace cfire::cli {
                     pass_edits.push_back(std::move(f));
                 }
 
-                // 2. Sema diagnostics & quick-fixes
+                // 2. Parser diagnostics & quick-fixes (e.g. deprecations)
+                for (const auto& err : pres.errors) {
+                    auto d = cfire::diag::parse_diagnostic_string(err, fpath.string(), "error", "cfire/SYNTAX");
+                    cfire::diag::synthesize_fixits_for_diagnostic(d, nullptr, lines);
+                    for (auto& fix : d.fixits) {
+                        if (fix.is_preferred) pass_edits.push_back(std::move(fix));
+                    }
+                }
+
+                // 3. Sema diagnostics & quick-fixes
                 auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
                 for (const auto& w : chk.warnings) {
                     auto d = cfire::diag::parse_diagnostic_string(w, fpath.string(), "warning", "cfire/WARNING");
@@ -302,14 +311,23 @@ namespace cfire::cli {
                 ++failed_checks;
                 continue;
             }
+            for (const auto& w : res->second.warnings) {
+                std::println(stderr, "{}", w);
+            }
             auto syntax_check = cfire::build::verify_cpp_syntax_only(ctarget, res->first, res->second, runtime_dir, extra_includes);
             if (!syntax_check) {
                 std::println(stderr, "{}", syntax_check.error());
                 ++failed_checks;
                 continue;
             }
-            std::println("✓ {} checked cleanly ({} auto-linked packages, {} C++ headers ingested)",
-                ctarget.string(), res->second.auto_linked.size(), res->second.cpp_headers.size());
+            if (res->second.warnings.empty()) {
+                std::println("✓ {} checked cleanly (0 errors, 0 warnings) ({} auto-linked packages, {} C++ headers ingested)",
+                    ctarget.string(), res->second.auto_linked.size(), res->second.cpp_headers.size());
+            } else {
+                std::println("✓ {} checked (0 errors, {} warning{}) ({} auto-linked packages, {} C++ headers ingested)",
+                    ctarget.string(), res->second.warnings.size(), res->second.warnings.size() == 1 ? "" : "s",
+                    res->second.auto_linked.size(), res->second.cpp_headers.size());
+            }
         }
         return failed_checks > 0 ? 1 : 0;
 }

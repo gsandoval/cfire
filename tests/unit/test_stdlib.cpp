@@ -1104,12 +1104,9 @@ q := legacy_div(10, 3, out r)
     require(ast_out.has_value(), "parse out parameter code");
     if (ast_out) {
         auto checked = cfire::frontend::analyze(std::move(*ast_out));
-        require(checked.has_value(), "analyze out parameter code succeeds with warnings");
-        if (checked) {
-            bool has_dep_warn = std::ranges::any_of(checked->warnings, [](const auto& w) {
-                return w.contains("cfire/DEPRECATED-OUT-PARAM");
-            });
-            require(has_dep_warn, "deprecation warning emitted for 'out' parameter");
+        require(!checked.has_value(), "analyze out parameter code fails with hard error (CF-103)");
+        if (!checked) {
+            require(checked.error().contains("cfire/DEPRECATED-OUT-PARAM"), "error contains cfire/DEPRECATED-OUT-PARAM");
         }
     }
     std::println("--- PASS: test_multi_return_tuples_and_destructuring");
@@ -1296,15 +1293,12 @@ var mut b: str = "old"
     auto ast_var = cfire::frontend::parse_source("test_deprecated_var.cf", src_var);
     require(ast_var.has_value(), "parse legacy var code");
     if (ast_var) {
-        auto checked = cfire::frontend::analyze(std::move(*ast_var));
-        require(checked.has_value(), "analyze legacy var code succeeds with warnings");
-        if (checked) {
-            int warn_count = 0;
-            for (const auto& w : checked->warnings) {
-                if (w.contains("cfire/DEPRECATED-VAR")) ++warn_count;
-            }
-            require(warn_count >= 4, "emits cfire/DEPRECATED-VAR warning for each var declaration");
+        auto checked = cfire::frontend::analyze_resilient(std::move(*ast_var));
+        int err_count = 0;
+        for (const auto& err : checked.errors) {
+            if (err.contains("cfire/DEPRECATED-VAR")) ++err_count;
         }
+        require(err_count >= 2, "emits cfire/DEPRECATED-VAR error for each var declaration (CF-103)");
     }
     std::println("--- PASS: test_variable_declarations_unification");
 }

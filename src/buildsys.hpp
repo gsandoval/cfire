@@ -8,8 +8,190 @@
 #include "build/package_loader.hpp"
 #include "build/wasm_shell.hpp"
 #include "build/apple_bundle.hpp"
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
 
 namespace cfire::build {
+
+inline bool g_debug_mode = false;
+inline bool g_profile_mode = false;
+
+[[nodiscard]] inline auto resolve_cxx_compiler(std::string_view target_triple = "") -> std::string {
+    if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
+        return std::string(env_cxx);
+    }
+    if (!target_triple.empty() && !is_wasm_target(target_triple) && !is_ios_target(target_triple)) {
+        std::string prefixed = std::format("{}-clang++", target_triple);
+        int rc = 0;
+#if defined(_WIN32)
+        (void)bridge::run_command_capture(std::format("where {} >NUL 2>&1", prefixed), rc);
+#else
+        (void)bridge::run_command_capture(std::format("command -v {} >/dev/null 2>&1", prefixed), rc);
+#endif
+        if (rc == 0) {
+            return prefixed;
+        }
+        if (const char* home = std::getenv("HOME"); home && *home) {
+            std::filesystem::path opt_dir = std::filesystem::path(home) / ".local" / "opt";
+            std::error_code ec;
+            if (std::filesystem::is_directory(opt_dir, ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
+                    if (!entry.is_directory(ec)) continue;
+                    auto cand = entry.path() / "bin" / prefixed;
+                    if (std::filesystem::exists(cand, ec)) {
+                        return cand.string();
+                    }
+                }
+            }
+        }
+    }
+    return "clang++";
+}
+
+[[nodiscard]] inline auto resolve_windres(std::string_view target_triple) -> std::string {
+    if (const char* env_wr = std::getenv("CFIRE_WINDRES"); env_wr && *env_wr) {
+        return std::string(env_wr);
+    }
+    std::string triple_str = target_triple.empty() ? "x86_64-w64-mingw32" : std::string(target_triple);
+    std::vector<std::string> candidates = {
+        std::format("{}-windres", triple_str),
+        "llvm-windres",
+        "windres"
+    };
+    for (const auto& cand : candidates) {
+        int rc = 0;
+#if defined(_WIN32)
+        (void)bridge::run_command_capture(std::format("where {} >NUL 2>&1", cand), rc);
+#else
+        (void)bridge::run_command_capture(std::format("command -v {} >/dev/null 2>&1", cand), rc);
+#endif
+        if (rc == 0) return cand;
+    }
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        std::filesystem::path opt_dir = std::filesystem::path(home) / ".local" / "opt";
+        std::error_code ec;
+        if (std::filesystem::is_directory(opt_dir, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
+                if (!entry.is_directory(ec)) continue;
+                for (const auto& cand : candidates) {
+                    auto p = entry.path() / "bin" / cand;
+                    if (std::filesystem::exists(p, ec)) return p.string();
+                }
+            }
+        }
+    }
+    return "";
+}
+
+[[nodiscard]] inline auto wrap_png_as_ico(
+    const std::filesystem::path& png_path,
+    const std::filesystem::path& ico_out
+) -> bool {
+    std::ifstream in(png_path, std::ios::binary);
+    if (!in.is_open()) return false;
+    std::vector<std::uint8_t> png((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (png.size() < 24 ||
+        png[0] != 0x89 || png[1] != 0x50 || png[2] != 0x4E || png[3] != 0x47 ||
+        png[4] != 0x0D || png[5] != 0x0A || png[6] != 0x1A || png[7] != 0x0A) {
+        return false;
+    }
+    std::uint32_t w = (static_cast<std::uint32_t>(png[16]) << 24) |
+                      (static_cast<std::uint32_t>(png[17]) << 16) |
+                      (static_cast<std::uint32_t>(png[18]) << 8) |
+                      static_cast<std::uint32_t>(png[19]);
+    std::uint32_t h = (static_cast<std::uint32_t>(png[20]) << 24) |
+                      (static_cast<std::uint32_t>(png[21]) << 16) |
+                      (static_cast<std::uint32_t>(png[22]) << 8) |
+                      static_cast<std::uint32_t>(png[23]);
+    std::uint8_t ico_w = (w == 0 || w >= 256) ? 0 : static_cast<std::uint8_t>(w);
+    std::uint8_t ico_h = (h == 0 || h >= 256) ? 0 : static_cast<std::uint8_t>(h);
+    std::uint32_t sz = static_cast<std::uint32_t>(png.size());
+    std::uint8_t hdr[22] = {
+        0, 0,       // idReserved
+        1, 0,       // idType = 1 (ICON)
+        1, 0,       // idCount = 1
+        ico_w,      // bWidth
+        ico_h,      // bHeight
+        0,          // bColorCount
+        0,          // bReserved
+        1, 0,       // wPlanes = 1
+        32, 0,      // wBitCount = 32
+        static_cast<std::uint8_t>(sz & 0xFFu),
+        static_cast<std::uint8_t>((sz >> 8) & 0xFFu),
+        static_cast<std::uint8_t>((sz >> 16) & 0xFFu),
+        static_cast<std::uint8_t>((sz >> 24) & 0xFFu),
+        22, 0, 0, 0 // dwImageOffset = 22
+    };
+    std::ofstream out(ico_out, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) return false;
+    out.write(reinterpret_cast<const char*>(hdr), sizeof(hdr));
+    out.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+    return out.good();
+}
+
+[[nodiscard]] inline auto compile_windows_icon(
+    const std::filesystem::path& icon_path,
+    const std::filesystem::path& out_bin,
+    std::string_view target_triple
+) -> std::string {
+    std::error_code ec;
+    std::filesystem::path ico_file;
+    if (icon_path.extension() == ".ico" && std::filesystem::exists(icon_path, ec)) {
+        ico_file = icon_path;
+    } else {
+        auto sib_ico = icon_path;
+        sib_ico.replace_extension(".ico");
+        if (std::filesystem::exists(sib_ico, ec)) {
+            ico_file = sib_ico;
+        }
+    }
+
+    auto out_dir = out_bin.has_parent_path() ? out_bin.parent_path() : std::filesystem::current_path(ec);
+    std::filesystem::create_directories(out_dir, ec);
+    auto stem = out_bin.stem().string();
+
+    if (ico_file.empty()) {
+        std::filesystem::path png_file;
+        if (icon_path.extension() == ".png" && std::filesystem::exists(icon_path, ec)) {
+            png_file = icon_path;
+        } else {
+            auto sib_png = icon_path;
+            sib_png.replace_extension(".png");
+            if (std::filesystem::exists(sib_png, ec)) {
+                png_file = sib_png;
+            }
+        }
+        if (!png_file.empty()) {
+            auto gen_ico = out_dir / (stem + "_cfire_icon.ico");
+            if (wrap_png_as_ico(png_file, gen_ico)) {
+                ico_file = gen_ico;
+            }
+        }
+    }
+    if (ico_file.empty()) return "";
+
+    std::string windres = resolve_windres(target_triple);
+    if (windres.empty()) return "";
+
+    auto rc_path = out_dir / (stem + "_cfire_icon.rc");
+    auto res_obj = out_dir / (stem + "_cfire_icon.res.o");
+    {
+        std::string ico_escaped = std::filesystem::absolute(ico_file, ec).string();
+        for (char& c : ico_escaped) {
+            if (c == '\\') c = '/';
+        }
+        std::ofstream rc_out(rc_path, std::ios::binary | std::ios::trunc);
+        rc_out << "1 ICON \"" << ico_escaped << "\"\n";
+    }
+    int rc = 0;
+    std::string cmd = std::format("{} \"{}\" -O coff -o \"{}\"", windres, rc_path.string(), res_obj.string());
+    (void)bridge::run_command_capture(cmd, rc);
+    if (rc != 0 || !std::filesystem::exists(res_obj, ec)) {
+        return "";
+    }
+    return res_obj.string();
+}
 
 [[nodiscard]] inline auto analyze_and_emit(
     const std::filesystem::path& cf_file,
@@ -78,18 +260,19 @@ namespace cfire::build {
     }
     if (test_mode) {
         plan.cflags.push_back("-DCFIRE_TEST_MODE=1");
+        if (!is_wasm) {
+            plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
+            plan.cflags.push_back("-fsanitize-trap=all");
+        }
+    } else {
+        plan.cflags.push_back("-fwrapv");
     }
-    bool is_win_target = (plan.target_triple.find("windows") != std::string::npos ||
-                          plan.target_triple.find("win32") != std::string::npos ||
-                          plan.target_triple.find("mingw") != std::string::npos);
-#if defined(_WIN32)
-    if (!is_wasm) {
-        is_win_target = true;
-    }
-#endif
+    bool is_win_target = is_windows_target(plan.target_triple);
     if (is_win_target) {
         plan.ldflags.push_back("-lws2_32");
         plan.ldflags.push_back("-ladvapi32");
+        plan.ldflags.push_back("-lshell32");
+        plan.ldflags.push_back("-static");
     }
 
     // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08, CF-031)
@@ -213,6 +396,7 @@ namespace cfire::build {
     // 3. Semantic Analysis
     auto checked = frontend::analyze(std::move(*ast));
     if (!checked) return std::unexpected(checked.error());
+    plan.warnings = checked->warnings;
 
     static const std::unordered_map<std::string, std::string> core_to_pc = {
         {"core:compress/zstd", "libzstd"},
@@ -275,7 +459,7 @@ namespace cfire::build {
         if (seen_pc.contains(pc)) return;
         seen_pc.insert(pc);
         plan.pkg_config_deps.push_back(pc);
-        query_pkg_config(pc, plan.cflags, plan.ldflags, install_root);
+        query_pkg_config(pc, plan.cflags, plan.ldflags, install_root, is_win_target);
     };
 
     auto cache_dir = dir / ".cfire" / "cache";
@@ -357,6 +541,10 @@ namespace cfire::build {
                             "-framework", "Foundation",
                             "-framework", "CoreGraphics"
                         });
+                    } else if (is_win_target) {
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32", "-lshlwapi"
+                        });
                     } else {
 #if defined(__APPLE__)
                         plan.uses_objc = true;
@@ -379,18 +567,7 @@ namespace cfire::build {
                                 add_pc("gtk+-3.0");
                             }
                         }
-#elif defined(_WIN32)
-                        plan.ldflags.insert(plan.ldflags.end(), {
-                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32"
-                        });
 #endif
-                        if (plan.target_triple.find("windows") != std::string::npos ||
-                            plan.target_triple.find("win32") != std::string::npos ||
-                            plan.target_triple.find("mingw") != std::string::npos) {
-                            plan.ldflags.insert(plan.ldflags.end(), {
-                                "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32"
-                            });
-                        }
                     }
                 }
             }
@@ -613,6 +790,9 @@ namespace cfire::build {
                     if (found_sodium) {
                         add_pc("libsodium");
                         plan.cflags.push_back("-DCFIRE_HAS_LIBSODIUM=1");
+                        if (is_win_target) {
+                            plan.cflags.push_back("-DSODIUM_STATIC=1");
+                        }
                     } else if (inspect_clang_ast) {
                         return std::unexpected(
                             "ext:crypto/sodium requires libsodium (install via 'brew install libsodium' or 'apt install libsodium-dev')");
@@ -621,18 +801,15 @@ namespace cfire::build {
             }
             if (imp.path == "core:keychain" || imp.path == "ext:keychain") {
                 if (!is_wasm) {
-#if defined(__APPLE__)
-                    plan.ldflags.insert(plan.ldflags.end(), {
-                        "-framework", "Security",
-                        "-framework", "CoreFoundation"
-                    });
-#elif defined(_WIN32)
-                    plan.ldflags.push_back("-ladvapi32");
-#endif
-                    if (plan.target_triple.find("windows") != std::string::npos ||
-                        plan.target_triple.find("win32") != std::string::npos ||
-                        plan.target_triple.find("mingw") != std::string::npos) {
+                    if (is_win_target) {
                         plan.ldflags.push_back("-ladvapi32");
+                    } else {
+#if defined(__APPLE__)
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "Security",
+                            "-framework", "CoreFoundation"
+                        });
+#endif
                     }
                 }
             }
@@ -656,6 +833,9 @@ namespace cfire::build {
                     if (found_libssh) {
                         add_pc("libssh");
                         plan.cflags.push_back("-DCFIRE_HAS_LIBSSH=1");
+                        if (is_win_target) {
+                            plan.cflags.push_back("-DLIBSSH_STATIC=1");
+                        }
                     }
                 }
             }
@@ -667,7 +847,7 @@ namespace cfire::build {
             }
         }
         if (inspect_clang_ast) {
-            auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir);
+            auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
             if (!idx) return std::unexpected(idx.error());
             for (const auto& [sym_name, sym] : idx->symbols) {
                 if (sym.kind == "FunctionDecl") {
@@ -731,43 +911,61 @@ namespace cfire::build {
     return std::make_pair(std::move(cpp_code), std::move(plan));
 }
 
-
-[[nodiscard]] inline auto resolve_cxx_compiler() -> std::string {
-    if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
-        return std::string(env_cxx);
-    }
-    return "clang++";
-}
-
 [[nodiscard]] inline auto prelude_pch_path(
     const std::filesystem::path& runtime_dir,
-    bool sanitize
+    bool sanitize,
+    bool test_mode = false
 ) -> std::filesystem::path {
     std::error_code ec;
+#if defined(_WIN32)
     auto pch_dir = std::filesystem::temp_directory_path(ec) / "cfire_pch_cache";
+#else
+    auto uid = ::getuid();
+    auto tmp_base = std::filesystem::temp_directory_path(ec);
+    auto pch_dir = tmp_base / std::format("cfire-{}-pch", uid);
+#endif
+    std::filesystem::create_directories(pch_dir, ec);
+#if !defined(_WIN32)
+    ::chmod(pch_dir.c_str(), 0700);
+#endif
     auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
     std::string cxx_bin = resolve_cxx_compiler();
-    std::string key = std::format("{}|{}|{}|{}",
+    std::string tag = sanitize ? (test_mode ? "san_test" : "san") : (test_mode ? "test_trap" : "opt_wrapv");
+
+    std::size_t content_hash = 0;
+    auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
+    if (std::filesystem::exists(prelude_hdr, ec)) {
+        std::ifstream f(prelude_hdr, std::ios::binary);
+        if (f) {
+            std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            content_hash = std::hash<std::string>{}(content);
+        }
+    }
+
+    std::string key = std::format("{}|{}|{}|{}|{}|{:016x}",
         (ec ? runtime_dir : can_rt).string(),
         cxx_bin,
         cfire::version::kVersion,
-        cfire::version::kGitSha);
+        cfire::version::kGitSha,
+        tag,
+        content_hash);
     std::size_t rt_hash = std::hash<std::string>{}(key);
     std::string pch_name = std::format("cfire_prelude_{}_{:08x}.pch",
-        sanitize ? "san" : "opt",
+        tag,
         static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
     return pch_dir / pch_name;
 }
 
 [[nodiscard]] inline auto ensure_prelude_pch(
     const std::filesystem::path& runtime_dir,
-    bool sanitize
+    bool sanitize,
+    bool test_mode = false
 ) -> std::string {
     auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
     std::error_code ec;
     if (!std::filesystem::exists(prelude_hdr, ec)) return "";
 
-    auto pch_path = prelude_pch_path(runtime_dir, sanitize);
+    auto pch_path = prelude_pch_path(runtime_dir, sanitize, test_mode);
     std::filesystem::create_directories(pch_path.parent_path(), ec);
     std::string cxx_bin = resolve_cxx_compiler();
 
@@ -788,20 +986,36 @@ namespace cfire::build {
     }
 
     if (needs_build) {
-        std::string opt_flags = sanitize
-            ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
-            : "-O2";
+        std::string opt_flags;
+        if (sanitize) {
+            opt_flags = "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined";
+            if (test_mode) {
+                opt_flags += " -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fsanitize-trap=all";
+            }
+        } else {
+            if (test_mode) {
+                opt_flags = "-O2 -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fsanitize-trap=all";
+            } else {
+                opt_flags = "-O2 -fwrapv";
+            }
+        }
 #if defined(__linux__)
         opt_flags += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -pthread";
 #endif
+        auto tmp_pch_path = pch_path;
+        tmp_pch_path += std::format(".tmp.{}.pch", ::getpid());
         std::string cmd = std::format(
             "{} -std=c++2b -Wno-c++11-narrowing {} -x c++-header \"{}\" -o \"{}\"",
-            cxx_bin, opt_flags, prelude_hdr.string(), pch_path.string());
+            cxx_bin, opt_flags, prelude_hdr.string(), tmp_pch_path.string());
         int rc = 0;
         (void)bridge::run_command_capture(cmd, rc);
         if (rc != 0) {
-            std::filesystem::remove(pch_path, ec);
+            std::filesystem::remove(tmp_pch_path, ec);
             return "";
+        }
+        std::filesystem::rename(tmp_pch_path, pch_path, ec);
+        if (ec) {
+            std::filesystem::remove(tmp_pch_path, ec);
         }
     }
     return pch_path.string();
@@ -823,12 +1037,20 @@ namespace cfire::build {
     }
     {
         std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return std::unexpected("failed to open generated C++ file for writing: " + cpp_path.string());
+        }
         out << cpp_code;
+        out.flush();
+        if (!out.good()) {
+            return std::unexpected("failed to write generated C++ code: " + cpp_path.string());
+        }
     }
 
+    bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
     std::string pch_path;
-    if (plan.target_triple.empty() && !plan.uses_objc) {
-        pch_path = ensure_prelude_pch(runtime_dir, false);
+    if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
+        pch_path = ensure_prelude_pch(runtime_dir, false, has_trap);
     }
     std::string cmd = resolve_cxx_compiler() + " -O2";
     for (const auto& f : plan.cflags) cmd += " " + f;
@@ -868,6 +1090,9 @@ namespace cfire::build {
     auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem);
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
+    for (const auto& w : plan.warnings) {
+        std::println(stderr, "{}", w);
+    }
     plan.sanitized = sanitize;
     plan.extra_link_libs = extra_link_libs;
     plan.extra_includes = extra_includes;
@@ -892,6 +1117,19 @@ namespace cfire::build {
         std::filesystem::path icon_resolved = resolve_icon_candidate(plan.icon_path);
         plan.icon_path = icon_resolved.string();
         plan.cflags.push_back(std::format("-DCFIRE_APP_ICON_PATH=\\\"{}\\\"", icon_resolved.string()));
+    }
+
+    if (g_debug_mode) {
+        plan.cflags.push_back("-O0");
+        plan.cflags.push_back("-g");
+        if (!target_triple.starts_with("wasm")) {
+            plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
+            plan.cflags.push_back("-fsanitize-trap=all");
+        }
+    }
+    if (g_profile_mode) {
+        plan.cflags.push_back("-g");
+        plan.cflags.push_back("-fno-omit-frame-pointer");
     }
 
     bool is_wasm = target_triple.starts_with("wasm");
@@ -953,13 +1191,14 @@ namespace cfire::build {
         }
     } else {
         bool gui_subsystem = (plan.subsystem == "gui") || (plan.subsystem == "auto" && plan.is_gui);
+        bool is_windows = is_windows_target(target_triple);
+        if (is_windows && !test_mode && !plan.icon_path.empty()) {
+            auto res_obj = compile_windows_icon(plan.icon_path, out_bin, target_triple);
+            if (!res_obj.empty()) {
+                plan.ldflags.push_back("\"" + res_obj + "\"");
+            }
+        }
         if (gui_subsystem) {
-            bool is_windows = target_triple.find("windows") != std::string::npos ||
-                              target_triple.find("win32") != std::string::npos ||
-                              target_triple.find("mingw") != std::string::npos;
-#if defined(_WIN32)
-            is_windows = true;
-#endif
             if (is_windows) {
                 plan.ldflags.push_back("-mwindows");
             } else {
@@ -1009,19 +1248,27 @@ namespace cfire::build {
 
     {
         std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return std::unexpected("failed to open generated C++ file for writing: " + cpp_path.string());
+        }
         out << cpp_code;
+        out.flush();
+        if (!out.good()) {
+            return std::unexpected("failed to write generated C++ code: " + cpp_path.string());
+        }
     }
 
     std::string opt_flags = sanitize
         ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
-        : "-O2";
+        : (g_debug_mode ? "-O0 -g" : "-O2");
     // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
+    bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
     std::string pch_path;
-    if (plan.target_triple.empty() && !plan.uses_objc) {
-        pch_path = ensure_prelude_pch(runtime_dir, sanitize);
+    if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
+        pch_path = ensure_prelude_pch(runtime_dir, sanitize, test_mode || has_trap);
     }
 
-    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler();
+    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler(plan.target_triple);
     std::string cmd = compiler;
     if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
         cmd += " -fobjc-arc";

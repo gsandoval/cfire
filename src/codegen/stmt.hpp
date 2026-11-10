@@ -9,6 +9,7 @@ inline void Emitter::emit_or_handler_body(const OrExpr& or_ex, std::string_view 
         writeln(std::format("const cfire::Error& {} = cfire::extract_or_error({});", sanitize_cpp_ident(or_ex.err_var), tmp));
     }
     for (const auto& hs : or_ex.handler_body) emit_stmt(hs, in_main);
+    last_source_line_ = -1;
 }
 
 inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
@@ -20,9 +21,14 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             if (st.init) {
                 bool top_handled = std::holds_alternative<TryExpr>(st.init->node) ||
                     (std::holds_alternative<OrExpr>(st.init->node) && !std::get<OrExpr>(st.init->node).handler_body.empty());
+                std::size_t pre_hoist = hoisted_tries_.size();
                 hoist_subexpr_tries(st.init, in_main, s->line, top_handled);
+                if (hoisted_tries_.size() > pre_hoist && s->line > 0) {
+                    emit_line_directive(s->line);
+                }
             }
             local_vars_.insert(st.name);
+            if (st.type) var_types_[st.name] = st.type->name;
             if ((st.type && st.type->is_optional) || (!st.type && expr_returns_optional(st.init))) {
                 optional_vars_.insert(st.name);
             }
@@ -32,7 +38,9 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 if (const auto* tr = std::get_if<TryExpr>(&cur_init->node)) cur_init = tr->inner;
                 else if (const auto* or_ex = std::get_if<OrExpr>(&cur_init->node)) cur_init = or_ex->inner;
                 if (cur_init) {
-                    if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
+                    if (const auto* id = std::get_if<IdentExpr>(&cur_init->node)) {
+                        if (smart_ptr_vars_.contains(id->name)) is_smart_var = true;
+                    } else if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
                         if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node)) {
                             if (cid->name == "make" && call_ex->type_args.size() == 1 && !call_ex->type_args[0].smart_wrap.empty()) {
                                 is_smart_var = true;
@@ -107,7 +115,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
             if (!st.type && st.init) {
-                if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && lit->kind == TokenKind::String) {
+                if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
                     cpp_type = "std::string";
                 } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&st.init->node); arr_lit && !arr_lit->elements.empty()) {
                     if (const auto* first_lit = std::get_if<LiteralExpr>(&arr_lit->elements[0]->node);
@@ -180,7 +188,13 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     rhs = "nullptr";
                 }
             }
-            writeln(std::format("{} {} {};", lhs, st.op, rhs));
+            if (st.op == "/=") {
+                writeln(std::format("{} = cfire::div({}, {});", lhs, lhs, rhs));
+            } else if (st.op == "%=") {
+                writeln(std::format("{} = cfire::mod({}, {});", lhs, lhs, rhs));
+            } else {
+                writeln(std::format("{} {} {};", lhs, st.op, rhs));
+            }
         } else if constexpr (std::is_same_v<T, DeferStmt>) {
             if (!st.body.empty()) {
                 if (!active_async_scopes_.empty()) {
@@ -198,10 +212,10 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln("});");
                 }
             } else if (!active_async_scopes_.empty()) {
-                writeln(std::format("{}.defer([&] {{ {}; }});", active_async_scopes_.back(), emit_expr(st.call)));
+                writeln(std::format("{}.defer([&] {{ (void)({}); }});", active_async_scopes_.back(), emit_expr(st.call)));
             } else {
                 ++defer_count_;
-                writeln(std::format("auto _defer_{} = cfire::scope_exit([&] {{ {}; }});", defer_count_, emit_expr(st.call)));
+                writeln(std::format("auto _defer_{} = cfire::scope_exit([&] {{ (void)({}); }});", defer_count_, emit_expr(st.call)));
             }
         } else if constexpr (std::is_same_v<T, ReturnStmt>) {
             hoist_subexpr_tries(st.value, in_main, s->line, false);
@@ -214,7 +228,16 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 } else if (std::holds_alternative<ArrayLitExpr>(st.value->node) && !cur_fn_raw_return_type_.empty()) {
                     rval = std::format("{}{}", cur_fn_raw_return_type_, rval);
                 }
-                writeln(std::format("return {};", rval));
+                if (in_main && rval.starts_with("cfire::make_error(")) {
+                    writeln(std::format("std::println(stderr, \"Error: {{}}\", {}.error().message());", rval));
+                    writeln("return 1;");
+                } else if (in_test_ && rval.starts_with("cfire::make_error(")) {
+                    writeln(std::format("cfire::assert_true_at(false, {}.error().message(), \"{}\", {}, \"return error\");",
+                        rval, escape_line_path(source_path_), s->line));
+                    writeln("return;");
+                } else {
+                    writeln(std::format("return {};", rval));
+                }
             }
         } else if constexpr (std::is_same_v<T, IfStmt>) {
             hoist_subexpr_tries(st.cond, in_main, s->line, false);
@@ -306,6 +329,10 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             --indent_;
             writeln("}");
+        } else if constexpr (std::is_same_v<T, BreakStmt>) {
+            writeln("break;");
+        } else if constexpr (std::is_same_v<T, ContinueStmt>) {
+            writeln("continue;");
         } else if constexpr (std::is_same_v<T, ExprStmt>) {
             if (const auto* id = std::get_if<IdentExpr>(&st.expr->node)) {
                 if (id->name == "break") {
@@ -319,7 +346,11 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             bool top_handled = st.expr && (std::holds_alternative<TryExpr>(st.expr->node) ||
                 (std::holds_alternative<OrExpr>(st.expr->node) && !std::get<OrExpr>(st.expr->node).handler_body.empty()));
+            std::size_t pre_hoist = hoisted_tries_.size();
             hoist_subexpr_tries(st.expr, in_main, s->line, top_handled);
+            if (hoisted_tries_.size() > pre_hoist && s->line > 0) {
+                emit_line_directive(s->line);
+            }
             if (const auto* try_ex = std::get_if<TryExpr>(&st.expr->node)) {
                 if (in_main || in_test_) {
                     int id = ++try_count_;
@@ -346,7 +377,11 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
         } else if constexpr (std::is_same_v<T, DestructureVarDeclStmt>) {
             bool top_handled = st.init && (std::holds_alternative<TryExpr>(st.init->node) ||
                 (std::holds_alternative<OrExpr>(st.init->node) && !std::get<OrExpr>(st.init->node).handler_body.empty()));
+            std::size_t pre_hoist = hoisted_tries_.size();
             hoist_subexpr_tries(st.init, in_main, s->line, top_handled);
+            if (hoisted_tries_.size() > pre_hoist && s->line > 0) {
+                emit_line_directive(s->line);
+            }
             std::string names;
             for (std::size_t i = 0; i < st.bindings.size(); ++i) {
                 if (i > 0) names += ", ";
@@ -375,10 +410,14 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             writeln(std::format("auto [{}] = {};", names, emit_expr(st.init)));
         } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
+            std::size_t pre_hoist = hoisted_tries_.size();
             for (const auto& t : st.targets) {
                 hoist_subexpr_tries(t, in_main, s->line, false);
             }
             hoist_subexpr_tries(st.value, in_main, s->line, false);
+            if (hoisted_tries_.size() > pre_hoist && s->line > 0) {
+                emit_line_directive(s->line);
+            }
             std::string targs;
             for (std::size_t i = 0; i < st.targets.size(); ++i) {
                 if (i > 0) targs += ", ";
@@ -498,14 +537,25 @@ inline void Emitter::emit_match_common(
     }
 
     std::string enum_name;
-    for (const auto& arm : arms) {
-        if (!arm.enum_prefix.empty()) {
-            enum_name = arm.enum_prefix;
-            break;
+    if (target) {
+        if (const auto* id = std::get_if<IdentExpr>(&target->node)) {
+            if (auto it = var_types_.find(id->name); it != var_types_.end() && cf_.enums.contains(it->second)) {
+                enum_name = it->second;
+            }
         }
-        if (auto it = cf_.variant_to_enum.find(arm.variant_name); it != cf_.variant_to_enum.end()) {
-            enum_name = it->second;
-            break;
+    }
+    if (enum_name.empty()) {
+        for (const auto& arm : arms) {
+            if (!arm.enum_prefix.empty()) {
+                enum_name = arm.enum_prefix;
+                break;
+            }
+            if (auto it = cf_.variant_to_enum.find(arm.variant_name); it != cf_.variant_to_enum.end()) {
+                if (!cf_.ambiguous_variants.contains(arm.variant_name)) {
+                    enum_name = it->second;
+                    break;
+                }
+            }
         }
     }
 
@@ -592,6 +642,7 @@ inline void Emitter::emit_match_common(
 inline void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
     std::ostringstream dummy;
     emit_match_common(ms.target, ms.is_move, ms.arms, false, in_main, dummy);
+    last_source_line_ = -1;
 }
 
 inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr) {
@@ -635,6 +686,7 @@ inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vect
 [[nodiscard]] inline auto Emitter::emit_match_expr(const MatchExpr& me) -> std::string {
     std::ostringstream sb;
     emit_match_common(me.target, me.is_move, me.arms, true, false, sb);
+    last_source_line_ = -1;
     return sb.str();
 }
 

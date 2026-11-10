@@ -68,7 +68,18 @@ namespace detail {
 
 [[nodiscard]] inline auto exists(const std::filesystem::path& p) noexcept -> bool {
     std::error_code ec;
-    return std::filesystem::exists(detail::resolve_path(p, false), ec);
+    auto resolved = detail::resolve_path(p, false);
+    if (std::filesystem::exists(resolved, ec)) return true;
+#if defined(_WIN32)
+    // On Windows, a reparse point that the OS cannot follow (such as an IO_REPARSE_TAG_AF_UNIX
+    // listening socket file) causes std::filesystem::exists() to fail with ERROR_CANT_ACCESS_FILE
+    // (1920). Fall back to symlink_status() so fs.exists() sees the file itself like POSIX lstat.
+    if (ec) {
+        std::error_code ec2;
+        return std::filesystem::exists(std::filesystem::symlink_status(resolved, ec2));
+    }
+#endif
+    return false;
 }
 
 [[nodiscard]] inline auto is_dir(const std::filesystem::path& p) noexcept -> bool {

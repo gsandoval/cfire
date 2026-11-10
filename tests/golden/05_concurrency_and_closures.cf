@@ -1,0 +1,28 @@
+package main
+
+import "core:sync"
+
+fn run_tasks() -> i32 {
+    mut counter := 0
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            println("worker 1 finished")
+        }
+        scope.spawn || {
+            println("worker 2 finished")
+        }
+    }
+    return counter
+}
+
+fn apply_op(val: i32, op: fn(i32) -> i32) -> i32 {
+    return op(val)
+}
+
+fn main() {
+    base := 10
+    cl := |x: i32| -> i32 { return x + base }
+    res := apply_op(5, cl)
+    _ = run_tasks()
+    println("closure result: {}", res)
+}

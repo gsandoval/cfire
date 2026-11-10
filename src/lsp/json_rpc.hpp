@@ -210,69 +210,236 @@ struct CursorSymbol {
     return out;
 }
 
+struct StringInterpolationSpan {
+    bool in_string = false;
+    bool in_interp_expr = false;
+    int min_col = 0;
+    int max_col = 0;
+    std::string expr_text;
+    std::string fmt_spec;
+};
+
+[[nodiscard]] inline auto find_string_interpolation_span_at(std::string_view ln, int character) -> StringInterpolationSpan {
+    const int n = static_cast<int>(ln.size());
+    int i = 0;
+    while (i < n) {
+        char c = ln[static_cast<std::size_t>(i)];
+        if (c == '/' && i + 1 < n && ln[static_cast<std::size_t>(i + 1)] == '/') {
+            break; // line comment
+        }
+        if (c == '`') {
+            int q_open = i++;
+            while (i < n && ln[static_cast<std::size_t>(i)] != '`') ++i;
+            int q_close = i;
+            if (character > q_open && character <= q_close) {
+                return StringInterpolationSpan{true, false, q_open + 1, q_close, {}, {}};
+            }
+            if (i < n) ++i;
+            continue;
+        }
+        if (c == '"') {
+            int q_open = i++;
+            int interp_depth = 0;
+            bool in_inner_quote = false;
+            while (i < n) {
+                char cur = ln[static_cast<std::size_t>(i)];
+                if (cur == '\\') {
+                    i += 2;
+                    continue;
+                }
+                if (in_inner_quote) {
+                    if (cur == '"') in_inner_quote = false;
+                    ++i;
+                    continue;
+                }
+                if (cur == '"') {
+                    if (interp_depth > 0) {
+                        bool has_closing_quote = false;
+                        bool has_closing_brace = false;
+                        for (int k = i + 1; k < n; ++k) {
+                            if (ln[static_cast<std::size_t>(k)] == '\\' && k + 1 < n) {
+                                ++k;
+                                continue;
+                            }
+                            if (!has_closing_quote) {
+                                if (ln[static_cast<std::size_t>(k)] == '"') has_closing_quote = true;
+                            } else if (ln[static_cast<std::size_t>(k)] == '}') {
+                                has_closing_brace = true;
+                                break;
+                            }
+                        }
+                        if (has_closing_quote && has_closing_brace) {
+                            in_inner_quote = true;
+                            ++i;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (cur == '{') {
+                    if (i + 1 < n && ln[static_cast<std::size_t>(i + 1)] == '{') {
+                        i += 2;
+                        continue;
+                    }
+                    ++interp_depth;
+                    ++i;
+                    continue;
+                }
+                if (cur == '}' && interp_depth > 0) {
+                    --interp_depth;
+                    ++i;
+                    continue;
+                }
+                ++i;
+            }
+            int q_close = i; // either index of closing '"' or n if unclosed
+            if (character > q_open && character <= q_close) {
+                std::string_view sv = ln.substr(
+                    static_cast<std::size_t>(q_open + 1),
+                    static_cast<std::size_t>(q_close - (q_open + 1)));
+                auto placeholders = cfire::frontend::scan_interpolation_placeholders(sv);
+                for (const auto& ph : placeholders) {
+                    int expr_start = q_open + 1 + static_cast<int>(ph.expr_offset);
+                    int expr_end = expr_start + static_cast<int>(ph.expr_text.size());
+                    if (character >= expr_start && character <= expr_end) {
+                        return StringInterpolationSpan{
+                            true, true, expr_start, expr_end, ph.expr_text, ph.fmt_spec};
+                    }
+                }
+                // Also support unclosed '{' inside string literal for live completion (e.g. `"val={log.`)
+                int open_brace = -1;
+                int depth = 0;
+                for (int k = q_open + 1; k < q_close; ++k) {
+                    if (ln[static_cast<std::size_t>(k)] == '\\' && k + 1 < q_close) {
+                        ++k;
+                        continue;
+                    }
+                    if (ln[static_cast<std::size_t>(k)] == '{') {
+                        if (k + 1 < q_close && ln[static_cast<std::size_t>(k + 1)] == '{') {
+                            ++k;
+                            continue;
+                        }
+                        if (depth == 0) open_brace = k;
+                        ++depth;
+                    } else if (ln[static_cast<std::size_t>(k)] == '}' && depth > 0) {
+                        --depth;
+                        if (depth == 0) open_brace = -1;
+                    }
+                }
+                if (open_brace >= 0 && character > open_brace && character <= q_close) {
+                    return StringInterpolationSpan{
+                        true, true, open_brace + 1, q_close,
+                        std::string(ln.substr(static_cast<std::size_t>(open_brace + 1), static_cast<std::size_t>(q_close - (open_brace + 1)))),
+                        {}};
+                }
+                return StringInterpolationSpan{true, false, q_open + 1, q_close, {}, {}};
+            }
+            if (i < n) ++i;
+            continue;
+        }
+        ++i;
+    }
+    return StringInterpolationSpan{false, false, 0, n, {}, {}};
+}
+
 [[nodiscard]] inline auto symbol_at_position(const std::vector<std::string>& lines, int line, int character) -> CursorSymbol {
     if (line < 0 || static_cast<std::size_t>(line) >= lines.size()) return {};
     const std::string& ln = lines[static_cast<std::size_t>(line)];
     if (ln.empty()) return {};
-    int idx = std::clamp(character, 0, static_cast<int>(ln.size()) - 1);
+
+    auto span = find_string_interpolation_span_at(ln, character);
+    if (span.in_string && !span.in_interp_expr) {
+        return {};
+    }
+    const int min_col = span.in_interp_expr ? span.min_col : 0;
+    const int max_col = span.in_interp_expr ? span.max_col : static_cast<int>(ln.size());
+    if (min_col >= max_col) return {};
+
+    int idx = std::clamp(character, min_col, max_col - 1);
     auto is_ident = [](char c) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '@';
     };
 
     auto extract_qualifier_before_sep = [&](int sep_idx) -> std::string {
         int qend = sep_idx;
-        if (qend > 0 && ln[static_cast<std::size_t>(qend - 1)] == ')') {
-            // Handle `(*owned_box).Value` -> extract `owned_box`
-            int p = qend - 2;
-            while (p >= 0 && is_ident(ln[static_cast<std::size_t>(p)])) --p;
-            int id_start = p + 1;
-            if (id_start < qend - 1) {
-                return ln.substr(static_cast<std::size_t>(id_start), static_cast<std::size_t>(qend - 1 - id_start));
+        if (qend <= min_col) return "";
+        int p = qend - 1;
+        while (p >= min_col) {
+            char c = ln[static_cast<std::size_t>(p)];
+            if (c == ')' || c == ']') {
+                char close_ch = c;
+                char open_ch = (c == ')') ? '(' : '[';
+                int depth = 1;
+                --p;
+                bool in_str = false;
+                while (p >= min_col && depth > 0) {
+                    char sc = ln[static_cast<std::size_t>(p)];
+                    if (sc == '"' && (p == min_col || ln[static_cast<std::size_t>(p - 1)] != '\\')) {
+                        in_str = !in_str;
+                    } else if (!in_str) {
+                        if (sc == close_ch) ++depth;
+                        else if (sc == open_ch) --depth;
+                    }
+                    --p;
+                }
+            } else if (is_ident(c) || c == '.') {
+                --p;
+            } else if (p >= min_col + 1 && c == ':' && ln[static_cast<std::size_t>(p - 1)] == ':') {
+                p -= 2;
+            } else {
+                break;
             }
         }
-        int qstart = qend - 1;
-        while (qstart >= 0 && (is_ident(ln[static_cast<std::size_t>(qstart)]) || ln[static_cast<std::size_t>(qstart)] == '.')) {
-            --qstart;
-        }
-        ++qstart;
+        int qstart = p + 1;
         if (qend > qstart) {
-            return ln.substr(static_cast<std::size_t>(qstart), static_cast<std::size_t>(qend - qstart));
+            std::string qual = ln.substr(static_cast<std::size_t>(qstart), static_cast<std::size_t>(qend - qstart));
+            if (qual.starts_with("(*") && qual.ends_with(")") && qual.size() > 3) {
+                return qual.substr(2, qual.size() - 3);
+            }
+            if (qual.starts_with("(") && qual.ends_with(")") && qual.size() > 2) {
+                std::string inner = qual.substr(1, qual.size() - 2);
+                while (!inner.empty() && (inner.front() == ' ' || inner.front() == '\t')) inner.erase(inner.begin());
+                if (inner.starts_with("try ")) inner = inner.substr(4);
+                while (!inner.empty() && (inner.front() == ' ' || inner.front() == '\t')) inner.erase(inner.begin());
+                return inner;
+            }
+            return qual;
         }
         return "";
     };
 
     // Check if cursor is immediately after `.` (e.g. `m_out.|`) or `::` (e.g. `cpp::|`) with no following ident
-    if (character > 0 && character <= static_cast<int>(ln.size()) && ln[static_cast<std::size_t>(character - 1)] == '.' &&
-        (character == static_cast<int>(ln.size()) || !is_ident(ln[static_cast<std::size_t>(character)]))) {
+    if (character > min_col && character <= max_col && ln[static_cast<std::size_t>(character - 1)] == '.' &&
+        (character == max_col || !is_ident(ln[static_cast<std::size_t>(character)]))) {
         return CursorSymbol{extract_qualifier_before_sep(character - 1), "", character, character};
     }
-    if (character >= 2 && character <= static_cast<int>(ln.size()) &&
+    if (character >= min_col + 2 && character <= max_col &&
         ln[static_cast<std::size_t>(character - 1)] == ':' && ln[static_cast<std::size_t>(character - 2)] == ':' &&
-        (character == static_cast<int>(ln.size()) || !is_ident(ln[static_cast<std::size_t>(character)]))) {
+        (character == max_col || !is_ident(ln[static_cast<std::size_t>(character)]))) {
         return CursorSymbol{extract_qualifier_before_sep(character - 2), "", character, character};
     }
-    if (!is_ident(ln[static_cast<std::size_t>(idx)]) && idx > 0 && is_ident(ln[static_cast<std::size_t>(idx - 1)])) {
+    if (!is_ident(ln[static_cast<std::size_t>(idx)]) && idx > min_col && is_ident(ln[static_cast<std::size_t>(idx - 1)])) {
         --idx;
     }
     if (!is_ident(ln[static_cast<std::size_t>(idx)])) {
-        if (ln[static_cast<std::size_t>(idx)] == '.' && idx > 0) {
+        if (ln[static_cast<std::size_t>(idx)] == '.' && idx > min_col) {
             return CursorSymbol{extract_qualifier_before_sep(idx), "", idx + 1, idx + 1};
         }
-        if (ln[static_cast<std::size_t>(idx)] == ':' && idx > 0 && ln[static_cast<std::size_t>(idx - 1)] == ':') {
+        if (ln[static_cast<std::size_t>(idx)] == ':' && idx > min_col && ln[static_cast<std::size_t>(idx - 1)] == ':') {
             return CursorSymbol{extract_qualifier_before_sep(idx - 1), "", idx + 1, idx + 1};
         }
         return {};
     }
     int start = idx;
-    while (start > 0 && is_ident(ln[static_cast<std::size_t>(start - 1)])) --start;
+    while (start > min_col && is_ident(ln[static_cast<std::size_t>(start - 1)])) --start;
     int end = idx;
-    while (end < static_cast<int>(ln.size()) && is_ident(ln[static_cast<std::size_t>(end)])) ++end;
+    while (end < max_col && is_ident(ln[static_cast<std::size_t>(end)])) ++end;
     std::string word = ln.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(end - start));
 
     std::string qual;
-    if (start > 0 && ln[static_cast<std::size_t>(start - 1)] == '.') {
+    if (start > min_col && ln[static_cast<std::size_t>(start - 1)] == '.') {
         qual = extract_qualifier_before_sep(start - 1);
-    } else if (start > 1 && ln[static_cast<std::size_t>(start - 1)] == ':' && ln[static_cast<std::size_t>(start - 2)] == ':') {
+    } else if (start > min_col + 1 && ln[static_cast<std::size_t>(start - 1)] == ':' && ln[static_cast<std::size_t>(start - 2)] == ':') {
         qual = extract_qualifier_before_sep(start - 2);
     }
     return CursorSymbol{qual, word, start, end};
@@ -288,13 +455,19 @@ struct CallContext {
 [[nodiscard]] inline auto find_call_context(const std::vector<std::string>& lines, int line, int character) -> std::optional<CallContext> {
     if (line < 0 || static_cast<std::size_t>(line) >= lines.size()) return std::nullopt;
     const std::string& ln = lines[static_cast<std::size_t>(line)];
-    int pos = std::clamp(character - 1, 0, static_cast<int>(ln.size()) - 1);
+    if (ln.empty()) return std::nullopt;
+    auto span = find_string_interpolation_span_at(ln, character);
+    int min_col = span.in_interp_expr ? span.min_col : 0;
+    int max_col = span.in_interp_expr ? span.max_col : static_cast<int>(ln.size());
+    if (min_col >= max_col) return std::nullopt;
+
+    int pos = std::clamp(character - 1, min_col, max_col - 1);
     int depth = 0;
     int commas = 0;
     bool in_str = false;
-    for (int i = pos; i >= 0; --i) {
+    for (int i = pos; i >= min_col; --i) {
         char c = ln[static_cast<std::size_t>(i)];
-        if (c == '"' && (i == 0 || ln[static_cast<std::size_t>(i - 1)] != '\\')) {
+        if (c == '"' && (i == min_col || ln[static_cast<std::size_t>(i - 1)] != '\\')) {
             in_str = !in_str;
             continue;
         }
@@ -309,10 +482,10 @@ struct CallContext {
             } else {
                 // Found opening '(' of the active call! Extract callee before '(' (skipping optional `[TypeArg]`)
                 int cend = i;
-                if (cend > 0 && ln[static_cast<std::size_t>(cend - 1)] == ']') {
+                if (cend > min_col && ln[static_cast<std::size_t>(cend - 1)] == ']') {
                     int bdepth = 1;
                     cend -= 2;
-                    while (cend >= 0 && bdepth > 0) {
+                    while (cend >= min_col && bdepth > 0) {
                         if (ln[static_cast<std::size_t>(cend)] == ']') ++bdepth;
                         else if (ln[static_cast<std::size_t>(cend)] == '[') --bdepth;
                         --cend;
@@ -398,6 +571,14 @@ inline void walk_stmt_exprs(
     const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
 );
 
+inline auto interp_expr_arena_cache() -> std::vector<std::shared_ptr<cfire::frontend::AstArena>>& {
+    thread_local std::vector<std::shared_ptr<cfire::frontend::AstArena>> cache;
+    if (cache.size() > 512) {
+        cache.erase(cache.begin(), cache.begin() + 256);
+    }
+    return cache;
+}
+
 inline void walk_exprs(
     const cfire::frontend::ExprPtr& e,
     const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
@@ -405,7 +586,21 @@ inline void walk_exprs(
     using namespace cfire::frontend;
     if (!e) return;
     visitor(e);
-    if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+    if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+        if (lit->kind == TokenKind::String && lit->value.find('{') != std::string::npos) {
+            auto placeholders = scan_interpolation_placeholders(lit->value);
+            for (const auto& ph : placeholders) {
+                int expr_col = std::max(1, e->col) + 1 + static_cast<int>(ph.expr_offset);
+                auto parsed = parse_expr_snippet("<interp>", ph.expr_text, e->line, expr_col);
+                if (parsed.has_value() && parsed->expr) {
+                    if (parsed->arena) {
+                        interp_expr_arena_cache().push_back(parsed->arena);
+                    }
+                    walk_exprs(parsed->expr, visitor);
+                }
+            }
+        }
+    } else if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
         walk_exprs(un->operand, visitor);
     } else if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
         walk_exprs(bin->left, visitor);
@@ -441,6 +636,35 @@ inline void walk_exprs(
     } else if (const auto* tup = std::get_if<TupleExpr>(&e->node)) {
         for (const auto& elem : tup->elements) walk_exprs(elem, visitor);
     }
+}
+
+[[nodiscard]] inline auto expand_tokens_with_interpolations(
+    std::string_view path,
+    const std::vector<cfire::frontend::Token>& raw_toks
+) -> std::vector<cfire::frontend::Token> {
+    using namespace cfire::frontend;
+    std::vector<Token> out;
+    out.reserve(raw_toks.size());
+    for (const auto& t : raw_toks) {
+        out.push_back(t);
+        if (t.kind == TokenKind::String && t.lexeme.find('{') != std::string::npos) {
+            auto placeholders = scan_interpolation_placeholders(t.lexeme);
+            for (const auto& ph : placeholders) {
+                auto sub_toks = tokenize(path, ph.expr_text);
+                if (!sub_toks.has_value()) continue;
+                int base_col = t.col + 1 + static_cast<int>(ph.expr_offset);
+                for (auto sub_t : *sub_toks) {
+                    if (sub_t.kind == TokenKind::Eof) continue;
+                    if (sub_t.line == 1) {
+                        sub_t.col = base_col + (sub_t.col - 1);
+                    }
+                    sub_t.line = t.line + (sub_t.line - 1);
+                    out.push_back(std::move(sub_t));
+                }
+            }
+        }
+    }
+    return out;
 }
 
 inline void walk_stmt_exprs(
