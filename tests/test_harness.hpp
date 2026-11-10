@@ -4,6 +4,7 @@
 #define CFIRE_TEST_MODE 1
 #endif
 
+#include "../src/analysis.hpp"
 #include "../src/buildsys.hpp"
 #include "../src/docgen.hpp"
 #include "../src/formatter.hpp"
@@ -214,6 +215,7 @@ void test_content_hashed_pch_and_cli_flag_validation(const std::filesystem::path
 void test_multiline_lambda_source_mapping_cf114(const std::filesystem::path& rt_dir);
 void test_interned_typeid_lattice_and_diagnostics_cf116(const std::filesystem::path& rt_dir);
 void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir);
+void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir);
 void test_negative_parser_corpus_and_fuzz_runtime(const std::filesystem::path& rt_dir);
 
 // Granular Stdlib Intent Suites

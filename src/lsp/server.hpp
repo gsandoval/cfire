@@ -1,6 +1,7 @@
 #pragma once
 // src/lsp/server.hpp — Full-Featured Language Server Protocol (LSP 3.17) Server (`cfire::lsp::Server`)
 
+#include "../analysis.hpp"
 #include "../buildsys.hpp"
 #include "../diagnostics.hpp"
 #include "json_rpc.hpp"
@@ -672,71 +673,23 @@ public:
     }
 
     auto compute_diagnostics_for_doc(const std::string& uri, const std::string& text, bool allow_cpp_fallback = false) -> std::vector<detail::DiagnosticEntry> {
-        using namespace cfire::frontend;
-        std::vector<detail::DiagnosticEntry> entries;
         std::string file_path = detail::uri_to_path(uri);
-        auto pres = parse_source_resilient(file_path, text);
+        cfire::analysis::CheckOptions opts;
+        opts.verify_cpp_backend = allow_cpp_fallback && (debounce_duration_.count() >= 50);
+        auto layout = cfire::build::locate_toolchain_layout(nullptr);
+        opts.runtime_dir = layout.runtime_dir;
 
-        auto parse_err = [&](const std::string& err_str, std::string_view fallback_code, int severity = 1) -> detail::DiagnosticEntry {
-            auto sd = cfire::diag::parse_diagnostic_string(
-                err_str, file_path, severity == 2 ? "warning" : "error", fallback_code);
-            return detail::DiagnosticEntry{
-                std::max(0, sd.line - 1),
-                std::max(0, sd.col - 1),
-                sd.code,
-                err_str,
-                severity
-            };
-        };
-
-        if (!pres.ok()) {
-            for (const auto& err : pres.errors) {
-                entries.push_back(parse_err(err, "cfire/SYNTAX", 1));
-            }
-        } else {
-            // Merge local package declarations before semantic analysis
-            auto ws = resolve_workspace(uri, pres.ast);
-            FileAST merged = pres.ast;
-            for (const auto& pkg : ws.local_packages) {
-                if (pkg.ast.arena) merged.child_arenas.push_back(pkg.ast.arena);
-                merged.child_arenas.insert(merged.child_arenas.end(),
-                    pkg.ast.child_arenas.begin(), pkg.ast.child_arenas.end());
-                for (const auto& st : pkg.ast.structs) merged.structs.push_back(st);
-                for (const auto& en : pkg.ast.enums) merged.enums.push_back(en);
-                for (const auto& ifc : pkg.ast.interfaces) merged.interfaces.push_back(ifc);
-                for (const auto& gv : pkg.ast.global_vars) merged.global_vars.push_back(gv);
-                for (const auto& fn : pkg.ast.functions) merged.functions.insert(merged.functions.begin(), fn);
-            }
-            auto checked = analyze_resilient(std::move(merged));
-            for (const auto& err : checked.errors) {
-                entries.push_back(parse_err(err, "cfire/SEMA", 1));
-            }
-            for (const auto& warn : checked.warnings) {
-                entries.push_back(parse_err(warn, "cfire/WARNING", 2));
-            }
-            if (allow_cpp_fallback && checked.errors.empty() && !file_path.empty() && debounce_duration_.count() >= 50) {
-                auto layout = cfire::build::locate_toolchain_layout(nullptr);
-                if (!layout.runtime_dir.empty()) {
-                    bool is_test_f = file_path.ends_with("_test.cf");
-                    std::string cpp_code = cfire::frontend::emit_cpp(checked, is_test_f);
-                    cfire::build::BuildPlan plan;
-                    plan.entry_file = file_path;
-                    plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + layout.runtime_dir.string()};
-                    std::error_code ec;
-                    if (std::filesystem::is_directory(layout.runtime_dir / "vendor", ec)) {
-                        plan.cflags.push_back("-I" + (layout.runtime_dir / "vendor").string());
-                    }
-                    auto syntax_check = cfire::build::verify_cpp_syntax_only(file_path, cpp_code, plan, layout.runtime_dir);
-                    if (!syntax_check) {
-                        auto clang_lines = cfire::diag::split_lines(syntax_check.error());
-                        for (const auto& cl : clang_lines) {
-                            if (cl.contains(": error:")) {
-                                entries.push_back(parse_err(cl, "cfire/TYPE-ERROR", 1));
-                            }
-                        }
-                    }
-                }
-            }
+        auto diags = cfire::analysis::check_source(file_path, text, opts);
+        std::vector<detail::DiagnosticEntry> entries;
+        entries.reserve(diags.size());
+        for (const auto& d : diags) {
+            entries.push_back(detail::DiagnosticEntry{
+                std::max(0, d.line - 1),
+                std::max(0, d.col - 1),
+                d.code,
+                d.message,
+                (d.severity == "warning") ? 2 : 1
+            });
         }
         {
             std::lock_guard<std::mutex> lock(diag_store_mutex_);

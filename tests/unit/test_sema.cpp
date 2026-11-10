@@ -2413,6 +2413,73 @@ fn main() {
     std::println("--- PASS: test_unified_stdlib_metadata_table (CF-117)");
 }
 
+void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_unified_diagnostics_pipeline (CF-118)");
+
+    cfire::analysis::CheckOptions opts;
+    opts.runtime_dir = rt_dir;
+
+    // 1. Resilient syntax error checking via check_source
+    const std::string bad_syntax = "package main\nfn main() { x := ;\n}\n";
+    auto diags1 = cfire::analysis::check_source("bad_syntax.cf", bad_syntax, opts);
+    require(!diags1.empty(), "check_source detects syntax error");
+    if (!diags1.empty()) {
+        require(diags1[0].code == "cfire/SYNTAX", "syntax error code is cfire/SYNTAX");
+        require(diags1[0].line >= 1, "syntax error line >= 1");
+    }
+
+    // 2. Resilient sema error checking with structured diagnostics and fixits
+    const std::string bad_sema = "package main\nfn bump(mut x: i32) { x += 1 }\nfn main() { mut val: i32 = 10; bump(val) }\n";
+    auto diags2 = cfire::analysis::check_source("bad_sema.cf", bad_sema, opts);
+    require(!diags2.empty(), "check_source detects sema error");
+    bool found_mut_callsite = false;
+    for (const auto& d : diags2) {
+        if (d.code == "cfire/MUT-CALLSITE") {
+            found_mut_callsite = true;
+            require(d.line == 3, "MUT-CALLSITE at line 3");
+            require(!d.fixits.empty(), "MUT-CALLSITE has attached fixit");
+            if (!d.fixits.empty()) {
+                require(d.fixits[0].replacement == "mut ", "fixit suggests 'mut '");
+            }
+        }
+    }
+    require(found_mut_callsite, "found MUT-CALLSITE diagnostic");
+
+    // 3. Serialization to JSON
+    std::string json_out = cfire::diag::serialize_diagnostics_json(diags2);
+    require(json_out.find("\"code\": \"cfire/MUT-CALLSITE\"") != std::string::npos, "JSON contains diagnostic code");
+    require(json_out.find("\"fixits\"") != std::string::npos, "JSON contains fixits");
+
+    // 4. Clean source check returns 0 diagnostics
+    const std::string clean_src = "package main\nfn main() { println(\"clean\") }\n";
+    auto diags_clean = cfire::analysis::check_source("clean.cf", clean_src, opts);
+    require(diags_clean.empty(), "clean source yields zero diagnostics");
+
+    // 5. check_path on files and directory
+    ScopedTempDir tmp("cf118_diag_test");
+    auto clean_file = tmp.path / "clean_mod.cf";
+    {
+        std::ofstream out(clean_file);
+        out << "package main\nfn main() { println(\"ok\") }\n";
+    }
+    auto diags_p_clean = cfire::analysis::check_path(clean_file, opts);
+    require(diags_p_clean.empty(), "check_path on clean file returns zero diagnostics");
+
+    auto bad_file = tmp.path / "bad_mod.cf";
+    {
+        std::ofstream out(bad_file);
+        out << "package main\nfn main() { unknown_ident_call() }\n";
+    }
+    auto diags_p_bad = cfire::analysis::check_path(bad_file, opts);
+    require(!diags_p_bad.empty(), "check_path on bad file returns diagnostics");
+
+    // 6. Directory check (checks all .cf files)
+    auto diags_dir = cfire::analysis::check_path(tmp.path, opts);
+    require(!diags_dir.empty(), "check_path on directory detects errors in directory files");
+
+    std::println("--- PASS: test_unified_diagnostics_pipeline (CF-118)");
+}
+
 
 
 
