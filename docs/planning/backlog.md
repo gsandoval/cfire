@@ -139,24 +139,24 @@ flowchart TD
 | `CF-113` | **P1** | **P1** | `src/buildsys.hpp`, `src/server.hpp` | **Content-Hashed PCH Cache & Multi-Arg Subprocess Execution**: Cache based on dep hashes | None | Buildsys | `[DONE]` |
 | `CF-114` | **P1** | **P1** | `src/codegen.hpp` | **Accurate Multi-Line Lambda Source Mapping**: Reset `#line` directives following lambdas | `CF-092` | Codegen | `[DONE]` |
 | `CF-115` | **P2** | **P1** | `src/sema.hpp`, `src/codegen.hpp` | **Semantic AST Resolution Pass**: Attach binding `Resolution` to AST; delete codegen name heuristics | `CF-092`, `CF-101` | Architecture | `[DONE]` |
-| `CF-116` | **P2** | **P1** | `src/sema.hpp` | **Interned TypeId Lattice & Unknown Diagnostics**: Replace ad-hoc type strings with type system | `CF-115` | Architecture | `[OPEN]` |
-| `CF-117` | **P2** | **P1** | `src/docgen/`, `src/module_registry.hpp` | **Unified Generated Standard Library Metadata Table**: Single source of truth for all modules | `CF-115` | Metadata | `[OPEN]` |
-| `CF-118` | **P2** | **P1** | `src/diagnostics.hpp`, `src/lsp/` | **Unified Diagnostic Pipeline**: End-to-end structured diagnostics across CLI, LSP, and MCP | `CF-115` | Diagnostics | `[OPEN]` |
-| `CF-119` | **P2** | **P1** | `src/refactor.hpp`, `src/lsp/` | **Scope-Sound Semantic Workspace Refactoring**: Disambiguate shadowed symbols during renames | `CF-115`, `CF-118` | Tooling | `[OPEN]` |
-| `CF-120` | **P2** | **P2** | `src/sema.hpp`, `src/buildsys.hpp` | **Compiler Modularization & High-Complexity Function Decomposition**: Modularize 3,600-line checker | `CF-116` | Architecture | `[OPEN]` |
-| `CF-121` | **P3** | **P2** | `src/parser.hpp`, `src/sema.hpp` | **User-Defined Generic Struct & Algebraic Enum Declarations**: `type Box[T] struct` lowering | `CF-107`, `CF-116` | Language | `[OPEN]` |
-| `CF-122` | **P3** | **P2** | `src/parser.hpp`, `src/sema.hpp` | **Multi-Pattern Or-Arms in Match Expressions**: Support `Pattern1 | Pattern2 =>` | `CF-110` | Language | `[OPEN]` |
-| `CF-123` | **P3** | **P2** | `docs/GUIDE.md`, `src/sema.hpp` | **Enum Idiom Documentation & `PREFER-ENUM` Diagnostic**: Guide updates and constant linting | `CF-106`, `CF-122` | Docs/Linter | `[OPEN]` |
-| `CF-124` | **P3** | **P2** | `src/sema.hpp` | **FFI Boundary Loan & Null Pointer Invariant Invalidation**: Invalidate loan state across C++ | `CF-115` | Safety | `[OPEN]` |
-| `CF-125` | **P4** | **P2** | `src/lsp/json_rpc.hpp` | **Standards-Compliant LSP JSON-RPC Protocol Parser**: Handle Unicode escapes, invalid methods | None | Tooling | `[OPEN]` |
-| `CF-126` | **P4** | **P2** | `src/lsp/server.hpp` | **LSP Document Lifecycle & Workspace File-Watcher Integration**: Handle `didClose` and cache expiry | None | Tooling | `[OPEN]` |
-| `CF-127` | **P4** | **P2** | `src/lsp/` | **Protocol-Compliant Position Encoding & Accurate Ranges**: UTF-16 support and exact token ranges | `CF-118` | Tooling | `[OPEN]` |
-| `CF-128` | **P4** | **P2** | `src/lsp/server.hpp` | **Incremental Sync & Worker Thread Request Pipeline**: Avoid whole-project sync on keystrokes | `CF-118` | Performance | `[OPEN]` |
-| `CF-129` | **P4** | **P2** | `src/lsp/` | **Extended LSP Capabilities**: Folding ranges, selection ranges, document highlights, pull diags | `CF-118` | Tooling | `[OPEN]` |
-| `CF-130` | **P4** | **P2** | `src/formatter.hpp` | **AST-Level Formatter Pretty-Printing Engine**: Normalize spacing, indentation, and expressions | `CF-096` | Tooling | `[OPEN]` |
+| `CF-116` | **P2** | **P1** | `src/sema.hpp` | **Interned TypeId Lattice & Unknown Diagnostics**: Replace ad-hoc type strings with type system | `CF-115` | Architecture | `[DONE]` |
+| `CF-117` | **P2** | **P1** | `src/docgen/`, `src/module_registry.hpp` | **Unified Generated Standard Library Metadata Table**: Single source of truth for all modules | `CF-115` | Metadata | `[DONE]` |
+| `CF-118` | **P2** | **P1** | `src/diagnostics.hpp`, `src/lsp/` | **Unified Diagnostic Pipeline**: End-to-end structured diagnostics across CLI, LSP, and MCP | `CF-115` | Diagnostics | `[DONE]` |
+| `CF-119` | **P2** | **P1** | `src/refactor.hpp`, `src/lsp/` | **Scope-Sound Semantic Workspace Refactoring**: Disambiguate shadowed symbols during renames | `CF-115`, `CF-118` | Tooling | `[DONE]` |
+| `CF-120` | **P2** | **P2** | `src/sema.hpp`, `src/buildsys.hpp` | **Compiler Modularization & High-Complexity Function Decomposition**: Modularize 3,600-line checker | `CF-116` | Architecture | `[DONE]` |
+| `CF-121` | **P3** | **P2** | `src/parser.hpp`, `src/sema.hpp` | **User-Defined Generic Struct & Algebraic Enum Declarations**: `type Box[T] struct` lowering | `CF-107`, `CF-116` | Language | `[DONE]` |
+| `CF-122` | **P3** | **P2** | `src/parser.hpp`, `src/sema.hpp` | **Multi-Pattern Or-Arms in Match Expressions**: Support `Pattern1 | Pattern2 =>` | `CF-110` | Language | `[DONE]` |
+| `CF-123` | **P3** | **P2** | `docs/GUIDE.md`, `src/sema.hpp` | **Enum Idiom Documentation & `PREFER-ENUM` Diagnostic**: Guide updates and constant linting | `CF-106`, `CF-122` | Docs/Linter | `[DONE]` |
+| `CF-124` | **P3** | **P2** | `src/sema.hpp` | **FFI Boundary Loan & Null Pointer Invariant Invalidation**: Invalidate loan state across C++ | `CF-115` | Safety | `[DONE]` |
+| `CF-125` | **P4** | **P2** | `src/lsp/json_rpc.hpp` | **Standards-Compliant LSP JSON-RPC Protocol Parser**: Handle Unicode escapes, invalid methods | None | Tooling | `[DONE]` |
+| `CF-126` | **P4** | **P2** | `src/lsp/server.hpp` | **LSP Document Lifecycle & Workspace File-Watcher Integration**: Handle `didClose` and cache expiry | None | Tooling | `[DONE]` |
+| `CF-127` | **P4** | **P2** | `src/lsp/` | **Protocol-Compliant Position Encoding & Accurate Ranges**: UTF-16 support and exact token ranges | `CF-118` | Tooling | `[DONE]` |
+| `CF-128` | **P4** | **P2** | `src/lsp/server.hpp` | **Incremental Sync & Worker Thread Request Pipeline**: Avoid whole-project sync on keystrokes | `CF-118` | Performance | `[DONE]` |
+| `CF-129` | **P4** | **P2** | `src/lsp/` | **Extended LSP Capabilities**: Folding ranges, selection ranges, document highlights, pull diags | `CF-118` | Tooling | `[DONE]` |
+| `CF-130` | **P4** | **P2** | `src/formatter.hpp` | **AST-Level Formatter Pretty-Printing Engine**: Normalize spacing, indentation, and expressions | `CF-096` | Tooling | `[DONE]` |
 | `CF-131` | **P1** | **P1** | `tests/unit/`, `tests/fuzz/` | **Negative Parser Corpus, LibFuzzer Targets & Runtime Coverage**: Coverage for parsers and FFI | `CF-093` | Tests | `[DONE]` |
-| `CF-132` | **Post** | **P2** | Ecosystem | **Downstream Ecosystem Automated Migration**: Run `cfire fix` across downstream client projects | `CF-103` | Ecosystem | `[OPEN]` |
-| `CF-133` | **Post** | **P2** | `.githooks/`, `.github/` | **Pre-Commit & Release CI Verification Gates**: Enforce automated checks on release workflows | None | CI | `[OPEN]` |
+| `CF-132` | **Post** | **P2** | Ecosystem | **Downstream Ecosystem Automated Migration**: Run `cfire fix` across downstream client projects | `CF-103` | Ecosystem | `[DONE]` |
+| `CF-133` | **Post** | **P2** | `.githooks/`, `.github/` | **Pre-Commit & Release CI Verification Gates**: Enforce automated checks on release workflows | None | CI | `[DONE]` |
 
 ---
 
@@ -373,7 +373,7 @@ flowchart TD
 
 ---
 
-#### `CF-102` — Terminal Warning Visibility `[OPEN]`
+#### `CF-102` — Terminal Warning Visibility `[DONE]`
 - **Problem & Evidence**:
   - Running `cfire check <file.cf>` in human terminal mode silently suppresses all compiler warnings. It prints `✓ checked cleanly` even when multiple deprecation warnings are active.
   - Warnings are only visible when passing the machine-readable `--json` flag.
@@ -388,7 +388,7 @@ flowchart TD
 
 ---
 
-#### `CF-103` — Hard Deprecation Error Enforcement & Migration `[OPEN]`
+#### `CF-103` — Hard Deprecation Error Enforcement & Migration `[DONE]`
 - **Problem & Evidence**:
   - Multiple redundant syntactic forms clutter the language: `var`, `out` parameter intent, `x: mut T` parameter placement, explicit `in` annotations, `make(own[T], v)`, `_ :=`, `Type.Variant`, and `(*p).Field` on smart pointers.
   - Allowing multiple ways to declare variables and parameters violates language orthogonality.
@@ -615,7 +615,7 @@ flowchart TD
 
 ---
 
-#### `CF-116` — Interned TypeId Lattice & Explicit Unknown-Type Diagnostics `[OPEN]`
+#### `CF-116` — Interned TypeId Lattice & Explicit Unknown-Type Diagnostics `[DONE]`
 - **Problem & Evidence**:
   - Types in Sema are represented as ad-hoc strings (`std::string`). When type inference fails, `infer_expr_type_name_sema` returns `""`, which causes downstream type checks to pass silently and leak errors to clang.
 - **Decision**: Compiler audit finding `H3`. Reconciled finding `R-51`. Replace type strings with an interned `TypeId` type system supporting primitive, nominal, pointer, borrow, container, and explicit `Unknown` states.
@@ -630,7 +630,7 @@ flowchart TD
 
 ---
 
-#### `CF-117` — Unified Generated Standard Library Metadata Table `[OPEN]`
+#### `CF-117` — Unified Generated Standard Library Metadata Table `[DONE]`
 - **Problem & Evidence**:
   - Knowledge of standard library functions, types, and headers is duplicated across 6+ locations (`catalog_types.hpp`, `module_registry.hpp`, `sema.hpp`, `codegen.hpp`, and LSP modules).
   - The module registry array of 35 namespaces was missing `build`, and new APIs regularly drift between docgen and sema.
@@ -646,7 +646,7 @@ flowchart TD
 
 ---
 
-#### `CF-118` — Unified Diagnostic Pipeline Across CLI, LSP & MCP `[OPEN]`
+#### `CF-118` — Unified Diagnostic Pipeline Across CLI, LSP & MCP `[DONE]`
 - **Problem & Evidence**:
   - Three divergent diagnostic engines exist: LSP uses resilient parsing and AST merging, CLI uses batch resilient checking plus emit analysis, and MCP stops at the first error and inspects only the first file in a directory.
   - Diagnostics are formatted as strings and lossily re-parsed by splitting on `:`, breaking on Windows paths like `C:\path`.
@@ -662,7 +662,7 @@ flowchart TD
 
 ---
 
-#### `CF-119` — Scope-Sound Semantic Workspace Refactoring `[OPEN]`
+#### `CF-119` — Scope-Sound Semantic Workspace Refactoring `[DONE]`
 - **Problem & Evidence**:
   - LSP rename and reference searches are text-based: renaming a local variable renames shadowed variables in nested blocks, and renaming a struct field renames every identically named field across the entire workspace (`navigation.hpp:431-566`).
   - LSP rename lacks keyword and collision validation, and multi-file rename writes files in place without atomic rollback.
@@ -680,7 +680,7 @@ flowchart TD
 
 ---
 
-#### `CF-120` — Compiler Modularization & High-Complexity Function Decomposition `[OPEN]`
+#### `CF-120` — Compiler Modularization & High-Complexity Function Decomposition `[DONE]`
 - **Problem & Evidence**:
   - `SemaFnChecker` in `src/sema.hpp` is an unwieldy 3,600-line monolithic class, and core routines in `buildsys.hpp` and `codegen/expr.hpp` span 400 to 700 lines each.
   - Everything is declared inline across headers, causing long recompile times during compiler development.
@@ -695,7 +695,7 @@ flowchart TD
 
 ---
 
-#### `CF-121` — User-Defined Generic Struct & Algebraic Enum Declarations `[OPEN]`
+#### `CF-121` — User-Defined Generic Struct & Algebraic Enum Declarations `[DONE]`
 - **Problem & Evidence**:
   - Generic type declarations are currently unsupported for user code (`type Box[T] struct` triggers a syntax error).
   - Users are unable to author reusable data structures (custom trees, ring buffers, caches) without dropping into raw C++ blocks.
@@ -711,7 +711,7 @@ flowchart TD
 
 ---
 
-#### `CF-122` — Multi-Pattern Or-Arms in Match Expressions & Statements `[OPEN]`
+#### `CF-122` — Multi-Pattern Or-Arms in Match Expressions & Statements `[DONE]`
 - **Problem & Evidence**:
   - Downstream applications frequently write repetitive match arms or fallback to `if/else` ladders because matching multiple values in a single arm (`"set_word", "auto_fill" =>`) triggers a syntax error.
 - **Decision**: Architectural decision `Q5` (Option A/C). Reconciled downstream finding from `linkup` and `pulse`. Support or-patterns in match arms.
@@ -727,7 +727,7 @@ flowchart TD
 
 ---
 
-#### `CF-123` — Enum Idiom Documentation & `PREFER-ENUM` Diagnostic `[OPEN]`
+#### `CF-123` — Enum Idiom Documentation & `PREFER-ENUM` Diagnostic `[DONE]`
 - **Problem & Evidence**:
   - Downstream code contains 76 uppercase integer constants grouped as pseudo-enums because developers were unaware enums were supported or ran into early bugs.
 - **Decision**: Architectural decision `Q5`. Document enum patterns in `docs/GUIDE.md` and introduce an optional lint to help developers modernize legacy integer flags.
@@ -742,7 +742,7 @@ flowchart TD
 
 ---
 
-#### `CF-124` — FFI Boundary Loan & Null Pointer Invariant Invalidation `[OPEN]`
+#### `CF-124` — FFI Boundary Loan & Null Pointer Invariant Invalidation `[DONE]`
 - **Problem & Evidence**:
   - The lexical loan and null tracker assumes variables remain untouched across foreign `cpp { ... }` blocks and foreign C function calls, risking false safety guarantees when C code mutates buffers.
 - **Decision**: Architectural decision `Q5` (F9). Treat C++ blocks and raw FFI calls as safety boundaries that invalidate active loans.
@@ -756,7 +756,7 @@ flowchart TD
 
 ---
 
-#### `CF-125` — Standards-Compliant LSP JSON-RPC Protocol Parser `[OPEN]`
+#### `CF-125` — Standards-Compliant LSP JSON-RPC Protocol Parser `[DONE]`
 - **Problem & Evidence**:
   - The LSP JSON-RPC reader uses hand-rolled substring searches: Unicode escapes like `\u00e9` are stripped of their backslash, `extract_json_int_after` throws uncaught `std::stoi` exceptions on overflow (crashing the server), and unknown methods return `result: null` instead of standard error `-32601` (`MethodNotFound`).
 - **Decision**: Tooling audit finding `M3`. Reconciled finding `R-43`. Adopt a robust JSON parser for protocol communication.
@@ -772,7 +772,7 @@ flowchart TD
 
 ---
 
-#### `CF-126` — LSP Document Lifecycle & Workspace File-Watcher Integration `[OPEN]`
+#### `CF-126` — LSP Document Lifecycle & Workspace File-Watcher Integration `[DONE]`
 - **Problem & Evidence**:
   - The LSP server only handles `didOpen`, `didChange`, and `didSave`. Closed files linger in `docs_` memory indefinitely, and external edits from `git` or external formatters leave stale text in memory.
   - Caches (`cpp_header_cache_`, `last_good_ast_`) are never invalidated, leading to memory bloat.
@@ -788,7 +788,7 @@ flowchart TD
 
 ---
 
-#### `CF-127` — Protocol-Compliant Position Encoding & Accurate Ranges `[OPEN]`
+#### `CF-127` — Protocol-Compliant Position Encoding & Accurate Ranges `[DONE]`
 - **Problem & Evidence**:
   - The LSP assumes all character offsets are raw byte indices into UTF-8 strings. Files containing non-ASCII characters or emojis drift out of alignment on hover, rename, and diagnostic markers.
   - Diagnostic and symbol ranges are hardcoded to dummy values (`col..col+10`, `character 0..20`).
@@ -804,7 +804,7 @@ flowchart TD
 
 ---
 
-#### `CF-128` — Incremental Sync & Worker Thread Request Pipeline `[OPEN]`
+#### `CF-128` — Incremental Sync & Worker Thread Request Pipeline `[DONE]`
 - **Problem & Evidence**:
   - Document sync is full-text only (`textDocumentSync: 1`). Every keystroke causes a full re-parse and triggers a synchronous `resolve_workspace` pass on the reader thread.
   - Large workspaces experience typing latency, and long-running requests cannot be cancelled via `$/cancelRequest`.
@@ -820,7 +820,7 @@ flowchart TD
 
 ---
 
-#### `CF-129` — Extended LSP Capabilities `[OPEN]`
+#### `CF-129` — Extended LSP Capabilities `[DONE]`
 - **Problem & Evidence**:
   - Standard IDE capabilities are unadvertised and unimplemented: folding ranges, selection ranges, document highlights, and pull diagnostics.
   - Code action queries ignore requested diagnostic contexts and re-run full analysis synchronously.
@@ -837,7 +837,7 @@ flowchart TD
 
 ---
 
-#### `CF-130` — AST-Level Formatter Pretty-Printing Engine `[OPEN]`
+#### `CF-130` — AST-Level Formatter Pretty-Printing Engine `[DONE]`
 - **Problem & Evidence**:
   - The formatter is currently a line-based indentation adjuster rather than a true pretty-printer. It does not normalize infix operator spacing, continuation line wrapping, or argument list layouts.
 - **Decision**: Tooling audit finding `M6`. Upgrade the formatter to an AST- and token-aware pretty printer.
@@ -852,7 +852,7 @@ flowchart TD
 
 ---
 
-#### `CF-131` — Negative Parser Corpus, LibFuzzer Targets & Runtime Coverage `[OPEN]`
+#### `CF-131` — Negative Parser Corpus, LibFuzzer Targets & Runtime Coverage `[DONE]`
 - **Problem & Evidence**:
   - Parser negative testing is near zero (only 1 expected parse error assertion exists in the entire test suite).
   - Runtime libraries handling untrusted network and document input (`doc_zip_deflate.hpp`, `doc_pdf.hpp`, `net/http.hpp`, `net/websocket.hpp`) have zero fuzz testing or direct unit tests.
@@ -868,7 +868,7 @@ flowchart TD
 
 ---
 
-#### `CF-132` — Downstream Ecosystem Automated Migration `[OPEN]`
+#### `CF-132` — Downstream Ecosystem Automated Migration `[DONE]`
 - **Problem & Evidence**:
   - Enforcing hard errors for deprecated forms (`CF-103`) will break downstream applications (`flautas`, `linkup`, `pulse`, `phosphor`, `tako`, `adventofcode`) until their source code is updated.
 - **Decision**: Provide an automated migration step executing `cfire fix` across the downstream workspace repositories.
@@ -882,7 +882,7 @@ flowchart TD
 
 ---
 
-#### `CF-133` — Pre-Commit & Continuous Integration Verification Hardening `[OPEN]`
+#### `CF-133` — Pre-Commit & Continuous Integration Verification Hardening `[DONE]`
 - **Problem & Evidence**:
   - The local pre-commit hook runs only format and doc checks, omitting automated tests.
   - Release workflows triggered via `workflow_dispatch` skip `review-check` gates.

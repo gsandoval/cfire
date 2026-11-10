@@ -736,16 +736,67 @@ inline auto Server::compute_rename(const std::string& uri, int line, int charact
 
 inline auto Server::compute_document_symbols(const std::string& uri) -> std::string {
     std::string text = get_doc_text(uri);
+    auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text);
     if (!ast_res) return "[]";
 
+    auto find_block_end_line = [&](int start_line) -> int {
+        int idx = std::max(0, start_line - 1);
+        int depth = 0;
+        bool found_open = false;
+        for (int i = idx; i < static_cast<int>(lines.size()); ++i) {
+            bool in_str = false;
+            for (std::size_t k = 0; k < lines[i].size(); ++k) {
+                char c = lines[i][k];
+                if (c == '"' && (k == 0 || lines[i][k - 1] != '\\')) {
+                    in_str = !in_str;
+                    continue;
+                }
+                if (in_str) continue;
+                if (c == '/' && k + 1 < lines[i].size() && lines[i][k + 1] == '/') break;
+                if (c == '{') {
+                    ++depth;
+                    found_open = true;
+                } else if (c == '}') {
+                    --depth;
+                    if (found_open && depth <= 0) {
+                        return i;
+                    }
+                }
+            }
+        }
+        return idx;
+    };
+
     std::string out = "[";
     bool first = true;
-    auto make_sym = [](std::string_view name, std::string_view detail_str, int kind, int one_based_line, std::string_view children_json = "[]") -> std::string {
-        int ln = std::max(0, one_based_line - 1);
+    auto make_sym = [&](std::string_view name, std::string_view detail_str, int kind, int one_based_line, int end_line_0 = -1, std::string_view children_json = "[]") -> std::string {
+        int start_ln = std::max(0, one_based_line - 1);
+        int end_ln = end_line_0 >= 0 ? end_line_0 : start_ln;
+        if (end_ln < start_ln) end_ln = start_ln;
+
+        int line_len = start_ln < static_cast<int>(lines.size()) ? static_cast<int>(detail::utf8_col_to_utf16_col(lines[start_ln], lines[start_ln].size())) : 0;
+        int end_line_len = end_ln < static_cast<int>(lines.size()) ? static_cast<int>(detail::utf8_col_to_utf16_col(lines[end_ln], lines[end_ln].size())) : 0;
+
+        int sel_start = 0;
+        int sel_end = 0;
+        if (start_ln < static_cast<int>(lines.size())) {
+            std::size_t found_pos = lines[start_ln].find(name);
+            if (found_pos != std::string::npos) {
+                sel_start = static_cast<int>(detail::utf8_col_to_utf16_col(lines[start_ln], found_pos));
+                sel_end = static_cast<int>(detail::utf8_col_to_utf16_col(lines[start_ln], found_pos + name.size()));
+            } else {
+                sel_start = 0;
+                sel_end = line_len;
+            }
+        }
+
         return std::format(
-            R"({{"name":"{}","detail":"{}","kind":{},"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":20}}}},"selectionRange":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":10}}}},"children":{}}})",
-            detail::json_escape(name), detail::json_escape(detail_str), kind, ln, ln, ln, ln, children_json);
+            R"({{"name":"{}","detail":"{}","kind":{},"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":{}}}}},"selectionRange":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"children":{}}})",
+            detail::json_escape(name), detail::json_escape(detail_str), kind,
+            start_ln, end_ln, end_line_len,
+            start_ln, sel_start, start_ln, sel_end,
+            children_json);
     };
 
     for (const auto& st : ast_res->structs) {
@@ -753,12 +804,12 @@ inline auto Server::compute_document_symbols(const std::string& uri) -> std::str
         for (std::size_t i = 0; i < st.fields.size(); ++i) {
             if (i > 0) children += ",";
             const auto& f = st.fields[i];
-            children += make_sym(f.name, cfire::fmt::format_type_ref(f.type), 8, f.line);
+            children += make_sym(f.name, cfire::fmt::format_type_ref(f.type), 8, f.line, f.line - 1);
         }
         children += "]";
         if (!first) out += ",";
         first = false;
-        out += make_sym(st.name, "struct", 23, st.line, children);
+        out += make_sym(st.name, "struct", 23, st.line, find_block_end_line(st.line), children);
     }
     for (const auto& en : ast_res->enums) {
         std::string children = "[";
@@ -770,35 +821,222 @@ inline auto Server::compute_document_symbols(const std::string& uri) -> std::str
                 if (j > 0) ptypes += ", ";
                 ptypes += cfire::fmt::format_type_ref(v.payload_types[j]);
             }
-            children += make_sym(v.name, ptypes, 22, v.line);
+            children += make_sym(v.name, ptypes, 22, v.line, v.line - 1);
         }
         children += "]";
         if (!first) out += ",";
         first = false;
-        out += make_sym(en.name, "enum", 10, en.line, children);
+        out += make_sym(en.name, "enum", 10, en.line, find_block_end_line(en.line), children);
     }
     for (const auto& iface : ast_res->interfaces) {
         if (!first) out += ",";
         first = false;
-        out += make_sym(iface.name, "interface", 11, iface.line);
+        out += make_sym(iface.name, "interface", 11, iface.line, find_block_end_line(iface.line));
     }
     for (const auto& fn : ast_res->functions) {
         if (!first) out += ",";
         first = false;
         int kind = fn.receiver ? 6 : 12; // 6 = Method, 12 = Function
         std::string label = fn.receiver ? std::format("({}).{}", cfire::fmt::format_type_ref(fn.receiver->type), fn.name) : fn.name;
-        out += make_sym(label, cfire::fmt::format_fn_signature(fn), kind, fn.line);
+        out += make_sym(label, cfire::fmt::format_fn_signature(fn), kind, fn.line, find_block_end_line(fn.line));
     }
     for (const auto& gv : ast_res->global_vars) {
         if (!first) out += ",";
         first = false;
-        out += make_sym(gv.name, "var", 13, gv.line);
+        out += make_sym(gv.name, "var", 13, gv.line, gv.line - 1);
     }
     for (const auto& t : ast_res->tests) {
         if (!first) out += ",";
         first = false;
         std::string prefix = t.is_fuzz ? "fuzz" : (t.is_bench ? "bench" : "test");
-        out += make_sym(prefix + ": " + t.name, prefix, 12, t.line);
+        out += make_sym(prefix + ": " + t.name, prefix, 12, t.line, find_block_end_line(t.line));
+    }
+    out += "]";
+    return out;
+}
+
+inline auto Server::compute_folding_ranges(const std::string& uri) -> std::string {
+    std::string text = get_doc_text(uri);
+    auto lines = detail::split_lines(text);
+    if (lines.empty()) return "[]";
+
+    std::string out = "[";
+    bool first = true;
+    auto add_fold = [&](int start_line, int end_line, std::string_view kind = "") {
+        if (start_line >= end_line) return;
+        if (!first) out += ",";
+        first = false;
+        if (kind.empty()) {
+            out += std::format(R"({{"startLine":{},"endLine":{}}})", start_line, end_line);
+        } else {
+            out += std::format(R"({{"startLine":{},"endLine":{},"kind":"{}"}})", start_line, end_line, detail::json_escape(kind));
+        }
+    };
+
+    int import_start = -1;
+    int import_end = -1;
+    for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
+        auto trimmed = cfire::fmt::detail::trim_ws(lines[i]);
+        if (trimmed.starts_with("import ")) {
+            if (import_start < 0) import_start = i;
+            import_end = i;
+        } else if (!trimmed.empty() && import_start >= 0) {
+            if (import_end > import_start) {
+                add_fold(import_start, import_end, "imports");
+            }
+            import_start = -1;
+            import_end = -1;
+        }
+    }
+    if (import_start >= 0 && import_end > import_start) {
+        add_fold(import_start, import_end, "imports");
+    }
+
+    std::vector<int> brace_stack;
+    bool in_block_comment = false;
+    int block_comment_start = -1;
+
+    for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
+        const auto& ln = lines[i];
+        bool in_str = false;
+        for (std::size_t k = 0; k < ln.size(); ++k) {
+            char c = ln[k];
+            if (in_block_comment) {
+                if (c == '*' && k + 1 < ln.size() && ln[k + 1] == '/') {
+                    in_block_comment = false;
+                    add_fold(block_comment_start, i, "comment");
+                    ++k;
+                }
+                continue;
+            }
+            if (!in_str && c == '/' && k + 1 < ln.size() && ln[k + 1] == '*') {
+                in_block_comment = true;
+                block_comment_start = i;
+                ++k;
+                continue;
+            }
+            if (!in_str && c == '/' && k + 1 < ln.size() && ln[k + 1] == '/') {
+                break;
+            }
+            if (c == '"' && (k == 0 || ln[k - 1] != '\\')) {
+                in_str = !in_str;
+                continue;
+            }
+            if (in_str) continue;
+
+            if (c == '{') {
+                brace_stack.push_back(i);
+            } else if (c == '}') {
+                if (!brace_stack.empty()) {
+                    int open_line = brace_stack.back();
+                    brace_stack.pop_back();
+                    if (i > open_line) {
+                        add_fold(open_line, i);
+                    }
+                }
+            }
+        }
+    }
+
+    out += "]";
+    return out;
+}
+
+inline auto Server::compute_selection_range(const std::string& uri, int line, int character) -> std::string {
+    std::string text = get_doc_text(uri);
+    auto lines = detail::split_lines(text);
+    if (lines.empty() || line < 0 || line >= static_cast<int>(lines.size())) {
+        return "[]";
+    }
+
+    const auto& cur_line = lines[line];
+    int line_len = static_cast<int>(detail::utf8_col_to_utf16_col(cur_line, cur_line.size()));
+    auto sym = detail::symbol_at_position(lines, line, character);
+
+    int sym_start = sym.name.empty() ? 0 : sym.start_col;
+    int sym_end = sym.name.empty() ? line_len : sym.end_col;
+
+    int block_start = 0;
+    int block_end = static_cast<int>(lines.size()) - 1;
+    bool has_block = false;
+    int depth = 0;
+    for (int i = line; i >= 0; --i) {
+        for (int k = static_cast<int>(lines[i].size()) - 1; k >= 0; --k) {
+            if (lines[i][k] == '}') ++depth;
+            else if (lines[i][k] == '{') {
+                if (depth == 0) {
+                    block_start = i;
+                    has_block = true;
+                    break;
+                } else {
+                    --depth;
+                }
+            }
+        }
+        if (has_block) break;
+    }
+    if (has_block) {
+        depth = 0;
+        for (int i = block_start; i < static_cast<int>(lines.size()); ++i) {
+            for (char c : lines[i]) {
+                if (c == '{') ++depth;
+                else if (c == '}') {
+                    --depth;
+                    if (depth <= 0) {
+                        block_end = i;
+                        break;
+                    }
+                }
+            }
+            if (depth <= 0) break;
+        }
+    }
+
+    int block_end_len = block_end < static_cast<int>(lines.size()) ? static_cast<int>(detail::utf8_col_to_utf16_col(lines[block_end], lines[block_end].size())) : 0;
+    int doc_end_line = static_cast<int>(lines.size()) - 1;
+    int doc_end_len = static_cast<int>(detail::utf8_col_to_utf16_col(lines[doc_end_line], lines[doc_end_line].size()));
+
+    std::string doc_range = std::format(
+        R"({{"range":{{"start":{{"line":0,"character":0}},"end":{{"line":{},"character":{}}}}}}})",
+        doc_end_line, doc_end_len);
+
+    std::string block_range = has_block ? std::format(
+        R"({{"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":{}}}}},"parent":{}}})",
+        block_start, block_end, block_end_len, doc_range) : doc_range;
+
+    std::string line_range = std::format(
+        R"({{"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":{}}}}},"parent":{}}})",
+        line, line, line_len, block_range);
+
+    std::string token_range;
+    if (!sym.name.empty()) {
+        token_range = std::format(
+            R"([ {{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"parent":{}}} ])",
+            line, sym_start, line, sym_end, line_range);
+    } else {
+        token_range = std::format("[ {} ]", line_range);
+    }
+
+    return token_range;
+}
+
+inline auto Server::compute_document_highlight(const std::string& uri, int line, int character) -> std::string {
+    std::string text = get_doc_text(uri);
+    auto lines = detail::split_lines(text);
+    auto sym = detail::symbol_at_position(lines, line, character);
+    if (sym.name.empty()) return "[]";
+
+    auto occurrences = find_symbol_occurrences(uri, line, character, sym.name, sym.qualifier);
+    if (occurrences.empty()) return "[]";
+
+    std::string out = "[";
+    bool first = true;
+    for (const auto& occ : occurrences) {
+        if (!first) out += ",";
+        first = false;
+        out += std::format(
+            R"({{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"kind":1}})",
+            occ.line, occ.start_col, occ.line, occ.end_col);
     }
     out += "]";
     return out;

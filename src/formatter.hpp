@@ -299,10 +299,167 @@ struct StructFieldLine {
     return net_delta;
 }
 
+[[nodiscard]] inline auto normalize_statement_tokens(std::string_view line) -> std::string {
+    if (line.empty()) return "";
+    auto cpos = find_comment_start(line);
+    std::string_view code = (cpos != std::string_view::npos) ? line.substr(0, cpos) : line;
+    std::string_view comment = (cpos != std::string_view::npos) ? line.substr(cpos) : "";
+
+    std::string out;
+    out.reserve(code.size() + 16);
+
+    bool in_str = false;
+    bool in_char = false;
+    bool in_backtick = false;
+
+    auto is_ident_char = [](char c) -> bool {
+        return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    };
+
+    auto ends_with_expr_term = [&](std::string_view sv) -> bool {
+        while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t')) sv.remove_suffix(1);
+        if (sv.empty()) return false;
+        char c = sv.back();
+        if (c == ')' || c == ']' || c == '"' || c == '`') return true;
+        if (is_ident_char(c)) {
+            // Check if last word is a keyword that cannot end an expression (e.g. or, return, case, in)
+            std::size_t start = sv.size() - 1;
+            while (start > 0 && is_ident_char(sv[start - 1])) --start;
+            std::string_view word = sv.substr(start);
+            if (word == "or" || word == "return" || word == "case" || word == "in" || word == "throw" || word == "if" || word == "while") {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    };
+
+    for (std::size_t i = 0; i < code.size(); ++i) {
+        char c = code[i];
+
+        if (in_str) {
+            out.push_back(c);
+            if (c == '\\' && i + 1 < code.size()) {
+                out.push_back(code[++i]);
+            } else if (c == '"') {
+                in_str = false;
+            }
+            continue;
+        }
+        if (in_char) {
+            out.push_back(c);
+            if (c == '\\' && i + 1 < code.size()) {
+                out.push_back(code[++i]);
+            } else if (c == '\'') {
+                in_char = false;
+            }
+            continue;
+        }
+        if (in_backtick) {
+            out.push_back(c);
+            if (c == '`') in_backtick = false;
+            continue;
+        }
+
+        if (c == '"') {
+            in_str = true;
+            out.push_back(c);
+            continue;
+        }
+        if (c == '\'') {
+            in_char = true;
+            out.push_back(c);
+            continue;
+        }
+        if (c == '`') {
+            in_backtick = true;
+            out.push_back(c);
+            continue;
+        }
+
+        // Two-character operators: ==, !=, <=, >=, +=, -=, *=, /=, %=, &&, ||, =>, ->, :=
+        if (i + 1 < code.size()) {
+            std::string_view two = code.substr(i, 2);
+            if (two == "::") {
+                out.append("::");
+                ++i;
+                continue;
+            }
+            if (two == ":=" || two == "==" || two == "!=" || two == "<=" || two == ">=" ||
+                two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "%=" ||
+                two == "&&" || two == "||" || two == "=>" || two == "->") {
+                if (!out.empty() && out.back() != ' ') out.push_back(' ');
+                out.append(two);
+                if (i + 2 < code.size() && code[i + 2] != ' ' && code[i + 2] != '\n' && code[i + 2] != '\r') {
+                    out.push_back(' ');
+                }
+                ++i;
+                continue;
+            }
+        }
+
+        // Single character punctuation
+        if (c == ',') {
+            while (!out.empty() && out.back() == ' ') out.pop_back();
+            out.push_back(',');
+            if (i + 1 < code.size() && code[i + 1] != ' ' && code[i + 1] != '\n' && code[i + 1] != '\r' && code[i + 1] != ')' && code[i + 1] != ']') {
+                out.push_back(' ');
+            }
+            continue;
+        }
+
+        if (c == ':') {
+            out.push_back(':');
+            if (i + 1 < code.size() && code[i + 1] != ' ' && code[i + 1] != ':' && code[i + 1] != '=' && code[i + 1] != '\n' && code[i + 1] != '\r') {
+                out.push_back(' ');
+            }
+            continue;
+        }
+
+        if (c == '=') {
+            if (!out.empty() && out.back() != ' ') out.push_back(' ');
+            out.push_back('=');
+            if (i + 1 < code.size() && code[i + 1] != ' ' && code[i + 1] != '\n' && code[i + 1] != '\r') {
+                out.push_back(' ');
+            }
+            continue;
+        }
+
+        // Infix binary operators: +, -, *, /, %
+        if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%') {
+            bool preceded = ends_with_expr_term(out);
+            std::size_t next_i = i + 1;
+            while (next_i < code.size() && (code[next_i] == ' ' || code[next_i] == '\t')) ++next_i;
+            bool followed = next_i < code.size() && (is_ident_char(code[next_i]) || code[next_i] == '(' || code[next_i] == '[');
+            if (preceded && followed) {
+                if (!out.empty() && out.back() != ' ') out.push_back(' ');
+                out.push_back(c);
+                if (code[i + 1] != ' ' && code[i + 1] != '\t') {
+                    out.push_back(' ');
+                }
+                continue;
+            }
+        }
+
+        out.push_back(c);
+    }
+
+    while (!out.empty() && (out.back() == ' ' || out.back() == '\t')) {
+        out.pop_back();
+    }
+
+    if (!comment.empty()) {
+        if (!out.empty()) out.push_back(' ');
+        out.append(comment);
+    }
+    return out;
+}
+
 inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
     std::vector<std::string> out_lines(raw_lines.size());
     int indent = 0;
     bool in_raw_string = false;
+    int in_cpp_depth = 0;
 
     for (std::size_t i = 0; i < raw_lines.size(); ++i) {
         const std::string& raw = raw_lines[i];
@@ -321,6 +478,10 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         if (trimmed.empty()) {
             out_lines[i] = "";
             continue;
+        }
+
+        if (trimmed.starts_with("cpp {") || trimmed.contains(" cpp {")) {
+            in_cpp_depth += 1;
         }
 
         // Check if this starts a `type <Name> struct {` block whose fields we can column-align
@@ -388,6 +549,10 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
             }
         }
 
+        if (in_cpp_depth == 0 && !trimmed.starts_with("//") && !trimmed.starts_with("/*")) {
+            trimmed = normalize_statement_tokens(trimmed);
+        }
+
         // Count leading closing braces on this line
         int leading_close = 0;
         for (char c : trimmed) {
@@ -403,6 +568,9 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         // Update net brace depth ignoring strings, char literals, and comments
         int net_delta = scan_line_brace_delta(trimmed, 0, in_raw_string);
         indent = std::max(0, indent + net_delta);
+        if (in_cpp_depth > 0 && net_delta < 0) {
+            in_cpp_depth = std::max(0, in_cpp_depth + net_delta);
+        }
     }
     return out_lines;
 }

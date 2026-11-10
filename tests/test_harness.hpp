@@ -195,6 +195,7 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir);
 void test_golden_codegen_snapshots(const std::filesystem::path& repo_root);
 void test_cfire_refactor_rename(const std::filesystem::path& rt_dir);
+void test_phase4_tooling_depth(const std::filesystem::path& rt_dir);
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir);
 void test_section2_language_ergonomics(const std::filesystem::path& rt_dir);
 

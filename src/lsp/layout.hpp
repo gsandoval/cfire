@@ -3,6 +3,7 @@
 
 #include "type_query.hpp"
 #include <algorithm>
+#include <charconv>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -98,9 +99,11 @@ inline auto compute_type_layout(
     if (tr.is_array) {
         TypeLayout elem = tr.elem_type ? compute_type_layout(*tr.elem_type, ast, ws, visited) : TypeLayout{1, 1};
         int n = 1;
-        try {
-            if (!tr.array_len.empty()) n = std::stoi(tr.array_len);
-        } catch (...) {}
+        if (!tr.array_len.empty()) {
+            int parsed = 0;
+            auto [ptr, ec] = std::from_chars(tr.array_len.data(), tr.array_len.data() + tr.array_len.size(), parsed);
+            if (ec == std::errc{} && parsed > 0) n = parsed;
+        }
         return TypeLayout{n * elem.size, elem.align};
     }
 

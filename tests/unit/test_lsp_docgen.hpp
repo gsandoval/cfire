@@ -1224,3 +1224,138 @@ fn main() {
 
     std::println("--- PASS: test_cfire_refactor_rename");
 }
+
+void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_phase4_tooling_depth");
+
+    // 1. CF-125: LSP JSON-RPC parser compliance
+    {
+        std::string unescaped = cfire::lsp::detail::json_unescape(R"(\u0041\u0042\u0043)");
+        require(unescaped == "ABC", "json_unescape decodes basic \\uXXXX");
+
+        std::string emoji = cfire::lsp::detail::json_unescape(R"(\uD83D\uDE00)");
+        require(emoji == "😀", "json_unescape decodes surrogate pairs \\uD83D\\uDE00 to emoji 😀");
+
+        auto overflow_int = cfire::lsp::detail::extract_json_int_after(R"({"num": 99999999999999999999999999})", "num");
+        require(!overflow_int.has_value(), "extract_json_int_after does not throw on large integer overflow");
+
+        std::string decoded_path = cfire::lsp::detail::uri_to_path("file:///path/with%20spaces/main.cf");
+        require(decoded_path == "/path/with spaces/main.cf", "uri_to_path percent-decodes spaces properly");
+
+        cfire::lsp::Server srv;
+        std::ostringstream ss;
+        srv.handle_message(R"({"jsonrpc":"2.0","id":42,"method":"custom/unknownMethod","params":{}})", ss);
+        std::string resp = ss.str();
+        require(resp.contains("\"code\":-32601") && resp.contains("Method not found"),
+            std::format("LSP unknown method returns standard -32601 MethodNotFound error, got: {}", resp));
+    }
+
+    // 2. CF-126: Document lifecycle (didClose and workspace/didChangeWatchedFiles)
+    {
+        cfire::lsp::Server srv;
+        std::ostringstream ss;
+        std::string uri = "file:///tmp/doc_test.cf";
+        srv.handle_message(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\nfn main() {{ let x = 1 }}\n"}}}}}})",
+            uri), ss);
+        require(srv.get_doc_text(uri).contains("let x = 1"), "didOpen sets document memory buffer");
+
+        std::ostringstream ss_close;
+        srv.handle_message(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didClose","params":{{"textDocument":{{"uri":"{}"}}}}}})",
+            uri), ss_close);
+        std::string close_resp = ss_close.str();
+        require(close_resp.contains("publishDiagnostics") && close_resp.contains("[]"),
+            std::format("didClose clears document and publishes empty diagnostics, got: '{}'", close_resp));
+        require(srv.get_doc_text(uri).empty(), "didClose purges document from memory buffer");
+
+        srv.handle_message(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[]}})", ss);
+        require(srv.get_doc_text(uri).empty(), "workspace/didChangeWatchedFiles clears in-memory caches");
+    }
+
+    // 3. CF-127: UTF-16 position translations & real symbol ranges
+    {
+        std::string mixed_line = "let s = \"😀 hello\"";
+        int u16_len = cfire::lsp::detail::utf8_col_to_utf16_col(mixed_line, mixed_line.size());
+        int u8_len = cfire::lsp::detail::utf16_col_to_utf8_col(mixed_line, u16_len);
+        require(u8_len == static_cast<int>(mixed_line.size()), "UTF-16 <-> UTF-8 column roundtrip matches byte length");
+
+        cfire::lsp::Server srv;
+        std::ostringstream ss;
+        std::string uri = "file:///tmp/sym_test.cf";
+        srv.handle_message(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\n\ntype Point struct {{\n    x: f64\n    y: f64\n}}\n\nfn add_coords(p: Point) -> f64 {{\n    return p.x + p.y\n}}\n"}}}}}})",
+            uri), ss);
+        std::string syms = srv.compute_document_symbols(uri);
+        require(syms.contains("\"name\":\"Point\"") && syms.contains("\"range\""), "documentSymbols contains Point struct");
+        require(syms.contains("\"name\":\"add_coords\"") && syms.contains("\"selectionRange\""), "documentSymbols contains function with selectionRange");
+        require(!syms.contains("\"character\":20"), "documentSymbols does not contain hardcoded dummy character:20 range");
+    }
+
+    // 4. CF-128: Incremental sync and $/cancelRequest
+    {
+        cfire::lsp::Server srv;
+        std::ostringstream ss;
+        std::string uri = "file:///tmp/incr_test.cf";
+        srv.handle_message(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\nfn run() {{\n    msg := \"hello\"\n}}\n"}}}}}})",
+            uri), ss);
+        srv.handle_message(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didChange","params":{{"textDocument":{{"uri":"{}"}},"contentChanges":[{{"range":{{"start":{{"line":2,"character":12}},"end":{{"line":2,"character":17}}}},"text":"world"}}]}}}})",
+            uri), ss);
+        std::string updated = srv.get_doc_text(uri);
+        require(updated.contains("msg := \"world\""),
+            std::format("incremental didChange successfully patched buffer, got:\n{}", updated));
+
+        srv.handle_message(R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":99}})", ss);
+    }
+
+    // 5. CF-129: Folding ranges, selection ranges, document highlight, code actions context
+    {
+        cfire::lsp::Server srv;
+        std::ostringstream ss;
+        std::string uri = "file:///tmp/features_test.cf";
+        srv.handle_message(std::format(
+            R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\n\nimport \"core:time\"\n\nfn compute(val: i32) -> i32 {{\n    mut total = val\n    total += 10\n    return total\n}}\n"}}}}}})",
+            uri), ss);
+
+        std::string folds = srv.compute_folding_ranges(uri);
+        require(folds.contains("\"startLine\":4") && folds.contains("\"endLine\":8"),
+            std::format("compute_folding_ranges identifies function block, got: {}", folds));
+
+        std::string sel = srv.compute_selection_range(uri, 5, 8);
+        require(sel.contains("\"range\"") && sel.contains("\"parent\""),
+            std::format("compute_selection_range provides hierarchical parent ranges, got: {}", sel));
+
+        std::string hl = srv.compute_document_highlight(uri, 5, 8);
+        require(hl.contains("\"kind\":1") && hl.contains("\"line\":5") && hl.contains("\"line\":6") && hl.contains("\"line\":7"),
+            std::format("compute_document_highlight highlights all usages of total, got: {}", hl));
+
+        std::string code_actions = srv.compute_code_actions(uri, 5, {"cfire/UNUSED-VARIABLE"});
+        require(code_actions == "[]", "compute_code_actions respects requested diagnostic code filter");
+    }
+
+    // 6. CF-130: Formatter token spacing and idempotency
+    {
+        std::string unformatted = R"(package main
+
+fn calc(a:int,b:int) -> int {
+    mut x:int=a+b
+    return x*2
+}
+)";
+        auto fmt_res = cfire::fmt::format_source(unformatted, "calc.cf");
+        require(fmt_res.has_value(), "cfire::fmt::format_source succeeds on unspaced code");
+        if (fmt_res) {
+            require(fmt_res->contains("fn calc(a: int, b: int) -> int {") &&
+                    fmt_res->contains("    mut x: int = a + b") &&
+                    fmt_res->contains("    return x * 2"),
+                std::format("expected normalized token spacing, got:\n{}", *fmt_res));
+
+            auto roundtrip = cfire::fmt::format_source(*fmt_res, "calc.cf");
+            require(roundtrip.has_value() && *roundtrip == *fmt_res, "formatter is strictly idempotent");
+        }
+    }
+
+    std::println("--- PASS: test_phase4_tooling_depth");
+}

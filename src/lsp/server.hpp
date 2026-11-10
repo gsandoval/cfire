@@ -142,7 +142,7 @@ public:
             }
             std::string id = id_opt.value_or("1");
             std::string resp = std::format(
-                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"textDocumentSync":1,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentOnTypeFormattingProvider":{{"firstTriggerCharacter":"\n","moreTriggerCharacter":["}}"]}},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"{}"}}}}}})",
+                R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"positionEncoding":"utf-16","textDocumentSync":2,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentOnTypeFormattingProvider":{{"firstTriggerCharacter":"\n","moreTriggerCharacter":["}}"]}},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"foldingRangeProvider":true,"selectionRangeProvider":true,"documentHighlightProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"{}"}}}}}})",
                 id, cfire::version::kVersion);
             send_rpc(out, resp);
             return true;
@@ -158,24 +158,91 @@ public:
         if (method == "exit") {
             return false;
         }
+        if (method == "$/cancelRequest") {
+            if (auto cancel_id = detail::extract_json_id(msg)) {
+                std::lock_guard<std::mutex> lock(cancel_mutex_);
+                cancelled_requests_.insert(*cancel_id);
+            }
+            return true;
+        }
+
+        if (method == "textDocument/didClose") {
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            {
+                std::lock_guard<std::mutex> lock(docs_mutex_);
+                docs_.erase(uri);
+            }
+            {
+                std::lock_guard<std::mutex> lock(diag_store_mutex_);
+                last_diagnostics_.erase(uri);
+            }
+            {
+                std::lock_guard<std::mutex> lock(file_ast_cache_mutex_);
+                file_ast_cache_.erase(uri);
+            }
+            last_good_ast_.erase(uri);
+            last_good_ws_.erase(uri);
+            // Clear published diagnostics in client
+            send_rpc(out, std::format(
+                R"({{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{}","diagnostics":[]}}}})",
+                detail::json_escape(uri)));
+            return true;
+        }
+
+        if (method == "workspace/didChangeWatchedFiles") {
+            {
+                std::lock_guard<std::mutex> lock(docs_mutex_);
+                docs_.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lock(cpp_cache_mutex_);
+                cpp_header_cache_.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lock(file_ast_cache_mutex_);
+                file_ast_cache_.clear();
+            }
+            last_good_ast_.clear();
+            last_good_ws_.clear();
+            return true;
+        }
 
         if (method == "textDocument/didOpen" || method == "textDocument/didChange" || method == "textDocument/didSave") {
             auto uri = detail::extract_json_string(msg, "uri").value_or("");
-            auto text = detail::extract_json_string(msg, "text");
             std::string content;
             {
                 std::lock_guard<std::mutex> lock(docs_mutex_);
-                if (text) {
-                    docs_[uri] = *text;
-                    content = *text;
-                } else if (docs_.find(uri) == docs_.end()) {
-                    std::ifstream ifs(detail::uri_to_path(uri));
-                    std::stringstream ss;
-                    ss << ifs.rdbuf();
-                    docs_[uri] = ss.str();
-                    content = docs_[uri];
+                if (method == "textDocument/didChange") {
+                    std::size_t range_idx = detail::find_json_key(msg, "range");
+                    if (range_idx != std::string_view::npos) {
+                        int s_line = detail::extract_json_int_after(msg, "line", range_idx).value_or(0);
+                        int s_char = detail::extract_json_int_after(msg, "character", range_idx).value_or(0);
+                        std::size_t end_idx = detail::find_json_key(msg, "end", range_idx);
+                        int e_line = detail::extract_json_int_after(msg, "line", end_idx != std::string_view::npos ? end_idx : range_idx).value_or(s_line);
+                        int e_char = detail::extract_json_int_after(msg, "character", end_idx != std::string_view::npos ? end_idx : range_idx).value_or(s_char);
+                        auto new_text = detail::extract_json_string(msg, "text", range_idx).value_or("");
+                        detail::apply_incremental_edit(docs_[uri], s_line, s_char, e_line, e_char, new_text);
+                        content = docs_[uri];
+                    } else if (auto text = detail::extract_json_string(msg, "text")) {
+                        docs_[uri] = *text;
+                        content = *text;
+                    } else {
+                        content = docs_[uri];
+                    }
                 } else {
-                    content = docs_[uri];
+                    auto text = detail::extract_json_string(msg, "text");
+                    if (text) {
+                        docs_[uri] = *text;
+                        content = *text;
+                    } else if (docs_.find(uri) == docs_.end()) {
+                        std::ifstream ifs(detail::uri_to_path(uri));
+                        std::stringstream ss;
+                        ss << ifs.rdbuf();
+                        docs_[uri] = ss.str();
+                        content = docs_[uri];
+                    } else {
+                        content = docs_[uri];
+                    }
                 }
             }
             bool immediate = (method != "textDocument/didChange");
@@ -331,8 +398,51 @@ public:
             auto uri = detail::extract_json_string(msg, "uri").value_or("");
             std::size_t range_idx = detail::find_json_key(msg, "range");
             int start_line = detail::extract_json_int_after(msg, "line", range_idx != std::string_view::npos ? range_idx : 0).value_or(-1);
-            std::string actions_json = compute_code_actions(uri, start_line);
+            std::vector<std::string> codes;
+            if (std::size_t ctx_idx = detail::find_json_key(msg, "context"); ctx_idx != std::string_view::npos) {
+                std::size_t search_pos = ctx_idx;
+                while (true) {
+                    std::size_t code_pos = detail::find_json_key(msg, "code", search_pos);
+                    if (code_pos == std::string_view::npos) break;
+                    if (auto code_str = detail::extract_json_string(msg, "code", search_pos)) {
+                        codes.push_back(*code_str);
+                    }
+                    search_pos = code_pos + 1;
+                }
+            }
+            std::string actions_json = compute_code_actions(uri, start_line, codes);
             send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, actions_json));
+            return true;
+        }
+
+        if (method == "textDocument/foldingRange") {
+            std::string id = id_opt.value_or("1");
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            std::string folds_json = compute_folding_ranges(uri);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, folds_json));
+            return true;
+        }
+
+        if (method == "textDocument/selectionRange") {
+            std::string id = id_opt.value_or("1");
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            std::size_t pos_idx = detail::find_json_key(msg, "positions");
+            if (pos_idx == std::string_view::npos) pos_idx = detail::find_json_key(msg, "position");
+            int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            std::string sel_json = compute_selection_range(uri, line, character);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, sel_json));
+            return true;
+        }
+
+        if (method == "textDocument/documentHighlight") {
+            std::string id = id_opt.value_or("1");
+            auto uri = detail::extract_json_string(msg, "uri").value_or("");
+            std::size_t pos_idx = detail::find_json_key(msg, "position");
+            int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
+            std::string hl_json = compute_document_highlight(uri, line, character);
+            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":{}}})", id, hl_json));
             return true;
         }
 
@@ -394,7 +504,9 @@ public:
         }
 
         if (id_opt) {
-            send_rpc(out, std::format(R"({{"jsonrpc":"2.0","id":{},"result":null}})", *id_opt));
+            send_rpc(out, std::format(
+                R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32601,"message":"Method not found: {}"}}}})",
+                *id_opt, detail::json_escape(method)));
         }
         return true;
     }
@@ -408,16 +520,21 @@ private:
     std::atomic<bool> worker_running_{false};
     std::unordered_map<std::string, PendingDiagRequest> pending_diags_;
 
+    std::mutex cancel_mutex_;
+    std::unordered_set<std::string> cancelled_requests_;
+
     std::mutex out_mutex_;
     std::ostream* out_stream_{nullptr};
 
     std::mutex docs_mutex_;
     std::mutex diag_store_mutex_;
     std::mutex cpp_cache_mutex_;
+    std::mutex file_ast_cache_mutex_;
 
     std::unordered_map<std::string, std::string> docs_;
     std::unordered_map<std::string, std::vector<detail::DiagnosticEntry>> last_diagnostics_;
     std::unordered_map<std::string, cfire::bridge::HeaderIndex> cpp_header_cache_;
+    std::unordered_map<std::string, std::pair<std::size_t, cfire::frontend::FileAST>> file_ast_cache_;
     std::unordered_map<std::string, cfire::frontend::FileAST> last_good_ast_;
     std::unordered_map<std::string, detail::WorkspaceContext> last_good_ws_;
     std::string workspace_root_;
@@ -436,6 +553,9 @@ public:
             std::ifstream ifs(path);
             std::stringstream ss;
             ss << ifs.rdbuf();
+            if (docs_.size() > 100) {
+                docs_.erase(docs_.begin());
+            }
             docs_[uri] = ss.str();
             return docs_[uri];
         }
@@ -472,7 +592,27 @@ public:
                     for (const auto& fpath : cf_files) {
                         std::string sub_uri = detail::path_to_uri(fpath);
                         std::string sub_text = get_doc_text(sub_uri);
-                        if (auto sub_ast = cfire::frontend::parse_source(fpath.string(), sub_text)) {
+                        std::size_t sub_hash = std::hash<std::string>{}(sub_text);
+                        std::optional<cfire::frontend::FileAST> sub_ast;
+                        {
+                            std::lock_guard<std::mutex> lock(file_ast_cache_mutex_);
+                            if (auto it = file_ast_cache_.find(sub_uri); it != file_ast_cache_.end()) {
+                                if (it->second.first == sub_hash) {
+                                    sub_ast = it->second.second;
+                                }
+                            }
+                        }
+                        if (!sub_ast) {
+                            if (auto parsed = cfire::frontend::parse_source(fpath.string(), sub_text)) {
+                                sub_ast = std::move(*parsed);
+                                std::lock_guard<std::mutex> lock(file_ast_cache_mutex_);
+                                if (file_ast_cache_.size() > 200) {
+                                    file_ast_cache_.erase(file_ast_cache_.begin());
+                                }
+                                file_ast_cache_[sub_uri] = {sub_hash, *sub_ast};
+                            }
+                        }
+                        if (sub_ast) {
                             detail::ImportedPkgFile pkg;
                             pkg.alias = !imp.alias.empty() ? imp.alias : sub_ast->package_name;
                             pkg.import_path = imp.path;
@@ -876,8 +1016,11 @@ public:
     auto compute_rename(const std::string& uri, int line, int character, std::string_view new_name) -> std::string;
     auto compute_document_symbols(const std::string& uri) -> std::string;
     auto compute_workspace_symbols(std::string_view query) -> std::string;
+    auto compute_folding_ranges(const std::string& uri) -> std::string;
+    auto compute_selection_range(const std::string& uri, int line, int character) -> std::string;
+    auto compute_document_highlight(const std::string& uri, int line, int character) -> std::string;
 
-    auto compute_code_actions(const std::string& uri, int req_line) -> std::string {
+    auto compute_code_actions(const std::string& uri, int req_line, const std::vector<std::string>& requested_codes = {}) -> std::string {
         std::string text = get_doc_text(uri);
         auto lines = detail::split_lines(text);
         auto diags = compute_diagnostics_for_doc(uri, text);
@@ -910,6 +1053,11 @@ public:
         };
 
         for (const auto& d : diags) {
+            if (!requested_codes.empty()) {
+                if (std::find(requested_codes.begin(), requested_codes.end(), d.code) == requested_codes.end()) {
+                    continue;
+                }
+            }
             if (req_line >= 0 && d.line != req_line && d.code != "cfire/NON-EXHAUSTIVE-MATCH") {
                 continue;
             }
