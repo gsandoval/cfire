@@ -723,6 +723,33 @@ inline void collect_stmt_exprs(
     walk_stmt_exprs(stmts, [&](const cfire::frontend::ExprPtr& ex) { out.push_back(ex); });
 }
 
+inline int get_block_end_line(
+    const std::vector<cfire::frontend::StmtPtr>& body,
+    const std::vector<std::string>& lines,
+    int start_line
+) {
+    int max_l = start_line;
+    for (const auto& s : body) {
+        if (!s) continue;
+        max_l = std::max(max_l, s->line);
+    }
+    int depth = 1;
+    for (std::size_t i = (max_l >= 1 ? max_l - 1 : 0); i < lines.size(); ++i) {
+        const auto& ln = lines[i];
+        for (char c : ln) {
+            if (c == '}') {
+                --depth;
+                if (depth <= 0) {
+                    return static_cast<int>(i + 1);
+                }
+            } else if (c == '{' && static_cast<int>(i + 1) > start_line) {
+                ++depth;
+            }
+        }
+    }
+    return max_l;
+}
+
 inline void collect_stmt_bindings(
     const std::vector<cfire::frontend::StmtPtr>& stmts,
     const cfire::frontend::FileAST& ast,
@@ -798,10 +825,25 @@ inline void collect_stmt_bindings(
                 }
             }
         } else if (const auto* ifs = std::get_if<IfStmt>(&s->node)) {
-            collect_stmt_bindings(ifs->then_body, ast, ws, lines, max_line, env, ordered_out);
-            collect_stmt_bindings(ifs->else_body, ast, ws, lines, max_line, env, ordered_out);
+            int then_start = ifs->line;
+            int then_end = get_block_end_line(ifs->then_body, lines, then_start);
+            if (max_line <= 0 || (max_line >= then_start && max_line <= then_end)) {
+                auto then_env = env;
+                collect_stmt_bindings(ifs->then_body, ast, ws, lines, max_line, then_env, ordered_out);
+                if (max_line > 0) env = std::move(then_env);
+            }
+            int else_start = ifs->then_body.empty() ? ifs->line : then_end;
+            int else_end = get_block_end_line(ifs->else_body, lines, else_start);
+            if (max_line <= 0 || (max_line >= else_start && max_line <= else_end)) {
+                auto else_env = env;
+                collect_stmt_bindings(ifs->else_body, ast, ws, lines, max_line, else_env, ordered_out);
+                if (max_line > 0) env = std::move(else_env);
+            }
         } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
-            if (max_line <= 0 || fs->line <= max_line) {
+            int for_start = fs->line;
+            int for_end = get_block_end_line(fs->body, lines, for_start);
+            if (max_line <= 0 || (max_line >= for_start && max_line <= for_end)) {
+                auto for_env = env;
                 if (!fs->index_var.empty() && fs->index_var != "_") {
                     LocalBindingInfo idx_info;
                     idx_info.name = fs->index_var;
@@ -810,7 +852,7 @@ inline void collect_stmt_bindings(
                     idx_info.cf_type = "usize";
                     idx_info.cpp_type = "std::size_t";
                     idx_info.inferred_colon_eq = false;
-                    env[idx_info.name] = idx_info;
+                    for_env[idx_info.name] = idx_info;
                 }
                 if (!fs->item_var.empty() && fs->item_var != "_") {
                     LocalBindingInfo item_info;
@@ -838,23 +880,52 @@ inline void collect_stmt_bindings(
                         item_info.cpp_type = cf_type_string_to_cpp(item_info.cf_type);
                     }
                     item_info.inferred_colon_eq = false;
-                    env[item_info.name] = item_info;
+                    for_env[item_info.name] = item_info;
                 }
+                collect_stmt_bindings(fs->body, ast, ws, lines, max_line, for_env, ordered_out);
+                if (max_line > 0) env = std::move(for_env);
             }
-            collect_stmt_bindings(fs->body, ast, ws, lines, max_line, env, ordered_out);
         } else if (const auto* def = std::get_if<DeferStmt>(&s->node)) {
-            collect_stmt_bindings(def->body, ast, ws, lines, max_line, env, ordered_out);
+            int def_start = def->line;
+            int def_end = get_block_end_line(def->body, lines, def_start);
+            if (max_line <= 0 || (max_line >= def_start && max_line <= def_end)) {
+                auto def_env = env;
+                collect_stmt_bindings(def->body, ast, ws, lines, max_line, def_env, ordered_out);
+                if (max_line > 0) env = std::move(def_env);
+            }
         } else if (const auto* as = std::get_if<AsyncScopeStmt>(&s->node)) {
-            collect_stmt_bindings(as->body, ast, ws, lines, max_line, env, ordered_out);
+            int as_start = as->line;
+            int as_end = get_block_end_line(as->body, lines, as_start);
+            if (max_line <= 0 || (max_line >= as_start && max_line <= as_end)) {
+                auto as_env = env;
+                collect_stmt_bindings(as->body, ast, ws, lines, max_line, as_env, ordered_out);
+                if (max_line > 0) env = std::move(as_env);
+            }
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
             for (const auto& arm : ms->arms) {
-                collect_stmt_bindings(arm.body, ast, ws, lines, max_line, env, ordered_out);
+                int arm_start = arm.line;
+                int arm_end = get_block_end_line(arm.body, lines, arm_start);
+                if (max_line <= 0 || (max_line >= arm_start && max_line <= arm_end)) {
+                    auto arm_env = env;
+                    for (const auto& b : arm.bindings) {
+                        if (b.empty() || b == "_") continue;
+                        LocalBindingInfo bi;
+                        bi.name = b;
+                        bi.decl_line = arm.line;
+                        arm_env[b] = bi;
+                    }
+                    collect_stmt_bindings(arm.body, ast, ws, lines, max_line, arm_env, ordered_out);
+                    if (max_line > 0) env = std::move(arm_env);
+                }
             }
         } else if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
             if (es->expr) {
                 if (const auto* call = std::get_if<CallExpr>(&es->expr->node)) {
                     if (call->block_arg) {
-                        if (max_line <= 0 || es->line <= max_line) {
+                        int blk_start = es->line;
+                        int blk_end = get_block_end_line(call->block_arg->body, lines, blk_start);
+                        if (max_line <= 0 || (max_line >= blk_start && max_line <= blk_end)) {
+                            auto blk_env = env;
                             for (std::size_t pi = 0; pi < call->block_arg->params.size(); ++pi) {
                                 const auto& bp_name = call->block_arg->params[pi];
                                 if (bp_name.empty() || bp_name == "_") continue;
@@ -877,10 +948,11 @@ inline void collect_stmt_bindings(
                                 }
                                 pinfo.cpp_type = cf_type_string_to_cpp(pinfo.cf_type);
                                 pinfo.inferred_colon_eq = false;
-                                env[pinfo.name] = pinfo;
+                                blk_env[pinfo.name] = pinfo;
                             }
+                            collect_stmt_bindings(call->block_arg->body, ast, ws, lines, max_line, blk_env, ordered_out);
+                            if (max_line > 0) env = std::move(blk_env);
                         }
-                        collect_stmt_bindings(call->block_arg->body, ast, ws, lines, max_line, env, ordered_out);
                     }
                 }
             }
@@ -926,7 +998,8 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
     int one_based = cursor_zero_based_line + 1;
 
     for (const auto& fn : ast.functions) {
-        if (one_based >= fn.line) {
+        int fn_end = get_block_end_line(fn.body, lines, fn.line);
+        if (one_based >= fn.line && one_based <= fn_end) {
             env.clear();
             if (fn.receiver) {
                 LocalBindingInfo r;
@@ -951,10 +1024,12 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
                 env[pi.name] = pi;
             }
             collect_stmt_bindings(fn.body, ast, ws, lines, one_based, env, dummy);
+            return env;
         }
     }
     for (const auto& t : ast.tests) {
-        if (one_based >= t.line) {
+        int t_end = get_block_end_line(t.body, lines, t.line);
+        if (one_based >= t.line && one_based <= t_end) {
             env.clear();
             for (const auto& p : t.params) {
                 LocalBindingInfo pi;
@@ -979,6 +1054,7 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
                 env[bi.name] = bi;
             }
             collect_stmt_bindings(t.body, ast, ws, lines, one_based, env, dummy);
+            return env;
         }
     }
     return env;

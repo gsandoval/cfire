@@ -43,20 +43,8 @@ struct RenameResult {
     std::size_t total_occurrences{0};
 };
 
-[[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
-    if (name.empty()) return false;
-    if (!std::isalpha(static_cast<unsigned char>(name[0])) && name[0] != '_') return false;
-    for (char c : name) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return false;
-    }
-    static const std::unordered_set<std::string_view> keywords = {
-        "package", "import", "cpp", "cplusplus", "as", "type", "struct", "enum", "interface",
-        "map", "fn", "async", "in", "mut", "out", "move", "var",
-        "if", "else", "for", "match", "defer", "return", "try", "or", "test",
-        "true", "false", "none", "nil", "null"
-    };
-    return !keywords.contains(name);
-}
+using lsp::detail::is_valid_identifier;
+using lsp::detail::check_rename_collision;
 
 [[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
     std::string diff;
@@ -189,38 +177,14 @@ struct RenameResult {
         return res;
     }
 
-    // Collision detection:
-    // Check if new_name already exists in target AST
+    // Collision detection
     auto ast_res = frontend::parse_source(target_file.string(), *raw_txt);
     if (ast_res) {
         auto ws = srv.resolve_workspace(target_uri, *ast_res);
-        auto env = lsp::detail::build_scope_bindings(*ast_res, ws, lines, line_0);
-        if (env.contains(res.new_name)) {
-            const auto& existing = env.at(res.new_name);
-            res.error = std::format("cfire/REFACTOR-COLLISION: symbol '{}' already exists in scope (declared at line {})",
-                res.new_name, existing.decl_line);
+        auto coll = check_rename_collision(*ast_res, ws, lines, line_0, res.new_name);
+        if (coll) {
+            res.error = *coll;
             return res;
-        }
-        for (const auto& st : ast_res->structs) {
-            if (st.name == res.new_name) {
-                res.error = std::format("cfire/REFACTOR-COLLISION: struct '{}' already exists in package at line {}",
-                    res.new_name, st.line);
-                return res;
-            }
-        }
-        for (const auto& fn : ast_res->functions) {
-            if (fn.name == res.new_name) {
-                res.error = std::format("cfire/REFACTOR-COLLISION: function '{}' already exists in package at line {}",
-                    res.new_name, fn.line);
-                return res;
-            }
-        }
-        for (const auto& en : ast_res->enums) {
-            if (en.name == res.new_name) {
-                res.error = std::format("cfire/REFACTOR-COLLISION: enum '{}' already exists in package at line {}",
-                    res.new_name, en.line);
-                return res;
-            }
         }
     }
 
@@ -267,11 +231,14 @@ struct RenameResult {
             }
         }
 
+        bool has_crlf = (file_raw->find("\r\n") != std::string::npos);
+        std::string eol = has_crlf ? "\r\n" : "\n";
+
         std::string modded;
         for (std::size_t li = 0; li < file_lines.size(); ++li) {
             modded += file_lines[li];
             if (li + 1 < file_lines.size() || file_raw->ends_with("\n")) {
-                modded += "\n";
+                modded += eol;
             }
         }
         mod.modified_content = std::move(modded);
@@ -288,21 +255,86 @@ struct RenameResult {
 
 [[nodiscard]] inline auto apply_rename(const RenameResult& res) -> std::expected<void, std::string> {
     if (!res.success) return std::unexpected(res.error);
-    for (const auto& mod : res.modifications) {
-        auto tmp_file = std::format("{}.tmp_{}", mod.file_path, ::getpid());
+    if (res.modifications.empty()) return {};
+
+    std::vector<std::string> tmp_files;
+    std::vector<std::pair<std::string, std::string>> backups; // {backup_path, target_path}
+
+    auto cleanup_tmps = [&]() {
+        for (const auto& tf : tmp_files) {
+            std::error_code ec;
+            std::filesystem::remove(tf, ec);
+        }
+    };
+    auto cleanup_backups = [&]() {
+        for (const auto& [bp, _] : backups) {
+            std::error_code ec;
+            std::filesystem::remove(bp, ec);
+        }
+    };
+
+    static std::atomic<std::uint64_t> s_apply_counter{0};
+    std::uint64_t op_id = s_apply_counter++;
+
+    // Step 1: Write all new contents to temporary files
+    for (std::size_t i = 0; i < res.modifications.size(); ++i) {
+        const auto& mod = res.modifications[i];
+        auto tmp_file = std::format("{}.tmp_{}_{}_{}", mod.file_path, ::getpid(), op_id, i);
         {
             std::ofstream out(tmp_file, std::ios::binary | std::ios::trunc);
             if (!out) {
+                cleanup_tmps();
                 return std::unexpected(std::format("failed to write temporary file '{}'", tmp_file));
             }
             out << mod.modified_content;
+            out.flush();
+            if (!out.good()) {
+                cleanup_tmps();
+                return std::unexpected(std::format("failed to write data to '{}'", tmp_file));
+            }
         }
+        tmp_files.push_back(std::move(tmp_file));
+    }
+
+    // Step 2: Create backup of every original file before renaming
+    for (std::size_t i = 0; i < res.modifications.size(); ++i) {
+        const auto& mod = res.modifications[i];
+        auto backup_file = std::format("{}.bak_{}_{}_{}", mod.file_path, ::getpid(), op_id, i);
+        std::error_code ec;
+        if (std::filesystem::exists(mod.file_path, ec)) {
+            std::filesystem::copy_file(mod.file_path, backup_file, std::filesystem::copy_options::overwrite_existing, ec);
+            if (ec) {
+                cleanup_tmps();
+                cleanup_backups();
+                return std::unexpected(std::format("failed to create backup for '{}': {}", mod.file_path, ec.message()));
+            }
+            backups.push_back({std::move(backup_file), mod.file_path});
+        }
+    }
+
+    // Step 3: Rename all temporary files to targets
+    std::size_t applied_count = 0;
+    for (std::size_t i = 0; i < res.modifications.size(); ++i) {
+        const auto& mod = res.modifications[i];
+        const auto& tmp_file = tmp_files[i];
         std::error_code ec;
         std::filesystem::rename(tmp_file, mod.file_path, ec);
         if (ec) {
-            return std::unexpected(std::format("failed to atomically replace '{}': {}", mod.file_path, ec.message()));
+            // Rollback already applied files!
+            for (std::size_t j = 0; j < applied_count; ++j) {
+                const auto& [bp, orig_path] = backups[j];
+                std::error_code rbec;
+                std::filesystem::rename(bp, orig_path, rbec);
+            }
+            cleanup_tmps();
+            cleanup_backups();
+            return std::unexpected(std::format("atomic apply failed on '{}': {}. Changes rolled back.", mod.file_path, ec.message()));
         }
+        applied_count++;
     }
+
+    // Step 4: All succeeded! Clean up backup files
+    cleanup_backups();
     return {};
 }
 

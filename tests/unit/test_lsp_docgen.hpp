@@ -1103,5 +1103,124 @@ fn run_demo() {
             std::format("MCP cfire_rename updated declaration and both '{{...}}' interpolations while preserving plain string text, got:\n{}", updated_txt));
     }
 
+    // 8. CF-119: Scope-sound refactor engine, LSP validity/collision checks, atomic rollback, and CRLF preservation
+    {
+        // 8a. CRLF line ending preservation
+        auto crlf_cf = tmp.file("crlf_sample.cf", "package main\r\n\r\nfn calc(n: i32) -> i32 {\r\n    temp_val := n * 2\r\n    return temp_val + 1\r\n}\r\n\r\nfn main() {\r\n    println(\"{}\", calc(10))\r\n}\r\n");
+        run_cfire(std::format("refactor rename \"{}:4:5\" my_val --apply", crlf_cf.string()))
+            .assert_ok("crlf rename exit 0 (CF-119)");
+
+        auto crlf_raw = cfire::build::read_file_text(crlf_cf).value_or("");
+        require(crlf_raw.contains("\r\n"), "crlf_sample.cf preserves \\r\\n line endings (CF-119)");
+        // Ensure no bare \n without preceding \r exists in file
+        bool has_bare_lf = false;
+        for (std::size_t i = 0; i < crlf_raw.size(); ++i) {
+            if (crlf_raw[i] == '\n' && (i == 0 || crlf_raw[i - 1] != '\r')) {
+                has_bare_lf = true;
+                break;
+            }
+        }
+        require(!has_bare_lf, "crlf_sample.cf contains zero bare LF endings (CF-119)");
+        require(crlf_raw.contains("my_val := n * 2") && crlf_raw.contains("return my_val + 1"),
+            "crlf_sample.cf renamed occurrences correctly (CF-119)");
+
+        // 8b. Scope-sound renaming across shadowed blocks
+        auto shadow_cf = tmp.file("shadow_sample.cf", R"(package main
+
+fn shadow_demo() {
+    val := 100
+    if true {
+        val := "inner string"
+        println("inner: {}", val)
+    }
+    println("outer: {}", val)
+}
+
+fn main() {
+    shadow_demo()
+}
+)");
+        // Rename outer `val` (line 4, col 5) -> `outer_number`
+        run_cfire(std::format("refactor rename \"{}:4:5\" outer_number --apply", shadow_cf.string()))
+            .assert_ok("rename outer val exit 0 (CF-119)");
+
+        auto shadow_after_outer = cfire::build::read_file_text(shadow_cf).value_or("");
+        require(shadow_after_outer.contains("outer_number := 100"), "outer declaration renamed to outer_number (CF-119)");
+        require(shadow_after_outer.contains("println(\"outer: {}\", outer_number)"), "outer usage renamed to outer_number (CF-119)");
+        require(shadow_after_outer.contains("val := \"inner string\""), "inner declaration preserved as val (not renamed) (CF-119)");
+        require(shadow_after_outer.contains("println(\"inner: {}\", val)"), "inner usage preserved as val (not renamed) (CF-119)");
+
+        // Rename inner `val` (line 6, col 9) -> `inner_string`
+        run_cfire(std::format("refactor rename \"{}:6:9\" inner_string --apply", shadow_cf.string()))
+            .assert_ok("rename inner val exit 0 (CF-119)");
+
+        auto shadow_after_inner = cfire::build::read_file_text(shadow_cf).value_or("");
+        require(shadow_after_inner.contains("outer_number := 100"), "outer declaration remains outer_number (CF-119)");
+        require(shadow_after_inner.contains("println(\"outer: {}\", outer_number)"), "outer usage remains outer_number (CF-119)");
+        require(shadow_after_inner.contains("inner_string := \"inner string\""), "inner declaration renamed to inner_string (CF-119)");
+        require(shadow_after_inner.contains("println(\"inner: {}\", inner_string)"), "inner usage renamed to inner_string (CF-119)");
+
+        // Verify refactored code compiles and executes cleanly
+        run_cfire(std::format("run \"{}\"", shadow_cf.string()))
+            .assert_ok("scope-renamed code runs cleanly (CF-119)")
+            .assert_contains("inner: inner string", "inner execution preserved (CF-119)")
+            .assert_contains("outer: 100", "outer execution preserved (CF-119)");
+
+        // 8c. LSP validity and collision checks
+        cfire::lsp::Server lsp_srv;
+        std::string s_uri = cfire::lsp::detail::path_to_uri(shadow_cf.string());
+
+        // Prepare rename: valid identifier returns placeholder
+        std::string prep_res = lsp_srv.compute_prepare_rename(s_uri, 3, 4); // 0-indexed line 3 = line 4
+        require(prep_res.contains("\"placeholder\":\"outer_number\""),
+            std::format("LSP prepareRename returns outer_number placeholder, got: {}", prep_res));
+
+        // Prepare rename on keyword returns null
+        std::string prep_kw = lsp_srv.compute_prepare_rename(s_uri, 4, 4); // 0-indexed line 4 = "if true"
+        require(prep_kw == "null", std::format("LSP prepareRename on keyword returns null, got: {}", prep_kw));
+
+        // Rename with keyword rejected by LSP
+        std::string rename_kw = lsp_srv.compute_rename(s_uri, 3, 4, "match");
+        require(rename_kw == "null", std::format("LSP rename to keyword returns null, got: {}", rename_kw));
+
+        // Rename with invalid identifier rejected by LSP
+        std::string rename_inv = lsp_srv.compute_rename(s_uri, 3, 4, "99bad");
+        require(rename_inv == "null", std::format("LSP rename to invalid identifier returns null, got: {}", rename_inv));
+
+        // Rename with collision (shadow_demo function name) rejected by LSP
+        std::string rename_coll = lsp_srv.compute_rename(s_uri, 3, 4, "shadow_demo");
+        require(rename_coll == "null", std::format("LSP rename with collision returns null, got: {}", rename_coll));
+
+        // Valid rename returns structured changes
+        std::string rename_valid = lsp_srv.compute_rename(s_uri, 3, 4, "clean_val");
+        require(rename_valid.contains("\"newText\":\"clean_val\""),
+            std::format("LSP rename with valid non-colliding name returns changes, got: {}", rename_valid));
+
+        // 8d. Atomic multi-file apply rollback safety
+        cfire::refactor::RenameResult fake_multi_res;
+        fake_multi_res.success = true;
+        fake_multi_res.new_name = "rollback_test";
+
+        auto good_cf = tmp.file("good_file.cf", "package main\nfn main() { orig_name := 1 }\n");
+        cfire::refactor::FileModification good_mod;
+        good_mod.file_path = good_cf.string();
+        good_mod.original_content = "package main\nfn main() { orig_name := 1 }\n";
+        good_mod.modified_content = "package main\nfn main() { rollback_test := 1 }\n";
+        fake_multi_res.modifications.push_back(good_mod);
+
+        cfire::refactor::FileModification bad_mod;
+        bad_mod.file_path = "/nonexistent_dir_9876543210/bad.cf";
+        bad_mod.original_content = "none";
+        bad_mod.modified_content = "bad";
+        fake_multi_res.modifications.push_back(bad_mod);
+
+        auto apply_err = cfire::refactor::apply_rename(fake_multi_res);
+        require(!apply_err.has_value(), "apply_rename on partial failure returns error (CF-119)");
+
+        auto good_check = cfire::build::read_file_text(good_cf).value_or("");
+        require(good_check == "package main\nfn main() { orig_name := 1 }\n",
+            "good_file.cf remains untouched after multi-file apply failure (CF-119)");
+    }
+
     std::println("--- PASS: test_cfire_refactor_rename");
 }

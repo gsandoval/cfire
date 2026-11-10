@@ -278,6 +278,8 @@ struct Resolution {
     std::string type_name{};        // inferred or declared type name
     std::string owner_type{};       // for Field, Method, EnumVariant (e.g. "Point", "Shape")
     std::string package_name{};     // for package-scoped symbols
+    int decl_line = 0;              // 1-based declaration line
+    int decl_col = 0;               // 1-based declaration column
     bool is_mut = false;
     bool is_optional = false;
     bool is_smart_ptr = false;
