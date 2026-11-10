@@ -8,202 +8,24 @@
 #include "build/package_loader.hpp"
 #include "build/wasm_shell.hpp"
 #include "build/apple_bundle.hpp"
+#include "build/windows_resources.hpp"
+#include "build/pch.hpp"
+#include "build/syntax_check.hpp"
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #endif
 
 namespace cfire::build {
 
-inline bool g_debug_mode = false;
-inline bool g_profile_mode = false;
-
-[[nodiscard]] inline auto resolve_cxx_compiler(std::string_view target_triple = "") -> std::string {
-    if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
-        return std::string(env_cxx);
-    }
-    if (!target_triple.empty() && !is_wasm_target(target_triple) && !is_ios_target(target_triple)) {
-        std::string prefixed = std::format("{}-clang++", target_triple);
-        int rc = 0;
-#if defined(_WIN32)
-        (void)bridge::run_command_capture(std::format("where {} >NUL 2>&1", prefixed), rc);
-#else
-        (void)bridge::run_command_capture(std::format("command -v {} >/dev/null 2>&1", prefixed), rc);
-#endif
-        if (rc == 0) {
-            return prefixed;
-        }
-        if (const char* home = std::getenv("HOME"); home && *home) {
-            std::filesystem::path opt_dir = std::filesystem::path(home) / ".local" / "opt";
-            std::error_code ec;
-            if (std::filesystem::is_directory(opt_dir, ec)) {
-                for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
-                    if (!entry.is_directory(ec)) continue;
-                    auto cand = entry.path() / "bin" / prefixed;
-                    if (std::filesystem::exists(cand, ec)) {
-                        return cand.string();
-                    }
-                }
-            }
-        }
-    }
-    return "clang++";
-}
-
-[[nodiscard]] inline auto resolve_windres(std::string_view target_triple) -> std::string {
-    if (const char* env_wr = std::getenv("CFIRE_WINDRES"); env_wr && *env_wr) {
-        return std::string(env_wr);
-    }
-    std::string triple_str = target_triple.empty() ? "x86_64-w64-mingw32" : std::string(target_triple);
-    std::vector<std::string> candidates = {
-        std::format("{}-windres", triple_str),
-        "llvm-windres",
-        "windres"
-    };
-    for (const auto& cand : candidates) {
-        int rc = 0;
-#if defined(_WIN32)
-        (void)bridge::run_command_capture(std::format("where {} >NUL 2>&1", cand), rc);
-#else
-        (void)bridge::run_command_capture(std::format("command -v {} >/dev/null 2>&1", cand), rc);
-#endif
-        if (rc == 0) return cand;
-    }
-    if (const char* home = std::getenv("HOME"); home && *home) {
-        std::filesystem::path opt_dir = std::filesystem::path(home) / ".local" / "opt";
-        std::error_code ec;
-        if (std::filesystem::is_directory(opt_dir, ec)) {
-            for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
-                if (!entry.is_directory(ec)) continue;
-                for (const auto& cand : candidates) {
-                    auto p = entry.path() / "bin" / cand;
-                    if (std::filesystem::exists(p, ec)) return p.string();
-                }
-            }
-        }
-    }
-    return "";
-}
-
-[[nodiscard]] inline auto wrap_png_as_ico(
-    const std::filesystem::path& png_path,
-    const std::filesystem::path& ico_out
-) -> bool {
-    std::ifstream in(png_path, std::ios::binary);
-    if (!in.is_open()) return false;
-    std::vector<std::uint8_t> png((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (png.size() < 24 ||
-        png[0] != 0x89 || png[1] != 0x50 || png[2] != 0x4E || png[3] != 0x47 ||
-        png[4] != 0x0D || png[5] != 0x0A || png[6] != 0x1A || png[7] != 0x0A) {
-        return false;
-    }
-    std::uint32_t w = (static_cast<std::uint32_t>(png[16]) << 24) |
-                      (static_cast<std::uint32_t>(png[17]) << 16) |
-                      (static_cast<std::uint32_t>(png[18]) << 8) |
-                      static_cast<std::uint32_t>(png[19]);
-    std::uint32_t h = (static_cast<std::uint32_t>(png[20]) << 24) |
-                      (static_cast<std::uint32_t>(png[21]) << 16) |
-                      (static_cast<std::uint32_t>(png[22]) << 8) |
-                      static_cast<std::uint32_t>(png[23]);
-    std::uint8_t ico_w = (w == 0 || w >= 256) ? 0 : static_cast<std::uint8_t>(w);
-    std::uint8_t ico_h = (h == 0 || h >= 256) ? 0 : static_cast<std::uint8_t>(h);
-    std::uint32_t sz = static_cast<std::uint32_t>(png.size());
-    std::uint8_t hdr[22] = {
-        0, 0,       // idReserved
-        1, 0,       // idType = 1 (ICON)
-        1, 0,       // idCount = 1
-        ico_w,      // bWidth
-        ico_h,      // bHeight
-        0,          // bColorCount
-        0,          // bReserved
-        1, 0,       // wPlanes = 1
-        32, 0,      // wBitCount = 32
-        static_cast<std::uint8_t>(sz & 0xFFu),
-        static_cast<std::uint8_t>((sz >> 8) & 0xFFu),
-        static_cast<std::uint8_t>((sz >> 16) & 0xFFu),
-        static_cast<std::uint8_t>((sz >> 24) & 0xFFu),
-        22, 0, 0, 0 // dwImageOffset = 22
-    };
-    std::ofstream out(ico_out, std::ios::binary | std::ios::trunc);
-    if (!out.is_open()) return false;
-    out.write(reinterpret_cast<const char*>(hdr), sizeof(hdr));
-    out.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
-    return out.good();
-}
-
-[[nodiscard]] inline auto compile_windows_icon(
-    const std::filesystem::path& icon_path,
-    const std::filesystem::path& out_bin,
-    std::string_view target_triple
-) -> std::string {
-    std::error_code ec;
-    std::filesystem::path ico_file;
-    if (icon_path.extension() == ".ico" && std::filesystem::exists(icon_path, ec)) {
-        ico_file = icon_path;
-    } else {
-        auto sib_ico = icon_path;
-        sib_ico.replace_extension(".ico");
-        if (std::filesystem::exists(sib_ico, ec)) {
-            ico_file = sib_ico;
-        }
-    }
-
-    auto out_dir = out_bin.has_parent_path() ? out_bin.parent_path() : std::filesystem::current_path(ec);
-    std::filesystem::create_directories(out_dir, ec);
-    auto stem = out_bin.stem().string();
-
-    if (ico_file.empty()) {
-        std::filesystem::path png_file;
-        if (icon_path.extension() == ".png" && std::filesystem::exists(icon_path, ec)) {
-            png_file = icon_path;
-        } else {
-            auto sib_png = icon_path;
-            sib_png.replace_extension(".png");
-            if (std::filesystem::exists(sib_png, ec)) {
-                png_file = sib_png;
-            }
-        }
-        if (!png_file.empty()) {
-            auto gen_ico = out_dir / (stem + "_cfire_icon.ico");
-            if (wrap_png_as_ico(png_file, gen_ico)) {
-                ico_file = gen_ico;
-            }
-        }
-    }
-    if (ico_file.empty()) return "";
-
-    std::string windres = resolve_windres(target_triple);
-    if (windres.empty()) return "";
-
-    auto rc_path = out_dir / (stem + "_cfire_icon.rc");
-    auto res_obj = out_dir / (stem + "_cfire_icon.res.o");
-    {
-        std::string ico_escaped = std::filesystem::absolute(ico_file, ec).string();
-        for (char& c : ico_escaped) {
-            if (c == '\\') c = '/';
-        }
-        std::ofstream rc_out(rc_path, std::ios::binary | std::ios::trunc);
-        rc_out << "1 ICON \"" << ico_escaped << "\"\n";
-    }
-    int rc = 0;
-    std::string cmd = std::format("{} \"{}\" -O coff -o \"{}\"", windres, rc_path.string(), res_obj.string());
-    (void)bridge::run_command_capture(cmd, rc);
-    if (rc != 0 || !std::filesystem::exists(res_obj, ec)) {
-        return "";
-    }
-    return res_obj.string();
-}
-
-[[nodiscard]] inline auto analyze_and_emit(
+[[nodiscard]] inline auto init_build_plan_flags(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
-    bool inspect_clang_ast,
-    bool test_mode = false,
-    const std::string& target_triple = "",
-    const std::string& sysroot = "",
-    const std::string& web_profile = "auto",
-    const std::string& subsystem = "auto"
-) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
-    auto dir = cf_file.parent_path();
+    bool test_mode,
+    const std::string& target_triple,
+    const std::string& sysroot,
+    const std::string& web_profile,
+    const std::string& subsystem
+) -> std::expected<BuildPlan, std::string> {
     BuildPlan plan;
     plan.entry_file = cf_file.string();
     plan.is_ios = is_ios_target(target_triple);
@@ -274,102 +96,135 @@ inline bool g_profile_mode = false;
         plan.ldflags.push_back("-lshell32");
         plan.ldflags.push_back("-static");
     }
+    return plan;
+}
 
-    // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08, CF-031)
-    if (cf_file.filename() != "build.cf") {
-        std::filesystem::path found_bcf;
-        std::error_code bcf_ec;
-        auto search_d = std::filesystem::weakly_canonical(dir, bcf_ec);
-        if (bcf_ec || search_d.empty()) search_d = std::filesystem::absolute(dir, bcf_ec);
-        for (int depth = 0; depth < 8 && !search_d.empty(); ++depth) {
-            auto cand_bcf = search_d / "build.cf";
-            if (std::filesystem::exists(cand_bcf, bcf_ec)) {
-                found_bcf = cand_bcf;
-                break;
-            }
-            if (search_d == search_d.parent_path()) break;
-            search_d = search_d.parent_path();
+[[nodiscard]] inline auto discover_and_apply_build_cf(
+    BuildPlan& plan,
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& dir,
+    bool test_mode
+) -> std::expected<void, std::string> {
+    if (cf_file.filename() == "build.cf") return {};
+    bool is_wasm = plan.target_triple.starts_with("wasm");
+
+    std::filesystem::path found_bcf;
+    std::error_code bcf_ec;
+    auto search_d = std::filesystem::weakly_canonical(dir, bcf_ec);
+    if (bcf_ec || search_d.empty()) search_d = std::filesystem::absolute(dir, bcf_ec);
+    for (int depth = 0; depth < 8 && !search_d.empty(); ++depth) {
+        auto cand_bcf = search_d / "build.cf";
+        if (std::filesystem::exists(cand_bcf, bcf_ec)) {
+            found_bcf = cand_bcf;
+            break;
         }
-        if (!found_bcf.empty()) {
-            auto parsed = parse_build_cf(found_bcf);
-            if (!parsed) return std::unexpected(parsed.error());
-            auto bcf_parent = found_bcf.parent_path();
-            if (!parsed->executables.empty()) {
-                const ExecutableSpec* matched_exe = &parsed->executables[0];
-                bool exact_entry_match = false;
-                auto cf_canon = std::filesystem::weakly_canonical(cf_file, bcf_ec);
-                for (const auto& ex : parsed->executables) {
-                    if (!ex.entry.empty()) {
-                        auto ex_canon = std::filesystem::weakly_canonical(bcf_parent / ex.entry, bcf_ec);
-                        if (!bcf_ec && ex_canon == cf_canon) {
-                            matched_exe = &ex;
-                            exact_entry_match = true;
-                            break;
-                        }
-                    }
+        if (search_d == search_d.parent_path()) break;
+        search_d = search_d.parent_path();
+    }
+    if (found_bcf.empty()) return {};
+
+    auto parsed = parse_build_cf(found_bcf);
+    if (!parsed) return std::unexpected(parsed.error());
+    auto bcf_parent = found_bcf.parent_path();
+    if (!parsed->executables.empty()) {
+        const ExecutableSpec* matched_exe = &parsed->executables[0];
+        bool exact_entry_match = false;
+        auto cf_canon = std::filesystem::weakly_canonical(cf_file, bcf_ec);
+        for (const auto& ex : parsed->executables) {
+            if (!ex.entry.empty()) {
+                auto ex_canon = std::filesystem::weakly_canonical(bcf_parent / ex.entry, bcf_ec);
+                if (!bcf_ec && ex_canon == cf_canon) {
+                    matched_exe = &ex;
+                    exact_entry_match = true;
+                    break;
                 }
-                if (plan.app_name.empty()) plan.app_name = matched_exe->app_name;
-                if (plan.bundle_id.empty()) plan.bundle_id = matched_exe->bundle_id;
-                if (plan.url_schemes.empty()) plan.url_schemes = matched_exe->url_schemes;
-                if (plan.sign_identity.empty()) plan.sign_identity = matched_exe->sign_identity;
-                if (plan.icon_path.empty() && !matched_exe->icon.empty()) {
-                    auto icon_cand = bcf_parent / matched_exe->icon;
-                    if (std::filesystem::exists(icon_cand, bcf_ec)) {
-                        plan.icon_path = icon_cand.string();
-                    } else {
-                        plan.icon_path = matched_exe->icon;
-                    }
-                }
-                std::vector<std::string> fws_to_link;
-                std::vector<std::string> libs_to_link;
-                auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
-                    if (item.empty()) return;
-                    for (const auto& existing : vec) {
-                        if (existing == item) return;
-                    }
-                    vec.push_back(item);
-                };
-                if (test_mode || !exact_entry_match) {
-                    for (const auto& ex : parsed->executables) {
-                        for (const auto& fw : ex.frameworks) add_unique(fws_to_link, fw);
-                        for (const auto& lib : ex.libraries) add_unique(libs_to_link, lib);
-                    }
-                } else {
-                    for (const auto& fw : matched_exe->frameworks) add_unique(fws_to_link, fw);
-                    for (const auto& lib : matched_exe->libraries) add_unique(libs_to_link, lib);
-                }
+            }
+        }
+        if (plan.app_name.empty()) plan.app_name = matched_exe->app_name;
+        if (plan.bundle_id.empty()) plan.bundle_id = matched_exe->bundle_id;
+        if (plan.url_schemes.empty()) plan.url_schemes = matched_exe->url_schemes;
+        if (plan.sign_identity.empty()) plan.sign_identity = matched_exe->sign_identity;
+        if (plan.icon_path.empty() && !matched_exe->icon.empty()) {
+            auto icon_cand = bcf_parent / matched_exe->icon;
+            if (std::filesystem::exists(icon_cand, bcf_ec)) {
+                plan.icon_path = icon_cand.string();
+            } else {
+                plan.icon_path = matched_exe->icon;
+            }
+        }
+        std::vector<std::string> fws_to_link;
+        std::vector<std::string> libs_to_link;
+        auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
+            if (item.empty()) return;
+            for (const auto& existing : vec) {
+                if (existing == item) return;
+            }
+            vec.push_back(item);
+        };
+        if (test_mode || !exact_entry_match) {
+            for (const auto& ex : parsed->executables) {
+                for (const auto& fw : ex.frameworks) add_unique(fws_to_link, fw);
+                for (const auto& lib : ex.libraries) add_unique(libs_to_link, lib);
+            }
+        } else {
+            for (const auto& fw : matched_exe->frameworks) add_unique(fws_to_link, fw);
+            for (const auto& lib : matched_exe->libraries) add_unique(libs_to_link, lib);
+        }
 #if defined(__APPLE__)
-                if (!is_wasm) {
-                    for (const auto& fw : fws_to_link) {
-                        plan.ldflags.push_back("-framework");
-                        plan.ldflags.push_back(fw);
-                    }
-                }
+        if (!is_wasm) {
+            for (const auto& fw : fws_to_link) {
+                plan.ldflags.push_back("-framework");
+                plan.ldflags.push_back(fw);
+            }
+        }
 #endif
-                if (!is_wasm) {
-                    for (const auto& lib : libs_to_link) {
-                        plan.ldflags.push_back(lib.starts_with("-l") ? lib : ("-l" + lib));
-                    }
-                }
-            }
-            for (auto& dep : parsed->external_deps) {
-                bool exists_already = false;
-                for (const auto& ed : plan.external_deps) {
-                    if (ed.name == dep.name) { exists_already = true; break; }
-                }
-                if (!exists_already) {
-                    plan.external_deps.push_back(std::move(dep));
-                }
-            }
-            for (auto& cmd : parsed->pre_build_commands) {
-                if (cmd.work_dir.empty()) cmd.work_dir = bcf_parent.string();
-                if (auto r = execute_pre_build_command(cmd, bcf_parent); !r) {
-                    return std::unexpected(r.error());
-                }
-                plan.pre_build_commands.push_back(std::move(cmd));
+        if (!is_wasm) {
+            for (const auto& lib : libs_to_link) {
+                plan.ldflags.push_back(lib.starts_with("-l") ? lib : ("-l" + lib));
             }
         }
     }
+    for (auto& dep : parsed->external_deps) {
+        bool exists_already = false;
+        for (const auto& ed : plan.external_deps) {
+            if (ed.name == dep.name) { exists_already = true; break; }
+        }
+        if (!exists_already) {
+            plan.external_deps.push_back(std::move(dep));
+        }
+    }
+    for (auto& cmd : parsed->pre_build_commands) {
+        if (cmd.work_dir.empty()) cmd.work_dir = bcf_parent.string();
+        if (auto r = execute_pre_build_command(cmd, bcf_parent); !r) {
+            return std::unexpected(r.error());
+        }
+        plan.pre_build_commands.push_back(std::move(cmd));
+    }
+    return {};
+}
+
+[[nodiscard]] inline auto analyze_and_emit(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    bool inspect_clang_ast,
+    bool test_mode = false,
+    const std::string& target_triple = "",
+    const std::string& sysroot = "",
+    const std::string& web_profile = "auto",
+    const std::string& subsystem = "auto"
+) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
+    auto dir = cf_file.parent_path();
+    auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem);
+    if (!plan_res) return std::unexpected(plan_res.error());
+    BuildPlan plan = std::move(*plan_res);
+
+    if (auto bcf_res = discover_and_apply_build_cf(plan, cf_file, dir, test_mode); !bcf_res) {
+        return std::unexpected(bcf_res.error());
+    }
+
+    auto install_root = derive_install_root(runtime_dir);
+    bool is_wasm = plan.target_triple.starts_with("wasm");
+    bool is_win_target = is_windows_target(plan.target_triple);
 
     // 2. Read and parse root .cf source
     auto raw = read_file_text(cf_file);
@@ -910,166 +765,6 @@ inline bool g_profile_mode = false;
 
     return std::make_pair(std::move(cpp_code), std::move(plan));
 }
-
-[[nodiscard]] inline auto prelude_pch_path(
-    const std::filesystem::path& runtime_dir,
-    bool sanitize,
-    bool test_mode = false
-) -> std::filesystem::path {
-    std::error_code ec;
-#if defined(_WIN32)
-    auto pch_dir = std::filesystem::temp_directory_path(ec) / "cfire_pch_cache";
-#else
-    auto uid = ::getuid();
-    auto tmp_base = std::filesystem::temp_directory_path(ec);
-    auto pch_dir = tmp_base / std::format("cfire-{}-pch", uid);
-#endif
-    std::filesystem::create_directories(pch_dir, ec);
-#if !defined(_WIN32)
-    ::chmod(pch_dir.c_str(), 0700);
-#endif
-    auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
-    std::string cxx_bin = resolve_cxx_compiler();
-    std::string tag = sanitize ? (test_mode ? "san_test" : "san") : (test_mode ? "test_trap" : "opt_wrapv");
-
-    std::size_t content_hash = 0;
-    auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
-    if (std::filesystem::exists(prelude_hdr, ec)) {
-        std::ifstream f(prelude_hdr, std::ios::binary);
-        if (f) {
-            std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-            content_hash = std::hash<std::string>{}(content);
-        }
-    }
-
-    std::string key = std::format("{}|{}|{}|{}|{}|{:016x}",
-        (ec ? runtime_dir : can_rt).string(),
-        cxx_bin,
-        cfire::version::kVersion,
-        cfire::version::kGitSha,
-        tag,
-        content_hash);
-    std::size_t rt_hash = std::hash<std::string>{}(key);
-    std::string pch_name = std::format("cfire_prelude_{}_{:08x}.pch",
-        tag,
-        static_cast<std::uint32_t>(rt_hash & 0xFFFFFFFFu));
-    return pch_dir / pch_name;
-}
-
-[[nodiscard]] inline auto ensure_prelude_pch(
-    const std::filesystem::path& runtime_dir,
-    bool sanitize,
-    bool test_mode = false
-) -> std::string {
-    auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
-    std::error_code ec;
-    if (!std::filesystem::exists(prelude_hdr, ec)) return "";
-
-    auto pch_path = prelude_pch_path(runtime_dir, sanitize, test_mode);
-    std::filesystem::create_directories(pch_path.parent_path(), ec);
-    std::string cxx_bin = resolve_cxx_compiler();
-
-    bool needs_build = !std::filesystem::exists(pch_path, ec);
-    if (!needs_build) {
-        auto hdr_time = std::filesystem::last_write_time(prelude_hdr, ec);
-        auto pch_time = std::filesystem::last_write_time(pch_path, ec);
-        if (!ec && hdr_time > pch_time) {
-            needs_build = true;
-        }
-        auto test_rt_hdr = runtime_dir / "cfire_test_runtime.hpp";
-        if (!needs_build && std::filesystem::exists(test_rt_hdr, ec)) {
-            auto tr_time = std::filesystem::last_write_time(test_rt_hdr, ec);
-            if (!ec && tr_time > pch_time) {
-                needs_build = true;
-            }
-        }
-    }
-
-    if (needs_build) {
-        std::string opt_flags;
-        if (sanitize) {
-            opt_flags = "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined";
-            if (test_mode) {
-                opt_flags += " -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fsanitize-trap=all";
-            }
-        } else {
-            if (test_mode) {
-                opt_flags = "-O2 -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fsanitize-trap=all";
-            } else {
-                opt_flags = "-O2 -fwrapv";
-            }
-        }
-#if defined(__linux__)
-        opt_flags += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -pthread";
-#endif
-        auto tmp_pch_path = pch_path;
-        tmp_pch_path += std::format(".tmp.{}.pch", ::getpid());
-        std::string cmd = std::format(
-            "{} -std=c++2b -Wno-c++11-narrowing {} -x c++-header \"{}\" -o \"{}\"",
-            cxx_bin, opt_flags, prelude_hdr.string(), tmp_pch_path.string());
-        int rc = 0;
-        (void)bridge::run_command_capture(cmd, rc);
-        if (rc != 0) {
-            std::filesystem::remove(tmp_pch_path, ec);
-            return "";
-        }
-        std::filesystem::rename(tmp_pch_path, pch_path, ec);
-        if (ec) {
-            std::filesystem::remove(tmp_pch_path, ec);
-        }
-    }
-    return pch_path.string();
-}
-
-[[nodiscard]] inline auto verify_cpp_syntax_only(
-    const std::filesystem::path& cf_file,
-    std::string_view cpp_code,
-    const BuildPlan& plan,
-    const std::filesystem::path& runtime_dir,
-    const std::vector<std::string>& extra_includes = {}
-) -> std::expected<void, std::string> {
-    auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
-    std::error_code ec;
-    std::filesystem::create_directories(gen_dir, ec);
-    auto cpp_path = gen_dir / (cf_file.stem().string() + ".cpp");
-    if (ec) {
-        cpp_path = std::filesystem::temp_directory_path() / (cf_file.stem().string() + "_check.cpp");
-    }
-    {
-        std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
-        if (!out) {
-            return std::unexpected("failed to open generated C++ file for writing: " + cpp_path.string());
-        }
-        out << cpp_code;
-        out.flush();
-        if (!out.good()) {
-            return std::unexpected("failed to write generated C++ code: " + cpp_path.string());
-        }
-    }
-
-    bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
-    std::string pch_path;
-    if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
-        pch_path = ensure_prelude_pch(runtime_dir, false, has_trap);
-    }
-    std::string cmd = resolve_cxx_compiler() + " -O2";
-    for (const auto& f : plan.cflags) cmd += " " + f;
-    for (const auto& inc : extra_includes) cmd += " -I \"" + inc + "\"";
-    if (!pch_path.empty()) {
-        cmd += std::format(" -include-pch \"{}\"", pch_path);
-    }
-    if (plan.uses_objc) {
-        cmd += " -x objective-c++";
-    }
-    cmd += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
-    int rc = 0;
-    auto output = bridge::run_command_capture(cmd, rc);
-    if (rc != 0) {
-        return std::unexpected(cfire::diag::humanize_cpp_compiler_output(output));
-    }
-    return {};
-}
-
 
 [[nodiscard]] inline auto build_native(
     const std::filesystem::path& cf_file,
