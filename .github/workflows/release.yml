@@ -54,7 +54,6 @@ jobs:
           ./cfire --version | grep -F "cfire ${TAG_VER} ($(git rev-parse --short=7 HEAD),"
 
       - name: Run Review Check Quality Gates
-        if: github.event_name != 'workflow_dispatch'
         run: make review-check
 
       - name: Package Portable Release Bundle (macOS arm64)

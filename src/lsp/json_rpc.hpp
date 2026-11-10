@@ -10,6 +10,8 @@
 #include "layout.hpp"
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -29,9 +31,33 @@ namespace detail {
     return cfire::detail::json_escape(sv);
 }
 
+inline void append_utf8(std::string& out, uint32_t cp) {
+    if (cp <= 0x7F) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | ((cp >> 6) & 0x1F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | ((cp >> 12) & 0x0F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0x10FFFF) {
+        out.push_back(static_cast<char>(0xF0 | ((cp >> 18) & 0x07)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
 [[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size());
+    auto hex_val = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
     for (std::size_t i = 0; i < sv.size(); ++i) {
         if (sv[i] == '\\' && i + 1 < sv.size()) {
             char next = sv[++i];
@@ -42,6 +68,36 @@ namespace detail {
                 case '"': out.push_back('"'); break;
                 case '\\': out.push_back('\\'); break;
                 case '/': out.push_back('/'); break;
+                case 'u': {
+                    if (i + 4 < sv.size()) {
+                        int h0 = hex_val(sv[i + 1]);
+                        int h1 = hex_val(sv[i + 2]);
+                        int h2 = hex_val(sv[i + 3]);
+                        int h3 = hex_val(sv[i + 4]);
+                        if (h0 >= 0 && h1 >= 0 && h2 >= 0 && h3 >= 0) {
+                            uint32_t cp = static_cast<uint32_t>((h0 << 12) | (h1 << 8) | (h2 << 4) | h3);
+                            i += 4;
+                            // Check for UTF-16 surrogate pair \uD800..\uDBFF followed by \uDC00..\uDFFF
+                            if (cp >= 0xD800 && cp <= 0xDBFF && i + 6 < sv.size() && sv[i + 1] == '\\' && sv[i + 2] == 'u') {
+                                int l0 = hex_val(sv[i + 3]);
+                                int l1 = hex_val(sv[i + 4]);
+                                int l2 = hex_val(sv[i + 5]);
+                                int l3 = hex_val(sv[i + 6]);
+                                if (l0 >= 0 && l1 >= 0 && l2 >= 0 && l3 >= 0) {
+                                    uint32_t low = static_cast<uint32_t>((l0 << 12) | (l1 << 8) | (l2 << 4) | l3);
+                                    if (low >= 0xDC00 && low <= 0xDFFF) {
+                                        cp = 0x10000 + (((cp - 0xD800) << 10) | (low - 0xDC00));
+                                        i += 6;
+                                    }
+                                }
+                            }
+                            append_utf8(out, cp);
+                            break;
+                        }
+                    }
+                    out.push_back('u');
+                    break;
+                }
                 default: out.push_back(next); break;
             }
         } else {
@@ -139,7 +195,12 @@ namespace detail {
     std::size_t end = pos;
     while (end < json.size() && (std::isdigit(static_cast<unsigned char>(json[end])) || json[end] == '-')) ++end;
     if (end == pos) return std::nullopt;
-    return std::stoi(std::string(json.substr(pos, end - pos)));
+    int val = 0;
+    auto res = std::from_chars(json.data() + pos, json.data() + end, val);
+    if (res.ec == std::errc{}) {
+        return val;
+    }
+    return std::nullopt;
 }
 
 [[nodiscard]] inline auto extract_json_bool(std::string_view json, std::string_view key, std::size_t start_pos = 0)
@@ -154,10 +215,126 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto uri_to_path(std::string_view uri) -> std::string {
-    if (uri.starts_with("file://")) {
-        return std::string(uri.substr(7));
+    std::string_view path_part = uri;
+    if (path_part.starts_with("file://")) {
+        path_part.remove_prefix(7);
+        #if defined(_WIN32)
+        if (path_part.starts_with('/') && path_part.size() >= 3 &&
+            std::isalpha(static_cast<unsigned char>(path_part[1])) && path_part[2] == ':') {
+            path_part.remove_prefix(1);
+        }
+        #endif
     }
-    return std::string(uri);
+    std::string out;
+    out.reserve(path_part.size());
+    for (std::size_t i = 0; i < path_part.size(); ++i) {
+        if (path_part[i] == '%' && i + 2 < path_part.size()) {
+            auto hex_val = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            };
+            int h1 = hex_val(path_part[i + 1]);
+            int h2 = hex_val(path_part[i + 2]);
+            if (h1 >= 0 && h2 >= 0) {
+                out.push_back(static_cast<char>((h1 << 4) | h2));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(path_part[i]);
+    }
+    return out;
+}
+
+[[nodiscard]] inline auto utf8_col_to_utf16_col(std::string_view line, int utf8_col) -> int {
+    if (utf8_col <= 0 || line.empty()) return 0;
+    int u16_col = 0;
+    std::size_t byte_idx = 0;
+    std::size_t target_byte = static_cast<std::size_t>(utf8_col);
+    while (byte_idx < line.size() && byte_idx < target_byte) {
+        unsigned char c = static_cast<unsigned char>(line[byte_idx]);
+        if (c < 0x80) {
+            byte_idx += 1;
+            u16_col += 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            byte_idx += 2;
+            u16_col += 1;
+        } else if ((c & 0xF0) == 0xE0) {
+            byte_idx += 3;
+            u16_col += 1;
+        } else if ((c & 0xF8) == 0xF0) {
+            byte_idx += 4;
+            u16_col += 2;
+        } else {
+            byte_idx += 1;
+            u16_col += 1;
+        }
+    }
+    return u16_col;
+}
+
+[[nodiscard]] inline auto utf16_col_to_utf8_col(std::string_view line, int u16_col) -> int {
+    if (u16_col <= 0 || line.empty()) return 0;
+    int cur_u16 = 0;
+    std::size_t byte_idx = 0;
+    while (byte_idx < line.size() && cur_u16 < u16_col) {
+        unsigned char c = static_cast<unsigned char>(line[byte_idx]);
+        if (c < 0x80) {
+            byte_idx += 1;
+            cur_u16 += 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            byte_idx += 2;
+            cur_u16 += 1;
+        } else if ((c & 0xF0) == 0xE0) {
+            byte_idx += 3;
+            cur_u16 += 1;
+        } else if ((c & 0xF8) == 0xF0) {
+            byte_idx += 4;
+            cur_u16 += 2;
+        } else {
+            byte_idx += 1;
+            cur_u16 += 1;
+        }
+    }
+    return static_cast<int>(byte_idx);
+}
+
+inline void apply_incremental_edit(std::string& doc, int start_line, int start_col, int end_line, int end_col, std::string_view new_text) {
+    auto lines = cfire::diag::split_lines(doc);
+    if (lines.empty() && doc.empty()) {
+        doc = std::string(new_text);
+        return;
+    }
+
+    std::size_t start_byte = 0;
+    for (int i = 0; i < start_line && i < static_cast<int>(lines.size()); ++i) {
+        start_byte += lines[i].size() + 1;
+    }
+    if (start_line < static_cast<int>(lines.size())) {
+        int u8_col = utf16_col_to_utf8_col(lines[start_line], start_col);
+        start_byte += std::min(static_cast<std::size_t>(u8_col), lines[start_line].size());
+    } else {
+        start_byte = doc.size();
+    }
+
+    std::size_t end_byte = 0;
+    for (int i = 0; i < end_line && i < static_cast<int>(lines.size()); ++i) {
+        end_byte += lines[i].size() + 1;
+    }
+    if (end_line < static_cast<int>(lines.size())) {
+        int u8_col = utf16_col_to_utf8_col(lines[end_line], end_col);
+        end_byte += std::min(static_cast<std::size_t>(u8_col), lines[end_line].size());
+    } else {
+        end_byte = doc.size();
+    }
+
+    if (start_byte > doc.size()) start_byte = doc.size();
+    if (end_byte > doc.size()) end_byte = doc.size();
+    if (start_byte > end_byte) std::swap(start_byte, end_byte);
+
+    doc.replace(start_byte, end_byte - start_byte, new_text);
 }
 
 [[nodiscard]] inline auto path_to_uri(const std::filesystem::path& p) -> std::string {

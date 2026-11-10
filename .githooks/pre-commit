@@ -33,3 +33,6 @@ fi
 
 # 3. Verify canonical formatting of examples
 ./cfire fmt --check examples/ >/dev/null
+
+# 4. Run fast unit test suites
+make -s test-unit
