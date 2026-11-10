@@ -5,6 +5,74 @@
 
 namespace cfire::lsp {
 
+namespace detail {
+
+[[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
+    if (name.empty()) return false;
+    if (!std::isalpha(static_cast<unsigned char>(name[0])) && name[0] != '_') return false;
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return false;
+    }
+    if (name == "_" || name == "true" || name == "false" || name == "none" || name == "nil" || name == "null") {
+        return false;
+    }
+    if (cfire::frontend::find_keyword(name).has_value()) {
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] inline auto check_rename_collision(
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::vector<std::string>& lines,
+    int line_0,
+    std::string_view new_name
+) -> std::optional<std::string> {
+    if (!is_valid_identifier(new_name)) {
+        return std::format("cfire/REFACTOR-INVALID-NAME: '{}' is not a valid non-keyword cfire identifier", new_name);
+    }
+    auto env = build_scope_bindings(ast, ws, lines, line_0);
+    if (env.contains(std::string(new_name))) {
+        const auto& existing = env.at(std::string(new_name));
+        return std::format("cfire/REFACTOR-COLLISION: symbol '{}' already exists in scope (declared at line {})",
+            new_name, existing.decl_line);
+    }
+    for (const auto& st : ast.structs) {
+        if (st.name == new_name) {
+            return std::format("cfire/REFACTOR-COLLISION: struct '{}' already exists in package at line {}",
+                new_name, st.line);
+        }
+    }
+    for (const auto& fn : ast.functions) {
+        if (fn.name == new_name && !fn.receiver) {
+            return std::format("cfire/REFACTOR-COLLISION: function '{}' already exists in package at line {}",
+                new_name, fn.line);
+        }
+    }
+    for (const auto& en : ast.enums) {
+        if (en.name == new_name) {
+            return std::format("cfire/REFACTOR-COLLISION: enum '{}' already exists in package at line {}",
+                new_name, en.line);
+        }
+    }
+    for (const auto& gv : ast.global_vars) {
+        if (gv.name == new_name) {
+            return std::format("cfire/REFACTOR-COLLISION: global variable '{}' already exists in package at line {}",
+                new_name, gv.line);
+        }
+    }
+    for (const auto& imp : ast.imports) {
+        if (imp.alias == new_name) {
+            return std::format("cfire/REFACTOR-COLLISION: import alias '{}' already exists in package at line {}",
+                new_name, imp.line);
+        }
+    }
+    return std::nullopt;
+}
+
+} // namespace detail
+
 inline auto Server::compute_definition(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
@@ -429,6 +497,7 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
     // 1. Check if symbol is a function-local variable, parameter, or receiver
     bool is_local = (qualifier.empty() && env.find(std::string(target_name)) != env.end());
     if (is_local && ast_res) {
+        int target_decl_line = env.at(std::string(target_name)).decl_line;
         int start_line = 1;
         int end_line = static_cast<int>(lines.size());
         int target_line_1 = line + 1;
@@ -468,10 +537,22 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
                 if (t.kind == cfire::frontend::TokenKind::Ident && t.lexeme == target_name) {
                     bool preceded_by_dot = (i > 0 && toks[i - 1].kind == cfire::frontend::TokenKind::Dot);
                     if (!preceded_by_dot) {
-                        int ln = std::max(0, t.line - 1);
-                        int sc = std::max(0, t.col - 1);
-                        int ec = sc + static_cast<int>(t.lexeme.size());
-                        refs.push_back(TokenOccurrence{uri, ln, sc, ec});
+                        bool match = false;
+                        if (t.line == target_decl_line) {
+                            match = true;
+                        } else if (t.line > target_decl_line) {
+                            auto env_t = detail::build_scope_bindings(*ast_res, ws, lines, t.line - 1);
+                            auto it = env_t.find(std::string(target_name));
+                            if (it != env_t.end() && it->second.decl_line == target_decl_line) {
+                                match = true;
+                            }
+                        }
+                        if (match) {
+                            int ln = std::max(0, t.line - 1);
+                            int sc = std::max(0, t.col - 1);
+                            int ec = sc + static_cast<int>(t.lexeme.size());
+                            refs.push_back(TokenOccurrence{uri, ln, sc, ec});
+                        }
                     }
                 }
             }
@@ -594,14 +675,7 @@ inline auto Server::compute_prepare_rename(const std::string& uri, int line, int
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
     if (sym.name.empty()) return "null";
-
-    static const std::unordered_set<std::string_view> keywords = {
-        "package", "import", "cpp", "as", "type", "struct", "enum", "interface",
-        "map", "fn", "async", "in", "mut", "out", "move", "var",
-        "if", "else", "for", "match", "defer", "return", "try", "or", "test",
-        "true", "false", "none"
-    };
-    if (keywords.contains(sym.name)) return "null";
+    if (!detail::is_valid_identifier(sym.name)) return "null";
 
     static const std::unordered_set<std::string_view> primitives = {
         "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64",
@@ -619,10 +693,19 @@ inline auto Server::compute_prepare_rename(const std::string& uri, int line, int
 
 inline auto Server::compute_rename(const std::string& uri, int line, int character, std::string_view new_name) -> std::string {
     if (new_name.empty()) return "null";
+    if (!detail::is_valid_identifier(new_name)) return "null";
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
-    if (sym.name.empty()) return "null";
+    if (sym.name.empty() || sym.name == new_name) return "null";
+
+    auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
+    if (ast_res) {
+        auto coll = detail::check_rename_collision(*ast_res, ws, lines, line, new_name);
+        if (coll.has_value()) {
+            return "null";
+        }
+    }
 
     auto refs = find_symbol_occurrences(uri, line, character, sym.name, sym.qualifier);
     if (refs.empty()) return "null";
