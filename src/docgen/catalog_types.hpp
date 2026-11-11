@@ -48,9 +48,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/audio.hpp";
         m.core_key = "audio";
         m.types = {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"};
-#if defined(__APPLE__)
-        m.link_tags = {"-framework AudioToolbox", "-framework CoreFoundation"};
-#endif
     } else if (m.import_path == "core:build") {
         m.core_key = "buildsys";
         m.header_path = "core/buildsys.hpp";
@@ -108,9 +105,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/keychain.hpp";
         m.core_key = "keychain";
         m.aliases = {"core:os/keychain"};
-#if defined(__APPLE__)
-        m.link_tags = {"-framework Security", "-framework CoreFoundation"};
-#endif
     } else if (m.import_path == "core:log") {
         m.header_path = "core/log.hpp";
         m.core_key = "log";

@@ -10,7 +10,7 @@
 
 namespace cfire::version {
 
-inline constexpr std::string_view kVersion = "0.10.0";
+inline constexpr std::string_view kVersion = "0.11.0";
 
 // Expanded automatically by `git archive` (e.g. GitHub release/branch tarballs) via .gitattributes export-subst.
 inline constexpr std::string_view kArchiveGitSha = "$Format:%h$";

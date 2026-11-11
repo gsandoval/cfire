@@ -1242,18 +1242,19 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         std::string decoded_path = cfire::lsp::detail::uri_to_path("file:///path/with%20spaces/main.cf");
         require(decoded_path == "/path/with spaces/main.cf", "uri_to_path percent-decodes spaces properly");
 
-        cfire::lsp::Server srv;
         std::ostringstream ss;
+        cfire::lsp::Server srv;
         srv.handle_message(R"({"jsonrpc":"2.0","id":42,"method":"custom/unknownMethod","params":{}})", ss);
         std::string resp = ss.str();
         require(resp.contains("\"code\":-32601") && resp.contains("Method not found"),
             std::format("LSP unknown method returns standard -32601 MethodNotFound error, got: {}", resp));
+        srv.stop_worker();
     }
 
     // 2. CF-126: Document lifecycle (didClose and workspace/didChangeWatchedFiles)
     {
-        cfire::lsp::Server srv;
         std::ostringstream ss;
+        cfire::lsp::Server srv;
         std::string uri = "file:///tmp/doc_test.cf";
         srv.handle_message(std::format(
             R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\nfn main() {{ let x = 1 }}\n"}}}}}})",
@@ -1271,6 +1272,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
 
         srv.handle_message(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[]}})", ss);
         require(srv.get_doc_text(uri).empty(), "workspace/didChangeWatchedFiles clears in-memory caches");
+        srv.stop_worker();
     }
 
     // 3. CF-127: UTF-16 position translations & real symbol ranges
@@ -1280,8 +1282,8 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         int u8_len = cfire::lsp::detail::utf16_col_to_utf8_col(mixed_line, u16_len);
         require(u8_len == static_cast<int>(mixed_line.size()), "UTF-16 <-> UTF-8 column roundtrip matches byte length");
 
-        cfire::lsp::Server srv;
         std::ostringstream ss;
+        cfire::lsp::Server srv;
         std::string uri = "file:///tmp/sym_test.cf";
         srv.handle_message(std::format(
             R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\n\ntype Point struct {{\n    x: f64\n    y: f64\n}}\n\nfn add_coords(p: Point) -> f64 {{\n    return p.x + p.y\n}}\n"}}}}}})",
@@ -1290,12 +1292,13 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         require(syms.contains("\"name\":\"Point\"") && syms.contains("\"range\""), "documentSymbols contains Point struct");
         require(syms.contains("\"name\":\"add_coords\"") && syms.contains("\"selectionRange\""), "documentSymbols contains function with selectionRange");
         require(!syms.contains("\"character\":20"), "documentSymbols does not contain hardcoded dummy character:20 range");
+        srv.stop_worker();
     }
 
     // 4. CF-128: Incremental sync and $/cancelRequest
     {
-        cfire::lsp::Server srv;
         std::ostringstream ss;
+        cfire::lsp::Server srv;
         std::string uri = "file:///tmp/incr_test.cf";
         srv.handle_message(std::format(
             R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\nfn run() {{\n    msg := \"hello\"\n}}\n"}}}}}})",
@@ -1308,12 +1311,13 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
             std::format("incremental didChange successfully patched buffer, got:\n{}", updated));
 
         srv.handle_message(R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":99}})", ss);
+        srv.stop_worker();
     }
 
     // 5. CF-129: Folding ranges, selection ranges, document highlight, code actions context
     {
-        cfire::lsp::Server srv;
         std::ostringstream ss;
+        cfire::lsp::Server srv;
         std::string uri = "file:///tmp/features_test.cf";
         srv.handle_message(std::format(
             R"({{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"{}","text":"package main\n\nimport \"core:time\"\n\nfn compute(val: i32) -> i32 {{\n    mut total = val\n    total += 10\n    return total\n}}\n"}}}}}})",
@@ -1333,6 +1337,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
 
         std::string code_actions = srv.compute_code_actions(uri, 5, {"cfire/UNUSED-VARIABLE"});
         require(code_actions == "[]", "compute_code_actions respects requested diagnostic code filter");
+        srv.stop_worker();
     }
 
     // 6. CF-130: Formatter token spacing and idempotency
