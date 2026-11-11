@@ -1525,12 +1525,12 @@ fn hardware_concurrency_and_arch(multiplier: i32) -> (str, i32) {
 
 fn main() {
     (arch, slots) := hardware_concurrency_and_arch(2)
-    println("arch={} worker_slots>={}", arch, slots >= 2)
+    println("arch_detected={} worker_slots>={}", arch.len() > 0, slots >= 2)
 }
 ```
 ```text
 # Output:
-arch=arm64 worker_slots>=true
+arch_detected=true worker_slots>=true
 ```
 
 ### Importing C Headers & Using Bitwise Flag Enums (`import cpp`)
