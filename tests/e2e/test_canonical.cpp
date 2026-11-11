@@ -468,9 +468,18 @@ void test_cfire_cross_compile(const std::filesystem::path& rt_dir) {
 
     // 1. Compile with target flag
     auto out_bin = tmp.path / "cross_bin";
-    run_cfire(std::format("build \"{}\" -o \"{}\" --target arm64-apple-darwin", main_cf.string(), out_bin.string()))
-        .assert_ok("cfire build --target arm64-apple-darwin exit 0 (BS-EXT-02)")
-        .assert_contains("target=arm64-apple-darwin", "output reports target=arm64-apple-darwin (BS-EXT-02)");
+#if defined(__APPLE__)
+    std::string test_target = "arm64-apple-darwin";
+#elif defined(_WIN32)
+    std::string test_target = "x86_64-w64-mingw32";
+#elif defined(__aarch64__)
+    std::string test_target = "aarch64-unknown-linux-gnu";
+#else
+    std::string test_target = "x86_64-unknown-linux-gnu";
+#endif
+    run_cfire(std::format("build \"{}\" -o \"{}\" --target {}", main_cf.string(), out_bin.string(), test_target))
+        .assert_ok(std::format("cfire build --target {} exit 0 (BS-EXT-02)", test_target))
+        .assert_contains(std::format("target={}", test_target), "output reports target (BS-EXT-02)");
     require(std::filesystem::exists(out_bin), "cfire build -o created output binary at requested path");
 
     // 2. Check emit-cpp with target

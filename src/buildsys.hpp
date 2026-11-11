@@ -110,8 +110,9 @@ namespace cfire::build {
 
     std::filesystem::path found_bcf;
     std::error_code bcf_ec;
-    auto search_d = std::filesystem::weakly_canonical(dir, bcf_ec);
-    if (bcf_ec || search_d.empty()) search_d = std::filesystem::absolute(dir, bcf_ec);
+    auto effective_dir = dir.empty() ? std::filesystem::path(".") : dir;
+    auto search_d = std::filesystem::weakly_canonical(effective_dir, bcf_ec);
+    if (bcf_ec || search_d.empty()) search_d = std::filesystem::absolute(effective_dir, bcf_ec);
     for (int depth = 0; depth < 8 && !search_d.empty(); ++depth) {
         auto cand_bcf = search_d / "build.cf";
         if (std::filesystem::exists(cand_bcf, bcf_ec)) {
@@ -214,6 +215,7 @@ namespace cfire::build {
     const std::string& subsystem = "auto"
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     auto dir = cf_file.parent_path();
+    if (dir.empty()) dir = ".";
     auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem);
     if (!plan_res) return std::unexpected(plan_res.error());
     BuildPlan plan = std::move(*plan_res);
@@ -855,7 +857,8 @@ namespace cfire::build {
         std::string effective_profile = (plan.web_profile == "auto") ? (plan.is_gui ? "canvas" : "cli") : plan.web_profile;
         plan.web_profile = effective_profile;
 
-        auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
+        auto cf_parent = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
+        auto gen_dir = cf_parent / ".cfire" / "gen";
         std::filesystem::create_directories(gen_dir);
         auto shell_path = gen_dir / (effective_profile == "canvas" ? "cfire_canvas_shell.html" : "cfire_console_shell.html");
         std::string shell_content = std::string(effective_profile == "canvas" ? kCanvasShellHtml : kConsoleShellHtml);
@@ -949,7 +952,8 @@ namespace cfire::build {
         plan.cflags.push_back("-I \"" + inc + "\"");
     }
 
-    auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
+    auto cf_parent = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
+    auto gen_dir = cf_parent / ".cfire" / "gen";
     std::filesystem::create_directories(gen_dir);
     if (out_bin.has_parent_path()) {
         std::error_code out_ec;

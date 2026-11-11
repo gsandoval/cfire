@@ -586,6 +586,9 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
 
     auto build_ast_cmd = [&](std::string_view bin) {
         std::string c = std::string(bin) + " -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
+#if defined(__linux__)
+        c += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L";
+#endif
         for (const auto& f : cflags) {
             c += " " + shell_quote(f);
         }
