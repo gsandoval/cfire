@@ -1308,8 +1308,8 @@ struct Token {
     explicit operator std::uint16_t() const noexcept { return static_cast&lt;std::uint16_t&gt;(_v.index()); }
     explicit operator std::uint32_t() const noexcept { return static_cast&lt;std::uint32_t&gt;(_v.index()); }
     explicit operator std::uint64_t() const noexcept { return static_cast&lt;std::uint64_t&gt;(_v.index()); }
-    explicit operator std::size_t() const noexcept { return _v.index(); }
-    explicit operator std::ptrdiff_t() const noexcept { return static_cast&lt;std::ptrdiff_t&gt;(_v.index()); }
+    template &lt;typename T&gt; requires (std::is_integral_v&lt;T&gt; &amp;&amp; !std::is_same_v&lt;T, bool&gt; &amp;&amp; !std::is_same_v&lt;T, std::int8_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::int16_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::int32_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::int64_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::uint8_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::uint16_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::uint32_t&gt; &amp;&amp; !std::is_same_v&lt;T, std::uint64_t&gt;)
+    explicit operator T() const noexcept { return static_cast&lt;T&gt;(_v.index()); }
     [[nodiscard]] auto to_i32() const noexcept -&gt; std::int32_t { return static_cast&lt;std::int32_t&gt;(_v.index()); }
     [[nodiscard]] auto to_i64() const noexcept -&gt; std::int64_t { return static_cast&lt;std::int64_t&gt;(_v.index()); }
     [[nodiscard]] auto to_string() const -&gt; std::string_view {
