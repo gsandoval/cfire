@@ -137,13 +137,20 @@ test "raygui_ext embedded font fallback loading" {
     f := GuiLoadSystemFontExtended([], 24)
     assert(f.texture.id > 0)
     assert_eq(f.baseSize, 24)
-    assert(f.glyphCount > 400)
+    // raylib 6.x reports only glyphs actually present in the font (not every requested codepoint),
+    // so assert real extended coverage beyond the 95 printable ASCII glyphs plus specific accents.
+    assert(f.glyphCount > 95)
+    assert_eq(rl.GetGlyphInfo(f, 0x00F1).value, 0x00F1) // ñ
+    assert_eq(rl.GetGlyphInfo(f, 0x00E9).value, 0x00E9) // é
+    assert_eq(rl.GetGlyphInfo(f, 0x00BF).value, 0x00BF) // ¿
 
     // Test embedded Source Code Pro mono font fallback
     f_mono := GuiLoadSystemMonoFontExtended([], 24)
     assert(f_mono.texture.id > 0)
     assert_eq(f_mono.baseSize, 24)
-    assert(f_mono.glyphCount > 400)
+    assert(f_mono.glyphCount > 95)
+    assert_eq(rl.GetGlyphInfo(f_mono, 0x00F1).value, 0x00F1) // ñ
+    assert_eq(rl.GetGlyphInfo(f_mono, 0x00E9).value, 0x00E9) // é
 }
 
 fuzz "utf8 cursor and word navigation never slice mid-codepoint" |s: str, raw_pos: i32| {

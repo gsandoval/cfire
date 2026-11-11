@@ -471,9 +471,12 @@ inline void synthesize_fixits_for_diagnostic(
     if (d.code == "cfire/DEPRECATED-SEPARATOR") {
         if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
-            if (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) {
-                auto dot_pos = cur_ln.rfind('.', static_cast<std::size_t>(d.col - 1));
-                if (dot_pos == std::string::npos) dot_pos = cur_ln.find('.', static_cast<std::size_t>(d.col - 1));
+            if (d.message.find("not a valid separator for enum variant") != std::string::npos ||
+                d.message.find("not a valid separator in pattern matching") != std::string::npos ||
+                d.message.find("for enum variant") != std::string::npos) {
+                std::size_t col_idx = (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) ? static_cast<std::size_t>(d.col - 1) : 0;
+                auto dot_pos = cur_ln.rfind('.', col_idx);
+                if (dot_pos == std::string::npos) dot_pos = cur_ln.find('.', col_idx);
                 if (dot_pos != std::string::npos) {
                     FixItEdit edit;
                     edit.title = "Replace '.' with '::' for enum variant (cfire/DEPRECATED-SEPARATOR)";
@@ -482,6 +485,23 @@ inline void synthesize_fixits_for_diagnostic(
                     edit.end_line = d.line;
                     edit.end_col = static_cast<int>(dot_pos + 1) + 1;
                     edit.replacement = "::";
+                    edit.is_preferred = true;
+                    d.fixits.push_back(std::move(edit));
+                    return;
+                }
+            } else if (d.message.find("instead of '::'") != std::string::npos || (d.message.find("use '") != std::string::npos && d.message.find("::") != std::string::npos)) {
+                // Replace '::' with '.' on import qualifier
+                std::size_t col_idx = (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) ? static_cast<std::size_t>(d.col - 1) : 0;
+                auto dcol_pos = cur_ln.find("::", col_idx);
+                if (dcol_pos == std::string::npos && col_idx > 0) dcol_pos = cur_ln.rfind("::", col_idx);
+                if (dcol_pos != std::string::npos) {
+                    FixItEdit edit;
+                    edit.title = "Replace '::' with '.' on import qualifier (cfire/DEPRECATED-SEPARATOR)";
+                    edit.start_line = d.line;
+                    edit.start_col = static_cast<int>(dcol_pos) + 1;
+                    edit.end_line = d.line;
+                    edit.end_col = static_cast<int>(dcol_pos + 2) + 1;
+                    edit.replacement = ".";
                     edit.is_preferred = true;
                     d.fixits.push_back(std::move(edit));
                     return;

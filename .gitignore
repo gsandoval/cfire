@@ -12,6 +12,8 @@
 # cfire compiler runtime cache
 .cfire/
 **/.cfire/
+.cfire_cache/
+**/.cfire_cache/
 
 # System & Editor artifacts
 .DS_Store

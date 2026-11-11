@@ -150,7 +150,8 @@ fn main() {
     llm_res.assert_contains("ext:ai", "doc --llm lists ext:ai");
     llm_res.assert_contains("json.parse", "doc --llm contains exact json.parse API");
     require(!llm_res.output.contains("json.decode"), "doc --llm does not contain hallucinated json.decode");
-    require(!llm_res.output.contains("sort.slice_by"), "doc --llm does not contain hallucinated sort.slice_by");
+    // sort.slice_by is a real API since CF-115; ensure it is documented with valid trailing-closure syntax.
+    require(!llm_res.output.contains("sort.slice_by(mut items, |a, b| a < b)"), "doc --llm does not contain invalid expression-closure sort.slice_by example");
 
     run_cfire("doc --check").assert_ok("cfire doc --check exit 0 (AGENT-P0-04)");
 
@@ -505,7 +506,7 @@ void test_cfire_remote_vendor(const std::filesystem::path& rt_dir) {
         remote_repo.string()));
 
     (void)cfire::fs::write_text(app_dir / "main.cf",
-        "package main\n\nimport cpp \"calc.h\"\n\nfn main() {\n    res := cpp::add(15, 25)\n    println(\"sum={}\", res)\n}\n");
+        "package main\n\nimport cpp \"calc.h\"\n\nfn main() {\n    res := cpp.add(15, 25)\n    println(\"sum={}\", res)\n}\n");
 
     // 1. Run cfire build/run and verify remote checkout + build.lock generation
     std::string run_cmd = std::format("cd \"{}\" && \"{}\"/cfire run main.cf",

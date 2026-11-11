@@ -428,6 +428,7 @@ public:
         const auto& dest_d = get(dest);
         const auto& src_d = get(src);
         if (dest_d.kind == TypeKind::Optional && (dest_d.elem_type == src || is_assignable(dest_d.elem_type, src))) return true;
+        if (dest_d.kind == TypeKind::Fallible && (dest_d.elem_type == src || is_assignable(dest_d.elem_type, src) || src_d.name == "Error" || src_d.name == "cfire::Error")) return true;
         if (is_integer(dest) && is_integer(src)) return true;
         if (is_float(dest) && is_numeric(src)) return true;
         if (dest == make_borrow_const(TypeId::Str()) && src == TypeId::Str()) return true;
@@ -504,6 +505,11 @@ struct CheckedFile {
     std::unordered_map<std::string, std::vector<StructTagInfo>> struct_tags{};
     std::unordered_map<std::string, uint64_t> last_use_move{}; // "fnName:varName" -> expr_id
     std::unordered_map<std::string, std::vector<std::string>> cpp_fn_params{}; // C/C++ fn -> param QualTypes
+    std::unordered_set<std::string> cpp_qualifiers{}; // "cpp" or aliases from `import cpp "..." as alias`
+    std::unordered_map<std::string, std::string> cpp_alias_to_header{}; // alias -> header path
+    std::unordered_map<std::string, std::string> core_aliases{}; // alias -> canonical_ns ("s" -> "str")
+    std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name ("rl" -> "raylib")
+    std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
     std::vector<std::string> warnings{};
     std::vector<std::string> errors{};

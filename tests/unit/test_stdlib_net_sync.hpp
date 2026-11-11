@@ -177,7 +177,9 @@ fn main() {
     println("ctx1.reason={}", ctx1.reason())
 
     (tctx, tcancel) := context.with_timeout(bg, 30)
-    time.sleep_ms(60)
+    // Block until the deadline fires (bounded) instead of racing a fixed sleep,
+    // which is flaky on loaded CI runners.
+    _ = tctx.wait_for(5000)
     println("tctx.done={}", tctx.done())
     println("tctx.reason={}", tctx.reason())
 }

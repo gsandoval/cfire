@@ -30,6 +30,7 @@ auto main(int argc, char** argv) -> int {
         test_interned_typeid_lattice_and_diagnostics_cf116(rt_dir);
         test_unified_stdlib_metadata_table_cf117(rt_dir);
         test_unified_diagnostics_pipeline_cf118(rt_dir);
+        test_phase2_concurrency_match_and_flow_control(rt_dir);
         test_phase3_advanced_language_and_safety(rt_dir);
         test_phase4_tooling_depth(rt_dir);
         test_negative_parser_corpus_and_fuzz_runtime(rt_dir);

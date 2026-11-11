@@ -38,6 +38,13 @@ public:
         return set_.size();
     }
 
+    [[nodiscard]] auto len() const -> std::size_t {
+        return set_.size();
+    }
+
+    auto begin() const { return set_.begin(); }
+    auto end() const { return set_.end(); }
+
     [[nodiscard]] auto empty() const -> bool {
         return set_.empty();
     }
@@ -88,6 +95,10 @@ public:
     }
 
     [[nodiscard]] auto size() const -> std::size_t {
+        return pq_.size();
+    }
+
+    [[nodiscard]] auto len() const -> std::size_t {
         return pq_.size();
     }
 
@@ -142,6 +153,15 @@ public:
     [[nodiscard]] auto size() const -> std::size_t {
         return deq_.size();
     }
+
+    [[nodiscard]] auto len() const -> std::size_t {
+        return deq_.size();
+    }
+
+    auto begin() { return deq_.begin(); }
+    auto end() { return deq_.end(); }
+    auto begin() const { return deq_.begin(); }
+    auto end() const { return deq_.end(); }
 
     [[nodiscard]] auto empty() const -> bool {
         return deq_.empty();

@@ -85,12 +85,23 @@ namespace cfire::frontend {
                     return res.canonical_name;
                 }
                 if (res.kind == SymbolKind::CoreNamespace) {
-                    if (res.canonical_name == "cpp") return "";
+                    if (res.canonical_name == "cpp" || is_cpp_qualifier(res.canonical_name)) return "";
                     return res.canonical_name;
                 }
             }
             std::string name = ex.name;
-            if (name.starts_with("cpp::")) name.erase(0, 5);
+            if (name.starts_with("cpp.")) name.erase(0, 4);
+            else if (name.starts_with("cpp::")) name.erase(0, 5);
+            for (const auto& q : cf_.cpp_qualifiers) {
+                if (name.starts_with(q + ".")) {
+                    name.erase(0, q.size() + 1);
+                    break;
+                }
+                if (name.starts_with(q + "::")) {
+                    name.erase(0, q.size() + 2);
+                    break;
+                }
+            }
             if (name.starts_with("http.")) {
                 name = "cfire::http::" + name.substr(5);
             } else if (name.starts_with("http::")) {
@@ -174,7 +185,7 @@ namespace cfire::frontend {
             if (ex.resolution) {
                 const auto& res = *ex.resolution;
                 if (res.kind == SymbolKind::CoreNamespace) {
-                    if (res.canonical_name == "cpp") return ex.field;
+                    if (res.canonical_name == "cpp" || is_cpp_qualifier(res.canonical_name)) return ex.field;
                     return res.canonical_name;
                 }
                 if (res.kind == SymbolKind::Function || res.kind == SymbolKind::Global) {
@@ -209,7 +220,7 @@ namespace cfire::frontend {
                 }
             }
             if (const auto* id = std::get_if<IdentExpr>(&ex.object->node)) {
-                if (id->name == "cpp") {
+                if (id->name == "cpp" || is_cpp_qualifier(id->name)) {
                     return ex.field;
                 }
                 if (cf_.enums.contains(id->name)) {
@@ -222,6 +233,8 @@ namespace cfire::frontend {
                     std::string actual_ns = id->name;
                     if (auto it = core_aliases_.find(id->name); it != core_aliases_.end()) {
                         actual_ns = it->second;
+                    } else if (auto it2 = cf_.core_aliases.find(id->name); it2 != cf_.core_aliases.end()) {
+                        actual_ns = it2->second;
                     }
                     if (actual_ns == "os" && (ex.field == "stdin" || ex.field == "stdout" || ex.field == "stderr")) {
                         return std::format("cfire::os::{}_file", ex.field);
@@ -318,29 +331,39 @@ namespace cfire::frontend {
             return std::format("cfire::slice({}, {}, {})", obj, start_s, end_s);
         } else if constexpr (std::is_same_v<T, StructLitExpr>) {
             std::string tname = ex.type_name;
-            if (tname.starts_with("cpp::")) tname.erase(0, 5);
+            if (tname.starts_with("cpp.")) tname.erase(0, 4);
+            else if (tname.starts_with("cpp::")) tname.erase(0, 5);
+            for (const auto& q : cf_.cpp_qualifiers) {
+                if (tname.starts_with(q + ".")) {
+                    tname.erase(0, q.size() + 1);
+                    break;
+                }
+                if (tname.starts_with(q + "::")) {
+                    tname.erase(0, q.size() + 2);
+                    break;
+                }
+            }
             if (tname == "http.Request" || tname == "http::Request") tname = "cfire::http::Request";
             if (tname == "http.Response" || tname == "http::Response") tname = "cfire::http::Response";
             if (tname == "http.Router" || tname == "http::Router") tname = "cfire::http::Router";
             if (tname == "http.HttpServer" || tname == "http::HttpServer") tname = "cfire::http::HttpServer";
             if (tname == "url.Url" || tname == "url::Url") tname = "cfire::url::Url";
-            if (auto dot_pos = tname.find('.'); dot_pos != std::string::npos) {
-                std::string mod = tname.substr(0, dot_pos);
-                std::string rest = tname.substr(dot_pos + 1);
+            auto sep_pos = tname.find_first_of(".:");
+            if (sep_pos != std::string::npos) {
+                bool is_dcolon = (tname[sep_pos] == ':' && sep_pos + 1 < tname.size() && tname[sep_pos + 1] == ':');
+                std::string mod = tname.substr(0, sep_pos);
+                std::string rest = tname.substr(sep_pos + (is_dcolon ? 2 : 1));
+                if (auto it = core_aliases_.find(mod); it != core_aliases_.end()) {
+                    mod = it->second;
+                } else if (auto it2 = cf_.core_aliases.find(mod); it2 != cf_.core_aliases.end()) {
+                    mod = it2->second;
+                }
                 if (used_core_.contains(mod)) {
                     tname = std::format("cfire::{}::{}", mod, rest);
-                } else if (is_local_type(rest) || is_vendor_alias(mod)) {
+                } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
                     tname = rest;
                 } else {
                     tname = std::format("{}::{}", mod, rest);
-                }
-            } else if (auto col_pos = tname.find("::"); col_pos != std::string::npos) {
-                std::string mod = tname.substr(0, col_pos);
-                std::string rest = tname.substr(col_pos + 2);
-                if (used_core_.contains(mod)) {
-                    tname = std::format("cfire::{}::{}", mod, rest);
-                } else if (is_local_type(rest) || is_vendor_alias(mod)) {
-                    tname = rest;
                 }
             } else {
                 if (tname == "Channel" && used_core_.contains("sync")) {
@@ -652,7 +675,13 @@ namespace cfire::frontend {
             }
             return std::format("{}({})", mem->resolution->canonical_name, args);
         }
-        if (mem->resolution && mem->resolution->kind == SymbolKind::Function) {
+        // Vendor (`rl.Fn`) and `cpp.Fn` calls must fall through to the generic path below,
+        // which applies C FFI argument coercion (`cfire::c_arg` / `cfire::c_str`).
+        bool is_foreign_object = false;
+        if (const auto* oid = std::get_if<IdentExpr>(&mem->object->node)) {
+            is_foreign_object = !local_vars_.contains(oid->name) && (is_cpp_qualifier(oid->name) || is_vendor_alias(oid->name));
+        }
+        if (mem->resolution && mem->resolution->kind == SymbolKind::Function && !is_foreign_object) {
             std::string args;
             for (std::size_t i = 0; i < call.args.size(); ++i) {
                 if (i > 0) args += ", ";
@@ -849,18 +878,26 @@ namespace cfire::frontend {
 
     bool is_vendor_call = false;
     if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
-        if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && (id->name == "cpp" || is_vendor_alias(id->name))) {
+        if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && (is_cpp_qualifier(id->name) || is_vendor_alias(id->name))) {
             is_vendor_call = true;
         }
     } else if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
-        if (id->name.starts_with("cpp::") || is_vendor_alias(id->name.substr(0, id->name.find("::")))) {
+        if (id->name.starts_with("cpp.") || id->name.starts_with("cpp::") || is_cpp_qualifier(id->name.substr(0, id->name.find('.'))) || is_vendor_alias(id->name.substr(0, id->name.find("::")))) {
             is_vendor_call = true;
         }
     }
 
     std::string callee = emit_expr(call.callee);
-    if (callee.starts_with("cpp::")) {
+    if (callee.starts_with("cpp.")) {
+        callee = callee.substr(4);
+    } else if (callee.starts_with("cpp::")) {
         callee = callee.substr(5);
+    }
+    for (const auto& q : cf_.cpp_qualifiers) {
+        if (callee.starts_with(q + ".")) {
+            callee = callee.substr(q.size() + 1);
+            break;
+        }
     }
     std::string lookup_name = callee;
     if (auto colon_pos = lookup_name.rfind("::"); colon_pos != std::string::npos) {
@@ -876,6 +913,9 @@ namespace cfire::frontend {
         for (std::size_t i = 0; i < call.type_args.size(); ++i) {
             if (i > 0) targs += ", ";
             targs += lower_owning_type(call.type_args[i]);
+        }
+        if (callee == "cfire::sync::Mutex" || callee == "sync.Mutex") {
+            callee = "cfire::sync::MutexT";
         }
         callee = std::format("{}<{}>", callee, targs);
     }

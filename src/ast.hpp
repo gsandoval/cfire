@@ -122,6 +122,7 @@ struct ArenaScope {
 
 struct TypeRef {
     std::string name{};
+    std::string raw_name{}; // Source spelling preserving '.' vs '::'
     bool is_slice = false;
     bool is_array = false;
     std::string array_len{};
@@ -417,6 +418,14 @@ struct MatchPattern {
     std::string slice_rest{};
     bool slice_has_rest = false;
     std::vector<std::string> slice_tail{};
+    bool is_range = false;
+    bool range_inclusive = false;
+    std::string range_start{};
+    std::string range_end{};
+    bool is_some = false;
+    bool is_none = false;
+    bool is_ok = false;
+    bool is_err = false;
     int line = 1;
 };
 
@@ -425,6 +434,7 @@ struct MatchArm {
     std::string variant_name{};
     std::vector<std::string> bindings{};
     std::string literal_val{}; // for primitive/string literals e.g. "\"GET\""
+    ExprPtr guard = nullptr;
 
     // Slice pattern matching:
     bool is_slice_pattern = false;
@@ -433,10 +443,42 @@ struct MatchArm {
     bool slice_has_rest = false;
     std::vector<std::string> slice_tail{};
 
+    bool is_range = false;
+    bool range_inclusive = false;
+    std::string range_start{};
+    std::string range_end{};
+    bool is_some = false;
+    bool is_none = false;
+    bool is_ok = false;
+    bool is_err = false;
+
     std::vector<MatchPattern> patterns{}; // all patterns in this arm (including or-patterns)
 
     std::vector<StmtPtr> body{};
     int line = 1;
+
+    [[nodiscard]] auto to_pattern() const -> MatchPattern {
+        MatchPattern p;
+        p.enum_prefix = enum_prefix;
+        p.variant_name = variant_name;
+        p.bindings = bindings;
+        p.literal_val = literal_val;
+        p.is_slice_pattern = is_slice_pattern;
+        p.slice_head = slice_head;
+        p.slice_rest = slice_rest;
+        p.slice_has_rest = slice_has_rest;
+        p.slice_tail = slice_tail;
+        p.is_range = is_range;
+        p.range_inclusive = range_inclusive;
+        p.range_start = range_start;
+        p.range_end = range_end;
+        p.is_some = is_some;
+        p.is_none = is_none;
+        p.is_ok = is_ok;
+        p.is_err = is_err;
+        p.line = line;
+        return p;
+    }
 };
 
 struct MatchExpr {
@@ -529,6 +571,11 @@ struct IfStmt {
     std::vector<StmtPtr> then_body{};
     std::vector<StmtPtr> else_body{};
     int line = 1;
+
+    // Conditional unwrap: `if [mut] val := expr [; guard] { ... }`
+    std::string unwrap_var{};
+    bool unwrap_mut = false;
+    ExprPtr unwrap_init = nullptr;
 };
 
 struct ForStmt {
@@ -539,6 +586,10 @@ struct ForStmt {
     int line = 1;
     ExprPtr range_end = nullptr;
     bool range_inclusive = false;
+
+    // Conditional unwrap: `for [mut] val := expr { ... }`
+    bool is_unwrap = false;
+    bool unwrap_mut = false;
 };
 
 struct MatchStmt {

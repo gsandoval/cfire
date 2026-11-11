@@ -177,19 +177,27 @@ inline auto cfire::json::schema_struct<Shape>() -> std::string {
     #line 17 "02_structs_and_enums.cf"
     double res = 0.0;
     #line 18 "02_structs_and_enums.cf"
-    std::visit(cfire::overloaded{
-        [&](const Shape::_Circle& _m) {
-            const auto& r = _m._0;
-            #line 20 "02_structs_and_enums.cf"
-            res = ((3.1415926535 * r) * r);
-        },
-        [&](const Shape::_Rectangle& _m) {
-            const auto& w = _m._0;
-            const auto& h = _m._1;
-            #line 23 "02_structs_and_enums.cf"
-            res = (w * h);
-        },
-    }, s._v);
+    {
+        const auto& _target = s;
+        bool _matched = false;
+        if (!_matched) {
+            if (auto* _p = std::get_if<Shape::_Circle>(&_target._v)) {
+                const auto& r = _p->_0;
+                _matched = true;
+                #line 20 "02_structs_and_enums.cf"
+                res = ((3.1415926535 * r) * r);
+            }
+        }
+        if (!_matched) {
+            if (auto* _p = std::get_if<Shape::_Rectangle>(&_target._v)) {
+                const auto& w = _p->_0;
+                const auto& h = _p->_1;
+                _matched = true;
+                #line 23 "02_structs_and_enums.cf"
+                res = (w * h);
+            }
+        }
+    }
     #line 26 "02_structs_and_enums.cf"
     return res;
 }

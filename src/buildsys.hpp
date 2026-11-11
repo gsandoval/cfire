@@ -248,8 +248,27 @@ namespace cfire::build {
         }
     }
 
+    // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
+    auto cache_dir = dir / ".cfire" / "cache";
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    if (inspect_clang_ast) {
+        for (const auto& imp : ast->imports) {
+            if (imp.is_cpp) {
+                auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
+                if (idx) {
+                    for (const auto& [sym_name, sym] : idx->symbols) {
+                        if (sym.kind == "FunctionDecl") {
+                            pre_cpp_fn_params[sym_name] = sym.param_types;
+                        }
+                    }
+                    plan.cpp_headers[imp.path] = std::move(*idx);
+                }
+            }
+        }
+    }
+
     // 3. Semantic Analysis
-    auto checked = frontend::analyze(std::move(*ast));
+    auto checked = frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params));
     if (!checked) return std::unexpected(checked.error());
     plan.warnings = checked->warnings;
 
@@ -317,7 +336,6 @@ namespace cfire::build {
         query_pkg_config(pc, plan.cflags, plan.ldflags, install_root, is_win_target);
     };
 
-    auto cache_dir = dir / ".cfire" / "cache";
     for (const auto& [sname, tags] : checked->struct_tags) {
         bool has_j = false;
         for (const auto& t : tags) {
@@ -701,7 +719,7 @@ namespace cfire::build {
                 add_pc(attr.args[0]);
             }
         }
-        if (inspect_clang_ast) {
+        if (inspect_clang_ast && !plan.cpp_headers.contains(imp.path)) {
             auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
             if (!idx) return std::unexpected(idx.error());
             for (const auto& [sym_name, sym] : idx->symbols) {

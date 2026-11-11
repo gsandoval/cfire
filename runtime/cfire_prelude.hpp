@@ -7,6 +7,8 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <cmath>
 #include <charconv>
 #include <cinttypes>
@@ -399,6 +401,8 @@ struct StringHash {
 template <typename K, typename V>
 class Map {
 public:
+    using key_type = K;
+    using mapped_type = V;
     using underlying_t = std::conditional_t<
         std::is_same_v<K, std::string>,
         std::unordered_map<std::string, V, StringHash, std::equal_to<>>,
@@ -1429,15 +1433,234 @@ template <typename T>
     return std::sqrt(sum_sq);
 }
 
+template <typename C>
+struct is_map_like {
+private:
+    template <typename T, typename = typename std::remove_cvref_t<T>::mapped_type>
+    static auto test(int) -> std::true_type;
+    template <typename>
+    static auto test(...) -> std::false_type;
+public:
+    static constexpr bool value = decltype(test<C>(0))::value;
+};
+
+template <typename C>
+inline constexpr bool is_map_like_v = is_map_like<C>::value;
+
+template <typename Iter>
+struct EnumerateIterator {
+    std::size_t index = 0;
+    Iter it;
+    bool operator!=(const EnumerateIterator& o) const { return it != o.it; }
+    EnumerateIterator& operator++() { ++index; ++it; return *this; }
+    auto operator*() const {
+        return std::pair<std::size_t, decltype(*it)>(index, *it);
+    }
+};
+
+template <typename C>
+struct EnumerateView {
+    C& c;
+    auto begin() { return EnumerateIterator<decltype(std::begin(c))>{0, std::begin(c)}; }
+    auto end() { return EnumerateIterator<decltype(std::end(c))>{0, std::end(c)}; }
+    auto begin() const { return EnumerateIterator<decltype(std::begin(c))>{0, std::begin(c)}; }
+    auto end() const { return EnumerateIterator<decltype(std::end(c))>{0, std::end(c)}; }
+};
+
+template <typename C>
+decltype(auto) iter_pairs(C& c) {
+    if constexpr (is_map_like_v<C>) {
+        return (c);
+    } else {
+        return EnumerateView<C>{c};
+    }
+}
+
 } // namespace detail
 
 // --- Structured Concurrency (`async.scope`) ---
 namespace async {
 
+struct ScopeState;
+
+template <typename T>
+class Task;
+
+struct ScopeState : public std::enable_shared_from_this<ScopeState> {
+    std::mutex queue_mu;
+    std::condition_variable cv;
+    std::condition_variable done_cv;
+    std::deque<std::function<void()>> queue;
+    std::vector<std::thread> workers;
+    std::atomic<std::size_t> active_tasks{0};
+    std::atomic<bool> stopping{false};
+    std::vector<std::function<void()>> defers;
+    std::mutex state_mu;
+    std::exception_ptr first_error{nullptr};
+
+    inline static thread_local ScopeState* current_scope_state = nullptr;
+
+    explicit ScopeState(std::size_t limit) {
+        if (limit == 0) {
+            limit = std::max(1u, std::thread::hardware_concurrency());
+        }
+        for (std::size_t i = 0; i < limit; ++i) {
+            workers.emplace_back([this] {
+                current_scope_state = this;
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lk(queue_mu);
+                        cv.wait(lk, [this] { return stopping.load() || !queue.empty(); });
+                        if (stopping.load() && queue.empty()) {
+                            break;
+                        }
+                        if (!queue.empty()) {
+                            task = std::move(queue.front());
+                            queue.pop_front();
+                        }
+                    }
+                    if (task) {
+                        task();
+                        --active_tasks;
+                        done_cv.notify_all();
+                    }
+                }
+            });
+        }
+    }
+
+    ~ScopeState() {
+        stop_and_join();
+    }
+
+    void post(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lk(queue_mu);
+            ++active_tasks;
+            queue.push_back(std::move(task));
+        }
+        cv.notify_one();
+    }
+
+    auto help_one_task() -> bool {
+        std::function<void()> task;
+        {
+            std::lock_guard<std::mutex> lk(queue_mu);
+            if (queue.empty()) return false;
+            task = std::move(queue.front());
+            queue.pop_front();
+        }
+        if (task) {
+            task();
+            --active_tasks;
+            done_cv.notify_all();
+            return true;
+        }
+        return false;
+    }
+
+    void record_error(std::exception_ptr ep) {
+        if (!ep) return;
+        std::lock_guard<std::mutex> lk(state_mu);
+        if (!first_error) first_error = ep;
+    }
+
+    void stop_and_join() {
+        {
+            std::lock_guard<std::mutex> lk(queue_mu);
+            stopping.store(true);
+        }
+        cv.notify_all();
+        for (auto& w : workers) {
+            if (w.joinable()) {
+                w.join();
+            }
+        }
+        workers.clear();
+    }
+};
+
+template <typename T>
+class Task {
+public:
+    struct Shared {
+        std::mutex mu;
+        std::condition_variable cv;
+        bool done = false;
+        std::exception_ptr err = nullptr;
+        std::optional<T> value;
+        std::shared_ptr<ScopeState> scope_state;
+    };
+
+    Task() = default;
+    explicit Task(std::shared_ptr<Shared> st) : state_(std::move(st)) {}
+
+    auto join() -> T {
+        if (!state_) return T{};
+        auto st = state_;
+        while (!st->done) {
+            if (st->scope_state && ScopeState::current_scope_state == st->scope_state.get()) {
+                if (!st->scope_state->help_one_task()) {
+                    std::unique_lock<std::mutex> lk(st->mu);
+                    st->cv.wait_for(lk, std::chrono::milliseconds(2), [&] { return st->done; });
+                }
+            } else {
+                std::unique_lock<std::mutex> lk(st->mu);
+                st->cv.wait(lk, [&] { return st->done; });
+            }
+        }
+        if (st->err) {
+            std::rethrow_exception(st->err);
+        }
+        return std::move(*st->value);
+    }
+
+private:
+    std::shared_ptr<Shared> state_;
+};
+
+template <>
+class Task<void> {
+public:
+    struct Shared {
+        std::mutex mu;
+        std::condition_variable cv;
+        bool done = false;
+        std::exception_ptr err = nullptr;
+        std::shared_ptr<ScopeState> scope_state;
+    };
+
+    Task() = default;
+    explicit Task(std::shared_ptr<Shared> st) : state_(std::move(st)) {}
+
+    void join() {
+        if (!state_) return;
+        auto st = state_;
+        while (!st->done) {
+            if (st->scope_state && ScopeState::current_scope_state == st->scope_state.get()) {
+                if (!st->scope_state->help_one_task()) {
+                    std::unique_lock<std::mutex> lk(st->mu);
+                    st->cv.wait_for(lk, std::chrono::milliseconds(2), [&] { return st->done; });
+                }
+            } else {
+                std::unique_lock<std::mutex> lk(st->mu);
+                st->cv.wait(lk, [&] { return st->done; });
+            }
+        }
+        if (st->err) {
+            std::rethrow_exception(st->err);
+        }
+    }
+
+private:
+    std::shared_ptr<Shared> state_;
+};
+
 class Scope {
 public:
-    explicit Scope(std::size_t max_workers = 4)
-        : state_(std::make_shared<State>(max_workers == 0 ? 4 : max_workers)),
+    explicit Scope(std::size_t max_workers = 0)
+        : state_(std::make_shared<ScopeState>(max_workers)),
           is_owner_(true) {}
 
     Scope(const Scope& other) noexcept
@@ -1472,16 +1695,51 @@ public:
     }
 
     template <typename F>
-    void spawn(F&& task) {
-        if (!state_) return;
-        auto st = state_;
-        auto fut = std::async(std::launch::async, [st, fn = std::forward<F>(task)]() mutable {
-            st->acquire();
-            auto rel = cfire::scope_exit([&] { st->release(); });
-            fn();
-        });
-        std::lock_guard<std::mutex> lk(state_->state_mu);
-        state_->futures.emplace_back(std::move(fut));
+    auto spawn(F&& task) {
+        using R = std::decay_t<std::invoke_result_t<std::decay_t<F>&>>;
+        if constexpr (std::is_void_v<R>) {
+            auto task_state = std::make_shared<typename Task<void>::Shared>();
+            task_state->scope_state = state_;
+            if (state_) {
+                state_->post([task_state, fn = std::forward<F>(task)]() mutable {
+                    try {
+                        fn();
+                    } catch (...) {
+                        task_state->err = std::current_exception();
+                        if (task_state->scope_state) {
+                            task_state->scope_state->record_error(task_state->err);
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> lk(task_state->mu);
+                        task_state->done = true;
+                    }
+                    task_state->cv.notify_all();
+                });
+            }
+            return Task<void>(task_state);
+        } else {
+            auto task_state = std::make_shared<typename Task<R>::Shared>();
+            task_state->scope_state = state_;
+            if (state_) {
+                state_->post([task_state, fn = std::forward<F>(task)]() mutable {
+                    try {
+                        task_state->value = fn();
+                    } catch (...) {
+                        task_state->err = std::current_exception();
+                        if (task_state->scope_state) {
+                            task_state->scope_state->record_error(task_state->err);
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> lk(task_state->mu);
+                        task_state->done = true;
+                    }
+                    task_state->cv.notify_all();
+                });
+            }
+            return Task<R>(task_state);
+        }
     }
 
     template <typename F>
@@ -1493,19 +1751,15 @@ public:
 
     void join_all() {
         if (!state_) return;
-        while (true) {
-            std::vector<std::future<void>> batch;
-            {
-                std::lock_guard<std::mutex> lk(state_->state_mu);
-                if (state_->futures.empty()) break;
-                batch.swap(state_->futures);
-            }
-            for (auto& f : batch) {
-                if (f.valid()) {
-                    f.get();
-                }
+        while (state_->active_tasks.load() > 0) {
+            if (!state_->help_one_task()) {
+                std::unique_lock<std::mutex> lk(state_->queue_mu);
+                state_->done_cv.wait_for(lk, std::chrono::milliseconds(2), [this] {
+                    return state_->active_tasks.load() == 0;
+                });
             }
         }
+        state_->stop_and_join();
 
         std::vector<std::function<void()>> defers;
         {
@@ -1517,36 +1771,20 @@ public:
             defers.pop_back();
             fn();
         }
+
+        std::exception_ptr ep = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(state_->state_mu);
+            ep = state_->first_error;
+            state_->first_error = nullptr;
+        }
+        if (ep) {
+            std::rethrow_exception(ep);
+        }
     }
 
 private:
-    struct State {
-        std::mutex mu;
-        std::condition_variable cv;
-        std::size_t active = 0;
-        std::size_t limit = 4;
-
-        std::mutex state_mu;
-        std::vector<std::future<void>> futures;
-        std::vector<std::function<void()>> defers;
-
-        explicit State(std::size_t lim) : limit(lim) {}
-
-        void acquire() {
-            std::unique_lock<std::mutex> lk(mu);
-            cv.wait(lk, [&] { return active < limit; });
-            ++active;
-        }
-        void release() {
-            {
-                std::lock_guard<std::mutex> lk(mu);
-                --active;
-            }
-            cv.notify_one();
-        }
-    };
-
-    std::shared_ptr<State> state_;
+    std::shared_ptr<ScopeState> state_;
     bool is_owner_ = false;
 };
 

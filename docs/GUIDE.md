@@ -1534,7 +1534,7 @@ arch=arm64 worker_slots>=true
 ```
 
 ### Importing C Headers & Using Bitwise Flag Enums (`import cpp`)
-Use `import cpp "<header.h>"` (with optional `@pkg("<pkg-config-name>")` and `@define("<KEY>", "<VAL>")` attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under `cpp::` (or `cpp.`):
+Use `import cpp "<header.h>"` (with optional `@pkg("<pkg-config-name>")` and `@define("<KEY>", "<VAL>")` attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under `cpp.` (or an aliased qualifier `import cpp "..." as <alias>`):
 
 ```cfire
 package main
@@ -1542,8 +1542,8 @@ package main
 import cpp "zstd.h" @pkg("libzstd")
 
 fn query_zstd_runtime() -> (u32, usize) {
-    ver := cpp::ZSTD_versionNumber()
-    bound := cpp::ZSTD_compressBound(1024)
+    ver := cpp.ZSTD_versionNumber()
+    bound := cpp.ZSTD_compressBound(1024)
     return (ver, bound)
 }
 
@@ -1608,9 +1608,9 @@ import cpp "vecmath.h"
 
 fn main() {
     payload := "cfire-hybrid"
-    crc := cpp::fastcrc32(payload, u32(payload.len()))
-    hash := cpp::kv_hash_key(payload)
-    dot := cpp::vm_dot2d(2.0, 3.0, 4.0, 5.0)
+    crc := cpp.fastcrc32(payload, u32(payload.len()))
+    hash := cpp.kv_hash_key(payload)
+    dot := cpp.vm_dot2d(2.0, 3.0, 4.0, 5.0)
     println("crc=0x{:x} kv_hash={} dot={:.1f}", crc, hash, dot)
 }
 ```

@@ -72,8 +72,25 @@ struct CheckOptions {
         }
     }
 
+    // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    for (const auto& imp : merged_ast.imports) {
+        if (imp.is_cpp) {
+            std::filesystem::path cache_dir = opts.runtime_dir.empty() ? ".cfire_cache" : (opts.runtime_dir / ".cfire_cache");
+            std::vector<std::string> cflags;
+            auto idx = bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
+            if (idx) {
+                for (const auto& [sym_name, sym] : idx->symbols) {
+                    if (sym.kind == "FunctionDecl") {
+                        pre_cpp_fn_params[sym_name] = sym.param_types;
+                    }
+                }
+            }
+        }
+    }
+
     // 3. Resilient semantic analysis
-    auto chk = cfire::frontend::analyze_resilient(std::move(merged_ast));
+    auto chk = cfire::frontend::analyze_resilient(std::move(merged_ast), std::move(pre_cpp_fn_params));
     for (const auto& w : chk.warnings) {
         auto d = cfire::diag::parse_diagnostic_string(w, file_path, "warning", "cfire/WARNING");
         cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);

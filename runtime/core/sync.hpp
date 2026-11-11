@@ -326,6 +326,77 @@ template <typename T>
     return Channel<T>{capacity};
 }
 
+template <typename T>
+class MutexGuard {
+public:
+    struct State {
+        std::mutex mtx;
+        T value;
+        template <typename... Args>
+        explicit State(Args&&... args) : value(std::forward<Args>(args)...) {}
+    };
+
+    MutexGuard() = default;
+    MutexGuard(std::shared_ptr<State> state, std::unique_lock<std::mutex> lock)
+        : state_(std::move(state)), lock_(std::move(lock)) {}
+
+    auto get() const -> const T& { return state_->value; }
+    auto get() -> T& { return state_->value; }
+    void set(T v) { state_->value = std::move(v); }
+
+    auto operator->() -> T* { return &state_->value; }
+    auto operator->() const -> const T* { return &state_->value; }
+    auto operator*() -> T& { return state_->value; }
+    auto operator*() const -> const T& { return state_->value; }
+
+    void unlock() { if (lock_.owns_lock()) lock_.unlock(); }
+
+private:
+    std::shared_ptr<State> state_{};
+    std::unique_lock<std::mutex> lock_{};
+};
+
+template <typename T>
+class MutexT {
+public:
+    using Guard = MutexGuard<T>;
+    using State = typename MutexGuard<T>::State;
+
+    MutexT() : state_(std::make_shared<State>()) {}
+    explicit MutexT(T initial) : state_(std::make_shared<State>(std::move(initial))) {}
+
+    template <typename Fn>
+    decltype(auto) with_lock(Fn&& fn) const {
+        std::lock_guard<std::mutex> lk(state_->mtx);
+        return fn(state_->value);
+    }
+
+    auto lock() const -> MutexGuard<T> {
+        return MutexGuard<T>(state_, std::unique_lock<std::mutex>(state_->mtx));
+    }
+
+    auto try_lock() const -> std::optional<MutexGuard<T>> {
+        std::unique_lock<std::mutex> lk(state_->mtx, std::try_to_lock);
+        if (lk.owns_lock()) {
+            return MutexGuard<T>(state_, std::move(lk));
+        }
+        return std::nullopt;
+    }
+
+    auto get() const -> T {
+        std::lock_guard<std::mutex> lk(state_->mtx);
+        return state_->value;
+    }
+
+    void set(T val) const {
+        std::lock_guard<std::mutex> lk(state_->mtx);
+        state_->value = std::move(val);
+    }
+
+private:
+    std::shared_ptr<State> state_;
+};
+
 class Mutex {
 public:
     Mutex() : mu_(std::make_shared<std::mutex>()) {}
@@ -338,12 +409,43 @@ public:
         std::lock_guard<std::mutex> lk(*mu_);
         return fn();
     }
+
 private:
     std::shared_ptr<std::mutex> mu_;
 };
 
+template <typename T>
+[[nodiscard]] inline auto make_mutex(T initial) -> MutexT<T> {
+    return MutexT<T>(std::move(initial));
+}
+
 [[nodiscard]] inline auto new_mutex() -> Mutex {
     return Mutex{};
+}
+
+template <typename T = int64_t>
+class Atomic {
+public:
+    Atomic() : val_(std::make_shared<std::atomic<T>>(T{})) {}
+    explicit Atomic(T initial) : val_(std::make_shared<std::atomic<T>>(initial)) {}
+
+    auto load() const -> T { return val_->load(); }
+    void store(T v) const { val_->store(v); }
+    auto add(T delta) const -> T { return val_->fetch_add(delta) + delta; }
+    auto sub(T delta) const -> T { return val_->fetch_sub(delta) - delta; }
+    auto fetch_add(T delta) const -> T { return val_->fetch_add(delta); }
+    auto fetch_sub(T delta) const -> T { return val_->fetch_sub(delta); }
+    auto cas(T expected, T desired) const -> bool {
+        return val_->compare_exchange_strong(expected, desired);
+    }
+
+private:
+    std::shared_ptr<std::atomic<T>> val_;
+};
+
+template <typename T = int64_t>
+[[nodiscard]] inline auto make_atomic(T initial = T{}) -> Atomic<T> {
+    return Atomic<T>(initial);
 }
 
 } // namespace cfire::sync

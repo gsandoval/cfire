@@ -81,7 +81,7 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
             },
             .expected_cpp = {
                 "concept Renderable = true;",
-                "std::visit(cfire::overloaded{",
+                "std::get_if<Shape::",
                 "cfire::Map<std::string, double>",
                 "cfire::slice(",
                 "template <Renderable T>",

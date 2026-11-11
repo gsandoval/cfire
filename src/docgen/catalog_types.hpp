@@ -641,7 +641,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {
                 {"slice", "fn slice(mut s: []T)", "cfire::sort::slice(s)", "Sorts a slice in ascending order in-place.", "sort.slice(mut numbers)"},
                 {"binary_search", "fn binary_search(s: []T, val: T) -> i64?", "cfire::sort::binary_search(s, val)", "Performs binary search on a sorted slice.", "idx := sort.binary_search(numbers, 42)"},
-                {"slice_by", "fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)", "cfire::sort::slice_by(s, cmp)", "Sorts slice `s` in-place using custom comparator `cmp`.", "sort.slice_by(mut items, |a, b| a < b)"}
+                {"slice_by", "fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)", "cfire::sort::slice_by(s, cmp)", "Sorts slice `s` in-place using custom comparator `cmp`.", "sort.slice_by(mut items) |a, b| { return a < b }"}
             }
         },
         {
@@ -681,7 +681,9 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "Go-style typed MPSC/MPMC channels (`Channel[T]`) with non-blocking and timeout receives, plus movable mutual exclusion locks (`Mutex`).",
             {
                 {"make_channel", "fn make_channel[T](capacity: usize = 0) -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
+                {"make_mutex", "fn make_mutex[T](initial: T) -> Mutex[T]", "cfire::sync::make_mutex(initial)", "Constructs a data-bearing mutex protecting initial value.", "mu := sync.make_mutex(0)"},
                 {"new_mutex", "fn new_mutex() -> Mutex", "cfire::sync::Mutex()", "Constructs a new mutual exclusion lock.", "m := sync.new_mutex()"},
+                {"make_atomic", "fn make_atomic[T](initial: T) -> Atomic[T]", "cfire::sync::make_atomic(initial)", "Constructs an atomic variable holding initial value.", "atm := sync.make_atomic(0)"},
                 {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
                 {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
                 {"Channel.try_recv", "fn (ch: Channel[T]) try_recv() -> T?", "ch.try_recv()", "Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty.", "v := ch.try_recv() or { return }"},
@@ -693,7 +695,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Mutex.lock", "fn (mut m: Mutex) lock()", "m.lock()", "Acquires the mutex lock, blocking until available.", "mu.lock()"},
                 {"Mutex.unlock", "fn (mut m: Mutex) unlock()", "m.unlock()", "Releases the mutex lock.", "mu.unlock()"},
                 {"Mutex.try_lock", "fn (mut m: Mutex) try_lock() -> bool", "m.try_lock()", "Attempts to acquire the mutex without blocking; returns `true` if acquired.", "if mu.try_lock() { defer mu.unlock() }"},
-                {"Mutex.with_lock", "fn (mut m: Mutex) with_lock(fn: fn())", "m.with_lock(fn)", "Executes `fn` while holding the mutex lock and unlocks automatically via RAII.", "mu.with_lock(|| { count += 1 })"}
+                {"Mutex.with_lock", "fn (mut m: Mutex) with_lock(fn: fn())", "m.with_lock(fn)", "Executes `fn` while holding the mutex lock and unlocks automatically via RAII.", "mu.with_lock(|| { count += 1 })"},
+                {"Atomic", "type Atomic[T] struct", "cfire::sync::Atomic<T>", "Atomic variable.", "atm := sync.make_atomic(0)"},
+                {"Atomic.load", "fn (a: Atomic[T]) load() -> T", "a.load()", "Loads the atomic value.", "v := a.load()"},
+                {"Atomic.store", "fn (a: Atomic[T]) store(val: T)", "a.store(val)", "Stores a value into the atomic.", "a.store(10)"},
+                {"Atomic.add", "fn (a: Atomic[T]) add(delta: T) -> T", "a.add(delta)", "Adds delta to atomic value.", "a.add(1)"},
+                {"Atomic.sub", "fn (a: Atomic[T]) sub(delta: T) -> T", "a.sub(delta)", "Subtracts delta from atomic value.", "a.sub(1)"}
             }
         },
         {
