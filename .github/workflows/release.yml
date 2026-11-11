@@ -53,6 +53,9 @@ jobs:
           ./cfire --version
           ./cfire --version | grep -F "cfire ${TAG_VER} ($(git rev-parse --short=7 HEAD),"
 
+      - name: Install raylib 6.x
+        run: ./cfire setup --raylib --yes
+
       - name: Run Review Check Quality Gates
         run: make review-check
 
