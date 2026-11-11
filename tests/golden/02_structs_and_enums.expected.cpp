@@ -113,8 +113,8 @@ struct Shape {
     explicit operator std::uint16_t() const noexcept { return static_cast<std::uint16_t>(_v.index()); }
     explicit operator std::uint32_t() const noexcept { return static_cast<std::uint32_t>(_v.index()); }
     explicit operator std::uint64_t() const noexcept { return static_cast<std::uint64_t>(_v.index()); }
-    explicit operator std::size_t() const noexcept { return _v.index(); }
-    explicit operator std::ptrdiff_t() const noexcept { return static_cast<std::ptrdiff_t>(_v.index()); }
+    template <typename T> requires (std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, std::int8_t> && !std::is_same_v<T, std::int16_t> && !std::is_same_v<T, std::int32_t> && !std::is_same_v<T, std::int64_t> && !std::is_same_v<T, std::uint8_t> && !std::is_same_v<T, std::uint16_t> && !std::is_same_v<T, std::uint32_t> && !std::is_same_v<T, std::uint64_t>)
+    explicit operator T() const noexcept { return static_cast<T>(_v.index()); }
     [[nodiscard]] auto to_i32() const noexcept -> std::int32_t { return static_cast<std::int32_t>(_v.index()); }
     [[nodiscard]] auto to_i64() const noexcept -> std::int64_t { return static_cast<std::int64_t>(_v.index()); }
     [[nodiscard]] auto to_string() const -> std::string_view {

@@ -2,6 +2,7 @@
 #include "../cfire_prelude.hpp"
 
 #include <cmath>
+#include <fstream>
 #include <random>
 #include <cstdint>
 #include <algorithm>
