@@ -43,9 +43,13 @@ namespace cfire::build {
     }
 
     bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
+    bool has_pthread = std::ranges::find(plan.cflags, "-pthread") != plan.cflags.end();
+#if defined(__linux__)
+    has_pthread = true;
+#endif
     std::string pch_path;
     if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
-        pch_path = ensure_prelude_pch(runtime_dir, false, has_trap);
+        pch_path = ensure_prelude_pch(runtime_dir, false, has_trap, has_pthread);
     }
     std::string cmd = resolve_cxx_compiler() + " -O2";
     for (const auto& f : plan.cflags) cmd += " " + f;
