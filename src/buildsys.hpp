@@ -976,9 +976,13 @@ namespace cfire::build {
         : (g_debug_mode ? "-O0 -g" : "-O2");
     // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
     bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
+    bool has_pthread = std::ranges::find(plan.cflags, "-pthread") != plan.cflags.end();
+#if defined(__linux__)
+    has_pthread = true;
+#endif
     std::string pch_path;
     if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
-        pch_path = ensure_prelude_pch(runtime_dir, sanitize, test_mode || has_trap);
+        pch_path = ensure_prelude_pch(runtime_dir, sanitize, test_mode || has_trap, has_pthread);
     }
 
     std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler(plan.target_triple);
@@ -1018,6 +1022,31 @@ namespace cfire::build {
 
     int exit_code = 0;
     std::string output = bridge::run_command_capture(cmd, exit_code);
+    if (exit_code != 0 && plan.used_pch) {
+        // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
+        std::string fallback_cmd = compiler;
+        if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
+            fallback_cmd += " -fobjc-arc";
+        }
+        for (const auto& f : plan.cflags) {
+            if (is_wasm && f.find("simdjson") != std::string::npos) continue;
+            fallback_cmd += " " + f;
+        }
+        fallback_cmd += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
+        for (const auto& l : plan.ldflags) {
+            if (is_wasm && (l.find(".dylib") != std::string::npos || l.find(".so") != std::string::npos || l == "-lsimdjson" || l == "-lsqlite3" || l == "-lzstd")) {
+                continue;
+            }
+            fallback_cmd += " " + l;
+        }
+        int fb_code = 0;
+        std::string fb_out = bridge::run_command_capture(fallback_cmd, fb_code);
+        if (fb_code == 0) {
+            exit_code = 0;
+            output = std::move(fb_out);
+            plan.used_pch = false;
+        }
+    }
     if (exit_code != 0) {
         std::string clean_out = cfire::diag::humanize_cpp_compiler_output(output);
         if (const char* verb = std::getenv("CFIRE_VERBOSE"); verb && std::string_view(verb) == "1") {

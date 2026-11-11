@@ -56,7 +56,8 @@ inline bool g_profile_mode = false;
 [[nodiscard]] inline auto prelude_pch_path(
     const std::filesystem::path& runtime_dir,
     bool sanitize,
-    bool test_mode = false
+    bool test_mode = false,
+    bool with_pthread = false
 ) -> std::filesystem::path {
     std::error_code ec;
 #if defined(_WIN32)
@@ -73,6 +74,9 @@ inline bool g_profile_mode = false;
     auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
     std::string cxx_bin = resolve_cxx_compiler();
     std::string tag = sanitize ? (test_mode ? "san_test" : "san") : (test_mode ? "test_trap" : "opt_wrapv");
+    if (with_pthread) {
+        tag += "_pth";
+    }
 
     std::size_t content_hash = 0;
     auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
@@ -101,13 +105,14 @@ inline bool g_profile_mode = false;
 [[nodiscard]] inline auto ensure_prelude_pch(
     const std::filesystem::path& runtime_dir,
     bool sanitize,
-    bool test_mode = false
+    bool test_mode = false,
+    bool with_pthread = false
 ) -> std::string {
     auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
     std::error_code ec;
     if (!std::filesystem::exists(prelude_hdr, ec)) return "";
 
-    auto pch_path = prelude_pch_path(runtime_dir, sanitize, test_mode);
+    auto pch_path = prelude_pch_path(runtime_dir, sanitize, test_mode, with_pthread);
     std::filesystem::create_directories(pch_path.parent_path(), ec);
     std::string cxx_bin = resolve_cxx_compiler();
 
@@ -143,6 +148,10 @@ inline bool g_profile_mode = false;
         }
 #if defined(__linux__)
         opt_flags += " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -pthread";
+#else
+        if (with_pthread) {
+            opt_flags += " -pthread";
+        }
 #endif
         auto tmp_pch_path = pch_path;
         tmp_pch_path += std::format(".tmp.{}.pch", ::getpid());

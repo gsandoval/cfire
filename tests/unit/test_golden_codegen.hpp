@@ -91,8 +91,8 @@ void test_golden_codegen_snapshots(const std::filesystem::path& repo_root) {
             std::size_t start = (diff_pos > 30) ? diff_pos - 30 : 0;
             std::string exp_snippet = expected_cpp.substr(start, std::min<std::size_t>(60, expected_cpp.size() - start));
             std::string act_snippet = actual_cpp.substr(start, std::min<std::size_t>(60, actual_cpp.size() - start));
-            std::println(stderr, "    Expected around line {}: {:?}", line_no, exp_snippet);
-            std::println(stderr, "    Actual   around line {}: {:?}", line_no, act_snippet);
+            std::println(stderr, "    Expected around line {}: \"{}\"", line_no, exp_snippet);
+            std::println(stderr, "    Actual   around line {}: \"{}\"", line_no, act_snippet);
         } else {
             ++verified_count;
         }
