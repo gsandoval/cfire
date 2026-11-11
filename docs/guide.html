@@ -4470,12 +4470,12 @@ fn hardware_concurrency_and_arch(multiplier: i32) -&gt; (str, i32) {
 
 fn main() {
     (arch, slots) := hardware_concurrency_and_arch(2)
-    println(&quot;arch={} worker_slots&gt;={}&quot;, arch, slots &gt;= 2)
+    println(&quot;arch_detected={} worker_slots&gt;={}&quot;, arch.len() &gt; 0, slots &gt;= 2)
 }
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
-  <pre><code>arch=arm64 worker_slots&gt;=true
+  <pre><code>arch_detected=true worker_slots&gt;=true
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
