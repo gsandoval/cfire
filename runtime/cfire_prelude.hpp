@@ -1,6 +1,6 @@
 #pragma once
 // cfire_prelude.hpp — Zero-overhead C++23 Runtime Prelude for cfire (.cf)
-// CFIRE_RUNTIME_VERSION: 0.10.0
+// CFIRE_RUNTIME_VERSION: 0.11.0
 // CFIRE_RUNTIME_ARCHIVE_SHA: $Format:%h$
 
 #include <algorithm>

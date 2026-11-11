@@ -42,6 +42,12 @@ public:
 
     ~Server() {
         stop_worker();
+        clear_out_stream();
+    }
+
+    void clear_out_stream() {
+        std::lock_guard<std::mutex> lock(out_mutex_);
+        out_stream_ = nullptr;
     }
 
     void send_rpc(std::ostream& out, std::string_view body) {
@@ -75,6 +81,10 @@ public:
         }
         worker_running_ = false;
         stop_requested_ = false;
+        {
+            std::lock_guard<std::mutex> lock(out_mutex_);
+            out_stream_ = nullptr;
+        }
     }
 
     void schedule_diagnostics(const std::string& uri, const std::string& text, bool immediate) {
