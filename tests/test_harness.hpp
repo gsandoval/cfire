@@ -153,7 +153,22 @@ inline void require_sema_error(
     auto ast = cfire::frontend::parse_source(filename, src);
     require(ast.has_value(), std::format("parse {}", filename));
     if (!ast) return;
-    auto checked = cfire::frontend::analyze(std::move(*ast));
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    for (const auto& imp : ast->imports) {
+        if (imp.is_cpp) {
+            auto cache_dir = std::filesystem::temp_directory_path() / ".cfire" / "cache";
+            std::vector<std::string> cflags;
+            auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
+            if (idx) {
+                for (const auto& [sym_name, sym] : idx->symbols) {
+                    if (sym.kind == "FunctionDecl") {
+                        pre_cpp_fn_params[sym_name] = sym.param_types;
+                    }
+                }
+            }
+        }
+    }
+    auto checked = cfire::frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params));
     require(!checked.has_value(), std::format("expected diagnostic {}", expected_diag));
     if (!checked) {
         require(checked.error().contains(expected_diag),
@@ -187,8 +202,23 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
     auto ast = cfire::frontend::parse_source(filename, src);
     require(ast.has_value(), std::format("parse {}", filename));
     if (!ast) return;
-    auto checked = cfire::frontend::analyze(std::move(*ast));
-    require(checked.has_value(), std::format("sema ok for {}", filename));
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    for (const auto& imp : ast->imports) {
+        if (imp.is_cpp) {
+            auto cache_dir = std::filesystem::temp_directory_path() / ".cfire" / "cache";
+            std::vector<std::string> cflags;
+            auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
+            if (idx) {
+                for (const auto& [sym_name, sym] : idx->symbols) {
+                    if (sym.kind == "FunctionDecl") {
+                        pre_cpp_fn_params[sym_name] = sym.param_types;
+                    }
+                }
+            }
+        }
+    }
+    auto checked = cfire::frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params));
+    require(checked.has_value(), std::format("sema ok for {}{}", filename, checked.has_value() ? "" : ": " + checked.error()));
 }
 
 // Frontend Suites
@@ -217,6 +247,7 @@ void test_multiline_lambda_source_mapping_cf114(const std::filesystem::path& rt_
 void test_interned_typeid_lattice_and_diagnostics_cf116(const std::filesystem::path& rt_dir);
 void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir);
 void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir);
+void test_phase2_concurrency_match_and_flow_control(const std::filesystem::path& rt_dir);
 void test_phase3_advanced_language_and_safety(const std::filesystem::path& rt_dir);
 void test_negative_parser_corpus_and_fuzz_runtime(const std::filesystem::path& rt_dir);
 

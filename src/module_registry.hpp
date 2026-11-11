@@ -85,6 +85,26 @@ struct ResolvedImport {
     return std::string(raw_path);
 }
 
+[[nodiscard]] inline auto canonical_ns_for_import(std::string_view raw_path) -> std::pair<std::string, bool> {
+    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+        if (mod.import_path == raw_path) {
+            return {mod.ns_alias, mod.is_vendor};
+        }
+        for (const auto& a : mod.aliases) {
+            if (a == raw_path) {
+                return {mod.ns_alias, mod.is_vendor};
+            }
+        }
+    }
+    std::string path = normalize_import_path(raw_path);
+    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+        if (mod.import_path == path) {
+            return {mod.ns_alias, mod.is_vendor};
+        }
+    }
+    return {"", false};
+}
+
 [[nodiscard]] inline auto resolve_import(std::string_view raw_path) -> ResolvedImport {
     ResolvedImport info;
 

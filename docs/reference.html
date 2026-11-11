@@ -2079,7 +2079,7 @@ syncCfireThemeBtn();
           <option value="mod-regex">core:regex (3 fns)</option>
           <option value="mod-sort">core:sort (3 fns)</option>
           <option value="mod-str">core:str (26 fns)</option>
-          <option value="mod-sync">core:sync (14 fns)</option>
+          <option value="mod-sync">core:sync (21 fns)</option>
           <option value="mod-context">core:sync/context (8 fns)</option>
           <option value="mod-tako">core:tako (8 fns)</option>
           <option value="mod-time">core:time (15 fns)</option>
@@ -2132,7 +2132,7 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#mod-regex" id="nav-pane-mod-regex" onclick="navigateToRefPane('mod-regex'); return false;"><code>core:regex</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-sort" id="nav-pane-mod-sort" onclick="navigateToRefPane('mod-sort'); return false;"><code>core:sort</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-str" id="nav-pane-mod-str" onclick="navigateToRefPane('mod-str'); return false;"><code>core:str</code> <span style="color:var(--muted);font-size:0.75rem;">(26)</span></a></li>
-          <li class="nav-item"><a href="#mod-sync" id="nav-pane-mod-sync" onclick="navigateToRefPane('mod-sync'); return false;"><code>core:sync</code> <span style="color:var(--muted);font-size:0.75rem;">(14)</span></a></li>
+          <li class="nav-item"><a href="#mod-sync" id="nav-pane-mod-sync" onclick="navigateToRefPane('mod-sync'); return false;"><code>core:sync</code> <span style="color:var(--muted);font-size:0.75rem;">(21)</span></a></li>
           <li class="nav-item"><a href="#mod-context" id="nav-pane-mod-context" onclick="navigateToRefPane('mod-context'); return false;"><code>core:sync/context</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-tako" id="nav-pane-mod-tako" onclick="navigateToRefPane('mod-tako'); return false;"><code>core:tako</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-time" id="nav-pane-mod-time" onclick="navigateToRefPane('mod-time'); return false;"><code>core:time</code> <span style="color:var(--muted);font-size:0.75rem;">(15)</span></a></li>
@@ -2342,7 +2342,7 @@ syncCfireThemeBtn();
           <a href="#mod-sync" class="ref-mod-card" onclick="navigateToRefPane('mod-sync'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:sync</span>
-              <span class="ref-mod-card-count">14 fns</span>
+              <span class="ref-mod-card-count">21 fns</span>
             </div>
             <div class="ref-mod-card-title">Thread-Safe Typed Channels &amp; Mutexes</div>
             <div class="ref-mod-card-desc">Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>).</div>
@@ -3706,7 +3706,7 @@ fn main() {
           <tbody>
             <tr><td><code>fn slice(mut s: []T)</code></td><td><code>cfire::sort::slice(s)</code></td><td>Sorts a slice in ascending order in-place.<br/><code>sort.slice(mut numbers)</code></td></tr>
             <tr><td><code>fn binary_search(s: []T, val: T) -&gt; i64?</code></td><td><code>cfire::sort::binary_search(s, val)</code></td><td>Performs binary search on a sorted slice.<br/><code>idx := sort.binary_search(numbers, 42)</code></td></tr>
-            <tr><td><code>fn slice_by(mut s: []T, cmp: fn(T, T) -&gt; bool)</code></td><td><code>cfire::sort::slice_by(s, cmp)</code></td><td>Sorts slice <code>s</code> in-place using custom comparator <code>cmp</code>.<br/><code>sort.slice_by(mut items, |a, b| a &lt; b)</code></td></tr>
+            <tr><td><code>fn slice_by(mut s: []T, cmp: fn(T, T) -&gt; bool)</code></td><td><code>cfire::sort::slice_by(s, cmp)</code></td><td>Sorts slice <code>s</code> in-place using custom comparator <code>cmp</code>.<br/><code>sort.slice_by(mut items) |a, b| { return a &lt; b }</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
@@ -3779,7 +3779,7 @@ fn main() {
       </article>
       <article class="ref-pane" id="ref-pane-mod-sync" data-pane-id="mod-sync" data-pane-short="core:sync" data-pane-title="core:sync — Thread-Safe Typed Channels &amp; Mutexes">
         <h2 id="mod-sync" style="margin-top:0.25rem;"><code>import "core:sync"</code> &mdash; Thread-Safe Typed Channels &amp; Mutexes</h2>
-        <p>Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sync.*</code> &bull; 14 exported functions</small></p>
+        <p>Go-style typed MPSC/MPMC channels (<code>Channel[T]</code>) with non-blocking and timeout receives, plus movable mutual exclusion locks (<code>Mutex</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>sync.*</code> &bull; 21 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3811,7 +3811,9 @@ fn main() {
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn make_channel[T](capacity: usize = 0) -&gt; Channel[T]</code></td><td><code>cfire::sync::make_channel&lt;T&gt;()</code></td><td>Creates a new shared, thread-safe channel of element type <code>T</code>.<br/><code>ch := sync.make_channel[i64]()</code></td></tr>
+            <tr><td><code>fn make_mutex[T](initial: T) -&gt; Mutex[T]</code></td><td><code>cfire::sync::make_mutex(initial)</code></td><td>Constructs a data-bearing mutex protecting initial value.<br/><code>mu := sync.make_mutex(0)</code></td></tr>
             <tr><td><code>fn new_mutex() -&gt; Mutex</code></td><td><code>cfire::sync::Mutex()</code></td><td>Constructs a new mutual exclusion lock.<br/><code>m := sync.new_mutex()</code></td></tr>
+            <tr><td><code>fn make_atomic[T](initial: T) -&gt; Atomic[T]</code></td><td><code>cfire::sync::make_atomic(initial)</code></td><td>Constructs an atomic variable holding initial value.<br/><code>atm := sync.make_atomic(0)</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) send(val: T)</code></td><td><code>ch.send(val)</code></td><td>Sends a value into the channel and wakes one waiting receiver.<br/><code>ch.send(42)</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) recv() -&gt; T!</code></td><td><code>ch.recv()</code></td><td>Blocks until a value is available or returns an error if the channel is closed and empty.<br/><code>v := ch.recv() or 0</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) try_recv() -&gt; T?</code></td><td><code>ch.try_recv()</code></td><td>Attempts a non-blocking receive from the channel, returning <code>none</code> immediately if the queue is empty.<br/><code>v := ch.try_recv() or { return }</code></td></tr>
@@ -3824,6 +3826,11 @@ fn main() {
             <tr><td><code>fn (mut m: Mutex) unlock()</code></td><td><code>m.unlock()</code></td><td>Releases the mutex lock.<br/><code>mu.unlock()</code></td></tr>
             <tr><td><code>fn (mut m: Mutex) try_lock() -&gt; bool</code></td><td><code>m.try_lock()</code></td><td>Attempts to acquire the mutex without blocking; returns <code>true</code> if acquired.<br/><code>if mu.try_lock() { defer mu.unlock() }</code></td></tr>
             <tr><td><code>fn (mut m: Mutex) with_lock(fn: fn())</code></td><td><code>m.with_lock(fn)</code></td><td>Executes <code>fn</code> while holding the mutex lock and unlocks automatically via RAII.<br/><code>mu.with_lock(|| { count += 1 })</code></td></tr>
+            <tr><td><code>type Atomic[T] struct</code></td><td><code>cfire::sync::Atomic&lt;T&gt;</code></td><td>Atomic variable.<br/><code>atm := sync.make_atomic(0)</code></td></tr>
+            <tr><td><code>fn (a: Atomic[T]) load() -&gt; T</code></td><td><code>a.load()</code></td><td>Loads the atomic value.<br/><code>v := a.load()</code></td></tr>
+            <tr><td><code>fn (a: Atomic[T]) store(val: T)</code></td><td><code>a.store(val)</code></td><td>Stores a value into the atomic.<br/><code>a.store(10)</code></td></tr>
+            <tr><td><code>fn (a: Atomic[T]) add(delta: T) -&gt; T</code></td><td><code>a.add(delta)</code></td><td>Adds delta to atomic value.<br/><code>a.add(1)</code></td></tr>
+            <tr><td><code>fn (a: Atomic[T]) sub(delta: T) -&gt; T</code></td><td><code>a.sub(delta)</code></td><td>Subtracts delta from atomic value.<br/><code>a.sub(1)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">

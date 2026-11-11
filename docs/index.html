@@ -1374,16 +1374,16 @@ struct cfire::reflect_enum&lt;Token&gt; {
             return &quot;empty&quot;;
         }
         if (!_matched &amp;&amp; _target.size() == 1) {
-            _matched = true;
             const auto&amp; only = _target[0];
+            _matched = true;
             #line 12 &quot;snippet_patterns.cf&quot;
             return (&quot;single=&quot; + only);
         }
         if (!_matched &amp;&amp; _target.size() &gt;= 2) {
-            _matched = true;
             const auto&amp; first = _target[0];
             auto mid = cfire::slice(_target, 1, (_target.size() - 1));
             const auto&amp; last = _target[_target.size() - 1];
+            _matched = true;
             #line 13 &quot;snippet_patterns.cf&quot;
             return ((((first + &quot;..(&quot;) + cfire::str_ctor(mid.size())) + &quot;)..&quot;) + last);
         }
@@ -1657,7 +1657,7 @@ import cpp &quot;fast_hash.h&quot;
 fn main() {
     msg := &quot;cfire systems programming&quot;
     // Automatic boundary coercion: 'str' passes as 'const char*'
-    hash := cpp::fh_fnv1a(msg, msg.len())
+    hash := cpp.fh_fnv1a(msg, msg.len())
     println(&quot;fnv1a hash: 0x{:x}&quot;, hash)
 }</code></pre>
       </div>

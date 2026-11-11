@@ -1569,8 +1569,8 @@ void test_uniform_generic_type_application([[maybe_unused]] const std::filesyste
 
 import "core:collections"
 
-fn make_pair(a: i32, b: str) -> cpp::std::pair[i32, str] {
-    return make[cpp::std::pair[i32, str]](a, b)
+fn make_pair(a: i32, b: str) -> cpp.std::pair[i32, str] {
+    return make[cpp.std::pair[i32, str]](a, b)
 }
 
 fn inspect_set(s: collections.Set[str]) -> usize {
@@ -1611,7 +1611,7 @@ fn main() {
     assert(p.first == 42, "pair.first is 42")
     assert(p.second == "galaxy", "pair.second is galaxy")
 
-    p2 := cpp::std::pair[i32, str](100, "stars")
+    p2 := cpp.std::pair[i32, str](100, "stars")
     assert(p2.first == 100, "p2.first is 100")
     assert(p2.second == "stars", "p2.second is stars")
 
@@ -1783,7 +1783,7 @@ fn test_redundant_or() {
 fn main() {}
 )", "cfire/REDUNDANT-OR", "cpp_ffi_redundant_or.cf");
 
-    // 4. Conformance Positive: File with import cpp resolves cpp:: symbols and pure cfire variables
+    // 4. Conformance Positive: File with import cpp resolves cpp. symbols and pure cfire variables
     run_cfire_source(R"CF(package main
 import cpp "<cstdio>"
 
@@ -1795,13 +1795,144 @@ fn main() {
     pure_res := add_pure(15, 25)
     assert(pure_res == 40, "pure cfire function call succeeds")
 
-    cpp::printf("printf from import cpp: %d\n", pure_res)
+    cpp.printf("printf from import cpp: %d\n", pure_res)
     println("scoped resolution with cpp ffi passed")
 }
 )CF", "cpp_ffi_resolution_test")
-        .assert_ok("import cpp file with pure cfire and cpp:: calls compiles and runs (CF-109)")
-        .assert_contains("printf from import cpp: 40", "cpp::printf output verified")
+        .assert_ok("import cpp file with pure cfire and cpp. calls compiles and runs (CF-109)")
+        .assert_contains("printf from import cpp: 40", "cpp.printf output verified")
         .assert_contains("scoped resolution with cpp ffi passed", "completion output verified");
+
+    // 5. Hard Error on cpp:: separator (cfire/DEPRECATED-SEPARATOR)
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn main() {
+    cpp::printf("hi\n")
+}
+)", "cfire/DEPRECATED-SEPARATOR", "cpp_colon_call.cf");
+
+    // 6. Hard Error on :: in type references (var decl, struct field, fn sig)
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn main() {
+    mut f: *cpp::FILE = none
+}
+)", "cfire/DEPRECATED-SEPARATOR", "cpp_colon_var.cf");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+type FileHandle struct {
+    f: *cpp::FILE
+}
+fn main() {}
+)", "cfire/DEPRECATED-SEPARATOR", "cpp_colon_field.cf");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn get_file(f: *cpp::FILE) -> *cpp::FILE {
+    return f
+}
+fn main() {}
+)", "cfire/DEPRECATED-SEPARATOR", "cpp_colon_fn.cf");
+
+    // 7. Auto-repair fix-it: cfire fix replaces cpp:: with cpp.
+    {
+        ScopedTempDir tmp_fix("cfire_cpp_sep_fix");
+        auto f = tmp_fix.file("cpp_sep.cf", R"(package main
+import cpp "<cstdio>"
+fn main() {
+    cpp::printf("hello world\n")
+}
+)");
+        auto fix_res = run_cfire(std::format("fix '{}'", f.string()));
+        fix_res.assert_ok("cfire fix applies cpp:: -> cpp. replacement");
+        auto fixed_content = cfire::fs::read_text(f).value_or("");
+        require(fixed_content.contains("cpp.printf"), "fixed content contains cpp.printf");
+        require(!fixed_content.contains("cpp::printf"), "fixed content does not contain cpp::printf");
+        auto chk_res = run_cfire(std::format("check '{}'", f.string()));
+        chk_res.assert_ok("fixed file passes check cleanly");
+    }
+
+    // 8. Aliased C++ import execution and syntax validation
+    run_cfire_source(R"CF(package main
+import cpp "<cstdio>" as my_io
+
+fn main() {
+    my_io.printf("aliased cpp printf works: %d\n", 42)
+    println("aliased cpp test passed")
+}
+)CF", "cpp_alias_exec_test")
+        .assert_ok("import cpp as alias executes cleanly")
+        .assert_contains("aliased cpp printf works: 42")
+        .assert_contains("aliased cpp test passed");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>" as my_io
+fn main() {
+    my_io::printf("hi\n")
+}
+)", "cfire/DEPRECATED-SEPARATOR", "cpp_alias_colon.cf");
+
+    // 9. Exclusive Aliasing: Shadowed default qualifiers rejected with fix-it
+    require_sema_error(R"(package main
+import cpp "<cstdio>" as my_io
+fn main() {
+    cpp.printf("hi\n")
+}
+)", "module 'cpp' is imported as 'my_io'; use 'my_io.printf'", "shadowed_cpp.cf");
+
+    require_sema_error(R"(package main
+import "core:str" as s
+fn main() {
+    parts := str.split("a,b", ",")
+}
+)", "module 'str' is imported as 's'; use 's.split'", "shadowed_core.cf");
+
+    // 10. Bare unqualified C calls rejected with targeted hint
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn main() {
+    printf("hi\n")
+}
+)", "did you mean 'cpp.printf'?", "bare_c_call.cf");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>" as my_io
+fn main() {
+    printf("hi\n")
+}
+)", "did you mean 'my_io.printf'?", "bare_c_call_alias.cf");
+
+    // 11. Strict CF-116 type checks in files with import cpp
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn main() {
+    x: i32 = "hello"
+}
+)", "cfire/TYPE-MISMATCH", "cpp_type_mismatch_var.cf");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn main() {
+    x := 10 + "hello"
+}
+)", "cfire/TYPE-MISMATCH", "cpp_type_mismatch_bin.cf");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn get_num() -> i32 {
+    return "hello"
+}
+fn main() {}
+)", "cfire/TYPE-MISMATCH", "cpp_type_mismatch_ret.cf");
+
+    require_sema_error(R"(package main
+import cpp "<cstdio>"
+fn main() {
+    mut x: i32 = 0
+    x = "hello"
+}
+)", "cfire/TYPE-MISMATCH", "cpp_type_mismatch_assign.cf");
 
     std::println("--- PASS: test_scoped_name_resolution_cpp_ffi (CF-109)");
 }
@@ -2290,6 +2421,68 @@ fn main() {
 }
 )", "cfire/TYPE-MISMATCH", "type_mismatch_binary.cf");
 
+    // 5b. Q3 canonical type identity: one package-qualified type, three internal spellings
+    // (annotation joined with '::', stdlib catalog bare return, inferred variable) are the same type.
+    require_sema_ok(R"(package main
+import "ext:webui"
+
+fn make_app() -> webui.App {
+    mut app := webui.new_app("Studio", 640, 480)
+    return app
+}
+
+fn direct_app() -> webui.App {
+    return webui.new_app("Direct", 320, 240)
+}
+
+fn main() {
+    a: webui.App = make_app()
+    mut b := direct_app()
+    b = make_app()
+}
+)", "q3_qualified_type_identity.cf");
+
+    // 5c. Q3: enum variant paths ('::') are untouched by package canonicalization.
+    require_sema_ok(R"(package main
+import "core:log"
+
+fn pick() -> log.Level {
+    return log.Level::Debug
+}
+
+fn main() {
+    lvl: log.Level = pick()
+    _ = lvl
+}
+)", "q3_enum_variant_path.cf");
+
+    // 5d. Negative: a local type and a package type sharing a leaf name are distinct (no leaf matching),
+    // and the diagnostic explains the difference.
+    require_sema_error(R"(package main
+import "ext:webui"
+
+type App struct {
+    title: str
+}
+
+fn wrong() -> webui.App {
+    return App{title: "local"}
+}
+
+fn main() {}
+)", "'App' is a local type, distinct from 'webui.App' (did you mean 'webui.App'?)", "q3_local_vs_package_type.cf");
+
+    // 5e. Diagnostics print the Q3 source spelling ('webui.App'), not the parser's internal 'webui::App'.
+    require_sema_error(R"(package main
+import "ext:webui"
+
+fn wrong() -> webui.App {
+    return 42
+}
+
+fn main() {}
+)", "expects 'webui.App', got 'i64'", "q3_diag_spelling.cf");
+
     // 6. Conformance Positive: Type-safe execution across complex types and fallible returns
     run_cfire_source(R"CF(package main
 
@@ -2607,7 +2800,7 @@ fn main() {}
 import cpp "<cstdio>"
 fn test_foreign_null(ptr: *int) {
     if ptr != none {
-        cpp::printf("%p\n", ptr)
+        cpp.printf("%p\n", ptr)
         val := *ptr
     }
 }
@@ -2615,6 +2808,208 @@ fn main() {}
 )", "cfire/NULL-DEREF");
 
     std::println("--- PASS: test_phase3_advanced_language_and_safety (CF-121 - CF-124)");
+}
+
+void test_phase2_concurrency_match_and_flow_control([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_phase2_concurrency_match_and_flow_control");
+
+    // 1. Escaping Capture Mutation Diagnostics (cfire/ESCAPING-CAPTURE-MUT)
+    // 1a. Struct field mutation
+    require_sema_error(R"(package main
+type S struct { count: i32 }
+fn main() {
+    mut s := S{count: 0}
+    async.scope |s_ctx| {
+        s_ctx.spawn || {
+            s.count += 1
+        }
+    }
+}
+)", "cfire/ESCAPING-CAPTURE-MUT");
+
+    // 1b. Slice / array index element mutation
+    require_sema_error(R"(package main
+fn main() {
+    mut arr: []i32 = [1, 2, 3]
+    async.scope |s_ctx| {
+        s_ctx.spawn || {
+            arr[0] = 99
+        }
+    }
+}
+)", "cfire/ESCAPING-CAPTURE-MUT");
+
+    // 1c. Container mutating method call (.push)
+    require_sema_error(R"(package main
+fn main() {
+    mut arr: []i32 = [1, 2]
+    async.scope |s_ctx| {
+        s_ctx.spawn || {
+            arr.push(3)
+        }
+    }
+}
+)", "cfire/ESCAPING-CAPTURE-MUT");
+
+    // 2. Data-bearing sync.Mutex[T] with with_lock and lock() RAII guard
+    run_cfire_source(R"(package main
+import "core:sync"
+fn main() {
+    mu := sync.make_mutex(0)
+    async.scope |s| {
+        for i in 0..10 {
+            s.spawn || {
+                mu.with_lock(|mut v| {
+                    v += 1
+                })
+            }
+        }
+    }
+    g := mu.lock()
+    println("TOTAL: {}", *g)
+}
+)", "phase2_mutex")
+        .assert_ok("concurrency mutex with_lock and lock() succeeds")
+        .assert_contains("TOTAL: 10", "mutex protected 10 concurrent increments");
+
+    // 3. sync.Atomic[T] and async.Task[T] join
+    run_cfire_source(R"(package main
+import "core:sync"
+fn main() {
+    atm := sync.make_atomic(100)
+    async.scope |s| {
+        t := s.spawn || -> i32 {
+            atm.add(23)
+            return 77
+        }
+        res := t.join()
+        println("TASK: {}, ATOM: {}", res, atm.load())
+    }
+}
+)", "phase2_atomic_task")
+        .assert_ok("atomic and task join succeed")
+        .assert_contains("TASK: 77, ATOM: 123", "task result and atomic updated correctly");
+
+    // 4. Pattern guards and Range patterns in match
+    run_cfire_source(R"(package main
+fn test_guards(x: i32) -> str {
+    match x {
+        _ if x < 0 => { return "negative" }
+        0 => { return "zero" }
+        1..=5 => { return "small" }
+        6..10 => { return "mid" }
+        _ => { return "large" }
+    }
+}
+fn main() {
+    println("{},{},{},{},{}", test_guards(-5), test_guards(0), test_guards(3), test_guards(7), test_guards(100))
+}
+)", "phase2_guards_ranges")
+        .assert_ok("pattern guards and range patterns compile and run")
+        .assert_contains("negative,zero,small,mid,large", "guards and ranges matched expected arms");
+
+    // 5. Enum match with return, break, continue control flow
+    run_cfire_source(R"(package main
+type Step enum { Skip, Stop, Done(i32) }
+fn run_steps() -> i32 {
+    mut sum := 0
+    steps: []Step = [Step::Skip, Step::Done(10), Step::Skip, Step::Done(20), Step::Stop, Step::Done(30)]
+    for s in steps {
+        match s {
+            Skip => { continue }
+            Stop => { break }
+            Done(v) => { sum += v }
+        }
+    }
+    return sum
+}
+fn main() {
+    println("SUM: {}", run_steps())
+}
+)", "phase2_enum_control_flow")
+        .assert_ok("enum match with continue and break succeeds")
+        .assert_contains("SUM: 30", "correctly skipped and broke out of loop in match arms");
+
+    // 6. Optional match (Some/none) and Result match (Ok/Err)
+    run_cfire_source(R"(package main
+fn check_opt(o: i32?) -> str {
+    match o {
+        Some(val) => { return "val={val}" }
+        none => { return "empty" }
+    }
+}
+fn check_res(r: i32!) -> str {
+    match r {
+        Ok(v) => { return "ok={v}" }
+        Err(e) => { return "err={e}" }
+    }
+}
+fn main() {
+    o1: i32? = 42
+    o2: i32? = none
+    r1: i32! = 100
+    r2: i32! = error("failed")
+    println("{}, {}, {}, {}", check_opt(o1), check_opt(o2), check_res(r1), check_res(r2))
+}
+)", "phase2_opt_res_match")
+        .assert_ok("optional and result match blocks compile and run")
+        .assert_contains("val=42, empty, ok=100, err=failed", "Some/none and Ok/Err unpacked accurately");
+
+    // 7. Conditional unwrapping (if val := expr [; guard] and for val := expr)
+    run_cfire_source(R"(package main
+type Iterator struct {
+    curr: i32
+    max: i32
+}
+fn (mut it: Iterator) next() -> i32? {
+    if it.curr < it.max {
+        val := it.curr
+        it.curr += 1
+        return val
+    }
+    return none
+}
+fn main() {
+    opt: i32? = 50
+    if v := opt; v > 20 {
+        println("UNWRAPPED: {}", v)
+    } else {
+        println("NOPE")
+    }
+    mut it := Iterator{curr: 0, max: 3}
+    mut total := 0
+    for v := it.next() {
+        total += v
+    }
+    println("TOTAL_IT: {}", total)
+}
+)", "phase2_unwrapping")
+        .assert_ok("if and for unwrapping compile and run")
+        .assert_contains("UNWRAPPED: 50", "conditional if-unwrap evaluated correctly")
+        .assert_contains("TOTAL_IT: 3", "for-unwrap loop terminated cleanly at none");
+
+    // 8. Two-variable map iteration & collection .len()
+    run_cfire_source(R"(package main
+import "core:collections"
+fn main() {
+    mut m: map[str]i32 = {}
+    m["apple"] = 10
+    mut sum := 0
+    for k, v in m {
+        if k == "apple" {
+            sum += v
+        }
+    }
+    mut set := collections.Set[i32]{}
+    set.insert(1)
+    set.insert(2)
+    println("MAP: {}, SET_LEN: {}", sum, set.len())
+}
+)", "phase2_map_and_len")
+        .assert_ok("two-variable map iteration and Set .len() compile and run")
+        .assert_contains("MAP: 10, SET_LEN: 2", "map iteration and set.len() produced expected results");
+
+    std::println("--- PASS: test_phase2_concurrency_match_and_flow_control");
 }
 
 

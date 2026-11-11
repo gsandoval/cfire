@@ -4491,15 +4491,15 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp" data-topic-id="ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp" data-topic-title="Importing C Headers &amp; Using Bitwise Flag Enums (import cpp)" data-short-title="11.2 C Headers &amp; Flags">
 <h3 class="guide-heading" id="ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp"><span class="heading-hash">#</span><span class="heading-text">Importing C Headers &amp; Using Bitwise Flag Enums (<code>import cpp</code>)</span></h3>
-<p>Use <code>import cpp &quot;&lt;header.h&gt;&quot;</code> (with optional <code>@pkg(&quot;&lt;pkg-config-name&gt;&quot;)</code> and <code>@define(&quot;&lt;KEY&gt;&quot;, &quot;&lt;VAL&gt;&quot;)</code> attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under <code>cpp::</code> (or <code>cpp.</code>):</p>
+<p>Use <code>import cpp &quot;&lt;header.h&gt;&quot;</code> (with optional <code>@pkg(&quot;&lt;pkg-config-name&gt;&quot;)</code> and <code>@define(&quot;&lt;KEY&gt;&quot;, &quot;&lt;VAL&gt;&quot;)</code> attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under <code>cpp.</code> (or an aliased qualifier <code>import cpp &quot;...&quot; as &lt;alias&gt;</code>):</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
 import cpp &quot;zstd.h&quot; @pkg(&quot;libzstd&quot;)
 
 fn query_zstd_runtime() -&gt; (u32, usize) {
-    ver := cpp::ZSTD_versionNumber()
-    bound := cpp::ZSTD_compressBound(1024)
+    ver := cpp.ZSTD_versionNumber()
+    bound := cpp.ZSTD_compressBound(1024)
     return (ver, bound)
 }
 
@@ -4571,9 +4571,9 @@ import cpp &quot;vecmath.h&quot;
 
 fn main() {
     payload := &quot;cfire-hybrid&quot;
-    crc := cpp::fastcrc32(payload, u32(payload.len()))
-    hash := cpp::kv_hash_key(payload)
-    dot := cpp::vm_dot2d(2.0, 3.0, 4.0, 5.0)
+    crc := cpp.fastcrc32(payload, u32(payload.len()))
+    hash := cpp.kv_hash_key(payload)
+    dot := cpp.vm_dot2d(2.0, 3.0, 4.0, 5.0)
     println(&quot;crc=0x{:x} kv_hash={} dot={:.1f}&quot;, crc, hash, dot)
 }
 </code></pre>

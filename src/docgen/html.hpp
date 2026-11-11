@@ -23,8 +23,6 @@ namespace cfire::doc {
 ) -> std::string {
     auto ast = cfire::frontend::parse_source(std::string(filename), cf_source);
     if (!ast) return std::format("// Parse error: {}\n", ast.error());
-    auto checked = cfire::frontend::analyze(std::move(*ast));
-    if (!checked) return std::format("// Sema error: {}\n", checked.error());
 
     std::filesystem::path rt_dir = hint_rt_dir;
     if (rt_dir.empty() || !std::filesystem::exists(rt_dir / "cfire_prelude.hpp")) {
@@ -46,16 +44,20 @@ namespace cfire::doc {
         }
     }
     auto cache_dir = std::filesystem::temp_directory_path() / "cfire_doc_cache";
-    for (const auto& imp : checked->ast.imports) {
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    for (const auto& imp : ast->imports) {
         if (!imp.is_cpp) continue;
         if (auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir)) {
             for (const auto& [sym_name, sym] : idx->symbols) {
                 if (sym.kind == "FunctionDecl") {
-                    checked->cpp_fn_params[sym_name] = sym.param_types;
+                    pre_cpp_fn_params[sym_name] = sym.param_types;
                 }
             }
         }
     }
+    auto checked = cfire::frontend::analyze(std::move(*ast), pre_cpp_fn_params);
+    if (!checked) return std::format("// Sema error: {}\n", checked.error());
+    checked->cpp_fn_params = std::move(pre_cpp_fn_params);
     return cfire::frontend::emit_cpp(*checked);
 }
 
@@ -178,7 +180,7 @@ import cpp "fast_hash.h"
 fn main() {
     msg := "cfire systems programming"
     // Automatic boundary coercion: 'str' passes as 'const char*'
-    hash := cpp::fh_fnv1a(msg, msg.len())
+    hash := cpp.fh_fnv1a(msg, msg.len())
     println("fnv1a hash: 0x{:x}", hash)
 })";
     std::string snip5_cpp = compile_snippet_to_cpp("snippet_interop.cf", snip5_cf);
@@ -1287,11 +1289,33 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
             if (!std::filesystem::exists(t.path)) {
                 return std::unexpected(std::format("missing documentation file: {} (run `./cfire doc` to regenerate)", t.path.string()));
             }
-            std::ifstream ifs(t.path);
+            std::ifstream ifs(t.path, std::ios::binary);
             std::stringstream ss;
             ss << ifs.rdbuf();
-            if (ss.str() != t.content) {
-                return std::unexpected(std::format("documentation file out of date: {} (run `./cfire doc` to regenerate)", t.path.string()));
+            // Normalize line endings so CRLF checkouts (e.g. Windows autocrlf) compare equal.
+            auto strip_cr = [](std::string s) {
+                std::erase(s, '\r');
+                return s;
+            };
+            const std::string on_disk = strip_cr(ss.str());
+            const std::string expected = strip_cr(t.content);
+            if (on_disk != expected) {
+                // Report the first differing line to make platform-specific drift diagnosable from CI logs.
+                std::size_t line = 1, i = 0;
+                const std::size_t n = std::min(on_disk.size(), expected.size());
+                while (i < n && on_disk[i] == expected[i]) {
+                    if (on_disk[i] == '\n') ++line;
+                    ++i;
+                }
+                auto line_at = [](const std::string& s, std::size_t pos) {
+                    auto b = s.rfind('\n', pos == 0 ? 0 : pos - 1);
+                    b = (b == std::string::npos || pos == 0) ? 0 : b + 1;
+                    auto e = s.find('\n', pos);
+                    return s.substr(b, (e == std::string::npos ? s.size() : e) - b);
+                };
+                return std::unexpected(std::format(
+                    "documentation file out of date: {} (run `./cfire doc` to regenerate)\n  first difference at line {}:\n    on disk:  {}\n    expected: {}",
+                    t.path.string(), line, line_at(on_disk, i), line_at(expected, i)));
             }
         } else {
             std::ofstream ofs(t.path, std::ios::trunc);

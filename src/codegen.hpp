@@ -1376,26 +1376,51 @@ public:
             if (tr.name == "webui::App" || (tr.name == "App" && used_core_.contains("webui"))) return "cfire::webui::App";
         }
         std::string clean = tr.name;
-        if (clean.starts_with("cpp::")) clean.erase(0, 5);
-        if (auto col_pos = clean.find("::"); col_pos != std::string::npos) {
-            std::string mod = clean.substr(0, col_pos);
-            std::string rest = clean.substr(col_pos + 2);
+        if (clean.starts_with("cpp.")) clean.erase(0, 4);
+        else if (clean.starts_with("cpp::")) clean.erase(0, 5);
+        for (const auto& q : cf_.cpp_qualifiers) {
+            if (clean.starts_with(q + ".")) {
+                clean.erase(0, q.size() + 1);
+                break;
+            }
+            if (clean.starts_with(q + "::")) {
+                clean.erase(0, q.size() + 2);
+                break;
+            }
+        }
+        auto sep_pos = clean.find_first_of(".:");
+        if (sep_pos != std::string::npos) {
+            bool is_dcolon = (clean[sep_pos] == ':' && sep_pos + 1 < clean.size() && clean[sep_pos + 1] == ':');
+            std::string mod = clean.substr(0, sep_pos);
+            std::string rest = clean.substr(sep_pos + (is_dcolon ? 2 : 1));
             if (auto it = core_aliases_.find(mod); it != core_aliases_.end()) {
+                mod = it->second;
+            }
+            if (auto it = cf_.core_aliases.find(mod); it != cf_.core_aliases.end()) {
                 mod = it->second;
             }
             if (used_core_.contains(mod)) {
                 clean = std::format("cfire::{}::{}", mod, rest);
-            } else if (is_local_type(rest) || is_vendor_alias(mod)) {
+            } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
                 clean = rest;
             }
         } else {
             if (clean == "Channel" && used_core_.contains("sync")) {
                 clean = "cfire::sync::Channel";
-            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "Deque") && used_core_.contains("collections")) {
+            } else if (clean == "Mutex" && used_core_.contains("sync")) {
+                clean = tr.type_args.empty() ? "cfire::sync::Mutex" : "cfire::sync::MutexT";
+            } else if (clean == "Atomic" && used_core_.contains("sync")) {
+                clean = "cfire::sync::Atomic";
+            } else if (clean == "Task" && used_core_.contains("async")) {
+                clean = "cfire::async::Task";
+            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "Deque" || clean == "BTreeMap" || clean == "BitSet") && used_core_.contains("collections")) {
                 clean = std::format("cfire::collections::{}", clean);
             }
         }
         if (!tr.type_args.empty()) {
+            if (clean == "cfire::sync::Mutex" || clean == "sync.Mutex" || clean == "sync::Mutex") {
+                clean = "cfire::sync::MutexT";
+            }
             std::string args;
             for (std::size_t i = 0; i < tr.type_args.size(); ++i) {
                 if (i > 0) args += ", ";
@@ -1410,10 +1435,15 @@ public:
     }
 
     [[nodiscard]] auto is_vendor_alias(std::string_view mod) const -> bool {
+        if (cf_.vendor_aliases.contains(std::string(mod))) return true;
         for (const auto& [_, alias] : used_vendor_) {
             if (alias == mod) return true;
         }
         return false;
+    }
+
+    [[nodiscard]] auto is_cpp_qualifier(std::string_view mod) const -> bool {
+        return mod == "cpp" || cf_.cpp_qualifiers.contains(std::string(mod));
     }
 
     [[nodiscard]] auto lower_owning_type(const TypeRef& tr) const -> std::string {

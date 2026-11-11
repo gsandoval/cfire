@@ -16,9 +16,72 @@
 
 namespace cfire::frontend {
 
-[[nodiscard]] inline auto analyze_resilient(FileAST ast) -> CheckedFile {
+[[nodiscard]] inline auto analyze_resilient(
+    FileAST ast,
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+) -> CheckedFile {
     CheckedFile cf;
     cf.ast = std::move(ast);
+    cf.cpp_fn_params = std::move(pre_cpp_fn_params);
+
+    // Populate import qualifiers, aliases, and shadowed default qualifiers
+    std::unordered_set<std::string> unaliased_core_modules;
+    bool has_unaliased_cpp = false;
+    for (const auto& imp : cf.ast.imports) {
+        if (imp.is_cpp) {
+            if (!imp.alias.empty() && imp.alias != "cpp") {
+                cf.cpp_qualifiers.insert(imp.alias);
+                cf.cpp_alias_to_header[imp.alias] = imp.path;
+            } else {
+                has_unaliased_cpp = true;
+                cf.cpp_qualifiers.insert("cpp");
+                cf.cpp_alias_to_header["cpp"] = imp.path;
+            }
+        } else {
+            auto [ns_alias, is_vendor] = cfire::modules::canonical_ns_for_import(imp.path);
+            if (is_vendor) {
+                std::string vendor_key = (ns_alias == "rl") ? "raylib" : (ns_alias == "rg") ? "raygui" : ns_alias;
+                if (!imp.alias.empty() && imp.alias != vendor_key && imp.alias != ns_alias) {
+                    cf.vendor_aliases[imp.alias] = vendor_key;
+                    cf.shadowed_default_qualifiers[vendor_key] = imp.alias;
+                    if (ns_alias != imp.alias) {
+                        cf.shadowed_default_qualifiers[ns_alias] = imp.alias;
+                    }
+                } else {
+                    std::string active = imp.alias.empty() ? vendor_key : imp.alias;
+                    cf.vendor_aliases[active] = vendor_key;
+                    cf.vendor_aliases[vendor_key] = vendor_key;
+                    cf.vendor_aliases[ns_alias] = vendor_key;
+                    unaliased_core_modules.insert(vendor_key);
+                    unaliased_core_modules.insert(ns_alias);
+                }
+            } else {
+                std::string canon_ns = ns_alias;
+                if (canon_ns.empty()) {
+                    auto slash = imp.path.rfind('/');
+                    auto colon = imp.path.rfind(':');
+                    std::size_t sep = (colon != std::string::npos && slash != std::string::npos) ? std::max(colon, slash) : (colon != std::string::npos ? colon : slash);
+                    canon_ns = (sep == std::string::npos) ? imp.path : imp.path.substr(sep + 1);
+                }
+                if (!imp.alias.empty() && imp.alias != canon_ns) {
+                    cf.core_aliases[imp.alias] = canon_ns;
+                    cf.shadowed_default_qualifiers[canon_ns] = imp.alias;
+                } else {
+                    std::string active = imp.alias.empty() ? canon_ns : imp.alias;
+                    cf.core_aliases[active] = canon_ns;
+                    unaliased_core_modules.insert(canon_ns);
+                }
+            }
+        }
+    }
+    for (const auto& un : unaliased_core_modules) {
+        cf.shadowed_default_qualifiers.erase(un);
+    }
+    if (has_unaliased_cpp) {
+        cf.shadowed_default_qualifiers.erase("cpp");
+    } else if (!cf.cpp_qualifiers.empty() && !cf.cpp_qualifiers.contains("cpp")) {
+        cf.shadowed_default_qualifiers["cpp"] = *cf.cpp_qualifiers.begin();
+    }
 
     // 0a. Check Module Imports (CF-006 / CF-086 / CF-105)
     for (const auto& imp : cf.ast.imports) {
@@ -222,9 +285,39 @@ namespace cfire::frontend {
     }
 
     // Validate no dynamic slices or arrays of structural interfaces (CF-108)
+    auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col) -> void {
+        if (!tr.raw_name.empty()) {
+            auto dcol = tr.raw_name.find("::");
+            auto dot = tr.raw_name.find('.');
+            if (dcol != std::string::npos && (dot == std::string::npos || dcol < dot)) {
+                std::string qual = tr.raw_name.substr(0, dcol);
+                if (!cf.enums.contains(qual) &&
+                    (qual == "cpp" || cf.cpp_qualifiers.contains(qual) || cf.vendor_aliases.contains(qual) ||
+                     cf.core_aliases.contains(qual) || cf.shadowed_default_qualifiers.contains(qual))) {
+                    std::string rest = tr.raw_name.substr(dcol + 2);
+                    cf.errors.push_back(std::format(
+                        "{}:{}:{}: use '{}.{}' instead of '{}::{}' (cfire/DEPRECATED-SEPARATOR)",
+                        src_path, line, col, qual, rest, qual, rest));
+                }
+            }
+        }
+        if (tr.elem_type) {
+            self(self, *tr.elem_type, src_path, line, col);
+        }
+        if (tr.key_type) {
+            self(self, *tr.key_type, src_path, line, col);
+        }
+        for (const auto& ga : tr.type_args) {
+            self(self, ga, src_path, line, col);
+        }
+        for (const auto& tup : tr.tuple_types) {
+            self(self, tup, src_path, line, col);
+        }
+    };
     for (const auto& st : cf.ast.structs) {
         std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
         for (const auto& fld : st.fields) {
+            check_type_ref_separators_ast(check_type_ref_separators_ast, fld.type, st_path, fld.line, 1);
             if (auto iface = find_interface_in_slice(fld.type, cf.interfaces)) {
                 cf.errors.push_back(std::format(
                     "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
@@ -234,13 +327,18 @@ namespace cfire::frontend {
     }
     for (const auto& fn : cf.ast.functions) {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
+        if (fn.receiver) {
+            check_type_ref_separators_ast(check_type_ref_separators_ast, fn.receiver->type, fn_path, fn.line, 1);
+        }
         for (const auto& p : fn.params) {
+            check_type_ref_separators_ast(check_type_ref_separators_ast, p.type, fn_path, p.line, p.col);
             if (auto iface = find_interface_in_slice(p.type, cf.interfaces)) {
                 cf.errors.push_back(std::format(
                     "{}:{}:{}: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
                     fn_path, p.line, p.col, *iface));
             }
         }
+        check_type_ref_separators_ast(check_type_ref_separators_ast, fn.return_type, fn_path, fn.line, 1);
         if (auto iface = find_interface_in_slice(fn.return_type, cf.interfaces)) {
             cf.errors.push_back(std::format(
                 "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
@@ -250,6 +348,7 @@ namespace cfire::frontend {
     for (const auto& gv : cf.ast.global_vars) {
         if (gv.type) {
             std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
+            check_type_ref_separators_ast(check_type_ref_separators_ast, *gv.type, gv_path, gv.line, 1);
             if (auto iface = find_interface_in_slice(*gv.type, cf.interfaces)) {
                 cf.errors.push_back(std::format(
                     "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
@@ -572,8 +671,11 @@ namespace cfire::frontend {
     return cf;
 }
 
-[[nodiscard]] inline auto analyze(FileAST ast) -> std::expected<CheckedFile, std::string> {
-    auto cf = analyze_resilient(std::move(ast));
+[[nodiscard]] inline auto analyze(
+    FileAST ast,
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+) -> std::expected<CheckedFile, std::string> {
+    auto cf = analyze_resilient(std::move(ast), std::move(pre_cpp_fn_params));
     if (!cf.errors.empty()) {
         return std::unexpected(cf.errors.front());
     }

@@ -59,8 +59,11 @@ using namespace cfire::frontend;
     } else if (t.is_ptr && t.elem_type) {
         base = std::format("*{}", format_type_ref(*t.elem_type));
     } else {
-        std::string raw_name = t.name.empty() ? "void" : t.name;
-        if (!raw_name.starts_with("cpp::") && raw_name.contains("::")) {
+        std::string raw_name = !t.raw_name.empty() ? t.raw_name : (t.name.empty() ? "void" : t.name);
+        if (raw_name.starts_with("cpp::")) {
+            raw_name = "cpp." + raw_name.substr(5);
+        }
+        if (!raw_name.starts_with("cpp.") && raw_name.contains("::")) {
             std::string normalized;
             for (std::size_t i = 0; i < raw_name.size(); ++i) {
                 if (i + 1 < raw_name.size() && raw_name[i] == ':' && raw_name[i + 1] == ':') {

@@ -53,10 +53,13 @@ public:
             }
         }
         if (fn.receiver) {
+            if (auto r = check_type_ref_separators(fn.receiver->type, fn.receiver->line, fn.receiver->col); !r) {
+                errors_.push_back(r.error());
+            }
             param_names_.insert(fn.receiver->name);
             var_scope_depth_[fn.receiver->name] = 0;
             if (!fn.receiver->type.name.empty()) {
-                var_types_[fn.receiver->name] = fn.receiver->type.name;
+                var_types_[fn.receiver->name] = format_type_ref_sema(fn.receiver->type);
             }
             if (fn.receiver->has_explicit_in) {
                 errors_.push_back(std::format(
@@ -83,12 +86,21 @@ public:
             }
         }
         for (const auto& p : fn.params) {
+            if (auto r = check_type_ref_separators(p.type, p.line, p.col); !r) {
+                errors_.push_back(r.error());
+            }
             param_names_.insert(p.name);
             var_scope_depth_[p.name] = 0;
             if (!p.type.smart_wrap.empty() && p.type.elem_type && !p.type.elem_type->name.empty()) {
                 var_types_[p.name] = p.type.elem_type->name;
             } else if (!p.type.name.empty()) {
-                var_types_[p.name] = p.type.name;
+                var_types_[p.name] = format_type_ref_sema(p.type);
+            }
+            if (p.type.is_optional) {
+                optional_vars_.insert(p.name);
+            }
+            if (p.type.is_fallible) {
+                fallible_vars_.insert(p.name);
             }
             if (is_scalar_primitive_typeref(p.type)) {
                 scalar_primitive_vars_.insert(p.name);
@@ -146,6 +158,19 @@ public:
             }
             if ((p.type.is_slice || p.type.is_array) && p.type.name == "byte") {
                 byte_slice_vars_.insert(p.name);
+            }
+            std::string pt = p.type.raw_name.empty() ? p.type.name : p.type.raw_name;
+            auto dot = pt.find('.');
+            if (dot != std::string::npos) {
+                std::string qual = pt.substr(0, dot);
+                if (qual == "cpp" || is_cpp_qualifier_sema(qual) || is_vendor_alias_sema(qual)) {
+                    foreign_vars_.insert(p.name);
+                }
+            }
+        }
+        if (!fn.return_type.name.empty()) {
+            if (auto r = check_type_ref_separators(fn.return_type, fn.line, 1); !r) {
+                errors_.push_back(r.error());
             }
         }
     }
@@ -364,19 +389,38 @@ public:
         return false;
     }
 
-    [[nodiscard]] auto is_namespace_ident_sema(std::string_view name) const -> bool {
-        if (name == "fs" || name == "zstd" || name == "json" ||
-            name == "sqlite" || name == "blake3" || name == "net" || name == "cli" ||
-            name == "time" || name == "os" || name == "sync" || name == "str" ||
-            name == "math" || name == "rand" || name == "log" || name == "regex" ||
-            name == "collections" || name == "sort" || name == "unicode" ||
-            name == "base64" || name == "hex" || name == "csv" ||
-            name == "aes" || name == "hmac" || name == "sha256" ||
-            name == "sodium" || name == "keychain" || name == "ssh" || name == "webui" ||
-            name == "context" || name == "websocket" || name == "http" || name == "url" || name == "tls" ||
-            name == "audio" || name == "ai" || name == "cpp" || name == "testing" || name == "tako") {
-            return true;
+    [[nodiscard]] auto is_cpp_qualifier_sema(std::string_view name) const -> bool {
+        if (cf_.shadowed_default_qualifiers.contains(std::string(name))) return false;
+        if (name == "cpp") return true;
+        return cf_.cpp_qualifiers.contains(std::string(name));
+    }
+
+    [[nodiscard]] auto is_vendor_alias_sema(std::string_view name) const -> bool {
+        if (cf_.vendor_aliases.contains(std::string(name))) return true;
+        for (const auto& imp : cf_.ast.imports) {
+            if (imp.alias == name && imp.path.starts_with("vendor:")) return true;
         }
+        return false;
+    }
+
+    [[nodiscard]] auto resolve_stdlib_ns_sema(std::string_view qualifier) const -> std::string {
+        if (cf_.shadowed_default_qualifiers.contains(std::string(qualifier))) return "";
+        if (auto it = cf_.core_aliases.find(std::string(qualifier)); it != cf_.core_aliases.end()) {
+            return it->second;
+        }
+        if (StdlibCatalogIndex::instance().has_namespace(qualifier)) {
+            return std::string(qualifier);
+        }
+        return "";
+    }
+
+    [[nodiscard]] auto is_namespace_ident_sema(std::string_view name) const -> bool {
+        if (cf_.shadowed_default_qualifiers.contains(std::string(name))) return false;
+        if (name == "cpp") return true;
+        if (is_cpp_qualifier_sema(name)) return true;
+        if (is_vendor_alias_sema(name)) return true;
+        if (cf_.core_aliases.contains(std::string(name))) return true;
+        if (StdlibCatalogIndex::instance().has_namespace(name)) return true;
         for (const auto& imp : cf_.ast.imports) {
             if (!imp.alias.empty() && imp.alias == name) return true;
             auto slash = imp.path.rfind('/');
@@ -637,6 +681,16 @@ public:
                         return call->type_args[0].name;
                     }
                 }
+                if (cid->name == "sync.Mutex" || cid->name == "sync.make_mutex") {
+                    if (!call->type_args.empty()) return "sync.Mutex[" + call->type_args[0].name + "]";
+                    if (!call->args.empty() && call->args[0].value) return "sync.Mutex[" + infer_expr_type_name_sema(call->args[0].value) + "]";
+                    return "sync.Mutex[void]";
+                }
+                if (cid->name == "sync.Atomic" || cid->name == "sync.make_atomic") {
+                    if (!call->type_args.empty()) return "sync.Atomic[" + call->type_args[0].name + "]";
+                    if (!call->args.empty() && call->args[0].value) return "sync.Atomic[" + infer_expr_type_name_sema(call->args[0].value) + "]";
+                    return "sync.Atomic[i64]";
+                }
                 if (cid->name == "[]byte" || cid->name == "[]u8" || cid->name == "str" ||
                     cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" ||
                     cid->name == "u8" || cid->name == "byte" || cid->name == "u16" || cid->name == "u32" ||
@@ -688,7 +742,14 @@ public:
                             !std_sig->unwrapped_return_type.starts_with("shared[") && !std_sig->unwrapped_return_type.starts_with("tuple[") &&
                             !std_sig->unwrapped_return_type.starts_with('(') &&
                             std_sig->unwrapped_return_type != "T") {
-                            return std_sig->unwrapped_return_type;
+                            std::string ret_type = qualify_stdlib_type_sema(*std_sig, recv_id->name);
+                            if (!call->type_args.empty()) {
+                                std::string targ = call->type_args[0].name;
+                                if (auto p = ret_type.find("[T]"); p != std::string::npos && !targ.empty()) {
+                                    ret_type.replace(p, 3, "[" + targ + "]");
+                                }
+                            }
+                            return ret_type;
                         }
                     }
                     if (!is_ident_in_scope_sema(recv_id->name)) {
@@ -702,7 +763,7 @@ public:
                             if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
                                 if (std_sig->unwrapped_return_type == "[]byte") return "[]byte";
                                 if (!std_sig->unwrapped_return_type.empty() && std_sig->unwrapped_return_type != "void") {
-                                    return std_sig->unwrapped_return_type;
+                                    return qualify_stdlib_type_sema(*std_sig, sub_id->name);
                                 }
                             }
                         }
@@ -728,15 +789,77 @@ public:
                     std::string recv_t = infer_expr_type_name_sema(mem->object);
                     if (!recv_t.empty()) {
                         const auto& idx = StdlibCatalogIndex::instance();
-                        if (auto mit = idx.receiver_methods.find(recv_t + "." + mem->field); mit != idx.receiver_methods.end()) {
-                            return mit->second.unwrapped_return_type;
+                        std::string base_recv = recv_t;
+                        std::string generic_arg;
+                        if (auto br = base_recv.find('['); br != std::string::npos && base_recv.ends_with(']')) {
+                            generic_arg = base_recv.substr(br + 1, base_recv.size() - br - 2);
+                            base_recv = base_recv.substr(0, br);
                         }
-                        if (auto dcol = recv_t.find("::"); dcol != std::string::npos) {
-                            std::string norm_t = recv_t.substr(0, dcol) + "." + recv_t.substr(dcol + 2);
-                            if (auto mit = idx.receiver_methods.find(norm_t + "." + mem->field); mit != idx.receiver_methods.end()) {
-                                return mit->second.unwrapped_return_type;
+                        std::string unqual_recv = base_recv;
+                        if (auto dot = unqual_recv.rfind('.'); dot != std::string::npos) {
+                            unqual_recv = unqual_recv.substr(dot + 1);
+                        }
+                        if (auto dcol = unqual_recv.rfind("::"); dcol != std::string::npos) {
+                            unqual_recv = unqual_recv.substr(dcol + 2);
+                        }
+
+                        auto find_ret = [&](const std::string& key) -> std::string {
+                            if (auto mit = idx.receiver_methods.find(key); mit != idx.receiver_methods.end()) {
+                                std::string uret = mit->second.unwrapped_return_type;
+                                if (!generic_arg.empty() && uret == "T") {
+                                    return generic_arg;
+                                }
+                                return uret;
+                            }
+                            return "";
+                        };
+
+                        if (base_recv == "async.Task" && mem->field == "join") {
+                            return generic_arg.empty() ? "void" : generic_arg;
+                        }
+                        if (base_recv == "sync.Mutex") {
+                            if (mem->field == "lock") return "sync.MutexGuard[" + generic_arg + "]";
+                            if (mem->field == "get") return generic_arg;
+                            if (mem->field == "with_lock") {
+                                if (call->block_arg && call->block_arg->return_type) return call->block_arg->return_type->name;
+                                if (!call->args.empty() && call->args[0].value) {
+                                    if (const auto* cl = std::get_if<ClosureExpr>(&call->args[0].value->node); cl && cl->return_type) {
+                                        return cl->return_type->name;
+                                    }
+                                }
+                                return generic_arg;
                             }
                         }
+                        if (base_recv == "sync.MutexGuard" && mem->field == "get") {
+                            return generic_arg;
+                        }
+                        if (base_recv == "sync.Atomic") {
+                            if (mem->field == "load" || mem->field == "add" || mem->field == "sub" ||
+                                mem->field == "fetch_add" || mem->field == "fetch_sub") {
+                                return generic_arg.empty() ? "i64" : generic_arg;
+                            }
+                            if (mem->field == "cas") return "bool";
+                        }
+                        if (mem->field == "spawn") {
+                            std::string ret_t = "void";
+                            if (!call->args.empty() && call->args[0].value) {
+                                if (const auto* cl = std::get_if<ClosureExpr>(&call->args[0].value->node); cl && cl->return_type) {
+                                    ret_t = cl->return_type->name;
+                                }
+                            }
+                            if (call->block_arg && call->block_arg->return_type) ret_t = call->block_arg->return_type->name;
+                            return "async.Task[" + ret_t + "]";
+                        }
+                        if (mem->field == "len") {
+                            if (unqual_recv == "Set" || unqual_recv == "Deque" || unqual_recv == "PriorityQueue" ||
+                                unqual_recv == "BTreeMap" || unqual_recv == "BitSet") {
+                                return "i64";
+                            }
+                        }
+
+                        if (std::string r = find_ret(recv_t + "." + mem->field); !r.empty()) return r;
+                        if (std::string r = find_ret(base_recv + "." + mem->field); !r.empty()) return r;
+                        if (std::string r = find_ret(unqual_recv + "." + mem->field); !r.empty()) return r;
                     }
                 }
             }
@@ -759,7 +882,11 @@ public:
             if (un->op == "&") return cf_.type_table.make_borrow(op_t);
             if (un->op == "&mut") return cf_.type_table.make_mut_borrow(op_t);
             if (un->op == "*") {
-                const auto& d = cf_.type_table.get(op_t);
+                TypeId ptr_t = op_t;
+                if (cf_.type_table.get(ptr_t).kind == TypeKind::Optional) {
+                    ptr_t = cf_.type_table.unwrap_optional(ptr_t);
+                }
+                const auto& d = cf_.type_table.get(ptr_t);
                 if (d.elem_type.is_valid()) return d.elem_type;
             }
             return op_t;
@@ -774,13 +901,18 @@ public:
             if (bin->op == "+" && (lt == TypeId::Str() || rt == TypeId::Str())) {
                 return TypeId::Str();
             }
+            // String concatenation always yields an owned `str`, even when both operands are `&str` views.
+            if (bin->op == "+") {
+                const TypeId str_borrow = type_id_of("&str");
+                if (lt == str_borrow || rt == str_borrow) return TypeId::Str();
+            }
             if (lt.is_valid() && !lt.is_unknown()) return lt;
             if (rt.is_valid() && !rt.is_unknown()) return rt;
             return TypeId::Unknown();
         }
         if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
             TypeId obj_t = infer_expr_type_id_sema(sl->object);
-            if (obj_t == TypeId::Str()) return cf_.type_table.from_name("&str");
+            if (obj_t == TypeId::Str()) return type_id_of("&str");
             const auto& d = cf_.type_table.get(obj_t);
             if (d.kind == TypeKind::Slice || d.kind == TypeKind::Array) {
                 return cf_.type_table.make_slice(d.elem_type);
@@ -795,6 +927,27 @@ public:
             if (d.kind == TypeKind::Map) return d.elem_type;
             return TypeId::Unknown();
         }
+        if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            TypeId inner_t = infer_expr_type_id_sema(or_ex->inner);
+            if (inner_t.is_valid() && !inner_t.is_unknown()) {
+                const auto& d = cf_.type_table.get(inner_t);
+                if (d.kind == TypeKind::Fallible) return cf_.type_table.unwrap_fallible(inner_t);
+                if (d.kind == TypeKind::Optional) return cf_.type_table.unwrap_optional(inner_t);
+                return inner_t;
+            }
+            if (or_ex->fallback_val) {
+                TypeId fb_t = infer_expr_type_id_sema(or_ex->fallback_val);
+                if (fb_t.is_valid() && !fb_t.is_unknown()) return fb_t;
+            }
+        }
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            TypeId inner_t = infer_expr_type_id_sema(tr->inner);
+            if (inner_t.is_valid() && !inner_t.is_unknown()) {
+                const auto& d = cf_.type_table.get(inner_t);
+                if (d.kind == TypeKind::Fallible) return cf_.type_table.unwrap_fallible(inner_t);
+                return inner_t;
+            }
+        }
         if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
             for (const auto& arm : me->arms) {
                 if (!arm.body.empty()) {
@@ -807,28 +960,55 @@ public:
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                if (mem->field == "len") return TypeId::Usize();
+                if (mem->field == "empty") return TypeId::Bool();
+                if (mem->field == "index_of") return TypeId::Int64();
+                if (mem->field == "bytes" && call->args.empty()) return type_id_of("[]byte");
                 if (const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr) {
                     if (const auto* sfn = StdlibCatalogIndex::instance().find_ns_fn(obj_id->name, mem->field)) {
                         if (!sfn->unwrapped_return_type.empty() && sfn->unwrapped_return_type != "void") {
-                            return cf_.type_table.from_name(sfn->unwrapped_return_type);
+                            return type_id_of(qualify_stdlib_type_sema(*sfn, obj_id->name));
                         }
                     }
                     if (auto it = var_types_.find(obj_id->name); it != var_types_.end()) {
                         std::string recv_t = it->second;
-                        if (auto dot = recv_t.rfind('.'); dot != std::string::npos) recv_t = recv_t.substr(dot + 1);
-                        if (auto mit = StdlibCatalogIndex::instance().receiver_methods.find(recv_t + "." + mem->field);
-                            mit != StdlibCatalogIndex::instance().receiver_methods.end()) {
-                            if (!mit->second.unwrapped_return_type.empty() && mit->second.unwrapped_return_type != "void") {
-                                return cf_.type_table.from_name(mit->second.unwrapped_return_type);
-                            }
+                        const std::string recv_full = canonical_type_name_sema(it->second);
+                        std::string base_recv = recv_t;
+                        std::string generic_arg;
+                        if (auto br = base_recv.find('['); br != std::string::npos && base_recv.ends_with(']')) {
+                            generic_arg = base_recv.substr(br + 1, base_recv.size() - br - 2);
+                            base_recv = base_recv.substr(0, br);
                         }
+                        std::string unqual_recv = base_recv;
+                        if (auto dot = unqual_recv.rfind('.'); dot != std::string::npos) unqual_recv = unqual_recv.substr(dot + 1);
+                        if (auto dcol = unqual_recv.rfind("::"); dcol != std::string::npos) unqual_recv = unqual_recv.substr(dcol + 2);
+
+                        auto check_mit = [&](const std::string& key) -> TypeId {
+                            if (auto mit = StdlibCatalogIndex::instance().receiver_methods.find(key);
+                                mit != StdlibCatalogIndex::instance().receiver_methods.end()) {
+                                if (!mit->second.unwrapped_return_type.empty() && mit->second.unwrapped_return_type != "void") {
+                                    if (!generic_arg.empty() && mit->second.unwrapped_return_type == "T") {
+                                        return type_id_of(generic_arg);
+                                    }
+                                    const auto dotq = recv_full.rfind('.');
+                                    return type_id_of(qualify_stdlib_type_sema(mit->second, dotq == std::string::npos
+                                        ? local_qualifier_for_module_sema(mit->second.module_import, mit->second.ns_alias)
+                                        : recv_full.substr(0, dotq)));
+                                }
+                            }
+                            return TypeId::Unknown();
+                        };
+
+                        if (TypeId tid = check_mit(recv_t + "." + mem->field); !tid.is_unknown()) return tid;
+                        if (TypeId tid = check_mit(base_recv + "." + mem->field); !tid.is_unknown()) return tid;
+                        if (TypeId tid = check_mit(unqual_recv + "." + mem->field); !tid.is_unknown()) return tid;
                     }
                 } else if (mem->object) {
                     if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
                         if (const auto* sub_id = std::get_if<IdentExpr>(&sub_mem->object->node)) {
                             if (const auto* sfn = StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
                                 if (!sfn->unwrapped_return_type.empty() && sfn->unwrapped_return_type != "void") {
-                                    return cf_.type_table.from_name(sfn->unwrapped_return_type);
+                                    return type_id_of(qualify_stdlib_type_sema(*sfn, sub_id->name));
                                 }
                             }
                         }
@@ -838,7 +1018,7 @@ public:
         }
         std::string n = infer_expr_type_name_sema(e);
         if (!n.empty()) {
-            return cf_.type_table.from_name(n);
+            return type_id_of(n);
         }
         return TypeId::Unknown();
     }
@@ -1043,7 +1223,12 @@ public:
     }
 
     [[nodiscard]] auto is_stdlib_ns_imported(std::string_view ns) const -> bool {
-        if (ns == "build" || ns == "testing" || ns == "cpp") return true;
+        if (cf_.shadowed_default_qualifiers.contains(std::string(ns))) return false;
+        if (ns == "build" || ns == "testing") return true;
+        if (ns == "cpp") return !cf_.cpp_qualifiers.empty();
+        if (is_cpp_qualifier_sema(ns)) return true;
+        if (is_vendor_alias_sema(ns)) return true;
+        if (cf_.core_aliases.contains(std::string(ns))) return true;
         const auto& idx = StdlibCatalogIndex::instance();
         auto mod_it = idx.ns_to_import.find(std::string(ns));
         std::string_view expected_mod = (mod_it != idx.ns_to_import.end()) ? std::string_view(mod_it->second) : std::string_view{};
@@ -1065,6 +1250,12 @@ public:
     }
 
     [[nodiscard]] auto check_stdlib_ns_imported(std::string_view ns, int line, int col) -> std::expected<void, std::string> {
+        if (cf_.shadowed_default_qualifiers.contains(std::string(ns))) {
+            std::string active_alias = cf_.shadowed_default_qualifiers.at(std::string(ns));
+            return emit_error(std::format(
+                "{}:{}:{}: module '{}' is imported as '{}'; use '{}.<member>' (cfire/UNDECLARED-IDENT)",
+                path_, line, col, ns, active_alias, active_alias));
+        }
         const auto& idx = StdlibCatalogIndex::instance();
         if (!idx.has_namespace(ns) || is_ident_in_scope_sema(std::string(ns))) return {};
         if (is_stdlib_ns_imported(ns)) return {};
@@ -1074,6 +1265,48 @@ public:
         return emit_error(std::format(
             "{}:{}:{}: module '{}' is not imported; add 'import \"{}\"' (cfire/MISSING-IMPORT)",
             path_, line, col, ns, mod_path));
+    }
+
+    [[nodiscard]] auto check_type_ref_separators(const TypeRef& tr, int line, int col) -> std::expected<void, std::string> {
+        if (!tr.raw_name.empty()) {
+            auto dcol = tr.raw_name.find("::");
+            auto dot = tr.raw_name.find('.');
+            if (dcol != std::string::npos && (dot == std::string::npos || dcol < dot)) {
+                std::string qual = tr.raw_name.substr(0, dcol);
+                if (!cf_.enums.contains(qual) &&
+                    (qual == "cpp" || is_cpp_qualifier_sema(qual) || is_vendor_alias_sema(qual) ||
+                     !resolve_stdlib_ns_sema(qual).empty() || is_namespace_ident_sema(qual) ||
+                     cf_.shadowed_default_qualifiers.contains(qual))) {
+                    std::string rest = tr.raw_name.substr(dcol + 2);
+                    return emit_error(std::format(
+                        "{}:{}:{}: use '{}.{}' instead of '{}::{}' (cfire/DEPRECATED-SEPARATOR)",
+                        path_, line, col, qual, rest, qual, rest));
+                }
+            }
+            if (dot != std::string::npos) {
+                std::string qual = tr.raw_name.substr(0, dot);
+                if (cf_.shadowed_default_qualifiers.contains(qual)) {
+                    std::string active_alias = cf_.shadowed_default_qualifiers.at(qual);
+                    std::string rest = tr.raw_name.substr(dot + 1);
+                    return emit_error(std::format(
+                        "{}:{}:{}: module '{}' is imported as '{}'; use '{}.{}' (cfire/UNDECLARED-IDENT)",
+                        path_, line, col, qual, active_alias, active_alias, rest));
+                }
+            }
+        }
+        if (tr.elem_type) {
+            if (auto r = check_type_ref_separators(*tr.elem_type, line, col); !r) return r;
+        }
+        if (tr.key_type) {
+            if (auto r = check_type_ref_separators(*tr.key_type, line, col); !r) return r;
+        }
+        for (const auto& arg : tr.type_args) {
+            if (auto r = check_type_ref_separators(arg, line, col); !r) return r;
+        }
+        for (const auto& tup : tr.tuple_types) {
+            if (auto r = check_type_ref_separators(tup, line, col); !r) return r;
+        }
+        return {};
     }
 
     [[nodiscard]] auto is_ident_in_scope_sema(const std::string& ident) const -> bool {
@@ -1111,11 +1344,11 @@ public:
     }
 
     [[nodiscard]] auto is_known_identifier_sema(const std::string& name) const -> bool {
+        if (cf_.shadowed_default_qualifiers.contains(name)) return false;
         if (name.empty() || is_builtin_ident_sema(name)) return true;
         if (is_ident_in_scope_sema(name)) return true;
         if (is_namespace_ident_sema(name)) return true;
         if (cf_.struct_tags.contains(name) || cf_.enums.contains(name) || cf_.variant_to_enum.contains(name)) return true;
-        if (cf_.cpp_fn_params.contains(name)) return true;
         for (const auto& st : cf_.ast.structs) {
             if (st.name == name) return true;
         }
@@ -1138,12 +1371,183 @@ public:
         return false;
     }
 
-    [[nodiscard]] auto is_vendor_alias_sema(std::string_view name) const -> bool {
-        if (name == "rl" || name == "rg") return true;
-        for (const auto& imp : cf_.ast.imports) {
-            if (imp.alias == name && imp.path.starts_with("vendor:")) return true;
+    // ---------------------------------------------------------------------------------
+    // Canonical nominal type identity (ADR Q3)
+    //
+    // Q3: '.' qualifies a package (`webui.App`, `rl.Rectangle`); '::' walks type-level
+    // paths (`pkg.Type::Variant`, `Enum::Variant`). The same source type reaches sema in
+    // different spellings: the parser joins annotations with '::' (`rl::Rectangle`),
+    // struct literals keep the source separator (`rl.Rectangle`), and stdlib catalog
+    // signatures are written from inside their module (`App`). Every name -> TypeId
+    // conversion goes through `type_id_of`, which restores the package boundary by
+    // *resolution* (is the leading segment a package/alias in this file?), never by
+    // blind separator rewriting. The canonical key uses the import alias as written.
+    // ---------------------------------------------------------------------------------
+
+    [[nodiscard]] auto is_package_qualifier_sema(std::string_view head) const -> bool {
+        if (head.empty()) return false;
+        return is_cpp_qualifier_sema(head) || is_namespace_ident_sema(head) || is_vendor_alias_sema(head);
+    }
+
+    /// Canonicalizes a bare (unwrapped) nominal path: `rl::Rectangle` -> `rl.Rectangle`,
+    /// `webui.App` -> `webui.App`, `Enum::Variant` / local `App` unchanged.
+    [[nodiscard]] auto canonical_nominal_path_sema(std::string_view name) const -> std::string {
+        // Generic application `pkg.Box[T]`: canonicalize the head and each argument.
+        if (auto br = name.find('['); br != std::string_view::npos && name.ends_with(']') && br > 0) {
+            std::string out = canonical_nominal_path_sema(name.substr(0, br)) + "[";
+            std::string_view args = name.substr(br + 1, name.size() - br - 2);
+            int depth = 0;
+            std::size_t start = 0;
+            for (std::size_t i = 0; i <= args.size(); ++i) {
+                if (i < args.size() && (args[i] == '[' || args[i] == '(')) ++depth;
+                else if (i < args.size() && (args[i] == ']' || args[i] == ')')) --depth;
+                else if (i == args.size() || (args[i] == ',' && depth == 0)) {
+                    std::string_view a = args.substr(start, i - start);
+                    while (!a.empty() && a.front() == ' ') a.remove_prefix(1);
+                    if (start > 0) out += ", ";
+                    out += canonical_type_name_sema(a);
+                    start = i + 1;
+                }
+            }
+            return out + "]";
         }
-        return false;
+        auto sep = name.find_first_of(".:");
+        if (sep == std::string_view::npos) {
+            // Bare name declared in the current (non-main) package is that package's type.
+            if (!pkg_name_.empty() && pkg_name_ != "main") {
+                for (const auto& st : cf_.ast.structs) {
+                    if (st.name == name && st.package_name == pkg_name_) return std::format("{}.{}", pkg_name_, name);
+                }
+                for (const auto& en : cf_.ast.enums) {
+                    if (en.name == name && en.package_name == pkg_name_) return std::format("{}.{}", pkg_name_, name);
+                }
+            }
+            return std::string(name);
+        }
+        const bool is_dcolon = name[sep] == ':' && sep + 1 < name.size() && name[sep + 1] == ':';
+        if (name[sep] == ':' && !is_dcolon) return std::string(name);
+        std::string_view head = name.substr(0, sep);
+        std::string_view rest = name.substr(sep + (is_dcolon ? 2 : 1));
+        if (is_package_qualifier_sema(head)) return std::format("{}.{}", head, rest);
+        return std::string(name);
+    }
+
+    /// Canonicalizes a full type spelling, recursing through the same wrappers that
+    /// `TypeTable::from_name` decomposes.
+    [[nodiscard]] auto canonical_type_name_sema(std::string_view name) const -> std::string {
+        if (name.empty()) return {};
+        if (name.starts_with("[]")) return "[]" + canonical_type_name_sema(name.substr(2));
+        if (name.ends_with('?')) return canonical_type_name_sema(name.substr(0, name.size() - 1)) + "?";
+        if (name.ends_with('!')) return canonical_type_name_sema(name.substr(0, name.size() - 1)) + "!";
+        if (name.starts_with("&mut ")) return "&mut " + canonical_type_name_sema(name.substr(5));
+        if (name.starts_with('&')) return "&" + canonical_type_name_sema(name.substr(1));
+        if (name.starts_with("*mut ")) return "*mut " + canonical_type_name_sema(name.substr(5));
+        if (name.starts_with('*')) return "*" + canonical_type_name_sema(name.substr(1));
+        if (name.starts_with("own[") && name.ends_with(']')) return "own[" + canonical_type_name_sema(name.substr(4, name.size() - 5)) + "]";
+        if (name.starts_with("shared[") && name.ends_with(']')) return "shared[" + canonical_type_name_sema(name.substr(7, name.size() - 8)) + "]";
+        if (name.starts_with('[')) {
+            // Fixed array `[N]T`
+            if (auto rb = name.find(']'); rb != std::string_view::npos) {
+                return std::string(name.substr(0, rb + 1)) + canonical_type_name_sema(name.substr(rb + 1));
+            }
+        }
+        if (name.starts_with("map[")) {
+            int depth = 0;
+            for (std::size_t i = 3; i < name.size(); ++i) {
+                if (name[i] == '[') ++depth;
+                else if (name[i] == ']' && --depth == 0) {
+                    return "map[" + canonical_type_name_sema(name.substr(4, i - 4)) + "]" + canonical_type_name_sema(name.substr(i + 1));
+                }
+            }
+        }
+        if (name.starts_with('(') || name.starts_with("fn")) return std::string(name); // tuples / fn types
+        return canonical_nominal_path_sema(name);
+    }
+
+    /// Canonicalizes every nominal leaf of a parsed TypeRef (annotations, fields, params).
+    [[nodiscard]] auto canonical_typeref_sema(TypeRef tr) const -> TypeRef {
+        if (!tr.name.empty() && !tr.is_fn && !tr.is_tuple) tr.name = canonical_type_name_sema(tr.name);
+        if (tr.elem_type) tr.elem_type = std::make_shared<TypeRef>(canonical_typeref_sema(*tr.elem_type));
+        if (tr.key_type) tr.key_type = std::make_shared<TypeRef>(canonical_typeref_sema(*tr.key_type));
+        for (auto& a : tr.type_args) a = canonical_typeref_sema(a);
+        for (auto& t : tr.tuple_types) t = canonical_typeref_sema(t);
+        return tr;
+    }
+
+    /// Single entry point for converting a type spelling into an interned TypeId.
+    /// Strict: used for explicit annotations, which must be spelled as Q3 requires.
+    [[nodiscard]] auto type_id_of(std::string_view name) const -> TypeId {
+        return cf_.type_table.from_name(canonical_type_name_sema(name));
+    }
+
+    [[nodiscard]] auto type_id_of(const TypeRef& tr) const -> TypeId {
+        return cf_.type_table.from_typeref(canonical_typeref_sema(tr));
+    }
+
+    /// Q2 hint: explain local-vs-package mismatches that share a leaf name.
+    [[nodiscard]] auto nominal_mismatch_hint_sema(TypeId a, TypeId b) const -> std::string {
+        auto is_nominal = [this](TypeId t) {
+            if (!t.is_valid() || t.is_unknown()) return false;
+            const auto k = cf_.type_table.get(t).kind;
+            return k == TypeKind::NominalStruct || k == TypeKind::NominalEnum;
+        };
+        if (!is_nominal(a) || !is_nominal(b)) return {};
+        std::string sa = cf_.type_table.to_string(a);
+        std::string sb = cf_.type_table.to_string(b);
+        auto leaf_of = [](const std::string& s) -> std::string_view {
+            auto p = s.rfind('.');
+            return p == std::string::npos ? std::string_view(s) : std::string_view(s).substr(p + 1);
+        };
+        const bool qa = sa.find('.') != std::string::npos;
+        const bool qb = sb.find('.') != std::string::npos;
+        if (qa == qb || leaf_of(sa) != leaf_of(sb)) return {};
+        const std::string& local = qa ? sb : sa;
+        const std::string& pkg = qa ? sa : sb;
+        return std::format("; '{}' is a local type, distinct from '{}' (did you mean '{}'?)", local, pkg, pkg);
+    }
+
+    /// The qualifier this file uses for a stdlib/vendor module: its import alias if one
+    /// was given, otherwise the module's own namespace.
+    [[nodiscard]] auto local_qualifier_for_module_sema(std::string_view module_import, std::string_view default_ns) const -> std::string {
+        for (const auto& imp : cf_.ast.imports) {
+            if (imp.path == module_import && !imp.alias.empty()) return imp.alias;
+        }
+        return std::string(default_ns);
+    }
+
+    /// Stdlib catalog signatures name module-local types bare (`-> App`). Qualify such a
+    /// return type with the module's qualifier in this file (`webui.App`), using the
+    /// CF-117 metadata table as the source of truth for which names a module declares.
+    [[nodiscard]] auto qualify_stdlib_type_sema(const StdFnSigInfo& sig, std::string_view qualifier) const -> std::string {
+        const std::string& t = sig.unwrapped_return_type;
+        const auto& idx = StdlibCatalogIndex::instance();
+        auto declares = [&](std::string_view bare) {
+            if (auto it = idx.ns_types_and_consts.find(sig.ns_alias); it != idx.ns_types_and_consts.end()) {
+                return it->second.contains(std::string(bare));
+            }
+            return false;
+        };
+        // Find the innermost bare nominal (strip wrappers we know) and qualify it in place.
+        std::size_t b = 0;
+        std::size_t e = t.size();
+        for (bool changed = true; changed;) {
+            changed = false;
+            std::string_view v(t.data() + b, e - b);
+            for (std::string_view p : {"[]", "&mut ", "&", "*mut ", "*"}) {
+                if (v.starts_with(p)) { b += p.size(); changed = true; break; }
+            }
+            if (!changed && (v.ends_with('?') || v.ends_with('!'))) { --e; changed = true; }
+        }
+        std::string_view core(t.data() + b, e - b);
+        std::string_view head = core.substr(0, core.find('['));
+        if (head.empty() || head.find_first_of(".:") != std::string_view::npos || !declares(head)) return t;
+        // Built-in types (`str`, `i32`, `bool`, ...) are never module-qualified, even when a
+        // namespace shares their name (e.g. `core:str` lists `str`).
+        {
+            const auto& d = cf_.type_table.get(cf_.type_table.from_name(head));
+            if (d.kind != TypeKind::NominalStruct && d.kind != TypeKind::NominalEnum) return t;
+        }
+        return t.substr(0, b) + std::string(qualifier) + "." + std::string(core) + t.substr(e);
     }
 
     [[nodiscard]] auto resolve_ident(const std::string& name) const -> std::optional<Resolution> {
@@ -1279,8 +1683,8 @@ public:
 
         // 1. If object is an IdentExpr
         if (const auto* id = std::get_if<IdentExpr>(&mem.object->node)) {
-            // Foreign FFI prefix "cpp"
-            if (id->name == "cpp") {
+            // Foreign FFI prefix "cpp" or alias
+            if (id->name == "cpp" || is_cpp_qualifier_sema(id->name)) {
                 res.kind = SymbolKind::CoreNamespace;
                 res.canonical_name = mem.field;
                 return res;
@@ -1328,7 +1732,8 @@ public:
                 }
                 if (is_namespace_ident_sema(id->name)) {
                     res.kind = SymbolKind::CoreNamespace;
-                    std::string actual_ns = id->name;
+                    std::string actual_ns = resolve_stdlib_ns_sema(id->name);
+                    if (actual_ns.empty()) actual_ns = id->name;
                     for (const auto& imp : cf_.ast.imports) {
                         if (imp.alias == id->name) {
                             auto colon = imp.path.rfind(':');
@@ -1556,7 +1961,8 @@ public:
                 for (const auto& [k, mdecl] : cf_.methods) {
                     if (k.ends_with(col_suffix) && mdecl.return_type.is_fallible) return true;
                 }
-                if (has_cpp_imports_ || seen_cpp_block_) return true;
+                const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (oid && (oid->name == "cpp" || is_cpp_qualifier_sema(oid->name) || is_vendor_alias_sema(oid->name))) return true;
             }
         }
         return false;
@@ -1611,7 +2017,8 @@ public:
                 for (const auto& [k, mdecl] : cf_.methods) {
                     if (k.ends_with(col_suffix) && mdecl.return_type.is_optional) return true;
                 }
-                if (has_cpp_imports_ || seen_cpp_block_) return true;
+                const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (oid && (oid->name == "cpp" || is_cpp_qualifier_sema(oid->name) || is_vendor_alias_sema(oid->name))) return true;
             }
         }
         return false;
@@ -1701,6 +2108,18 @@ public:
                 if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return r;
             }
             if (!is_known_identifier_sema(id->name)) {
+                if (cf_.shadowed_default_qualifiers.contains(id->name)) {
+                    std::string active_alias = cf_.shadowed_default_qualifiers.at(id->name);
+                    return emit_error(std::format(
+                        "{}:{}:{}: module '{}' is imported as '{}'; use '{}.<member>' (cfire/UNDECLARED-IDENT)",
+                        path_, e->line, e->col, id->name, active_alias, active_alias));
+                }
+                if (cf_.cpp_fn_params.contains(id->name)) {
+                    std::string cpp_q = cf_.cpp_qualifiers.empty() ? "cpp" : *cf_.cpp_qualifiers.begin();
+                    return emit_error(std::format(
+                        "{}:{}:{}: undeclared identifier '{}'; did you mean '{}.{}'? (cfire/UNDECLARED-IDENT)",
+                        path_, e->line, e->col, id->name, cpp_q, id->name));
+                }
                 return emit_error(std::format(
                     "{}:{}:{}: undeclared identifier '{}' (cfire/UNDECLARED-IDENT)",
                     path_, e->line, e->col, id->name));
@@ -1748,6 +2167,27 @@ public:
             if (sep != std::string::npos) {
                 std::string prefix = st->type_name.substr(0, sep);
                 if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return r;
+            }
+            if (dcol != std::string::npos && (dot == std::string::npos || dcol < dot)) {
+                std::string qual = st->type_name.substr(0, dcol);
+                if (!cf_.enums.contains(qual) &&
+                    (qual == "cpp" || is_cpp_qualifier_sema(qual) || is_vendor_alias_sema(qual) ||
+                     is_namespace_ident_sema(qual) || cf_.shadowed_default_qualifiers.contains(qual))) {
+                    std::string rest = st->type_name.substr(dcol + 2);
+                    return emit_error(std::format(
+                        "{}:{}:{}: use '{}.{}' instead of '{}::{}' (cfire/DEPRECATED-SEPARATOR)",
+                        path_, e->line, e->col, qual, rest, qual, rest));
+                }
+            }
+            if (dot != std::string::npos) {
+                std::string qual = st->type_name.substr(0, dot);
+                if (cf_.shadowed_default_qualifiers.contains(qual)) {
+                    std::string active_alias = cf_.shadowed_default_qualifiers.at(qual);
+                    std::string rest = st->type_name.substr(dot + 1);
+                    return emit_error(std::format(
+                        "{}:{}:{}: module '{}' is imported as '{}'; use '{}.{}' (cfire/UNDECLARED-IDENT)",
+                        path_, e->line, e->col, qual, active_alias, active_alias, rest));
+                }
             }
             for (const auto& f : st->fields) {
                 if (auto r = check_expr(f.value); !r) return r;
@@ -1947,10 +2387,27 @@ public:
                 path_, line, col));
         }
         // CF-116: Type compatibility check for binary expressions
-        if (!has_cpp_imports_) {
+        {
             TypeId lt = infer_expr_type_id_sema(bin.left);
             TypeId rt = infer_expr_type_id_sema(bin.right);
-            if (lt.is_valid() && rt.is_valid() && !lt.is_unknown() && !rt.is_unknown()) {
+            // Borrowed string views (e.g. slices `s[a..b]` typed `&str`) behave as `str` for operators.
+            auto decay_str_borrow = [this](TypeId t) -> TypeId {
+                if (!t.is_valid() || t.is_unknown()) return t;
+                const auto& d = cf_.type_table.get(t);
+                if ((d.kind == TypeKind::Borrow || d.kind == TypeKind::MutBorrow) && d.elem_type == TypeId::Str()) {
+                    return TypeId::Str();
+                }
+                return t;
+            };
+            lt = decay_str_borrow(lt);
+            rt = decay_str_borrow(rt);
+            auto is_generic_placeholder = [this](TypeId t) -> bool {
+                if (!t.is_valid() || t.is_unknown()) return false;
+                const auto& d = cf_.type_table.get(t);
+                return d.name == "T" || d.name == "U" || d.name == "V" || (d.name.size() == 1 && std::isupper(static_cast<unsigned char>(d.name[0])));
+            };
+            if (lt.is_valid() && rt.is_valid() && !lt.is_unknown() && !rt.is_unknown() &&
+                !is_generic_placeholder(lt) && !is_generic_placeholder(rt)) {
                 if (bin.op == "+") {
                     if (lt == TypeId::Str() || rt == TypeId::Str()) {
                         if (lt != rt) {
@@ -2003,6 +2460,21 @@ public:
                 }
             }
             if (const auto* obj_id = std::get_if<IdentExpr>(&mem.object->node)) {
+                if (cf_.shadowed_default_qualifiers.contains(obj_id->name)) {
+                    std::string active_alias = cf_.shadowed_default_qualifiers.at(obj_id->name);
+                    return emit_error(std::format(
+                        "{}:{}:{}: module '{}' is imported as '{}'; use '{}.{}' (cfire/UNDECLARED-IDENT)",
+                        path_, line, col, obj_id->name, active_alias, active_alias, mem.field));
+                }
+                if (mem.is_namespace) {
+                    if (!cf_.enums.contains(obj_id->name) &&
+                        (obj_id->name == "cpp" || is_cpp_qualifier_sema(obj_id->name) ||
+                         is_vendor_alias_sema(obj_id->name) || is_namespace_ident_sema(obj_id->name))) {
+                        return emit_error(std::format(
+                            "{}:{}:{}: use '{}.{}' instead of '{}::{}' (cfire/DEPRECATED-SEPARATOR)",
+                            path_, line, col, obj_id->name, mem.field, obj_id->name, mem.field));
+                    }
+                }
                 if (auto r = check_stdlib_ns_imported(obj_id->name, mem.object->line > 0 ? mem.object->line : line, mem.object->col > 0 ? mem.object->col : col); !r) return r;
                 if (obj_id->name == "os" && !is_ident_in_scope_sema("os") &&
                     (mem.field == "STDIN" || mem.field == "STDOUT" || mem.field == "STDERR")) {
@@ -2328,15 +2800,16 @@ public:
                 }
             }
             if (!target_sig && obj_id) {
-                if (catalog_idx.has_namespace(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
-                    std_sig = catalog_idx.find_ns_fn(obj_id->name, mem->field);
-                    if (!std_sig && obj_id->name != "rl" && obj_id->name != "rg" &&
-                        !catalog_idx.is_known_ns_member(obj_id->name, mem->field)) {
-                        std::string sugg = catalog_idx.suggest_closest_fn(obj_id->name, mem->field);
+                std::string resolved_ns = resolve_stdlib_ns_sema(obj_id->name);
+                if (!resolved_ns.empty() && !is_ident_in_scope_sema(obj_id->name)) {
+                    std_sig = catalog_idx.find_ns_fn(resolved_ns, mem->field);
+                    if (!std_sig && !is_vendor_alias_sema(obj_id->name) && obj_id->name != "cpp" && !is_cpp_qualifier_sema(obj_id->name) &&
+                        !catalog_idx.is_known_ns_member(resolved_ns, mem->field)) {
+                        std::string sugg = catalog_idx.suggest_closest_fn(resolved_ns, mem->field);
                         std::string hint = sugg.empty() ? "" : std::format("; did you mean '{}.{}'?", obj_id->name, sugg);
                         if (auto r = emit_error(std::format(
                             "{}:{}:{}: unknown function '{}.{}' in module '{}'{} (cfire/UNKNOWN-STDLIB-FN)",
-                            path_, line, col, obj_id->name, mem->field, catalog_idx.ns_to_import.at(obj_id->name), hint)); !r) return r;
+                            path_, line, col, obj_id->name, mem->field, catalog_idx.ns_to_import.at(resolved_ns), hint)); !r) return r;
                     }
                 } else if (auto dot = obj_id->name.find('.'); dot != std::string::npos) {
                     std::string ns_part = obj_id->name.substr(0, dot);
@@ -2561,12 +3034,12 @@ public:
         }
         bool is_foreign_call = false;
         if (const auto* cid = std::get_if<IdentExpr>(&call.callee->node)) {
-            if (cid->name.starts_with("cpp::") || cid->name.starts_with("cpp.") || cf_.cpp_fn_params.contains(cid->name)) {
+            if (cid->name.starts_with("cpp.") || is_cpp_qualifier_sema(cid->name) || is_vendor_alias_sema(cid->name) || cf_.cpp_fn_params.contains(cid->name)) {
                 is_foreign_call = true;
             }
         } else if (const auto* cmem = std::get_if<MemberExpr>(&call.callee->node)) {
             const auto* obj_id = cmem->object ? std::get_if<IdentExpr>(&cmem->object->node) : nullptr;
-            if (obj_id && (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg")) {
+            if (obj_id && (obj_id->name == "cpp" || is_cpp_qualifier_sema(obj_id->name) || is_vendor_alias_sema(obj_id->name))) {
                 is_foreign_call = true;
             }
         }
@@ -2581,6 +3054,26 @@ public:
                     }
                     if (borrow_origin_.contains(pi->root)) {
                         invalidated_loans_[pi->root] = InvalidatedLoan{"loan invalidated by foreign C++ call", line};
+                    }
+                }
+            }
+        }
+        if (in_escaping_closure_depth_ > 0 && call.callee) {
+            if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
+                if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
+                    mem->field == "insert" || mem->field == "erase" || mem->field == "remove") {
+                    std::string root = get_root_variable_name(mem->object);
+                    if (!root.empty() && root != "_") {
+                        auto sit = var_scope_depth_.find(root);
+                        if (sit != var_scope_depth_.end() && sit->second <= escaping_closure_entry_scope_) {
+                            std::string r_ty;
+                            if (auto tit = var_types_.find(root); tit != var_types_.end()) r_ty = tit->second;
+                            if (!is_concurrency_safe_type(r_ty)) {
+                                return emit_error(std::format(
+                                    "{}:{}:1: cannot mutate captured outer variable '{}' inside escaping closure; wrap shared mutable state in 'sync.Mutex[T]', 'sync.Atomic[T]', or communicate via 'sync.Channel[T]' (cfire/ESCAPING-CAPTURE-MUT)",
+                                    path_, line, root));
+                            }
+                        }
                     }
                 }
             }
@@ -2679,28 +3172,50 @@ public:
 
         for (const auto& arm : arms) {
             std::vector<MatchPattern> pats = arm.patterns.empty()
-                ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                ? std::vector<MatchPattern>{arm.to_pattern()}
                 : arm.patterns;
             for (const auto& pat : pats) {
                 if (pat.variant_name == "_") {
-                    has_wildcard = true;
+                    if (!arm.guard) has_wildcard = true;
                 } else {
-                    covered.insert(pat.variant_name);
+                    if (!arm.guard) covered.insert(pat.variant_name);
                     if (enum_name.empty() && !pat.enum_prefix.empty() && cf_.enums.contains(pat.enum_prefix)) {
                         enum_name = pat.enum_prefix;
                     }
                 }
             }
             ScopeGuard sg(*this);
-            bind_match_arm_vars(arm);
+            bind_match_arm_vars(arm, target_t);
+            if (arm.guard) {
+                if (auto r = check_expr(arm.guard); !r) return r;
+            }
             if (auto r = check_block_stmts(arm.body, is_expr_match); !r) return r;
         }
 
-        if (!enum_name.empty()) {
+        bool is_opt = target_t.ends_with('?') || target_t.starts_with("std::optional");
+        bool is_res = target_t.ends_with('!') || target_t.starts_with("cfire::Result");
+
+        if (is_opt && !has_wildcard) {
+            bool has_some = covered.contains("Some");
+            bool has_none = covered.contains("none");
+            if (!has_some || !has_none) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: non-exhaustive match on optional '{}': missing '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
+                    path_, line, col, target_t, !has_some ? "Some" : "none")); !r) return r;
+            }
+        } else if (is_res && !has_wildcard) {
+            bool has_ok = covered.contains("Ok");
+            bool has_err = covered.contains("Err");
+            if (!has_ok || !has_err) {
+                if (auto r = emit_error(std::format(
+                    "{}:{}:{}: non-exhaustive match on fallible '{}': missing '{}' (cfire/NON-EXHAUSTIVE-MATCH)",
+                    path_, line, col, target_t, !has_ok ? "Ok" : "Err")); !r) return r;
+            }
+        } else if (!enum_name.empty()) {
             if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
                 for (const auto& arm : arms) {
                     std::vector<MatchPattern> pats = arm.patterns.empty()
-                        ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                        ? std::vector<MatchPattern>{arm.to_pattern()}
                         : arm.patterns;
                     for (const auto& pat : pats) {
                         if (pat.variant_name != "_" && pat.literal_val.empty() && !pat.is_slice_pattern) {
@@ -2805,6 +3320,10 @@ public:
                     "{}:{}:{}: unreachable match arm #{}: previous wildcard '_' arm already matches all remaining cases (cfire/UNREACHABLE-MATCH-ARM)",
                     path_, match_line, match_col, idx + 1));
             }
+            if (arm.guard != nullptr) {
+                // Guarded arms are conditional; they do not fully cover the pattern and cannot be statically proven unreachable
+                continue;
+            }
             if (arm.is_slice_pattern) {
                 std::size_t min_sz = arm.slice_head.size() + arm.slice_tail.size();
                 if (!arm.slice_has_rest) {
@@ -2836,7 +3355,7 @@ public:
                 continue;
             }
             std::vector<MatchPattern> pats = arm.patterns.empty()
-                ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                ? std::vector<MatchPattern>{arm.to_pattern()}
                 : arm.patterns;
             for (const auto& pat : pats) {
                 if (!pat.literal_val.empty()) {
@@ -2944,6 +3463,8 @@ public:
                 }
                 if (all_diverge) {
                     if (has_wildcard) return true;
+                    if (arm_variants.contains("Some") && arm_variants.contains("none")) return true;
+                    if (arm_variants.contains("Ok") && arm_variants.contains("Err")) return true;
                     if (cf) {
                         for (const auto& [ename, edef] : cf->enums) {
                             if (edef.variants.empty()) continue;
@@ -3100,9 +3621,22 @@ public:
         }
     }
 
-    void bind_match_arm_vars(const MatchArm& arm) {
+    void bind_match_arm_vars(const MatchArm& arm, const std::string& target_t = "") {
         for (const auto& b : arm.bindings) {
             bind_scoped_var(b, false);
+        }
+        if (!arm.bindings.empty()) {
+            if (arm.is_some || arm.variant_name == "Some") {
+                if (target_t.ends_with('?')) {
+                    var_types_[arm.bindings[0]] = target_t.substr(0, target_t.size() - 1);
+                }
+            } else if (arm.is_ok || arm.variant_name == "Ok") {
+                if (target_t.ends_with('!')) {
+                    var_types_[arm.bindings[0]] = target_t.substr(0, target_t.size() - 1);
+                }
+            } else if (arm.is_err || arm.variant_name == "Err") {
+                var_types_[arm.bindings[0]] = "Error";
+            }
         }
         if (arm.is_slice_pattern) {
             for (const auto& h : arm.slice_head) bind_scoped_var(h, false);
@@ -3218,6 +3752,7 @@ public:
                 path_, vd.line, vd.col)); !r) return r;
         }
         if (vd.type) {
+            if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col); !r) return r;
             if (auto iface = find_interface_in_slice(*vd.type, cf_.interfaces)) {
                 if (auto r = emit_error(std::format(
                     "{}:{}:{}: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
@@ -3246,31 +3781,70 @@ public:
         }
 
         // CF-116: Type compatibility check for declared type vs initializer
-        if (vd.type && vd.init && !has_cpp_imports_) {
-            TypeId dest_t = cf_.type_table.from_typeref(*vd.type);
+        if (vd.type && vd.init) {
+            TypeId dest_t = type_id_of(*vd.type);
             TypeId src_t = infer_expr_type_id_sema(vd.init);
             if (dest_t.is_valid() && src_t.is_valid() && !dest_t.is_unknown() && !src_t.is_unknown()) {
                 std::string dest_str = cf_.type_table.to_string(dest_t);
                 std::string src_str = cf_.type_table.to_string(src_t);
                 if (dest_str.find("cpp::") == std::string::npos &&
                     src_str.find("cpp::") == std::string::npos &&
+                    dest_str.find("cpp.") == std::string::npos &&
+                    src_str.find("cpp.") == std::string::npos &&
                     !cf_.type_table.is_assignable(dest_t, src_t)) {
-                    if (vd.type->name == "str" && src_t == cf_.type_table.from_name("&str")) {
+                    if (vd.type->name == "str" && src_t == type_id_of("&str")) {
                         // Handled elsewhere with specific hint
                     } else if (!is_byte_slice) {
                         return emit_error(std::format(
-                            "{}:{}:{}: cannot initialize variable '{}' of type '{}' with expression of type '{}' (cfire/TYPE-MISMATCH)",
-                            path_, vd.line, vd.col, vd.name, dest_str, src_str));
+                            "{}:{}:{}: cannot initialize variable '{}' of type '{}' with expression of type '{}'{} (cfire/TYPE-MISMATCH)",
+                            path_, vd.line, vd.col, vd.name, dest_str, src_str, nominal_mismatch_hint_sema(dest_t, src_t)));
                     }
                 }
             }
         }
-        if (!vd.type && vd.name != "_" && vd.init && !has_cpp_imports_) {
+        if (!vd.type && vd.name != "_" && vd.init) {
             TypeId src_t = infer_expr_type_id_sema(vd.init);
             if (src_t.is_unknown() && !std::holds_alternative<LiteralExpr>(vd.init->node)) {
-                warnings_.push_back(std::format(
-                    "{}:{}:{}: could not infer concrete type for variable '{}'; expression has unknown type (cfire/UNKNOWN-TYPE)",
-                    path_, vd.line, vd.col, vd.name));
+                bool is_foreign = false;
+                auto check_foreign_expr = [&](auto& self, const ExprPtr& ex) -> bool {
+                    if (!ex) return false;
+                    if (const auto* call = std::get_if<CallExpr>(&ex->node)) {
+                        if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                            if (const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr) {
+                                if (oid->name == "cpp" || is_cpp_qualifier_sema(oid->name) || is_vendor_alias_sema(oid->name)) return true;
+                            }
+                        } else if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                            if (cid->name.starts_with("cpp.") || is_vendor_alias_sema(cid->name) || is_cpp_qualifier_sema(cid->name)) return true;
+                        }
+                    } else if (const auto* slit = std::get_if<StructLitExpr>(&ex->node)) {
+                        auto dot = slit->type_name.find('.');
+                        if (dot != std::string::npos) {
+                            std::string qual = slit->type_name.substr(0, dot);
+                            if (qual == "cpp" || is_cpp_qualifier_sema(qual) || is_vendor_alias_sema(qual)) return true;
+                        }
+                    } else if (const auto* mem = std::get_if<MemberExpr>(&ex->node)) {
+                        if (const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr) {
+                            if (oid->name == "cpp" || is_cpp_qualifier_sema(oid->name) || is_vendor_alias_sema(oid->name) || foreign_vars_.contains(oid->name)) return true;
+                        }
+                    } else if (const auto* id = std::get_if<IdentExpr>(&ex->node)) {
+                        if (foreign_vars_.contains(id->name)) return true;
+                    } else if (const auto* bin = std::get_if<BinaryExpr>(&ex->node)) {
+                        if (self(self, bin->left) || self(self, bin->right)) return true;
+                    } else if (const auto* un = std::get_if<UnaryExpr>(&ex->node)) {
+                        if (self(self, un->operand)) return true;
+                    } else if (const auto* or_ex = std::get_if<OrExpr>(&ex->node)) {
+                        if (self(self, or_ex->inner)) return true;
+                    }
+                    return false;
+                };
+                is_foreign = check_foreign_expr(check_foreign_expr, vd.init);
+                if (is_foreign) {
+                    foreign_vars_.insert(vd.name);
+                } else {
+                    warnings_.push_back(std::format(
+                        "{}:{}:{}: could not infer concrete type for variable '{}'; expression has unknown type (cfire/UNKNOWN-TYPE)",
+                        path_, vd.line, vd.col, vd.name));
+                }
             }
         }
 
@@ -3282,6 +3856,13 @@ public:
             inferred_t = format_type_ref_sema(*vd.type);
         } else {
             inferred_t = infer_expr_type_name_sema(vd.init);
+        }
+        auto dot = inferred_t.find('.');
+        if (dot != std::string::npos) {
+            std::string qual = inferred_t.substr(0, dot);
+            if (qual == "cpp" || is_cpp_qualifier_sema(qual) || is_vendor_alias_sema(qual)) {
+                foreign_vars_.insert(vd.name);
+            }
         }
         bool is_opt_var = (vd.type && vd.type->is_optional) || (!vd.type && expr_returns_optional_sema(vd.init));
         bool is_fallible_var = (vd.type && vd.type->is_fallible);
@@ -3459,6 +4040,23 @@ public:
         return {};
     }
 
+    [[nodiscard]] auto get_root_variable_name(const ExprPtr& e) const -> std::string {
+        if (!e) return "";
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
+        if (const auto* mem = std::get_if<MemberExpr>(&e->node)) return get_root_variable_name(mem->object);
+        if (const auto* idx = std::get_if<IndexExpr>(&e->node)) return get_root_variable_name(idx->object);
+        return "";
+    }
+
+    [[nodiscard]] auto is_concurrency_safe_type(const std::string& ty) const -> bool {
+        if (ty.starts_with("sync.Mutex") || ty.starts_with("cfire::sync::Mutex")) return true;
+        if (ty.starts_with("sync.Atomic") || ty.starts_with("cfire::sync::Atomic")) return true;
+        if (ty.starts_with("sync.Channel") || ty.starts_with("cfire::sync::Channel")) return true;
+        if (ty.starts_with("sync.WaitGroup") || ty.starts_with("sync.RwLock")) return true;
+        if (ty.starts_with("shared[") || ty.starts_with("std::shared_ptr")) return true;
+        return false;
+    }
+
     [[nodiscard]] auto check_assign_stmt(const AssignStmt& as) -> std::expected<void, std::string> {
         if (as.value && as.target) {
             if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
@@ -3476,16 +4074,23 @@ public:
         if (as.op != "=") {
             if (auto r = check_expr(as.target); !r) return r;
         }
-        if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
-            if (id->name == "_") return {};
-            if (in_escaping_closure_depth_ > 0) {
-                auto sit = var_scope_depth_.find(id->name);
+        if (in_escaping_closure_depth_ > 0 && as.target) {
+            std::string root = get_root_variable_name(as.target);
+            if (!root.empty() && root != "_") {
+                auto sit = var_scope_depth_.find(root);
                 if (sit != var_scope_depth_.end() && sit->second <= escaping_closure_entry_scope_) {
-                    return emit_error(std::format(
-                        "{}:{}:1: cannot mutate captured outer variable '{}' inside escaping closure; escaping closures capture by value (cfire/ESCAPING-CAPTURE-MUT)",
-                        path_, as.line, id->name));
+                    std::string r_ty;
+                    if (auto tit = var_types_.find(root); tit != var_types_.end()) r_ty = tit->second;
+                    if (!is_concurrency_safe_type(r_ty)) {
+                        return emit_error(std::format(
+                            "{}:{}:1: cannot mutate captured outer variable '{}' inside escaping closure; wrap shared mutable state in 'sync.Mutex[T]', 'sync.Atomic[T]', or communicate via 'sync.Channel[T]' (cfire/ESCAPING-CAPTURE-MUT)",
+                            path_, as.line, root));
+                    }
                 }
             }
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
+            if (id->name == "_") return {};
             if (byte_slice_vars_.contains(id->name) && as.value) {
                 if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&as.value->node)) {
                     for (const auto& el : arr_lit->elements) {
@@ -3547,7 +4152,7 @@ public:
             }
         }
         // CF-116: Type compatibility check for assignment
-        if (as.target && as.value && as.op == "=" && !has_cpp_imports_) {
+        if (as.target && as.value && as.op == "=") {
             TypeId dest_t = infer_expr_type_id_sema(as.target);
             TypeId src_t = infer_expr_type_id_sema(as.value);
             if (dest_t.is_valid() && src_t.is_valid() && !dest_t.is_unknown() && !src_t.is_unknown()) {
@@ -3555,10 +4160,12 @@ public:
                 std::string src_str = cf_.type_table.to_string(src_t);
                 if (dest_str.find("cpp::") == std::string::npos &&
                     src_str.find("cpp::") == std::string::npos &&
+                    dest_str.find("cpp.") == std::string::npos &&
+                    src_str.find("cpp.") == std::string::npos &&
                     !cf_.type_table.is_assignable(dest_t, src_t)) {
                     return emit_error(std::format(
-                        "{}:{}:1: cannot assign expression of type '{}' to target of type '{}' (cfire/TYPE-MISMATCH)",
-                        path_, as.line, src_str, dest_str));
+                        "{}:{}:1: cannot assign expression of type '{}' to target of type '{}'{} (cfire/TYPE-MISMATCH)",
+                        path_, as.line, src_str, dest_str, nominal_mismatch_hint_sema(dest_t, src_t)));
                 }
             }
         }
@@ -3624,23 +4231,26 @@ public:
             }
         }
         // CF-116: Type compatibility check for return statement
-        if (rt.value && !fn_ret_str_.empty() && fn_ret_str_ != "void" && !has_cpp_imports_ && in_closure_depth_ == 0) {
-            TypeId ret_t = cf_.type_table.from_name(fn_ret_str_);
+        if (rt.value && !fn_ret_str_.empty() && fn_ret_str_ != "void" && in_closure_depth_ == 0) {
+            TypeId ret_t = type_id_of(fn_ret_str_);
             TypeId val_t = infer_expr_type_id_sema(rt.value);
             if (ret_t.is_valid() && val_t.is_valid() && !ret_t.is_unknown() && !val_t.is_unknown()) {
                 std::string ret_str = cf_.type_table.to_string(ret_t);
                 std::string val_str = cf_.type_table.to_string(val_t);
                 if (fn_ret_str_.find("cpp::") == std::string::npos &&
                     ret_str.find("cpp::") == std::string::npos &&
-                    val_str.find("cpp::") == std::string::npos) {
+                    val_str.find("cpp::") == std::string::npos &&
+                    fn_ret_str_.find("cpp.") == std::string::npos &&
+                    ret_str.find("cpp.") == std::string::npos &&
+                    val_str.find("cpp.") == std::string::npos) {
                     bool ok = cf_.type_table.is_assignable(ret_t, val_t);
                     if (!ok && fn_is_fallible_) {
                         ok = cf_.type_table.is_assignable(cf_.type_table.unwrap_fallible(ret_t), val_t);
                     }
                     if (!ok) {
                         return emit_error(std::format(
-                            "{}:{}:1: return type mismatch: function '{}' expects '{}', got '{}' (cfire/TYPE-MISMATCH)",
-                            path_, rt.line, fn_name_, fn_ret_str_, val_str));
+                            "{}:{}:1: return type mismatch: function '{}' expects '{}', got '{}'{} (cfire/TYPE-MISMATCH)",
+                            path_, rt.line, fn_name_, ret_str, val_str, nominal_mismatch_hint_sema(ret_t, val_t)));
                     }
                 }
             }
@@ -3649,17 +4259,44 @@ public:
     }
 
     [[nodiscard]] auto check_if_stmt(const IfStmt& ifs) -> std::expected<void, std::string> {
-        if (auto r = check_expr(ifs.cond); !r) return r;
+        std::string unwrap_elem_ty;
+        if (ifs.unwrap_init) {
+            if (auto r = check_expr(ifs.unwrap_init); !r) return r;
+            std::string init_ty = infer_expr_type_name_sema(ifs.unwrap_init);
+            if (init_ty.ends_with('?')) {
+                unwrap_elem_ty = init_ty.substr(0, init_ty.size() - 1);
+            } else if (init_ty.ends_with('!')) {
+                unwrap_elem_ty = init_ty.substr(0, init_ty.size() - 1);
+            } else if (init_ty.starts_with("std::optional<") && init_ty.ends_with('>')) {
+                unwrap_elem_ty = init_ty.substr(14, init_ty.size() - 15);
+            } else if (init_ty.starts_with("cfire::Result<") && init_ty.ends_with('>')) {
+                unwrap_elem_ty = init_ty.substr(14, init_ty.size() - 15);
+            } else {
+                unwrap_elem_ty = "auto";
+            }
+        }
+        if (ifs.cond) {
+            ScopeGuard sg_cond(*this);
+            if (ifs.unwrap_init && !ifs.unwrap_var.empty()) {
+                bind_scoped_var(ifs.unwrap_var, ifs.unwrap_mut);
+                var_types_[ifs.unwrap_var] = unwrap_elem_ty;
+            }
+            if (auto r = check_expr(ifs.cond); !r) return r;
+        }
         auto initial_moves = moved_at_line_;
         auto initial_loans = invalidated_loans_;
         auto initial_null = ptr_null_state_;
-        auto nc = extract_null_check(ifs.cond);
+        auto nc = ifs.cond ? extract_null_check(ifs.cond) : std::nullopt;
 
         if (nc) {
             ptr_null_state_[nc->first] = nc->second ? NullState::NonNull : NullState::Null;
         }
         {
             ScopeGuard sg(*this);
+            if (ifs.unwrap_init && !ifs.unwrap_var.empty()) {
+                bind_scoped_var(ifs.unwrap_var, ifs.unwrap_mut);
+                var_types_[ifs.unwrap_var] = unwrap_elem_ty;
+            }
             if (auto r = check_block_stmts(ifs.then_body); !r) return r;
         }
         auto then_moves = moved_at_line_;
@@ -3747,6 +4384,22 @@ public:
     }
 
     [[nodiscard]] auto check_for_stmt(const ForStmt& fs) -> std::expected<void, std::string> {
+        if (fs.is_unwrap) {
+            if (auto r = check_expr(fs.iter_expr); !r) return r;
+            std::string init_ty = infer_expr_type_name_sema(fs.iter_expr);
+            std::string elem_ty;
+            if (init_ty.ends_with('?')) elem_ty = init_ty.substr(0, init_ty.size() - 1);
+            else if (init_ty.ends_with('!')) elem_ty = init_ty.substr(0, init_ty.size() - 1);
+            else if (init_ty.starts_with("sync.Channel[") && init_ty.ends_with(']')) elem_ty = init_ty.substr(13, init_ty.size() - 14);
+            else elem_ty = "auto";
+
+            ++loop_depth_;
+            auto loop_guard = cfire::scope_exit([this] { --loop_depth_; });
+            ScopeGuard sg(*this);
+            bind_scoped_var(fs.item_var, fs.unwrap_mut);
+            var_types_[fs.item_var] = elem_ty;
+            return check_block_stmts(fs.body);
+        }
         if (fs.item_var.empty()) {
             ++in_invalid_unwrap_context_;
             auto guard = cfire::scope_exit([this] { --in_invalid_unwrap_context_; });
@@ -3775,11 +4428,54 @@ public:
             ++loop_depth_;
             auto loop_guard = cfire::scope_exit([this] { --loop_depth_; });
             ScopeGuard sg(*this);
-            if (!fs.index_var.empty()) {
-                bind_scoped_var(fs.index_var, false);
-            }
-            if (!fs.item_var.empty()) {
+            if (fs.range_end) {
                 bind_scoped_var(fs.item_var, false);
+                var_types_[fs.item_var] = "i64";
+            } else if (!fs.item_var.empty()) {
+                std::string col_ty = infer_expr_type_name_sema(fs.iter_expr);
+                std::string idx_ty = "usize";
+                std::string item_ty = "auto";
+                if (fs.is_unwrap) {
+                    if (col_ty.ends_with('?')) {
+                        item_ty = col_ty.substr(0, col_ty.size() - 1);
+                    } else if (col_ty.ends_with('!')) {
+                        item_ty = col_ty.substr(0, col_ty.size() - 1);
+                    } else if (col_ty.starts_with("std::optional<") && col_ty.ends_with('>')) {
+                        item_ty = col_ty.substr(14, col_ty.size() - 15);
+                    } else if (col_ty.starts_with("cfire::Result<") && col_ty.ends_with('>')) {
+                        item_ty = col_ty.substr(14, col_ty.size() - 15);
+                    }
+                } else if (col_ty == "str" || col_ty == "string") {
+                    idx_ty = "usize";
+                    item_ty = "u8";
+                } else if (col_ty.starts_with("map[") && col_ty.find(']') != std::string::npos) {
+                    auto close_b = col_ty.find(']');
+                    idx_ty = col_ty.substr(4, close_b - 4);
+                    item_ty = col_ty.substr(close_b + 1);
+                } else if (col_ty.starts_with("collections.BTreeMap[") && col_ty.ends_with(']')) {
+                    auto inner = col_ty.substr(21, col_ty.size() - 22);
+                    auto comma = inner.find(',');
+                    if (comma != std::string::npos) {
+                        idx_ty = trim_str(inner.substr(0, comma));
+                        item_ty = trim_str(inner.substr(comma + 1));
+                    }
+                } else if (col_ty.starts_with("[]")) {
+                    idx_ty = "usize";
+                    item_ty = col_ty.substr(2);
+                } else if (col_ty.starts_with("collections.Set[") && col_ty.ends_with(']')) {
+                    item_ty = col_ty.substr(16, col_ty.size() - 17);
+                } else if (col_ty.starts_with("collections.Deque[") && col_ty.ends_with(']')) {
+                    idx_ty = "usize";
+                    item_ty = col_ty.substr(18, col_ty.size() - 19);
+                } else if (col_ty.starts_with("sync.Channel[") && col_ty.ends_with(']')) {
+                    item_ty = col_ty.substr(13, col_ty.size() - 14);
+                }
+                if (!fs.index_var.empty()) {
+                    bind_scoped_var(fs.index_var, false);
+                    var_types_[fs.index_var] = idx_ty;
+                }
+                bind_scoped_var(fs.item_var, false);
+                var_types_[fs.item_var] = item_ty;
             }
             if (auto r = check_block_stmts(fs.body); !r) return r;
         }
@@ -3847,6 +4543,7 @@ private:
     std::unordered_set<std::string> reported_unhandled_vars_{};
     std::unordered_set<std::string> scalar_primitive_vars_{};
     std::unordered_set<std::string> reported_missing_imports_{};
+    std::unordered_set<std::string> foreign_vars_{};
     std::unordered_map<std::string, std::string> var_types_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
     std::unordered_map<std::string, std::size_t> fixed_array_lens_{};

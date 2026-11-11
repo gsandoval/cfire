@@ -744,12 +744,12 @@ fn main() {
         require(checked.has_value(), std::format("analyze match move item: {}", checked ? "" : checked.error()));
         if (checked) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("[&](Item::_Named&& _m)"),
-                "match move emits rvalue reference visitor");
-            require(cpp.contains("auto&& val = std::move(_m._0);"),
+            require(cpp.contains("std::get_if<Item::_Named>(&_target._v)"),
+                "match move emits std::get_if for variant");
+            require(cpp.contains("auto&& val = std::move(_p->_0);"),
                 "match move binds payload as rvalue reference with std::move");
-            require(cpp.contains("std::move(it._v)"),
-                "std::visit receives std::move(it._v)");
+            require(cpp.contains("auto&& _target = std::move(it);"),
+                "match receives std::move(it)");
         }
     }
     std::println("--- PASS: test_variant_pattern_matching");

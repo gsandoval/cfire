@@ -1,2 +1,3 @@
+* text=auto eol=lf
 src/version.hpp export-subst
 runtime/cfire_prelude.hpp export-subst

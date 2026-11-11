@@ -724,9 +724,11 @@ inline auto run_setup(
         if (!check_pkg_or_header("raylib", "raylib.h", dummy) && !std::filesystem::exists(cache_rl / "include" / "raylib.h")) {
             std::string url;
 #if defined(__APPLE__)
-            url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_macos.tar.gz";
+            url = "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_macos.tar.gz";
+#elif defined(__linux__) && defined(__aarch64__)
+            url = "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_linux_arm64.tar.gz";
 #elif defined(__linux__)
-            url = "https://github.com/raysan5/raylib/releases/download/5.0/raylib-5.0_linux_amd64.tar.gz";
+            url = "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_linux_amd64.tar.gz";
 #endif
             if (!url.empty()) {
                 std::println("==> Pre-fetching vendor:raylib from {}...", url);

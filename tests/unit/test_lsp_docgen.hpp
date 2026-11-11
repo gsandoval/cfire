@@ -749,7 +749,7 @@ fn main() {
 import cpp "fast_hash.h"
 fn main() {
     msg := "cfire systems programming"
-    hash := cpp::fh_fnv1a(msg, msg.len())
+    hash := cpp.fh_fnv1a(msg, msg.len())
     println("fnv1a hash: 0x{:x}", hash)
 })", "showcase_tab5")
             .assert_ok("Showcase Tab 5 runs cleanly")

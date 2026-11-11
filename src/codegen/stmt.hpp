@@ -240,25 +240,86 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 }
             }
         } else if constexpr (std::is_same_v<T, IfStmt>) {
-            hoist_subexpr_tries(st.cond, in_main, s->line, false);
-            std::string cond = emit_expr(st.cond);
-            if (cond.starts_with('(') && cond.ends_with(')')) {
-                writeln(std::format("if {} {{", cond));
+            if (st.unwrap_init) {
+                hoist_subexpr_tries(st.unwrap_init, in_main, s->line, false);
+                std::string init_s = emit_expr(st.unwrap_init);
+                local_vars_.insert(st.unwrap_var);
+                std::string mut_kw = st.unwrap_mut ? "auto" : "const auto";
+                if (st.cond) {
+                    hoist_subexpr_tries(st.cond, in_main, s->line, false);
+                    std::string cond_s = emit_expr(st.cond);
+                    writeln("{");
+                    ++indent_;
+                    writeln(std::format("auto _opt = {};", init_s));
+                    writeln("bool _taken = false;");
+                    writeln("if (_opt.has_value()) {");
+                    ++indent_;
+                    writeln(std::format("{}& {} = *_opt;", mut_kw, st.unwrap_var));
+                    writeln(std::format("if ({}) {{", cond_s));
+                    ++indent_;
+                    writeln("_taken = true;");
+                    for (const auto& b : st.then_body) emit_stmt(b, in_main);
+                    --indent_;
+                    writeln("}");
+                    --indent_;
+                    writeln("}");
+                    if (!st.else_body.empty()) {
+                        writeln("if (!_taken) {");
+                        ++indent_;
+                        for (const auto& b : st.else_body) emit_stmt(b, in_main);
+                        --indent_;
+                        writeln("}");
+                    }
+                    --indent_;
+                    writeln("}");
+                } else {
+                    writeln(std::format("if (auto _opt = {}; _opt.has_value()) {{", init_s));
+                    ++indent_;
+                    writeln(std::format("{}& {} = *_opt;", mut_kw, st.unwrap_var));
+                    for (const auto& b : st.then_body) emit_stmt(b, in_main);
+                    --indent_;
+                    if (!st.else_body.empty()) {
+                        writeln("} else {");
+                        ++indent_;
+                        for (const auto& b : st.else_body) emit_stmt(b, in_main);
+                        --indent_;
+                    }
+                    writeln("}");
+                }
             } else {
-                writeln(std::format("if ({}) {{", cond));
-            }
-            ++indent_;
-            for (const auto& b : st.then_body) emit_stmt(b, in_main);
-            --indent_;
-            if (!st.else_body.empty()) {
-                writeln("} else {");
+                hoist_subexpr_tries(st.cond, in_main, s->line, false);
+                std::string cond = emit_expr(st.cond);
+                if (cond.starts_with('(') && cond.ends_with(')')) {
+                    writeln(std::format("if {} {{", cond));
+                } else {
+                    writeln(std::format("if ({}) {{", cond));
+                }
                 ++indent_;
-                for (const auto& b : st.else_body) emit_stmt(b, in_main);
+                for (const auto& b : st.then_body) emit_stmt(b, in_main);
                 --indent_;
+                if (!st.else_body.empty()) {
+                    writeln("} else {");
+                    ++indent_;
+                    for (const auto& b : st.else_body) emit_stmt(b, in_main);
+                    --indent_;
+                }
+                writeln("}");
             }
-            writeln("}");
         } else if constexpr (std::is_same_v<T, ForStmt>) {
-            if (!st.item_var.empty()) {
+            if (st.is_unwrap) {
+                hoist_subexpr_tries(st.iter_expr, in_main, s->line, false);
+                std::string iter_s = emit_expr(st.iter_expr);
+                local_vars_.insert(st.item_var);
+                std::string mut_kw = st.unwrap_mut ? "auto" : "const auto";
+                writeln("while (true) {");
+                ++indent_;
+                writeln(std::format("auto _opt = {};", iter_s));
+                writeln("if (!_opt.has_value()) break;");
+                writeln(std::format("{}& {} = *_opt;", mut_kw, st.item_var));
+                for (const auto& b : st.body) emit_stmt(b, in_main);
+                --indent_;
+                writeln("}");
+            } else if (!st.item_var.empty()) {
                 hoist_subexpr_tries(st.iter_expr, in_main, s->line, false);
                 if (st.range_end) {
                     hoist_subexpr_tries(st.range_end, in_main, s->line, false);
@@ -277,11 +338,12 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln("}");
                 } else if (!st.index_var.empty()) {
                     local_vars_.insert(st.index_var);
+                    local_vars_.insert(st.item_var);
                     std::string col = emit_expr(st.iter_expr);
                     loop_index_to_col_[st.index_var] = col;
-                    writeln(std::format("for (std::size_t {0} = 0; {0} < {1}.size(); ++{0}) {{", st.index_var, col));
+                    writeln(std::format("auto&& _col_{0} = {1};", st.index_var, col));
+                    writeln(std::format("for (auto&& [{0}, {1}] : cfire::detail::iter_pairs(_col_{0})) {{", st.index_var, st.item_var));
                     ++indent_;
-                    writeln(std::format("const auto& {} = {}[{}];", st.item_var, col, st.index_var));
                     for (const auto& b : st.body) emit_stmt(b, in_main);
                     --indent_;
                     writeln("}");
@@ -462,9 +524,13 @@ inline void Emitter::emit_match_common(
 
     bool is_slice_match = false;
     bool is_primitive_match = false;
+    bool is_opt_match = false;
+    bool is_res_match = false;
     for (const auto& a : arms) {
         if (a.is_slice_pattern) is_slice_match = true;
-        if (!a.literal_val.empty()) is_primitive_match = true;
+        if (!a.literal_val.empty() || a.is_range) is_primitive_match = true;
+        if (a.is_some || a.is_none || a.variant_name == "Some" || a.variant_name == "none") is_opt_match = true;
+        if (a.is_ok || a.is_err || a.variant_name == "Ok" || a.variant_name == "Err") is_res_match = true;
     }
 
     if (is_slice_match) {
@@ -489,7 +555,6 @@ inline void Emitter::emit_match_common(
 
                 write_ln(std::format("if (!_matched && {}) {{", cond));
                 ++indent_;
-                write_ln("_matched = true;");
 
                 for (std::size_t i = 0; i < head_count; ++i) {
                     if (arm.slice_head[i] != "_" && stmts_reference_ident(arm.body, arm.slice_head[i])) {
@@ -512,20 +577,126 @@ inline void Emitter::emit_match_common(
                     }
                 }
 
-                emit_arm(arm.body);
+                if (arm.guard) {
+                    write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                    ++indent_;
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                    --indent_;
+                    write_ln("}");
+                } else {
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                }
                 --indent_;
                 write_ln("}");
             } else if (arm.variant_name == "_") {
                 write_ln("if (!_matched) {");
                 ++indent_;
-                write_ln("_matched = true;");
-                emit_arm(arm.body);
+                if (arm.guard) {
+                    write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                    ++indent_;
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                    --indent_;
+                    write_ln("}");
+                } else {
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                }
                 --indent_;
                 write_ln("}");
             }
         }
         if (is_expr) {
             write_ln("cfire::assert_true(false, \"unreachable slice match\");");
+        }
+        --indent_;
+        if (is_expr) {
+            write_tail("})()");
+        } else {
+            write_ln("}");
+        }
+        return;
+    }
+
+    if (is_opt_match) {
+        std::string target_expr = emit_expr(target);
+        write_ln(is_expr ? "([&]() -> auto {" : "{");
+        ++indent_;
+        write_ln(std::format("const auto& _target = {};", target_expr));
+        write_ln("bool _matched = false;");
+        for (const auto& arm : arms) {
+            bool is_none_arm = arm.is_none || arm.variant_name == "none";
+            bool is_some_arm = arm.is_some || arm.variant_name == "Some";
+            std::string cond = is_none_arm ? "!_target.has_value()" : (is_some_arm ? "_target.has_value()" : "true");
+            write_ln(std::format("if (!_matched && ({})) {{", cond));
+            ++indent_;
+            if (is_some_arm && !arm.bindings.empty() && arm.bindings[0] != "_") {
+                local_vars_.insert(arm.bindings[0]);
+                write_ln(std::format("const auto& {} = *_target;", arm.bindings[0]));
+            }
+            if (arm.guard) {
+                write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                ++indent_;
+                write_ln("_matched = true;");
+                emit_arm(arm.body);
+                --indent_;
+                write_ln("}");
+            } else {
+                write_ln("_matched = true;");
+                emit_arm(arm.body);
+            }
+            --indent_;
+            write_ln("}");
+        }
+        if (is_expr) {
+            write_ln("cfire::assert_true(false, \"unreachable optional match\");");
+        }
+        --indent_;
+        if (is_expr) {
+            write_tail("})()");
+        } else {
+            write_ln("}");
+        }
+        return;
+    }
+
+    if (is_res_match) {
+        std::string target_expr = emit_expr(target);
+        write_ln(is_expr ? "([&]() -> auto {" : "{");
+        ++indent_;
+        write_ln(std::format("const auto& _target = {};", target_expr));
+        write_ln("bool _matched = false;");
+        for (const auto& arm : arms) {
+            bool is_err_arm = arm.is_err || arm.variant_name == "Err";
+            bool is_ok_arm = arm.is_ok || arm.variant_name == "Ok";
+            std::string cond = is_err_arm ? "!_target.has_value()" : (is_ok_arm ? "_target.has_value()" : "true");
+            write_ln(std::format("if (!_matched && ({})) {{", cond));
+            ++indent_;
+            if (is_ok_arm && !arm.bindings.empty() && arm.bindings[0] != "_") {
+                local_vars_.insert(arm.bindings[0]);
+                write_ln(std::format("const auto& {} = _target.value();", arm.bindings[0]));
+            } else if (is_err_arm && !arm.bindings.empty() && arm.bindings[0] != "_") {
+                local_vars_.insert(arm.bindings[0]);
+                write_ln(std::format("const auto& {} = _target.error();", arm.bindings[0]));
+            }
+            if (arm.guard) {
+                write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                ++indent_;
+                write_ln("_matched = true;");
+                emit_arm(arm.body);
+                --indent_;
+                write_ln("}");
+            } else {
+                write_ln("_matched = true;");
+                emit_arm(arm.body);
+            }
+            --indent_;
+            write_ln("}");
+        }
+        if (is_expr) {
+            write_ln("cfire::assert_true(false, \"unreachable result match\");");
         }
         --indent_;
         if (is_expr) {
@@ -564,32 +735,52 @@ inline void Emitter::emit_match_common(
         write_ln(is_expr ? "([&]() -> auto {" : "{");
         ++indent_;
         write_ln(std::format("const auto& _target = {};", target_expr));
-        bool first = true;
+        write_ln("bool _matched = false;");
         for (const auto& arm : arms) {
             std::vector<MatchPattern> pats = arm.patterns.empty()
-                ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+                ? std::vector<MatchPattern>{arm.to_pattern()}
                 : arm.patterns;
-            if (pats.size() == 1 && pats[0].variant_name == "_" && pats[0].literal_val.empty()) {
-                write_ln("else {");
+            if (pats.size() == 1 && pats[0].variant_name == "_" && pats[0].literal_val.empty() && !pats[0].is_range) {
+                write_ln("if (!_matched) {");
                 ++indent_;
-                emit_arm(arm.body);
+                if (arm.guard) {
+                    write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                    ++indent_;
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                    --indent_;
+                    write_ln("}");
+                } else {
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                }
                 --indent_;
                 write_ln("}");
             } else {
                 std::string cond;
                 for (std::size_t pi = 0; pi < pats.size(); ++pi) {
                     if (pi > 0) cond += " || ";
-                    std::string pat = !pats[pi].literal_val.empty() ? pats[pi].literal_val : pats[pi].variant_name;
-                    cond += std::format("_target == {}", pat);
+                    if (pats[pi].is_range) {
+                        std::string op = pats[pi].range_inclusive ? "<=" : "<";
+                        cond += std::format("(_target >= {} && _target {} {})", pats[pi].range_start, op, pats[pi].range_end);
+                    } else {
+                        std::string pat = !pats[pi].literal_val.empty() ? pats[pi].literal_val : pats[pi].variant_name;
+                        cond += std::format("(_target == {})", pat);
+                    }
                 }
-                if (first) {
-                    write_ln(std::format("if ({}) {{", cond));
-                    first = false;
-                } else {
-                    write_ln(std::format("else if ({}) {{", cond));
-                }
+                write_ln(std::format("if (!_matched && ({})) {{", cond));
                 ++indent_;
-                emit_arm(arm.body);
+                if (arm.guard) {
+                    write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                    ++indent_;
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                    --indent_;
+                    write_ln("}");
+                } else {
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                }
                 --indent_;
                 write_ln("}");
             }
@@ -607,48 +798,76 @@ inline void Emitter::emit_match_common(
     }
 
     bool is_rvalue = is_move || (target && std::holds_alternative<CallExpr>(target->node));
-    std::string_view ret_arrow = is_expr ? " -> auto " : " ";
-    write_ln("std::visit(cfire::overloaded{");
+    write_ln(is_expr ? "([&]() -> auto {" : "{");
     ++indent_;
+    if (is_rvalue) {
+        write_ln(std::format("auto&& _target = {};", emit_expr(target)));
+    } else {
+        write_ln(std::format("const auto& _target = {};", emit_expr(target)));
+    }
+    write_ln("bool _matched = false;");
+
     for (const auto& arm : arms) {
         std::vector<MatchPattern> pats = arm.patterns.empty()
-            ? std::vector<MatchPattern>{MatchPattern{arm.enum_prefix, arm.variant_name, arm.bindings, arm.literal_val, arm.is_slice_pattern, arm.slice_head, arm.slice_rest, arm.slice_has_rest, arm.slice_tail, arm.line}}
+            ? std::vector<MatchPattern>{arm.to_pattern()}
             : arm.patterns;
         for (const auto& pat : pats) {
             if (pat.variant_name == "_") {
-                write_ln(std::format("[&]({}){}{{", is_rvalue ? "auto&&" : "const auto&", ret_arrow));
+                write_ln("if (!_matched) {");
+                ++indent_;
+                if (arm.guard) {
+                    write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                    ++indent_;
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                    --indent_;
+                    write_ln("}");
+                } else {
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                }
+                --indent_;
+                write_ln("}");
             } else {
-                if (is_rvalue) {
-                    write_ln(std::format("[&]({}::_{}&& _m){}{{", enum_name, pat.variant_name, ret_arrow));
-                } else {
-                    write_ln(std::format("[&](const {}::_{}& _m){}{{", enum_name, pat.variant_name, ret_arrow));
+                write_ln("if (!_matched) {");
+                ++indent_;
+                write_ln(std::format("if (auto* _p = std::get_if<{}::_{}>(&_target._v)) {{", enum_name, pat.variant_name));
+                ++indent_;
+                for (std::size_t i = 0; i < pat.bindings.size(); ++i) {
+                    if (pat.bindings[i] == "_") continue;
+                    local_vars_.insert(pat.bindings[i]);
+                    if (is_rvalue) {
+                        write_ln(std::format("auto&& {} = std::move(_p->_{});", pat.bindings[i], i));
+                    } else {
+                        write_ln(std::format("const auto& {} = _p->_{};", pat.bindings[i], i));
+                    }
                 }
-            }
-            ++indent_;
-            for (std::size_t i = 0; i < pat.bindings.size(); ++i) {
-                local_vars_.insert(pat.bindings[i]);
-                if (is_rvalue) {
-                    write_ln(std::format("auto&& {} = std::move(_m._{});", pat.bindings[i], i));
+                if (arm.guard) {
+                    write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
+                    ++indent_;
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
+                    --indent_;
+                    write_ln("}");
                 } else {
-                    write_ln(std::format("const auto& {} = _m._{};", pat.bindings[i], i));
+                    write_ln("_matched = true;");
+                    emit_arm(arm.body);
                 }
+                --indent_;
+                write_ln("}");
+                --indent_;
+                write_ln("}");
             }
-            emit_arm(arm.body);
-            --indent_;
-            write_ln("},");
         }
     }
+    if (is_expr) {
+        write_ln("cfire::assert_true(false, \"unreachable enum match\");");
+    }
     --indent_;
-    if (is_rvalue) {
-        std::string t_str = emit_expr(target);
-        if (t_str.starts_with("std::move(") && t_str.ends_with(")")) {
-            std::string inner = t_str.substr(10, t_str.size() - 11);
-            write_tail(std::format("}}, std::move({}._v))", inner));
-        } else {
-            write_tail(std::format("}}, std::move({}._v))", t_str));
-        }
+    if (is_expr) {
+        write_tail("})()");
     } else {
-        write_tail(std::format("}}, {}._v)", emit_expr(target)));
+        write_ln("}");
     }
 }
 

@@ -68,7 +68,12 @@ inline auto rasterize_font_cpu_only(
     font.baseSize = fontSize;
     font.glyphCount = (codepointCount > 0) ? codepointCount : 95;
     font.glyphPadding = 4;
+#if defined(RAYLIB_VERSION_MAJOR) && RAYLIB_VERSION_MAJOR >= 6
+    // raylib 6.x added a trailing `int *glyphCount` out-parameter.
+    font.glyphs = ::LoadFontData(fileData, dataSize, fontSize, codepoints, font.glyphCount, FONT_DEFAULT, &font.glyphCount);
+#else
     font.glyphs = ::LoadFontData(fileData, dataSize, fontSize, codepoints, font.glyphCount, FONT_DEFAULT);
+#endif
     if (font.glyphs != nullptr) {
         Image atlas = ::GenImageFontAtlas(font.glyphs, &font.recs, font.glyphCount, fontSize, font.glyphPadding, 0);
         font.texture.id = 1;
