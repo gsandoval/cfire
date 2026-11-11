@@ -23,7 +23,8 @@ namespace cfire::build {
     const std::filesystem::path& runtime_dir,
     const std::vector<std::string>& extra_includes = {}
 ) -> std::expected<void, std::string> {
-    auto gen_dir = cf_file.parent_path() / ".cfire" / "gen";
+    auto cf_parent = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
+    auto gen_dir = cf_parent / ".cfire" / "gen";
     std::error_code ec;
     std::filesystem::create_directories(gen_dir, ec);
     auto cpp_path = gen_dir / (cf_file.stem().string() + ".cpp");

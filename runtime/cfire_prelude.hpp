@@ -3,6 +3,16 @@
 // CFIRE_RUNTIME_VERSION: 0.11.0
 // CFIRE_RUNTIME_ARCHIVE_SHA: $Format:%h$
 
+#if defined(__clang__) && !defined(__apple_build_version__)
+#  if !defined(__cpp_concepts) || (__cpp_concepts < 202002L)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbuiltin-macro-redefined"
+#    undef __cpp_concepts
+#    define __cpp_concepts 202002L
+#    pragma clang diagnostic pop
+#  endif
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
