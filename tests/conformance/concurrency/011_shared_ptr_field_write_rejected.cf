@@ -1,0 +1,13 @@
+package main
+type Counter struct {
+    n: i64
+}
+fn main() {
+    c := make(shared[Counter], Counter{n: 0})
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            c.n += 1 //~ error cfire/SPAWN-SHARED-MUT
+        }
+    }
+    println("{}", c.n)
+}

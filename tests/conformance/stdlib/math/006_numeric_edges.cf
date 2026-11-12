@@ -1,0 +1,21 @@
+// expect: stdout
+// | none 1 -2147483648 2147483647 2 -1 0
+// | true 3 4 0.25 true 5
+package main
+import "core:math"
+fn main() {
+    lo := i32.MIN
+    a := lo.checked_abs()
+    b := (7).checked_div(0) or 1
+    c := lo.wrapping_neg()
+    d := lo.saturating_div(-1)
+    e := (-7).rem_euclid(3)
+    f := (-7).div_euclid(3).signum()
+    g := u8.MAX.checked_add(1) or 0
+    if a == none {
+        println("none {} {} {} {} {} {}", b, c, d, e, f, g)
+    }
+    nan := f64.NAN
+    h := nan.min(3.0)
+    println("{} {} {} {} {} {}", f64.INF.is_inf(), h, (16).count_ones() + 3, (8.25).fract(), (64).is_power_of_two(), math.gcd(15, 10))
+}

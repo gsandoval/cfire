@@ -1,0 +1,7 @@
+// expect: stdout
+// | ab
+package main
+fn main() {
+    s := "a" + "b"
+    println("{}", s)
+}

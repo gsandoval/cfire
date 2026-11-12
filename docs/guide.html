@@ -2188,7 +2188,7 @@ syncCfireThemeBtn();
       </ul>
         <a href="reference.html" class="sidebar-footer-card">
           <span class="sfc-title">Stdlib Reference</span>
-          <span class="sfc-badge">39 MODULES</span>
+          <span class="sfc-badge">37 MODULES</span>
         </a>
       </div>
     </div>
@@ -2526,10 +2526,10 @@ cfire lsp             # Starts the JSON-RPC 2.0 Language Server on stdio
   </div>
   <section class="guide-topic active-topic" id="topic-ch2-trying-ideas-instantly-with-cfire-eval" data-topic-id="ch2-trying-ideas-instantly-with-cfire-eval" data-topic-title="Trying Ideas Instantly with cfire eval" data-short-title="2.1 Live Eval">
 <h3 class="guide-heading" id="ch2-trying-ideas-instantly-with-cfire-eval"><span class="heading-hash">#</span><span class="heading-text">Trying Ideas Instantly with <code>cfire eval</code></span></h3>
-<p>Before creating a single file, you can test expressions, math, or standard library functions right from your terminal using <code>cfire eval</code>. It wraps your snippet in <code>package main</code>, detects module prefixes (<code>math.</code>, <code>str.</code>, <code>json.</code>, <code>fs.</code>, <code>time.</code>), and injects the matching <code>import</code> headers automatically:</p>
+<p>Before creating a single file, you can test expressions, math, or standard library functions right from your terminal using <code>cfire eval</code>. It wraps your snippet in <code>package main</code>, detects module prefixes (<code>math.</code>, <code>json.</code>, <code>fs.</code>, <code>time.</code>), and injects the matching <code>import</code> headers automatically:</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code># 1. Expression mode (-e): evaluates the expression and prints its result
-cfire eval -e &quot;2.0 * math.pi() * 10.0&quot;
+cfire eval -e &quot;2.0 * math.PI * 10.0&quot;
 # Output: 62.83185307179586
 
 # 2. Statement mode: executes semicolon- or newline-separated statements
@@ -2554,12 +2554,11 @@ cfire eval 'nums := [10, 20, 30]; println(&quot;count={} first={}&quot;, nums.le
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;core:str&quot;
 import &quot;core:time&quot;
 
 fn main() {
     started_ms := time.now_ms()
-    host := str.trim(&quot;  cfire-node-01  &quot;)
+    host := &quot;  cfire-node-01  &quot;.trim()
     println(&quot;[{}] node={} ready&quot;, started_ms, host)
 }
 </code></pre>
@@ -2571,7 +2570,7 @@ fn main() {
 <p>Notice a few details that shape daily code in <code>cfire</code>:</p>
 <ul>
   <li>Every <code>.cf</code> file starts with a <code>package</code> declaration (<code>package main</code> for executable entry points).</li>
-  <li>Standard library imports always carry their tier prefix (<code>import &quot;core:str&quot;</code>, <code>import &quot;core:time&quot;</code>). Their last path segment (<code>str</code>, <code>time</code>) becomes the namespace alias unless you rename it with <code>as</code>.</li>
+  <li>Standard library imports always carry their tier prefix (<code>import &quot;core:fs&quot;</code>, <code>import &quot;core:time&quot;</code>). Their last path segment (<code>fs</code>, <code>time</code>) becomes the namespace alias unless you rename it with <code>as</code>.</li>
   <li><code>started_ms := time.now_ms()</code> declares an <strong>immutable</strong> binding (<code>const std::int64_t</code> in C++23). If you try to reassign <code>started_ms</code> later, the compiler stops you with <code>CF3003</code>. When you actually want mutation, you opt in with <code>mut</code>.</li>
 </ul>
     <div class="chapter-pager topic-pager">
@@ -3025,7 +3024,7 @@ fn main() {
     items: []str = [&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;]
     mut joined := &quot;&quot;
     for item in items {
-        if !joined.empty() {
+        if !joined.is_empty() {
             joined = joined + &quot;,&quot;
         }
         joined = joined + item
@@ -3070,8 +3069,8 @@ fn main() {
       <tr><th>Syntax</th><th>Creation Expression</th><th>Ownership &amp; Mutation Semantics</th><th>Emitted ISO C++23 Type</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>own[T]</code></td><td><code>make[own[T]](val)</code></td><td>Unique RAII heap ownership; movable, never implicitly copied</td><td><code>std::unique_ptr&lt;T&gt;</code></td></tr>
-      <tr><td><code>shared[T]</code></td><td><code>make[shared[T]](val)</code></td><td>Atomic reference-counted shared heap ownership</td><td><code>std::shared_ptr&lt;T&gt;</code></td></tr>
+      <tr><td><code>own[T]</code></td><td><code>make(own[T], val)</code></td><td>Unique RAII heap ownership; movable, never implicitly copied</td><td><code>std::unique_ptr&lt;T&gt;</code></td></tr>
+      <tr><td><code>shared[T]</code></td><td><code>make(shared[T], val)</code></td><td>Atomic reference-counted shared heap ownership</td><td><code>std::shared_ptr&lt;T&gt;</code></td></tr>
       <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>&amp;x</code> / <code>&amp;mut x</code></td><td>Non-owning immutable or mutable borrow (<code>&amp;str</code> -&gt; <code>std::string_view</code>)</td><td><code>const T&amp;</code> / <code>T*</code></td></tr>
       <tr><td><code>*T</code></td><td><code>&amp;x</code> or foreign C pointer</td><td>Non-owning pointer; requires null check (<code>if p != none</code>) before deref</td><td><code>T*</code></td></tr>
       <tr><td><code>*mut T</code></td><td><code>&amp;mut x</code></td><td>Rebindable pointer to a mutable target; supports <code>*p = val</code> and <code>*p += 1</code></td><td><code>T*</code></td></tr>
@@ -3083,16 +3082,16 @@ fn main() {
 <pre><code>package main
 
 type Packet struct {
-    Sequence: i64
-    Payload:  str
+    sequence: i64
+    payload:  str
 }
 
 fn main() {
     // 1. Unique heap ownership (std::unique_ptr&lt;Packet&gt;)
-    unique_pkt := make[own[Packet]](Packet{Sequence: 1, Payload: &quot;SYN&quot;})
+    unique_pkt := make(own[Packet], Packet{sequence: 1, payload: &quot;SYN&quot;})
 
     // 2. Shared reference-counted ownership (std::shared_ptr&lt;Packet&gt;)
-    shared_pkt := make[shared[Packet]](Packet{Sequence: 2, Payload: &quot;ACK&quot;})
+    shared_pkt := make(shared[Packet], Packet{sequence: 2, payload: &quot;ACK&quot;})
     shared_clone := shared_pkt
 
     // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
@@ -3104,7 +3103,7 @@ fn main() {
     *cursor = 99
 
     println(&quot;seq1={} seq2={} a={} b={}&quot;,
-        unique_pkt.Sequence, shared_clone.Sequence, a, b)
+        unique_pkt.sequence, shared_clone.sequence, a, b)
 }
 </code></pre>
 <div class="terminal-tray">
@@ -3299,7 +3298,7 @@ fn main() {
       <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable twice in one call when at least one arg is <code>mut</code>.</td><td>Pass distinct variables (<code>transfer(mut a, mut b)</code>).</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading a variable after <code>move x</code> transferred ownership on an earlier path.</td><td>Read before <code>move x</code>, or pass by <code>mut</code> borrow.</td></tr>
       <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Reading a pointer/view (<code>&amp;x</code>, <code>.data()</code>, <code>.byte_ptr()</code>, <code>s[a..b]</code>) after <code>.push()</code>, <code>.clear()</code>, <code>move</code>, or reassignment mutated the owner.</td><td>Finish reading the view before mutating the container, or re-slice after <code>.push()</code>.</td></tr>
-      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Assigning the address of an inner-scope variable (<code>ptr = &amp;local</code>) to an outer pointer.</td><td>Keep the pointee in the outer scope or allocate with <code>make[own[T]](...)</code>.</td></tr>
+      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Assigning the address of an inner-scope variable (<code>ptr = &amp;local</code>) to an outer pointer.</td><td>Keep the pointee in the outer scope or allocate with <code>make(own[T], ...)</code>.</td></tr>
       <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Returning a pointer or view (<code>&amp;local</code>, <code>local.data()</code>) to stack-local storage.</td><td>Return an owned value (<code>T</code>, <code>str</code>, <code>[]T</code>) or <code>own[T]</code> instead.</td></tr>
       <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Mutating a collection (<code>.push()</code>, <code>.clear()</code>, <code>.remove()</code>, <code>move</code>) inside <code>for x in col</code>.</td><td>Collect mutations in a separate slice and apply them after the loop.</td></tr>
     </tbody>
@@ -3670,11 +3669,10 @@ fn main() {
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;core:str&quot;
 
 fn parse_port(raw: str) -&gt; u16! {
-    cleaned := str.trim(raw)
-    if cleaned.empty() {
+    cleaned := raw.trim()
+    if cleaned.is_empty() {
         return error(&quot;port string is empty&quot;)
     }
     if cleaned == &quot;8080&quot; {
@@ -3866,12 +3864,15 @@ fn main() {
       <tr><th>Module</th><th>Function / Method</th><th>Signature</th><th>What It Does</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>core:str</code></td><td><code>str.split</code> / <code>str.join</code></td><td><code>fn(s: str, sep: str) -&gt; []str</code> / <code>fn(items: []str, sep: str) -&gt; str</code></td><td>Splits <code>s</code> on delimiter <code>sep</code> or joins a slice of strings with <code>sep</code>.</td></tr>
-      <tr><td><code>core:str</code></td><td><code>str.trim</code> / <code>trim_left</code> / <code>trim_right</code></td><td><code>fn(s: str) -&gt; str</code></td><td>Strips leading and/or trailing ASCII whitespace (<code>' '</code>, <code>'\t'</code>, <code>'\n'</code>, <code>'\r'</code>).</td></tr>
-      <tr><td><code>core:str</code></td><td><code>str.replace</code></td><td><code>fn(s: str, from: str, to: str) -&gt; str</code></td><td>Replaces all occurrences of <code>from</code> in <code>s</code> with <code>to</code>.</td></tr>
-      <tr><td><code>core:str</code></td><td><code>str.starts_with</code> / <code>ends_with</code> / <code>contains</code></td><td><code>fn(s: str, pat: str) -&gt; bool</code></td><td>Prefix, suffix, and substring containment checks.</td></tr>
-      <tr><td><code>core:str</code></td><td><code>str.index_of</code> / <code>last_index_of</code></td><td><code>fn(s: str, sub: str) -&gt; i64</code></td><td>Returns the 0-based byte offset of <code>sub</code> in <code>s</code>, or <code>-1</code> if absent.</td></tr>
-      <tr><td><code>core:str</code></td><td><code>str.to_upper</code> / <code>to_lower</code> / <code>repeat</code></td><td><code>fn(s: str) -&gt; str</code> / <code>fn(s: str, count: usize) -&gt; str</code></td><td>ASCII case conversion and <code>count</code>-fold string repetition.</td></tr>
+      <tr><td>builtin</td><td><code>s.split(sep)</code> / <code>s.split_n(sep, n)</code> / <code>s.lines()</code> / <code>parts.join(sep)</code></td><td><code>fn(sep: &amp;str) -&gt; []str</code> / <code>fn(sep: &amp;str) -&gt; str</code></td><td>Splits <code>s</code> on <code>sep</code> (or on newlines) or joins a <code>[]str</code> with <code>sep</code>.</td></tr>
+      <tr><td>builtin</td><td><code>s.trim()</code> / <code>trim_start()</code> / <code>trim_end()</code></td><td><code>fn() -&gt; &amp;str</code></td><td>View without leading and/or trailing ASCII whitespace (<code>' '</code>, <code>'\t'</code>, <code>'\n'</code>, <code>'\r'</code>); loan-tracked like <code>s[a..b]</code>.</td></tr>
+      <tr><td>builtin</td><td><code>s.strip_prefix(p)</code> / <code>strip_suffix(p)</code></td><td><code>fn(p: &amp;str) -&gt; &amp;str?</code></td><td>View after the prefix / before the suffix, or <code>none</code> when it is absent.</td></tr>
+      <tr><td>builtin</td><td><code>s.replace(from, to)</code> / <code>replace_all(from, to)</code></td><td><code>fn(from: &amp;str, to: &amp;str) -&gt; str</code></td><td>Copy with the first / every occurrence of <code>from</code> replaced.</td></tr>
+      <tr><td>builtin</td><td><code>s.starts_with(p)</code> / <code>ends_with(p)</code> / <code>contains(p)</code></td><td><code>fn(p: &amp;str) -&gt; bool</code></td><td>Prefix, suffix, and substring containment checks.</td></tr>
+      <tr><td>builtin</td><td><code>s.index_of(sub)</code> / <code>last_index_of(sub)</code></td><td><code>fn(sub: &amp;str) -&gt; usize?</code></td><td>The 0-based byte offset of <code>sub</code>, or <code>none</code> when it is absent (Q8: no <code>-1</code> sentinels).</td></tr>
+      <tr><td>builtin</td><td><code>s.to_upper()</code> / <code>to_lower()</code> / <code>repeat(n)</code></td><td><code>fn() -&gt; str</code> / <code>fn(n: usize) -&gt; str</code></td><td>ASCII case conversion and <code>n</code>-fold repetition.</td></tr>
+      <tr><td>builtin</td><td><code>s.runes()</code> / <code>rune_count()</code></td><td><code>fn() -&gt; []u32</code> / <code>fn() -&gt; usize</code></td><td>Unicode code points (invalid UTF-8 decodes as U+FFFD).</td></tr>
+      <tr><td>builtin</td><td><code>i32.parse(s)</code> / <code>f64.parse(s)</code> / <code>bool.parse(s)</code></td><td><code>fn(s: str) -&gt; T?</code></td><td>Parses a whole literal of the target type; <code>none</code> on invalid or out-of-range input.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.is_valid_utf8</code> / <code>rune_count</code></td><td><code>fn(s: str) -&gt; bool</code> / <code>fn(s: str) -&gt; usize</code></td><td>Validates RFC 3629 UTF-8 byte sequences and counts Unicode codepoints.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.runes</code> / <code>encode_rune</code></td><td><code>fn(s: str) -&gt; []u32</code> / <code>fn(r: u32) -&gt; str</code></td><td>Decodes UTF-8 into 32-bit scalar values (<code>u32</code>) or encodes a codepoint to UTF-8.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.to_lower</code> / <code>to_upper</code></td><td><code>fn(s: str) -&gt; str</code></td><td>Full Unicode case folding across Latin, Greek, and Cyrillic scripts.</td></tr>
@@ -3886,13 +3887,12 @@ fn main() {
 <pre><code>package main
 
 import &quot;core:regex&quot;
-import &quot;core:str&quot;
 import &quot;core:unicode&quot;
 
 fn main() -&gt; void! {
     raw := &quot;  node_01, node_02, node_03  &quot;
-    parts := str.split(str.trim(raw), &quot;, &quot;)
-    joined := str.join(parts, &quot;|&quot;)
+    parts := raw.trim().split(&quot;, &quot;)
+    joined := parts.join(&quot;|&quot;)
 
     banner := &quot;cfire 🔥&quot;
     runes := unicode.runes(banner)
@@ -3977,7 +3977,7 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch8-generic-sets-priority-queues-deques-sorting" data-topic-id="ch8-generic-sets-priority-queues-deques-sorting" data-topic-title="Generic Sets, Priority Queues, Deques &amp; Sorting" data-short-title="8.3 Sets, Heaps &amp; Sort">
 <h3 class="guide-heading" id="ch8-generic-sets-priority-queues-deques-sorting"><span class="heading-hash">#</span><span class="heading-text">Generic Sets, Priority Queues, Deques &amp; Sorting</span></h3>
-<p>Beyond built-in slices (<code>[]T</code>) and hash maps (<code>map[K]V</code>), <code>core:collections</code> and <code>core:sort</code> give you generic hash sets, max-heap priority queues, double-ended ring queues, in-place sorting, and binary search:</p>
+<p>Beyond built-in slices (<code>[]T</code>) and hash maps (<code>map[K]V</code>), <code>core:collections</code> gives you generic hash sets, max-heap priority queues, and double-ended ring queues; sorting and searching are methods on the slice itself:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3988,9 +3988,11 @@ fn main() {
       <tr><td><code>core:collections</code></td><td><code>collections.Set[T]</code></td><td><code>.insert(v)</code>, <code>.contains(v) -&gt; bool</code>, <code>.remove(v)</code>, <code>.len() -&gt; usize</code>, <code>.clear()</code></td><td><code>std::unordered_set&lt;T&gt;</code></td></tr>
       <tr><td><code>core:collections</code></td><td><code>collections.PriorityQueue[T]</code></td><td><code>.push(v)</code>, <code>.top() -&gt; T</code>, <code>.pop() -&gt; T</code>, <code>.empty() -&gt; bool</code>, <code>.len() -&gt; usize</code></td><td><code>std::priority_queue&lt;T&gt;</code> (max-heap)</td></tr>
       <tr><td><code>core:collections</code></td><td><code>collections.Deque[T]</code></td><td><code>.push_front(v)</code>, <code>.push_back(v)</code>, <code>.pop_front() -&gt; T</code>, <code>.pop_back() -&gt; T</code>, <code>.len() -&gt; usize</code></td><td><code>std::deque&lt;T&gt;</code></td></tr>
-      <tr><td><code>core:sort</code></td><td><code>sort.slice(mut s)</code> / <code>sort.reverse(mut s)</code></td><td><code>fn[T](mut s: []T)</code> — sorts <code>s</code> ascending or reverses <code>s</code> in place</td><td><code>std::sort</code> / <code>std::reverse</code></td></tr>
-      <tr><td><code>core:sort</code></td><td><code>sort.slice_by(mut s, less)</code></td><td><code>fn[T](mut s: []T, less: fn(T, T) -&gt; bool)</code> — custom comparator sort</td><td><code>std::sort(s.begin(), s.end(), less)</code></td></tr>
-      <tr><td><code>core:sort</code></td><td><code>sort.is_sorted(s)</code> / <code>binary_search(s, val)</code></td><td><code>fn[T](s: []T) -&gt; bool</code> / <code>fn[T](s: []T, val: T) -&gt; i64?</code></td><td><code>std::is_sorted</code> / <code>std::lower_bound</code></td></tr>
+      <tr><td>builtin</td><td><code>xs.sort()</code> / <code>xs.reverse()</code></td><td>sorts <code>xs</code> ascending or reverses it in place (needs a <code>mut</code> binding)</td><td><code>std::sort</code> / <code>std::reverse</code></td></tr>
+      <tr><td>builtin</td><td><code>xs.sort_by(less)</code></td><td><code>fn(less: fn(T, T) -&gt; bool)</code> — custom comparator sort</td><td><code>std::sort(xs.begin(), xs.end(), less)</code></td></tr>
+      <tr><td>builtin</td><td><code>xs.is_sorted()</code> / <code>xs.binary_search(v)</code></td><td><code>fn() -&gt; bool</code> / <code>fn(v: T) -&gt; usize?</code></td><td><code>std::is_sorted</code> / <code>std::lower_bound</code></td></tr>
+      <tr><td>builtin</td><td><code>xs.contains(v)</code> / <code>index_of(v)</code> / <code>first()</code> / <code>last()</code></td><td><code>-&gt; bool</code> / <code>-&gt; usize?</code> / <code>-&gt; T?</code></td><td>linear search and safe ends</td></tr>
+      <tr><td>builtin</td><td><code>xs.insert(i, v)</code> / <code>remove(i)</code> / <code>swap_remove(i)</code> / <code>pop()</code> / <code>truncate(n)</code> / <code>extend(other)</code></td><td>mutators; out-of-range indices panic; every one invalidates loans</td><td><code>std::vector</code></td></tr>
     </tbody>
   </table>
 </div>
@@ -3998,12 +4000,11 @@ fn main() {
 <pre><code>package main
 
 import &quot;core:collections&quot;
-import &quot;core:sort&quot;
 
 fn main() {
     mut latencies: []i64 = [42, 7, 19, 88, 12]
-    sort.slice(mut latencies)
-    idx := sort.binary_search(latencies, 19) or -1
+    latencies.sort()
+    idx := latencies.binary_search(19) or -1
 
     mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
@@ -4076,7 +4077,7 @@ fn main() {
       <tr><td><code>core:os</code></td><td><code>os.getenv</code> / <code>os.setenv</code> / <code>os.cwd</code></td><td><code>fn(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td>Reads or sets process environment variables and queries the working directory.</td></tr>
       <tr><td><code>core:time</code></td><td><code>time.now_ms</code> / <code>now</code> / <code>parse_rfc3339</code> / <code>sleep_ms</code></td><td><code>fn() -&gt; i64</code> / <code>Time</code> / <code>Time!</code></td><td>Monotonic millisecond clock, wall-clock <code>Time</code> with <code>.format_rfc3339()</code>, and thread sleep.</td></tr>
       <tr><td><code>core:rand</code></td><td><code>rand.u64</code> / <code>range_i64</code> / <code>f64_unit</code> / <code>bytes</code></td><td><code>fn(n: usize) -&gt; []byte</code></td><td>Thread-local <code>MT19937_64</code> draws and OS-entropy CSPRNG byte slices (<code>rand.bytes</code>).</td></tr>
-      <tr><td><code>core:math</code></td><td><code>math.sqrt</code> / <code>sin</code> / <code>cos</code> / <code>pow</code> / <code>clamp_f64</code></td><td><code>fn(f64) -&gt; f64</code></td><td>IEEE-754 transcendental functions and numeric clamping.</td></tr>
+      <tr><td><code>core:math</code></td><td><code>math.PI</code> / <code>E</code> / <code>TAU</code> / <code>SQRT_2</code> and <code>math.atan2</code> / <code>hypot</code> / <code>gcd</code> / <code>lcm</code></td><td><code>f64</code> constants / multi-input functions</td><td>Constants and functions with no natural receiver; single-value math is a method (<code>x.sqrt()</code>, <code>x.sin()</code>, <code>x.clamp(lo, hi)</code>, <code>a.checked_add(b)</code>).</td></tr>
     </tbody>
   </table>
 </div>
@@ -4102,7 +4103,7 @@ fn main() -&gt; void! {
     token := rand.bytes(16)
     elapsed := time.now_ms() - t0
     println(&quot;has_host={} token_bytes={} hypot={:.1f} elapsed&gt;={}&quot;,
-        content.contains(&quot;host=&quot;), token.len(), math.sqrt(9.0 + 16.0), elapsed &gt;= 0)
+        content.contains(&quot;host=&quot;), token.len(), (9.0 + 16.0).sqrt(), elapsed &gt;= 0)
 }
 </code></pre>
 <div class="terminal-tray">
@@ -4133,12 +4134,11 @@ fn main() -&gt; void! {
 <pre><code>package main
 
 import &quot;core:os&quot;
-import &quot;core:str&quot;
 
 fn main() -&gt; void! {
     // Spawns /bin/echo directly via posix_spawnp — shell metacharacters are inert literals
     res := try os.command(&quot;echo&quot;, [&quot;hello; uname -a&quot;, &quot;safe-argv&quot;])
-    println(&quot;exit={} output={}&quot;, res.exit_code, str.trim(res.stdout))
+    println(&quot;exit={} output={}&quot;, res.exit_code, res.stdout.trim())
 }
 </code></pre>
 <div class="terminal-tray">
@@ -4286,7 +4286,7 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch10-communicating-across-workers-with-mpmc-channels-coresync" data-topic-id="ch10-communicating-across-workers-with-mpmc-channels-coresync" data-topic-title="Communicating Across Workers with MPMC Channels (core:sync)" data-short-title="10.2 MPMC Channels">
 <h3 class="guide-heading" id="ch10-communicating-across-workers-with-mpmc-channels-coresync"><span class="heading-hash">#</span><span class="heading-text">Communicating Across Workers with MPMC Channels (<code>core:sync</code>)</span></h3>
-<p>When workers need to stream items through a producer/consumer pipeline rather than write to fixed slice slots, use <code>sync.make_channel[T]()</code>. It provides a typed, thread-safe multi-producer / multi-consumer (<code>MPMC</code>) queue that integrates directly with <code>for item in ch</code> loops:</p>
+<p>When workers need to stream items through a producer/consumer pipeline rather than write to fixed slice slots, use <code>make(sync.Channel[T], capacity)</code>. It provides a typed, thread-safe multi-producer / multi-consumer (<code>MPMC</code>) queue that integrates directly with <code>for item in ch</code> loops:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -4294,7 +4294,7 @@ fn main() {
       <tr><th>Function / Method</th><th>Signature</th><th>Behavior</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>sync.make_channel[T]</code></td><td><code>fn make_channel[T]() -&gt; Channel[T]</code></td><td>Creates a thread-safe channel handle (copying the handle shares the underlying queue).</td></tr>
+      <tr><td><code>make(sync.Channel[T], cap)</code></td><td><code>-&gt; Channel[T]</code></td><td>Creates a thread-safe channel handle (copying the handle shares the underlying queue); <code>cap = 0</code> is unbuffered.</td></tr>
       <tr><td><code>ch.send(val)</code></td><td><code>fn (ch: Channel[T]) send(val: T)</code></td><td>Enqueues <code>val</code> and wakes one blocked receiver thread.</td></tr>
       <tr><td><code>ch.recv()</code></td><td><code>fn (ch: Channel[T]) recv() -&gt; T!</code></td><td>Blocks until an item is available, or returns an error when closed and drained.</td></tr>
       <tr><td><code>ch.recv_ctx(ctx)</code></td><td><code>fn (ch: Channel[T]) recv_ctx(ctx: Context) -&gt; T!</code></td><td>Blocks until an item arrives, the channel closes, or <code>ctx</code> is cancelled/times out.</td></tr>
@@ -4308,7 +4308,7 @@ fn main() {
 import &quot;core:sync&quot;
 
 fn main() {
-    ch := sync.make_channel[i64]()
+    ch := make(sync.Channel[i64])
     mut total: i64 = 0
 
     async.scope(workers: 1) |scope| {
@@ -4375,7 +4375,7 @@ fn main() {
     (ctx, cancel) := context.with_timeout(root, 50)
     defer cancel(&quot;cleanup&quot;)
 
-    ch := sync.make_channel[str]()
+    ch := make(sync.Channel[str])
 
     async.scope(workers: 2) |scope| {
         scope.spawn || {
@@ -4828,7 +4828,7 @@ cfire fix src/main.cf
   </section>
   <section class="guide-topic" id="topic-ch13-building-an-http-router-streaming-sse-corenethttp" data-topic-id="ch13-building-an-http-router-streaming-sse-corenethttp" data-topic-title="Building an HTTP Router &amp; Streaming SSE (core:net/http)" data-short-title="13.2 HTTP &amp; SSE">
 <h3 class="guide-heading" id="ch13-building-an-http-router-streaming-sse-corenethttp"><span class="heading-hash">#</span><span class="heading-text">Building an HTTP Router &amp; Streaming SSE (<code>core:net/http</code>)</span></h3>
-<p>Let's build an HTTP service with pre-dispatch middleware, parameterized routes (<code>/users/:id</code>), and a real-time Server-Sent Events (<code>/v1/stream</code>) endpoint. Notice how <code>router.dispatch(...)</code> lets you unit-test your entire routing table in memory before binding a live port via <code>http.make_server(0)</code>:</p>
+<p>Let's build an HTTP service with pre-dispatch middleware, parameterized routes (<code>/users/:id</code>), and a real-time Server-Sent Events (<code>/v1/stream</code>) endpoint. Notice how <code>router.dispatch(...)</code> lets you unit-test your entire routing table in memory before binding a live port via <code>make(http.Server, 0)</code>:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -4836,14 +4836,14 @@ cfire fix src/main.cf
       <tr><th>Function / Method</th><th>Signature</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>http.get</code> / <code>http.get_insecure</code></td><td><code>fn(url: str) -&gt; Response!</code></td><td>Sends an <code>HTTP GET</code> request over <code>http://</code> or <code>https://</code> (<code>get_insecure</code> skips self-signed cert verification).</td></tr>
+      <tr><td><code>http.get</code></td><td><code>fn(url: str, headers = {}, verify_peer: bool = true) -&gt; Response!</code></td><td>Sends an <code>HTTP GET</code> request over <code>http://</code> or <code>https://</code> (<code>verify_peer: false</code> accepts self-signed certificates).</td></tr>
       <tr><td><code>http.post</code> / <code>http.request</code></td><td><code>fn(url: str, body: str, ...) -&gt; Response!</code></td><td>Sends an <code>HTTP POST</code> or custom HTTP verb (<code>PUT</code>, <code>PATCH</code>, <code>DELETE</code>) with headers.</td></tr>
       <tr><td><code>http.post_sse</code></td><td><code>fn(url: str, body: str, headers: map[str]str, on_event: fn(SseEvent) -&gt; bool) -&gt; void!</code></td><td>Streams <code>text/event-stream</code> chunks in real time, invoking <code>on_event</code> for each frame until the stream ends or <code>on_event</code> returns <code>false</code>.</td></tr>
-      <tr><td><code>http.make_router()</code></td><td><code>fn() -&gt; Router</code></td><td>Constructs a pattern-matching router supporting static paths, <code>:param</code> segments, and <code>*</code> wildcards.</td></tr>
+      <tr><td><code>make(http.Router)</code></td><td><code>-&gt; Router</code></td><td>Constructs a pattern-matching router supporting static paths, <code>:param</code> segments, and <code>*</code> wildcards.</td></tr>
       <tr><td><code>router.get</code> / <code>post</code> / <code>put</code> / <code>delete_</code></td><td><code>fn(pattern: str, handler: fn(Request) -&gt; Response)</code></td><td>Registers a route handler for the specified HTTP method and path pattern.</td></tr>
       <tr><td><code>router.use</code></td><td><code>fn(middleware: fn(Request) -&gt; int)</code></td><td>Runs before route dispatch (<code>0</code> continues; non-zero HTTP status code short-circuits).</td></tr>
       <tr><td><code>router.dispatch</code></td><td><code>fn(req: Request) -&gt; Response</code></td><td>Executes middleware and route matching in memory without opening a network socket.</td></tr>
-      <tr><td><code>http.make_server</code> / <code>make_tls_server_pem</code></td><td><code>fn(port: int = 0) -&gt; Server!</code></td><td>Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (<code>0</code> picks an ephemeral port via <code>server.port()</code>).</td></tr>
+      <tr><td><code>make(http.Server, port)</code> / <code>make(http.Server, port, tls: http.TlsConfig{...})</code></td><td><code>-&gt; Server!</code></td><td>Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (<code>0</code> picks an ephemeral port via <code>server.port()</code>); <code>server.set_limits(http.ServerLimits{...})</code> tunes timeouts and sizes.</td></tr>
     </tbody>
   </table>
 </div>
@@ -4853,7 +4853,7 @@ cfire fix src/main.cf
 import &quot;core:net/http&quot;
 
 fn main() -&gt; void! {
-    mut router := http.make_router()
+    mut router := make(http.Router)
 
     // Middleware: return 0 to continue or an HTTP status code to halt dispatch
     router.use(|req: http.Request| -&gt; int {
@@ -4880,7 +4880,7 @@ fn main() -&gt; void! {
     println(&quot;In-memory status={}, body={}&quot;, synth.status, synth.body)
 
     // 2. Live loopback server on an ephemeral port
-    mut server := try http.make_server(0)
+    mut server := try make(http.Server, 0)
     defer server.stop()
     server.serve_in_background(router)
 
@@ -4942,7 +4942,7 @@ import &quot;core:net/tls&quot;
 import &quot;core:net/websocket&quot;
 
 fn main() -&gt; void! {
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.ws(&quot;/ws/echo&quot;, |req: http.Request, mut ws: websocket.WebSocket| {
         msg := ws.recv_text() or &quot;&quot;
         if msg != &quot;&quot; {
@@ -4951,7 +4951,7 @@ fn main() -&gt; void! {
         _ = ws.close()
     })
 
-    mut srv := try http.make_server(0)
+    mut srv := try make(http.Server, 0)
     defer srv.stop()
     srv.serve_in_background(router)
 
@@ -4963,15 +4963,15 @@ fn main() -&gt; void! {
 
     if tls.available() {
         pem := try tls.generate_self_signed_pem(&quot;localhost&quot;)
-        mut tls_router := http.make_router()
+        mut tls_router := make(http.Router)
         tls_router.get(&quot;/secure&quot;, |req: http.Request| -&gt; http.Response {
             return http.Response.text(200, &quot;TLS-1.3-OK&quot;)
         })
-        mut tls_srv := try http.make_tls_server_pem(0, pem.cert_pem, pem.key_pem)
+        mut tls_srv := try make(http.Server, 0, tls: http.TlsConfig{cert_pem: pem.cert_pem, key_pem: pem.key_pem})
         defer tls_srv.stop()
         tls_srv.serve_in_background(tls_router)
 
-        sec := try http.get_insecure(&quot;https://127.0.0.1:{tls_srv.port()}/secure&quot;)
+        sec := try http.get(&quot;https://127.0.0.1:{tls_srv.port()}/secure&quot;, verify_peer: false)
         println(&quot;HTTPS status={}, body={}&quot;, sec.status, sec.body)
     }
 }
@@ -5621,22 +5621,22 @@ fn main() -&gt; void! {
   </section>
   <section class="guide-topic" id="topic-ch17-building-model-context-protocol-mcpserver-tools" data-topic-id="ch17-building-model-context-protocol-mcpserver-tools" data-topic-title="Building Model Context Protocol (McpServer) Tools" data-short-title="17.4 MCP Servers">
 <h3 class="guide-heading" id="ch17-building-model-context-protocol-mcpserver-tools"><span class="heading-hash">#</span><span class="heading-text">Building Model Context Protocol (<code>McpServer</code>) Tools</span></h3>
-<p>Want to expose your <code>cfire</code> functions as tools inside Claude Desktop, Cursor, or another MCP host? <code>ai.make_mcp_server(name, version)</code> and <code>mcp.register_tool[T](...)</code> wire up schema validation and JSON-RPC 2.0 dispatch in a few lines:</p>
+<p>Want to expose your <code>cfire</code> functions as tools inside Claude Desktop, Cursor, or another MCP host? <code>make(ai.McpServer, name, version)</code> and <code>mcp.register_tool[T](...)</code> wire up schema validation and JSON-RPC 2.0 dispatch in a few lines:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
 import &quot;ext:ai&quot; as ai
 
 type SearchArgs struct {
-    Query: str `json:&quot;query&quot; desc:&quot;Search phrase&quot;`
-    Limit: i64 `json:&quot;limit&quot; desc:&quot;Maximum results to return&quot;`
+    query: str `json:&quot;query&quot; desc:&quot;Search phrase&quot;`
+    limit: i64 `json:&quot;limit&quot; desc:&quot;Maximum results to return&quot;`
 }
 
 fn main() {
-    mut mcp := ai.make_mcp_server(&quot;cfire-kb-server&quot;, &quot;1.0.0&quot;)
+    mut mcp := make(ai.McpServer, &quot;cfire-kb-server&quot;, &quot;1.0.0&quot;)
 
     mcp.register_tool[SearchArgs](&quot;search_kb&quot;, &quot;Searches the internal knowledge base&quot;, |args: SearchArgs| -&gt; str! {
-        return &quot;[{{\&quot;query\&quot;:\&quot;{args.Query}\&quot;,\&quot;limit\&quot;:{args.Limit}}}]&quot;
+        return &quot;[{{\&quot;query\&quot;:\&quot;{args.query}\&quot;,\&quot;limit\&quot;:{args.limit}}}]&quot;
     })
 
     // Test JSON-RPC 2.0 dispatch in memory (call mcp.serve_stdio() in production)
@@ -5663,20 +5663,20 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" data-topic-id="ch17-multi-turn-agent-loops-self-correcting-validation-aiagent" data-topic-title="Multi-Turn Agent Loops &amp; Self-Correcting Validation (ai.Agent)" data-short-title="17.5 Multi-Turn Agent Loops..">
 <h3 class="guide-heading" id="ch17-multi-turn-agent-loops-self-correcting-validation-aiagent"><span class="heading-hash">#</span><span class="heading-text">Multi-Turn Agent Loops &amp; Self-Correcting Validation (<code>ai.Agent</code>)</span></h3>
-<p>Inspired by Pydantic AI, <code>ai.make_agent(client, model, system_prompt)</code> orchestrates multi-turn tool calls, shares tool registries with <code>ai.McpServer</code> via <code>agent.use_mcp(mcp)</code>, and automatically feeds <code>validate:&quot;...&quot;</code> or custom validator errors back to the model to self-correct (<code>run_struct[Out]</code>, <code>run_struct_validated[Out]</code>):</p>
+<p>Inspired by Pydantic AI, <code>make(ai.Agent, client, model, system_prompt)</code> orchestrates multi-turn tool calls, shares tool registries with <code>ai.McpServer</code> via <code>agent.use_mcp(mcp)</code>, and automatically feeds <code>validate:&quot;...&quot;</code> or custom validator errors back to the model to self-correct (<code>run_struct[Out]</code>, <code>run_struct_validated[Out]</code>):</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
 import &quot;ext:ai&quot; as ai
 
 type MetricArgs struct {
-    Service: str `json:&quot;service&quot; validate:&quot;non_empty&quot;`
+    service: str `json:&quot;service&quot; validate:&quot;non_empty&quot;`
 }
 
 type HealthReport struct {
-    Service:  str `json:&quot;service&quot;  validate:&quot;non_empty&quot;`
-    Severity: i64 `json:&quot;severity&quot; validate:&quot;min=1,max=5&quot;`
-    Env:      str `json:&quot;env&quot;      validate:&quot;oneof=dev|staging|prod&quot;`
+    service:  str `json:&quot;service&quot;  validate:&quot;non_empty&quot;`
+    severity: i64 `json:&quot;severity&quot; validate:&quot;min=1,max=5&quot;`
+    env:      str `json:&quot;env&quot;      validate:&quot;oneof=dev|staging|prod&quot;`
 }
 
 fn main() -&gt; void! {
@@ -5698,13 +5698,13 @@ fn main() -&gt; void! {
         return ai.ChatResponse{text: &quot;{\&quot;service\&quot;:\&quot;billing\&quot;,\&quot;severity\&quot;:2,\&quot;env\&quot;:\&quot;prod\&quot;}&quot;}
     })
 
-    mut agent := ai.make_agent(client, &quot;mock-model&quot;, &quot;You are an SRE assistant.&quot;)
+    mut agent := make(ai.Agent, client, &quot;mock-model&quot;, &quot;You are an SRE assistant.&quot;)
     agent.register_tool[MetricArgs](&quot;fetch_metrics&quot;, &quot;Fetches service telemetry&quot;, |args: MetricArgs| -&gt; str! {
-        return &quot;p99=420ms for {args.Service}&quot;
+        return &quot;p99=420ms for {args.service}&quot;
     })
 
     report := try agent.run_struct[HealthReport](&quot;Assess billing service health&quot;)
-    println(&quot;Agent report: service={}, severity={}, env={}, steps={}&quot;, report.Service, report.Severity, report.Env, step)
+    println(&quot;Agent report: service={}, severity={}, env={}, steps={}&quot;, report.service, report.severity, report.env, step)
 }
 </code></pre>
 <div class="terminal-tray">
@@ -5812,35 +5812,35 @@ console.log(mix.peak_pct, mix.status); // 83.75, &quot;ACTIVE&quot;
 import &quot;ext:webui&quot;
 
 type TrackMix struct {
-    Channel: i64  `json:&quot;channel&quot;`
-    Name:    str  `json:&quot;name&quot;`
-    GainDb:  f64  `json:&quot;gain_db&quot;`
-    Muted:   bool `json:&quot;muted&quot;`
+    channel: i64  `json:&quot;channel&quot;`
+    name:    str  `json:&quot;name&quot;`
+    gain_db:  f64  `json:&quot;gain_db&quot;`
+    muted:   bool `json:&quot;muted&quot;`
 }
 
 type MixResult struct {
-    Channel: i64  `json:&quot;channel&quot;`
-    PeakPct: f64  `json:&quot;peak_pct&quot;`
-    Clipped: bool `json:&quot;clipped&quot;`
-    Status:  str  `json:&quot;status&quot;`
+    channel: i64  `json:&quot;channel&quot;`
+    peak_pct: f64  `json:&quot;peak_pct&quot;`
+    clipped: bool `json:&quot;clipped&quot;`
+    status:  str  `json:&quot;status&quot;`
 }
 
 fn main() -&gt; void! {
-    mut app := webui.new_app(&quot;cfire Studio&quot;, 1024, 680)
+    mut app := make(webui.App, &quot;cfire Studio&quot;, 1024, 680)
 
     // 1. Typed struct-in -&gt; struct-out RPC binding
     app.bind[TrackMix](&quot;update_track&quot;) |req| {
-        mut peak := 75.0 + req.GainDb * 2.5
+        mut peak := 75.0 + req.gain_db * 2.5
         mut label := &quot;ACTIVE&quot;
-        if req.Muted {
+        if req.muted {
             peak = 0.0
             label = &quot;MUTED&quot;
         }
         return MixResult{
-            Channel: req.Channel,
-            PeakPct: peak,
-            Clipped: peak &gt;= 100.0,
-            Status:  label,
+            channel: req.channel,
+            peak_pct: peak,
+            clipped: peak &gt;= 100.0,
+            status:  label,
         }
     }
 
@@ -5891,17 +5891,17 @@ fn main() -&gt; void! {
 import &quot;ext:webui&quot;
 
 type TransportEvent struct {
-    Playing: bool `json:&quot;playing&quot;`
-    Bpm:     i64  `json:&quot;bpm&quot;`
+    playing: bool `json:&quot;playing&quot;`
+    bpm:     i64  `json:&quot;bpm&quot;`
 }
 
 fn main() {
-    mut app := webui.new_app(&quot;Event Bus Demo&quot;, 800, 600)
+    mut app := make(webui.App, &quot;Event Bus Demo&quot;, 800, 600)
 
     // Listen for events emitted from JavaScript via window.runtime.EventsEmit(&quot;transport:toggle&quot;, ...)
     app.on(&quot;transport:toggle&quot;) |payload| {
         app.set_state(&quot;transport&quot;, payload)
-        app.emit(&quot;transport:ack&quot;, TransportEvent{ Playing: true, Bpm: 128 })
+        app.emit(&quot;transport:ack&quot;, TransportEvent{ playing: true, bpm: 128 })
     }
 
     // Simulate an incoming frontend event in headless mode
@@ -5972,13 +5972,13 @@ fn main() {
 import &quot;ext:webui&quot;
 
 type EchoReq struct {
-    Text: str `json:&quot;text&quot;`
+    text: str `json:&quot;text&quot;`
 }
 
 fn main() -&gt; void! {
-    mut app := webui.new_app(&quot;WebView Test Runner&quot;, 640, 480)
+    mut app := make(webui.App, &quot;WebView Test Runner&quot;, 640, 480)
     app.bind[EchoReq](&quot;upper_echo&quot;) |req| {
-        return &quot;{\&quot;reply\&quot;:\&quot;&quot; + req.Text + &quot;!\&quot;}&quot;
+        return &quot;{\&quot;reply\&quot;:\&quot;&quot; + req.text + &quot;!\&quot;}&quot;
     }
     app.set_html(`&lt;!doctype html&gt;&lt;html&gt;&lt;body&gt;&lt;script&gt;
         (async () =&gt; {
@@ -6053,16 +6053,15 @@ import &quot;ext:ai&quot; as ai
 import &quot;ext:db/sqlite&quot; as sqlite
 import &quot;core:json&quot; as json
 import &quot;core:net/http&quot; as http
-import &quot;core:str&quot; as str
 
 type SearchRequest struct {
-    Query: str `json:&quot;query&quot;`
-    TopK:  i64 `json:&quot;top_k&quot;`
+    query: str `json:&quot;query&quot;`
+    top_k:  i64 `json:&quot;top_k&quot;`
 }
 
 type SearchResult struct {
-    Title: str `sql:&quot;title&quot; json:&quot;title&quot;`
-    Score: f64 `sql:&quot;score&quot; json:&quot;score&quot;`
+    title: str `sql:&quot;title&quot; json:&quot;title&quot;`
+    score: f64 `sql:&quot;score&quot; json:&quot;score&quot;`
 }
 
 fn main() -&gt; void! {
@@ -6078,19 +6077,19 @@ fn main() -&gt; void! {
     ]
     client := ai.local()
     for d in docs {
-        parts := str.split(d, &quot;: &quot;)
+        parts := d.split(&quot;: &quot;)
         vec   := try client.embed(d)
         try db.exec(&quot;INSERT INTO kb VALUES (?1, ?2, ?3)&quot;, parts[0], d, vec)
     }
 
     // 2. Attach an HTTP JSON endpoint querying SQLite SIMD vector similarity
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.post(&quot;/v1/search&quot;, |req: http.Request| -&gt; http.Response {
         q := json.parse[SearchRequest](req.body) or { return http.Response.json(400, &quot;{\&quot;error\&quot;:\&quot;invalid JSON\&quot;}&quot;) }
-        qvec := client.embed(q.Query) or { return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;embed failed\&quot;}&quot;) }
+        qvec := client.embed(q.query) or { return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;embed failed\&quot;}&quot;) }
         hits := db.query[SearchResult](
             &quot;SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM kb ORDER BY score DESC LIMIT ?2&quot;,
-            qvec, q.TopK
+            qvec, q.top_k
         ) or { return http.Response.json(500, &quot;{\&quot;error\&quot;:\&quot;query failed\&quot;}&quot;) }
         return http.Response.json(200, json.stringify(hits))
     })
@@ -6102,7 +6101,7 @@ fn main() -&gt; void! {
         body:   &quot;{\&quot;query\&quot;:\&quot;64 stereo voices mixer\&quot;,\&quot;top_k\&quot;:1}&quot;
     })
     parsed := try json.parse[[]SearchResult](res.body)
-    println(&quot;HTTP {} -&gt; top hit: '{}'&quot;, res.status, parsed[0].Title)
+    println(&quot;HTTP {} -&gt; top hit: '{}'&quot;, res.status, parsed[0].title)
 }
 </code></pre>
 <div class="terminal-tray">
@@ -6142,7 +6141,7 @@ fn main() -&gt; void! {
     msgs   := try sqs.ReceiveMessages(q_url, 1)
 
     println(&quot;s3_etag_ok={} body={} sqs_msg={} received={}&quot;,
-        !etag.empty(), obj.Body, !msg_id.empty(), msgs.len())
+        !etag.is_empty(), obj.Body, !msg_id.is_empty(), msgs.len())
 }
 </code></pre>
 <div class="terminal-tray">
@@ -6185,7 +6184,7 @@ fn main() -&gt; void! {
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/12-raygui-controls"><code>examples/12-raygui-controls</code></a></td><td>Raygui GUI Kit</td><td>Immediate-mode controls (<code>vendor:raygui</code>): checkboxes, sliders, progress bars, combo boxes, <code>&amp;mut str</code> text boxes</td><td><code>cfire run examples/12-raygui-controls/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/13-ios-native-ui"><code>examples/13-ios-native-ui</code></a></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit (<code>examples/13-ios-native-ui/ui/kit.cf</code>), safe-area insets, real-time <code>core:audio</code> metering (<code>--ios</code>, <code>--web</code>, desktop)</td><td><code>cfire run --ios examples/13-ios-native-ui/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>ai.make_mcp_server</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
+      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>make(ai.McpServer, ...)</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>core:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
       <tr><td><a href="file:///Users/memo/Programming/cfire/examples/17-webui-studio"><code>examples/17-webui-studio</code></a></td><td>Hybrid WebUI Studio</td><td>Wails/Tauri-style native WebView (<code>ext:webui</code>), typed <code>app.bind[T]</code> JSON-RPC 2.0, <code>window.backend</code> ES6 Proxy, <code>app://localhost/</code> VFS, offscreen <code>WKWebView</code> test (<code>--ios</code> &amp; desktop)</td><td><code>cfire run examples/17-webui-studio/main.cf</code></td></tr>
     </tbody>
@@ -6215,7 +6214,7 @@ fn main() -&gt; void! {
       </a>
       <a href="reference.html" class="pager-card pager-next">
         <span class="pager-label">NEXT &rarr;</span>
-        <strong class="pager-title">Stdlib Reference (39 Modules)</strong>
+        <strong class="pager-title">Stdlib Reference (37 Modules)</strong>
       </a>
     </div>
   </section>
@@ -6226,7 +6225,7 @@ fn main() -&gt; void! {
     </a>
     <a href="reference.html" class="pager-card pager-next">
       <span class="pager-label">NEXT &rarr;</span>
-      <strong class="pager-title">Stdlib Reference (39 Modules)</strong>
+      <strong class="pager-title">Stdlib Reference (37 Modules)</strong>
     </a>
   </div>
 </article>
@@ -6422,7 +6421,7 @@ fn main() -&gt; void! {
   <div class="toc-quick-links">
     <div class="toc-header">QUICK LINKS</div>
     <ul class="toc-list">
-      <li><a href="reference.html">Stdlib Catalog (39 Modules) &rarr;</a></li>
+      <li><a href="reference.html">Stdlib Catalog (37 Modules) &rarr;</a></li>
       <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
       <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
       <li><a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub Repository &rarr;</a></li>

@@ -1,0 +1,6 @@
+package main
+fn main() {
+    xs: []i64 = [1, 2, 3]
+    i := 7
+    println("{}", xs[i]) //~ panic "index out of bounds"
+}

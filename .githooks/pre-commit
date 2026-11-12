@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # .githooks/pre-commit — Automatically keeps VERSION, src/version.hpp, runtime stamps, and docs in sync on commit
 set -e
 
@@ -26,8 +26,32 @@ make -s build
 
 if ! ./cfire doc --check >/dev/null 2>&1; then
     echo "==> [pre-commit] Synchronizing documentation and version manifests via ./cfire doc..."
+    SYNC_PATHS="VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/"
+    # Stage only what `cfire doc` regenerates (CF-159). If a generated file also has unstaged
+    # hand edits, staging it would silently commit work the author did not stage, so stop instead.
+    BEFORE="$(git diff --name-only -- $SYNC_PATHS | sort)"
+    BEFORE_HASHES="$(for f in $BEFORE; do [ -f "$f" ] && git hash-object "$f"; done)"
+    UNTRACKED_BEFORE="$(git ls-files --others --exclude-standard -- $SYNC_PATHS | sort)"
     ./cfire doc
-    git add VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/
+    AFTER="$(git diff --name-only -- $SYNC_PATHS | sort)"
+    UNTRACKED_AFTER="$(git ls-files --others --exclude-standard -- $SYNC_PATHS | sort)"
+    NEW_FILES="$(comm -13 <(printf "%s\n" "$UNTRACKED_BEFORE") <(printf "%s\n" "$UNTRACKED_AFTER"))"
+    CONFLICTS=""
+    i=0
+    for f in $BEFORE; do
+        i=$((i + 1))
+        old_hash="$(printf "%s\n" "$BEFORE_HASHES" | sed -n "${i}p")"
+        [ -f "$f" ] && [ "$(git hash-object "$f")" != "$old_hash" ] && CONFLICTS="$CONFLICTS $f"
+    done
+    if [ -n "$CONFLICTS" ]; then
+        echo "==> [pre-commit] cfire doc regenerated files that also have unstaged edits:$CONFLICTS" >&2
+        echo "    Review them, stage what you intend to commit (git add -p), and commit again." >&2
+        exit 1
+    fi
+    REGENERATED="$(comm -13 <(printf "%s\n" "$BEFORE") <(printf "%s\n" "$AFTER"))"
+    for f in $REGENERATED $NEW_FILES; do
+        [ -n "$f" ] && git add -- "$f" && echo "    staged regenerated $f"
+    done
     ./cfire doc --check
 fi
 

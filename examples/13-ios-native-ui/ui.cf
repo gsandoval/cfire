@@ -1,7 +1,6 @@
 package main
 
 import "core:math"
-import "core:str"
 import "core:unicode"
 import "vendor:raylib" as rl
 
@@ -271,7 +270,7 @@ fn (mut c: Context) slider_row(label: str, mut value: f32, min_val: f32, max_val
     row := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: row_h}
     mut changed := false
 
-    value = f32(math.clamp_f64(f64(value), f64(min_val), f64(max_val)))
+    value = f32(f64(value).clamp(f64(min_val), f64(max_val)))
     track := rl.Rectangle{x: row.x + 14.0, y: row.y + 38.0, width: row.width - 28.0, height: 6.0}
     touch_zone := rl.Rectangle{x: row.x + 8.0, y: row.y + 24.0, width: row.width - 16.0, height: 30.0}
 
@@ -284,7 +283,7 @@ fn (mut c: Context) slider_row(label: str, mut value: f32, min_val: f32, max_val
                 tw_safe = 1.0
             }
             raw_ratio := f64(mp.x - track.x) / f64(tw_safe)
-            ratio := f32(math.clamp_f64(raw_ratio, 0.0, 1.0))
+            ratio := f32(raw_ratio.clamp(0.0, 1.0))
             value = min_val + ratio * (max_val - min_val)
             changed = true
         }
@@ -304,7 +303,7 @@ fn (mut c: Context) slider_row(label: str, mut value: f32, min_val: f32, max_val
         rl.DrawRectangleRounded(track, 1.0, 6, c.theme.tertiary)
         mut pct: f32 = 0.0
         if max_val > min_val {
-            pct = f32(math.clamp_f64(f64(value - min_val) / f64(max_val - min_val), 0.0, 1.0))
+            pct = f32((f64(value - min_val) / f64(max_val - min_val)).clamp(0.0, 1.0))
         }
         fill_w := track.width * pct
         if fill_w > 2.0 {
@@ -324,7 +323,7 @@ fn (mut c: Context) slider_row(label: str, mut value: f32, min_val: f32, max_val
 }
 
 fn (mut c: Context) segmented_row(label: str, options: str, mut active: i32) -> i32 {
-    items := str.split(options, ";")
+    items := options.split(";")
     n := i32(items.len())
     has_label := label.len() > 0
     mut row_h: f32 = 44.0
@@ -334,7 +333,7 @@ fn (mut c: Context) segmented_row(label: str, options: str, mut active: i32) -> 
     row := rl.Rectangle{x: c.margin_x, y: c.cursor_y, width: c.content_w, height: row_h}
 
     if n > 0 {
-        active = i32(math.clamp_i64(i64(active), 0, i64(n - 1)))
+        active = i32(i64(active).clamp(0, i64(n - 1)))
     }
 
     if rl.IsWindowReady() && n > 0 {
@@ -415,7 +414,7 @@ fn (mut c: Context) text_field_row(label: str, mut text: str, max_len: i32) -> b
         rl.DrawRectangleRounded(box, 0.3, 6, c.theme.tertiary)
         mut disp := text
         if is_focused {
-            rl.DrawRectangleRoundedLines(box, 0.3, 6, 1.5, c.theme.blue)
+            rl.DrawRectangleRoundedLinesEx(box, 0.3, 6, 1.5, c.theme.blue)
             rl.RequestKeyboard()
 
             mut key := rl.GetCharPressed()
@@ -485,10 +484,10 @@ fn (mut c: Context) button(label: str, destructive: bool) -> bool {
 }
 
 fn (mut c: Context) tab_bar(tabs: str, mut active: i32) -> i32 {
-    items := str.split(tabs, ";")
+    items := tabs.split(";")
     n := i32(items.len())
     if n > 0 {
-        active = i32(math.clamp_i64(i64(active), 0, i64(n - 1)))
+        active = i32(i64(active).clamp(0, i64(n - 1)))
     }
     if !rl.IsWindowReady() || n <= 0 {
         return active

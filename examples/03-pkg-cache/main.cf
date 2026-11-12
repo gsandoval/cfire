@@ -5,9 +5,9 @@ import "ext:db/sqlite"
 import "core:crypto/blake3"
 
 type PackageMeta struct {
-    Name:    str `json:"name"    db:"name"`
-    Version: str `json:"version" db:"version"`
-    Size:    u64 `json:"size"    db:"size"`
+    name:    str `json:"name"    db:"name"`
+    version: str `json:"version" db:"version"`
+    size:    u64 `json:"size"    db:"size"`
 }
 
 fn ingest_manifest(mut db: sqlite.Conn, payload: str) -> PackageMeta! {
@@ -17,7 +17,7 @@ fn ingest_manifest(mut db: sqlite.Conn, payload: str) -> PackageMeta! {
     try db.tx |tx| {
         try tx.exec(
             "INSERT INTO pkgs (name, version, size, hash) VALUES (?1, ?2, ?3, ?4)",
-            meta.Name, meta.Version, meta.Size, hash,
+            meta.name, meta.version, meta.size, hash,
         )
     }
     return meta
@@ -31,5 +31,5 @@ fn main() -> void! {
     pkg := try ingest_manifest(mut db, sample)
 
     rows := try db.query[PackageMeta]("SELECT name, version, size FROM pkgs")
-    println("Indexed {}@{} (rows={}, size={})", pkg.Name, pkg.Version, rows.len, rows[0].Size)
+    println("Indexed {}@{} (rows={}, size={})", pkg.name, pkg.version, rows.len(), rows[0].size)
 }

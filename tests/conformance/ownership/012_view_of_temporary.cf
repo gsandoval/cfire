@@ -1,0 +1,8 @@
+package main
+fn make() -> str {
+    return "hello world, this is a long heap string"
+}
+fn main() {
+    v := make()[0..5] //~ error cfire/DANGLING-TEMPORARY
+    println("{}", v)
+}

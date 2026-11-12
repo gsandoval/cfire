@@ -466,9 +466,8 @@ namespace cfire::build {
                     for (const auto& cache_raylib_wasm : {
                         get_package_cache_root() / "vendor_raylib_wasm",
                         std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "") / ".cache" / "cfire" / "pkg" / "vendor_raylib_wasm",
-                        std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "") / ".cfire" / "cache" / "pkg" / "vendor_raylib_wasm",
-                        std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib_wasm")
-                    }) {
+                        std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "") / ".cfire" / "cache" / "pkg" / "vendor_raylib_wasm"
+                    }) {  // never a shared /tmp location: another user could plant a library there (CF-153)
                         if (std::filesystem::exists(cache_raylib_wasm / "include" / "raylib.h")) {
                             plan.cflags.push_back("-I" + (cache_raylib_wasm / "include").string());
                             if (std::filesystem::exists(cache_raylib_wasm / "lib" / "libraylib.a")) {
@@ -495,8 +494,7 @@ namespace cfire::build {
                                 break;
                             }
                         }
-                        for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib",
-                                                         std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib")}) {
+                        for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib"}) {
                             if (std::filesystem::exists(cache_raylib / "include" / "raylib.h")) {
                                 plan.cflags.push_back("-I" + (cache_raylib / "include").string());
                                 break;
@@ -608,8 +606,7 @@ namespace cfire::build {
                     }
                 }
                 if (!found_raylib) {
-                    for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib",
-                                                     std::filesystem::path("/tmp/cfire_cache/pkg/vendor_raylib")}) {
+                    for (const auto& cache_raylib : {get_package_cache_root() / "vendor_raylib"}) {
                         if (is_readable(cache_raylib / "include" / "raylib.h") &&
                             is_readable(cache_raylib / "include" / "raymath.h") &&
                             is_readable(cache_raylib / "lib" / "libraylib.a")) {
@@ -976,7 +973,7 @@ namespace cfire::build {
     }
 
     std::string opt_flags = sanitize
-        ? "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
+        ? sanitizer_opt_flags()
         : (g_debug_mode ? "-O0 -g" : "-O2");
     // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
     bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();

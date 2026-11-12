@@ -1,0 +1,16 @@
+package main
+type Sized interface {
+    fn size() -> i64
+}
+type Box struct {
+    n: i32
+}
+fn (b: Box) size() -> str {
+    return "big"
+}
+fn total[T: Sized](x: T) -> i64 {
+    return x.size()
+}
+fn main() {
+    println("{}", total(Box{n: 1})) //~ error cfire/UNSATISFIED-CONSTRAINT
+}

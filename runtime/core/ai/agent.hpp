@@ -125,7 +125,15 @@ public:
             }
             for (const auto& t : tools_) {
                 if (t.spec.name == tname->as_str()) {
-                    auto res = t.handler(args_str);
+                    // Exception barrier (CF-140): a throwing tool reports isError instead of killing the server.
+                    std::expected<std::string, cfire::Error> res;
+                    try {
+                        res = t.handler(args_str);
+                    } catch (const std::exception& e) {
+                        res = std::unexpected(cfire::Error(std::format("internal error in tool '{}': {}", t.spec.name, e.what())));
+                    } catch (...) {
+                        res = std::unexpected(cfire::Error(std::format("internal error in tool '{}': unknown exception", t.spec.name)));
+                    }
                     if (!res) {
                         return std::format(
                             R"({{"jsonrpc":"2.0","id":{},"result":{{"content":[{{"type":"text","text":"{}"}}],"isError":true}}}})",

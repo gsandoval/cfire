@@ -1426,8 +1426,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
 [[nodiscard]] inline auto generate_reference_markdown() -> std::string {
     std::string out = "# `cfire` Standard Library (`core:*`) & Diagnostics Reference\n\n";
     out += "> Auto-generated from the compiler's single-source-of-truth catalog via `./cfire doc`.\n\n";
-    out += "## 1. Built-In `core:*` Standard Library Modules\n\n";
-    for (const auto& mod : stdlib_catalog()) {
+    out += "## 1. Builtin Types & Built-In `core:*` Standard Library Modules\n\n";
+    for (const auto& mod : reference_modules()) {
         out += std::format("### `{}` (`{}`) — {}\n\n", mod.import_path, mod.ns_alias, mod.title);
         out += std::format("- **Auto-Link Flags:** `{}`\n", mod.link_flags);
         out += std::format("- **Overview:** {}\n\n", mod.overview);

@@ -1,0 +1,10 @@
+package main
+fn f(n: i32) -> str {
+    return match n {
+        _ => "any",
+        1 => "one", //~ error cfire/UNREACHABLE-MATCH-ARM
+    }
+}
+fn main() {
+    println("{}", f(1))
+}

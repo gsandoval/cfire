@@ -2,7 +2,6 @@ package raygui_ext
 
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
-import "core:str"
 
 type KeyModifiers struct {
     super_down: bool
@@ -223,8 +222,8 @@ fn GuiProcessEditorKeys(
                 redo_stack.clear()
                 mut ins := clip
                 if !buf.allow_newlines {
-                    ins = str.replace(ins, "\n", " ")
-                    ins = str.replace(ins, "\r", " ")
+                    ins = ins.replace("\n", " ")
+                    ins = ins.replace("\r", " ")
                 }
                 text_insert_at(mut text, mut buf.cursor_pos, mut buf.sel_anchor, ins)
                 buf.status_message = "PASTED from clipboard"

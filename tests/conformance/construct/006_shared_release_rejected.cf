@@ -1,0 +1,8 @@
+package main
+type Box struct {
+    v: i32
+}
+fn main() {
+    s := make(shared[Box], Box{v: 3})
+    p := s.release() //~ error cfire/INVALID-RELEASE
+}

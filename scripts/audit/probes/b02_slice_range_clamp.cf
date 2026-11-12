@@ -1,0 +1,11 @@
+// probe: B2 an out-of-range slice silently clamps instead of panicking
+// kind: guard
+// mode: run
+// ideal: panic
+package main
+fn main() {
+    xs: []i32 = [1, 2, 3]
+    hi := 10
+    w := xs[1..hi]
+    println("{}", w.len())
+}

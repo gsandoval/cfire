@@ -1,0 +1,36 @@
+name: Nightly Fuzz
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Seconds per fuzz target"
+        default: "1800"
+
+jobs:
+  libfuzzer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install LLVM 18 with libFuzzer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+
+      - name: Run every fuzz target (CF-141)
+        run: make fuzz-lib FUZZ_SECONDS=${{ github.event.inputs.seconds || '1800' }} FUZZ_CXX=clang++-18
+
+      - name: Upload crashes and grown corpora
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-fuzz-${{ github.run_id }}
+          path: |
+            .fuzz_crashes/
+            .fuzz_corpus/

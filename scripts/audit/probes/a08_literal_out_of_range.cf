@@ -1,0 +1,9 @@
+// probe: A8 out-of-range integer literals are silently narrowed
+// kind: guard
+// mode: check
+// ideal: reject
+package main
+fn main() {
+    a: u8 = 300
+    println("{}", a)
+}

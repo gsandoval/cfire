@@ -1,0 +1,10 @@
+// expect: stdout
+// | body
+// | second
+// | first
+package main
+fn main() {
+    defer println("first")
+    defer println("second")
+    println("body")
+}

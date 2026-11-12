@@ -1,0 +1,23 @@
+// expect: stdout
+// | ok=42
+// | err=bad input
+package main
+fn parse(s: str) -> i32! {
+    if s == "42" {
+        return 42
+    }
+    return error("bad input")
+}
+fn twice(s: str) -> i32! {
+    v := try parse(s)
+    return v
+}
+fn main() {
+    a := twice("42") or 0
+    println("ok={}", a)
+    b := twice("x") or err {
+        println("err={}", err.message())
+        return
+    }
+    println("unreachable {}", b)
+}

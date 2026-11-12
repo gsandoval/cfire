@@ -1,0 +1,13 @@
+// probe: Q7/Q8 str operations as methods with optional positions (target API)
+// kind: hole
+// mode: run
+// ideal: stdout [a,b] 2 true
+package main
+fn main() {
+    s := " a,b "
+    t := s.trim()
+    parts := t.split(",")
+    i := t.index_of("b") or 99
+    j := t.index_of("z")
+    println("[{}] {} {}", t, i, j == none)
+}

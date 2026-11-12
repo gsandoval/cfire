@@ -1,0 +1,8 @@
+package main
+fn main() {
+    mut nums: []i32 = [10, 20, 30]
+    view := nums[0..2]
+    v2 := view
+    nums.push(40)
+    println("{}", v2[0]) //~ error cfire/USE-AFTER-FREE
+}

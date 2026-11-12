@@ -115,7 +115,7 @@ struct SessionState {
     std::mutex mtx;
     std::string host;
     std::uint16_t port = 22;
-    std::string user = "root";
+    std::string user{};
     bool connected = false;
     bool authenticated = false;
     bool is_mock = false;
@@ -778,17 +778,27 @@ private:
 [[nodiscard]] inline auto dial(
     std::string_view host,
     std::uint16_t port = 22,
-    std::string_view user = "root",
+    std::string_view user = "",
     std::int64_t timeout_ms = 10000
 ) -> std::expected<Session, Error> {
     if (host.empty()) {
         return std::unexpected(Error("ssh.dial: empty host"));
     }
+    // CF-168: no privileged default. Like ssh(1), an empty user means the local login name.
+    std::string effective_user(user);
+    if (effective_user.empty()) {
+        for (const char* var : {"USER", "LOGNAME", "USERNAME"}) {
+            if (const char* v = std::getenv(var); v && *v) { effective_user = v; break; }
+        }
+    }
+    if (effective_user.empty()) {
+        return std::unexpected(Error("ssh.dial: no user given and no local login name ($USER/$LOGNAME) is set"));
+    }
 
     auto st = std::make_shared<detail::SessionState>();
     st->host = std::string(host);
     st->port = port;
-    st->user = user.empty() ? "root" : std::string(user);
+    st->user = std::move(effective_user);
     st->is_mock = detail::is_mock_mode();
 
     if (st->is_mock) {
@@ -834,6 +844,12 @@ private:
     (void)timeout_ms;
     return std::unexpected(Error("ssh.dial: libssh is not installed on this system"));
 #endif
+}
+
+// Q29: `ssh.connect` is the client verb, like `net.connect` / `tls.connect` / `websocket.connect`.
+[[nodiscard]] inline auto connect(std::string_view host, std::uint16_t port = 22, std::string_view user = "", std::int64_t timeout_ms = 10000)
+    -> std::expected<Session, Error> {
+    return dial(host, port, user, timeout_ms);
 }
 
 } // namespace cfire::ssh

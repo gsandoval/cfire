@@ -1,0 +1,9 @@
+// probe: Q9 runtime narrowing conversion silently truncates
+// kind: guard
+// mode: run
+// ideal: panic
+package main
+fn main() {
+    n: i32 = 300
+    println("{}", u8(n))
+}

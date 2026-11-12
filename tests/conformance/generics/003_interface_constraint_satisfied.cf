@@ -1,0 +1,18 @@
+// expect: stdout
+// | scene:CAD
+package main
+type Renderable interface {
+    fn tag() -> str
+}
+type Scene struct {
+    Title: str
+}
+fn (s: Scene) tag() -> str {
+    return "scene:" + s.Title
+}
+fn describe[T: Renderable](item: T) {
+    println("{}", item.tag())
+}
+fn main() {
+    describe(Scene{Title: "CAD"})
+}

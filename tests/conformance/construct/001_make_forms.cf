@@ -1,0 +1,28 @@
+// expect: stdout
+// | 4 x|6 8|9|3 0 16|2|0
+package main
+
+type P struct {
+    a: i32 = 4
+    b: str = "x"
+}
+
+type Point struct {
+    x: i32
+    y: i32
+}
+
+fn (Point) make(x: i32, y: i32) -> Point {
+    return Point{x: x * 2, y: y * 2}
+}
+
+fn main() {
+    d := make(P)
+    p := make(Point, 3, 4)
+    o := make(own[Point], Point{x: 9, y: 0})
+    s := make(shared[Point], 1, 1)
+    xs := make([]i32, 3)
+    ys := make([]byte, 0, 16)
+    m := make(map[str]i32)
+    println("{} {}|{} {}|{}|{} {} {}|{}|{}", d.a, d.b, p.x, p.y, o.x, xs.len(), ys.len(), 16, s.x, m.len())
+}

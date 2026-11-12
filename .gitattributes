@@ -1,3 +1,5 @@
 * text=auto eol=lf
 src/version.hpp export-subst
 runtime/cfire_prelude.hpp export-subst
+# Fuzz seeds are byte-exact inputs (HTTP framing needs CRLF).
+tests/fuzz/corpus/** -text

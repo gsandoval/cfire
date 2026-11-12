@@ -5,14 +5,14 @@ import "ext:db/sqlite" as sqlite
 import "core:json" as json
 
 type QueryPlan struct {
-    Target: str `json:"target" desc:"Search target concept"`
-    TopK:   i64 `json:"top_k" desc:"Number of top results to retrieve"`
+    target: str `json:"target" desc:"Search target concept"`
+    top_k:  i64 `json:"top_k" desc:"Number of top results to retrieve"`
 }
 
 type DocEntry struct {
-    Id:      i64 `sql:"id"`
-    Title:   str `sql:"title"`
-    Snippet: str `sql:"snippet"`
+    id:      i64 `sql:"id"`
+    title:   str `sql:"title"`
+    snippet: str `sql:"snippet"`
 }
 
 fn main() {
@@ -54,9 +54,9 @@ fn main() {
         qvec
     )
 
-    if results.len > 0 {
+    if results.len() > 0 {
         top := results[0]
-        println("Top RAG Match -> [#{}] {}: {}", top.Id, top.Title, top.Snippet)
+        println("Top RAG Match -> [#{}] {}: {}", top.id, top.title, top.snippet)
     }
 
     // 5. Structured document parsing & section-preserving chunking (.pdf, .pptx, .docx, .odt, .epub, .md)

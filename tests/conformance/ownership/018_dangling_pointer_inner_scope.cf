@@ -1,0 +1,10 @@
+package main
+fn main() {
+    x := 1
+    mut p := &x
+    if true {
+        inner := 2
+        p = &inner //~ error cfire/DANGLING-POINTER
+    }
+    println("{}", *p)
+}

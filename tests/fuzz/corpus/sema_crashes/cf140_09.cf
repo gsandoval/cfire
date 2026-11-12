@@ -1,0 +1,10 @@
+package main
+
+import "./pkg/checksum"
+
+fn main() {
+    tag := checksum.compute1e_tag("cfire")
+    prin)
+}
+tln("Multi-package + build.CC archive checksum: {}",( tag)
+}

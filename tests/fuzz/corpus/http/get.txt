@@ -1,0 +1,4 @@
+GET /items/42?q=a%20b HTTP/1.1
+Host: localhost
+Content-Length: 0
+

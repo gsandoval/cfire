@@ -1,0 +1,5 @@
+package main
+fn main() {
+    s := "abc"
+    println("{}", s.size()) //~ error cfire/UNKNOWN-METHOD
+}

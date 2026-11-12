@@ -842,7 +842,9 @@ inline auto run_install(
         }
     }
     {
-        std::ofstream ver_ofs(dest_rt / "VERSION", std::ios::trunc);
+        std::error_code rm_ec;
+        std::filesystem::remove(dest_rt / "VERSION", rm_ec);  // shadows <version> on case-insensitive filesystems
+        std::ofstream ver_ofs(dest_rt / "cfire-runtime.version", std::ios::trunc);
         if (ver_ofs) {
             ver_ofs << std::format("{} {}\n", kCfireVersion, kCfireGitSha);
         }

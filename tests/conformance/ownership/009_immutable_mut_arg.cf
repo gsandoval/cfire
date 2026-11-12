@@ -1,0 +1,9 @@
+package main
+fn bump(mut x: i32) {
+    x += 1
+}
+fn main() {
+    a: i32 = 1
+    bump(mut a) //~ error cfire/IMMUTABLE-MUT-ARG
+    println("{}", a)
+}

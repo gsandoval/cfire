@@ -1,0 +1,7 @@
+// expect: panic "remove index 5 out of bounds for length 2"
+package main
+fn main() {
+    mut xs: []i32 = [1, 2]
+    i: usize = 5
+    println("{}", xs.remove(i))
+}

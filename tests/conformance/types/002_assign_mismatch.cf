@@ -1,0 +1,6 @@
+package main
+fn main() {
+    mut x: i32 = 1
+    x = "s" //~ error cfire/TYPE-MISMATCH
+    println("{}", x)
+}

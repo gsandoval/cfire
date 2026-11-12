@@ -1,0 +1,14 @@
+// probe: A6 (corrected) map element references stay valid across inserts (node-based map); remove invalidates
+// kind: guard
+// mode: run
+// ideal: stdout 1
+package main
+fn main() {
+    mut m: map[str]i32
+    m["a"] = 1
+    p := &m["a"]
+    for i in 0..10000 {
+        m[str(i)] = i32(i)
+    }
+    println("{}", *p)
+}

@@ -1,0 +1,14 @@
+// expect: stdout
+// | 2 h hé 0 3 3
+package main
+fn main() {
+    xs: []i32 = [1, 2, 3]
+    arr: [3]f64 = [1.0, 2.0, 3.0]
+    s := "héllo"
+    a := xs[1..]
+    b := s[0..1]
+    c := s[0..3]
+    e := xs[3..3]
+    f := arr[0..3]
+    println("{} {} {} {} {} {}", a.len(), b, c, e.len(), f.len(), s[..3].len())
+}

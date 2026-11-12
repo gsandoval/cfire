@@ -1,0 +1,5 @@
+package main
+fn main() {
+    s := "a:b"
+    i := usize(s.index_of(":")) //~ error cfire/TYPE-MISMATCH
+}

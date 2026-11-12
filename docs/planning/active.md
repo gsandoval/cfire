@@ -77,11 +77,177 @@ This workbench tracks the active 5-phase execution promoted from [`backlog.md`](
   - [x] `CF-113`: Content-Hashed Precompiled Headers & Idempotent Preprocessor Invocation
   - [x] `CF-114`: Lambda & Closure `#line` Directive Accuracy
   - [x] `CF-131`: Negative Parser Corpus, LibFuzzer Targets & Runtime Coverage
-- [ ] **Phase 13: Resolved & Typed AST (`CF-115` – `CF-120`)**
+- [x] **Phase 13: Resolved & Typed AST (`CF-115` – `CF-120`)**
   - [x] `CF-115`: Semantic AST Resolution Pass & Codegen Decoupling
-  - [ ] `CF-116`: Interned TypeId Lattice & Explicit Unknown-Type Diagnostics
-  - [ ] `CF-117`: Unified Generated Standard Library Metadata Table
-  - [ ] `CF-118`: Unified Diagnostic Pipeline across CLI, LSP & MCP
-  - [ ] `CF-119`: Scope-Sound Semantic Workspace Refactoring
-  - [ ] `CF-120`: Compiler Modularization & High-Complexity Function Decomposition
+  - [x] `CF-116`: Interned TypeId Lattice & Explicit Unknown-Type Diagnostics
+  - [x] `CF-117`: Unified Generated Standard Library Metadata Table
+  - [x] `CF-118`: Unified Diagnostic Pipeline across CLI, LSP & MCP
+  - [x] `CF-119`: Scope-Sound Semantic Workspace Refactoring
+  - [x] `CF-120`: Compiler Modularization & High-Complexity Function Decomposition
 
+- [x] **Wave W0: Crash-Proofing & Regression Net (`CF-140`, `CF-161`, `CF-157`, `CF-141`, `CF-159`, plus the `CF-177` blocker)** (local gates green; CI-only steps await their first run). Source: [`backlog.md` §A](./backlog.md); evidence in [`audit/reports/2026-11-11.md`](./audit/reports/2026-11-11.md).
+  - [x] `CF-140`: Sema checked lookups and LSP/MCP exception barriers
+    - *In scope*: the `.at()` sites in `src/sema/`, the LSP request/notification dispatch, MCP tool dispatch, and a grep gate.
+    - *Deferred*: a general Sema error-recovery redesign.
+    - *Tests*: a conformance negative file, an LSP survival stream test, and the 34 fuzz seeds.
+  - [x] `CF-161`: `tests/conformance/` corpus and directive runner
+    - *In scope*: the directive grammar (`expect: stdout|error|warning|panic|exit|xfail`, `flags:`), parallel runner, `--filter`, the `make test-conformance` target wired into `make test`, and porting the 35 audit probes plus a feature seed.
+    - *Deferred*: migrating the ~115 inline C++-string programs.
+  - [x] `CF-157`: test-runner trap and crash reporting
+    - *In scope*: per-test flush, signal handlers naming the failing test, and a conformance check.
+    - *Deferred*: `--isolate` fork mode.
+  - [x] `CF-141`: libFuzzer wiring and a sema fuzz target
+    - *In scope*: a `make fuzz-lib` target, `fuzz_sema.cpp`, committed crash seeds as regression corpus inputs, and the CI smoke job.
+  - [x] `CF-159`: CI sanitizer matrix and gate hygiene
+    - *In scope*: ASan across all suites on macOS and Linux, a TSan job, a full Windows runner, a non-phony `cfire` target, the hook no longer auto-staging, and gate text matching the Makefile.
+  - [x] `CF-177`: `sync.context` reference cycle and cancelled-parent deadlock. Found by the new TSan job and fixed as a W0 blocker.
+  - **W0 exit gate**:
+    - All 34 fuzz crash seeds produce diagnostics, and LSP/MCP survive them.
+    - `make test` runs the conformance corpus, with the audit holes present as `xfail`.
+    - ASan runs on all suites, and the TSan job runs on the sync tests.
+    - The standard gates pass: zero warnings, `make review-check`, and `cfire doc --check`.
+  - **Exit-gate results (2026-11-11, uncommitted working tree on `f611aa2`)**:
+    - The 34 fuzz crash seeds produce diagnostics, and the LSP/MCP survive them. A fresh 1,200-input mutation fuzz gave 0 crashes and 0 hangs.
+    - `make review-check`: green, 0 warnings, 39/39 GUIDE doc-tests, conformance 64 PASS / 33 XFAIL / 0 FAIL, 3:53 wall time.
+    - `make test-asan`: green across all suites plus the corpus. UBSan logged 2 recoverable reports, now tracked as `CF-179` (W1).
+    - `make test-tsan`: green, after `CF-177`.
+    - `make fuzz-replay`: green, 8 targets.
+    - Audit probes: 12 OK, 23 OPEN, 0 CRASH/REGRESSION.
+    - *Caveat*: the LSP suites currently need a `/tmp` free of unrelated `.cf` files (`CF-178`, W2).
+    - *Not verified locally*: `make fuzz-lib` (no libFuzzer in Apple clang), the Windows CI steps, and the Linux sanitizer jobs.
+- [x] **Wave W1: Memory, Thread & Arithmetic Soundness (`CF-179`, `CF-143`, `CF-165`, `CF-166`, `CF-147`, `CF-144`, `CF-164`)** (local gates green). Source: [`backlog.md` §A](./backlog.md); ADRs `Q9`, `Q11`, `Q12`, `Q14`, `Q18`, `Q19`.
+  - [x] `CF-179`: `~E` on unscoped enums yields the underlying integer (`Q18`), and UBSan becomes fatal in `test-asan`.
+  - [x] `CF-143`: closed builtin method surface (`Q14`).
+    - *In scope*: rejecting raw C++ members on `str`/`[]T`/`[N]T`/`map[K]V` outside `cpp {}` with `cfire/UNKNOWN-METHOD` plus fix-its, a `mutates_receiver` flag feeding the loan tracker, and migrating the examples.
+    - *Deferred*: the W4 method-set expansion (`CF-163`/`CF-170`/`CF-171`).
+  - [x] `CF-165`: checked numeric conversions and literal ranges (`Q9`, `Q19`).
+  - [x] `CF-166`: defined shift semantics (`Q11`).
+  - [x] `CF-147`: slice range semantics (`Q12`).
+  - [x] `CF-144`: loan provenance (temporaries, returns, struct fields, map refs).
+  - [x] `CF-164`: spawn capture thread-safety and `--sanitize=thread`.
+  - New ADR during W1: `Q20` (strict spawn pointer-write rule, amending `Q2`).
+  - Corrected audit finding: A6 was not a bug.
+  - **W1 exit gate**:
+    - Every `unsound/`-class xfail for A2–A8, B2, and G1 flips to PASS.
+    - TSan is clean on `conformance/concurrency`.
+    - No new false positives on `examples/`, `pkg/`, or the GUIDE doc-tests.
+    - UBSan is fatal and clean.
+    - The standard gates pass.
+  - **Exit-gate results (2026-11-11, uncommitted working tree on `f611aa2`)**:
+    - Every W1-owned hole is fixed. The 12 audit probes A2–A5, A8, B1–B3, G1, and N1–N3 were flipped to guards, and A6 was corrected to a guard.
+    - Conformance: 98 PASS / 20 XFAIL / 0 FAIL out of 118 files. Every remaining XFAIL belongs to W2–W5.
+    - `make review-check`: green, 0 warnings, 39/39 GUIDE doc-tests.
+    - `make test-asan`: green with **UBSan fatal**.
+    - `make test-tsan`: green, with the concurrency corpus on native `--sanitize=thread`.
+    - `make fuzz-replay`: green on 327 seeds.
+    - Mutation fuzz: 1,200 inputs, 0 crashes or hangs.
+    - Audit probes: 25 OK, 10 OPEN (W2–W4).
+    - No new false positives on `examples/`, `pkg/`, or the GUIDE.
+    - *Pre-existing, now tracked*: `cfire check` can't find native library headers for 9 examples (`CF-176`).
+- [x] **Wave W2: Network & Supply-Chain Security (`CF-153`, `CF-178`, `CF-151`, `CF-150`, `CF-152`, `CF-160`, `CF-168`, `CF-167`)** (local gates green). Source: [`backlog.md` §A](./backlog.md); ADRs `Q15`, `Q21`, `Q22`.
+  - [x] `CF-153`: secure temp files (`mkstemp`/`mkdtemp` helper, per-user caches, and a grep gate on fixed temp paths).
+  - [x] `CF-178`: bounded LSP workspace discovery (`Q21`) and hermetic LSP tests.
+  - [x] `CF-151`: typed TLS `RequestOptions`, and removal of the `x-cfire-tls-*` header controls.
+  - [x] `CF-150`: HTTP server hardening (`Q22`): deadlines, worker pool, strict framing, chunked decode, peer address, IPv6.
+  - [x] `CF-152`: verified dependency cache, `--` in git argv, and `curl --proto =https`.
+  - [x] `CF-160`: MCP workspace confinement (`Q15`).
+  - [x] `CF-168`: no default `root` SSH user, and an atomic keychain update.
+  - [x] `CF-167`: injection taint tracking, with both lints promoted to errors.
+  - **W2 exit gate**:
+    - Slowloris and smuggling tests pass.
+    - A tampered cache and option-injection refs are rejected.
+    - No predictable temp paths remain (grep gate).
+    - MCP path escapes are rejected.
+    - The injection bypass probes are rejected.
+    - LSP suites pass with a polluted `/tmp`.
+    - All standard gates pass.
+  - **Progress at pause (2026-11-11)**:
+    - `CF-153` is partly done:
+      - Added `cfire::detail::SecureTempDir` (mkdtemp, 0700, RAII) and `user_cache_dir()` to the prelude.
+      - Moved these to them: the runtime OCR/JPEG/PDF temp files, MCP eval and its cache, the `run`/`test`/wasm/iOS binaries (which are *executed*, so the fixed names were a code-execution risk), the syntax-check fallback, `eval`, the dependency download and fallback caches, the doc cache, the emscripten cache, and the test harness header cache.
+      - Removed the `/tmp/cfire_cache/pkg/vendor_raylib*` lookups from `src/buildsys.hpp`, so a library planted there is no longer linked.
+      - **Remaining**: ~12 fixed temp paths in `tests/` (`test_stdlib.cpp`, `test_lsp_docgen.hpp`, `test_canonical.cpp`), the CI grep gate, conformance/unit coverage, and a full gate run. None of the `CF-153` changes have been through the full suite yet.
+    - The other W2 items (`CF-178`, `CF-151`, `CF-150`, `CF-152`, `CF-160`, `CF-168`, `CF-167`) haven't started. Decisions are recorded as `Q21` and `Q22`.
+  - **W2 exit-gate results (2026-11-11, uncommitted working tree on `f611aa2`)**. All gates ran with 200 conflicting `.cf` files planted under `/tmp`:
+    - `make review-check`: green, 0 warnings, 39/39 GUIDE doc-tests, conformance 103 PASS / 20 XFAIL / 0 FAIL.
+    - `make test-asan`: green, with UBSan fatal.
+    - `make test-tsan`: green, including the HTTP worker pool.
+    - `make fuzz-replay`: green on 8 targets.
+    - Mutation fuzz: 1,200 inputs, 0 crashes.
+    - Audit probes: 26 OK (D5 flipped to a guard), 9 OPEN (W3–W4).
+    - New W2 regression tests: `test_cf153_secure_temp_storage`, `test_cf151_no_inband_tls_controls`, `test_cf150_http_server_hardening`, `test_cf152_verified_dependency_cache`, `test_cf160_mcp_workspace_confinement`, `test_cf168_secure_runtime_defaults`, plus `security/001`–`006`.
+    - *Deferred, now tracked*:
+      - IPv6 dual-stack, and `.cf`-level `set_limits`/`RequestOptions` (`CF-180`, W4).
+      - `"a" + "b"` literal concatenation fails in clang (`types/016`, `CF-148`).
+    - *Not verified locally*: the new CI `/tmp`-pollution step and Windows/Linux jobs, which await the first push.
+- [x] **Wave W3: Type-System Completion (`CF-176`, `CF-148`, `CF-146`, `CF-145`, `CF-149`)**. ADRs `Q23` (delete the string inference path) and `Q24` (full typed-diagnostic rewrite).
+  - [x] `CF-176`: `cfire check` uses the build plan's include and library flags.
+  - [x] `CF-148`: TypeId-only inference (`Q23`); call-argument, struct-field, unknown field/method, optional-operand, literal-concatenation, and match-arm checks; an ICE gate.
+  - [x] `CF-146`: strict `bool` conditions.
+  - [x] `CF-145`: interface conformance at generic call sites.
+  - [x] `CF-149`: typed diagnostics end to end (`Q24`), with exact ranges and no string re-parsing.
+  - **W3 exit gate**:
+    - Zero `UNKNOWN-TYPE` in examples and the guide.
+    - No clang diagnostic is reachable from a well-typed corpus program.
+    - Every diagnostic has an exact range.
+    - `parse_diagnostic_string` is gone.
+    - The standard gates pass.
+  - **W3 results (2026-11-11)**:
+    - `CF-176`: `cfire check` runs the backend through `analyze_and_emit`, so `build.cf` include paths and libraries apply. It falls back to the minimal plan.
+    - `CF-148`: `infer_expr_type_name_sema` is deleted, leaving one `TypeId` path. New checks:
+      - call-argument types;
+      - struct-literal fields and `UNKNOWN-FIELD`;
+      - optional-operand `TYPE-MISMATCH`;
+      - a unified match result type, emitted as an explicit lambda return type;
+      - `"a" + "b"` lowered through `std::string`;
+      - generic substitution in stdlib signatures.
+
+      The conformance ICE gate rejects any `TYPE-ERROR` expectation.
+    - `CF-146`: `NON-BOOL-CONDITION` on `if`, the `for` condition, `&&`, `||` and `!` operands.
+    - `CF-145`: `UNSATISFIED-CONSTRAINT` at generic call sites.
+    - `CF-149`: typed diagnostics end to end.
+      - Sema diagnostics are pushed as `StructuredDiagnostic` with `facts`.
+      - Parser and lexer errors are `SourceError{file,line,col,message,code}`.
+      - Fix-its read facts, not message text. `parse_diagnostic_string` is now clang-only (`parse_clang_diagnostic_line`).
+      - The LSP carries facts through to code actions.
+      - Unreachable match arms point at the arm, and `UNKNOWN-FIELD` at the field name.
+      - Golden ranges per code: `test_diagnostic_golden_ranges`.
+    - Found during the gate: `cfire fmt` split `<<=`/`>>=` (`< <=`) and spaced float exponents (`2.5e - 4`). Both are fixed, with unit tests. `&=`, `|=` and `^=` are now spaced as whole operators.
+    - Gates:
+      - `make test`, `review-check`, `test-asan`, `test-tsan` and `fuzz-replay` are green, with zero warnings.
+      - `cfire doc --check` is up to date.
+      - `cfire fmt --check` is clean on all examples and corpus files except the two xfail files (`syntax/007`, `syntax/008`), which don't parse by design.
+      - Conformance: 116 pass, 11 xfail, 0 xpass, 0 fail. Runner self-test 12/12.
+      - Guide doc-tests 39/39. Examples and guide have 0 `UNKNOWN-TYPE`.
+      - Probes: 27 OK, 7 OPEN (all W4 target APIs).
+      - mutfuzz: 0 crashes. LSP smoke: all examples alive.
+- [x] **Wave W4: Uniform Builtin API, breaking 0.16.0 (`CF-162`, `CF-163`, `CF-170`, `CF-171`, `CF-154`, `CF-181`, `CF-180`)**. Pre-coding gate decisions recorded 2026-11-11 as ADRs `Q25`–`Q28` in `backlog.md` §A.1.
+  - **Scope**: every item in the W4 row of `backlog.md` §A.3a, plus `CF-181` (added at this gate). *Deferred*: visibility rules for fields (no visibility system, `Q28`); ordered maps (`Q27`).
+  - **Decisions**:
+    - `Q25`: `make` is the one construction builtin, with the type first: `make(T[, args])`, `make(own[T][, args])`, `make(shared[T][, args])`, `make([]T, len[, cap])`. The type decides placement. Constructors are declared as `fn (T) make(...) -> T`. `make[...](...)`, `make_*()` and `new_*()` are retired with `cfire fix` rewrites. `release` / `from_raw` are the only C bridge (`CF-181`).
+    - `Q26`: `.len()` only.
+    - `Q27`: map iteration order is unspecified.
+    - `Q28`: snake_case fields, enforced by the `cfire/FIELD-NAME-CASE` lint.
+    - `Q29`–`Q31` (asked during `CF-154`): `connect`/`listen` connection verbs; `verify_peer: false` as the only TLS opt-out; TLS servers via `make(http.Server, port, tls: http.TlsConfig{...})`.
+  - **Known bug to fix in `CF-154`**: `make[[]i32](1, 2)` lowers to `std::vector<int32_t> v(1)` and silently drops the `2`.
+  - [x] `CF-162`: numeric methods, associated items, complete `core:math`.
+  - [x] `CF-163`: uniform `str` API.
+  - [x] `CF-170`: uniform slice API.
+  - [x] `CF-171`: uniform map API.
+  - [x] `CF-154`: one construction builtin, naming, one-way APIs.
+  - [x] `CF-181`: `own[T]` release / adopt.
+  - [x] `CF-180`: IPv6 dual-stack and `.cf`-level network options.
+  - **W4 exit gate**: `cfire fix` migrates the repo with zero manual edits; no free-function, sentinel, `make[...]`, `make_*` or `new_*` forms remain; `stdlib/{math,str,slices,maps}` conformance passes; the STDLIB reference is regenerated; the standard gates pass.
+  - **W4 results (2026-11-12)**:
+    - *One table*: `src/sema/builtin_methods.hpp` lists every method on builtin types (receiver kinds, parameters, return type, mutates/borrows flags, docs). Sema reads it for the closed surface, arity, argument and return types, `mut` receivers and loan invalidation; codegen lowers rows to `cfire::bm::<name>(recv, args)` (`runtime/core/builtin_methods.hpp`); LSP completion/hover/type queries and the generated reference (`builtin` pane) read it too.
+    - `CF-162`: integer and float methods (`abs`, `min`/`max`/`clamp` that panic on `lo > hi`, `pow`, bit queries, `checked_*`/`wrapping_*`/`saturating_*` incl. `div`/`neg`/`abs`, euclidean ops, rounding, `sqrt`, logs, trig, `is_nan`/`is_inf`), `T.MIN`/`T.MAX`/`T.BITS`, `f64.EPSILON`/`INF`/`NEG_INF`/`NAN`, `T.parse(s) -> T?`, `math.PI`/`E`/`TAU`/`SQRT_2`/`LN_2`/`LN_10`, `math.atan2`/`hypot`/`gcd`/`lcm`, float `%` as `fmod`.
+    - `CF-163`: the full `str` method set with `usize?` positions (`index_of` takes an optional start), view-returning `trim*`/`strip_*` that are loan-tracked (and copy when the receiver is a temporary), `split_n`, `lines`, `repeat`, `runes`, `rune_count`. `core:str` is retired.
+    - `CF-170`/`CF-171`: slice and map method sets; every mutator needs `mut` and invalidates loans; `pop`/`first`/`last`/`binary_search`/`get`/`insert`/`remove` return optionals. `core:sort` is retired. `xs.empty()` is renamed `is_empty()`, `xs.len` must be `xs.len()` (`Q26`).
+    - `CF-154`: `make(T, ...)` with `fn (T) make(...)` constructors, `own`/`shared`/slice/map forms, and stdlib constructors (`make(http.Router)`, `make(sync.Channel[T], n)`, `make(sync.Mutex[void])`, `make(ai.Agent, ...)`, `make(webui.App, ...)`, `make(os.RawTerminal)`). `connect`/`listen` verbs (`Q29`), `verify_peer: false` as the only TLS opt-out (`Q30`), TLS servers via `make(http.Server, port, tls: http.TlsConfig{...})` (`Q31`), snake_case field lint `cfire/FIELD-NAME-CASE` with a workspace rename fix (`Q28`).
+    - `CF-181`: `o.release() -> *mut T` (a move for the loan tracker; rejected on `shared[T]`) and `own[T].from_raw(p)`.
+    - `CF-180`: dual-stack wildcard listener (`IPV6_V6ONLY=0`, IPv4 fallback), IPv6 literals, IPv4-mapped peers reported as IPv4, `TcpConn.remote_addr()`, `http.ServerLimits` + `server.set_limits(...)` and `http.TlsConfig` as `.cf` struct types (`kStdlibStructs`). An invalid listen address is now an error (it used to bind every interface).
+    - *Migration*: every retired form is `cfire/RETIRED-API` with a fix-it; `cfire fix --only <codes>` (new) applies just the migration. It rewrote the repo's `.cf` files, guide code blocks and the `.cf` programs embedded in C++ tests and docgen.
+    - *Deviation from the gate*: "zero manual edits" did not fully hold. Five places used the old `-1` sentinel arithmetically (`pkg/raygui_ext/text_buffer.cf` ×2, the round-3 upstream snippet, `types/014`, `stdlib/str/001`) and needed `or default` by hand; three negative tests (`imports/003`, the shadowed-module alias test, the LSP position test) were re-targeted because their subject (`core:str`, `math.sqrt`) no longer exists; one `cpp {}` block named a renamed field. The rename engine does not touch `cpp {}` text.
+    - *Deviation from `CF-180`*: no `RequestOptions` struct. Labeled arguments now reach stdlib calls by name (they were passed positionally before, so `http.get(url, verify_peer: false)` put `false` into `headers`), which makes the typed `verify_peer:`/`ca_file:` parameters the one spelling (`Q30` amended).
+    - *Bugs found and fixed on the way*: labeled stdlib arguments ignored; struct literals written out of declaration order reached clang; map types printed as `map[str]i32[i32]`; `make[[]i32](1, 2)` dropped the `2`; `println(x, y)` with a non-string format and `println("{}", opt)` reached clang (now `TYPE-MISMATCH`); `usize(opt)` reached clang; `cfire fix` added imports for module names in strings and for parameters named like modules (`log`); the installed `runtime/VERSION` stamp shadowed `<version>` on case-insensitive filesystems (renamed `cfire-runtime.version`, old name still read); `cfire fmt` split `..=`.
+    - *Open, tracked elsewhere*: the field rename is name-based, not type-aware (`CF-155`, W5); `HttpServer.enable_tls_files`/`enable_tls_pem` remain as a post-construction TLS spelling; a builtin method on a receiver Sema cannot type still lowers to the raw member unless the name is `str`/numeric-only.

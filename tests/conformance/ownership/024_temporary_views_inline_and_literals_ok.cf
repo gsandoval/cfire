@@ -1,0 +1,12 @@
+// expect: stdout
+// | he lit 3
+package main
+fn make() -> str {
+    return "hello world"
+}
+fn main() {
+    ok := "literal"[0..3]
+    owner := make()
+    v := owner[0..3]
+    println("{} {} {}", make()[0..2], ok, v.len())
+}

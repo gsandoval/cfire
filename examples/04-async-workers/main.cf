@@ -3,13 +3,13 @@ package main
 import "core:net"
 
 fn fetch_status(endpoint: str, port: u16) -> i32! {
-    mut conn := try net.connect_tcp(endpoint, port)
+    mut conn := try net.connect(endpoint, port)
     _ = try conn.write_text("HEAD / HTTP/1.1\r\nHost: localhost\r\n\r\n")
     return 200
 }
 
 fn check_cluster(hosts: &[]str, port: u16) -> []i32 {
-    mut codes := make([]i32, hosts.len)
+    mut codes := make([]i32, hosts.len())
     async.scope(workers: 4) |scope| {
         for i, h in hosts {
             slot := &mut codes[i]
@@ -22,7 +22,7 @@ fn check_cluster(hosts: &[]str, port: u16) -> []i32 {
 }
 
 fn main() {
-    mut ln := try net.listen_tcp(0)
+    mut ln := try net.listen(0)
     port := ln.port()
 
     mut hosts: []str

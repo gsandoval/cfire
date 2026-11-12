@@ -1,0 +1,13 @@
+package main
+fn main() {
+    mut codes: []i32 = [0, 0, 0, 0]
+    async.scope(workers: 4) |scope| {
+        for i, c in codes {
+            slot := &mut codes[0]
+            scope.spawn || {
+                *slot = i32(i) //~ error cfire/SPAWN-SHARED-MUT
+            }
+        }
+    }
+    println("{}", codes[0])
+}

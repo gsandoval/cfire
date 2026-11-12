@@ -9,8 +9,52 @@
 #include <optional>
 #include <limits>
 #include <type_traits>
+#include <numbers>
+#include <numeric>
+#include <source_location>
 
 namespace cfire::math {
+
+// Q10: math constants are values (`math.PI`), not functions.
+inline constexpr double PI = std::numbers::pi;
+inline constexpr double E = std::numbers::e;
+inline constexpr double TAU = 2.0 * std::numbers::pi;
+inline constexpr double SQRT_2 = std::numbers::sqrt2;
+inline constexpr double LN_2 = std::numbers::ln2;
+inline constexpr double LN_10 = std::numbers::ln10;
+
+// Multi-input functions with no natural receiver (Q7).
+[[nodiscard]] inline auto atan2(double y, double x) noexcept -> double { return std::atan2(y, x); }
+[[nodiscard]] inline auto hypot(double x, double y) noexcept -> double { return std::hypot(x, y); }
+
+template <std::integral A, std::integral B>
+[[nodiscard]] constexpr auto gcd(A a, B b, const std::source_location& loc = std::source_location::current()) {
+    using T = std::common_type_t<A, B>;
+    if constexpr (std::is_signed_v<T>) {
+        if (a == std::numeric_limits<A>::min() || b == std::numeric_limits<B>::min()) [[unlikely]] {
+            cfire::assert_true_at(false, "'math.gcd' of the minimum value overflows", loc.file_name(), static_cast<int>(loc.line()), "gcd overflow");
+        }
+    }
+    return std::gcd(static_cast<T>(a), static_cast<T>(b));
+}
+
+template <std::integral A, std::integral B>
+[[nodiscard]] constexpr auto lcm(A a, B b, const std::source_location& loc = std::source_location::current()) {
+    using T = std::common_type_t<A, B>;
+    T g = gcd(a, b, loc);
+    if (g == 0) return T{0};
+    T x = static_cast<T>(a) / g;
+    T y = static_cast<T>(b);
+    if constexpr (std::is_signed_v<T>) {
+        if (x < 0) x = -x;
+        if (y < 0) y = -y;
+    }
+    T r;
+    if (__builtin_mul_overflow(x, y, &r)) [[unlikely]] {
+        cfire::assert_true_at(false, "'math.lcm' overflows", loc.file_name(), static_cast<int>(loc.line()), "lcm overflow");
+    }
+    return r;
+}
 
 [[nodiscard]] inline auto abs_f64(double x) noexcept -> double { return std::abs(x); }
 [[nodiscard]] inline auto sqrt_f64(double x) noexcept -> double { return std::sqrt(x); }

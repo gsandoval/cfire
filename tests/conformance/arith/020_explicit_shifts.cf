@@ -1,0 +1,13 @@
+// expect: stdout
+// | 8 0 -4 1099511627776 2 -1 16
+package main
+fn main() {
+    a: i32 = 1
+    s: i32 = 3
+    big: i64 = 1
+    w := a.wrapping_shl(33)
+    c := a.checked_shl(40) or -1
+    mut x: i32 = 1
+    x <<= 4
+    println("{} {} {} {} {} {} {}", a << s, a >> s, -7 >> 1, big << 40, w, c, x)
+}

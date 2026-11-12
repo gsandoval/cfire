@@ -1,0 +1,7 @@
+// expect: stdout
+// | 0.5
+package main
+fn main() {
+    f: f64 = 2.5
+    println("{}", f % 1.0)
+}

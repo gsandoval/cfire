@@ -55,7 +55,7 @@ void print_usage() {
     std::println("  eval     [-e <expr>|code]     Evaluate one-shot statement, expression, or stdin");
     std::println("  refactor rename <loc> <to>    Semantic symbol rename across workspace (--diff, --apply, --json)");
     std::println("  check    [--json] [--fix] [path|file.cf] Type-check, verify parameter intents, and inspect C++ headers");
-    std::println("  fix      [--dry-run] [--json] [path|file.cf] Auto-fix missing imports, mut annotations, and enum matches");
+    std::println("  fix      [--dry-run] [--json] [--only codes] [path|file.cf] Auto-fix diagnostics (--only cfire/RETIRED-API runs just the 0.16 migration)");
     std::println("  inspect  <target> [--json]    Stateless symbol/type hover, foreign C header, or stdlib docs");
     std::println("  outline  [--json] [path]      Token-compressed outline of packages, types, and functions");
     std::println("  fmt      [--check] <path>     Canonically format .cf file(s) or directory");
@@ -230,7 +230,7 @@ fn format_greeting(req: GreetReq) -> GreetRes {{
 }}
 
 fn build_app() -> webui.App {{
-    mut app := webui.new_app("{}", 960, 640)
+    mut app := make(webui.App, "{}", 960, 640)
     app.serve_dir("./ui")
     app.bind[GreetReq]("greet") |req| {{
         res := format_greeting(req)
@@ -400,7 +400,6 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
 
     // Always include essential prelude modules
     auto_imports.insert("core:fs");
-    auto_imports.insert("core:str");
     auto_imports.insert("core:math");
     auto_imports.insert("core:time");
     auto_imports.insert("core:unicode");
@@ -553,10 +552,9 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
 
         std::string wrapped_cf = wrap_eval_code(raw_code, expr_mode);
 
-        auto now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
-        auto tmp_dir = std::filesystem::temp_directory_path() / std::format("cfire_eval_{}_{}", ::getpid(), now_ns);
+        cfire::detail::SecureTempDir eval_dir("cfire_eval");  // private 0700 dir (CF-153)
+        auto tmp_dir = eval_dir.path();
         std::error_code ec;
-        std::filesystem::create_directories(tmp_dir, ec);
 
         struct DirCleanup {
             std::filesystem::path p;

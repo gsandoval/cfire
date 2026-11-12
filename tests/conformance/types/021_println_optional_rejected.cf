@@ -1,0 +1,5 @@
+package main
+fn main() {
+    s := "ab"
+    println("{}", s.index_of("z")) //~ error cfire/TYPE-MISMATCH
+}

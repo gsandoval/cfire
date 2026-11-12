@@ -31,8 +31,49 @@ public:
                 out.insert(pos + needle.size(), "#include \"core/str.hpp\"\n");
             }
         }
+        if (out.contains("cfire::bm::") && !out.contains("#include \"core/builtin_methods.hpp\"")) {
+            std::string needle = "#include \"cfire_prelude.hpp\"\n";
+            if (auto pos = out.find(needle); pos != std::string::npos) {
+                out.insert(pos + needle.size(), "#include \"core/builtin_methods.hpp\"\n");
+            }
+        }
         return out;
     }
+
+    // Q10: `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`); returns the C++ type.
+    [[nodiscard]] auto primitive_prefix_cpp(const ExprPtr& obj) const -> std::string {
+        if (!obj) return {};
+        const auto* id = std::get_if<IdentExpr>(&obj->node);
+        if (!id || local_vars_.contains(id->name)) return {};
+        static const std::unordered_map<std::string_view, std::string_view> kPrims = {
+            {"i8", "std::int8_t"}, {"i16", "std::int16_t"}, {"i32", "std::int32_t"}, {"i64", "std::int64_t"},
+            {"u8", "std::uint8_t"}, {"u16", "std::uint16_t"}, {"u32", "std::uint32_t"}, {"u64", "std::uint64_t"},
+            {"isize", "std::ptrdiff_t"}, {"usize", "std::size_t"}, {"f32", "float"}, {"f64", "double"}, {"bool", "bool"}};
+        if (auto it = kPrims.find(id->name); it != kPrims.end()) return std::string(it->second);
+        return {};
+    }
+
+    // Q25: the C++ for every `make(T, args...)` form. Sema has already checked arity and argument types.
+    [[nodiscard]] auto user_ctor_name(const TypeRef& t) const -> std::string {
+        std::string leaf = t.name;
+        for (auto p = leaf.find("::"); p != std::string::npos; p = leaf.find("::")) leaf.replace(p, 2, ".");
+        std::string pkg;
+        if (auto dot = leaf.rfind('.'); dot != std::string::npos) {
+            pkg = leaf.substr(0, dot);
+            leaf = leaf.substr(dot + 1);
+        }
+        const std::string fn = "cfire_ctor_" + leaf;
+        if (!pkg.empty() && cf_.fn_sigs.contains(pkg + "." + fn)) {
+            return colliding_fn_names_.contains(fn) ? std::format("cfire_pkg_{}__{}", pkg, fn) : fn;
+        }
+        if (cf_.fn_sigs.contains(fn)) return fn;
+        for (const auto& [key, sig] : cf_.fn_sigs) {
+            if (key.ends_with("." + fn)) return colliding_fn_names_.contains(fn) ? std::format("cfire_pkg_{}__{}", sig.package_name, fn) : fn;
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto emit_make(const CallExpr& call) -> std::string;
 
 public:
     const CheckedFile& cf_;
@@ -1177,6 +1218,8 @@ public:
     void emit_match_stmt(const MatchStmt& ms, bool in_main);
     void emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr);
     [[nodiscard]] auto emit_match_expr(const MatchExpr& me) -> std::string;
+    [[nodiscard]] auto match_lambda_header() const -> std::string;
+    std::string match_expr_result_type_{};
 
     struct InterpolationResult {
         std::string fmt_str{};
@@ -1555,6 +1598,75 @@ public:
 #include "codegen/expr.hpp"
 #include "codegen/reflect.hpp"
 #include "codegen/test_runner.hpp"
+
+namespace cfire::frontend {
+
+inline auto Emitter::emit_make(const CallExpr& call) -> std::string {
+    const TypeRef& ta = call.type_args[0];
+    std::string args;
+    for (std::size_t i = 0; i < call.args.size(); ++i) {
+        if (i > 0) args += ", ";
+        args += emit_call_arg(call.args[i]);
+    }
+    if (!ta.smart_wrap.empty() && ta.elem_type) {
+        const char* helper = ta.smart_wrap == "own" ? "cfire::make_own" : "cfire::make_shared_ptr";
+        std::string inner = lower_owning_type(*ta.elem_type);
+        if (std::string ctor = user_ctor_name(*ta.elem_type); !ctor.empty() && !call.make_from_value) {
+            return std::format("{}<{}>({}({}))", helper, inner, ctor, args);
+        }
+        return std::format("{}<{}>({})", helper, inner, args);
+    }
+    if (ta.is_slice && ta.elem_type) {
+        return std::format("cfire::make_slice<{}>({})", lower_owning_type(*ta.elem_type), args);
+    }
+    if (ta.is_map || ta.is_array) return std::format("{}{{}}", lower_owning_type(ta));
+    if (std::string ctor = user_ctor_name(ta); !ctor.empty()) return std::format("{}({})", ctor, args);
+    std::string spelled = ta.name;
+    for (auto p = spelled.find("::"); p != std::string::npos; p = spelled.find("::")) spelled.replace(p, 2, ".");
+    if (auto dot = spelled.find('.'); dot != std::string::npos) {
+        std::string ns = spelled.substr(0, dot);
+        if (auto it = core_aliases_.find(ns); it != core_aliases_.end()) ns = it->second;
+        if (const auto* sc = find_stdlib_ctor_for(ns, std::string_view(spelled).substr(dot + 1))) {
+            used_core_.insert(std::string(sc->ns));
+            if (sc->generic && !ta.type_args.empty()) {
+                if (sc->type == "Mutex" && ta.type_args[0].name == "void") return "cfire::sync::MutexT<void>{}";
+                return std::format("{}<{}>({})", sc->cpp, lower_owning_type(ta.type_args[0]), args);
+            }
+            // Labeled arguments (`tls: cfg`) go to their parameter; skipped ones get their declared default.
+            if (const auto* sig = StdlibCatalogIndex::instance().find_ns_fn(sc->ns, std::string(sc->type) + ".make");
+                sig && std::any_of(call.args.begin(), call.args.end(), [](const CallArg& a) { return !a.label.empty(); })) {
+                std::vector<std::string> vals(sig->params.size());
+                std::size_t next_pos = 0;
+                std::size_t last = 0;
+                for (const auto& a : call.args) {
+                    std::size_t slot = next_pos;
+                    if (!a.label.empty()) {
+                        for (std::size_t k = 0; k < sig->params.size(); ++k) {
+                            if (sig->params[k].name == a.label) { slot = k; break; }
+                        }
+                    } else {
+                        ++next_pos;
+                    }
+                    if (slot < vals.size()) {
+                        vals[slot] = emit_call_arg(a);
+                        last = std::max(last, slot + 1);
+                    }
+                }
+                std::string placed;
+                for (std::size_t k = 0; k < last; ++k) {
+                    std::string v = vals[k];
+                    if (v.empty()) v = sig->params[k].default_text.empty() ? std::string("{}") : sig->params[k].default_text;
+                    placed += (k > 0 ? ", " : "") + v;
+                }
+                return std::format("{}({})", sc->cpp, placed);
+            }
+            return std::format("{}({})", sc->cpp, args);
+        }
+    }
+    return std::format("{}{{{}}}", lower_owning_type(ta), args);
+}
+
+} // namespace cfire::frontend
 
 namespace cfire::frontend {
 

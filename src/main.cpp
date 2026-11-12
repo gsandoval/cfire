@@ -218,8 +218,13 @@ auto main(int argc, char** argv) -> int {
         bool global_scope = false;
         std::string target = "auto";
         std::filesystem::path ws_dir = std::filesystem::current_path();
+        bool allow_outside_root = false;
         for (int i = 2; i < argc; ++i) {
             std::string_view arg = argv[i];
+            if (arg == "--allow-outside-root") {
+                allow_outside_root = true;
+                continue;
+            }
             if (arg == "--setup" || arg == "setup" || arg == "--config" || arg == "config") {
                 setup_mode = true;
             } else if (arg == "--print-config" || arg == "print-config") {
@@ -245,7 +250,8 @@ auto main(int argc, char** argv) -> int {
             std::print("{}", *res);
             return 0;
         }
-        return cfire::mcp::serve_stdio(runtime_dir);
+        // Q15 (CF-160): tools are confined to the workspace (`--dir`, default: cwd) unless explicitly opted out.
+        return cfire::mcp::serve_stdio(runtime_dir, cfire::mcp::McpOptions{ws_dir, allow_outside_root});
     }
 
     if (sub == "ide") {
@@ -357,6 +363,7 @@ auto main(int argc, char** argv) -> int {
     bool json_mode = false;
     bool fix_mode = false;
     bool dry_run = false;
+    std::string fix_only_codes;
     bool bench_mode = (sub == "bench");
     std::string filter_pattern;
     std::string fuzz_runs_arg;
@@ -397,8 +404,14 @@ auto main(int argc, char** argv) -> int {
             cfire::build::g_profile_mode = true;
             continue;
         }
-        if (arg == "--sanitize") {
+        if (arg == "--sanitize" || arg == "--sanitize=address") {
             sanitize = true;
+            cfire::build::g_sanitizer_set = "address,undefined";
+            continue;
+        }
+        if (arg == "--sanitize=thread") {
+            sanitize = true;
+            cfire::build::g_sanitizer_set = "thread";
             continue;
         }
         if (arg == "--json") {
@@ -411,6 +424,11 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg == "--dry-run") {
             dry_run = true;
+            continue;
+        }
+        if (arg == "--only" && i + 1 < argc) {
+            // `cfire fix --only cfire/RETIRED-API[,code...]`: apply only fixes for these diagnostic codes.
+            fix_only_codes = argv[++i];
             continue;
         }
         if (arg == "--bench" || arg == "-bench") {
@@ -597,7 +615,7 @@ auto main(int argc, char** argv) -> int {
         }
         if (arg.starts_with("-") && arg != "-" && arg != "--") {
             static const std::vector<std::string_view> kKnownFlags = {
-                "--release", "-r", "--debug", "-g", "--sanitize", "--test", "--bench",
+                "--release", "-r", "--debug", "-g", "--sanitize", "--sanitize=address", "--sanitize=thread", "--test", "--bench",
                 "--fuzz-runs", "--seed", "--bench-time", "--filter",
                 "--output", "-o", "--icon", "--name", "--app-name",
                 "--web-profile", "--subsystem", "--no-open", "--open",
@@ -659,7 +677,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "fix" || (sub == "check" && fix_mode)) {
-        int fix_rc = run_fix_subcommand(sub, target, json_mode, dry_run);
+        int fix_rc = run_fix_subcommand(sub, target, json_mode, dry_run, fix_only_codes);
         if (sub == "fix") return fix_rc;
     }
 
@@ -937,7 +955,9 @@ auto main(int argc, char** argv) -> int {
                         std::println("==> Suite {}/{}: {}", idx + 1, suite_entries.size(), suite_file.string());
                     }
                     const char* bin_ext = cfire::build::is_windows_target(target_triple) ? ".exe" : "";
-                    auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-test-{}-{}{}", ::getpid(), idx, bin_ext);
+                    // Build and run from a private 0700 dir so no other user can swap the binary (CF-153).
+                    cfire::detail::SecureTempDir suite_dir("cfire-test");
+                    auto tmp_bin = suite_dir.file(std::format("suite-{}{}", idx, bin_ext));
                     auto plan = cfire::build::build_native(suite_file, runtime_dir, tmp_bin, true, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
                     if (!plan) {
                         ++suite_failures;
@@ -1147,7 +1167,8 @@ auto main(int argc, char** argv) -> int {
         }
 
         if (target_triple.starts_with("wasm")) {
-            auto tmp_html = std::filesystem::temp_directory_path() / std::format("cfire-wasm-{}.html", ::getpid());
+            cfire::detail::SecureTempDir wasm_dir("cfire-wasm");  // CF-153
+            auto tmp_html = wasm_dir.file("index.html");
             auto js_file = tmp_html;
             js_file.replace_extension(".js");
             auto wasm_file = tmp_html;
@@ -1191,9 +1212,10 @@ auto main(int argc, char** argv) -> int {
             std::string app_stem = target.parent_path().filename().string();
             if (app_stem.empty() || app_stem == ".") app_stem = target.stem().string();
             if (app_stem == "main") app_stem = "cfire_ios_app";
-            auto tmp_ios_dir = std::filesystem::temp_directory_path() / std::format("cfire-ios-{}", ::getpid());
+            // Private 0700 dir (CF-153); kept after return because the simulator install reads from it.
+            cfire::detail::SecureTempDir ios_dir("cfire-ios");
+            auto tmp_ios_dir = ios_dir.release();
             std::error_code ec;
-            std::filesystem::create_directories(tmp_ios_dir, ec);
             auto tmp_ios_bin = tmp_ios_dir / app_stem;
             auto plan = cfire::build::build_native(
                 target,
@@ -1226,7 +1248,9 @@ auto main(int argc, char** argv) -> int {
         }
 
         const char* bin_ext = cfire::build::is_windows_target(target_triple) ? ".exe" : "";
-        auto tmp_bin = std::filesystem::temp_directory_path() / std::format("cfire-{}-{}{}", sub, ::getpid(), bin_ext);
+        // Build and run from a private 0700 dir so no other user can swap the binary (CF-153).
+        cfire::detail::SecureTempDir run_dir(std::format("cfire-{}", sub));
+        auto tmp_bin = run_dir.file(std::format("{}{}", sub, bin_ext));
         auto plan = cfire::build::build_native(target, runtime_dir, tmp_bin, is_test, sanitize, target_triple, sysroot, extra_link_libs, extra_includes, web_profile, subsystem);
         if (!plan) {
             std::println(stderr, "{}", plan.error());

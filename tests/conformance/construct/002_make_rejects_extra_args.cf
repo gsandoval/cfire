@@ -1,0 +1,9 @@
+package main
+type Q struct {
+    a: i32
+}
+fn main() {
+    v := make([]i32, 1, 2, 3) //~ error cfire/INVALID-MAKE
+    q := make(Q, 1) //~ error cfire/INVALID-MAKE
+    m := make(map[str]i32, 4) //~ error cfire/INVALID-MAKE
+}

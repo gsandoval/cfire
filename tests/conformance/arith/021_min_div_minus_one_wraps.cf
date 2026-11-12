@@ -1,0 +1,8 @@
+// expect: stdout
+// | -9223372036854775808 0
+package main
+fn main() {
+    m: i64 = -9223372036854775808
+    d: i64 = -1
+    println("{} {}", m / d, m % d)
+}

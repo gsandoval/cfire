@@ -75,11 +75,11 @@ fn main() {
 
     // Hardware-accelerated Zstandard frame compression
     compressed := try zstd.compress(raw, level: 3)
-    println("Original size: {} bytes -> Compressed: {} bytes", raw.len, compressed.len)
+    println("Original size: {} bytes -> Compressed: {} bytes", raw.len(), compressed.len())
 
     // Decompression using the embedded frame content size
     decompressed := try zstd.decompress(compressed)
-    println("Decompressed size: {} bytes", decompressed.len)
+    println("Decompressed size: {} bytes", decompressed.len())
 })CF";
     }
     if (mod == "core:json") {
@@ -206,12 +206,12 @@ import "core:net"
 
 fn main() {
     // 1. Bind loopback TCP listener on an ephemeral port (0)
-    mut ln := try net.listen_tcp(port: 0)
+    mut ln := try net.listen(port: 0)
     port := ln.port()
     println("Listening on 127.0.0.1:{}", port)
 
     // 2. Connect client TCP socket
-    mut client := try net.connect_tcp("127.0.0.1", port)
+    mut client := try net.connect("127.0.0.1", port)
     _ = try client.write_text("PING\n")
 
     // 3. Accept incoming connection and read data
@@ -256,7 +256,7 @@ fn main() {
     }
 
     // 2. Build independent HTTP router with path parameters
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.get("/health", |req| {
         return http.Response.json(200, "{\"status\":\"healthy\",\"uptime_sec\":120}")
     })
@@ -265,7 +265,7 @@ fn main() {
     })
 
     // 3. Serve requests using the router
-    mut server := try http.make_server(port: 8080)
+    mut server := try make(http.Server, port: 8080)
     server.serve_in_background(router)
 })CF";
     }
@@ -280,11 +280,11 @@ fn main() {
     pair := try tls.generate_self_signed_pem("localhost", 365)
 
     // 2. Start an HTTPS server backed by the in-memory certificate
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.get("/secure", |req| {
         return http.Response.text(200, "TLS 1.3 Secure OK")
     })
-    mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)
+    mut srv := try make(http.Server, 0, tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem})
     srv.serve_in_background(router)
     defer srv.stop()
 })CF";
@@ -296,7 +296,7 @@ import "core:net/websocket"
 
 fn main() {
     // 1. Start a standalone WebSocket server on an ephemeral port
-    mut srv := try websocket.make_server(0)
+    mut srv := try make(websocket.Server, 0)
     srv.serve_in_background(|mut ws: websocket.Conn| {
         msg := ws.recv_text() or ""
         _ = ws.send_text("ECHO: " + msg)
@@ -348,7 +348,7 @@ import "core:sync"
 
 fn main() {
     // Typed buffered message channel
-    ch := sync.make_channel[i32](capacity: 10)
+    ch := make(sync.Channel[i32], capacity: 10)
 
     async.scope(workers: 2) |scope| {
         // Producer task
@@ -386,27 +386,14 @@ fn main() {
     }
 })CF";
     }
-    if (mod == "core:str") {
-        return R"CF(package main
-
-import "core:str"
-
-fn main() {
-    raw := "  systems, programming, language  "
-    trimmed := str.trim(raw)
-    tokens := str.split(trimmed, ", ")
-    formatted := str.join(tokens, "::")
-    println("Processed string: {}", formatted)
-})CF";
-    }
     if (mod == "core:math") {
         return R"CF(package main
 
 import "core:math"
 
 fn main() {
-    bounded := math.clamp_f64(3.14159, 0.0, 1.0)
-    hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
+    bounded := (3.14159).clamp(0.0, 1.0)
+    hypot := (3.0 * 3.0 + 4.0 * 4.0).sqrt()
     println("Clamped: {}, Hypot: {}", bounded, hypot)
 })CF";
     }
@@ -447,7 +434,7 @@ fn main() {
     println("Hexadecimal string: 0x{}", hex_str)
 
     restored := try hex.decode(hex_str)
-    println("Restored byte length: {}", restored.len)
+    println("Restored byte length: {}", restored.len())
 })CF";
     }
     if (mod == "core:encoding/csv") {
@@ -510,24 +497,6 @@ fn main() {
     dq.push_back("item_2")
     dq.push_front("item_1")
     println("Front: {}, Back: {}", dq.pop_front(), dq.pop_back())
-})CF";
-    }
-    if (mod == "core:sort") {
-        return R"CF(package main
-
-import "core:sort"
-
-fn main() {
-    mut numbers := [95, 12, 48, 3, 77]
-    // In-place slice sorting
-    sort.slice(mut numbers)
-    println("Sorted numbers: {:?}", numbers)
-
-    // Logarithmic binary search
-    idx := sort.binary_search(numbers, 48)
-    if idx != none {
-        println("Found element 48 at index: {}", idx)
-    }
 })CF";
     }
     if (mod == "core:log") {
@@ -674,7 +643,7 @@ fn main() {
 
     sealed := try sodium.xchacha20poly1305_encrypt(key, []byte("top-secret-vault-payload"))
     opened := try sodium.xchacha20poly1305_decrypt(key, sealed)
-    println("Decrypted bytes: {}", opened.len)
+    println("Decrypted bytes: {}", opened.len())
 })CF";
     }
     if (mod == "core:keychain") {
@@ -696,7 +665,7 @@ import "ext:net/ssh"
 import "core:keychain"
 
 fn main() {
-    mut sess := try ssh.dial("10.0.0.12", 22, "deploy", 5000)
+    mut sess := try ssh.connect("10.0.0.12", 22, "deploy", 5000)
     defer sess.close()
 
     fp := sess.host_key_fingerprint()
@@ -733,7 +702,7 @@ type TrackStatusRes struct {
 }
 
 fn main() {
-    mut app := webui.new_app("Pocket Mastering Studio", 960, 640)
+    mut app := make(webui.App, "Pocket Mastering Studio", 960, 640)
     defer app.close()
 
     app.serve_dir("./ui")

@@ -1,0 +1,6 @@
+package main
+fn main() {
+    s := "héllo"
+    n := 2
+    println("{}", s[0..n]) //~ panic "UTF-8"
+}

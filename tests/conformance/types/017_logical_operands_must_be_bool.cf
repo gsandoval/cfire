@@ -1,0 +1,12 @@
+package main
+fn main() {
+    n := 3
+    s := "x"
+    ok := true
+    a := ok && n //~ error cfire/NON-BOOL-CONDITION
+    b := !s //~ error cfire/NON-BOOL-CONDITION
+    for n { //~ error cfire/NON-BOOL-CONDITION
+        break
+    }
+    println("{} {}", a, b)
+}

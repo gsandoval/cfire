@@ -1,0 +1,5 @@
+package main
+fn main() {
+    a: u8 = 300 //~ error cfire/LITERAL-OUT-OF-RANGE
+    println("{}", a)
+}

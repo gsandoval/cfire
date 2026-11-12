@@ -1,0 +1,14 @@
+// expect: stdout
+// | yes 2
+package main
+fn main() {
+    n := 3
+    xs: []i32 = [1, 2]
+    mut k := 0
+    if n != 0 && xs.len() > 0 && !(n == 4) {
+        println("yes {}", xs.len())
+    }
+    for k < 2 {
+        k += 1
+    }
+}

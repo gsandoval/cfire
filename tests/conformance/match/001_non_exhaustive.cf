@@ -1,0 +1,15 @@
+package main
+type E enum {
+    A,
+    B(i32),
+    C,
+}
+fn f(e: E) -> i32 {
+    return match e { //~ error cfire/NON-EXHAUSTIVE-MATCH
+        A => 1,
+        B(x) => x,
+    }
+}
+fn main() {
+    println("{}", f(E::C))
+}

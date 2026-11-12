@@ -5,6 +5,7 @@
 #include "catalog_examples.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "sema/builtin_methods.hpp"
 #include <algorithm>
 #include <expected>
 #include <filesystem>
@@ -15,6 +16,75 @@
 #include <vector>
 
 namespace cfire::doc {
+
+// W4: the builtin-type surface (methods, associated items, `make`), rendered from src/sema/builtin_methods.hpp
+// as a documentation-only module. It is not importable and is not part of stdlib_catalog().
+[[nodiscard]] inline auto builtin_types_doc() -> const StdModuleDoc& {
+    static const StdModuleDoc doc = [] {
+        StdModuleDoc m;
+        m.import_path = "builtin";
+        m.ns_alias = "builtin";
+        m.title = "Builtin Types: Methods, Associated Items & make";
+        m.link_flags = "(always available)";
+        m.overview = "Operations on values of builtin types are methods on the value (Q7): `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. "
+                     "Searches return `T?`, never `-1` (Q8). Limits and parsing belong to the type (Q10): `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. "
+                     "`make` is the one construction builtin, and the type decides where memory lives (Q25): `make(T, args)` is a value, "
+                     "`make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, "
+                     "`T` the element type and `K`/`V` the map key/value types.";
+        struct Kind { std::uint8_t bit; std::string_view recv; std::string_view cpp; };
+        constexpr Kind kinds[] = {
+            {cfire::frontend::BmInt, "i64", "x"}, {cfire::frontend::BmFloat, "f64", "f"}, {cfire::frontend::BmStr, "str", "s"},
+            {cfire::frontend::BmSlice, "[]T", "xs"}, {cfire::frontend::BmArray, "[N]T", "arr"}, {cfire::frontend::BmMap, "map[K]V", "m"},
+        };
+        for (const auto& k : kinds) {
+            for (const auto& bm : cfire::frontend::kBuiltinMethods) {
+                if ((bm.recv & k.bit) == 0) continue;
+                std::string sig = cfire::frontend::builtin_method_signature(bm);
+                sig.insert(3, std::format("({}: {}) ", k.cpp, k.recv));
+                std::string lowered = bm.lowered ? std::format("cfire::bm::{}({}, ...)", bm.name, k.cpp) : std::string("(dedicated lowering)");
+                m.functions.push_back({std::format("{}.{}", k.recv, bm.name), sig, lowered, std::string(bm.summary), std::string(bm.example)});
+            }
+        }
+        for (const auto& c : cfire::frontend::kBuiltinAssocConsts) {
+            const bool is_float = (c.recv & cfire::frontend::BmFloat) != 0;
+            std::string_view t = is_float ? "f64" : "i64";
+            std::string_view cpp_t = is_float ? std::string_view("double") : std::string_view("std::int64_t");
+            std::string lowered = std::vformat(c.cpp, std::make_format_args(cpp_t));
+            m.functions.push_back({std::format("{}.{}", t, c.name), std::format("const {}.{}: {}", is_float ? "<float>" : "<int>", c.name, c.name == "BITS" ? "u32" : "Self"),
+                                   lowered, std::string(c.summary), std::format("v := {}.{}", is_float ? "f64" : "i32", c.name)});
+        }
+        m.functions.push_back({"T.parse", "fn T.parse(s: str) -> T?", "cfire::bm::parse<T>(s)",
+                               "Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`); `none` on invalid or out-of-range input.",
+                               "port := u16.parse(arg) or 8080"});
+        m.functions.push_back({"make(T)", "make(T) / make(T, args...)", "T{} / cfire_ctor_T(args...)",
+                               "A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type).",
+                               "p := make(Point, 3, 4)"});
+        m.functions.push_back({"make(own[T])", "make(own[T], args...) / make(shared[T], args...)", "cfire::make_own<T>(...) / cfire::make_shared_ptr<T>(...)",
+                               "A heap-owned `T` (`unique_ptr` / `shared_ptr`), built from one `T` value or the constructor's arguments.",
+                               "node := make(own[Node], Node{v: 1})"});
+        m.functions.push_back({"make([]T)", "make([]T, len) / make([]T, len, cap)", "cfire::make_slice<T>(len[, cap])",
+                               "`len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics.",
+                               "buf := make([]byte, 0, 4096)"});
+        m.functions.push_back({"make(map[K]V)", "make(map[K]V)", "cfire::Map<K, V>{}", "An empty map (iteration order is unspecified, Q27).",
+                               "counts := make(map[str]i32)"});
+        m.functions.push_back({"own.release", "fn (o: own[T]) release() -> *mut T", "o.release()",
+                               "Gives up ownership for C interop (CF-181): returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`.",
+                               "c_api_take(buf.release())"});
+        m.functions.push_back({"own.from_raw", "fn own[T].from_raw(p: *mut T) -> own[T]", "std::unique_ptr<T>(p)",
+                               "Takes ownership of a pointer produced by `release` (CF-181). Adopting any other pointer is undefined behavior.",
+                               "buf := own[Buffer].from_raw(c_api_give())"});
+        return m;
+    }();
+    return doc;
+}
+
+// The modules shown in the reference: the builtin-type surface first, then stdlib_catalog().
+[[nodiscard]] inline auto reference_modules() -> std::vector<StdModuleDoc> {
+    std::vector<StdModuleDoc> out;
+    out.push_back(builtin_types_doc());
+    for (const auto& m : stdlib_catalog()) out.push_back(m);
+    return out;
+}
 
 struct DiscoveredModule {
     std::string import_path;
@@ -47,7 +117,6 @@ struct DiscoveredModule {
             else if (rel == "os.hpp") discovered.push_back({"core:os", "core/" + rel, false});
             else if (rel == "regex.hpp") discovered.push_back({"core:regex", "core/" + rel, false});
             else if (rel == "sqlite.hpp") discovered.push_back({"ext:db/sqlite", "core/" + rel, false});
-            else if (rel == "str.hpp") discovered.push_back({"core:str", "core/" + rel, false});
             else if (rel == "time.hpp") discovered.push_back({"core:time", "core/" + rel, false});
             else if (rel == "unicode.hpp") discovered.push_back({"core:unicode", "core/" + rel, false});
             else if (rel == "audio.hpp") discovered.push_back({"core:audio", "core/" + rel, false});
@@ -69,7 +138,6 @@ struct DiscoveredModule {
                 discovered.push_back({"core:rand", "core/" + rel, false});
             } else if (rel == "collections.hpp") {
                 discovered.push_back({"core:collections", "core/" + rel, false});
-                discovered.push_back({"core:sort", "core/" + rel, false});
             } else if (rel == "sync.hpp") {
                 discovered.push_back({"core:sync", "core/" + rel, false});
                 discovered.push_back({"core:sync/context", "core/" + rel, false});

@@ -1,0 +1,10 @@
+// probe: guard runtime index out of bounds panics
+// kind: guard
+// mode: run
+// ideal: panic index out of bounds
+package main
+fn main() {
+    xs: []i64 = [1, 2, 3]
+    i := 7
+    println("{}", xs[i])
+}

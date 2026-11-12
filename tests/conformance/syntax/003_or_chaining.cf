@@ -1,0 +1,16 @@
+// expect: stdout
+// | 7
+package main
+fn first(xs: []i32, v: i32) -> i32? {
+    for x in xs {
+        if x == v {
+            return x
+        }
+    }
+    return none
+}
+fn main() {
+    xs: []i32 = [5, 7]
+    r := first(xs, 1) or first(xs, 7) or 0
+    println("{}", r)
+}

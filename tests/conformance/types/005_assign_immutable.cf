@@ -1,0 +1,6 @@
+package main
+fn main() {
+    x := 1
+    x = 2 //~ error cfire/ASSIGN-IMMUTABLE
+    println("{}", x)
+}

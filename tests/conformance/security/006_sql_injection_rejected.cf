@@ -1,0 +1,16 @@
+package main
+import "core:os"
+import "ext:db/sqlite"
+fn main() {
+    mut db := sqlite.open(":memory:") or {
+        return
+    }
+    name := os.args()[0]
+    db.exec("INSERT INTO items (name) VALUES ('" + name + "')") or { //~ error cfire/SQL-INJECTION-RISK
+        return
+    }
+    stmt := "DELETE FROM items WHERE name = '{name}'"
+    db.exec(stmt) or { //~ error cfire/SQL-INJECTION-RISK
+        return
+    }
+}

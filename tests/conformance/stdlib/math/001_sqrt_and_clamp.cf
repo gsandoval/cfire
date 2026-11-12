@@ -1,0 +1,10 @@
+// expect: stdout
+// | 5 1 10
+package main
+import "core:math"
+fn main() {
+    h := (3.0 * 3.0 + 4.0 * 4.0).sqrt()
+    a := (3.14).clamp(0.0, 1.0)
+    b := (50).clamp(0, 10)
+    println("{} {} {}", h, a, b)
+}

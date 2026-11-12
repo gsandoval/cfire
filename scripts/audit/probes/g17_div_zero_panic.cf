@@ -1,0 +1,10 @@
+// probe: guard runtime division by zero panics
+// kind: guard
+// mode: run
+// ideal: panic division by zero
+package main
+fn main() {
+    b := 10
+    z := 0
+    println("{}", b / z)
+}

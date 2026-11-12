@@ -81,6 +81,24 @@ for i, (code, expected_output) in enumerate(matches, 1):
         if os.path.exists(tf_name):
             os.remove(tf_name)
 
+# CF-148: every complete cfire block in the guide must type-check without UNKNOWN-TYPE warnings.
+unknown_blocks = 0
+for idx, block in enumerate(re.findall(r"```cfire\n(.*?)\n```", text, re.DOTALL)):
+    if "package " not in block:
+        continue
+    with tempfile.TemporaryDirectory(prefix="cfire_guide_types_") as tmp:
+        name = "main_test.cf" if 'test "' in block else "main.cf"
+        path = Path(tmp) / name
+        path.write_text(block)
+        res = subprocess.run([str(CFIRE_BIN), "check", str(path)], capture_output=True, text=True, timeout=120)
+        lines = [l for l in (res.stdout + res.stderr).splitlines() if "cfire/UNKNOWN-TYPE" in l]
+        if lines:
+            unknown_blocks += 1
+            print(f"  [types] block {idx}: {lines[0].split(': ', 1)[-1][:160]}")
+if unknown_blocks:
+    print(f"  {unknown_blocks} GUIDE block(s) have expressions Sema cannot type (cfire/UNKNOWN-TYPE)")
+    failed += unknown_blocks
+
 print(f"\n==========================================")
 print(f"GUIDE Doc-Test Results: {passed} passed, {failed} failed (total {len(matches)})")
 

@@ -1,0 +1,19 @@
+// probe: G1 data race through a captured &mut pointer in scope.spawn
+// kind: guard
+// mode: check
+// ideal: reject
+package main
+fn main() {
+    mut counter: i64 = 0
+    p := &mut counter
+    async.scope(workers: 8) |scope| {
+        for w in 0..8 {
+            scope.spawn || {
+                for i in 0..100000 {
+                    *p += 1
+                }
+            }
+        }
+    }
+    println("counter={}", counter)
+}

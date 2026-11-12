@@ -1,0 +1,9 @@
+// expect: stdout
+// | true true 2 3 [a,b]
+package main
+fn main() {
+    s := "a,b,c"
+    parts := s.split(",")
+    t := "  [a,b]  ".trim()
+    println("{} {} {} {} {}", s.contains("b"), s.starts_with("a"), s.index_of("b") or 99, parts.len(), t)
+}

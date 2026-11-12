@@ -2,7 +2,6 @@ package raygui_ext
 
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
-import "core:str"
 
 type SinglelineInputStyle struct {
     bg_color: rl.Color

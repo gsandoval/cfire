@@ -1,0 +1,9 @@
+package main
+fn bump(mut x: i32) {
+    x += 1
+}
+fn main() {
+    mut a: i32 = 1
+    bump(a) //~ error cfire/MUT-CALLSITE
+    println("{}", a)
+}

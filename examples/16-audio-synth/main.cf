@@ -18,7 +18,7 @@ fn main() {
 
     // 3. Encode synthesized waveform to in-memory RIFF/WAV byte buffer
     wav_bytes := audio.encode_wav(synth_wave)
-    println("Synthesized WAV image: {} bytes, duration: {}s", wav_bytes.len, synth_wave.duration_sec())
+    println("Synthesized WAV image: {} bytes, duration: {}s", wav_bytes.len(), synth_wave.duration_sec())
 
     // 4. Verify roundtrip file persistence and decode
     wav_path := "synth_output.wav"

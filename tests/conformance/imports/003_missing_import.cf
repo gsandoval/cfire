@@ -1,0 +1,4 @@
+package main
+fn main() {
+    println("{}", math.hypot(3.0, 4.0)) //~ error cfire/MISSING-IMPORT
+}

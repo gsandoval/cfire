@@ -1,0 +1,14 @@
+// probe: guard mutating an outer variable inside spawn is rejected
+// kind: guard
+// mode: check
+// ideal: reject cfire/ESCAPING-CAPTURE-MUT
+package main
+fn main() {
+    mut counter := 0
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            counter += 1
+        }
+    }
+    println("{}", counter)
+}

@@ -320,7 +320,30 @@ namespace cfire::mcp {
 #endif
 }
 
-[[nodiscard]] inline auto build_compiler_mcp_server(const std::filesystem::path& runtime_dir) -> cfire::ai::McpServer {
+// Q15 (CF-160): every path an MCP client passes is confined to the server's workspace root, so an agent
+// (or a prompt-injected instruction it follows) cannot read, test, or rewrite files elsewhere on disk.
+struct McpOptions {
+    std::filesystem::path root = std::filesystem::current_path();
+    bool allow_outside_root = false;
+};
+
+[[nodiscard]] inline auto resolve_in_root(const McpOptions& opts, std::string_view raw)
+    -> std::expected<std::filesystem::path, cfire::Error> {
+    std::filesystem::path p = raw.empty() ? std::filesystem::path(".") : std::filesystem::path(raw);
+    if (opts.allow_outside_root) return p;
+    std::error_code ec;
+    auto root = std::filesystem::weakly_canonical(std::filesystem::absolute(opts.root, ec), ec);
+    auto cand = std::filesystem::weakly_canonical(p.is_absolute() ? p : (root / p), ec);  // resolves `..` and symlinks
+    auto rel = cand.lexically_relative(root);
+    if (ec || rel.empty() || *rel.begin() == "..") {
+        return cfire::make_error(std::format(
+            "path '{}' is outside the MCP workspace root '{}' (start `cfire mcp --allow-outside-root` to permit this)",
+            raw, root.string()));
+    }
+    return cand;
+}
+
+[[nodiscard]] inline auto build_compiler_mcp_server(const std::filesystem::path& runtime_dir, McpOptions mcp_opts = {}) -> cfire::ai::McpServer {
     auto srv = cfire::ai::make_mcp_server("cfire-compiler", std::string(cfire::version::kVersion));
 
     srv.register_tool<EmptyInput>(
@@ -399,7 +422,7 @@ namespace cfire::mcp {
     srv.register_tool<CheckInput>(
         "cfire_check",
         "Type-check cfire (.cf) inline code or a workspace file/directory path, verify memory safety & parameter intents, and validate C++23 codegen with fix-it suggestions.",
-        [runtime_dir](CheckInput in) -> std::expected<std::string, cfire::Error> {
+        [runtime_dir, mcp_opts](CheckInput in) -> std::expected<std::string, cfire::Error> {
             cfire::analysis::CheckOptions opts;
             opts.runtime_dir = runtime_dir;
 
@@ -411,7 +434,9 @@ namespace cfire::mcp {
                 }
                 diags = cfire::analysis::check_source("snippet.cf", src, opts);
             } else {
-                std::filesystem::path target_path = in.path.empty() ? "." : in.path;
+                auto confined = resolve_in_root(mcp_opts, in.path);
+                if (!confined) return std::unexpected(confined.error());
+                std::filesystem::path target_path = *confined;
                 std::error_code ec;
                 if (!std::filesystem::exists(target_path, ec)) {
                     return cfire::make_error(std::format("path '{}' not found", target_path.string()));
@@ -439,11 +464,11 @@ namespace cfire::mcp {
         "cfire_eval",
         "Compile and execute a cfire (.cf) program or snippet and return its stdout/stderr.",
         [runtime_dir](CodeInput in) -> std::expected<std::string, cfire::Error> {
-            static std::atomic<uint64_t> s_eval_counter{1};
-            auto now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
-            auto tmp_dir = std::filesystem::temp_directory_path() / std::format("cfire_mcp_eval_{}_{}_{}", ::getpid(), now_ns, s_eval_counter.fetch_add(1));
+            // Per-call private directory (mkdtemp, 0700) for the snippet and its binary (CF-153, Q15).
+            cfire::detail::SecureTempDir eval_dir("cfire_mcp_eval");
+            if (!eval_dir.ok()) return cfire::make_error("cfire_eval: could not create a private temporary directory");
+            auto tmp_dir = eval_dir.path();
             std::error_code ec;
-            std::filesystem::create_directories(tmp_dir, ec);
             auto cf_file = tmp_dir / "eval.cf";
             auto bin_file = tmp_dir / "eval_bin";
             std::string src = in.code;
@@ -452,7 +477,6 @@ namespace cfire::mcp {
                 if (src.contains("json.") || src.contains("`json:")) imports += "import \"core:json\"\n";
                 if (src.contains("ai.")) imports += "import \"ext:ai\"\n";
                 if (src.contains("webui.") || src.contains("App.")) imports += "import \"ext:webui\"\n";
-                if (src.contains("str.")) imports += "import \"core:str\"\n";
                 if (src.contains("math.")) imports += "import \"core:math\"\n";
                 if (src.contains("fs.")) imports += "import \"core:fs\"\n";
                 if (src.contains("os.")) imports += "import \"core:os\"\n";
@@ -481,8 +505,10 @@ namespace cfire::mcp {
     srv.register_tool<PathInput>(
         "cfire_outline",
         "Return a token-compressed AST outline of packages, imports, structs, enums, interfaces, function signatures, and test blocks for a .cf file or directory.",
-        [](PathInput in) -> std::expected<std::string, cfire::Error> {
-            std::filesystem::path target_path = in.path.empty() ? "." : in.path;
+        [mcp_opts](PathInput in) -> std::expected<std::string, cfire::Error> {
+            auto confined = resolve_in_root(mcp_opts, in.path);
+            if (!confined) return std::unexpected(confined.error());
+            std::filesystem::path target_path = *confined;
             std::vector<std::filesystem::path> cf_files;
             std::error_code ec;
             if (std::filesystem::is_directory(target_path, ec)) {
@@ -537,10 +563,14 @@ namespace cfire::mcp {
     srv.register_tool<TestInput>(
         "cfire_test",
         "Run cfire unit tests (`test`), property-based fuzz tests (`fuzz` with counterexample shrinking), executable doc-tests (`///`), automatic JSON round-trip invariants, and multi-iteration parameterized benchmarks (`bench`).",
-        [runtime_dir](TestInput in) -> std::expected<std::string, cfire::Error> {
+        [runtime_dir, mcp_opts](TestInput in) -> std::expected<std::string, cfire::Error> {
             auto cfire_bin = cfire::lsp::resolve_cfire_binary(runtime_dir.parent_path());
             std::vector<std::string> argv = {cfire_bin, in.bench ? "bench" : "test"};
-            if (!in.path.empty()) argv.push_back(in.path);
+            if (!in.path.empty()) {
+                auto confined = resolve_in_root(mcp_opts, in.path);
+                if (!confined) return std::unexpected(confined.error());
+                argv.push_back(confined->string());
+            }
             if (!in.filter.empty()) {
                 argv.push_back("--filter");
                 argv.push_back(in.filter);
@@ -570,7 +600,7 @@ namespace cfire::mcp {
     srv.register_tool<TargetInput>(
         "cfire_inspect",
         "Inspect a source coordinate ('<file.cf>:<line>:<col>'), foreign C/C++ header ('cpp <header.h>'), stdlib symbol, or compiler diagnostic code ('cfire/USE-AFTER-FREE').",
-        [runtime_dir](TargetInput in) -> std::expected<std::string, cfire::Error> {
+        [runtime_dir, mcp_opts](TargetInput in) -> std::expected<std::string, cfire::Error> {
             std::string target_str = in.target;
             // 1. Check diagnostic catalog
             for (const auto& d : cfire::doc::diagnostics_catalog()) {
@@ -588,8 +618,7 @@ namespace cfire::mcp {
                 std::error_code ec;
                 std::filesystem::create_directories(cache_dir, ec);
                 if (ec) {
-                    cache_dir = std::filesystem::temp_directory_path() / "cfire_mcp_cache";
-                    std::filesystem::create_directories(cache_dir, ec);
+                    cache_dir = cfire::detail::user_cache_dir("mcp");  // never a shared temp-dir name (CF-153)
                 }
                 auto idx = cfire::bridge::inspect_header(header, {}, cache_dir);
                 if (!idx) return cfire::make_error(idx.error());
@@ -608,6 +637,7 @@ namespace cfire::mcp {
                 auto pcol = cfire::detail::parse_int<int>(target_str.substr(c1 + 1));
                 if (pline && pcol && *pline > 0 && *pcol > 0) {
                     std::string req_file = target_str.substr(0, c2);
+                    if (auto confined = resolve_in_root(mcp_opts, req_file); !confined) return std::unexpected(confined.error());
                     cfire::lsp::Server lsp_srv;
                     std::error_code ec;
                     auto abs_p = std::filesystem::absolute(req_file, ec);
@@ -673,7 +703,7 @@ namespace cfire::mcp {
     srv.register_tool<RenameInput>(
         "cfire_rename",
         "Semantically rename a cfire identifier at '<file.cf>:<line>:<col>' across the workspace, including occurrences inside '{...}' replacement strings.",
-        [](RenameInput in) -> std::expected<std::string, cfire::Error> {
+        [mcp_opts](RenameInput in) -> std::expected<std::string, cfire::Error> {
             auto c1 = in.target.rfind(':');
             auto c2 = (c1 != std::string::npos && c1 > 0) ? in.target.rfind(':', c1 - 1) : std::string::npos;
             if (c1 == std::string::npos || c2 == std::string::npos || c2 >= c1) {
@@ -684,10 +714,15 @@ namespace cfire::mcp {
             if (!pline || !pcol || *pline <= 0 || *pcol <= 0) {
                 return cfire::make_error(std::format("invalid line/col in target '{}'", in.target));
             }
-            std::filesystem::path target_file = in.target.substr(0, c2);
+            auto confined = resolve_in_root(mcp_opts, in.target.substr(0, c2));
+            if (!confined) return std::unexpected(confined.error());
+            std::filesystem::path target_file = *confined;
             auto res = cfire::refactor::plan_rename(target_file, *pline, *pcol, in.new_name);
             if (!res.success) {
                 return cfire::make_error(res.error);
+            }
+            for (const auto& m : res.modifications) {  // a workspace-wide rename must not write outside the root
+                if (auto inside = resolve_in_root(mcp_opts, m.file_path); !inside) return std::unexpected(inside.error());
             }
             std::string diff = cfire::refactor::generate_unified_diff(res);
             if (!in.dry_run) {
@@ -714,8 +749,8 @@ namespace cfire::mcp {
     return srv;
 }
 
-inline auto serve_stdio(const std::filesystem::path& runtime_dir) -> int {
-    auto srv = build_compiler_mcp_server(runtime_dir);
+inline auto serve_stdio(const std::filesystem::path& runtime_dir, McpOptions opts = {}) -> int {
+    auto srv = build_compiler_mcp_server(runtime_dir, std::move(opts));
     return srv.serve_stdio();
 }
 

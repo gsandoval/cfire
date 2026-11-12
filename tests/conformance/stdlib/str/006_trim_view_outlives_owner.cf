@@ -1,0 +1,7 @@
+package main
+fn main() {
+    mut s := "  hi  "
+    t := s.trim()
+    s = "changed"
+    println("{}", t) //~ error cfire/USE-AFTER-FREE
+}

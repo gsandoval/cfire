@@ -1,0 +1,10 @@
+// probe: Q7 map keys/values (target API)
+// kind: hole
+// mode: run
+// ideal: stdout 1 1
+package main
+fn main() {
+    mut m: map[str]i32
+    m["a"] = 1
+    println("{} {}", m.keys().len(), m.values().len())
+}

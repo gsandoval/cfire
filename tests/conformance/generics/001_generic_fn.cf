@@ -1,0 +1,11 @@
+// expect: stdout
+// | 3 b
+package main
+fn last_of[T](xs: []T) -> T {
+    return xs[xs.len() - 1]
+}
+fn main() {
+    a: []i32 = [1, 2, 3]
+    b: []str = ["a", "b"]
+    println("{} {}", last_of(a), last_of(b))
+}

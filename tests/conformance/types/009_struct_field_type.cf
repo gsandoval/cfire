@@ -1,0 +1,8 @@
+package main
+type P struct {
+    a: i32
+}
+fn main() {
+    p := P{a: "s"} //~ error cfire/TYPE-MISMATCH
+    println("{}", p.a)
+}

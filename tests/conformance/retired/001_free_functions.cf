@@ -1,0 +1,9 @@
+package main
+import "core:str" //~ error cfire/RETIRED-API
+import "core:math"
+fn main() {
+    a := str.trim(" x ") //~ error cfire/RETIRED-API
+    b := math.sqrt(4.0) //~ error cfire/RETIRED-API
+    c := math.pi() //~ error cfire/RETIRED-API
+    d := "7".parse_i32() //~ error cfire/RETIRED-API
+}

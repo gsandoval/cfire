@@ -203,7 +203,11 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
 [[nodiscard]] inline auto resolve_emscripten_compiler() -> std::expected<std::string, std::string> {
     if (std::getenv("EM_CACHE") == nullptr) {
         std::error_code ec;
-        auto tmp_cache = std::filesystem::path("/tmp/cfire_emscripten_cache");
+        auto tmp_cache = cfire::detail::user_cache_dir("emscripten");  // CF-153: not a shared /tmp path
+        if (tmp_cache.empty()) {
+            static cfire::detail::SecureTempDir em_fallback("cfire_emscripten_cache");
+            tmp_cache = em_fallback.path();
+        }
         std::filesystem::create_directories(tmp_cache, ec);
         if (!ec) {
             auto canon_cache = std::filesystem::canonical(tmp_cache, ec);

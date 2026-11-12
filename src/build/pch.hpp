@@ -20,6 +20,12 @@ namespace cfire::build {
 
 inline bool g_debug_mode = false;
 inline bool g_profile_mode = false;
+// `--sanitize` selects ASan+UBSan; `--sanitize=thread` selects TSan (CF-164). Only read when sanitize is on.
+inline std::string g_sanitizer_set = "address,undefined";
+
+[[nodiscard]] inline auto sanitizer_opt_flags() -> std::string {
+    return "-O1 -g -fno-omit-frame-pointer -fsanitize=" + g_sanitizer_set;
+}
 
 [[nodiscard]] inline auto resolve_cxx_compiler(std::string_view target_triple = "") -> std::string {
     if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
@@ -73,7 +79,8 @@ inline bool g_profile_mode = false;
 #endif
     auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
     std::string cxx_bin = resolve_cxx_compiler();
-    std::string tag = sanitize ? (test_mode ? "san_test" : "san") : (test_mode ? "test_trap" : "opt_wrapv");
+    std::string san_tag = g_sanitizer_set == "thread" ? "tsan" : "san";
+    std::string tag = sanitize ? (test_mode ? san_tag + "_test" : san_tag) : (test_mode ? "test_trap" : "opt_wrapv");
     if (with_pthread) {
         tag += "_pth";
     }
@@ -135,7 +142,7 @@ inline bool g_profile_mode = false;
     if (needs_build) {
         std::string opt_flags;
         if (sanitize) {
-            opt_flags = "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined";
+            opt_flags = sanitizer_opt_flags();
             if (test_mode) {
                 opt_flags += " -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fsanitize-trap=all";
             }

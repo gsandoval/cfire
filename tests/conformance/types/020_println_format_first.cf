@@ -1,0 +1,5 @@
+package main
+fn main() {
+    y := 3
+    println(y, 4) //~ error cfire/TYPE-MISMATCH
+}

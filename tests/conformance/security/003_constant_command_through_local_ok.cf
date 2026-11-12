@@ -1,0 +1,10 @@
+// expect: stdout
+// | true
+package main
+import "core:os"
+fn main() {
+    mut cmd := "echo"
+    cmd += " hello"
+    res := os.exec(cmd) or ""
+    println("{}", res.contains("hello"))
+}

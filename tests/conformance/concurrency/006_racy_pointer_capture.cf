@@ -1,0 +1,13 @@
+package main
+fn main() {
+    mut counter: i64 = 0
+    p := &mut counter
+    async.scope(workers: 8) |scope| {
+        for w in 0..8 {
+            scope.spawn || {
+                *p += 1 //~ error cfire/SPAWN-SHARED-MUT
+            }
+        }
+    }
+    println("counter={}", counter)
+}

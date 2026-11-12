@@ -1,0 +1,14 @@
+// expect: stdout
+// | 1
+package main
+// cfire maps are node-based (std::unordered_map): references to an element stay valid across inserts
+// and rehashing; only removing that element (or clear) invalidates them (see 022).
+fn main() {
+    mut m: map[str]i32
+    m["a"] = 1
+    p := &m["a"]
+    for i in 0..10000 {
+        m[str(i)] = i32(i)
+    }
+    println("{}", *p)
+}

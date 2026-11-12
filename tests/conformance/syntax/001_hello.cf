@@ -1,0 +1,6 @@
+// expect: stdout
+// | hello, cfire
+package main
+fn main() {
+    println("hello, cfire")
+}

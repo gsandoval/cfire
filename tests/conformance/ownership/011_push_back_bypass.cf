@@ -1,0 +1,9 @@
+package main
+fn main() {
+    mut xs: []i32 = [1, 2, 3]
+    v := xs[0..2]
+    for i in 0..100 {
+        xs.push_back(i32(i)) //~ error cfire/UNKNOWN-METHOD
+    }
+    println("{}", v[0])
+}

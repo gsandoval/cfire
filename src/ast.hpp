@@ -391,6 +391,11 @@ struct CallExpr {
     std::vector<CallArg> args{};
     std::optional<ClosureExpr> block_arg{};
     std::optional<Resolution> resolution{};
+    // Q25: `make(T, args...)` with the type as the first argument (stored in type_args[0]); false for the
+    // retired bracket form `make[T](args...)`.
+    bool make_type_first = false;
+    // Set by Sema: `make(own[T], v)` where `v` is already a `T` (so T's declared constructor is not called).
+    mutable bool make_from_value = false;
 };
 
 struct TryExpr {
@@ -487,6 +492,9 @@ struct MatchExpr {
     std::vector<MatchArm> arms{};
     int line = 1;
     int col = 1;
+    // Set by Sema when every arm yields the same primitive type (CF-148): codegen gives the lowered lambda an
+    // explicit return type, so a literal arm (`_ => 0`) converts instead of clashing with `i64(...)`.
+    mutable std::string result_type{};
 };
 
 using ExprVariant = std::variant<
@@ -677,6 +685,7 @@ struct FnDecl {
     int line = 1;
     std::string package_name{};
     std::string source_path{};
+    std::string ctor_type{};  // Q25: set for `fn (T) make(...)`, whose name is rewritten to `cfire_ctor_T`
 };
 
 struct GlobalVarDecl {

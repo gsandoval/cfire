@@ -1,0 +1,18 @@
+// expect: stdout
+// | filtered_sum=130
+package main
+fn for_each_above(items: []i32, threshold: i32, visit: fn(i32)) {
+    for x in items {
+        if x >= threshold {
+            visit(x)
+        }
+    }
+}
+fn main() {
+    mut total: i32 = 0
+    scores: []i32 = [10, 50, 25, 80]
+    for_each_above(scores, 30) |score| {
+        total += score
+    }
+    println("filtered_sum={}", total)
+}

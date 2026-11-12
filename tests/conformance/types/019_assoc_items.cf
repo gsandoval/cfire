@@ -1,0 +1,16 @@
+// expect: stdout
+// | 127 -128 64 42 none true 2.5 0
+package main
+fn main() {
+    a := i8.MAX
+    b := i8.MIN
+    c := i64.BITS
+    d := i32.parse(" 42 ") or 0
+    e := u8.parse("300")
+    f := bool.parse("TRUE") or false
+    g := f64.parse("2.5") or 0.0
+    h := u16.MIN
+    if e == none {
+        println("{} {} {} {} none {} {} {}", a, b, c, d, f, g, h)
+    }
+}

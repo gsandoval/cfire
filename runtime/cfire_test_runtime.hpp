@@ -11,8 +11,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <csignal>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#if defined(_WIN32)
+#include <io.h>
+#else
+#include <signal.h>
+#include <unistd.h>
+#endif
 #include <format>
 #include <limits>
 #if __has_include(<print>)
@@ -36,6 +44,78 @@ inline thread_local std::string failure_expr;
 inline thread_local std::string failure_msg;
 
 struct TestAssertionFailure {};
+
+// --- Crash & sanitizer-trap reporting (CF-157) ---
+// A UBSan trap (-fsanitize-trap), segfault or abort inside a test used to kill the runner with no output.
+// begin_test() records the running test and flushes stdout; the signal handler then reports it with
+// async-signal-safe write(2) calls only, and exits with status 1 like an ordinary test failure.
+inline char crash_report_line[512] = {0};
+inline std::size_t crash_report_len = 0;
+
+inline void begin_test(std::string_view name, std::string_view file, int line) {
+    std::fflush(stdout);
+    std::string msg = std::format("--- FAIL: {} ({}:{}: test crashed: ", name, file, line);
+    crash_report_len = std::min(msg.size(), sizeof(crash_report_line) - 1);
+    std::memcpy(crash_report_line, msg.data(), crash_report_len);
+}
+
+inline void end_test() noexcept { crash_report_len = 0; }
+
+[[nodiscard]] inline auto crash_signal_reason(int sig) noexcept -> const char* {
+    switch (sig) {
+#if defined(SIGTRAP)
+        case SIGTRAP:
+#endif
+        case SIGILL: return "sanitizer trap: signed integer overflow, out-of-range shift, or integer division by zero)\n";
+        case SIGSEGV: return "invalid memory access (SIGSEGV))\n";
+#if defined(SIGBUS)
+        case SIGBUS: return "invalid memory access (SIGBUS))\n";
+#endif
+        case SIGFPE: return "arithmetic exception (SIGFPE))\n";
+        case SIGABRT: return "aborted (SIGABRT))\n";
+        default: return "fatal signal)\n";
+    }
+}
+
+inline void crash_signal_handler(int sig) {
+    auto put = [](const char* s, std::size_t n) {
+#if defined(_WIN32)
+        (void)::_write(1, s, static_cast<unsigned>(n));
+#else
+        (void)!::write(1, s, n);
+#endif
+    };
+    if (crash_report_len > 0) {
+        put(crash_report_line, crash_report_len);
+        const char* reason = crash_signal_reason(sig);
+        put(reason, std::strlen(reason));
+        static constexpr char tail[] = "FAIL (test runner crashed; remaining tests were not run)\n";
+        put(tail, sizeof(tail) - 1);
+    }
+    std::_Exit(1);
+}
+
+inline void install_crash_handlers() {
+    const int sigs[] = {
+#if defined(SIGTRAP)
+        SIGTRAP,
+#endif
+#if defined(SIGBUS)
+        SIGBUS,
+#endif
+        SIGILL, SIGSEGV, SIGFPE, SIGABRT};
+    for (int sig : sigs) {
+#if defined(_WIN32)
+        std::signal(sig, crash_signal_handler);
+#else
+        struct sigaction sa{};
+        sa.sa_handler = crash_signal_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESETHAND;
+        ::sigaction(sig, &sa, nullptr);
+#endif
+    }
+}
 
 template <typename Fn>
 inline auto run_test_guarded(Fn&& fn) -> bool {

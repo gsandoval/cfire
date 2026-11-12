@@ -99,6 +99,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
         writeln("}");
         writeln("(void)bench_mode; (void)bench_time_ms; (void)fuzz_runs; (void)fuzz_seed;");
         writeln("cfire::testing_detail::in_test_harness = true;");
+        writeln("cfire::testing_detail::install_crash_handlers();");
         if (used_core_.contains("sqlite")) {
             writeln("#if defined(CFIRE_USE_SQLITE)");
             writeln("{ unsigned char _sq_warm = 0; sqlite3_randomness(1, &_sq_warm); }");
@@ -126,6 +127,8 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
                 writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", t_name));
                 ++indent_;
                 writeln(std::format("if (!json_mode) std::println(\"=== BENCH {}\");", t_name));
+                writeln(std::format("cfire::testing_detail::begin_test(\"{}\", \"{}\", {});", t_name,
+                    escape_line_path(td.source_path.empty() ? source_path_ : td.source_path), td.line));
                 writeln("cfire::testing_detail::current_test_failed = false;");
                 writeln("cfire::testing_detail::failure_file.clear();");
                 writeln("cfire::testing_detail::failure_line = 0;");
@@ -134,6 +137,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
                 writeln("auto start_t = std::chrono::steady_clock::now();");
                 writeln(std::format("(void)cfire::testing_detail::run_test_guarded([&] {{ __cfire_bench_runner_{}(!bench_mode, bench_time_ms, json_mode, bench_records); }});", i));
                 writeln("auto end_t = std::chrono::steady_clock::now();");
+            writeln("cfire::testing_detail::end_test();");
                 writeln("double dur_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();");
                 writeln("if (!cfire::testing_detail::current_test_failed) {");
                 writeln("    passed_count++;");
@@ -155,6 +159,8 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", t_name));
             ++indent_;
             writeln(std::format("if (!json_mode) std::println(\"=== RUN   {}\");", t_name));
+            writeln(std::format("cfire::testing_detail::begin_test(\"{}\", \"{}\", {});", t_name,
+                escape_line_path(td.source_path.empty() ? source_path_ : td.source_path), td.line));
             writeln("cfire::testing_detail::current_test_failed = false;");
             writeln("cfire::testing_detail::failure_file.clear();");
             writeln("cfire::testing_detail::failure_line = 0;");
@@ -186,6 +192,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
                 writeln(std::format("(void)cfire::testing_detail::run_test_guarded([&] {{ __cfire_test_{}(); }});", i));
             }
             writeln("auto end_t = std::chrono::steady_clock::now();");
+            writeln("cfire::testing_detail::end_test();");
             if (check_fd_leak) {
                 std::string td_file = escape_line_path(td.source_path.empty() ? source_path_ : td.source_path);
                 writeln("const std::size_t fds_after = cfire::testing_detail::count_open_fds();");
@@ -229,6 +236,8 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             writeln(std::format("if (filter.empty() || std::string_view(\"{}\").find(filter) != std::string_view::npos) {{", auto_name));
             ++indent_;
             writeln(std::format("if (!json_mode) std::println(\"=== RUN   {}\");", auto_name));
+            writeln(std::format("cfire::testing_detail::begin_test(\"{}\", \"{}\", {});", auto_name,
+                escape_line_path(source_path_), sline));
             writeln("cfire::testing_detail::current_test_failed = false;");
             writeln("cfire::testing_detail::failure_file.clear();");
             writeln("cfire::testing_detail::failure_line = 0;");
@@ -237,6 +246,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
             writeln("auto start_t = std::chrono::steady_clock::now();");
             writeln(std::format("(void)cfire::testing_detail::run_test_guarded([&] {{ __cfire_auto_json_{}(fuzz_seed); }});", j));
             writeln("auto end_t = std::chrono::steady_clock::now();");
+            writeln("cfire::testing_detail::end_test();");
             writeln("double dur_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();");
             writeln("if (!cfire::testing_detail::current_test_failed) {");
             writeln("    passed_count++;");

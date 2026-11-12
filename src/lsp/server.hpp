@@ -132,7 +132,19 @@ public:
         }
     }
 
+    // Exception barrier (CF-140): a failure while serving one message must never take the server down.
     bool handle_message(std::string_view msg, std::ostream& out) {
+        try {
+            return handle_message_impl(msg, out);
+        } catch (const std::exception& e) {
+            report_internal_error(msg, out, e.what());
+        } catch (...) {
+            report_internal_error(msg, out, "unknown exception");
+        }
+        return true;
+    }
+
+    bool handle_message_impl(std::string_view msg, std::ostream& out) {
         {
             std::lock_guard<std::mutex> lock(out_mutex_);
             if (!out_stream_) out_stream_ = &out;
@@ -522,6 +534,16 @@ public:
     }
 
 private:
+    void report_internal_error(std::string_view msg, std::ostream& out, std::string_view what) {
+        auto method = detail::extract_json_string(msg, "method").value_or("");
+        std::println(stderr, "cfire lsp: internal error handling '{}': {}", method, what);
+        if (auto id_opt = detail::extract_json_id(msg)) {
+            send_rpc(out, std::format(
+                R"({{"jsonrpc":"2.0","id":{},"error":{{"code":-32603,"message":"cfire internal error: {}"}}}})",
+                *id_opt, detail::json_escape(what)));
+        }
+    }
+
     std::chrono::milliseconds debounce_duration_{150};
     std::thread worker_thread_;
     std::mutex diag_mutex_;
@@ -838,7 +860,8 @@ public:
                 std::max(0, d.col - 1),
                 d.code,
                 d.message,
-                (d.severity == "warning") ? 2 : 1
+                (d.severity == "warning") ? 2 : 1,
+                d.facts
             });
         }
         {
@@ -927,7 +950,13 @@ public:
             }
 
             if (has_req) {
-                run_and_publish_diagnostics(current_req.uri, current_req.text);
+                try {
+                    run_and_publish_diagnostics(current_req.uri, current_req.text);
+                } catch (const std::exception& e) {
+                    std::println(stderr, "cfire lsp: internal error while analyzing {}: {}", current_req.uri, e.what());
+                } catch (...) {
+                    std::println(stderr, "cfire lsp: internal error while analyzing {}: unknown exception", current_req.uri);
+                }
             }
         }
     }
@@ -954,11 +983,19 @@ public:
         int end_col = 0;   // 0-based
     };
 
-    auto get_workspace_root_for_uri(const std::string& uri) -> std::filesystem::path {
+    // Q21 (CF-178): the workspace is the editor's rootUri, else the nearest ancestor holding a project
+    // marker. A cache directory (`.cfire`) is not a marker: a stray /tmp/.cfire used to turn all of /tmp
+    // into one workspace. `has_marker == false` means "just this file's directory, non-recursively".
+    struct WorkspaceRoot {
+        std::filesystem::path path;
+        bool has_marker = false;
+    };
+
+    auto resolve_workspace_root(const std::string& uri) -> WorkspaceRoot {
         if (!workspace_root_.empty()) {
             std::error_code ec;
             if (std::filesystem::exists(workspace_root_, ec)) {
-                return std::filesystem::path(workspace_root_);
+                return {std::filesystem::path(workspace_root_), true};
             }
         }
         std::filesystem::path file_path = detail::uri_to_path(uri);
@@ -967,25 +1004,44 @@ public:
             std::error_code ec;
             if (std::filesystem::exists(p / "build.cf", ec) ||
                 std::filesystem::exists(p / ".git", ec) ||
-                std::filesystem::exists(p / ".cfire", ec) ||
                 std::filesystem::exists(p / ".vscode", ec) ||
                 std::filesystem::exists(p / ".zed", ec)) {
-                return p;
+                return {p, true};
             }
             p = p.parent_path();
         }
-        return file_path.parent_path();
+        return {file_path.parent_path(), false};
     }
+
+    auto get_workspace_root_for_uri(const std::string& uri) -> std::filesystem::path {
+        return resolve_workspace_root(uri).path;
+    }
+
+    static constexpr std::size_t kMaxWorkspaceFiles = 5000;
 
     auto discover_workspace_cf_files(const std::string& current_uri) -> std::vector<std::string> {
         std::vector<std::string> uris;
         std::unordered_set<std::string> seen;
 
-        std::filesystem::path root = get_workspace_root_for_uri(current_uri);
+        auto ws = resolve_workspace_root(current_uri);
+        std::filesystem::path root = ws.path;
         std::error_code ec;
-        if (std::filesystem::exists(root, ec) && std::filesystem::is_directory(root, ec)) {
+        if (std::filesystem::exists(root, ec) && std::filesystem::is_directory(root, ec) && !ws.has_marker) {
+            // No project marker: only the opened file's own directory, never its whole subtree (Q21).
+            for (const auto& entry : std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec)) {
+                if (uris.size() >= kMaxWorkspaceFiles) break;
+                if (entry.is_regular_file(ec) && entry.path().extension() == ".cf") {
+                    std::string u = detail::path_to_uri(entry.path());
+                    if (seen.insert(u).second) uris.push_back(u);
+                }
+            }
+        } else if (std::filesystem::exists(root, ec) && std::filesystem::is_directory(root, ec)) {
             for (std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec), end;
                  it != end && !ec; it.increment(ec)) {
+                if (uris.size() >= kMaxWorkspaceFiles) {
+                    std::println(stderr, "cfire lsp: workspace '{}' has more than {} .cf files; indexing stopped", root.string(), kMaxWorkspaceFiles);
+                    break;
+                }
                 if (it->is_directory(ec)) {
                     auto fname = it->path().filename().string();
                     if (fname.starts_with(".") || fname == "build" || fname == "vendor" || fname == "node_modules" || fname == "c_deps") {
@@ -1076,6 +1132,7 @@ public:
             sd.col = d.col + 1;
             sd.code = d.code;
             sd.message = d.message;
+            sd.facts = d.facts;
             cfire::diag::synthesize_fixits_for_diagnostic(sd, ast_res ? &(*ast_res) : nullptr, lines, extra_enums);
 
             for (const auto& fix : sd.fixits) {

@@ -1,0 +1,13 @@
+// probe: guard use-after-move is rejected
+// kind: guard
+// mode: check
+// ideal: reject cfire/USE-AFTER-MOVE
+package main
+fn take(move xs: []i64) -> i64 {
+    return i64(xs.len())
+}
+fn main() {
+    xs: []i64 = [1, 2, 3]
+    n := take(move xs)
+    println("{} {}", n, xs.len())
+}

@@ -1,0 +1,10 @@
+package main
+fn main() {
+    mut counter := 0
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            counter += 1 //~ error cfire/ESCAPING-CAPTURE-MUT
+        }
+    }
+    println("{}", counter)
+}

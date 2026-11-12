@@ -3,6 +3,9 @@
 #include "test_lsp_docgen.hpp"
 #include "test_ergonomics_upstream.hpp"
 #include "test_golden_codegen.hpp"
+#include "test_audit_w0.hpp"
+#include "test_audit_w2.hpp"
+#include "test_audit_w4.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");
@@ -425,7 +428,6 @@ import "ext:db/sqlite"
 import "core:fs"
 import "core:json"
 import "core:net/http"
-import "core:str"
 
 type ToolArgs struct {
     query: str  `json:"query" desc:"Search query string"`
@@ -447,16 +449,16 @@ type DocRow struct {
 fn main() {
     // 1. Compile-time JSON Schema reflection with desc:"..." tags
     schema := json.schema[ToolArgs]()
-    assert(str.contains(schema, `"type":"object"`), "schema object type")
-    assert(str.contains(schema, `"description":"Search query string"`), "schema field description")
-    assert(str.contains(schema, `"required":["query","limit","exact"]`), "schema required fields")
+    assert(schema.contains(`"type":"object"`), "schema object type")
+    assert(schema.contains(`"description":"Search query string"`), "schema field description")
+    assert(schema.contains(`"required":["query","limit","exact"]`), "schema required fields")
 
     // 2. RAG text chunking & language detection via stateful on-device Client
     local_ai := ai.local()
     chunks := ai.chunk_text("First paragraph about systems programming.\n\nSecond paragraph about vector search and embeddings in SQLite.", 60, 12)
     assert(chunks.len() >= 2, "chunk_text splits into multiple chunks")
     lang := local_ai.detect_language("Hello from the cfire systems language")
-    assert(!lang.empty(), "detect_language returns non-empty code")
+    assert(!lang.is_empty(), "detect_language returns non-empty code")
 
     // 3. Unified local embeddings + SQLite vector similarity search + []f32 column mapping
     v_sys := try local_ai.embed("C++23 systems programming memory safety and RAII")
@@ -481,23 +483,23 @@ fn main() {
     assert_eq(rows[0].vec.len(), v_sql.len(), "round-tripped []f32 BLOB matches dimension")
 
     // 4. Model Context Protocol (MCP) server registration & JSON-RPC dispatch
-    mut mcp := ai.make_mcp_server("demo-mcp", "1.0.0")
+    mut mcp := make(ai.McpServer, "demo-mcp", "1.0.0")
     mcp.register_tool[ToolArgs]("search_docs", "Search indexed docs", |args| {
         return "hit:" + args.query
     })
     init_resp := mcp.handle_jsonrpc(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
-    assert(str.contains(init_resp, `"name":"demo-mcp"`), "MCP initialize response")
+    assert(init_resp.contains(`"name":"demo-mcp"`), "MCP initialize response")
     list_resp := mcp.handle_jsonrpc(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
-    assert(str.contains(list_resp, `"name":"search_docs"`), "MCP tools/list includes search_docs")
+    assert(list_resp.contains(`"name":"search_docs"`), "MCP tools/list includes search_docs")
     call_resp := mcp.handle_jsonrpc(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_docs","arguments":{"query":"simd","limit":5,"exact":true}}}`)
-    assert(str.contains(call_resp, "hit:simd"), "MCP tools/call executes typed handler")
+    assert(call_resp.contains("hit:simd"), "MCP tools/call executes typed handler")
 
     // 5. Local mock OpenAI-compatible HTTP server for structured outputs & SSE token streaming
-    mut srv := try http.make_server(0)
+    mut srv := try make(http.Server, 0)
     defer srv.stop()
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.post("/v1/chat/completions", |req| {
-        if str.contains(req.body, `"stream":true`) {
+        if req.body.contains(`"stream":true`) {
             sse_payload := "data: {\"choices\":[{\"delta\":{\"content\":\"Hello \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"AI\"}}]}\n\ndata: [DONE]\n\n"
             mut r := http.Response.text(200, sse_payload)
             r.headers["Content-Type"] = "text/event-stream"
@@ -531,8 +533,8 @@ fn main() {
     docx_doc := try ai.load_document("spec.docx")
     try fs.remove("spec.docx")
     assert_eq(docx_doc.format, "docx", "detected docx format")
-    assert(str.contains(docx_doc.text, "# Architecture Overview"), "docx heading converted to markdown")
-    assert(str.contains(docx_doc.text, "Zero-overhead C++23 lowering"), "docx paragraph extracted")
+    assert(docx_doc.text.contains("# Architecture Overview"), "docx heading converted to markdown")
+    assert(docx_doc.text.contains("Zero-overhead C++23 lowering"), "docx paragraph extracted")
 
     pptx_bytes := ai.create_zip([
         ai.ZipEntry{
@@ -571,15 +573,15 @@ fn main() {
     xlsx_doc := try ai.load_document("metrics.xlsx")
     try fs.remove("metrics.xlsx")
     assert_eq(xlsx_doc.format, "xlsx", "detected xlsx format")
-    assert(str.contains(xlsx_doc.text, "Metric"), "xlsx shared string resolved")
-    assert(str.contains(xlsx_doc.text, "1.2"), "xlsx numeric value extracted")
+    assert(xlsx_doc.text.contains("Metric"), "xlsx shared string resolved")
+    assert(xlsx_doc.text.contains("1.2"), "xlsx numeric value extracted")
 
     pdf_raw := "%PDF-1.4\n1 0 obj\n<< /Length 120 >>\nstream\n/CIDInit /ProcSet findresource begin\n2 beginbfchar\n<0001> <004C>\n<0002> <0069>\nendbfchar\n1 beginbfrange\n<0010> <0012> <006E>\nendbfrange\nendstream\nendobj\n2 0 obj\n<< /Length 88 >>\nstream\nBT /F1 12 Tf 72 712 Td [<000100020010> -250 (Quarterly Financial Summary)] TJ ET\nendstream\nendobj\n%%EOF"
     try fs.write_text("report.pdf", pdf_raw)
     pdf_doc := try ai.load_document("report.pdf")
     try fs.remove("report.pdf")
     assert_eq(pdf_doc.format, "pdf", "detected pdf format")
-    assert(str.contains(pdf_doc.text, "Lin Quarterly Financial Summary"), "pdf CMap + TJ kerning array extracted")
+    assert(pdf_doc.text.contains("Lin Quarterly Financial Summary"), "pdf CMap + TJ kerning array extracted")
 
     odt_bytes := ai.create_zip([
         ai.ZipEntry{name: "mimetype", content: "application/vnd.oasis.opendocument.text"},
@@ -592,7 +594,7 @@ fn main() {
     odt_doc := try ai.load_document("guide.odt")
     try fs.remove("guide.odt")
     assert_eq(odt_doc.format, "odt", "detected LibreOffice odt format")
-    assert(str.contains(odt_doc.text, "Zero external dev packages required."), "odt paragraph extracted")
+    assert(odt_doc.text.contains("Zero external dev packages required."), "odt paragraph extracted")
 
     epub_bytes := ai.create_zip([
         ai.ZipEntry{name: "META-INF/container.xml", content: "<container/>"},
@@ -602,7 +604,7 @@ fn main() {
     epub_doc := try ai.load_document("book.epub")
     try fs.remove("book.epub")
     assert_eq(epub_doc.format, "epub", "detected epub format")
-    assert(str.contains(epub_doc.text, "Systems programming on Linux and macOS."), "epub XHTML chapter extracted")
+    assert(epub_doc.text.contains("Systems programming on Linux and macOS."), "epub XHTML chapter extracted")
 
     // Construct a minimal PNG with an embedded tEXt chunk for deterministic cross-platform OCR & image embedding
     mut png_data: []u8 = [
@@ -617,7 +619,7 @@ fn main() {
     ]
     try fs.write_bytes("invoice.png", png_data)
     ocr_txt := try local_ai.ocr("invoice.png")
-    assert(str.contains(ocr_txt, "Invoice #4200"), "OCR extracted PNG text metadata")
+    assert(ocr_txt.contains("Invoice #4200"), "OCR extracted PNG text metadata")
     img_vec := try local_ai.embed_image("invoice.png")
     try fs.remove("invoice.png")
     assert_eq(img_vec.len(), 384, "embed_image returns 384-dim normalized vector")

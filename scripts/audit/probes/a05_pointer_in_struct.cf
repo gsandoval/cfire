@@ -1,0 +1,16 @@
+// probe: A5 a pointer stored in a struct field is not tracked as a loan
+// kind: guard
+// mode: check
+// ideal: reject
+package main
+type Holder struct {
+    p: *i32
+}
+fn main() {
+    mut nums: []i32 = [1, 2, 3]
+    h := Holder{p: &nums[0]}
+    for i in 0..1000 {
+        nums.push(i32(i))
+    }
+    println("{}", *h.p)
+}

@@ -41,6 +41,11 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     if (const auto* id = std::get_if<IdentExpr>(&cur_init->node)) {
                         if (smart_ptr_vars_.contains(id->name)) is_smart_var = true;
                     } else if (const auto* call_ex = std::get_if<CallExpr>(&cur_init->node)) {
+                        if (const auto* fmem = std::get_if<MemberExpr>(&call_ex->callee->node); fmem && fmem->field == "from_raw") {
+                            if (const auto* ix = std::get_if<IndexExpr>(&fmem->object->node)) {
+                                if (const auto* base = ix->object ? std::get_if<IdentExpr>(&ix->object->node) : nullptr; base && base->name == "own") is_smart_var = true;
+                            }
+                        }
                         if (const auto* cid = std::get_if<IdentExpr>(&call_ex->callee->node)) {
                             if (cid->name == "make" && call_ex->type_args.size() == 1 && !call_ex->type_args[0].smart_wrap.empty()) {
                                 is_smart_var = true;
@@ -80,19 +85,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln(std::format("auto {} = std::move(*{});", vname, tmp));
                     return;
                 }
-                if (const auto* call_ex = std::get_if<CallExpr>(&st.init->node)) {
-                    if (const auto* id = std::get_if<IdentExpr>(&call_ex->callee->node);
-                        id && id->name == "make" && call_ex->type_args.size() == 1 &&
-                        call_ex->type_args[0].smart_wrap.empty()) {
-                        if (call_ex->args.empty()) {
-                            writeln(std::format("{} {}{{}};", lower_owning_type(call_ex->type_args[0]), vname));
-                        } else {
-                            writeln(std::format("{} {}({});",
-                                lower_owning_type(call_ex->type_args[0]), vname, emit_expr(call_ex->args[0].value)));
-                        }
-                        return;
-                    }
-                }
+
             }
             if (st.type && (st.type->is_ptr || st.type->is_mut_ptr)) {
                 ptr_vars_.insert(st.name);
@@ -192,6 +185,8 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 writeln(std::format("{} = cfire::div({}, {});", lhs, lhs, rhs));
             } else if (st.op == "%=") {
                 writeln(std::format("{} = cfire::mod({}, {});", lhs, lhs, rhs));
+            } else if (st.op == "<<=" || st.op == ">>=") {
+                writeln(std::format("{} = cfire::{}({}, {});", lhs, st.op == "<<=" ? "shl" : "shr", lhs, rhs));
             } else {
                 writeln(std::format("{} {} {};", lhs, st.op, rhs));
             }
@@ -490,6 +485,14 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
     }, s->node);
 }
 
+// CF-148: explicit lambda return type for match expressions whose arms share a primitive type.
+inline auto Emitter::match_lambda_header() const -> std::string {
+    if (match_expr_result_type_.empty()) return "([&]() -> auto {";
+    TypeRef tr;
+    tr.name = match_expr_result_type_;
+    return std::format("([&]() -> {} {{", lower_owning_type(tr));
+}
+
 inline void Emitter::emit_match_common(
     const ExprPtr& target,
     bool is_move,
@@ -535,7 +538,7 @@ inline void Emitter::emit_match_common(
 
     if (is_slice_match) {
         std::string target_expr = emit_expr(target);
-        write_ln(is_expr ? "([&]() -> auto {" : "{");
+        write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
         write_ln(std::format("const auto& _target = {};", target_expr));
         write_ln("bool _matched = false;");
@@ -622,7 +625,7 @@ inline void Emitter::emit_match_common(
 
     if (is_opt_match) {
         std::string target_expr = emit_expr(target);
-        write_ln(is_expr ? "([&]() -> auto {" : "{");
+        write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
         write_ln(std::format("const auto& _target = {};", target_expr));
         write_ln("bool _matched = false;");
@@ -664,7 +667,7 @@ inline void Emitter::emit_match_common(
 
     if (is_res_match) {
         std::string target_expr = emit_expr(target);
-        write_ln(is_expr ? "([&]() -> auto {" : "{");
+        write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
         write_ln(std::format("const auto& _target = {};", target_expr));
         write_ln("bool _matched = false;");
@@ -732,7 +735,7 @@ inline void Emitter::emit_match_common(
 
     if (is_primitive_match || enum_name.empty()) {
         std::string target_expr = emit_expr(target);
-        write_ln(is_expr ? "([&]() -> auto {" : "{");
+        write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
         write_ln(std::format("const auto& _target = {};", target_expr));
         write_ln("bool _matched = false;");
@@ -798,7 +801,7 @@ inline void Emitter::emit_match_common(
     }
 
     bool is_rvalue = is_move || (target && std::holds_alternative<CallExpr>(target->node));
-    write_ln(is_expr ? "([&]() -> auto {" : "{");
+    write_ln(is_expr ? match_lambda_header() : std::string("{"));
     ++indent_;
     if (is_rvalue) {
         write_ln(std::format("auto&& _target = {};", emit_expr(target)));
@@ -917,7 +920,9 @@ inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vect
 
 [[nodiscard]] inline auto Emitter::emit_match_expr(const MatchExpr& me) -> std::string {
     std::ostringstream sb;
+    std::string saved = std::exchange(match_expr_result_type_, me.result_type);
     emit_match_common(me.target, me.is_move, me.arms, true, false, sb);
+    match_expr_result_type_ = saved;
     last_source_line_ = -1;
     return sb.str();
 }
