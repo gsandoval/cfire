@@ -1,0 +1,5 @@
+package main
+fn main() {
+    n: i32 = 300
+    println("{}", u8(n)) //~ panic "out of range"
+}

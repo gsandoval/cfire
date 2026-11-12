@@ -1,0 +1,8 @@
+// expect: stdout
+// | 12 -1
+package main
+fn main() {
+    a := i32.parse("12") or 0
+    b := i32.parse("x") or -1
+    println("{} {}", a, b)
+}

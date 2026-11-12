@@ -1,0 +1,10 @@
+// expect: stdout
+// | 8080 25
+package main
+fn main() {
+    mut ports: map[str]i32
+    ports["http"] = 8080
+    http_port := ports.get("http") or 80
+    smtp_port := ports.get("smtp") or 25
+    println("{} {}", http_port, smtp_port)
+}

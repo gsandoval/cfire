@@ -11,8 +11,8 @@ type Shape enum {
 }
 
 type Scene struct {
-    Title: str
-    Areas: map[str]f64
+    title: str
+    areas: map[str]f64
 }
 
 fn (mut s: Scene) register_shape(raw_label: str, shape: Shape) {
@@ -31,11 +31,15 @@ fn (mut s: Scene) register_shape(raw_label: str, shape: Shape) {
         }
     }
 
-    s.Areas[short_key] = computed
+    s.areas[short_key] = computed
+}
+
+fn (s: Scene) tag() -> str {
+    return s.title
 }
 
 fn (s: Scene) query_area(key: str) -> f64? {
-    return s.Areas.get(key)
+    return s.areas.get(key)
 }
 
 fn describe_scene[T: Renderable](item: T) {
@@ -43,7 +47,7 @@ fn describe_scene[T: Renderable](item: T) {
 }
 
 fn main() {
-    mut scene := Scene{Title: "CAD Viewport"}
+    mut scene := Scene{title: "CAD Viewport"}
     scene.register_shape("circle_main", Shape::Circle(10.0))
     scene.register_shape("rect_panel", Shape::Rect(5.0, 8.0))
     scene.register_shape("empty_slot", Shape::Empty)
@@ -52,7 +56,7 @@ fn main() {
     r_area := scene.query_area("rect") or -1.0
     missing := scene.query_area("none") or -1.0
 
-    println("Title slice: {}", scene.Title[0..3])
+    println("Title slice: {}", scene.title[0..3])
     println("Areas -> circ={}, rect={}, missing={}", c_area, r_area, missing)
     describe_scene(scene)
 }

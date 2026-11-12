@@ -1,0 +1,11 @@
+// probe: B5 integer used as an if condition is accepted
+// kind: hole
+// mode: check
+// ideal: reject
+package main
+fn main() {
+    x := 1
+    if x {
+        println("y")
+    }
+}

@@ -19,6 +19,22 @@ fn bump(mut x: i32) {
 x += 1
 }
 )";
+    {
+        // Compound shift/bitwise assignments must not be split (`<<=` was emitted as `< <=`).
+        auto fmt_ops = cfire::fmt::format_source("package main\nfn main() {\n    mut x: i32 = 1\n    x<<=4\n    x>>=1\n    x&=3\n    x|=1\n    x^=2\n}\n", "ops.cf");
+        require(fmt_ops.has_value() && fmt_ops->contains("x <<= 4\n    x >>= 1\n    x &= 3\n    x |= 1\n    x ^= 2"),
+            std::format("expected compound assignment operators kept whole, got: {}", fmt_ops ? *fmt_ops : fmt_ops.error()));
+    }
+    {
+        auto fmt_rng = cfire::fmt::format_source("package main\nfn main() {\n    for cp in 32..=512 {\n    }\n    s := \"abc\"\n    t := s[0..2]\n}\n", "rng.cf");
+        require(fmt_rng.has_value() && fmt_rng->contains("for cp in 32..=512 {") && fmt_rng->contains("t := s[0..2]"),
+            std::format("expected range operators kept whole, got: {}", fmt_rng ? *fmt_rng : fmt_rng.error()));
+    }
+    {
+        auto fmt_sci = cfire::fmt::format_source("package main\nfn main() {\n    b := 2.5e-4\n    c := 1E+9\n    d := e - 4\n}\n", "sci.cf");
+        require(fmt_sci.has_value() && fmt_sci->contains("b := 2.5e-4\n    c := 1E+9\n    d := e - 4"),
+            std::format("expected float exponent signs kept inside literals, got: {}", fmt_sci ? *fmt_sci : fmt_sci.error()));
+    }
     auto fmt1 = cfire::fmt::format_source(messy_cf, "messy.cf");
     require(fmt1.has_value(), "cfire::fmt::format_source(messy.cf)");
     if (fmt1) {
@@ -75,8 +91,13 @@ type Config struct {
         std::format("expected 3-line formatted range, got:\n{}", fmt_range_res.value_or("<error>")));
 
     // 2. Test `cfire lsp` JSON-RPC 2.0 server (initialize, didOpen diagnostics, hover, completion, signatureHelp, inlayHint, definition)
-    auto rpc_frame = [](std::string_view body) {
-        return std::format("Content-Length: {}\r\n\r\n{}", body.size(), body);
+    // CF-178: hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
+    // rebased into a private dir with a workspace-root marker, so unrelated .cf files under /tmp can't leak in.
+    ScopedTempDir rpc_frame_ws("cfire_lsp_ws");
+    std::filesystem::create_directory(rpc_frame_ws.path / ".git");  // workspace-root marker (Q21)
+    auto rpc_frame = [ws_uri = "file://" + rpc_frame_ws.path.string() + "/"](std::string_view body) {
+        std::string rebased(cfire::str::replace_all(body, "file:///tmp/", ws_uri));
+        return std::format("Content-Length: {}\r\n\r\n{}", rebased.size(), rebased);
     };
     std::stringstream lsp_in;
     std::stringstream lsp_out;
@@ -214,8 +235,9 @@ type Config struct {
         "LSP cross-package definition on checksum.compute_tag expected pkg/checksum/checksum.cf URI");
     require(rpc_resp.contains("\"label\":\"Entries\"") && rpc_resp.contains("Field of AuditLog"),
         "LSP resilient completion on audit. expected field Entries");
-    require(rpc_resp.contains("\"label\":\"push\"") && rpc_resp.contains("\"label\":\"capacity\""),
-        "LSP chained completion on audit.Entries. expected vector methods push and capacity");
+    require(rpc_resp.contains("\"label\":\"push\"") && rpc_resp.contains("\"label\":\"insert\"") &&
+                !rpc_resp.contains("\"label\":\"capacity\""),
+        "LSP chained completion on audit.Entries. offers the builtin slice methods (push, insert), not raw C++ members");
     require(rpc_resp.contains("\"label\":\"fn\"") &&
             rpc_resp.contains("\"insertTextFormat\":2") &&
             rpc_resp.contains("fn ${1:name}(${2:params}) -> ${3:void} {\\n\\t${0}\\n}") &&
@@ -425,13 +447,13 @@ fn main() -> i32 {
 import "ext:webui"
 
 type TrackMix struct {
-    Channel: i64 `json:"channel"`
-    Gain: f64 `json:"gain"`
+    channel: i64 `json:"channel"`
+    gain: f64 `json:"gain"`
 }
 
 fn main() {
     webui.
-    mut app := webui.new_app("Studio", 800, 600)
+    mut app := make(webui.App, "Studio", 800, 600)
     app.
     app.bind[TrackMix]("set_track") |req| {
         req.
@@ -451,8 +473,9 @@ fn main() {
         webui_srv.handle_stream(w_in, w_out);
         std::string w_resp = w_out.str();
 
-        require(w_resp.contains(R"("id":401)") && w_resp.contains(R"("label":"new_app")"),
-            "LSP completion on webui. expected new_app (WEBUI-P0-06)");
+        require(w_resp.contains(R"("id":401)") && w_resp.contains(R"("label":"clipboard_get")") &&
+                !w_resp.contains(R"("label":"new_app")"),
+            "LSP completion on webui. lists module functions and no retired new_app (WEBUI-P0-06, Q25)");
         require(w_resp.contains(R"("id":402)") &&
                 w_resp.contains(R"("label":"bind")") &&
                 w_resp.contains(R"("label":"bind_action")") &&
@@ -462,9 +485,9 @@ fn main() {
                 w_resp.contains(R"("label":"run")"),
             "LSP completion on app. expected webui.App handle methods (WEBUI-P0-06)");
         require(w_resp.contains(R"("id":403)") &&
-                w_resp.contains(R"("label":"Channel")") &&
-                w_resp.contains(R"("label":"Gain")"),
-            "LSP completion on req. inside app.bind[TrackMix] block expected struct fields Channel and Gain (WEBUI-P0-06)");
+                w_resp.contains(R"("label":"channel")") &&
+                w_resp.contains(R"("label":"gain")"),
+            "LSP completion on req. inside app.bind[TrackMix] block expected struct fields channel and gain (WEBUI-P0-06)");
     }
 
     // 2f. Chained method completion (`try os.stdin().`), `: []str` inlay hints on chained calls, parameter snippets, and onTypeFormatting
@@ -475,12 +498,12 @@ fn main() {
 
         std::string chain_src = R"(package main
 import "core:os"
-import "core:str"
+// (line kept so the positions below stay fixed)
 
 fn main() {
     lines := try os.stdin().read_lines()
     for line in lines {
-    v := str.
+    v := line.
     }
     x := try os.stdin().
 }
@@ -491,8 +514,8 @@ fn main() {
             cfire::lsp::detail::json_escape(chain_src)));
         // 501: completion on `try os.stdin().` at line 9, character 24
         c_in << rpc_frame(R"({"jsonrpc":"2.0","id":501,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":9,"character":24}}})");
-        // 502: completion on `str.` at line 7, character 13
-        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":502,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":7,"character":13}}})");
+        // 502: completion on `line.` (a `str`) at line 7, character 14: builtin methods with parameter snippets (W4)
+        c_in << rpc_frame(R"({"jsonrpc":"2.0","id":502,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":7,"character":14}}})");
         // 503: inlayHint for `lines := try os.stdin().read_lines()` -> `: []str`
         c_in << rpc_frame(R"({"jsonrpc":"2.0","id":503,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"}}})");
         // 504: hover on `line` in `for line in lines` at line 6, character 9 -> `line: str`
@@ -513,9 +536,10 @@ fn main() {
                 c_resp.contains(R"("label":"read_text")"),
             "LSP second-level completion on 'try os.stdin().' returns fs.File methods with snippet tabstops");
         require(c_resp.contains(R"("id":502)") &&
-                c_resp.contains(R"("label":"parse_i32")") &&
-                c_resp.contains(R"("insertText":"parse_i32(${1:s})$0")"),
-            "LSP completion on 'str.' emits parameter tabstop snippet for parse_i32");
+                c_resp.contains(R"("label":"split")") &&
+                c_resp.contains(R"("insertText":"split(${1:a})$0")") &&
+                c_resp.contains(R"("label":"trim")"),
+            "LSP completion on a str value lists builtin methods with parameter tabstop snippets (W4)");
         require(c_resp.contains(R"("id":503)") &&
                 c_resp.contains(R"("label":": []str")"),
             "LSP inlayHint infers ': []str' for 'lines := try os.stdin().read_lines()'");
@@ -567,7 +591,8 @@ fn main() {
         require(r_unit >= 0.0 && r_unit <= 1.0, "cfire::rand::f64_unit check");
         (void)r_u64;
 
-        auto test_tmp_file = std::filesystem::temp_directory_path() / "cfire_io_test.bin";
+        ScopedTempDir test_tmp_file_scope("cfire_test_tmp_file");  // hermetic, mkdtemp-backed (CF-153)
+        auto test_tmp_file = test_tmp_file_scope.path / "cfire_io_test.bin";
         std::vector<std::byte> payload = {std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}};
         auto w_res = cfire::fs::write_bytes(test_tmp_file, payload);
         require(w_res.has_value(), "cfire::fs::write_bytes check");
@@ -630,7 +655,7 @@ ok
 
         std::string ref_html = cfire::doc::generate_reference_html();
         require(ref_html.contains("ref-pane-overview") &&
-                ref_html.contains("ref-pane-mod-str") &&
+                ref_html.contains("ref-pane-mod-builtin") &&
                 ref_html.contains("ref-pane-mod-ai") &&
                 ref_html.contains("ref-pane-diagnostics"),
             "generate_reference_html emits overview dashboard, per-module panes, and diagnostics pane");
@@ -651,7 +676,8 @@ ok
 
         // Verify runtime provenance skew detection (version and commit mismatch)
         {
-            auto tmp_rt = std::filesystem::temp_directory_path() / "cfire_test_rt_prov";
+            ScopedTempDir tmp_rt_scope("cfire_tmp_rt");  // hermetic, mkdtemp-backed (CF-153)
+            auto tmp_rt = tmp_rt_scope.path / "cfire_test_rt_prov";
             std::error_code rt_ec;
             std::filesystem::remove_all(tmp_rt, rt_ec);
             std::filesystem::create_directories(tmp_rt, rt_ec);
@@ -813,7 +839,7 @@ fn main() {
         auto types_cf = sync_tmp.file("types.cf", R"CF(package main
 
 type Counter struct {
-    Value: i64
+    value: i64
 }
 
 type Runner interface {
@@ -821,26 +847,26 @@ type Runner interface {
 }
 
 fn (mut self: Counter) add_delta(amount: i64) -> i64 {
-    self.Value += amount
-    return self.Value
+    self.value += amount
+    return self.value
 }
 )CF");
 
         auto app_cf = sync_tmp.file("app.cf", R"CF(package main
 
 fn run_loop() {
-    mut c := Counter{Value: 10}
+    mut c := Counter{value: 10}
     defer {
         _ = c.add_delta(5)
     }
     for idx in 0..4 {
         _ = c.add_delta(idx)
     }
-    assert_eq(c.Value, 16)
+    assert_eq(c.value, 16)
 }
 
 test "counter sibling test" {
-    mut c := Counter{Value: 1}
+    mut c := Counter{value: 1}
     assert_eq(c.add_delta(2), 3)
 }
 )CF");
@@ -871,7 +897,7 @@ test "counter sibling test" {
             std::format("LSP-01d: expected hover on assert_eq, got: {}", hover_assert_eq));
 
         // MCP-01a & MCP-01b: Test `cfire_check` with workspace `path` and `cfire_outline` filtering `.tako` & showing `interface`/`test`
-        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir);
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{sync_tmp.path, false});  // CF-160 root
         std::string check_req = std::format(
             R"({{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"cfire_check","arguments":{{"path":"{}"}}}}}})",
             cfire::lsp::detail::json_escape(sync_tmp.path.string()));
@@ -1077,7 +1103,7 @@ fn run_demo() {
             std::format("completion on log.Level. offers Debug/Info/Warn/Error, got: {}", lvl_comp));
 
         // MCP `cfire_inspect` on `sample_val` inside `{compute_metric(sample_val, 1.5):.2f}` (1-based line 10, col 59)
-        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir);
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{interp_cf.parent_path(), false});  // CF-160 root
         std::string inspect_req = std::format(
             R"({{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{{"name":"cfire_inspect","arguments":{{"target":"{}:10:59"}}}}}})",
             cfire::lsp::detail::json_escape(interp_cf.string()));

@@ -326,14 +326,14 @@ fn main() {
     client.close()
 
     pair := try tls.generate_self_signed_pem("localhost", 30)
-    mut wss_srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)
+    mut wss_srv := try make(websocket.Server, 0, tls: websocket.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem})
     wss_srv.serve_in_background(|mut ws: websocket.Conn| {
         m := ws.recv_text() or ""
         _ = ws.send_text("wss-echo:" + m)
     })
     defer wss_srv.stop()
 
-    mut wss_cli := try websocket.connect_insecure("wss://127.0.0.1:{wss_srv.port()}/stream")
+    mut wss_cli := try websocket.connect("wss://127.0.0.1:{wss_srv.port()}/stream", verify_peer: false)
     defer wss_cli.close()
     try wss_cli.send_text("tls13")
     wss_reply := try wss_cli.recv_text()
@@ -547,7 +547,7 @@ void test_net_http_and_router(const std::filesystem::path& /*rt_dir*/) {
 import "core:net/http"
 
 fn main() {
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.get("/ping", |req| {
         return http.Response.text(200, "pong")
     })

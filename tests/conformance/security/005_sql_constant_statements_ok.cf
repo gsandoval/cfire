@@ -1,0 +1,20 @@
+// expect: stdout
+// | 1
+package main
+import "ext:db/sqlite"
+fn main() {
+    mut db := sqlite.open(":memory:") or {
+        return
+    }
+    table := "items"
+    base := "CREATE TABLE "
+    ddl := base + "items (id INTEGER, name TEXT)"
+    db.exec(ddl) or {
+        return
+    }
+    name := "widget"
+    db.exec("INSERT INTO items (id, name) VALUES (?1, ?2)", 1, name) or {
+        return
+    }
+    println("{}", table.len() - 4)
+}

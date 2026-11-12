@@ -2,6 +2,10 @@
 // src/parser.hpp — Recursive-Descent Parser in C++23 for cfire (.cf)
 
 #include "ast.hpp"
+#include "cfire_prelude.hpp"
+#include <algorithm>
+#include <ranges>
+#include <sstream>
 #include <expected>
 #include <format>
 #include <string>
@@ -13,10 +17,19 @@ namespace cfire::frontend {
 
 struct ParseResult {
     FileAST ast;
-    std::vector<std::string> errors;
+    std::vector<std::string> errors;              // rendered text of `source_errors`
+    std::vector<SourceError> source_errors{};     // Q24 (CF-149): structured, as detected
 
     [[nodiscard]] bool ok() const noexcept { return errors.empty(); }
 };
+
+[[nodiscard]] inline auto make_parse_result(FileAST ast, std::vector<SourceError> errs) -> ParseResult {
+    ParseResult r;
+    r.ast = std::move(ast);
+    for (const auto& e : errs) r.errors.push_back(e.text());
+    r.source_errors = std::move(errs);
+    return r;
+}
 
 [[nodiscard]] inline auto is_make_ident(const ExprPtr& callee) -> bool {
     if (!callee) return false;
@@ -37,13 +50,13 @@ public:
         auto pkg_kw = expect(TokenKind::KwPackage);
         if (!pkg_kw) {
             record_error(pkg_kw.error());
-            if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
             synchronize_decl();
         } else {
             auto pkg_id = expect(TokenKind::Ident);
             if (!pkg_id) {
                 record_error(pkg_id.error());
-                if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                 synchronize_decl();
             } else {
                 f.package_name = pkg_id->lexeme;
@@ -56,7 +69,7 @@ public:
                     auto imp = parse_import();
                     if (!imp) {
                         record_error(imp.error());
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     } else {
                         f.imports.push_back(std::move(*imp));
@@ -66,7 +79,7 @@ public:
                 case TokenKind::KwType: {
                     if (auto r = parse_type_decl(f); !r) {
                         record_error(r.error());
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     }
                     break;
@@ -75,7 +88,7 @@ public:
                     auto fn = parse_fn_decl();
                     if (!fn) {
                         record_error(fn.error());
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     } else {
                         f.functions.push_back(std::move(*fn));
@@ -86,7 +99,7 @@ public:
                     auto gv = parse_global_var();
                     if (!gv) {
                         record_error(gv.error());
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     } else {
                         f.global_vars.push_back(std::move(*gv));
@@ -98,15 +111,14 @@ public:
                         auto gv = parse_global_var();
                         if (!gv) {
                             record_error(gv.error());
-                            if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                             synchronize_decl();
                         } else {
                             f.global_vars.push_back(std::move(*gv));
                         }
                     } else {
-                        record_error(std::format("{}:{}:{}: unexpected 'mut' at top-level",
-                            file_, cur().line, cur().col));
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected 'mut' at top-level")});
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     }
                     break;
@@ -116,7 +128,7 @@ public:
                         auto td = parse_test_decl();
                         if (!td) {
                             record_error(td.error());
-                            if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                             synchronize_decl();
                         } else {
                             f.tests.push_back(std::move(*td));
@@ -126,32 +138,29 @@ public:
                         auto gv = parse_global_var();
                         if (!gv) {
                             record_error(gv.error());
-                            if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                             synchronize_decl();
                         } else {
                             f.global_vars.push_back(std::move(*gv));
                         }
                     } else {
-                        record_error(std::format("{}:{}:{}: unexpected identifier '{}' at top-level",
-                            file_, cur().line, cur().col, cur().lexeme));
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected identifier '{}' at top-level", cur().lexeme)});
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     }
                     break;
                 }
                 case TokenKind::CppBlock: {
                     Token cpp_tok = advance();
-                    record_error(std::format(
-                        "{}:{}:{}: top-level 'cpp {{ ... }}' blocks are not supported in cfire; use 'import cpp \"header.h\"' for headers or place 'cpp {{ ... }}' inside a 'fn' body",
-                        file_, cpp_tok.line, cpp_tok.col));
-                    if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                    record_error(SourceError{std::string(file_), static_cast<int>(cpp_tok.line), static_cast<int>(cpp_tok.col), std::format("top-level 'cpp {{ ... }}' blocks are not supported in cfire; use 'import cpp \"header.h\"' for headers or place 'cpp {{ ... }}' inside a 'fn' body")});
+                    if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                     break;
                 }
                 case TokenKind::KwTest: {
                     auto td = parse_test_decl();
                     if (!td) {
                         record_error(td.error());
-                        if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     } else {
                         f.tests.push_back(std::move(*td));
@@ -159,32 +168,30 @@ public:
                     break;
                 }
                 default:
-                    record_error(std::format("{}:{}:{}: unexpected top-level token '{}'",
-                        file_, cur().line, cur().col, cur().lexeme));
-                    if (!resilient_) return ParseResult{std::move(f), std::move(errors_)};
+                    record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected top-level token '{}'", cur().lexeme)});
+                    if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                     synchronize_decl();
                     break;
             }
         }
-        return ParseResult{std::move(f), std::move(errors_)};
+        return make_parse_result(std::move(f), std::move(errors_));
     }
 
-    [[nodiscard]] auto parse_file() -> std::expected<FileAST, std::string> {
+    [[nodiscard]] auto parse_file() -> std::expected<FileAST, SourceError> {
         auto res = parse_file_result();
         if (!res.ok()) {
-            return std::unexpected(res.errors.front());
+            return std::unexpected(res.source_errors.front());
         }
         return std::move(res.ast);
     }
 
-    [[nodiscard]] auto parse_standalone_expr() -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_standalone_expr() -> std::expected<ExprPtr, SourceError> {
         auto ex = parse_expr();
         if (!ex) {
             return std::unexpected(ex.error());
         }
         if (cur().kind != TokenKind::Eof) {
-            return std::unexpected(std::format("{}:{}:{}: unexpected trailing token '{}' in interpolated expression",
-                file_, cur().line, cur().col, cur().lexeme));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected trailing token '{}' in interpolated expression", cur().lexeme)});
         }
         return ex;
     }
@@ -193,7 +200,7 @@ private:
     std::string file_;
     std::vector<Token> tokens_;
     std::size_t pos_ = 0;
-    std::vector<std::string> errors_;
+    std::vector<SourceError> errors_;
     bool resilient_ = true;
     bool allow_struct_lit_ = true;
     int recursion_depth_ = 0;
@@ -217,7 +224,7 @@ private:
         }
     };
 
-    void record_error(std::string err) {
+    void record_error(SourceError err) {
         if (errors_.size() < 20) {
             errors_.push_back(std::move(err));
         }
@@ -385,16 +392,15 @@ private:
         return peek(offset).kind == TokenKind::LBrace;
     }
 
-    [[nodiscard]] auto expect(TokenKind kind) -> std::expected<Token, std::string> {
+    [[nodiscard]] auto expect(TokenKind kind) -> std::expected<Token, SourceError> {
         const Token& t = cur();
         if (t.kind != kind) {
-            return std::unexpected(std::format("{}:{}:{}: expected '{}', got '{}' ({})",
-                file_, t.line, t.col, token_kind_name(kind), t.lexeme, token_kind_name(t.kind)));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(t.line), static_cast<int>(t.col), std::format("expected '{}', got '{}' ({})", token_kind_name(kind), t.lexeme, token_kind_name(t.kind))});
         }
         return advance();
     }
 
-    [[nodiscard]] auto parse_import() -> std::expected<ImportDecl, std::string> {
+    [[nodiscard]] auto parse_import() -> std::expected<ImportDecl, SourceError> {
         ImportDecl imp;
         auto start = expect(TokenKind::KwImport);
         if (!start) return std::unexpected(start.error());
@@ -435,7 +441,7 @@ private:
         return imp;
     }
 
-    [[nodiscard]] auto parse_type_decl(FileAST& f) -> std::expected<void, std::string> {
+    [[nodiscard]] auto parse_type_decl(FileAST& f) -> std::expected<void, SourceError> {
         Token start = advance(); // 'type'
         auto name_tok = expect(TokenKind::Ident);
         if (!name_tok) return std::unexpected(name_tok.error());
@@ -584,8 +590,7 @@ private:
             return {};
         }
 
-        return std::unexpected(std::format("{}:{}:{}: expected 'struct', 'enum', or 'interface' after type name",
-            file_, cur().line, cur().col));
+        return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected 'struct', 'enum', or 'interface' after type name")});
     }
 
     static void hoist_nested_fallible_optional(TypeRef& rt) {
@@ -605,10 +610,9 @@ private:
         }
     }
 
-    [[nodiscard]] auto parse_type_ref() -> std::expected<TypeRef, std::string> {
+    [[nodiscard]] auto parse_type_ref() -> std::expected<TypeRef, SourceError> {
         if (recursion_depth_ >= kMaxParseDepth) {
-            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
-                file_, cur().line, cur().col));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
         }
         DepthGuard depth_guard(recursion_depth_);
         TypeRef tr;
@@ -680,8 +684,7 @@ private:
                 if (cur().kind == TokenKind::Comma) {
                     advance();
                 } else if (cur().kind != TokenKind::RParen) {
-                    return std::unexpected(std::format("{}:{}:{}: expected ',' or ')' in tuple type",
-                        file_, cur().line, cur().col));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or ')' in tuple type")});
                 }
             }
             if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
@@ -732,14 +735,12 @@ private:
             if (cur().kind == TokenKind::Ident || cur().kind == TokenKind::KwCpp) {
                 Token name_tok = advance();
                 if (name_tok.lexeme == "bytes" && cur().kind != TokenKind::DoubleColon && cur().kind != TokenKind::Dot) {
-                    return std::unexpected(std::format("{}:{}:{}: 'bytes' is not a type in cfire; use '[]byte' instead",
-                        file_, name_tok.line, name_tok.col));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(name_tok.line), static_cast<int>(name_tok.col), std::format("'bytes' is not a type in cfire; use '[]byte' instead")});
                 }
                 tr.name = name_tok.lexeme;
                 tr.raw_name = name_tok.lexeme;
             } else {
-                return std::unexpected(std::format("{}:{}:{}: expected type name, got '{}'",
-                    file_, cur().line, cur().col, cur().lexeme));
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected type name, got '{}'", cur().lexeme)});
             }
             while (cur().kind == TokenKind::DoubleColon || cur().kind == TokenKind::Dot) {
                 Token sep_tok = advance();
@@ -757,8 +758,7 @@ private:
                     if (cur().kind == TokenKind::Comma) {
                         advance();
                     } else if (cur().kind != TokenKind::RBracket) {
-                        return std::unexpected(std::format("{}:{}:{}: expected ',' or ']' in type arguments",
-                            file_, cur().line, cur().col));
+                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or ']' in type arguments")});
                     }
                 }
                 if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
@@ -786,15 +786,28 @@ private:
         return tr;
     }
 
-    [[nodiscard]] auto parse_fn_decl() -> std::expected<FnDecl, std::string> {
+    [[nodiscard]] auto parse_fn_decl() -> std::expected<FnDecl, SourceError> {
         Token start = advance(); // 'fn'
         FnDecl fn;
         fn.return_type = TypeRef{"void"};
         fn.line = start.line;
         fn.source_path = file_;
 
+        // Q25: a constructor `fn (Type) make(...) -> Type` (a receiver type with no binding) becomes the plain
+        // function `cfire_ctor_<Type>`, which `make(Type, args...)` calls.
+        std::string ctor_type{};
+        int ctor_line = 0;
+        int ctor_col = 0;
+        if (cur().kind == TokenKind::LParen && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::RParen) {
+            advance(); // '('
+            Token t = advance();
+            advance(); // ')'
+            ctor_type = t.lexeme;
+            ctor_line = static_cast<int>(t.line);
+            ctor_col = static_cast<int>(t.col);
+        }
         // Optional method receiver: `fn (s: Type)` or `fn (mut s: Type)`
-        if (cur().kind == TokenKind::LParen) {
+        if (ctor_type.empty() && cur().kind == TokenKind::LParen) {
             advance(); // '('
             ReceiverDecl recv;
             if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwIn) {
@@ -822,6 +835,13 @@ private:
         auto name_tok = expect(TokenKind::Ident);
         if (!name_tok) return std::unexpected(name_tok.error());
         fn.name = name_tok->lexeme;
+        if (!ctor_type.empty()) {
+            if (fn.name != "make") {
+                return std::unexpected(SourceError{std::string(file_), ctor_line, ctor_col, std::format("'fn ({}) {}' declares an associated function, but the only one a type can declare is its constructor 'make'; add a receiver binding ('fn (x: {}) {}') for a method", ctor_type, fn.name, ctor_type, fn.name), "cfire/INVALID-CONSTRUCTOR"});
+            }
+            fn.name = "cfire_ctor_" + ctor_type;
+            fn.ctor_type = ctor_type;
+        }
 
         // Optional generic type parameters: `fn foo[T: Hasher](...)`
         if (cur().kind == TokenKind::LBracket) {
@@ -901,7 +921,7 @@ private:
         return fn;
     }
 
-    [[nodiscard]] auto parse_global_var() -> std::expected<GlobalVarDecl, std::string> {
+    [[nodiscard]] auto parse_global_var() -> std::expected<GlobalVarDecl, SourceError> {
         bool was_var = false;
         bool is_mut = false;
         int line = cur().line;
@@ -918,9 +938,7 @@ private:
         } else if (cur().kind == TokenKind::Ident && cur().lexeme == "const") {
             Token const_tok = advance(); // 'const'
             std::string var_name = (cur().kind == TokenKind::Ident) ? cur().lexeme : "x";
-            return std::unexpected(std::format(
-                "{}:{}:{}: 'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead",
-                file_, const_tok.line, const_tok.col, var_name, var_name));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(const_tok.line), static_cast<int>(const_tok.col), std::format("'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead", var_name, var_name)});
         }
 
         auto name_tok = expect(TokenKind::Ident);
@@ -937,8 +955,7 @@ private:
         if (cur().kind == TokenKind::ColonEq || cur().kind == TokenKind::Assign) {
             advance(); // ':=' or '='
         } else {
-            return std::unexpected(std::format("{}:{}:{}: expected ':=' or '=' in variable declaration",
-                file_, cur().line, cur().col));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ':=' or '=' in variable declaration")});
         }
 
         auto val = parse_expr();
@@ -946,7 +963,7 @@ private:
         return GlobalVarDecl{name_tok->lexeme, is_mut, std::move(type_annot), std::move(*val), was_var, line, "", file_};
     }
 
-    [[nodiscard]] auto parse_test_decl() -> std::expected<TestDecl, std::string> {
+    [[nodiscard]] auto parse_test_decl() -> std::expected<TestDecl, SourceError> {
         Token start = advance(); // 'test', 'fuzz', or 'bench'
         auto name_tok = expect(TokenKind::String);
         if (!name_tok) return std::unexpected(name_tok.error());
@@ -1044,10 +1061,9 @@ private:
         return td;
     }
 
-    [[nodiscard]] auto parse_block() -> std::expected<std::vector<StmtPtr>, std::string> {
+    [[nodiscard]] auto parse_block() -> std::expected<std::vector<StmtPtr>, SourceError> {
         if (recursion_depth_ >= kMaxParseDepth) {
-            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
-                file_, cur().line, cur().col));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
         }
         DepthGuard depth_guard(recursion_depth_);
         if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
@@ -1074,13 +1090,12 @@ private:
         } else if (!resilient_) {
             if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
         } else {
-            record_error(std::format("{}:{}:{}: expected '}}' at end of block",
-                file_, cur().line, cur().col));
+            record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected '}}' at end of block")});
         }
         return stmts;
     }
 
-    [[nodiscard]] auto parse_stmt() -> std::expected<StmtPtr, std::string> {
+    [[nodiscard]] auto parse_stmt() -> std::expected<StmtPtr, SourceError> {
         Token tok = cur();
         switch (tok.kind) {
             case TokenKind::CppBlock: {
@@ -1149,15 +1164,11 @@ private:
             case TokenKind::KwMut: {
                 advance();
                 if (cur().kind == TokenKind::ColonEq || cur().kind == TokenKind::Colon || cur().kind == TokenKind::Assign) {
-                    return std::unexpected(std::format(
-                        "{}:{}:{}: 'mut' is a reserved parameter-intent and mutability keyword and cannot be used as a variable name; choose a different identifier",
-                        file_, tok.line, tok.col));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'mut' is a reserved parameter-intent and mutability keyword and cannot be used as a variable name; choose a different identifier")});
                 }
                 if (cur().kind == TokenKind::KwOut || cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwMut) {
                     Token kw_tok = advance();
-                    return std::unexpected(std::format(
-                        "{}:{}:{}: '{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')",
-                        file_, kw_tok.line, kw_tok.col, kw_tok.lexeme));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(kw_tok.line), static_cast<int>(kw_tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", kw_tok.lexeme)});
                 }
                 auto id_tok = expect(TokenKind::Ident);
                 if (!id_tok) return std::unexpected(id_tok.error());
@@ -1184,7 +1195,7 @@ private:
                 if (auto dot = expect(TokenKind::Dot); !dot) return std::unexpected(dot.error());
                 auto m = expect(TokenKind::Ident);
                 if (!m || m->lexeme != "scope") {
-                    return std::unexpected(std::format("{}:{}:{}: expected async.scope", file_, tok.line, tok.col));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("expected async.scope")});
                 }
                 ExprPtr workers = nullptr;
                 if (cur().kind == TokenKind::LParen) {
@@ -1276,26 +1287,20 @@ private:
         if (tok.kind == TokenKind::Ident && tok.lexeme == "const" && peek(1).kind == TokenKind::Ident) {
             advance(); // 'const'
             Token id_tok = advance();
-            return std::unexpected(std::format(
-                "{}:{}:{}: 'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead",
-                file_, tok.line, tok.col, id_tok.lexeme, id_tok.lexeme));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead", id_tok.lexeme, id_tok.lexeme)});
         }
 
         if ((tok.kind == TokenKind::KwOut || tok.kind == TokenKind::KwMove) &&
             (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon || peek(1).kind == TokenKind::Assign)) {
             advance();
-            return std::unexpected(std::format(
-                "{}:{}:{}: '{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')",
-                file_, tok.line, tok.col, tok.lexeme));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", tok.lexeme)});
         }
 
         if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
             Token id_tok = advance();
             advance(); // ':='
             if (id_tok.lexeme == "_") {
-                return std::unexpected(std::format(
-                    "{}:{}:{}: '_ :=' is deprecated; use '_ =' to discard values without declaring a binding (cfire/DEPRECATED-DISCARD)",
-                    file_, id_tok.line, id_tok.col));
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(id_tok.line), static_cast<int>(id_tok.col), std::format("'_ :=' is deprecated; use '_ =' to discard values without declaring a binding"), "cfire/DEPRECATED-DISCARD"});
             }
             auto init = parse_expr();
             if (!init) return std::unexpected(init.error());
@@ -1331,7 +1336,7 @@ private:
         return make_stmt(ExprStmt{std::move(*lhs), tok.line}, tok.line);
     }
 
-    [[nodiscard]] auto parse_if_stmt() -> std::expected<StmtPtr, std::string> {
+    [[nodiscard]] auto parse_if_stmt() -> std::expected<StmtPtr, SourceError> {
         Token start = advance(); // 'if'
         ExprPtr cond = nullptr;
         std::string unwrap_var{};
@@ -1393,7 +1398,7 @@ private:
         return make_stmt(IfStmt{std::move(cond), std::move(*then_body), std::move(else_body), start.line, std::move(unwrap_var), unwrap_mut, std::move(unwrap_init)}, start.line);
     }
 
-    [[nodiscard]] auto parse_for_stmt() -> std::expected<StmtPtr, std::string> {
+    [[nodiscard]] auto parse_for_stmt() -> std::expected<StmtPtr, SourceError> {
         Token start = advance(); // 'for'
         if (cur().kind == TokenKind::KwMut && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::ColonEq) {
             advance(); // 'mut'
@@ -1494,9 +1499,9 @@ private:
         return make_stmt(ForStmt{"", "", std::move(cond), std::move(*body), start.line}, start.line);
     }
 
-    [[nodiscard]] auto parse_match_arms() -> std::expected<std::vector<MatchArm>, std::string> {
+    [[nodiscard]] auto parse_match_arms() -> std::expected<std::vector<MatchArm>, SourceError> {
         std::vector<MatchArm> arms;
-        auto parse_single_pattern = [&]() -> std::expected<MatchPattern, std::string> {
+        auto parse_single_pattern = [&]() -> std::expected<MatchPattern, SourceError> {
             MatchPattern pat;
             if (cur().kind == TokenKind::KwNone) {
                 Token n = advance();
@@ -1529,7 +1534,7 @@ private:
                             pat.slice_head.push_back(id);
                         }
                     } else {
-                        return std::unexpected(std::format("{}:{}: unexpected token in slice pattern", cur().line, cur().col));
+                        return std::unexpected(SourceError{file_, cur().line, cur().col, "unexpected token in slice pattern"});
                     }
                     if (cur().kind == TokenKind::Comma) advance();
                 }
@@ -1555,7 +1560,7 @@ private:
                         } else if (cur().kind == TokenKind::Int) {
                             second_val = advance().lexeme;
                         } else {
-                            return std::unexpected(std::format("{}:{}: expected integer literal for range pattern upper bound", cur().line, cur().col));
+                            return std::unexpected(SourceError{file_, cur().line, cur().col, "expected integer literal for range pattern upper bound"});
                         }
                         pat.line = line;
                         pat.is_range = true;
@@ -1584,9 +1589,7 @@ private:
                     auto sub_tok = expect(TokenKind::Ident);
                     if (!sub_tok) return std::unexpected(sub_tok.error());
                     if (sep.kind == TokenKind::Dot) {
-                        return std::unexpected(std::format(
-                            "{}:{}:{}: '.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}') (cfire/DEPRECATED-SEPARATOR)",
-                            file_, sep.line, sep.col, v_tok->lexeme, sub_tok->lexeme));
+                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col), std::format("'.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}')", v_tok->lexeme, sub_tok->lexeme), "cfire/DEPRECATED-SEPARATOR"});
                     }
                     pat.enum_prefix = v_tok->lexeme;
                     pat.variant_name = sub_tok->lexeme;
@@ -1669,7 +1672,7 @@ private:
         return arms;
     }
 
-    [[nodiscard]] auto parse_match_stmt() -> std::expected<StmtPtr, std::string> {
+    [[nodiscard]] auto parse_match_stmt() -> std::expected<StmtPtr, SourceError> {
         Token start = advance(); // 'match'
         bool is_move = false;
         if (cur().kind == TokenKind::KwMove) {
@@ -1694,16 +1697,15 @@ private:
 
     // --- Expression Parsing ---
 
-    [[nodiscard]] auto parse_expr() -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_expr() -> std::expected<ExprPtr, SourceError> {
         if (recursion_depth_ >= kMaxParseDepth) {
-            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
-                file_, cur().line, cur().col));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
         }
         DepthGuard depth_guard(recursion_depth_);
         return parse_or_expr();
     }
 
-    [[nodiscard]] auto parse_or_expr() -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_or_expr() -> std::expected<ExprPtr, SourceError> {
         auto left = parse_binary_expr();
         if (!left) return std::unexpected(left.error());
         while (cur().kind == TokenKind::KwOr) {
@@ -1783,7 +1785,7 @@ private:
         }
     }
 
-    [[nodiscard]] auto parse_binary_expr(int min_prec = 1) -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_binary_expr(int min_prec = 1) -> std::expected<ExprPtr, SourceError> {
         auto left = parse_unary_expr();
         if (!left) return std::unexpected(left.error());
         for (;;) {
@@ -1799,10 +1801,9 @@ private:
         return left;
     }
 
-    [[nodiscard]] auto parse_unary_expr() -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_unary_expr() -> std::expected<ExprPtr, SourceError> {
         if (recursion_depth_ >= kMaxParseDepth) {
-            return std::unexpected(std::format("{}:{}:{}: maximum parser nesting depth (256) exceeded",
-                file_, cur().line, cur().col));
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
         }
         DepthGuard depth_guard(recursion_depth_);
         Token tok = cur();
@@ -1838,7 +1839,7 @@ private:
         return parse_postfix_expr();
     }
 
-    [[nodiscard]] auto parse_postfix_expr() -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_postfix_expr() -> std::expected<ExprPtr, SourceError> {
         auto expr = parse_primary_expr();
         if (!expr) return std::unexpected(expr.error());
 
@@ -1852,8 +1853,7 @@ private:
                         (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
                         field = advance().lexeme;
                     } else {
-                        return std::unexpected(std::format("{}:{}:{}: expected member name after '{}'",
-                            file_, cur().line, cur().col, sep.lexeme));
+                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected member name after '{}'", sep.lexeme)});
                     }
                     expr = make_expr(MemberExpr{std::move(*expr), std::move(field), sep.kind == TokenKind::DoubleColon}, sep.line, sep.col);
                     break;
@@ -1967,9 +1967,7 @@ private:
                     if (target_t && target_t->is_slice && target_t->elem_type) {
                         target_name = "[]" + target_t->elem_type->name;
                     }
-                    return std::unexpected(std::format(
-                        "{}:{}:{}: 'as' cast syntax is not supported in cfire; use constructor conversion '{}(...)' instead",
-                        file_, as_tok.line, as_tok.col, target_name));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(as_tok.line), static_cast<int>(as_tok.col), std::format("'as' cast syntax is not supported in cfire; use constructor conversion '{}(...)' instead", target_name)});
                 }
                 default:
                     return expr;
@@ -1978,7 +1976,7 @@ private:
     }
 
     [[nodiscard]] auto parse_call_with_callee(ExprPtr callee, std::vector<TypeRef> type_args)
-        -> std::expected<ExprPtr, std::string>
+        -> std::expected<ExprPtr, SourceError>
     {
         Token lp = advance(); // '('
         StructLitScope arg_scope(*this, true);
@@ -1986,19 +1984,13 @@ private:
         call.callee = std::move(callee);
         call.type_args = std::move(type_args);
 
+        // Q25: `make(T, args...)` — the first argument of `make` is always a type.
         if (auto* id = std::get_if<IdentExpr>(&call.callee->node);
-            id && id->name == "make" &&
-            (cur().kind == TokenKind::LBracket || cur().kind == TokenKind::KwMap ||
-             (cur().kind == TokenKind::Ident && (cur().lexeme == "own" || cur().lexeme == "shared") && peek(1).kind == TokenKind::LBracket))) {
-            if (call.type_args.empty() && cur().kind == TokenKind::Ident && (cur().lexeme == "own" || cur().lexeme == "shared")) {
-                std::string smart_kind = cur().lexeme;
-                return std::unexpected(std::format(
-                    "{}:{}:{}: smart pointer construction requires type arguments: write 'make[{}[T]](...)' instead of 'make({}[T], ...)' (cfire/INVALID-SMART-PTR-CTOR)",
-                    file_, cur().line, cur().col, smart_kind, smart_kind));
-            }
+            id && id->name == "make" && call.type_args.empty() && cur().kind != TokenKind::RParen) {
             auto tref = parse_type_ref();
             if (!tref) return std::unexpected(tref.error());
             call.type_args.push_back(std::move(*tref));
+            call.make_type_first = true;
             if (cur().kind == TokenKind::Comma) advance();
         }
 
@@ -2034,7 +2026,7 @@ private:
         return make_expr(std::move(call), lp.line, lp.col);
     }
 
-    [[nodiscard]] auto parse_closure_expr() -> std::expected<ClosureExpr, std::string> {
+    [[nodiscard]] auto parse_closure_expr() -> std::expected<ClosureExpr, SourceError> {
         ClosureExpr cl;
         if (cur().kind == TokenKind::DoublePipe) {
             advance();
@@ -2061,8 +2053,7 @@ private:
                 if (cur().kind == TokenKind::Comma) {
                     advance();
                 } else if (cur().kind != TokenKind::Pipe) {
-                    return std::unexpected(std::format("{}:{}:{}: expected ',' or '|' in closure parameter list, got '{}'",
-                        file_, cur().line, cur().col, cur().lexeme));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or '|' in closure parameter list, got '{}'", cur().lexeme)});
                 }
             }
             if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
@@ -2089,7 +2080,7 @@ private:
         return cl;
     }
 
-    [[nodiscard]] auto parse_primary_expr() -> std::expected<ExprPtr, std::string> {
+    [[nodiscard]] auto parse_primary_expr() -> std::expected<ExprPtr, SourceError> {
         Token tok = cur();
         switch (tok.kind) {
             case TokenKind::Int:
@@ -2183,7 +2174,7 @@ private:
                                 type_args.push_back(std::move(*targ));
                                 if (cur().kind == TokenKind::Comma) advance();
                                 else if (cur().kind != TokenKind::RBracket) {
-                                    return std::unexpected(std::format("{}:{}:{}: expected ',' or ']' in type arguments", file_, cur().line, cur().col));
+                                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or ']' in type arguments")});
                                 }
                             }
                             if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
@@ -2241,7 +2232,7 @@ private:
             }
             case TokenKind::LBrace: {
                 if (!allow_struct_lit_) {
-                    return std::unexpected(std::format("{}:{}:{}: unexpected '{{' in expression", file_, tok.line, tok.col));
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("unexpected '{{' in expression")});
                 }
                 advance();
                 StructLitExpr st;
@@ -2286,12 +2277,9 @@ private:
             case TokenKind::KwOut:
             case TokenKind::KwMove:
             case TokenKind::KwMut:
-                return std::unexpected(std::format(
-                    "{}:{}:{}: '{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')",
-                    file_, tok.line, tok.col, tok.lexeme));
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", tok.lexeme)});
             default:
-                return std::unexpected(std::format("{}:{}:{}: unexpected token '{}' in expression",
-                    file_, tok.line, tok.col, tok.lexeme));
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("unexpected token '{}' in expression", tok.lexeme)});
         }
     }
 };
@@ -2303,7 +2291,7 @@ private:
     ArenaScope scope(arena.get());
     auto toks = tokenize(path, src);
     if (!toks) {
-        return ParseResult{FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}, arena}, {toks.error()}};
+        return make_parse_result(FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}, arena}, {toks.error()});
     }
     Parser p(std::string(path), std::move(*toks), true);
     auto res = p.parse_file_result();
@@ -2312,11 +2300,11 @@ private:
 }
 
 [[nodiscard]] inline auto parse_source(std::string_view path, std::string_view src)
-    -> std::expected<FileAST, std::string>
+    -> std::expected<FileAST, SourceError>
 {
     auto res = parse_source_resilient(path, src);
     if (!res.ok()) {
-        return std::unexpected(res.errors.front());
+        return std::unexpected(res.source_errors.front());
     }
     return std::move(res.ast);
 }
@@ -2414,7 +2402,7 @@ inline void append_doctests(std::string_view path, std::string_view src, FileAST
 }
 
 [[nodiscard]] inline auto parse_expr_snippet(std::string_view path, std::string_view src, int base_line = 1, int base_col = 1)
-    -> std::expected<ExprSnippetResult, std::string>
+    -> std::expected<ExprSnippetResult, SourceError>
 {
     auto arena = std::make_shared<AstArena>();
     ArenaScope scope(arena.get());

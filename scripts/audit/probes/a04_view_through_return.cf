@@ -1,0 +1,14 @@
+// probe: A4 a view returned from a function does not carry its loan
+// kind: guard
+// mode: check
+// ideal: reject
+package main
+fn head(s: str) -> &str {
+    return s[0..2]
+}
+fn main() {
+    mut s: str = "hello there friend"
+    h := head(s)
+    s = "completely different and much longer string to force realloc"
+    println("{}", h)
+}

@@ -112,7 +112,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:math") {
         m.header_path = "core/math.hpp";
         m.core_key = "math";
-        m.types = {"PI", "E"};
     } else if (m.import_path == "core:net") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
@@ -120,7 +119,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:net/http") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
-        m.types = {"Request", "Response", "Router", "HttpServer", "Server", "SseEvent"};
+        m.types = {"Request", "Response", "Router", "HttpServer", "Server", "SseEvent", "ServerLimits", "TlsConfig"};
         m.aliases = {"core:http"};
     } else if (m.import_path == "core:net/tls") {
         m.header_path = "core/net.hpp";
@@ -135,7 +134,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:net/websocket") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
-        m.types = {"Conn", "Server", "Message"};
+        m.types = {"Conn", "Server", "Message", "TlsConfig"};
         m.aliases = {"core:websocket"};
     } else if (m.import_path == "core:os") {
         m.header_path = "core/os.hpp";
@@ -149,13 +148,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/regex.hpp";
         m.core_key = "regex";
         m.types = {"Pattern", "Match"};
-    } else if (m.import_path == "core:sort") {
-        m.header_path = "core/collections.hpp";
-        m.core_key = "collections";
-    } else if (m.import_path == "core:str") {
-        m.header_path = "core/str.hpp";
-        m.core_key = "str";
-        m.types = {"StringBuilder"};
     } else if (m.import_path == "core:sync") {
         m.header_path = "core/sync.hpp";
         m.core_key = "sync";
@@ -460,35 +452,31 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
-            "core:math", "math", "Numeric & Floating-Point Utilities", "(header-only)",
-            "Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.",
+            "core:math", "math", "Math Constants & Multi-Input Functions", "(header-only)",
+            "Mathematical constants (`math.PI`, `math.E`, `math.TAU`, `math.SQRT_2`, `math.LN_2`, `math.LN_10`) and functions with no natural receiver (`atan2`, `hypot`, `gcd`, `lcm`). Single-value operations are methods on the number itself (`x.abs()`, `f.sqrt()`, `x.clamp(lo, hi)`, `a.checked_add(b)`); type limits and parsing are associated with the type (`i32.MAX`, `f64.NAN`, `i32.parse(s)`). See the builtin method reference.",
             {
-                {"clamp_i64", "fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64", "cfire::math::clamp_i64(val, lo, hi)", "Clamps a 64-bit integer to `[lo, hi]`.", "c := math.clamp_i64(x, 0, 100)"},
-                {"clamp_f64", "fn clamp_f64(val: f64, lo: f64, hi: f64) -> f64", "cfire::math::clamp_f64(val, lo, hi)", "Clamps a 64-bit float to `[lo, hi]`.", "c := math.clamp_f64(v, 0.0, 1.0)"},
-                {"sqrt", "fn sqrt(x: f64) -> f64", "cfire::math::sqrt(x)", "Computes square root.", "r := math.sqrt(16.0)"},
-                {"sqrt_f64", "fn sqrt_f64(x: f64) -> f64", "cfire::math::sqrt(x)", "Computes square root of a 64-bit float.", "r := math.sqrt_f64(16.0)"},
-                {"abs_f64", "fn abs_f64(x: f64) -> f64", "cfire::math::abs_f64(x)", "Computes absolute value of a `f64`.", "a := math.abs_f64(-3.5)"},
-                {"checked_add", "fn checked_add(a: i64, b: i64) -> i64?", "cfire::math::checked_add(a, b)", "Adds two integers, returning `none` on overflow.", "res := math.checked_add(x, y)"},
-                {"checked_sub", "fn checked_sub(a: i64, b: i64) -> i64?", "cfire::math::checked_sub(a, b)", "Subtracts two integers, returning `none` on overflow.", "res := math.checked_sub(x, y)"},
-                {"checked_mul", "fn checked_mul(a: i64, b: i64) -> i64?", "cfire::math::checked_mul(a, b)", "Multiplies two integers, returning `none` on overflow.", "res := math.checked_mul(x, y)"},
-                {"wrapping_add", "fn wrapping_add(a: i64, b: i64) -> i64", "cfire::math::wrapping_add(a, b)", "Adds two integers with well-defined two's-complement wrapping.", "res := math.wrapping_add(x, y)"},
-                {"wrapping_sub", "fn wrapping_sub(a: i64, b: i64) -> i64", "cfire::math::wrapping_sub(a, b)", "Subtracts two integers with well-defined two's-complement wrapping.", "res := math.wrapping_sub(x, y)"},
-                {"wrapping_mul", "fn wrapping_mul(a: i64, b: i64) -> i64", "cfire::math::wrapping_mul(a, b)", "Multiplies two integers with well-defined two's-complement wrapping.", "res := math.wrapping_mul(x, y)"},
-                {"saturating_add", "fn saturating_add(a: i64, b: i64) -> i64", "cfire::math::saturating_add(a, b)", "Adds two integers, saturating at min/max numeric bounds.", "res := math.saturating_add(x, y)"},
-                {"saturating_sub", "fn saturating_sub(a: i64, b: i64) -> i64", "cfire::math::saturating_sub(a, b)", "Subtracts two integers, saturating at min/max numeric bounds.", "res := math.saturating_sub(x, y)"},
-                {"saturating_mul", "fn saturating_mul(a: i64, b: i64) -> i64", "cfire::math::saturating_mul(a, b)", "Multiplies two integers, saturating at min/max numeric bounds.", "res := math.saturating_mul(x, y)"}
+                {"PI", "const PI: f64", "cfire::math::PI", "Ratio of a circle's circumference to its diameter (π).", "area := math.PI * r * r"},
+                {"E", "const E: f64", "cfire::math::E", "Euler's number (e).", "y := math.E.powi(2)"},
+                {"TAU", "const TAU: f64", "cfire::math::TAU", "Full turn in radians (2π).", "step := math.TAU / f64(n)"},
+                {"SQRT_2", "const SQRT_2: f64", "cfire::math::SQRT_2", "Square root of 2.", "d := side * math.SQRT_2"},
+                {"LN_2", "const LN_2: f64", "cfire::math::LN_2", "Natural logarithm of 2.", "bits := x.ln() / math.LN_2"},
+                {"LN_10", "const LN_10: f64", "cfire::math::LN_10", "Natural logarithm of 10.", "d := x.ln() / math.LN_10"},
+                {"atan2", "fn atan2(y: f64, x: f64) -> f64", "cfire::math::atan2(y, x)", "Angle of the point `(x, y)` from the positive x-axis, in radians (`-π..=π`).", "heading := math.atan2(dy, dx)"},
+                {"hypot", "fn hypot(x: f64, y: f64) -> f64", "cfire::math::hypot(x, y)", "`sqrt(x*x + y*y)` without intermediate overflow or underflow.", "dist := math.hypot(dx, dy)"},
+                {"gcd", "fn gcd(a: i64, b: i64) -> i64", "cfire::math::gcd(a, b)", "Greatest common divisor (non-negative); `gcd(0, 0) == 0`. Panics for the minimum `i64`.", "g := math.gcd(12, 18)"},
+                {"lcm", "fn lcm(a: i64, b: i64) -> i64", "cfire::math::lcm(a, b)", "Least common multiple (non-negative); panics on overflow.", "l := math.lcm(4, 6)"}
             }
         },
         {
             "core:net", "net", "POSIX BSD TCP Sockets & Loopback Networking", "(POSIX sockets)",
             "RAII TCP client, listener, and connected socketpair handles backed by BSD `AF_INET` / `AF_UNIX` sockets with non-blocking `poll` timeouts and strict `_bytes` / `_text` I/O symmetry.",
             {
-                {"listen_tcp", "fn listen_tcp(port: u16 = 0) -> TcpListener!", "cfire::net::listen_tcp(port)", "Binds a TCP listener on `0.0.0.0:port` (`0` selects an ephemeral port).", "mut ln := try net.listen_tcp(0)"},
-                {"listen_tcp_addr", "fn listen_tcp_addr(host: str, port: u16 = 0) -> TcpListener!", "cfire::net::listen_tcp_addr(host, port)", "Binds a TCP listener on a specific interface address (`host:port`).", "mut ln := try net.listen_tcp_addr(\"127.0.0.1\", 8080)"},
+                {"listen", "fn listen(port: u16 = 0, host: str = \"0.0.0.0\") -> TcpListener!", "cfire::net::listen(port, host)", "Binds a TCP listener on `host:port` (`0` picks an ephemeral port; the default host is every interface).", "mut ln := try net.listen(0)"},
                 {"TcpListener.port", "fn (ln: TcpListener) port() -> u16", "ln.port()", "Returns the bound TCP port.", "p := ln.port()"},
                 {"TcpListener.accept", "fn (mut ln: TcpListener) accept() -> TcpConn!", "ln.accept()", "Accepts an incoming TCP connection with a safe poll timeout.", "mut conn := try ln.accept()"},
-                {"connect_tcp", "fn connect_tcp(host: str, port: u16) -> TcpConn!", "cfire::net::connect_tcp(host, port)", "Connects a `TcpConn` to `host:port`.", "mut c := try net.connect_tcp(\"127.0.0.1\", p)"},
+                {"connect", "fn connect(host: str, port: u16) -> TcpConn!", "cfire::net::connect(host, port)", "Connects a `TcpConn` to `host:port`.", "mut c := try net.connect(\"127.0.0.1\", p)"},
                 {"socketpair", "fn socketpair() -> (TcpConn, TcpConn)!", "cfire::net::socketpair()", "Creates a connected pair of full-duplex `TcpConn` stream sockets.", "(mut a, mut b) := try net.socketpair()"},
+                {"TcpConn.remote_addr", "fn (c: TcpConn) remote_addr() -> str", "c.remote_addr()", "The peer address of an accepted connection (`203.0.113.7`, `2001:db8::1`; IPv4-mapped IPv6 peers are reported as IPv4), or the host a client connection dialed.", "println(\"client {}\", conn.remote_addr())"},
                 {"TcpConn.fd", "fn (c: TcpConn) fd() -> i32", "c.fd()", "Returns the underlying socket file descriptor (`-1` if closed).", "fd := conn.fd()"},
                 {"TcpConn.is_open", "fn (c: TcpConn) is_open() -> bool", "c.is_open()", "Returns `true` if the socket connection is open.", "if conn.is_open() { ... }"},
                 {"TcpConn.poll", "fn (c: TcpConn) poll(timeout_ms: i64 = 0) -> bool", "c.poll(timeout_ms)", "Polls the socket for readability up to `timeout_ms` milliseconds (`EINTR`-safe).", "if conn.poll(50) { ... }"},
@@ -507,18 +495,14 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "core:net/http", "http", "HTTP/1.1 & HTTPS Client, Server & Router", "(POSIX sockets + TLS)",
-            "RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).",
+            "RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), HTTP/HTTPS server (`make(http.Server, port)`, `make(http.Server, port, tls: http.TlsConfig{...})`, per-connection `http.ServerLimits`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).",
             {
                 {"get", "fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::get(url, headers, verify_peer)", "Executes an HTTP or HTTPS GET request against a target URL.", "resp := try http.get(\"https://127.0.0.1:8443/health\", {}, false)"},
-                {"get_insecure", "fn get_insecure(url: str, headers: map[str]str = {}) -> Response!", "cfire::http::get_insecure(url, headers)", "Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs).", "resp := try http.get_insecure(\"https://127.0.0.1:8443/health\")"},
                 {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::post(url, body, content_type, headers, verify_peer)", "Executes an HTTP or HTTPS POST request with payload body.", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
-                {"post_insecure", "fn post_insecure(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}) -> Response!", "cfire::http::post_insecure(url, body, content_type, headers)", "Executes an HTTPS POST request skipping peer certificate verification.", "resp := try http.post_insecure(\"https://127.0.0.1:8443/items\", \"{}\")"},
-                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
+                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = \"\") -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
                 {"post_sse", "fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true) -> void!", "cfire::http::post_sse(url, body, headers, on_event, verify_peer)", "Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.", "try http.post_sse(url, payload, headers, |ev| { print(\"{}\", ev.data); return true })"},
-                {"make_server", "fn make_server(port: u16 = 0) -> HttpServer!", "cfire::http::make_server(port)", "Creates a lightweight HTTP server listening on `port` (0 for ephemeral).", "mut srv := try http.make_server(8080)"},
-                {"make_tls_server", "fn make_tls_server(port: u16, cert_file: str, key_file: str) -> HttpServer!", "cfire::http::make_tls_server(port, cert_file, key_file)", "Creates an HTTPS/WSS server backed by certificate and private key PEM files.", "mut srv := try http.make_tls_server(8443, \"cert.pem\", \"key.pem\")"},
-                {"make_tls_server_pem", "fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> HttpServer!", "cfire::http::make_tls_server_pem(port, cert_pem, key_pem)", "Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings.", "mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)"},
-                {"make_router", "fn make_router() -> Router", "cfire::http::make_router()", "Creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).", "mut r := http.make_router()"},
+                {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}) -> HttpServer!", "cfire::http::make_server(port, tls)", "`make(http.Server, port)` creates an HTTP server listening on `port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` (or `cert_pem` / `key_pem`) serves HTTPS.", "mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: \"cert.pem\", key_file: \"key.pem\"})"},
+                {"Router.make", "fn make() -> Router", "cfire::http::make_router()", "`make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).", "mut router := make(http.Router)"},
                 {"parse_request", "fn parse_request(raw: str) -> Request!", "cfire::http::parse_request(raw)", "Parses raw HTTP/1.1 wire text into a structured Request model.", "req := try http.parse_request(raw_text)"},
                 {"Response.text", "fn Response.text(code: i32, payload: str) -> Response", "cfire::http::Response::text(code, payload)", "Creates an HTTP Response with text/plain content-type and standard status reason.", "return http.Response.text(200, \"OK\")"},
                 {"Response.json", "fn Response.json(code: i32, json_str: str) -> Response", "cfire::http::Response::json(code, json_str)", "Creates an HTTP Response with application/json content-type.", "return http.Response.json(200, \"{\\\"status\\\":\\\"ok\\\"}\")"},
@@ -529,9 +513,13 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Router.ws", "fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -> void) -> Router&", "r.ws(pattern, handler)", "Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.", "r.ws(\"/chat/:room\", |req, mut ws| { ... })"},
                 {"Router.dispatch", "fn (r: Router) dispatch(req: Request) -> Response", "r.dispatch(req)", "Dispatches an HTTP request through the router in-memory without open network sockets.", "res := router.dispatch(test_req)"},
                 {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.", "r.use(|req| { return None })"},
+                {"ServerLimits", "type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128 }", "cfire::http::ServerLimits", "Per-connection server limits (Q22, CF-180). Omitted fields keep their defaults; `workers = 0` keeps the default pool size (`hardware_concurrency()`, at least 4).", "srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000})"},
+                {"TlsConfig", "type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }", "cfire::http::TlsConfig", "Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM.", "tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}"},
+                {"HttpServer.set_limits", "fn (mut s: HttpServer) set_limits(limits: ServerLimits)", "s.set_limits(limits)", "Replaces the per-connection limits (Q22): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending}`; omitted fields keep their defaults.", "srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})"},
                 {"HttpServer.enable_tls_files", "fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!", "s.enable_tls_files(cert_file, key_file)", "Enables TLS on the server using certificate and private key PEM files.", "try srv.enable_tls_files(\"cert.pem\", \"key.pem\")"},
                 {"HttpServer.enable_tls_pem", "fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!", "s.enable_tls_pem(cert_pem, key_pem)", "Enables TLS on the server using in-memory certificate and private key PEM strings.", "try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)"},
                 {"HttpServer.serve_in_background", "fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void", "s.serve_in_background(handler)", "Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.", "server.serve_in_background(router)"},
+                {"HttpServer.port", "fn (s: HttpServer) port() -> u16", "s.port()", "Returns the port the server is listening on (useful after binding port 0).", "port := srv.port()"},
                 {"HttpServer.stop", "fn (mut s: HttpServer) stop() -> void", "s.stop()", "Gracefully closes the listening socket and stops worker threads.", "server.stop()"},
                 {"Request.param", "fn (req: Request) param(key: str, fallback: str = \"\") -> str", "req.param(key, fallback)", "Retrieves a named route path parameter extracted by the router.", "id := req.param(\"id\")"},
                 {"Request.query", "fn (req: Request) query(key: str, fallback: str = \"\") -> str", "req.query(key, fallback)", "Retrieves a decoded URL query parameter.", "page := req.query(\"page\", \"1\")"},
@@ -562,13 +550,11 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "core:net/websocket", "websocket", "RFC 6455 High-Level WebSockets & WSS Client & Server", "(POSIX sockets + TLS)",
-            "RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.",
+            "RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, with `verify_peer: false` for self-signed certificates), standalone server (`make(websocket.Server, port)`, `tls: websocket.TlsConfig{...}` for `wss://`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.",
             {
                 {"connect", "fn connect(url: str, verify_peer: bool = true) -> Conn!", "cfire::websocket::connect(url, verify_peer)", "Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.", "mut ws := try websocket.connect(\"ws://127.0.0.1:8080/ws\")"},
-                {"connect_insecure", "fn connect_insecure(url: str) -> Conn!", "cfire::websocket::connect_insecure(url)", "Establishes a `wss://` WebSocket connection skipping peer certificate verification (for self-signed certs).", "mut ws := try websocket.connect_insecure(\"wss://127.0.0.1:8443/ws\")"},
-                {"make_server", "fn make_server(port: u16 = 0) -> Server!", "cfire::websocket::make_server(port)", "Creates a standalone WebSocket server listening on `port` (`0` for ephemeral).", "mut srv := try websocket.make_server(0)"},
-                {"make_tls_server", "fn make_tls_server(port: u16, cert_file: str, key_file: str) -> Server!", "cfire::websocket::make_tls_server(port, cert_file, key_file)", "Creates a standalone `wss://` WebSocket server backed by certificate and private key PEM files.", "mut srv := try websocket.make_tls_server(8443, \"cert.pem\", \"key.pem\")"},
-                {"make_tls_server_pem", "fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> Server!", "cfire::websocket::make_tls_server_pem(port, cert_pem, key_pem)", "Creates a standalone `wss://` WebSocket server from in-memory certificate and private key PEM strings.", "mut srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)"},
+                {"TlsConfig", "type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }", "cfire::http::TlsConfig", "Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`.", "tls: websocket.TlsConfig{cert_file: \"cert.pem\", key_file: \"key.pem\"}"},
+                {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!", "cfire::websocket::make_server(port, tls)", "`make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`.", "mut srv := try make(websocket.Server, 9001)"},
                 {"upgrade", "fn upgrade(req: Request, mut conn: TcpConn) -> Conn!", "cfire::websocket::upgrade(req, conn)", "Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.", "mut ws := try websocket.upgrade(req, mut conn)"},
                 {"pair", "fn pair() -> (Conn, Conn)!", "cfire::websocket::pair()", "Creates an in-process full-duplex WebSocket client/server loopback pair.", "mut (client, server) := try websocket.pair()"},
                 {"Conn.send_text", "fn (mut ws: Conn) send_text(msg: str) -> void!", "ws.send_text(msg)", "Sends a UTF-8 text frame to the peer (masked if client).", "try ws.send_text(\"hello world\")"},
@@ -588,7 +574,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "core:os", "os", "Environment, Standard Streams, Terminal, Pipes & Subprocesses", "(header-only)",
-            "Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make_raw`, `on_signal`), and subprocess execution (`command`, `exec_output`).",
+            "Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).",
             {
                 {"args", "fn args() -> []str", "cfire::os::args()", "Returns the command-line arguments passed to the current process.", "argv := os.args()"},
                 {"exit", "fn exit(code: i32)", "cfire::os::exit(code)", "Terminates the current process immediately with status `code`.", "os.exit(1)"},
@@ -603,7 +589,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"pipe", "fn pipe() -> (File, File)!", "cfire::os::pipe()", "Creates an OS pipe returning an owning `(reader, writer)` tuple of `fs.File` handles with `FD_CLOEXEC` enabled.", "(mut r, mut w) := try os.pipe()"},
                 {"is_tty", "fn is_tty() -> bool", "cfire::os::is_tty()", "Returns `true` if standard input refers to an interactive terminal (or call `.is_tty()` on any `fs.File`).", "if os.is_tty() { ... }"},
                 {"term_size", "fn term_size() -> TermSize", "cfire::os::term_size()", "Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY.", "sz := os.term_size()"},
-                {"make_raw", "fn make_raw() -> RawTerminal!", "cfire::os::make_raw()", "Places standard input into raw terminal mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit.", "raw := try os.make_raw()"},
+                {"RawTerminal.make", "fn make() -> RawTerminal!", "cfire::os::make_raw()", "`make(os.RawTerminal)` puts standard input into raw terminal mode (`cfmakeraw`) and returns an RAII guard that restores `termios` when it goes out of scope.", "raw := try make(os.RawTerminal)"},
                 {"on_signal", "fn on_signal(sig: i32, handler: fn(i32))", "cfire::os::on_signal(sig, handler)", "Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`).", "os.on_signal(28, |sig| { println(\"resized: {}\", sig) })"},
                 {"exec_output", "fn exec_output(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec_output(\"uname -s\")"},
                 {"exec", "fn exec(cmd: str) -> str!", "cfire::os::exec_output(cmd)", "Executes a shell command via `popen` and returns its captured stdout.", "out := try os.exec(\"uname -s\")"},
@@ -630,54 +616,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
-            "core:sort", "sort", "Slice Sorting & Binary Search", "(header-only)",
-            "In-place sorting algorithms and binary search on slices.",
-            {
-                {"slice", "fn slice(mut s: []T)", "cfire::sort::slice(s)", "Sorts a slice in ascending order in-place.", "sort.slice(mut numbers)"},
-                {"binary_search", "fn binary_search(s: []T, val: T) -> i64?", "cfire::sort::binary_search(s, val)", "Performs binary search on a sorted slice.", "idx := sort.binary_search(numbers, 42)"},
-                {"slice_by", "fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)", "cfire::sort::slice_by(s, cmp)", "Sorts slice `s` in-place using custom comparator `cmp`.", "sort.slice_by(mut items) |a, b| { return a < b }"}
-            }
-        },
-        {
-            "core:str", "str", "UTF-8 String Manipulation", "(header-only)",
-            "Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion.",
-            {
-                {"split", "fn split(s: str, sep: str) -> []str", "cfire::str::split(s, sep)", "Splits `s` around every occurrence of `sep`.", "parts := str.split(\"a,b,c\", \",\")"},
-                {"join", "fn join(items: []str, sep: str) -> str", "cfire::str::join(items, sep)", "Joins a slice of strings with `sep`.", "s := str.join(parts, \"-\")"},
-                {"trim", "fn trim(s: str) -> str", "cfire::str::trim(s)", "Strips leading and trailing whitespace.", "clean := str.trim(\"  hi  \")"},
-                {"starts_with", "fn starts_with(s: str, prefix: str) -> bool", "cfire::str::starts_with(s, prefix)", "Returns `true` if `s` starts with `prefix`.", "if str.starts_with(s, \"cf\") { ... }"},
-                {"ends_with", "fn ends_with(s: str, suffix: str) -> bool", "cfire::str::ends_with(s, suffix)", "Returns `true` if `s` ends with `suffix`.", "if str.ends_with(f, \".cf\") { ... }"},
-                {"contains", "fn contains(s: str, needle: str) -> bool", "cfire::str::contains(s, needle)", "Returns `true` if `s` contains `needle`.", "if str.contains(s, \"fire\") { ... }"},
-                {"replace", "fn replace(s: str, from: str, to: str) -> str", "cfire::str::replace(s, from, to)", "Replaces all occurrences of `from` in `s` with `to`.", "r := str.replace(s, \"old\", \"new\")"},
-                {"replace_all", "fn replace_all(s: str, from: str, to: str) -> str", "cfire::str::replace_all(s, from, to)", "Replaces all occurrences of `from` with `to` in `s`.", "r := str.replace_all(\"a-b-c\", \"-\", \"_\")"},
-                {"bytes", "fn bytes(s: str) -> []byte", "cfire::str::to_bytes(s)", "Returns the UTF-8 bytes of string `s` as a byte slice.", "b := str.bytes(\"hello\")"},
-                {"to_upper", "fn to_upper(s: str) -> str", "cfire::str::to_upper(s)", "Converts ASCII characters to uppercase.", "u := str.to_upper(\"cfire\")"},
-                {"to_lower", "fn to_lower(s: str) -> str", "cfire::str::to_lower(s)", "Converts ASCII characters to lowercase.", "l := str.to_lower(\"CFIRE\")"},
-                {"index_of", "fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64", "cfire::str::index_of(s, substr, start_pos)", "Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1.", "idx := str.index_of(path, \".\")"},
-                {"find", "fn find(s: str, substr: str, start_pos: usize = 0) -> usize?", "cfire::str::find(s, substr, start_pos)", "Finds the first byte offset of `substr` in `s` starting at `start_pos`, or `none` if not found.", "pos := str.find(s, \":\") or { return }"},
-                {"last_index_of", "fn last_index_of(s: str, substr: str) -> i64", "cfire::str::last_index_of(s, substr)", "Finds last occurrence of `substr` in `s`; returns index or -1.", "idx := str.last_index_of(path, \"/\")"},
-                {"rfind", "fn rfind(s: str, substr: str, start_pos: usize = npos) -> i64", "cfire::str::rfind(s, substr, start_pos)", "Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1.", "pos := str.rfind(s, \"#\")"},
-                {"parse_i64", "fn parse_i64(s: str) -> i64?", "cfire::str::parse_i64(s)", "Parses a base-10 signed 64-bit integer from `s` (or as method `s.parse_i64()`), returning `none` on invalid input or overflow.", "n := str.parse_i64(\"42\") or 0"},
-                {"parse_i32", "fn parse_i32(s: str) -> i32?", "cfire::str::parse_i32(s)", "Parses a base-10 signed 32-bit integer from `s` (or as method `s.parse_i32()`), returning `none` on invalid input or overflow.", "n := str.parse_i32(\"42\") or 0"},
-                {"parse_u64", "fn parse_u64(s: str) -> u64?", "cfire::str::parse_u64(s)", "Parses a base-10 unsigned 64-bit integer from `s` (or as method `s.parse_u64()`), returning `none` on invalid input or overflow.", "n := str.parse_u64(\"42\") or 0"},
-                {"parse_f64", "fn parse_f64(s: str) -> f64?", "cfire::str::parse_f64(s)", "Parses a 64-bit floating-point number from `s` (or as method `s.parse_f64()`), returning `none` on invalid input.", "v := str.parse_f64(\"3.14\") or 0.0"},
-                {"parse_bool", "fn parse_bool(s: str) -> bool?", "cfire::str::parse_bool(s)", "Parses `\"true\"`, `\"false\"`, `\"1\"`, or `\"0\"` (ASCII case-insensitive) into a `bool`, returning `none` otherwise.", "b := str.parse_bool(\"true\") or false"},
-                {"byte_ptr", "fn byte_ptr(s: str) -> *c_char", "cfire::str::byte_ptr(s)", "Returns a raw pointer to the underlying buffer of `s` for C FFI interop.", "ptr := s.byte_ptr()"},
-                {"byte_ptr_at", "fn byte_ptr_at(s: str, offset: i64) -> *c_char", "cfire::str::byte_ptr_at(s, offset)", "Returns a raw pointer offset by `offset` bytes into `s` with bounds safety.", "ptr := s.byte_ptr_at(4)"},
-                {"str.data", "fn (s: str) data() -> *const c_char", "(s).data()", "Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop.", "ptr := s.data()"},
-                {"str.bytes", "fn (s: str) bytes() -> []byte", "cfire::to_bytes(s)", "Returns a safe byte slice view (`std::span<const std::byte>`) over the UTF-8 bytes of `s`.", "b := s.bytes()"},
-                {"slice.data", "fn (s: []T) data() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop.", "ptr := s.data()"},
-                {"slice.data_ptr", "fn (s: []T) data_ptr() -> *T / *const T", "(s).data()", "Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`).", "ptr := s.data_ptr()"}
-            }
-        },
-        {
             "core:sync", "sync", "Thread-Safe Typed Channels & Mutexes", "(header-only)",
             "Go-style typed MPSC/MPMC channels (`Channel[T]`) with non-blocking and timeout receives, plus movable mutual exclusion locks (`Mutex`).",
             {
-                {"make_channel", "fn make_channel[T](capacity: usize = 0) -> Channel[T]", "cfire::sync::make_channel<T>()", "Creates a new shared, thread-safe channel of element type `T`.", "ch := sync.make_channel[i64]()"},
-                {"make_mutex", "fn make_mutex[T](initial: T) -> Mutex[T]", "cfire::sync::make_mutex(initial)", "Constructs a data-bearing mutex protecting initial value.", "mu := sync.make_mutex(0)"},
-                {"new_mutex", "fn new_mutex() -> Mutex", "cfire::sync::Mutex()", "Constructs a new mutual exclusion lock.", "m := sync.new_mutex()"},
-                {"make_atomic", "fn make_atomic[T](initial: T) -> Atomic[T]", "cfire::sync::make_atomic(initial)", "Constructs an atomic variable holding initial value.", "atm := sync.make_atomic(0)"},
+                {"Channel.make", "fn make[T](capacity: usize = 0) -> Channel[T]", "cfire::sync::make_channel<T>(capacity)", "`make(sync.Channel[T], capacity)` creates a shared, thread-safe channel of element type `T` (`0` = unbuffered).", "ch := make(sync.Channel[i32], 8)"},
+                {"Mutex.make", "fn make[T](initial: T) -> Mutex[T]", "cfire::sync::make_mutex<T>(initial)", "`make(sync.Mutex[T], initial)` creates a mutex protecting a value of type `T`; `make(sync.Mutex[void])` is a pure lock.", "mu := make(sync.Mutex[i64], 0)"},
+                {"Atomic.make", "fn make[T](initial: T) -> Atomic[T]", "cfire::sync::make_atomic<T>(initial)", "`make(sync.Atomic[T], initial)` creates an atomic variable holding `initial`.", "hits := make(sync.Atomic[i64], 0)"},
                 {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
                 {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
                 {"Channel.try_recv", "fn (ch: Channel[T]) try_recv() -> T?", "ch.try_recv()", "Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty.", "v := ch.try_recv() or { return }"},
@@ -685,12 +629,14 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Channel.recv_ctx", "fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!", "ch.recv_ctx(ctx)", "Receives from the channel or aborts immediately with an error if `ctx` is cancelled.", "v := try ch.recv_ctx(ctx)"},
                 {"Channel.len", "fn (ch: Channel[T]) len() -> usize", "ch.len()", "Returns the number of buffered items currently queued in the channel.", "n := ch.len()"},
                 {"Channel.close", "fn (mut ch: Channel[T]) close()", "ch.close()", "Closes the channel and wakes all waiting receivers.", "ch.close()"},
-                {"Mutex", "type Mutex struct", "cfire::sync::Mutex", "Mutual exclusion lock movable at initialization (`mut mu := sync.Mutex{}`).", "mut mu := sync.Mutex{}"},
-                {"Mutex.lock", "fn (mut m: Mutex) lock()", "m.lock()", "Acquires the mutex lock, blocking until available.", "mu.lock()"},
-                {"Mutex.unlock", "fn (mut m: Mutex) unlock()", "m.unlock()", "Releases the mutex lock.", "mu.unlock()"},
-                {"Mutex.try_lock", "fn (mut m: Mutex) try_lock() -> bool", "m.try_lock()", "Attempts to acquire the mutex without blocking; returns `true` if acquired.", "if mu.try_lock() { defer mu.unlock() }"},
-                {"Mutex.with_lock", "fn (mut m: Mutex) with_lock(fn: fn())", "m.with_lock(fn)", "Executes `fn` while holding the mutex lock and unlocks automatically via RAII.", "mu.with_lock(|| { count += 1 })"},
-                {"Atomic", "type Atomic[T] struct", "cfire::sync::Atomic<T>", "Atomic variable.", "atm := sync.make_atomic(0)"},
+                {"Mutex", "type Mutex[T] struct", "cfire::sync::MutexT<T>", "Mutual exclusion (CF-154): `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock.", "mu := make(sync.Mutex[i64], 0)"},
+                {"Mutex.lock", "fn (m: Mutex[T]) lock() -> MutexGuard[T]", "m.lock()", "`Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`.", "mut g := mu.lock()"},
+                {"Mutex.unlock", "fn (m: Mutex[void]) unlock()", "m.unlock()", "Releases a `Mutex[void]` acquired with `lock()`.", "lk.unlock()"},
+                {"Mutex.try_lock", "fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?", "m.try_lock()", "Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock.", "if g := mu.try_lock() { ... }"},
+                {"Mutex.with_lock", "fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R", "m.with_lock(f)", "Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns.", "n := mu.with_lock(|v| { v += 1; return v })"},
+                {"Mutex.get", "fn (m: Mutex[T]) get() -> T", "m.get()", "Copy of the protected value, read under the lock.", "total := mu.get()"},
+                {"Mutex.set", "fn (m: Mutex[T]) set(v: T)", "m.set(v)", "Replaces the protected value under the lock.", "mu.set(0)"},
+                {"Atomic", "type Atomic[T] struct", "cfire::sync::Atomic<T>", "Atomic variable.", "hits := make(sync.Atomic[i64], 0)"},
                 {"Atomic.load", "fn (a: Atomic[T]) load() -> T", "a.load()", "Loads the atomic value.", "v := a.load()"},
                 {"Atomic.store", "fn (a: Atomic[T]) store(val: T)", "a.store(val)", "Stores a value into the atomic.", "a.store(10)"},
                 {"Atomic.add", "fn (a: Atomic[T]) add(delta: T) -> T", "a.add(delta)", "Adds delta to atomic value.", "a.add(1)"},
@@ -760,7 +706,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "ext:ai", "ai", "On-Device & Cloud AI, Agent Orchestration, Document Ingestion & MCP", "(POSIX sockets + TLS + AVX2/NEON SIMD + NaturalLanguage / PDFKit / Vision / Tesseract)",
-            "Unified AI SDK built around stateful `Client` and `Agent` objects supporting Cross-Platform On-Device Intelligence (`ai.local()` / `ai.apple()`: `NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (`ai.openai()`), Anthropic Claude (`ai.anthropic()`), Google Gemini (`ai.gemini()`), Ollama (`ai.ollama()`), vLLM/llama.cpp (`ai.openai_compatible()`), and deterministic offline mocks (`ai.mock()`, `ai.mock_sequence()`), with multi-turn tool-calling agents (`Agent`, `make_agent`), self-correcting structured outputs (`Client.generate_struct[T]`, `Agent.run_struct[T]`, `Agent.run_struct_validated[T]`) backed by compile-time `validate:\"...\"` struct tags, stateful client embeddings/OCR/language recognition (`Client.embed`, `Client.embed_image`, `Client.ocr`, `Client.detect_language`), pure stateless document parsers (`load_document`, `chunk_document`), SIMD vector math (`cosine_similarity`, `l2_distance`, `dot_product`, `normalize`), and a Model Context Protocol server (`McpServer`) that shares tool definitions with `Agent` (`use_mcp`).",
+            "Unified AI SDK built around stateful `Client` and `Agent` objects supporting Cross-Platform On-Device Intelligence (`ai.local()` / `ai.apple()`: `NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (`ai.openai()`), Anthropic Claude (`ai.anthropic()`), Google Gemini (`ai.gemini()`), Ollama (`ai.ollama()`), vLLM/llama.cpp (`ai.openai_compatible()`), and deterministic offline mocks (`ai.mock()`, `ai.mock_sequence()`), with multi-turn tool-calling agents (`make(ai.Agent, client, model)`), self-correcting structured outputs (`Client.generate_struct[T]`, `Agent.run_struct[T]`, `Agent.run_struct_validated[T]`) backed by compile-time `validate:\"...\"` struct tags, stateful client embeddings/OCR/language recognition (`Client.embed`, `Client.embed_image`, `Client.ocr`, `Client.detect_language`), pure stateless document parsers (`load_document`, `chunk_document`), SIMD vector math (`cosine_similarity`, `l2_distance`, `dot_product`, `normalize`), and a Model Context Protocol server (`McpServer`) that shares tool definitions with `Agent` (`use_mcp`).",
             {
                 {"local", "fn local() -> Client", "cfire::ai::local()", "Creates a cross-platform on-device `Client` (`default_model: \"local\"`) backed by Apple `NaturalLanguage`/`Vision`/`PDFKit` on macOS/iOS and `libtesseract`/`pdftotext` + pure C++23 SIMD embeddings on Linux/Windows/WASM.", "client := ai.local()"},
                 {"apple", "fn apple() -> Client", "cfire::ai::apple()", "Alias for `ai.local()` creating an on-device `Client` (`default_model: \"local\"`).", "client := ai.apple()"},
@@ -800,7 +746,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"dot_product", "fn dot_product(a: []f32, b: []f32) -> f32", "cfire::ai::dot_product(a, b)", "Computes the inner product of two `[]f32` vectors.", "dot := ai.dot_product(v1, v2)"},
                 {"normalize", "fn normalize(v: []f32) -> []f32", "cfire::ai::normalize(v)", "Returns an L2-normalized unit vector copy of `v`.", "unit := ai.normalize(raw_vec)"},
                 {"chunk_text", "fn chunk_text(text: str, max_chars: i32 = 512, overlap: i32 = 64) -> []str", "cfire::ai::chunk_text(text, max_chars, overlap)", "Splits a document into overlapping paragraph/sentence-aware chunks for RAG indexing.", "chunks := ai.chunk_text(markdown, 512, 64)"},
-                {"make_agent", "fn make_agent(client: Client, model: str = \"\", system_prompt: str = \"\") -> Agent", "cfire::ai::make_agent(client, model, system_prompt)", "Creates a stateful multi-turn `Agent` orchestrating tool calls, MCP toolsets, and self-correcting structured outputs.", "mut agent := ai.make_agent(client, \"gpt-4o-mini\", \"You are a helpful assistant.\")"},
+                {"Agent.make", "fn make(client: Client, model: str = \"\", system_prompt: str = \"\") -> Agent", "cfire::ai::make_agent(client, model, system_prompt)", "`make(ai.Agent, client, model, system_prompt)` creates a stateful multi-turn `Agent` that runs tool calls through `client`.", "mut agent := make(ai.Agent, client, \"gpt-4o\")"},
                 {"Agent.register_tool", "fn (mut a: Agent) register_tool[Args](name: str, description: str, handler: fn(Args) -> R!)", "a.register_tool<Args>(name, description, handler)", "Registers a schema-typed tool on the `Agent` (`handler` may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`; errors are returned to the LLM to self-correct).", "agent.register_tool[LookupArgs](\"lookup\", \"Lookup item\", |args| { return item })"},
                 {"Agent.register_tool_action", "fn (mut a: Agent) register_tool_action(name: str, description: str, handler: fn() -> R!)", "a.register_tool_action(name, description, handler)", "Registers a parameterless tool on the `Agent`.", "agent.register_tool_action(\"ping\", \"Health check\", || { return \"pong\" })"},
                 {"Agent.use_mcp", "fn (mut a: Agent) use_mcp(mcp: McpServer)", "a.use_mcp(mcp)", "Mounts all tools registered on `mcp` directly into the `Agent`.", "agent.use_mcp(mcp)"},
@@ -812,7 +758,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Agent.run_struct_validated", "fn (mut a: Agent) run_struct_validated[Out](prompt: str, validator: fn(Out) -> void!) -> Out!", "a.run_struct_validated<Out>(prompt, validator)", "Runs the multi-turn agent loop, parses `Out`, and executes custom cross-field `validator` logic (feeding any `error(...)` back to the model to self-correct).", "report := try agent.run_struct_validated[Report](\"Summarize\", |r: Report| -> void! { ... })"},
                 {"Agent.history", "fn (a: Agent) history() -> []Message", "a.history()", "Returns the accumulated multi-turn conversation and tool-call `[]Message` history.", "msgs := agent.history()"},
                 {"Agent.clear_history", "fn (mut a: Agent) clear_history()", "a.clear_history()", "Clears the agent's conversation history.", "agent.clear_history()"},
-                {"make_mcp_server", "fn make_mcp_server(name: str, version: str = \"1.0.0\") -> McpServer", "cfire::ai::make_mcp_server(name, version)", "Creates a Model Context Protocol (MCP) server capable of serving compile-time schema-typed tools over JSON-RPC 2.0 or mounting into an `Agent` via `use_mcp`.", "mut mcp := ai.make_mcp_server(\"my-tools\", \"1.0.0\")"},
+                {"McpServer.make", "fn make(name: str, version: str = \"1.0.0\") -> McpServer", "cfire::ai::make_mcp_server(name, version)", "`make(ai.McpServer, name, version)` creates a Model Context Protocol (MCP) server that serves registered tools over stdio.", "mut mcp := make(ai.McpServer, \"docs\", \"1.0.0\")"},
                 {"McpServer.register_tool", "fn (mut s: McpServer) register_tool[T](name: str, description: str, handler: fn(T) -> R!)", "s.register_tool<T>(name, description, handler)", "Registers an MCP tool whose input schema is derived from `T` (`json.schema[T]()`) and whose handler may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`.", "mcp.register_tool[Query](\"search\", \"Search docs\", |q| { return \"ok\" })"},
                 {"McpServer.register_tool_action", "fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)", "s.register_tool_action(name, description, handler)", "Registers a parameterless MCP tool.", "mcp.register_tool_action(\"status\", \"Server status\", || { return \"ready\" })"},
                 {"McpServer.handle_jsonrpc", "fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str", "s.handle_jsonrpc(req_json)", "Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.", "resp := mcp.handle_jsonrpc(line)"},
@@ -863,7 +809,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "ext:net/ssh", "ssh", "First-Class SSH Client, PTY, SFTP & Port Forwarding", "-lssh (libssh)",
             "SSHv2 client, interactive PTY terminal sessions, one-shot command execution, SFTP file transfers, and TCP port forwarding backed by `libssh` (`CFIRE_HAS_LIBSSH=1`) with deterministic loopback/mock support (`ssh.enable_mock_server()`) for headless testing.",
             {
-                {"dial", "fn dial(host: str, port: u16 = 22, user: str = \"root\", timeout_ms: i64 = 10000) -> Session!", "cfire::ssh::dial(host, port, user, timeout_ms)", "Connects an SSH session to `host:port` as `user` with a connection timeout in milliseconds.", "mut sess := try ssh.dial(\"10.0.0.10\", 22, \"deploy\", 5000)"},
+                {"connect", "fn connect(host: str, port: u16 = 22, user: str = \"\", timeout_ms: i64 = 10000) -> Session!", "cfire::ssh::connect(host, port, user, timeout_ms)", "Connects an SSH session to `host:port` as `user` (default: the local login name, like ssh(1)).", "mut sess := try ssh.connect(\"build-box\", 22, \"deploy\")"},
                 {"enable_mock_server", "fn enable_mock_server(enabled: bool = true)", "cfire::ssh::enable_mock_server(enabled)", "Enables or disables the deterministic in-memory loopback SSH/PTY/SFTP mock server for unit tests.", "ssh.enable_mock_server(true)"},
                 {"Session.host_key_fingerprint", "fn (sess: Session) host_key_fingerprint() -> str", "sess.host_key_fingerprint()", "Returns the connected server's public key fingerprint in `SHA256:<base64>` format.", "fp := sess.host_key_fingerprint()"},
                 {"Session.is_known_host", "fn (sess: Session) is_known_host() -> bool", "sess.is_known_host()", "Checks whether the server's public key matches `~/.ssh/known_hosts`.", "if !sess.is_known_host() { ... }"},
@@ -896,7 +842,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "ext:webui", "webui", "Hybrid Native WebView & Two-Way Typed RPC Application Framework", "(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)",
             "Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (`WKWebView` on macOS & iOS, `WebKitGTK` on Linux, `WebView2` on Windows) over a custom `app://localhost/` URI scheme with two-way typed struct RPC (`app.bind[T]`), live event streaming (`app.on`, `app.emit`), reactive key-value state (`app.set_state`), and an injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` JavaScript bridge.",
             {
-                {"new_app", "fn new_app(title: str = \"cfire WebUI\", width: i32 = 960, height: i32 = 640) -> App", "cfire::webui::new_app(title, width, height)", "Creates a new native WebView application instance with initial window title and dimensions.", "mut app := webui.new_app(\"Studio Desk\", 980, 640)"},
+                {"App.make", "fn make(title: str = \"cfire WebUI\", width: i32 = 960, height: i32 = 640) -> App", "cfire::webui::new_app(title, width, height)", "`make(webui.App, title, width, height)` creates a native WebView application window.", "mut app := make(webui.App, \"Studio\", 1280, 800)"},
                 {"App.bind", "fn (mut app: App) bind[T](name: str, handler: fn(T) -> any!)", "app.bind<T>(name, handler)", "Binds a typed `cfire` closure to `window.backend.<name>(params)` and `window.invoke(name, params)`, automatically deserializing incoming JSON into struct `T` and serializing the return value.", "app.bind[TrackMix](\"set_track\") |req| { return compute_mix(req) }"},
                 {"App.bind_async", "fn (mut app: App) bind_async[T](name: str, handler: fn(T) -> any!)", "app.bind_async<T>(name, handler)", "Binds a typed RPC handler that executes asynchronously on a background worker thread without blocking the main UI/WebView thread.", "app.bind_async[ConnectReq](\"connect_ssh\") |req| { return dial(req) }"},
                 {"App.bind_action", "fn (mut app: App) bind_action(name: str, handler: fn() -> any!)", "app.bind_action(name, handler)", "Binds a zero-argument action closure to `window.backend.<name>()`.", "app.bind_action(\"reset_desk\") || { return \"ok\" }"},
@@ -941,6 +887,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"App.message_dialog", "fn (app: App) message_dialog(title: str, message: str)", "app.message_dialog(title, message)", "Displays a modal native OS alert dialog.", "app.message_dialog(\"Export Complete\", \"Saved master preset.\")"},
                 {"App.call_rpc", "fn (mut app: App) call_rpc(method: str, params_json: str = \"{}\") -> str!", "app.call_rpc(method, params_json)", "Directly invokes a bound RPC handler in-memory without opening a window (ideal for `cfire test` and `fuzz` blocks).", "res := try app.call_rpc(\"set_track\", \"{\\\"channel\\\":1}\")"},
                 {"App.dispatch_event", "fn (mut app: App) dispatch_event(event: str, data_json: str = \"{}\")", "app.dispatch_event(event, data_json)", "Dispatches a synthetic frontend event to `app.on(event)` listeners during headless testing.", "app.dispatch_event(\"fader:input\", \"{\\\"channel\\\":1}\")"},
+                {"App.resolve_asset_mime", "fn (app: App) resolve_asset_mime(path: str) -> str", "app.resolve_asset_mime(path)", "Returns the MIME type the embedded asset server reports for `path` (useful in headless contract tests).", "mime := app.resolve_asset_mime(\"/index.html\")"},
                 {"App.emitted_events_count", "fn (app: App) emitted_events_count(event: str) -> i64", "app.emitted_events_count(event)", "Returns the number of times `app.emit(event, ...)` has been triggered.", "n := app.emitted_events_count(\"meter:peak\")"},
                 {"App.last_emitted_payload", "fn (app: App) last_emitted_payload(event: str) -> str", "app.last_emitted_payload(event)", "Returns the most recent JSON payload emitted for `event`.", "last := app.last_emitted_payload(\"meter:peak\")"},
                 {"App.run_webview_test", "fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!", "app.run_webview_test(timeout_ms)", "Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached.", "ok := try app.run_webview_test(3000)"},
@@ -1015,6 +962,48 @@ inline void apply_module_metadata(StdModuleDoc& m) {
 
 [[nodiscard]] inline auto diagnostics_catalog() -> const std::vector<DiagnosticDoc>& {
     static const std::vector<DiagnosticDoc> diags = {
+        {
+            "cfire/RETIRED-API",
+            "API Retired in the 0.16 Uniform-API Migration",
+            "The 0.16 release (Q16) replaced free functions, sentinels and duplicate spellings with one form each: methods on values (`s.trim()`, `xs.sort()`, `x.abs()`), type-associated items (`i32.parse(s)`, `i32.MAX`, `math.PI`), `.len()`, `.is_empty()`, `make(T, ...)` construction, `connect` / `listen` verbs and `verify_peer: false`. Every retired form is a hard error with a fix-it; `cfire fix --only cfire/RETIRED-API` applies exactly these rewrites.",
+            "import \"core:str\" // ERROR [cfire/RETIRED-API]\nfn main() {\n    t := str.trim(\" x \") // ERROR [cfire/RETIRED-API]\n    n := t.len // ERROR [cfire/RETIRED-API]\n}",
+            "fn main() {\n    t := \" x \".trim() // OK\n    n := t.len() // OK\n}"
+        },
+        {
+            "cfire/INVALID-MAKE",
+            "Invalid `make(T, ...)` Arguments",
+            "`make` takes the type first (Q25). Slices take `len` and optional `cap` integers, maps and arrays take nothing, and a struct takes either nothing (default fields) or the arguments of its declared constructor `fn (T) make(...) -> T`.",
+            "type Q struct { a: i32 }\nfn main() {\n    v := make([]i32, 1, 2, 3) // ERROR [cfire/INVALID-MAKE]\n    q := make(Q, 1) // ERROR [cfire/INVALID-MAKE]\n}",
+            "type Q struct { a: i32 }\nfn (Q) make(a: i32) -> Q { return Q{a: a} }\nfn main() {\n    v := make([]i32, 1, 2) // OK\n    q := make(Q, 1) // OK\n}"
+        },
+        {
+            "cfire/INVALID-CONSTRUCTOR",
+            "Associated Function Other Than `make`",
+            "A receiver type with no binding (`fn (T) ...`) declares the type's constructor, and the only name it may have is `make` (Q25). Methods need a receiver binding.",
+            "type P struct { x: i32 }\nfn (P) origin() -> P { return P{x: 0} } // ERROR [cfire/INVALID-CONSTRUCTOR]",
+            "type P struct { x: i32 }\nfn (P) make(x: i32) -> P { return P{x: x} } // OK\nfn (p: P) shifted() -> P { return P{x: p.x + 1} } // OK"
+        },
+        {
+            "cfire/INVALID-RELEASE",
+            "`release` on a Shared Pointer",
+            "`o.release() -> *mut T` hands ownership to C (CF-181) and exists only on `own[T]`: a `shared[T]` may have other owners.",
+            "type B struct { v: i32 }\nfn main() {\n    s := make(shared[B], B{v: 1})\n    p := s.release() // ERROR [cfire/INVALID-RELEASE]\n}",
+            "type B struct { v: i32 }\nfn main() {\n    o := make(own[B], B{v: 1})\n    p := o.release() // OK; adopt it back with own[B].from_raw(p)\n}"
+        },
+        {
+            "cfire/UNKNOWN-ARG-LABEL",
+            "Unknown Labeled Argument",
+            "A labeled argument (`verify_peer: false`) must name a parameter of the called function; labels place arguments by name and skipped parameters keep their defaults.",
+            "import \"core:net/http\"\nfn main() -> void! {\n    r := try http.get(\"https://x\", verify: false) // ERROR [cfire/UNKNOWN-ARG-LABEL]\n}",
+            "import \"core:net/http\"\nfn main() -> void! {\n    r := try http.get(\"https://x\", verify_peer: false) // OK\n}"
+        },
+        {
+            "cfire/FIELD-NAME-CASE",
+            "Struct Field Is Not snake_case",
+            "Struct fields are snake_case like functions and locals (Q28); capitalization carries no meaning. This is a warning; `cfire fix` renames the field and every use across the workspace. Untagged JSON/CLI keys follow the field name, so add a `json:\"...\"` tag to keep an existing wire name.",
+            "type Doc struct {\n    TopK: i32 // WARNING [cfire/FIELD-NAME-CASE]\n}",
+            "type Doc struct {\n    top_k: i32 `json:\"TopK\"` // OK\n}"
+        },
         {
             "cfire/MUT-CALLSITE",
             "Missing Call-Site `mut` Marker",

@@ -24,3 +24,12 @@
 *.tmp
 *.dSYM
 __pycache__/
+
+# Fuzzing work directories (CF-141)
+/.fuzz_corpus/
+/.fuzz_crashes/
+/.fuzz_replay_*
+/.cfire_gitsha
+/.cfire_test_runner_asan
+/.cfire_test_runner_tsan
+/.cfire_check.log

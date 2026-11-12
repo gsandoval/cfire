@@ -1,0 +1,16 @@
+// expect: stdout
+// | 314 0
+package main
+type Shape enum {
+    Circle(f64),
+    Empty,
+}
+fn area(s: Shape) -> i64 {
+    return match s {
+        Circle(r) => i64(3.14 * r * r),
+        _ => 0,
+    }
+}
+fn main() {
+    println("{} {}", area(Shape::Circle(10.0)), area(Shape::Empty))
+}

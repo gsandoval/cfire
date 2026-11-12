@@ -2,7 +2,6 @@ package raygui_ext
 
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
-import "core:str"
 
 /// Returns international/Spanish accent variants for a base key (`a`, `e`, `i`, `o`, `u`, `n`, `?`, `!`).
 /// ```cf

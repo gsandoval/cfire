@@ -1,0 +1,31 @@
+// expect: stdout
+// | received=60 count=3
+// flags: --sanitize=thread
+package main
+import "core:sync"
+fn main() {
+    ch := make(sync.Channel[i32], capacity: 10)
+    results := make(sync.Channel[i32], capacity: 10)
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            for i in [10, 20, 30] {
+                ch.send(i)
+            }
+            ch.close()
+        }
+        scope.spawn || {
+            mut sum: i32 = 0
+            mut n: i32 = 0
+            for {
+                item := ch.recv() or break
+                sum += item
+                n += 1
+            }
+            results.send(sum)
+            results.send(n)
+        }
+    }
+    s := results.recv() or 0
+    n := results.recv() or 0
+    println("received={} count={}", s, n)
+}

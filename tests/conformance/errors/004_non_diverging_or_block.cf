@@ -1,0 +1,10 @@
+package main
+fn parse(s: str) -> i32! {
+    return 1
+}
+fn main() {
+    v := parse("x") or err { //~ error cfire/NON-DIVERGING-OR-BLOCK
+        println("oops")
+    }
+    println("{}", v)
+}

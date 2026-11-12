@@ -1,0 +1,11 @@
+// expect: stdout
+// | inf 2.5 9007199254740992 true 3
+package main
+fn main() {
+    huge: f64 = 1e300
+    x: f64 = 2.5
+    big: i64 = 9007199254740993
+    nan: f64 = 0.0 / 0.0
+    t: f64 = 3.99
+    println("{} {} {} {} {}", f32(huge), f32(x), f64(big), f32(nan) != f32(nan), i32(t))
+}

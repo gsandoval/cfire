@@ -1,0 +1,5 @@
+package main
+fn main() {
+    big: f64 = 1e20
+    println("{}", i32(big)) //~ panic "out of range"
+}

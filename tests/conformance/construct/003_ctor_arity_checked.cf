@@ -1,0 +1,10 @@
+package main
+type Point struct {
+    x: i32
+}
+fn (Point) make(x: i32) -> Point {
+    return Point{x: x}
+}
+fn main() {
+    p := make(Point, 1, 2) //~ error cfire/ARITY-MISMATCH
+}

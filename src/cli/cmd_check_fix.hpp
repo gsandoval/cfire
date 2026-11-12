@@ -1,4 +1,5 @@
 #pragma once
+#include "../refactor.hpp"
 // src/cli/cmd_check_fix.hpp — `cfire fix` & `cfire check` Subcommands
 
 #include "../analysis.hpp"
@@ -10,8 +11,22 @@ namespace cfire::cli {
     std::string_view sub,
     const std::filesystem::path& target,
     bool json_mode,
-    bool dry_run
+    bool dry_run,
+    std::string_view only_codes = {}
 ) -> int {
+        // `--only a,b`: restrict fixes to these diagnostic codes (`cfire/RETIRED-API` runs only the 0.16 migration).
+        std::vector<std::string> only;
+        for (std::string_view rest = only_codes; !rest.empty();) {
+            auto comma = rest.find(',');
+            std::string code(rest.substr(0, comma));
+            if (!code.empty() && !code.starts_with("cfire/")) code = "cfire/" + code;
+            if (!code.empty()) only.push_back(std::move(code));
+            if (comma == std::string_view::npos) break;
+            rest.remove_prefix(comma + 1);
+        }
+        auto wanted = [&](std::string_view code) {
+            return only.empty() || std::find(only.begin(), only.end(), code) != only.end();
+        };
         std::vector<std::filesystem::path> fix_files;
         std::error_code fix_ec;
         if (std::filesystem::is_directory(target, fix_ec)) {
@@ -47,21 +62,24 @@ namespace cfire::cli {
             std::string current_text = *raw_txt;
             std::vector<cfire::diag::FixItEdit> total_applied;
 
-            for (int pass = 0; pass < 3; ++pass) {
+            for (int pass = 0; pass < 8; ++pass) {
                 auto pres = cfire::frontend::parse_source_resilient(fpath.string(), current_text);
                 auto lines = cfire::diag::split_lines(current_text);
                 std::vector<cfire::diag::FixItEdit> pass_edits;
 
                 // 1. Missing stdlib imports
-                auto import_fixes = cfire::diag::detect_missing_stdlib_imports(pres.ast, lines);
+                auto import_fixes = wanted("cfire/MISSING-IMPORT") ? cfire::diag::detect_missing_stdlib_imports(pres.ast, lines)
+                                                                     : decltype(cfire::diag::detect_missing_stdlib_imports(pres.ast, lines)){};
                 bool has_batch_import_fix = !import_fixes.empty();
                 for (auto& f : import_fixes) {
                     pass_edits.push_back(std::move(f));
                 }
 
                 // 2. Parser diagnostics & quick-fixes (e.g. deprecations)
-                for (const auto& err : pres.errors) {
-                    auto d = cfire::diag::parse_diagnostic_string(err, fpath.string(), "error", "cfire/SYNTAX");
+                for (const auto& err : pres.source_errors) {
+                    auto d = cfire::diag::from_source_error(err);
+                    if (!wanted(d.code)) continue;
+                    cfire::diag::resolve_diagnostic_range(d, lines);
                     cfire::diag::synthesize_fixits_for_diagnostic(d, nullptr, lines);
                     for (auto& fix : d.fixits) {
                         if (fix.is_preferred) pass_edits.push_back(std::move(fix));
@@ -70,16 +88,11 @@ namespace cfire::cli {
 
                 // 3. Sema diagnostics & quick-fixes
                 auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
-                for (const auto& w : chk.warnings) {
-                    auto d = cfire::diag::parse_diagnostic_string(w, fpath.string(), "warning", "cfire/WARNING");
-                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
-                    for (auto& fix : d.fixits) {
-                        if (fix.is_preferred) pass_edits.push_back(std::move(fix));
-                    }
-                }
-                for (const auto& err : chk.errors) {
-                    auto d = cfire::diag::parse_diagnostic_string(err, fpath.string(), "error", "cfire/SEMA-ERROR");
-                    if (has_batch_import_fix && d.code == "cfire/MISSING-IMPORT") continue;
+                for (auto d : chk.diagnostics) {
+                    if (d.severity == "error" && has_batch_import_fix && d.code == "cfire/MISSING-IMPORT") continue;
+                    if (!wanted(d.code)) continue;
+                    if (d.file.empty()) d.file = fpath.string();
+                    cfire::diag::resolve_diagnostic_range(d, lines);
                     cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
                     for (auto& fix : d.fixits) {
                         if (fix.is_preferred) pass_edits.push_back(std::move(fix));
@@ -104,6 +117,35 @@ namespace cfire::cli {
             if (!dry_run && !total_applied.empty()) {
                 std::ofstream out(fpath, std::ios::binary | std::ios::trunc);
                 out << current_text;
+            }
+
+            // Q28: FIELD-NAME-CASE renames the field and every use across the workspace (the rename engine), so
+            // it runs after this file's in-place edits are on disk. Each rename is planned against fresh text.
+            if (!dry_run && wanted("cfire/FIELD-NAME-CASE")) {
+                for (int guard = 0; guard < 64; ++guard) {
+                    auto txt = cfire::build::read_file_text(fpath);
+                    if (!txt) break;
+                    auto chk = cfire::frontend::analyze_resilient(cfire::frontend::parse_source_resilient(fpath.string(), *txt).ast);
+                    auto lines = cfire::diag::split_lines(*txt);
+                    bool renamed = false;
+                    for (const auto& d : chk.diagnostics) {
+                        if (d.code != "cfire/FIELD-NAME-CASE") continue;
+                        const std::string field = cfire::diag::fact_of(d, "field");
+                        const std::string to = cfire::diag::fact_of(d, "to");
+                        if (to.empty() || d.line < 1 || static_cast<std::size_t>(d.line) > lines.size()) continue;
+                        const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+                        auto pos = ln.find(field);
+                        if (pos == std::string::npos) continue;
+                        auto plan = cfire::refactor::plan_rename(fpath, d.line, static_cast<int>(pos) + 1, to);
+                        if (!plan.error.empty() || !cfire::refactor::apply_rename(plan)) continue;
+                        cfire::diag::FixItEdit note;
+                        note.title = std::format("Rename field '{}' to '{}' across the workspace (cfire/FIELD-NAME-CASE)", field, to);
+                        total_applied.push_back(std::move(note));
+                        renamed = true;
+                        break;
+                    }
+                    if (!renamed) break;
+                }
             }
 
             grand_total_fixes += total_applied.size();

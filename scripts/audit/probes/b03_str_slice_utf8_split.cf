@@ -1,0 +1,10 @@
+// probe: B2 slicing a str inside a UTF-8 code point yields invalid UTF-8
+// kind: guard
+// mode: run
+// ideal: panic
+package main
+fn main() {
+    s := "héllo"
+    n := 2
+    println("{}", s[0..n])
+}

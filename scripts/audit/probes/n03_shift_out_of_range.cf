@@ -1,0 +1,10 @@
+// probe: Q11 runtime shift by >= bit width is undefined (prints 0)
+// kind: guard
+// mode: run
+// ideal: panic
+package main
+fn main() {
+    one: i32 = 1
+    s: i32 = 40
+    println("{}", one << s)
+}

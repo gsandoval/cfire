@@ -1,0 +1,8 @@
+package main
+type P struct {
+    a: i32
+}
+fn main() {
+    p := P{a: 1}
+    println("{}", p.zz) //~ error cfire/UNKNOWN-FIELD
+}

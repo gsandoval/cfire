@@ -74,6 +74,37 @@ inline void set_sock_timeout_ms(int fd, int ms) noexcept {
 #endif
 }
 
+// CF-180: an IPv6 listener that also accepts IPv4 (as ::ffff:a.b.c.d) when the OS allows it.
+inline void set_dual_stack(int fd) noexcept {
+    if (fd < 0) return;
+#if defined(_WIN32)
+    const char off = 0;
+    ::setsockopt(static_cast<SOCKET>(fd), IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+#else
+    int off = 0;
+    ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+#endif
+}
+
+// Peer address text for an accepted socket; IPv4-mapped IPv6 addresses are reported as plain IPv4.
+[[nodiscard]] inline auto peer_address_text(const sockaddr_storage& ss) -> std::string {
+    char ip[INET6_ADDRSTRLEN] = {0};
+    if (ss.ss_family == AF_INET) {
+        const auto* in4 = reinterpret_cast<const sockaddr_in*>(&ss);
+        if (::inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip))) return ip;
+        return {};
+    }
+    if (ss.ss_family == AF_INET6) {
+        const auto* in6 = reinterpret_cast<const sockaddr_in6*>(&ss);
+        if (::inet_ntop(AF_INET6, &in6->sin6_addr, ip, sizeof(ip))) {
+            std::string text(ip);
+            if (text.starts_with("::ffff:") && text.find('.') != std::string::npos) text.erase(0, 7);
+            return text;
+        }
+    }
+    return {};
+}
+
 inline void set_reuseaddr(int fd) noexcept {
     if (fd < 0) return;
 #if defined(_WIN32)
@@ -227,6 +258,8 @@ public:
     [[nodiscard]] auto is_open() const noexcept -> bool { return fd_ >= 0; }
     [[nodiscard]] auto release_fd() noexcept -> int { return std::exchange(fd_, -1); }
     [[nodiscard]] auto endpoint() const noexcept -> const std::string& { return endpoint_; }
+    // CF-180: the peer's address (IPv4 dotted or IPv6 text) for accepted connections, the dialed host otherwise.
+    [[nodiscard]] auto remote_addr() const -> std::string { return endpoint_; }
 
     [[nodiscard]] auto poll(std::int64_t timeout_ms = 0) const noexcept -> bool {
         return detail::poll_sock_read(fd_, static_cast<int>(timeout_ms));
@@ -452,7 +485,7 @@ public:
             }
             if (fd_ >= 0) {
                 if (detail::poll_sock_read(fd_, 10)) {
-                    sockaddr_in client_addr{};
+                    sockaddr_storage client_addr{};
                     socklen_t len = sizeof(client_addr);
 #if defined(_WIN32)
                     SOCKET client_s = ::accept(static_cast<SOCKET>(fd_), reinterpret_cast<sockaddr*>(&client_addr), &len);
@@ -461,7 +494,8 @@ public:
                     int client_fd = ::accept(fd_, reinterpret_cast<sockaddr*>(&client_addr), &len);
 #endif
                     if (client_fd >= 0) {
-                        return TcpConn(client_fd, "127.0.0.1");
+                        // Report the real peer address (CF-150); every client used to appear as 127.0.0.1.
+                        return TcpConn(client_fd, detail::peer_address_text(client_addr));
                     }
                 }
             } else {
@@ -480,30 +514,60 @@ private:
 [[nodiscard]] inline auto listen_tcp_addr(std::string_view host, std::uint16_t port = 0)
     -> std::expected<TcpListener, cfire::Error>
 {
+    // CF-180: the wildcard host listens dual-stack (IPv6 with IPv4-mapped clients) and falls back to IPv4;
+    // `::1` / any IPv6 literal binds IPv6; an address that is neither is an error instead of a silent
+    // bind to every interface.
+    const bool wildcard = host.empty() || host == "0.0.0.0" || host == "*" || host == "::";
+    const bool v6_literal = !wildcard && host.find(':') != std::string_view::npos;
+    auto bound = [&](int fd, sockaddr* addr, socklen_t addr_len) -> std::optional<TcpListener> {
+        if (::bind(fd, addr, addr_len) == 0 && ::listen(fd, 16) == 0) {
+            sockaddr_storage got{};
+            socklen_t len = sizeof(got);
+            ::getsockname(fd, reinterpret_cast<sockaddr*>(&got), &len);
+            std::uint16_t p = got.ss_family == AF_INET6 ? ntohs(reinterpret_cast<sockaddr_in6*>(&got)->sin6_port)
+                                                        : ntohs(reinterpret_cast<sockaddr_in*>(&got)->sin_port);
+            return TcpListener(fd, p);
+        }
+        detail::close_sock(fd);
+        return std::nullopt;
+    };
+    if (wildcard || v6_literal) {
+        sockaddr_in6 addr6{};
+        addr6.sin6_family = AF_INET6;
+        addr6.sin6_port = htons(port);
+        addr6.sin6_addr = in6addr_any;
+        if (v6_literal) {
+            std::string host_str(host);
+            if (host_str.size() > 2 && host_str.front() == '[' && host_str.back() == ']') host_str = host_str.substr(1, host_str.size() - 2);
+            if (::inet_pton(AF_INET6, host_str.c_str(), &addr6.sin6_addr) != 1) {
+                return cfire::make_error(std::format("invalid listen address '{}'", host));
+            }
+        }
+        int fd6 = detail::open_tcp_socket(AF_INET6, SOCK_STREAM, 0);
+        if (fd6 >= 0) {
+            detail::set_reuseaddr(fd6);
+            if (wildcard) detail::set_dual_stack(fd6);
+            if (auto l = bound(fd6, reinterpret_cast<sockaddr*>(&addr6), sizeof(addr6))) return std::move(*l);
+        }
+        if (v6_literal) return cfire::make_error(std::format("failed to listen on [{}]:{}", host, port));
+    }
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if (wildcard) {
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (host == "localhost") {
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    } else {
+        std::string host_str(host);
+        if (::inet_pton(AF_INET, host_str.c_str(), &addr.sin_addr) != 1) {
+            return cfire::make_error(std::format("invalid listen address '{}' (use an IPv4 or IPv6 literal, 'localhost', or '0.0.0.0')", host));
+        }
+    }
     int fd = detail::open_tcp_socket(AF_INET, SOCK_STREAM, 0);
     if (fd >= 0) {
         detail::set_reuseaddr(fd);
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        if (host.empty() || host == "0.0.0.0" || host == "*") {
-            addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        } else if (host == "127.0.0.1" || host == "localhost") {
-            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        } else {
-            std::string host_str(host);
-            if (::inet_pton(AF_INET, host_str.c_str(), &addr.sin_addr) <= 0) {
-                addr.sin_addr.s_addr = htonl(INADDR_ANY);
-            }
-        }
-        addr.sin_port = htons(port);
-
-        if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0 && ::listen(fd, 16) == 0) {
-            socklen_t len = sizeof(addr);
-            ::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len);
-            return TcpListener(fd, ntohs(addr.sin_port));
-        }
-        detail::close_sock(fd);
+        if (auto l = bound(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))) return std::move(*l);
     }
     std::uint16_t vport = (port == 0) ? detail::next_vport++ : port;
     return TcpListener(-1, vport);
@@ -525,14 +589,16 @@ private:
     std::string port_str = std::to_string(port);
 
     addrinfo hints{};
-    hints.ai_family = AF_INET;
+    hints.ai_family = AF_UNSPEC;  // CF-180: IPv6 hosts and literals (`::1`) as well as IPv4
     hints.ai_socktype = SOCK_STREAM;
     addrinfo* res = nullptr;
+    if (host_str.size() > 2 && host_str.front() == '[' && host_str.back() == ']') host_str = host_str.substr(1, host_str.size() - 2);
     if (::getaddrinfo(host_str.c_str(), port_str.c_str(), &hints, &res) == 0 && res != nullptr) {
-        int fd = detail::open_tcp_socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-        if (fd >= 0) {
+        for (addrinfo* ai = res; ai != nullptr; ai = ai->ai_next) {
+            int fd = detail::open_tcp_socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+            if (fd < 0) continue;
             detail::set_sock_timeout_ms(fd, 2000);
-            if (::connect(fd, res->ai_addr, static_cast<int>(res->ai_addrlen)) == 0) {
+            if (::connect(fd, ai->ai_addr, static_cast<int>(ai->ai_addrlen)) == 0) {
                 ::freeaddrinfo(res);
                 return TcpConn(fd, host_str);
             }
@@ -565,6 +631,14 @@ private:
         TcpConn(sv[0], "socketpair"),
         TcpConn(sv[1], "socketpair")
     };
+}
+
+// Q29: one verb per direction across `net`, `tls`, `websocket` and `ssh`.
+[[nodiscard]] inline auto connect(std::string_view host, std::uint16_t port) -> std::expected<TcpConn, cfire::Error> {
+    return connect_tcp(host, port);
+}
+[[nodiscard]] inline auto listen(std::uint16_t port = 0, std::string_view host = "0.0.0.0") -> std::expected<TcpListener, cfire::Error> {
+    return listen_tcp_addr(host, port);
 }
 
 } // namespace cfire::net

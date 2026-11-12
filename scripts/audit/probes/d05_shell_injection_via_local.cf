@@ -1,0 +1,12 @@
+// probe: D5 shell-injection lint is bypassed through a local variable
+// kind: guard
+// mode: check
+// ideal: reject cfire/SHELL-INJECTION-RISK
+package main
+import "core:os"
+fn main() {
+    user := os.args()[0]
+    cmd := "ls " + user
+    res := os.exec(cmd) or ""
+    println("{}", res)
+}

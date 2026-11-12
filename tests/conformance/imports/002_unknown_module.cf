@@ -1,0 +1,5 @@
+package main
+import "core:strr" //~ error cfire/UNKNOWN-MODULE
+fn main() {
+    println("x")
+}

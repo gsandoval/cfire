@@ -1,0 +1,9 @@
+// probe: B1 raw C++ members (.size/.length/.substr) leak onto builtin types
+// kind: guard
+// mode: check
+// ideal: reject
+package main
+fn main() {
+    s := "abc"
+    println("{} {}", s.size(), s.length())
+}

@@ -2,7 +2,178 @@
 
 > Auto-generated from the compiler's single-source-of-truth catalog via `./cfire doc`.
 
-## 1. Built-In `core:*` Standard Library Modules
+## 1. Builtin Types & Built-In `core:*` Standard Library Modules
+
+### `builtin` (`builtin`) — Builtin Types: Methods, Associated Items & make
+
+- **Auto-Link Flags:** `(always available)`
+- **Overview:** Operations on values of builtin types are methods on the value (Q7): `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1` (Q8). Limits and parsing belong to the type (Q10): `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives (Q25): `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
+
+| `.cf` Signature | Lowered C++23 | Description | Example |
+|---|---|---|---|
+| `fn (x: i64) abs() -> Self` | `cfire::bm::abs(x, ...)` | Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`. | `d := (a - b).abs()` |
+| `fn (x: i64) min(a: Self) -> Self` | `cfire::bm::min(x, ...)` | Smaller of the two values (for floats, a NaN operand yields the other operand). | `lo := a.min(b)` |
+| `fn (x: i64) max(a: Self) -> Self` | `cfire::bm::max(x, ...)` | Larger of the two values (for floats, a NaN operand yields the other operand). | `hi := a.max(b)` |
+| `fn (x: i64) clamp(a: Self, b: Self) -> Self` | `cfire::bm::clamp(x, ...)` | Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN). | `v := x.clamp(0, 255)` |
+| `fn (x: i64) signum() -> Self` | `cfire::bm::signum(x, ...)` | `-1`, `0` or `1` (floats: `-1.0`, `±0.0`, `1.0`, NaN for NaN). | `s := delta.signum()` |
+| `fn (x: i64) pow(a: Self) -> Self` | `cfire::bm::pow(x, ...)` | Integer power (a negative exponent or overflow panics) or float power. | `kb := base.pow(10)` |
+| `fn (x: i64) count_ones() -> u32` | `cfire::bm::count_ones(x, ...)` | Number of set bits. | `bits := mask.count_ones()` |
+| `fn (x: i64) leading_zeros() -> u32` | `cfire::bm::leading_zeros(x, ...)` | Number of leading zero bits. | `lz := x.leading_zeros()` |
+| `fn (x: i64) trailing_zeros() -> u32` | `cfire::bm::trailing_zeros(x, ...)` | Number of trailing zero bits. | `tz := x.trailing_zeros()` |
+| `fn (x: i64) is_power_of_two() -> bool` | `cfire::bm::is_power_of_two(x, ...)` | `true` for 1, 2, 4, …; `false` for zero and negatives. | `ok := n.is_power_of_two()` |
+| `fn (x: i64) div_euclid(a: Self) -> Self` | `cfire::bm::div_euclid(x, ...)` | Euclidean division (the remainder is never negative); panics on division by zero or overflow. | `q := a.div_euclid(b)` |
+| `fn (x: i64) rem_euclid(a: Self) -> Self` | `cfire::bm::rem_euclid(x, ...)` | Euclidean remainder, always `>= 0`; integer division by zero panics. | `i := idx.rem_euclid(len)` |
+| `fn (x: i64) checked_add(a: Self) -> Self?` | `cfire::bm::checked_add(x, ...)` | `none` on overflow. | `s := a.checked_add(b) or 0` |
+| `fn (x: i64) checked_sub(a: Self) -> Self?` | `cfire::bm::checked_sub(x, ...)` | `none` on overflow. | `s := a.checked_sub(b) or 0` |
+| `fn (x: i64) checked_mul(a: Self) -> Self?` | `cfire::bm::checked_mul(x, ...)` | `none` on overflow. | `p := a.checked_mul(b) or 0` |
+| `fn (x: i64) checked_div(a: Self) -> Self?` | `cfire::bm::checked_div(x, ...)` | `none` on division by zero or overflow (`MIN / -1`). | `q := a.checked_div(b) or 0` |
+| `fn (x: i64) checked_neg() -> Self?` | `cfire::bm::checked_neg(x, ...)` | `none` on overflow (`MIN`, or any non-zero unsigned value). | `n := a.checked_neg() or 0` |
+| `fn (x: i64) checked_abs() -> Self?` | `cfire::bm::checked_abs(x, ...)` | `none` for `MIN`. | `d := a.checked_abs() or 0` |
+| `fn (x: i64) wrapping_add(a: Self) -> Self` | `cfire::bm::wrapping_add(x, ...)` | Two's-complement wrapping addition. | `h := h.wrapping_add(c)` |
+| `fn (x: i64) wrapping_sub(a: Self) -> Self` | `cfire::bm::wrapping_sub(x, ...)` | Two's-complement wrapping subtraction. | `d := a.wrapping_sub(b)` |
+| `fn (x: i64) wrapping_mul(a: Self) -> Self` | `cfire::bm::wrapping_mul(x, ...)` | Two's-complement wrapping multiplication. | `h := h.wrapping_mul(16777619)` |
+| `fn (x: i64) wrapping_div(a: Self) -> Self` | `cfire::bm::wrapping_div(x, ...)` | Wrapping division (`MIN / -1 == MIN`); division by zero panics. | `q := a.wrapping_div(b)` |
+| `fn (x: i64) wrapping_neg() -> Self` | `cfire::bm::wrapping_neg(x, ...)` | Two's-complement wrapping negation. | `n := a.wrapping_neg()` |
+| `fn (x: i64) wrapping_abs() -> Self` | `cfire::bm::wrapping_abs(x, ...)` | Absolute value, wrapping for `MIN`. | `d := a.wrapping_abs()` |
+| `fn (x: i64) saturating_add(a: Self) -> Self` | `cfire::bm::saturating_add(x, ...)` | Addition clamped to `MIN..=MAX`. | `s := a.saturating_add(b)` |
+| `fn (x: i64) saturating_sub(a: Self) -> Self` | `cfire::bm::saturating_sub(x, ...)` | Subtraction clamped to `MIN..=MAX`. | `s := a.saturating_sub(b)` |
+| `fn (x: i64) saturating_mul(a: Self) -> Self` | `cfire::bm::saturating_mul(x, ...)` | Multiplication clamped to `MIN..=MAX`. | `p := a.saturating_mul(b)` |
+| `fn (x: i64) saturating_div(a: Self) -> Self` | `cfire::bm::saturating_div(x, ...)` | Division clamped to `MIN..=MAX` (`MIN / -1 == MAX`); division by zero panics. | `q := a.saturating_div(b)` |
+| `fn (x: i64) saturating_neg() -> Self` | `cfire::bm::saturating_neg(x, ...)` | Negation clamped to `MIN..=MAX`. | `n := a.saturating_neg()` |
+| `fn (x: i64) wrapping_shl(a: u32) -> Self` | `(dedicated lowering)` | Left shift with the count taken modulo the bit width. | `x := x.wrapping_shl(n)` |
+| `fn (x: i64) wrapping_shr(a: u32) -> Self` | `(dedicated lowering)` | Right shift with the count taken modulo the bit width. | `x := x.wrapping_shr(n)` |
+| `fn (x: i64) checked_shl(a: u32) -> Self?` | `(dedicated lowering)` | `none` when the count is `>=` the bit width. | `x := v.checked_shl(n) or 0` |
+| `fn (x: i64) checked_shr(a: u32) -> Self?` | `(dedicated lowering)` | `none` when the count is `>=` the bit width. | `x := v.checked_shr(n) or 0` |
+| `fn (x: i64) wrapping_as()` | `(dedicated lowering)` | Conversion to `T` that wraps on overflow: `x.wrapping_as[u8]()`. | `b := x.wrapping_as[u8]()` |
+| `fn (x: i64) saturating_as()` | `(dedicated lowering)` | Conversion to `T` that clamps on overflow: `x.saturating_as[u8]()`. | `b := x.saturating_as[u8]()` |
+| `fn (x: i64) try_as()` | `(dedicated lowering)` | Conversion to `T?`, `none` when the value does not fit: `x.try_as[u8]()`. | `b := x.try_as[u8]() or 0` |
+| `fn (f: f64) abs() -> Self` | `cfire::bm::abs(f, ...)` | Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`. | `d := (a - b).abs()` |
+| `fn (f: f64) min(a: Self) -> Self` | `cfire::bm::min(f, ...)` | Smaller of the two values (for floats, a NaN operand yields the other operand). | `lo := a.min(b)` |
+| `fn (f: f64) max(a: Self) -> Self` | `cfire::bm::max(f, ...)` | Larger of the two values (for floats, a NaN operand yields the other operand). | `hi := a.max(b)` |
+| `fn (f: f64) clamp(a: Self, b: Self) -> Self` | `cfire::bm::clamp(f, ...)` | Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN). | `v := x.clamp(0, 255)` |
+| `fn (f: f64) signum() -> Self` | `cfire::bm::signum(f, ...)` | `-1`, `0` or `1` (floats: `-1.0`, `±0.0`, `1.0`, NaN for NaN). | `s := delta.signum()` |
+| `fn (f: f64) pow(a: Self) -> Self` | `cfire::bm::pow(f, ...)` | Integer power (a negative exponent or overflow panics) or float power. | `kb := base.pow(10)` |
+| `fn (f: f64) rem_euclid(a: Self) -> Self` | `cfire::bm::rem_euclid(f, ...)` | Euclidean remainder, always `>= 0`; integer division by zero panics. | `i := idx.rem_euclid(len)` |
+| `fn (f: f64) wrapping_as()` | `(dedicated lowering)` | Conversion to `T` that wraps on overflow: `x.wrapping_as[u8]()`. | `b := x.wrapping_as[u8]()` |
+| `fn (f: f64) saturating_as()` | `(dedicated lowering)` | Conversion to `T` that clamps on overflow: `x.saturating_as[u8]()`. | `b := x.saturating_as[u8]()` |
+| `fn (f: f64) try_as()` | `(dedicated lowering)` | Conversion to `T?`, `none` when the value does not fit: `x.try_as[u8]()`. | `b := x.try_as[u8]() or 0` |
+| `fn (f: f64) floor() -> Self` | `cfire::bm::floor(f, ...)` | Largest integer value `<=` x. | `f := x.floor()` |
+| `fn (f: f64) ceil() -> Self` | `cfire::bm::ceil(f, ...)` | Smallest integer value `>=` x. | `c := x.ceil()` |
+| `fn (f: f64) round() -> Self` | `cfire::bm::round(f, ...)` | Nearest integer value, halfway cases away from zero. | `r := x.round()` |
+| `fn (f: f64) trunc() -> Self` | `cfire::bm::trunc(f, ...)` | Integer part, rounding toward zero. | `t := x.trunc()` |
+| `fn (f: f64) fract() -> Self` | `cfire::bm::fract(f, ...)` | Fractional part, `x - x.trunc()`. | `f := x.fract()` |
+| `fn (f: f64) sqrt() -> Self` | `cfire::bm::sqrt(f, ...)` | Square root (NaN for negative input). | `d := (dx * dx + dy * dy).sqrt()` |
+| `fn (f: f64) cbrt() -> Self` | `cfire::bm::cbrt(f, ...)` | Cube root. | `c := v.cbrt()` |
+| `fn (f: f64) powi(a: i32) -> Self` | `cfire::bm::powi(f, ...)` | Raises to an integer power. | `a := r.powi(2)` |
+| `fn (f: f64) exp() -> Self` | `cfire::bm::exp(f, ...)` | `e` raised to x. | `y := x.exp()` |
+| `fn (f: f64) ln() -> Self` | `cfire::bm::ln(f, ...)` | Natural logarithm. | `y := x.ln()` |
+| `fn (f: f64) log2() -> Self` | `cfire::bm::log2(f, ...)` | Base-2 logarithm. | `bits := n.log2()` |
+| `fn (f: f64) log10() -> Self` | `cfire::bm::log10(f, ...)` | Base-10 logarithm. | `db := 20.0 * a.log10()` |
+| `fn (f: f64) sin() -> Self` | `cfire::bm::sin(f, ...)` | Sine (radians). | `y := t.sin()` |
+| `fn (f: f64) cos() -> Self` | `cfire::bm::cos(f, ...)` | Cosine (radians). | `x := t.cos()` |
+| `fn (f: f64) tan() -> Self` | `cfire::bm::tan(f, ...)` | Tangent (radians). | `m := t.tan()` |
+| `fn (f: f64) asin() -> Self` | `cfire::bm::asin(f, ...)` | Arcsine, in radians. | `a := y.asin()` |
+| `fn (f: f64) acos() -> Self` | `cfire::bm::acos(f, ...)` | Arccosine, in radians. | `a := x.acos()` |
+| `fn (f: f64) atan() -> Self` | `cfire::bm::atan(f, ...)` | Arctangent, in radians (see `math.atan2` for two inputs). | `a := m.atan()` |
+| `fn (f: f64) sinh() -> Self` | `cfire::bm::sinh(f, ...)` | Hyperbolic sine. | `y := x.sinh()` |
+| `fn (f: f64) cosh() -> Self` | `cfire::bm::cosh(f, ...)` | Hyperbolic cosine. | `y := x.cosh()` |
+| `fn (f: f64) tanh() -> Self` | `cfire::bm::tanh(f, ...)` | Hyperbolic tangent. | `y := x.tanh()` |
+| `fn (f: f64) to_degrees() -> Self` | `cfire::bm::to_degrees(f, ...)` | Converts radians to degrees. | `deg := rad.to_degrees()` |
+| `fn (f: f64) to_radians() -> Self` | `cfire::bm::to_radians(f, ...)` | Converts degrees to radians. | `rad := deg.to_radians()` |
+| `fn (f: f64) is_nan() -> bool` | `cfire::bm::is_nan(f, ...)` | `true` for NaN. | `if x.is_nan() { return }` |
+| `fn (f: f64) is_inf() -> bool` | `cfire::bm::is_inf(f, ...)` | `true` for `+inf` or `-inf`. | `if x.is_inf() { return }` |
+| `fn (f: f64) is_finite() -> bool` | `cfire::bm::is_finite(f, ...)` | `true` unless NaN or infinite. | `ok := x.is_finite()` |
+| `fn (s: str) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
+| `fn (s: str) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
+| `fn (s: str) contains(a: &str) -> bool` | `cfire::bm::contains(s, ...)` | `true` if the substring occurs. | `if path.contains("..") { return }` |
+| `fn (s: str) starts_with(a: &str) -> bool` | `cfire::bm::starts_with(s, ...)` | `true` if `s` begins with `prefix`. | `if line.starts_with("#") { continue }` |
+| `fn (s: str) ends_with(a: &str) -> bool` | `cfire::bm::ends_with(s, ...)` | `true` if `s` ends with `suffix`. | `if name.ends_with(".cf") { ... }` |
+| `fn (s: str) index_of(a: &str, b: usize = default) -> usize?` | `cfire::bm::index_of(s, ...)` | Byte position of the first occurrence at or after `start` (default 0), or `none`. | `dot := path.index_of(".") or { return }` |
+| `fn (s: str) last_index_of(a: &str) -> usize?` | `cfire::bm::last_index_of(s, ...)` | Byte position of the last occurrence, or `none`. | `slash := path.last_index_of("/") or 0` |
+| `fn (s: str) split(a: &str) -> []str` | `cfire::bm::split(s, ...)` | Splits on every occurrence of `sep` (an empty `s` gives one empty part). | `parts := line.split(",")` |
+| `fn (s: str) split_n(a: &str, b: usize) -> []str` | `cfire::bm::split_n(s, ...)` | Splits into at most `n` parts; the last part holds the rest. | `kv := line.split_n("=", 2)` |
+| `fn (s: str) lines() -> []str` | `cfire::bm::lines(s, ...)` | Splits on `\n`, dropping a trailing `\r` from each line and a final empty line. | `for line in text.lines() { ... }` |
+| `fn (s: str) trim() -> &str` | `cfire::bm::trim(s, ...)` | View without leading and trailing ASCII whitespace. | `name := raw.trim()` |
+| `fn (s: str) trim_start() -> &str` | `cfire::bm::trim_start(s, ...)` | View without leading ASCII whitespace. | `body := text.trim_start()` |
+| `fn (s: str) trim_end() -> &str` | `cfire::bm::trim_end(s, ...)` | View without trailing ASCII whitespace. | `line := raw.trim_end()` |
+| `fn (s: str) strip_prefix(a: &str) -> &str?` | `cfire::bm::strip_prefix(s, ...)` | View after `prefix`, or `none` if `s` does not start with it. | `rest := arg.strip_prefix("--") or { continue }` |
+| `fn (s: str) strip_suffix(a: &str) -> &str?` | `cfire::bm::strip_suffix(s, ...)` | View before `suffix`, or `none` if `s` does not end with it. | `stem := file.strip_suffix(".cf") or file` |
+| `fn (s: str) replace(a: &str, b: &str) -> str` | `cfire::bm::replace(s, ...)` | Copy with the first occurrence of `from` replaced. | `s2 := s.replace("a", "b")` |
+| `fn (s: str) replace_all(a: &str, b: &str) -> str` | `cfire::bm::replace_all(s, ...)` | Copy with every occurrence of `from` replaced. | `s2 := s.replace_all("\t", "    ")` |
+| `fn (s: str) repeat(a: usize) -> str` | `cfire::bm::repeat(s, ...)` | `s` concatenated `n` times. | `rule := "-".repeat(40)` |
+| `fn (s: str) to_upper() -> str` | `cfire::bm::to_upper(s, ...)` | ASCII upper-case copy. | `tag := name.to_upper()` |
+| `fn (s: str) to_lower() -> str` | `cfire::bm::to_lower(s, ...)` | ASCII lower-case copy. | `key := header.to_lower()` |
+| `fn (s: str) runes() -> []u32` | `cfire::bm::runes(s, ...)` | Unicode code points (invalid UTF-8 bytes decode as U+FFFD). | `for r in s.runes() { ... }` |
+| `fn (s: str) rune_count() -> usize` | `cfire::bm::rune_count(s, ...)` | Number of Unicode code points. | `n := s.rune_count()` |
+| `fn (s: str) bytes() -> []byte` | `(dedicated lowering)` | The UTF-8 bytes of `s`. | `raw := s.bytes()` |
+| `fn (s: str) pop() -> T?` | `cfire::bm::pop(s, ...)` | Removes and returns the last element (last byte for `str`), or `none` when empty. | `last := stack.pop() or { break }` |
+| `fn (s: str) data() -> *T` | `(dedicated lowering)` | Raw pointer to the contiguous buffer, for C FFI. | `ptr := xs.data()` |
+| `fn (s: str) byte_ptr() -> *c_char` | `(dedicated lowering)` | Raw `char*` into the string, for C FFI. | `p := s.byte_ptr()` |
+| `fn (s: str) byte_ptr_at(a: i64) -> *c_char` | `(dedicated lowering)` | Raw `char*` at a byte offset, for C FFI. | `p := s.byte_ptr_at(4)` |
+| `fn (s: str) with_ext(a: &str) -> str` | `(dedicated lowering)` | Path with its extension replaced. | `out := path.with_ext(".o")` |
+| `fn (xs: []T) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
+| `fn (xs: []T) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
+| `fn (xs: []T) pop() -> T?` | `cfire::bm::pop(xs, ...)` | Removes and returns the last element (last byte for `str`), or `none` when empty. | `last := stack.pop() or { break }` |
+| `fn (xs: []T) contains(a: T) -> bool` | `cfire::bm::contains(xs, ...)` | `true` if an element equals `v`. | `if xs.contains(3) { ... }` |
+| `fn (xs: []T) index_of(a: T) -> usize?` | `cfire::bm::index_of(xs, ...)` | Position of the first element equal to `v`, or `none`. | `i := xs.index_of(v) or { return }` |
+| `fn (xs: []T) first() -> T?` | `cfire::bm::first(xs, ...)` | Copy of the first element, or `none` when empty. | `head := xs.first() or 0` |
+| `fn (xs: []T) last() -> T?` | `cfire::bm::last(xs, ...)` | Copy of the last element, or `none` when empty. | `tail := xs.last() or 0` |
+| `fn (xs: []T) reverse()` | `cfire::bm::reverse(xs, ...)` | Reverses the elements in place. | `xs.reverse()` |
+| `fn (xs: []T) sort()` | `cfire::bm::sort(xs, ...)` | Sorts in place, ascending. | `xs.sort()` |
+| `fn (xs: []T) sort_by(a: fn(T, T) -> bool)` | `cfire::bm::sort_by(xs, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
+| `fn (xs: []T) is_sorted() -> bool` | `cfire::bm::is_sorted(xs, ...)` | `true` if the elements are in ascending order. | `assert(xs.is_sorted())` |
+| `fn (xs: []T) binary_search(a: T) -> usize?` | `cfire::bm::binary_search(xs, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
+| `fn (xs: []T) join(a: &str) -> str` | `cfire::bm::join(xs, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
+| `fn (xs: []T) push(a: T)` | `(dedicated lowering)` | Appends `v`. | `xs.push(4)` |
+| `fn (xs: []T) insert(a: usize, b: T)` | `cfire::bm::insert(xs, ...)` | Inserts `v` at `i`, shifting later elements; panics when `i > len()`. | `xs.insert(0, head)` |
+| `fn (xs: []T) remove(a: usize) -> T` | `cfire::bm::remove(xs, ...)` | Removes and returns the element at `i`, shifting later elements; panics when out of range. | `x := xs.remove(0)` |
+| `fn (xs: []T) swap_remove(a: usize) -> T` | `cfire::bm::swap_remove(xs, ...)` | Removes the element at `i` by moving the last one into its place (O(1)); panics when out of range. | `x := xs.swap_remove(i)` |
+| `fn (xs: []T) truncate(a: usize)` | `cfire::bm::truncate(xs, ...)` | Keeps the first `n` elements (no effect when `n >= len()`). | `xs.truncate(10)` |
+| `fn (xs: []T) extend(a: []T)` | `cfire::bm::extend(xs, ...)` | Appends a copy of every element of `other`. | `xs.extend(more)` |
+| `fn (xs: []T) clear()` | `cfire::bm::clear(xs, ...)` | Removes every element. | `xs.clear()` |
+| `fn (xs: []T) data() -> *T` | `(dedicated lowering)` | Raw pointer to the contiguous buffer, for C FFI. | `ptr := xs.data()` |
+| `fn (xs: []T) data_ptr() -> *T` | `(dedicated lowering)` | Raw pointer to the element buffer, for C FFI. | `ptr := xs.data_ptr()` |
+| `fn (xs: []T) bytes() -> []byte` | `(dedicated lowering)` | Byte view of the slice's storage. | `raw := xs.bytes()` |
+| `fn (arr: [N]T) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
+| `fn (arr: [N]T) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
+| `fn (arr: [N]T) contains(a: T) -> bool` | `cfire::bm::contains(arr, ...)` | `true` if an element equals `v`. | `if xs.contains(3) { ... }` |
+| `fn (arr: [N]T) index_of(a: T) -> usize?` | `cfire::bm::index_of(arr, ...)` | Position of the first element equal to `v`, or `none`. | `i := xs.index_of(v) or { return }` |
+| `fn (arr: [N]T) first() -> T?` | `cfire::bm::first(arr, ...)` | Copy of the first element, or `none` when empty. | `head := xs.first() or 0` |
+| `fn (arr: [N]T) last() -> T?` | `cfire::bm::last(arr, ...)` | Copy of the last element, or `none` when empty. | `tail := xs.last() or 0` |
+| `fn (arr: [N]T) reverse()` | `cfire::bm::reverse(arr, ...)` | Reverses the elements in place. | `xs.reverse()` |
+| `fn (arr: [N]T) sort()` | `cfire::bm::sort(arr, ...)` | Sorts in place, ascending. | `xs.sort()` |
+| `fn (arr: [N]T) sort_by(a: fn(T, T) -> bool)` | `cfire::bm::sort_by(arr, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
+| `fn (arr: [N]T) is_sorted() -> bool` | `cfire::bm::is_sorted(arr, ...)` | `true` if the elements are in ascending order. | `assert(xs.is_sorted())` |
+| `fn (arr: [N]T) binary_search(a: T) -> usize?` | `cfire::bm::binary_search(arr, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
+| `fn (arr: [N]T) join(a: &str) -> str` | `cfire::bm::join(arr, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
+| `fn (arr: [N]T) data() -> *T` | `(dedicated lowering)` | Raw pointer to the contiguous buffer, for C FFI. | `ptr := xs.data()` |
+| `fn (arr: [N]T) data_ptr() -> *T` | `(dedicated lowering)` | Raw pointer to the element buffer, for C FFI. | `ptr := xs.data_ptr()` |
+| `fn (m: map[K]V) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
+| `fn (m: map[K]V) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
+| `fn (m: map[K]V) clear()` | `cfire::bm::clear(m, ...)` | Removes every element. | `xs.clear()` |
+| `fn (m: map[K]V) contains(a: K) -> bool` | `cfire::bm::contains(m, ...)` | `true` if the key is present. | `if m.contains("id") { ... }` |
+| `fn (m: map[K]V) get(a: K) -> V?` | `cfire::bm::get(m, ...)` | Copy of the value for `k`, or `none`. | `port := cfg.get("port") or 8080` |
+| `fn (m: map[K]V) insert(a: K, b: V) -> V?` | `cfire::bm::insert(m, ...)` | Sets `k` to `v`; returns the previous value, or `none`. | `old := m.insert(k, v)` |
+| `fn (m: map[K]V) remove(a: K) -> V?` | `cfire::bm::remove(m, ...)` | Removes `k`; returns its value, or `none` if absent. | `gone := m.remove(k)` |
+| `fn (m: map[K]V) keys() -> []K` | `cfire::bm::keys(m, ...)` | Copy of the keys, in unspecified order (Q27). | `for k in m.keys() { ... }` |
+| `fn (m: map[K]V) values() -> []V` | `cfire::bm::values(m, ...)` | Copy of the values, in unspecified order (Q27). | `total := m.values().len()` |
+| `const <int>.MAX: Self` | `std::numeric_limits<std::int64_t>::max()` | Largest value of the type. | `v := i32.MAX` |
+| `const <int>.MIN: Self` | `std::numeric_limits<std::int64_t>::min()` | Smallest value of the type. | `v := i32.MIN` |
+| `const <int>.BITS: u32` | `static_cast<std::uint32_t>(std::numeric_limits<std::make_unsigned_t<std::int64_t>>::digits)` | Width in bits (`u32`). | `v := i32.BITS` |
+| `const <float>.MAX: Self` | `std::numeric_limits<double>::max()` | Largest finite value. | `v := f64.MAX` |
+| `const <float>.MIN: Self` | `std::numeric_limits<double>::lowest()` | Most negative finite value. | `v := f64.MIN` |
+| `const <float>.MIN_POSITIVE: Self` | `std::numeric_limits<double>::min()` | Smallest positive normal value. | `v := f64.MIN_POSITIVE` |
+| `const <float>.EPSILON: Self` | `std::numeric_limits<double>::epsilon()` | Difference between `1.0` and the next representable value. | `v := f64.EPSILON` |
+| `const <float>.INF: Self` | `std::numeric_limits<double>::infinity()` | Positive infinity. | `v := f64.INF` |
+| `const <float>.NEG_INF: Self` | `(-std::numeric_limits<double>::infinity())` | Negative infinity. | `v := f64.NEG_INF` |
+| `const <float>.NAN: Self` | `std::numeric_limits<double>::quiet_NaN()` | Not a number. | `v := f64.NAN` |
+| `fn T.parse(s: str) -> T?` | `cfire::bm::parse<T>(s)` | Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`); `none` on invalid or out-of-range input. | `port := u16.parse(arg) or 8080` |
+| `make(T) / make(T, args...)` | `T{} / cfire_ctor_T(args...)` | A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type). | `p := make(Point, 3, 4)` |
+| `make(own[T], args...) / make(shared[T], args...)` | `cfire::make_own<T>(...) / cfire::make_shared_ptr<T>(...)` | A heap-owned `T` (`unique_ptr` / `shared_ptr`), built from one `T` value or the constructor's arguments. | `node := make(own[Node], Node{v: 1})` |
+| `make([]T, len) / make([]T, len, cap)` | `cfire::make_slice<T>(len[, cap])` | `len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics. | `buf := make([]byte, 0, 4096)` |
+| `make(map[K]V)` | `cfire::Map<K, V>{}` | An empty map (iteration order is unspecified, Q27). | `counts := make(map[str]i32)` |
+| `fn (o: own[T]) release() -> *mut T` | `o.release()` | Gives up ownership for C interop (CF-181): returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`. | `c_api_take(buf.release())` |
+| `fn own[T].from_raw(p: *mut T) -> own[T]` | `std::unique_ptr<T>(p)` | Takes ownership of a pointer produced by `release` (CF-181). Adopting any other pointer is undefined behavior. | `buf := own[Buffer].from_raw(c_api_give())` |
 
 ### `core:audio` (`audio`) — Audio Engine, Polyphonic Mixer, Synth & WAV
 
@@ -376,7 +547,7 @@ fn main() {
     println("Hexadecimal string: 0x{}", hex_str)
 
     restored := try hex.decode(hex_str)
-    println("Restored byte length: {}", restored.len)
+    println("Restored byte length: {}", restored.len())
 }
 ```
 
@@ -555,10 +726,10 @@ fn main() {
 | `fn warn(msg: str, ...attrs: any)` | `cfire::log::warn(msg, ...)` | Logs a warning message with optional key-value attribute pairs. | `log.warn("rate limit reached", "client", ip)` |
 | `fn error(msg: str, ...attrs: any)` | `cfire::log::error(msg, ...)` | Logs an error message with optional key-value attribute pairs. | `log.error("database connection failed", "db", name)` |
 
-### `core:math` (`math`) — Numeric & Floating-Point Utilities
+### `core:math` (`math`) — Math Constants & Multi-Input Functions
 
 - **Auto-Link Flags:** `(header-only)`
-- **Overview:** Standard mathematical constants (`PI`, `E`) and numeric clamping/transcendental functions.
+- **Overview:** Mathematical constants (`math.PI`, `math.E`, `math.TAU`, `math.SQRT_2`, `math.LN_2`, `math.LN_10`) and functions with no natural receiver (`atan2`, `hypot`, `gcd`, `lcm`). Single-value operations are methods on the number itself (`x.abs()`, `f.sqrt()`, `x.clamp(lo, hi)`, `a.checked_add(b)`); type limits and parsing are associated with the type (`i32.MAX`, `f64.NAN`, `i32.parse(s)`). See the builtin method reference.
 
 **Practical Example:**
 ```cf
@@ -567,28 +738,24 @@ package main
 import "core:math"
 
 fn main() {
-    bounded := math.clamp_f64(3.14159, 0.0, 1.0)
-    hypot := math.sqrt(3.0 * 3.0 + 4.0 * 4.0)
+    bounded := (3.14159).clamp(0.0, 1.0)
+    hypot := (3.0 * 3.0 + 4.0 * 4.0).sqrt()
     println("Clamped: {}, Hypot: {}", bounded, hypot)
 }
 ```
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn clamp_i64(val: i64, lo: i64, hi: i64) -> i64` | `cfire::math::clamp_i64(val, lo, hi)` | Clamps a 64-bit integer to `[lo, hi]`. | `c := math.clamp_i64(x, 0, 100)` |
-| `fn clamp_f64(val: f64, lo: f64, hi: f64) -> f64` | `cfire::math::clamp_f64(val, lo, hi)` | Clamps a 64-bit float to `[lo, hi]`. | `c := math.clamp_f64(v, 0.0, 1.0)` |
-| `fn sqrt(x: f64) -> f64` | `cfire::math::sqrt(x)` | Computes square root. | `r := math.sqrt(16.0)` |
-| `fn sqrt_f64(x: f64) -> f64` | `cfire::math::sqrt(x)` | Computes square root of a 64-bit float. | `r := math.sqrt_f64(16.0)` |
-| `fn abs_f64(x: f64) -> f64` | `cfire::math::abs_f64(x)` | Computes absolute value of a `f64`. | `a := math.abs_f64(-3.5)` |
-| `fn checked_add(a: i64, b: i64) -> i64?` | `cfire::math::checked_add(a, b)` | Adds two integers, returning `none` on overflow. | `res := math.checked_add(x, y)` |
-| `fn checked_sub(a: i64, b: i64) -> i64?` | `cfire::math::checked_sub(a, b)` | Subtracts two integers, returning `none` on overflow. | `res := math.checked_sub(x, y)` |
-| `fn checked_mul(a: i64, b: i64) -> i64?` | `cfire::math::checked_mul(a, b)` | Multiplies two integers, returning `none` on overflow. | `res := math.checked_mul(x, y)` |
-| `fn wrapping_add(a: i64, b: i64) -> i64` | `cfire::math::wrapping_add(a, b)` | Adds two integers with well-defined two's-complement wrapping. | `res := math.wrapping_add(x, y)` |
-| `fn wrapping_sub(a: i64, b: i64) -> i64` | `cfire::math::wrapping_sub(a, b)` | Subtracts two integers with well-defined two's-complement wrapping. | `res := math.wrapping_sub(x, y)` |
-| `fn wrapping_mul(a: i64, b: i64) -> i64` | `cfire::math::wrapping_mul(a, b)` | Multiplies two integers with well-defined two's-complement wrapping. | `res := math.wrapping_mul(x, y)` |
-| `fn saturating_add(a: i64, b: i64) -> i64` | `cfire::math::saturating_add(a, b)` | Adds two integers, saturating at min/max numeric bounds. | `res := math.saturating_add(x, y)` |
-| `fn saturating_sub(a: i64, b: i64) -> i64` | `cfire::math::saturating_sub(a, b)` | Subtracts two integers, saturating at min/max numeric bounds. | `res := math.saturating_sub(x, y)` |
-| `fn saturating_mul(a: i64, b: i64) -> i64` | `cfire::math::saturating_mul(a, b)` | Multiplies two integers, saturating at min/max numeric bounds. | `res := math.saturating_mul(x, y)` |
+| `const PI: f64` | `cfire::math::PI` | Ratio of a circle's circumference to its diameter (π). | `area := math.PI * r * r` |
+| `const E: f64` | `cfire::math::E` | Euler's number (e). | `y := math.E.powi(2)` |
+| `const TAU: f64` | `cfire::math::TAU` | Full turn in radians (2π). | `step := math.TAU / f64(n)` |
+| `const SQRT_2: f64` | `cfire::math::SQRT_2` | Square root of 2. | `d := side * math.SQRT_2` |
+| `const LN_2: f64` | `cfire::math::LN_2` | Natural logarithm of 2. | `bits := x.ln() / math.LN_2` |
+| `const LN_10: f64` | `cfire::math::LN_10` | Natural logarithm of 10. | `d := x.ln() / math.LN_10` |
+| `fn atan2(y: f64, x: f64) -> f64` | `cfire::math::atan2(y, x)` | Angle of the point `(x, y)` from the positive x-axis, in radians (`-π..=π`). | `heading := math.atan2(dy, dx)` |
+| `fn hypot(x: f64, y: f64) -> f64` | `cfire::math::hypot(x, y)` | `sqrt(x*x + y*y)` without intermediate overflow or underflow. | `dist := math.hypot(dx, dy)` |
+| `fn gcd(a: i64, b: i64) -> i64` | `cfire::math::gcd(a, b)` | Greatest common divisor (non-negative); `gcd(0, 0) == 0`. Panics for the minimum `i64`. | `g := math.gcd(12, 18)` |
+| `fn lcm(a: i64, b: i64) -> i64` | `cfire::math::lcm(a, b)` | Least common multiple (non-negative); panics on overflow. | `l := math.lcm(4, 6)` |
 
 ### `core:net` (`net`) — POSIX BSD TCP Sockets & Loopback Networking
 
@@ -603,12 +770,12 @@ import "core:net"
 
 fn main() {
     // 1. Bind loopback TCP listener on an ephemeral port (0)
-    mut ln := try net.listen_tcp(port: 0)
+    mut ln := try net.listen(port: 0)
     port := ln.port()
     println("Listening on 127.0.0.1:{}", port)
 
     // 2. Connect client TCP socket
-    mut client := try net.connect_tcp("127.0.0.1", port)
+    mut client := try net.connect("127.0.0.1", port)
     _ = try client.write_text("PING\n")
 
     // 3. Accept incoming connection and read data
@@ -620,12 +787,12 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn listen_tcp(port: u16 = 0) -> TcpListener!` | `cfire::net::listen_tcp(port)` | Binds a TCP listener on `0.0.0.0:port` (`0` selects an ephemeral port). | `mut ln := try net.listen_tcp(0)` |
-| `fn listen_tcp_addr(host: str, port: u16 = 0) -> TcpListener!` | `cfire::net::listen_tcp_addr(host, port)` | Binds a TCP listener on a specific interface address (`host:port`). | `mut ln := try net.listen_tcp_addr("127.0.0.1", 8080)` |
+| `fn listen(port: u16 = 0, host: str = "0.0.0.0") -> TcpListener!` | `cfire::net::listen(port, host)` | Binds a TCP listener on `host:port` (`0` picks an ephemeral port; the default host is every interface). | `mut ln := try net.listen(0)` |
 | `fn (ln: TcpListener) port() -> u16` | `ln.port()` | Returns the bound TCP port. | `p := ln.port()` |
 | `fn (mut ln: TcpListener) accept() -> TcpConn!` | `ln.accept()` | Accepts an incoming TCP connection with a safe poll timeout. | `mut conn := try ln.accept()` |
-| `fn connect_tcp(host: str, port: u16) -> TcpConn!` | `cfire::net::connect_tcp(host, port)` | Connects a `TcpConn` to `host:port`. | `mut c := try net.connect_tcp("127.0.0.1", p)` |
+| `fn connect(host: str, port: u16) -> TcpConn!` | `cfire::net::connect(host, port)` | Connects a `TcpConn` to `host:port`. | `mut c := try net.connect("127.0.0.1", p)` |
 | `fn socketpair() -> (TcpConn, TcpConn)!` | `cfire::net::socketpair()` | Creates a connected pair of full-duplex `TcpConn` stream sockets. | `(mut a, mut b) := try net.socketpair()` |
+| `fn (c: TcpConn) remote_addr() -> str` | `c.remote_addr()` | The peer address of an accepted connection (`203.0.113.7`, `2001:db8::1`; IPv4-mapped IPv6 peers are reported as IPv4), or the host a client connection dialed. | `println("client {}", conn.remote_addr())` |
 | `fn (c: TcpConn) fd() -> i32` | `c.fd()` | Returns the underlying socket file descriptor (`-1` if closed). | `fd := conn.fd()` |
 | `fn (c: TcpConn) is_open() -> bool` | `c.is_open()` | Returns `true` if the socket connection is open. | `if conn.is_open() { ... }` |
 | `fn (c: TcpConn) poll(timeout_ms: i64 = 0) -> bool` | `c.poll(timeout_ms)` | Polls the socket for readability up to `timeout_ms` milliseconds (`EINTR`-safe). | `if conn.poll(50) { ... }` |
@@ -644,7 +811,7 @@ fn main() {
 ### `core:net/http` (`http`) — HTTP/1.1 & HTTPS Client, Server & Router
 
 - **Auto-Link Flags:** `(POSIX sockets + TLS)`
-- **Overview:** RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), multi-mode HTTP/HTTPS server (`make_server`, `make_tls_server`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).
+- **Overview:** RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), HTTP/HTTPS server (`make(http.Server, port)`, `make(http.Server, port, tls: http.TlsConfig{...})`, per-connection `http.ServerLimits`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).
 
 **Practical Example:**
 ```cf
@@ -668,7 +835,7 @@ fn main() {
     }
 
     // 2. Build independent HTTP router with path parameters
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.get("/health", |req| {
         return http.Response.json(200, "{\"status\":\"healthy\",\"uptime_sec\":120}")
     })
@@ -677,7 +844,7 @@ fn main() {
     })
 
     // 3. Serve requests using the router
-    mut server := try http.make_server(port: 8080)
+    mut server := try make(http.Server, port: 8080)
     server.serve_in_background(router)
 }
 ```
@@ -685,15 +852,11 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!` | `cfire::http::get(url, headers, verify_peer)` | Executes an HTTP or HTTPS GET request against a target URL. | `resp := try http.get("https://127.0.0.1:8443/health", {}, false)` |
-| `fn get_insecure(url: str, headers: map[str]str = {}) -> Response!` | `cfire::http::get_insecure(url, headers)` | Executes an HTTPS GET request skipping peer certificate verification (for self-signed certs). | `resp := try http.get_insecure("https://127.0.0.1:8443/health")` |
 | `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true) -> Response!` | `cfire::http::post(url, body, content_type, headers, verify_peer)` | Executes an HTTP or HTTPS POST request with payload body. | `resp := try http.post("http://127.0.0.1:8080/items", "{\"id\": 1}")` |
-| `fn post_insecure(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}) -> Response!` | `cfire::http::post_insecure(url, body, content_type, headers)` | Executes an HTTPS POST request skipping peer certificate verification. | `resp := try http.post_insecure("https://127.0.0.1:8443/items", "{}")` |
-| `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true) -> Response!` | `cfire::http::request(method, url, body, content_type, headers, verify_peer)` | Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.). | `resp := try http.request("DELETE", "http://127.0.0.1:8080/items/1")` |
+| `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "") -> Response!` | `cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file)` | Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.). | `resp := try http.request("DELETE", "http://127.0.0.1:8080/items/1")` |
 | `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true) -> void!` | `cfire::http::post_sse(url, body, headers, on_event, verify_peer)` | Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event. | `try http.post_sse(url, payload, headers, |ev| { print("{}", ev.data); return true })` |
-| `fn make_server(port: u16 = 0) -> HttpServer!` | `cfire::http::make_server(port)` | Creates a lightweight HTTP server listening on `port` (0 for ephemeral). | `mut srv := try http.make_server(8080)` |
-| `fn make_tls_server(port: u16, cert_file: str, key_file: str) -> HttpServer!` | `cfire::http::make_tls_server(port, cert_file, key_file)` | Creates an HTTPS/WSS server backed by certificate and private key PEM files. | `mut srv := try http.make_tls_server(8443, "cert.pem", "key.pem")` |
-| `fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> HttpServer!` | `cfire::http::make_tls_server_pem(port, cert_pem, key_pem)` | Creates an HTTPS/WSS server from in-memory certificate and private key PEM strings. | `mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)` |
-| `fn make_router() -> Router` | `cfire::http::make_router()` | Creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`). | `mut r := http.make_router()` |
+| `fn make(port: u16 = 0, tls: TlsConfig = {}) -> HttpServer!` | `cfire::http::make_server(port, tls)` | `make(http.Server, port)` creates an HTTP server listening on `port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` (or `cert_pem` / `key_pem`) serves HTTPS. | `mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: "cert.pem", key_file: "key.pem"})` |
+| `fn make() -> Router` | `cfire::http::make_router()` | `make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`). | `mut router := make(http.Router)` |
 | `fn parse_request(raw: str) -> Request!` | `cfire::http::parse_request(raw)` | Parses raw HTTP/1.1 wire text into a structured Request model. | `req := try http.parse_request(raw_text)` |
 | `fn Response.text(code: i32, payload: str) -> Response` | `cfire::http::Response::text(code, payload)` | Creates an HTTP Response with text/plain content-type and standard status reason. | `return http.Response.text(200, "OK")` |
 | `fn Response.json(code: i32, json_str: str) -> Response` | `cfire::http::Response::json(code, json_str)` | Creates an HTTP Response with application/json content-type. | `return http.Response.json(200, "{\"status\":\"ok\"}")` |
@@ -704,9 +867,13 @@ fn main() {
 | `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -> void) -> Router&` | `r.ws(pattern, handler)` | Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`. | `r.ws("/chat/:room", |req, mut ws| { ... })` |
 | `fn (r: Router) dispatch(req: Request) -> Response` | `r.dispatch(req)` | Dispatches an HTTP request through the router in-memory without open network sockets. | `res := router.dispatch(test_req)` |
 | `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&` | `r.use(mw)` | Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests. | `r.use(|req| { return None })` |
+| `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128 }` | `cfire::http::ServerLimits` | Per-connection server limits (Q22, CF-180). Omitted fields keep their defaults; `workers = 0` keeps the default pool size (`hardware_concurrency()`, at least 4). | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000})` |
+| `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM. | `tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}` |
+| `fn (mut s: HttpServer) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the per-connection limits (Q22): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending}`; omitted fields keep their defaults. | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})` |
 | `fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!` | `s.enable_tls_files(cert_file, key_file)` | Enables TLS on the server using certificate and private key PEM files. | `try srv.enable_tls_files("cert.pem", "key.pem")` |
 | `fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!` | `s.enable_tls_pem(cert_pem, key_pem)` | Enables TLS on the server using in-memory certificate and private key PEM strings. | `try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)` |
 | `fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void` | `s.serve_in_background(handler)` | Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests. | `server.serve_in_background(router)` |
+| `fn (s: HttpServer) port() -> u16` | `s.port()` | Returns the port the server is listening on (useful after binding port 0). | `port := srv.port()` |
 | `fn (mut s: HttpServer) stop() -> void` | `s.stop()` | Gracefully closes the listening socket and stops worker threads. | `server.stop()` |
 | `fn (req: Request) param(key: str, fallback: str = "") -> str` | `req.param(key, fallback)` | Retrieves a named route path parameter extracted by the router. | `id := req.param("id")` |
 | `fn (req: Request) query(key: str, fallback: str = "") -> str` | `req.query(key, fallback)` | Retrieves a decoded URL query parameter. | `page := req.query("page", "1")` |
@@ -729,11 +896,11 @@ fn main() {
     pair := try tls.generate_self_signed_pem("localhost", 365)
 
     // 2. Start an HTTPS server backed by the in-memory certificate
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.get("/secure", |req| {
         return http.Response.text(200, "TLS 1.3 Secure OK")
     })
-    mut srv := try http.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)
+    mut srv := try make(http.Server, 0, tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem})
     srv.serve_in_background(router)
     defer srv.stop()
 }
@@ -780,7 +947,7 @@ fn main() {
 ### `core:net/websocket` (`websocket`) — RFC 6455 High-Level WebSockets & WSS Client & Server
 
 - **Auto-Link Flags:** `(POSIX sockets + TLS)`
-- **Overview:** RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, `connect_insecure`), standalone server (`make_server`, `make_tls_server`, `make_tls_server_pem`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.
+- **Overview:** RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, with `verify_peer: false` for self-signed certificates), standalone server (`make(websocket.Server, port)`, `tls: websocket.TlsConfig{...}` for `wss://`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.
 
 **Practical Example:**
 ```cf
@@ -790,7 +957,7 @@ import "core:net/websocket"
 
 fn main() {
     // 1. Start a standalone WebSocket server on an ephemeral port
-    mut srv := try websocket.make_server(0)
+    mut srv := try make(websocket.Server, 0)
     srv.serve_in_background(|mut ws: websocket.Conn| {
         msg := ws.recv_text() or ""
         _ = ws.send_text("ECHO: " + msg)
@@ -810,10 +977,8 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn connect(url: str, verify_peer: bool = true) -> Conn!` | `cfire::websocket::connect(url, verify_peer)` | Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake. | `mut ws := try websocket.connect("ws://127.0.0.1:8080/ws")` |
-| `fn connect_insecure(url: str) -> Conn!` | `cfire::websocket::connect_insecure(url)` | Establishes a `wss://` WebSocket connection skipping peer certificate verification (for self-signed certs). | `mut ws := try websocket.connect_insecure("wss://127.0.0.1:8443/ws")` |
-| `fn make_server(port: u16 = 0) -> Server!` | `cfire::websocket::make_server(port)` | Creates a standalone WebSocket server listening on `port` (`0` for ephemeral). | `mut srv := try websocket.make_server(0)` |
-| `fn make_tls_server(port: u16, cert_file: str, key_file: str) -> Server!` | `cfire::websocket::make_tls_server(port, cert_file, key_file)` | Creates a standalone `wss://` WebSocket server backed by certificate and private key PEM files. | `mut srv := try websocket.make_tls_server(8443, "cert.pem", "key.pem")` |
-| `fn make_tls_server_pem(port: u16, cert_pem: str, key_pem: str) -> Server!` | `cfire::websocket::make_tls_server_pem(port, cert_pem, key_pem)` | Creates a standalone `wss://` WebSocket server from in-memory certificate and private key PEM strings. | `mut srv := try websocket.make_tls_server_pem(0, pair.cert_pem, pair.key_pem)` |
+| `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`. | `tls: websocket.TlsConfig{cert_file: "cert.pem", key_file: "key.pem"}` |
+| `fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!` | `cfire::websocket::make_server(port, tls)` | `make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`. | `mut srv := try make(websocket.Server, 9001)` |
 | `fn upgrade(req: Request, mut conn: TcpConn) -> Conn!` | `cfire::websocket::upgrade(req, conn)` | Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection. | `mut ws := try websocket.upgrade(req, mut conn)` |
 | `fn pair() -> (Conn, Conn)!` | `cfire::websocket::pair()` | Creates an in-process full-duplex WebSocket client/server loopback pair. | `mut (client, server) := try websocket.pair()` |
 | `fn (mut ws: Conn) send_text(msg: str) -> void!` | `ws.send_text(msg)` | Sends a UTF-8 text frame to the peer (masked if client). | `try ws.send_text("hello world")` |
@@ -833,7 +998,7 @@ fn main() {
 ### `core:os` (`os`) — Environment, Standard Streams, Terminal, Pipes & Subprocesses
 
 - **Auto-Link Flags:** `(header-only)`
-- **Overview:** Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make_raw`, `on_signal`), and subprocess execution (`command`, `exec_output`).
+- **Overview:** Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).
 
 **Practical Example:**
 ```cf
@@ -866,7 +1031,7 @@ fn main() {
 | `fn pipe() -> (File, File)!` | `cfire::os::pipe()` | Creates an OS pipe returning an owning `(reader, writer)` tuple of `fs.File` handles with `FD_CLOEXEC` enabled. | `(mut r, mut w) := try os.pipe()` |
 | `fn is_tty() -> bool` | `cfire::os::is_tty()` | Returns `true` if standard input refers to an interactive terminal (or call `.is_tty()` on any `fs.File`). | `if os.is_tty() { ... }` |
 | `fn term_size() -> TermSize` | `cfire::os::term_size()` | Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY. | `sz := os.term_size()` |
-| `fn make_raw() -> RawTerminal!` | `cfire::os::make_raw()` | Places standard input into raw terminal mode (`cfmakeraw`) and returns an RAII `RawTerminal` guard that restores `termios` on scope exit. | `raw := try os.make_raw()` |
+| `fn make() -> RawTerminal!` | `cfire::os::make_raw()` | `make(os.RawTerminal)` puts standard input into raw terminal mode (`cfmakeraw`) and returns an RAII guard that restores `termios` when it goes out of scope. | `raw := try make(os.RawTerminal)` |
 | `fn on_signal(sig: i32, handler: fn(i32))` | `cfire::os::on_signal(sig, handler)` | Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`). | `os.on_signal(28, |sig| { println("resized: {}", sig) })` |
 | `fn exec_output(cmd: str) -> str!` | `cfire::os::exec_output(cmd)` | Executes a shell command via `popen` and returns its captured stdout. | `out := try os.exec_output("uname -s")` |
 | `fn exec(cmd: str) -> str!` | `cfire::os::exec_output(cmd)` | Executes a shell command via `popen` and returns its captured stdout. | `out := try os.exec("uname -s")` |
@@ -930,86 +1095,6 @@ fn main() {
 | `fn is_match(pattern: str, text: str) -> bool!` | `cfire::regex::is_match(pattern, text)` | Tests whether a regex pattern matches text. | `ok := try regex.is_match("^[a-z]+$", s)` |
 | `fn replace_all(pattern: str, text: str, repl: str) -> str!` | `cfire::regex::replace_all(pattern, text, repl)` | Replaces all occurrences matching pattern with repl. | `res := try regex.replace_all("\s+", s, " ")` |
 
-### `core:sort` (`sort`) — Slice Sorting & Binary Search
-
-- **Auto-Link Flags:** `(header-only)`
-- **Overview:** In-place sorting algorithms and binary search on slices.
-
-**Practical Example:**
-```cf
-package main
-
-import "core:sort"
-
-fn main() {
-    mut numbers := [95, 12, 48, 3, 77]
-    // In-place slice sorting
-    sort.slice(mut numbers)
-    println("Sorted numbers: {:?}", numbers)
-
-    // Logarithmic binary search
-    idx := sort.binary_search(numbers, 48)
-    if idx != none {
-        println("Found element 48 at index: {}", idx)
-    }
-}
-```
-
-| `.cf` Signature | Lowered C++23 | Description | Example |
-|---|---|---|---|
-| `fn slice(mut s: []T)` | `cfire::sort::slice(s)` | Sorts a slice in ascending order in-place. | `sort.slice(mut numbers)` |
-| `fn binary_search(s: []T, val: T) -> i64?` | `cfire::sort::binary_search(s, val)` | Performs binary search on a sorted slice. | `idx := sort.binary_search(numbers, 42)` |
-| `fn slice_by(mut s: []T, cmp: fn(T, T) -> bool)` | `cfire::sort::slice_by(s, cmp)` | Sorts slice `s` in-place using custom comparator `cmp`. | `sort.slice_by(mut items) |a, b| { return a < b }` |
-
-### `core:str` (`str`) — UTF-8 String Manipulation
-
-- **Auto-Link Flags:** `(header-only)`
-- **Overview:** Zero-surprise string splitting, joining, trimming, searching, replacement, and ASCII case conversion.
-
-**Practical Example:**
-```cf
-package main
-
-import "core:str"
-
-fn main() {
-    raw := "  systems, programming, language  "
-    trimmed := str.trim(raw)
-    tokens := str.split(trimmed, ", ")
-    formatted := str.join(tokens, "::")
-    println("Processed string: {}", formatted)
-}
-```
-
-| `.cf` Signature | Lowered C++23 | Description | Example |
-|---|---|---|---|
-| `fn split(s: str, sep: str) -> []str` | `cfire::str::split(s, sep)` | Splits `s` around every occurrence of `sep`. | `parts := str.split("a,b,c", ",")` |
-| `fn join(items: []str, sep: str) -> str` | `cfire::str::join(items, sep)` | Joins a slice of strings with `sep`. | `s := str.join(parts, "-")` |
-| `fn trim(s: str) -> str` | `cfire::str::trim(s)` | Strips leading and trailing whitespace. | `clean := str.trim("  hi  ")` |
-| `fn starts_with(s: str, prefix: str) -> bool` | `cfire::str::starts_with(s, prefix)` | Returns `true` if `s` starts with `prefix`. | `if str.starts_with(s, "cf") { ... }` |
-| `fn ends_with(s: str, suffix: str) -> bool` | `cfire::str::ends_with(s, suffix)` | Returns `true` if `s` ends with `suffix`. | `if str.ends_with(f, ".cf") { ... }` |
-| `fn contains(s: str, needle: str) -> bool` | `cfire::str::contains(s, needle)` | Returns `true` if `s` contains `needle`. | `if str.contains(s, "fire") { ... }` |
-| `fn replace(s: str, from: str, to: str) -> str` | `cfire::str::replace(s, from, to)` | Replaces all occurrences of `from` in `s` with `to`. | `r := str.replace(s, "old", "new")` |
-| `fn replace_all(s: str, from: str, to: str) -> str` | `cfire::str::replace_all(s, from, to)` | Replaces all occurrences of `from` with `to` in `s`. | `r := str.replace_all("a-b-c", "-", "_")` |
-| `fn bytes(s: str) -> []byte` | `cfire::str::to_bytes(s)` | Returns the UTF-8 bytes of string `s` as a byte slice. | `b := str.bytes("hello")` |
-| `fn to_upper(s: str) -> str` | `cfire::str::to_upper(s)` | Converts ASCII characters to uppercase. | `u := str.to_upper("cfire")` |
-| `fn to_lower(s: str) -> str` | `cfire::str::to_lower(s)` | Converts ASCII characters to lowercase. | `l := str.to_lower("CFIRE")` |
-| `fn index_of(s: str, substr: str, start_pos: usize = 0) -> i64` | `cfire::str::index_of(s, substr, start_pos)` | Finds first occurrence of `substr` in `s` starting at `start_pos`; returns index or -1. | `idx := str.index_of(path, ".")` |
-| `fn find(s: str, substr: str, start_pos: usize = 0) -> usize?` | `cfire::str::find(s, substr, start_pos)` | Finds the first byte offset of `substr` in `s` starting at `start_pos`, or `none` if not found. | `pos := str.find(s, ":") or { return }` |
-| `fn last_index_of(s: str, substr: str) -> i64` | `cfire::str::last_index_of(s, substr)` | Finds last occurrence of `substr` in `s`; returns index or -1. | `idx := str.last_index_of(path, "/")` |
-| `fn rfind(s: str, substr: str, start_pos: usize = npos) -> i64` | `cfire::str::rfind(s, substr, start_pos)` | Reverse-searches `substr` in `s` starting backwards from `start_pos`; returns index or -1. | `pos := str.rfind(s, "#")` |
-| `fn parse_i64(s: str) -> i64?` | `cfire::str::parse_i64(s)` | Parses a base-10 signed 64-bit integer from `s` (or as method `s.parse_i64()`), returning `none` on invalid input or overflow. | `n := str.parse_i64("42") or 0` |
-| `fn parse_i32(s: str) -> i32?` | `cfire::str::parse_i32(s)` | Parses a base-10 signed 32-bit integer from `s` (or as method `s.parse_i32()`), returning `none` on invalid input or overflow. | `n := str.parse_i32("42") or 0` |
-| `fn parse_u64(s: str) -> u64?` | `cfire::str::parse_u64(s)` | Parses a base-10 unsigned 64-bit integer from `s` (or as method `s.parse_u64()`), returning `none` on invalid input or overflow. | `n := str.parse_u64("42") or 0` |
-| `fn parse_f64(s: str) -> f64?` | `cfire::str::parse_f64(s)` | Parses a 64-bit floating-point number from `s` (or as method `s.parse_f64()`), returning `none` on invalid input. | `v := str.parse_f64("3.14") or 0.0` |
-| `fn parse_bool(s: str) -> bool?` | `cfire::str::parse_bool(s)` | Parses `"true"`, `"false"`, `"1"`, or `"0"` (ASCII case-insensitive) into a `bool`, returning `none` otherwise. | `b := str.parse_bool("true") or false` |
-| `fn byte_ptr(s: str) -> *c_char` | `cfire::str::byte_ptr(s)` | Returns a raw pointer to the underlying buffer of `s` for C FFI interop. | `ptr := s.byte_ptr()` |
-| `fn byte_ptr_at(s: str, offset: i64) -> *c_char` | `cfire::str::byte_ptr_at(s, offset)` | Returns a raw pointer offset by `offset` bytes into `s` with bounds safety. | `ptr := s.byte_ptr_at(4)` |
-| `fn (s: str) data() -> *const c_char` | `(s).data()` | Returns a raw pointer to the contiguous null-terminated UTF-8 buffer of `s` for C FFI interop. | `ptr := s.data()` |
-| `fn (s: str) bytes() -> []byte` | `cfire::to_bytes(s)` | Returns a safe byte slice view (`std::span<const std::byte>`) over the UTF-8 bytes of `s`. | `b := s.bytes()` |
-| `fn (s: []T) data() -> *T / *const T` | `(s).data()` | Returns a raw pointer to the underlying contiguous element buffer (*const T for immutable receivers) for C FFI interop. | `ptr := s.data()` |
-| `fn (s: []T) data_ptr() -> *T / *const T` | `(s).data()` | Returns a raw pointer to the underlying contiguous element buffer (alias for `data()`). | `ptr := s.data_ptr()` |
-
 ### `core:sync` (`sync`) — Thread-Safe Typed Channels & Mutexes
 
 - **Auto-Link Flags:** `(header-only)`
@@ -1023,7 +1108,7 @@ import "core:sync"
 
 fn main() {
     // Typed buffered message channel
-    ch := sync.make_channel[i32](capacity: 10)
+    ch := make(sync.Channel[i32], capacity: 10)
 
     async.scope(workers: 2) |scope| {
         // Producer task
@@ -1047,10 +1132,9 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn make_channel[T](capacity: usize = 0) -> Channel[T]` | `cfire::sync::make_channel<T>()` | Creates a new shared, thread-safe channel of element type `T`. | `ch := sync.make_channel[i64]()` |
-| `fn make_mutex[T](initial: T) -> Mutex[T]` | `cfire::sync::make_mutex(initial)` | Constructs a data-bearing mutex protecting initial value. | `mu := sync.make_mutex(0)` |
-| `fn new_mutex() -> Mutex` | `cfire::sync::Mutex()` | Constructs a new mutual exclusion lock. | `m := sync.new_mutex()` |
-| `fn make_atomic[T](initial: T) -> Atomic[T]` | `cfire::sync::make_atomic(initial)` | Constructs an atomic variable holding initial value. | `atm := sync.make_atomic(0)` |
+| `fn make[T](capacity: usize = 0) -> Channel[T]` | `cfire::sync::make_channel<T>(capacity)` | `make(sync.Channel[T], capacity)` creates a shared, thread-safe channel of element type `T` (`0` = unbuffered). | `ch := make(sync.Channel[i32], 8)` |
+| `fn make[T](initial: T) -> Mutex[T]` | `cfire::sync::make_mutex<T>(initial)` | `make(sync.Mutex[T], initial)` creates a mutex protecting a value of type `T`; `make(sync.Mutex[void])` is a pure lock. | `mu := make(sync.Mutex[i64], 0)` |
+| `fn make[T](initial: T) -> Atomic[T]` | `cfire::sync::make_atomic<T>(initial)` | `make(sync.Atomic[T], initial)` creates an atomic variable holding `initial`. | `hits := make(sync.Atomic[i64], 0)` |
 | `fn (ch: Channel[T]) send(val: T)` | `ch.send(val)` | Sends a value into the channel and wakes one waiting receiver. | `ch.send(42)` |
 | `fn (ch: Channel[T]) recv() -> T!` | `ch.recv()` | Blocks until a value is available or returns an error if the channel is closed and empty. | `v := ch.recv() or 0` |
 | `fn (ch: Channel[T]) try_recv() -> T?` | `ch.try_recv()` | Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty. | `v := ch.try_recv() or { return }` |
@@ -1058,12 +1142,14 @@ fn main() {
 | `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!` | `ch.recv_ctx(ctx)` | Receives from the channel or aborts immediately with an error if `ctx` is cancelled. | `v := try ch.recv_ctx(ctx)` |
 | `fn (ch: Channel[T]) len() -> usize` | `ch.len()` | Returns the number of buffered items currently queued in the channel. | `n := ch.len()` |
 | `fn (mut ch: Channel[T]) close()` | `ch.close()` | Closes the channel and wakes all waiting receivers. | `ch.close()` |
-| `type Mutex struct` | `cfire::sync::Mutex` | Mutual exclusion lock movable at initialization (`mut mu := sync.Mutex{}`). | `mut mu := sync.Mutex{}` |
-| `fn (mut m: Mutex) lock()` | `m.lock()` | Acquires the mutex lock, blocking until available. | `mu.lock()` |
-| `fn (mut m: Mutex) unlock()` | `m.unlock()` | Releases the mutex lock. | `mu.unlock()` |
-| `fn (mut m: Mutex) try_lock() -> bool` | `m.try_lock()` | Attempts to acquire the mutex without blocking; returns `true` if acquired. | `if mu.try_lock() { defer mu.unlock() }` |
-| `fn (mut m: Mutex) with_lock(fn: fn())` | `m.with_lock(fn)` | Executes `fn` while holding the mutex lock and unlocks automatically via RAII. | `mu.with_lock(|| { count += 1 })` |
-| `type Atomic[T] struct` | `cfire::sync::Atomic<T>` | Atomic variable. | `atm := sync.make_atomic(0)` |
+| `type Mutex[T] struct` | `cfire::sync::MutexT<T>` | Mutual exclusion (CF-154): `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock. | `mu := make(sync.Mutex[i64], 0)` |
+| `fn (m: Mutex[T]) lock() -> MutexGuard[T]` | `m.lock()` | `Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`. | `mut g := mu.lock()` |
+| `fn (m: Mutex[void]) unlock()` | `m.unlock()` | Releases a `Mutex[void]` acquired with `lock()`. | `lk.unlock()` |
+| `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?` | `m.try_lock()` | Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock. | `if g := mu.try_lock() { ... }` |
+| `fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R` | `m.with_lock(f)` | Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns. | `n := mu.with_lock(|v| { v += 1; return v })` |
+| `fn (m: Mutex[T]) get() -> T` | `m.get()` | Copy of the protected value, read under the lock. | `total := mu.get()` |
+| `fn (m: Mutex[T]) set(v: T)` | `m.set(v)` | Replaces the protected value under the lock. | `mu.set(0)` |
+| `type Atomic[T] struct` | `cfire::sync::Atomic<T>` | Atomic variable. | `hits := make(sync.Atomic[i64], 0)` |
 | `fn (a: Atomic[T]) load() -> T` | `a.load()` | Loads the atomic value. | `v := a.load()` |
 | `fn (a: Atomic[T]) store(val: T)` | `a.store(val)` | Stores a value into the atomic. | `a.store(10)` |
 | `fn (a: Atomic[T]) add(delta: T) -> T` | `a.add(delta)` | Adds delta to atomic value. | `a.add(1)` |
@@ -1214,7 +1300,7 @@ fn main() {
 ### `ext:ai` (`ai`) — On-Device & Cloud AI, Agent Orchestration, Document Ingestion & MCP
 
 - **Auto-Link Flags:** `(POSIX sockets + TLS + AVX2/NEON SIMD + NaturalLanguage / PDFKit / Vision / Tesseract)`
-- **Overview:** Unified AI SDK built around stateful `Client` and `Agent` objects supporting Cross-Platform On-Device Intelligence (`ai.local()` / `ai.apple()`: `NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (`ai.openai()`), Anthropic Claude (`ai.anthropic()`), Google Gemini (`ai.gemini()`), Ollama (`ai.ollama()`), vLLM/llama.cpp (`ai.openai_compatible()`), and deterministic offline mocks (`ai.mock()`, `ai.mock_sequence()`), with multi-turn tool-calling agents (`Agent`, `make_agent`), self-correcting structured outputs (`Client.generate_struct[T]`, `Agent.run_struct[T]`, `Agent.run_struct_validated[T]`) backed by compile-time `validate:"..."` struct tags, stateful client embeddings/OCR/language recognition (`Client.embed`, `Client.embed_image`, `Client.ocr`, `Client.detect_language`), pure stateless document parsers (`load_document`, `chunk_document`), SIMD vector math (`cosine_similarity`, `l2_distance`, `dot_product`, `normalize`), and a Model Context Protocol server (`McpServer`) that shares tool definitions with `Agent` (`use_mcp`).
+- **Overview:** Unified AI SDK built around stateful `Client` and `Agent` objects supporting Cross-Platform On-Device Intelligence (`ai.local()` / `ai.apple()`: `NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (`ai.openai()`), Anthropic Claude (`ai.anthropic()`), Google Gemini (`ai.gemini()`), Ollama (`ai.ollama()`), vLLM/llama.cpp (`ai.openai_compatible()`), and deterministic offline mocks (`ai.mock()`, `ai.mock_sequence()`), with multi-turn tool-calling agents (`make(ai.Agent, client, model)`), self-correcting structured outputs (`Client.generate_struct[T]`, `Agent.run_struct[T]`, `Agent.run_struct_validated[T]`) backed by compile-time `validate:"..."` struct tags, stateful client embeddings/OCR/language recognition (`Client.embed`, `Client.embed_image`, `Client.ocr`, `Client.detect_language`), pure stateless document parsers (`load_document`, `chunk_document`), SIMD vector math (`cosine_similarity`, `l2_distance`, `dot_product`, `normalize`), and a Model Context Protocol server (`McpServer`) that shares tool definitions with `Agent` (`use_mcp`).
 
 **Practical Example:**
 ```cf
@@ -1302,7 +1388,7 @@ fn main() {
 | `fn dot_product(a: []f32, b: []f32) -> f32` | `cfire::ai::dot_product(a, b)` | Computes the inner product of two `[]f32` vectors. | `dot := ai.dot_product(v1, v2)` |
 | `fn normalize(v: []f32) -> []f32` | `cfire::ai::normalize(v)` | Returns an L2-normalized unit vector copy of `v`. | `unit := ai.normalize(raw_vec)` |
 | `fn chunk_text(text: str, max_chars: i32 = 512, overlap: i32 = 64) -> []str` | `cfire::ai::chunk_text(text, max_chars, overlap)` | Splits a document into overlapping paragraph/sentence-aware chunks for RAG indexing. | `chunks := ai.chunk_text(markdown, 512, 64)` |
-| `fn make_agent(client: Client, model: str = "", system_prompt: str = "") -> Agent` | `cfire::ai::make_agent(client, model, system_prompt)` | Creates a stateful multi-turn `Agent` orchestrating tool calls, MCP toolsets, and self-correcting structured outputs. | `mut agent := ai.make_agent(client, "gpt-4o-mini", "You are a helpful assistant.")` |
+| `fn make(client: Client, model: str = "", system_prompt: str = "") -> Agent` | `cfire::ai::make_agent(client, model, system_prompt)` | `make(ai.Agent, client, model, system_prompt)` creates a stateful multi-turn `Agent` that runs tool calls through `client`. | `mut agent := make(ai.Agent, client, "gpt-4o")` |
 | `fn (mut a: Agent) register_tool[Args](name: str, description: str, handler: fn(Args) -> R!)` | `a.register_tool<Args>(name, description, handler)` | Registers a schema-typed tool on the `Agent` (`handler` may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`; errors are returned to the LLM to self-correct). | `agent.register_tool[LookupArgs]("lookup", "Lookup item", |args| { return item })` |
 | `fn (mut a: Agent) register_tool_action(name: str, description: str, handler: fn() -> R!)` | `a.register_tool_action(name, description, handler)` | Registers a parameterless tool on the `Agent`. | `agent.register_tool_action("ping", "Health check", || { return "pong" })` |
 | `fn (mut a: Agent) use_mcp(mcp: McpServer)` | `a.use_mcp(mcp)` | Mounts all tools registered on `mcp` directly into the `Agent`. | `agent.use_mcp(mcp)` |
@@ -1314,7 +1400,7 @@ fn main() {
 | `fn (mut a: Agent) run_struct_validated[Out](prompt: str, validator: fn(Out) -> void!) -> Out!` | `a.run_struct_validated<Out>(prompt, validator)` | Runs the multi-turn agent loop, parses `Out`, and executes custom cross-field `validator` logic (feeding any `error(...)` back to the model to self-correct). | `report := try agent.run_struct_validated[Report]("Summarize", |r: Report| -> void! { ... })` |
 | `fn (a: Agent) history() -> []Message` | `a.history()` | Returns the accumulated multi-turn conversation and tool-call `[]Message` history. | `msgs := agent.history()` |
 | `fn (mut a: Agent) clear_history()` | `a.clear_history()` | Clears the agent's conversation history. | `agent.clear_history()` |
-| `fn make_mcp_server(name: str, version: str = "1.0.0") -> McpServer` | `cfire::ai::make_mcp_server(name, version)` | Creates a Model Context Protocol (MCP) server capable of serving compile-time schema-typed tools over JSON-RPC 2.0 or mounting into an `Agent` via `use_mcp`. | `mut mcp := ai.make_mcp_server("my-tools", "1.0.0")` |
+| `fn make(name: str, version: str = "1.0.0") -> McpServer` | `cfire::ai::make_mcp_server(name, version)` | `make(ai.McpServer, name, version)` creates a Model Context Protocol (MCP) server that serves registered tools over stdio. | `mut mcp := make(ai.McpServer, "docs", "1.0.0")` |
 | `fn (mut s: McpServer) register_tool[T](name: str, description: str, handler: fn(T) -> R!)` | `s.register_tool<T>(name, description, handler)` | Registers an MCP tool whose input schema is derived from `T` (`json.schema[T]()`) and whose handler may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`. | `mcp.register_tool[Query]("search", "Search docs", |q| { return "ok" })` |
 | `fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)` | `s.register_tool_action(name, description, handler)` | Registers a parameterless MCP tool. | `mcp.register_tool_action("status", "Server status", || { return "ready" })` |
 | `fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str` | `s.handle_jsonrpc(req_json)` | Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string. | `resp := mcp.handle_jsonrpc(line)` |
@@ -1337,11 +1423,11 @@ fn main() {
 
     // Hardware-accelerated Zstandard frame compression
     compressed := try zstd.compress(raw, level: 3)
-    println("Original size: {} bytes -> Compressed: {} bytes", raw.len, compressed.len)
+    println("Original size: {} bytes -> Compressed: {} bytes", raw.len(), compressed.len())
 
     // Decompression using the embedded frame content size
     decompressed := try zstd.decompress(compressed)
-    println("Decompressed size: {} bytes", decompressed.len)
+    println("Decompressed size: {} bytes", decompressed.len())
 }
 ```
 
@@ -1370,7 +1456,7 @@ fn main() {
 
     sealed := try sodium.xchacha20poly1305_encrypt(key, []byte("top-secret-vault-payload"))
     opened := try sodium.xchacha20poly1305_decrypt(key, sealed)
-    println("Decrypted bytes: {}", opened.len)
+    println("Decrypted bytes: {}", opened.len())
 }
 ```
 
@@ -1448,7 +1534,7 @@ import "ext:net/ssh"
 import "core:keychain"
 
 fn main() {
-    mut sess := try ssh.dial("10.0.0.12", 22, "deploy", 5000)
+    mut sess := try ssh.connect("10.0.0.12", 22, "deploy", 5000)
     defer sess.close()
 
     fp := sess.host_key_fingerprint()
@@ -1470,7 +1556,7 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn dial(host: str, port: u16 = 22, user: str = "root", timeout_ms: i64 = 10000) -> Session!` | `cfire::ssh::dial(host, port, user, timeout_ms)` | Connects an SSH session to `host:port` as `user` with a connection timeout in milliseconds. | `mut sess := try ssh.dial("10.0.0.10", 22, "deploy", 5000)` |
+| `fn connect(host: str, port: u16 = 22, user: str = "", timeout_ms: i64 = 10000) -> Session!` | `cfire::ssh::connect(host, port, user, timeout_ms)` | Connects an SSH session to `host:port` as `user` (default: the local login name, like ssh(1)). | `mut sess := try ssh.connect("build-box", 22, "deploy")` |
 | `fn enable_mock_server(enabled: bool = true)` | `cfire::ssh::enable_mock_server(enabled)` | Enables or disables the deterministic in-memory loopback SSH/PTY/SFTP mock server for unit tests. | `ssh.enable_mock_server(true)` |
 | `fn (sess: Session) host_key_fingerprint() -> str` | `sess.host_key_fingerprint()` | Returns the connected server's public key fingerprint in `SHA256:<base64>` format. | `fp := sess.host_key_fingerprint()` |
 | `fn (sess: Session) is_known_host() -> bool` | `sess.is_known_host()` | Checks whether the server's public key matches `~/.ssh/known_hosts`. | `if !sess.is_known_host() { ... }` |
@@ -1522,7 +1608,7 @@ type TrackStatusRes struct {
 }
 
 fn main() {
-    mut app := webui.new_app("Pocket Mastering Studio", 960, 640)
+    mut app := make(webui.App, "Pocket Mastering Studio", 960, 640)
     defer app.close()
 
     app.serve_dir("./ui")
@@ -1556,7 +1642,7 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn new_app(title: str = "cfire WebUI", width: i32 = 960, height: i32 = 640) -> App` | `cfire::webui::new_app(title, width, height)` | Creates a new native WebView application instance with initial window title and dimensions. | `mut app := webui.new_app("Studio Desk", 980, 640)` |
+| `fn make(title: str = "cfire WebUI", width: i32 = 960, height: i32 = 640) -> App` | `cfire::webui::new_app(title, width, height)` | `make(webui.App, title, width, height)` creates a native WebView application window. | `mut app := make(webui.App, "Studio", 1280, 800)` |
 | `fn (mut app: App) bind[T](name: str, handler: fn(T) -> any!)` | `app.bind<T>(name, handler)` | Binds a typed `cfire` closure to `window.backend.<name>(params)` and `window.invoke(name, params)`, automatically deserializing incoming JSON into struct `T` and serializing the return value. | `app.bind[TrackMix]("set_track") |req| { return compute_mix(req) }` |
 | `fn (mut app: App) bind_async[T](name: str, handler: fn(T) -> any!)` | `app.bind_async<T>(name, handler)` | Binds a typed RPC handler that executes asynchronously on a background worker thread without blocking the main UI/WebView thread. | `app.bind_async[ConnectReq]("connect_ssh") |req| { return dial(req) }` |
 | `fn (mut app: App) bind_action(name: str, handler: fn() -> any!)` | `app.bind_action(name, handler)` | Binds a zero-argument action closure to `window.backend.<name>()`. | `app.bind_action("reset_desk") || { return "ok" }` |
@@ -1601,6 +1687,7 @@ fn main() {
 | `fn (app: App) message_dialog(title: str, message: str)` | `app.message_dialog(title, message)` | Displays a modal native OS alert dialog. | `app.message_dialog("Export Complete", "Saved master preset.")` |
 | `fn (mut app: App) call_rpc(method: str, params_json: str = "{}") -> str!` | `app.call_rpc(method, params_json)` | Directly invokes a bound RPC handler in-memory without opening a window (ideal for `cfire test` and `fuzz` blocks). | `res := try app.call_rpc("set_track", "{\"channel\":1}")` |
 | `fn (mut app: App) dispatch_event(event: str, data_json: str = "{}")` | `app.dispatch_event(event, data_json)` | Dispatches a synthetic frontend event to `app.on(event)` listeners during headless testing. | `app.dispatch_event("fader:input", "{\"channel\":1}")` |
+| `fn (app: App) resolve_asset_mime(path: str) -> str` | `app.resolve_asset_mime(path)` | Returns the MIME type the embedded asset server reports for `path` (useful in headless contract tests). | `mime := app.resolve_asset_mime("/index.html")` |
 | `fn (app: App) emitted_events_count(event: str) -> i64` | `app.emitted_events_count(event)` | Returns the number of times `app.emit(event, ...)` has been triggered. | `n := app.emitted_events_count("meter:peak")` |
 | `fn (app: App) last_emitted_payload(event: str) -> str` | `app.last_emitted_payload(event)` | Returns the most recent JSON payload emitted for `event`. | `last := app.last_emitted_payload("meter:peak")` |
 | `fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!` | `app.run_webview_test(timeout_ms)` | Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached. | `ok := try app.run_webview_test(3000)` |
@@ -1728,6 +1815,127 @@ fn main() {
 | `fn Clamp(value: f32, min: f32, max: f32) -> f32` | `Clamp(value, min, max)` | Clamps float value between `[min, max]` (`<raymath.h>`). | `x := rl.Clamp(pos.x, 0.0, 800.0)` |
 
 ## 2. Semantic Diagnostic Codes
+
+### `[cfire/RETIRED-API]` — API Retired in the 0.16 Uniform-API Migration
+
+The 0.16 release (Q16) replaced free functions, sentinels and duplicate spellings with one form each: methods on values (`s.trim()`, `xs.sort()`, `x.abs()`), type-associated items (`i32.parse(s)`, `i32.MAX`, `math.PI`), `.len()`, `.is_empty()`, `make(T, ...)` construction, `connect` / `listen` verbs and `verify_peer: false`. Every retired form is a hard error with a fix-it; `cfire fix --only cfire/RETIRED-API` applies exactly these rewrites.
+
+**Rejected (`.cf`):**
+```cf
+import "core:str" // ERROR [cfire/RETIRED-API]
+fn main() {
+    t := str.trim(" x ") // ERROR [cfire/RETIRED-API]
+    n := t.len // ERROR [cfire/RETIRED-API]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+fn main() {
+    t := " x ".trim() // OK
+    n := t.len() // OK
+}
+```
+
+### `[cfire/INVALID-MAKE]` — Invalid `make(T, ...)` Arguments
+
+`make` takes the type first (Q25). Slices take `len` and optional `cap` integers, maps and arrays take nothing, and a struct takes either nothing (default fields) or the arguments of its declared constructor `fn (T) make(...) -> T`.
+
+**Rejected (`.cf`):**
+```cf
+type Q struct { a: i32 }
+fn main() {
+    v := make([]i32, 1, 2, 3) // ERROR [cfire/INVALID-MAKE]
+    q := make(Q, 1) // ERROR [cfire/INVALID-MAKE]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+type Q struct { a: i32 }
+fn (Q) make(a: i32) -> Q { return Q{a: a} }
+fn main() {
+    v := make([]i32, 1, 2) // OK
+    q := make(Q, 1) // OK
+}
+```
+
+### `[cfire/INVALID-CONSTRUCTOR]` — Associated Function Other Than `make`
+
+A receiver type with no binding (`fn (T) ...`) declares the type's constructor, and the only name it may have is `make` (Q25). Methods need a receiver binding.
+
+**Rejected (`.cf`):**
+```cf
+type P struct { x: i32 }
+fn (P) origin() -> P { return P{x: 0} } // ERROR [cfire/INVALID-CONSTRUCTOR]
+```
+
+**Accepted (`.cf`):**
+```cf
+type P struct { x: i32 }
+fn (P) make(x: i32) -> P { return P{x: x} } // OK
+fn (p: P) shifted() -> P { return P{x: p.x + 1} } // OK
+```
+
+### `[cfire/INVALID-RELEASE]` — `release` on a Shared Pointer
+
+`o.release() -> *mut T` hands ownership to C (CF-181) and exists only on `own[T]`: a `shared[T]` may have other owners.
+
+**Rejected (`.cf`):**
+```cf
+type B struct { v: i32 }
+fn main() {
+    s := make(shared[B], B{v: 1})
+    p := s.release() // ERROR [cfire/INVALID-RELEASE]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+type B struct { v: i32 }
+fn main() {
+    o := make(own[B], B{v: 1})
+    p := o.release() // OK; adopt it back with own[B].from_raw(p)
+}
+```
+
+### `[cfire/UNKNOWN-ARG-LABEL]` — Unknown Labeled Argument
+
+A labeled argument (`verify_peer: false`) must name a parameter of the called function; labels place arguments by name and skipped parameters keep their defaults.
+
+**Rejected (`.cf`):**
+```cf
+import "core:net/http"
+fn main() -> void! {
+    r := try http.get("https://x", verify: false) // ERROR [cfire/UNKNOWN-ARG-LABEL]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+import "core:net/http"
+fn main() -> void! {
+    r := try http.get("https://x", verify_peer: false) // OK
+}
+```
+
+### `[cfire/FIELD-NAME-CASE]` — Struct Field Is Not snake_case
+
+Struct fields are snake_case like functions and locals (Q28); capitalization carries no meaning. This is a warning; `cfire fix` renames the field and every use across the workspace. Untagged JSON/CLI keys follow the field name, so add a `json:"..."` tag to keep an existing wire name.
+
+**Rejected (`.cf`):**
+```cf
+type Doc struct {
+    TopK: i32 // WARNING [cfire/FIELD-NAME-CASE]
+}
+```
+
+**Accepted (`.cf`):**
+```cf
+type Doc struct {
+    top_k: i32 `json:"TopK"` // OK
+}
+```
 
 ### `[cfire/MUT-CALLSITE]` — Missing Call-Site `mut` Marker
 

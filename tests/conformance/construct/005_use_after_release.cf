@@ -1,0 +1,9 @@
+package main
+type Box struct {
+    v: i32
+}
+fn main() {
+    b := make(own[Box], Box{v: 3})
+    p := b.release()
+    println("{}", b.v) //~ error cfire/USE-AFTER-MOVE
+}

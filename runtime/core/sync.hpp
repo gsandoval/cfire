@@ -25,6 +25,29 @@ struct ContextState {
     std::uint64_t next_cb_id = 1;
     std::vector<std::pair<std::uint64_t, std::function<void()>>> callbacks{};
     std::thread timer_thread{};
+    // Link to the parent's cancellation callback (CF-177). Held weakly: a child must never keep its
+    // parent alive, and a parent only keeps weak references to its children.
+    std::weak_ptr<ContextState> parent{};
+    std::uint64_t parent_cb_id = 0;
+
+    // Removes this context's registration from its parent, so long-lived parents (background())
+    // don't accumulate callbacks for every request-scoped child.
+    void detach_from_parent() {
+        std::shared_ptr<ContextState> p;
+        std::uint64_t id = 0;
+        {
+            std::lock_guard<std::mutex> lk(mu);
+            p = parent.lock();
+            id = std::exchange(parent_cb_id, 0);
+            parent.reset();
+        }
+        if (!p || id == 0) return;
+        std::lock_guard<std::mutex> lk(p->mu);
+        auto& cbs = p->callbacks;
+        cbs.erase(std::remove_if(cbs.begin(), cbs.end(),
+            [id](const auto& kv) { return kv.first == id; }), cbs.end());
+    }
+
     ~ContextState() {
         {
             std::lock_guard<std::mutex> lk(mu);
@@ -38,6 +61,7 @@ struct ContextState {
                 timer_thread.join();
             }
         }
+        detach_from_parent();
     }
 };
 
@@ -59,14 +83,17 @@ public:
     }
     auto on_cancel(std::function<void()> cb) const -> std::uint64_t {
         if (!state_ || !cb) return 0;
-        std::lock_guard<std::mutex> lk(state_->mu);
-        if (state_->cancelled.load(std::memory_order_relaxed)) {
-            cb();
-            return 0;
+        {
+            std::lock_guard<std::mutex> lk(state_->mu);
+            if (!state_->cancelled.load(std::memory_order_relaxed)) {
+                std::uint64_t id = state_->next_cb_id++;
+                state_->callbacks.emplace_back(id, std::move(cb));
+                return id;
+            }
         }
-        std::uint64_t id = state_->next_cb_id++;
-        state_->callbacks.emplace_back(id, std::move(cb));
-        return id;
+        // Already cancelled: run outside the lock, since callbacks may query this context (CF-177).
+        cb();
+        return 0;
     }
     void remove_cancel_callback(std::uint64_t id) const {
         if (!state_ || id == 0) return;
@@ -120,25 +147,43 @@ private:
     auto child_state = std::make_shared<ContextState>();
     Context child(child_state);
 
-    auto do_cancel = [child_state](std::string_view reason) {
+    // Cancels `st` once, runs its callbacks outside the lock, and unregisters it from its parent.
+    auto cancel_state = [](const std::shared_ptr<ContextState>& st, std::string_view reason) {
         std::vector<std::pair<std::uint64_t, std::function<void()>>> to_run;
         {
-            std::lock_guard<std::mutex> lk(child_state->mu);
-            if (child_state->cancelled.exchange(true, std::memory_order_relaxed)) return;
-            if (!reason.empty()) child_state->reason = std::string(reason);
-            to_run = std::move(child_state->callbacks);
+            std::lock_guard<std::mutex> lk(st->mu);
+            if (st->cancelled.exchange(true, std::memory_order_relaxed)) return;
+            if (!reason.empty()) st->reason = std::string(reason);
+            to_run = std::move(st->callbacks);
         }
-        child_state->cv.notify_all();
+        st->cv.notify_all();
+        st->detach_from_parent();
         for (auto& [id, cb] : to_run) {
             if (cb) cb();
         }
     };
 
-    (void)parent.on_cancel([do_cancel, parent] {
-        do_cancel(parent.reason());
+    // The parent holds only weak references (CF-177): capturing `parent` or the child strongly here
+    // created a cycle that leaked every context derived from background(), including timer threads.
+    std::weak_ptr<ContextState> weak_child = child_state;
+    std::weak_ptr<ContextState> weak_parent = parent.raw_state();
+    std::uint64_t cb_id = parent.on_cancel([weak_child, weak_parent, cancel_state] {
+        auto c = weak_child.lock();
+        if (!c) return;
+        std::string reason = "cancelled";
+        if (auto p = weak_parent.lock()) {
+            std::lock_guard<std::mutex> lk(p->mu);
+            reason = p->reason;
+        }
+        cancel_state(c, reason);
     });
+    if (cb_id != 0) {
+        std::lock_guard<std::mutex> lk(child_state->mu);
+        child_state->parent = weak_parent;
+        child_state->parent_cb_id = cb_id;
+    }
 
-    CancelFunc fn([do_cancel](std::string_view r) { do_cancel(r); });
+    CancelFunc fn([child_state, cancel_state](std::string_view r) { cancel_state(child_state, r); });
     return {child, fn};
 }
 
@@ -163,6 +208,7 @@ private:
         to_run = std::move(raw->callbacks);
         lk.unlock();
         raw->cv.notify_all();
+        raw->detach_from_parent();
         for (auto& [id, cb] : to_run) {
             if (cb) cb();
         }
@@ -395,6 +441,25 @@ public:
 
 private:
     std::shared_ptr<State> state_;
+};
+
+// Q25/CF-154: `sync.Mutex[void]` is the pure lock (no protected value); `Mutex` is kept as its C++ name.
+template <>
+class MutexT<void> {
+public:
+    MutexT() : mu_(std::make_shared<std::mutex>()) {}
+    void lock() const { mu_->lock(); }
+    void unlock() const { mu_->unlock(); }
+    [[nodiscard]] auto try_lock() const -> bool { return mu_->try_lock(); }
+
+    template <typename Fn>
+    decltype(auto) with_lock(Fn&& fn) const {
+        std::lock_guard<std::mutex> lk(*mu_);
+        return fn();
+    }
+
+private:
+    std::shared_ptr<std::mutex> mu_;
 };
 
 class Mutex {

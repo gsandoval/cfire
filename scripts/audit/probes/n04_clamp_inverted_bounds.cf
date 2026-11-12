@@ -1,0 +1,9 @@
+// probe: F2 clamp with lo > hi silently returns a value (std::clamp UB)
+// kind: hole
+// mode: run
+// ideal: panic
+package main
+import "core:math"
+fn main() {
+    println("{}", (5).clamp(10, 0))
+}

@@ -403,40 +403,41 @@ struct LocalBindingInfo {
             // 5. Check receiver methods (`os.stdin().read_lines()`, `listener.accept()`, `s.trim()`, `ch.recv()`, user methods)
             std::string rtype = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env));
             if (!rtype.empty() && rtype != "auto") {
-                if (rtype == "str") {
-                    if (mem->field == "len" || mem->field == "size") return "usize";
-                    if (mem->field == "empty") return "bool";
-                    if (mem->field == "bytes") return "[]byte";
-                    if (mem->field == "data" || mem->field == "data_ptr" || mem->field == "byte_ptr" || mem->field == "byte_ptr_at") {
-                        return "*c_char";
-                    }
-                    for (const auto& mod : cfire::doc::stdlib_catalog()) {
-                        if (mod.import_path == "core:str") {
-                            for (const auto& sfn : mod.functions) {
-                                if (sfn.name == mem->field) {
-                                    if (auto arrow = sfn.cf_sig.find("-> "); arrow != std::string::npos) {
-                                        return sfn.cf_sig.substr(arrow + 3);
-                                    }
-                                    return "void";
-                                }
+                // W4: builtin method return types come from the single table; `T`/`K`/`V`/`Self` resolve here.
+                if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
+                    if (const auto* bm = cfire::frontend::find_builtin_method(bits, mem->field); bm && !bm->ret.empty()) {
+                        std::string self = rtype;
+                        while (self.starts_with("&")) self.erase(0, 1);
+                        std::string elem = "u8";
+                        std::string key;
+                        std::string val;
+                        if (self == "str") elem = "byte";
+                        else if (self.starts_with("map[")) {
+                            if (auto rb = self.find(']'); rb != std::string::npos) {
+                                key = self.substr(4, rb - 4);
+                                val = self.substr(rb + 1);
                             }
+                        } else if (auto rb = self.find(']'); self.starts_with("[") && rb != std::string::npos) {
+                            elem = self.substr(rb + 1);
                         }
+                        std::string ret(bm->ret);
+                        auto subst = [&](std::string_view ph, const std::string& with) {
+                            std::string out;
+                            for (std::size_t i = 0; i < ret.size();) {
+                                const bool at = ret.compare(i, ph.size(), ph) == 0 &&
+                                    (i == 0 || !std::isalnum(static_cast<unsigned char>(ret[i - 1]))) &&
+                                    (i + ph.size() >= ret.size() || !std::isalnum(static_cast<unsigned char>(ret[i + ph.size()])));
+                                if (at) { out += with; i += ph.size(); }
+                                else out += ret[i++];
+                            }
+                            ret = std::move(out);
+                        };
+                        subst("Self", self);
+                        subst("T", elem);
+                        if (!key.empty()) subst("K", key);
+                        if (!val.empty()) subst("V", val);
+                        return ret;
                     }
-                }
-                if (rtype.starts_with("[]") || rtype.starts_with("[")) {
-                    if (mem->field == "len" || mem->field == "size" || mem->field == "capacity") return "usize";
-                    if (mem->field == "empty") return "bool";
-                    if (mem->field == "push" || mem->field == "pop" || mem->field == "clear" || mem->field == "reserve") return "void";
-                    if (mem->field == "data" || mem->field == "data_ptr") {
-                        auto rb = rtype.find(']');
-                        std::string elem = (rb != std::string::npos) ? rtype.substr(rb + 1) : "u8";
-                        return "*" + elem;
-                    }
-                }
-                if (rtype.starts_with("map[")) {
-                    if (mem->field == "len" || mem->field == "size") return "usize";
-                    if (mem->field == "empty" || mem->field == "has") return "bool";
-                    if (mem->field == "remove" || mem->field == "clear") return "void";
                 }
                 if (rtype == "net.TcpListener" || rtype == "TcpListener") {
                     if (mem->field == "port") return "u16";

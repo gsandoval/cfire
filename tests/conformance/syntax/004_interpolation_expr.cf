@@ -1,0 +1,8 @@
+// expect: stdout
+// | sum=5 name=cfire
+package main
+fn main() {
+    a := 2
+    name := "cfire"
+    println("sum={a + 3} name={name}")
+}

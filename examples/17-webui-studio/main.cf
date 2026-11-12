@@ -1,7 +1,6 @@
 package main
 
 import "core:math"
-import "core:str"
 import "ext:webui"
 
 type TrackMixReq struct {
@@ -32,7 +31,7 @@ type PresetConfig struct {
 /// assert(res.status == "active")
 /// ```
 fn compute_track_mix(req: TrackMixReq) -> TrackStatusRes {
-    clamped_gain := math.clamp_f64(req.gain_db, -60.0, 12.0)
+    clamped_gain := req.gain_db.clamp(-60.0, 12.0)
     mut effective := clamped_gain
     mut headroom := 0.0 - clamped_gain
     mut state_label := "active"
@@ -53,7 +52,7 @@ fn compute_track_mix(req: TrackMixReq) -> TrackStatusRes {
 }
 
 fn configure_studio_app() -> webui.App {
-    mut app := webui.new_app("Pocket Mastering Studio", 980, 640)
+    mut app := make(webui.App, "Pocket Mastering Studio", 980, 640)
     app.set_dark_mode(true)
     app.set_min_size(640, 420)
     app.serve_dir("./ui")
@@ -69,7 +68,7 @@ fn configure_studio_app() -> webui.App {
     }
 
     app.bind[PresetConfig]("load_preset") |preset| {
-        clean_name := str.trim(preset.name)
+        clean_name := preset.name.trim()
         app.set_state("preset", clean_name)
         return "loaded:{clean_name}"
     }

@@ -183,6 +183,30 @@ public:
             TypeId elem = from_name(n.substr(2));
             return make_slice(elem);
         }
+        // `map[K]V` (K may itself contain brackets) and `[N]T`.
+        if (n.starts_with("map[") && !n.ends_with('?') && !n.ends_with('!')) {
+            int depth = 0;
+            for (std::size_t i = 3; i < n.size(); ++i) {
+                if (n[i] == '[') ++depth;
+                else if (n[i] == ']' && --depth == 0) {
+                    TypeId key = from_name(n.substr(4, i - 4));
+                    TypeId val = from_name(n.substr(i + 1));
+                    if (key.is_unknown() || val.is_unknown()) return TypeId::Unknown();
+                    return make_map(key, val);
+                }
+            }
+        }
+        if (n.size() > 2 && n[0] == '[' && std::isdigit(static_cast<unsigned char>(n[1])) && !n.ends_with('?') && !n.ends_with('!')) {
+            if (auto rb = n.find(']'); rb != std::string::npos) {
+                std::size_t len = 0;
+                for (std::size_t i = 1; i < rb; ++i) {
+                    if (!std::isdigit(static_cast<unsigned char>(n[i]))) return TypeId::Unknown();
+                    len = len * 10 + static_cast<std::size_t>(n[i] - '0');
+                }
+                TypeId elem = from_name(n.substr(rb + 1));
+                if (!elem.is_unknown()) return make_array(elem, len);
+            }
+        }
         if (n.ends_with('?')) {
             TypeId inner = from_name(n.substr(0, n.size() - 1));
             return make_optional(inner);
@@ -511,8 +535,22 @@ struct CheckedFile {
     std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name ("rl" -> "raylib")
     std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
+    // Q24 (CF-149): `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms
+    // (kept for callers that only print). Always add through add_error / add_warning.
     std::vector<std::string> warnings{};
     std::vector<std::string> errors{};
+    std::vector<cfire::diag::StructuredDiagnostic> diagnostics{};
+
+    void add_error(cfire::diag::StructuredDiagnostic d) {
+        d.severity = "error";
+        errors.push_back(cfire::diag::render_diagnostic(d));
+        diagnostics.push_back(std::move(d));
+    }
+    void add_warning(cfire::diag::StructuredDiagnostic d) {
+        d.severity = "warning";
+        warnings.push_back(cfire::diag::render_diagnostic(d));
+        diagnostics.push_back(std::move(d));
+    }
 };
 
 [[nodiscard]] inline auto find_interface_in_slice(const TypeRef& tr, const std::unordered_set<std::string>& ifaces) -> std::optional<std::string> {

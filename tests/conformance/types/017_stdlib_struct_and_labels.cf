@@ -1,0 +1,6 @@
+package main
+import "core:net/http"
+fn main() {
+    lim := http.ServerLimits{max_pendin: 3} //~ error cfire/UNKNOWN-FIELD
+    r := http.get("http://127.0.0.1:1/", verify: false) or { return } //~ error cfire/UNKNOWN-ARG-LABEL
+}

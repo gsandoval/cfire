@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <unordered_set>
+#include <unordered_map>
 #include "cfire_prelude.hpp"
 #include "ast.hpp"
 #include "docgen/catalog_types.hpp"
@@ -37,15 +38,90 @@ struct StructuredDiagnostic {
     std::string message{};  // clean message without redundant "<file>:<line>:<col>: " prefix
     std::string source{"cfire"};
     std::vector<FixItEdit> fixits{};
+    // Q24 (CF-149): structured facts recorded where the problem is detected (an identifier, a keyword, a
+    // replacement token, ...). Fix-it builders read these instead of re-parsing the message text.
+    std::unordered_map<std::string, std::string> facts{};
 };
 
 using Diagnostic = StructuredDiagnostic;
+
+// Q24 (CF-149): every compiler diagnostic is constructed here at the point of detection. `col == 0` means
+// "only the line is known": resolve_diagnostic_range() then spans the statement on that line.
+[[nodiscard]] inline auto diag(std::string_view file, int line, int col, std::string_view code, std::string message,
+                               std::unordered_map<std::string, std::string> facts = {}) -> StructuredDiagnostic {
+    StructuredDiagnostic d;
+    d.file = std::string(file);
+    d.line = line > 0 ? line : 1;
+    d.col = col;
+    d.end_line = d.line;
+    d.end_col = col;
+    d.severity = "error";
+    d.code = code.empty() ? std::string("cfire/SEMA-ERROR") : std::string(code);
+    d.message = std::move(message);
+    d.facts = std::move(facts);
+    return d;
+}
+
+// Structured lexer/parser error -> diagnostic (field copy, no text parsing).
+[[nodiscard]] inline auto from_source_error(const cfire::frontend::SourceError& e) -> StructuredDiagnostic {
+    auto d = diag(e.file, e.line, e.col, e.code, e.message);
+    d.severity = "error";
+    return d;
+}
+
+// Canonical single-line text form: `file:line:col: [warning: ]message (code)` (the code appears exactly once).
+[[nodiscard]] inline auto render_diagnostic(const StructuredDiagnostic& d) -> std::string {
+    std::string_view msg = d.message;
+    bool has_code = !d.code.empty() && msg.ends_with("(" + d.code + ")");
+    return std::format("{}:{}:{}: {}{}{}", d.file, d.line, d.col > 0 ? d.col : 1,
+        d.severity == "warning" ? "warning: " : (d.severity == "info" ? "note: " : ""),
+        msg, has_code || d.code.empty() ? std::string() : std::format(" ({})", d.code));
+}
+
+// Exact source range for `d` given the file's lines: the token starting at `col` (identifier, number,
+// string literal, or operator run), or the whole statement on the line when only the line is known.
+inline void resolve_diagnostic_range(StructuredDiagnostic& d, const std::vector<std::string>& lines) {
+    if (d.line < 1 || static_cast<std::size_t>(d.line - 1) >= lines.size()) {
+        if (d.col < 1) d.col = 1;
+        if (d.end_col < d.col) d.end_col = d.col;
+        return;
+    }
+    const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+    auto is_ident = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    if (d.col < 1 || static_cast<std::size_t>(d.col - 1) >= ln.size()) {
+        std::size_t b = ln.find_first_not_of(" \t");
+        std::size_t e = ln.find_last_not_of(" \t\r");
+        if (b == std::string::npos) { d.col = 1; d.end_col = 1; return; }
+        if (auto cmt = ln.find("//", b); cmt != std::string::npos && cmt > b) e = ln.find_last_not_of(" \t", cmt - 1);
+        d.col = static_cast<int>(b) + 1;
+        d.end_col = static_cast<int>(e) + 2;
+        d.end_line = d.line;
+        return;
+    }
+    std::size_t i = static_cast<std::size_t>(d.col - 1);
+    std::size_t j = i;
+    if (ln[i] == '"') {
+        j = i + 1;
+        while (j < ln.size() && ln[j] != '"') j += (ln[j] == '\\' ? 2 : 1);
+        j = std::min(ln.size(), j + 1);
+    } else if (is_ident(ln[i])) {
+        while (j < ln.size() && (is_ident(ln[j]) || ln[j] == '.')) ++j;
+        while (j > i + 1 && ln[j - 1] == '.') --j;
+    } else {
+        while (j < ln.size() && std::string_view("+-*/%=<>!&|^~?:").find(ln[j]) != std::string_view::npos) ++j;
+        if (j == i) j = i + 1;
+    }
+    d.end_line = d.line;
+    d.end_col = static_cast<int>(j) + 1;
+}
 
 [[nodiscard]] inline auto json_escape(std::string_view s) -> std::string {
     return cfire::detail::json_escape(s);
 }
 
-[[nodiscard]] inline auto parse_diagnostic_string(
+// The only text-to-diagnostic parser left (Q24): it reads *clang's* output for generated C++, which is
+// external text. cfire's own lexer, parser and Sema diagnostics are structured from the start.
+[[nodiscard]] inline auto parse_clang_diagnostic_line(
     std::string_view err_str,
     std::string_view default_file = "",
     std::string_view default_severity = "error",
@@ -134,6 +210,96 @@ using Diagnostic = StructuredDiagnostic;
     return lines;
 }
 
+// Structured fact recorded by the diagnostic's producer ("" when absent).
+[[nodiscard]] inline auto fact_of(const StructuredDiagnostic& d, std::string_view key) -> std::string {
+    if (auto it = d.facts.find(std::string(key)); it != d.facts.end()) return it->second;
+    return "";
+}
+
+// W4 (Q16) rewrite helpers. They work on one source line and give up (no fix-it) on anything they cannot
+// parse with certainty, such as a call whose arguments continue on the next line.
+namespace rewrite_detail {
+[[nodiscard]] inline auto trim_ws(std::string_view v) -> std::string_view {
+    while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.remove_prefix(1);
+    while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.remove_suffix(1);
+    return v;
+}
+// Splits `ln[open+1 ..]` into top-level comma-separated arguments up to the matching ')'. Returns the index of
+// that ')' or npos. String literals and nested brackets are skipped.
+[[nodiscard]] inline auto split_call_args(const std::string& ln, std::size_t open, std::vector<std::string>& out) -> std::size_t {
+    int depth = 0;
+    std::size_t arg_start = open + 1;
+    for (std::size_t i = open + 1; i < ln.size(); ++i) {
+        char c = ln[i];
+        if (c == '"') {
+            for (++i; i < ln.size() && ln[i] != '"'; ++i) if (ln[i] == '\\') ++i;
+            continue;
+        }
+        if (c == '(' || c == '[' || c == '{') ++depth;
+        else if (c == ')' || c == ']' || c == '}') {
+            if (depth == 0) {
+                if (c != ')') return std::string::npos;
+                std::string_view last = trim_ws(std::string_view(ln).substr(arg_start, i - arg_start));
+                if (!last.empty() || !out.empty()) out.emplace_back(last);
+                return i;
+            }
+            --depth;
+        } else if (c == ',' && depth == 0) {
+            out.emplace_back(trim_ws(std::string_view(ln).substr(arg_start, i - arg_start)));
+            arg_start = i + 1;
+        }
+    }
+    return std::string::npos;
+}
+// A receiver that can take `.method()` without parentheses: identifiers, field chains, calls, indexing and literals.
+[[nodiscard]] inline auto is_postfix_operand(std::string_view r) -> bool {
+    if (r.empty()) return false;
+    if (r.front() == '"' && r.back() == '"') return true;
+    int depth = 0;
+    for (char c : r) {
+        if (c == '(' || c == '[' || c == '{') { ++depth; continue; }
+        if (c == ')' || c == ']' || c == '}') { --depth; continue; }
+        if (depth > 0) continue;
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.')) return false;
+    }
+    // A bare integer literal would lex `3.abs()` as a float; parenthesize it.
+    return !std::isdigit(static_cast<unsigned char>(r.front()));
+}
+// Start of the postfix receiver expression that ends right before `end` (scanning back over a.b(c)[d]).
+[[nodiscard]] inline auto receiver_start(const std::string& ln, std::size_t end) -> std::size_t {
+    std::size_t i = end;
+    while (i > 0) {
+        char c = ln[i - 1];
+        if (c == ')' || c == ']') {
+            char open = c == ')' ? '(' : '[';
+            int depth = 0;
+            std::size_t j = i;
+            while (j > 0) {
+                char d = ln[j - 1];
+                if (d == c) ++depth;
+                else if (d == open && --depth == 0) break;
+                --j;
+            }
+            if (j == 0) return std::string::npos;
+            i = j - 1;
+            continue;
+        }
+        if (c == '"') {
+            std::size_t j = i - 1;
+            while (j > 0 && ln[j - 1] != '"') --j;
+            if (j == 0) return std::string::npos;
+            i = j - 1;
+            continue;
+        }
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.') { --i; continue; }
+        break;
+    }
+    return i < end ? i : std::string::npos;
+}
+} // namespace rewrite_detail
+
+// Q24 (CF-149): fix-it builders, keyed by diagnostic code. They use the producer's structured facts plus the
+// source lines; they never parse the message text.
 inline void synthesize_fixits_for_diagnostic(
     StructuredDiagnostic& d,
     const cfire::frontend::FileAST* ast,
@@ -203,7 +369,7 @@ inline void synthesize_fixits_for_diagnostic(
             std::size_t search_from = (d.col > 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size())
                 ? static_cast<std::size_t>(d.col - 1)
                 : 0;
-            std::string_view kw = d.message.contains("redundant 'out'") ? "out " : "mut ";
+            std::string kw = (fact_of(d, "keyword").empty() ? std::string("mut") : fact_of(d, "keyword")) + " ";
             if (auto pos = cur_ln.find(kw, search_from); pos != std::string::npos) {
                 FixItEdit edit;
                 edit.title = std::format("Remove redundant '{}' at call site (cfire/REDUNDANT-CALLSITE-INTENT)", kw);
@@ -236,12 +402,7 @@ inline void synthesize_fixits_for_diagnostic(
 
     if (d.code == "cfire/PREFER-ENUM") {
         std::string pfx;
-        if (auto p1 = d.message.find("prefix '"); p1 != std::string::npos) {
-            auto p2 = d.message.find("'", p1 + 8);
-            if (p2 != std::string::npos) {
-                pfx = d.message.substr(p1 + 8, p2 - (p1 + 8));
-            }
-        }
+        pfx = fact_of(d, "prefix");
         FixItEdit edit;
         edit.title = pfx.empty()
             ? "Convert constants to enum (cfire/PREFER-ENUM)"
@@ -265,12 +426,7 @@ inline void synthesize_fixits_for_diagnostic(
 
     if (d.code == "cfire/MISSING-IMPORT") {
         std::string mod_path;
-        if (auto p = d.message.find("import \""); p != std::string::npos) {
-            p += 8;
-            if (auto e = d.message.find('"', p); e != std::string::npos) {
-                mod_path = d.message.substr(p, e - p);
-            }
-        }
+        mod_path = fact_of(d, "module");
         if (!mod_path.empty()) {
             int insert_line = 1;
             for (std::size_t i = 0; i < lines.size(); ++i) {
@@ -297,18 +453,8 @@ inline void synthesize_fixits_for_diagnostic(
     if (d.code == "cfire/INVALID-IMPORT") {
         std::string old_imp;
         std::string new_imp;
-        if (auto p = d.message.find("module '"); p != std::string::npos) {
-            p += 8;
-            if (auto e = d.message.find('\'', p); e != std::string::npos) {
-                old_imp = d.message.substr(p, e - p);
-            }
-        }
-        if (auto p = d.message.find("imported as '"); p != std::string::npos) {
-            p += 13;
-            if (auto e = d.message.find('\'', p); e != std::string::npos) {
-                new_imp = d.message.substr(p, e - p);
-            }
-        }
+        old_imp = fact_of(d, "from");
+        new_imp = fact_of(d, "to");
         if (!old_imp.empty() && !new_imp.empty() && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
             std::string target_str = "\"" + old_imp + "\"";
@@ -327,13 +473,212 @@ inline void synthesize_fixits_for_diagnostic(
         }
     }
 
-    if (d.code == "cfire/DEPRECATED-API") {
+    if (d.code == "cfire/UNKNOWN-METHOD" && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+        // `.push_back(` -> `.push(` when the producer knows the canonical replacement (CF-143).
+        std::string method = fact_of(d, "method");
+        std::string repl = fact_of(d, "replacement");
+        if (!method.empty() && !repl.empty()) {
+            std::string from = "." + method + "(";
+            std::string to = "." + repl + "(";
+            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            auto pos = cur_ln.find(from, from_col);
+            if (pos == std::string::npos) pos = cur_ln.find(from);
+            if (pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = std::format("Replace '{}' with '{}' (cfire/UNKNOWN-METHOD)", from, to);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(pos + from.size()) + 1;
+                edit.replacement = to;
+                edit.is_preferred = true;
+                d.fixits.push_back(std::move(edit));
+            }
+        }
+        return;
+    }
+
+    // W4: `cfire/RETIRED-API` marks the 0.16 breaking-change migration (Q16); its rewrites share the
+    // DEPRECATED-API builders below, so `cfire fix --only cfire/RETIRED-API` applies exactly the migration.
+    if ((d.code == "cfire/DEPRECATED-API" || d.code == "cfire/RETIRED-API") && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+        const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+        const std::string kind = fact_of(d, "rewrite");
+        if (kind == "call_to_method") {
+            // `str.trim(s)` -> `s.trim()`, `sort.slice(mut xs)` -> `xs.sort()`, `math.clamp_i64(v, 0, 9)` -> `v.clamp(0, 9)`.
+            std::string from = fact_of(d, "from") + "(";
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t pos = ln.find(from, from_col);
+            if (pos == std::string::npos) pos = ln.find(from);
+            std::vector<std::string> args;
+            std::size_t close = pos == std::string::npos ? pos : rewrite_detail::split_call_args(ln, pos + from.size() - 1, args);
+            if (close != std::string::npos && !args.empty()) {
+                std::string recv = args[0];
+                for (std::string_view pfx : {"mut ", "&mut ", "&"}) {
+                    if (recv.starts_with(pfx)) { recv = recv.substr(pfx.size()); break; }
+                }
+                if (!rewrite_detail::is_postfix_operand(recv)) recv = "(" + recv + ")";
+                std::string rest;
+                for (std::size_t i = 1; i < args.size(); ++i) rest += (i > 1 ? ", " : "") + args[i];
+                FixItEdit edit;
+                edit.replacement = std::format("{}.{}({})", recv, fact_of(d, "method"), rest);
+                edit.title = std::format("Rewrite as '{}' ({})", edit.replacement, d.code);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(close) + 2;
+                d.fixits.push_back(std::move(edit));
+            }
+            return;
+        }
+        if (kind == "make_bracket" || kind == "ctor_to_make") {
+            // `make[own[P]](v)` -> `make(own[P], v)`; `http.make_router()` -> `make(http.Router)`;
+            // `sync.make_channel[i32](8)` -> `make(sync.Channel[i32], 8)`.
+            const bool bracket = kind == "make_bracket";
+            std::string head = bracket ? std::string("make[") : fact_of(d, "from");
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t pos = ln.find(head, from_col);
+            if (pos == std::string::npos) pos = ln.find(head);
+            if (pos == std::string::npos) return;
+            std::size_t i = pos + head.size();
+            std::string type_text = bracket ? std::string() : fact_of(d, "to_type");
+            if (bracket || (i < ln.size() && ln[i] == '[')) {
+                std::size_t open = bracket ? i - 1 : i;
+                int depth = 0;
+                std::size_t close = std::string::npos;
+                for (std::size_t k = open; k < ln.size(); ++k) {
+                    if (ln[k] == '[') ++depth;
+                    else if (ln[k] == ']' && --depth == 0) { close = k; break; }
+                }
+                if (close == std::string::npos) return;
+                std::string inner = ln.substr(open + 1, close - open - 1);
+                if (bracket) type_text = inner;
+                else if (type_text.find('[') == std::string::npos) type_text += "[" + inner + "]";
+                i = close + 1;
+            }
+            if (i >= ln.size() || ln[i] != '(') return;
+            std::vector<std::string> args;
+            std::size_t close = rewrite_detail::split_call_args(ln, i, args);
+            if (close == std::string::npos || type_text.empty()) return;
+            std::string rep = "make(" + type_text;
+            for (const auto& a : args) rep += ", " + a;
+            rep += ")";
+            FixItEdit edit;
+            edit.replacement = rep;
+            edit.title = std::format("Rewrite as '{}' ({})", rep, d.code);
+            edit.start_line = d.line;
+            edit.start_col = static_cast<int>(pos) + 1;
+            edit.end_line = d.line;
+            edit.end_col = static_cast<int>(close) + 2;
+            d.fixits.push_back(std::move(edit));
+            return;
+        }
+        if (kind == "tls_server") {
+            std::string from = fact_of(d, "from") + "(";
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t pos = ln.find(from, from_col);
+            if (pos == std::string::npos) pos = ln.find(from);
+            std::vector<std::string> args;
+            std::size_t close = pos == std::string::npos ? pos : rewrite_detail::split_call_args(ln, pos + from.size() - 1, args);
+            if (close == std::string::npos || args.size() != 3) return;
+            const std::string ns = fact_of(d, "ns");
+            const bool pem = !fact_of(d, "pem").empty();
+            FixItEdit edit;
+            edit.replacement = std::format("make({0}.Server, {1}, tls: {0}.TlsConfig{{{2}: {3}, {4}: {5}}})", ns, args[0],
+                pem ? "cert_pem" : "cert_file", args[1], pem ? "key_pem" : "key_file", args[2]);
+            edit.title = std::format("Rewrite as '{}' ({})", edit.replacement, d.code);
+            edit.start_line = d.line;
+            edit.start_col = static_cast<int>(pos) + 1;
+            edit.end_line = d.line;
+            edit.end_col = static_cast<int>(close) + 2;
+            d.fixits.push_back(std::move(edit));
+            return;
+        }
+        if (kind == "swap_to_fn" || kind == "append_verify_off") {
+            std::string from = fact_of(d, "from") + "(";
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t pos = ln.find(from, from_col);
+            if (pos == std::string::npos) pos = ln.find(from);
+            std::vector<std::string> args;
+            std::size_t close = pos == std::string::npos ? pos : rewrite_detail::split_call_args(ln, pos + from.size() - 1, args);
+            if (close == std::string::npos) return;
+            std::string inner;
+            if (kind == "swap_to_fn") {
+                if (args.empty() || args.size() > 2) return;
+                inner = (args.size() == 2 ? args[1] : std::string("0")) + ", " + args[0];
+            } else {
+                for (const auto& a : args) inner += a + ", ";
+                inner += "verify_peer: false";
+            }
+            FixItEdit edit;
+            edit.replacement = std::format("{}({})", fact_of(d, "to"), inner);
+            edit.title = std::format("Rewrite as '{}' ({})", edit.replacement, d.code);
+            edit.start_line = d.line;
+            edit.start_col = static_cast<int>(pos) + 1;
+            edit.end_line = d.line;
+            edit.end_col = static_cast<int>(close) + 2;
+            d.fixits.push_back(std::move(edit));
+            return;
+        }
+        if (kind == "len_call") {
+            // `hosts.len` -> `hosts.len()`; skip occurrences already followed by `(` or an identifier char.
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            for (std::size_t pos = ln.find(".len", from_col); pos != std::string::npos; pos = ln.find(".len", pos + 1)) {
+                std::size_t after = pos + 4;
+                if (after < ln.size() && (ln[after] == '(' || std::isalnum(static_cast<unsigned char>(ln[after])) || ln[after] == '_')) continue;
+                FixItEdit edit;
+                edit.title = "Call '.len()' (cfire/RETIRED-API)";
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(after) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(after) + 1;
+                edit.replacement = "()";
+                d.fixits.push_back(std::move(edit));
+                break;
+            }
+            return;
+        }
+        if (kind == "delete_line") {
+            // A retired `import "core:sort"` line: remove it together with its newline.
+            if (ln.find("\"" + fact_of(d, "from") + "\"") != std::string::npos) {
+                FixItEdit edit;
+                edit.title = std::format("Remove retired import '{}' (cfire/RETIRED-API)", fact_of(d, "from"));
+                edit.start_line = d.line;
+                edit.start_col = 1;
+                edit.end_line = d.line + 1;
+                edit.end_col = 1;
+                d.fixits.push_back(std::move(edit));
+            }
+            return;
+        }
+        if (kind == "method_to_assoc") {
+            // `s.parse_i32()` -> `i32.parse(s)`.
+            std::string needle = "." + fact_of(d, "method") + "()";
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t dot = ln.find(needle, from_col);
+            if (dot == std::string::npos) dot = ln.find(needle);
+            std::size_t start = dot == std::string::npos ? dot : rewrite_detail::receiver_start(ln, dot);
+            if (start != std::string::npos) {
+                FixItEdit edit;
+                edit.replacement = std::format("{}({})", fact_of(d, "to"), ln.substr(start, dot - start));
+                edit.title = std::format("Rewrite as '{}' ({})", edit.replacement, d.code);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(start) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(dot + needle.size()) + 1;
+                d.fixits.push_back(std::move(edit));
+            }
+            return;
+        }
+    }
+
+    if (d.code == "cfire/DEPRECATED-API" || d.code == "cfire/RETIRED-API") {
         if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
             auto try_replace_token = [&](std::string_view from_tok, std::string_view to_tok) -> bool {
                 if (auto pos = cur_ln.find(from_tok); pos != std::string::npos) {
                     FixItEdit edit;
-                    edit.title = std::format("Replace '{}' with '{}' (cfire/DEPRECATED-API)", from_tok, to_tok);
+                    edit.title = std::format("Replace '{}' with '{}' ({})", from_tok, to_tok, d.code);
                     edit.start_line = d.line;
                     edit.start_col = static_cast<int>(pos) + 1;
                     edit.end_line = d.line;
@@ -345,20 +690,8 @@ inline void synthesize_fixits_for_diagnostic(
                 }
                 return false;
             };
-            if (d.message.contains("'fs.read_all'")) {
-                if (try_replace_token("fs.read_all", "fs.read_bytes")) return;
-            } else if (d.message.contains("'fs.write_all'")) {
-                if (try_replace_token("fs.write_all", "fs.write_bytes")) return;
-            } else if (d.message.contains("'os.read_stdin_lines'")) {
-                if (try_replace_token("os.read_stdin_lines", "try os.stdin().read_lines")) return;
-            } else if (d.message.contains("'os.read_stdin_bytes'")) {
-                if (try_replace_token("os.read_stdin_bytes", "try os.stdin().read_bytes")) return;
-            } else if (d.message.contains("'os.read_stdin'")) {
-                if (try_replace_token("os.read_stdin", "try os.stdin().read_text")) return;
-            } else if (d.message.contains("'.read_str'")) {
-                if (try_replace_token(".read_str", ".read_text")) return;
-            } else if (d.message.contains("'.write_str'")) {
-                if (try_replace_token(".write_str", ".write_text")) return;
+            if (std::string from = fact_of(d, "from"), to = fact_of(d, "to"); !from.empty() && !to.empty()) {
+                if (try_replace_token(from, to)) return;
             }
         }
         return;
@@ -471,9 +804,7 @@ inline void synthesize_fixits_for_diagnostic(
     if (d.code == "cfire/DEPRECATED-SEPARATOR") {
         if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
-            if (d.message.find("not a valid separator for enum variant") != std::string::npos ||
-                d.message.find("not a valid separator in pattern matching") != std::string::npos ||
-                d.message.find("for enum variant") != std::string::npos) {
+            if (fact_of(d, "kind") == "enum-variant") {
                 std::size_t col_idx = (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) ? static_cast<std::size_t>(d.col - 1) : 0;
                 auto dot_pos = cur_ln.rfind('.', col_idx);
                 if (dot_pos == std::string::npos) dot_pos = cur_ln.find('.', col_idx);
@@ -489,7 +820,7 @@ inline void synthesize_fixits_for_diagnostic(
                     d.fixits.push_back(std::move(edit));
                     return;
                 }
-            } else if (d.message.find("instead of '::'") != std::string::npos || (d.message.find("use '") != std::string::npos && d.message.find("::") != std::string::npos)) {
+            } else if (fact_of(d, "kind") == "qualifier") {
                 // Replace '::' with '.' on import qualifier
                 std::size_t col_idx = (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) ? static_cast<std::size_t>(d.col - 1) : 0;
                 auto dcol_pos = cur_ln.find("::", col_idx);
@@ -535,12 +866,7 @@ inline void synthesize_fixits_for_diagnostic(
 
     if (d.code == "cfire/NULL-DEREF") {
         std::string ptr_name;
-        if (auto p = d.message.find("pointer '"); p != std::string::npos) {
-            p += 9;
-            if (auto e = d.message.find('\'', p); e != std::string::npos) {
-                ptr_name = d.message.substr(p, e - p);
-            }
-        }
+        ptr_name = fact_of(d, "ptr");
         if (!ptr_name.empty() && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
             std::string indent;
@@ -562,12 +888,7 @@ inline void synthesize_fixits_for_diagnostic(
 
     if (d.code == "cfire/IMMUTABLE-MUT-ARG" || d.code == "cfire/MUT-RECEIVER") {
         std::string var_name;
-        if (auto p = d.message.find("immutable variable '"); p != std::string::npos) {
-            p += 20;
-            if (auto e = d.message.find('\'', p); e != std::string::npos) {
-                var_name = d.message.substr(p, e - p);
-            }
-        }
+        var_name = fact_of(d, "var");
         if (!var_name.empty()) {
             // Find declaration of var_name up to (d.line - 1) in lines
             int target_line = -1;
@@ -612,18 +933,8 @@ inline void synthesize_fixits_for_diagnostic(
     if (d.code == "cfire/NON-EXHAUSTIVE-MATCH") {
         std::string enum_name;
         std::string fallback_variant;
-        if (auto p = d.message.find("non-exhaustive match on enum '"); p != std::string::npos) {
-            p += 30;
-            if (auto e = d.message.find('\'', p); e != std::string::npos) {
-                enum_name = d.message.substr(p, e - p);
-            }
-        }
-        if (auto p = d.message.find("missing variant '"); p != std::string::npos) {
-            p += 17;
-            if (auto e = d.message.find('\'', p); e != std::string::npos) {
-                fallback_variant = d.message.substr(p, e - p);
-            }
-        }
+        enum_name = fact_of(d, "enum");
+        fallback_variant = fact_of(d, "missing");
 
         const cfire::frontend::EnumDecl* target_enum = nullptr;
         if (!enum_name.empty()) {
@@ -844,11 +1155,49 @@ inline auto detect_missing_stdlib_imports(
         }
     }
 
+    // Only code counts: `"build.CC archive"` in a string or `// see fs.read_text` in a comment is not a use.
+    std::vector<std::string> code_lines;
+    code_lines.reserve(lines.size());
+    for (const auto& raw : lines) {
+        std::string code;
+        char quote = 0;
+        for (std::size_t i = 0; i < raw.size(); ++i) {
+            char c = raw[i];
+            if (quote) {
+                if (c == '\\' && quote == '"') { ++i; continue; }
+                if (c == quote) quote = 0;
+                code.push_back(' ');
+                continue;
+            }
+            if (c == '"' || c == '`') { quote = c; code.push_back(' '); continue; }
+            if (c == '/' && i + 1 < raw.size() && raw[i + 1] == '/') break;
+            code.push_back(c);
+        }
+        code_lines.push_back(std::move(code));
+    }
+
+    // A module alias that the file binds as a parameter, receiver or local (`fn add(log: AuditLog)`) is not a module use.
+    std::unordered_set<std::string> bound_names;
+    for (const auto& fn : ast.functions) {
+        if (fn.receiver) bound_names.insert(fn.receiver->name);
+        for (const auto& p : fn.params) bound_names.insert(p.name);
+    }
+    for (const auto& line : code_lines) {
+        for (std::size_t p = line.find(":="); p != std::string::npos; p = line.find(":=", p + 2)) {
+            std::size_t e = p;
+            while (e > 0 && line[e - 1] == ' ') --e;
+            std::size_t b0 = e;
+            while (b0 > 0 && (std::isalnum(static_cast<unsigned char>(line[b0 - 1])) || line[b0 - 1] == '_')) --b0;
+            if (b0 < e) bound_names.insert(line.substr(b0, e - b0));
+        }
+    }
+
     std::unordered_set<std::string> needed_modules;
     for (const auto& mod : catalog) {
         if (existing_imports.contains(mod.import_path)) continue;
+        if (bound_names.contains(mod.ns_alias)) continue;
         std::string pattern = mod.ns_alias + ".";
-        for (const auto& line : lines) {
+        for (const auto& line : code_lines) {
             auto pos = line.find(pattern);
             if (pos != std::string::npos) {
                 bool left_ok = (pos == 0) || (!std::isalnum(static_cast<unsigned char>(line[pos - 1])) && line[pos - 1] != '_');

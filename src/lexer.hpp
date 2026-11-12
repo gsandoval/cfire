@@ -11,8 +11,50 @@
 
 namespace cfire::frontend {
 
+// Q24 (CF-149): lexer and parser errors are structured at the point of detection. `text()` is the
+// rendered `file:line:col: message` form for callers that only print.
+struct SourceError {
+    std::string file{};
+    int line = 1;
+    int col = 1;
+    std::string message{};
+    std::string code{"cfire/SYNTAX"};
+
+    SourceError() = default;
+    SourceError(std::string f, int l, int c, std::string msg, std::string cd = "cfire/SYNTAX")
+        : file(std::move(f)), line(l), col(c), message(std::move(msg)), code(std::move(cd)) {}
+    SourceError(const char* msg) : message(msg ? msg : "") {}  // NOLINT: lets `ok ? "ok" : err` type-check
+
+    [[nodiscard]] auto text() const -> std::string {
+        // Non-default codes render as a single trailing "(code)" suffix, matching sema output.
+        std::string body = message;
+        if (!code.empty() && code != "cfire/SYNTAX" && body.find(code) == std::string::npos)
+            body += std::format(" ({})", code);
+        if (file.empty()) return body;
+        return std::format("{}:{}:{}: {}", file, line, col, body);
+    }
+    operator std::string() const { return text(); }  // NOLINT: compatibility for callers that print errors
+    // Read-only text queries for callers that inspect the rendered error.
+    [[nodiscard]] auto contains(std::string_view needle) const -> bool { return text().find(needle) != std::string::npos; }
+    [[nodiscard]] auto find(std::string_view needle) const -> std::size_t { return text().find(needle); }
+    [[nodiscard]] auto starts_with(std::string_view p) const -> bool { return text().starts_with(p); }
+    [[nodiscard]] auto empty() const -> bool { return message.empty(); }
+};
+
+} // namespace cfire::frontend
+
+template <>
+struct std::formatter<cfire::frontend::SourceError, char> : std::formatter<std::string, char> {
+    template <typename FormatContext>
+    auto format(const cfire::frontend::SourceError& e, FormatContext& ctx) const {
+        return std::formatter<std::string, char>::format(e.text(), ctx);
+    }
+};
+
+namespace cfire::frontend {
+
 [[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
-    -> std::expected<std::vector<Token>, std::string>
+    -> std::expected<std::vector<Token>, SourceError>
 {
     std::vector<Token> tokens;
     std::size_t i = 0;
@@ -287,7 +329,7 @@ namespace cfire::frontend {
                 s.push_back(advance());
             }
             if (i >= n) {
-                return std::unexpected(std::format("{}:{}:{}: unterminated string literal", file, start_line, start_col));
+                return std::unexpected(SourceError{std::string(file), static_cast<int>(start_line), static_cast<int>(start_col), std::format("unterminated string literal")});
             }
             advance();
             tokens.push_back(Token{TokenKind::String, std::move(s), start_line, start_col});
@@ -302,7 +344,7 @@ namespace cfire::frontend {
                 s.push_back(advance());
             }
             if (i >= n) {
-                return std::unexpected(std::format("{}:{}:{}: unterminated raw string literal", file, start_line, start_col));
+                return std::unexpected(SourceError{std::string(file), static_cast<int>(start_line), static_cast<int>(start_col), std::format("unterminated raw string literal")});
             }
             advance();
             tokens.push_back(Token{TokenKind::RawString, std::move(s), start_line, start_col});
@@ -464,7 +506,7 @@ namespace cfire::frontend {
             case '>': tokens.push_back(Token{TokenKind::Gt, ">", start_line, start_col}); break;
             case ';': tokens.push_back(Token{TokenKind::Semicolon, ";", start_line, start_col}); break;
             default:
-                return std::unexpected(std::format("{}:{}:{}: unexpected character '{}'", file, start_line, start_col, c));
+                return std::unexpected(SourceError{std::string(file), static_cast<int>(start_line), static_cast<int>(start_col), std::format("unexpected character '{}'", c)});
         }
     }
 

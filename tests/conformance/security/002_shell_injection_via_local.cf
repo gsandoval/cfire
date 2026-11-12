@@ -1,0 +1,8 @@
+package main
+import "core:os"
+fn main() {
+    user := os.args()[0]
+    cmd := "ls " + user
+    res := os.exec(cmd) or "" //~ error cfire/SHELL-INJECTION-RISK
+    println("{}", res)
+}

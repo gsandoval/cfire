@@ -1,0 +1,11 @@
+// expect: stdout
+// | first_in_view=10
+// | new_len=4
+package main
+fn main() {
+    mut nums: []i32 = [10, 20, 30]
+    view := nums[0..2]
+    println("first_in_view={}", view[0])
+    nums.push(40)
+    println("new_len={}", nums.len())
+}

@@ -1,0 +1,12 @@
+// expect: stdout
+// | small big small
+package main
+fn size(n: i32) -> str {
+    return match n {
+        1 | 2 | 3 => "small",
+        _ => "big",
+    }
+}
+fn main() {
+    println("{} {} {}", size(2), size(9), size(3))
+}

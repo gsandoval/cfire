@@ -12,7 +12,7 @@ fn main() {
     println("=== cfire HTTP/1.1 Server & Independent Router Demo ===")
 
     // 1. Build an Independent HTTP Router (Decoupled from network sockets)
-    mut router := http.make_router()
+    mut router := make(http.Router)
 
     router.get("/health", |req| {
             return http.Response.json(200, "{\"status\":\"healthy\",\"version\":\"1.0.0\"}")
@@ -39,7 +39,7 @@ fn main() {
 
     // 3. Live Server Deployment: Pass the router directly to the HTTP server
     println("[2] Starting live HTTP server with router on ephemeral port...")
-    mut server := try http.make_server(port: 0)
+    mut server := try make(http.Server, port: 0)
     port := server.port()
     println("    Server listening on http://127.0.0.1:{}", port)
 

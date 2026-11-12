@@ -1,0 +1,16 @@
+// expect: stdout
+// | 0 10 20 30
+// flags: --sanitize=thread
+package main
+fn main() {
+    mut codes: []i32 = [0, 0, 0, 0]
+    async.scope(workers: 4) |scope| {
+        for i, c in codes {
+            slot := &mut codes[i]
+            scope.spawn || {
+                *slot = i32(i) * 10
+            }
+        }
+    }
+    println("{} {} {} {}", codes[0], codes[1], codes[2], codes[3])
+}

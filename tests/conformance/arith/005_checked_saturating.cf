@@ -1,0 +1,9 @@
+// expect: stdout
+// | -1 9223372036854775807
+package main
+import "core:math"
+fn main() {
+    a := (9223372036854775807).checked_add(1) or -1
+    b := (9223372036854775807).saturating_mul(2)
+    println("{} {}", a, b)
+}

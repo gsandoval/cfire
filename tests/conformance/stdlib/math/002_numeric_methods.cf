@@ -1,0 +1,9 @@
+// expect: stdout
+// | 5 2 3 true
+package main
+fn main() {
+    x: i32 = -5
+    f: f64 = 2.5
+    nan: f64 = 0.0 / 0.0
+    println("{} {} {} {}", x.abs(), f.floor(), x.max(3), nan.is_nan())
+}

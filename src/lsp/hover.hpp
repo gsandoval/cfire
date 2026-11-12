@@ -112,9 +112,11 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
                    "**Example:**\n```cf\nbench \"payload encode\" |size in [64, 1024, 16384]| {\n    black_box(encode_payload(size))\n}\n```";
         }
         if (sym.name == "make") {
-            return "### Built-in Allocator `make[T](...args)`\n```cf\nmake[own[T]](args...) -> own[T]\nmake[shared[T]](args...) -> shared[T]\nmake[sync.Channel[T]](capacity: usize) -> sync.Channel[T]\n```\n"
-                   "Allocates a managed smart pointer on the heap (`std::make_unique` for `own[T]`, `std::make_shared` for `shared[T]`), or initializes a bounded/unbounded channel.\n\n"
-                   "**Example:**\n```cf\nbox := make[own[Node]](Node{Id: 1})\n```";
+            return "### Built-in Constructor `make(T, args...)`\n```cf\nmake(T) / make(T, args...) -> T\nmake(own[T], args...) -> own[T]\nmake(shared[T], args...) -> shared[T]\nmake([]T, len[, cap]) -> []T\nmake(map[K]V) -> map[K]V\nmake(sync.Channel[T], capacity) -> sync.Channel[T]\n```\n"
+                   "The one construction builtin (Q25); the type decides where memory lives. `make(T, args)` calls the type's constructor `fn (T) make(...) -> T` "
+                   "(no arguments: default field values); `own[T]` / `shared[T]` place the value on the heap (`std::unique_ptr` / `std::shared_ptr`); "
+                   "slices get `len` zero-filled elements and optional reserved `cap`.\n\n"
+                   "**Example:**\n```cf\nnode := make(own[Node], Node{id: 1})\nbuf := make([]byte, 0, 4096)\n```";
         }
         if (sym.name == "defer") {
             return "### Keyword `defer`\n"
@@ -268,10 +270,14 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
                         return std::format("### `{}` (`{}`)\n```cf\n{}\n```\n**Lowered C++23:** `{}`\n\n{}\n\n**Example:**\n```cf\n{}\n```",
                             fn.name, mod.import_path, fn.cf_sig, fn.cpp_lowering, fn.summary, fn.example);
                     }
-                } else if (recv_type == "str" && mod.import_path == "core:str" && fn.name == sym.name) {
-                    return std::format("### `{}.{}` (`{}`)\n```cf\n{}\n```\n**Lowered C++23:** `{}`\n\n{}\n\n**Example:**\n```cf\n{}\n```",
-                        mod.ns_alias, fn.name, mod.import_path, fn.cf_sig, fn.cpp_lowering, fn.summary, fn.example);
                 }
+            }
+        }
+        // W4: methods on builtin types (`s.trim()`, `xs.sort()`, `x.abs()`) from the single table.
+        if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(recv_type); bits != 0) {
+            if (const auto* bm = cfire::frontend::find_builtin_method(bits, sym.name)) {
+                return std::format("### `{}.{}` (builtin method)\n```cf\n{}\n```\n{}\n\n**Example:**\n```cf\n{}\n```",
+                    recv_type, bm->name, cfire::frontend::builtin_method_signature(*bm), bm->summary, bm->example);
             }
         }
         // Check user struct fields & methods on `recv_type` (both local and imported packages)

@@ -380,7 +380,33 @@ struct StructFieldLine {
             continue;
         }
 
-        // Two-character operators: ==, !=, <=, >=, +=, -=, *=, /=, %=, &&, ||, =>, ->, :=
+        // Range operators stay whole: `32..=512` must not become `32.. = 512`.
+        if (code.substr(i).starts_with("..=")) {
+            out.append("..=");
+            i += 2;
+            continue;
+        }
+        if (code.substr(i).starts_with("..")) {
+            out.append("..");
+            ++i;
+            continue;
+        }
+
+        // Three-character compound shifts: <<=, >>=
+        if (i + 2 < code.size()) {
+            std::string_view three = code.substr(i, 3);
+            if (three == "<<=" || three == ">>=") {
+                if (!out.empty() && out.back() != ' ') out.push_back(' ');
+                out.append(three);
+                if (i + 3 < code.size() && code[i + 3] != ' ' && code[i + 3] != '\n' && code[i + 3] != '\r') {
+                    out.push_back(' ');
+                }
+                i += 2;
+                continue;
+            }
+        }
+
+        // Two-character operators: ==, !=, <=, >=, +=, -=, *=, /=, %=, &=, |=, ^=, &&, ||, =>, ->, :=
         if (i + 1 < code.size()) {
             std::string_view two = code.substr(i, 2);
             if (two == "::") {
@@ -390,7 +416,7 @@ struct StructFieldLine {
             }
             if (two == ":=" || two == "==" || two == "!=" || two == "<=" || two == ">=" ||
                 two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "%=" ||
-                two == "&&" || two == "||" || two == "=>" || two == "->") {
+                two == "&=" || two == "|=" || two == "^=" || two == "&&" || two == "||" || two == "=>" || two == "->") {
                 if (!out.empty() && out.back() != ' ') out.push_back(' ');
                 out.append(two);
                 if (i + 2 < code.size() && code[i + 2] != ' ' && code[i + 2] != '\n' && code[i + 2] != '\r') {
@@ -430,6 +456,17 @@ struct StructFieldLine {
 
         // Infix binary operators: +, -, *, /, %
         if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%') {
+            // Exponent sign inside a float literal (`2.5e-4`, `1E+9`) is not an operator.
+            if ((c == '+' || c == '-') && !out.empty() && (out.back() == 'e' || out.back() == 'E')) {
+                std::size_t k = out.size() - 1;
+                while (k > 0 && (std::isdigit(static_cast<unsigned char>(out[k - 1])) || out[k - 1] == '.' || out[k - 1] == '_')) --k;
+                bool starts_with_digit = k < out.size() - 1 && std::isdigit(static_cast<unsigned char>(out[k]));
+                bool standalone = k == 0 || !is_ident_char(out[k - 1]);
+                if (starts_with_digit && standalone) {
+                    out.push_back(c);
+                    continue;
+                }
+            }
             bool preceded = ends_with_expr_term(out);
             std::size_t next_i = i + 1;
             while (next_i < code.size() && (code[next_i] == ' ' || code[next_i] == '\t')) ++next_i;

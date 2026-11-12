@@ -1,0 +1,29 @@
+// expect: stdout
+// | atomic=80000 locked=80000 chan_sum=28
+// flags: --sanitize=thread
+package main
+import "core:sync"
+fn main() {
+    atm := make(sync.Atomic[i64], 0)
+    mu := make(sync.Mutex[i64], 0)
+    ch := make(sync.Channel[i64], capacity: 64)
+    async.scope(workers: 8) |scope| {
+        for w in 0..8 {
+            scope.spawn || {
+                for i in 0..10000 {
+                    atm.add(1)
+                    mut g := mu.lock()
+                    *g += 1
+                }
+                ch.send(i64(w))
+            }
+        }
+    }
+    ch.close()
+    mut total: i64 = 0
+    for {
+        v := ch.recv() or break
+        total += v
+    }
+    println("atomic={} locked={} chan_sum={}", atm.load(), mu.get(), total)
+}

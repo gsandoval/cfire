@@ -28,8 +28,10 @@ namespace cfire::build {
     std::error_code ec;
     std::filesystem::create_directories(gen_dir, ec);
     auto cpp_path = gen_dir / (cf_file.stem().string() + ".cpp");
+    std::optional<cfire::detail::SecureTempDir> fallback_dir;
     if (ec) {
-        cpp_path = std::filesystem::temp_directory_path() / (cf_file.stem().string() + "_check.cpp");
+        fallback_dir.emplace("cfire_check");  // private dir instead of a shared temp-dir file name (CF-153)
+        cpp_path = fallback_dir->file(cf_file.stem().string() + "_check.cpp");
     }
     {
         std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);

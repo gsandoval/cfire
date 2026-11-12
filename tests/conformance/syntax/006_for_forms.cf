@@ -1,0 +1,25 @@
+// expect: stdout
+// | 0 1 2 | 0:a 1:b | 3
+package main
+fn main() {
+    mut s := ""
+    for i in 0..3 {
+        s += str(i)
+        if i < 2 {
+            s += " "
+        }
+    }
+    names: []str = ["a", "b"]
+    mut t := ""
+    for i, n in names {
+        t += "{i}:{n}"
+        if i == 0 {
+            t += " "
+        }
+    }
+    mut k := 0
+    for k < 3 {
+        k += 1
+    }
+    println("{} | {} | {}", s, t, k)
+}

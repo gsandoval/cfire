@@ -1,0 +1,51 @@
+package main
+
+import "./ui"
+import "core:audio"
+import "core:os"
+import "vendor:raylib" as rl
+
+fn main() {
+    headless := os.getenv("CFIRE_HEADLESS_TEST", "") == "1"
+    if !headless {
+        rl.InitWindow(0, 0, "Pocket Studio")
+        rl.SetTargetFPS(60)
+    }
+    defer rl.CloseWindow()
+
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.65)
+
+    tap_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Tap))
+    sync_sfx := audio.load_sound_from_wave(audio.gen_sfx(audio.SfxPreset::Coin))
+    dsp_stream := try audio.open_stream(48000, 2)
+    pad_wave := audio.gen_tone(audio.Waveform::Sine, 220.0, 0.04, 0.25)
+
+    mut ctx := ui.make_context()
+    mut active_tab: i32 = 0
+    mut dark_mode := true
+    mut notifications := true
+    mut auto_sync := false
+    mut perf_profile: i32 = 1
+    mut target_temp: f32 = 72.0
+    mut buffer_ms: f32 = 16.0
+    mut device_name := "Memo's iPhone"
+    mut sync_count: i32 = 0
+
+    mut frame := 0
+    for headless || !rl.WindowShouldClose() {
+        if dsp_stream.needs_data(2048) {
+            dsp_stream.push_samples(pad_wave.samples)
+        }
+        live_rms := audio.rms_level()
+
+        if !headless {
+            rl.BeginDrawing()
+        }
+
+        ctx.set_dark_mode(dark_mode)
+        ctx.begin_screen("Pocket Studio", "ONLINE | {device_name}")
+
+        if active_tab == 0 {
+            // 1. Arbitrary 3-Column Grid built from pure .

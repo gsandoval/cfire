@@ -1,0 +1,4 @@
+package main
+fn main() {
+    println("{}", nope + 1) //~ error cfire/UNDECLARED-IDENT
+}

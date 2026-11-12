@@ -1,0 +1,8 @@
+package main
+fn parse(s: str) -> i32! {
+    return error("bad")
+}
+fn main() {
+    v := parse("x") //~ error cfire/UNHANDLED-RESULT
+    println("{}", v)
+}

@@ -1,0 +1,9 @@
+// expect: stdout
+// | [a,b] 2 B,A
+package main
+fn main() {
+    s := " a,b "
+    t := s.trim()
+    parts := t.split(",")
+    println("[{}] {} {}", t, parts.len(), t.to_upper().replace("A,B", "B,A"))
+}

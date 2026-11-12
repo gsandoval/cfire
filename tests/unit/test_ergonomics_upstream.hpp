@@ -258,13 +258,13 @@ test "deliberate fd leak" {
             // UPSTREAM-02 Item 1: `as` cast syntax is rejected with actionable diagnostic pointing to `T(x)` / `[]byte(x)`
             {
                 auto as_res = cfire::frontend::parse_source("bad_as.cf", "package main\nfn main() {\n    x := 42 as i64\n}\n");
-                require(!as_res.has_value() && as_res.error().contains("'as' cast syntax is not supported in cfire") &&
-                        as_res.error().contains("i64(...)"),
-                        std::format("UPSTREAM-02: expected actionable 'as' diagnostic, got: {}", as_res ? "ok" : as_res.error()));
+                require(!as_res.has_value() && as_res.error().text().contains("'as' cast syntax is not supported in cfire") &&
+                        as_res.error().text().contains("i64(...)"),
+                        std::format("UPSTREAM-02: expected actionable 'as' diagnostic, got: {}", as_res ? std::string("ok") : as_res.error().text()));
 
                 auto as_bytes = cfire::frontend::parse_source("bad_as_bytes.cf", "package main\nfn main() {\n    b := \"hello\" as []byte\n}\n");
-                require(!as_bytes.has_value() && as_bytes.error().contains("use constructor conversion '[]byte(...)' instead"),
-                        std::format("UPSTREAM-02: expected actionable '[]byte(...)' diagnostic, got: {}", as_bytes ? "ok" : as_bytes.error()));
+                require(!as_bytes.has_value() && as_bytes.error().text().contains("use constructor conversion '[]byte(...)' instead"),
+                        std::format("UPSTREAM-02: expected actionable '[]byte(...)' diagnostic, got: {}", as_bytes ? std::string("ok") : as_bytes.error().text()));
             }
 
             // UPSTREAM-02 Item 2: Top-level `cpp { ... }` is rejected with actionable diagnostic
@@ -330,7 +330,6 @@ fn helper() -> i64 {
 
 import "core:json"
 import "ext:db/sqlite"
-import "core:str"
 import "core:fs"
 import "./subpkg" as sp
 
@@ -468,7 +467,7 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     empty_rows := make_rows(false) or []
     assert(empty_rows.len() == 0)
 
-    num := str.parse_i64("not_a_number") or -1
+    num := i64.parse("not_a_number") or -1
     assert(num == -1)
 
     // CF-034: Nested string literals inside string interpolation
@@ -497,7 +496,7 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
 
     // CF-048: `or` handler block inside reassignment (`=`) and parameterless `or { ... }`
     mut parsed_val: i64 = 0
-    parsed_val = str.parse_i64("1234") or {
+    parsed_val = i64.parse("1234") or {
         return
     }
     assert(parsed_val == 1234)
@@ -576,7 +575,7 @@ import "ext:net/ssh"
 
 test "ssh e2e session and pty" {
     ssh.enable_mock_server(true)
-    mut sess := try ssh.dial("10.0.0.42", 22, "root", 2000)
+    mut sess := try ssh.connect("10.0.0.42", 22, "root", 2000)
     defer sess.close()
 
     fp := sess.host_key_fingerprint()
@@ -648,12 +647,15 @@ fn main() {
                 require(has_cat_fn("core:crypto/hmac", "pbkdf2_sha256"),
                         "UPSTREAM-03: core:crypto/hmac pbkdf2_sha256 in stdlib_catalog");
                 require(has_cat_fn("core:os", "args") && has_cat_fn("core:os", "exit") && has_cat_fn("core:os", "getenv_opt") &&
-                        has_cat_fn("core:os", "term_size") && has_cat_fn("core:os", "make_raw") && has_cat_fn("core:os", "on_signal") &&
+                        has_cat_fn("core:os", "term_size") && has_cat_fn("core:os", "RawTerminal.make") && has_cat_fn("core:os", "on_signal") &&
                         has_cat_fn("core:os", "stdin") && has_cat_fn("core:os", "pipe") &&
                         !has_cat_fn("core:os", "read_line"),
                         "UPSTREAM-03: core:os functions in stdlib_catalog (and removed read_line absent)");
-                require(has_cat_fn("core:str", "parse_i64") && has_cat_fn("core:str", "parse_f64") && has_cat_fn("core:str", "parse_bool") && has_cat_fn("core:str", "find"),
-                        "UPSTREAM-03: core:str parse_* and find in stdlib_catalog");
+                // W4 (Q7/Q10): `core:str` is retired; string operations are builtin methods and parsing is `T.parse(s)`.
+                require(!has_cat_fn("core:str", "trim") &&
+                        cfire::frontend::find_builtin_method(cfire::frontend::BmStr, "trim") != nullptr &&
+                        cfire::frontend::find_builtin_method(cfire::frontend::BmStr, "find") == nullptr,
+                        "UPSTREAM-03: str operations are builtin methods (core:str retired, find stays rejected)");
                 require(has_cat_fn("core:sync", "Channel.try_recv") && has_cat_fn("core:sync", "Channel.recv_timeout") &&
                         has_cat_fn("core:sync", "Mutex") && has_cat_fn("core:sync", "Mutex.with_lock"),
                         "UPSTREAM-03: core:sync try_recv, recv_timeout, and Mutex in stdlib_catalog");
@@ -662,7 +664,7 @@ fn main() {
                         has_cat_fn("ext:webui", "App.set_icon") && has_cat_fn("ext:webui", "App.add_menu_item") &&
                         has_cat_fn("ext:webui", "App.monospace_fonts"),
                         "UPSTREAM-03: ext:webui async/binary/clipboard/secret/icon/menu/fonts in stdlib_catalog");
-                require(has_cat_fn("ext:net/ssh", "dial") && has_cat_fn("ext:net/ssh", "Session.auth_publickey_mem") &&
+                require(has_cat_fn("ext:net/ssh", "connect") && has_cat_fn("ext:net/ssh", "Session.auth_publickey_mem") &&
                         has_cat_fn("ext:net/ssh", "Session.open_pty") && has_cat_fn("ext:net/ssh", "Channel.resize_pty") &&
                         has_cat_fn("ext:net/ssh", "Session.sftp_write_text") && has_cat_fn("ext:net/ssh", "Session.open_forward"),
                         "CF-005: ext:net/ssh functions in stdlib_catalog");
@@ -826,7 +828,7 @@ fn main() {
 }
 )", "cfire/TYPE-MISMATCH", "bad_slice_view_owned.cf");
 
-                // CF-085: Reject `shared(v)` constructor syntax in Sema with fix-it pointing to `make[shared[T]](v)`
+                // CF-085: Reject `shared(v)` constructor syntax in Sema with fix-it pointing to `make(shared[T], v)`
                 require_sema_error(R"(package main
 type Box struct {
     v: i64
@@ -874,10 +876,10 @@ import "./pkgb" as pb
 // CF-078: Negative default values in struct fields
 // CF-057: `default:"..."` tags honored by json.parse when key is absent or null
 type EndpointConfig struct {
-    Host: str `json:"host" default:"127.0.0.1"`
-    Port: i32 = -1 `json:"port" default:"2222"`
-    Bias: f64 = -0.5 `json:"bias"`
-    Enabled: bool `json:"enabled" default:"true"`
+    host: str `json:"host" default:"127.0.0.1"`
+    port: i32 = -1 `json:"port" default:"2222"`
+    bias: f64 = -0.5 `json:"bias"`
+    enabled: bool `json:"enabled" default:"true"`
 }
 
 // CF-066: Struct holding non-serializable handle (`sync.Mutex`) alongside `ext:json` import
@@ -911,7 +913,7 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
 
     // CF-059 & CF-060: s.index_of / s.last_index_of and zero-copy &str slice view + explicit str(...) copy
     addr := "10.0.0.1:8022"
-    colon := addr.index_of(":")
+    colon := addr.index_of(":") or 0
     last_dot := addr.last_index_of(".")
     assert_eq(colon, 8)
     assert_eq(last_dot, 6)
@@ -926,13 +928,13 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
 
     // CF-078 & CF-057: Negative struct field defaults and JSON `default:"..."` tags on missing/null keys
     def_ep := EndpointConfig{}
-    assert_eq(def_ep.Port, -1)
-    assert(def_ep.Bias == -0.5)
+    assert_eq(def_ep.port, -1)
+    assert(def_ep.bias == -0.5)
 
     parsed_ep := try json.parse[EndpointConfig](`{"port": null}`)
-    assert_eq(parsed_ep.Host, "127.0.0.1")
-    assert_eq(parsed_ep.Port, 2222)
-    assert_eq(parsed_ep.Enabled, true)
+    assert_eq(parsed_ep.host, "127.0.0.1")
+    assert_eq(parsed_ep.port, 2222)
+    assert_eq(parsed_ep.enabled, true)
 
     // CF-067: Pushing slice literal into [][]str
     mut rows: [][]str = []
@@ -941,16 +943,16 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
     assert_eq(rows.len(), 2)
     assert_eq(rows[0][1], "col2")
 
-    // CF-085: make[shared[T]] and make[own[T]] with auto-deref on .field and .method()
-    sc := make[shared[SharedCounter]](SharedCounter{count: 21})
+    // CF-085: make(shared[T], v) and make(own[T], v) with auto-deref on .field and .method()
+    sc := make(shared[SharedCounter], SharedCounter{count: 21})
     assert_eq(sc.count, 21)
     assert_eq(sc.doubled(), 42)
-    oc := make[own[SharedCounter]](SharedCounter{count: 9})
+    oc := make(own[SharedCounter], SharedCounter{count: 9})
     assert_eq(oc.count, 9)
     assert_eq(oc.doubled(), 18)
 
     // CF-083: Nested scope.spawn inside async.scope
-    ch := sync.make_channel[i64](4)
+    ch := make(sync.Channel[i64], 4)
     async.scope(2) |scope| {
         scope.spawn(|| {
             scope.spawn(|| {
@@ -1019,19 +1021,19 @@ import "core:json"
 import "ext:ai"
 
 type TicketSpec struct {
-    Title:    str   `json:"title"    validate:"non_empty,max_len=40"`
-    Severity: i64   `json:"severity" validate:"min=1,max=5"`
-    Env:      str   `json:"env"      validate:"oneof=dev|staging|prod"`
-    Tags:     []str `json:"tags"     validate:"min_len=1,max_len=3"`
+    title:    str   `json:"title"    validate:"non_empty,max_len=40"`
+    severity: i64   `json:"severity" validate:"min=1,max=5"`
+    env:      str   `json:"env"      validate:"oneof=dev|staging|prod"`
+    tags:     []str `json:"tags"     validate:"min_len=1,max_len=3"`
 }
 
 type LookupArgs struct {
-    Service: str `json:"service" validate:"non_empty"`
+    service: str `json:"service" validate:"non_empty"`
 }
 
 type ServiceInfo struct {
-    Owner:   str `json:"owner"`
-    Healthy: bool `json:"healthy"`
+    owner:   str `json:"owner"`
+    healthy: bool `json:"healthy"`
 }
 
 test "CF-087 validate struct tags and Agent self-correction" {
@@ -1045,19 +1047,19 @@ test "CF-087 validate struct tags and Agent self-correction" {
 
     // 2. json.parse[T] enforces validate:"..." rules at runtime
     valid_t := try json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":2,\"env\":\"prod\",\"tags\":[\"db\"]}")
-    assert_eq(valid_t.Title, "DB spike")
-    assert_eq(valid_t.Severity, 2)
+    assert_eq(valid_t.title, "DB spike")
+    assert_eq(valid_t.severity, 2)
 
-    bad_max := json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":9,\"env\":\"prod\",\"tags\":[\"db\"]}") or TicketSpec{Severity: -1}
-    assert_eq(bad_max.Severity, -1)
+    bad_max := json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":9,\"env\":\"prod\",\"tags\":[\"db\"]}") or TicketSpec{severity: -1}
+    assert_eq(bad_max.severity, -1)
 
-    bad_enum := json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":2,\"env\":\"qa\",\"tags\":[\"db\"]}") or TicketSpec{Severity: -1}
-    assert_eq(bad_enum.Severity, -1)
+    bad_enum := json.parse[TicketSpec]("{\"title\":\"DB spike\",\"severity\":2,\"env\":\"qa\",\"tags\":[\"db\"]}") or TicketSpec{severity: -1}
+    assert_eq(bad_enum.severity, -1)
 
     // 3. Multi-turn Agent + MCP tool sharing + struct tool returns + self-correction
-    mut mcp := ai.make_mcp_server("ops-mcp", "1.0.0")
+    mut mcp := make(ai.McpServer, "ops-mcp", "1.0.0")
     mcp.register_tool[LookupArgs]("lookup_service", "Lookup service metadata", |args: LookupArgs| -> ServiceInfo! {
-        return ServiceInfo{Owner: "team-" + args.Service, Healthy: false}
+        return ServiceInfo{owner: "team-" + args.service, healthy: false}
     })
 
     mut step := 0
@@ -1086,20 +1088,20 @@ test "CF-087 validate struct tags and Agent self-correction" {
         return ai.ChatResponse{text: "{\"title\":\"payments outage\",\"severity\":1,\"env\":\"prod\",\"tags\":[\"ops\"]}"}
     })
 
-    mut agent := ai.make_agent(client, "mock-llm", "You are an incident responder.")
+    mut agent := make(ai.Agent, client, "mock-llm", "You are an incident responder.")
     agent.use_mcp(mcp)
     agent.register_tool_action("cluster_region", "Returns active region", || -> str! {
         return "us-east-1"
     })
 
     ticket := try agent.run_struct_validated[TicketSpec]("Triage payments", |t: TicketSpec| -> void! {
-        if t.Env == "prod" && t.Severity > 2 {
+        if t.env == "prod" && t.severity > 2 {
             return error("prod incidents must have severity <= 2")
         }
     })
-    assert_eq(ticket.Title, "payments outage")
-    assert_eq(ticket.Severity, 1)
-    assert_eq(ticket.Env, "prod")
+    assert_eq(ticket.title, "payments outage")
+    assert_eq(ticket.severity, 1)
+    assert_eq(ticket.env, "prod")
     assert_eq(step, 4)
     assert(agent.history().len() >= 6)
 
@@ -1115,7 +1117,7 @@ test "CF-087 validate struct tags and Agent self-correction" {
                         .assert_ok("CF-087: validate tags, Agent multi-turn tool loop, MCP tool sharing, and self-correction pass");
 
                     require(has_cat_fn("ext:ai", "local") && has_cat_fn("ext:ai", "mock") &&
-                            has_cat_fn("ext:ai", "mock_sequence") && has_cat_fn("ext:ai", "make_agent") &&
+                            has_cat_fn("ext:ai", "mock_sequence") && has_cat_fn("ext:ai", "Agent.make") &&
                             has_cat_fn("ext:ai", "Client.ocr") && has_cat_fn("ext:ai", "Client.detect_language") &&
                             has_cat_fn("ext:ai", "Client.set_model") && has_cat_fn("ext:ai", "Client.model") &&
                             !has_cat_fn("ext:ai", "embed") && !has_cat_fn("ext:ai", "ocr") &&
@@ -1147,7 +1149,7 @@ import "core:net"
 import "core:os"
 
 fn can_connect_unlistening() -> bool {
-    _ = net.connect_tcp("127.0.0.1", 59997) or err {
+    _ = net.connect("127.0.0.1", 59997) or err {
         return false
     }
     return true

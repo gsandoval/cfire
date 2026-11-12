@@ -1,0 +1,22 @@
+// expect: stdout
+// | total=6
+// flags: --sanitize=thread
+package main
+import "core:sync"
+fn main() {
+    atm := make(sync.Atomic[i64], 0)
+    async.scope(workers: 4) |scope| {
+        for w in 0..2 {
+            scope.spawn || {
+                atm.add(1)
+                scope.spawn || {
+                    atm.add(1)
+                }
+                scope.spawn || {
+                    atm.add(1)
+                }
+            }
+        }
+    }
+    println("total={}", atm.load())
+}

@@ -284,9 +284,9 @@ struct DecodedImage {
             has_djpeg = (std::system("which djpeg >/dev/null 2>&1") == 0) ? 1 : 0;
         }
         if (has_djpeg == 1) {
-            static std::uint64_t seq = 0;
-            std::string tmp_jpg = std::format("/tmp/cfire_jpg_{}_{}.jpg", static_cast<long>(::getpid()), ++seq);
-            if (cfire::fs::write_bytes(tmp_jpg, bytes)) {
+            cfire::detail::SecureTempDir tmp_dir("cfire_jpg");  // private 0700 dir, removed on scope exit (CF-153)
+            std::string tmp_jpg = tmp_dir.file("in.jpg").string();
+            if (tmp_dir.ok() && cfire::fs::write_bytes(tmp_jpg, bytes)) {
                 std::string cmd = std::format("djpeg -pnm '{}' 2>/dev/null", tmp_jpg);
                 std::vector<std::byte> pnm_bytes;
                 if (FILE* pipe = ::popen(cmd.c_str(), "r")) {
@@ -361,9 +361,9 @@ struct DecodedImage {
         has_tesseract_cli = (std::system("which tesseract >/dev/null 2>&1") == 0) ? 1 : 0;
     }
     if (has_tesseract_cli == 1) {
-        static std::uint64_t seq = 0;
-        std::string tmp_path = std::format("/tmp/cfire_ocr_{}_{}.img", static_cast<long>(::getpid()), ++seq);
-        if (cfire::fs::write_bytes(tmp_path, img_bytes)) {
+        cfire::detail::SecureTempDir tmp_dir("cfire_ocr");  // private 0700 dir, removed on scope exit (CF-153)
+        std::string tmp_path = tmp_dir.file("in.img").string();
+        if (tmp_dir.ok() && cfire::fs::write_bytes(tmp_path, img_bytes)) {
             std::string cmd = std::format("tesseract '{}' stdout --oem 1 -l eng 2>/dev/null", tmp_path);
             std::string out;
             if (FILE* pipe = ::popen(cmd.c_str(), "r")) {

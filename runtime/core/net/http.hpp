@@ -18,6 +18,9 @@
 #include <unordered_map>
 #include <atomic>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <deque>
 #include <type_traits>
 #include <cctype>
 #include <algorithm>
@@ -38,6 +41,17 @@ inline constexpr std::size_t kMaxHttpHeaders = 128;
 inline constexpr std::size_t kMaxHttpQueryParams = 256;
 
 namespace detail {
+// CF-151: `x-cfire-*` header names are reserved and never sent. They used to be read as in-band TLS
+// controls (`x-cfire-tls-verify: false` disabled certificate checks), so code that forwarded
+// user-supplied headers could be downgraded. TLS behavior now comes only from typed parameters.
+[[nodiscard]] inline auto is_reserved_cfire_header(std::string_view k) -> bool {
+    if (k.size() < 8) return false;
+    for (std::size_t i = 0; i < 8; ++i) {
+        if (std::tolower(static_cast<unsigned char>(k[i])) != "x-cfire-"[i]) return false;
+    }
+    return true;
+}
+
 [[nodiscard]] inline auto strip_crlf(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size());
@@ -171,6 +185,7 @@ struct Response {
 };
 
 struct Request {
+    std::string remote_addr{};  // peer IP address of the client connection (CF-150)
     std::string method{"GET"};
     std::string path{"/"};
     std::string raw_query{};
@@ -386,6 +401,10 @@ inline auto parse_request(std::string_view raw) -> std::expected<Request, cfire:
                 std::string lower_k;
                 lower_k.reserve(k.size());
                 for (char c : k) lower_k.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+                if ((lower_k == "content-length" || lower_k == "transfer-encoding") && req.headers.contains(lower_k)) {
+                    // Q22 (CF-150): duplicate framing headers are a request-smuggling vector.
+                    return cfire::make_error(std::format("duplicate {} header", lower_k), 400);
+                }
                 req.headers[lower_k] = std::string(v);
             }
         }
@@ -395,58 +414,174 @@ inline auto parse_request(std::string_view raw) -> std::expected<Request, cfire:
     return req;
 }
 
+// Q22 (CF-150): per-connection limits for the built-in server. Errors carry the HTTP status to send
+// (Error::code): 400 malformed / ambiguous framing, 408 deadline exceeded, 413 body too large.
+// Q31: the server certificate for `make(http.Server, port, tls: http.TlsConfig{...})`: files or in-memory PEM.
+struct TlsConfig {
+    std::string cert_file{};
+    std::string key_file{};
+    std::string cert_pem{};
+    std::string key_pem{};
+};
+
+struct ServerLimits {
+    int header_timeout_ms = 10000;
+    int body_timeout_ms = 30000;
+    std::size_t max_body_bytes = 10 * 1024 * 1024;
+    std::size_t workers = std::max<std::size_t>(4, std::thread::hardware_concurrency());
+    std::size_t max_pending = 128;
+};
+
+namespace detail {
+enum class ChunkStatus : std::uint8_t { NeedMore, Done, Malformed, TooLarge };
+
+// Strict incremental chunked-body decoder: `raw` is everything received after the header section.
+// Only CRLF line endings, hex sizes (with optional `;ext`), CRLF after each chunk, trailers ignored.
+[[nodiscard]] inline auto decode_chunked_strict(std::string_view raw, std::size_t max_bytes, std::string& out) -> ChunkStatus {
+    out.clear();
+    std::size_t pos = 0;
+    for (;;) {
+        std::size_t crlf = raw.find("\r\n", pos);
+        if (crlf == std::string_view::npos) return raw.size() - pos > 64 ? ChunkStatus::Malformed : ChunkStatus::NeedMore;
+        std::string_view size_sv = raw.substr(pos, crlf - pos);
+        if (auto semi = size_sv.find(';'); semi != std::string_view::npos) size_sv = size_sv.substr(0, semi);
+        if (size_sv.empty() || size_sv.size() > 15) return ChunkStatus::Malformed;
+        std::size_t len = 0;
+        for (char c : size_sv) {
+            int d = (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+            if (d < 0) return ChunkStatus::Malformed;
+            len = (len << 4) | static_cast<std::size_t>(d);
+        }
+        pos = crlf + 2;
+        if (len == 0) {
+            // Trailer section: lines until an empty line.
+            for (;;) {
+                std::size_t t = raw.find("\r\n", pos);
+                if (t == std::string_view::npos) return ChunkStatus::NeedMore;
+                if (t == pos) return ChunkStatus::Done;
+                pos = t + 2;
+            }
+        }
+        if (out.size() + len > max_bytes) return ChunkStatus::TooLarge;
+        if (raw.size() < pos + len + 2) return ChunkStatus::NeedMore;
+        if (raw[pos + len] != '\r' || raw[pos + len + 1] != '\n') return ChunkStatus::Malformed;
+        out.append(raw.substr(pos, len));
+        pos += len + 2;
+    }
+}
+
+enum class ReadMore : std::uint8_t { Data, Eof, Deadline };
+
+// Reads more bytes into `buf` before an absolute deadline. A per-read socket timeout (recv error after
+// waiting) keeps waiting until the deadline; an immediate error (reset) or a zero-length read is EOF.
+[[nodiscard]] inline auto read_more_until(cfire::net::TcpConn& conn, std::string& buf,
+                                          std::chrono::steady_clock::time_point deadline) -> ReadMore {
+    using clock = std::chrono::steady_clock;
+    for (;;) {
+        auto now = clock::now();
+        if (now >= deadline) return ReadMore::Deadline;
+        auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+        conn.set_timeout_ms(static_cast<int>(std::clamp<long long>(left, 1, 2000)));
+        auto started = clock::now();
+        auto chunk = conn.read_text(8192);
+        if (chunk) {
+            if (chunk->empty()) return ReadMore::Eof;
+            buf.append(*chunk);
+            return ReadMore::Data;
+        }
+        if (clock::now() - started < std::chrono::milliseconds(1)) return ReadMore::Eof;
+    }
+}
+} // namespace detail
+
+inline auto read_http_request(cfire::net::TcpConn& conn, const ServerLimits& lim)
+    -> std::expected<Request, cfire::Error>
+{
+    using clock = std::chrono::steady_clock;
+    std::string raw;
+    std::size_t header_end = std::string::npos;
+    const auto header_deadline = clock::now() + std::chrono::milliseconds(lim.header_timeout_ms);
+    while (header_end == std::string::npos) {
+        auto st = detail::read_more_until(conn, raw, header_deadline);
+        if (st == detail::ReadMore::Deadline) return cfire::make_error("request header deadline exceeded", 408);
+        if (st == detail::ReadMore::Eof) {
+            if (raw.empty()) return cfire::make_error("connection closed before request");
+            return cfire::make_error("malformed HTTP request: missing header delimiter", 400);
+        }
+        header_end = raw.find("\r\n\r\n");
+        if (header_end == std::string::npos && raw.size() > 65536) {
+            return cfire::make_error("HTTP header section exceeds maximum size (64KB)", 431);
+        }
+    }
+    std::string_view head = std::string_view(raw).substr(0, header_end);
+    for (std::size_t i = 0; i < head.size(); ++i) {
+        if (head[i] == '\n' && (i == 0 || head[i - 1] != '\r')) {
+            return cfire::make_error("malformed HTTP request: bare LF line ending", 400);
+        }
+    }
+    auto req_res = parse_request(std::string_view(raw).substr(0, header_end + 4));
+    if (!req_res) {
+        int code = req_res.error().code() != 0 ? req_res.error().code() : 400;
+        return cfire::make_error(std::string(req_res.error().message()), code);
+    }
+    auto& req = *req_res;
+    std::string rest = raw.substr(header_end + 4);
+
+    auto cl_it = req.headers.find("content-length");
+    auto te_it = req.headers.find("transfer-encoding");
+    if (cl_it != req.headers.end() && te_it != req.headers.end()) {
+        return cfire::make_error("request has both Content-Length and Transfer-Encoding", 400);
+    }
+    const auto body_deadline = clock::now() + std::chrono::milliseconds(lim.body_timeout_ms);
+    if (te_it != req.headers.end()) {
+        std::string te;
+        for (char c : te_it->second) if (c != ' ' && c != '\t') te.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (te != "chunked") return cfire::make_error(std::format("unsupported Transfer-Encoding '{}'", te_it->second), 400);
+        std::string body;
+        for (;;) {
+            auto st = detail::decode_chunked_strict(rest, lim.max_body_bytes, body);
+            if (st == detail::ChunkStatus::Done) break;
+            if (st == detail::ChunkStatus::Malformed) return cfire::make_error("malformed chunked request body", 400);
+            if (st == detail::ChunkStatus::TooLarge) return cfire::make_error("payload too large", 413);
+            auto rs = detail::read_more_until(conn, rest, body_deadline);
+            if (rs == detail::ReadMore::Deadline) return cfire::make_error("request body deadline exceeded", 408);
+            if (rs == detail::ReadMore::Eof) return cfire::make_error("truncated chunked request body", 400);
+        }
+        req.body = std::move(body);
+        req.headers.erase("transfer-encoding");
+        return req;
+    }
+
+    std::size_t content_len = 0;
+    if (cl_it != req.headers.end()) {
+        std::string_view v = cl_it->second;
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.remove_suffix(1);
+        if (v.empty() || v.size() > 19 || !std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; })) {
+            return cfire::make_error(std::format("invalid Content-Length '{}'", cl_it->second), 400);
+        }
+        content_len = cfire::detail::parse_int<std::size_t>(v).value_or(0);
+    }
+    if (content_len > lim.max_body_bytes) {
+        return cfire::make_error(std::format("payload too large: Content-Length {} exceeds limit {}", content_len, lim.max_body_bytes), 413);
+    }
+    while (rest.size() < content_len) {
+        auto rs = detail::read_more_until(conn, rest, body_deadline);
+        if (rs == detail::ReadMore::Deadline) return cfire::make_error("request body deadline exceeded", 408);
+        if (rs == detail::ReadMore::Eof) {
+            return cfire::make_error(std::format("truncated request body: got {} of {} bytes", rest.size(), content_len), 400);
+        }
+    }
+    rest.resize(content_len);
+    req.body = std::move(rest);
+    return req;
+}
+
 inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_size = 10 * 1024 * 1024)
     -> std::expected<Request, cfire::Error>
 {
-    std::string raw;
-    std::size_t header_end = std::string::npos;
-
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        auto chunk = conn.read_text(4096);
-        if (chunk && !chunk->empty()) {
-            raw.append(*chunk);
-            header_end = raw.find("\r\n\r\n");
-            if (header_end != std::string::npos) {
-                break;
-            }
-            header_end = raw.find("\n\n");
-            if (header_end != std::string::npos) {
-                break;
-            }
-            if (raw.size() > 65536) {
-                return cfire::make_error("HTTP header section exceeds maximum size (64KB)");
-            }
-        } else if (!raw.empty()) {
-            break;
-        }
-    }
-
-    if (header_end == std::string::npos) {
-        if (raw.empty()) return cfire::make_error("connection closed before request");
-        return cfire::make_error("malformed HTTP request: missing header delimiter");
-    }
-
-    auto req_res = parse_request(raw);
-    if (!req_res) return req_res;
-    auto& req = *req_res;
-
-    std::size_t content_len = 0;
-    auto cl_it = req.headers.find("content-length");
-    if (cl_it != req.headers.end()) {
-        content_len = cfire::detail::parse_int<std::size_t>(cl_it->second).value_or(0);
-    }
-    if (content_len > max_body_size) {
-        return cfire::make_error(std::format("payload too large: Content-Length {} exceeds limit {}", content_len, max_body_size));
-    }
-
-    while (req.body.size() < content_len) {
-        std::size_t to_read = std::min<std::size_t>(4096, content_len - req.body.size());
-        auto chunk = conn.read_text(to_read);
-        if (!chunk || chunk->empty()) break;
-        req.body.append(*chunk);
-    }
-
-    return req;
+    ServerLimits lim;
+    lim.max_body_bytes = max_body_size;
+    return read_http_request(conn, lim);
 }
 
 #if defined(__APPLE__)
@@ -516,7 +651,7 @@ namespace detail {
         if (kStr && vStr) reinterpret_cast<FnVoid2>(msg_send)(req, selSetHdr, vStr, kStr);
     }
     for (const auto& [k, v] : extra_headers) {
-        if (k == "x-cfire-tls-verify" || k == "x-cfire-tls-ca") continue;
+        if (detail::is_reserved_cfire_header(k)) continue;
         void* kStr = fnStr(nsStrCls, selUTF8, k.c_str());
         void* vStr = fnStr(nsStrCls, selUTF8, v.c_str());
         if (kStr && vStr) reinterpret_cast<FnVoid2>(msg_send)(req, selSetHdr, vStr, kStr);
@@ -564,17 +699,19 @@ namespace detail {
     std::string_view body = "",
     std::string_view content_type = "",
     const std::unordered_map<std::string, std::string>& extra_headers = {},
-    bool verify_peer = true
+    bool verify_peer = true,
+    std::string_view ca_file = ""
 ) -> std::expected<Response, cfire::Error> {
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
     (void)verify_peer;
+    (void)ca_file;
     std::string m_str(method);
     std::string u_str(url_str);
     std::string b_str(body);
     std::string ct_str(content_type);
     std::string hdrs_packed;
     for (const auto& [k, v] : extra_headers) {
-        if (k == "x-cfire-tls-verify" || k == "x-cfire-tls-ca") continue;
+        if (detail::is_reserved_cfire_header(k)) continue;
         hdrs_packed += detail::strip_crlf(k) + ": " + detail::strip_crlf(v) + "\n";
     }
     char* raw_ptr = reinterpret_cast<char*>(EM_ASM_PTR({
@@ -645,20 +782,8 @@ namespace detail {
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
 
-    bool effective_verify = verify_peer;
-    std::string ca_file;
-    for (const auto& [k, v] : extra_headers) {
-        std::string lk;
-        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        if (lk == "x-cfire-tls-verify" && (v == "false" || v == "0")) {
-            effective_verify = false;
-        } else if (lk == "x-cfire-tls-ca") {
-            ca_file = v;
-        }
-    }
-
     if (u->scheme == "https") {
-        auto tls_res = cfire::tls::wrap_client(conn, u->host, effective_verify, ca_file);
+        auto tls_res = cfire::tls::wrap_client(conn, u->host, verify_peer, std::string(ca_file));
         if (!tls_res) {
 #if defined(__APPLE__)
             return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers);
@@ -685,7 +810,7 @@ namespace detail {
     for (const auto& [k, v] : extra_headers) {
         std::string lk;
         for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        if (lk == "x-cfire-tls-verify" || lk == "x-cfire-tls-ca") continue;
+        if (detail::is_reserved_cfire_header(lk)) continue;
         req += std::format("{}: {}\r\n", detail::strip_crlf(k), detail::strip_crlf(v));
     }
     req += "\r\n";
@@ -747,7 +872,8 @@ template <typename Callback>
     std::string_view body,
     const std::unordered_map<std::string, std::string>& extra_headers,
     Callback&& on_event,
-    bool verify_peer = true
+    bool verify_peer = true,
+    std::string_view ca_file = ""
 ) -> std::expected<Response, cfire::Error> {
     auto dispatch_sse_text = [&](std::string_view text, SseEvent& cur_ev, Response& res_acc, bool& stop_flag) {
         std::size_t pos = 0;
@@ -825,17 +951,8 @@ template <typename Callback>
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
 
-    bool effective_verify = verify_peer;
-    std::string ca_file;
-    for (const auto& [k, v] : extra_headers) {
-        std::string lk;
-        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        if (lk == "x-cfire-tls-verify" && (v == "false" || v == "0")) effective_verify = false;
-        else if (lk == "x-cfire-tls-ca") ca_file = v;
-    }
-
     if (u->scheme == "https") {
-        auto tls_res = cfire::tls::wrap_client(conn, u->host, effective_verify, ca_file);
+        auto tls_res = cfire::tls::wrap_client(conn, u->host, verify_peer, std::string(ca_file));
         if (!tls_res) {
 #if defined(__APPLE__)
             auto hdrs = extra_headers;
@@ -868,7 +985,7 @@ template <typename Callback>
     for (const auto& [k, v] : extra_headers) {
         std::string lk;
         for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        if (lk == "x-cfire-tls-verify" || lk == "x-cfire-tls-ca" || lk == "accept" || lk == "content-type") continue;
+        if (detail::is_reserved_cfire_header(lk) || lk == "accept" || lk == "content-type") continue;
         req += std::format("{}: {}\r\n", detail::strip_crlf(k), detail::strip_crlf(v));
     }
     req += "\r\n";
@@ -1345,18 +1462,64 @@ public:
         handle_conn(*conn_res, handler);
     }
 
+    // Q22 (CF-150): connections are served by a bounded worker pool, so one slow or idle client cannot
+    // stall the server; when every worker is busy and the queue is full, new clients get 503.
     template <typename Handler>
     void listen_and_serve(Handler&& handler) {
         running_ = true;
+        std::mutex mu;
+        std::condition_variable cv;
+        std::deque<cfire::net::TcpConn> queue;
+        bool closing = false;
+        std::vector<std::thread> pool;
+        const std::size_t n_workers = std::max<std::size_t>(1, limits_.workers);
+        pool.reserve(n_workers);
+        for (std::size_t i = 0; i < n_workers; ++i) {
+            pool.emplace_back([&] {
+                for (;;) {
+                    std::optional<cfire::net::TcpConn> conn;
+                    {
+                        std::unique_lock<std::mutex> lk(mu);
+                        cv.wait(lk, [&] { return closing || !queue.empty(); });
+                        if (queue.empty()) return;
+                        conn.emplace(std::move(queue.front()));
+                        queue.pop_front();
+                    }
+                    handle_conn(*conn, handler);
+                }
+            });
+        }
         while (running_) {
             auto conn_res = listener_.accept();
             if (!conn_res) {
                 if (!running_) break;
                 continue;
             }
-            handle_conn(*conn_res, handler);
+            std::unique_lock<std::mutex> lk(mu);
+            if (queue.size() >= limits_.max_pending) {
+                lk.unlock();
+                Response busy = Response::text(503, "503 Service Unavailable");
+                (void)conn_res->write_text(busy.to_http_wire());
+                continue;
+            }
+            queue.push_back(std::move(*conn_res));
+            lk.unlock();
+            cv.notify_one();
         }
+        {
+            std::lock_guard<std::mutex> lk(mu);
+            closing = true;
+        }
+        cv.notify_all();
+        for (auto& t : pool) t.join();
     }
+
+    void set_limits(const ServerLimits& lim) noexcept {
+        limits_ = lim;
+        // From `.cf` code `workers = 0` means "keep the default pool size".
+        if (limits_.workers == 0) limits_.workers = ServerLimits{}.workers;
+    }
+    [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
 
     template <typename Handler>
     void serve_in_background(Handler handler) {
@@ -1374,12 +1537,17 @@ private:
             auto wr = tls_ctx_->wrap_server(conn);
             if (!wr) return;
         }
-        auto req_res = read_http_request(conn);
+        auto req_res = read_http_request(conn, limits_);
         if (!req_res) {
-            Response err_resp = Response::bad_request("400 Bad Request");
+            int status = req_res.error().code();
+            if (status != 400 && status != 408 && status != 413 && status != 431) status = 400;
+            std::string_view reason = status == 408 ? "Request Timeout" : status == 413 ? "Payload Too Large"
+                                    : status == 431 ? "Request Header Fields Too Large" : "Bad Request";
+            Response err_resp = Response::text(status, std::format("{} {}", status, reason));
             (void)conn.write_text(err_resp.to_http_wire());
             return;
         }
+        req_res->remote_addr = conn.endpoint();
         if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
             if (handler.try_dispatch_ws(*req_res, conn)) {
                 return;
@@ -1393,6 +1561,7 @@ private:
     std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
     std::atomic<bool> running_{false};
     std::thread worker_{};
+    ServerLimits limits_{};
 };
 
 [[nodiscard]] inline auto make_server(std::uint16_t port = 0)
@@ -1425,6 +1594,13 @@ private:
     auto l = cfire::net::listen_tcp(port);
     if (!l) return std::unexpected(l.error());
     return HttpServer(std::move(*l), std::move(*ctx_res));
+}
+
+// Q31: `make(http.Server, port, tls: cfg)`. An empty config builds a plain HTTP server.
+[[nodiscard]] inline auto make_server(std::uint16_t port, const TlsConfig& tls) -> std::expected<HttpServer, cfire::Error> {
+    if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file);
+    if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem);
+    return make_server(port);
 }
 
 } // namespace cfire::http

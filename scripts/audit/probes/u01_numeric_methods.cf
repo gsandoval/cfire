@@ -1,0 +1,11 @@
+// probe: Q7/Q10 numeric methods and associated limits/constants (target API)
+// kind: hole
+// mode: run
+// ideal: stdout 5 2 2147483647 3.14
+package main
+import "core:math"
+fn main() {
+    x: i32 = -5
+    f: f64 = 2.5
+    println("{} {} {} {}", x.abs(), f.floor(), i32.MAX, math.PI)
+}

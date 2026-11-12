@@ -1,0 +1,12 @@
+// expect: stdout
+// | 3
+package main
+type Box struct {
+    v: i32
+}
+fn main() {
+    b := make(own[Box], Box{v: 3})
+    p := b.release()
+    b2 := own[Box].from_raw(p)
+    println("{}", b2.v)
+}

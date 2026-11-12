@@ -126,17 +126,17 @@ fn main() {
         .assert_contains("undef_err.cf:4:", "text check error points to .cf file and line 4");
 
     // CF-102: Terminal Warning Visibility in human check mode
+    // (Uses PREFER-ENUM: the injection lints became errors in CF-167.)
     auto warn_cf = tmp_ws.file("warn_test.cf", R"(package main
-import "core:os"
+MODE_A := 0
+MODE_B := 1
+MODE_C := 2
 
-fn main() {
-    target := "foo"
-    _ = os.exec("{target}")
-}
+fn main() {}
 )");
     auto warn_check = run_cfire(std::format("check \"{}\"", warn_cf.string()));
     warn_check.assert_ok("human cfire check exits 0 on warning (CF-102)")
-        .assert_contains("warning: dynamic string interpolation/concatenation in 'os.exec'", "warning output rendered to stderr (CF-102)")
+        .assert_contains("warning: cluster of 3 related integer constants with prefix 'MODE'", "warning output rendered to stderr (CF-102)")
         .assert_contains("checked (0 errors, 1 warning)", "summary line reports warning count (CF-102)");
 
     // 6. Test doc --llm & doc --check (AGENT-P0-04)
@@ -236,7 +236,7 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
 
     // 4. Verify new MCP server tools (cfire_outline, cfire_inspect, cfire_doc_llm)
     {
-        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir);
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{tmp_ide_ws.path, false});  // CF-160 root
         auto resp_inspect = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cfire_inspect","arguments":{"target":"cfire/USE-AFTER-FREE"}}})");
         require(resp_inspect.contains("Use of Dangling Pointer"), "MCP cfire_inspect returns diagnostic rule (IDE-MCP-01)");
 
@@ -260,8 +260,13 @@ fn main() {
             cfire::lsp::Server hier_srv(10);
             std::stringstream h_in;
             std::stringstream h_out;
-            auto rpc_f = [](std::string_view p) {
-                return std::format("Content-Length: {}\r\n\r\n{}", p.size(), p);
+            // CF-178: hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
+            // rebased into a private dir with a workspace-root marker, so unrelated .cf files under /tmp can't leak in.
+            ScopedTempDir rpc_f_ws("cfire_lsp_ws");
+            std::filesystem::create_directory(rpc_f_ws.path / ".git");  // workspace-root marker (Q21)
+            auto rpc_f = [ws_uri = "file://" + rpc_f_ws.path.string() + "/"](std::string_view p) {
+                std::string rebased(cfire::str::replace_all(p, "file:///tmp/", ws_uri));
+                return std::format("Content-Length: {}\r\n\r\n{}", rebased.size(), rebased);
             };
             std::string_view hier_src = R"(package main
 
@@ -327,9 +332,8 @@ fn caller_entry() -> bool {
         std::filesystem::create_directories(user_proj);
 
         (void)cfire::fs::write_text(user_proj / "app.cf", R"(package main
-import "core:str"
 fn main() {
-    println("relocatable={}", str.to_upper("ok"))
+    println("relocatable={}", "ok".to_upper())
 }
 )");
 
@@ -393,8 +397,8 @@ void test_cfire_eval([[maybe_unused]] const std::filesystem::path& rt_dir) {
         .assert_ok("eval expression exit 0")
         .assert_contains("184", "eval expression stdout 184 match");
 
-    // 3. Pre-imported stdlib (str + unicode)
-    run_cfire("eval 'name := \"cfire🚀\"; println(\"upper={}, runes={}\", str.to_upper(\"cfire\"), unicode.rune_count(name))'")
+    // 3. Builtin str methods + pre-imported stdlib (unicode)
+    run_cfire("eval 'name := \"cfire🚀\"; println(\"upper={}, runes={}\", \"cfire\".to_upper(), unicode.rune_count(name))'")
         .assert_ok("eval pre-imported stdlib exit 0")
         .assert_contains("upper=CFIRE, runes=6", "eval pre-imported stdlib rune count match");
 
@@ -1033,7 +1037,6 @@ void test_performance_benchmarks([[maybe_unused]] const std::filesystem::path& r
     {
         std::string_view cf_prog = R"(package main
 import "core:fs"
-import "core:str"
 
 type Record struct {
     id: i64

@@ -187,7 +187,8 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
         },
     };
 
-    auto tmp_dir = std::filesystem::temp_directory_path() / "cfire_conformance_bins";
+    ScopedTempDir tmp_dir_scope("cfire_tmp_dir");  // hermetic, mkdtemp-backed (CF-153)
+    auto tmp_dir = tmp_dir_scope.path / "cfire_conformance_bins";
     std::filesystem::create_directories(tmp_dir);
 
     for (const auto& tc : cases) {
@@ -292,7 +293,6 @@ void test_raylib_vendor_codegen_and_eject(const std::filesystem::path& rt_dir) {
         std::string_view rl_src = R"(package main
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
-import "core:str"
 
 type Entity struct {
     pos: rl.Vector2
@@ -362,9 +362,9 @@ fn main() {
     assert(ptr_name != none)
     ptr_off := player_name.byte_ptr_at(2)
     assert(ptr_off != none)
-    ptr_mod := str.byte_ptr(player_name)
+    ptr_mod := player_name.byte_ptr()
     assert(ptr_mod != none)
-    ptr_mod_off := str.byte_ptr_at(player_name, 1)
+    ptr_mod_off := player_name.byte_ptr_at(1)
     assert(ptr_mod_off != none)
 
     // Test rebindable pointer aliases and dereference assignment (LANG-P2-05)
@@ -402,7 +402,8 @@ fn main() {
     codepoints[0] = 32
 }
 )";
-        auto rl_dir = std::filesystem::temp_directory_path() / "cfire_raylib_full_test_dir";
+        ScopedTempDir rl_dir_scope("cfire_rl_dir");  // hermetic, mkdtemp-backed (CF-153)
+        auto rl_dir = rl_dir_scope.path / "cfire_raylib_full_test_dir";
         std::filesystem::remove_all(rl_dir);
         std::filesystem::create_directories(rl_dir);
         auto rl_tmp = rl_dir / "main.cf";
@@ -435,7 +436,8 @@ fn main() {
         std::filesystem::remove_all(rl_dir);
     }
 
-    auto eject_dir = std::filesystem::temp_directory_path() / "cfire_eject_test";
+    ScopedTempDir eject_dir_scope("cfire_eject_dir");  // hermetic, mkdtemp-backed (CF-153)
+    auto eject_dir = eject_dir_scope.path / "cfire_eject_test";
     std::filesystem::remove_all(eject_dir);
     auto ej = cfire::build::eject_cmake("examples/02-log-compressor/main.cf", rt_dir, eject_dir);
     require(ej.has_value(), "eject_cmake(02-log-compressor)");
@@ -446,7 +448,8 @@ fn main() {
         "ejected CMakeLists.txt content check");
     std::filesystem::remove_all(eject_dir);
 
-    auto eject_cc_dir = std::filesystem::temp_directory_path() / "cfire_eject_cc_test";
+    ScopedTempDir eject_cc_dir_scope("cfire_eject_cc_dir");  // hermetic, mkdtemp-backed (CF-153)
+    auto eject_cc_dir = eject_cc_dir_scope.path / "cfire_eject_cc_test";
     std::filesystem::remove_all(eject_cc_dir);
     auto ej_cc = cfire::build::eject_cmake("examples/08-multi-pkg-cc-build/main.cf", rt_dir, eject_cc_dir);
     require(ej_cc.has_value(), "eject_cmake(08-multi-pkg-cc-build)");
@@ -505,7 +508,7 @@ fn main() {
     pid := os.getpid()
     cwd := os.cwd()
     key := aes.generate_key()
-    app := webui.new_app("Win32 Cross", 800, 600)
+    app := make(webui.App, "Win32 Cross", 800, 600)
     app.set_hide_on_close(true)
     app.set_dark_mode(false)
     app.center()

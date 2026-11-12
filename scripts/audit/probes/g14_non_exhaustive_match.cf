@@ -1,0 +1,19 @@
+// probe: guard non-exhaustive match is rejected
+// kind: guard
+// mode: check
+// ideal: reject cfire/NON-EXHAUSTIVE-MATCH
+package main
+type E enum {
+    A,
+    B(i32),
+    C,
+}
+fn f(e: E) -> i32 {
+    return match e {
+        A => 1,
+        B(x) => x,
+    }
+}
+fn main() {
+    println("{}", f(E::C))
+}

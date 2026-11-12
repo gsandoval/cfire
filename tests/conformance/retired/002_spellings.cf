@@ -1,0 +1,12 @@
+package main
+import "core:net/http"
+type Box struct {
+    v: i32
+}
+fn main() {
+    xs: []i32 = [1]
+    n := xs.len //~ error cfire/RETIRED-API
+    e := xs.empty() //~ error cfire/RETIRED-API
+    b := make[own[Box]](Box{v: 1}) //~ error cfire/RETIRED-API
+    r := http.make_router() //~ error cfire/RETIRED-API
+}

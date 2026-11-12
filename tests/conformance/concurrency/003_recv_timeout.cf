@@ -1,0 +1,10 @@
+// expect: stdout
+// | timed_out=true queued=0
+package main
+import "core:sync"
+fn main() {
+    ch := make(sync.Channel[i32], capacity: 1)
+    v := ch.recv_timeout(20)
+    timed_out := v == none
+    println("timed_out={} queued={}", timed_out, ch.len())
+}

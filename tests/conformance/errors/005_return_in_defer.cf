@@ -1,0 +1,10 @@
+package main
+fn f() -> i32 {
+    defer {
+        return 2 //~ error cfire/RETURN-IN-DEFER
+    }
+    return 1
+}
+fn main() {
+    println("{}", f())
+}

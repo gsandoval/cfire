@@ -1,0 +1,9 @@
+// probe: Q9 out-of-range float to int conversion is undefined behavior
+// kind: guard
+// mode: run
+// ideal: panic
+package main
+fn main() {
+    big: f64 = 1e20
+    println("{}", i32(big))
+}

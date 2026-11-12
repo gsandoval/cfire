@@ -11,6 +11,7 @@ auto main(int argc, char** argv) -> int {
 
     if (should_run("unit")) {
         test_sema_intent_and_move_diagnostics();
+        test_diagnostic_golden_ranges();
         test_golden_codegen_snapshots(std::filesystem::current_path());
         test_formatter_lsp_and_docgen(rt_dir);
         test_cfire_refactor_rename(rt_dir);
@@ -34,6 +35,17 @@ auto main(int argc, char** argv) -> int {
         test_phase3_advanced_language_and_safety(rt_dir);
         test_phase4_tooling_depth(rt_dir);
         test_negative_parser_corpus_and_fuzz_runtime(rt_dir);
+        test_cf140_crash_proof_tools(rt_dir);
+        test_cf177_context_lifetime(rt_dir);
+        test_cf153_secure_temp_storage(rt_dir);
+        test_cf151_no_inband_tls_controls(rt_dir);
+        test_cf150_http_server_hardening(rt_dir);
+        test_cf152_verified_dependency_cache(rt_dir);
+        test_cf160_mcp_workspace_confinement(rt_dir);
+        test_cf168_secure_runtime_defaults(rt_dir);
+        test_w4_migration_rewrites(rt_dir);
+        test_w4_builtin_runtime_semantics(rt_dir);
+        test_cf180_dual_stack_listener(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
         test_section2_language_ergonomics(rt_dir);
         test_section3_agent_tooling(rt_dir);

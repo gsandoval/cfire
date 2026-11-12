@@ -1,0 +1,11 @@
+// expect: stdout
+// | 2
+package main
+fn bump(mut x: i32) {
+    x += 1
+}
+fn main() {
+    mut a: i32 = 1
+    bump(mut a)
+    println("{}", a)
+}

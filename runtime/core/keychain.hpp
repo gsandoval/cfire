@@ -105,7 +105,18 @@ inline auto utf8_to_wide(std::string_view s) -> std::wstring {
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     auto q_guard = cfire::scope_exit([&] { if (query) CFRelease(query); });
 
-    SecItemDelete(query);
+    // CF-168: update in place, and only add when the item does not exist yet. The previous
+    // delete-then-add lost the stored secret whenever SecItemAdd failed (e.g. a locked keychain).
+    const void* upd_keys[] = { kSecValueData };
+    const void* upd_vals[] = { cf_secret };
+    CFDictionaryRef upd_dict = CFDictionaryCreate(kCFAllocatorDefault, upd_keys, upd_vals, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    auto u_guard = cfire::scope_exit([&] { if (upd_dict) CFRelease(upd_dict); });
+    OSStatus upd_status = SecItemUpdate(query, upd_dict);
+    if (upd_status == errSecSuccess) return {};
+    if (upd_status != errSecItemNotFound) {
+        return cfire::make_error(std::format("macOS Keychain SecItemUpdate failed (OSStatus {})", static_cast<int>(upd_status)));
+    }
 
     const void* add_keys[] = { kSecClass, kSecAttrService, kSecAttrAccount, kSecValueData };
     const void* add_vals[] = { kSecClassGenericPassword, cf_service, cf_account, cf_secret };

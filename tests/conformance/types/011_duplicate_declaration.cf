@@ -1,0 +1,10 @@
+package main
+fn f() -> i32 {
+    return 1
+}
+fn f() -> i32 { //~ error cfire/DUPLICATE-DECLARATION
+    return 2
+}
+fn main() {
+    println("{}", f())
+}

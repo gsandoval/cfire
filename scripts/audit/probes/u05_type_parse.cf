@@ -1,0 +1,9 @@
+// probe: Q10 type-associated parsing (target API)
+// kind: hole
+// mode: run
+// ideal: stdout 42
+package main
+fn main() {
+    v := i32.parse("42") or 0
+    println("{}", v)
+}

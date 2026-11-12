@@ -1,0 +1,7 @@
+package main
+fn main() {
+    a: i32 = 1
+    b := a << 32 //~ error cfire/SHIFT-OUT-OF-RANGE
+    c := a >> -1 //~ error cfire/SHIFT-OUT-OF-RANGE
+    println("{} {}", b, c)
+}

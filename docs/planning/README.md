@@ -7,6 +7,7 @@ This directory maintains the active planning state and project backlog for the `
 1. [`backlog.md`](./backlog.md): Selected and prioritized engineering backlog items.
 2. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
 3. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
+4. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
 
 ---
 
@@ -19,7 +20,8 @@ Whenever work is performed on this repository, the following protocol **must** b
 ```
 
 ### Quality Gates (Mandatory)
-- **Gate 1 — Zero Compiler Warnings (Strict Mode)**: Code must compile cleanly with `clang++ -std=c++2b -O2 -Wall -Wextra` (zero warnings).
+- **Gate 1 — Zero Compiler Warnings (Strict Mode)**: Code must compile cleanly with the Makefile `CXXFLAGS` (`clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality`), producing zero warnings.
 - **Gate 2 — Formatting Invariance**: `./cfire fmt --check examples/` must pass cleanly.
 - **Gate 3 — Public Documentation Invariance**: `./cfire doc --check` must pass 100%.
-- **Gate 4 — Full Conformance Suite**: `make review-check` (all unit, stdlib, LSP, and E2E test suites) must pass 100%.
+- **Gate 4 — Full Conformance Suite**: `make review-check` (all unit, stdlib, LSP, and E2E test suites, plus the `tests/conformance/` corpus) must pass 100%.
+- **Gate 5 — Language Conformance Corpus**: every change to language semantics, diagnostics, or stdlib behavior adds or updates a file in [`tests/conformance/`](../../tests/conformance/README.md). A fix for a tracked hole removes its `xfail` line in the same change.

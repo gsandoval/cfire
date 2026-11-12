@@ -1,0 +1,12 @@
+package main
+type Holder struct {
+    p: *i32
+}
+fn main() {
+    mut nums: []i32 = [1, 2, 3]
+    h := Holder{p: &nums[0]}
+    for i in 0..1000 {
+        nums.push(i32(i))
+    }
+    println("{}", *h.p) //~ error cfire/USE-AFTER-FREE
+}

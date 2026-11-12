@@ -1,0 +1,13 @@
+// expect: stdout
+// | str
+// | 6
+package main
+fn main() {
+    x := 5
+    if true {
+        x := "str"
+        println("{}", x)
+    }
+    y := x + 1
+    println("{}", y)
+}

@@ -1,0 +1,9 @@
+package main
+fn take(move xs: []i64) -> i64 {
+    return i64(xs.len())
+}
+fn main() {
+    xs: []i64 = [1, 2, 3]
+    n := take(move xs)
+    println("{} {}", n, xs.len()) //~ error cfire/USE-AFTER-MOVE
+}

@@ -30,10 +30,11 @@ inline auto get_package_cache_root() -> std::filesystem::path {
             }
         }
     }
-    auto tmp_pkg = std::filesystem::temp_directory_path() / "cfire_cache" / "pkg";
-    std::error_code ec;
-    std::filesystem::create_directories(tmp_pkg, ec);
-    return tmp_pkg;
+    // No writable per-user location: use a private per-process cache, never a shared temp-dir name that
+    // another account could pre-populate with poisoned packages (CF-153).
+    if (auto user = cfire::detail::user_cache_dir("pkg"); !user.empty()) return user;
+    static cfire::detail::SecureTempDir fallback("cfire_pkg_cache");
+    return fallback.path();
 }
 
 inline auto read_build_lock(const std::filesystem::path& lock_file) -> std::unordered_map<std::string, LockedPackage> {
@@ -109,21 +110,44 @@ inline auto write_build_lock(
     return true;
 }
 
+// CF-152: arguments that reach `git` / `curl` as positional values must not be parseable as options
+// (`--upload-pack=...`), and git's command-running transports (`ext::`, `fd::`) are never allowed.
+[[nodiscard]] inline auto validate_fetch_arg(std::string_view what, std::string_view v) -> std::expected<void, std::string> {
+    if (v.starts_with("-")) {
+        return std::unexpected(std::format("cfire/INVALID-DEPENDENCY: {} '{}' must not start with '-'", what, v));
+    }
+    if (v.starts_with("ext::") || v.starts_with("fd::") || v.find("\n") != std::string_view::npos) {
+        return std::unexpected(std::format("cfire/INVALID-DEPENDENCY: {} '{}' uses a forbidden transport", what, v));
+    }
+    return {};
+}
+
+inline constexpr std::string_view kGitSafe = "git -c protocol.ext.allow=never -c protocol.fd.allow=never";
+
 inline auto fetch_git_repository(
     const std::string& url,
     const std::string& ref,
     const std::filesystem::path& dest_dir,
-    std::string& resolved_commit
+    std::string& resolved_commit,
+    const std::string& expected_commit = ""
 ) -> std::expected<void, std::string> {
+    if (auto v = validate_fetch_arg("git url", url); !v) return v;
+    if (!ref.empty()) {
+        if (auto v = validate_fetch_arg("git ref", ref); !v) return v;
+    }
     std::error_code ec;
     std::filesystem::create_directories(dest_dir.parent_path(), ec);
+    const std::string q_dest = bridge::shell_quote(dest_dir.string());
 
     if (std::filesystem::exists(dest_dir / ".git", ec)) {
+        // CF-152: a cache hit is trusted only if it is exactly the locked commit with no modified tracked
+        // files; otherwise it is discarded and refetched.
         int rc = 0;
-        std::string rev = bridge::run_command_capture(
-            std::format("git -C {} rev-parse HEAD", bridge::shell_quote(dest_dir.string())), rc);
-        if (rc == 0) {
-            resolved_commit = trim_whitespace(rev);
+        std::string rev = trim_whitespace(bridge::run_command_capture(std::format("git -C {} rev-parse HEAD", q_dest), rc));
+        int dirty_rc = 0;
+        (void)bridge::run_command_capture(std::format("git -C {} diff --quiet HEAD --", q_dest), dirty_rc);
+        if (rc == 0 && dirty_rc == 0 && (expected_commit.empty() || rev == expected_commit)) {
+            resolved_commit = rev;
             return {};
         }
     }
@@ -132,25 +156,22 @@ inline auto fetch_git_repository(
 
     std::string clone_cmd;
     if (!ref.empty()) {
-        clone_cmd = std::format("git clone --depth 1 --branch {} {} {}",
-            bridge::shell_quote(ref), bridge::shell_quote(url), bridge::shell_quote(dest_dir.string()));
+        clone_cmd = std::format("{} clone --depth 1 --branch {} -- {} {}",
+            kGitSafe, bridge::shell_quote(ref), bridge::shell_quote(url), q_dest);
     } else {
-        clone_cmd = std::format("git clone --depth 1 {} {}",
-            bridge::shell_quote(url), bridge::shell_quote(dest_dir.string()));
+        clone_cmd = std::format("{} clone --depth 1 -- {} {}", kGitSafe, bridge::shell_quote(url), q_dest);
     }
 
     int rc = 0;
     std::string out = bridge::run_command_capture(clone_cmd, rc);
     if (rc != 0) {
-        std::string fallback_cmd = std::format("git clone {} {}",
-            bridge::shell_quote(url), bridge::shell_quote(dest_dir.string()));
+        std::string fallback_cmd = std::format("{} clone -- {} {}", kGitSafe, bridge::shell_quote(url), q_dest);
         out = bridge::run_command_capture(fallback_cmd, rc);
         if (rc != 0) {
             return std::unexpected(std::format("failed to clone git repository '{}':\n{}", url, out));
         }
         if (!ref.empty()) {
-            std::string co_cmd = std::format("git -C {} checkout {}",
-                bridge::shell_quote(dest_dir.string()), bridge::shell_quote(ref));
+            std::string co_cmd = std::format("git -C {} checkout --detach {} --", q_dest, bridge::shell_quote(ref));
             out = bridge::run_command_capture(co_cmd, rc);
             if (rc != 0) {
                 return std::unexpected(std::format("failed to checkout ref '{}' in '{}':\n{}", ref, url, out));
@@ -159,10 +180,15 @@ inline auto fetch_git_repository(
     }
 
     int rev_rc = 0;
-    std::string rev_out = bridge::run_command_capture(
-        std::format("git -C {} rev-parse HEAD", bridge::shell_quote(dest_dir.string())), rev_rc);
+    std::string rev_out = bridge::run_command_capture(std::format("git -C {} rev-parse HEAD", q_dest), rev_rc);
     if (rev_rc == 0) {
         resolved_commit = trim_whitespace(rev_out);
+    }
+    if (!expected_commit.empty() && resolved_commit != expected_commit) {
+        std::filesystem::remove_all(dest_dir, ec);
+        return std::unexpected(std::format(
+            "cfire/INTEGRITY-MISMATCH: '{}' resolved to commit {} but build.lock pins {}; update the lock deliberately with 'cfire vendor' if this is intended",
+            url, resolved_commit, expected_commit));
     }
     return {};
 }
@@ -176,21 +202,33 @@ inline auto fetch_archive(
     std::error_code ec;
     std::filesystem::create_directories(dest_dir.parent_path(), ec);
 
+    if (auto v = validate_fetch_arg("archive url", url); !v) return v;
+    auto to_lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    // CF-152: a cache hit is trusted only if its recorded archive hash matches the pin (`.cfire_sha256`
+    // is written after a verified download); a missing or different record forces a refetch.
+    const auto sidecar = dest_dir / ".cfire_sha256";
     if (std::filesystem::exists(dest_dir, ec) && !std::filesystem::is_empty(dest_dir, ec)) {
-        return {};
+        std::string recorded;
+        if (std::ifstream in(sidecar); in) std::getline(in, recorded);
+        recorded = trim_whitespace(recorded);
+        if (!recorded.empty() && (expected_sha256.empty() || to_lower(recorded) == to_lower(expected_sha256))) {
+            actual_sha256 = recorded;
+            return {};
+        }
+        std::filesystem::remove_all(dest_dir, ec);
     }
 
-    auto now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
-    auto tmp_archive = std::filesystem::temp_directory_path() / std::format("cfire_pkg_dl_{}_{}.archive", ::getpid(), now_ns);
-    struct ArchiveCleanup {
-        std::filesystem::path p;
-        ~ArchiveCleanup() { std::error_code ec; std::filesystem::remove(p, ec); }
-    } cleanup{tmp_archive};
+    cfire::detail::SecureTempDir dl_dir("cfire_pkg_dl");  // private 0700 dir, removed on return (CF-153)
+    if (!dl_dir.ok()) return std::unexpected("failed to create a private temporary directory for the download");
+    auto tmp_archive = dl_dir.file("download.archive");
 
     int rc = 0;
     std::string q_archive = bridge::shell_quote(tmp_archive.string());
     std::string q_dest = bridge::shell_quote(dest_dir.string());
-    std::string dl_cmd = std::format("curl -fsSL {} -o {}", bridge::shell_quote(url), q_archive);
+    std::string dl_cmd = std::format("curl -fsSL --proto =https --proto-redir =https --tlsv1.2 -o {} -- {}", q_archive, bridge::shell_quote(url));
     std::string out = bridge::run_command_capture(dl_cmd, rc);
     if (rc != 0) {
         return std::unexpected(std::format("failed to download archive from '{}':\n{}", url, out));
@@ -201,11 +239,6 @@ inline auto fetch_archive(
         return std::unexpected(hash_res.error());
     }
     actual_sha256 = *hash_res;
-
-    auto to_lower = [](std::string s) {
-        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return s;
-    };
 
     if (!expected_sha256.empty() && !actual_sha256.empty() && to_lower(actual_sha256) != to_lower(expected_sha256)) {
         return std::unexpected(std::format("cfire/INTEGRITY-MISMATCH: checksum mismatch for '{}': expected {}, got {}",
@@ -239,7 +272,8 @@ inline auto fetch_archive(
     if (ext_rc != 0) {
         return std::unexpected(std::format("failed to extract archive from '{}':\n{}", url, out));
     }
-
+    // Record the verified archive hash so later cache hits can be checked against the pin (CF-152).
+    if (std::ofstream rec(sidecar, std::ios::trunc); rec) rec << actual_sha256 << "\n";
     return {};
 }
 
@@ -281,7 +315,13 @@ inline auto resolve_external_dep_source(
         std::string actual_sha256;
 
         if (dep.fetch_kind == "git" || dep.driver == "Git" || target_url.ends_with(".git") || !dep.ref.empty() || target_url.starts_with("git@")) {
-            auto fetch_res = fetch_git_repository(target_url, dep.ref, cache_dest, resolved_commit);
+            std::string locked_commit;
+            // The pin applies while build.cf still asks for the locked ref; an intentional ref change re-pins.
+            if (auto it = lock_entries.find(dep.name);
+                it != lock_entries.end() && (it->second.ref == dep.ref || it->second.commit == dep.ref)) {
+                locked_commit = it->second.commit;
+            }
+            auto fetch_res = fetch_git_repository(target_url, dep.ref, cache_dest, resolved_commit, locked_commit);
             if (!fetch_res) return std::unexpected(fetch_res.error());
         } else {
             auto fetch_res = fetch_archive(target_url, dep.sha256, cache_dest, actual_sha256);

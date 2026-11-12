@@ -1,0 +1,8 @@
+package main
+fn f() -> i32 {
+    x := "text"
+    return x //~ error cfire/TYPE-MISMATCH
+}
+fn main() {
+    println("{}", f())
+}

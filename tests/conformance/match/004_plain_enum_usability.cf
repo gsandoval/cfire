@@ -1,0 +1,12 @@
+// expect: stdout
+// | true Green 1
+package main
+type Color enum {
+    Red,
+    Green,
+    Blue,
+}
+fn main() {
+    c := Color::Green
+    println("{} {} {}", c == Color::Green, c, i32(c))
+}

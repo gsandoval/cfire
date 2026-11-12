@@ -180,6 +180,17 @@ namespace cfire::frontend {
             if (ex.op == "%") {
                 return std::format("cfire::mod({}, {})", emit_expr(ex.left), emit_expr(ex.right));
             }
+            if (ex.op == "+") {
+                // CF-148: `"a" + "b"` must concatenate strings, not add two `const char[]` (which clang rejects).
+                const auto* llit = ex.left ? std::get_if<LiteralExpr>(&ex.left->node) : nullptr;
+                const auto* rlit = ex.right ? std::get_if<LiteralExpr>(&ex.right->node) : nullptr;
+                if (llit && rlit && llit->kind == TokenKind::String && rlit->kind == TokenKind::String) {
+                    return std::format("(std::string({}) + {})", emit_expr(ex.left), emit_expr(ex.right));
+                }
+            }
+            if (ex.op == "<<" || ex.op == ">>") {  // Q11 (CF-166): out-of-range counts panic instead of UB
+                return std::format("cfire::{}({}, {})", ex.op == "<<" ? "shl" : "shr", emit_expr(ex.left), emit_expr(ex.right));
+            }
             return std::format("({} {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
             if (ex.resolution) {
@@ -255,6 +266,12 @@ namespace cfire::frontend {
                     }
                 }
             }
+            if (std::string prim = primitive_prefix_cpp(ex.object); !prim.empty()) {
+                const bool is_float = prim == "float" || prim == "double";
+                if (const auto* c = find_builtin_assoc_const(is_float ? BmFloat : BmInt, ex.field)) {
+                    return std::vformat(c->cpp, std::make_format_args(prim));
+                }
+            }
             std::string obj = emit_expr(ex.object);
             if (obj == "cpp") {
                 return ex.field;
@@ -265,12 +282,12 @@ namespace cfire::frontend {
             if (const auto* id = std::get_if<IdentExpr>(&ex.object->node)) {
                 if ((optional_vars_.contains(id->name) || smart_ptr_vars_.contains(id->name) || ptr_vars_.contains(id->name)) &&
                     ex.field != "has_value" && ex.field != "value" && ex.field != "value_or" &&
-                    ex.field != "reset" && ex.field != "get" && ex.field != "use_count") {
+                    ex.field != "reset" && ex.field != "get" && ex.field != "use_count" && ex.field != "release") {
                     obj = std::format("(*{})", obj);
                 }
             } else if (const auto* sub_mem = std::get_if<MemberExpr>(&ex.object->node)) {
                 if ((smart_ptr_field_names_.contains(sub_mem->field) || ptr_field_names_.contains(sub_mem->field)) &&
-                    ex.field != "reset" && ex.field != "get" && ex.field != "use_count") {
+                    ex.field != "reset" && ex.field != "get" && ex.field != "use_count" && ex.field != "release") {
                     obj = std::format("(*{})", obj);
                 }
             }
@@ -381,14 +398,37 @@ namespace cfire::frontend {
                 tname = std::format("{}<{}>", tname, targs);
             }
             if (ex.fields.empty()) return tname + "{}";
+            // C++ designated initializers must follow declaration order; cfire literals may list fields in any order.
+            std::vector<std::string> decl_order;
+            if (auto sit = cf_.struct_tags.find(ex.type_name); sit != cf_.struct_tags.end()) {
+                for (const auto& t : sit->second) decl_order.push_back(t.field_name);
+            } else if (auto sep = ex.type_name.find_first_of(".:"); sep != std::string::npos) {
+                std::string mod = ex.type_name.substr(0, sep);
+                std::string rest = ex.type_name.substr(ex.type_name.find_first_not_of(".:", sep));
+                if (auto it = core_aliases_.find(mod); it != core_aliases_.end()) mod = it->second;
+                if (const auto* sst = find_stdlib_struct(mod, rest)) {
+                    tname = std::string(sst->cpp);
+                    for (const auto& f : stdlib_struct_fields(*sst)) decl_order.emplace_back(f.name);
+                }
+            }
+            std::vector<std::size_t> order(ex.fields.size());
+            for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+            if (!decl_order.empty()) {
+                auto rank = [&](std::size_t i) {
+                    auto it = std::find(decl_order.begin(), decl_order.end(), ex.fields[i].name);
+                    return static_cast<std::size_t>(it - decl_order.begin());
+                };
+                std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return rank(a) < rank(b); });
+            }
             std::string inits;
-            for (std::size_t i = 0; i < ex.fields.size(); ++i) {
-                if (i > 0) inits += ", ";
-                std::string fval = emit_expr(ex.fields[i].value);
-                if (fval == "std::nullopt" && ptr_field_names_.contains(ex.fields[i].name)) {
+            for (std::size_t k = 0; k < order.size(); ++k) {
+                const auto& fld = ex.fields[order[k]];
+                if (k > 0) inits += ", ";
+                std::string fval = emit_expr(fld.value);
+                if (fval == "std::nullopt" && ptr_field_names_.contains(fld.name)) {
                     fval = "nullptr";
                 }
-                inits += std::format(".{} = {}", sanitize_cpp_ident(ex.fields[i].name), fval);
+                inits += std::format(".{} = {}", sanitize_cpp_ident(fld.name), fval);
             }
             return std::format("{}{{{}}}", tname, inits);
         } else if constexpr (std::is_same_v<T, ArrayLitExpr>) {
@@ -605,20 +645,8 @@ namespace cfire::frontend {
             return std::format("cfire::assert_true_at({}, {}, \"{}\", {}, \"{}\")",
                 cond, msg, escaped_file, line, escaped_expr);
         }
-        if (id->name == "make" && call.type_args.size() == 1) {
-            const auto& ta = call.type_args[0];
-            std::string args;
-            for (std::size_t i = 0; i < call.args.size(); ++i) {
-                if (i > 0) args += ", ";
-                args += emit_call_arg(call.args[i]);
-            }
-            if (ta.smart_wrap == "own" && ta.elem_type) {
-                return std::format("cfire::make_own<{}>({})", lower_owning_type(*ta.elem_type), args);
-            }
-            if (ta.smart_wrap == "shared" && ta.elem_type) {
-                return std::format("cfire::make_shared_ptr<{}>({})", lower_owning_type(*ta.elem_type), args);
-            }
-            return std::format("{}{{{}}}", lower_owning_type(ta), args);
+        if (id->name == "make" && call.type_args.size() == 1 && !local_vars_.contains("make")) {
+            return emit_make(call);
         }
         if (id->name == "bool" && call.args.size() == 1) {
             return std::format("cfire::bool_({})", emit_call_arg(call.args[0]));
@@ -693,9 +721,38 @@ namespace cfire::frontend {
             }
             return std::format("{}({})", mem->resolution->canonical_name, args);
         }
+        if (mem->field == "from_raw" && call.args.size() == 1) {
+            if (const auto* ix = std::get_if<IndexExpr>(&mem->object->node)) {
+                if (const auto* base = ix->object ? std::get_if<IdentExpr>(&ix->object->node) : nullptr; base && base->name == "own" && ix->index) {
+                    if (const auto* targ = std::get_if<IdentExpr>(&ix->index->node)) {
+                        TypeRef tr;
+                        tr.name = targ->name;
+                        return std::format("std::unique_ptr<{}>({})", lower_owning_type(tr), emit_call_arg(call.args[0]));
+                    }
+                }
+            }
+        }
+        if (mem->field == "parse" && call.args.size() == 1) {
+            if (std::string prim = primitive_prefix_cpp(mem->object); !prim.empty()) {
+                return std::format("cfire::bm::parse<{}>({})", prim, emit_call_arg(call.args[0]));
+            }
+        }
+        // W4: methods on builtin types (src/sema/builtin_methods.hpp) lower to `cfire::bm::<name>(recv, args...)`.
+        if (mem->resolution && mem->resolution->kind == SymbolKind::Method && mem->resolution->owner_type == "builtin") {
+            std::string args = emit_expr(mem->object);
+            if (const auto* oid = std::get_if<IdentExpr>(&mem->object->node); oid && optional_vars_.contains(oid->name)) {
+                args = std::format("(*{})", args);
+            }
+            for (const auto& a : call.args) args += ", " + emit_call_arg(a);
+            if (call.block_arg) args += ", " + emit_closure(*call.block_arg);
+            return std::format("{}({})", mem->resolution->canonical_name, args);
+        }
         bool is_user_method = cf_.method_owners.contains(mem->field) || cf_.method_owner.contains(mem->field);
         if (!is_user_method && mem->field == "len" && call.args.empty()) {
             return std::format("{}.size()", emit_expr(mem->object));
+        }
+        if (!is_user_method && mem->field == "is_empty" && call.args.empty()) {
+            return std::format("{}.empty()", emit_expr(mem->object));
         }
         if (!is_user_method && mem->field == "byte_ptr" && call.args.empty()) {
             used_core_.insert("str");
@@ -799,6 +856,25 @@ namespace cfire::frontend {
             }
         }
 
+        // W4: a `str` or numeric method on a receiver Sema could not type (a field of a stdlib struct such as
+        // `res.stdout.trim()`) still lowers to `cfire::bm`. Names that containers also use (`insert`, `contains`,
+        // `len`, ...) keep the member call, since the receiver may be a stdlib collection.
+        if (!is_ns_object && !is_user_method) {
+            bool scalar_only = false;
+            for (const auto& bm : kBuiltinMethods) {
+                if (bm.name != mem->field) continue;
+                if ((bm.recv & (BmSlice | BmArray | BmMap)) != 0 || !bm.lowered) { scalar_only = false; break; }
+                scalar_only = true;
+            }
+            for (const auto& bm : kBuiltinMethods) {
+                if (!scalar_only || bm.name != mem->field) continue;
+                if (StdlibCatalogIndex::instance().unambiguous_methods.contains(mem->field)) break;
+                std::string args = emit_expr(mem->object);
+                for (const auto& a : call.args) args += ", " + emit_call_arg(a);
+                if (call.block_arg) args += ", " + emit_closure(*call.block_arg);
+                return std::format("cfire::bm::{}({})", bm.name, args);
+            }
+        }
         std::string obj = emit_expr(mem->object);
         if (!is_ns_object && (mem->field == "index_of" || mem->field == "last_index_of" ||
                               mem->field == "parse_i64" || mem->field == "parse_i32" ||
@@ -822,6 +898,15 @@ namespace cfire::frontend {
         }
         if (mem->field == "bytes" && call.args.empty()) {
             return std::format("cfire::to_bytes({})", obj);
+        }
+        if ((mem->field == "wrapping_shl" || mem->field == "wrapping_shr" ||
+             mem->field == "checked_shl" || mem->field == "checked_shr") && call.args.size() == 1 && call.type_args.empty()) {
+            return std::format("cfire::{}({}, {})", mem->field, obj, emit_call_arg(call.args[0]));
+        }
+        if ((mem->field == "wrapping_as" || mem->field == "saturating_as" || mem->field == "try_as") &&
+            call.type_args.size() == 1 && call.args.empty()) {
+            // Q9 (CF-165): explicit numeric conversions with defined out-of-range behavior.
+            return std::format("cfire::{}<{}>({})", mem->field, lower_owning_type(call.type_args[0]), obj);
         }
         if ((mem->field == "parse" || mem->field == "try_parse") && call.type_args.size() == 1) {
             if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && id->name == "cli") {
@@ -918,6 +1003,45 @@ namespace cfire::frontend {
             callee = "cfire::sync::MutexT";
         }
         callee = std::format("{}<{}>", callee, targs);
+    }
+    // Labeled arguments to stdlib functions (`http.get(url, verify_peer: false)`) are placed by parameter name,
+    // and skipped parameters before them get their declared defaults.
+    if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node);
+        mem && std::any_of(call.args.begin(), call.args.end(), [](const CallArg& a) { return !a.label.empty(); })) {
+        if (const auto* oid = std::get_if<IdentExpr>(&mem->object->node); oid && !local_vars_.contains(oid->name)) {
+            std::string ns = oid->name;
+            if (auto it = core_aliases_.find(ns); it != core_aliases_.end()) ns = it->second;
+            if (const auto* sig = StdlibCatalogIndex::instance().find_ns_fn(ns, mem->field)) {
+                std::vector<std::string> vals(sig->params.size());
+                std::size_t next_pos = 0;
+                std::size_t last = 0;
+                for (const auto& a : call.args) {
+                    std::size_t slot = next_pos;
+                    if (!a.label.empty()) {
+                        for (std::size_t k = 0; k < sig->params.size(); ++k) {
+                            if (sig->params[k].name == a.label) { slot = k; break; }
+                        }
+                    } else {
+                        ++next_pos;
+                    }
+                    if (slot < vals.size()) {
+                        vals[slot] = emit_call_arg(a);
+                        last = std::max(last, slot + 1);
+                    }
+                }
+                std::string out;
+                for (std::size_t k = 0; k < last; ++k) {
+                    std::string v = vals[k];
+                    if (v.empty()) {
+                        const std::string& d = sig->params[k].default_text;
+                        v = (d.empty() || d == "[]") ? std::string("{}") : d;
+                    }
+                    out += (k > 0 ? ", " : "") + v;
+                }
+                if (call.block_arg) out += (out.empty() ? "" : ", ") + emit_closure(*call.block_arg);
+                return std::format("{}({})", callee, out);
+            }
+        }
     }
     std::string args;
     for (std::size_t i = 0; i < call.args.size(); ++i) {

@@ -1,0 +1,17 @@
+// probe: guard a safe program runs clean under ASan/UBSan
+// kind: guard
+// mode: sanitize
+// ideal: clean
+package main
+type P struct {
+    a: i32
+}
+fn main() {
+    mut xs: []P = [P{a: 1}, P{a: 2}]
+    xs.push(P{a: 3})
+    mut sum: i32 = 0
+    for p in xs {
+        sum += p.a
+    }
+    println("{}", sum)
+}

@@ -1,0 +1,11 @@
+// probe: B5 argument type mismatch must be caught by Sema (cfire code), not leaked from clang
+// kind: hole
+// mode: check
+// ideal: reject cfire/TYPE-MISMATCH
+package main
+fn add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+fn main() {
+    println("{}", add("x", 2))
+}

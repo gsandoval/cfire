@@ -2,7 +2,7 @@ package main
 
 type AuditLog struct {
     // `Entries` values that get printed
-    Entries: []str
+    entries: []str
 }
 
 // `prefix` is explicit borrow `&str` (std::string_view)
@@ -10,19 +10,19 @@ type AuditLog struct {
 // `msg` is `move` (std::string&& with automatic std::move on definite last use)
 fn record(prefix: &str, mut log: AuditLog, move msg: str) -> usize {
     formatted := "[{prefix}] {msg}"
-    log.Entries.push(move formatted)
-    return log.Entries.len
+    log.entries.push(move formatted)
+    return log.entries.len()
 }
 
 fn main() {
     mut audit := AuditLog{}
-    defer println("Audit session closed ({} entries).", audit.Entries.len)
+    defer println("Audit session closed ({} entries).", audit.entries.len())
 
     own_msg := "boot sequence complete"
     count := record("INFO", mut audit, move own_msg)
-    println("Recorded #{} -> {}", count, audit.Entries[0])
+    println("Recorded #{} -> {}", count, audit.entries[0])
 
     cpp {
-        std::println("[native C++23] vector capacity >= {}", audit.Entries.capacity() >= 1);
+        std::println("[native C++23] vector capacity >= {}", audit.entries.capacity() >= 1);
     }
 }

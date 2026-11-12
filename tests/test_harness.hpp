@@ -31,6 +31,13 @@ inline void require(bool cond, std::string_view msg) {
     }
 }
 
+// Structured parse errors (Q24) used as a failure message.
+template <typename E>
+    requires std::is_same_v<std::remove_cvref_t<E>, cfire::frontend::SourceError>
+inline void require(bool cond, const E& msg) {
+    require(cond, std::string_view(msg.text()));
+}
+
 // RAII Hermetic Test Directory (thread-safe, mkdtemp-backed, and PID-isolated)
 struct ScopedTempDir {
     std::filesystem::path path;
@@ -160,7 +167,7 @@ inline void require_sema_error(
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     for (const auto& imp : ast->imports) {
         if (imp.is_cpp) {
-            auto cache_dir = std::filesystem::temp_directory_path() / ".cfire" / "cache";
+            auto cache_dir = cfire::detail::user_cache_dir("test-header-cache");  // not /tmp/.cfire (CF-153, CF-178)
             std::vector<std::string> cflags;
             auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
             if (idx) {
@@ -209,7 +216,7 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     for (const auto& imp : ast->imports) {
         if (imp.is_cpp) {
-            auto cache_dir = std::filesystem::temp_directory_path() / ".cfire" / "cache";
+            auto cache_dir = cfire::detail::user_cache_dir("test-header-cache");  // not /tmp/.cfire (CF-153, CF-178)
             std::vector<std::string> cflags;
             auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
             if (idx) {
@@ -235,6 +242,7 @@ void test_section2_language_ergonomics(const std::filesystem::path& rt_dir);
 
 // Sema Suites
 void test_sema_intent_and_move_diagnostics();
+void test_diagnostic_golden_ranges();
 void test_slice_pattern_matching(const std::filesystem::path& rt_dir);
 void test_hard_deprecation_enforcement(const std::filesystem::path& rt_dir);
 void test_duplicate_declaration_pass(const std::filesystem::path& rt_dir);
@@ -254,6 +262,17 @@ void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir
 void test_phase2_concurrency_match_and_flow_control(const std::filesystem::path& rt_dir);
 void test_phase3_advanced_language_and_safety(const std::filesystem::path& rt_dir);
 void test_negative_parser_corpus_and_fuzz_runtime(const std::filesystem::path& rt_dir);
+void test_cf140_crash_proof_tools(const std::filesystem::path& rt_dir);
+void test_cf177_context_lifetime(const std::filesystem::path& rt_dir);
+void test_cf153_secure_temp_storage(const std::filesystem::path& rt_dir);
+void test_cf151_no_inband_tls_controls(const std::filesystem::path& rt_dir);
+void test_w4_migration_rewrites(const std::filesystem::path& rt_dir);
+void test_w4_builtin_runtime_semantics(const std::filesystem::path& rt_dir);
+void test_cf180_dual_stack_listener(const std::filesystem::path& rt_dir);
+void test_cf150_http_server_hardening(const std::filesystem::path& rt_dir);
+void test_cf152_verified_dependency_cache(const std::filesystem::path& rt_dir);
+void test_cf160_mcp_workspace_confinement(const std::filesystem::path& rt_dir);
+void test_cf168_secure_runtime_defaults(const std::filesystem::path& rt_dir);
 
 // Granular Stdlib Intent Suites
 void test_crypto_sha256_and_csprng(const std::filesystem::path& rt_dir);

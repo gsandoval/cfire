@@ -1,0 +1,6 @@
+package main
+fn main() {
+    s := "abc"
+    lo := -1
+    println("{}", s[lo..2]) //~ panic "out of bounds"
+}

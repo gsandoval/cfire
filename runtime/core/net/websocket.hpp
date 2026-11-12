@@ -716,4 +716,12 @@ private:
     return Server(std::move(*l), std::move(*ctx_res));
 }
 
+// Q31: `make(websocket.Server, port, tls: cfg)`; `websocket.TlsConfig` is `http.TlsConfig`.
+using TlsConfig = cfire::http::TlsConfig;
+[[nodiscard]] inline auto make_server(std::uint16_t port, const TlsConfig& tls) -> std::expected<Server, cfire::Error> {
+    if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file);
+    if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem);
+    return make_server(port);
+}
+
 } // namespace cfire::websocket

@@ -1248,6 +1248,7 @@ struct DiagnosticEntry {
     std::string code;  // e.g. "cfire/MUT-CALLSITE"
     std::string message;
     int severity = 1;  // 1 = Error, 2 = Warning
+    std::unordered_map<std::string, std::string> facts{};  // typed fix-it inputs (see cfire::diag::fact_of)
 };
 
 } // namespace detail

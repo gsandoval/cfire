@@ -1,0 +1,10 @@
+// expect: stdout
+// | 195 169 true
+package main
+// A str element is a byte: `u8(s[i])` is 0..255 on every platform, whatever the target's `char` signedness.
+fn main() {
+    s := "é"
+    a := u8(s[0])
+    b := u8(s[1])
+    println("{} {} {}", a, b, (b & 0xC0) == 0x80)
+}

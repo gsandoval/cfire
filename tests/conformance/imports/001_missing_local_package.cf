@@ -1,0 +1,5 @@
+package main
+import "./pkg/nothere" //~ error cfire/UNRESOLVED-PACKAGE
+fn main() {
+    x := nothere.f()
+}

@@ -1436,6 +1436,11 @@ RLAPI void DrawRectangleRoundedLines(Rectangle rec, float roundness, int segment
     draw_arc(rec.x + rec.width - r, rec.y + rec.height - r, 0.0f);
     draw_arc(rec.x + r,             rec.y + rec.height - r, 0.5f * PI);
 }
+// raylib 5.5+ moved the thickness overload to `...Ex`; provide it so `.cf` code compiles against both
+// desktop raylib 6.x and this iOS shim (examples/13-ios-native-ui, CF-176).
+RLAPI void DrawRectangleRoundedLinesEx(Rectangle rec, float roundness, int segments, float lineThick, Color color) {
+    DrawRectangleRoundedLines(rec, roundness, segments, lineThick, color);
+}
 
 RLAPI void DrawLine(int startPosX, int startPosY, int endPosX, int endPosY, Color color) {
     DrawLineEx(Vector2{static_cast<float>(startPosX), static_cast<float>(startPosY)},

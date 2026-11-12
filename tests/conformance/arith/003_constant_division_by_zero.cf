@@ -1,0 +1,5 @@
+package main
+fn main() {
+    x := 10
+    println("{}", x / 0) //~ error cfire/DIVIDE-BY-ZERO
+}

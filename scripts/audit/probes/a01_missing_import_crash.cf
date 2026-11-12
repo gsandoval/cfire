@@ -1,0 +1,9 @@
+// probe: A1 importing a missing local package must not crash check or the LSP
+// kind: guard
+// mode: check
+// ideal: reject cfire/UNRESOLVED-PACKAGE
+package main
+import "./pkg/nothere"
+fn main() {
+    x := nothere.f()
+}

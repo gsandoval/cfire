@@ -1,0 +1,11 @@
+// expect: stdout
+// | 7 seven
+package main
+type Box[T] struct {
+    value: T
+}
+fn main() {
+    a := Box[i32]{value: 7}
+    b := Box[str]{value: "seven"}
+    println("{} {}", a.value, b.value)
+}

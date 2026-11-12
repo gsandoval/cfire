@@ -19,6 +19,7 @@ struct StdParamInfo {
     std::string type_str{};
     bool has_default = false;
     bool is_variadic = false;
+    std::string default_text{};  // the `.cf` default expression (`true`, `""`, `{}`, `443`)
 };
 
 struct StdFnSigInfo {
@@ -36,6 +37,18 @@ struct StdFnSigInfo {
     bool is_optional = false;
     std::string unwrapped_return_type{};
 };
+
+// Non-throwing map lookup for Sema: a missing key yields "" instead of std::out_of_range (CF-140).
+template <typename Map>
+[[nodiscard]] inline auto lookup_or(const Map& m, const std::string& key, std::string_view fallback) -> std::string {
+    if (auto it = m.find(key); it != m.end()) return it->second;
+    return std::string(fallback);
+}
+
+template <typename Map>
+[[nodiscard]] inline auto lookup_or_empty(const Map& m, const std::string& key) -> std::string {
+    return lookup_or(m, key, "");
+}
 
 struct StdlibCatalogIndex {
     std::unordered_map<std::string, std::string> ns_to_import{}; // "os" -> "core:os"
@@ -80,7 +93,8 @@ struct StdlibCatalogIndex {
         }
         if (auto dot = fn_name.find('.'); dot != std::string_view::npos) {
             std::string_view prefix = fn_name.substr(0, dot);
-            if (prefix != "Response" && prefix != "Duration") {
+            // `Type.make` is a constructor (Q25: `make(ns.Type, args...)`), not a method.
+            if (prefix != "Response" && prefix != "Duration" && fn_name.substr(dot + 1) != "make") {
                 info.has_receiver = true;
                 if (info.receiver_type.empty()) info.receiver_type = std::string(prefix);
             }
@@ -168,6 +182,7 @@ struct StdlibCatalogIndex {
                 }
                 if (eq_pos != std::string::npos) {
                     pinfo.has_default = true;
+                    pinfo.default_text = trim_str(std::string_view(p_tok).substr(eq_pos + 1));
                     p_tok = trim_str(std::string_view(p_tok).substr(0, eq_pos));
                 }
                 if (auto col = p_tok.find(':'); col != std::string::npos) {
@@ -272,6 +287,12 @@ struct StdlibCatalogIndex {
 
     [[nodiscard]] auto has_namespace(std::string_view ns) const -> bool {
         return ns_to_import.contains(std::string(ns));
+    }
+
+    // Non-throwing lookup; returns "" for namespaces that are not stdlib modules (e.g. local packages).
+    [[nodiscard]] auto import_path_for(std::string_view ns) const -> std::string {
+        if (auto it = ns_to_import.find(std::string(ns)); it != ns_to_import.end()) return it->second;
+        return "";
     }
 
     [[nodiscard]] auto find_ns_fn(std::string_view ns, std::string_view fn) const -> const StdFnSigInfo* {

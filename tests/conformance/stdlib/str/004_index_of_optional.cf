@@ -1,0 +1,12 @@
+// expect: stdout
+// | 2 missing
+package main
+fn main() {
+    s := "a,b"
+    i := s.index_of("b") or 99
+    j := s.index_of("z") or {
+        println("{} missing", i)
+        return
+    }
+    println("unreachable {}", j)
+}

@@ -73,8 +73,11 @@ struct RuntimeProvenance {
     RuntimeProvenance prov;
     std::error_code ec;
 
-    // 1. Check runtime/VERSION stamp written by `cfire install`, `make install`, or `install.sh`
-    auto ver_file = runtime_dir / "VERSION";
+    // 1. Check the runtime stamp written by `cfire install`, `make install`, or `install.sh`. It is not named
+    // `VERSION`: the runtime dir is an include path, and on case-insensitive filesystems `#include <version>`
+    // (pulled in by <bit>, <format>, ...) would find that file instead of the standard header.
+    auto ver_file = runtime_dir / "cfire-runtime.version";
+    if (!std::filesystem::exists(ver_file, ec)) ver_file = runtime_dir / "VERSION";  // installs before 0.16
     if (std::filesystem::exists(ver_file, ec)) {
         std::ifstream ifs(ver_file);
         std::string line;

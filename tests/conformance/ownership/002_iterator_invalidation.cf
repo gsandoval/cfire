@@ -1,0 +1,7 @@
+package main
+fn main() {
+    mut xs: []i64 = [1, 2, 3]
+    for x in xs {
+        xs.push(x) //~ error cfire/ITERATOR-INVALIDATION
+    }
+}

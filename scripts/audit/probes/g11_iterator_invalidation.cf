@@ -1,0 +1,11 @@
+// probe: guard pushing into a slice while iterating it is rejected
+// kind: guard
+// mode: check
+// ideal: reject cfire/ITERATOR-INVALIDATION
+package main
+fn main() {
+    mut xs: []i64 = [1, 2, 3]
+    for x in xs {
+        xs.push(x)
+    }
+}

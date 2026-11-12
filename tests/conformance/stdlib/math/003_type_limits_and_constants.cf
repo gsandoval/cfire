@@ -1,0 +1,7 @@
+// expect: stdout
+// | 2147483647 -128 3.141592653589793
+package main
+import "core:math"
+fn main() {
+    println("{} {} {}", i32.MAX, i8.MIN, math.PI)
+}

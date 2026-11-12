@@ -1,0 +1,6 @@
+package main
+import "core:os"
+fn main() {
+    res := os.exec("echo " + os.args()[0]) or "" //~ error cfire/SHELL-INJECTION-RISK
+    println("{}", res.len() > 0)
+}

@@ -4,6 +4,7 @@
 #include "types.hpp"
 #include "stdlib_index.hpp"
 #include "fn_checker.hpp"
+#include "builtin_methods.hpp"
 #include <algorithm>
 #include <expected>
 #include <format>
@@ -88,18 +89,16 @@ namespace cfire::frontend {
         if (!imp.is_cpp) {
             if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(imp.path); !canon.empty()) {
                 if (canon == "ext:crypto/sodium") {
-                    cf.errors.push_back(std::format(
-                        "{}:{}:1: module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium' (cfire/INVALID-IMPORT)",
-                        cf.ast.path, imp.line, imp.path));
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-IMPORT", std::format("module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium'", imp.path), {{"from", imp.path}, {"to", "ext:crypto/sodium"}}));
                 } else if (canon.starts_with("ext:")) {
-                    cf.errors.push_back(std::format(
-                        "{}:{}:1: module '{}' requires a native extension engine and must be imported as '{}' (cfire/INVALID-IMPORT)",
-                        cf.ast.path, imp.line, imp.path, canon));
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-IMPORT", std::format("module '{}' requires a native extension engine and must be imported as '{}'", imp.path, canon), {{"from", imp.path}, {"to", canon}}));
                 } else {
-                    cf.errors.push_back(std::format(
-                        "{}:{}:1: module '{}' is part of the zero-setup core standard library and must be imported as '{}' (cfire/INVALID-IMPORT)",
-                        cf.ast.path, imp.line, imp.path, canon));
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-IMPORT", std::format("module '{}' is part of the zero-setup core standard library and must be imported as '{}'", imp.path, canon), {{"from", imp.path}, {"to", canon}}));
                 }
+            } else if (std::find(kRetiredModules.begin(), kRetiredModules.end(), imp.path) != kRetiredModules.end()) {
+                std::string_view what = imp.path == "core:str" ? "'str' methods (s.trim(), s.split(sep), parts.join(sep), i32.parse(s))"
+                                                               : "slice methods (xs.sort(), xs.sort_by(f), xs.binary_search(v))";
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format("module '{}' has been retired; use {}", imp.path, what), {{"rewrite", "delete_line"}, {"from", imp.path}}));
             } else if (!imp.path.starts_with("./") && !imp.path.starts_with("../") && !imp.path.ends_with(".cf") && !cfire::modules::is_known_module(imp.path)) {
                 std::string best_match;
                 std::size_t best_dist = 5;
@@ -111,9 +110,7 @@ namespace cfire::frontend {
                     }
                 }
                 std::string hint = best_match.empty() ? "" : std::format("; did you mean '{}'?", best_match);
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: unknown module '{}'{} (cfire/UNKNOWN-MODULE)",
-                    cf.ast.path, imp.line, imp.path, hint));
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/UNKNOWN-MODULE", std::format("unknown module '{}'{}", imp.path, hint)));
             }
         }
     }
@@ -122,9 +119,7 @@ namespace cfire::frontend {
     for (const auto& gv : cf.ast.global_vars) {
         if (gv.was_var) {
             std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
-            cf.errors.push_back(std::format(
-                "{}:{}:1: 'var' is deprecated; use 'x := val' or 'mut x: T = val' instead (cfire/DEPRECATED-VAR)",
-                gv_path, gv.line));
+            cf.add_error(cfire::diag::diag(gv_path, gv.line, 0, "cfire/DEPRECATED-VAR", std::format("'var' is deprecated; use 'x := val' or 'mut x: T = val' instead")));
         }
     }
 
@@ -142,9 +137,7 @@ namespace cfire::frontend {
     for (const auto& st : cf.ast.structs) {
         std::string st_path = st.source_path.empty() ? cf.ast.path : st.source_path;
         if (auto it = declared_types.find(st.name); it != declared_types.end()) {
-            cf.errors.push_back(std::format(
-                "{}:{}:1: duplicate declaration of type '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
-                st_path, st.line, st.name, it->second.path, it->second.line));
+            cf.add_error(cfire::diag::diag(st_path, st.line, 0, "cfire/DUPLICATE-DECLARATION", std::format("duplicate declaration of type '{}'; previously declared at {}:{}", st.name, it->second.path, it->second.line)));
         } else {
             declared_types[st.name] = DeclLocation{st_path, st.line, 1};
         }
@@ -153,9 +146,7 @@ namespace cfire::frontend {
     for (const auto& en : cf.ast.enums) {
         std::string en_path = en.source_path.empty() ? cf.ast.path : en.source_path;
         if (auto it = declared_types.find(en.name); it != declared_types.end()) {
-            cf.errors.push_back(std::format(
-                "{}:{}:1: duplicate declaration of type '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
-                en_path, en.line, en.name, it->second.path, it->second.line));
+            cf.add_error(cfire::diag::diag(en_path, en.line, 0, "cfire/DUPLICATE-DECLARATION", std::format("duplicate declaration of type '{}'; previously declared at {}:{}", en.name, it->second.path, it->second.line)));
         } else {
             declared_types[en.name] = DeclLocation{en_path, en.line, 1};
         }
@@ -163,9 +154,7 @@ namespace cfire::frontend {
         std::unordered_map<std::string, DeclLocation> seen_variants;
         for (const auto& v : en.variants) {
             if (auto vit = seen_variants.find(v.name); vit != seen_variants.end()) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: duplicate declaration of enum variant '{}.{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
-                    en_path, v.line, en.name, v.name, vit->second.path, vit->second.line));
+                cf.add_error(cfire::diag::diag(en_path, v.line, 0, "cfire/DUPLICATE-DECLARATION", std::format("duplicate declaration of enum variant '{}.{}'; previously declared at {}:{}", en.name, v.name, vit->second.path, vit->second.line)));
             } else {
                 seen_variants[v.name] = DeclLocation{en_path, v.line, 1};
             }
@@ -177,9 +166,7 @@ namespace cfire::frontend {
         std::string pkg = gv.package_name.empty() ? cf.ast.package_name : gv.package_name;
         std::string gv_key = pkg + "::" + gv.name;
         if (auto it = declared_globals.find(gv_key); it != declared_globals.end()) {
-            cf.errors.push_back(std::format(
-                "{}:{}:1: duplicate declaration of variable '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
-                gv_path, gv.line, gv.name, it->second.path, it->second.line));
+            cf.add_error(cfire::diag::diag(gv_path, gv.line, 0, "cfire/DUPLICATE-DECLARATION", std::format("duplicate declaration of variable '{}'; previously declared at {}:{}", gv.name, it->second.path, it->second.line)));
         } else {
             declared_globals[gv_key] = DeclLocation{gv_path, gv.line, 1};
         }
@@ -209,9 +196,7 @@ namespace cfire::frontend {
     }
     for (const auto& [pfx, info] : prefix_clusters) {
         if (info.const_names.size() >= 3) {
-            cf.warnings.push_back(std::format(
-                "{}:{}:1: warning: cluster of {} related integer constants with prefix '{}' detected; prefer an enum instead (cfire/PREFER-ENUM)",
-                info.source_path, info.line, info.const_names.size(), pfx));
+            cf.add_warning(cfire::diag::diag(info.source_path, info.line, 0, "cfire/PREFER-ENUM", std::format("cluster of {} related integer constants with prefix '{}' detected; prefer an enum instead", info.const_names.size(), pfx), {{"prefix", pfx}}));
         }
     }
 
@@ -220,9 +205,7 @@ namespace cfire::frontend {
         if (fn.receiver) {
             std::string m_key = fn.receiver->type.name + "." + fn.name;
             if (auto it = declared_methods.find(m_key); it != declared_methods.end()) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: duplicate declaration of method '{}.{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
-                    fn_path, fn.line, fn.receiver->type.name, fn.name, it->second.path, it->second.line));
+                cf.add_error(cfire::diag::diag(fn_path, fn.line, 0, "cfire/DUPLICATE-DECLARATION", std::format("duplicate declaration of method '{}.{}'; previously declared at {}:{}", fn.receiver->type.name, fn.name, it->second.path, it->second.line)));
             } else {
                 declared_methods[m_key] = DeclLocation{fn_path, fn.line, 1};
             }
@@ -230,9 +213,7 @@ namespace cfire::frontend {
             std::string pkg = fn.package_name.empty() ? cf.ast.package_name : fn.package_name;
             std::string fn_key = pkg + "::" + fn.name;
             if (auto it = declared_functions.find(fn_key); it != declared_functions.end()) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: duplicate declaration of function '{}'; previously declared at {}:{} (cfire/DUPLICATE-DECLARATION)",
-                    fn_path, fn.line, fn.name, it->second.path, it->second.line));
+                cf.add_error(cfire::diag::diag(fn_path, fn.line, 0, "cfire/DUPLICATE-DECLARATION", std::format("duplicate declaration of function '{}'; previously declared at {}:{}", fn.name, it->second.path, it->second.line)));
             } else {
                 declared_functions[fn_key] = DeclLocation{fn_path, fn.line, 1};
             }
@@ -295,9 +276,7 @@ namespace cfire::frontend {
                     (qual == "cpp" || cf.cpp_qualifiers.contains(qual) || cf.vendor_aliases.contains(qual) ||
                      cf.core_aliases.contains(qual) || cf.shadowed_default_qualifiers.contains(qual))) {
                     std::string rest = tr.raw_name.substr(dcol + 2);
-                    cf.errors.push_back(std::format(
-                        "{}:{}:{}: use '{}.{}' instead of '{}::{}' (cfire/DEPRECATED-SEPARATOR)",
-                        src_path, line, col, qual, rest, qual, rest));
+                    cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/DEPRECATED-SEPARATOR", std::format("use '{}.{}' instead of '{}::{}'", qual, rest, qual, rest), {{"kind", "qualifier"}}));
                 }
             }
         }
@@ -314,14 +293,38 @@ namespace cfire::frontend {
             self(self, tup, src_path, line, col);
         }
     };
+    // Q28: struct fields are snake_case; `cfire fix` renames the field and every use across the workspace.
+    auto snake_case_of = [](std::string_view n) -> std::string {
+        std::string out;
+        for (std::size_t i = 0; i < n.size(); ++i) {
+            const unsigned char c = static_cast<unsigned char>(n[i]);
+            if (std::isupper(c)) {
+                const bool prev_lower = i > 0 && (std::islower(static_cast<unsigned char>(n[i - 1])) || std::isdigit(static_cast<unsigned char>(n[i - 1])));
+                const bool next_lower = i + 1 < n.size() && std::islower(static_cast<unsigned char>(n[i + 1]));
+                const bool prev_upper = i > 0 && std::isupper(static_cast<unsigned char>(n[i - 1]));
+                if (i > 0 && n[i - 1] != '_' && (prev_lower || (prev_upper && next_lower))) out.push_back('_');
+                out.push_back(static_cast<char>(std::tolower(c)));
+            } else {
+                out.push_back(static_cast<char>(c));
+            }
+        }
+        return out;
+    };
+    std::unordered_set<std::string> field_case_seen;  // merged package views list a struct under `./f.cf` and `f.cf`
     for (const auto& st : cf.ast.structs) {
         std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
         for (const auto& fld : st.fields) {
+            std::string seen_key = std::format("{}:{}:{}.{}", std::filesystem::path(st_path).lexically_normal().string(), fld.line, st.name, fld.name);
+            if (std::string snake = snake_case_of(fld.name); snake != fld.name && field_case_seen.insert(seen_key).second) {
+                bool keyword_clash = cfire::frontend::find_keyword(snake).has_value();
+                cf.add_warning(cfire::diag::diag(st_path, fld.line, 0, "cfire/FIELD-NAME-CASE",
+                    std::format("field '{}.{}' should be snake_case ('{}'){}", st.name, fld.name, snake,
+                        keyword_clash ? "; that name is a keyword, so rename it by hand" : "; untagged JSON/CLI keys follow the field name"),
+                    {{"field", fld.name}, {"to", keyword_clash ? std::string() : snake}}));
+            }
             check_type_ref_separators_ast(check_type_ref_separators_ast, fld.type, st_path, fld.line, 1);
             if (auto iface = find_interface_in_slice(fld.type, cf.interfaces)) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
-                    st_path, fld.line, *iface));
+                cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface)));
             }
         }
     }
@@ -333,16 +336,12 @@ namespace cfire::frontend {
         for (const auto& p : fn.params) {
             check_type_ref_separators_ast(check_type_ref_separators_ast, p.type, fn_path, p.line, p.col);
             if (auto iface = find_interface_in_slice(p.type, cf.interfaces)) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:{}: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
-                    fn_path, p.line, p.col, *iface));
+                cf.add_error(cfire::diag::diag(fn_path, p.line, p.col, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface)));
             }
         }
         check_type_ref_separators_ast(check_type_ref_separators_ast, fn.return_type, fn_path, fn.line, 1);
         if (auto iface = find_interface_in_slice(fn.return_type, cf.interfaces)) {
-            cf.errors.push_back(std::format(
-                "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
-                fn_path, fn.line, *iface));
+            cf.add_error(cfire::diag::diag(fn_path, fn.line, 0, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface)));
         }
     }
     for (const auto& gv : cf.ast.global_vars) {
@@ -350,9 +349,7 @@ namespace cfire::frontend {
             std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
             check_type_ref_separators_ast(check_type_ref_separators_ast, *gv.type, gv_path, gv.line, 1);
             if (auto iface = find_interface_in_slice(*gv.type, cf.interfaces)) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically (cfire/DYNAMIC-INTERFACE-UNSUPPORTED)",
-                    gv_path, gv.line, *iface));
+                cf.add_error(cfire::diag::diag(gv_path, gv.line, 0, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface)));
             }
         }
     }
@@ -386,18 +383,14 @@ namespace cfire::frontend {
                     }
                     if (!info.cli_long.empty() && info.cli_long != "-") {
                         if (auto prev = seen_cli_longs.find(info.cli_long); prev != seen_cli_longs.end()) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: duplicate cli flag '--{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, info.cli_long, st.name, fld.name, prev->second));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("duplicate cli flag '--{}' on field '{}.{}' (already used by field '{}')", info.cli_long, st.name, fld.name, prev->second)));
                         } else {
                             seen_cli_longs[info.cli_long] = fld.name;
                         }
                     }
                     if (!info.cli_short.empty() && info.cli_short != "-") {
                         if (auto prev = seen_cli_shorts.find(info.cli_short); prev != seen_cli_shorts.end()) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: duplicate cli short flag '-{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, info.cli_short, st.name, fld.name, prev->second));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("duplicate cli short flag '-{}' on field '{}.{}' (already used by field '{}')", info.cli_short, st.name, fld.name, prev->second)));
                         } else {
                             seen_cli_shorts[info.cli_short] = fld.name;
                         }
@@ -409,9 +402,7 @@ namespace cfire::frontend {
                     info.json_key = trim_str(comma != std::string_view::npos ? std::string_view(val).substr(0, comma) : std::string_view(val));
                     if (!info.json_key.empty() && info.json_key != "-") {
                         if (auto prev = seen_json_keys.find(info.json_key); prev != seen_json_keys.end()) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: duplicate json tag key '{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, info.json_key, st.name, fld.name, prev->second));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("duplicate json tag key '{}' on field '{}.{}' (already used by field '{}')", info.json_key, st.name, fld.name, prev->second)));
                         } else {
                             seen_json_keys[info.json_key] = fld.name;
                         }
@@ -420,9 +411,7 @@ namespace cfire::frontend {
                     info.db_column = trim_str(val);
                     if (!info.db_column.empty() && info.db_column != "-") {
                         if (auto prev = seen_db_cols.find(info.db_column); prev != seen_db_cols.end()) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: duplicate {} column tag '{}' on field '{}.{}' (already used by field '{}') (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, key, info.db_column, st.name, fld.name, prev->second));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("duplicate {} column tag '{}' on field '{}.{}' (already used by field '{}')", key, info.db_column, st.name, fld.name, prev->second)));
                         } else {
                             seen_db_cols[info.db_column] = fld.name;
                         }
@@ -432,29 +421,21 @@ namespace cfire::frontend {
                     const std::string& tname = fld.type.name;
                     if (tname == "i8" || tname == "i16" || tname == "i32" || tname == "i64" || tname == "int") {
                         if (!cfire::detail::parse_int<std::int64_t>(dval)) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: invalid default tag value '{}' for integer field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, dval, st.name, fld.name, tname));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid default tag value '{}' for integer field '{}.{}' of type '{}'", dval, st.name, fld.name, tname)));
                         }
                     } else if (tname == "u8" || tname == "u16" || tname == "u32" || tname == "u64" || tname == "usize" || tname == "byte") {
                         if (dval.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(dval)) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: invalid default tag value '{}' for unsigned field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, dval, st.name, fld.name, tname));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid default tag value '{}' for unsigned field '{}.{}' of type '{}'", dval, st.name, fld.name, tname)));
                         }
                     } else if (tname == "bool") {
                         if (dval != "true" && dval != "false" && dval != "1" && dval != "0") {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: invalid default tag value '{}' for bool field '{}.{}' (expected 'true' or 'false') (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, dval, st.name, fld.name));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid default tag value '{}' for bool field '{}.{}' (expected 'true' or 'false')", dval, st.name, fld.name)));
                         }
                     } else if (tname == "f32" || tname == "f64") {
                         char* endp = nullptr;
                         (void)std::strtod(dval.c_str(), &endp);
                         if (dval.empty() || endp != dval.c_str() + dval.size()) {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: invalid default tag value '{}' for float field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, dval, st.name, fld.name, tname));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid default tag value '{}' for float field '{}.{}' of type '{}'", dval, st.name, fld.name, tname)));
                         }
                     }
                 } else if (key == "validate") {
@@ -476,9 +457,7 @@ namespace cfire::frontend {
 
                         if (r_tok == "non_empty") {
                             if (!is_len_type) {
-                                cf.errors.push_back(std::format(
-                                    "{}:{}:1: validate rule 'non_empty' on field '{}.{}' requires 'str' or slice type, got '{}' (cfire/INVALID-STRUCT-TAG)",
-                                    st_path, fld.line, st.name, fld.name, tname));
+                                cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate rule 'non_empty' on field '{}.{}' requires 'str' or slice type, got '{}'", st.name, fld.name, tname)));
                             } else {
                                 info.validation.non_empty = true;
                                 info.validation.has_rules = true;
@@ -487,9 +466,7 @@ namespace cfire::frontend {
                             bool is_min = r_tok.starts_with("min=");
                             std::string nstr = trim_str(std::string_view(r_tok).substr(4));
                             if (!is_num_type) {
-                                cf.errors.push_back(std::format(
-                                    "{}:{}:1: validate rule '{}' on field '{}.{}' requires a numeric field type, got '{}' (cfire/INVALID-STRUCT-TAG)",
-                                    st_path, fld.line, r_tok, st.name, fld.name, tname));
+                                cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate rule '{}' on field '{}.{}' requires a numeric field type, got '{}'", r_tok, st.name, fld.name, tname)));
                             } else {
                                 char* endp = nullptr;
                                 double num = std::strtod(nstr.c_str(), &endp);
@@ -497,9 +474,7 @@ namespace cfire::frontend {
                                 if (is_int_type && !cfire::detail::parse_int<std::int64_t>(nstr)) valid_num = false;
                                 if (is_uint_type && (nstr.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(nstr))) valid_num = false;
                                 if (!valid_num) {
-                                    cf.errors.push_back(std::format(
-                                        "{}:{}:1: invalid numeric bound '{}' in validate tag on field '{}.{}' of type '{}' (cfire/INVALID-STRUCT-TAG)",
-                                        st_path, fld.line, r_tok, st.name, fld.name, tname));
+                                    cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid numeric bound '{}' in validate tag on field '{}.{}' of type '{}'", r_tok, st.name, fld.name, tname)));
                                 } else {
                                     info.validation.has_rules = true;
                                     if (is_min) {
@@ -517,15 +492,11 @@ namespace cfire::frontend {
                             bool is_min_l = r_tok.starts_with("min_len=");
                             std::string lstr = trim_str(std::string_view(r_tok).substr(8));
                             if (!is_len_type) {
-                                cf.errors.push_back(std::format(
-                                    "{}:{}:1: validate rule '{}' on field '{}.{}' requires 'str' or slice type, got '{}' (cfire/INVALID-STRUCT-TAG)",
-                                    st_path, fld.line, r_tok, st.name, fld.name, tname));
+                                cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate rule '{}' on field '{}.{}' requires 'str' or slice type, got '{}'", r_tok, st.name, fld.name, tname)));
                             } else {
                                 auto parsed_len = (!lstr.starts_with('-')) ? cfire::detail::parse_int<std::uint64_t>(lstr) : std::nullopt;
                                 if (!parsed_len) {
-                                    cf.errors.push_back(std::format(
-                                        "{}:{}:1: invalid length bound '{}' in validate tag on field '{}.{}' (cfire/INVALID-STRUCT-TAG)",
-                                        st_path, fld.line, r_tok, st.name, fld.name));
+                                    cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid length bound '{}' in validate tag on field '{}.{}'", r_tok, st.name, fld.name)));
                                 } else {
                                     info.validation.has_rules = true;
                                     if (is_min_l) {
@@ -540,9 +511,7 @@ namespace cfire::frontend {
                         } else if (r_tok.starts_with("oneof=")) {
                             std::string opts_str = trim_str(std::string_view(r_tok).substr(6));
                             if (tname != "str") {
-                                cf.errors.push_back(std::format(
-                                    "{}:{}:1: validate rule '{}' on field '{}.{}' requires 'str' field type, got '{}' (cfire/INVALID-STRUCT-TAG)",
-                                    st_path, fld.line, r_tok, st.name, fld.name, tname));
+                                cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate rule '{}' on field '{}.{}' requires 'str' field type, got '{}'", r_tok, st.name, fld.name, tname)));
                             } else {
                                 std::vector<std::string> opts;
                                 std::size_t opos = 0;
@@ -555,29 +524,21 @@ namespace cfire::frontend {
                                     if (!item.empty()) opts.push_back(std::move(item));
                                 }
                                 if (opts.empty()) {
-                                    cf.errors.push_back(std::format(
-                                        "{}:{}:1: empty 'oneof=' option list in validate tag on field '{}.{}' (cfire/INVALID-STRUCT-TAG)",
-                                        st_path, fld.line, st.name, fld.name));
+                                    cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("empty 'oneof=' option list in validate tag on field '{}.{}'", st.name, fld.name)));
                                 } else {
                                     info.validation.has_rules = true;
                                     info.validation.oneof = std::move(opts);
                                 }
                             }
                         } else {
-                            cf.errors.push_back(std::format(
-                                "{}:{}:1: unknown validate tag rule '{}' on field '{}.{}' (expected min=, max=, min_len=, max_len=, non_empty, or oneof=) (cfire/INVALID-STRUCT-TAG)",
-                                st_path, fld.line, r_tok, st.name, fld.name));
+                            cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("unknown validate tag rule '{}' on field '{}.{}' (expected min=, max=, min_len=, max_len=, non_empty, or oneof=)", r_tok, st.name, fld.name)));
                         }
                     }
                     if (info.validation.has_min && info.validation.has_max && info.validation.min_num > info.validation.max_num) {
-                        cf.errors.push_back(std::format(
-                            "{}:{}:1: validate tag on field '{}.{}' has min ({}) > max ({}) (cfire/INVALID-STRUCT-TAG)",
-                            st_path, fld.line, st.name, fld.name, info.validation.min_raw, info.validation.max_raw));
+                        cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate tag on field '{}.{}' has min ({}) > max ({})", st.name, fld.name, info.validation.min_raw, info.validation.max_raw)));
                     }
                     if (info.validation.has_min_len && info.validation.has_max_len && info.validation.min_len > info.validation.max_len) {
-                        cf.errors.push_back(std::format(
-                            "{}:{}:1: validate tag on field '{}.{}' has min_len ({}) > max_len ({}) (cfire/INVALID-STRUCT-TAG)",
-                            st_path, fld.line, st.name, fld.name, info.validation.min_len, info.validation.max_len));
+                        cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate tag on field '{}.{}' has min_len ({}) > max_len ({})", st.name, fld.name, info.validation.min_len, info.validation.max_len)));
                     }
                 }
                 info.custom_tags[key] = val;
@@ -608,7 +569,7 @@ namespace cfire::frontend {
     {
         FnDecl gv_dummy_fn;
         gv_dummy_fn.name = "__cfire_global_init";
-        SemaFnChecker gv_checker(cf.ast.path, gv_dummy_fn, cf, cf.warnings, cf.errors, true);
+        SemaFnChecker gv_checker(cf.ast.path, gv_dummy_fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
         for (const auto& gv : cf.ast.global_vars) {
             if (gv.value) {
                 (void)gv_checker.check_expr(gv.value);
@@ -626,15 +587,13 @@ namespace cfire::frontend {
     // 4. Validate Function & Method Bodies
     for (const auto& fn : cf.ast.functions) {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
-        SemaFnChecker checker(fn_path, fn, cf, cf.warnings, cf.errors, true);
+        SemaFnChecker checker(fn_path, fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
         for (const auto& st : fn.body) {
             (void)checker.check_stmt(st);
         }
         if (!fn.return_type.name.empty() && fn.return_type.name != "void" && fn.name != "main") {
             if (!SemaFnChecker::block_diverges(fn.body, &cf)) {
-                cf.errors.push_back(std::format(
-                    "{}:{}:1: missing return statement on all execution paths in function '{}' returning '{}' (cfire/MISSING-RETURN)",
-                    fn_path, fn.line, fn.name, fn.return_type.name));
+                cf.add_error(cfire::diag::diag(fn_path, fn.line, 0, "cfire/MISSING-RETURN", std::format("missing return statement on all execution paths in function '{}' returning '{}'", fn.name, fn.return_type.name)));
             }
         }
         std::string fn_key = fn.receiver ? (fn.receiver->type.name + "__" + fn.name) : fn.name;
@@ -657,7 +616,7 @@ namespace cfire::frontend {
         for (const auto& bv : td.bench_variations) {
             dummy_fn.params.push_back(ParamDecl{"in", bv.name, bv.inferred_type, bv.line, 1});
         }
-        SemaFnChecker checker(td_path, dummy_fn, cf, cf.warnings, cf.errors, true);
+        SemaFnChecker checker(td_path, dummy_fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
         for (const auto& bv : td.bench_variations) {
             for (const auto& vex : bv.values) {
                 (void)checker.check_expr(vex);

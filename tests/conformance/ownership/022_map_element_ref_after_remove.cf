@@ -1,0 +1,8 @@
+package main
+fn main() {
+    mut m: map[str]i32
+    m["a"] = 1
+    p := &m["a"]
+    m.remove("a")
+    println("{}", *p) //~ error cfire/USE-AFTER-FREE
+}

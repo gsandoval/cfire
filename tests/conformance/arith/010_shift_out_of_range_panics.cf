@@ -1,0 +1,6 @@
+package main
+fn main() {
+    one: i32 = 1
+    s: i32 = 40
+    println("{}", one << s) //~ panic "shift"
+}

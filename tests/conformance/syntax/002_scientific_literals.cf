@@ -1,0 +1,8 @@
+// expect: stdout
+// | 1000000000 0.00025
+package main
+fn main() {
+    a := 1e9
+    b := 2.5e-4
+    println("{} {}", i64(a), b)
+}

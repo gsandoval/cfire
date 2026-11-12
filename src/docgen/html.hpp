@@ -43,7 +43,11 @@ namespace cfire::doc {
             cflags.push_back("-I" + std::filesystem::absolute(rt_dir / "vendor").string());
         }
     }
-    auto cache_dir = std::filesystem::temp_directory_path() / "cfire_doc_cache";
+    auto cache_dir = cfire::detail::user_cache_dir("doc");  // per-user, never a shared temp-dir name (CF-153)
+    if (cache_dir.empty()) {
+        static cfire::detail::SecureTempDir doc_fallback("cfire_doc_cache");
+        cache_dir = doc_fallback.path();
+    }
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     for (const auto& imp : ast->imports) {
         if (!imp.is_cpp) continue;
@@ -105,7 +109,7 @@ fn main() {
     increment(mut b, 2)
     
     // Explicit unique ownership:
-    p := make[own[Box]](Box{ value: 100 })
+    p := make(own[Box], Box{ value: 100 })
     println("b={} p={}", b.value, p.value)
 })";
     std::string snip1_cpp = compile_snippet_to_cpp("snippet_intents.cf", snip1_cf);
@@ -268,7 +272,7 @@ type GreetRes struct {
 }
 
 fn main() {
-    mut app := webui.new_app("cfire Studio", 960, 640)
+    mut app := make(webui.App, "cfire Studio", 960, 640)
     defer app.close()
     app.serve_dir("./ui")
 
@@ -622,7 +626,7 @@ fn main() {
 }
 
 [[nodiscard]] inline auto generate_reference_html() -> std::string {
-    const auto& mods = stdlib_catalog();
+    const auto mods = reference_modules();
     const auto& diags = diagnostics_catalog();
 
     std::string out;
@@ -666,6 +670,13 @@ fn main() {
         else if (mod.import_path.starts_with("ext:")) ++ext_count;
         else if (mod.import_path.starts_with("vendor:")) ++vendor_count;
     }
+    out += "        <h4>Builtin Types</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n";
+    for (const auto& mod : mods) {
+        if (mod.import_path.find(':') != std::string::npos) continue;
+        out += std::format("          <li class=\"nav-item\"><a href=\"#mod-{}\" id=\"nav-pane-mod-{}\" onclick=\"navigateToRefPane('mod-{}'); return false;\"><code>{}</code> <span style=\"color:var(--muted);font-size:0.75rem;\">({})</span></a></li>\n",
+            mod.ns_alias, mod.ns_alias, mod.ns_alias, mod.title, mod.functions.size());
+    }
+    out += "        </ul>\n";
     out += std::format("        <h4>Foundational Core ({})</h4>\n        <ul class=\"sidebar-module-list\" style=\"list-style: none; padding: 0;\">\n", core_count);
     for (const auto& mod : mods) {
         if (!mod.import_path.starts_with("core:")) continue;

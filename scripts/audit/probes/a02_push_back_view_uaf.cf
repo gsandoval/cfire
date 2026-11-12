@@ -1,0 +1,13 @@
+// probe: A2/B1 raw push_back bypasses the loan tracker (heap use-after-free)
+// kind: guard
+// mode: check
+// ideal: reject
+package main
+fn main() {
+    mut xs: []i32 = [1, 2, 3]
+    v := xs[0..2]
+    for i in 0..100 {
+        xs.push_back(i32(i))
+    }
+    println("{}", v[0])
+}

@@ -1,0 +1,6 @@
+// expect: panic "pow"
+package main
+fn main() {
+    base: i32 = 10
+    println("{}", base.pow(12))
+}

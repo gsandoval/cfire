@@ -288,60 +288,14 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
         if (ast_res) {
             auto env = detail::build_scope_bindings(*ast_res, ws, lines, line);
             std::string rtype = detail::resolve_qualifier_type(sym.qualifier, *ast_res, ws, env);
-            if (rtype == "str") {
-                append_item("len", 10, "usize", "Length in bytes (lowers to .size())");
-                {
-                    auto [ins, fmt] = make_sig_snippet("empty", "fn empty() -> bool");
-                    append_item("empty", 2, "fn empty() -> bool", "Returns true if empty", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("data", "fn data() -> *const c_char");
-                    append_item("data", 2, "fn data() -> *const c_char", "Returns raw pointer to null-terminated UTF-8 C string (lowers to .data())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("bytes", "fn bytes() -> []byte");
-                    append_item("bytes", 2, "fn bytes() -> []byte", "Returns safe byte slice view over UTF-8 bytes (lowers to cfire::to_bytes())", ins, fmt);
-                }
-                for (const auto& mod : cfire::doc::stdlib_catalog()) {
-                    if (mod.import_path == "core:str") {
-                        for (const auto& fn : mod.functions) {
-                            if (!fn.name.contains('.')) {
-                                auto [ins, fmt] = make_sig_snippet(fn.name, fn.cf_sig, true);
-                                append_item(fn.name, 2, fn.cf_sig, fn.summary, ins, fmt);
-                            }
-                        }
-                    }
-                }
-            }
-            if (rtype.starts_with("[")) {
-                append_item("len", 10, "usize", "Length in elements (lowers to .size())");
-                {
-                    auto [ins, fmt] = make_sig_snippet("data", "fn data() -> *T");
-                    append_item("data", 2, "fn data() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("data_ptr", "fn data_ptr() -> *T");
-                    append_item("data_ptr", 2, "fn data_ptr() -> *T", "Returns raw pointer to contiguous element buffer (lowers to .data())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("empty", "fn empty() -> bool");
-                    append_item("empty", 2, "fn empty() -> bool", "Returns true if empty (lowers to .empty())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("push", "fn push(elem: T) -> void");
-                    append_item("push", 2, "fn push(elem: T) -> void", "Appends element to vector (lowers to .push_back())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("pop", "fn pop() -> void");
-                    append_item("pop", 2, "fn pop() -> void", "Removes last element from vector (lowers to .pop_back())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("capacity", "fn capacity() -> usize");
-                    append_item("capacity", 2, "fn capacity() -> usize", "Allocated storage capacity of the vector (lowers to .capacity())", ins, fmt);
-                }
-                {
-                    auto [ins, fmt] = make_sig_snippet("clear", "fn clear() -> void");
-                    append_item("clear", 2, "fn clear() -> void", "Erases all elements from vector (lowers to .clear())", ins, fmt);
+            // W4: builtin methods come from the single table (src/sema/builtin_methods.hpp).
+            if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
+                std::unordered_set<std::string_view> seen;
+                for (const auto& bm : cfire::frontend::kBuiltinMethods) {
+                    if ((bm.recv & bits) == 0 || !seen.insert(bm.name).second) continue;
+                    std::string sig = cfire::frontend::builtin_method_signature(bm);
+                    auto [ins, fmt] = make_sig_snippet(std::string(bm.name), sig);
+                    append_item(std::string(bm.name), 2, sig, std::string(bm.summary), ins, fmt);
                 }
             }
             auto add_struct_fields = [&](const std::vector<cfire::frontend::StructDecl>& structs) {

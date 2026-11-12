@@ -1,0 +1,12 @@
+// probe: C4 an overflow trap inside a test must report the failing test name
+// kind: guard
+// mode: test
+// ideal: stdout FAIL: overflow traps
+package main
+fn bump(a: i32) -> i32 {
+    return a + 1
+}
+test "overflow traps" {
+    x := bump(2147483647)
+    println("{}", x)
+}

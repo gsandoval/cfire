@@ -1,0 +1,15 @@
+// expect: stdout
+// | -1 1 2 2 -1 1 true
+package main
+fn main() {
+    mut m: map[str]i32
+    a := m.insert("k", 1) or -1
+    b := m.insert("k", 2) or -1
+    c := m.get("k") or -1
+    d := m.remove("k") or -1
+    e := m.remove("k") or -1
+    m.insert("x", 7)
+    mut ks := m.keys()
+    ks.sort()
+    println("{} {} {} {} {} {} {}", a, b, c, d, e, ks.len(), m.contains("x"))
+}

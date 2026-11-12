@@ -192,11 +192,11 @@ The built-in `cfire lsp` daemon provides live diagnostics (`textDocument/publish
 ## Chapter 2: Quickstart & Toolchain Tour
 
 ### Trying Ideas Instantly with `cfire eval`
-Before creating a single file, you can test expressions, math, or standard library functions right from your terminal using `cfire eval`. It wraps your snippet in `package main`, detects module prefixes (`math.`, `str.`, `json.`, `fs.`, `time.`), and injects the matching `import` headers automatically:
+Before creating a single file, you can test expressions, math, or standard library functions right from your terminal using `cfire eval`. It wraps your snippet in `package main`, detects module prefixes (`math.`, `json.`, `fs.`, `time.`), and injects the matching `import` headers automatically:
 
 ```bash
 # 1. Expression mode (-e): evaluates the expression and prints its result
-cfire eval -e "2.0 * math.pi() * 10.0"
+cfire eval -e "2.0 * math.PI * 10.0"
 # Output: 62.83185307179586
 
 # 2. Statement mode: executes semicolon- or newline-separated statements
@@ -212,12 +212,11 @@ Let's create a small standalone program in `hello.cf` that trims a node name and
 ```cfire
 package main
 
-import "core:str"
 import "core:time"
 
 fn main() {
     started_ms := time.now_ms()
-    host := str.trim("  cfire-node-01  ")
+    host := "  cfire-node-01  ".trim()
     println("[{}] node={} ready", started_ms, host)
 }
 ```
@@ -230,7 +229,7 @@ cfire run hello.cf
 
 Notice a few details that shape daily code in `cfire`:
 - Every `.cf` file starts with a `package` declaration (`package main` for executable entry points).
-- Standard library imports always carry their tier prefix (`import "core:str"`, `import "core:time"`). Their last path segment (`str`, `time`) becomes the namespace alias unless you rename it with `as`.
+- Standard library imports always carry their tier prefix (`import "core:fs"`, `import "core:time"`). Their last path segment (`fs`, `time`) becomes the namespace alias unless you rename it with `as`.
 - `started_ms := time.now_ms()` declares an **immutable** binding (`const std::int64_t` in C++23). If you try to reassign `started_ms` later, the compiler stops you with `CF3003`. When you actually want mutation, you opt in with `mut`.
 
 ### Checking, Building, Inspecting C++23 & Ejecting to CMake
@@ -542,7 +541,7 @@ fn main() {
     items: []str = ["alpha", "beta", "gamma"]
     mut joined := ""
     for item in items {
-        if !joined.empty() {
+        if !joined.is_empty() {
             joined = joined + ","
         }
         joined = joined + item
@@ -571,8 +570,8 @@ When you need indirection or heap allocation, `cfire` separates **owning smart p
 
 | Syntax | Creation Expression | Ownership & Mutation Semantics | Emitted ISO C++23 Type |
 | :--- | :--- | :--- | :--- |
-| `own[T]` | `make[own[T]](val)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
-| `shared[T]` | `make[shared[T]](val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
+| `own[T]` | `make(own[T], val)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
+| `shared[T]` | `make(shared[T], val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
 | `&T` / `&mut T` | `&x` / `&mut x` | Non-owning immutable or mutable borrow (`&str` -> `std::string_view`) | `const T&` / `T*` |
 | `*T` | `&x` or foreign C pointer | Non-owning pointer; requires null check (`if p != none`) before deref | `T*` |
 | `*mut T` | `&mut x` | Rebindable pointer to a mutable target; supports `*p = val` and `*p += 1` | `T*` |
@@ -583,16 +582,16 @@ Let's see how unique (`own[T]`), shared (`shared[T]`), and rebindable mutable po
 package main
 
 type Packet struct {
-    Sequence: i64
-    Payload:  str
+    sequence: i64
+    payload:  str
 }
 
 fn main() {
     // 1. Unique heap ownership (std::unique_ptr<Packet>)
-    unique_pkt := make[own[Packet]](Packet{Sequence: 1, Payload: "SYN"})
+    unique_pkt := make(own[Packet], Packet{sequence: 1, payload: "SYN"})
 
     // 2. Shared reference-counted ownership (std::shared_ptr<Packet>)
-    shared_pkt := make[shared[Packet]](Packet{Sequence: 2, Payload: "ACK"})
+    shared_pkt := make(shared[Packet], Packet{sequence: 2, payload: "ACK"})
     shared_clone := shared_pkt
 
     // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
@@ -604,7 +603,7 @@ fn main() {
     *cursor = 99
 
     println("seq1={} seq2={} a={} b={}",
-        unique_pkt.Sequence, shared_clone.Sequence, a, b)
+        unique_pkt.sequence, shared_clone.sequence, a, b)
 }
 ```
 ```text
@@ -741,7 +740,7 @@ If you tried to read `view[0]` *after* `nums.push(40)`, the compiler immediately
 | `cfire/MUT-ALIAS` | Passing the same variable twice in one call when at least one arg is `mut`. | Pass distinct variables (`transfer(mut a, mut b)`). |
 | `cfire/USE-AFTER-MOVE` | Reading a variable after `move x` transferred ownership on an earlier path. | Read before `move x`, or pass by `mut` borrow. |
 | `cfire/USE-AFTER-FREE` | Reading a pointer/view (`&x`, `.data()`, `.byte_ptr()`, `s[a..b]`) after `.push()`, `.clear()`, `move`, or reassignment mutated the owner. | Finish reading the view before mutating the container, or re-slice after `.push()`. |
-| `cfire/DANGLING-POINTER` | Assigning the address of an inner-scope variable (`ptr = &local`) to an outer pointer. | Keep the pointee in the outer scope or allocate with `make[own[T]](...)`. |
+| `cfire/DANGLING-POINTER` | Assigning the address of an inner-scope variable (`ptr = &local`) to an outer pointer. | Keep the pointee in the outer scope or allocate with `make(own[T], ...)`. |
 | `cfire/DANGLING-RETURN` | Returning a pointer or view (`&local`, `local.data()`) to stack-local storage. | Return an owned value (`T`, `str`, `[]T`) or `own[T]` instead. |
 | `cfire/ITERATOR-INVALIDATION` | Mutating a collection (`.push()`, `.clear()`, `.remove()`, `move`) inside `for x in col`. | Collect mutations in a separate slice and apply them after the loop. |
 
@@ -985,11 +984,10 @@ When you want to handle an error or provide a fallback right at the call site, u
 ```cfire
 package main
 
-import "core:str"
 
 fn parse_port(raw: str) -> u16! {
-    cleaned := str.trim(raw)
-    if cleaned.empty() {
+    cleaned := raw.trim()
+    if cleaned.is_empty() {
         return error("port string is empty")
     }
     if cleaned == "8080" {
@@ -1127,12 +1125,15 @@ In `cfire`, `str` is an owned UTF-8 buffer (`std::string`), and `&str` is a borr
 
 | Module | Function / Method | Signature | What It Does |
 | :--- | :--- | :--- | :--- |
-| `core:str` | `str.split` / `str.join` | `fn(s: str, sep: str) -> []str` / `fn(items: []str, sep: str) -> str` | Splits `s` on delimiter `sep` or joins a slice of strings with `sep`. |
-| `core:str` | `str.trim` / `trim_left` / `trim_right` | `fn(s: str) -> str` | Strips leading and/or trailing ASCII whitespace (`' '`, `'\t'`, `'\n'`, `'\r'`). |
-| `core:str` | `str.replace` | `fn(s: str, from: str, to: str) -> str` | Replaces all occurrences of `from` in `s` with `to`. |
-| `core:str` | `str.starts_with` / `ends_with` / `contains` | `fn(s: str, pat: str) -> bool` | Prefix, suffix, and substring containment checks. |
-| `core:str` | `str.index_of` / `last_index_of` | `fn(s: str, sub: str) -> i64` | Returns the 0-based byte offset of `sub` in `s`, or `-1` if absent. |
-| `core:str` | `str.to_upper` / `to_lower` / `repeat` | `fn(s: str) -> str` / `fn(s: str, count: usize) -> str` | ASCII case conversion and `count`-fold string repetition. |
+| builtin | `s.split(sep)` / `s.split_n(sep, n)` / `s.lines()` / `parts.join(sep)` | `fn(sep: &str) -> []str` / `fn(sep: &str) -> str` | Splits `s` on `sep` (or on newlines) or joins a `[]str` with `sep`. |
+| builtin | `s.trim()` / `trim_start()` / `trim_end()` | `fn() -> &str` | View without leading and/or trailing ASCII whitespace (`' '`, `'\t'`, `'\n'`, `'\r'`); loan-tracked like `s[a..b]`. |
+| builtin | `s.strip_prefix(p)` / `strip_suffix(p)` | `fn(p: &str) -> &str?` | View after the prefix / before the suffix, or `none` when it is absent. |
+| builtin | `s.replace(from, to)` / `replace_all(from, to)` | `fn(from: &str, to: &str) -> str` | Copy with the first / every occurrence of `from` replaced. |
+| builtin | `s.starts_with(p)` / `ends_with(p)` / `contains(p)` | `fn(p: &str) -> bool` | Prefix, suffix, and substring containment checks. |
+| builtin | `s.index_of(sub)` / `last_index_of(sub)` | `fn(sub: &str) -> usize?` | The 0-based byte offset of `sub`, or `none` when it is absent (Q8: no `-1` sentinels). |
+| builtin | `s.to_upper()` / `to_lower()` / `repeat(n)` | `fn() -> str` / `fn(n: usize) -> str` | ASCII case conversion and `n`-fold repetition. |
+| builtin | `s.runes()` / `rune_count()` | `fn() -> []u32` / `fn() -> usize` | Unicode code points (invalid UTF-8 decodes as U+FFFD). |
+| builtin | `i32.parse(s)` / `f64.parse(s)` / `bool.parse(s)` | `fn(s: str) -> T?` | Parses a whole literal of the target type; `none` on invalid or out-of-range input. |
 | `core:unicode` | `unicode.is_valid_utf8` / `rune_count` | `fn(s: str) -> bool` / `fn(s: str) -> usize` | Validates RFC 3629 UTF-8 byte sequences and counts Unicode codepoints. |
 | `core:unicode` | `unicode.runes` / `encode_rune` | `fn(s: str) -> []u32` / `fn(r: u32) -> str` | Decodes UTF-8 into 32-bit scalar values (`u32`) or encodes a codepoint to UTF-8. |
 | `core:unicode` | `unicode.to_lower` / `to_upper` | `fn(s: str) -> str` | Full Unicode case folding across Latin, Greek, and Cyrillic scripts. |
@@ -1145,13 +1146,12 @@ In `cfire`, `str` is an owned UTF-8 buffer (`std::string`), and `&str` is a borr
 package main
 
 import "core:regex"
-import "core:str"
 import "core:unicode"
 
 fn main() -> void! {
     raw := "  node_01, node_02, node_03  "
-    parts := str.split(str.trim(raw), ", ")
-    joined := str.join(parts, "|")
+    parts := raw.trim().split(", ")
+    joined := parts.join("|")
 
     banner := "cfire 🔥"
     runes := unicode.runes(banner)
@@ -1205,27 +1205,28 @@ bytes=9 first_payload_byte=49 first_sample=0.25
 ```
 
 ### Generic Sets, Priority Queues, Deques & Sorting
-Beyond built-in slices (`[]T`) and hash maps (`map[K]V`), `core:collections` and `core:sort` give you generic hash sets, max-heap priority queues, double-ended ring queues, in-place sorting, and binary search:
+Beyond built-in slices (`[]T`) and hash maps (`map[K]V`), `core:collections` gives you generic hash sets, max-heap priority queues, and double-ended ring queues; sorting and searching are methods on the slice itself:
 
 | Module | Type / Function | Operations / Signature | C++23 Backing |
 | :--- | :--- | :--- | :--- |
 | `core:collections` | `collections.Set[T]` | `.insert(v)`, `.contains(v) -> bool`, `.remove(v)`, `.len() -> usize`, `.clear()` | `std::unordered_set<T>` |
 | `core:collections` | `collections.PriorityQueue[T]` | `.push(v)`, `.top() -> T`, `.pop() -> T`, `.empty() -> bool`, `.len() -> usize` | `std::priority_queue<T>` (max-heap) |
 | `core:collections` | `collections.Deque[T]` | `.push_front(v)`, `.push_back(v)`, `.pop_front() -> T`, `.pop_back() -> T`, `.len() -> usize` | `std::deque<T>` |
-| `core:sort` | `sort.slice(mut s)` / `sort.reverse(mut s)` | `fn[T](mut s: []T)` — sorts `s` ascending or reverses `s` in place | `std::sort` / `std::reverse` |
-| `core:sort` | `sort.slice_by(mut s, less)` | `fn[T](mut s: []T, less: fn(T, T) -> bool)` — custom comparator sort | `std::sort(s.begin(), s.end(), less)` |
-| `core:sort` | `sort.is_sorted(s)` / `binary_search(s, val)` | `fn[T](s: []T) -> bool` / `fn[T](s: []T, val: T) -> i64?` | `std::is_sorted` / `std::lower_bound` |
+| builtin | `xs.sort()` / `xs.reverse()` | sorts `xs` ascending or reverses it in place (needs a `mut` binding) | `std::sort` / `std::reverse` |
+| builtin | `xs.sort_by(less)` | `fn(less: fn(T, T) -> bool)` — custom comparator sort | `std::sort(xs.begin(), xs.end(), less)` |
+| builtin | `xs.is_sorted()` / `xs.binary_search(v)` | `fn() -> bool` / `fn(v: T) -> usize?` | `std::is_sorted` / `std::lower_bound` |
+| builtin | `xs.contains(v)` / `index_of(v)` / `first()` / `last()` | `-> bool` / `-> usize?` / `-> T?` | linear search and safe ends |
+| builtin | `xs.insert(i, v)` / `remove(i)` / `swap_remove(i)` / `pop()` / `truncate(n)` / `extend(other)` | mutators; out-of-range indices panic; every one invalidates loans | `std::vector` |
 
 ```cfire
 package main
 
 import "core:collections"
-import "core:sort"
 
 fn main() {
     mut latencies: []i64 = [42, 7, 19, 88, 12]
-    sort.slice(mut latencies)
-    idx := sort.binary_search(latencies, 19) or -1
+    latencies.sort()
+    idx := latencies.binary_search(19) or -1
 
     mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
@@ -1264,7 +1265,7 @@ Whether your code runs on a Linux server, macOS desktop, or inside the iOS Simul
 | `core:os` | `os.getenv` / `os.setenv` / `os.cwd` | `fn(key: str, fallback: str = "") -> str` | Reads or sets process environment variables and queries the working directory. |
 | `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.format_rfc3339()`, and thread sleep. |
 | `core:rand` | `rand.u64` / `range_i64` / `f64_unit` / `bytes` | `fn(n: usize) -> []byte` | Thread-local `MT19937_64` draws and OS-entropy CSPRNG byte slices (`rand.bytes`). |
-| `core:math` | `math.sqrt` / `sin` / `cos` / `pow` / `clamp_f64` | `fn(f64) -> f64` | IEEE-754 transcendental functions and numeric clamping. |
+| `core:math` | `math.PI` / `E` / `TAU` / `SQRT_2` and `math.atan2` / `hypot` / `gcd` / `lcm` | `f64` constants / multi-input functions | Constants and functions with no natural receiver; single-value math is a method (`x.sqrt()`, `x.sin()`, `x.clamp(lo, hi)`, `a.checked_add(b)`). |
 
 ```cfire
 package main
@@ -1288,7 +1289,7 @@ fn main() -> void! {
     token := rand.bytes(16)
     elapsed := time.now_ms() - t0
     println("has_host={} token_bytes={} hypot={:.1f} elapsed>={}",
-        content.contains("host="), token.len(), math.sqrt(9.0 + 16.0), elapsed >= 0)
+        content.contains("host="), token.len(), (9.0 + 16.0).sqrt(), elapsed >= 0)
 }
 ```
 ```text
@@ -1307,12 +1308,11 @@ Shelling out via `/bin/sh -c` with string-concatenated arguments (`os.exec("tar 
 package main
 
 import "core:os"
-import "core:str"
 
 fn main() -> void! {
     // Spawns /bin/echo directly via posix_spawnp — shell metacharacters are inert literals
     res := try os.command("echo", ["hello; uname -a", "safe-argv"])
-    println("exit={} output={}", res.exit_code, str.trim(res.stdout))
+    println("exit={} output={}", res.exit_code, res.stdout.trim())
 }
 ```
 ```text
@@ -1400,11 +1400,11 @@ shards=[10, 20, 30, 40]
 ```
 
 ### Communicating Across Workers with MPMC Channels (`core:sync`)
-When workers need to stream items through a producer/consumer pipeline rather than write to fixed slice slots, use `sync.make_channel[T]()`. It provides a typed, thread-safe multi-producer / multi-consumer (`MPMC`) queue that integrates directly with `for item in ch` loops:
+When workers need to stream items through a producer/consumer pipeline rather than write to fixed slice slots, use `make(sync.Channel[T], capacity)`. It provides a typed, thread-safe multi-producer / multi-consumer (`MPMC`) queue that integrates directly with `for item in ch` loops:
 
 | Function / Method | Signature | Behavior |
 | :--- | :--- | :--- |
-| `sync.make_channel[T]` | `fn make_channel[T]() -> Channel[T]` | Creates a thread-safe channel handle (copying the handle shares the underlying queue). |
+| `make(sync.Channel[T], cap)` | `-> Channel[T]` | Creates a thread-safe channel handle (copying the handle shares the underlying queue); `cap = 0` is unbuffered. |
 | `ch.send(val)` | `fn (ch: Channel[T]) send(val: T)` | Enqueues `val` and wakes one blocked receiver thread. |
 | `ch.recv()` | `fn (ch: Channel[T]) recv() -> T!` | Blocks until an item is available, or returns an error when closed and drained. |
 | `ch.recv_ctx(ctx)` | `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!` | Blocks until an item arrives, the channel closes, or `ctx` is cancelled/times out. |
@@ -1416,7 +1416,7 @@ package main
 import "core:sync"
 
 fn main() {
-    ch := sync.make_channel[i64]()
+    ch := make(sync.Channel[i64])
     mut total: i64 = 0
 
     async.scope(workers: 1) |scope| {
@@ -1465,7 +1465,7 @@ fn main() {
     (ctx, cancel) := context.with_timeout(root, 50)
     defer cancel("cleanup")
 
-    ch := sync.make_channel[str]()
+    ch := make(sync.Channel[str])
 
     async.scope(workers: 2) |scope| {
         scope.spawn || {
@@ -1756,18 +1756,18 @@ The `core:net` family gives you one API from raw TCP sockets up to HTTP routers,
 | `core:net/websocket` | `WebSocket`, `WsPair`, `WsServer`, `Frame` | RFC 6455 frame engine over `TcpStream` / `TlsStream` | RFC 6455 frame engine | RFC 6455 frame engine | In-memory `websocket.pair()` full-duplex channel |
 
 ### Building an HTTP Router & Streaming SSE (`core:net/http`)
-Let's build an HTTP service with pre-dispatch middleware, parameterized routes (`/users/:id`), and a real-time Server-Sent Events (`/v1/stream`) endpoint. Notice how `router.dispatch(...)` lets you unit-test your entire routing table in memory before binding a live port via `http.make_server(0)`:
+Let's build an HTTP service with pre-dispatch middleware, parameterized routes (`/users/:id`), and a real-time Server-Sent Events (`/v1/stream`) endpoint. Notice how `router.dispatch(...)` lets you unit-test your entire routing table in memory before binding a live port via `make(http.Server, 0)`:
 
 | Function / Method | Signature | Description |
 | :--- | :--- | :--- |
-| `http.get` / `http.get_insecure` | `fn(url: str) -> Response!` | Sends an `HTTP GET` request over `http://` or `https://` (`get_insecure` skips self-signed cert verification). |
+| `http.get` | `fn(url: str, headers = {}, verify_peer: bool = true) -> Response!` | Sends an `HTTP GET` request over `http://` or `https://` (`verify_peer: false` accepts self-signed certificates). |
 | `http.post` / `http.request` | `fn(url: str, body: str, ...) -> Response!` | Sends an `HTTP POST` or custom HTTP verb (`PUT`, `PATCH`, `DELETE`) with headers. |
 | `http.post_sse` | `fn(url: str, body: str, headers: map[str]str, on_event: fn(SseEvent) -> bool) -> void!` | Streams `text/event-stream` chunks in real time, invoking `on_event` for each frame until the stream ends or `on_event` returns `false`. |
-| `http.make_router()` | `fn() -> Router` | Constructs a pattern-matching router supporting static paths, `:param` segments, and `*` wildcards. |
+| `make(http.Router)` | `-> Router` | Constructs a pattern-matching router supporting static paths, `:param` segments, and `*` wildcards. |
 | `router.get` / `post` / `put` / `delete_` | `fn(pattern: str, handler: fn(Request) -> Response)` | Registers a route handler for the specified HTTP method and path pattern. |
 | `router.use` | `fn(middleware: fn(Request) -> int)` | Runs before route dispatch (`0` continues; non-zero HTTP status code short-circuits). |
 | `router.dispatch` | `fn(req: Request) -> Response` | Executes middleware and route matching in memory without opening a network socket. |
-| `http.make_server` / `make_tls_server_pem` | `fn(port: int = 0) -> Server!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`). |
+| `make(http.Server, port)` / `make(http.Server, port, tls: http.TlsConfig{...})` | `-> Server!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`); `server.set_limits(http.ServerLimits{...})` tunes timeouts and sizes. |
 
 ```cfire
 package main
@@ -1775,7 +1775,7 @@ package main
 import "core:net/http"
 
 fn main() -> void! {
-    mut router := http.make_router()
+    mut router := make(http.Router)
 
     // Middleware: return 0 to continue or an HTTP status code to halt dispatch
     router.use(|req: http.Request| -> int {
@@ -1802,7 +1802,7 @@ fn main() -> void! {
     println("In-memory status={}, body={}", synth.status, synth.body)
 
     // 2. Live loopback server on an ephemeral port
-    mut server := try http.make_server(0)
+    mut server := try make(http.Server, 0)
     defer server.stop()
     server.serve_in_background(router)
 
@@ -1846,7 +1846,7 @@ import "core:net/tls"
 import "core:net/websocket"
 
 fn main() -> void! {
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.ws("/ws/echo", |req: http.Request, mut ws: websocket.WebSocket| {
         msg := ws.recv_text() or ""
         if msg != "" {
@@ -1855,7 +1855,7 @@ fn main() -> void! {
         _ = ws.close()
     })
 
-    mut srv := try http.make_server(0)
+    mut srv := try make(http.Server, 0)
     defer srv.stop()
     srv.serve_in_background(router)
 
@@ -1867,15 +1867,15 @@ fn main() -> void! {
 
     if tls.available() {
         pem := try tls.generate_self_signed_pem("localhost")
-        mut tls_router := http.make_router()
+        mut tls_router := make(http.Router)
         tls_router.get("/secure", |req: http.Request| -> http.Response {
             return http.Response.text(200, "TLS-1.3-OK")
         })
-        mut tls_srv := try http.make_tls_server_pem(0, pem.cert_pem, pem.key_pem)
+        mut tls_srv := try make(http.Server, 0, tls: http.TlsConfig{cert_pem: pem.cert_pem, key_pem: pem.key_pem})
         defer tls_srv.stop()
         tls_srv.serve_in_background(tls_router)
 
-        sec := try http.get_insecure("https://127.0.0.1:{tls_srv.port()}/secure")
+        sec := try http.get("https://127.0.0.1:{tls_srv.port()}/secure", verify_peer: false)
         println("HTTPS status={}, body={}", sec.status, sec.body)
     }
 }
@@ -2276,7 +2276,7 @@ Top RAG hit: section #1 'Storage Engine' (score > 0.2: true)
 ```
 
 ### Building Model Context Protocol (`McpServer`) Tools
-Want to expose your `cfire` functions as tools inside Claude Desktop, Cursor, or another MCP host? `ai.make_mcp_server(name, version)` and `mcp.register_tool[T](...)` wire up schema validation and JSON-RPC 2.0 dispatch in a few lines:
+Want to expose your `cfire` functions as tools inside Claude Desktop, Cursor, or another MCP host? `make(ai.McpServer, name, version)` and `mcp.register_tool[T](...)` wire up schema validation and JSON-RPC 2.0 dispatch in a few lines:
 
 ```cfire
 package main
@@ -2284,15 +2284,15 @@ package main
 import "ext:ai" as ai
 
 type SearchArgs struct {
-    Query: str `json:"query" desc:"Search phrase"`
-    Limit: i64 `json:"limit" desc:"Maximum results to return"`
+    query: str `json:"query" desc:"Search phrase"`
+    limit: i64 `json:"limit" desc:"Maximum results to return"`
 }
 
 fn main() {
-    mut mcp := ai.make_mcp_server("cfire-kb-server", "1.0.0")
+    mut mcp := make(ai.McpServer, "cfire-kb-server", "1.0.0")
 
     mcp.register_tool[SearchArgs]("search_kb", "Searches the internal knowledge base", |args: SearchArgs| -> str! {
-        return "[{{\"query\":\"{args.Query}\",\"limit\":{args.Limit}}}]"
+        return "[{{\"query\":\"{args.query}\",\"limit\":{args.limit}}}]"
     })
 
     // Test JSON-RPC 2.0 dispatch in memory (call mcp.serve_stdio() in production)
@@ -2307,7 +2307,7 @@ MCP JSON-RPC response contains SIMD: true
 ```
 
 ### Multi-Turn Agent Loops & Self-Correcting Validation (`ai.Agent`)
-Inspired by Pydantic AI, `ai.make_agent(client, model, system_prompt)` orchestrates multi-turn tool calls, shares tool registries with `ai.McpServer` via `agent.use_mcp(mcp)`, and automatically feeds `validate:"..."` or custom validator errors back to the model to self-correct (`run_struct[Out]`, `run_struct_validated[Out]`):
+Inspired by Pydantic AI, `make(ai.Agent, client, model, system_prompt)` orchestrates multi-turn tool calls, shares tool registries with `ai.McpServer` via `agent.use_mcp(mcp)`, and automatically feeds `validate:"..."` or custom validator errors back to the model to self-correct (`run_struct[Out]`, `run_struct_validated[Out]`):
 
 ```cfire
 package main
@@ -2315,13 +2315,13 @@ package main
 import "ext:ai" as ai
 
 type MetricArgs struct {
-    Service: str `json:"service" validate:"non_empty"`
+    service: str `json:"service" validate:"non_empty"`
 }
 
 type HealthReport struct {
-    Service:  str `json:"service"  validate:"non_empty"`
-    Severity: i64 `json:"severity" validate:"min=1,max=5"`
-    Env:      str `json:"env"      validate:"oneof=dev|staging|prod"`
+    service:  str `json:"service"  validate:"non_empty"`
+    severity: i64 `json:"severity" validate:"min=1,max=5"`
+    env:      str `json:"env"      validate:"oneof=dev|staging|prod"`
 }
 
 fn main() -> void! {
@@ -2343,13 +2343,13 @@ fn main() -> void! {
         return ai.ChatResponse{text: "{\"service\":\"billing\",\"severity\":2,\"env\":\"prod\"}"}
     })
 
-    mut agent := ai.make_agent(client, "mock-model", "You are an SRE assistant.")
+    mut agent := make(ai.Agent, client, "mock-model", "You are an SRE assistant.")
     agent.register_tool[MetricArgs]("fetch_metrics", "Fetches service telemetry", |args: MetricArgs| -> str! {
-        return "p99=420ms for {args.Service}"
+        return "p99=420ms for {args.service}"
     })
 
     report := try agent.run_struct[HealthReport]("Assess billing service health")
-    println("Agent report: service={}, severity={}, env={}, steps={}", report.Service, report.Severity, report.Env, step)
+    println("Agent report: service={}, severity={}, env={}, steps={}", report.service, report.severity, report.env, step)
 }
 ```
 ```text
@@ -2409,35 +2409,35 @@ package main
 import "ext:webui"
 
 type TrackMix struct {
-    Channel: i64  `json:"channel"`
-    Name:    str  `json:"name"`
-    GainDb:  f64  `json:"gain_db"`
-    Muted:   bool `json:"muted"`
+    channel: i64  `json:"channel"`
+    name:    str  `json:"name"`
+    gain_db:  f64  `json:"gain_db"`
+    muted:   bool `json:"muted"`
 }
 
 type MixResult struct {
-    Channel: i64  `json:"channel"`
-    PeakPct: f64  `json:"peak_pct"`
-    Clipped: bool `json:"clipped"`
-    Status:  str  `json:"status"`
+    channel: i64  `json:"channel"`
+    peak_pct: f64  `json:"peak_pct"`
+    clipped: bool `json:"clipped"`
+    status:  str  `json:"status"`
 }
 
 fn main() -> void! {
-    mut app := webui.new_app("cfire Studio", 1024, 680)
+    mut app := make(webui.App, "cfire Studio", 1024, 680)
 
     // 1. Typed struct-in -> struct-out RPC binding
     app.bind[TrackMix]("update_track") |req| {
-        mut peak := 75.0 + req.GainDb * 2.5
+        mut peak := 75.0 + req.gain_db * 2.5
         mut label := "ACTIVE"
-        if req.Muted {
+        if req.muted {
             peak = 0.0
             label = "MUTED"
         }
         return MixResult{
-            Channel: req.Channel,
-            PeakPct: peak,
-            Clipped: peak >= 100.0,
-            Status:  label,
+            channel: req.channel,
+            peak_pct: peak,
+            clipped: peak >= 100.0,
+            status:  label,
         }
     }
 
@@ -2470,17 +2470,17 @@ package main
 import "ext:webui"
 
 type TransportEvent struct {
-    Playing: bool `json:"playing"`
-    Bpm:     i64  `json:"bpm"`
+    playing: bool `json:"playing"`
+    bpm:     i64  `json:"bpm"`
 }
 
 fn main() {
-    mut app := webui.new_app("Event Bus Demo", 800, 600)
+    mut app := make(webui.App, "Event Bus Demo", 800, 600)
 
     // Listen for events emitted from JavaScript via window.runtime.EventsEmit("transport:toggle", ...)
     app.on("transport:toggle") |payload| {
         app.set_state("transport", payload)
-        app.emit("transport:ack", TransportEvent{ Playing: true, Bpm: 128 })
+        app.emit("transport:ack", TransportEvent{ playing: true, bpm: 128 })
     }
 
     // Simulate an incoming frontend event in headless mode
@@ -2521,13 +2521,13 @@ package main
 import "ext:webui"
 
 type EchoReq struct {
-    Text: str `json:"text"`
+    text: str `json:"text"`
 }
 
 fn main() -> void! {
-    mut app := webui.new_app("WebView Test Runner", 640, 480)
+    mut app := make(webui.App, "WebView Test Runner", 640, 480)
     app.bind[EchoReq]("upper_echo") |req| {
-        return "{\"reply\":\"" + req.Text + "!\"}"
+        return "{\"reply\":\"" + req.text + "!\"}"
     }
     app.set_html(`<!doctype html><html><body><script>
         (async () => {
@@ -2572,16 +2572,15 @@ import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
 import "core:json" as json
 import "core:net/http" as http
-import "core:str" as str
 
 type SearchRequest struct {
-    Query: str `json:"query"`
-    TopK:  i64 `json:"top_k"`
+    query: str `json:"query"`
+    top_k:  i64 `json:"top_k"`
 }
 
 type SearchResult struct {
-    Title: str `sql:"title" json:"title"`
-    Score: f64 `sql:"score" json:"score"`
+    title: str `sql:"title" json:"title"`
+    score: f64 `sql:"score" json:"score"`
 }
 
 fn main() -> void! {
@@ -2597,19 +2596,19 @@ fn main() -> void! {
     ]
     client := ai.local()
     for d in docs {
-        parts := str.split(d, ": ")
+        parts := d.split(": ")
         vec   := try client.embed(d)
         try db.exec("INSERT INTO kb VALUES (?1, ?2, ?3)", parts[0], d, vec)
     }
 
     // 2. Attach an HTTP JSON endpoint querying SQLite SIMD vector similarity
-    mut router := http.make_router()
+    mut router := make(http.Router)
     router.post("/v1/search", |req: http.Request| -> http.Response {
         q := json.parse[SearchRequest](req.body) or { return http.Response.json(400, "{\"error\":\"invalid JSON\"}") }
-        qvec := client.embed(q.Query) or { return http.Response.json(500, "{\"error\":\"embed failed\"}") }
+        qvec := client.embed(q.query) or { return http.Response.json(500, "{\"error\":\"embed failed\"}") }
         hits := db.query[SearchResult](
             "SELECT title, vec_cosine_similarity(vec, ?1) AS score FROM kb ORDER BY score DESC LIMIT ?2",
-            qvec, q.TopK
+            qvec, q.top_k
         ) or { return http.Response.json(500, "{\"error\":\"query failed\"}") }
         return http.Response.json(200, json.stringify(hits))
     })
@@ -2621,7 +2620,7 @@ fn main() -> void! {
         body:   "{\"query\":\"64 stereo voices mixer\",\"top_k\":1}"
     })
     parsed := try json.parse[[]SearchResult](res.body)
-    println("HTTP {} -> top hit: '{}'", res.status, parsed[0].Title)
+    println("HTTP {} -> top hit: '{}'", res.status, parsed[0].title)
 }
 ```
 ```text
@@ -2650,7 +2649,7 @@ fn main() -> void! {
     msgs   := try sqs.ReceiveMessages(q_url, 1)
 
     println("s3_etag_ok={} body={} sqs_msg={} received={}",
-        !etag.empty(), obj.Body, !msg_id.empty(), msgs.len())
+        !etag.is_empty(), obj.Body, !msg_id.is_empty(), msgs.len())
 }
 ```
 ```text
@@ -2677,7 +2676,7 @@ Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is
 | [`examples/12-raygui-controls`](file:///Users/memo/Programming/cfire/examples/12-raygui-controls) | Raygui GUI Kit | Immediate-mode controls (`vendor:raygui`): checkboxes, sliders, progress bars, combo boxes, `&mut str` text boxes | `cfire run examples/12-raygui-controls/main.cf` |
 | [`examples/13-ios-native-ui`](file:///Users/memo/Programming/cfire/examples/13-ios-native-ui) | Native iOS UI | Zero-coordinate `GuiIos*` auto-layout kit (`examples/13-ios-native-ui/ui/kit.cf`), safe-area insets, real-time `core:audio` metering (`--ios`, `--web`, desktop) | `cfire run --ios examples/13-ios-native-ui/main.cf` |
 | [`examples/14-ai-rag-sqlite`](file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |
-| [`examples/15-mcp-server`](file:///Users/memo/Programming/cfire/examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`ai.make_mcp_server`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
+| [`examples/15-mcp-server`](file:///Users/memo/Programming/cfire/examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`make(ai.McpServer, ...)`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
 | [`examples/16-audio-synth`](file:///Users/memo/Programming/cfire/examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`core:audio`) | `cfire run examples/16-audio-synth/main.cf` |
 | [`examples/17-webui-studio`](file:///Users/memo/Programming/cfire/examples/17-webui-studio) | Hybrid WebUI Studio | Wails/Tauri-style native WebView (`ext:webui`), typed `app.bind[T]` JSON-RPC 2.0, `window.backend` ES6 Proxy, `app://localhost/` VFS, offscreen `WKWebView` test (`--ios` & desktop) | `cfire run examples/17-webui-studio/main.cf` |
 

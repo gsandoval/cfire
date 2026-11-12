@@ -1,0 +1,14 @@
+// expect: stdout
+// | in.cf|main|k=v=w|3|a,b|é9|2|xyxyxy|a-b.c|a-b-c
+package main
+fn main() {
+    name := "main.cf"
+    stem := name.strip_suffix(".cf") or name
+    ext := name.strip_prefix("ma") or "none"
+    kv := "k=v=w".split_n("=", 2)
+    ls := "one\r\ntwo\nthree".lines()
+    parts := ",a,b".split(",")
+    word := "é9"
+    runes := word.runes()
+    println("{}|{}|{}={}|{}|{}|{}{}|{}|{}|{}|{}", ext.trim_start(), stem, kv[0], kv[1], ls.len(), parts[1] + "," + parts[2], word, "", runes.len(), "xy".repeat(3), "a.b.c".replace(".", "-"), "a.b.c".replace_all(".", "-"))
+}

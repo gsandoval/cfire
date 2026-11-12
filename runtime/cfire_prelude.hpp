@@ -27,6 +27,7 @@
 #include <cstring>
 #include <expected>
 #include <filesystem>
+#include <random>
 #include <format>
 #include <functional>
 #include <future>
@@ -46,6 +47,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <source_location>
 #include <variant>
 #include <vector>
 #if defined(__AVX2__) || defined(__SSE2__)
@@ -58,6 +60,7 @@
 #if !defined(_WIN32)
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #if !defined(__EMSCRIPTEN__)
 #include <poll.h>
 #include <termios.h>
@@ -168,16 +171,35 @@ template <typename A, typename B>
         if (b == 0) [[unlikely]] {
             cfire::panic("division by zero");
         }
+        using R = decltype(a / b);
+        if constexpr (std::is_signed_v<R>) {
+            // MIN / -1 overflows (UB, traps on x86); release wraps like every other overflow (Q4, CF-166).
+            if (static_cast<R>(b) == R{-1} && static_cast<R>(a) == std::numeric_limits<R>::min()) [[unlikely]] {
+                return static_cast<R>(a);
+            }
+        }
     }
     return a / b;
 }
 
 template <typename A, typename B>
 [[nodiscard]] constexpr auto mod(A a, B b) {
-    if (b == 0) [[unlikely]] {
-        cfire::panic("division by zero");
+    if constexpr (std::is_floating_point_v<A> || std::is_floating_point_v<B>) {
+        // W4 (CF-162): float `%` is IEEE `fmod` (sign of the dividend; `x % 0.0` is NaN, not a panic).
+        using R = std::common_type_t<A, B>;
+        return std::fmod(static_cast<R>(a), static_cast<R>(b));
+    } else {
+        if (b == 0) [[unlikely]] {
+            cfire::panic("division by zero");
+        }
+        if constexpr (std::is_integral_v<A> && std::is_integral_v<B>) {
+            using R = decltype(a % b);
+            if constexpr (std::is_signed_v<R>) {
+                if (static_cast<R>(b) == R{-1}) [[unlikely]] return R{0};  // MIN % -1 is UB in C++
+            }
+        }
+        return a % b;
     }
-    return a % b;
 }
 } // namespace cfire
 
@@ -289,6 +311,86 @@ template <std::integral I>
 constexpr auto operator!=(I lhs, std::byte rhs) noexcept -> bool {
     return lhs != std::to_integer<I>(rhs);
 }
+
+namespace cfire::detail {
+
+// --- Secure temporary storage & per-user caches (CF-153) ---
+// Never use a predictable or shared name under the temp directory: on a multi-user machine another
+// account can pre-create it (symlink attacks, cache poisoning, reading private documents). Temp data
+// lives in a private directory created atomically (mkdtemp, mode 0700) that is removed on scope exit.
+class SecureTempDir {
+public:
+    explicit SecureTempDir(std::string_view prefix = "cfire") {
+        std::error_code ec;
+        auto base = std::filesystem::temp_directory_path(ec);
+        if (ec || base.empty()) base = std::filesystem::current_path(ec);
+#if !defined(_WIN32)
+        std::string tmpl = (base / (std::string(prefix) + "_XXXXXX")).string();
+        if (char* res = ::mkdtemp(tmpl.data())) path_ = res;
+#else
+        std::random_device rd;
+        for (int attempt = 0; attempt < 64 && path_.empty(); ++attempt) {
+            auto cand = base / std::format("{}_{:016x}", prefix, (static_cast<std::uint64_t>(rd()) << 32) ^ rd());
+            if (std::filesystem::create_directory(cand, ec)) path_ = cand;  // false if it already exists
+        }
+#endif
+    }
+    ~SecureTempDir() {
+        if (!path_.empty() && !keep_) {
+            std::error_code ec;
+            std::filesystem::remove_all(path_, ec);
+        }
+    }
+    SecureTempDir(const SecureTempDir&) = delete;
+    SecureTempDir& operator=(const SecureTempDir&) = delete;
+    SecureTempDir(SecureTempDir&& o) noexcept : path_(std::exchange(o.path_, {})), keep_(o.keep_) {}
+
+    [[nodiscard]] auto ok() const noexcept -> bool { return !path_.empty(); }
+    [[nodiscard]] auto path() const noexcept -> const std::filesystem::path& { return path_; }
+    [[nodiscard]] auto file(std::string_view name) const -> std::filesystem::path { return path_ / name; }
+    // Leaves the directory in place (e.g. a build output the caller hands to another process).
+    auto release() noexcept -> std::filesystem::path { keep_ = true; return path_; }
+
+private:
+    std::filesystem::path path_{};
+    bool keep_ = false;
+};
+
+// Per-user cache root for `sub` ($XDG_CACHE_HOME, ~/Library/Caches, %LOCALAPPDATA%), created with
+// mode 0700. Returns an empty path when no per-user location exists; callers must then fall back to a
+// per-process SecureTempDir rather than a shared temp-dir name.
+[[nodiscard]] inline auto user_cache_dir(std::string_view sub) -> std::filesystem::path {
+    auto env = [](const char* k) -> std::string {
+        const char* v = std::getenv(k);
+        return v ? std::string(v) : std::string();
+    };
+    std::filesystem::path root;
+#if defined(_WIN32)
+    if (auto la = env("LOCALAPPDATA"); !la.empty()) root = std::filesystem::path(la) / "cfire";
+#else
+    if (auto xdg = env("XDG_CACHE_HOME"); !xdg.empty() && xdg.starts_with("/")) {
+        root = std::filesystem::path(xdg) / "cfire";
+    } else if (auto home = env("HOME"); !home.empty()) {
+#if defined(__APPLE__)
+        root = std::filesystem::path(home) / "Library" / "Caches" / "cfire";
+#else
+        root = std::filesystem::path(home) / ".cache" / "cfire";
+#endif
+    }
+#endif
+    if (root.empty()) return {};
+    auto dir = sub.empty() ? root : root / sub;
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec || !std::filesystem::is_directory(dir, ec)) return {};
+#if !defined(_WIN32)
+    ::chmod(root.c_str(), 0700);
+    ::chmod(dir.c_str(), 0700);
+#endif
+    return dir;
+}
+
+} // namespace cfire::detail
 
 namespace cfire {
 
@@ -468,6 +570,7 @@ public:
 
     [[nodiscard]] auto size() const noexcept -> std::size_t { return map_.size(); }
     [[nodiscard]] auto empty() const noexcept -> bool { return map_.empty(); }
+    void clear() noexcept { map_.clear(); }
     auto begin() noexcept { return map_.begin(); }
     auto end() noexcept { return map_.end(); }
     auto begin() const noexcept { return map_.begin(); }
@@ -478,35 +581,77 @@ private:
 };
 
 // --- Zero-Copy Slicing (`s[start..end]`) for `str`, `[]T`, `[N]T`, and `bytes` ---
-[[nodiscard]] inline auto slice(std::string_view sv CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::string_view {
-    if (start > sv.size()) start = sv.size();
-    if (end > sv.size()) end = sv.size();
-    if (end < start) end = start;
-    return sv.substr(start, end - start);
+// Q12 (CF-147): `xs[a..b]` panics on an invalid range (a > b, b > len, negative bound), exactly like
+// indexing; `str` slices also panic when a bound falls inside a UTF-8 code point. The location is the
+// caller's `.cf` line via #line + std::source_location.
+inline void assert_true_at(bool cond, std::string_view msg, std::string_view file, int line, std::string_view expr_text);
+
+// --- `make([]T, len[, cap])` (Q25): `len` zero-filled elements, `cap` reserved; negative sizes panic ---
+template <typename T, std::integral L>
+[[nodiscard]] inline auto make_slice(L len, const std::source_location& loc = std::source_location::current()) -> std::vector<T> {
+    if (std::cmp_less(len, 0)) [[unlikely]] {
+        assert_true_at(false, std::format("make: negative slice length {}", len), loc.file_name(), static_cast<int>(loc.line()), "negative slice length");
+    }
+    return std::vector<T>(static_cast<std::size_t>(len));
+}
+template <typename T, std::integral L, std::integral C>
+[[nodiscard]] inline auto make_slice(L len, C cap, const std::source_location& loc = std::source_location::current()) -> std::vector<T> {
+    if (std::cmp_less(len, 0) || std::cmp_less(cap, len)) [[unlikely]] {
+        assert_true_at(false, std::format("make: invalid slice length {} / capacity {}", len, cap), loc.file_name(), static_cast<int>(loc.line()), "invalid slice capacity");
+    }
+    std::vector<T> v;
+    v.reserve(static_cast<std::size_t>(cap));
+    v.resize(static_cast<std::size_t>(len));
+    return v;
 }
 
-template <typename T>
-[[nodiscard]] inline auto slice(const std::vector<T>& vec CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
-    if (start > vec.size()) start = vec.size();
-    if (end > vec.size()) end = vec.size();
-    if (end < start) end = start;
-    return std::span<const T>(vec.data() + start, end - start);
+
+namespace detail {
+template <std::integral A, std::integral B>
+inline auto checked_slice_bounds(A a, B b, std::size_t len, const std::source_location& loc) -> std::pair<std::size_t, std::size_t> {
+    if (std::cmp_less(a, 0) || std::cmp_less(b, 0) || std::cmp_greater(a, b) || std::cmp_greater(b, len)) [[unlikely]] {
+        assert_true_at(false, std::format("slice range {}..{} out of bounds for length {}", a, b, len),
+            loc.file_name(), static_cast<int>(loc.line()), "slice range out of bounds");
+    }
+    return {static_cast<std::size_t>(a), static_cast<std::size_t>(b)};
+}
+inline void check_utf8_boundary(std::string_view sv, std::size_t pos, const std::source_location& loc) {
+    // 0 and len() are always boundaries, even for data that is not valid UTF-8.
+    if (pos > 0 && pos < sv.size() && (static_cast<unsigned char>(sv[pos]) & 0xC0u) == 0x80u) [[unlikely]] {
+        assert_true_at(false, std::format("str slice bound {} is not on a UTF-8 code point boundary", pos),
+            loc.file_name(), static_cast<int>(loc.line()), "slice splits a UTF-8 code point");
+    }
+}
+} // namespace detail
+
+template <std::integral A, std::integral B>
+[[nodiscard]] inline auto slice(std::string_view sv CFIRE_LIFETIMEBOUND, A start, B end,
+                                std::source_location loc = std::source_location::current()) -> std::string_view {
+    auto [s, e] = detail::checked_slice_bounds(start, end, sv.size(), loc);
+    detail::check_utf8_boundary(sv, s, loc);
+    detail::check_utf8_boundary(sv, e, loc);
+    return sv.substr(s, e - s);
 }
 
-template <typename T>
-[[nodiscard]] inline auto slice(std::span<const T> sp CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
-    if (start > sp.size()) start = sp.size();
-    if (end > sp.size()) end = sp.size();
-    if (end < start) end = start;
-    return sp.subspan(start, end - start);
+template <typename T, std::integral A, std::integral B>
+[[nodiscard]] inline auto slice(const std::vector<T>& vec CFIRE_LIFETIMEBOUND, A start, B end,
+                                std::source_location loc = std::source_location::current()) -> std::span<const T> {
+    auto [s, e] = detail::checked_slice_bounds(start, end, vec.size(), loc);
+    return std::span<const T>(vec.data() + s, e - s);
 }
 
-template <typename T, std::size_t N>
-[[nodiscard]] inline auto slice(const std::array<T, N>& arr CFIRE_LIFETIMEBOUND, std::size_t start, std::size_t end) noexcept -> std::span<const T> {
-    if (start > N) start = N;
-    if (end > N) end = N;
-    if (end < start) end = start;
-    return std::span<const T>(arr.data() + start, end - start);
+template <typename T, std::integral A, std::integral B>
+[[nodiscard]] inline auto slice(std::span<const T> sp CFIRE_LIFETIMEBOUND, A start, B end,
+                                std::source_location loc = std::source_location::current()) -> std::span<const T> {
+    auto [s, e] = detail::checked_slice_bounds(start, end, sp.size(), loc);
+    return sp.subspan(s, e - s);
+}
+
+template <typename T, std::size_t N, std::integral A, std::integral B>
+[[nodiscard]] inline auto slice(const std::array<T, N>& arr CFIRE_LIFETIMEBOUND, A start, B end,
+                                std::source_location loc = std::source_location::current()) -> std::span<const T> {
+    auto [s, e] = detail::checked_slice_bounds(start, end, N, loc);
+    return std::span<const T>(arr.data() + s, e - s);
 }
 
 // --- Smart Pointer Factories (`make(own[T], ...)` & `make(shared[T], ...)`) ---
@@ -1892,49 +2037,185 @@ concept CfireScalarCastable =
         { v.to_i32() } -> std::convertible_to<std::int32_t>;
     };
 
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto i8(T val) noexcept -> std::int8_t {
-    return static_cast<std::int8_t>(val);
+namespace detail {
+// Q9/Q19 (CF-165): `T(x)` preserves the value or panics. Integer narrowing and sign changes that don't fit,
+// and float->int that is NaN or out of range (UB in C++), panic at the caller's `.cf` location; the
+// `#line` directives emitted before each statement make std::source_location report the .cf file and line.
+// Widening, int->float and float->float conversions are IEEE-defined and never panic.
+template <typename T>
+inline constexpr bool is_char_like_v = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> ||
+    std::is_same_v<T, char8_t> || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t>;
+
+// std::in_range / std::cmp_* reject character types. A `char` is a byte of a `str` (`s[i]`), so it is read
+// as an unsigned 0..255 value on every platform: `u8(s[i])` never panics, and the result no longer depends
+// on whether the target's `char` is signed (Apple arm64, x86) or unsigned (most other ARM targets).
+template <typename T>
+[[nodiscard]] constexpr auto as_comparable_int(T v) noexcept {
+    using U = std::remove_cvref_t<T>;
+    if constexpr (std::is_same_v<U, char>) {
+        return static_cast<unsigned long long>(static_cast<unsigned char>(v));
+    } else if constexpr (is_char_like_v<U>) {
+        return static_cast<unsigned long long>(static_cast<std::make_unsigned_t<U>>(v));
+    } else {
+        return v;
+    }
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto i16(T val) noexcept -> std::int16_t {
-    return static_cast<std::int16_t>(val);
+
+template <typename To, typename From>
+[[nodiscard]] constexpr auto checked_numeric_cast(From val, const std::source_location& loc) -> To {
+    using F = std::remove_cvref_t<From>;
+    if constexpr (is_char_like_v<F> || is_char_like_v<To>) {
+        if constexpr (is_char_like_v<F> && !is_char_like_v<To>) {
+            return checked_numeric_cast<To>(as_comparable_int(val), loc);
+        } else {
+            return static_cast<To>(val);
+        }
+    } else if constexpr (std::is_enum_v<F>) {
+        return checked_numeric_cast<To>(static_cast<std::underlying_type_t<F>>(val), loc);
+    } else if constexpr (std::is_integral_v<To> && !std::is_same_v<To, bool> && std::is_integral_v<F> && !std::is_same_v<F, bool>) {
+        if (!std::in_range<To>(val)) [[unlikely]] {
+            assert_true_at(false, std::format("value {} out of range for {}-bit {} integer",
+                    val, sizeof(To) * 8, std::is_signed_v<To> ? "signed" : "unsigned"),
+                loc.file_name(), static_cast<int>(loc.line()), "numeric conversion out of range");
+        }
+        return static_cast<To>(val);
+    } else if constexpr (std::is_integral_v<To> && !std::is_same_v<To, bool> && std::is_floating_point_v<F>) {
+        const long double t = std::trunc(static_cast<long double>(val));
+        constexpr long double lo = static_cast<long double>(std::numeric_limits<To>::min());
+        // Exclusive upper bound 2^(bits-1) or 2^bits; both bounds are exact powers of two in long double.
+        constexpr long double hi = std::is_signed_v<To>
+            ? -lo
+            : 2.0L * (static_cast<long double>(std::numeric_limits<To>::max() / 2) + 1.0L);
+        if (!(t >= lo && t < hi)) [[unlikely]] {
+            assert_true_at(false, std::format("value {} out of range for {}-bit {} integer",
+                    val, sizeof(To) * 8, std::is_signed_v<To> ? "signed" : "unsigned"),
+                loc.file_name(), static_cast<int>(loc.line()), "numeric conversion out of range");
+        }
+        return static_cast<To>(val);
+    } else {
+        return static_cast<To>(val);
+    }
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto i32(T val) noexcept -> std::int32_t {
-    return static_cast<std::int32_t>(val);
+} // namespace detail
+
+// --- Q11 (CF-166): shifts. `x << n` keeps C++'s promoted result type, but a count outside
+// [0, bit width) panics at the caller's .cf location (via #line) instead of being undefined behavior.
+template <typename A, typename B>
+[[nodiscard]] constexpr auto shl(A a, B n, std::source_location loc = std::source_location::current()) {
+    if constexpr (std::is_integral_v<A> && std::is_integral_v<B>) {
+        using R = decltype(+a);
+        constexpr int bits = static_cast<int>(sizeof(R) * 8);
+        if (std::cmp_less(n, 0) || std::cmp_greater_equal(n, bits)) [[unlikely]] {
+            assert_true_at(false, std::format("shift count {} out of range for {}-bit integer", n, bits),
+                loc.file_name(), static_cast<int>(loc.line()), "shift out of range");
+        }
+        return static_cast<R>(static_cast<std::make_unsigned_t<R>>(a) << n);  // two's-complement wrap, as in C++20
+    } else {
+        return a << n;
+    }
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto i64(T val) noexcept -> std::int64_t {
-    return static_cast<std::int64_t>(val);
+template <typename A, typename B>
+[[nodiscard]] constexpr auto shr(A a, B n, std::source_location loc = std::source_location::current()) {
+    if constexpr (std::is_integral_v<A> && std::is_integral_v<B>) {
+        using R = decltype(+a);
+        constexpr int bits = static_cast<int>(sizeof(R) * 8);
+        if (std::cmp_less(n, 0) || std::cmp_greater_equal(n, bits)) [[unlikely]] {
+            assert_true_at(false, std::format("shift count {} out of range for {}-bit integer", n, bits),
+                loc.file_name(), static_cast<int>(loc.line()), "shift out of range");
+        }
+        return static_cast<R>(static_cast<R>(a) >> n);  // arithmetic for signed, as in C++20
+    } else {
+        return a >> n;
+    }
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto u8(T val) noexcept -> std::uint8_t {
-    return static_cast<std::uint8_t>(val);
+template <std::integral A, std::integral B>
+[[nodiscard]] constexpr auto wrapping_shl(A a, B n) noexcept {
+    using R = decltype(+a);
+    constexpr unsigned bits = sizeof(R) * 8;
+    return static_cast<R>(static_cast<std::make_unsigned_t<R>>(a) << (static_cast<unsigned>(n) % bits));
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto byte(T val) noexcept -> std::byte {
-    return static_cast<std::byte>(static_cast<std::uint8_t>(val));
+template <std::integral A, std::integral B>
+[[nodiscard]] constexpr auto wrapping_shr(A a, B n) noexcept {
+    using R = decltype(+a);
+    constexpr unsigned bits = sizeof(R) * 8;
+    return static_cast<R>(static_cast<R>(a) >> (static_cast<unsigned>(n) % bits));
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto u16(T val) noexcept -> std::uint16_t {
-    return static_cast<std::uint16_t>(val);
+template <std::integral A, std::integral B>
+[[nodiscard]] constexpr auto checked_shl(A a, B n) noexcept -> std::optional<decltype(+a)> {
+    using R = decltype(+a);
+    if (std::cmp_less(n, 0) || std::cmp_greater_equal(n, sizeof(R) * 8)) return std::nullopt;
+    return static_cast<R>(static_cast<std::make_unsigned_t<R>>(a) << n);
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto u32(T val) noexcept -> std::uint32_t {
-    return static_cast<std::uint32_t>(val);
+template <std::integral A, std::integral B>
+[[nodiscard]] constexpr auto checked_shr(A a, B n) noexcept -> std::optional<decltype(+a)> {
+    using R = decltype(+a);
+    if (std::cmp_less(n, 0) || std::cmp_greater_equal(n, sizeof(R) * 8)) return std::nullopt;
+    return static_cast<R>(static_cast<R>(a) >> n);
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto u64(T val) noexcept -> std::uint64_t {
-    return static_cast<std::uint64_t>(val);
+
+// Explicit conversions with defined behavior when the value does not fit (`x.wrapping_as[u8]()` etc.).
+template <typename To, typename From>
+    requires std::is_integral_v<To> && std::is_integral_v<std::remove_cvref_t<From>>
+[[nodiscard]] constexpr auto wrapping_as(From val) noexcept -> To {
+    return static_cast<To>(val);  // modular since C++20
 }
-template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto usize(T val) noexcept -> std::size_t {
-    return static_cast<std::size_t>(val);
+template <typename To, typename From>
+    requires std::is_arithmetic_v<To> && std::is_arithmetic_v<std::remove_cvref_t<From>>
+[[nodiscard]] constexpr auto saturating_as(From val) noexcept -> To {
+    using F = std::remove_cvref_t<From>;
+    if constexpr (std::is_integral_v<To> && std::is_floating_point_v<F>) {
+        if (std::isnan(val)) return To{0};
+        const long double t = std::trunc(static_cast<long double>(val));
+        if (t <= static_cast<long double>(std::numeric_limits<To>::min())) return std::numeric_limits<To>::min();
+        if (t >= static_cast<long double>(std::numeric_limits<To>::max())) return std::numeric_limits<To>::max();
+        return static_cast<To>(t);
+    } else if constexpr (std::is_integral_v<To> && std::is_integral_v<F> && !std::is_same_v<To, bool> && !std::is_same_v<F, bool>) {
+        auto v = detail::as_comparable_int(val);
+        if (std::cmp_less(v, std::numeric_limits<To>::min())) return std::numeric_limits<To>::min();
+        if (std::cmp_greater(v, std::numeric_limits<To>::max())) return std::numeric_limits<To>::max();
+        return static_cast<To>(val);
+    } else {
+        return static_cast<To>(val);
+    }
 }
+template <typename To, typename From>
+    requires std::is_arithmetic_v<To> && std::is_arithmetic_v<std::remove_cvref_t<From>>
+[[nodiscard]] constexpr auto try_as(From val) noexcept -> std::optional<To> {
+    using F = std::remove_cvref_t<From>;
+    if constexpr (std::is_integral_v<To> && std::is_integral_v<F> && !std::is_same_v<To, bool> && !std::is_same_v<F, bool> &&
+                  !detail::is_char_like_v<To>) {
+        if (!std::in_range<To>(detail::as_comparable_int(val))) return std::nullopt;
+    } else if constexpr (std::is_integral_v<To> && std::is_floating_point_v<F>) {
+        const long double t = std::trunc(static_cast<long double>(val));
+        constexpr long double lo = static_cast<long double>(std::numeric_limits<To>::min());
+        constexpr long double hi = std::is_signed_v<To>
+            ? -lo
+            : 2.0L * (static_cast<long double>(std::numeric_limits<To>::max() / 2) + 1.0L);
+        if (!(t >= lo && t < hi) || t != static_cast<long double>(val)) return std::nullopt;
+    }
+    return static_cast<To>(val);
+}
+
+#define CFIRE_CHECKED_SCALAR_CTOR(NAME, TYPE)                                                   \
+    template <CfireScalarCastable T>                                                            \
+    [[nodiscard]] constexpr auto NAME(T val, std::source_location loc = std::source_location::current()) -> TYPE { \
+        return detail::checked_numeric_cast<TYPE>(val, loc);                                   \
+    }
+CFIRE_CHECKED_SCALAR_CTOR(i8, std::int8_t)
+CFIRE_CHECKED_SCALAR_CTOR(i16, std::int16_t)
+CFIRE_CHECKED_SCALAR_CTOR(i32, std::int32_t)
+CFIRE_CHECKED_SCALAR_CTOR(i64, std::int64_t)
+CFIRE_CHECKED_SCALAR_CTOR(u8, std::uint8_t)
+CFIRE_CHECKED_SCALAR_CTOR(u16, std::uint16_t)
+CFIRE_CHECKED_SCALAR_CTOR(u32, std::uint32_t)
+CFIRE_CHECKED_SCALAR_CTOR(u64, std::uint64_t)
+CFIRE_CHECKED_SCALAR_CTOR(usize, std::size_t)
+CFIRE_CHECKED_SCALAR_CTOR(isize, std::ptrdiff_t)
+#undef CFIRE_CHECKED_SCALAR_CTOR
+
 template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto isize(T val) noexcept -> std::ptrdiff_t {
-    return static_cast<std::ptrdiff_t>(val);
+[[nodiscard]] constexpr auto byte(T val, std::source_location loc = std::source_location::current()) -> std::byte {
+    return static_cast<std::byte>(detail::checked_numeric_cast<std::uint8_t>(val, loc));
 }
 template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto f32(T val) noexcept -> float {
@@ -1970,7 +2251,11 @@ template <CfireIsEnum E>
     using U = std::underlying_type_t<E>;
     return static_cast<E>(static_cast<U>(a) ^ static_cast<U>(b));
 }
+// Q18 (CF-179): only scoped enums (always a fixed underlying type) map `~E -> E`. For unscoped C enums
+// the complement lies outside the enum's value range (UB on the cast), so they use the built-in `~`,
+// which yields the integer; `flags &= ~FLAG` then goes through the mixed enum/integer operators below.
 template <CfireIsEnum E>
+    requires std::is_scoped_enum_v<E>
 [[nodiscard]] constexpr auto operator~(E a) noexcept -> E {
     using U = std::underlying_type_t<E>;
     return static_cast<E>(~static_cast<U>(a));

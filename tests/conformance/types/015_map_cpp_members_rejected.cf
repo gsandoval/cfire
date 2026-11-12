@@ -1,0 +1,7 @@
+package main
+fn main() {
+    mut m: map[str]i32
+    m["k"] = 1
+    m.erase("k") //~ error cfire/UNKNOWN-METHOD
+    println("{}", m.count("k")) //~ error cfire/UNKNOWN-METHOD
+}

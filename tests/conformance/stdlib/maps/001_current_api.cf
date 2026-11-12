@@ -1,0 +1,13 @@
+// expect: stdout
+// | 2 true 1 false
+package main
+fn main() {
+    mut m: map[str]i32
+    m["a"] = 1
+    m["b"] = 2
+    n := m.len()
+    has := m.contains("a")
+    v := m.get("a") or 0
+    m.remove("a")
+    println("{} {} {} {}", n, has, v, m.contains("a"))
+}

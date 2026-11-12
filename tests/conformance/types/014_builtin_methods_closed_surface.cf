@@ -1,0 +1,14 @@
+// expect: stdout
+// | 3 false b 2 true
+package main
+fn main() {
+    mut s := "abc"
+    mut xs: []i32 = [1, 2]
+    xs.push(3)
+    mut m: map[str]i32
+    m["k"] = 1
+    n := xs.len()
+    s.pop()
+    tail := s.last_index_of("b") or 0
+    println("{} {} {} {} {}", n, xs.is_empty(), s[1..2], tail + 1, m.contains("k"))
+}

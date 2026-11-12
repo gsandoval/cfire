@@ -1,0 +1,7 @@
+package main
+fn main() {
+    x := 1
+    if x { //~ error cfire/NON-BOOL-CONDITION
+        println("y")
+    }
+}

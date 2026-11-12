@@ -1,0 +1,8 @@
+package main
+fn take(move xs: []i64) -> i64 {
+    return i64(xs.len())
+}
+fn main() {
+    xs: []i64 = [1, 2, 3]
+    println("{}", take(xs)) //~ error cfire/MOVE-CALLSITE
+}

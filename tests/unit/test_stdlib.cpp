@@ -235,7 +235,8 @@ void test_cpp_ast_ingestion_and_overloads([[maybe_unused]] const std::filesystem
     cfire::bridge::HeaderIndex idx;
     idx.header = "<test_math.h>";
     idx.symbols = syms;
-    auto cache_tmp = std::filesystem::temp_directory_path() / "cfire_bs03_test.idx";
+    ScopedTempDir cache_tmp_scope("cfire_cache_tmp");  // hermetic, mkdtemp-backed (CF-153)
+    auto cache_tmp = cache_tmp_scope.path / "cfire_bs03_test.idx";
     cfire::bridge::save_cached_index(cache_tmp, idx);
 
     auto loaded = cfire::bridge::load_cached_index(cache_tmp, "<test_math.h>");
@@ -388,15 +389,18 @@ fn set_val(v: *mut i32, n: i32) {
 }
 
 fn test_scope_defer() -> i32 {
-mut val := 10
-ptr := &mut val
+mut vals: []i32 = [10]
+ptr := &mut vals[0]
 async.scope(workers: 2) |scope| {
     defer set_val(ptr, 99)
-    scope.spawn || {
-        *ptr = 42
+    for i in 0..1 {
+        slot := &mut vals[i]
+        scope.spawn || {
+            *slot = 42
+        }
     }
 }
-return val
+return vals[0]
 }
 
 fn main() {
@@ -624,8 +628,11 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
     require(cfire::u64(pi_flt) == 3, "u64(float)");
     require(cfire::f32(42) == 42.0f, "f32(int)");
     require(cfire::f64(42) == 42.0, "f64(int)");
-    require(cfire::i8(300) == 44, "i8 overflow wrapping");
-    require(cfire::u8(-1) == 255, "u8 underflow wrapping");
+    // Q9 (CF-165): T(x) panics when the value doesn't fit; wrapping is explicit.
+    require(cfire::wrapping_as<std::int8_t>(300) == 44, "i8 overflow wrapping via wrapping_as");
+    require(cfire::wrapping_as<std::uint8_t>(-1) == 255, "u8 underflow wrapping via wrapping_as");
+    require(cfire::saturating_as<std::uint8_t>(-1) == 0, "u8 saturating_as clamps at 0");
+    require(!cfire::try_as<std::uint8_t>(300).has_value(), "u8 try_as rejects out-of-range values");
     require(cfire::byte(0xFE) == 0xFE, "byte(int)");
     require(cfire::usize(12345) == 12345, "usize(int)");
     require(cfire::isize(-54321) == -54321, "isize(int)");
@@ -689,7 +696,8 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
 
 void test_relocatable_cmake_ejection([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_relocatable_cmake_ejection");
-    auto tmp_eject = std::filesystem::temp_directory_path() / "cfire_relocatable_eject";
+    ScopedTempDir tmp_eject_scope("cfire_tmp_eject");  // hermetic, mkdtemp-backed (CF-153)
+    auto tmp_eject = tmp_eject_scope.path / "cfire_relocatable_eject";
     std::filesystem::remove_all(tmp_eject);
     auto ej = cfire::build::eject_cmake("examples/08-multi-pkg-cc-build/main.cf", rt_dir, tmp_eject);
     require(ej.has_value(), "eject_cmake for 08-multi-pkg-cc-build");
@@ -1017,7 +1025,8 @@ void test_structured_logging_json_and_text([[maybe_unused]] const std::filesyste
 
 void test_shared_library_dynamic_linking([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_shared_library_dynamic_linking");
-    auto tmp_bs06 = std::filesystem::temp_directory_path() / "cfire_bs06_test";
+    ScopedTempDir tmp_bs06_scope("cfire_tmp_bs06");  // hermetic, mkdtemp-backed (CF-153)
+    auto tmp_bs06 = tmp_bs06_scope.path / "cfire_bs06_test";
     std::filesystem::remove_all(tmp_bs06);
     std::filesystem::create_directories(tmp_bs06 / "vendor" / "sharedlib");
 
@@ -1121,7 +1130,8 @@ void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem:
     require(cfire::fs::extension("source.cf") == ".cf", "fs.extension .cf");
 
     // 2. Streaming File open, write, seek, tell, read, flush, close
-    auto tmp_file = std::filesystem::temp_directory_path() / "cfire_stream_test.txt";
+    ScopedTempDir tmp_file_scope("cfire_tmp_file");  // hermetic, mkdtemp-backed (CF-153)
+    auto tmp_file = tmp_file_scope.path / "cfire_stream_test.txt";
     std::filesystem::remove(tmp_file);
 
     auto file_res = cfire::fs::open(tmp_file, cfire::fs::OpenMode::Write);
@@ -1181,7 +1191,8 @@ void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem:
     require(!cfire::fs::is_dir(tmp_file), "!fs.is_dir(tmp_file)");
     require(cfire::fs::is_dir(std::filesystem::temp_directory_path()), "fs.is_dir(temp_directory_path)");
     require(cfire::fs::append_text(tmp_file, "\nLine 3.").has_value(), "fs.append_text");
-    auto copy_path = std::filesystem::temp_directory_path() / "cfire_stream_copy.txt";
+    ScopedTempDir copy_path_scope("cfire_copy_path");  // hermetic, mkdtemp-backed (CF-153)
+    auto copy_path = copy_path_scope.path / "cfire_stream_copy.txt";
     require(cfire::fs::copy_file(tmp_file, copy_path).has_value(), "fs.copy_file");
     auto sz = cfire::fs::file_size(copy_path);
     require(sz.has_value() && *sz == 38, "fs.file_size matches appended length");

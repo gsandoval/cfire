@@ -1,0 +1,13 @@
+// probe: guard returning the address of a local is rejected
+// kind: guard
+// mode: check
+// ideal: reject cfire/DANGLING-RETURN
+package main
+fn get() -> *i64 {
+    x := 5
+    return &x
+}
+fn main() {
+    p := get()
+    println("{}", *p)
+}

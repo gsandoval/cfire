@@ -2,7 +2,6 @@ package raygui_ext
 
 import "vendor:raylib" as rl
 import "vendor:raygui" as rg
-import "core:str"
 
 type VisualRow struct {
     logical_line: i32
@@ -304,9 +303,9 @@ fn GuiCodeEditor(
                 }
 
                 mut txt_col := style.text_color
-                if str.starts_with(vr.text, "##") || str.starts_with(vr.text, "# ") {
+                if vr.text.starts_with("##") || vr.text.starts_with("# ") {
                     txt_col = style.cursor_color
-                } else if str.starts_with(vr.text, "![") {
+                } else if vr.text.starts_with("![") {
                     txt_col = rl.Color{r: 59, g: 130, b: 246, a: 255}
                 }
                 if font.texture.id > 0 {

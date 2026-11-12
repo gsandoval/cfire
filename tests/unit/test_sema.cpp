@@ -1,5 +1,18 @@
 #include "../test_harness.hpp"
 
+
+// Q24 (CF-149): fix-its are produced by the real pipeline (structured facts), not by re-parsing strings.
+inline auto first_diag_with_code(std::string_view file, std::string_view src, std::string_view code)
+    -> cfire::diag::StructuredDiagnostic {
+    cfire::analysis::CheckOptions opts;
+    opts.verify_cpp_backend = false;
+    opts.resolve_sibling_packages = false;
+    for (auto& d : cfire::analysis::check_source(file, src, opts)) {
+        if (d.code == code) return d;
+    }
+    return {};
+}
+
 void test_sema_intent_and_move_diagnostics() {
     std::println("=== RUN   test_sema_intent_and_move_diagnostics");
 
@@ -296,16 +309,16 @@ fn main() {
 
     {
         auto valid_smart_ast = cfire::frontend::parse_source("valid_smart_ptr.cf", R"(package main
-type Node struct { Val: i32 }
+type Node struct { val: i32 }
 fn main() {
-    box := make[own[Node]](Node{Val: 7})
-    println("{}", box.Val)
+    box := make(own[Node], Node{val: 7})
+    println("{}", box.val)
 }
 )");
-        require(valid_smart_ast.has_value(), "parse valid make[own[Node]] (SAFE-02b)");
+        require(valid_smart_ast.has_value(), "parse valid make(own[Node], v) (SAFE-02b)");
         if (valid_smart_ast) {
             auto checked = cfire::frontend::analyze(std::move(*valid_smart_ast));
-            require(checked.has_value(), "sema accepts make[own[Node]] non-null member access (SAFE-02b)");
+            require(checked.has_value(), "sema accepts make(own[Node], v) non-null member access (SAFE-02b)");
         }
     }
 
@@ -318,29 +331,32 @@ fn main() {
 }
 )", "cfire/MOVE-CALLSITE", "missing_move_callsite.cf");
 
-    // SAFE-02d: Static SQL & Shell Injection Risk Warnings (cfire/SQL-INJECTION-RISK & cfire/SHELL-INJECTION-RISK)
+    // SAFE-02d, tightened by CF-167: SQL & shell injection risks are errors, and the rule follows data
+    // through locals and parameters (only provably constant strings may reach os.exec / db.exec).
     {
-        auto inj_ast = cfire::frontend::parse_source("injection_warn.cf", R"(package main
+        auto inj_ast = cfire::frontend::parse_source("injection_err.cf", R"(package main
 import "ext:db/sqlite"
 import "core:os"
-fn check_warns(db: sqlite.Database, user_input: str) {
+fn check_errs(db: sqlite.Database, user_input: str) {
     _ = db.exec("DELETE FROM users WHERE name = '" + user_input + "'")
     _ = os.exec("rm -rf " + user_input)
+    cmd := "ls " + user_input
+    _ = os.exec(cmd)
+    _ = os.exec("ls -la")
 }
 fn main() {}
 )");
-        require(inj_ast.has_value(), "parse injection_warn.cf (SAFE-02d)");
+        require(inj_ast.has_value(), "parse injection_err.cf (SAFE-02d/CF-167)");
         if (inj_ast) {
             auto res = cfire::frontend::analyze_resilient(std::move(*inj_ast));
-            require(res.errors.empty(), "injection warnings do not fail compilation (SAFE-02d)");
-            bool saw_sql = false;
-            bool saw_shell = false;
-            for (const auto& w : res.warnings) {
-                if (w.contains("cfire/SQL-INJECTION-RISK")) saw_sql = true;
-                if (w.contains("cfire/SHELL-INJECTION-RISK")) saw_shell = true;
+            int sql = 0;
+            int shell = 0;
+            for (const auto& e : res.errors) {
+                if (e.contains("cfire/SQL-INJECTION-RISK")) ++sql;
+                if (e.contains("cfire/SHELL-INJECTION-RISK")) ++shell;
             }
-            require(saw_sql, "emits cfire/SQL-INJECTION-RISK on concatenated SQL query (SAFE-02d)");
-            require(saw_shell, "emits cfire/SHELL-INJECTION-RISK on concatenated os.exec command (SAFE-02d)");
+            require(sql == 1, std::format("CF-167: concatenated SQL is an error (got {})", sql));
+            require(shell == 2, std::format("CF-167: concatenated and local-propagated shell commands are errors, the constant one is not (got {})", shell));
         }
     }
 
@@ -348,8 +364,7 @@ fn main() {}
     {
         std::string null_src = "package main\nfn main() {\n    mut p: *mut i32 = none\n    *p = 1\n}\n";
         auto lines = cfire::diag::split_lines(null_src);
-        auto sd = cfire::diag::parse_diagnostic_string("null.cf:4:5: error: dereference of potentially null pointer 'p' (cfire/NULL-DEREF)", "null.cf");
-        cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+        auto sd = first_diag_with_code("null.cf", null_src, "cfire/NULL-DEREF");
         require(!sd.fixits.empty(), "synthesizes fix-it for cfire/NULL-DEREF (TOOL-SAFE-01)");
         if (!sd.fixits.empty()) {
             require(sd.fixits[0].replacement.contains("assert(p != none)"),
@@ -495,7 +510,7 @@ fn main() {
 import "core:os"
 fn main() -> void! {
     lines := try os.stdin().read_lines()
-    for i in 0..lines.len {
+    for i in 0..lines.len() {
         println("message {lines[i]}")
     }
 }
@@ -563,10 +578,7 @@ fn main() -> void! {
         {
             std::string dep_src = "package main\nimport \"core:fs\"\nfn main() -> void! {\n    _ = try fs.read_all(\"a.bin\")\n}\n";
             auto lines = cfire::diag::split_lines(dep_src);
-            auto sd = cfire::diag::parse_diagnostic_string(
-                "dep.cf:4:14: error: 'fs.read_all' has been renamed to 'fs.read_bytes' (or 'fs.read_text' for UTF-8 strings) (cfire/DEPRECATED-API)",
-                "dep.cf");
-            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            auto sd = first_diag_with_code("dep.cf", dep_src, "cfire/DEPRECATED-API");
             require(!sd.fixits.empty() && sd.fixits[0].replacement == "fs.read_bytes",
                 "synthesizes 'fs.read_bytes' replacement fix-it for cfire/DEPRECATED-API on fs.read_all");
         }
@@ -586,17 +598,14 @@ fn compute() -> []str! {
 }
 fn main() {
     lines := compute()
-    println("{}", lines.len)
+    println("{}", lines.len())
 }
 )", "cfire/UNHANDLED-RESULT", "unhandled_user_result.cf");
 
         {
             std::string unhandled_src = "package main\nimport \"core:fs\"\nfn main() -> void! {\n    s := fs.read_text(\"a.txt\")\n}\n";
             auto lines = cfire::diag::split_lines(unhandled_src);
-            auto sd = cfire::diag::parse_diagnostic_string(
-                "unhandled.cf:4:10: error: call to 'fs.read_text' returns fallible type 'str!' which must be handled with 'try' or 'or' (cfire/UNHANDLED-RESULT)",
-                "unhandled.cf");
-            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            auto sd = first_diag_with_code("unhandled.cf", unhandled_src, "cfire/UNHANDLED-RESULT");
             require(!sd.fixits.empty() && sd.fixits[0].replacement == "try ",
                 "synthesizes 'try ' insertion fix-it for cfire/UNHANDLED-RESULT");
         }
@@ -605,7 +614,7 @@ fn main() {
         require_sema_error(R"(package main
 fn main() {
     args := os.args()
-    println("{}", args.len)
+    println("{}", args.len())
 }
 )", "cfire/MISSING-IMPORT", "missing_os_import.cf");
 
@@ -632,7 +641,7 @@ fn main() {
 import "core:os"
 fn main() {
     args := os.args("unexpected_arg")
-    println("{}", args.len)
+    println("{}", args.len())
 }
 )", "cfire/ARITY-MISMATCH", "stdlib_arity_mismatch.cf");
 
@@ -643,7 +652,7 @@ fn maybe_lines() -> []str? {
 }
 fn main() {
     lines := maybe_lines()
-    println("{}", lines.len)
+    println("{}", lines.len())
 }
 )", "cfire/UNWRAPPED-OPTIONAL", "opt_len_unwrapped.cf");
 
@@ -727,10 +736,7 @@ fn main() -> void! {
         {
             std::string red_try_src = "package main\nfn main() -> void! {\n    x := try (1 + 2)\n}\n";
             auto lines = cfire::diag::split_lines(red_try_src);
-            auto sd = cfire::diag::parse_diagnostic_string(
-                "red_try.cf:3:10: error: 'try' has no effect on non-fallible expression of type 'i32'; remove 'try' (cfire/REDUNDANT-TRY)",
-                "red_try.cf");
-            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            auto sd = first_diag_with_code("red_try.cf", red_try_src, "cfire/REDUNDANT-TRY");
             require(!sd.fixits.empty() && sd.fixits[0].replacement.empty() && sd.fixits[0].end_col - sd.fixits[0].start_col == 4,
                 "synthesizes 'try ' removal fix-it for cfire/REDUNDANT-TRY");
         }
@@ -840,10 +846,7 @@ fn main() {
         {
             std::string red_mut_src = "package main\nfn read_only(x: i32) -> i32 { return x }\nfn main() {\n    mut v := 10\n    _ = read_only(mut v)\n}\n";
             auto lines = cfire::diag::split_lines(red_mut_src);
-            auto sd = cfire::diag::parse_diagnostic_string(
-                "red_mut.cf:5:19: error: call-site 'mut' annotation has no effect on 'in' parameter 1 of 'read_only'; remove 'mut' (cfire/REDUNDANT-CALLSITE-INTENT)",
-                "red_mut.cf");
-            cfire::diag::synthesize_fixits_for_diagnostic(sd, nullptr, lines);
+            auto sd = first_diag_with_code("red_mut.cf", red_mut_src, "cfire/REDUNDANT-CALLSITE-INTENT");
             require(!sd.fixits.empty() && sd.fixits[0].replacement.empty() && sd.fixits[0].end_col - sd.fixits[0].start_col == 4,
                 "synthesizes 'mut ' removal fix-it for cfire/REDUNDANT-CALLSITE-INTENT");
         }
@@ -992,13 +995,30 @@ fn test_esc() {
 fn main() {}
 )", "cfire/ESCAPING-CAPTURE-MUT", "esc_capture_mut.cf");
 
-    require_sema_ok(R"(package main
-fn test_esc_ok() {
+    // CF-164 (strict rule, amends Q2): writing through a captured pointer from a spawned task is a data
+    // race risk and is rejected; per-task slots from the spawning loop's index stay legal.
+    require_sema_error(R"(package main
+fn test_esc_ptr() {
     mut total := 0
     ptr := &mut total
     async.scope |scope| {
         scope.spawn || {
             *ptr += 5
+        }
+    }
+}
+fn main() {}
+)", "cfire/SPAWN-SHARED-MUT", "esc_capture_ptr.cf");
+
+    require_sema_ok(R"(package main
+fn test_esc_ok() {
+    mut totals: []i32 = [0, 0]
+    async.scope |scope| {
+        for i in 0..2 {
+            slot := &mut totals[i]
+            scope.spawn || {
+                *slot += 5
+            }
         }
     }
 }
@@ -1059,10 +1079,10 @@ import "core:math"
 
 fn main() {
     max_i64 := 9223372036854775807
-    sat := math.saturating_add(max_i64, 100)
-    wrap := math.wrapping_add(max_i64, 1)
-    chk1 := math.checked_add(max_i64, 1)
-    chk2 := math.checked_add(10, 20)
+    sat := max_i64.saturating_add(100)
+    wrap := max_i64.wrapping_add(1)
+    chk1 := max_i64.checked_add(1)
+    chk2 := (10).checked_add(20)
 
     has_chk1 := chk1 != none
     println("sat={}", sat)
@@ -1255,9 +1275,9 @@ fn inspect(in x: i32) {}
 fn main() {}
 )", "cfire/DEPRECATED-IN-PARAM", "dep_in_param.cf");
 
-    // 6. make(own[T], v) produces hard error cfire/INVALID-SMART-PTR-CTOR
+    // 6. Q25 reverses CF-103: `make(own[T], v)` is the construction form; the bracket form is retired.
     {
-        auto ast_res = cfire::frontend::parse_source("dep_make_smart.cf", R"(package main
+        auto ast_res = cfire::frontend::parse_source("make_smart.cf", R"(package main
 type Box struct {
     val: i32
 }
@@ -1265,11 +1285,16 @@ fn main() {
     b := make(own[Box], Box{val: 42})
 }
 )");
-        require(!ast_res.has_value(), "make(own[T], ...) rejected at parse time (CF-103)");
-        if (!ast_res) {
-            require(ast_res.error().contains("cfire/INVALID-SMART-PTR-CTOR"),
-                "expected cfire/INVALID-SMART-PTR-CTOR, got: " + ast_res.error());
-        }
+        require(ast_res.has_value() && cfire::frontend::analyze(std::move(*ast_res)).has_value(),
+            "make(own[T], v) parses and checks (Q25)");
+        require_sema_error(R"(package main
+type Box struct {
+    val: i32
+}
+fn main() {
+    b := make[own[Box]](Box{val: 42})
+}
+)", "cfire/RETIRED-API", "retired_make_bracket.cf");
     }
 
     // 7. _ := discard produces hard error cfire/DEPRECATED-DISCARD
@@ -1304,7 +1329,7 @@ type Box struct {
     val: i32
 }
 fn main() {
-    b := make[own[Box]](Box{val: 42})
+    b := make(own[Box], Box{val: 42})
     _ = (*b).val
 }
 )", "cfire/REDUNDANT-DEREF", "dep_smart_deref.cf");
@@ -1329,7 +1354,7 @@ fn worker(in x: i32) {
 
 fn main() {
     _ := 10
-    b := make[own[Box]](Box{val: 42})
+    b := make(own[Box], Box{val: 42})
     v := (*b).val
     st := Status.Active
 }
@@ -1570,7 +1595,7 @@ void test_uniform_generic_type_application([[maybe_unused]] const std::filesyste
 import "core:collections"
 
 fn make_pair(a: i32, b: str) -> cpp.std::pair[i32, str] {
-    return make[cpp.std::pair[i32, str]](a, b)
+    return make(cpp.std::pair[i32, str], a, b)
 }
 
 fn inspect_set(s: collections.Set[str]) -> usize {
@@ -1725,7 +1750,7 @@ fn main() {
 import "core:sync"
 
 fn main() {
-    ch := sync.make_channel[i64](5)
+    ch := make(sync.Channel[i64], 5)
     ch.send(10)
     ch.send(20)
     ch.send(30)
@@ -1882,11 +1907,11 @@ fn main() {
 )", "module 'cpp' is imported as 'my_io'; use 'my_io.printf'", "shadowed_cpp.cf");
 
     require_sema_error(R"(package main
-import "core:str" as s
+import "core:time" as t
 fn main() {
-    parts := str.split("a,b", ",")
+    now := time.now_ms()
 }
-)", "module 'str' is imported as 's'; use 's.split'", "shadowed_core.cf");
+)", "module 'time' is imported as 't'; use 't.now_ms'", "shadowed_core.cf");
 
     // 10. Bare unqualified C calls rejected with targeted hint
     require_sema_error(R"(package main
@@ -2427,12 +2452,12 @@ fn main() {
 import "ext:webui"
 
 fn make_app() -> webui.App {
-    mut app := webui.new_app("Studio", 640, 480)
+    mut app := make(webui.App, "Studio", 640, 480)
     return app
 }
 
 fn direct_app() -> webui.App {
-    return webui.new_app("Direct", 320, 240)
+    return make(webui.App, "Direct", 320, 240)
 }
 
 fn main() {
@@ -2523,7 +2548,7 @@ void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_di
     std::println("=== RUN   test_unified_stdlib_metadata_table (CF-117)");
 
     const auto& catalog = cfire::doc::stdlib_catalog();
-    require(catalog.size() >= 39, "stdlib_catalog contains at least 39 modules");
+    require(catalog.size() >= 37, "stdlib_catalog contains at least 37 modules (core:str and core:sort retired in W4)");
 
     // Verify all module paths are unique and sorted
     for (size_t i = 1; i < catalog.size(); ++i) {
@@ -2586,14 +2611,13 @@ void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_di
 import "core:os"
 import "core:time"
 import "core:math"
-import "core:str"
 
 fn main() {
     start := time.now()
     _ = start
-    sq := math.sqrt(16.0)
+    sq := (16.0).sqrt()
     assert(sq == 4.0, "math.sqrt returned 4.0")
-    rep := str.replace_all("banana", "a", "o")
+    rep := "banana".replace_all("a", "o")
     assert(rep == "bonono", "str.replace_all executed correctly")
     home := os.getenv("NONEXISTENT_VAR_12345", "fallback_val")
     assert(home == "fallback_val", "os.getenv fallback")
@@ -2855,7 +2879,7 @@ fn main() {
     run_cfire_source(R"(package main
 import "core:sync"
 fn main() {
-    mu := sync.make_mutex(0)
+    mu := make(sync.Mutex[i64], 0)
     async.scope |s| {
         for i in 0..10 {
             s.spawn || {
@@ -2876,7 +2900,7 @@ fn main() {
     run_cfire_source(R"(package main
 import "core:sync"
 fn main() {
-    atm := sync.make_atomic(100)
+    atm := make(sync.Atomic[i64], 100)
     async.scope |s| {
         t := s.spawn || -> i32 {
             atm.add(23)
@@ -3019,3 +3043,34 @@ fn main() {
 
 
 
+
+// CF-149 / Q24: golden LSP ranges per diagnostic code (1-based line/col, end_col exclusive).
+void test_diagnostic_golden_ranges() {
+    std::println("=== RUN   test_diagnostic_golden_ranges");
+    struct Golden {
+        std::string_view code;
+        std::string_view src;
+        int line, col, end_line, end_col;
+    };
+    const Golden cases[] = {
+        {"cfire/MUT-CALLSITE",
+         "package main\nfn bump(mut x: i32) { x = x + 1 }\nfn main() {\n    a := 1\n    bump(a)\n}\n", 5, 10, 5, 11},
+        {"cfire/NON-BOOL-CONDITION",
+         "package main\nfn main() {\n    n := 3\n    if n {\n        println(\"x\")\n    }\n}\n", 4, 8, 4, 9},
+        {"cfire/TYPE-MISMATCH",
+         "package main\nfn take(s: str) {}\nfn main() {\n    take(42)\n}\n", 4, 10, 4, 12},
+        {"cfire/UNKNOWN-FIELD",
+         "package main\ntype P struct { X: i32 }\nfn main() {\n    p := P{X: 1}\n    println(\"{}\", p.Y)\n}\n", 5, 21, 5, 22},
+        {"cfire/UNREACHABLE-MATCH-ARM",
+         "package main\nfn f(n: i32) -> str {\n    return match n {\n        _ => \"any\",\n        1 => \"one\",\n    }\n}\n", 5, 9, 5, 20},
+        {"cfire/NON-EXHAUSTIVE-MATCH",
+         "package main\ntype S enum {\n    A,\n    B,\n}\nfn f(s: S) {\n    match s {\n        A => {}\n    }\n}\n", 7, 5, 7, 10},
+    };
+    for (const auto& g : cases) {
+        auto d = first_diag_with_code("golden_range.cf", g.src, g.code);
+        require(d.code == g.code && d.line == g.line && d.col == g.col && d.end_line == g.end_line && d.end_col == g.end_col,
+            std::format("{} golden range {}:{}-{}:{} (got '{}' {}:{}-{}:{})", g.code, g.line, g.col, g.end_line, g.end_col,
+                        d.code, d.line, d.col, d.end_line, d.end_col));
+    }
+    std::println("--- PASS: test_diagnostic_golden_ranges");
+}

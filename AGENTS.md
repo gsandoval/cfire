@@ -25,6 +25,7 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
   - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` (`runtime/core/net/{tcp,url,http,websocket}.hpp`) — Modular header implementations for all 28 `core:*` standard library packages.
 - `docs/planning/README.md` — The authoritative operational protocol and validation process guidelines.
 - `docs/planning/` — The project backlog, active development tasks, and architectural evaluations.
+- `docs/planning/audit/PLAYBOOK.md` — Repeatable language audit procedure. When asked to "audit the language" or "re-run the audit", follow it end to end (read-only, no commits). It uses `scripts/audit/` (`run_probes.py`, `mutfuzz.py`, `lsp_smoke.py`, `probes/*.cf`).
 - `tests/` — Modular conformance test suite (`tests/unit/`, `tests/e2e/`, `tests/test_main.cpp`, `tests/test_harness.hpp`).
 - `examples/` — Canonical verified examples (`01-hello-core` through `11-http-server-router`).
 
@@ -65,6 +66,6 @@ Before editing code for any non-trivial task:
    - **Conformance Tests**: End-to-end language execution, memory safety, and LSP JSON-RPC stream assertions in `tests/unit/` and `tests/e2e/`.
    - **Manual Validation**: Live reproduction in target environments (e.g. Zed editor, VS Code, or interactive shell) confirming interactive UI, tabstops, and timing.
 6. **Quality Standards**:
-   - Compiler builds must compile with **zero warnings** using `clang++ -std=c++23 -O2 -Wall -Wextra`.
+   - Compiler builds must compile with **zero warnings** using the Makefile flags (`clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality`).
    - `make test` must pass 100%.
    - `./cfire doc --check` must confirm documentation is synchronized.

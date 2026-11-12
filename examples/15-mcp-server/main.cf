@@ -3,17 +3,17 @@ package main
 import "ext:ai" as ai
 
 type CalculateArgs struct {
-    Expression: str `json:"expression" desc:"Mathematical expression to evaluate"`
-    Precision:  i64 `json:"precision" desc:"Decimal places for rounding"`
+    expression: str `json:"expression" desc:"Mathematical expression to evaluate"`
+    precision:  i64 `json:"precision" desc:"Decimal places for rounding"`
 }
 
 fn main() {
     // 1. Instantiate an in-process Model Context Protocol (MCP) server
-    mut srv := ai.make_mcp_server("calculator-mcp", "1.0.0")
+    mut srv := make(ai.McpServer, "calculator-mcp", "1.0.0")
 
     // 2. Register typed tool with automatic compile-time JSON Schema extraction
     srv.register_tool[CalculateArgs]("calculate", "Evaluates a numeric expression with precision") |args| {
-        println("Tool 'calculate' invoked with expr: '{}', precision: {}", args.Expression, args.Precision)
+        println("Tool 'calculate' invoked with expr: '{}', precision: {}", args.expression, args.precision)
         return "42.0"
     }
 

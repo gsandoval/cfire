@@ -974,7 +974,7 @@ syncCfireThemeBtn();
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 39 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 37 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -1000,12 +1000,12 @@ syncCfireThemeBtn();
       <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">32 Rules</div>
+      <div class="stat-val">38 Rules</div>
       <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">Core + Ext</div>
-      <div class="stat-lbl">39 Tiered Stdlib Modules</div>
+      <div class="stat-lbl">37 Tiered Stdlib Modules</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">cfire eject</div>
@@ -1174,7 +1174,7 @@ fn main() {
     increment(mut b, 2)
     
     // Explicit unique ownership:
-    p := make[own[Box]](Box{ value: 100 })
+    p := make(own[Box], Box{ value: 100 })
     println(&quot;b={} p={}&quot;, b.value, p.value)
 }</code></pre>
       </div>
@@ -2091,7 +2091,7 @@ type GreetRes struct {
 }
 
 fn main() {
-    mut app := webui.new_app(&quot;cfire Studio&quot;, 960, 640)
+    mut app := make(webui.App, &quot;cfire Studio&quot;, 960, 640)
     defer app.close()
     app.serve_dir(&quot;./ui&quot;)
 

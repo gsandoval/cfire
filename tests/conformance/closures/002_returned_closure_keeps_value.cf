@@ -1,0 +1,12 @@
+// expect: stdout
+// | 42
+package main
+fn make_adder(base: i32) -> fn(i32) -> i32 {
+    return |x: i32| -> i32 {
+        return base + x
+    }
+}
+fn main() {
+    add := make_adder(40)
+    println("{}", add(2))
+}

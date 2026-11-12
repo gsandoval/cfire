@@ -1,0 +1,9 @@
+package main
+fn g() -> i32! {
+    mut m: map[str]i32
+    v := try m.get("a") //~ error cfire/TRY-ON-OPTIONAL
+    return v
+}
+fn main() {
+    println("{}", g() or 0)
+}

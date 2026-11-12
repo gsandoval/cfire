@@ -1,0 +1,17 @@
+// probe: A7 generic interface constraints are never checked
+// kind: hole
+// mode: check
+// ideal: reject
+package main
+type Renderable interface {
+    fn tag() -> str
+}
+type Scene struct {
+    title: str
+}
+fn describe[T: Renderable](item: T) {
+    println("ok")
+}
+fn main() {
+    describe(Scene{title: "x"})
+}

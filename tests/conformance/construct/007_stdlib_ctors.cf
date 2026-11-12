@@ -1,0 +1,17 @@
+// expect: stdout
+// | 3 5 7 true
+package main
+import "core:sync"
+import "core:net/http"
+fn main() {
+    ch := make(sync.Channel[i32], 4)
+    mu := make(sync.Mutex[i64], 5)
+    lk := make(sync.Mutex[void])
+    at := make(sync.Atomic[i64], 7)
+    mut r := make(http.Router)
+    ch.send(3)
+    v := ch.recv() or 0
+    lk.lock()
+    lk.unlock()
+    println("{} {} {} {}", v, mu.get(), at.load(), true)
+}

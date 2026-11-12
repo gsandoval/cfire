@@ -1,0 +1,7 @@
+package main
+fn f(a: i32) -> i32 {
+    return a
+}
+fn main() {
+    println("{}", f(1, 2)) //~ error cfire/ARITY-MISMATCH
+}

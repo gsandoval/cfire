@@ -1,0 +1,11 @@
+// expect: stdout
+// | parent=true child=true reason=stop
+package main
+import "core:sync/context"
+fn main() {
+    bg := context.background()
+    (parent, cancel) := context.with_cancel(bg)
+    (child, _c) := context.with_cancel(parent)
+    cancel("stop")
+    println("parent={} child={} reason={}", parent.is_cancelled(), child.is_cancelled(), child.reason())
+}
