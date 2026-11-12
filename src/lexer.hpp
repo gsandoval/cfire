@@ -53,7 +53,14 @@ struct std::formatter<cfire::frontend::SourceError, char> : std::formatter<std::
 
 namespace cfire::frontend {
 
-[[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src)
+// A comment's byte range `[begin, end)` in the source (`cfire fmt` re-emits comments verbatim).
+struct CommentSpan {
+    std::size_t begin = 0;
+    std::size_t end = 0;
+    bool block = false;
+};
+
+[[nodiscard]] inline auto tokenize(std::string_view file, std::string_view src, std::vector<CommentSpan>* comments = nullptr)
     -> std::expected<std::vector<Token>, SourceError>
 {
     std::vector<Token> tokens;
@@ -84,9 +91,38 @@ namespace cfire::frontend {
             continue;
         }
         if (c == '/' && peek(1) == '/') {
+            const std::size_t begin = i;
             while (i < n && peek() != '\n') {
                 advance();
             }
+            if (comments) comments->push_back({begin, i, false});
+            continue;
+        }
+        // Q32 (CF-172): `/* ... */` block comments, which nest.
+        if (c == '/' && peek(1) == '*') {
+            const std::size_t begin = i;
+            const int open_line = line;
+            const int open_col = col;
+            advance();
+            advance();
+            int depth = 1;
+            while (i < n && depth > 0) {
+                if (peek() == '/' && peek(1) == '*') {
+                    advance();
+                    advance();
+                    ++depth;
+                } else if (peek() == '*' && peek(1) == '/') {
+                    advance();
+                    advance();
+                    --depth;
+                } else {
+                    advance();
+                }
+            }
+            if (depth > 0) {
+                return std::unexpected(SourceError{std::string(file), open_line, open_col, "unterminated block comment; add a closing '*/'", "cfire/SYNTAX"});
+            }
+            if (comments) comments->push_back({begin, i, true});
             continue;
         }
 

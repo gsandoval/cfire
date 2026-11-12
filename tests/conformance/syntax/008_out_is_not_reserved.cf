@@ -1,6 +1,5 @@
 // expect: stdout
 // | 3
-// expect: xfail CF-175 the removed `out` intent is still a reserved word, so `out := ...` is a syntax error
 package main
 fn main() {
     out := 3

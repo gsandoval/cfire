@@ -1077,6 +1077,7 @@ public:
     }
 
     auto find_symbol_occurrences(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence>;
+    auto find_symbol_occurrences_unscoped(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence>;
     auto compute_references(const std::string& uri, int line, int character) -> std::string;
     auto compute_prepare_rename(const std::string& uri, int line, int character) -> std::string;
     auto compute_rename(const std::string& uri, int line, int character, std::string_view new_name) -> std::string;

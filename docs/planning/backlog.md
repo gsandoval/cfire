@@ -46,6 +46,10 @@ Source: [`audit/reports/2026-11-11.md`](./audit/reports/2026-11-11.md). It holds
 29. **Connection Verbs (`Q29`, W4 gate, resolves `CF-154`)**: Clients open with `connect`, servers with `listen`, in every module: `net.connect(host, port)` (was `connect_tcp`), `net.listen(port, host = "0.0.0.0")` (merges `listen_tcp` and `listen_tcp_addr`), `tls.connect`, `websocket.connect`, `ssh.connect` (was `dial`). The old names are hard errors with `cfire fix` rewrites.
 30. **One TLS Opt-Out (`Q30`)**: Certificate verification is turned off only through the typed `verify_peer: false` parameter, passed by label (`tls.connect(host, port, verify_peer: false)`, `websocket.connect(url, verify_peer: false)`, `http.get(url, verify_peer: false)`). Labeled arguments now reach stdlib calls by name (they used to be passed positionally), so no separate `RequestOptions` struct was added. `websocket.connect_insecure`, `http.get_insecure` and `http.post_insecure` are removed with `cfire fix` rewrites.
 31. **TLS Servers Are an Option on `make` (`Q31`)**: `make(http.Server, port)` builds a plain server and `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` (or `cert_pem` / `key_pem`) a TLS one; the same for `websocket.Server`. `make_tls_server` and `make_tls_server_pem` are removed with `cfire fix` rewrites. This needs stdlib struct types visible to `.cf` code, which `CF-180` also needs for `RequestOptions` and `ServerLimits`.
+32. **Block Comments (`Q32`, W5 gate, resolves `CF-172`)**: `/* ... */` is a comment, and block comments nest (`/* a /* b */ c */`), as in Rust and Swift. An unterminated block comment is `cfire/SYNTAX` at its opening `/*`. `cfire fmt` keeps block comments verbatim; doc comments stay `///`.
+33. **Retired Keywords Are Identifiers (`Q33`, resolves `CF-175`)**: `out` and `var` are not keywords. They are ordinary identifiers with no special handling, so the retired forms `fn f(out x: T)` and `var x = ...` are plain syntax errors, and `cfire/DEPRECATED-VAR` / `cfire/DEPRECATED-OUT-PARAM` no longer exist.
+34. **Formatter Prints From the AST (`Q34`, resolves `CF-156` scope)**: `cfire fmt` replaces the line-based formatter. *As built*: the printer re-emits the exact text of every token and comment and decides only the whitespace between them (indentation from bracket depth, one spacing rule per token-kind pair, struct-literal vs block braces, closure pipes), splits `;`-joined statements, and keeps at most one blank line. The parsed AST validates the input and output. Because only whitespace and statement `;` separators can change, formatting cannot change the program; this is checked on every file in the repo. It is guarded by `tests/fmt/{in,out}/*.cf` pairs, an idempotence check, and a check that formatting never changes the generated C++ (modulo `#line`).
+35. **An Explicit File Is the Whole Program (`Q35`, resolves `CF-173`)**: `cfire run/check/build a.cf`, where `a.cf` is a `package main` file that declares `fn main`, compiles `a.cf` and the packages it imports, like `go run a.go`. Test files (`*_test.cf`) and files of library packages still pull in their package's other files, because they are not programs on their own. Other `.cf` files in the same directory are not merged; when some exist, a one-line note says so and points at `cfire run .`. A directory argument (`cfire run .`, `cfire check examples/13-ios-native-ui`) compiles every file of the package.
 
 ### A.2 Execution Dependency Graph
 
@@ -148,12 +152,12 @@ flowchart TD
 | 27 | `CF-154` | A4 | **P2** | M | `runtime/core/{sync,webui,net/*,ssh}.hpp`, `examples/` | **Stdlib Naming & One-Way APIs**: `make_*`, one `Mutex`, connect/dial, TLS insecure | B3, B4, B7 | `CF-149` | `[DONE]` |
 | 28 | `CF-155` | A5 | **P2** | S | `src/refactor.hpp`, `src/main.cpp` | **Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help`** | C2 | `CF-161` | `[DONE]` |
 | 29 | `CF-156` | A5 | **P2** | L | `src/formatter.hpp`, `tests/fmt/` | **True AST Pretty-Printer & Ugly→Canonical Corpus** | C3, E6 | `CF-161` | `[DONE]` |
-| 30 | `CF-158` | A5 | **P2** | S | `src/docgen/`, `docs/GUIDE.md` | **Doc Integrity Checks**: No `file://` links, generated diagnostics table, accurate wording | C5 | `CF-149` | `[TODO]` |
+| 30 | `CF-158` | A5 | **P2** | S | `src/docgen/`, `docs/GUIDE.md` | **Doc Integrity Checks**: No `file://` links, generated diagnostics table, accurate wording | C5 | `CF-149` | `[DONE]` |
 | 31 | `CF-174` | A5 | **P2** | S | `docs/GUIDE.md`, `src/docgen/catalog_types.hpp` | **Concurrency Documentation**: `Mutex[T]` guard pattern, fix `with_lock` example | G2 | `CF-164` | `[DONE]` |
-| 32 | `CF-173` | A5 | **P3** | S | `src/main.cpp`, `src/analysis.hpp` | **Single-File `run`/`check` UX & Duplicate Code Suffix** | C7, C1 | None | `[TODO]` |
-| 33 | `CF-172` | A5 | **P3** | S | `src/lexer.hpp`, `docs/GUIDE.md` | **Comment Syntax Decision**: Block comments or a clear diagnostic | B8 | None | `[TODO]` |
+| 32 | `CF-173` | A5 | **P3** | S | `src/main.cpp`, `src/analysis.hpp` | **Single-File `run`/`check` UX & Duplicate Code Suffix** | C7, C1 | None | `[DONE]` |
+| 33 | `CF-172` | A5 | **P3** | S | `src/lexer.hpp`, `docs/GUIDE.md` | **Comment Syntax Decision**: Block comments or a clear diagnostic | B8 | None | `[DONE]` |
 | 34 | `CF-176` | A3 | **P2** | S | `src/analysis.hpp`, `src/build/syntax_check.hpp` | **`cfire check` Honors `build.cf` Include Paths & Dependencies**: `examples/08` fails `check` (`'fastcrc.h' file not found`) though `run` works | Found during W0 | None | `[DONE]` |
-| 35 | `CF-175` | A5 | **P3** | S | `src/lexer_types.hpp`, `src/parser.hpp` | **Retired Keyword Policy** (*needs decision*): `out` is still reserved after its removal as an intent, so `out := 3` is a syntax error | Found during W0 | None | `[TODO]` |
+| 35 | `CF-175` | A5 | **P3** | S | `src/lexer_types.hpp`, `src/parser.hpp` | **Retired Keyword Policy** (*needs decision*): `out` is still reserved after its removal as an intent, so `out := 3` is a syntax error | Found during W0 | None | `[DONE]` |
 | 36 | `CF-178` | A2 | **P1** | M | `src/lsp/server.hpp`, `tests/unit/test_lsp_docgen.hpp` | **Bounded LSP Workspace Discovery & Hermetic LSP Tests**: A stray `.cfire/` cache makes `/tmp` (or `~`) a workspace root that the LSP crawls recursively; LSP tests hard-code `file:///tmp/*.cf` and fail when unrelated `.cf` files exist under `/tmp` | Found during W0 | `CF-153` | `[DONE]` |
 | 37 | `CF-180` | A4 | **P2** | M | `runtime/core/net/{tcp,http}.hpp`, `src/docgen/catalog_types.hpp` | **IPv6 Dual-Stack Server & `.cf`-Level Network Options**: AF_INET6 listener with `IPV6_V6ONLY=0`, IPv6 `remote_addr`; expose `http.ServerLimits` / `server.set_limits` and a `RequestOptions` struct to `.cf` code | Deferred from `CF-150`/`CF-151` (W2) | `CF-154` | `[DONE]` |
 | 38 | `CF-181` | A4 | **P2** | S | `src/sema/fn_checker.hpp`, `src/codegen/expr.hpp`, `runtime/cfire_prelude.hpp` | **`own[T]` Release & Adopt for C Interop** (`Q25`): `o.release() -> *mut T` and `own[T].from_raw(p)` | W4 pre-coding gate | `CF-154` | `[DONE]` |
@@ -612,19 +616,24 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Tests**: *Conformance*: round trip through a C function in `build.cf`; use-after-release is `cfire/USE-AFTER-MOVE`. *Unit*: the lowering emits `unique_ptr::release` / the `unique_ptr` constructor.
 - **Acceptance Criteria**: Ownership crosses the C boundary in both directions without a `cpp {}` block, and the loan tracker sees `release` as a move.
 
-#### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[TODO]`
+#### `CF-182` — Everyday-Program Ergonomics: `parse` and `&str` Friction (user report, 2026-11-12) `[TODO]`
+- **Report**: `/Users/memo/Programming/adventofcode/2025/day1_01.cf` and `day1_02.cf` are very simple programs, yet `parse` and `&str` get in the way of simple common actions.
+- **Questions to answer**: Is `&str` a C++ construct leaking into the language? Should these cases resolve automatically (for example by copying a view into an owned `str` where the program needs one), or differently? What else makes these programs hard to write?
+- **Next step**: reproduce with both files, list every friction point with the diagnostic it produced, and bring a proposal (and any decisions) to the user before changing the language.
+
+#### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:
   - Renaming outer `count` also renames `|count: i32|` and its uses.
   - `--diff` emits malformed hunks and `a//private/...` paths.
   - `cfire refactor rename --help` prints the global help.
 - **Acceptance Criteria**: Closure parameters and match bindings are separate scopes for rename, the diff output applies with `git apply`, and `--help` works per subcommand.
 
-#### `CF-156` — True AST Pretty-Printer & Ugly→Canonical Corpus `[TODO]`
+#### `CF-156` — True AST Pretty-Printer & Ugly→Canonical Corpus `[DONE]`
 - **Problem & Evidence**: `fmt` normalizes `a:i32=-1` but leaves `b : str`, `type   P struct{`, `fn  f( mut p`, `->i32{`, and `;`-joined one-liners. `CF-130` is only partially delivered.
 - **Implementation**: Print from the AST with comment attachment, and add `tests/fmt/{in,out}/*.cf` pairs plus an idempotence/re-parse fuzz (`CF-141`).
 - **Acceptance Criteria**: The corpus round-trips, and formatting never changes the generated C++ (golden diff modulo `#line`).
 
-#### `CF-158` — Doc Integrity Checks `[TODO]`
+#### `CF-158` — Doc Integrity Checks `[DONE]`
 - **Problem & Evidence**:
   - The GUIDE and `guide.html` contain 21 `file:///Users/memo/...` links.
   - The "Complete 18-Rule" table is stale (~78 codes exist), and `USE-AFTER-FREE` is described differently in Ch5 and Ch12.
@@ -632,11 +641,11 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Implementation**: `doc --check` fails on `file://` and absolute local links, and the diagnostics table is generated from the code registry. All code blocks, including `cfire eval` shell examples, become doc-tests.
 - **Acceptance Criteria**: Docs can't drift from the compiler's diagnostic set.
 
-#### `CF-174` — Concurrency Documentation `[TODO]`
+#### `CF-174` — Concurrency Documentation `[DONE]`
 - **Problem & Evidence**: The reference's `mu.with_lock(|| { count += 1 })` example is rejected inside `spawn`. The working `Mutex[T]` pattern (`mut g := mu.lock(); *g += 1`) and its methods aren't documented.
 - **Acceptance Criteria**: The reference lists `Mutex[T]`/guard methods, and the GUIDE Ch10 shared-state examples are doc-tested.
 
-#### `CF-173` — Single-File `run`/`check` UX & Duplicate Code Suffix `[TODO]`
+#### `CF-173` — Single-File `run`/`check` UX & Duplicate Code Suffix `[DONE]`
 - **Problem & Evidence**: `cfire run a.cf` compiles every sibling `.cf` and reports errors from files you didn't name. The diagnostic code is also printed twice.
 - **Implementation**: An explicit file argument compiles that file plus its declared package files only, with a clear notice. The duplicate code suffix gets fixed as part of `CF-149`.
 
@@ -668,12 +677,12 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Implementation**: Make the C++ backend syntax check in `src/analysis.hpp` use the same `BuildPlan` include and define resolution as `cfire build` (the nearest ancestor `build.cf` plus `external_deps`). Add `for d in examples/*/; do ./cfire check $d; done` (failing on any error) to `review-check`.
 - **Acceptance Criteria**: `cfire check` passes on every canonical example, and `review-check` enforces it.
 
-#### `CF-175` — Retired Keyword Policy `[TODO]`
+#### `CF-175` — Retired Keyword Policy `[DONE]`
 - **Problem & Evidence**: `out` was removed as a parameter intent (`CF-103`) but is still a reserved word, so `out := 3` fails with `cfire/SYNTAX` (the conformance file is `syntax/008_out_is_not_reserved.cf`, currently xfail). Seeding the corpus hit this twice, as `out := ...` and `results` vs `out`. `var` is in the same position.
 - **Decision needed (pre-coding gate)**: either (a) release retired keywords as identifiers and keep only the context-sensitive `DEPRECATED-*` fix-its where the old form is unambiguous, or (b) keep them reserved and emit a dedicated `cfire/RESERVED-KEYWORD` diagnostic with a rename fix-it.
 - **Acceptance Criteria**: The chosen policy is documented in GUIDE Ch4, and `syntax/008` matches it.
 
-#### `CF-172` — Comment Syntax Decision `[TODO]`
+#### `CF-172` — Comment Syntax Decision `[DONE]`
 - **Problem & Evidence**: `/* */` produces `expected 'IDENT', got '/'`, and its absence isn't documented.
 - **Implementation**: The choice of supporting block comments or emitting `cfire/UNSUPPORTED-BLOCK-COMMENT` is made at the pre-coding gate. Document the result in GUIDE Ch4.
 

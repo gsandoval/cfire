@@ -51,7 +51,7 @@ fn run_app() -> void! {
     // 3. core:json roundtrip (`stringify` + `parse` with str, i64, f64, bool)
     m_in := Metric{
         service: joined,
-        count:   128,
+        count: 128,
         latency: 1.5,
         healthy: true,
     }

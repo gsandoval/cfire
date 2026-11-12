@@ -52,7 +52,7 @@ auto main(int argc, char** argv) -> int {
         std::string_view a = argv[i];
         if (a == "--") break;
         if (a == "--help" || a == "-h") {
-            print_usage();
+            if (!print_command_usage(sub)) print_usage();
             return 0;
         }
     }
@@ -674,6 +674,65 @@ auto main(int argc, char** argv) -> int {
     if (target.empty()) {
         print_usage();
         return 1;
+    }
+
+    // Q35 (CF-173): `cfire run a.cf` builds a.cf and its imports, like `go run a.go`; a directory builds the package.
+    if (sub == "run" || sub == "build" || sub == "check" || sub == "emit-cpp" || sub == "eject") {
+        std::error_code tec;
+        auto declares_main_package = [](const std::filesystem::path& p) {
+            auto txt = cfire::build::read_file_text(p);
+            if (!txt) return std::pair{false, false};
+            const bool is_main_pkg = txt->starts_with("package main") || txt->contains("\npackage main");
+            return std::pair{is_main_pkg, txt->contains("fn main(")};
+        };
+        auto package_files = [](const std::filesystem::path& dir) {
+            std::vector<std::filesystem::path> files;
+            std::error_code dec;
+            for (const auto& e : std::filesystem::directory_iterator(dir, dec)) {
+                const auto name = e.path().filename().string();
+                if (e.is_regular_file() && e.path().extension() == ".cf" && name != "build.cf" && !name.ends_with("_test.cf")) files.push_back(e.path());
+            }
+            std::sort(files.begin(), files.end());
+            return files;
+        };
+        if (std::filesystem::is_regular_file(target, tec) && target.extension() == ".cf" && target.filename() != "build.cf" &&
+            !target.filename().string().ends_with("_test.cf")) {
+            auto [is_main_pkg, has_main] = declares_main_package(target);
+            if (is_main_pkg && has_main) {
+                cfire::build::explicit_entry_file_only() = true;
+                auto dir = target.parent_path().empty() ? std::filesystem::path(".") : target.parent_path();
+                std::size_t others = 0;
+                for (const auto& f : package_files(dir)) {
+                    if (!std::filesystem::equivalent(f, target, tec) && declares_main_package(f).first) ++others;
+                }
+                if (others > 0 && !json_mode) {
+                    std::println(stderr, "note: compiling only {} and its imports; {} other 'package main' file{} in {} {} not included (use 'cfire {} {}' to build the whole package)",
+                        target.filename().string(), others, others == 1 ? "" : "s", dir.string(), others == 1 ? "is" : "are", sub, dir.string());
+                }
+            }
+        } else if ((sub == "run" || sub == "build" || sub == "emit-cpp" || sub == "eject") && std::filesystem::is_directory(target, tec) &&
+                   !std::filesystem::exists(target / "build.cf", tec)) {
+            // A package directory: its entry is `main.cf`, or the one file that declares `fn main`.
+            std::filesystem::path entry;
+            if (std::filesystem::exists(target / "main.cf", tec)) {
+                entry = target / "main.cf";
+            } else {
+                for (const auto& f : package_files(target)) {
+                    if (declares_main_package(f).second) {
+                        if (!entry.empty()) {
+                            std::println(stderr, "error: {} has more than one file declaring 'fn main' ({} and {}); name the entry file", target.string(), entry.filename().string(), f.filename().string());
+                            return 1;
+                        }
+                        entry = f;
+                    }
+                }
+            }
+            if (entry.empty()) {
+                std::println(stderr, "error: {} has no main.cf and no file declaring 'fn main'", target.string());
+                return 1;
+            }
+            target = entry;
+        }
     }
 
     if (sub == "fix" || (sub == "check" && fix_mode)) {

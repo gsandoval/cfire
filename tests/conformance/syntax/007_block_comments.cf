@@ -1,0 +1,8 @@
+// expect: stdout
+// | 3
+package main
+/* a block comment /* that nests */ still a comment */
+fn main() {
+    x := 1 /* inline */ + 2
+    println("{}", x)
+}

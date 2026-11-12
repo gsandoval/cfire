@@ -543,7 +543,6 @@ struct VarDeclStmt {
     bool is_mut = false;
     std::optional<TypeRef> type{};
     ExprPtr init = nullptr;
-    bool was_var = false;
     int line = 1;
     int col = 1;
 };
@@ -693,7 +692,6 @@ struct GlobalVarDecl {
     bool is_mut = false;
     std::optional<TypeRef> type{};
     ExprPtr value{};
-    bool was_var = false;
     int line = 1;
     std::string package_name{};
     std::string source_path{};

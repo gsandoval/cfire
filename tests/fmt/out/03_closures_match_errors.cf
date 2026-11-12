@@ -1,0 +1,28 @@
+package main
+import "core:fs"
+
+type Shape enum {
+    Circle(f64)
+    Square(f64)
+}
+
+fn area(s: Shape) -> f64 {
+    return match s { Shape::Circle(r) => r * r * 3.0, Shape::Square(a) => a * a }
+}
+
+fn load(p: str) -> str! {
+    t := try fs.read_text(p)
+    return t
+}
+
+fn main() -> void! {
+    double := |x: i32| -> i32 { return x * 2 }
+    mut xs: []i32 = [3, 1, 2]
+    xs.sort_by(|a, b| { return a > b })
+    v := load("x.txt") or err {
+        println("{}", err)
+        return
+    }
+    if v.len() > 0 && !v.is_empty() { println("{}", double(2)) }
+    println("{}", area(Shape::Circle(1.0)))
+}

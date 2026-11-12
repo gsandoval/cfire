@@ -1,6 +1,7 @@
 #pragma once
 // src/docgen/catalog_types.hpp — Lightweight Metadata Catalog Types & Static Tables (`stdlib_catalog` & `diagnostics_catalog`)
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -633,7 +634,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Mutex.lock", "fn (m: Mutex[T]) lock() -> MutexGuard[T]", "m.lock()", "`Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`.", "mut g := mu.lock()"},
                 {"Mutex.unlock", "fn (m: Mutex[void]) unlock()", "m.unlock()", "Releases a `Mutex[void]` acquired with `lock()`.", "lk.unlock()"},
                 {"Mutex.try_lock", "fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?", "m.try_lock()", "Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock.", "if g := mu.try_lock() { ... }"},
-                {"Mutex.with_lock", "fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R", "m.with_lock(f)", "Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns.", "n := mu.with_lock(|v| { v += 1; return v })"},
+                {"Mutex.with_lock", "fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R", "m.with_lock(f)", "Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns.", "n := mu.with_lock(|mut v| { v += 1; return v })"},
                 {"Mutex.get", "fn (m: Mutex[T]) get() -> T", "m.get()", "Copy of the protected value, read under the lock.", "total := mu.get()"},
                 {"Mutex.set", "fn (m: Mutex[T]) set(v: T)", "m.set(v)", "Replaces the protected value under the lock.", "mu.set(0)"},
                 {"Atomic", "type Atomic[T] struct", "cfire::sync::Atomic<T>", "Atomic variable.", "hits := make(sync.Atomic[i64], 0)"},
@@ -960,6 +961,76 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     return catalog;
 }
 
+// CF-158: one line for every diagnostic code the compiler can emit. Codes with a detailed entry in
+// diagnostics_catalog() take their summary from there; the unit test `test_cf158_doc_integrity` fails when the
+// sources emit a code that is in neither list. The GUIDE's diagnostics table is generated from this.
+struct DiagnosticCodeDoc {
+    std::string code;
+    std::string category;
+    std::string summary;
+};
+
+[[nodiscard]] inline auto diagnostics_catalog() -> const std::vector<DiagnosticDoc>&;
+
+[[nodiscard]] inline auto diagnostic_code_registry() -> const std::vector<DiagnosticCodeDoc>& {
+    static const std::vector<DiagnosticCodeDoc> all = [] {
+        std::vector<DiagnosticCodeDoc> v = {
+            {"cfire/AMBIGUOUS-INTERPOLATION", "Syntax", "An interpolation `{...}` that starts with a number literal must be parenthesized."},
+            {"cfire/ARITY-MISMATCH", "Types", "A call passes the wrong number of arguments."},
+            {"cfire/ASSIGN-IMMUTABLE", "Mutability", "Assignment to a binding declared without `mut`."},
+            {"cfire/DANGLING-TEMPORARY", "Memory safety", "A view or pointer borrows from a temporary that is destroyed at the end of the statement."},
+            {"cfire/DEPRECATED-API", "Migration", "A stdlib function that was renamed or replaced before 0.16 (`fs.read_all`, `os.read_stdin`, ...)."},
+            {"cfire/DEPRECATED-DISCARD", "Migration", "`_ := expr` is not a discard form; write `_ = expr`."},
+            {"cfire/DEPRECATED-IN-PARAM", "Migration", "Explicit `in` intent; parameters are read-only by default."},
+            {"cfire/DEPRECATED-INTENT-POS", "Migration", "`x: mut T` intent placement; write `mut x: T`."},
+            {"cfire/DEPRECATED-SEPARATOR", "Syntax", "`::` used where `.` is required (only enum variants use `::`)."},
+            {"cfire/DUPLICATE-DECLARATION", "Declarations", "Two declarations of the same type, function or method."},
+            {"cfire/DYNAMIC-INTERFACE-UNSUPPORTED", "Types", "A slice or array of interface values; interfaces lower to C++ concepts."},
+            {"cfire/ERROR", "Tooling", "An internal error with no more specific code."},
+            {"cfire/ESCAPING-CAPTURE-MUT", "Concurrency", "An escaping closure mutates a captured outer variable."},
+            {"cfire/FILE-NOT-FOUND", "Tooling", "A file named on the command line or imported does not exist."},
+            {"cfire/INVALID-IMPORT", "Imports", "A module imported under the wrong tier prefix (`core:` vs `ext:`)."},
+            {"cfire/INVALID-INDEX", "Types", "Indexing a value that is not a string, slice, array or map."},
+            {"cfire/INVALID-INTERPOLATION", "Syntax", "An interpolation `{...}` that is not a valid expression."},
+            {"cfire/INVALID-MEMBER", "Types", "A member access on a primitive value that has no such member."},
+            {"cfire/INVALID-SMART-PTR-CTOR", "Construction", "`own(v)` / `shared(v)` called as functions; write `make(own[T], v)`."},
+            {"cfire/LITERAL-OUT-OF-RANGE", "Numbers", "An integer literal that does not fit its target type (Q9)."},
+            {"cfire/MISSING-IMPORT", "Imports", "A stdlib module is used without being imported."},
+            {"cfire/MISSING-RETURN", "Control flow", "A function with a return type can fall off its end."},
+            {"cfire/NON-BOOL-CONDITION", "Types", "A condition (`if`, `for`, `&&`, `||`, `!`) that is not `bool`."},
+            {"cfire/OUT-CALLSITE", "Migration", "A call-site `out` marker (retired with the `out` intent)."},
+            {"cfire/PREFER-ENUM", "Style", "A cluster of related integer constants that should be an enum (warning)."},
+            {"cfire/REDUNDANT-DEREF", "Style", "`(*p).field` on a smart pointer; write `p.field`."},
+            {"cfire/SEMA-ERROR", "Tooling", "A semantic error with no more specific code."},
+            {"cfire/SHIFT-OUT-OF-RANGE", "Numbers", "A constant shift count outside the operand's bit width (Q11)."},
+            {"cfire/SPAWN-SHARED-MUT", "Concurrency", "A spawned task writes through a pointer other tasks can reach (Q20)."},
+            {"cfire/SYNTAX", "Syntax", "The source does not parse."},
+            {"cfire/TYPE-ERROR", "Tooling", "The C++ backend rejected generated code; Sema should have caught it (please report)."},
+            {"cfire/TYPE-MISMATCH", "Types", "A value of one type is used where another is required."},
+            {"cfire/UNDECLARED-IDENT", "Names", "A name that is not declared, or a module used under the wrong alias."},
+            {"cfire/UNHANDLED-RESULT", "Errors", "A fallible `T!` value used without `try` or `or`."},
+            {"cfire/UNKNOWN-ENUM-VARIANT", "Names", "A variant that the enum does not declare."},
+            {"cfire/UNKNOWN-FIELD", "Names", "A field or associated item that the type does not have."},
+            {"cfire/UNKNOWN-METHOD", "Names", "A method that the receiver type does not have (Q14 closed builtin surface)."},
+            {"cfire/UNKNOWN-MODULE", "Imports", "An import path that names no known module."},
+            {"cfire/UNKNOWN-STDLIB-FN", "Names", "A function that the stdlib module does not export."},
+            {"cfire/UNKNOWN-TYPE", "Types", "An expression whose type cannot be inferred (warning)."},
+            {"cfire/UNRESOLVED-PACKAGE", "Imports", "A local package import that cannot be found."},
+            {"cfire/UNSATISFIED-CONSTRAINT", "Generics", "A type argument that does not satisfy the interface constraint."},
+            {"cfire/UNWRAPPED-OPTIONAL", "Errors", "A member access on a `T?` value without unwrapping."},
+            {"cfire/WRONG-ARG-COUNT", "Types", "A builtin called with the wrong number of arguments."},
+        };
+        for (const auto& d : diagnostics_catalog()) {
+            if (std::none_of(v.begin(), v.end(), [&](const DiagnosticCodeDoc& r) { return r.code == d.code; })) {
+                v.push_back({d.code, "Detailed rule", d.title});
+            }
+        }
+        std::sort(v.begin(), v.end(), [](const DiagnosticCodeDoc& a, const DiagnosticCodeDoc& b) { return a.code < b.code; });
+        return v;
+    }();
+    return all;
+}
+
 [[nodiscard]] inline auto diagnostics_catalog() -> const std::vector<DiagnosticDoc>& {
     static const std::vector<DiagnosticDoc> diags = {
         {
@@ -1028,7 +1099,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         {
             "cfire/MUT-ALIAS",
             "Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity)",
-            "A variable passed as a `mut` or `out` argument (or used as a `mut` method receiver) cannot also be passed as another argument in the same call.",
+            "A variable passed as a `mut` argument (or used as a `mut` method receiver) cannot also be passed as another argument in the same call.",
             "fn transfer(mut from: i32, mut to: i32) { ... }\nfn main() {\n    mut acc := 100\n    transfer(mut acc, mut acc) // ERROR [cfire/MUT-ALIAS]\n}",
             "fn transfer(mut from: i32, mut to: i32) { ... }\nfn main() {\n    mut a := 100\n    mut b := 50\n    transfer(mut a, mut b) // OK: distinct bindings\n}"
         },
@@ -1202,8 +1273,8 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "cfire/REDUNDANT-CALLSITE-INTENT",
-            "Redundant `mut` or `out` Annotation on `in` Parameter",
-            "Call-site `mut` and `out` annotations are only valid when the target parameter is declared `mut` or `out`. Writing `mut` or `out` on a read-only `in` parameter misleads readers into thinking the call mutates the argument.",
+            "Redundant `mut` Annotation on a Read-Only Parameter",
+            "Call-site `mut` annotations are only valid when the target parameter is declared `mut`. Writing `mut` on a read-only parameter misleads readers into thinking the call mutates the argument.",
             "fn show(x: i32) { println(\"{}\", x) }\nfn main() {\n    mut a := 10\n    show(mut a) // ERROR [cfire/REDUNDANT-CALLSITE-INTENT]\n}",
             "fn show(x: i32) { println(\"{}\", x) }\nfn main() {\n    mut a := 10\n    show(a) // OK\n}"
         },

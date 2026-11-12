@@ -1,0 +1,26 @@
+package main
+
+// leading comment
+type Config struct {
+    name:str   `json:"name"`  // display name
+    port :  u16 = 8080
+    /* block
+       comment */
+    tags: []str
+}
+
+fn (c:Config) url()->str {   // trailing
+    return "http://{c.name}:{c.port}"
+}
+
+fn main(){
+    xs:[]i32=[3,1,2]
+    m:map[str]i32={"a":1}
+    total:=0
+    for i in 0..xs.len(){ total+=xs[i] }
+    p:=&xs[0]
+    q:= *p
+    c:=Config{name:"x",tags:["a","b"]}
+    s := "a;b{c}" ; r := `raw ; { text`
+    println("{} {} {} {}",total,q,c.url(),m.len())
+}

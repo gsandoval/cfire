@@ -1,6 +1,6 @@
 # The `cfire` Language & Systems Programming Guide
 
-**cfire** (pronounced *sapphire* • `/ˈsæf.aɪ.ər/`) is a systems programming language that compiles 1-to-1 to human-readable ISO C++23. It gives you the ergonomics of a modern language—read-only bindings by default, explicit call-site mutation and move markers (`in`, `mut`, `move`, `out`), value-based error handling (`T!`), lexical structured concurrency (`async.scope`), and zero-wrapper C/C++ header ingestion (`import cpp`)—while compiling down to clean, standard C++23 across native desktop/server (`x86_64` / `arm64`), WebAssembly (`--web`), and native iOS (`--ios`).
+**cfire** (pronounced *sapphire* • `/ˈsæf.aɪ.ər/`) is a systems programming language that compiles 1-to-1 to human-readable ISO C++23. It gives you the ergonomics of a modern language—read-only bindings by default, explicit call-site mutation and move markers (`mut`, `move`), value-based error handling (`T!`), lexical structured concurrency (`async.scope`), and zero-wrapper C/C++ header ingestion (`import cpp`)—while compiling down to clean, standard C++23 across native desktop/server (`x86_64` / `arm64`), WebAssembly (`--web`), and native iOS (`--ios`).
 
 This guide is written as a hands-on builder's tour rather than a dry language specification. Each chapter walks through real engineering problems step by step—starting with a working example, showing what happens under the hood in emitted ISO C++23, and highlighting how the compiler's 18 static safety checks catch subtle bugs before they ever reach a debugger.
 
@@ -15,7 +15,7 @@ This guide is written as a hands-on builder's tour rather than a dry language sp
 
 1. **Lexical & Resilient Syntax Analysis (`lexer` / `parser`)**: Tokenizes `.cf` source files and constructs a typed Abstract Syntax Tree (AST) with statement-level error recovery so your editor and LSP stay responsive while you type.
 2. **Clang AST Bridge (`clang_bridge`)**: Whenever it sees `import cpp "header.h"`, `cfire` invokes the system Clang frontend (`-Xclang -ast-dump=json`) to ingest C/C++ function signatures, structs, enums, and macros directly—no manual FFI glue required.
-3. **Semantic, Intent & Loan Verification (`sema`)**: Resolves package imports, infers types, checks `match` exhaustiveness and reachability, verifies call-site `mut`/`move`/`out` markers, tracks local pointer/slice loans against container mutations (`cfire/USE-AFTER-FREE`, `cfire/ITERATOR-INVALIDATION`), and enforces flow-sensitive null checks (`cfire/NULL-DEREF`).
+3. **Semantic, Intent & Loan Verification (`sema`)**: Resolves package imports, infers types, checks `match` exhaustiveness and reachability, verifies call-site `mut`/`move` markers, tracks local pointer/slice loans against container mutations (`cfire/USE-AFTER-FREE`, `cfire/ITERATOR-INVALIDATION`), and enforces flow-sensitive null checks (`cfire/NULL-DEREF`).
 4. **ISO C++23 Code Generation (`codegen`)**: Emits standard ISO C++23 source code annotated with `#line` directives so `lldb`, `gdb`, and AddressSanitizer stack traces point directly to your `.cf` filenames and line numbers.
 5. **PCH-Accelerated Backend Compilation (`buildsys`)**: Compiles the generated C++23 translation unit against a precompiled header (`cfire_prelude.hpp.pch`) using your host C++23 compiler (`clang++` 18+ or `g++` 14+) and links the required system or vendor libraries.
 
@@ -344,14 +344,14 @@ package build
 import "core:build"
 
 // 1. Pre-build code generation hook (runs only when Inputs are newer than Outputs)
-var GenTables = build.Command("python3", {
+GenTables := build.Command("python3", {
     Args:    ["scripts/gen_tables.py"],
     Inputs:  ["scripts/schema.json"],
     Outputs: ["src/generated_tables.cf"],
 })
 
 // 2. Native C/C++ sources compiled into a cached static archive (.a)
-var CSupport = build.CC("./vendor/fastcrc", {
+CSupport := build.CC("./vendor/fastcrc", {
     Sources:  ["fastcrc.c"],
     Includes: ["."],
     Defines:  {"FASTCRC_SEED": 42},
@@ -365,7 +365,7 @@ KVStore := build.CMake("./vendor/libkv_cmake", {
 })
 
 // 4. Remote Git repository dependency (pinned in cfire.lock)
-var RemoteEngine = build.Git("https://github.com/example/engine.git", {
+RemoteEngine := build.Git("https://github.com/example/engine.git", {
     Tag:      "v1.2.0",
     Driver:   "CMake",
     Target:   "engine_core",
@@ -373,7 +373,7 @@ var RemoteEngine = build.Git("https://github.com/example/engine.git", {
 })
 
 // 5. Multi-target application executable definition
-var App = build.Executable("service-app", {
+App := build.Executable("service-app", {
     Entry:      "src/main.cf",
     Subsystem:  "console",
     Name:       "ServiceApp",
@@ -735,7 +735,7 @@ If you tried to read `view[0]` *after* `nums.push(40)`, the compiler immediately
 | :--- | :--- | :--- |
 | `cfire/MUT-CALLSITE` | Calling a `mut` parameter without writing `mut` at the call site. | Write `f(mut x)` (or run `cfire fix`). |
 | `cfire/MOVE-CALLSITE` | Calling a `move` parameter without writing `move` at the call site. | Write `f(move x)` to confirm ownership transfer. |
-| `cfire/IMMUTABLE-MUT-ARG` | Passing an immutable binding (`x := ...`) to a `mut` or `out` parameter. | Declare `mut x := ...`. |
+| `cfire/IMMUTABLE-MUT-ARG` | Passing an immutable binding (`x := ...`) to a `mut` parameter. | Declare `mut x := ...`. |
 | `cfire/MUT-RECEIVER` | Calling a `fn (mut s: T)` method on an immutable struct variable. | Declare `mut s := ...`. |
 | `cfire/MUT-ALIAS` | Passing the same variable twice in one call when at least one arg is `mut`. | Pass distinct variables (`transfer(mut a, mut b)`). |
 | `cfire/USE-AFTER-MOVE` | Reading a variable after `move x` transferred ownership on an earlier path. | Read before `move x`, or pass by `mut` borrow. |
@@ -1440,6 +1440,48 @@ fn main() {
 channel_sum=100
 ```
 
+### Shared State with `Mutex[T]` and `Atomic[T]` (`core:sync`)
+A spawned task may not write through a captured variable or pointer that other tasks can also reach (`cfire/SPAWN-SHARED-MUT`, `cfire/ESCAPING-CAPTURE-MUT`). When workers really do need one shared value, put it behind a `sync.Mutex[T]` or `sync.Atomic[T]`. Copies of either handle share the same state, so each task captures the handle and goes through its methods:
+
+| Function / Method | Signature | Behavior |
+| :--- | :--- | :--- |
+| `make(sync.Mutex[T], v)` | `-> Mutex[T]` | A mutex protecting the value `v`. `make(sync.Mutex[void])` is a pure lock with `lock()` / `unlock()`. |
+| `mu.lock()` | `fn (m: Mutex[T]) lock() -> MutexGuard[T]` | Blocks until the lock is free. Read or write the value through the guard (`*g += 1`); the lock is released when `g` goes out of scope. |
+| `mu.try_lock()` | `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?` | Like `lock()`, but `none` instead of blocking. |
+| `mu.with_lock(f)` | `fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R` | Runs `f` on the value while holding the lock: `mu.with_lock(\|mut v\| { v += 1 })`. |
+| `mu.get()` / `mu.set(v)` | `-> T` / `fn(v: T)` | Copies the value out, or replaces it, under the lock. |
+| `make(sync.Atomic[T], v)` | `-> Atomic[T]` | A lock-free integer counter: `load()`, `store(v)`, `add(d)`, `sub(d)`. |
+
+```cfire
+package main
+
+import "core:sync"
+
+fn main() {
+    total := make(sync.Mutex[i64], 0)
+    hits := make(sync.Atomic[i64], 0)
+
+    async.scope |s| {
+        for w in 0..4 {
+            s.spawn || {
+                for i in 0..250 {
+                    mut g := total.lock()
+                    *g += 2
+                    hits.add(1)
+                }
+            }
+        }
+    }
+
+    total.with_lock(|mut v| { v += 1 })
+    println("total={} hits={}", total.get(), hits.load())
+}
+```
+```text
+# Output:
+total=2001 hits=1000
+```
+
 ### Hierarchical Cancellation & Deadlines (`core:sync/context`)
 Long-running network calls and worker pipelines need cooperative timeouts and cancellation. `core:sync/context` implements hierarchical cancellation tokens where cancelling a parent `Context` automatically cancels all of its child contexts and wakes any blocked `recv_ctx` or `sleep_ctx` calls:
 
@@ -1575,25 +1617,25 @@ package build
 
 import "core:build"
 
-var FastCRC = build.CC("./c_deps/fastcrc", {
+FastCRC := build.CC("./c_deps/fastcrc", {
     Sources:  ["fastcrc.c"],
     Includes: ["."],
     Defines:  {"FASTCRC_SEED": 42},
 })
 
-var KVStore = build.CMake("./vendor/libkv_cmake", {
+KVStore := build.CMake("./vendor/libkv_cmake", {
     Target:   "kvstore",
     Includes: ["include"],
     Defines:  {"KV_SALT": 42},
 })
 
-var VecMath = build.Make("./vendor/libmath_make", {
+VecMath := build.Make("./vendor/libmath_make", {
     Target:   "vecmath",
     Includes: ["include"],
     Defines:  {"MATH_SCALE_BIAS": 1.0},
 })
 
-var App = build.Executable("hybrid-build-demo", {
+App := build.Executable("hybrid-build-demo", {
     Entry: "main.cf",
 })
 ```
@@ -1712,29 +1754,95 @@ cfire fix --dry-run src/main.cf
 cfire fix src/main.cf
 ```
 
-### Complete 18-Rule `cfire/*` Safety & Diagnostics Reference
-Every compiler stage (`CF1xxx`–`CF5xxx`) and semantic safety rule (`cfire/*`) has a stable identifier that can be inspected in [`reference.html`](file:///Users/memo/Programming/cfire/docs/reference.html) or emitted as structured JSON via `cfire check --json <file.cf>`. Below are all 18 semantic safety and exclusivity rules enforced by the compiler:
+### Complete `cfire/*` Diagnostics Reference
+Every diagnostic has a stable `cfire/*` code, shown after the message and emitted as structured JSON by `cfire check --json <file.cf>`. The detailed rules, with rejected and accepted examples, are in [`reference.html`](reference.html). This table lists every code the compiler can report:
 
-| Rule Code | Category | Enforced Invariant | `cfire fix`? |
-| :--- | :--- | :--- | :---: |
-| `cfire/MUT-CALLSITE` | Call-Site Intent | Call site must write `mut arg` when passing to a `mut` / `out` parameter. | **Yes** |
-| `cfire/MOVE-CALLSITE` | Call-Site Intent | Call site must write `move arg` when passing to a `move` parameter. | **Yes** |
-| `cfire/IMMUTABLE-MUT-ARG` | Mutability | Argument passed as `mut` / `out` must be declared `mut` at its binding site. | **Yes** |
-| `cfire/MUT-RECEIVER` | Mutability | Calling a `fn (mut self: T)` method requires a `mut` receiver binding. | **Yes** |
-| `cfire/MUT-ALIAS` | Aliasing Safety | A `mut`/`out` argument cannot alias any other argument in the same call expression. | Manual |
-| `cfire/USE-AFTER-MOVE` | Ownership | A variable moved with `move x` cannot be read or moved again unless re-initialized. | Manual |
-| `cfire/USE-AFTER-FREE` | Heap Safety | Heap pointer freed via `free(p)` cannot be dereferenced, passed, or freed again (`double free`). | Manual |
-| `cfire/DANGLING-POINTER` | Lifetime / Loans | Taking `&x` or `&mut x` of an inner-scope local variable cannot assign into an outer-scope pointer, and a variable cannot be mutated while borrowed. | Manual |
-| `cfire/DANGLING-RETURN` | Lifetime / Loans | A function cannot return the address of a stack-local variable or parameter (`return &local`). | Manual |
-| `cfire/ITERATOR-INVALIDATION` | Container Safety | A container (`[]T`, `map[K]V`, `str`) cannot be structurally mutated (`.push`, `.clear`, `.remove`) inside a `for item in container` loop. | Manual |
-| `cfire/NULL-DEREF` | Null Safety | A pointer (`*T`, `*mut T`) that is `none` or potentially null cannot be dereferenced without an explicit `if p != none` guard. | Manual |
-| `cfire/INDEX-OUT-OF-BOUNDS` | Bounds Safety | Negative slice/array indices (`s[-1]`) or constant indices `>= N` on `[N]T` are rejected at compile time. | Manual |
-| `cfire/DIVIDE-BY-ZERO` | Arithmetic Safety | Integer division (`/`) or modulo (`%`) by a constant zero expression is rejected at compile time. | Manual |
-| `cfire/NON-EXHAUSTIVE-MATCH` | Pattern Matching | `match` over an `enum` must cover every declared variant (or include a wildcard `_ => { ... }` arm). | **Yes** |
-| `cfire/NON-DIVERGING-OR-BLOCK` | Error Handling | Recovery block `val := fallible() or err { ... }` must diverge (`return`, `break`, `continue`, `panic`). | Manual |
-| `cfire/RETURN-IN-DEFER` | Control Flow | `return` is forbidden inside a `defer { ... }` block so cleanup cannot silently swallow upstream return values or errors. | Manual |
-| `cfire/SQL-INJECTION-RISK` | Security | Concatenating or interpolating runtime variables into `db.exec` / `db.query` SQL strings is rejected; use `?1`, `?2` parameters. | Manual |
-| `cfire/SHELL-INJECTION-RISK` | Security | Concatenating or interpolating runtime variables into `os.exec` / `os.exec_output` commands is rejected; use `os.command(bin, args)`. | Manual |
+<!-- cfire:diagnostics-table:begin (generated by `cfire doc`; do not edit) -->
+| Code | Category | Meaning |
+| :--- | :--- | :--- |
+| `cfire/AMBIGUOUS-INTERPOLATION` | Syntax | An interpolation `{...}` that starts with a number literal must be parenthesized. |
+| `cfire/ARITY-MISMATCH` | Types | A call passes the wrong number of arguments. |
+| `cfire/ASSIGN-IMMUTABLE` | Mutability | Assignment to a binding declared without `mut`. |
+| `cfire/BREAK-OUTSIDE-LOOP` | Detailed rule | `break` or `continue` Outside of a `for` Loop |
+| `cfire/DANGLING-POINTER` | Detailed rule | Inner-Scope Borrow Escaping to Outer-Scope Pointer or View |
+| `cfire/DANGLING-RETURN` | Detailed rule | Returning Pointer or View Rooted in Function-Local Storage |
+| `cfire/DANGLING-TEMPORARY` | Memory safety | A view or pointer borrows from a temporary that is destroyed at the end of the statement. |
+| `cfire/DEPRECATED-API` | Migration | A stdlib function that was renamed or replaced before 0.16 (`fs.read_all`, `os.read_stdin`, ...). |
+| `cfire/DEPRECATED-DISCARD` | Migration | `_ := expr` is not a discard form; write `_ = expr`. |
+| `cfire/DEPRECATED-IN-PARAM` | Migration | Explicit `in` intent; parameters are read-only by default. |
+| `cfire/DEPRECATED-INTENT-POS` | Migration | `x: mut T` intent placement; write `mut x: T`. |
+| `cfire/DEPRECATED-SEPARATOR` | Syntax | `::` used where `.` is required (only enum variants use `::`). |
+| `cfire/DIVIDE-BY-ZERO` | Detailed rule | Compile-Time Division or Modulo by Constant Zero |
+| `cfire/DUPLICATE-DECLARATION` | Declarations | Two declarations of the same type, function or method. |
+| `cfire/DYNAMIC-INTERFACE-UNSUPPORTED` | Types | A slice or array of interface values; interfaces lower to C++ concepts. |
+| `cfire/ERROR` | Tooling | An internal error with no more specific code. |
+| `cfire/ESCAPING-CAPTURE-MUT` | Concurrency | An escaping closure mutates a captured outer variable. |
+| `cfire/FIELD-NAME-CASE` | Detailed rule | Struct Field Is Not snake_case |
+| `cfire/FILE-NOT-FOUND` | Tooling | A file named on the command line or imported does not exist. |
+| `cfire/IMMUTABLE-MUT-ARG` | Detailed rule | Passing Immutable Binding as `mut` Argument |
+| `cfire/INDEX-OUT-OF-BOUNDS` | Detailed rule | Compile-Time Out-of-Bounds or Negative Constant Sequence Index |
+| `cfire/INVALID-CONSTRUCTOR` | Detailed rule | Associated Function Other Than `make` |
+| `cfire/INVALID-IMPORT` | Imports | A module imported under the wrong tier prefix (`core:` vs `ext:`). |
+| `cfire/INVALID-INDEX` | Types | Indexing a value that is not a string, slice, array or map. |
+| `cfire/INVALID-INTERPOLATION` | Syntax | An interpolation `{...}` that is not a valid expression. |
+| `cfire/INVALID-MAKE` | Detailed rule | Invalid `make(T, ...)` Arguments |
+| `cfire/INVALID-MEMBER` | Types | A member access on a primitive value that has no such member. |
+| `cfire/INVALID-MOVE` | Detailed rule | No-Op `move` on Rvalue or Scalar `Copy` Variable |
+| `cfire/INVALID-OR-BLOCK-CONTEXT` | Detailed rule | Block `or { ... }` Inside Short-Circuit Operand or `for` Condition |
+| `cfire/INVALID-RELEASE` | Detailed rule | `release` on a Shared Pointer |
+| `cfire/INVALID-SMART-PTR-CTOR` | Construction | `own(v)` / `shared(v)` called as functions; write `make(own[T], v)`. |
+| `cfire/INVALID-STRUCT-TAG` | Detailed rule | Duplicate or Malformed Struct Reflection Tag |
+| `cfire/INVALID-TRY-CONTEXT` | Detailed rule | `try` Inside Short-Circuit Operand or `for` Condition |
+| `cfire/ITERATOR-INVALIDATION` | Detailed rule | Structural Mutation or Move of Collection During `for` Iteration |
+| `cfire/LITERAL-OUT-OF-RANGE` | Numbers | An integer literal that does not fit its target type (Q9). |
+| `cfire/MISSING-IMPORT` | Imports | A stdlib module is used without being imported. |
+| `cfire/MISSING-RETURN` | Control flow | A function with a return type can fall off its end. |
+| `cfire/MOVE-CALLSITE` | Detailed rule | Missing Call-Site `move` Marker |
+| `cfire/MUT-ALIAS` | Detailed rule | Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity) |
+| `cfire/MUT-CALLSITE` | Detailed rule | Missing Call-Site `mut` Marker |
+| `cfire/MUT-RECEIVER` | Detailed rule | Calling `mut` Method on Immutable Receiver |
+| `cfire/NO-EFFECT-STMT` | Detailed rule | Pure Expression Statement With No Side Effects |
+| `cfire/NON-BOOL-CONDITION` | Types | A condition (`if`, `for`, `&&`, `||`, `!`) that is not `bool`. |
+| `cfire/NON-DIVERGING-OR-BLOCK` | Detailed rule | Non-Diverging Error Recovery Block on Value Binding |
+| `cfire/NON-EXHAUSTIVE-MATCH` | Detailed rule | Non-Exhaustive `match` Statement Over Algebraic `enum` |
+| `cfire/NULL-DEREF` | Detailed rule | Dereference or Member Access on Null or Potentially Null Pointer |
+| `cfire/OPTIONAL-OR-ERR` | Detailed rule | Binding Error Variable `or err` on Optional `T?` |
+| `cfire/OUT-CALLSITE` | Migration | A call-site `out` marker (retired with the `out` intent). |
+| `cfire/PREFER-ENUM` | Style | A cluster of related integer constants that should be an enum (warning). |
+| `cfire/REDUNDANT-CALLSITE-INTENT` | Detailed rule | Redundant `mut` Annotation on a Read-Only Parameter |
+| `cfire/REDUNDANT-DEREF` | Style | `(*p).field` on a smart pointer; write `p.field`. |
+| `cfire/REDUNDANT-OR` | Detailed rule | Redundant `or` on Non-Fallible, Non-Optional Expression |
+| `cfire/REDUNDANT-TRY` | Detailed rule | Redundant `try` on Non-Fallible Expression |
+| `cfire/RETIRED-API` | Detailed rule | API Retired in the 0.16 Uniform-API Migration |
+| `cfire/RETURN-IN-DEFER` | Detailed rule | `return` Statement Inside `defer { ... }` Block |
+| `cfire/SEMA-ERROR` | Tooling | A semantic error with no more specific code. |
+| `cfire/SHELL-INJECTION-RISK` | Detailed rule | Dynamic String Concatenation or Interpolation in Shell Command |
+| `cfire/SHIFT-OUT-OF-RANGE` | Numbers | A constant shift count outside the operand's bit width (Q11). |
+| `cfire/SPAWN-SHARED-MUT` | Concurrency | A spawned task writes through a pointer other tasks can reach (Q20). |
+| `cfire/SQL-INJECTION-RISK` | Detailed rule | Dynamic String Concatenation or Interpolation in SQL Query |
+| `cfire/SYNTAX` | Syntax | The source does not parse. |
+| `cfire/TRY-IN-DEFER` | Detailed rule | `try` Inside `defer` Block |
+| `cfire/TRY-IN-NON-FALLIBLE-FN` | Detailed rule | `try` Inside Non-Fallible Function |
+| `cfire/TRY-ON-OPTIONAL` | Detailed rule | Using `try` on Optional `T?` Instead of `or` |
+| `cfire/TYPE-ERROR` | Tooling | The C++ backend rejected generated code; Sema should have caught it (please report). |
+| `cfire/TYPE-MISMATCH` | Types | A value of one type is used where another is required. |
+| `cfire/UNDECLARED-IDENT` | Names | A name that is not declared, or a module used under the wrong alias. |
+| `cfire/UNHANDLED-RESULT` | Errors | A fallible `T!` value used without `try` or `or`. |
+| `cfire/UNKNOWN-ARG-LABEL` | Detailed rule | Unknown Labeled Argument |
+| `cfire/UNKNOWN-ENUM-VARIANT` | Names | A variant that the enum does not declare. |
+| `cfire/UNKNOWN-FIELD` | Names | A field or associated item that the type does not have. |
+| `cfire/UNKNOWN-METHOD` | Names | A method that the receiver type does not have (Q14 closed builtin surface). |
+| `cfire/UNKNOWN-MODULE` | Imports | An import path that names no known module. |
+| `cfire/UNKNOWN-STDLIB-FN` | Names | A function that the stdlib module does not export. |
+| `cfire/UNKNOWN-TYPE` | Types | An expression whose type cannot be inferred (warning). |
+| `cfire/UNREACHABLE-MATCH-ARM` | Detailed rule | Unreachable `match` Arm Shadowed by Earlier Pattern |
+| `cfire/UNRESOLVED-PACKAGE` | Imports | A local package import that cannot be found. |
+| `cfire/UNSATISFIED-CONSTRAINT` | Generics | A type argument that does not satisfy the interface constraint. |
+| `cfire/UNWRAPPED-OPTIONAL` | Errors | A member access on a `T?` value without unwrapping. |
+| `cfire/USE-AFTER-FREE` | Detailed rule | Use of Dangling Pointer or Slice View After Owner Invalidation |
+| `cfire/USE-AFTER-MOVE` | Detailed rule | Use of Value After Explicit `move` |
+| `cfire/WRONG-ARG-COUNT` | Types | A builtin called with the wrong number of arguments. |
+<!-- cfire:diagnostics-table:end -->
 
 ---
 
@@ -2109,9 +2217,9 @@ For desktop IDE and studio tools, the workspace also includes `pkg/raygui_ext` (
 ```bash
 # Scaffold a graphical app or launch directly on Desktop, WebAssembly, or iOS Simulator:
 cfire new my-studio --template gui
-cfire run examples/13-ios-native-ui/main.cf
-cfire run --web examples/13-ios-native-ui/main.cf
-cfire run --ios examples/13-ios-native-ui/main.cf
+cfire run examples/13-ios-native-ui
+cfire run --web examples/13-ios-native-ui
+cfire run --ios examples/13-ios-native-ui
 ```
 
 ---
@@ -2658,28 +2766,28 @@ s3_etag_ok=true body=zstd-frame-bytes sqs_msg=true received=1
 ```
 
 ### Canonical Projects Index (`examples/01`–`17`)
-Every project in [`examples/`](file:///Users/memo/Programming/cfire/examples) is continuously verified by `make test-examples` and can be run directly from the repository root:
+Every project in [`examples/`](../examples) is continuously verified by `make test-examples` and can be run directly from the repository root:
 
 | Directory | Title | Core Technologies Demonstrated | Run / Build Command |
 | :--- | :--- | :--- | :--- |
-| [`examples/01-hello-core`](file:///Users/memo/Programming/cfire/examples/01-hello-core) | Hello Core & Defer | Mutability (`mut`), parameter intents (`in`, `mut`, `out`, `move`), `defer` scope guards, string interpolation | `cfire run examples/01-hello-core/main.cf` |
-| [`examples/02-log-compressor`](file:///Users/memo/Programming/cfire/examples/02-log-compressor) | Log Compressor | Declarative CLI flag parsing (`core:cli`), RFC 8878 Zstandard compression (`ext:compress/zstd`), `core:fs` | `cfire run examples/02-log-compressor/main.cf` |
-| [`examples/03-pkg-cache`](file:///Users/memo/Programming/cfire/examples/03-pkg-cache) | Package Cache | SQLite3 WAL transactions (`ext:db/sqlite`), compile-time JSON struct mapping (`core:json`), SHA-256 (`core:crypto/sha256`) | `cfire run examples/03-pkg-cache/main.cf` |
-| [`examples/04-async-workers`](file:///Users/memo/Programming/cfire/examples/04-async-workers) | Async Workers | Scoped thread pool concurrency (`async.scope`), disjoint slice writes, MPMC `Channel[T]` (`core:sync`) | `cfire run examples/04-async-workers/main.cf` |
-| [`examples/05-cmake-interop`](file:///Users/memo/Programming/cfire/examples/05-cmake-interop) | CMake Interop | Clang JSON AST ingestion (`import cpp "<zstd.h>"`), `build.CMake` native library orchestration | `cfire run examples/05-cmake-interop/main.cf` |
-| [`examples/06-raylib-viz`](file:///Users/memo/Programming/cfire/examples/06-raylib-viz) | Raylib Visualization | Hardware 2D graphics loop (`vendor:raylib`), 60 FPS particle & telemetry rendering (`--web` & `--ios` ready) | `cfire run examples/06-raylib-viz/main.cf` |
-| [`examples/07-types-match-map`](file:///Users/memo/Programming/cfire/examples/07-types-match-map) | Types & Match | Algebraic `enum` sum types (`std::variant`), exhaustive `match`, `map[K]V`, `interface` C++20 concepts | `cfire run examples/07-types-match-map/main.cf` |
-| [`examples/08-multi-pkg-cc-build`](file:///Users/memo/Programming/cfire/examples/08-multi-pkg-cc-build) | Multi-Package Build | Multi-package `build.cf` orchestration, static archive compilation (`build.CC`) | `cfire run examples/08-multi-pkg-cc-build` |
-| [`examples/09-stdlib-test-pointers`](file:///Users/memo/Programming/cfire/examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`*T`, `^T`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
-| [`examples/10-cmake-and-make-deps`](file:///Users/memo/Programming/cfire/examples/10-cmake-and-make-deps) | Multi-Build Deps | Simultaneous `build.CMake` and `build.Make` external dependency orchestration in a single `build.cf` | `cfire run examples/10-cmake-and-make-deps` |
-| [`examples/11-http-server-router`](file:///Users/memo/Programming/cfire/examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`core:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
-| [`examples/12-raygui-controls`](file:///Users/memo/Programming/cfire/examples/12-raygui-controls) | Raygui GUI Kit | Immediate-mode controls (`vendor:raygui`): checkboxes, sliders, progress bars, combo boxes, `&mut str` text boxes | `cfire run examples/12-raygui-controls/main.cf` |
-| [`examples/13-ios-native-ui`](file:///Users/memo/Programming/cfire/examples/13-ios-native-ui) | Native iOS UI | Zero-coordinate `GuiIos*` auto-layout kit (`examples/13-ios-native-ui/ui/kit.cf`), safe-area insets, real-time `core:audio` metering (`--ios`, `--web`, desktop) | `cfire run --ios examples/13-ios-native-ui/main.cf` |
-| [`examples/14-ai-rag-sqlite`](file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |
-| [`examples/15-mcp-server`](file:///Users/memo/Programming/cfire/examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`make(ai.McpServer, ...)`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
-| [`examples/16-audio-synth`](file:///Users/memo/Programming/cfire/examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`core:audio`) | `cfire run examples/16-audio-synth/main.cf` |
-| [`examples/17-webui-studio`](file:///Users/memo/Programming/cfire/examples/17-webui-studio) | Hybrid WebUI Studio | Wails/Tauri-style native WebView (`ext:webui`), typed `app.bind[T]` JSON-RPC 2.0, `window.backend` ES6 Proxy, `app://localhost/` VFS, offscreen `WKWebView` test (`--ios` & desktop) | `cfire run examples/17-webui-studio/main.cf` |
+| [`examples/01-hello-core`](../examples/01-hello-core) | Hello Core & Defer | Mutability (`mut`), parameter intents (`mut`, `move`), `defer` scope guards, string interpolation | `cfire run examples/01-hello-core/main.cf` |
+| [`examples/02-log-compressor`](../examples/02-log-compressor) | Log Compressor | Declarative CLI flag parsing (`core:cli`), RFC 8878 Zstandard compression (`ext:compress/zstd`), `core:fs` | `cfire run examples/02-log-compressor/main.cf` |
+| [`examples/03-pkg-cache`](../examples/03-pkg-cache) | Package Cache | SQLite3 WAL transactions (`ext:db/sqlite`), compile-time JSON struct mapping (`core:json`), SHA-256 (`core:crypto/sha256`) | `cfire run examples/03-pkg-cache/main.cf` |
+| [`examples/04-async-workers`](../examples/04-async-workers) | Async Workers | Scoped thread pool concurrency (`async.scope`), disjoint slice writes, MPMC `Channel[T]` (`core:sync`) | `cfire run examples/04-async-workers/main.cf` |
+| [`examples/05-cmake-interop`](../examples/05-cmake-interop) | CMake Interop | Clang JSON AST ingestion (`import cpp "<zstd.h>"`), `build.CMake` native library orchestration | `cfire run examples/05-cmake-interop/main.cf` |
+| [`examples/06-raylib-viz`](../examples/06-raylib-viz) | Raylib Visualization | Hardware 2D graphics loop (`vendor:raylib`), 60 FPS particle & telemetry rendering (`--web` & `--ios` ready) | `cfire run examples/06-raylib-viz/main.cf` |
+| [`examples/07-types-match-map`](../examples/07-types-match-map) | Types & Match | Algebraic `enum` sum types (`std::variant`), exhaustive `match`, `map[K]V`, `interface` C++20 concepts | `cfire run examples/07-types-match-map/main.cf` |
+| [`examples/08-multi-pkg-cc-build`](../examples/08-multi-pkg-cc-build) | Multi-Package Build | Multi-package `build.cf` orchestration, static archive compilation (`build.CC`) | `cfire run examples/08-multi-pkg-cc-build` |
+| [`examples/09-stdlib-test-pointers`](../examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`*T`, `^T`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
+| [`examples/10-cmake-and-make-deps`](../examples/10-cmake-and-make-deps) | Multi-Build Deps | Simultaneous `build.CMake` and `build.Make` external dependency orchestration in a single `build.cf` | `cfire run examples/10-cmake-and-make-deps` |
+| [`examples/11-http-server-router`](../examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`core:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
+| [`examples/12-raygui-controls`](../examples/12-raygui-controls) | Raygui GUI Kit | Immediate-mode controls (`vendor:raygui`): checkboxes, sliders, progress bars, combo boxes, `&mut str` text boxes | `cfire run examples/12-raygui-controls/main.cf` |
+| [`examples/13-ios-native-ui`](../examples/13-ios-native-ui) | Native iOS UI | Zero-coordinate `GuiIos*` auto-layout kit (`examples/13-ios-native-ui/ui/kit.cf`), safe-area insets, real-time `core:audio` metering (`--ios`, `--web`, desktop) | `cfire run --ios examples/13-ios-native-ui` |
+| [`examples/14-ai-rag-sqlite`](../examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |
+| [`examples/15-mcp-server`](../examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`make(ai.McpServer, ...)`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
+| [`examples/16-audio-synth`](../examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`core:audio`) | `cfire run examples/16-audio-synth/main.cf` |
+| [`examples/17-webui-studio`](../examples/17-webui-studio) | Hybrid WebUI Studio | Wails/Tauri-style native WebView (`ext:webui`), typed `app.bind[T]` JSON-RPC 2.0, `window.backend` ES6 Proxy, `app://localhost/` VFS, offscreen `WKWebView` test (`--ios` & desktop) | `cfire run examples/17-webui-studio/main.cf` |
 
 ### Further Reference & Module Index
-- **Standard Library API Reference**: Browse [`reference.html`](file:///Users/memo/Programming/cfire/docs/reference.html) (or [`STDLIB_REFERENCE.md`](file:///Users/memo/Programming/cfire/docs/STDLIB_REFERENCE.md)) for every function signature, C++23 lowering expression, and diagnostic code in the compiler catalog.
-- **LLM Context Snapshot**: Feed [`LLMS.txt`](file:///Users/memo/Programming/cfire/docs/LLMS.txt) or start `cfire mcp` to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.
+- **Standard Library API Reference**: Browse [`reference.html`](./reference.html) (or [`STDLIB_REFERENCE.md`](./STDLIB_REFERENCE.md)) for every function signature, C++23 lowering expression, and diagnostic code in the compiler catalog.
+- **LLM Context Snapshot**: Feed [`LLMS.txt`](./LLMS.txt) or start `cfire mcp` to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.

@@ -115,14 +115,6 @@ namespace cfire::frontend {
         }
     }
 
-    // 0. Check Global / Package Variables
-    for (const auto& gv : cf.ast.global_vars) {
-        if (gv.was_var) {
-            std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
-            cf.add_error(cfire::diag::diag(gv_path, gv.line, 0, "cfire/DEPRECATED-VAR", std::format("'var' is deprecated; use 'x := val' or 'mut x: T = val' instead")));
-        }
-    }
-
     // 0b. Check Duplicate Symbol Declarations (CF-104)
     struct DeclLocation {
         std::string path;

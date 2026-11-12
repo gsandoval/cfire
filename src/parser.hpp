@@ -95,17 +95,6 @@ public:
                     }
                     break;
                 }
-                case TokenKind::KwVar: {
-                    auto gv = parse_global_var();
-                    if (!gv) {
-                        record_error(gv.error());
-                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
-                        synchronize_decl();
-                    } else {
-                        f.global_vars.push_back(std::move(*gv));
-                    }
-                    break;
-                }
                 case TokenKind::KwMut: {
                     if (peek(1).kind == TokenKind::Ident) {
                         auto gv = parse_global_var();
@@ -240,7 +229,6 @@ private:
                 case TokenKind::KwImport:
                 case TokenKind::KwType:
                 case TokenKind::KwFn:
-                case TokenKind::KwVar:
                 case TokenKind::KwMut:
                 case TokenKind::KwTest:
                 case TokenKind::CppBlock:
@@ -278,7 +266,6 @@ private:
                 case TokenKind::KwIf:
                 case TokenKind::KwFor:
                 case TokenKind::KwMatch:
-                case TokenKind::KwVar:
                 case TokenKind::KwMut:
                 case TokenKind::KwDefer:
                 case TokenKind::CppBlock:
@@ -369,7 +356,7 @@ private:
         std::size_t offset = 1;
         while (true) {
             if (peek(offset).kind == TokenKind::KwMut || peek(offset).kind == TokenKind::KwIn ||
-                peek(offset).kind == TokenKind::KwMove || peek(offset).kind == TokenKind::KwOut) {
+                peek(offset).kind == TokenKind::KwMove) {
                 ++offset;
             }
             if (peek(offset).kind != TokenKind::Ident) return false;
@@ -874,7 +861,6 @@ private:
                     intent = advance().lexeme;
                     break;
                 case TokenKind::KwMut:
-                case TokenKind::KwOut:
                 case TokenKind::KwMove:
                     intent = advance().lexeme;
                     break;
@@ -922,17 +908,9 @@ private:
     }
 
     [[nodiscard]] auto parse_global_var() -> std::expected<GlobalVarDecl, SourceError> {
-        bool was_var = false;
         bool is_mut = false;
         int line = cur().line;
-        if (cur().kind == TokenKind::KwVar) {
-            advance(); // 'var'
-            was_var = true;
-            if (cur().kind == TokenKind::KwMut) {
-                advance();
-                is_mut = true;
-            }
-        } else if (cur().kind == TokenKind::KwMut) {
+        if (cur().kind == TokenKind::KwMut) {
             advance(); // 'mut'
             is_mut = true;
         } else if (cur().kind == TokenKind::Ident && cur().lexeme == "const") {
@@ -960,7 +938,7 @@ private:
 
         auto val = parse_expr();
         if (!val) return std::unexpected(val.error());
-        return GlobalVarDecl{name_tok->lexeme, is_mut, std::move(type_annot), std::move(*val), was_var, line, "", file_};
+        return GlobalVarDecl{name_tok->lexeme, is_mut, std::move(type_annot), std::move(*val), line, "", file_};
     }
 
     [[nodiscard]] auto parse_test_decl() -> std::expected<TestDecl, SourceError> {
@@ -1136,37 +1114,12 @@ private:
                 return parse_for_stmt();
             case TokenKind::KwMatch:
                 return parse_match_stmt();
-            case TokenKind::KwVar: {
-                advance();
-                bool is_mut = false;
-                if (cur().kind == TokenKind::KwMut) {
-                    advance();
-                    is_mut = true;
-                }
-                auto id_tok = expect(TokenKind::Ident);
-                if (!id_tok) return std::unexpected(id_tok.error());
-                std::optional<TypeRef> t_ref;
-                if (cur().kind == TokenKind::Colon) {
-                    advance();
-                    auto tr = parse_type_ref();
-                    if (!tr) return std::unexpected(tr.error());
-                    t_ref = std::move(*tr);
-                }
-                ExprPtr init = nullptr;
-                if (cur().kind == TokenKind::Assign || cur().kind == TokenKind::ColonEq) {
-                    advance();
-                    auto ex = parse_expr();
-                    if (!ex) return std::unexpected(ex.error());
-                    init = std::move(*ex);
-                }
-                return make_stmt(VarDeclStmt{id_tok->lexeme, is_mut, std::move(t_ref), std::move(init), /*was_var=*/true, id_tok->line, id_tok->col}, id_tok->line);
-            }
             case TokenKind::KwMut: {
                 advance();
                 if (cur().kind == TokenKind::ColonEq || cur().kind == TokenKind::Colon || cur().kind == TokenKind::Assign) {
                     return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'mut' is a reserved parameter-intent and mutability keyword and cannot be used as a variable name; choose a different identifier")});
                 }
-                if (cur().kind == TokenKind::KwOut || cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwMut) {
+                if (cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwMut) {
                     Token kw_tok = advance();
                     return std::unexpected(SourceError{std::string(file_), static_cast<int>(kw_tok.line), static_cast<int>(kw_tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", kw_tok.lexeme)});
                 }
@@ -1183,12 +1136,12 @@ private:
                         if (!ex) return std::unexpected(ex.error());
                         init = std::move(*ex);
                     }
-                    return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::move(*t_ref), std::move(init), /*was_var=*/false, id_tok->line, id_tok->col}, id_tok->line);
+                    return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::move(*t_ref), std::move(init), id_tok->line, id_tok->col}, id_tok->line);
                 }
                 if (auto ce = expect(TokenKind::ColonEq); !ce) return std::unexpected(ce.error());
                 auto init = parse_expr();
                 if (!init) return std::unexpected(init.error());
-                return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::nullopt, std::move(*init), /*was_var=*/false, id_tok->line, id_tok->col}, id_tok->line);
+                return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::nullopt, std::move(*init), id_tok->line, id_tok->col}, id_tok->line);
             }
             case TokenKind::KwAsync: {
                 advance();
@@ -1290,7 +1243,7 @@ private:
             return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead", id_tok.lexeme, id_tok.lexeme)});
         }
 
-        if ((tok.kind == TokenKind::KwOut || tok.kind == TokenKind::KwMove) &&
+        if (tok.kind == TokenKind::KwMove &&
             (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon || peek(1).kind == TokenKind::Assign)) {
             advance();
             return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", tok.lexeme)});
@@ -1304,7 +1257,7 @@ private:
             }
             auto init = parse_expr();
             if (!init) return std::unexpected(init.error());
-            return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::nullopt, std::move(*init), /*was_var=*/false, id_tok.line, id_tok.col}, id_tok.line);
+            return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::nullopt, std::move(*init), id_tok.line, id_tok.col}, id_tok.line);
         }
 
         if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
@@ -1319,7 +1272,7 @@ private:
                 if (!ex) return std::unexpected(ex.error());
                 init = std::move(*ex);
             }
-            return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::move(*t_ref), std::move(init), /*was_var=*/false, id_tok.line, id_tok.col}, id_tok.line);
+            return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::move(*t_ref), std::move(init), id_tok.line, id_tok.col}, id_tok.line);
         }
 
         auto lhs = parse_expr();
@@ -2009,7 +1962,7 @@ private:
             }
             Token arg_tok = cur();
             std::string intent;
-            if (arg_tok.kind == TokenKind::KwMut || arg_tok.kind == TokenKind::KwMove || arg_tok.kind == TokenKind::KwOut) {
+            if (arg_tok.kind == TokenKind::KwMut || arg_tok.kind == TokenKind::KwMove) {
                 intent = advance().lexeme;
             }
             std::string label;
@@ -2034,8 +1987,7 @@ private:
             if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
             while (cur().kind != TokenKind::Pipe && cur().kind != TokenKind::Eof) {
                 std::string p_intent = "in";
-                if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwMove ||
-                    cur().kind == TokenKind::KwOut || cur().kind == TokenKind::KwIn) {
+                if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwIn) {
                     p_intent = advance().lexeme;
                 }
                 auto id = expect(TokenKind::Ident);
@@ -2274,10 +2226,9 @@ private:
                 if (!cl) return std::unexpected(cl.error());
                 return make_expr(std::move(*cl), tok.line, tok.col);
             }
-            case TokenKind::KwOut:
             case TokenKind::KwMove:
             case TokenKind::KwMut:
-                return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", tok.lexeme)});
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'res' or 'val')", tok.lexeme)});
             default:
                 return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("unexpected token '{}' in expression", tok.lexeme)});
         }

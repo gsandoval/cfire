@@ -1,0 +1,28 @@
+package main
+import "core:math"
+
+/* header
+   comment */
+type P struct {
+    a: i32 = -1
+    b: str // the b
+}
+
+fn f(mut p: P, x: i32) -> i32 {
+    p.a += x
+    return p.a * -1
+}
+
+fn main() {
+    mut q := P{a: 1, b: "x"}
+    v := f(mut q, 2)
+    println("{}", v)
+}
+fn g(xs: []i32, m: map[str]i32) -> i32? {
+    for i in 0..=3 {
+        if i == 2 && xs.len() > 0 { return xs[0] }
+    }
+    h := |a: i32, b: i32| { return a < b }
+    k := &xs[0]
+    return none
+}

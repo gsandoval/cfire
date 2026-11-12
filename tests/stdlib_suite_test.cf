@@ -111,7 +111,7 @@ fuzz "csv stringify/parse single-row round-trip" |a: str, b: str| {
     clean_a := a.replace("\r", "")
     clean_b := b.replace("\r", "")
     if clean_a.len() > 0 || clean_b.len() > 0 {
-        rows: [][]str = [[clean_a, clean_b]]
+        rows: [][] str = [[clean_a, clean_b]]
         serialized := csv.stringify(rows)
         parsed := csv.parse(serialized)
         assert_eq(parsed.len(), 1)
@@ -151,13 +151,13 @@ bench "zstd round-trip throughput" |size in [128, 2048, 8192]| {
 bench "json struct serialize and parse" |count in [10, 50]| {
     for i in 0..count {
         rec := ConfigRecord{
-            service:     "api-{i}",
-            port:        8080 + i32(i),
+            service: "api-{i}",
+            port: 8080 + i32(i),
             tls_enabled: (i % 2) == 0,
-            tags:        ["prod", "v2"],
+            tags: ["prod", "v2"],
         }
         raw := json.stringify(rec)
-        parsed := json.parse[ConfigRecord](raw) or ConfigRecord{}
+        parsed := json.parse[ConfigRecord](raw) or ConfigRecord {}
         assert_eq(parsed.port, 8080 + i32(i))
     }
 }

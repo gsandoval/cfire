@@ -46,42 +46,56 @@ struct RenameResult {
 using lsp::detail::is_valid_identifier;
 using lsp::detail::check_rename_collision;
 
+// CF-155: a unified diff that `git apply` / `patch -p1` accept: paths relative to the current directory (when the
+// file is under it), 3 lines of context, overlapping hunks merged, and correct line counts.
 [[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
     std::string diff;
+    std::error_code ec;
+    const auto cwd = std::filesystem::current_path(ec);
     for (const auto& mod : res.modifications) {
         auto orig_lines = lsp::detail::split_lines(mod.original_content);
         auto mod_lines = lsp::detail::split_lines(mod.modified_content);
+        if (!mod.original_content.empty() && mod.original_content.ends_with('\n') && !orig_lines.empty() && orig_lines.back().empty()) orig_lines.pop_back();
+        if (!mod.modified_content.empty() && mod.modified_content.ends_with('\n') && !mod_lines.empty() && mod_lines.back().empty()) mod_lines.pop_back();
 
-        diff += std::format("--- a/{}\n", mod.file_path);
-        diff += std::format("+++ b/{}\n", mod.file_path);
+        std::string shown = mod.file_path;
+        if (!ec) {
+            auto rel = std::filesystem::path(mod.file_path).lexically_relative(cwd);
+            if (!rel.empty() && !rel.string().starts_with("..")) shown = rel.generic_string();
+        }
+        if (shown.starts_with('/')) shown.erase(0, 1);  // `a/<abs path>` instead of `a//<abs path>`
+        diff += std::format("--- a/{}\n+++ b/{}\n", shown, shown);
 
-        std::size_t i = 0;
-        std::size_t max_lines = std::max(orig_lines.size(), mod_lines.size());
-        while (i < max_lines) {
-            if (i < orig_lines.size() && i < mod_lines.size() && orig_lines[i] == mod_lines[i]) {
-                ++i;
-                continue;
+        if (orig_lines.size() != mod_lines.size()) {  // renames keep line structure; anything else gets one hunk
+            diff += std::format("@@ -1,{} +1,{} @@\n", orig_lines.size(), mod_lines.size());
+            for (const auto& l : orig_lines) diff += "-" + l + "\n";
+            for (const auto& l : mod_lines) diff += "+" + l + "\n";
+            continue;
+        }
+        constexpr std::size_t kContext = 3;
+        std::vector<std::size_t> changed;
+        for (std::size_t i = 0; i < orig_lines.size(); ++i) {
+            if (orig_lines[i] != mod_lines[i]) changed.push_back(i);
+        }
+        std::size_t c = 0;
+        while (c < changed.size()) {
+            std::size_t lo = changed[c] >= kContext ? changed[c] - kContext : 0;
+            std::size_t hi = std::min(orig_lines.size(), changed[c] + kContext + 1);
+            std::size_t next = c + 1;
+            while (next < changed.size() && changed[next] < hi + kContext) {
+                hi = std::min(orig_lines.size(), changed[next] + kContext + 1);
+                ++next;
             }
-            std::size_t hunk_start = (i >= 2) ? i - 2 : 0;
-            std::size_t hunk_end = std::min(max_lines, i + 3);
-
-            std::size_t orig_len = std::min(orig_lines.size(), hunk_end) - std::min(orig_lines.size(), hunk_start);
-            std::size_t mod_len = std::min(mod_lines.size(), hunk_end) - std::min(mod_lines.size(), hunk_start);
-
-            diff += std::format("@@ -{},{} +{},{} @@\n", hunk_start + 1, orig_len, hunk_start + 1, mod_len);
-            for (std::size_t k = hunk_start; k < hunk_end; ++k) {
-                if (k < orig_lines.size() && k < mod_lines.size() && orig_lines[k] == mod_lines[k]) {
+            diff += std::format("@@ -{},{} +{},{} @@\n", lo + 1, hi - lo, lo + 1, hi - lo);
+            for (std::size_t k = lo; k < hi; ++k) {
+                if (orig_lines[k] == mod_lines[k]) {
                     diff += " " + orig_lines[k] + "\n";
                 } else {
-                    if (k < orig_lines.size()) {
-                        diff += "-" + orig_lines[k] + "\n";
-                    }
-                    if (k < mod_lines.size()) {
-                        diff += "+" + mod_lines[k] + "\n";
-                    }
+                    diff += "-" + orig_lines[k] + "\n";
+                    diff += "+" + mod_lines[k] + "\n";
                 }
             }
-            i = hunk_end;
+            c = next;
         }
     }
     return diff;

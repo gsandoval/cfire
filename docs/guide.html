@@ -2220,7 +2220,7 @@ syncCfireThemeBtn();
 <article class="chapter-pane active" id="chapter-pane-1" data-chapter="1" data-part="Part I: Getting Started &amp; Tooling" data-title="Installation &amp; Platform Setup" data-short-title="Install &amp; Setup">
   <div class="chapter-intro">
 <h1>The <code>cfire</code> Language &amp; Systems Programming Guide</h1>
-<p><strong>cfire</strong> (pronounced <em>sapphire</em> • <code>/ˈsæf.aɪ.ər/</code>) is a systems programming language that compiles 1-to-1 to human-readable ISO C++23. It gives you the ergonomics of a modern language—read-only bindings by default, explicit call-site mutation and move markers (<code>in</code>, <code>mut</code>, <code>move</code>, <code>out</code>), value-based error handling (<code>T!</code>), lexical structured concurrency (<code>async.scope</code>), and zero-wrapper C/C++ header ingestion (<code>import cpp</code>)—while compiling down to clean, standard C++23 across native desktop/server (<code>x86_64</code> / <code>arm64</code>), WebAssembly (<code>--web</code>), and native iOS (<code>--ios</code>).</p>
+<p><strong>cfire</strong> (pronounced <em>sapphire</em> • <code>/ˈsæf.aɪ.ər/</code>) is a systems programming language that compiles 1-to-1 to human-readable ISO C++23. It gives you the ergonomics of a modern language—read-only bindings by default, explicit call-site mutation and move markers (<code>mut</code>, <code>move</code>), value-based error handling (<code>T!</code>), lexical structured concurrency (<code>async.scope</code>), and zero-wrapper C/C++ header ingestion (<code>import cpp</code>)—while compiling down to clean, standard C++23 across native desktop/server (<code>x86_64</code> / <code>arm64</code>), WebAssembly (<code>--web</code>), and native iOS (<code>--ios</code>).</p>
 <p>This guide is written as a hands-on builder's tour rather than a dry language specification. Each chapter walks through real engineering problems step by step—starting with a working example, showing what happens under the hood in emitted ISO C++23, and highlighting how the compiler's 18 static safety checks catch subtle bugs before they ever reach a debugger.</p>
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
 <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid var(--border);" />
@@ -2243,7 +2243,7 @@ syncCfireThemeBtn();
 <ol>
   <li><strong>Lexical &amp; Resilient Syntax Analysis (<code>lexer</code> / <code>parser</code>)</strong>: Tokenizes <code>.cf</code> source files and constructs a typed Abstract Syntax Tree (AST) with statement-level error recovery so your editor and LSP stay responsive while you type.</li>
   <li><strong>Clang AST Bridge (<code>clang_bridge</code>)</strong>: Whenever it sees <code>import cpp &quot;header.h&quot;</code>, <code>cfire</code> invokes the system Clang frontend (<code>-Xclang -ast-dump=json</code>) to ingest C/C++ function signatures, structs, enums, and macros directly—no manual FFI glue required.</li>
-  <li><strong>Semantic, Intent &amp; Loan Verification (<code>sema</code>)</strong>: Resolves package imports, infers types, checks <code>match</code> exhaustiveness and reachability, verifies call-site <code>mut</code>/<code>move</code>/<code>out</code> markers, tracks local pointer/slice loans against container mutations (<code>cfire/USE-AFTER-FREE</code>, <code>cfire/ITERATOR-INVALIDATION</code>), and enforces flow-sensitive null checks (<code>cfire/NULL-DEREF</code>).</li>
+  <li><strong>Semantic, Intent &amp; Loan Verification (<code>sema</code>)</strong>: Resolves package imports, infers types, checks <code>match</code> exhaustiveness and reachability, verifies call-site <code>mut</code>/<code>move</code> markers, tracks local pointer/slice loans against container mutations (<code>cfire/USE-AFTER-FREE</code>, <code>cfire/ITERATOR-INVALIDATION</code>), and enforces flow-sensitive null checks (<code>cfire/NULL-DEREF</code>).</li>
   <li><strong>ISO C++23 Code Generation (<code>codegen</code>)</strong>: Emits standard ISO C++23 source code annotated with <code>#line</code> directives so <code>lldb</code>, <code>gdb</code>, and AddressSanitizer stack traces point directly to your <code>.cf</code> filenames and line numbers.</li>
   <li><strong>PCH-Accelerated Backend Compilation (<code>buildsys</code>)</strong>: Compiles the generated C++23 translation unit against a precompiled header (<code>cfire_prelude.hpp.pch</code>) using your host C++23 compiler (<code>clang++</code> 18+ or <code>g++</code> 14+) and links the required system or vendor libraries.</li>
 </ol>
@@ -2746,14 +2746,14 @@ cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
 import &quot;core:build&quot;
 
 // 1. Pre-build code generation hook (runs only when Inputs are newer than Outputs)
-var GenTables = build.Command(&quot;python3&quot;, {
+GenTables := build.Command(&quot;python3&quot;, {
     Args:    [&quot;scripts/gen_tables.py&quot;],
     Inputs:  [&quot;scripts/schema.json&quot;],
     Outputs: [&quot;src/generated_tables.cf&quot;],
 })
 
 // 2. Native C/C++ sources compiled into a cached static archive (.a)
-var CSupport = build.CC(&quot;./vendor/fastcrc&quot;, {
+CSupport := build.CC(&quot;./vendor/fastcrc&quot;, {
     Sources:  [&quot;fastcrc.c&quot;],
     Includes: [&quot;.&quot;],
     Defines:  {&quot;FASTCRC_SEED&quot;: 42},
@@ -2767,7 +2767,7 @@ KVStore := build.CMake(&quot;./vendor/libkv_cmake&quot;, {
 })
 
 // 4. Remote Git repository dependency (pinned in cfire.lock)
-var RemoteEngine = build.Git(&quot;https://github.com/example/engine.git&quot;, {
+RemoteEngine := build.Git(&quot;https://github.com/example/engine.git&quot;, {
     Tag:      &quot;v1.2.0&quot;,
     Driver:   &quot;CMake&quot;,
     Target:   &quot;engine_core&quot;,
@@ -2775,7 +2775,7 @@ var RemoteEngine = build.Git(&quot;https://github.com/example/engine.git&quot;, 
 })
 
 // 5. Multi-target application executable definition
-var App = build.Executable(&quot;service-app&quot;, {
+App := build.Executable(&quot;service-app&quot;, {
     Entry:      &quot;src/main.cf&quot;,
     Subsystem:  &quot;console&quot;,
     Name:       &quot;ServiceApp&quot;,
@@ -3293,7 +3293,7 @@ fn main() {
     <tbody>
       <tr><td><code>cfire/MUT-CALLSITE</code></td><td>Calling a <code>mut</code> parameter without writing <code>mut</code> at the call site.</td><td>Write <code>f(mut x)</code> (or run <code>cfire fix</code>).</td></tr>
       <tr><td><code>cfire/MOVE-CALLSITE</code></td><td>Calling a <code>move</code> parameter without writing <code>move</code> at the call site.</td><td>Write <code>f(move x)</code> to confirm ownership transfer.</td></tr>
-      <tr><td><code>cfire/IMMUTABLE-MUT-ARG</code></td><td>Passing an immutable binding (<code>x := ...</code>) to a <code>mut</code> or <code>out</code> parameter.</td><td>Declare <code>mut x := ...</code>.</td></tr>
+      <tr><td><code>cfire/IMMUTABLE-MUT-ARG</code></td><td>Passing an immutable binding (<code>x := ...</code>) to a <code>mut</code> parameter.</td><td>Declare <code>mut x := ...</code>.</td></tr>
       <tr><td><code>cfire/MUT-RECEIVER</code></td><td>Calling a <code>fn (mut s: T)</code> method on an immutable struct variable.</td><td>Declare <code>mut s := ...</code>.</td></tr>
       <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable twice in one call when at least one arg is <code>mut</code>.</td><td>Pass distinct variables (<code>transfer(mut a, mut b)</code>).</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading a variable after <code>move x</code> transferred ownership on an earlier path.</td><td>Read before <code>move x</code>, or pass by <code>mut</code> borrow.</td></tr>
@@ -4225,10 +4225,11 @@ fn main() {
 <h2 id="chapter-10"><a id="ch10"></a>10. Structured Concurrency &amp; Channels</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 10 (3)</span>
+    <span class="topic-pill-label">Ch 10 (4)</span>
     <a href="#ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it" class="topic-pill active" data-topic-pill="ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it" title="Why Unstructured Threads Fail &amp; How async.scope Fixes It" onclick="navigateToSubhead('10', 'ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it'); return false;">10.1 async.scope Tasks</a>
     <a href="#ch10-communicating-across-workers-with-mpmc-channels-coresync" class="topic-pill" data-topic-pill="ch10-communicating-across-workers-with-mpmc-channels-coresync" title="Communicating Across Workers with MPMC Channels (core:sync)" onclick="navigateToSubhead('10', 'ch10-communicating-across-workers-with-mpmc-channels-coresync'); return false;">10.2 MPMC Channels</a>
-    <a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" class="topic-pill" data-topic-pill="ch10-hierarchical-cancellation-deadlines-coresynccontext" title="Hierarchical Cancellation &amp; Deadlines (core:sync/context)" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">10.3 Context &amp; Deadlines</a>
+    <a href="#ch10-shared-state-with-mutext-and-atomict-coresync" class="topic-pill" data-topic-pill="ch10-shared-state-with-mutext-and-atomict-coresync" title="Shared State with Mutex[T] and Atomic[T] (core:sync)" onclick="navigateToSubhead('10', 'ch10-shared-state-with-mutext-and-atomict-coresync'); return false;">10.3 Shared State with Mute..</a>
+    <a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" class="topic-pill" data-topic-pill="ch10-hierarchical-cancellation-deadlines-coresynccontext" title="Hierarchical Cancellation &amp; Deadlines (core:sync/context)" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">10.4 Context &amp; Deadlines</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it" data-topic-id="ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it" data-topic-title="Why Unstructured Threads Fail &amp; How async.scope Fixes It" data-short-title="10.1 async.scope Tasks">
 <h3 class="guide-heading" id="ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it"><span class="heading-hash">#</span><span class="heading-text">Why Unstructured Threads Fail &amp; How <code>async.scope</code> Fixes It</span></h3>
@@ -4337,13 +4338,73 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 10.1)</span>
         <strong class="pager-title">Why Unstructured Threads Fail &amp; How async.scope Fixes It</strong>
       </a>
-      <a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" class="pager-card pager-next" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">
+      <a href="#ch10-shared-state-with-mutext-and-atomict-coresync" class="pager-card pager-next" onclick="navigateToSubhead('10', 'ch10-shared-state-with-mutext-and-atomict-coresync'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 10.3) &rarr;</span>
+        <strong class="pager-title">Shared State with Mutex[T] and Atomic[T] (core:sync)</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch10-shared-state-with-mutext-and-atomict-coresync" data-topic-id="ch10-shared-state-with-mutext-and-atomict-coresync" data-topic-title="Shared State with Mutex[T] and Atomic[T] (core:sync)" data-short-title="10.3 Shared State with Mute..">
+<h3 class="guide-heading" id="ch10-shared-state-with-mutext-and-atomict-coresync"><span class="heading-hash">#</span><span class="heading-text">Shared State with <code>Mutex[T]</code> and <code>Atomic[T]</code> (<code>core:sync</code>)</span></h3>
+<p>A spawned task may not write through a captured variable or pointer that other tasks can also reach (<code>cfire/SPAWN-SHARED-MUT</code>, <code>cfire/ESCAPING-CAPTURE-MUT</code>). When workers really do need one shared value, put it behind a <code>sync.Mutex[T]</code> or <code>sync.Atomic[T]</code>. Copies of either handle share the same state, so each task captures the handle and goes through its methods:</p>
+<div class="table-wrap">
+  <div class="table-scroll-cue">Scroll table &rarr;</div>
+  <table>
+    <thead>
+      <tr><th>Function / Method</th><th>Signature</th><th>Behavior</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>make(sync.Mutex[T], v)</code></td><td><code>-&gt; Mutex[T]</code></td><td>A mutex protecting the value <code>v</code>. <code>make(sync.Mutex[void])</code> is a pure lock with <code>lock()</code> / <code>unlock()</code>.</td></tr>
+      <tr><td><code>mu.lock()</code></td><td><code>fn (m: Mutex[T]) lock() -&gt; MutexGuard[T]</code></td><td>Blocks until the lock is free. Read or write the value through the guard (<code>*g += 1</code>); the lock is released when <code>g</code> goes out of scope.</td></tr>
+      <tr><td><code>mu.try_lock()</code></td><td><code>fn (m: Mutex[T]) try_lock() -&gt; MutexGuard[T]?</code></td><td>Like <code>lock()</code>, but <code>none</code> instead of blocking.</td></tr>
+      <tr><td><code>mu.with_lock(f)</code></td><td><code>fn (m: Mutex[T]) with_lock(f: fn(mut T) -&gt; R) -&gt; R</code></td><td>Runs <code>f</code> on the value while holding the lock: <code>mu.with_lock(|mut v| { v += 1 })</code>.</td></tr>
+      <tr><td><code>mu.get()</code> / <code>mu.set(v)</code></td><td><code>-&gt; T</code> / <code>fn(v: T)</code></td><td>Copies the value out, or replaces it, under the lock.</td></tr>
+      <tr><td><code>make(sync.Atomic[T], v)</code></td><td><code>-&gt; Atomic[T]</code></td><td>A lock-free integer counter: <code>load()</code>, <code>store(v)</code>, <code>add(d)</code>, <code>sub(d)</code>.</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+import &quot;core:sync&quot;
+
+fn main() {
+    total := make(sync.Mutex[i64], 0)
+    hits := make(sync.Atomic[i64], 0)
+
+    async.scope |s| {
+        for w in 0..4 {
+            s.spawn || {
+                for i in 0..250 {
+                    mut g := total.lock()
+                    *g += 2
+                    hits.add(1)
+                }
+            }
+        }
+    }
+
+    total.with_lock(|mut v| { v += 1 })
+    println(&quot;total={} hits={}&quot;, total.get(), hits.load())
+}
+</code></pre>
+<div class="terminal-tray">
+  <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
+  <pre><code>total=2001 hits=1000
+</code></pre>
+</div>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch10-communicating-across-workers-with-mpmc-channels-coresync" class="pager-card pager-prev" onclick="navigateToSubhead('10', 'ch10-communicating-across-workers-with-mpmc-channels-coresync'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 10.2)</span>
+        <strong class="pager-title">Communicating Across Workers with MPMC Channels (core:sync)</strong>
+      </a>
+      <a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" class="pager-card pager-next" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 10.4) &rarr;</span>
         <strong class="pager-title">Hierarchical Cancellation &amp; Deadlines (core:sync/context)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch10-hierarchical-cancellation-deadlines-coresynccontext" data-topic-id="ch10-hierarchical-cancellation-deadlines-coresynccontext" data-topic-title="Hierarchical Cancellation &amp; Deadlines (core:sync/context)" data-short-title="10.3 Context &amp; Deadlines">
+  <section class="guide-topic" id="topic-ch10-hierarchical-cancellation-deadlines-coresynccontext" data-topic-id="ch10-hierarchical-cancellation-deadlines-coresynccontext" data-topic-title="Hierarchical Cancellation &amp; Deadlines (core:sync/context)" data-short-title="10.4 Context &amp; Deadlines">
 <h3 class="guide-heading" id="ch10-hierarchical-cancellation-deadlines-coresynccontext"><span class="heading-hash">#</span><span class="heading-text">Hierarchical Cancellation &amp; Deadlines (<code>core:sync/context</code>)</span></h3>
 <p>Long-running network calls and worker pipelines need cooperative timeouts and cancellation. <code>core:sync/context</code> implements hierarchical cancellation tokens where cancelling a parent <code>Context</code> automatically cancels all of its child contexts and wakes any blocked <code>recv_ctx</code> or <code>sleep_ctx</code> calls:</p>
 <div class="table-wrap">
@@ -4394,9 +4455,9 @@ fn main() {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch10-communicating-across-workers-with-mpmc-channels-coresync" class="pager-card pager-prev" onclick="navigateToSubhead('10', 'ch10-communicating-across-workers-with-mpmc-channels-coresync'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 10.2)</span>
-        <strong class="pager-title">Communicating Across Workers with MPMC Channels (core:sync)</strong>
+      <a href="#ch10-shared-state-with-mutext-and-atomict-coresync" class="pager-card pager-prev" onclick="navigateToSubhead('10', 'ch10-shared-state-with-mutext-and-atomict-coresync'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 10.3)</span>
+        <strong class="pager-title">Shared State with Mutex[T] and Atomic[T] (core:sync)</strong>
       </a>
       <a href="#ch11-zero-wrapper-interop-inline-cpp-blocks-abi-coercion" class="pager-card pager-next" onclick="navigateToSubhead('11', 'ch11-zero-wrapper-interop-inline-cpp-blocks-abi-coercion'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 11.1) &rarr;</span>
@@ -4480,7 +4541,7 @@ fn main() {
 </div>
     <div class="chapter-pager topic-pager">
       <a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" class="pager-card pager-prev" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 10.3)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 10.4)</span>
         <strong class="pager-title">Hierarchical Cancellation &amp; Deadlines (core:sync/context)</strong>
       </a>
       <a href="#ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp" class="pager-card pager-next" onclick="navigateToSubhead('11', 'ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp'); return false;">
@@ -4539,25 +4600,25 @@ flags |= rl.ConfigFlags::FLAG_MSAA_4X_HINT
 
 import &quot;core:build&quot;
 
-var FastCRC = build.CC(&quot;./c_deps/fastcrc&quot;, {
+FastCRC := build.CC(&quot;./c_deps/fastcrc&quot;, {
     Sources:  [&quot;fastcrc.c&quot;],
     Includes: [&quot;.&quot;],
     Defines:  {&quot;FASTCRC_SEED&quot;: 42},
 })
 
-var KVStore = build.CMake(&quot;./vendor/libkv_cmake&quot;, {
+KVStore := build.CMake(&quot;./vendor/libkv_cmake&quot;, {
     Target:   &quot;kvstore&quot;,
     Includes: [&quot;include&quot;],
     Defines:  {&quot;KV_SALT&quot;: 42},
 })
 
-var VecMath = build.Make(&quot;./vendor/libmath_make&quot;, {
+VecMath := build.Make(&quot;./vendor/libmath_make&quot;, {
     Target:   &quot;vecmath&quot;,
     Includes: [&quot;include&quot;],
     Defines:  {&quot;MATH_SCALE_BIAS&quot;: 1.0},
 })
 
-var App = build.Executable(&quot;hybrid-build-demo&quot;, {
+App := build.Executable(&quot;hybrid-build-demo&quot;, {
     Entry: &quot;main.cf&quot;,
 })
 </code></pre>
@@ -4609,7 +4670,7 @@ fn main() {
     <a href="#ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test" class="topic-pill active" data-topic-pill="ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test" title="Unit Tests, Doc-Tests &amp; Resource-Leak Canaries (cfire test)" onclick="navigateToSubhead('12', 'ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test'); return false;">12.1 Unit &amp; Doc Tests</a>
     <a href="#ch12-property-based-fuzzing-statistical-benchmarks-fuzz-bench" class="topic-pill" data-topic-pill="ch12-property-based-fuzzing-statistical-benchmarks-fuzz-bench" title="Property-Based Fuzzing &amp; Statistical Benchmarks (fuzz &amp; bench)" onclick="navigateToSubhead('12', 'ch12-property-based-fuzzing-statistical-benchmarks-fuzz-bench'); return false;">12.2 Fuzzing &amp; Bench</a>
     <a href="#ch12-source-mapped-sanitizers-sanitize-auto-remediation-cfire-fix" class="topic-pill" data-topic-pill="ch12-source-mapped-sanitizers-sanitize-auto-remediation-cfire-fix" title="Source-Mapped Sanitizers (--sanitize) &amp; Auto-Remediation (cfire fix)" onclick="navigateToSubhead('12', 'ch12-source-mapped-sanitizers-sanitize-auto-remediation-cfire-fix'); return false;">12.3 Sanitizers &amp; Fix</a>
-    <a href="#ch12-complete-18-rule-cfire-safety-diagnostics-reference" class="topic-pill" data-topic-pill="ch12-complete-18-rule-cfire-safety-diagnostics-reference" title="Complete 18-Rule cfire/* Safety &amp; Diagnostics Reference" onclick="navigateToSubhead('12', 'ch12-complete-18-rule-cfire-safety-diagnostics-reference'); return false;">12.4 18 Safety Rules</a>
+    <a href="#ch12-complete-cfire-diagnostics-reference" class="topic-pill" data-topic-pill="ch12-complete-cfire-diagnostics-reference" title="Complete cfire/* Diagnostics Reference" onclick="navigateToSubhead('12', 'ch12-complete-cfire-diagnostics-reference'); return false;">12.4 Complete cfire/* Diagn..</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test" data-topic-id="ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test" data-topic-title="Unit Tests, Doc-Tests &amp; Resource-Leak Canaries (cfire test)" data-short-title="12.1 Unit &amp; Doc Tests">
 <h3 class="guide-heading" id="ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test"><span class="heading-hash">#</span><span class="heading-text">Unit Tests, Doc-Tests &amp; Resource-Leak Canaries (<code>cfire test</code>)</span></h3>
@@ -4725,40 +4786,104 @@ cfire fix src/main.cf
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.2)</span>
         <strong class="pager-title">Property-Based Fuzzing &amp; Statistical Benchmarks (fuzz &amp; bench)</strong>
       </a>
-      <a href="#ch12-complete-18-rule-cfire-safety-diagnostics-reference" class="pager-card pager-next" onclick="navigateToSubhead('12', 'ch12-complete-18-rule-cfire-safety-diagnostics-reference'); return false;">
+      <a href="#ch12-complete-cfire-diagnostics-reference" class="pager-card pager-next" onclick="navigateToSubhead('12', 'ch12-complete-cfire-diagnostics-reference'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 12.4) &rarr;</span>
-        <strong class="pager-title">Complete 18-Rule cfire/* Safety &amp; Diagnostics Reference</strong>
+        <strong class="pager-title">Complete cfire/* Diagnostics Reference</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch12-complete-18-rule-cfire-safety-diagnostics-reference" data-topic-id="ch12-complete-18-rule-cfire-safety-diagnostics-reference" data-topic-title="Complete 18-Rule cfire/* Safety &amp; Diagnostics Reference" data-short-title="12.4 18 Safety Rules">
-<h3 class="guide-heading" id="ch12-complete-18-rule-cfire-safety-diagnostics-reference"><span class="heading-hash">#</span><span class="heading-text">Complete 18-Rule <code>cfire/*</code> Safety &amp; Diagnostics Reference</span></h3>
-<p>Every compiler stage (<code>CF1xxx</code>–<code>CF5xxx</code>) and semantic safety rule (<code>cfire/*</code>) has a stable identifier that can be inspected in <a href="file:///Users/memo/Programming/cfire/docs/reference.html"><code>reference.html</code></a> or emitted as structured JSON via <code>cfire check --json &lt;file.cf&gt;</code>. Below are all 18 semantic safety and exclusivity rules enforced by the compiler:</p>
+  <section class="guide-topic" id="topic-ch12-complete-cfire-diagnostics-reference" data-topic-id="ch12-complete-cfire-diagnostics-reference" data-topic-title="Complete cfire/* Diagnostics Reference" data-short-title="12.4 Complete cfire/* Diagn..">
+<h3 class="guide-heading" id="ch12-complete-cfire-diagnostics-reference"><span class="heading-hash">#</span><span class="heading-text">Complete <code>cfire/*</code> Diagnostics Reference</span></h3>
+<p>Every diagnostic has a stable <code>cfire/*</code> code, shown after the message and emitted as structured JSON by <code>cfire check --json &lt;file.cf&gt;</code>. The detailed rules, with rejected and accepted examples, are in <a href="reference.html"><code>reference.html</code></a>. This table lists every code the compiler can report:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
     <thead>
-      <tr><th>Rule Code</th><th>Category</th><th>Enforced Invariant</th><th><code>cfire fix</code>?</th></tr>
+      <tr><th>Code</th><th>Category</th><th>Meaning</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>cfire/MUT-CALLSITE</code></td><td>Call-Site Intent</td><td>Call site must write <code>mut arg</code> when passing to a <code>mut</code> / <code>out</code> parameter.</td><td><strong>Yes</strong></td></tr>
-      <tr><td><code>cfire/MOVE-CALLSITE</code></td><td>Call-Site Intent</td><td>Call site must write <code>move arg</code> when passing to a <code>move</code> parameter.</td><td><strong>Yes</strong></td></tr>
-      <tr><td><code>cfire/IMMUTABLE-MUT-ARG</code></td><td>Mutability</td><td>Argument passed as <code>mut</code> / <code>out</code> must be declared <code>mut</code> at its binding site.</td><td><strong>Yes</strong></td></tr>
-      <tr><td><code>cfire/MUT-RECEIVER</code></td><td>Mutability</td><td>Calling a <code>fn (mut self: T)</code> method requires a <code>mut</code> receiver binding.</td><td><strong>Yes</strong></td></tr>
-      <tr><td><code>cfire/MUT-ALIAS</code></td><td>Aliasing Safety</td><td>A <code>mut</code>/<code>out</code> argument cannot alias any other argument in the same call expression.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Ownership</td><td>A variable moved with <code>move x</code> cannot be read or moved again unless re-initialized.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Heap Safety</td><td>Heap pointer freed via <code>free(p)</code> cannot be dereferenced, passed, or freed again (<code>double free</code>).</td><td>Manual</td></tr>
-      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Lifetime / Loans</td><td>Taking <code>&amp;x</code> or <code>&amp;mut x</code> of an inner-scope local variable cannot assign into an outer-scope pointer, and a variable cannot be mutated while borrowed.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Lifetime / Loans</td><td>A function cannot return the address of a stack-local variable or parameter (<code>return &amp;local</code>).</td><td>Manual</td></tr>
-      <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Container Safety</td><td>A container (<code>[]T</code>, <code>map[K]V</code>, <code>str</code>) cannot be structurally mutated (<code>.push</code>, <code>.clear</code>, <code>.remove</code>) inside a <code>for item in container</code> loop.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/NULL-DEREF</code></td><td>Null Safety</td><td>A pointer (<code>*T</code>, <code>*mut T</code>) that is <code>none</code> or potentially null cannot be dereferenced without an explicit <code>if p != none</code> guard.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/INDEX-OUT-OF-BOUNDS</code></td><td>Bounds Safety</td><td>Negative slice/array indices (<code>s[-1]</code>) or constant indices <code>&gt;= N</code> on <code>[N]T</code> are rejected at compile time.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/DIVIDE-BY-ZERO</code></td><td>Arithmetic Safety</td><td>Integer division (<code>/</code>) or modulo (<code>%</code>) by a constant zero expression is rejected at compile time.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/NON-EXHAUSTIVE-MATCH</code></td><td>Pattern Matching</td><td><code>match</code> over an <code>enum</code> must cover every declared variant (or include a wildcard <code>_ =&gt; { ... }</code> arm).</td><td><strong>Yes</strong></td></tr>
-      <tr><td><code>cfire/NON-DIVERGING-OR-BLOCK</code></td><td>Error Handling</td><td>Recovery block <code>val := fallible() or err { ... }</code> must diverge (<code>return</code>, <code>break</code>, <code>continue</code>, <code>panic</code>).</td><td>Manual</td></tr>
-      <tr><td><code>cfire/RETURN-IN-DEFER</code></td><td>Control Flow</td><td><code>return</code> is forbidden inside a <code>defer { ... }</code> block so cleanup cannot silently swallow upstream return values or errors.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/SQL-INJECTION-RISK</code></td><td>Security</td><td>Concatenating or interpolating runtime variables into <code>db.exec</code> / <code>db.query</code> SQL strings is rejected; use <code>?1</code>, <code>?2</code> parameters.</td><td>Manual</td></tr>
-      <tr><td><code>cfire/SHELL-INJECTION-RISK</code></td><td>Security</td><td>Concatenating or interpolating runtime variables into <code>os.exec</code> / <code>os.exec_output</code> commands is rejected; use <code>os.command(bin, args)</code>.</td><td>Manual</td></tr>
+      <tr><td><code>cfire/AMBIGUOUS-INTERPOLATION</code></td><td>Syntax</td><td>An interpolation <code>{...}</code> that starts with a number literal must be parenthesized.</td></tr>
+      <tr><td><code>cfire/ARITY-MISMATCH</code></td><td>Types</td><td>A call passes the wrong number of arguments.</td></tr>
+      <tr><td><code>cfire/ASSIGN-IMMUTABLE</code></td><td>Mutability</td><td>Assignment to a binding declared without <code>mut</code>.</td></tr>
+      <tr><td><code>cfire/BREAK-OUTSIDE-LOOP</code></td><td>Detailed rule</td><td><code>break</code> or <code>continue</code> Outside of a <code>for</code> Loop</td></tr>
+      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Detailed rule</td><td>Inner-Scope Borrow Escaping to Outer-Scope Pointer or View</td></tr>
+      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Detailed rule</td><td>Returning Pointer or View Rooted in Function-Local Storage</td></tr>
+      <tr><td><code>cfire/DANGLING-TEMPORARY</code></td><td>Memory safety</td><td>A view or pointer borrows from a temporary that is destroyed at the end of the statement.</td></tr>
+      <tr><td><code>cfire/DEPRECATED-API</code></td><td>Migration</td><td>A stdlib function that was renamed or replaced before 0.16 (<code>fs.read_all</code>, <code>os.read_stdin</code>, ...).</td></tr>
+      <tr><td><code>cfire/DEPRECATED-DISCARD</code></td><td>Migration</td><td><code>_ := expr</code> is not a discard form; write <code>_ = expr</code>.</td></tr>
+      <tr><td><code>cfire/DEPRECATED-IN-PARAM</code></td><td>Migration</td><td>Explicit <code>in</code> intent; parameters are read-only by default.</td></tr>
+      <tr><td><code>cfire/DEPRECATED-INTENT-POS</code></td><td>Migration</td><td><code>x: mut T</code> intent placement; write <code>mut x: T</code>.</td></tr>
+      <tr><td><code>cfire/DEPRECATED-SEPARATOR</code></td><td>Syntax</td><td><code>::</code> used where <code>.</code> is required (only enum variants use <code>::</code>).</td></tr>
+      <tr><td><code>cfire/DIVIDE-BY-ZERO</code></td><td>Detailed rule</td><td>Compile-Time Division or Modulo by Constant Zero</td></tr>
+      <tr><td><code>cfire/DUPLICATE-DECLARATION</code></td><td>Declarations</td><td>Two declarations of the same type, function or method.</td></tr>
+      <tr><td><code>cfire/DYNAMIC-INTERFACE-UNSUPPORTED</code></td><td>Types</td><td>A slice or array of interface values; interfaces lower to C++ concepts.</td></tr>
+      <tr><td><code>cfire/ERROR</code></td><td>Tooling</td><td>An internal error with no more specific code.</td></tr>
+      <tr><td><code>cfire/ESCAPING-CAPTURE-MUT</code></td><td>Concurrency</td><td>An escaping closure mutates a captured outer variable.</td></tr>
+      <tr><td><code>cfire/FIELD-NAME-CASE</code></td><td>Detailed rule</td><td>Struct Field Is Not snake_case</td></tr>
+      <tr><td><code>cfire/FILE-NOT-FOUND</code></td><td>Tooling</td><td>A file named on the command line or imported does not exist.</td></tr>
+      <tr><td><code>cfire/IMMUTABLE-MUT-ARG</code></td><td>Detailed rule</td><td>Passing Immutable Binding as <code>mut</code> Argument</td></tr>
+      <tr><td><code>cfire/INDEX-OUT-OF-BOUNDS</code></td><td>Detailed rule</td><td>Compile-Time Out-of-Bounds or Negative Constant Sequence Index</td></tr>
+      <tr><td><code>cfire/INVALID-CONSTRUCTOR</code></td><td>Detailed rule</td><td>Associated Function Other Than <code>make</code></td></tr>
+      <tr><td><code>cfire/INVALID-IMPORT</code></td><td>Imports</td><td>A module imported under the wrong tier prefix (<code>core:</code> vs <code>ext:</code>).</td></tr>
+      <tr><td><code>cfire/INVALID-INDEX</code></td><td>Types</td><td>Indexing a value that is not a string, slice, array or map.</td></tr>
+      <tr><td><code>cfire/INVALID-INTERPOLATION</code></td><td>Syntax</td><td>An interpolation <code>{...}</code> that is not a valid expression.</td></tr>
+      <tr><td><code>cfire/INVALID-MAKE</code></td><td>Detailed rule</td><td>Invalid <code>make(T, ...)</code> Arguments</td></tr>
+      <tr><td><code>cfire/INVALID-MEMBER</code></td><td>Types</td><td>A member access on a primitive value that has no such member.</td></tr>
+      <tr><td><code>cfire/INVALID-MOVE</code></td><td>Detailed rule</td><td>No-Op <code>move</code> on Rvalue or Scalar <code>Copy</code> Variable</td></tr>
+      <tr><td><code>cfire/INVALID-OR-BLOCK-CONTEXT</code></td><td>Detailed rule</td><td>Block <code>or { ... }</code> Inside Short-Circuit Operand or <code>for</code> Condition</td></tr>
+      <tr><td><code>cfire/INVALID-RELEASE</code></td><td>Detailed rule</td><td><code>release</code> on a Shared Pointer</td></tr>
+      <tr><td><code>cfire/INVALID-SMART-PTR-CTOR</code></td><td>Construction</td><td><code>own(v)</code> / <code>shared(v)</code> called as functions; write <code>make(own[T], v)</code>.</td></tr>
+      <tr><td><code>cfire/INVALID-STRUCT-TAG</code></td><td>Detailed rule</td><td>Duplicate or Malformed Struct Reflection Tag</td></tr>
+      <tr><td><code>cfire/INVALID-TRY-CONTEXT</code></td><td>Detailed rule</td><td><code>try</code> Inside Short-Circuit Operand or <code>for</code> Condition</td></tr>
+      <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Detailed rule</td><td>Structural Mutation or Move of Collection During <code>for</code> Iteration</td></tr>
+      <tr><td><code>cfire/LITERAL-OUT-OF-RANGE</code></td><td>Numbers</td><td>An integer literal that does not fit its target type (Q9).</td></tr>
+      <tr><td><code>cfire/MISSING-IMPORT</code></td><td>Imports</td><td>A stdlib module is used without being imported.</td></tr>
+      <tr><td><code>cfire/MISSING-RETURN</code></td><td>Control flow</td><td>A function with a return type can fall off its end.</td></tr>
+      <tr><td><code>cfire/MOVE-CALLSITE</code></td><td>Detailed rule</td><td>Missing Call-Site <code>move</code> Marker</td></tr>
+      <tr><td><code>cfire/MUT-ALIAS</code></td><td>Detailed rule</td><td>Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity)</td></tr>
+      <tr><td><code>cfire/MUT-CALLSITE</code></td><td>Detailed rule</td><td>Missing Call-Site <code>mut</code> Marker</td></tr>
+      <tr><td><code>cfire/MUT-RECEIVER</code></td><td>Detailed rule</td><td>Calling <code>mut</code> Method on Immutable Receiver</td></tr>
+      <tr><td><code>cfire/NO-EFFECT-STMT</code></td><td>Detailed rule</td><td>Pure Expression Statement With No Side Effects</td></tr>
+      <tr><td><code>cfire/NON-BOOL-CONDITION</code></td><td>Types</td><td>A condition (<code>if</code>, <code>for</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>!</code>) that is not <code>bool</code>.</td></tr>
+      <tr><td><code>cfire/NON-DIVERGING-OR-BLOCK</code></td><td>Detailed rule</td><td>Non-Diverging Error Recovery Block on Value Binding</td></tr>
+      <tr><td><code>cfire/NON-EXHAUSTIVE-MATCH</code></td><td>Detailed rule</td><td>Non-Exhaustive <code>match</code> Statement Over Algebraic <code>enum</code></td></tr>
+      <tr><td><code>cfire/NULL-DEREF</code></td><td>Detailed rule</td><td>Dereference or Member Access on Null or Potentially Null Pointer</td></tr>
+      <tr><td><code>cfire/OPTIONAL-OR-ERR</code></td><td>Detailed rule</td><td>Binding Error Variable <code>or err</code> on Optional <code>T?</code></td></tr>
+      <tr><td><code>cfire/OUT-CALLSITE</code></td><td>Migration</td><td>A call-site <code>out</code> marker (retired with the <code>out</code> intent).</td></tr>
+      <tr><td><code>cfire/PREFER-ENUM</code></td><td>Style</td><td>A cluster of related integer constants that should be an enum (warning).</td></tr>
+      <tr><td><code>cfire/REDUNDANT-CALLSITE-INTENT</code></td><td>Detailed rule</td><td>Redundant <code>mut</code> Annotation on a Read-Only Parameter</td></tr>
+      <tr><td><code>cfire/REDUNDANT-DEREF</code></td><td>Style</td><td><code>(*p).field</code> on a smart pointer; write <code>p.field</code>.</td></tr>
+      <tr><td><code>cfire/REDUNDANT-OR</code></td><td>Detailed rule</td><td>Redundant <code>or</code> on Non-Fallible, Non-Optional Expression</td></tr>
+      <tr><td><code>cfire/REDUNDANT-TRY</code></td><td>Detailed rule</td><td>Redundant <code>try</code> on Non-Fallible Expression</td></tr>
+      <tr><td><code>cfire/RETIRED-API</code></td><td>Detailed rule</td><td>API Retired in the 0.16 Uniform-API Migration</td></tr>
+      <tr><td><code>cfire/RETURN-IN-DEFER</code></td><td>Detailed rule</td><td><code>return</code> Statement Inside <code>defer { ... }</code> Block</td></tr>
+      <tr><td><code>cfire/SEMA-ERROR</code></td><td>Tooling</td><td>A semantic error with no more specific code.</td></tr>
+      <tr><td><code>cfire/SHELL-INJECTION-RISK</code></td><td>Detailed rule</td><td>Dynamic String Concatenation or Interpolation in Shell Command</td></tr>
+      <tr><td><code>cfire/SHIFT-OUT-OF-RANGE</code></td><td>Numbers</td><td>A constant shift count outside the operand's bit width (Q11).</td></tr>
+      <tr><td><code>cfire/SPAWN-SHARED-MUT</code></td><td>Concurrency</td><td>A spawned task writes through a pointer other tasks can reach (Q20).</td></tr>
+      <tr><td><code>cfire/SQL-INJECTION-RISK</code></td><td>Detailed rule</td><td>Dynamic String Concatenation or Interpolation in SQL Query</td></tr>
+      <tr><td><code>cfire/SYNTAX</code></td><td>Syntax</td><td>The source does not parse.</td></tr>
+      <tr><td><code>cfire/TRY-IN-DEFER</code></td><td>Detailed rule</td><td><code>try</code> Inside <code>defer</code> Block</td></tr>
+      <tr><td><code>cfire/TRY-IN-NON-FALLIBLE-FN</code></td><td>Detailed rule</td><td><code>try</code> Inside Non-Fallible Function</td></tr>
+      <tr><td><code>cfire/TRY-ON-OPTIONAL</code></td><td>Detailed rule</td><td>Using <code>try</code> on Optional <code>T?</code> Instead of <code>or</code></td></tr>
+      <tr><td><code>cfire/TYPE-ERROR</code></td><td>Tooling</td><td>The C++ backend rejected generated code; Sema should have caught it (please report).</td></tr>
+      <tr><td><code>cfire/TYPE-MISMATCH</code></td><td>Types</td><td>A value of one type is used where another is required.</td></tr>
+      <tr><td><code>cfire/UNDECLARED-IDENT</code></td><td>Names</td><td>A name that is not declared, or a module used under the wrong alias.</td></tr>
+      <tr><td><code>cfire/UNHANDLED-RESULT</code></td><td>Errors</td><td>A fallible <code>T!</code> value used without <code>try</code> or <code>or</code>.</td></tr>
+      <tr><td><code>cfire/UNKNOWN-ARG-LABEL</code></td><td>Detailed rule</td><td>Unknown Labeled Argument</td></tr>
+      <tr><td><code>cfire/UNKNOWN-ENUM-VARIANT</code></td><td>Names</td><td>A variant that the enum does not declare.</td></tr>
+      <tr><td><code>cfire/UNKNOWN-FIELD</code></td><td>Names</td><td>A field or associated item that the type does not have.</td></tr>
+      <tr><td><code>cfire/UNKNOWN-METHOD</code></td><td>Names</td><td>A method that the receiver type does not have (Q14 closed builtin surface).</td></tr>
+      <tr><td><code>cfire/UNKNOWN-MODULE</code></td><td>Imports</td><td>An import path that names no known module.</td></tr>
+      <tr><td><code>cfire/UNKNOWN-STDLIB-FN</code></td><td>Names</td><td>A function that the stdlib module does not export.</td></tr>
+      <tr><td><code>cfire/UNKNOWN-TYPE</code></td><td>Types</td><td>An expression whose type cannot be inferred (warning).</td></tr>
+      <tr><td><code>cfire/UNREACHABLE-MATCH-ARM</code></td><td>Detailed rule</td><td>Unreachable <code>match</code> Arm Shadowed by Earlier Pattern</td></tr>
+      <tr><td><code>cfire/UNRESOLVED-PACKAGE</code></td><td>Imports</td><td>A local package import that cannot be found.</td></tr>
+      <tr><td><code>cfire/UNSATISFIED-CONSTRAINT</code></td><td>Generics</td><td>A type argument that does not satisfy the interface constraint.</td></tr>
+      <tr><td><code>cfire/UNWRAPPED-OPTIONAL</code></td><td>Errors</td><td>A member access on a <code>T?</code> value without unwrapping.</td></tr>
+      <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Detailed rule</td><td>Use of Dangling Pointer or Slice View After Owner Invalidation</td></tr>
+      <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Detailed rule</td><td>Use of Value After Explicit <code>move</code></td></tr>
+      <tr><td><code>cfire/WRONG-ARG-COUNT</code></td><td>Types</td><td>A builtin called with the wrong number of arguments.</td></tr>
     </tbody>
   </table>
 </div>
@@ -4816,9 +4941,9 @@ cfire fix src/main.cf
   </table>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch12-complete-18-rule-cfire-safety-diagnostics-reference" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-complete-18-rule-cfire-safety-diagnostics-reference'); return false;">
+      <a href="#ch12-complete-cfire-diagnostics-reference" class="pager-card pager-prev" onclick="navigateToSubhead('12', 'ch12-complete-cfire-diagnostics-reference'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 12.4)</span>
-        <strong class="pager-title">Complete 18-Rule cfire/* Safety &amp; Diagnostics Reference</strong>
+        <strong class="pager-title">Complete cfire/* Diagnostics Reference</strong>
       </a>
       <a href="#ch13-building-an-http-router-streaming-sse-corenethttp" class="pager-card pager-next" onclick="navigateToSubhead('13', 'ch13-building-an-http-router-streaming-sse-corenethttp'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 13.2) &rarr;</span>
@@ -5329,9 +5454,9 @@ fn main() {
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code># Scaffold a graphical app or launch directly on Desktop, WebAssembly, or iOS Simulator:
 cfire new my-studio --template gui
-cfire run examples/13-ios-native-ui/main.cf
-cfire run --web examples/13-ios-native-ui/main.cf
-cfire run --ios examples/13-ios-native-ui/main.cf
+cfire run examples/13-ios-native-ui
+cfire run --web examples/13-ios-native-ui
+cfire run --ios examples/13-ios-native-ui
 </code></pre>
     <div class="chapter-pager topic-pager">
       <a href="#ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" class="pager-card pager-prev" onclick="navigateToSubhead('15', 'ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui'); return false;">
@@ -6162,7 +6287,7 @@ fn main() -&gt; void! {
   </section>
   <section class="guide-topic" id="topic-ch19-canonical-projects-index-examples0117" data-topic-id="ch19-canonical-projects-index-examples0117" data-topic-title="Canonical Projects Index (examples/01–17)" data-short-title="19.3 Examples Index">
 <h3 class="guide-heading" id="ch19-canonical-projects-index-examples0117"><span class="heading-hash">#</span><span class="heading-text">Canonical Projects Index (<code>examples/01</code>–<code>17</code>)</span></h3>
-<p>Every project in <a href="file:///Users/memo/Programming/cfire/examples"><code>examples/</code></a> is continuously verified by <code>make test-examples</code> and can be run directly from the repository root:</p>
+<p>Every project in <a href="../examples"><code>examples/</code></a> is continuously verified by <code>make test-examples</code> and can be run directly from the repository root:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -6170,23 +6295,23 @@ fn main() -&gt; void! {
       <tr><th>Directory</th><th>Title</th><th>Core Technologies Demonstrated</th><th>Run / Build Command</th></tr>
     </thead>
     <tbody>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/01-hello-core"><code>examples/01-hello-core</code></a></td><td>Hello Core &amp; Defer</td><td>Mutability (<code>mut</code>), parameter intents (<code>in</code>, <code>mut</code>, <code>out</code>, <code>move</code>), <code>defer</code> scope guards, string interpolation</td><td><code>cfire run examples/01-hello-core/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/02-log-compressor"><code>examples/02-log-compressor</code></a></td><td>Log Compressor</td><td>Declarative CLI flag parsing (<code>core:cli</code>), RFC 8878 Zstandard compression (<code>ext:compress/zstd</code>), <code>core:fs</code></td><td><code>cfire run examples/02-log-compressor/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/03-pkg-cache"><code>examples/03-pkg-cache</code></a></td><td>Package Cache</td><td>SQLite3 WAL transactions (<code>ext:db/sqlite</code>), compile-time JSON struct mapping (<code>core:json</code>), SHA-256 (<code>core:crypto/sha256</code>)</td><td><code>cfire run examples/03-pkg-cache/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/04-async-workers"><code>examples/04-async-workers</code></a></td><td>Async Workers</td><td>Scoped thread pool concurrency (<code>async.scope</code>), disjoint slice writes, MPMC <code>Channel[T]</code> (<code>core:sync</code>)</td><td><code>cfire run examples/04-async-workers/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/05-cmake-interop"><code>examples/05-cmake-interop</code></a></td><td>CMake Interop</td><td>Clang JSON AST ingestion (<code>import cpp &quot;&lt;zstd.h&gt;&quot;</code>), <code>build.CMake</code> native library orchestration</td><td><code>cfire run examples/05-cmake-interop/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/06-raylib-viz"><code>examples/06-raylib-viz</code></a></td><td>Raylib Visualization</td><td>Hardware 2D graphics loop (<code>vendor:raylib</code>), 60 FPS particle &amp; telemetry rendering (<code>--web</code> &amp; <code>--ios</code> ready)</td><td><code>cfire run examples/06-raylib-viz/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/07-types-match-map"><code>examples/07-types-match-map</code></a></td><td>Types &amp; Match</td><td>Algebraic <code>enum</code> sum types (<code>std::variant</code>), exhaustive <code>match</code>, <code>map[K]V</code>, <code>interface</code> C++20 concepts</td><td><code>cfire run examples/07-types-match-map/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/08-multi-pkg-cc-build"><code>examples/08-multi-pkg-cc-build</code></a></td><td>Multi-Package Build</td><td>Multi-package <code>build.cf</code> orchestration, static archive compilation (<code>build.CC</code>)</td><td><code>cfire run examples/08-multi-pkg-cc-build</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/09-stdlib-test-pointers"><code>examples/09-stdlib-test-pointers</code></a></td><td>Stdlib &amp; Tests</td><td>Smart pointers (<code>*T</code>, <code>^T</code>), <code>test &quot;...&quot;</code> blocks, <code>core:testing</code> assertions</td><td><code>cfire test examples/09-stdlib-test-pointers/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/10-cmake-and-make-deps"><code>examples/10-cmake-and-make-deps</code></a></td><td>Multi-Build Deps</td><td>Simultaneous <code>build.CMake</code> and <code>build.Make</code> external dependency orchestration in a single <code>build.cf</code></td><td><code>cfire run examples/10-cmake-and-make-deps</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/11-http-server-router"><code>examples/11-http-server-router</code></a></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server (<code>core:net/http</code>), fluent request router, URL <code>:param</code> &amp; query extraction</td><td><code>cfire run examples/11-http-server-router/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/12-raygui-controls"><code>examples/12-raygui-controls</code></a></td><td>Raygui GUI Kit</td><td>Immediate-mode controls (<code>vendor:raygui</code>): checkboxes, sliders, progress bars, combo boxes, <code>&amp;mut str</code> text boxes</td><td><code>cfire run examples/12-raygui-controls/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/13-ios-native-ui"><code>examples/13-ios-native-ui</code></a></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit (<code>examples/13-ios-native-ui/ui/kit.cf</code>), safe-area insets, real-time <code>core:audio</code> metering (<code>--ios</code>, <code>--web</code>, desktop)</td><td><code>cfire run --ios examples/13-ios-native-ui/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>make(ai.McpServer, ...)</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>core:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
-      <tr><td><a href="file:///Users/memo/Programming/cfire/examples/17-webui-studio"><code>examples/17-webui-studio</code></a></td><td>Hybrid WebUI Studio</td><td>Wails/Tauri-style native WebView (<code>ext:webui</code>), typed <code>app.bind[T]</code> JSON-RPC 2.0, <code>window.backend</code> ES6 Proxy, <code>app://localhost/</code> VFS, offscreen <code>WKWebView</code> test (<code>--ios</code> &amp; desktop)</td><td><code>cfire run examples/17-webui-studio/main.cf</code></td></tr>
+      <tr><td><a href="../examples/01-hello-core"><code>examples/01-hello-core</code></a></td><td>Hello Core &amp; Defer</td><td>Mutability (<code>mut</code>), parameter intents (<code>mut</code>, <code>move</code>), <code>defer</code> scope guards, string interpolation</td><td><code>cfire run examples/01-hello-core/main.cf</code></td></tr>
+      <tr><td><a href="../examples/02-log-compressor"><code>examples/02-log-compressor</code></a></td><td>Log Compressor</td><td>Declarative CLI flag parsing (<code>core:cli</code>), RFC 8878 Zstandard compression (<code>ext:compress/zstd</code>), <code>core:fs</code></td><td><code>cfire run examples/02-log-compressor/main.cf</code></td></tr>
+      <tr><td><a href="../examples/03-pkg-cache"><code>examples/03-pkg-cache</code></a></td><td>Package Cache</td><td>SQLite3 WAL transactions (<code>ext:db/sqlite</code>), compile-time JSON struct mapping (<code>core:json</code>), SHA-256 (<code>core:crypto/sha256</code>)</td><td><code>cfire run examples/03-pkg-cache/main.cf</code></td></tr>
+      <tr><td><a href="../examples/04-async-workers"><code>examples/04-async-workers</code></a></td><td>Async Workers</td><td>Scoped thread pool concurrency (<code>async.scope</code>), disjoint slice writes, MPMC <code>Channel[T]</code> (<code>core:sync</code>)</td><td><code>cfire run examples/04-async-workers/main.cf</code></td></tr>
+      <tr><td><a href="../examples/05-cmake-interop"><code>examples/05-cmake-interop</code></a></td><td>CMake Interop</td><td>Clang JSON AST ingestion (<code>import cpp &quot;&lt;zstd.h&gt;&quot;</code>), <code>build.CMake</code> native library orchestration</td><td><code>cfire run examples/05-cmake-interop/main.cf</code></td></tr>
+      <tr><td><a href="../examples/06-raylib-viz"><code>examples/06-raylib-viz</code></a></td><td>Raylib Visualization</td><td>Hardware 2D graphics loop (<code>vendor:raylib</code>), 60 FPS particle &amp; telemetry rendering (<code>--web</code> &amp; <code>--ios</code> ready)</td><td><code>cfire run examples/06-raylib-viz/main.cf</code></td></tr>
+      <tr><td><a href="../examples/07-types-match-map"><code>examples/07-types-match-map</code></a></td><td>Types &amp; Match</td><td>Algebraic <code>enum</code> sum types (<code>std::variant</code>), exhaustive <code>match</code>, <code>map[K]V</code>, <code>interface</code> C++20 concepts</td><td><code>cfire run examples/07-types-match-map/main.cf</code></td></tr>
+      <tr><td><a href="../examples/08-multi-pkg-cc-build"><code>examples/08-multi-pkg-cc-build</code></a></td><td>Multi-Package Build</td><td>Multi-package <code>build.cf</code> orchestration, static archive compilation (<code>build.CC</code>)</td><td><code>cfire run examples/08-multi-pkg-cc-build</code></td></tr>
+      <tr><td><a href="../examples/09-stdlib-test-pointers"><code>examples/09-stdlib-test-pointers</code></a></td><td>Stdlib &amp; Tests</td><td>Smart pointers (<code>*T</code>, <code>^T</code>), <code>test &quot;...&quot;</code> blocks, <code>core:testing</code> assertions</td><td><code>cfire test examples/09-stdlib-test-pointers/main.cf</code></td></tr>
+      <tr><td><a href="../examples/10-cmake-and-make-deps"><code>examples/10-cmake-and-make-deps</code></a></td><td>Multi-Build Deps</td><td>Simultaneous <code>build.CMake</code> and <code>build.Make</code> external dependency orchestration in a single <code>build.cf</code></td><td><code>cfire run examples/10-cmake-and-make-deps</code></td></tr>
+      <tr><td><a href="../examples/11-http-server-router"><code>examples/11-http-server-router</code></a></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server (<code>core:net/http</code>), fluent request router, URL <code>:param</code> &amp; query extraction</td><td><code>cfire run examples/11-http-server-router/main.cf</code></td></tr>
+      <tr><td><a href="../examples/12-raygui-controls"><code>examples/12-raygui-controls</code></a></td><td>Raygui GUI Kit</td><td>Immediate-mode controls (<code>vendor:raygui</code>): checkboxes, sliders, progress bars, combo boxes, <code>&amp;mut str</code> text boxes</td><td><code>cfire run examples/12-raygui-controls/main.cf</code></td></tr>
+      <tr><td><a href="../examples/13-ios-native-ui"><code>examples/13-ios-native-ui</code></a></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit (<code>examples/13-ios-native-ui/ui/kit.cf</code>), safe-area insets, real-time <code>core:audio</code> metering (<code>--ios</code>, <code>--web</code>, desktop)</td><td><code>cfire run --ios examples/13-ios-native-ui</code></td></tr>
+      <tr><td><a href="../examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
+      <tr><td><a href="../examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>make(ai.McpServer, ...)</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
+      <tr><td><a href="../examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>core:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
+      <tr><td><a href="../examples/17-webui-studio"><code>examples/17-webui-studio</code></a></td><td>Hybrid WebUI Studio</td><td>Wails/Tauri-style native WebView (<code>ext:webui</code>), typed <code>app.bind[T]</code> JSON-RPC 2.0, <code>window.backend</code> ES6 Proxy, <code>app://localhost/</code> VFS, offscreen <code>WKWebView</code> test (<code>--ios</code> &amp; desktop)</td><td><code>cfire run examples/17-webui-studio/main.cf</code></td></tr>
     </tbody>
   </table>
 </div>
@@ -6204,8 +6329,8 @@ fn main() -&gt; void! {
   <section class="guide-topic" id="topic-ch19-further-reference-module-index" data-topic-id="ch19-further-reference-module-index" data-topic-title="Further Reference &amp; Module Index" data-short-title="19.4 Module Index">
 <h3 class="guide-heading" id="ch19-further-reference-module-index"><span class="heading-hash">#</span><span class="heading-text">Further Reference &amp; Module Index</span></h3>
 <ul>
-  <li><strong>Standard Library API Reference</strong>: Browse <a href="file:///Users/memo/Programming/cfire/docs/reference.html"><code>reference.html</code></a> (or <a href="file:///Users/memo/Programming/cfire/docs/STDLIB_REFERENCE.md"><code>STDLIB_REFERENCE.md</code></a>) for every function signature, C++23 lowering expression, and diagnostic code in the compiler catalog.</li>
-  <li><strong>LLM Context Snapshot</strong>: Feed <a href="file:///Users/memo/Programming/cfire/docs/LLMS.txt"><code>LLMS.txt</code></a> or start <code>cfire mcp</code> to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.</li>
+  <li><strong>Standard Library API Reference</strong>: Browse <a href="./reference.html"><code>reference.html</code></a> (or <a href="./STDLIB_REFERENCE.md"><code>STDLIB_REFERENCE.md</code></a>) for every function signature, C++23 lowering expression, and diagnostic code in the compiler catalog.</li>
+  <li><strong>LLM Context Snapshot</strong>: Feed <a href="./LLMS.txt"><code>LLMS.txt</code></a> or start <code>cfire mcp</code> to give coding agents full access to the compiler's type checker, formatter, and standard library catalog.</li>
 </ul>
     <div class="chapter-pager topic-pager">
       <a href="#ch19-canonical-projects-index-examples0117" class="pager-card pager-prev" onclick="navigateToSubhead('19', 'ch19-canonical-projects-index-examples0117'); return false;">
@@ -6313,7 +6438,8 @@ fn main() -&gt; void! {
       <ul class="toc-list">
         <li><a href="#ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it" title="Why Unstructured Threads Fail &amp; How async.scope Fixes It" onclick="navigateToSubhead('10', 'ch10-why-unstructured-threads-fail-how-asyncscope-fixes-it'); return false;">10.1 async.scope Tasks</a></li>
         <li><a href="#ch10-communicating-across-workers-with-mpmc-channels-coresync" title="Communicating Across Workers with MPMC Channels (core:sync)" onclick="navigateToSubhead('10', 'ch10-communicating-across-workers-with-mpmc-channels-coresync'); return false;">10.2 MPMC Channels</a></li>
-        <li><a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" title="Hierarchical Cancellation &amp; Deadlines (core:sync/context)" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">10.3 Context &amp; Deadlines</a></li>
+        <li><a href="#ch10-shared-state-with-mutext-and-atomict-coresync" title="Shared State with Mutex[T] and Atomic[T] (core:sync)" onclick="navigateToSubhead('10', 'ch10-shared-state-with-mutext-and-atomict-coresync'); return false;">10.3 Shared State with Mute..</a></li>
+        <li><a href="#ch10-hierarchical-cancellation-deadlines-coresynccontext" title="Hierarchical Cancellation &amp; Deadlines (core:sync/context)" onclick="navigateToSubhead('10', 'ch10-hierarchical-cancellation-deadlines-coresynccontext'); return false;">10.4 Context &amp; Deadlines</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-11" style="display: none;">
@@ -6328,7 +6454,7 @@ fn main() -&gt; void! {
         <li><a href="#ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test" title="Unit Tests, Doc-Tests &amp; Resource-Leak Canaries (cfire test)" onclick="navigateToSubhead('12', 'ch12-unit-tests-doc-tests-resource-leak-canaries-cfire-test'); return false;">12.1 Unit &amp; Doc Tests</a></li>
         <li><a href="#ch12-property-based-fuzzing-statistical-benchmarks-fuzz-bench" title="Property-Based Fuzzing &amp; Statistical Benchmarks (fuzz &amp; bench)" onclick="navigateToSubhead('12', 'ch12-property-based-fuzzing-statistical-benchmarks-fuzz-bench'); return false;">12.2 Fuzzing &amp; Bench</a></li>
         <li><a href="#ch12-source-mapped-sanitizers-sanitize-auto-remediation-cfire-fix" title="Source-Mapped Sanitizers (--sanitize) &amp; Auto-Remediation (cfire fix)" onclick="navigateToSubhead('12', 'ch12-source-mapped-sanitizers-sanitize-auto-remediation-cfire-fix'); return false;">12.3 Sanitizers &amp; Fix</a></li>
-        <li><a href="#ch12-complete-18-rule-cfire-safety-diagnostics-reference" title="Complete 18-Rule cfire/* Safety &amp; Diagnostics Reference" onclick="navigateToSubhead('12', 'ch12-complete-18-rule-cfire-safety-diagnostics-reference'); return false;">12.4 18 Safety Rules</a></li>
+        <li><a href="#ch12-complete-cfire-diagnostics-reference" title="Complete cfire/* Diagnostics Reference" onclick="navigateToSubhead('12', 'ch12-complete-cfire-diagnostics-reference'); return false;">12.4 Complete cfire/* Diagn..</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-13" style="display: none;">

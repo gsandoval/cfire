@@ -44,10 +44,10 @@ fn compute_track_mix(req: TrackMixReq) -> TrackStatusRes {
         state_label = "muted"
     }
     return TrackStatusRes{
-        channel:      req.channel,
+        channel: req.channel,
         effective_db: effective,
-        headroom_db:  headroom,
-        status:       state_label,
+        headroom_db: headroom,
+        status: state_label,
     }
 }
 
@@ -146,7 +146,7 @@ fuzz "compute_track_mix invariants hold across arbitrary fader inputs" |ch: i32,
     res := compute_track_mix(TrackMixReq{
             channel: ch,
             gain_db: gain,
-            muted:   muted,
+            muted: muted,
     })
     assert(res.channel == ch)
     if muted {

@@ -506,7 +506,7 @@ void test_cfire_remote_vendor(const std::filesystem::path& rt_dir) {
     std::filesystem::create_directories(app_dir);
 
     (void)cfire::fs::write_text(app_dir / "build.cf", std::format(
-        "package build\n\nvar Calc = build.Git(\"{}\", {{\n    Driver: \"CC\",\n    Sources: [\"calc.c\"],\n    Includes: [\".\"]\n}})\n",
+        "package build\n\nCalc := build.Git(\"{}\", {{\n    Driver: \"CC\",\n    Sources: [\"calc.c\"],\n    Includes: [\".\"]\n}})\n",
         remote_repo.string()));
 
     (void)cfire::fs::write_text(app_dir / "main.cf",

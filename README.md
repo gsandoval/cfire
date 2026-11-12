@@ -118,7 +118,7 @@ docker run --rm cfire:latest run examples/01-hello-core/main.cf
 ./cfire wasm build apps/desktop/main.cf -o web/app.html
 
 # Run native iOS apps directly on simulator:
-./cfire run --ios examples/13-ios-native-ui/main.cf
+./cfire run --ios examples/13-ios-native-ui
 
 # Serve WebAssembly applications locally with zero dependencies (application/wasm MIME + COOP/COEP isolation):
 ./cfire serve web/app.html

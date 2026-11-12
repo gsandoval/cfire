@@ -46,6 +46,9 @@ auto main(int argc, char** argv) -> int {
         test_w4_migration_rewrites(rt_dir);
         test_w4_builtin_runtime_semantics(rt_dir);
         test_cf180_dual_stack_listener(rt_dir);
+        test_cf156_formatter_corpus(rt_dir);
+        test_cf155_rename_scopes_and_diff(rt_dir);
+        test_cf158_doc_integrity(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
         test_section2_language_ergonomics(rt_dir);
         test_section3_agent_tooling(rt_dir);

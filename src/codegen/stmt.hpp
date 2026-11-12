@@ -111,9 +111,19 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
                     cpp_type = "std::string";
                 } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&st.init->node); arr_lit && !arr_lit->elements.empty()) {
-                    if (const auto* first_lit = std::get_if<LiteralExpr>(&arr_lit->elements[0]->node);
-                        first_lit && (first_lit->kind == TokenKind::String || first_lit->kind == TokenKind::RawString)) {
+                    // `nums := [10, 20, 30]` is a slice; `auto x = {...}` would be a std::initializer_list.
+                    const auto* first_lit = std::get_if<LiteralExpr>(&arr_lit->elements[0]->node);
+                    if (const auto* neg = std::get_if<UnaryExpr>(&arr_lit->elements[0]->node); !first_lit && neg && neg->op == "-" && neg->operand) {
+                        first_lit = std::get_if<LiteralExpr>(&neg->operand->node);
+                    }
+                    if (first_lit && (first_lit->kind == TokenKind::String || first_lit->kind == TokenKind::RawString)) {
                         cpp_type = "std::vector<std::string>";
+                    } else if (first_lit && first_lit->kind == TokenKind::Int) {
+                        cpp_type = "std::vector<std::int64_t>";
+                    } else if (first_lit && first_lit->kind == TokenKind::Float) {
+                        cpp_type = "std::vector<double>";
+                    } else {
+                        cpp_type = "std::vector";  // CTAD from the element expressions
                     }
                 }
             }
