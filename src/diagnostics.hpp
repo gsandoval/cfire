@@ -697,45 +697,6 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
-    if (d.code == "cfire/DEPRECATED-VAR") {
-        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
-            const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];
-            if (auto vpos = cur_ln.find("var "); vpos != std::string::npos) {
-                FixItEdit edit;
-                edit.start_line = d.line;
-                edit.end_line = d.line;
-                edit.is_preferred = true;
-                if (cur_ln.substr(vpos).starts_with("var mut ")) {
-                    edit.title = "Replace 'var mut' with 'mut' (cfire/DEPRECATED-VAR)";
-                    edit.start_col = static_cast<int>(vpos) + 1;
-                    edit.end_col = static_cast<int>(vpos + 8) + 1;
-                    edit.replacement = "mut ";
-                    d.fixits.push_back(std::move(edit));
-                    return;
-                } else if (auto eq_pos = cur_ln.find(" = ", vpos); eq_pos != std::string::npos && cur_ln.find(':', vpos) > eq_pos) {
-                    edit.title = "Replace 'var x = ...' with 'x := ...' (cfire/DEPRECATED-VAR)";
-                    edit.start_col = static_cast<int>(vpos) + 1;
-                    edit.end_col = static_cast<int>(cur_ln.size()) + 1;
-                    std::string line_tail = cur_ln.substr(vpos + 4);
-                    if (auto eq_in_tail = line_tail.find(" = "); eq_in_tail != std::string::npos) {
-                        line_tail.replace(eq_in_tail, 3, " := ");
-                    }
-                    edit.replacement = line_tail;
-                    d.fixits.push_back(std::move(edit));
-                    return;
-                } else {
-                    edit.title = "Remove 'var' keyword (cfire/DEPRECATED-VAR)";
-                    edit.start_col = static_cast<int>(vpos) + 1;
-                    edit.end_col = static_cast<int>(vpos + 4) + 1;
-                    edit.replacement = "";
-                    d.fixits.push_back(std::move(edit));
-                    return;
-                }
-            }
-        }
-        return;
-    }
-
     if (d.code == "cfire/DEPRECATED-DISCARD") {
         if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];

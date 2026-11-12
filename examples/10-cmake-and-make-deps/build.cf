@@ -3,15 +3,15 @@ package build
 import "core:build"
 
 KVStore := build.CMake("./vendor/libkv_cmake", {
-        Target:   "kvstore",
+        Target: "kvstore",
         Includes: ["include"],
-        Defines:  {"KV_SALT": 42},
+        Defines: {"KV_SALT": 42},
 })
 
 VecMath := build.Make("./vendor/libmath_make", {
-        Target:   "vecmath",
+        Target: "vecmath",
         Includes: ["include"],
-        Defines:  {"MATH_SCALE_BIAS": 1.0},
+        Defines: {"MATH_SCALE_BIAS": 1.0},
 })
 
 App := build.Executable("hybrid-build-demo", {

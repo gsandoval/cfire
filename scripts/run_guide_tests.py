@@ -99,6 +99,27 @@ if unknown_blocks:
     print(f"  {unknown_blocks} GUIDE block(s) have expressions Sema cannot type (cfire/UNKNOWN-TYPE)")
     failed += unknown_blocks
 
+# CF-158: `cfire eval` examples in ```bash blocks are doc-tests too: each `cfire eval ...` line followed by a
+# `# Output: <text>` line must print <text>.
+import shlex
+eval_checked = 0
+for block in re.findall(r"```bash\n(.*?)\n```", text, re.DOTALL):
+    blines = block.splitlines()
+    for i, line in enumerate(blines):
+        if not line.startswith("cfire eval ") or i + 1 >= len(blines) or not blines[i + 1].startswith("# Output: "):
+            continue
+        want = blines[i + 1][len("# Output: "):]
+        args = shlex.split(line)[2:]
+        res = subprocess.run([str(CFIRE_BIN), "eval", *args], capture_output=True, text=True, timeout=180)
+        got = res.stdout.strip().splitlines()[-1] if res.stdout.strip() else ""
+        eval_checked += 1
+        if res.returncode != 0 or got != want:
+            failed += 1
+            print(f"  [eval] {line}\n       want: {want}\n       got:  {got or (res.stdout + res.stderr).strip()[:200]}")
+        else:
+            passed += 1
+print(f"  {eval_checked} `cfire eval` example(s) checked")
+
 print(f"\n==========================================")
 print(f"GUIDE Doc-Test Results: {passed} passed, {failed} failed (total {len(matches)})")
 

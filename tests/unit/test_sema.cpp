@@ -43,10 +43,6 @@ fn (mut c: Counter) inc() { c.Val += 1 }
 fn main() { imm_c := Counter{Val: 0}; imm_c.inc() }
 )", "cfire/MUT-RECEIVER", "mut_receiver.cf");
 
-    require_sema_error(R"(package main
-fn write_out(out target: i32) { target = 42 }
-fn main() { mut v: i32 = 0; write_out(v) }
-)", "cfire/DEPRECATED-OUT-PARAM", "out_callsite.cf");
 
     require_sema_error(R"(package main
 fn mutate_val(mut target: i32) { target += 1 }
@@ -1237,29 +1233,26 @@ fn main() {
 void test_hard_deprecation_enforcement([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_hard_deprecation_enforcement (CF-103)");
 
-    // 1. var declarations produce hard error cfire/DEPRECATED-VAR
-    require_sema_error(R"(package main
+    // 1-3. Q33 (CF-175): `var` and `out` are ordinary identifiers; their retired keyword forms no longer parse.
+    {
+        auto ident_ast = cfire::frontend::parse_source("var_out_idents.cf", R"(package main
+fn compute(out: i32, var: i32) -> i32 {
+    return out + var
+}
 fn main() {
-    var x = 10
+    var := 1
+    out := compute(var, 2)
+    println("{}", out)
 }
-)", "cfire/DEPRECATED-VAR", "dep_var.cf");
-
-    // 2. out parameter intent produces hard error cfire/DEPRECATED-OUT-PARAM
-    require_sema_error(R"(package main
-fn compute(out total: i32) {
-    total = 42
-}
-fn main() {}
-)", "cfire/DEPRECATED-OUT-PARAM", "dep_out_decl.cf");
-
-    // 3. out call-site annotation produces hard error cfire/DEPRECATED-OUT-PARAM
-    require_sema_error(R"(package main
-fn compute(mut total: i32) {}
-fn main() {
-    mut res := 0
-    compute(out res)
-}
-)", "cfire/DEPRECATED-OUT-PARAM", "dep_out_call.cf");
+)");
+        require(ident_ast.has_value() && cfire::frontend::analyze(std::move(*ident_ast)).has_value(),
+            "var and out are usable as identifiers (CF-175)");
+        auto var_kw = cfire::frontend::parse_source("var_kw.cf", "package main\nfn main() {\n    var x = 10\n}\n");
+        require(!var_kw.has_value() || !cfire::frontend::analyze(std::move(*var_kw)).has_value(),
+            "`var x = 10` is not a declaration form (CF-175)");
+        require(!cfire::frontend::parse_source("out_kw.cf", "package main\nfn f(out total: i32) {}\nfn main() {}\n").has_value(),
+            "`out` is not a parameter intent (CF-175)");
+    }
 
     // 4. x: mut T produces hard error cfire/DEPRECATED-INTENT-POS
     require_sema_error(R"(package main

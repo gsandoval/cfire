@@ -141,7 +141,7 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
             return;
         }
         if (t.kind == TokenKind::KwMut || t.kind == TokenKind::KwMove ||
-            t.kind == TokenKind::KwIn || t.kind == TokenKind::KwOut ||
+            t.kind == TokenKind::KwIn ||
             t.kind == TokenKind::KwAsync) {
             raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 11 /* modifier */, 0});
             return;
@@ -149,7 +149,7 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
         if (t.kind == TokenKind::KwPackage || t.kind == TokenKind::KwImport ||
             t.kind == TokenKind::KwType || t.kind == TokenKind::KwStruct ||
             t.kind == TokenKind::KwEnum || t.kind == TokenKind::KwInterface ||
-            t.kind == TokenKind::KwFn || t.kind == TokenKind::KwVar ||
+            t.kind == TokenKind::KwFn ||
             t.kind == TokenKind::KwIf || t.kind == TokenKind::KwElse ||
             t.kind == TokenKind::KwFor || t.kind == TokenKind::KwMatch ||
             t.kind == TokenKind::KwReturn || t.kind == TokenKind::KwDefer ||

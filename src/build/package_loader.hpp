@@ -67,6 +67,14 @@ namespace cfire::build {
 
 // Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"` or `import "pkg:raygui_ext"`)
 // and automatically discovers same-directory sibling `.cf` files sharing `root_ast.package_name`.
+// Q35 (CF-173): set by the CLI when the user named a program's entry file (`cfire run a.cf`). That file is then
+// the whole program plus what it imports: same-directory `package main` siblings are not merged. Test files and
+// files of library packages keep their package's siblings (one file of a package is not a program).
+[[nodiscard]] inline auto explicit_entry_file_only() -> bool& {
+    static bool value = false;
+    return value;
+}
+
 [[nodiscard]] inline auto resolve_local_cf_imports(
     const std::filesystem::path& root_base_dir,
     frontend::FileAST& root_ast,
@@ -111,7 +119,8 @@ namespace cfire::build {
     std::deque<WorkItem> queue;
 
     // 0. Automatically discover same-directory sibling `.cf` files with matching `package_name` (ERG-02a / ERG-02b)
-    if (!root_ast.package_name.empty()) {
+    const bool entry_file_only = explicit_entry_file_only() && !is_test_entry && root_ast.package_name == "main" && root_has_main;
+    if (!root_ast.package_name.empty() && !entry_file_only) {
         std::error_code ec;
         std::vector<std::filesystem::path> sibling_candidates;
         for (const auto& entry : std::filesystem::directory_iterator(root_base_dir, ec)) {

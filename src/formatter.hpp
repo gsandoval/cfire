@@ -16,6 +16,8 @@
 #include <string_view>
 #include <vector>
 
+#include "formatter_printer.hpp"
+
 namespace cfire::fmt {
 
 using namespace cfire::frontend;
@@ -255,6 +257,7 @@ struct StructFieldLine {
     return !out.type_and_default.empty();
 }
 
+// Net `{([` minus `})]` on a line, skipping strings, char literals, comments and raw strings (LSP on-type indent).
 [[nodiscard]] inline auto scan_line_brace_delta(std::string_view line, std::size_t start_idx, bool& in_raw_string) -> int {
     bool in_str = false;
     int net_delta = 0;
@@ -302,317 +305,53 @@ struct StructFieldLine {
     return net_delta;
 }
 
-[[nodiscard]] inline auto normalize_statement_tokens(std::string_view line) -> std::string {
-    if (line.empty()) return "";
-    auto cpos = find_comment_start(line);
-    std::string_view code = (cpos != std::string_view::npos) ? line.substr(0, cpos) : line;
-    std::string_view comment = (cpos != std::string_view::npos) ? line.substr(cpos) : "";
-
-    std::string out;
-    out.reserve(code.size() + 16);
-
-    bool in_str = false;
-    bool in_char = false;
-    bool in_backtick = false;
-
-    auto is_ident_char = [](char c) -> bool {
-        return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
-    };
-
-    auto ends_with_expr_term = [&](std::string_view sv) -> bool {
-        while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t')) sv.remove_suffix(1);
-        if (sv.empty()) return false;
-        char c = sv.back();
-        if (c == ')' || c == ']' || c == '"' || c == '`') return true;
-        if (is_ident_char(c)) {
-            // Check if last word is a keyword that cannot end an expression (e.g. or, return, case, in)
-            std::size_t start = sv.size() - 1;
-            while (start > 0 && is_ident_char(sv[start - 1])) --start;
-            std::string_view word = sv.substr(start);
-            if (word == "or" || word == "return" || word == "case" || word == "in" || word == "throw" || word == "if" || word == "while") {
-                return false;
-            }
-            return true;
+// Column-aligns the fields of every `type X struct { ... }` block whose body is only fields and comments.
+inline void align_struct_fields(std::vector<std::string>& lines) {
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        std::string head = trim_ws(lines[i]);
+        if (!(head.starts_with("type ") && head.ends_with("struct {"))) continue;
+        const std::size_t indent = lines[i].find_first_not_of(' ');
+        std::vector<StructFieldLine> fields;
+        std::size_t j = i + 1;
+        bool pure = true;
+        std::size_t real = 0;
+        for (; j < lines.size(); ++j) {
+            std::string ft = trim_ws(lines[j]);
+            if (ft == "}") break;
+            if (ft.empty()) continue;
+            StructFieldLine sfl;
+            if (!try_parse_struct_field_line(ft, sfl)) { pure = false; break; }
+            if (!sfl.is_comment_only) ++real;
+            fields.push_back(std::move(sfl));
         }
-        return false;
-    };
-
-    for (std::size_t i = 0; i < code.size(); ++i) {
-        char c = code[i];
-
-        if (in_str) {
-            out.push_back(c);
-            if (c == '\\' && i + 1 < code.size()) {
-                out.push_back(code[++i]);
-            } else if (c == '"') {
-                in_str = false;
-            }
-            continue;
+        if (!pure || j >= lines.size() || real == 0) continue;
+        std::size_t max_name = 0;
+        std::size_t max_type = 0;
+        bool tags_or_comments = false;
+        for (const auto& f : fields) {
+            if (f.is_comment_only) continue;
+            max_name = std::max(max_name, f.name.size());
+            max_type = std::max(max_type, f.type_and_default.size());
+            if (!f.tag.empty() || !f.comment.empty()) tags_or_comments = true;
         }
-        if (in_char) {
-            out.push_back(c);
-            if (c == '\\' && i + 1 < code.size()) {
-                out.push_back(code[++i]);
-            } else if (c == '\'') {
-                in_char = false;
-            }
-            continue;
-        }
-        if (in_backtick) {
-            out.push_back(c);
-            if (c == '`') in_backtick = false;
-            continue;
-        }
-
-        if (c == '"') {
-            in_str = true;
-            out.push_back(c);
-            continue;
-        }
-        if (c == '\'') {
-            in_char = true;
-            out.push_back(c);
-            continue;
-        }
-        if (c == '`') {
-            in_backtick = true;
-            out.push_back(c);
-            continue;
-        }
-
-        // Range operators stay whole: `32..=512` must not become `32.. = 512`.
-        if (code.substr(i).starts_with("..=")) {
-            out.append("..=");
-            i += 2;
-            continue;
-        }
-        if (code.substr(i).starts_with("..")) {
-            out.append("..");
-            ++i;
-            continue;
-        }
-
-        // Three-character compound shifts: <<=, >>=
-        if (i + 2 < code.size()) {
-            std::string_view three = code.substr(i, 3);
-            if (three == "<<=" || three == ">>=") {
-                if (!out.empty() && out.back() != ' ') out.push_back(' ');
-                out.append(three);
-                if (i + 3 < code.size() && code[i + 3] != ' ' && code[i + 3] != '\n' && code[i + 3] != '\r') {
-                    out.push_back(' ');
-                }
-                i += 2;
-                continue;
-            }
-        }
-
-        // Two-character operators: ==, !=, <=, >=, +=, -=, *=, /=, %=, &=, |=, ^=, &&, ||, =>, ->, :=
-        if (i + 1 < code.size()) {
-            std::string_view two = code.substr(i, 2);
-            if (two == "::") {
-                out.append("::");
-                ++i;
-                continue;
-            }
-            if (two == ":=" || two == "==" || two == "!=" || two == "<=" || two == ">=" ||
-                two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "%=" ||
-                two == "&=" || two == "|=" || two == "^=" || two == "&&" || two == "||" || two == "=>" || two == "->") {
-                if (!out.empty() && out.back() != ' ') out.push_back(' ');
-                out.append(two);
-                if (i + 2 < code.size() && code[i + 2] != ' ' && code[i + 2] != '\n' && code[i + 2] != '\r') {
-                    out.push_back(' ');
-                }
-                ++i;
-                continue;
-            }
-        }
-
-        // Single character punctuation
-        if (c == ',') {
-            while (!out.empty() && out.back() == ' ') out.pop_back();
-            out.push_back(',');
-            if (i + 1 < code.size() && code[i + 1] != ' ' && code[i + 1] != '\n' && code[i + 1] != '\r' && code[i + 1] != ')' && code[i + 1] != ']') {
-                out.push_back(' ');
-            }
-            continue;
-        }
-
-        if (c == ':') {
-            out.push_back(':');
-            if (i + 1 < code.size() && code[i + 1] != ' ' && code[i + 1] != ':' && code[i + 1] != '=' && code[i + 1] != '\n' && code[i + 1] != '\r') {
-                out.push_back(' ');
-            }
-            continue;
-        }
-
-        if (c == '=') {
-            if (!out.empty() && out.back() != ' ') out.push_back(' ');
-            out.push_back('=');
-            if (i + 1 < code.size() && code[i + 1] != ' ' && code[i + 1] != '\n' && code[i + 1] != '\r') {
-                out.push_back(' ');
-            }
-            continue;
-        }
-
-        // Infix binary operators: +, -, *, /, %
-        if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%') {
-            // Exponent sign inside a float literal (`2.5e-4`, `1E+9`) is not an operator.
-            if ((c == '+' || c == '-') && !out.empty() && (out.back() == 'e' || out.back() == 'E')) {
-                std::size_t k = out.size() - 1;
-                while (k > 0 && (std::isdigit(static_cast<unsigned char>(out[k - 1])) || out[k - 1] == '.' || out[k - 1] == '_')) --k;
-                bool starts_with_digit = k < out.size() - 1 && std::isdigit(static_cast<unsigned char>(out[k]));
-                bool standalone = k == 0 || !is_ident_char(out[k - 1]);
-                if (starts_with_digit && standalone) {
-                    out.push_back(c);
-                    continue;
-                }
-            }
-            bool preceded = ends_with_expr_term(out);
-            std::size_t next_i = i + 1;
-            while (next_i < code.size() && (code[next_i] == ' ' || code[next_i] == '\t')) ++next_i;
-            bool followed = next_i < code.size() && (is_ident_char(code[next_i]) || code[next_i] == '(' || code[next_i] == '[');
-            if (preceded && followed) {
-                if (!out.empty() && out.back() != ' ') out.push_back(' ');
-                out.push_back(c);
-                if (code[i + 1] != ' ' && code[i + 1] != '\t') {
-                    out.push_back(' ');
-                }
-                continue;
-            }
-        }
-
-        out.push_back(c);
-    }
-
-    while (!out.empty() && (out.back() == ' ' || out.back() == '\t')) {
-        out.pop_back();
-    }
-
-    if (!comment.empty()) {
-        if (!out.empty()) out.push_back(' ');
-        out.append(comment);
-    }
-    return out;
-}
-
-inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> std::vector<std::string> {
-    std::vector<std::string> out_lines(raw_lines.size());
-    int indent = 0;
-    bool in_raw_string = false;
-    int in_cpp_depth = 0;
-
-    for (std::size_t i = 0; i < raw_lines.size(); ++i) {
-        const std::string& raw = raw_lines[i];
-        if (in_raw_string) {
-            out_lines[i] = raw;
-            auto close_bt = raw.find('`');
-            if (close_bt != std::string::npos) {
-                in_raw_string = false;
-                int net_delta = scan_line_brace_delta(raw, close_bt + 1, in_raw_string);
-                indent = std::max(0, indent + net_delta);
-            }
-            continue;
-        }
-
-        std::string trimmed = trim_ws(raw);
-        if (trimmed.empty()) {
-            out_lines[i] = "";
-            continue;
-        }
-
-        if (trimmed.starts_with("cpp {") || trimmed.contains(" cpp {")) {
-            in_cpp_depth += 1;
-        }
-
-        // Check if this starts a `type <Name> struct {` block whose fields we can column-align
-        if (trimmed.starts_with("type ") && trimmed.ends_with("struct {")) {
-            std::size_t j = i + 1;
-            std::vector<StructFieldLine> fields;
-            bool pure_fields = true;
-            std::size_t real_field_count = 0;
-            while (j < raw_lines.size()) {
-                std::string ft = trim_ws(raw_lines[j]);
-                if (ft == "}") break;
-                if (ft.empty()) {
-                    ++j;
-                    continue;
-                }
-                StructFieldLine sfl;
-                if (try_parse_struct_field_line(ft, sfl)) {
-                    if (!sfl.is_comment_only) ++real_field_count;
-                    fields.push_back(std::move(sfl));
-                } else {
-                    pure_fields = false;
-                    break;
-                }
-                ++j;
-            }
-            if (pure_fields && j < raw_lines.size() && real_field_count > 0) {
-                out_lines[i] = std::string(indent * 4, ' ') + trimmed;
-                std::size_t max_name = 0;
-                std::size_t max_type = 0;
-                bool any_tags_or_comments = false;
-                for (const auto& f : fields) {
-                    if (f.is_comment_only) continue;
-                    max_name = std::max(max_name, f.name.size());
-                    max_type = std::max(max_type, f.type_and_default.size());
-                    if (!f.tag.empty() || !f.comment.empty()) any_tags_or_comments = true;
-                }
-                std::size_t field_idx = 0;
-                for (std::size_t row = i + 1; row < j; ++row) {
-                    if (trim_ws(raw_lines[row]).empty()) {
-                        out_lines[row] = "";
-                        continue;
-                    }
-                    const auto& f = fields[field_idx++];
-                    std::string line_str = std::string((indent + 1) * 4, ' ');
-                    if (f.is_comment_only) {
-                        line_str += f.comment;
-                    } else {
-                        line_str += f.name + ": ";
-                        if (real_field_count > 1 && any_tags_or_comments) {
-                            line_str += std::string(max_name - f.name.size(), ' ');
-                        }
-                        line_str += f.type_and_default;
-                        if (!f.tag.empty()) {
-                            line_str += std::string(max_type - f.type_and_default.size() + 1, ' ') + f.tag;
-                        }
-                        if (!f.comment.empty()) {
-                            line_str += " " + f.comment;
-                        }
-                    }
-                    out_lines[row] = line_str;
-                }
-                out_lines[j] = std::string(indent * 4, ' ') + "}";
-                i = j;
-                continue;
-            }
-        }
-
-        if (in_cpp_depth == 0 && !trimmed.starts_with("//") && !trimmed.starts_with("/*")) {
-            trimmed = normalize_statement_tokens(trimmed);
-        }
-
-        // Count leading closing braces on this line
-        int leading_close = 0;
-        for (char c : trimmed) {
-            if (c == '}' || c == ')' || c == ']') {
-                ++leading_close;
+        std::size_t fi = 0;
+        for (std::size_t row = i + 1; row < j; ++row) {
+            if (trim_ws(lines[row]).empty()) { lines[row].clear(); continue; }
+            const auto& f = fields[fi++];
+            std::string l(indent + 4, ' ');
+            if (f.is_comment_only) {
+                l += f.comment;
             } else {
-                break;
+                l += f.name + ": ";
+                if (real > 1 && tags_or_comments) l += std::string(max_name - f.name.size(), ' ');
+                l += f.type_and_default;
+                if (!f.tag.empty()) l += std::string(max_type - f.type_and_default.size() + 1, ' ') + f.tag;
+                if (!f.comment.empty()) l += " " + f.comment;
             }
+            lines[row] = std::move(l);
         }
-        int line_indent = std::max(0, indent - leading_close);
-        out_lines[i] = std::string(line_indent * 4, ' ') + trimmed;
-
-        // Update net brace depth ignoring strings, char literals, and comments
-        int net_delta = scan_line_brace_delta(trimmed, 0, in_raw_string);
-        indent = std::max(0, indent + net_delta);
-        if (in_cpp_depth > 0 && net_delta < 0) {
-            in_cpp_depth = std::max(0, in_cpp_depth + net_delta);
-        }
+        i = j;
     }
-    return out_lines;
 }
 
 } // namespace detail
@@ -630,41 +369,34 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
         return std::unexpected(ast_res.error());
     }
 
-    std::vector<std::string> raw_lines;
+    std::vector<cfire::frontend::CommentSpan> comments;
+    auto src_toks = cfire::frontend::tokenize(filename, src, &comments);
+    if (!src_toks) return std::unexpected(src_toks.error().text());
+    std::string printed = printer::format(src, *src_toks, comments);
+
+    // Struct field columns are aligned as a final pass over the printed lines.
+    std::vector<std::string> lines;
     {
-        std::istringstream iss{std::string(src)};
-        std::string l;
-        while (std::getline(iss, l)) {
-            if (!l.empty() && l.back() == '\r') l.pop_back();
-            raw_lines.push_back(l);
+        std::size_t pos = 0;
+        while (pos <= printed.size()) {
+            auto nl = printed.find('\n', pos);
+            if (nl == std::string::npos) { if (pos < printed.size()) lines.push_back(printed.substr(pos)); break; }
+            lines.push_back(printed.substr(pos, nl - pos));
+            pos = nl + 1;
         }
     }
-
-    auto formatted_lines = detail::format_lines_internal(raw_lines);
+    detail::align_struct_fields(lines);
     std::string out;
-    bool prev_blank = false;
-    for (const auto& line : formatted_lines) {
-        if (line.empty()) {
-            if (!prev_blank && !out.empty()) {
-                out += "\n";
-                prev_blank = true;
-            }
-            continue;
-        }
-        prev_blank = false;
-        out += line + "\n";
-    }
-
-    while (out.size() >= 2 && out.ends_with("\n\n")) {
-        out.pop_back();
-    }
-    if (!out.empty() && !out.ends_with("\n")) {
-        out += "\n";
-    }
+    for (const auto& l : lines) out += l + "\n";
 
     // Token-stream invariance check (CF-096): verify non-whitespace tokens match identically
-    auto orig_toks = cfire::frontend::tokenize(filename, src);
-    auto fmt_toks = cfire::frontend::tokenize(filename, out);
+    // Statement `;` separators are the one token the printer may drop (it puts the statement on its own line).
+    auto drop_semicolons = [](std::expected<std::vector<cfire::frontend::Token>, cfire::frontend::SourceError> t) {
+        if (t) std::erase_if(*t, [](const cfire::frontend::Token& x) { return x.kind == cfire::frontend::TokenKind::Semicolon; });
+        return t;
+    };
+    auto orig_toks = drop_semicolons(cfire::frontend::tokenize(filename, src));
+    auto fmt_toks = drop_semicolons(cfire::frontend::tokenize(filename, out));
     if (!orig_toks || !fmt_toks || orig_toks->size() != fmt_toks->size()) {
         return std::unexpected("formatter roundtrip verification failed: token stream count mismatch");
     }
@@ -692,31 +424,33 @@ inline auto format_lines_internal(const std::vector<std::string>& raw_lines) -> 
     -> std::expected<std::string, std::string>
 {
     if (src.empty()) return "";
-    auto ast_check = parse_source(filename, src);
-    if (!ast_check) {
-        return std::unexpected(std::format("cannot format range on unparseable source: {}", ast_check.error()));
-    }
-    std::vector<std::string> raw_lines;
-    {
-        std::istringstream iss{std::string(src)};
-        std::string l;
-        while (std::getline(iss, l)) {
+    auto split = [](std::string_view text) {
+        std::vector<std::string> lines;
+        std::size_t pos = 0;
+        while (pos < text.size()) {
+            auto nl = text.find('\n', pos);
+            std::string l(text.substr(pos, nl == std::string_view::npos ? std::string_view::npos : nl - pos));
             if (!l.empty() && l.back() == '\r') l.pop_back();
-            raw_lines.push_back(l);
+            lines.push_back(std::move(l));
+            if (nl == std::string_view::npos) break;
+            pos = nl + 1;
         }
-    }
-    if (raw_lines.empty()) return "";
-
-    start_line = std::clamp(start_line, 0, static_cast<int>(raw_lines.size()) - 1);
-    end_line = std::clamp(end_line, start_line, static_cast<int>(raw_lines.size()) - 1);
-
-    auto formatted_lines = detail::format_lines_internal(raw_lines);
+        return lines;
+    };
+    auto formatted = format_source(src, filename);
+    if (!formatted) return std::unexpected(std::format("cannot format range on unparseable source: {}", formatted.error()));
+    auto orig_lines = split(src);
+    auto fmt_lines = split(*formatted);
+    if (orig_lines.empty()) return "";
+    start_line = std::clamp(start_line, 0, static_cast<int>(orig_lines.size()) - 1);
+    end_line = std::clamp(end_line, start_line, static_cast<int>(orig_lines.size()) - 1);
+    // The printer keeps line structure except where it splits `;`-joined statements or collapses blank lines;
+    // when the file's line count changed, the range is returned unchanged rather than mapped approximately.
+    const auto& use = fmt_lines.size() == orig_lines.size() ? fmt_lines : orig_lines;
     std::string out;
     for (int i = start_line; i <= end_line; ++i) {
-        out += formatted_lines[static_cast<std::size_t>(i)];
-        if (i < end_line) {
-            out += "\n";
-        }
+        out += use[static_cast<std::size_t>(i)];
+        if (i < end_line) out += "\n";
     }
     return out;
 }

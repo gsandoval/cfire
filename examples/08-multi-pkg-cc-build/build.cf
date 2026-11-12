@@ -3,9 +3,9 @@ package build
 import "core:build"
 
 FastCRC := build.CC("./c_deps/fastcrc", {
-        Sources:  ["fastcrc.c"],
+        Sources: ["fastcrc.c"],
         Includes: ["."],
-        Defines:  {"FASTCRC_SEED": 42},
+        Defines: {"FASTCRC_SEED": 42},
 })
 
 App := build.Executable("multi-pkg-demo", {

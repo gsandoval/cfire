@@ -773,6 +773,12 @@ namespace detail {
             continue;
         }
 
+        // Single-line HTML comments (the GUIDE's generated-section markers) are not rendered.
+        if (std::string tl0 = detail::trim_md(lines[idx]); tl0.starts_with("<!--") && tl0.ends_with("-->")) {
+            ++idx;
+            continue;
+        }
+
         // Paragraphs
         size_t p_start_idx = idx;
         std::string p_text;

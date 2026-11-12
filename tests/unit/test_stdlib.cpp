@@ -118,7 +118,7 @@ void test_buildsys_incremental_caching([[maybe_unused]] const std::filesystem::p
 
 import "core:build"
 
-var DemoApp = build.Executable("demo-desktop", {
+DemoApp := build.Executable("demo-desktop", {
     Entry: "src/main.cf",
     Subsystem: "gui",
     Name: "Demo App",
@@ -1097,27 +1097,9 @@ mut b := 0.0
     }
 
     // 2. Deprecation warning for 'out' parameters
-    std::string_view src_out = R"(package main
-
-fn legacy_div(num: i32, denom: i32, out rem: i32) -> i32 {
-rem = num % denom
-return num / denom
-}
-
-fn main() {
-mut r := 0
-q := legacy_div(10, 3, out r)
-}
-)";
-    auto ast_out = cfire::frontend::parse_source("test_out_param.cf", src_out);
-    require(ast_out.has_value(), "parse out parameter code");
-    if (ast_out) {
-        auto checked = cfire::frontend::analyze(std::move(*ast_out));
-        require(!checked.has_value(), "analyze out parameter code fails with hard error (CF-103)");
-        if (!checked) {
-            require(checked.error().contains("cfire/DEPRECATED-OUT-PARAM"), "error contains cfire/DEPRECATED-OUT-PARAM");
-        }
-    }
+    // Q33 (CF-175): `out` is not a parameter intent any more (multi-return tuples replace it).
+    require(!cfire::frontend::parse_source("test_out_param.cf", "package main\nfn legacy_div(num: i32, denom: i32, out rem: i32) -> i32 {\n    return num / denom\n}\nfn main() {}\n").has_value(),
+        "out parameter intent no longer parses (CF-175)");
     std::println("--- PASS: test_multi_return_tuples_and_destructuring");
 }
 
@@ -1290,27 +1272,9 @@ mut count: i64 = 99
         }
     }
 
-    // 2. Deprecation warning for 'var'
-    std::string_view src_var = R"(package main
-
-var global_legacy = 123
-var mut global_typed: i32 = 456
-
-fn legacy_local() {
-var a = 1
-var mut b: str = "old"
-}
-)";
-    auto ast_var = cfire::frontend::parse_source("test_deprecated_var.cf", src_var);
-    require(ast_var.has_value(), "parse legacy var code");
-    if (ast_var) {
-        auto checked = cfire::frontend::analyze_resilient(std::move(*ast_var));
-        int err_count = 0;
-        for (const auto& err : checked.errors) {
-            if (err.contains("cfire/DEPRECATED-VAR")) ++err_count;
-        }
-        require(err_count >= 2, "emits cfire/DEPRECATED-VAR error for each var declaration (CF-103)");
-    }
+    // 2. Q33 (CF-175): `var` is an identifier, not a declaration keyword.
+    require(!cfire::frontend::parse_source("test_deprecated_var.cf", "package main\nvar global_legacy = 123\n").has_value(),
+        "`var x = ...` is not a declaration form (CF-175)");
     std::println("--- PASS: test_variable_declarations_unification");
 }
 

@@ -32,9 +32,7 @@ enum class TokenKind : int {
     KwAsync,
     KwIn,
     KwMut,
-    KwOut,
     KwMove,
-    KwVar,
     KwIf,
     KwElse,
     KwFor,
@@ -135,9 +133,7 @@ struct Token {
         case TokenKind::KwAsync: return "async";
         case TokenKind::KwIn: return "in";
         case TokenKind::KwMut: return "mut";
-        case TokenKind::KwOut: return "out";
         case TokenKind::KwMove: return "move";
-        case TokenKind::KwVar: return "var";
         case TokenKind::KwIf: return "if";
         case TokenKind::KwElse: return "else";
         case TokenKind::KwFor: return "for";
@@ -220,9 +216,7 @@ inline const std::unordered_map<std::string_view, TokenKind>& keyword_map() {
         {"async", TokenKind::KwAsync},
         {"in", TokenKind::KwIn},
         {"mut", TokenKind::KwMut},
-        {"out", TokenKind::KwOut},
         {"move", TokenKind::KwMove},
-        {"var", TokenKind::KwVar},
         {"if", TokenKind::KwIf},
         {"else", TokenKind::KwElse},
         {"for", TokenKind::KwFor},

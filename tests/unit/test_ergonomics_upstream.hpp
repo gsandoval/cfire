@@ -675,11 +675,11 @@ fn main() {
                         "UPSTREAM-03: generate_llm_reference includes canonical []byte(x), os.stdin(), and OPTIONAL-OR-ERR");
 
                 // 6. Follow-up Upstream Review Fixes (CF-027 & E1..E7)
-                // E3: Reserved parameter-intent keywords `out`, `move`, and `mut` as variable names emit actionable diagnostic
+                // E3: Reserved parameter-intent keywords `move` and `mut` as variable names emit actionable diagnostic;
+                // `out` is an ordinary identifier since Q33 (CF-175).
                 {
-                    auto bad_out = cfire::frontend::parse_source("bad_out.cf", "package main\nfn main() {\n    out := 1\n}\n");
-                    require(!bad_out.has_value() && bad_out.error().contains("'out' is a reserved parameter-intent keyword"),
-                            std::format("E3: expected reserved keyword diagnostic for 'out := 1', got: {}", bad_out ? "ok" : bad_out.error()));
+                    auto ok_out = cfire::frontend::parse_source("ok_out.cf", "package main\nfn main() {\n    out := 1\n}\n");
+                    require(ok_out.has_value(), "E3: 'out := 1' declares a variable (CF-175)");
 
                     auto bad_move = cfire::frontend::parse_source("bad_move.cf", "package main\nfn main() {\n    move := 1\n}\n");
                     require(!bad_move.has_value() && bad_move.error().contains("'move' is a reserved parameter-intent keyword"),

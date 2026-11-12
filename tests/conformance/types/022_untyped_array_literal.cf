@@ -1,0 +1,10 @@
+// expect: stdout
+// | 3 10 2.5 2
+package main
+fn main() {
+    nums := [10, 20, 30]
+    fs := [1.5, 2.5]
+    x := 7
+    xs := [x, x]
+    println("{} {} {} {}", nums.len(), nums[0], fs[1], xs.len())
+}

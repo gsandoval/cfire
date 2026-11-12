@@ -1,6 +1,0 @@
-// expect: xfail CF-172 block comments produce "expected 'IDENT', got '/'" instead of a dedicated diagnostic
-package main
-/* a block comment */ //~ error cfire/UNSUPPORTED-BLOCK-COMMENT
-fn main() {
-    println("x")
-}

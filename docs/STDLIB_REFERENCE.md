@@ -1146,7 +1146,7 @@ fn main() {
 | `fn (m: Mutex[T]) lock() -> MutexGuard[T]` | `m.lock()` | `Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`. | `mut g := mu.lock()` |
 | `fn (m: Mutex[void]) unlock()` | `m.unlock()` | Releases a `Mutex[void]` acquired with `lock()`. | `lk.unlock()` |
 | `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?` | `m.try_lock()` | Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock. | `if g := mu.try_lock() { ... }` |
-| `fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R` | `m.with_lock(f)` | Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns. | `n := mu.with_lock(|v| { v += 1; return v })` |
+| `fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R` | `m.with_lock(f)` | Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns. | `n := mu.with_lock(|mut v| { v += 1; return v })` |
 | `fn (m: Mutex[T]) get() -> T` | `m.get()` | Copy of the protected value, read under the lock. | `total := mu.get()` |
 | `fn (m: Mutex[T]) set(v: T)` | `m.set(v)` | Replaces the protected value under the lock. | `mu.set(0)` |
 | `type Atomic[T] struct` | `cfire::sync::Atomic<T>` | Atomic variable. | `hits := make(sync.Atomic[i64], 0)` |
@@ -1999,7 +1999,7 @@ c.inc() // OK
 
 ### `[cfire/MUT-ALIAS]` — Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity)
 
-A variable passed as a `mut` or `out` argument (or used as a `mut` method receiver) cannot also be passed as another argument in the same call.
+A variable passed as a `mut` argument (or used as a `mut` method receiver) cannot also be passed as another argument in the same call.
 
 **Rejected (`.cf`):**
 ```cf
@@ -2472,9 +2472,9 @@ if ok && (parse_flag() or false) { // OK
 }
 ```
 
-### `[cfire/REDUNDANT-CALLSITE-INTENT]` — Redundant `mut` or `out` Annotation on `in` Parameter
+### `[cfire/REDUNDANT-CALLSITE-INTENT]` — Redundant `mut` Annotation on a Read-Only Parameter
 
-Call-site `mut` and `out` annotations are only valid when the target parameter is declared `mut` or `out`. Writing `mut` or `out` on a read-only `in` parameter misleads readers into thinking the call mutates the argument.
+Call-site `mut` annotations are only valid when the target parameter is declared `mut`. Writing `mut` on a read-only parameter misleads readers into thinking the call mutates the argument.
 
 **Rejected (`.cf`):**
 ```cf

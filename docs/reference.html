@@ -3895,7 +3895,7 @@ fn main() {
             <tr><td><code>fn (m: Mutex[T]) lock() -&gt; MutexGuard[T]</code></td><td><code>m.lock()</code></td><td><code>Mutex[T]</code>: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. <code>Mutex[void]</code>: acquires the lock; pair it with <code>unlock()</code>.<br/><code>mut g := mu.lock()</code></td></tr>
             <tr><td><code>fn (m: Mutex[void]) unlock()</code></td><td><code>m.unlock()</code></td><td>Releases a <code>Mutex[void]</code> acquired with <code>lock()</code>.<br/><code>lk.unlock()</code></td></tr>
             <tr><td><code>fn (m: Mutex[T]) try_lock() -&gt; MutexGuard[T]?</code></td><td><code>m.try_lock()</code></td><td>Non-blocking <code>lock()</code>: <code>none</code> (<code>false</code> for <code>Mutex[void]</code>) when another task holds the lock.<br/><code>if g := mu.try_lock() { ... }</code></td></tr>
-            <tr><td><code>fn (m: Mutex[T]) with_lock(f: fn(mut T) -&gt; R) -&gt; R</code></td><td><code>m.with_lock(f)</code></td><td>Runs <code>f</code> with the protected value while holding the lock (<code>fn() -&gt; R</code> for <code>Mutex[void]</code>) and unlocks when it returns.<br/><code>n := mu.with_lock(|v| { v += 1; return v })</code></td></tr>
+            <tr><td><code>fn (m: Mutex[T]) with_lock(f: fn(mut T) -&gt; R) -&gt; R</code></td><td><code>m.with_lock(f)</code></td><td>Runs <code>f</code> with the protected value while holding the lock (<code>fn() -&gt; R</code> for <code>Mutex[void]</code>) and unlocks when it returns.<br/><code>n := mu.with_lock(|mut v| { v += 1; return v })</code></td></tr>
             <tr><td><code>fn (m: Mutex[T]) get() -&gt; T</code></td><td><code>m.get()</code></td><td>Copy of the protected value, read under the lock.<br/><code>total := mu.get()</code></td></tr>
             <tr><td><code>fn (m: Mutex[T]) set(v: T)</code></td><td><code>m.set(v)</code></td><td>Replaces the protected value under the lock.<br/><code>mu.set(0)</code></td></tr>
             <tr><td><code>type Atomic[T] struct</code></td><td><code>cfire::sync::Atomic&lt;T&gt;</code></td><td>Atomic variable.<br/><code>hits := make(sync.Atomic[i64], 0)</code></td></tr>
@@ -4803,7 +4803,7 @@ c.inc() // OK</code></pre></div>
         </div>
         <div class="card" id="diag-cfire/MUT-ALIAS" style="margin-bottom:1.25rem;">
           <h3><code>[cfire/MUT-ALIAS]</code> &mdash; Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity)</h3>
-          <p style="margin-bottom:0.85rem;">A variable passed as a <code>mut</code> or <code>out</code> argument (or used as a <code>mut</code> method receiver) cannot also be passed as another argument in the same call.</p>
+          <p style="margin-bottom:0.85rem;">A variable passed as a <code>mut</code> argument (or used as a <code>mut</code> method receiver) cannot also be passed as another argument in the same call.</p>
           <div class="grid-2">
             <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn transfer(mut from: i32, mut to: i32) { ... }
 fn main() {
@@ -5127,8 +5127,8 @@ fn main() {
           </div>
         </div>
         <div class="card" id="diag-cfire/REDUNDANT-CALLSITE-INTENT" style="margin-bottom:1.25rem;">
-          <h3><code>[cfire/REDUNDANT-CALLSITE-INTENT]</code> &mdash; Redundant <code>mut</code> or <code>out</code> Annotation on <code>in</code> Parameter</h3>
-          <p style="margin-bottom:0.85rem;">Call-site <code>mut</code> and <code>out</code> annotations are only valid when the target parameter is declared <code>mut</code> or <code>out</code>. Writing <code>mut</code> or <code>out</code> on a read-only <code>in</code> parameter misleads readers into thinking the call mutates the argument.</p>
+          <h3><code>[cfire/REDUNDANT-CALLSITE-INTENT]</code> &mdash; Redundant <code>mut</code> Annotation on a Read-Only Parameter</h3>
+          <p style="margin-bottom:0.85rem;">Call-site <code>mut</code> annotations are only valid when the target parameter is declared <code>mut</code>. Writing <code>mut</code> on a read-only parameter misleads readers into thinking the call mutates the argument.</p>
           <div class="grid-2">
             <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn show(x: i32) { println(&quot;{}&quot;, x) }
 fn main() {

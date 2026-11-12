@@ -108,10 +108,7 @@ public:
             if (p.has_deprecated_mut_pos) {
                 (void)emit_error(diag_at(p.line, p.col, "cfire/DEPRECATED-INTENT-POS", std::format("'x: mut T' parameter placement is deprecated; use 'mut x: T' instead")));
             }
-            if (p.intent == "out") {
-                (void)emit_error(diag_at(p.line, p.col, "cfire/DEPRECATED-OUT-PARAM", std::format("'out' parameter is deprecated; use multi-return tuple '(T1, T2)' instead")));
-            }
-            if (p.intent == "mut" || p.intent == "out") {
+            if (p.intent == "mut") {
                 mut_vars_.insert(p.name);
             } else {
                 imm_vars_.insert(p.name);
@@ -3962,9 +3959,6 @@ public:
 
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             const auto& arg = call.args[i];
-            if (arg.intent == "out") {
-                if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/DEPRECATED-OUT-PARAM", std::format("'out' call-site annotation is deprecated; use multi-return tuple destructuring instead"))); !r) return r;
-            }
             if (auto r = check_expr(arg.value); !r) return r;
             bool expected_is_move = false;
             if (target_sig && i < target_sig->params.size()) {
@@ -4757,9 +4751,6 @@ public:
     }
 
     [[nodiscard]] auto check_var_decl_stmt(const VarDeclStmt& vd) -> std::expected<void, std::string> {
-        if (vd.was_var) {
-            if (auto r = emit_error(diag_at(vd.line, vd.col, "cfire/DEPRECATED-VAR", std::format("'var' is deprecated; use 'x := val' or 'mut x: T = val' instead"))); !r) return r;
-        }
         if (vd.type) {
             if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col); !r) return r;
             if (!vd.type->is_slice && !vd.type->is_array && !vd.type->is_optional && !vd.type->is_ptr) {

@@ -485,7 +485,163 @@ inline auto Server::compute_implementation(const std::string& uri, int line, int
     return out;
 }
 
+namespace detail {
+// CF-155: token ranges `[first, last]` where `name` is rebound by a closure parameter (`|name| ...`) or a match-arm
+// pattern (`Some(name) => ...`). Inside such a range the name is a different variable from any outer binding.
+[[nodiscard]] inline auto rebinding_scopes(const std::vector<cfire::frontend::Token>& toks, std::string_view name)
+    -> std::vector<std::pair<std::size_t, std::size_t>> {
+    using cfire::frontend::TokenKind;
+    std::vector<std::pair<std::size_t, std::size_t>> out;
+    auto match_close = [&](std::size_t open) -> std::size_t {
+        int depth = 0;
+        for (std::size_t k = open; k < toks.size(); ++k) {
+            if (toks[k].kind == TokenKind::LBrace) ++depth;
+            else if (toks[k].kind == TokenKind::RBrace && --depth == 0) return k;
+        }
+        return toks.size() - 1;
+    };
+    // End of an expression body starting at `k`: the matching `}` of a block, else the last token before a
+    // depth-0 `,` / `)` / `}` or a line change.
+    auto body_end = [&](std::size_t k) -> std::size_t {
+        if (k >= toks.size()) return toks.size() - 1;
+        if (toks[k].kind == TokenKind::LBrace) return match_close(k);
+        int depth = 0;
+        const int body_line = toks[k].line;
+        std::size_t last = k;
+        for (std::size_t j = k; j < toks.size(); ++j) {
+            const auto kind = toks[j].kind;
+            if (depth == 0 && (kind == TokenKind::Comma || kind == TokenKind::RParen || kind == TokenKind::RBrace || toks[j].line != body_line)) break;
+            if (kind == TokenKind::LParen || kind == TokenKind::LBrace || kind == TokenKind::LBracket) ++depth;
+            else if (kind == TokenKind::RParen || kind == TokenKind::RBrace || kind == TokenKind::RBracket) --depth;
+            last = j;
+        }
+        return last;
+    };
+    for (std::size_t i = 0; i < toks.size(); ++i) {
+        // Closures: `|a, mut b: T| body` after `(`, `,`, `:=`, `=`, `)` (trailing block), `{`, `=>` or `return`.
+        if (toks[i].kind == TokenKind::Pipe) {
+            const bool opener = i == 0 || toks[i - 1].kind == TokenKind::LParen || toks[i - 1].kind == TokenKind::Comma ||
+                                toks[i - 1].kind == TokenKind::ColonEq || toks[i - 1].kind == TokenKind::Assign ||
+                                toks[i - 1].kind == TokenKind::RParen || toks[i - 1].kind == TokenKind::LBrace ||
+                                toks[i - 1].kind == TokenKind::FatArrow || toks[i - 1].kind == TokenKind::KwReturn;
+            if (!opener) continue;
+            std::size_t close = i + 1;
+            bool binds = false;
+            bool after_colon = false;
+            for (; close < toks.size() && toks[close].kind != TokenKind::Pipe; ++close) {
+                const auto& t = toks[close];
+                if (t.kind == TokenKind::Colon) after_colon = true;
+                else if (t.kind == TokenKind::Comma) after_colon = false;
+                else if (t.kind == TokenKind::Ident && !after_colon && t.lexeme == name) binds = true;
+                if (t.kind == TokenKind::LBrace || t.kind == TokenKind::Semicolon) break;
+            }
+            if (close >= toks.size() || toks[close].kind != TokenKind::Pipe) continue;
+            std::size_t b = close + 1;
+            if (b < toks.size() && toks[b].kind == TokenKind::Arrow) {
+                while (b < toks.size() && toks[b].kind != TokenKind::LBrace) ++b;
+            }
+            if (binds) out.emplace_back(i, body_end(b));
+            i = close;
+            continue;
+        }
+        // Match arms: `pattern => body` inside `match x { ... }`.
+        if (toks[i].kind == TokenKind::KwMatch) {
+            std::size_t open = i + 1;
+            while (open < toks.size() && toks[open].kind != TokenKind::LBrace) ++open;
+            if (open >= toks.size()) break;
+            const std::size_t close = match_close(open);
+            std::size_t k = open + 1;
+            while (k < close) {
+                const std::size_t pat_start = k;
+                bool binds = false;
+                int depth = 0;
+                for (; k < close; ++k) {
+                    const auto& t = toks[k];
+                    if (depth == 0 && t.kind == TokenKind::FatArrow) break;
+                    if (t.kind == TokenKind::LParen || t.kind == TokenKind::LBracket || t.kind == TokenKind::LBrace) ++depth;
+                    else if (t.kind == TokenKind::RParen || t.kind == TokenKind::RBracket || t.kind == TokenKind::RBrace) --depth;
+                    const bool qualified = k > 0 && (toks[k - 1].kind == TokenKind::Dot || toks[k - 1].kind == TokenKind::DoubleColon);
+                    const bool callee = k + 1 < close && (toks[k + 1].kind == TokenKind::LParen || toks[k + 1].kind == TokenKind::DoubleColon ||
+                                                          toks[k + 1].kind == TokenKind::Dot || toks[k + 1].kind == TokenKind::LBrace);
+                    if (t.kind == TokenKind::Ident && t.lexeme == name && !qualified && !callee) binds = true;
+                }
+                if (k >= close) break;
+                const std::size_t end = body_end(k + 1);
+                if (binds) out.emplace_back(pat_start, end);
+                k = end + 1;
+                if (k < close && toks[k].kind == TokenKind::Comma) ++k;
+            }
+        }
+    }
+    return out;
+}
+} // namespace detail
+
 inline auto Server::find_symbol_occurrences(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence> {
+    std::vector<TokenOccurrence> refs;
+    if (target_name.empty()) return refs;
+
+    std::string text = get_doc_text(uri);
+    auto lines = detail::split_lines(text);
+
+    // CF-155: closure parameters and match bindings are their own scopes.
+    if (qualifier.empty()) {
+        if (auto raw_toks = cfire::frontend::tokenize(detail::uri_to_path(uri), text)) {
+            auto toks = detail::expand_tokens_with_interpolations(detail::uri_to_path(uri), *raw_toks);
+            auto scopes = detail::rebinding_scopes(toks, target_name);
+            std::size_t cursor = toks.size();
+            for (std::size_t i = 0; i < toks.size(); ++i) {
+                if (toks[i].line - 1 == line && toks[i].col - 1 <= character &&
+                    character < toks[i].col - 1 + static_cast<int>(toks[i].lexeme.size())) {
+                    cursor = i;
+                    break;
+                }
+            }
+            auto innermost = [&](std::size_t idx) -> std::optional<std::pair<std::size_t, std::size_t>> {
+                std::optional<std::pair<std::size_t, std::size_t>> best;
+                for (const auto& sc : scopes) {
+                    if (idx >= sc.first && idx <= sc.second && (!best || sc.second - sc.first < best->second - best->first)) best = sc;
+                }
+                return best;
+            };
+            auto ident_at = [&](std::size_t i) {
+                return toks[i].kind == cfire::frontend::TokenKind::Ident && toks[i].lexeme == target_name &&
+                       !(i > 0 && toks[i - 1].kind == cfire::frontend::TokenKind::Dot);
+            };
+            if (cursor < toks.size()) {
+                if (auto own = innermost(cursor)) {
+                    for (std::size_t i = own->first; i <= own->second && i < toks.size(); ++i) {
+                        if (!ident_at(i) || innermost(i) != own) continue;
+                        int sc = std::max(0, toks[i].col - 1);
+                        refs.push_back(TokenOccurrence{uri, std::max(0, toks[i].line - 1), sc, sc + static_cast<int>(toks[i].lexeme.size())});
+                    }
+                    return refs;
+                }
+            }
+            if (!scopes.empty()) {
+                // The cursor names an outer binding: compute its references as usual, then drop the shadowed ones.
+                auto all = find_symbol_occurrences_unscoped(uri, line, character, target_name, qualifier);
+                std::vector<TokenOccurrence> kept;
+                for (const auto& r : all) {
+                    bool shadowed = false;
+                    if (r.uri == uri) {
+                        for (std::size_t i = 0; i < toks.size(); ++i) {
+                            if (toks[i].line - 1 == r.line && toks[i].col - 1 == r.start_col) {
+                                shadowed = innermost(i).has_value();
+                                break;
+                            }
+                        }
+                    }
+                    if (!shadowed) kept.push_back(r);
+                }
+                return kept;
+            }
+        }
+    }
+    return find_symbol_occurrences_unscoped(uri, line, character, target_name, qualifier);
+}
+
+inline auto Server::find_symbol_occurrences_unscoped(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence> {
     std::vector<TokenOccurrence> refs;
     if (target_name.empty()) return refs;
 

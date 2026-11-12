@@ -177,7 +177,10 @@ fn GuiProcessEditorKeys(
         if has_sel {
             mut s0 := buf.sel_anchor
             mut s1 := cur
-            if s0 > s1 { s0 = cur; s1 = buf.sel_anchor }
+            if s0 > s1 {
+                s0 = cur
+                s1 = buf.sel_anchor
+            }
             if s0 < 0 { s0 = 0 }
             if s1 > len { s1 = len }
             sub := str(text[s0..s1])
@@ -198,7 +201,10 @@ fn GuiProcessEditorKeys(
         if has_sel {
             mut s0 := buf.sel_anchor
             mut s1 := cur
-            if s0 > s1 { s0 = cur; s1 = buf.sel_anchor }
+            if s0 > s1 {
+                s0 = cur
+                s1 = buf.sel_anchor
+            }
             if s0 < 0 { s0 = 0 }
             if s1 > len { s1 = len }
             sub := str(text[s0..s1])
@@ -320,14 +326,44 @@ fn GuiProcessEditorKeys(
     mut currently_down_hold_key: i32 = 0
     mut down_base_str := ""
     if !cmd_or_ctrl && !alt_down {
-        if rl.IsKeyDown(rl.KEY_A) { currently_down_hold_key = rl.KEY_A; down_base_str = "a"; if shift_down { down_base_str = "A" } }
-        else if rl.IsKeyDown(rl.KEY_E) { currently_down_hold_key = rl.KEY_E; down_base_str = "e"; if shift_down { down_base_str = "E" } }
-        else if rl.IsKeyDown(rl.KEY_I) { currently_down_hold_key = rl.KEY_I; down_base_str = "i"; if shift_down { down_base_str = "I" } }
-        else if rl.IsKeyDown(rl.KEY_O) { currently_down_hold_key = rl.KEY_O; down_base_str = "o"; if shift_down { down_base_str = "O" } }
-        else if rl.IsKeyDown(rl.KEY_U) { currently_down_hold_key = rl.KEY_U; down_base_str = "u"; if shift_down { down_base_str = "U" } }
-        else if rl.IsKeyDown(rl.KEY_N) { currently_down_hold_key = rl.KEY_N; down_base_str = "n"; if shift_down { down_base_str = "N" } }
-        else if shift_down && rl.IsKeyDown(rl.KEY_SLASH) { currently_down_hold_key = rl.KEY_SLASH; down_base_str = "?" }
-        else if shift_down && rl.IsKeyDown(rl.KEY_ONE) { currently_down_hold_key = rl.KEY_ONE; down_base_str = "!" }
+        if rl.IsKeyDown(rl.KEY_A) {
+            currently_down_hold_key = rl.KEY_A
+            down_base_str = "a"
+            if shift_down { down_base_str = "A" }
+        }
+        else if rl.IsKeyDown(rl.KEY_E) {
+            currently_down_hold_key = rl.KEY_E
+            down_base_str = "e"
+            if shift_down { down_base_str = "E" }
+        }
+        else if rl.IsKeyDown(rl.KEY_I) {
+            currently_down_hold_key = rl.KEY_I
+            down_base_str = "i"
+            if shift_down { down_base_str = "I" }
+        }
+        else if rl.IsKeyDown(rl.KEY_O) {
+            currently_down_hold_key = rl.KEY_O
+            down_base_str = "o"
+            if shift_down { down_base_str = "O" }
+        }
+        else if rl.IsKeyDown(rl.KEY_U) {
+            currently_down_hold_key = rl.KEY_U
+            down_base_str = "u"
+            if shift_down { down_base_str = "U" }
+        }
+        else if rl.IsKeyDown(rl.KEY_N) {
+            currently_down_hold_key = rl.KEY_N
+            down_base_str = "n"
+            if shift_down { down_base_str = "N" }
+        }
+        else if shift_down && rl.IsKeyDown(rl.KEY_SLASH) {
+            currently_down_hold_key = rl.KEY_SLASH
+            down_base_str = "?"
+        }
+        else if shift_down && rl.IsKeyDown(rl.KEY_ONE) {
+            currently_down_hold_key = rl.KEY_ONE
+            down_base_str = "!"
+        }
     }
     if currently_down_hold_key != 0 {
         if buf.held_key == currently_down_hold_key {

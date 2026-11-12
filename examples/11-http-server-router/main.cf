@@ -29,11 +29,11 @@ fn main() {
 
     // 2. Standalone Unit Testing: Dispatch requests purely in memory with NO open sockets
     println("[1] Executing in-memory standalone dispatch tests...")
-    test_req := http.Request{ method: "GET", path: "/items/42" }
+    test_req := http.Request{method: "GET", path: "/items/42"}
     test_res := router.dispatch(test_req)
     println("    GET /items/42 -> status: {}, body: {}", test_res.status_code, test_res.body)
 
-    post_test := http.Request{ method: "POST", path: "/items", body: "{\"name\":\"turbine\"}" }
+    post_test := http.Request{method: "POST", path: "/items", body: "{\"name\":\"turbine\"}"}
     post_res := router.dispatch(post_test)
     println("    POST /items -> status: {}, body: {}", post_res.status_code, post_res.body)
 
