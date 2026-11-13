@@ -92,13 +92,20 @@ void test_cf150_http_server_hardening([[maybe_unused]] const std::filesystem::pa
 
     // 1. Slowloris: an idle client must not block other requests, and is dropped with 408.
     {
+        auto timed_get = [port]() {
+            auto t0 = std::chrono::steady_clock::now();
+            auto r = cfire::http::get(std::format("http://127.0.0.1:{}/x", port));
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+            return std::pair{std::move(r), ms};
+        };
+        // CF-184: compare against this machine's own request time (an emulated VM is many times slower). A request
+        // stuck behind the idle client would wait out the 600 ms header deadline; allow less than that on top.
+        auto baseline = std::min(timed_get().second, timed_get().second);
         auto idle = cfire::net::connect_tcp("127.0.0.1", port);
         require(idle.has_value(), "CF-150: idle client connects");
-        auto t0 = std::chrono::steady_clock::now();
-        auto ok = cfire::http::get(std::format("http://127.0.0.1:{}/x", port));
-        auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        auto [ok, dt] = timed_get();
         require(ok.has_value() && ok->body.starts_with("body=;peer="), "CF-150: normal request succeeds while a client idles");
-        require(dt < 2000, std::format("CF-150: normal request is not blocked by the idle client ({} ms)", dt));
+        require(dt < baseline + 400, std::format("CF-150: normal request is not blocked by the idle client ({} ms, baseline {} ms)", dt, baseline));
         if (idle) {
             idle->set_timeout_ms(3000);
             auto r = idle->read_text(4096);

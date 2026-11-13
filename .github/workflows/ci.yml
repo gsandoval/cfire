@@ -126,7 +126,7 @@ jobs:
 
       - name: Build & Run C++ Unit Suites on Windows
         run: |
-          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"dev\" -Iruntime -Isrc tests/unit/test_frontend.cpp tests/unit/test_sema.cpp tests/unit/test_stdlib.cpp tests/e2e/test_canonical.cpp tests/test_main.cpp -o cfire_test_runner.exe -lws2_32 -ladvapi32 -lshell32
+          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"dev\" -Iruntime -Isrc tests/unit/test_frontend.cpp tests/unit/test_sema.cpp tests/unit/test_stdlib.cpp tests/e2e/test_canonical.cpp tests/test_main.cpp -o cfire_test_runner.exe -lws2_32 -ladvapi32 -lshell32 -lgdi32
           ./cfire_test_runner.exe unit
 
       - name: Run Language Conformance Corpus on Windows

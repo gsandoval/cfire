@@ -717,7 +717,7 @@ int main() {
         std::vector<std::uint8_t> raw_blob{std::uint8_t{0xDE}, std::uint8_t{0xAD}, std::uint8_t{0xBE}, std::uint8_t{0xEF}};
 
         // CF-008: ext:keychain in headless mode
-        ::setenv("CFIRE_HEADLESS_TEST", "1", 1);
+        test_set_env("CFIRE_HEADLESS_TEST", "1");
         require(cfire::keychain::set("dev.flint.test", "acct1", "s3cr3t").has_value(), "CF-008: keychain::set");
         auto kc_val = cfire::keychain::get("dev.flint.test", "acct1");
         require(kc_val.has_value() && *kc_val == "s3cr3t", "CF-008: keychain::get");

@@ -95,7 +95,7 @@ type Config struct {
     // rebased into a private dir with a workspace-root marker, so unrelated .cf files under /tmp can't leak in.
     ScopedTempDir rpc_frame_ws("cfire_lsp_ws");
     std::filesystem::create_directory(rpc_frame_ws.path / ".git");  // workspace-root marker (Q21)
-    auto rpc_frame = [ws_uri = "file://" + rpc_frame_ws.path.string() + "/"](std::string_view body) {
+    auto rpc_frame = [ws_uri = cfire::lsp::detail::path_to_uri(rpc_frame_ws.path) + "/"](std::string_view body) {
         std::string rebased(cfire::str::replace_all(body, "file:///tmp/", ws_uri));
         return std::format("Content-Length: {}\r\n\r\n{}", rebased.size(), rebased);
     };
@@ -117,7 +117,7 @@ type Config struct {
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":13,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":12,"character":5},"newName":"increment_in_place"}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":14,"method":"workspace/symbol","params":{"query":"Metric"}})");
     // Cross-package LSP test on examples/08-multi-pkg-cc-build/main.cf (`checksum.compute_tag`)
-    auto pkg_main_uri = "file://" + (rt_dir.parent_path() / "examples/08-multi-pkg-cc-build/main.cf").string();
+    auto pkg_main_uri = cfire::lsp::detail::path_to_uri(rt_dir.parent_path() / "examples/08-multi-pkg-cc-build/main.cf");
     lsp_in << rpc_frame(std::format(
         R"({{"jsonrpc":"2.0","id":15,"method":"textDocument/hover","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":5,"character":24}}}}}})",
         pkg_main_uri));
@@ -140,7 +140,7 @@ type Config struct {
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":24,"method":"textDocument/typeDefinition","params":{"textDocument":{"uri":"file:///tmp/lsp_test.cf"},"position":{"line":11,"character":8}}})");
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":26,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/audit_test.cf"}}})");
     // Cross-package references and rename tests (LSP-04)
-    auto pkg_checksum_uri = "file://" + (rt_dir.parent_path() / "examples/08-multi-pkg-cc-build/pkg/checksum/checksum.cf").string();
+    auto pkg_checksum_uri = cfire::lsp::detail::path_to_uri(rt_dir.parent_path() / "examples/08-multi-pkg-cc-build/pkg/checksum/checksum.cf");
     lsp_in << rpc_frame(std::format(
         R"({{"jsonrpc":"2.0","id":28,"method":"textDocument/references","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":5}}}}}})",
         pkg_checksum_uri));

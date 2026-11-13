@@ -24,6 +24,53 @@
 
 inline std::atomic<int> g_failures{0};
 
+// CF-184: the few POSIX calls the suites make, with their Windows equivalents, so the runner builds everywhere.
+inline void test_set_env(const char* name, const char* value) {
+#if defined(_WIN32)
+    (void)::_putenv_s(name, value);
+#else
+    (void)::setenv(name, value, 1);
+#endif
+}
+// The cfire binary built in the repo root, as a command the platform shell runs (cmd.exe has no `./`).
+[[nodiscard]] inline auto cfire_exe() -> std::string {
+#if defined(_WIN32)
+    return ".\\cfire.exe";
+#else
+    return "./cfire";
+#endif
+}
+inline void test_ignore_sigpipe() {
+#if !defined(_WIN32)
+    ::signal(SIGPIPE, SIG_IGN);
+#endif
+}
+namespace test_sock {
+// A connected stream-socket pair (AF_UNIX on POSIX, loopback TCP on Windows), as plain descriptors.
+[[nodiscard]] inline auto pair(int sv[2]) -> bool { return cfire::net::detail::create_loopback_pair(sv); }
+inline void send_bytes(int fd, const void* data, std::size_t len) {
+#if defined(_WIN32)
+    (void)::send(static_cast<SOCKET>(fd), static_cast<const char*>(data), static_cast<int>(len), 0);
+#else
+    (void)::send(fd, data, len, MSG_NOSIGNAL);
+#endif
+}
+// Reads and discards whatever is already buffered, without blocking.
+inline void drain(int fd) {
+    char buf[64];
+#if defined(_WIN32)
+    u_long nonblocking = 1;
+    ::ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &nonblocking);
+    while (::recv(static_cast<SOCKET>(fd), buf, sizeof(buf), 0) > 0) {}
+    nonblocking = 0;
+    ::ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &nonblocking);
+#else
+    while (::recv(fd, buf, sizeof(buf), MSG_DONTWAIT) > 0) {}
+#endif
+}
+inline void close(int fd) { cfire::net::detail::close_sock(fd); }
+} // namespace test_sock
+
 inline void require(bool cond, std::string_view msg) {
     if (!cond) {
         std::println(stderr, "  [FAIL] {}", msg);
@@ -123,7 +170,7 @@ struct ExampleCase {
 
 inline auto run_cfire(std::string_view args) -> RunResult {
     RunResult r;
-    r.output = cfire::bridge::run_command_capture(std::format("./cfire {}", args), r.exit_code);
+    r.output = cfire::bridge::run_command_capture(std::format("{} {}", cfire_exe(), args), r.exit_code);
     return r;
 }
 

@@ -1352,9 +1352,9 @@ fn main() {
     st := Status.Active
 }
 )");
-        auto fix_res = run_cfire(std::format("fix '{}'", f.string()));
+        auto fix_res = run_cfire(std::format("fix {}", cfire::bridge::shell_quote(f.string())));
         fix_res.assert_ok("cfire fix applies deprecation repairs (CF-103)");
-        auto chk_res = run_cfire(std::format("check '{}'", f.string()));
+        auto chk_res = run_cfire(std::format("check {}", cfire::bridge::shell_quote(f.string())));
         chk_res.assert_ok("repaired file passes cfire check cleanly (CF-103)");
     }
 
@@ -1862,12 +1862,12 @@ fn main() {
     cpp::printf("hello world\n")
 }
 )");
-        auto fix_res = run_cfire(std::format("fix '{}'", f.string()));
+        auto fix_res = run_cfire(std::format("fix {}", cfire::bridge::shell_quote(f.string())));
         fix_res.assert_ok("cfire fix applies cpp:: -> cpp. replacement");
         auto fixed_content = cfire::fs::read_text(f).value_or("");
         require(fixed_content.contains("cpp.printf"), "fixed content contains cpp.printf");
         require(!fixed_content.contains("cpp::printf"), "fixed content does not contain cpp::printf");
-        auto chk_res = run_cfire(std::format("check '{}'", f.string()));
+        auto chk_res = run_cfire(std::format("check {}", cfire::bridge::shell_quote(f.string())));
         chk_res.assert_ok("fixed file passes check cleanly");
     }
 
@@ -2245,21 +2245,21 @@ void test_content_hashed_pch_and_cli_flag_validation([[maybe_unused]] const std:
     // 2. Verify unknown CLI flags produce actionable typo suggestions via Levenshtein distance
     {
         int ec = 0;
-        auto out = cfire::bridge::run_command_capture("./cfire build --relase main.cf 2>&1", ec);
+        auto out = cfire::bridge::run_command_capture(cfire_exe() + " build --relase main.cf 2>&1", ec);
         require(ec != 0, "mistyped flag --relase fails with non-zero exit code");
         require(out.find("did you mean '--release'?") != std::string::npos,
             "mistyped flag suggests '--release'");
     }
     {
         int ec = 0;
-        auto out = cfire::bridge::run_command_capture("./cfire build --targt wasm main.cf 2>&1", ec);
+        auto out = cfire::bridge::run_command_capture(cfire_exe() + " build --targt wasm main.cf 2>&1", ec);
         require(ec != 0, "mistyped flag --targt fails with non-zero exit code");
         require(out.find("did you mean '--target'?") != std::string::npos,
             "mistyped flag suggests '--target'");
     }
     {
         int ec = 0;
-        auto out = cfire::bridge::run_command_capture("./cfire build --totally-unrecognized-xyz main.cf 2>&1", ec);
+        auto out = cfire::bridge::run_command_capture(cfire_exe() + " build --totally-unrecognized-xyz main.cf 2>&1", ec);
         require(ec != 0, "unrecognized flag fails with non-zero exit code");
         require(out.find("unrecognized flag '--totally-unrecognized-xyz'") != std::string::npos,
             "unrecognized flag produces clean error without crash");

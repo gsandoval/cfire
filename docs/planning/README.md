@@ -25,3 +25,4 @@ Whenever work is performed on this repository, the following protocol **must** b
 - **Gate 3 — Public Documentation Invariance**: `./cfire doc --check` must pass 100%.
 - **Gate 4 — Full Conformance Suite**: `make review-check` (all unit, stdlib, LSP, and E2E test suites, plus the `tests/conformance/` corpus) must pass 100%.
 - **Gate 5 — Language Conformance Corpus**: every change to language semantics, diagnostics, or stdlib behavior adds or updates a file in [`tests/conformance/`](../../tests/conformance/README.md). A fix for a tracked hole removes its `xfail` line in the same change.
+- **Gate 6 — Linux & Windows (pre-release, and for platform-specific changes)**: `make test-vm-linux` and `make test-vm-windows` run the CI `linux` / `windows` jobs on the working tree in local UTM VMs (see [`scripts/vm/README.md`](../../scripts/vm/README.md)). Run them before a release and after changes to platform-conditional code, the build system, or the runtime.

@@ -229,7 +229,7 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
         .assert_ok("cfire mcp --print-config exit 0 (IDE-MCP-01)")
         .assert_contains("\"mcpServers\"", "cfire mcp --print-config outputs mcpServers JSON (IDE-MCP-01)");
 
-    run_cfire(std::format("ide --status --dir '{}'", tmp_ide_ws.path.string()))
+    run_cfire(std::format("ide --status --dir {}", cfire::bridge::shell_quote(tmp_ide_ws.path.string())))
         .assert_ok("cfire ide --status exit 0 (IDE-MCP-01)")
         .assert_contains("Google Antigravity", "cfire ide --status lists Antigravity (IDE-MCP-01)")
         .assert_contains("Claude Code", "cfire ide --status lists Claude Code (IDE-MCP-01)");
@@ -264,7 +264,7 @@ fn main() {
             // rebased into a private dir with a workspace-root marker, so unrelated .cf files under /tmp can't leak in.
             ScopedTempDir rpc_f_ws("cfire_lsp_ws");
             std::filesystem::create_directory(rpc_f_ws.path / ".git");  // workspace-root marker (Q21)
-            auto rpc_f = [ws_uri = "file://" + rpc_f_ws.path.string() + "/"](std::string_view p) {
+            auto rpc_f = [ws_uri = cfire::lsp::detail::path_to_uri(rpc_f_ws.path) + "/"](std::string_view p) {
                 std::string rebased(cfire::str::replace_all(p, "file:///tmp/", ws_uri));
                 return std::format("Content-Length: {}\r\n\r\n{}", rebased.size(), rebased);
             };
@@ -322,7 +322,9 @@ fn caller_entry() -> bool {
         }
     }
 
-    // 5. SELF-LOCATE-01: Verify Portable Directory Installation, System FHS Prefix Installation, and Symlinked Binary
+    // 5. SELF-LOCATE-01: Verify Portable Directory Installation, System FHS Prefix Installation, and Symlinked Binary.
+    //    POSIX layouts and shell (`env -u`); Windows installs are covered by the CI job's own steps.
+#if !defined(_WIN32)
     {
         auto portable_dir = tmp_ide_ws.subpath("portable_dist");
         auto fhs_prefix = tmp_ide_ws.subpath("fhs_prefix");
@@ -380,6 +382,7 @@ fn main() {
                 std::format("symlinked cfire resolves target runtime (SELF-LOCATE-01): {}", sym_run));
         }
     }
+#endif
 
     std::println("--- PASS: test_ide_configuration_setup");
 }
@@ -404,7 +407,7 @@ void test_cfire_eval([[maybe_unused]] const std::filesystem::path& rt_dir) {
 
     // 4. Stdin piping
     int code = 0;
-    std::string out4 = cfire::bridge::run_command_capture("echo 'println(\"pipe-ok-42\")' | ./cfire eval", code);
+    std::string out4 = cfire::bridge::run_command_capture("echo 'println(\"pipe-ok-42\")' | " + cfire_exe() + " eval", code);
     require(code == 0, std::format("eval stdin piping exit 0: {}", out4));
     require(out4.contains("pipe-ok-42"), "eval stdin piping stdout match");
 
@@ -448,7 +451,8 @@ fn main() {
     println("arg[3]={}", opts.C)
 }
 )");
-        run_cfire(std::format("run '{}' -- --a 'hello world' --b '$LITERAL_DOLLAR' --c 'quote\"inside'", f.string()))
+        run_cfire(std::format("run {} -- --a {} --b {} --c {}", cfire::bridge::shell_quote(f.string()), cfire::bridge::shell_quote("hello world"),
+                             cfire::bridge::shell_quote("$LITERAL_DOLLAR"), cfire::bridge::shell_quote("quote\"inside")))
             .assert_ok("cfire run with special shell args exit 0")
             .assert_contains("arg[1]=hello world", "cfire run preserved space in arg[1]")
             .assert_contains("arg[2]=$LITERAL_DOLLAR", "cfire run prevented shell expansion of $LITERAL_DOLLAR")
@@ -581,7 +585,7 @@ fn main() {
 )");
 
         // Dry-run mode: should propose fixes in JSON but NOT alter the file on disk
-        auto dry_res = run_cfire(std::format("fix --dry-run --json '{}'", f.string()));
+        auto dry_res = run_cfire(std::format("fix --dry-run --json {}", cfire::bridge::shell_quote(f.string())));
         dry_res.assert_ok("cfire fix dry run exit 0")
             .assert_contains("\"success\": true", "dry run json success")
             .assert_contains("\"applied_fixes\":", "dry run json applied_fixes");
@@ -591,12 +595,12 @@ fn main() {
         require(untouched_content.has_value() && !untouched_content->contains("mut x :="), "dry-run preserved original file");
 
         // Real fix mode: applies fixes and modifies file
-        auto fix_res = run_cfire(std::format("fix '{}'", f.string()));
+        auto fix_res = run_cfire(std::format("fix {}", cfire::bridge::shell_quote(f.string())));
         fix_res.assert_ok("cfire fix exit 0")
             .assert_contains("Applied", "cfire fix report");
 
         // Check that repaired file passes cfire check with 0 errors!
-        auto chk_res = run_cfire(std::format("check '{}'", f.string()));
+        auto chk_res = run_cfire(std::format("check {}", cfire::bridge::shell_quote(f.string())));
         chk_res.assert_ok("cfire check on auto-fixed file passes with 0 errors");
     }
 
@@ -618,7 +622,7 @@ test "passing test assertion" {
 
         // Run --json mode: both tests execute, failing test doesn't abort whole runner
         int exit_code = 0;
-        std::string json_out = cfire::bridge::run_command_capture(std::format("./cfire test --json '{}'", f.string()), exit_code);
+        std::string json_out = cfire::bridge::run_command_capture(std::format("{} test --json {}", cfire_exe(), cfire::bridge::shell_quote(f.string())), exit_code);
         require(exit_code == 1, "test --json returns exit code 1 when tests fail");
         require(json_out.contains("\"success\": false"), "test --json output has success: false");
         require(json_out.contains("\"passed\": 1"), "test --json output has passed: 1");
@@ -628,7 +632,7 @@ test "passing test assertion" {
         require(json_out.contains("(a == b)"), "test --json captured assertion expression");
 
         // Run --filter mode: only runs matching test
-        auto filt_res = run_cfire(std::format("test --filter passing '{}'", f.string()));
+        auto filt_res = run_cfire(std::format("test --filter passing {}", cfire::bridge::shell_quote(f.string())));
         filt_res.assert_ok("cfire test --filter passing exit 0")
             .assert_contains("PASS (1 cfire tests succeeded)", "filtered test ran 1 passing test");
     }
@@ -673,27 +677,27 @@ void test_security_and_fuzzing([[maybe_unused]] const std::filesystem::path& rt_
     // 1. SEC-P0-01a: WebSocket 64-Bit Frame Length Allocation Bomb (OOM DoS Prevention)
     {
         int sv[2]{-1, -1};
-        require(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0, "socketpair for ws bomb test");
+        require(test_sock::pair(sv), "socketpair for ws bomb test");
         // Frame 1: FIN=1, opcode=0x2 (binary), mask=0, len=127, 8-byte extended len = 0x7FFFFFFFFFFFFFFF (9 EB)
         const std::uint8_t bomb1[10] = {0x82, 127, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-        (void)::send(sv[0], bomb1, sizeof(bomb1), 0);
+        test_sock::send_bytes(sv[0], bomb1, sizeof(bomb1));
         auto res1 = cfire::websocket::decode_frame(sv[1]);
         require(!res1.has_value(), "decode_frame immediately rejects 9-exabyte 64-bit length bomb without OOM");
 
         // Frame 2: MSB set on 64-bit length (violates RFC 6455 Section 5.2)
         const std::uint8_t bomb2[10] = {0x82, 127, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10};
-        (void)::send(sv[0], bomb2, sizeof(bomb2), 0);
+        test_sock::send_bytes(sv[0], bomb2, sizeof(bomb2));
         auto res2 = cfire::websocket::decode_frame(sv[1]);
         require(!res2.has_value(), "decode_frame rejects RFC 6455 invalid MSB-set 64-bit length");
 
         // Frame 3: Custom max_frame_size limit (1024 bytes) vs 4096-byte claimed frame
         const std::uint8_t bomb3[4] = {0x81, 126, 0x10, 0x00}; // len = 4096
-        (void)::send(sv[0], bomb3, sizeof(bomb3), 0);
+        test_sock::send_bytes(sv[0], bomb3, sizeof(bomb3));
         auto res3 = cfire::websocket::decode_frame(sv[1], nullptr, /*max_frame_size=*/1024);
         require(!res3.has_value(), "decode_frame rejects frame exceeding custom max_frame_size");
 
-        ::close(sv[0]);
-        ::close(sv[1]);
+        test_sock::close(sv[0]);
+        test_sock::close(sv[1]);
     }
 
     // 2. SEC-P0-01b: HTTP CRLF Response Splitting & Header/Query Parameter Flood Caps
@@ -847,9 +851,8 @@ void test_security_and_fuzzing([[maybe_unused]] const std::filesystem::path& rt_
         // 1,500 WebSocket binary wire frame mutations
         {
             int sv[2]{-1, -1};
-            require(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0, "socketpair for ws fuzzing");
-            timeval tv{.tv_sec = 0, .tv_usec = 1000}; // 1ms timeout for truncated frames
-            ::setsockopt(sv[1], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            require(test_sock::pair(sv), "socketpair for ws fuzzing");
+            cfire::net::detail::set_sock_timeout_ms(sv[1], 1);  // truncated frames time out quickly
             for (int i = 0; i < 1500; ++i) {
                 std::size_t flen = (rng() % 24) + 2;
                 std::vector<std::uint8_t> raw(flen);
@@ -858,15 +861,14 @@ void test_security_and_fuzzing([[maybe_unused]] const std::filesystem::path& rt_
                 if ((raw[1] & 0x7F) < 126) {
                     raw[1] = (raw[1] & 0x80) | static_cast<std::uint8_t>(rng() % 8);
                 }
-                (void)::send(sv[0], raw.data(), raw.size(), MSG_NOSIGNAL);
+                test_sock::send_bytes(sv[0], raw.data(), raw.size());
                 (void)cfire::websocket::decode_frame(sv[1], nullptr, 4096);
                 // Drain any leftover bytes in sv[1]
-                std::uint8_t drain[64];
-                while (::recv(sv[1], drain, sizeof(drain), MSG_DONTWAIT) > 0) {}
+                test_sock::drain(sv[1]);
                 ++total_fuzz_cases;
             }
-            ::close(sv[0]);
-            ::close(sv[1]);
+            test_sock::close(sv[0]);
+            test_sock::close(sv[1]);
         }
 
         // 1,500 Compiler Lexer + Parser + LSP JSON-RPC mutations

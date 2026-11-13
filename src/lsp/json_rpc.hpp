@@ -340,7 +340,12 @@ inline void apply_incremental_edit(std::string& doc, int start_line, int start_c
 [[nodiscard]] inline auto path_to_uri(const std::filesystem::path& p) -> std::string {
     std::error_code ec;
     auto canon = std::filesystem::weakly_canonical(p, ec);
-    return "file://" + (ec ? p.string() : canon.string());
+    std::string s = (ec ? p : canon).generic_string();
+#if defined(_WIN32)
+    // CF-184: `C:\a\b.cf` is `file:///C:/a/b.cf` (RFC 8089), the form editors send and `uri_to_path` reads back.
+    if (s.size() >= 2 && std::isalpha(static_cast<unsigned char>(s[0])) && s[1] == ':') return "file:///" + s;
+#endif
+    return "file://" + s;
 }
 
 [[nodiscard]] inline auto split_lines(std::string_view text) -> std::vector<std::string> {

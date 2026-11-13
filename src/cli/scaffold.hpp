@@ -609,16 +609,21 @@ auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::string {
             } else if (arg == "--to" && i + 1 < argc) {
                 new_name = argv[++i];
             } else if (target_file.empty() && arg.find(':') != std::string_view::npos) {
-                auto first_colon = arg.find(':');
-                auto second_colon = arg.find(':', first_colon + 1);
-                target_file = arg.substr(0, first_colon);
-                if (second_colon != std::string_view::npos) {
-                    target_line = std::atoi(std::string(arg.substr(first_colon + 1, second_colon - first_colon - 1)).c_str());
-                    target_col = std::atoi(std::string(arg.substr(second_colon + 1)).c_str());
-                } else {
-                    target_line = std::atoi(std::string(arg.substr(first_colon + 1)).c_str());
-                    target_col = 1;
+                // `<file>:<line>[:<col>]`, read from the right: a Windows path has its own colon (`C:\a\main.cf:4:5`).
+                auto is_num = [](std::string_view t) {
+                    return !t.empty() && std::ranges::all_of(t, [](char c) { return c >= '0' && c <= '9'; });
+                };
+                std::string_view rest = arg;
+                std::vector<int> nums;
+                while (nums.size() < 2) {
+                    auto c = rest.rfind(':');
+                    if (c == std::string_view::npos || !is_num(rest.substr(c + 1))) break;
+                    nums.insert(nums.begin(), std::atoi(std::string(rest.substr(c + 1)).c_str()));
+                    rest = rest.substr(0, c);
                 }
+                target_file = rest;
+                target_line = nums.empty() ? 0 : nums[0];
+                target_col = nums.size() > 1 ? nums[1] : 1;
             } else if (new_name.empty()) {
                 new_name = arg;
             }

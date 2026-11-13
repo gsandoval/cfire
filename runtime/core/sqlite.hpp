@@ -236,8 +236,22 @@ public:
         if (!db_) return cfire::make_error("sqlite connection is closed");
         using EnableExtFn = int(*)(sqlite3*, int);
         using LoadExtFn = int(*)(sqlite3*, const char*, const char*, char**);
-        auto fn_enable = reinterpret_cast<EnableExtFn>(::dlsym(RTLD_DEFAULT, "sqlite3_enable_load_extension"));
-        auto fn_load = reinterpret_cast<LoadExtFn>(::dlsym(RTLD_DEFAULT, "sqlite3_load_extension"));
+        // CF-184: found at run time, since many libsqlite3 builds omit extension loading. Windows has no
+        // `dlsym(RTLD_DEFAULT)`; there the functions come from a loaded SQLite DLL, if the program uses one.
+        auto find_sym = [](const char* name) -> void* {
+#if defined(_WIN32)
+            for (const char* mod : {"libsqlite3-0.dll", "sqlite3.dll"}) {
+                if (HMODULE h = ::GetModuleHandleA(mod)) {
+                    if (auto p = ::GetProcAddress(h, name)) return reinterpret_cast<void*>(p);
+                }
+            }
+            return nullptr;
+#else
+            return ::dlsym(RTLD_DEFAULT, name);
+#endif
+        };
+        auto fn_enable = reinterpret_cast<EnableExtFn>(find_sym("sqlite3_enable_load_extension"));
+        auto fn_load = reinterpret_cast<LoadExtFn>(find_sym("sqlite3_load_extension"));
         if (!fn_enable || !fn_load) {
             return cfire::make_error("system libsqlite3 does not expose sqlite3_load_extension; use built-in vec_cosine_similarity / vec_l2_distance functions");
         }

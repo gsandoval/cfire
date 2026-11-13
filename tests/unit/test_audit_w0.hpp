@@ -87,7 +87,7 @@ void test_cf140_crash_proof_tools(const std::filesystem::path& rt_dir) {
         ScopedTempDir tmp("cfire_cf140_lsp");
         auto main_cf = tmp.path / "main.cf";
         { std::ofstream(main_cf) << repro; }
-        std::string uri = "file://" + main_cf.string();
+        std::string uri = cfire::lsp::detail::path_to_uri(main_cf);
         std::stringstream in, out;
         in << cfire_test_w0::lsp_frame(std::format(
             R"({{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"rootUri":"file://{}","capabilities":{{}}}}}})",

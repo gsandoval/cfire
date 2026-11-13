@@ -14,7 +14,7 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: FORCE all build hooks install uninstall doctor setup test test-unit test-stdlib test-e2e test-guide test-conformance test-asan test-tsan fuzz fuzz-replay fuzz-lib bench docs fmt review-check release clean
+.PHONY: FORCE all build hooks install uninstall doctor setup test test-unit test-stdlib test-e2e test-guide test-conformance test-asan test-tsan test-vm-linux test-vm-windows fuzz fuzz-replay fuzz-lib bench docs fmt review-check release clean
 
 all: build
 
@@ -164,6 +164,13 @@ fuzz-lib:
 bench: build .cfire_test_runner
 	./.cfire_test_runner bench
 	./cfire bench tests/stdlib_suite_test.cf
+
+# --- Local UTM VM gates (CF-184, Q48): the CI `linux` / `windows` jobs on the working tree. See scripts/vm/README.md.
+test-vm-linux:
+	scripts/vm/test_vm.sh linux
+
+test-vm-windows:
+	scripts/vm/test_vm.sh windows
 
 clean:
 	rm -rf cfire .cfire_gitsha .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*

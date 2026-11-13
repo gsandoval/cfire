@@ -58,7 +58,7 @@ namespace cfire::build {
     for (const auto& f : plan.cflags) cmd += " " + f;
     for (const auto& inc : extra_includes) cmd += " -I \"" + inc + "\"";
     if (!pch_path.empty()) {
-        cmd += std::format(" -include-pch \"{}\"", pch_path);
+        cmd += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
     }
     if (plan.uses_objc) {
         cmd += " -x objective-c++";

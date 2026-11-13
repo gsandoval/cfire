@@ -681,7 +681,7 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Tests**: `make test`, `review-check`, ASan and TSan pass on macOS with raylib uninstalled; the Linux VM passes `make test` with no raylib download step; the C-interop fixture test passes on macOS, Linux and Windows; a conformance case pins the removed-import diagnostic; `cfire doc --check` passes after the GUIDE changes.
 - **Acceptance Criteria**: no file under `src/`, `runtime/`, `tests/` or CI references raylib except the removed-import diagnostic and its test (and fuzz-replay inputs), and the same suite runs on macOS, Linux and Windows with no optional downloads. Met; see `active.md`.
 
-#### `CF-184` — Windows Test Parity (found on the Windows VM, 2026-11-12) `[TODO]`
+#### `CF-184` — Windows Test Parity (found on the Windows VM, 2026-11-12) `[DONE]`
 - **Problem & Evidence** (MSYS2 CLANG64, clang 23.1.5; all predate CF-183):
   - The C++ unit runner does not build on Windows: `tests/unit/test_stdlib_tooling_fuzz_bench.hpp` uses `::socketpair`, `MSG_DONTWAIT` and POSIX `send`/`setsockopt` signatures, `test_stdlib_webui_ext.hpp` uses `::setenv`, and `tests/test_main.cpp` uses `SIGPIPE`. The CI `windows` job's "Build & Run C++ Unit Suites" step cannot pass as written.
   - Five `concurrency/*` conformance files use `// flags: --sanitize=thread`, which clang's `x86_64-w64-windows-gnu` target rejects; the runner should skip TSan files on Windows rather than fail them.
@@ -702,6 +702,7 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Not changed**: with `$HOME` unset the package cache is per-process (CF-153); at most `cfire setup` warns about it.
 - **Tests**: the CI `windows` job's steps pass in the Windows VM with 0 warnings; the macOS gate as usual.
 - **Acceptance Criteria**: the CI `windows` job builds and runs the unit suite, conformance passes on Windows (TSan files run unsanitized), and the Windows build has 0 warnings.
+- **Outcome (2026-11-13)**: all three criteria are met in the Windows VM. The unit suite's 52 first-run failures were all test portability or Windows runtime bugs fixed here (`core:sqlite` `load_extension` used `dlsym`; MCP timeouts were ignored; LSP URIs, drive-letter `file:line`, `count_open_fds`); none needed a separate item. Details in `active.md`.
 
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:
