@@ -41,7 +41,7 @@ namespace cfire::frontend {
         } else {
             auto [ns_alias, is_vendor] = cfire::modules::canonical_ns_for_import(imp.path);
             if (is_vendor) {
-                std::string vendor_key = (ns_alias == "rl") ? "raylib" : (ns_alias == "rg") ? "raygui" : ns_alias;
+                std::string vendor_key = ns_alias;
                 if (!imp.alias.empty() && imp.alias != vendor_key && imp.alias != ns_alias) {
                     cf.vendor_aliases[imp.alias] = vendor_key;
                     cf.shadowed_default_qualifiers[vendor_key] = imp.alias;
@@ -99,6 +99,10 @@ namespace cfire::frontend {
                 std::string_view what = imp.path == "core:str" ? "'str' methods (s.trim(), s.split(sep), parts.join(sep), i32.parse(s))"
                                                                : "slice methods (xs.sort(), xs.sort_by(f), xs.binary_search(v))";
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format("module '{}' has been retired; use {}", imp.path, what), {{"rewrite", "delete_line"}, {"from", imp.path}}));
+            } else if (imp.path == "vendor:raylib" || imp.path == "vendor:raygui") {
+                // CF-185: raylib is no longer bundled. There is no automatic rewrite: the `rl.`/`rg.` calls need a port.
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
+                    "module '{}' has been retired; cfire no longer bundles raylib. Use 'ext:webui' for GUIs, or use raylib as a C library with 'import cpp \"raylib.h\" @pkg(\"raylib\")'", imp.path)));
             } else if (!imp.path.starts_with("./") && !imp.path.starts_with("../") && !imp.path.ends_with(".cf") && !cfire::modules::is_known_module(imp.path)) {
                 std::string best_match;
                 std::size_t best_dist = 5;

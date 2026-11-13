@@ -136,7 +136,7 @@ void test_cf152_verified_dependency_cache([[maybe_unused]] const std::filesystem
     require(!b::validate_fetch_arg("git url", "--upload-pack=touch /tmp/pwned").has_value(), "CF-152: option-like url rejected");
     require(!b::validate_fetch_arg("git ref", "-oProxyCommand=x").has_value(), "CF-152: option-like ref rejected");
     require(!b::validate_fetch_arg("git url", "ext::sh -c touch% /tmp/pwned").has_value(), "CF-152: ext:: transport rejected");
-    require(b::validate_fetch_arg("git url", "https://github.com/raysan5/raylib.git").has_value(), "CF-152: normal url accepted");
+    require(b::validate_fetch_arg("git url", "https://github.com/madler/zlib.git").has_value(), "CF-152: normal url accepted");
 
     ScopedTempDir work("cfire_cf152");
     auto upstream = work.path / "upstream";

@@ -2541,7 +2541,7 @@ void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_di
     std::println("=== RUN   test_unified_stdlib_metadata_table (CF-117)");
 
     const auto& catalog = cfire::doc::stdlib_catalog();
-    require(catalog.size() >= 37, "stdlib_catalog contains at least 37 modules (core:str and core:sort retired in W4)");
+    require(catalog.size() >= 35, "stdlib_catalog contains at least 35 modules (core:str and core:sort retired in W4; vendor:raylib and vendor:raygui in CF-185)");
 
     // Verify all module paths are unique and sorted
     for (size_t i = 1; i < catalog.size(); ++i) {

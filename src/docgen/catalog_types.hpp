@@ -214,16 +214,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
         m.aliases = {"core:webui"};
-    } else if (m.import_path == "vendor:raygui") {
-        m.header_path = "vendor/raygui.h";
-        m.is_vendor = true;
-        m.link_tags = {"-lraylib"};
-        m.implied_vendors = {"raylib"};
-    } else if (m.import_path == "vendor:raylib") {
-        m.header_path = "vendor/raylib.h";
-        m.is_vendor = true;
-        m.types = {"Color", "Rectangle", "Vector2"};
-        m.link_tags = {"-lraylib"};
     }
 }
 
@@ -907,57 +897,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"clipboard_set", "fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)", "cfire::webui::clipboard_set(text, concealed, clear_after_ms)", "Writes plaintext to the system clipboard with optional auto-clear timeout.", "webui.clipboard_set(\"secret\", true, 10000)"},
                 {"clipboard_set_secret", "fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)", "cfire::webui::clipboard_set_secret(text, clear_after_ms)", "Writes sensitive secret to the clipboard and schedules automatic clearing.", "webui.clipboard_set_secret(\"pass\")"},
                 {"monospace_fonts", "fn monospace_fonts() -> []str", "cfire::webui::monospace_fonts()", "Returns a list of platform-installed monospaced font family names.", "fonts := webui.monospace_fonts()"}
-            }
-        },
-        {
-            "vendor:raygui", "rg", "Raygui 4.0 Immediate-Mode GUI Controls", "-lraylib",
-            "Header-only immediate-mode GUI controls (`GuiWindowBox`, `GuiButton`, `GuiCheckBox`, `GuiSliderBar`, `GuiComboBox`, `GuiTextBox`) built on top of `vendor:raylib` with safe `mut str` (`&mut my_str`) text box editing.",
-            {
-                {"GuiEnable", "fn GuiEnable()", "GuiEnable()", "Enables gui controls (global state).", "rg.GuiEnable()"},
-                {"GuiDisable", "fn GuiDisable()", "GuiDisable()", "Disables gui controls (global state).", "rg.GuiDisable()"},
-                {"GuiLock", "fn GuiLock()", "GuiLock()", "Locks gui controls (global state).", "rg.GuiLock()"},
-                {"GuiUnlock", "fn GuiUnlock()", "GuiUnlock()", "Unlocks gui controls (global state).", "rg.GuiUnlock()"},
-                {"GuiSetStyle", "fn GuiSetStyle(control: i32, property: i32, value: i32)", "GuiSetStyle(control, property, value)", "Sets one style property value for a control.", "rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 16)"},
-                {"GuiGetStyle", "fn GuiGetStyle(control: i32, property: i32) -> i32", "GuiGetStyle(control, property)", "Gets one style property value for a control.", "sz := rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE)"},
-                {"GuiWindowBox", "fn GuiWindowBox(bounds: rl.Rectangle, title: str) -> i32", "GuiWindowBox(bounds, cfire::c_arg(title))", "Draws a window box control with a title bar and close button (returns 1 when close clicked).", "closed := rg.GuiWindowBox(rl.Rectangle{x: 20.0, y: 20.0, width: 300.0, height: 220.0}, \"Settings\")"},
-                {"GuiGroupBox", "fn GuiGroupBox(bounds: rl.Rectangle, text: str) -> i32", "GuiGroupBox(bounds, cfire::c_arg(text))", "Draws a group box control with text name.", "rg.GuiGroupBox(bounds, \"Audio\")"},
-                {"GuiLabel", "fn GuiLabel(bounds: rl.Rectangle, text: str) -> i32", "GuiLabel(bounds, cfire::c_arg(text))", "Draws a text label control.", "rg.GuiLabel(bounds, \"Volume\")"},
-                {"GuiButton", "fn GuiButton(bounds: rl.Rectangle, text: str) -> i32", "GuiButton(bounds, cfire::c_arg(text))", "Draws a clickable button control (returns 1 when clicked).", "if rg.GuiButton(bounds, \"Apply\") != 0 { ... }"},
-                {"GuiCheckBox", "fn GuiCheckBox(bounds: rl.Rectangle, text: str, checked: &mut bool) -> i32", "GuiCheckBox(bounds, cfire::c_arg(text), &checked)", "Draws a check box control and mutates `checked` in-place.", "rg.GuiCheckBox(bounds, \"VSync\", &mut vsync)"},
-                {"GuiSliderBar", "fn GuiSliderBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiSliderBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a slider bar control and mutates `value` within `[minValue, maxValue]`.", "rg.GuiSliderBar(bounds, \"0%\", \"100%\", &mut volume, 0.0, 100.0)"},
-                {"GuiProgressBar", "fn GuiProgressBar(bounds: rl.Rectangle, textLeft: str, textRight: str, value: &mut f32, minValue: f32, maxValue: f32) -> i32", "GuiProgressBar(bounds, cfire::c_arg(textLeft), cfire::c_arg(textRight), &value, minValue, maxValue)", "Draws a progress bar control.", "rg.GuiProgressBar(bounds, \"\", \"\", &mut progress, 0.0, 1.0)"},
-                {"GuiComboBox", "fn GuiComboBox(bounds: rl.Rectangle, text: str, active: &mut i32) -> i32", "GuiComboBox(bounds, cfire::c_arg(text), &active)", "Draws a semicolon-delimited combo box control and updates `active` index.", "rg.GuiComboBox(bounds, \"Low;Medium;High\", &mut quality)"},
-                {"GuiTextBox", "fn GuiTextBox(bounds: rl.Rectangle, text: &mut str, textSize: i32, editMode: bool) -> i32", "GuiTextBox(bounds, &text, textSize, editMode)", "Draws an editable text box control safely backed by a `cfire` `mut str`.", "if rg.GuiTextBox(bounds, &mut name, 64, editing) != 0 { editing = !editing }"}
-            }
-        },
-        {
-            "vendor:raylib", "rl", "Raylib 5.0 2D/3D Graphics, Audio, Input & Math", "-lraylib",
-            "Auto-linked C99/C++23 bindings for Raylib 5.0 (`<raylib.h>`, `<raymath.h>`, `<rlgl.h>`) with struct literal lowering (`rl.Vector2`, `rl.Rectangle`, `rl.Color`, `rl.Camera2D`) and automatic `str` to `const char*` coercion.",
-            {
-                {"InitWindow", "fn InitWindow(width: i32, height: i32, title: str)", "InitWindow(width, height, cfire::c_arg(title))", "Initializes window and OpenGL context.", "rl.InitWindow(800, 450, \"cfire + raylib\")"},
-                {"WindowShouldClose", "fn WindowShouldClose() -> bool", "WindowShouldClose()", "Checks if KEY_ESCAPE or window close icon was pressed.", "for !rl.WindowShouldClose() { ... }"},
-                {"CloseWindow", "fn CloseWindow()", "CloseWindow()", "Closes window and unloads OpenGL context.", "defer rl.CloseWindow()"},
-                {"SetTargetFPS", "fn SetTargetFPS(fps: i32)", "SetTargetFPS(fps)", "Sets target framerate (maximum) for the render loop.", "rl.SetTargetFPS(60)"},
-                {"GetFrameTime", "fn GetFrameTime() -> f32", "GetFrameTime()", "Returns time in seconds for the last frame drawn (delta time).", "dt := rl.GetFrameTime()"},
-                {"BeginDrawing", "fn BeginDrawing()", "BeginDrawing()", "Sets up canvas (framebuffer) to start drawing.", "rl.BeginDrawing()"},
-                {"EndDrawing", "fn EndDrawing()", "EndDrawing()", "Ends canvas drawing and swaps buffers (double buffering).", "defer rl.EndDrawing()"},
-                {"ClearBackground", "fn ClearBackground(color: rl.Color)", "ClearBackground(color)", "Sets background color (framebuffer clear color).", "rl.ClearBackground(rl.RAYWHITE)"},
-                {"BeginMode2D", "fn BeginMode2D(camera: rl.Camera2D)", "BeginMode2D(camera)", "Begins 2D mode with custom `rl.Camera2D`.", "rl.BeginMode2D(cam)"},
-                {"EndMode2D", "fn EndMode2D()", "EndMode2D()", "Ends 2D mode with custom camera.", "rl.EndMode2D()"},
-                {"DrawText", "fn DrawText(text: str, posX: i32, posY: i32, fontSize: i32, color: rl.Color)", "DrawText(cfire::c_arg(text), posX, posY, fontSize, color)", "Draws text (using default font) with automatic `str` interpolation support.", "rl.DrawText(\"Score: {score}\", 20, 20, 24, rl.DARKGRAY)"},
-                {"DrawCircleV", "fn DrawCircleV(center: rl.Vector2, radius: f32, color: rl.Color)", "DrawCircleV(center, radius, color)", "Draws a color-filled circle (Vector version).", "rl.DrawCircleV(pos, 16.0, rl.MAROON)"},
-                {"DrawRectangleRec", "fn DrawRectangleRec(rec: rl.Rectangle, color: rl.Color)", "DrawRectangleRec(rec, color)", "Draws a color-filled rectangle from an `rl.Rectangle` struct.", "rl.DrawRectangleRec(box, rl.SKYBLUE)"},
-                {"IsKeyDown", "fn IsKeyDown(key: i32) -> bool", "IsKeyDown(key)", "Checks if a key is currently being pressed.", "if rl.IsKeyDown(rl.KEY_RIGHT) { ... }"},
-                {"GetMousePosition", "fn GetMousePosition() -> rl.Vector2", "GetMousePosition()", "Returns current mouse position XY as `rl.Vector2`.", "mouse := rl.GetMousePosition()"},
-                {"CheckCollisionRecs", "fn CheckCollisionRecs(rec1: rl.Rectangle, rec2: rl.Rectangle) -> bool", "CheckCollisionRecs(rec1, rec2)", "Checks collision between two rectangles.", "hit := rl.CheckCollisionRecs(player_box, wall_box)"},
-                {"GetSafeAreaRect", "fn GetSafeAreaRect() -> rl.Rectangle", "GetSafeAreaRect()", "Returns the usable safe-area rectangle inset past the iOS Dynamic Island and Home Indicator.", "safe := rl.GetSafeAreaRect()"},
-                {"BeginScissorMode", "fn BeginScissorMode(x: i32, y: i32, width: i32, height: i32)", "BeginScissorMode(x, y, width, height)", "Begins scissor clipping mode for scrollable views and clipped cards.", "rl.BeginScissorMode(0, 100, 393, 600)"},
-                {"EndScissorMode", "fn EndScissorMode()", "EndScissorMode()", "Ends scissor clipping mode and restores the full viewport.", "rl.EndScissorMode()"},
-                {"RequestKeyboard", "fn RequestKeyboard()", "RequestKeyboard()", "Requests the native iOS `<UIKeyInput>` software keyboard for the active frame.", "rl.RequestKeyboard()"},
-                {"TriggerHaptic", "fn TriggerHaptic(style: i32)", "TriggerHaptic(style)", "Triggers native iOS Taptic Engine impact feedback (0=Light, 1=Medium, 2=Heavy).", "rl.TriggerHaptic(0)"},
-                {"Vector2Add", "fn Vector2Add(v1: rl.Vector2, v2: rl.Vector2) -> rl.Vector2", "Vector2Add(v1, v2)", "Adds two vectors (`<raymath.h>`).", "pos = rl.Vector2Add(pos, vel)"},
-                {"Vector2Scale", "fn Vector2Scale(v: rl.Vector2, scale: f32) -> rl.Vector2", "Vector2Scale(v, scale)", "Scales vector by float value (`<raymath.h>`).", "step := rl.Vector2Scale(dir, speed * dt)"},
-                {"Clamp", "fn Clamp(value: f32, min: f32, max: f32) -> f32", "Clamp(value, min, max)", "Clamps float value between `[min, max]` (`<raymath.h>`).", "x := rl.Clamp(pos.x, 0.0, 800.0)"}
             }
         }
     };

@@ -974,7 +974,7 @@ syncCfireThemeBtn();
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 37 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 35 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -1005,7 +1005,7 @@ syncCfireThemeBtn();
     </div>
     <div class="stat-pill">
       <div class="stat-val">Core + Ext</div>
-      <div class="stat-lbl">37 Tiered Stdlib Modules</div>
+      <div class="stat-lbl">35 Tiered Stdlib Modules</div>
     </div>
     <div class="stat-pill">
       <div class="stat-val">cfire eject</div>
@@ -1087,15 +1087,15 @@ syncCfireThemeBtn();
       <div>
         <div class="bento-card-header">
           <span class="material-symbols-outlined bento-icon" aria-hidden="true">widgets</span>
-          <span class="bento-tag">3-NAMESPACE STDLIB</span>
+          <span class="bento-tag">2-NAMESPACE STDLIB</span>
         </div>
-        <h3>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Tiers</h3>
+        <h3>Explicit <code>core:*</code> &amp; <code>ext:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 30 zero-setup C++23 &amp; baseline OS primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>), and <strong><code>vendor:*</code></strong> bundles <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 29 zero-setup C++23 &amp; baseline OS primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
         </p>
       </div>
       <div class="bento-footer">
-        <code>core:* (zero setup) &bull; ext:* (native C/AI/WebUI) &bull; vendor:* (C/C++ engines)</code>
+        <code>core:* (zero setup) &bull; ext:* (native C/AI/WebUI)</code>
       </div>
     </div>
 
@@ -2380,7 +2380,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code></strong>: 30 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>) + 2 vendor engines.</td>
+          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 29 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>).</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -2508,8 +2508,8 @@ fn main() {
     </a>
     <a class="roadmap-card" href="guide.html#chapter-15">
       <div class="roadmap-num">Chapter 15</div>
-      <h4>2D/3D Graphics &amp; Native UI</h4>
-      <p>Hardware-accelerated windowing via <code>vendor:raylib</code>, <code>vendor:raygui</code> controls, macOS .app bundles, WebAssembly, and native iOS UIKit.</p>
+      <h4>Graphics &amp; Native UI Options</h4>
+      <p>Choosing between <code>ext:webui</code> on macOS, iOS, Linux and Windows, and C graphics libraries through <code>import cpp</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-16">
       <div class="roadmap-num">Chapter 16</div>
@@ -2535,7 +2535,7 @@ fn main() {
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code>, <code>ext:*</code> &amp; <code>vendor:*</code> Catalog (37 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code> &amp; <code>ext:*</code> Catalog (35 Modules) &rarr;</a>
   </div>
 </div>
 

@@ -1,0 +1,44 @@
+package main
+
+import cpp "geom.h" as g
+
+type Entity struct {
+    pos: g.Vec2
+    bounds: g.Rect
+    tint: g.Color
+}
+
+fn step(e: Entity, vel: g.Vec2, dt: f32) -> g.Vec2 {
+    next := g.geom_vec2_add(e.pos, g.geom_vec2_scale(vel, dt))
+    return g.Vec2{x: g.geom_clamp(next.x, 0.0, 800.0), y: g.geom_clamp(next.y, 0.0, 450.0)}
+}
+
+fn main() {
+    ent := Entity{
+        pos: g.Vec2{x: 100.0, y: 200.0},
+        bounds: g.Rect{x: 100.0, y: 200.0, width: 32.0, height: 32.0},
+        tint: g.Color{r: 255, g: 120, b: 0, a: 255},
+    }
+    p := step(ent, g.Vec2{x: 50.0, y: -20.0}, 0.5)
+    assert(p.x == 125.0)
+    assert(p.y == 190.0)
+    assert(g.geom_rect_contains(ent.bounds, g.Vec2{x: 110.0, y: 210.0}) == 1)
+
+    title := "Settings"
+    assert(g.geom_label_len(title) == 8)
+    assert(g.geom_label_len("{title} Dialog") == 15)
+
+    mut values: []i32 = [1, 2, 3, 4]
+    assert(g.geom_sum_i32(values.data(), values.len()) == 10)
+    g.geom_fill_i32(values.data(), values.len(), 7)
+    assert(values[3] == 7)
+
+    mut flags: g.GeomFlags = g.GeomFlags::GEOM_FLAG_VISIBLE | g.GeomFlags::GEOM_FLAG_SOLID
+    flags |= g.GeomFlags::GEOM_FLAG_HIGHLIGHT
+    assert((flags & g.GeomFlags::GEOM_FLAG_SOLID) == g.GeomFlags::GEOM_FLAG_SOLID)
+    flags &= ~g.GeomFlags::GEOM_FLAG_VISIBLE
+    assert((flags & g.GeomFlags::GEOM_FLAG_VISIBLE) == 0)
+
+    packed := g.geom_pack_color(ent.tint)
+    println("cinterop ok {:08x}", packed)
+}

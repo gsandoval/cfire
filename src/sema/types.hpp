@@ -541,7 +541,7 @@ struct CheckedFile {
     std::unordered_set<std::string> cpp_qualifiers{}; // "cpp" or aliases from `import cpp "..." as alias`
     std::unordered_map<std::string, std::string> cpp_alias_to_header{}; // alias -> header path
     std::unordered_map<std::string, std::string> core_aliases{}; // alias -> canonical_ns ("s" -> "str")
-    std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name ("rl" -> "raylib")
+    std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name
     std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
     // Q36 (CF-182): untyped `mut x := <text>` declarations; codegen gives them an owned `std::string`

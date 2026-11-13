@@ -49,8 +49,8 @@ struct CommandHelp {
     std::string_view details;
 };
 inline constexpr CommandHelp kCommandHelp[] = {
-    {"init", "[--template cli|tako|gui|webui] [--force] [dir] Initialize a new cfire project in current/target directory", ""},
-    {"new", "[--template cli|tako|gui|webui] [--force] <dir> Create a new cfire project directory", ""},
+    {"init", "[--template cli|tako|webui] [--force] [dir] Initialize a new cfire project in current/target directory", ""},
+    {"new", "[--template cli|tako|webui] [--force] <dir> Create a new cfire project directory", ""},
     {"run", "[--web|--ios] [target|file.cf] Run native app, web app (--web), or iOS Simulator app (--ios)", "Usage: cfire run [--web|--ios] [target|file.cf] [-- args...]\n\nBuilds and runs. A single file argument builds that file and the packages it imports, not every .cf file beside it."},
     {"test", "[--json] [--filter <pat>] [--fuzz-runs <N>] [--seed <S>] [path|file.cf] Compile and execute test, fuzz & doc-test suites", ""},
     {"bench", "[--json] [--filter <pat>] [--bench-time <ms>] [path|file.cf] Run statistical micro-benchmarks (`bench \"...\"`)", ""},
@@ -131,6 +131,7 @@ inline auto print_command_usage(std::string_view cmd) -> bool {
         return 1;
     }
 
+    if (tmpl == "gui") tmpl = "webui";  // CF-185: the raylib `gui` template became the webui one
     std::string build_cf_txt;
     std::string main_cf_txt;
     std::string test_cf_txt;
@@ -177,46 +178,6 @@ test "greet_label formats click count" {
     assert(greet_label(3) == "Clicks: 3")
 }
 )CF";
-    } else if (tmpl == "gui") {
-        build_cf_txt = std::format(R"CF(package main
-
-import "core:build"
-
-app := build.Executable{{
-    Name:       "{}",
-    Entry:      "main.cf",
-    Targets:    ["native", "wasm", "ios-sim"],
-    Subsystem:  "gui",
-    WebProfile: "canvas",
-}}
-)CF", proj_name);
-        main_cf_txt = std::format(R"CF(package main
-
-import "vendor:raylib" as rl
-
-fn window_title(name: str) -> str {{
-    return "{{name}} — cfire + raylib"
-}}
-
-fn main() {{
-    rl.InitWindow(800, 450, window_title("{}"))
-    defer rl.CloseWindow()
-    rl.SetTargetFPS(60)
-
-    for !rl.WindowShouldClose() {{
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-        rl.ClearBackground(rl.RAYWHITE)
-        rl.DrawText("Hello from {}!", 40, 40, 28, rl.DARKGRAY)
-    }}
-}}
-)CF", proj_name, proj_name);
-        test_cf_txt = std::format(R"CF(package main
-
-test "window_title formats name" {{
-    assert(window_title("{0}") == "{0} — cfire + raylib")
-}}
-)CF", proj_name);
     } else if (tmpl == "webui") {
         build_cf_txt = std::format(R"CF(package main
 

@@ -568,8 +568,7 @@ fn main() {
     auto has_module = [&](std::string_view name) {
         return std::ranges::any_of(discovered, [&](const auto& m) { return m.import_path == name; });
     };
-    require(has_module("vendor:raylib"), "catalog discovered vendor:raylib");
-    require(has_module("vendor:raygui"), "catalog discovered vendor:raygui");
+    require(!has_module("vendor:raylib") && !has_module("vendor:raygui"), "CF-185: raylib is not in the catalog");
     require(has_module("core:math"), "catalog discovered core:math");
     require(has_module("ext:ai"), "catalog discovered ext:ai");
     require(has_module("ext:db/sqlite"), "catalog discovered ext:db/sqlite");
@@ -613,10 +612,8 @@ fn main() {
                 guide_txt->contains("build.Git") &&
                 guide_txt->contains("build.Archive") &&
                 guide_txt->contains("build.Command") &&
-                guide_txt->contains("--target=wasm") &&
-                guide_txt->contains("vendor:raylib") &&
-                guide_txt->contains("vendor:raygui"),
-            "docs/GUIDE.md Build System and Raylib/Raygui reconciliation");
+                guide_txt->contains("--target=wasm"),
+            "docs/GUIDE.md Build System reconciliation");
 
         // DOC-004: Verify chapter-scoped subheading IDs, nested lists, [!CAUTION] callout rendering, and bite-sized topic chunks
         std::string sample_md = R"MD(# Guide Title

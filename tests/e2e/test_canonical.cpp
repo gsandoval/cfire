@@ -273,167 +273,31 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
 
 
 
-void test_raylib_vendor_codegen_and_eject(const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_raylib_vendor_codegen_and_eject");
-    auto res = cfire::build::analyze_and_emit("examples/06-raylib-viz/main.cf", rt_dir, false);
-    require(res.has_value(), "analyze_and_emit(06-raylib-viz)");
-    if (res) {
-        require(res->first.contains("#include <raylib.h>") &&
-                res->first.contains("#include <raymath.h>") &&
-                res->first.contains("InitWindow(640, 360"),
-            "raylib codegen check");
-        require(res->second.auto_linked.size() == 1 && res->second.auto_linked[0] == "vendor:raylib",
-            "vendor:raylib auto-link recorded");
-    }
-
-    // Verify full Raylib + Raygui struct literals (rl.Vector2, rl.Rectangle, rl.Color, rl.Camera2D),
-    // type annotations, raymath functions (Vector2Add, Vector2Scale, Clamp), dynamic str coercion,
-    // and immediate-mode GUI controls (GuiSetStyle, GuiGetStyle, GuiCheckBox, GuiSliderBar, GuiTextBox(&mut str))
+// CF-185: the C header bridge against a bundled C library (tests/fixtures/cinterop) instead of raylib: C structs as
+// literals and fields, struct returns, `str` -> `const char*`, slice data pointers, and bitflag enums.
+void test_cinterop_codegen_and_eject(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_cinterop_codegen_and_eject");
     {
-        std::string_view rl_src = R"(package main
-import "vendor:raylib" as rl
-import "vendor:raygui" as rg
-
-type Entity struct {
-    pos: rl.Vector2
-    bounds: rl.Rectangle
-    tint: rl.Color
-}
-
-fn step_entity(e: Entity, vel: rl.Vector2, dt: f32) -> rl.Vector2 {
-    scaled := rl.Vector2Scale(vel, dt)
-    next := rl.Vector2Add(e.pos, scaled)
-    return rl.Vector2{
-        x: rl.Clamp(next.x, 0.0, 800.0),
-        y: rl.Clamp(next.y, 0.0, 450.0)
-    }
-}
-
-fn render_hud(title: str, score: i32, cam: rl.Camera2D) {
-    rl.SetWindowTitle(title)
-    rl.BeginMode2D(cam)
-    defer rl.EndMode2D()
-    rl.DrawText("Score: {score}", 20, 20, 24, rl.RAYWHITE)
-}
-
-fn main() {
-    ent := Entity{
-        pos: rl.Vector2{x: 100.0, y: 200.0},
-        bounds: rl.Rectangle{x: 100.0, y: 200.0, width: 32.0, height: 32.0},
-        tint: rl.Color{r: 255, g: 120, b: 0, a: 255}
-    }
-    p2 := step_entity(ent, rl.Vector2{x: 50.0, y: -20.0}, 0.5)
-    assert(p2.x == 125.0)
-    assert(p2.y == 190.0)
-
-    // Test vendor:raygui style, state, slider clamping, checkbox, and safe mut str GuiTextBox
-    rg.GuiSetStyle(rg.DEFAULT, rg.TEXT_SIZE, 18)
-    assert(rg.GuiGetStyle(rg.DEFAULT, rg.TEXT_SIZE) == 18)
-    mut vsync := true
-    mut volume: f32 = 150.0
-    mut quality: i32 = 1
-    mut player_name := "Memo"
-    box := rl.Rectangle{x: 20.0, y: 20.0, width: 200.0, height: 28.0}
-    rg.GuiWindowBox(box, "Settings")
-    rg.GuiCheckBox(box, "VSync", &mut vsync)
-    rg.GuiSliderBar(box, "Min", "Max: {volume}", &mut volume, 0.0, 100.0)
-    assert(volume == 100.0)
-    rg.GuiComboBox(box, "Low;Medium;High", &mut quality)
-    rg.GuiTextBox(box, &mut player_name, 64, false)
-    assert(player_name == "Memo")
-
-    // Test Cfire numeric constructors in .cf code (LANG-P0-01)
-    cast_int := i32(volume)
-    assert(cast_int == 100)
-    cast_flt := f32(cast_int)
-    assert(cast_flt == 100.0)
-
-    // Test vendor enum bitwise operations in .cf code (LANG-P1-03)
-    mut cfg_flags: rl.ConfigFlags = rl.FLAG_WINDOW_HIGHDPI
-    cfg_flags = cfg_flags | rl.FLAG_WINDOW_RESIZABLE
-    assert((cfg_flags & rl.FLAG_WINDOW_HIGHDPI) == rl.FLAG_WINDOW_HIGHDPI)
-    assert((cfg_flags & rl.FLAG_WINDOW_RESIZABLE) == rl.FLAG_WINDOW_RESIZABLE)
-    cfg_flags &= ~rl.FLAG_WINDOW_HIGHDPI
-    assert((cfg_flags & rl.FLAG_WINDOW_HIGHDPI) == 0)
-    assert((cfg_flags & rl.FLAG_WINDOW_RESIZABLE) == rl.FLAG_WINDOW_RESIZABLE)
-
-    // Test string pointer offsets and C FFI interop (LANG-P1-02)
-    ptr_name := player_name.byte_ptr()
-    assert(ptr_name != none)
-    ptr_off := player_name.byte_ptr_at(2)
-    assert(ptr_off != none)
-    ptr_mod := player_name.byte_ptr()
-    assert(ptr_mod != none)
-    ptr_mod_off := player_name.byte_ptr_at(1)
-    assert(ptr_mod_off != none)
-
-    // Test rebindable pointer aliases and dereference assignment (LANG-P2-05)
-    mut target: *mut str = &mut player_name
-    *target += " Sandoval"
-    assert(player_name == "Memo Sandoval")
-    mut title := "Settings"
-    target = &mut title
-    *target += " Dialog"
-    assert(title == "Settings Dialog")
-
-    mut p_quality: *mut i32 = &mut quality
-    *p_quality = 2
-    assert(quality == 2)
-    *p_quality += 3
-    assert(quality == 5)
-
-    mut p_null: *mut i32 = none
-    assert(p_null == none)
-    p_null = &mut quality
-    assert(p_null != none)
-    assert(*p_null == 5)
-
-    // Test slice and vector buffer pointer access for C FFI interop (LANG-P1-06)
-    mut codepoints: []i32 = [32, 65, 66]
-    assert(codepoints.len() == 3)
-    p_code := codepoints.data()
-    assert(p_code != none)
-    assert(*p_code == 32)
-    p_code_ptr := codepoints.data_ptr()
-    assert(p_code_ptr != none)
-    assert(*p_code_ptr == 32)
-    *p_code = 99
-    assert(codepoints[0] == 99)
-    codepoints[0] = 32
-}
-)";
-        ScopedTempDir rl_dir_scope("cfire_rl_dir");  // hermetic, mkdtemp-backed (CF-153)
-        auto rl_dir = rl_dir_scope.path / "cfire_raylib_full_test_dir";
-        std::filesystem::remove_all(rl_dir);
-        std::filesystem::create_directories(rl_dir);
-        auto rl_tmp = rl_dir / "main.cf";
-        {
-            std::ofstream ofs(rl_tmp);
-            ofs << rl_src;
+        ScopedTempDir fx_scope("cfire_cinterop");  // hermetic, mkdtemp-backed (CF-153)
+        auto fx = fx_scope.path / "cinterop";
+        std::error_code cec;
+        std::filesystem::copy("tests/fixtures/cinterop", fx,
+            std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, cec);
+        std::filesystem::remove_all(fx / ".cfire", cec);
+        require(!cec, std::format("copy the cinterop fixture: {}", cec.message()));
+        auto emit = cfire::build::analyze_and_emit(fx / "main.cf", rt_dir, false);
+        require(emit.has_value(), std::format("analyze_and_emit(cinterop): {}", emit ? "" : emit.error()));
+        if (emit) {
+            require(emit->first.contains("Vec2{.x =") &&
+                    emit->first.contains("Rect{.x =") &&
+                    emit->first.contains("Color{.r =") &&
+                    emit->first.contains("cfire::c_arg(title)") &&
+                    emit->first.contains("(values).data()"),
+                "C struct literals, c_arg string coercion, and slice data pointers emitted");
         }
-        auto rl_emit = cfire::build::analyze_and_emit(rl_tmp, rt_dir, false);
-        require(rl_emit.has_value(), "analyze_and_emit full raylib structs/raymath/str coercion");
-        if (rl_emit) {
-            require(rl_emit->first.contains("Vector2{.x =") &&
-                    rl_emit->first.contains("Rectangle{.x =") &&
-                    rl_emit->first.contains("Color{.r =") &&
-                    rl_emit->first.contains("cfire::c_arg(title)") &&
-                    rl_emit->first.contains("cfire::str::byte_ptr") &&
-                    rl_emit->first.contains("cfire::str::byte_ptr_at") &&
-                    rl_emit->first.contains("(codepoints).data()") &&
-                    rl_emit->first.contains("(*target) +="),
-                "raylib struct literal, c_arg string coercion, and pointer interop emitted");
-        }
-        // Execute the headless Raylib + Raymath vector/collision test end-to-end
-        auto rl_bin = rl_dir / "raylib_full_test_bin";
-        auto rl_build = cfire::build::build_native(rl_tmp, rt_dir, rl_bin, false, false);
-        require(rl_build.has_value(), "build_native raylib + raymath struct/vector test");
-        if (rl_build) {
-            int rl_rc = 0;
-            std::string rl_out = cfire::bridge::run_command_capture("\"" + rl_bin.string() + "\"", rl_rc);
-            require(rl_rc == 0, std::format("raylib_full_test exited with 0 (got {}): {}", rl_rc, rl_out));
-        }
-        std::filesystem::remove_all(rl_dir);
+        auto run = run_cfire(std::format("run \"{}\"", fx.string()));
+        require(run.ok() && run.output.contains("cinterop ok ff7800ff"),
+            std::format("cinterop fixture builds with build.CC and runs: {}", run.output));
     }
 
     ScopedTempDir eject_dir_scope("cfire_eject_dir");  // hermetic, mkdtemp-backed (CF-153)
@@ -459,7 +323,7 @@ fn main() {
             cmake_cc_txt->contains("FASTCRC_SEED=42"),
         "ejected CMakeLists.txt build.CC static library check");
     std::filesystem::remove_all(eject_cc_dir);
-    std::println("--- PASS: test_raylib_vendor_codegen_and_eject");
+    std::println("--- PASS: test_cinterop_codegen_and_eject");
 }
 
 
@@ -619,20 +483,14 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         require(has_platform_web, "wasm target defines -DPLATFORM_WEB");
     }
 
-    // 2. WebAssembly Canvas profile auto-detection on Raylib code
-    auto gui_cf = tmp.file("gui.cf", "package main\nimport \"vendor:raylib\" as rl\n\nfn main() {\n    rl.InitWindow(320, 240, \"test\")\n}\n");
+    // 2. With the raylib canvas gone (CF-185, Q49), a webui program on wasm gets no GLFW link flags.
+    auto gui_cf = tmp.file("gui.cf", "package main\nimport \"ext:webui\"\n\nfn main() {\n    println(\"gui\")\n}\n");
     auto gui_res = cfire::build::analyze_and_emit(gui_cf, rt_dir, false, false, "wasm32-unknown-emscripten");
-    require(gui_res.has_value(), "analyze_and_emit for wasm GUI (Canvas)");
+    require(gui_res.has_value(), "analyze_and_emit for a wasm webui program");
     if (gui_res) {
-        require(gui_res->second.is_gui, "gui.cf is marked as GUI");
-        bool has_glfw = false;
-        bool has_asyncify = false;
         for (const auto& l : gui_res->second.ldflags) {
-            if (l == "-sUSE_GLFW=3") has_glfw = true;
-            if (l == "-sASYNCIFY=1") has_asyncify = true;
+            require(l != "-sUSE_GLFW=3", "no raylib GLFW link flags on wasm");
         }
-        require(has_glfw, "wasm canvas profile links with -sUSE_GLFW=3");
-        require(has_asyncify, "wasm canvas profile links with -sASYNCIFY=1");
     }
 
     // 3. Toolchain detection & wasm build verification
@@ -655,14 +513,14 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         require(win_gui_res->second.is_gui, "win_gui_res marked as GUI");
     }
 
-    // 5. Native GUI Subsystem: macOS .app bundle creation for Raylib
+    // 5. Native GUI Subsystem: macOS .app bundle creation (`--subsystem gui`)
 #if defined(__APPLE__)
     auto rl_dir = tmp.path / "app_bundle_test";
     std::filesystem::create_directories(rl_dir);
     auto app_cf = rl_dir / "main.cf";
     {
         std::ofstream ofs(app_cf);
-        ofs << "package main\nimport \"vendor:raylib\" as rl\n\nfn main() {\n    rl.InitWindow(100, 100, \"App\")\n}\n";
+        ofs << "package main\n\nfn main() {\n    println(\"App\")\n}\n";
     }
     auto out_bin = rl_dir / "my_gui_app";
     auto app_build = cfire::build::build_native(app_cf, rt_dir, out_bin, false, false, "", "", {}, {}, "auto", "gui");
@@ -685,7 +543,7 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         require(!std::filesystem::exists(rl_dir / "my_console_app.app"), "no .app bundle created when console subsystem is forced");
     }
 
-    // 7. Native iOS & Simulator Target (`OPP-01`: `ios-sim` & `ios` target triples, UIKit/OpenGLES3 backend, flat .app bundle)
+    // 7. Native iOS & Simulator Target (`OPP-01`: `ios-sim` & `ios` target triples, flat .app bundle)
     require(cfire::build::is_ios_target("ios") && cfire::build::is_ios_target("ios-sim"), "is_ios_target detects ios and ios-sim");
     require(cfire::build::is_ios_simulator_target("ios-sim") && !cfire::build::is_ios_simulator_target("ios"),
         "is_ios_simulator_target distinguishes simulator from physical device");
@@ -704,8 +562,6 @@ import "core:fs"
 import "core:json"
 import "ext:db/sqlite"
 import "ext:compress/zstd"
-import "vendor:raylib" as rl
-import "vendor:raygui" as rg
 
 type SaveState struct {
     Pilot: str `json:"pilot"`
@@ -713,11 +569,7 @@ type SaveState struct {
 }
 
 fn main() {
-    rl.InitWindow(720, 480, "iOS Test")
-    defer rl.CloseWindow()
-    mut pilot := "Memo"
-    rg.GuiTextBox(rl.Rectangle{x: 10.0, y: 10.0, width: 120.0, height: 28.0}, &mut pilot, 32, true)
-    s := SaveState{Pilot: pilot, Score: 42}
+    s := SaveState{Pilot: "Memo", Score: 42}
     raw := json.stringify(s)
     _ = fs.write_text("save.json", raw)
     _ = zstd.compress("hello ios")
@@ -726,17 +578,13 @@ fn main() {
 )";
     }
     auto ios_emit = cfire::build::analyze_and_emit(ios_cf, rt_dir, false, false, "ios-sim");
-    require(ios_emit.has_value(), "analyze_and_emit for ios-sim with raylib, raygui, fs, json, sqlite, zstd");
+    require(ios_emit.has_value(), "analyze_and_emit for ios-sim with fs, json, sqlite, zstd");
     if (ios_emit) {
-        require(ios_emit->first.contains("#include \"core/ios_raylib.hpp\""), "ios-sim codegen includes core/ios_raylib.hpp");
-        require(ios_emit->first.contains("cfire::ios_rl::run_ios_app"), "ios-sim codegen wraps main with run_ios_app");
         bool has_platform_ios = false;
-        bool has_objc_arc = false;
         for (const auto& cf : ios_emit->second.cflags) {
             if (cf == "-DPLATFORM_IOS=1") has_platform_ios = true;
-            if (cf == "-fobjc-arc") has_objc_arc = true;
         }
-        require(has_platform_ios && has_objc_arc, "ios-sim cflags include -DPLATFORM_IOS=1 and -fobjc-arc");
+        require(has_platform_ios, "ios-sim cflags include -DPLATFORM_IOS=1");
     }
 
     if (cfire::build::resolve_ios_sdk_path(true).has_value()) {
@@ -751,19 +599,9 @@ fn main() {
             require(ios_plist.has_value() &&
                     ios_plist->contains("UIDeviceFamily") &&
                     ios_plist->contains("MinimumOSVersion") &&
+                    ios_plist->contains("UIInterfaceOrientationPortrait") &&
                     ios_plist->contains("UIInterfaceOrientationLandscapeLeft"),
-                "iOS Info.plist contains UIDeviceFamily, MinimumOSVersion, and Landscape orientation for 720x480 window");
-        }
-
-        // 8. Canonical 13-ios-native-ui Example (Zero-Coordinate GuiIos* Auto-Layout & Component Kit)
-        auto ios_ui_bin = ios_dir / "ios_native_ui";
-        auto ios_ui_build = cfire::build::build_native("examples/13-ios-native-ui/main.cf", rt_dir, ios_ui_bin, false, false, "ios-sim");
-        require(ios_ui_build.has_value(),
-            std::format("build_native(examples/13-ios-native-ui/main.cf, ios-sim) succeeded: {}", ios_ui_build ? "" : ios_ui_build.error()));
-        if (ios_ui_build) {
-            auto ui_bundle = std::filesystem::path(ios_ui_build->ios_app_bundle);
-            require(std::filesystem::exists(ui_bundle / "ios_native_ui"), "13-ios-native-ui flat .app bundle binary exists");
-            require(std::filesystem::exists(ui_bundle / "Info.plist"), "13-ios-native-ui flat .app bundle Info.plist exists");
+                "iOS Info.plist contains UIDeviceFamily, MinimumOSVersion, and portrait and landscape orientations");
         }
     }
 #endif

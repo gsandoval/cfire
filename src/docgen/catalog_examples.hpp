@@ -534,33 +534,6 @@ fn main() {
     }
 })CF";
     }
-    if (mod == "vendor:raylib") {
-        return R"CF(package main
-
-import "vendor:raylib" as rl
-
-fn main() {
-    rl.InitWindow(800, 450, "cfire + vendor:raylib")
-    defer rl.CloseWindow()
-
-    mut pos := rl.Vector2{x: 400.0, y: 225.0}
-    mut score := 0
-    rl.SetTargetFPS(60)
-
-    for !rl.WindowShouldClose() {
-        dt := rl.GetFrameTime()
-        if rl.IsKeyDown(rl.KEY_RIGHT) {
-            pos = rl.Vector2Add(pos, rl.Vector2{x: 200.0 * dt, y: 0.0})
-        }
-
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-        rl.ClearBackground(rl.RAYWHITE)
-        rl.DrawCircleV(pos, 24.0, rl.MAROON)
-        rl.DrawText("Score: {score}", 20, 20, 20, rl.DARKGRAY)
-    }
-})CF";
-    }
     if (mod == "core:audio") {
         return R"CF(package main
 
@@ -744,35 +717,6 @@ fn main() -> void! {
     _ = try s3.PutObject("data", "item.json", "{\"status\":\"ok\"}", "application/json")
     obj := try s3.GetObject("data", "item.json")
     println("Stored payload: {}", obj.Body)
-})CF";
-    }
-    if (mod == "vendor:raygui") {
-        return R"CF(package main
-
-import "vendor:raylib" as rl
-import "vendor:raygui" as rg
-
-fn main() {
-    rl.InitWindow(640, 360, "cfire + vendor:raygui")
-    defer rl.CloseWindow()
-
-    mut volume: f32 = 75.0
-    mut vsync := true
-    mut name := "Player1"
-    mut edit_name := false
-
-    for !rl.WindowShouldClose() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-        rl.ClearBackground(rl.RAYWHITE)
-
-        rg.GuiWindowBox(rl.Rectangle{x: 40.0, y: 30.0, width: 320.0, height: 220.0}, "Settings")
-        rg.GuiCheckBox(rl.Rectangle{x: 60.0, y: 70.0, width: 20.0, height: 20.0}, "Enable VSync", &mut vsync)
-        rg.GuiSliderBar(rl.Rectangle{x: 100.0, y: 110.0, width: 180.0, height: 20.0}, "Vol", "{volume}", &mut volume, 0.0, 100.0)
-        if rg.GuiTextBox(rl.Rectangle{x: 60.0, y: 150.0, width: 220.0, height: 28.0}, &mut name, 64, edit_name) != 0 {
-            edit_name = !edit_name
-        }
-    }
 })CF";
     }
     return "";

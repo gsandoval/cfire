@@ -65,7 +65,7 @@ namespace cfire::build {
     return true;
 }
 
-// Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"` or `import "pkg:raygui_ext"`)
+// Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"` or `import "pkg:tako"`)
 // and automatically discovers same-directory sibling `.cf` files sharing `root_ast.package_name`.
 // Q35 (CF-173): set by the CLI when the user named a program's entry file (`cfire run a.cf`). That file is then
 // the whole program plus what it imports: same-directory `package main` siblings are not merged. Test files and

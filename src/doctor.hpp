@@ -431,22 +431,6 @@ struct CheckItem {
             }
 #endif
         }
-
-        det.clear();
-        auto cache_rl = build::get_package_cache_root() / "vendor_raylib" / "include" / "raylib.h";
-        if (check_pkg_or_header("raylib", "raylib.h", det)) {
-            items.push_back({"Native Engine Libraries", "raylib (`vendor:raylib`)", "ok", det, ""});
-        } else if (std::filesystem::exists(cache_rl)) {
-            items.push_back({"Native Engine Libraries", "raylib (`vendor:raylib`)", "ok", cache_rl.parent_path().parent_path().string() + " (cached)", ""});
-        } else {
-            items.push_back({
-                "Native Engine Libraries",
-                "raylib (`vendor:raylib`)",
-                "ok",
-                "Auto-downloaded on first `vendor:raylib` build (or pre-fetch via `cfire setup --raylib`)",
-                ""
-            });
-        }
     }
 
     // --- 4. Cross-Platform & Target SDKs ---
@@ -613,8 +597,7 @@ inline auto run_doctor(const std::filesystem::path& runtime_dir, bool json_mode)
 inline auto run_setup(
     const std::filesystem::path& runtime_dir,
     bool auto_yes,
-    bool with_wasm,
-    bool with_raylib
+    bool with_wasm
 ) -> int {
     std::println("==> cfire setup (v{}) — Configuring Toolchain & Dependencies", kCfireVersion);
     std::string pm = detect_pkg_manager();
@@ -638,9 +621,6 @@ inline auto run_setup(
         if (!check_pkg_or_header("openssl", "openssl/ssl.h", dummy) &&
             !std::filesystem::exists("/opt/homebrew/opt/openssl/include/openssl/ssl.h")) {
             pkgs.push_back("openssl");
-        }
-        if (with_raylib && !check_pkg_or_header("raylib", "raylib.h", dummy)) {
-            pkgs.push_back("raylib");
         }
         if (with_wasm && !build::resolve_emscripten_compiler()) {
             pkgs.push_back("emscripten");
@@ -714,30 +694,6 @@ inline auto run_setup(
         auto pch_flags = build::ensure_prelude_pch(runtime_dir, false);
         if (!pch_flags.empty()) {
             std::println("    ✓ Prelude PCH ready ({})", pch_flags);
-        }
-    }
-
-    // 4. Optional Raylib pre-fetch
-    if (with_raylib) {
-        std::string dummy;
-        auto cache_rl = build::get_package_cache_root() / "vendor_raylib";
-        if (!check_pkg_or_header("raylib", "raylib.h", dummy) && !std::filesystem::exists(cache_rl / "include" / "raylib.h")) {
-            std::string url;
-#if defined(__APPLE__)
-            url = "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_macos.tar.gz";
-#elif defined(__linux__) && defined(__aarch64__)
-            url = "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_linux_arm64.tar.gz";
-#elif defined(__linux__)
-            url = "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_linux_amd64.tar.gz";
-#endif
-            if (!url.empty()) {
-                std::println("==> Pre-fetching vendor:raylib from {}...", url);
-                std::string sha;
-                auto res = build::fetch_archive(url, "", cache_rl, sha);
-                if (res) {
-                    std::println("    ✓ Cached vendor:raylib in {}", cache_rl.string());
-                }
-            }
         }
     }
 
