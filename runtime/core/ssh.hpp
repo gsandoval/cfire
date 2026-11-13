@@ -192,11 +192,11 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::byte>, Error> {
+    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::uint8_t>, Error> {
         auto s = read_text(max_bytes);
         if (!s) return std::unexpected(s.error());
         auto sp = cfire::to_bytes(*s);
-        return std::vector<std::byte>(sp.begin(), sp.end());
+        return std::vector<std::uint8_t>(sp.begin(), sp.end());
     }
 
     [[nodiscard]] auto write_text(std::string_view data) -> std::expected<std::size_t, Error> {
@@ -221,13 +221,10 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, Error> {
-        return write_text(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
-    }
-
     [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, Error> {
         return write_text(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
     }
+
 
     [[nodiscard]] auto resize_pty(std::int32_t cols, std::int32_t rows) -> std::expected<void, Error> {
         if (!state_) return std::unexpected(Error("ssh.Channel.resize_pty: invalid channel"));
@@ -601,10 +598,6 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto sftp_write_bytes(std::string_view remote_path, std::span<const std::byte> data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
-        return sftp_write_text(remote_path, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()), mode);
-    }
-
     [[nodiscard]] auto sftp_write_bytes(std::string_view remote_path, std::span<const std::uint8_t> data, std::uint32_t mode = 0644) -> std::expected<void, Error> {
         return sftp_write_text(remote_path, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()), mode);
     }
@@ -645,11 +638,11 @@ public:
 #endif
     }
 
-    [[nodiscard]] auto sftp_read_bytes(std::string_view remote_path) -> std::expected<std::vector<std::byte>, Error> {
+    [[nodiscard]] auto sftp_read_bytes(std::string_view remote_path) -> std::expected<std::vector<std::uint8_t>, Error> {
         auto s = sftp_read_text(remote_path);
         if (!s) return std::unexpected(s.error());
         auto sp = cfire::to_bytes(*s);
-        return std::vector<std::byte>(sp.begin(), sp.end());
+        return std::vector<std::uint8_t>(sp.begin(), sp.end());
     }
 
     [[nodiscard]] auto sftp_list_dir(std::string_view remote_path) -> std::expected<std::vector<SftpEntry>, Error> {
@@ -831,7 +824,7 @@ private:
         std::size_t hlen = 0;
         if (ssh_get_publickey_hash(srv_key, SSH_PUBLICKEY_HASH_SHA256, &hash, &hlen) == SSH_OK && hash) {
             st->host_fingerprint = "SHA256:" + cfire::base64::encode(
-                std::span<const std::byte>(reinterpret_cast<const std::byte*>(hash), hlen));
+                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(hash), hlen));
             ssh_clean_pubkey_hash(&hash);
         }
         ssh_key_free(srv_key);

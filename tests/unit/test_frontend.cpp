@@ -7,6 +7,7 @@
 #include "test_audit_w2.hpp"
 #include "test_audit_w4.hpp"
 #include "test_audit_w5.hpp"
+#include "test_cf183.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");

@@ -191,8 +191,8 @@ inline auto get_rng() -> std::mt19937_64& {
     return dist(get_rng());
 }
 
-[[nodiscard]] inline auto bytes(std::size_t n) -> std::vector<std::byte> {
-    std::vector<std::byte> buf(n);
+[[nodiscard]] inline auto bytes(std::size_t n) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> buf(n);
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     if (n > 0) {
         ::arc4random_buf(buf.data(), n);
@@ -204,7 +204,7 @@ inline auto get_rng() -> std::mt19937_64& {
     } else {
         auto& rng = get_rng();
         for (std::size_t i = 0; i < n; ++i) {
-            buf[i] = static_cast<std::byte>(rng() & 0xFF);
+            buf[i] = static_cast<std::uint8_t>(rng() & 0xFF);
         }
     }
 #endif

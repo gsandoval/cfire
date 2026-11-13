@@ -168,7 +168,7 @@ namespace cfire::frontend {
                 return std::format("R\"({})\"", ex.value);
             }
             // The lexer only accepts escapes C++ spells the same way, so the literal passes through.
-            if (ex.kind == TokenKind::Char) return std::format("std::byte{{static_cast<unsigned char>({})}}", ex.value);
+            if (ex.kind == TokenKind::Char) return std::format("std::uint8_t{{static_cast<unsigned char>({})}}", ex.value);
             return ex.value;
         } else if constexpr (std::is_same_v<T, UnaryExpr>) {
             if (ex.op == "move") return std::format("std::move({})", emit_expr(ex.operand));
@@ -191,7 +191,20 @@ namespace cfire::frontend {
                 }
             }
             if (ex.op == "<<" || ex.op == ">>") {  // Q11 (CF-166): out-of-range counts panic instead of UB
-                return std::format("cfire::{}({}, {})", ex.op == "<<" ? "shl" : "shr", emit_expr(ex.left), emit_expr(ex.right));
+                // CF-183: a bare integer literal is 64-bit here, as Sema's constant shift check assumes (`1 << 50`).
+                const auto* llit = ex.left ? std::get_if<LiteralExpr>(&ex.left->node) : nullptr;
+                std::string lhs = emit_expr(ex.left);
+                if (llit && llit->kind == TokenKind::Int) lhs = std::format("static_cast<std::int64_t>({})", lhs);
+                return std::format("cfire::{}({}, {})", ex.op == "<<" ? "shl" : "shr", lhs, emit_expr(ex.right));
+            }
+            if (ex.op == "<" || ex.op == "<=" || ex.op == ">" || ex.op == ">=" || ex.op == "==" || ex.op == "!=") {
+                // CF-183: `r < xs.len()` with a negative `r` must be true; a literal operand converts exactly.
+                const bool lit = (ex.left && std::holds_alternative<LiteralExpr>(ex.left->node)) ||
+                                 (ex.right && std::holds_alternative<LiteralExpr>(ex.right->node));
+                if (!lit) {
+                    const char* fn = ex.op == "<" ? "lt" : ex.op == "<=" ? "le" : ex.op == ">" ? "gt" : ex.op == ">=" ? "ge" : ex.op == "==" ? "eq" : "ne";
+                    return std::format("cfire::cmp_{}({}, {})", fn, emit_expr(ex.left), emit_expr(ex.right));
+                }
             }
             return std::format("({} {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
@@ -334,7 +347,7 @@ namespace cfire::frontend {
                 }
             }
             if (use_raw_index) {
-                return std::format("{}[{}]", emit_expr(ex.object), emit_expr(ex.index));
+                return std::format("cfire::detail::as_byte_elem({}[{}])", emit_expr(ex.object), emit_expr(ex.index));
             }
             return std::format(
                 "cfire::index_at({}, {}, \"{}\", {})",
@@ -387,7 +400,7 @@ namespace cfire::frontend {
             } else {
                 if (tname == "Channel" && used_core_.contains("sync")) {
                     tname = "cfire::sync::Channel";
-                } else if ((tname == "Set" || tname == "PriorityQueue" || tname == "Deque") && used_core_.contains("collections")) {
+                } else if ((tname == "Set" || tname == "PriorityQueue" || tname == "MinQueue" || tname == "Deque") && used_core_.contains("collections")) {
                     tname = std::format("cfire::collections::{}", tname);
                 }
             }
@@ -893,7 +906,8 @@ namespace cfire::frontend {
             return std::format("cfire::vec_push({}, {})", obj, emit_call_arg(call.args[0]));
         }
         if (mem->field == "pop" && call.args.empty()) {
-            return std::format("{}.pop_back()", obj);
+            // CF-183: an untyped receiver may be a slice, a string or a stdlib queue; `bm::pop` handles all three.
+            return std::format("cfire::bm::pop({})", obj);
         }
         if (mem->field == "with_ext" && call.args.size() == 1) {
             return std::format("cfire::path_with_ext({}, {})", obj, emit_call_arg(call.args[0]));
@@ -1096,7 +1110,7 @@ namespace cfire::frontend {
         if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "std::string";
         if (lit->kind == TokenKind::Float) return "double";
         if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
-        if (lit->kind == TokenKind::Char) return "std::byte";
+        if (lit->kind == TokenKind::Char) return "std::uint8_t";
         return "std::int64_t";
     }
     if (const auto* id = std::get_if<IdentExpr>(&e->node)) {

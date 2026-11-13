@@ -184,7 +184,7 @@ struct User {
 };
 
 struct Blob {
-    std::vector<std::byte> data;
+    std::vector<std::uint8_t> data;
     std::string content_type{"application/octet-stream"};
 };
 
@@ -879,7 +879,7 @@ public:
         return {};
     }
 
-    std::expected<void, cfire::Error> put(Ctx ctx, std::string_view key, const std::vector<std::byte>& data, std::string_view content_type = "application/octet-stream") const {
+    std::expected<void, cfire::Error> put(Ctx ctx, std::string_view key, const std::vector<std::uint8_t>& data, std::string_view content_type = "application/octet-stream") const {
         std::string_view sv(reinterpret_cast<const char*>(data.data()), data.size());
         return put(ctx, key, sv, content_type);
     }
@@ -893,7 +893,7 @@ public:
                 tako_c_free(res);
                 return cfire::make_error(err);
             }
-            std::vector<std::byte> bytes(res.len);
+            std::vector<std::uint8_t> bytes(res.len);
             if (res.len > 0 && res.data) {
                 std::memcpy(bytes.data(), res.data, res.len);
             }
@@ -906,7 +906,7 @@ public:
         auto& b = detail::local_store().buckets[name_];
         auto it = b.find(std::string(key));
         if (it == b.end()) return cfire::make_error(not_found("not found"));
-        std::vector<std::byte> bytes(it->second.first.size());
+        std::vector<std::uint8_t> bytes(it->second.first.size());
         if (!bytes.empty()) {
             std::memcpy(bytes.data(), it->second.first.data(), bytes.size());
         }

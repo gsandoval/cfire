@@ -1,0 +1,13 @@
+// expect: stdout
+// | step 1
+// | step 2
+package main
+// CF-183: output printed before a panic reaches a pipe or file. On Linux stdout is fully buffered when it is not a
+// terminal, so the panic path flushes before aborting.
+fn main() {
+    xs: []i64 = [1, 2]
+    println("step 1")
+    println("step 2")
+    i: i64 = 5
+    println("{}", xs[i]) //~ panic "index out of bounds"
+}

@@ -1892,7 +1892,7 @@ RLAPI Wave LoadWave(const char *fileName) {
 RLAPI Wave LoadWaveFromMemory(const char *fileType, const unsigned char *fileData, int dataSize) {
     (void)fileType;
     if (!fileData || dataSize <= 0) return Wave{};
-    std::span<const std::byte> span(reinterpret_cast<const std::byte*>(fileData), static_cast<std::size_t>(dataSize));
+    std::span<const std::uint8_t> span(reinterpret_cast<const std::uint8_t*>(fileData), static_cast<std::size_t>(dataSize));
     auto res = cfire::audio::decode_wav(span);
     if (!res) return Wave{};
     auto* buf = static_cast<float*>(std::malloc(res->samples.size() * sizeof(float)));

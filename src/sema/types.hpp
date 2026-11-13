@@ -104,7 +104,8 @@ struct TypeId {
     static constexpr TypeId Float32() noexcept { return TypeId{14}; }
     static constexpr TypeId Float64() noexcept { return TypeId{15}; }
     static constexpr TypeId Str() noexcept { return TypeId{16}; }
-    static constexpr TypeId Byte() noexcept { return TypeId{17}; }
+    // Q39 (CF-183): `byte` is an alias of `u8` (slot 17 is kept so the builtin ids stay stable).
+    static constexpr TypeId Byte() noexcept { return TypeId{8}; }
 };
 
 struct TypeDesc {
@@ -144,6 +145,7 @@ public:
         for (uint32_t i = 0; i < types_.size(); ++i) {
             name_to_id_[types_[i].name] = TypeId{i};
         }
+        name_to_id_["byte"] = TypeId::Uint8();
         name_to_id_["int"] = TypeId::Int64();
         name_to_id_["uint"] = TypeId::Uint64();
         name_to_id_["bool_"] = TypeId::Bool();
@@ -293,6 +295,11 @@ public:
         if (tr.is_mut_ptr) {
             TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
             return make_mut_ptr(elem);
+        }
+        // Q44 (CF-183): a stdlib priority queue keeps its element type (`collections.MinQueue[i64]`), so its
+        // `pop() -> T?` is typed. Other generic types are still named without their arguments.
+        if (tr.type_args.size() == 1 && (tr.name.ends_with("PriorityQueue") || tr.name.ends_with("MinQueue"))) {
+            return from_name(tr.name + "[" + to_string(from_typeref(tr.type_args[0])) + "]");
         }
         return from_name(tr.name);
     }

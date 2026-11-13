@@ -484,15 +484,15 @@ fn main() {
         require(rhex.size() == 32, "sha256::random_hex(16) returns 32 hex chars (SEC-02)");
 
         // RFC 5869 Test Case 1 (Basic test case with SHA-256)
-        std::vector<std::byte> ikm(22, std::byte{0x0b});
-        std::vector<std::byte> salt(13);
-        for (std::size_t i = 0; i < 13; ++i) salt[i] = static_cast<std::byte>(i);
-        std::vector<std::byte> info(10);
-        for (std::size_t i = 0; i < 10; ++i) info[i] = static_cast<std::byte>(0xf0 + i);
+        std::vector<std::uint8_t> ikm(22, std::uint8_t{0x0b});
+        std::vector<std::uint8_t> salt(13);
+        for (std::size_t i = 0; i < 13; ++i) salt[i] = static_cast<std::uint8_t>(i);
+        std::vector<std::uint8_t> info(10);
+        for (std::size_t i = 0; i < 10; ++i) info[i] = static_cast<std::uint8_t>(0xf0 + i);
         auto okm = cfire::hmac::hkdf_sha256(ikm, salt, info, 42);
         require(okm.size() == 42, "hkdf_sha256 derives 42-byte OKM (SEC-02)");
         std::string okm_hex;
-        for (std::byte b : okm) {
+        for (std::uint8_t b : okm) {
             okm_hex += std::format("{:02x}", static_cast<unsigned char>(b));
         }
         require(okm_hex == "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865",

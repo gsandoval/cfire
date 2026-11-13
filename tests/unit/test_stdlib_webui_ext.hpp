@@ -714,7 +714,7 @@ int main() {
         auto pbkdf2_key = cfire::hmac::pbkdf2_sha256("password", "salt", 1000, 32);
         require(pbkdf2_key.size() == 32, "CF-006: hmac::pbkdf2_sha256");
 
-        std::vector<std::byte> raw_blob{std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}};
+        std::vector<std::uint8_t> raw_blob{std::uint8_t{0xDE}, std::uint8_t{0xAD}, std::uint8_t{0xBE}, std::uint8_t{0xEF}};
 
         // CF-008: ext:keychain in headless mode
         ::setenv("CFIRE_HEADLESS_TEST", "1", 1);
@@ -724,8 +724,8 @@ int main() {
         require(cfire::keychain::delete_password("dev.flint.test", "acct1").has_value(), "CF-008: keychain::delete_password");
 
         // CF-021 & CF-022: byte == u8 comparisons and str::parse_*
-        std::byte b{0x0A};
-        require(b == 0x0A && b == static_cast<std::uint8_t>(10), "CF-021: std::byte == integral comparison");
+        std::uint8_t b{0x0A};
+        require(b == 0x0A && b == static_cast<std::uint8_t>(10), "CF-021: std::uint8_t == integral comparison");
         require(cfire::str::parse_i64(" -98765 ").value_or(0) == -98765, "CF-022: str::parse_i64");
         require(cfire::str::parse_f64("3.5").value_or(0.0) == 3.5, "CF-022: str::parse_f64");
         require(cfire::str::parse_bool("true").value_or(false) == true, "CF-022: str::parse_bool");
@@ -763,7 +763,7 @@ int main() {
         auto& [pipe_r, pipe_w] = *pp;
         require(pipe_w.write_text("pipe-payload").value_or(0) == 12, "CF-089: pipe writer write_text");
         pipe_w.close();
-        std::vector<std::byte> pipe_buf(32);
+        std::vector<std::uint8_t> pipe_buf(32);
         auto pipe_n = pipe_r.read_into(pipe_buf);
         require(pipe_n.has_value() && *pipe_n == 12, "CF-089: pipe reader read_into");
         pipe_buf.resize(*pipe_n);

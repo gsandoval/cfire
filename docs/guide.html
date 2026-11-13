@@ -2986,7 +2986,8 @@ fn main() {
   <div class="callout-title">Tip</div>
   <p><strong>Why <code>ports.get(key) or default</code> Beats C++ <code>std::map::operator[]</code></strong>: In C++, reading <code>ports[&quot;smtp&quot;]</code> silently mutates the map by inserting a default-constructed entry. In <code>cfire</code>, <code>ports.get(&quot;smtp&quot;)</code> is read-only and returns an optional <code>i32?</code>, which pairs naturally with <code>or 25</code>.</p>
 </div>
-<p>Additionally, all slice and array indexing (<code>scores[i]</code>) is checked at compile time for negative or constant out-of-bounds indices (<code>cfire/INDEX-OUT-OF-BOUNDS</code>) and verified at runtime via <code>cfire::index_at</code>.</p>
+<p>Additionally, all slice and array indexing (<code>scores[i]</code>) is checked at compile time for negative or constant out-of-bounds indices (<code>cfire/INDEX-OUT-OF-BOUNDS</code>) and verified at runtime via <code>cfire::index_at</code>. Any integer type can index (<code>grid[r][c]</code> with <code>r: i64</code> needs no cast); a negative index panics like an out-of-range one. Comparisons between signed and unsigned integers compare values, so <code>r &lt; grid.len()</code> is <code>true</code> for <code>r = -1</code>.</p>
+<p>Tuples and structs can be map keys and <code>Set</code>/<code>MinQueue</code> elements: tuples compare and hash element by element (<code>map[(i64, i64)]bool</code>), and a struct gets <code>==</code>, ordering and hashing automatically when every field has them.</p>
     <div class="chapter-pager topic-pager">
       <a href="#ch4-bindings-scalar-types-numeric-conversions" class="pager-card pager-prev" onclick="navigateToSubhead('4', 'ch4-bindings-scalar-types-numeric-conversions'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 4.1)</span>
@@ -3046,6 +3047,34 @@ fn main() {
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
   <pre><code>excl=10 incl=12 items=alpha,beta,gamma countdown=1
+</code></pre>
+</div>
+<h4 id="ch4-if-as-a-value-indexed-loops-map-entries"><code>if</code> as a Value, Indexed Loops &amp; Map Entries</h4>
+<p><code>if c { a } else { b }</code> is also an expression. The <code>else</code> branch is required, and both branches must have the same type (a bare number adapts to the other branch's numeric type). <code>for i, x in xs</code> visits each index with its element, and <code>for k, v in m</code> visits each map entry once. Map iteration order is unspecified.</p>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+fn main() {
+    temps: []i64 = [12, -3, 25]
+    mut labels: []str = []
+    for i, t in temps {
+        kind := if t &lt; 0 { &quot;freezing&quot; } else if t &lt; 20 { &quot;mild&quot; } else { &quot;hot&quot; }
+        labels.push(&quot;{i}:{kind}&quot;)
+    }
+
+    mut stock: map[str]i64 = {}
+    stock[&quot;apples&quot;] = 3
+    stock[&quot;pears&quot;] = 5
+    mut total: i64 = 0
+    for name, count in stock {
+        total += if name.starts_with(&quot;a&quot;) { count * 2 } else { count }
+    }
+    println(&quot;{} total={}&quot;, labels.join(&quot; &quot;), total)
+}
+</code></pre>
+<div class="terminal-tray">
+  <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
+  <pre><code>0:mild 1:freezing 2:hot total=11
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
@@ -3878,7 +3907,8 @@ fn main() {
       <tr><td><code>core:unicode</code></td><td><code>unicode.to_lower</code> / <code>to_upper</code></td><td><code>fn(s: str) -&gt; str</code></td><td>Full Unicode case folding across Latin, Greek, and Cyrillic scripts.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.is_letter</code> / <code>is_digit</code> / <code>is_space</code></td><td><code>fn(r: u32) -&gt; bool</code></td><td>Unicode general category classification predicates on a 32-bit rune.</td></tr>
       <tr><td><code>core:regex</code></td><td><code>regex.compile</code></td><td><code>fn(pattern: str) -&gt; Regex!</code></td><td>Compiles an ECMAScript regular expression (<code>std::regex</code>), returning an error on invalid syntax.</td></tr>
-      <tr><td><code>core:regex</code></td><td><code>regex.is_match</code> / <code>find</code> / <code>find_all</code></td><td><code>fn(pat: str, text: str) -&gt; bool!</code> / <code>Match?!</code> / <code>[]str!</code></td><td>Tests matches or extracts the first (<code>Match { text, index }</code>) or all non-overlapping matches.</td></tr>
+      <tr><td><code>core:regex</code></td><td><code>regex.is_match</code> / <code>find</code> / <code>find_all</code></td><td><code>fn(pat: str, text: str) -&gt; bool!</code> / <code>str?!</code> / <code>[]str!</code></td><td>One-shot forms: tests for a match, or extracts the first or all non-overlapping matches.</td></tr>
+      <tr><td><code>core:regex</code></td><td><code>re.is_match(text)</code> / <code>re.find(text)</code> / <code>re.find_all(text)</code></td><td><code>-&gt; bool</code> / <code>-&gt; str?</code> / <code>-&gt; []str</code></td><td>The same on a compiled <code>Regex</code> from <code>regex.compile</code>, for patterns used in a loop.</td></tr>
       <tr><td><code>core:regex</code></td><td><code>regex.replace_all</code></td><td><code>fn(pat: str, text: str, replacement: str) -&gt; str!</code></td><td>Replaces every match of <code>pat</code> in <code>text</code> with <code>replacement</code>.</td></tr>
     </tbody>
   </table>
@@ -4004,7 +4034,7 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch8-generic-sets-priority-queues-deques-sorting" data-topic-id="ch8-generic-sets-priority-queues-deques-sorting" data-topic-title="Generic Sets, Priority Queues, Deques &amp; Sorting" data-short-title="8.3 Sets, Heaps &amp; Sort">
 <h3 class="guide-heading" id="ch8-generic-sets-priority-queues-deques-sorting"><span class="heading-hash">#</span><span class="heading-text">Generic Sets, Priority Queues, Deques &amp; Sorting</span></h3>
-<p>Beyond built-in slices (<code>[]T</code>) and hash maps (<code>map[K]V</code>), <code>core:collections</code> gives you generic hash sets, max-heap priority queues, and double-ended ring queues; sorting and searching are methods on the slice itself:</p>
+<p>Beyond built-in slices (<code>[]T</code>) and hash maps (<code>map[K]V</code>), <code>core:collections</code> gives you generic hash sets, max-first and min-first priority queues, and double-ended ring queues; sorting and searching are methods on the slice itself:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -4013,7 +4043,8 @@ fn main() {
     </thead>
     <tbody>
       <tr><td><code>core:collections</code></td><td><code>collections.Set[T]</code></td><td><code>.insert(v)</code>, <code>.contains(v) -&gt; bool</code>, <code>.remove(v)</code>, <code>.len() -&gt; usize</code>, <code>.clear()</code></td><td><code>std::unordered_set&lt;T&gt;</code></td></tr>
-      <tr><td><code>core:collections</code></td><td><code>collections.PriorityQueue[T]</code></td><td><code>.push(v)</code>, <code>.top() -&gt; T</code>, <code>.pop() -&gt; T</code>, <code>.empty() -&gt; bool</code>, <code>.len() -&gt; usize</code></td><td><code>std::priority_queue&lt;T&gt;</code> (max-heap)</td></tr>
+      <tr><td><code>core:collections</code></td><td><code>collections.PriorityQueue[T]</code></td><td><code>.push(v)</code>, <code>.pop() -&gt; T?</code>, <code>.peek() -&gt; T?</code>, <code>.top() -&gt; T</code>, <code>.empty() -&gt; bool</code>, <code>.len() -&gt; usize</code></td><td><code>std::priority_queue&lt;T&gt;</code> (largest first)</td></tr>
+      <tr><td><code>core:collections</code></td><td><code>collections.MinQueue[T]</code></td><td>same as <code>PriorityQueue[T]</code>, smallest first (<code>MinQueue[(i64, i64)]</code> for Dijkstra <code>(cost, node)</code> states)</td><td><code>std::priority_queue&lt;T, std::vector&lt;T&gt;, std::greater&lt;T&gt;&gt;</code></td></tr>
       <tr><td><code>core:collections</code></td><td><code>collections.Deque[T]</code></td><td><code>.push_front(v)</code>, <code>.push_back(v)</code>, <code>.pop_front() -&gt; T</code>, <code>.pop_back() -&gt; T</code>, <code>.len() -&gt; usize</code></td><td><code>std::deque&lt;T&gt;</code></td></tr>
       <tr><td>builtin</td><td><code>xs.sort()</code> / <code>xs.reverse()</code></td><td>sorts <code>xs</code> ascending or reverses it in place (needs a <code>mut</code> binding)</td><td><code>std::sort</code> / <code>std::reverse</code></td></tr>
       <tr><td>builtin</td><td><code>xs.sort_by(less)</code></td><td><code>fn(less: fn(T, T) -&gt; bool)</code> — custom comparator sort</td><td><code>std::sort(xs.begin(), xs.end(), less)</code></td></tr>
@@ -4035,6 +4066,10 @@ fn main() {
 
     mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
+    mut open: collections.MinQueue[(i64, str)]
+    open.push((5, &quot;far&quot;))
+    open.push((1, &quot;near&quot;))
+    (cost, name) := open.pop() or (0, &quot;&quot;)
 
     mut dq: collections.Deque[str]
     dq.push_back(&quot;worker-1&quot;)
@@ -4044,13 +4079,13 @@ fn main() {
     seen.insert(&quot;us-east&quot;)
     seen.insert(&quot;eu-west&quot;)
 
-    println(&quot;min={} idx_of_19={} max_pq={} front={} regions={}&quot;,
-        latencies[0], idx, pq.top(), dq.pop_front(), seen.len())
+    println(&quot;min={} idx_of_19={} max_pq={} nearest={}:{} front={} regions={}&quot;,
+        latencies[0], idx, pq.top(), name, cost, dq.pop_front(), seen.len())
 }
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
-  <pre><code>min=7 idx_of_19=2 max_pq=88 front=leader-0 regions=2
+  <pre><code>min=7 idx_of_19=2 max_pq=88 nearest=near:1 front=leader-0 regions=2
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">

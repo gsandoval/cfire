@@ -277,7 +277,7 @@ fn (mut c: Context) slider_row(label: str, mut value: f32, min_val: f32, max_val
     if rl.IsWindowReady() {
         mp := rl.GetMousePosition()
         if max_val > min_val && rl.CheckCollisionPointRec(mp, touch_zone) &&
-        (rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON) || rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
+            (rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON) || rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
             mut tw_safe := track.width
             if tw_safe < 1.0 {
                 tw_safe = 1.0

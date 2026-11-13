@@ -5,7 +5,7 @@
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size == 0 || size > 64 * 1024) return 0;
-    auto sp = std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), size);
+    auto sp = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(data), size);
     auto raw = cfire::ai::detail::inflate_raw(sp, 1024 * 1024);
     (void)raw;
     auto zlib = cfire::ai::detail::inflate_zlib_or_raw(sp);

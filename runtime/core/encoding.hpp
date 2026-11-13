@@ -17,23 +17,20 @@ namespace cfire::base64 {
 inline constexpr std::string_view kStdChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-[[nodiscard]] inline auto encode(std::span<const std::byte> data, bool url_safe = false) -> std::string {
+[[nodiscard]] inline auto encode(std::span<const std::uint8_t> data, bool url_safe = false) -> std::string {
     return cfire::detail::base64_encode(data, url_safe);
 }
 
-[[nodiscard]] inline auto encode(std::span<const std::uint8_t> data, bool url_safe = false) -> std::string {
-    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size()), url_safe);
-}
 
 [[nodiscard]] inline auto encode_str(std::string_view s, bool url_safe = false) -> std::string {
-    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()), url_safe);
+    return encode(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(s.data()), s.size()), url_safe);
 }
 
 [[nodiscard]] inline auto encode(std::string_view s, bool url_safe = false) -> std::string {
     return encode_str(s, url_safe);
 }
 
-[[nodiscard]] inline auto decode(std::string_view s) -> std::expected<std::vector<std::byte>, cfire::Error> {
+[[nodiscard]] inline auto decode(std::string_view s) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     auto decode_char = [](char c) -> int {
         if (c >= 'A' && c <= 'Z') return c - 'A';
         if (c >= 'a' && c <= 'z') return c - 'a' + 26;
@@ -44,7 +41,7 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
         return -2; // invalid
     };
 
-    std::vector<std::byte> out;
+    std::vector<std::uint8_t> out;
     out.reserve((s.size() * 3) / 4);
 
     std::vector<int> quad;
@@ -67,9 +64,9 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
                                    (static_cast<std::uint32_t>(b2 < 0 ? 0 : b2) << 6) |
                                    (static_cast<std::uint32_t>(b3 < 0 ? 0 : b3));
 
-            out.push_back(static_cast<std::byte>((triple >> 16) & 0xFF));
-            if (b2 != -1) out.push_back(static_cast<std::byte>((triple >> 8) & 0xFF));
-            if (b3 != -1) out.push_back(static_cast<std::byte>(triple & 0xFF));
+            out.push_back(static_cast<std::uint8_t>((triple >> 16) & 0xFF));
+            if (b2 != -1) out.push_back(static_cast<std::uint8_t>((triple >> 8) & 0xFF));
+            if (b3 != -1) out.push_back(static_cast<std::uint8_t>(triple & 0xFF));
             quad.clear();
         }
     }
@@ -85,8 +82,8 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
         std::uint32_t triple = (static_cast<std::uint32_t>(b0) << 18) |
                                (static_cast<std::uint32_t>(b1) << 12) |
                                (static_cast<std::uint32_t>(b2 < 0 ? 0 : b2) << 6);
-        out.push_back(static_cast<std::byte>((triple >> 16) & 0xFF));
-        if (b2 != -1) out.push_back(static_cast<std::byte>((triple >> 8) & 0xFF));
+        out.push_back(static_cast<std::uint8_t>((triple >> 16) & 0xFF));
+        if (b2 != -1) out.push_back(static_cast<std::uint8_t>((triple >> 8) & 0xFF));
     }
 
     return out;
@@ -103,23 +100,20 @@ inline constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
 // --- `core:encoding/hex` (Hexadecimal Encoding/Decoding) ---
 namespace cfire::hex {
 
-[[nodiscard]] inline auto encode(std::span<const std::byte> data) -> std::string {
+[[nodiscard]] inline auto encode(std::span<const std::uint8_t> data) -> std::string {
     return cfire::detail::bytes_to_hex(data);
 }
 
-[[nodiscard]] inline auto encode(std::span<const std::uint8_t> data) -> std::string {
-    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size()));
-}
 
 [[nodiscard]] inline auto encode(std::string_view s) -> std::string {
-    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()));
+    return encode(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(s.data()), s.size()));
 }
 
 [[nodiscard]] inline auto encode_str(std::string_view s) -> std::string {
-    return encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()));
+    return encode(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(s.data()), s.size()));
 }
 
-[[nodiscard]] inline auto decode(std::string_view s) -> std::expected<std::vector<std::byte>, cfire::Error> {
+[[nodiscard]] inline auto decode(std::string_view s) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     auto hex_val = [](char c) -> int {
         if (c >= '0' && c <= '9') return c - '0';
         if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -130,7 +124,7 @@ namespace cfire::hex {
     if (s.size() % 2 != 0) {
         return cfire::make_error(std::format("odd hex string length ({})", s.size()));
     }
-    std::vector<std::byte> out;
+    std::vector<std::uint8_t> out;
     out.reserve(s.size() / 2);
     for (std::size_t i = 0; i < s.size(); i += 2) {
         int hi = hex_val(s[i]);
@@ -138,7 +132,7 @@ namespace cfire::hex {
         if (hi < 0 || lo < 0) {
             return cfire::make_error(std::format("invalid hex character at offset {}", (hi < 0 ? i : i + 1)));
         }
-        out.push_back(static_cast<std::byte>((hi << 4) | lo));
+        out.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
     }
     return out;
 }

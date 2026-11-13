@@ -1,0 +1,21 @@
+// expect: stdout
+// | -1 odd 71 neg zero pos 3
+package main
+// Q40 (CF-183): `if c { a } else { b }` is an expression; `else if` chains, and a branch may run statements first.
+fn sign(x: i64) -> str {
+    return if x < 0 { "neg" } else if x == 0 { "zero" } else { "pos" }
+}
+fn main() {
+    i: i64 = 7
+    id := if i % 2 == 0 { i / 2 } else { -1 }
+    label := if id > 0 { "even" } else { "odd" }
+    big := if i > 5 {
+        n := i * 10
+        n + 1
+    } else {
+        0
+    }
+    small: i32 = 3
+    k := if small > 1 { small } else { 0 }
+    println("{} {} {} {} {} {} {}", id, label, big, sign(-3), sign(0), sign(4), k)
+}

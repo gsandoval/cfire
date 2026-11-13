@@ -142,7 +142,7 @@ inline auto send_all(
     static constexpr std::string_view kGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     std::string combined = std::string(client_key) + std::string(kGuid);
     auto digest = detail::sha1(combined);
-    return cfire::base64::encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(digest.data()), digest.size()));
+    return cfire::base64::encode(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(digest.data()), digest.size()));
 }
 
 [[nodiscard]] inline auto generate_nonce() -> std::string {
@@ -151,7 +151,7 @@ inline auto send_all(
     for (int i = 0; i < 16; ++i) {
         nonce[i] = static_cast<std::uint8_t>(rd() & 0xFF);
     }
-    return cfire::base64::encode(std::span<const std::byte>(reinterpret_cast<const std::byte*>(nonce), 16));
+    return cfire::base64::encode(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(nonce), 16));
 }
 
 struct WsFrame {
@@ -328,9 +328,6 @@ public:
         return {};
     }
 
-    auto send_binary(std::span<const std::byte> data) -> std::expected<void, cfire::Error> {
-        return send_binary(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(data.data()), data.size()));
-    }
 
     auto ping(std::string_view payload = "") -> std::expected<void, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("websocket connection is closed");

@@ -58,12 +58,12 @@ void test_crypto_hmac_and_aes(const std::filesystem::path& rt_dir) {
 
     // GCM Tampering detection
     auto tampered_tag = gcm_res->tag;
-    tampered_tag[0] = static_cast<std::byte>(static_cast<unsigned char>(tampered_tag[0]) ^ 0x01);
+    tampered_tag[0] = static_cast<std::uint8_t>(static_cast<unsigned char>(tampered_tag[0]) ^ 0x01);
     auto tamper_res = cfire::aes::decrypt_gcm_str(key_str, nonce_str, gcm_res->ciphertext, tampered_tag, aad_str);
     require(!tamper_res.has_value(), "aes::decrypt_gcm rejects corrupted tag");
 
     auto tampered_ct = gcm_res->ciphertext;
-    tampered_ct[0] = static_cast<std::byte>(static_cast<unsigned char>(tampered_ct[0]) ^ 0x01);
+    tampered_ct[0] = static_cast<std::uint8_t>(static_cast<unsigned char>(tampered_ct[0]) ^ 0x01);
     auto tamper_ct_res = cfire::aes::decrypt_gcm_str(key_str, nonce_str, tampered_ct, gcm_res->tag, aad_str);
     require(!tamper_ct_res.has_value(), "aes::decrypt_gcm rejects corrupted ciphertext");
 

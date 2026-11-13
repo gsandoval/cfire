@@ -61,10 +61,11 @@ public:
     }
 
 private:
-    std::unordered_set<T> set_{};
+    std::unordered_set<T, cfire::detail::KeyHash<T>> set_{};
 };
 
-template <typename T>
+// `PriorityQueue[T]` pops the largest element first; `MinQueue[T]` (Q44, CF-183) pops the smallest first.
+template <typename T, typename Compare = std::less<T>>
 class PriorityQueue {
 public:
     PriorityQueue() = default;
@@ -107,8 +108,11 @@ public:
     }
 
 private:
-    std::priority_queue<T> pq_{};
+    std::priority_queue<T, std::vector<T>, Compare> pq_{};
 };
+
+template <typename T>
+using MinQueue = PriorityQueue<T, std::greater<T>>;
 
 template <typename T>
 class Deque {

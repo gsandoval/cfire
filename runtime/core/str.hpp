@@ -105,7 +105,7 @@ namespace cfire::str {
 }
 
 // --- String & Slice Raw Pointer Interop for C FFI (LANG-P1-02) ---
-[[nodiscard]] inline auto bytes(std::string_view sv) noexcept -> std::span<const std::byte> {
+[[nodiscard]] inline auto bytes(std::string_view sv) noexcept -> std::span<const std::uint8_t> {
     return cfire::to_bytes(sv);
 }
 

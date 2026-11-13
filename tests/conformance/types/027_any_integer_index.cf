@@ -1,0 +1,15 @@
+// expect: stdout
+// | 9 6
+package main
+// Q41 (CF-183): slices, arrays and strings take any integer index; a negative one panics.
+fn main() {
+    mut cells: [][]i64 = [[1, 2], [3, 4]]
+    r: i64 = 1
+    c: i32 = 0
+    cells[r][c] = 9
+    arr: [3]i64 = [5, 6, 7]
+    k: u8 = 1
+    println("{} {}", cells[1][0], arr[k])
+    neg: i64 = -1
+    println("{}", cells[neg][0]) //~ panic "index out of bounds"
+}

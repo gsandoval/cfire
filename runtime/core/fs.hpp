@@ -151,7 +151,7 @@ namespace detail {
 }
 
 [[nodiscard]] inline auto read_bytes(const std::filesystem::path& p)
-    -> std::expected<std::vector<std::byte>, cfire::Error>
+    -> std::expected<std::vector<std::uint8_t>, cfire::Error>
 {
     auto rp = detail::resolve_path(p, false);
     std::ifstream f(rp, std::ios::binary | std::ios::ate);
@@ -160,7 +160,7 @@ namespace detail {
     }
     auto sz = static_cast<std::size_t>(f.tellg());
     f.seekg(0, std::ios::beg);
-    std::vector<std::byte> buf(sz);
+    std::vector<std::uint8_t> buf(sz);
     if (sz > 0 && !f.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(sz))) {
         return cfire::make_error(std::format("failed to read file: {}", p.string()));
     }
@@ -182,7 +182,7 @@ namespace detail {
 
 [[nodiscard]] inline auto write_bytes(
     const std::filesystem::path& p,
-    std::span<const std::byte> data
+    std::span<const std::uint8_t> data
 ) -> std::expected<void, cfire::Error> {
     auto rp = detail::resolve_path(p, true);
     std::ofstream f(rp, std::ios::binary | std::ios::trunc);
@@ -198,12 +198,6 @@ namespace detail {
     return {};
 }
 
-[[nodiscard]] inline auto write_bytes(
-    const std::filesystem::path& p,
-    std::span<const std::uint8_t> data
-) -> std::expected<void, cfire::Error> {
-    return write_bytes(p, std::as_bytes(data));
-}
 
 [[nodiscard]] inline auto write_text(
     const std::filesystem::path& p,
@@ -214,7 +208,7 @@ namespace detail {
 
 [[nodiscard]] inline auto append_bytes(
     const std::filesystem::path& p,
-    std::span<const std::byte> data
+    std::span<const std::uint8_t> data
 ) -> std::expected<void, cfire::Error> {
     auto rp = detail::resolve_path(p, true);
     std::ofstream f(rp, std::ios::binary | std::ios::app);
@@ -230,12 +224,6 @@ namespace detail {
     return {};
 }
 
-[[nodiscard]] inline auto append_bytes(
-    const std::filesystem::path& p,
-    std::span<const std::uint8_t> data
-) -> std::expected<void, cfire::Error> {
-    return append_bytes(p, std::as_bytes(data));
-}
 
 [[nodiscard]] inline auto append_text(
     const std::filesystem::path& p,
@@ -310,28 +298,25 @@ public:
         }
     }
 
-    [[nodiscard]] auto read_into(std::span<std::byte> buf) -> std::expected<std::size_t, cfire::Error> {
+    [[nodiscard]] auto read_into(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("file is not open");
         return cfire::detail::fd_read(fd_, buf);
     }
 
-    [[nodiscard]] auto read_into(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
-        return read_into(std::as_writable_bytes(buf));
-    }
 
-    [[nodiscard]] auto read_exact(std::size_t n) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    [[nodiscard]] auto read_exact(std::size_t n) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("file is not open");
         return cfire::detail::fd_read_exact(fd_, n);
     }
 
     [[nodiscard]] auto read_bytes(std::size_t max_bytes = 64ULL * 1024ULL * 1024ULL)
-        -> std::expected<std::vector<std::byte>, cfire::Error>
+        -> std::expected<std::vector<std::uint8_t>, cfire::Error>
     {
         if (fd_ < 0) return cfire::make_error("file is not open");
-        if (max_bytes == 0) return std::vector<std::byte>{};
+        if (max_bytes == 0) return std::vector<std::uint8_t>{};
         if (max_bytes < (64ULL * 1024ULL * 1024ULL) && !is_seekable()) {
-            std::vector<std::byte> buf(max_bytes);
-            auto n = cfire::detail::fd_read(fd_, std::span<std::byte>(buf));
+            std::vector<std::uint8_t> buf(max_bytes);
+            auto n = cfire::detail::fd_read(fd_, std::span<std::uint8_t>(buf));
             if (!n) return std::unexpected(n.error());
             buf.resize(*n);
             return buf;
@@ -347,18 +332,13 @@ public:
         return std::string(reinterpret_cast<const char*>(b->data()), b->size());
     }
 
-    [[nodiscard]] auto read_bytes_until(std::byte delim, std::size_t max_bytes = 65536)
-        -> std::expected<std::vector<std::byte>, cfire::Error>
+    [[nodiscard]] auto read_bytes_until(std::uint8_t delim, std::size_t max_bytes = 65536)
+        -> std::expected<std::vector<std::uint8_t>, cfire::Error>
     {
         if (fd_ < 0) return cfire::make_error("file is not open");
         return cfire::detail::fd_read_until(fd_, delim, max_bytes);
     }
 
-    [[nodiscard]] auto read_bytes_until(std::uint8_t delim, std::size_t max_bytes = 65536)
-        -> std::expected<std::vector<std::byte>, cfire::Error>
-    {
-        return read_bytes_until(static_cast<std::byte>(delim), max_bytes);
-    }
 
     [[nodiscard]] auto read_text_until(std::string_view delim, std::size_t max_bytes = 65536)
         -> std::expected<std::string, cfire::Error>
@@ -366,9 +346,9 @@ public:
         if (fd_ < 0) return cfire::make_error("file is not open");
         if (delim.empty()) return cfire::make_error("read_text_until requires non-empty delimiter");
         std::string out;
-        std::byte ch{0};
+        std::uint8_t ch{0};
         while (out.size() < max_bytes) {
-            auto n = cfire::detail::fd_read(fd_, std::span<std::byte>(&ch, 1));
+            auto n = cfire::detail::fd_read(fd_, std::span<std::uint8_t>(&ch, 1));
             if (!n) return std::unexpected(n.error());
             if (*n == 0) break;
             out.push_back(static_cast<char>(ch));
@@ -391,18 +371,15 @@ public:
         return lines;
     }
 
-    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
+    [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("file is not open");
         return cfire::detail::fd_write_all(fd_, data);
     }
 
-    [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
-        return write_bytes(std::as_bytes(data));
-    }
 
     [[nodiscard]] auto write_text(std::string_view s) -> std::expected<std::size_t, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("file is not open");
-        return cfire::detail::fd_write_all(fd_, std::as_bytes(std::span(s.data(), s.size())));
+        return cfire::detail::fd_write_all(fd_, cfire::as_u8(std::span(s.data(), s.size())));
     }
 
     [[nodiscard]] auto seek(std::int64_t offset, SeekWhence whence = SeekWhence::Start) -> std::expected<std::int64_t, cfire::Error> {

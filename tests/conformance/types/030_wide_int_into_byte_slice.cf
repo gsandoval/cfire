@@ -1,0 +1,11 @@
+package main
+// Q39 (CF-183): a literal in 0..=255 or a `byte` value goes into a `[]byte` as is; a wider integer needs an
+// explicit `byte(x)`, so a push never truncates silently.
+fn main() {
+    n: i64 = 300
+    mut bs: []byte = [1, 255]
+    bs.push(7)
+    bs.push(n) //~ error cfire/TYPE-MISMATCH
+    bs.push(byte(n % 256))
+    println("{}", bs.len())
+}

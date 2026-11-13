@@ -55,7 +55,7 @@ enum class Provider : std::int32_t {
 struct Attachment {
     std::string filename{};
     std::string mime_type{};
-    std::vector<std::byte> data{};
+    std::vector<std::uint8_t> data{};
     std::string extracted_text{};
 };
 

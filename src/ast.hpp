@@ -492,6 +492,9 @@ struct MatchExpr {
     std::vector<MatchArm> arms{};
     int line = 1;
     int col = 1;
+    // Q40 (CF-183): `if c { a } else { b }` in expression position, parsed as a match on `c` with a `true`
+    // arm and a `_` arm. Sema requires both branches to have the same type.
+    bool is_if = false;
     // Set by Sema when every arm yields the same primitive type (CF-148): codegen gives the lowered lambda an
     // explicit return type, so a literal arm (`_ => 0`) converts instead of clashing with `i64(...)`.
     mutable std::string result_type{};

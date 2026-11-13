@@ -1,0 +1,9 @@
+// expect: stdout
+// | 1125899906842624 16
+package main
+// CF-183: a bare literal on the left of a shift is 64-bit, as the constant shift check assumes.
+fn main() {
+    big: i64 = 1 << 50
+    small: i32 = 1 << 4
+    println("{} {}", big, small)
+}

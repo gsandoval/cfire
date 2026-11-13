@@ -1,0 +1,6 @@
+package main
+fn main() {
+    n := 3
+    x := if n > 1 { 1 } //~ error cfire/SYNTAX
+    println("{}", x)
+}

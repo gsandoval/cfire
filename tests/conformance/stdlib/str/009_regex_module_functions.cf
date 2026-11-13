@@ -1,0 +1,14 @@
+// expect: stdout
+// | 4 mul(2,4) none 2
+package main
+import "core:regex"
+// Q46 (CF-183): `regex.find` / `regex.find_all` module functions, and typed `Regex` method results.
+fn main() -> void! {
+    line := "mul(2,4) and mul(11,8)"
+    nums := try regex.find_all("[0-9]+", line)
+    first := try regex.find("mul\\([0-9]+,[0-9]+\\)", line) or { return }
+    re := try regex.compile("mul\\([0-9]+,[0-9]+\\)")
+    calls := re.find_all(line)
+    m := re.find("nothing") or "none"
+    println("{} {} {} {}", nums.len(), first, m, calls.len())
+}

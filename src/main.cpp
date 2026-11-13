@@ -332,6 +332,10 @@ auto main(int argc, char** argv) -> int {
                 check_only = true;
             } else if (arg == "--stdout") {
                 to_stdout = true;
+            } else if (arg.starts_with("-")) {
+                // CF-183: an unknown flag must not fall through to rewriting files in place.
+                std::println(stderr, "error: unknown flag '{}' for 'cfire fmt' (expected --check or --stdout)", arg);
+                return 2;
             } else {
                 target_path = arg;
             }
@@ -702,10 +706,15 @@ auto main(int argc, char** argv) -> int {
                 cfire::build::explicit_entry_file_only() = true;
                 auto dir = target.parent_path().empty() ? std::filesystem::path(".") : target.parent_path();
                 std::size_t others = 0;
+                bool all_standalone = true;  // Q45 (CF-183): every sibling has its own `fn main` (a folder of scripts)
                 for (const auto& f : package_files(dir)) {
-                    if (!std::filesystem::equivalent(f, target, tec) && declares_main_package(f).first) ++others;
+                    if (std::filesystem::equivalent(f, target, tec)) continue;
+                    auto [sib_main_pkg, sib_has_main] = declares_main_package(f);
+                    if (!sib_main_pkg) continue;
+                    ++others;
+                    if (!sib_has_main) all_standalone = false;
                 }
-                if (others > 0 && !json_mode) {
+                if (others > 0 && !all_standalone && !json_mode) {
                     std::println(stderr, "note: compiling only {} and its imports; {} other 'package main' file{} in {} {} not included (use 'cfire {} {}' to build the whole package)",
                         target.filename().string(), others, others == 1 ? "" : "s", dir.string(), others == 1 ? "is" : "are", sub, dir.string());
                 }
@@ -1321,7 +1330,10 @@ auto main(int argc, char** argv) -> int {
         }
         std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
         int rc = std::system(sys_cmd.c_str());
-        std::filesystem::remove(tmp_bin);
+        // Windows can still hold the just-exited .exe open (loader, antivirus); a failed delete must not turn the
+        // program's exit code into a crash. `run_dir` removes what is left (CF-183).
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_bin, rm_ec);
         return unwrap_system_exit_code(rc);
     }
 

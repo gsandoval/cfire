@@ -155,10 +155,6 @@ inline void bind_arg(sqlite3_stmt* stmt, int idx, const std::vector<std::uint8_t
     sqlite3_bind_blob(stmt, idx, v.empty() ? "" : reinterpret_cast<const void*>(v.data()),
         static_cast<int>(v.size()), SQLITE_TRANSIENT);
 }
-inline void bind_arg(sqlite3_stmt* stmt, int idx, const std::vector<std::byte>& v) {
-    sqlite3_bind_blob(stmt, idx, v.empty() ? "" : reinterpret_cast<const void*>(v.data()),
-        static_cast<int>(v.size()), SQLITE_TRANSIENT);
-}
 inline void bind_arg(sqlite3_stmt* stmt, int idx, const std::vector<float>& v) {
     sqlite3_bind_blob(stmt, idx, v.empty() ? "" : reinterpret_cast<const void*>(v.data()),
         static_cast<int>(v.size() * sizeof(float)), SQLITE_TRANSIENT);
@@ -292,7 +288,7 @@ public:
         return exec(std::format("PRAGMA key = '{}';", escaped));
     }
 
-    [[nodiscard]] auto apply_key(std::span<const std::byte> key) -> std::expected<void, cfire::Error> {
+    [[nodiscard]] auto apply_key(std::span<const std::uint8_t> key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
         if (!has_cipher_support()) {
             return cfire::make_error("sqlite.open_encrypted requires SQLCipher (linked libsqlite3 does not support encryption; install sqlcipher)");
@@ -300,9 +296,6 @@ public:
         return exec(std::format("PRAGMA key = \"x'{}'\";", cfire::detail::bytes_to_hex(key)));
     }
 
-    [[nodiscard]] auto apply_key(std::span<const std::uint8_t> key) -> std::expected<void, cfire::Error> {
-        return apply_key(std::as_bytes(key));
-    }
 
     [[nodiscard]] auto rekey(std::string_view new_key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
@@ -318,7 +311,7 @@ public:
         return exec(std::format("PRAGMA rekey = '{}';", escaped));
     }
 
-    [[nodiscard]] auto rekey(std::span<const std::byte> new_key) -> std::expected<void, cfire::Error> {
+    [[nodiscard]] auto rekey(std::span<const std::uint8_t> new_key) -> std::expected<void, cfire::Error> {
         if (!db_) return cfire::make_error("sqlite connection is closed");
         if (!has_cipher_support()) {
             return cfire::make_error("sqlite.rekey requires SQLCipher (linked libsqlite3 does not support encryption; install sqlcipher)");
@@ -326,9 +319,6 @@ public:
         return exec(std::format("PRAGMA rekey = \"x'{}'\";", cfire::detail::bytes_to_hex(new_key)));
     }
 
-    [[nodiscard]] auto rekey(std::span<const std::uint8_t> new_key) -> std::expected<void, cfire::Error> {
-        return rekey(std::as_bytes(new_key));
-    }
 
 private:
     sqlite3* db_ = nullptr;
@@ -390,7 +380,7 @@ private:
     return conn;
 }
 
-[[nodiscard]] inline auto open_encrypted(const std::filesystem::path& p, std::span<const std::byte> key)
+[[nodiscard]] inline auto open_encrypted(const std::filesystem::path& p, std::span<const std::uint8_t> key)
     -> std::expected<Conn, cfire::Error>
 {
     std::error_code ec;
@@ -416,11 +406,6 @@ private:
     return conn;
 }
 
-[[nodiscard]] inline auto open_encrypted(const std::filesystem::path& p, std::span<const std::uint8_t> key)
-    -> std::expected<Conn, cfire::Error>
-{
-    return open_encrypted(p, std::as_bytes(key));
-}
 
 [[nodiscard]] inline auto col_str(sqlite3_stmt* stmt, int col) -> std::string {
     const unsigned char* txt = sqlite3_column_text(stmt, col);
@@ -444,12 +429,12 @@ private:
 [[nodiscard]] inline auto col_bool(sqlite3_stmt* stmt, int col) -> bool {
     return sqlite3_column_int(stmt, col) != 0;
 }
-[[nodiscard]] inline auto col_bytes(sqlite3_stmt* stmt, int col) -> std::vector<std::byte> {
+[[nodiscard]] inline auto col_bytes(sqlite3_stmt* stmt, int col) -> std::vector<std::uint8_t> {
     const void* blob = sqlite3_column_blob(stmt, col);
     int n = sqlite3_column_bytes(stmt, col);
     if (!blob || n <= 0) return {};
-    const auto* p = static_cast<const std::byte*>(blob);
-    return std::vector<std::byte>(p, p + n);
+    const auto* p = static_cast<const std::uint8_t*>(blob);
+    return std::vector<std::uint8_t>(p, p + n);
 }
 [[nodiscard]] inline auto col_u8_vec(sqlite3_stmt* stmt, int col) -> std::vector<std::uint8_t> {
     const void* blob = sqlite3_column_blob(stmt, col);
