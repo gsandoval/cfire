@@ -88,7 +88,6 @@ test: build .cfire_test_runner
 	./.cfire_test_runner
 	rm -f .cfire_test_runner $(TEST_OBJS)
 	./cfire test tests/stdlib_suite_test.cf
-	./cfire test pkg/raygui_ext/raygui_ext_test.cf
 	./cfire doc --check
 	$(MAKE) test-guide
 	$(MAKE) test-conformance
@@ -134,7 +133,6 @@ test-tsan: build
 fuzz: build .cfire_test_runner
 	./.cfire_test_runner fuzz
 	./cfire test tests/stdlib_suite_test.cf --fuzz-runs 500
-	./cfire test pkg/raygui_ext/raygui_ext_test.cf --fuzz-runs 500
 
 # --- Structural fuzz targets (tests/fuzz/fuzz_*.cpp, CF-141) ---
 FUZZ_TARGETS   := parser sema fmt http url websocket json_rpc deflate
@@ -166,7 +164,6 @@ fuzz-lib:
 bench: build .cfire_test_runner
 	./.cfire_test_runner bench
 	./cfire bench tests/stdlib_suite_test.cf
-	./cfire bench pkg/raygui_ext/raygui_ext_test.cf
 
 clean:
-	rm -rf cfire .cfire_gitsha .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire pkg/raygui_ext/.cfire cfire_cross_* cfire_wasm_gui_*
+	rm -rf cfire .cfire_gitsha .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*

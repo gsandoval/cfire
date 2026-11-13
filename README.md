@@ -23,16 +23,15 @@ The phonetic homophone to **sapphire** captures the visual identity: crystalline
 ## Core Pillars
 1. **TypeScript's Approach to C++23:** A clean, ergonomic structural skin that lowers directly to native C++23 (`std::expected`, `std::variant`, `std::span`, `std::string_view`, `std::format`, C++20 `concept`s) without a garbage collector or runtime reflection overhead.
 2. **Pure ISO C++23 Compiler & Runtime:** All compiler and toolchain subsystems (`src/*.hpp`, `src/main.cpp`) and the modular `core:*` runtime (`runtime/core/*.hpp`) are authored in clean, zero-dependency ISO C++23.
-3. **Explicit `core:*`, `ext:*` & `vendor:*` Package Namespaces:** Import zero-setup foundational & baseline OS primitives (`core:str`, `core:fs`, `core:sync`, `core:cli`, `core:json`, `core:net/http`, `core:audio`, `core:keychain`), opt-in native C library / platform extensions (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`), or bundled C/C++ graphics engines (`vendor:raylib`, `vendor:raygui`) and `cfire` automatically includes and links the underlying libraries (`libzstd`, `libsodium`, `sqlite3`, `libssh`, `raylib`).
+3. **Explicit `core:*` & `ext:*` Package Namespaces:** Import zero-setup foundational & baseline OS primitives (`core:str`, `core:fs`, `core:sync`, `core:cli`, `core:json`, `core:net/http`, `core:audio`, `core:keychain`), opt-in native C library / platform extensions (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`), and `cfire` automatically includes and links the underlying libraries (`libzstd`, `libsodium`, `sqlite3`, `libssh`). Any other C or C++ library (raylib, SDL, your own) comes in through `import cpp "<header.h>"`.
 4. **Clang AST C/C++ Interop + Unified `build.cf` Build System:** Import any C/C++ header (`import cpp "<header.h>"`) or build local/external `build.CC` and `build.CMake` dependencies into cached static archives (`.cfire/cache/lib/*.a`) with automatic `str` $\rightarrow$ `const char*` boundary coercion (`cfire::c_str`).
 5. **Intent Over Ceremony:** Replace `const T&`, `T&&`, `std::move`, `std::string_view`, and pointer hazards with `in` (default), `mut`, `move` (with definite last-use move insertion), multi-return tuples `(T1, T2)`, unified `str`/`path`/`bytes`, `own[T]`/`shared[T]`, `T!`, `defer`, `match`, and `test "..." { ... }` blocks.
 
-## 3-Namespace `core:*`, `ext:*` & `vendor:*` Standard Library Catalog (38 Modules)
+## 2-Namespace `core:*` & `ext:*` Standard Library Catalog (35 Modules)
 
-To keep the core language surface clear while providing batteries-included productivity, the standard library is separated into three explicit package namespaces based on external link requirements:
-- **`core:*` — Foundational & Platform Core (30 Modules, Zero External Setup):** Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:crypto/*`).
+To keep the core language surface clear while providing batteries-included productivity, the standard library is separated into two explicit package namespaces based on external link requirements:
+- **`core:*` — Foundational & Platform Core (29 Modules, Zero External Setup):** Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:crypto/*`).
 - **`ext:*` — Native C Libraries, WebUI & AI Extensions (6 Opt-In Modules):** Specialized engines requiring external C libraries, native GUI webview toolkits, or AI/OCR engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that are only included and linked when explicitly imported.
-- **`vendor:*` — Bundled Third-Party C/C++ Engines (2 Modules):** `vendor:raylib` and `vendor:raygui`.
 
 | Import Path | Native Engine / C++23 Lowering | Auto-Linked Flags |
 | :--- | :--- | :--- |
@@ -72,8 +71,6 @@ To keep the core language surface clear while providing batteries-included produ
 | `ext:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection (`open`, `exec`, `query[T]`, `tx`) via `sql:"..."` struct tags + `AVX2`/`ARM NEON` SIMD vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`) | `-lsqlite3` |
 | `ext:net/ssh` | First-class `libssh` client (`connect`, `exec`, `sftp_read`, `sftp_write`, `forward_local`) | `-lssh` |
 | `ext:webui` | Native desktop/mobile hybrid WebView (`WKWebView` / `WebKitGTK`) with `app://localhost/` VFS and typed RPC | *(WebKit / GTK3)* |
-| `vendor:raylib` | `raylib` (`<raylib.h>`) 2D/3D hardware-accelerated visualization across macOS, iOS, WASM & Linux | `-lraylib` + platform frameworks |
-| `vendor:raygui` | Immediate-mode GUI controls (`GuiButton`, `GuiSliderBar`, `GuiCheckBox`) & native iOS `GuiIos*` auto-layout kit | *(header-only over `vendor:raylib`)* |
 
 ## Quick Start
 

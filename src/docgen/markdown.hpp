@@ -192,8 +192,7 @@ namespace detail {
         {"Compile-Time JSON Serialization", "JSON & Schemas"},
         {"Embedded SQLite WAL", "SQLite & Vectors"},
         {"Zstandard Compression", "Zstd, AES & Hash"},
-        {"Hardware-Accelerated Canvas", "Raylib & Raygui"},
-        {"Zero-Coordinate iOS Auto-Layout", "iOS Auto-Layout"},
+        {"Choosing a UI Stack", "UI Options"},
         {"Lock-Free 64-Voice Mixer", "64-Voice Mixer"},
         {"Streaming Real-Time DSP", "Real-Time DSP"},
         {"Unified Cloud & On-Device Inference", "Cloud & Local AI"},
@@ -1566,7 +1565,6 @@ window.addEventListener('hashchange', updateChapterFromHash);
 - Imports:
   - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:json"`, `import "core:net/http"`, `import "core:audio"`, `import "core:keychain"`)
   - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)
-  - Bundled Vendor: `import "vendor:<module>"` (e.g. `import "vendor:raylib"`, `import "vendor:raygui"`)
   - Toolchain Packages: `import "pkg:<name>"` (e.g. `import "pkg:tako"`, resolved automatically from workspace/toolchain roots alongside `build.Tako()` in `build.cf`)
   - Local package: `import "./path/to/pkg"`
   - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")` (for linking system frameworks/libraries declaratively, set `Frameworks: [...]`, `Libraries: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` on `build.Executable` in `build.cf`).

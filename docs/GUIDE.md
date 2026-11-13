@@ -53,7 +53,6 @@ If any optional native libraries or build tools are missing, `cfire setup` insta
 
 ```bash
 cfire setup --yes             # Install missing native libraries + warm C++23 PCH
-cfire setup --yes --raylib    # Also pre-fetch vendor:raylib into global cache
 cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
 ```
 
@@ -103,13 +102,13 @@ wsl
 sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev
 ```
 
-### Understanding the Three Stdlib Namespaces (`core:*`, `ext:*`, `vendor:*`)
-One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 38 built-in modules into three explicit namespaces based on external link requirements:
-- **`core:*` (Foundational & Platform Core — 30 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:crypto/*`) with zero external C library setup required.
+### Understanding the Two Stdlib Namespaces (`core:*`, `ext:*`)
+One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 35 built-in modules into two explicit namespaces based on external link requirements:
+- **`core:*` (Foundational & Platform Core — 29 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:crypto/*`) with zero external C library setup required.
 - **`ext:*` (Native C Libraries, WebUI & AI Extensions — 6 Opt-In Modules)**: Specialized domain engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported—and include built-in portable fallbacks when an optional system library isn't installed.
-- **`vendor:*` (Bundled Third-Party C/C++ Engines — 2 Modules)**: `vendor:raylib` and `vendor:raygui`.
+- **Any other C or C++ library** (raylib, SDL, your own code) is used through `import cpp "<header.h>"` and, when it needs building, `build.CC` / `build.CMake` in `build.cf` (see Chapter 11). `cfire` no longer bundles raylib.
 
-| Core / Extension / Vendor Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
+| Core / Extension Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
 | :--- | :--- | :--- | :--- |
 | `core:json` | `libsimdjson` | `simdjson` | Bundled single-header `simdjson` implementation in `runtime/vendor/` |
 | `core:net/tls` & `core:net/http` | `libssl` / `libcrypto` | `openssl` | Dynamic `dlopen("libssl")` on Desktop/Linux; Apple `Foundation` `NSURLConnection` on macOS/iOS; browser `XMLHttpRequest` on WASM |
@@ -121,7 +120,6 @@ One of the biggest pain points in systems programming is pulling in a seemingly 
 | `ext:net/ssh` | `libssh` | `libssh` | OpenSSH `ssh` / `sftp` / `scp` subprocess bridge when `libssh` is absent |
 | `ext:ai` (OCR & PDF) | `Vision` / `libtesseract` / `pdftotext` | `tesseract` | `Vision.framework` & `PDFKit` on macOS/iOS; `dlopen("libtesseract.so.5")` & `pdftotext` on Linux; pure C++23 `/FlateDecode` PDF parser & PNG/JPEG metadata reader on all targets |
 | `ext:webui` | `WebKit.framework` / `webkit2gtk-4.1` | `webkit2gtk-4.1` | `WKWebView` + `Cocoa` on macOS, `WKWebView` + `UIKit` on iOS, `WebKitGTK` + `GTK3` on Linux, and deterministic headless RPC/Event dispatcher in CI |
-| `vendor:raylib` & `vendor:raygui` | Bundled in `runtime/` | None required | Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and `UIKit` + `OpenGLES3` on iOS |
 
 ### Setting Up WebAssembly & iOS Cross-Compilation
 
@@ -133,7 +131,7 @@ cd emsdk && ./emsdk install latest && ./emsdk activate latest
 source ./emsdk_env.sh
 ```
 - **Running in the Browser**: `cfire run --web app.cf` compiles with `-std=c++23 -O2 -msimd128` and starts a local HTTP server (or runs via `node` for CLI targets).
-- **Web Profiles**: GUI applications importing `vendor:raylib` or `core:audio` automatically select the `canvas` profile (HTML5 WebGL canvas + drag-and-drop `MEMFS` file staging); console applications select the `cli` profile.
+- **Web Profiles**: programs select the `cli` profile (console output in the page). Pass `--web-profile=canvas` for an HTML5 canvas shell with drag-and-drop `MEMFS` file staging, for example when you bring your own C graphics library. There is no built-in GUI on the web: `ext:webui` targets native desktop and iOS.
 
 #### Native iOS Simulator & Device (`--ios`)
 Building for iOS requires macOS with full Xcode installed so `xcrun` can resolve the `iphonesimulator` and `iphoneos` SDK sysroots:
@@ -169,7 +167,7 @@ Tools exposed by `cfire mcp`:
 
 | MCP Tool Name | Input Schema | Behavior & Return Payload |
 | :--- | :--- | :--- |
-| `cfire_stdlib_list` | `{}` | Lists every `core:*`, `ext:*`, and `vendor:*` module with its import path, namespace alias, and summary. |
+| `cfire_stdlib_list` | `{}` | Lists every `core:*` and `ext:*` module with its import path, namespace alias, and summary. |
 | `cfire_stdlib_lookup` | `{"query": "str"}` | Searches modules, function signatures, and types matching `query` (e.g., `"ext:webui"` or `"bind"`). |
 | `cfire_check` | `{"code"?: "str", "path"?: "str"}` | Parses, type-checks, and verifies loan/intent rules on inline `.cf` `code` or a workspace `path`; returns `"OK (0 errors)"` or exact diagnostics. |
 | `cfire_test` | `{"path"?: "str", "filter"?: "str", "bench"?: bool, "fuzz_runs"?: int, "seed"?: int, "bench_time"?: int}` | Executes unit tests (`test`), property-based fuzz tests (`fuzz` with shrinking), `///` doc-tests, automatic JSON round-trip invariants, or statistical benchmarks (`bench`). |
@@ -295,12 +293,11 @@ Anyone on your team—or any downstream platform—can build `dist/` with vanill
 ## Chapter 3: Workspaces, CLI & Build System
 
 ### Scaffolding New Projects (`cfire new` & `cfire init`)
-Instead of wiring up directories and build files by hand, use `cfire new <dir>` (or `cfire init` inside an existing directory) with one of the four built-in project templates:
+Instead of wiring up directories and build files by hand, use `cfire new <dir>` (or `cfire init` inside an existing directory) with one of the three built-in project templates:
 
 ```bash
 cfire new my-cli               # Default: CLI / backend service template (--template cli)
 cfire new --template webui app # Hybrid desktop/mobile WebView app (ext:webui + ./ui/index.html)
-cfire new --template gui game  # Hardware-accelerated 2D/3D raylib window (vendor:raylib)
 cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
 ```
 
@@ -309,8 +306,7 @@ Every scaffolded workspace includes a ready-to-run `build.cf`, `main.cf`, a unit
 | Template (`--template`) | Generated Files | Target Matrix & Default Subsystem | Best For |
 | :--- | :--- | :--- | :--- |
 | `cli` (default) | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` (`console`) | CLI tools, microservices, AI agents, systems daemons. |
-| `webui` | `build.cf`, `main.cf`, `main_test.cf`, `ui/index.html`, `.gitignore` | `["native", "ios-sim"]` (`gui`) | Wails/Tauri-style desktop & mobile apps using HTML/CSS/JS over `ext:webui`. |
-| `gui` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native", "wasm", "ios-sim"]` (`gui`, `canvas`) | 60 FPS 2D/3D canvases, games, and visualizers using `vendor:raylib` & `vendor:raygui`. |
+| `webui` (alias `gui`) | `build.cf`, `main.cf`, `main_test.cf`, `ui/index.html`, `.gitignore` | `["native", "ios-sim"]` (`gui`) | Wails/Tauri-style desktop & mobile apps using HTML/CSS/JS over `ext:webui`. |
 | `tako` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native", "wasm", "ios-sim"]` (`gui`, `canvas`) | Ergonomic desktop/web/iOS tools using `pkg:tako` / `core:tako`. |
 
 ### Multi-Package Workspace Layout
@@ -332,7 +328,7 @@ my-service/
 How `cfire` resolves files and packages across your workspace:
 1. **Same-Directory Package Merging**: All `.cf` files in the same folder declaring the same `package <name>` (for example, `main.cf`, `routes.cf`, and `store.cf` all declaring `package main`) automatically share their types, functions, methods, and constants—no relative imports needed between sibling files. Test files ending in `_test.cf` are compiled during `cfire test` and excluded during `cfire build` / `cfire run`.
 2. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all non-test `.cf` files in `./pkg/checksum/` belonging to `package checksum` and exposes their declarations under the `checksum.` namespace.
-3. **Standard Library (`import "core:..."`, `"ext:..."`, `"vendor:..."`)**: Resolves headers from the `cfire` runtime directory and auto-links required system frameworks.
+3. **Standard Library (`import "core:..."`, `"ext:..."`)**: Resolves headers from the `cfire` runtime directory and auto-links required system frameworks.
 4. **Companion Toolchain Packages (`import "pkg:tako"` / `import "core:tako"`)**: Resolves companion SDK headers across workspace parents, `~/.local/share`, and `CFIRE_PKG_PATH`.
 
 ### Declarative Build Files (`build.cf`)
@@ -390,7 +386,7 @@ App := build.Executable("service-app", {
 | Field / Builder | Type / Signature | Default / Config | Purpose |
 | :--- | :--- | :--- | :--- |
 | `Entry` | `str` | `"main.cf"` | Entry `.cf` file containing `fn main()`. |
-| `Subsystem` | `str` | `"auto"` | `"console"` (CLI binary) or `"gui"` (creates a macOS `.app` bundle and suppresses terminal console). Auto-switches to `"gui"` when `vendor:raylib` or `ext:webui` is used. |
+| `Subsystem` | `str` | `"auto"` | `"console"` (CLI binary) or `"gui"` (creates a macOS `.app` bundle and suppresses terminal console). Auto-switches to `"gui"` when `ext:webui` is used. |
 | `Name` & `BundleId` | `str` | `<name>`, `"com.cfire.<name>"` | Display name and reverse-DNS `CFBundleIdentifier` for macOS/iOS signing and Simulator launch. |
 | `Icon` | `str` | `""` | Path to a `.png` icon; auto-generates `.icns` on macOS, `AppIcon60x60@2x.png` on iOS, and window icon pixels on Linux. |
 | `Targets` & `WebProfile` | `[]str`, `str` | `["native"]`, `"auto"` | Target triples (`"native"`, `"wasm"`, `"ios-sim"`, `"ios"`) and WASM shell profile (`"canvas"` or `"cli"`). |
@@ -1665,9 +1661,10 @@ zstd_version=true bound_for_1kb=true
 ```
 
 **Bitwise Flag Operators & Formatting on C / Vendor Enums:**
-C libraries (like Raylib's `ConfigFlags` or POSIX file flags) frequently use `enum` types as bitmasks. `cfire` supports bitwise operators (`|`, `&`, `^`, `~`, `|=`, `&=`) and `"{flag}"` string formatting directly on C and `vendor:*` enums without requiring manual integer casts:
+C libraries (like raylib's `ConfigFlags` or POSIX file flags) frequently use `enum` types as bitmasks. `cfire` supports bitwise operators (`|`, `&`, `^`, `~`, `|=`, `&=`) and `"{flag}"` string formatting directly on C enums without requiring manual integer casts:
 ```cfire
 // Combine C enum bitflags directly with | and &=
+// With `import cpp "raylib.h" as rl @pkg("raylib")`:
 mut flags := rl.ConfigFlags::FLAG_WINDOW_RESIZABLE | rl.ConfigFlags::FLAG_VSYNC_HINT
 flags |= rl.ConfigFlags::FLAG_MSAA_4X_HINT
 ```
@@ -2213,79 +2210,18 @@ AES-GCM + Zstd verified: true, HMAC valid: true
 
 ---
 
-## Chapter 15: 2D/3D Graphics, Raygui Widgets & Native iOS UI
+## Chapter 15: Graphics & Native UI Options
 
-### Hardware-Accelerated Canvas & Immediate-Mode Controls (`vendor:raylib`, `vendor:raygui`)
-`cfire` embeds Raylib 5.0 (`vendor:raylib`) and Raygui (`vendor:raygui`) with a custom high-DPI font rasterizer (`CoreText` on macOS, `UIFont` on iOS, system TrueType on Linux). A single `.cf` file compiles to a native macOS Metal/OpenGL `.app`, a Linux desktop binary, an HTML5 WebGL2 canvas (`cfire run --web`), or a 60/120 Hz iOS Simulator app (`cfire run --ios`):
+### Choosing a UI Stack
+`cfire` ships one built-in UI stack, `ext:webui` (Chapter 18): HTML, CSS and JavaScript in the platform's own WebView, with typed RPC and events to `.cf` code. It runs natively on macOS (`WKWebView`), iOS (`WKWebView` + `UIKit`), Linux (`WebKitGTK`) and Windows (`WebView2`), and has a headless mode for tests, so the same UI code is built and tested on every desktop OS.
 
-| Subsystem | macOS (`darwin`) | Linux (`linux`) | iOS (`--ios`) | WebAssembly (`--web`) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Window & Context** | Cocoa (`NSWindow`) + high-DPI Retina OpenGL/Metal | X11 / Wayland + OpenGL 3.3 + auto-discovered `icon.png` | Native `UIWindow` + `UIViewController` + `CADisplayLink` | HTML5 `<canvas>` + WebGL2 + `emscripten_set_main_loop` |
-| **Font Rasterizer** | `CoreText.framework` 2x Retina subpixel rasterizer | System TrueType discovery (`fc-match` / DejaVu / Noto) | Native `UIFont` (`SF Pro`) glyph atlas | Embedded 2x high-DPI font atlas |
-| **Safe Area & Haptics** | Full viewport | Full viewport | `GetSafeAreaRect()` Dynamic Island inset + `TriggerHaptic` Taptic Engine | Full canvas + `navigator.vibrate` |
-
-```cfire
-package main
-
-import "vendor:raylib" as rl
-import "vendor:raygui" as rg
-
-fn main() {
-    rl.InitWindow(800, 480, "cfire Telemetry Studio")
-    defer rl.CloseWindow()
-    rl.SetTargetFPS(60)
-
-    mut vsync    := true
-    mut gain_db  : f32 = 0.0
-    mut profile  : i32 = 1
-    mut hostname := "edge-node-01"
-    mut editing  := false
-
-    for !rl.WindowShouldClose() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-        rl.ClearBackground(rl.GetColor(0x18181bff))
-
-        _ = rg.GuiWindowBox(rl.Rectangle{x: 24.0, y: 24.0, width: 340.0, height: 260.0}, "Node Configuration")
-        _ = rg.GuiCheckBox(rl.Rectangle{x: 44.0, y: 68.0, width: 20.0, height: 20.0}, "Enable VSync Lock", &mut vsync)
-        _ = rg.GuiSliderBar(rl.Rectangle{x: 90.0, y: 108.0, width: 200.0, height: 20.0}, "Gain", "{gain_db:.1f} dB", &mut gain_db, -24.0, 12.0)
-        _ = rg.GuiComboBox(rl.Rectangle{x: 44.0, y: 148.0, width: 246.0, height: 28.0}, "Eco;Balanced;Turbo", &mut profile)
-
-        if rg.GuiTextBox(rl.Rectangle{x: 44.0, y: 192.0, width: 246.0, height: 28.0}, &mut hostname, 64, editing) != 0 {
-            editing = !editing
-        }
-        if rg.GuiButton(rl.Rectangle{x: 44.0, y: 234.0, width: 246.0, height: 32.0}, "Apply Settings") != 0 {
-            rl.TriggerHaptic(1)
-        }
-
-        rl.DrawText("Host: {hostname} | Gain: {gain_db:.1f} dB", 400, 40, 20, rl.RAYWHITE)
-    }
-}
-```
-
-### Zero-Coordinate iOS Auto-Layout (`GuiIos*`) & Workspace Widgets (`pkg/raygui_ext`)
-Positioning every mobile button by manual `(x, y)` coordinates gets tedious fast when adapting to iPhone safe areas, Dynamic Island notches, and software keyboards. `vendor:raygui` includes a built-in **Zero-Coordinate iOS Layout Engine** (`rg.GuiIos*`) modeled after SwiftUI's `NavigationStack` and `Form`:
-
-| `vendor:raygui` iOS Control | Signature | What It Renders & Manages Automatically |
+| Need | Use | Platforms |
 | :--- | :--- | :--- |
-| `rg.GuiIosBegin` / `GuiIosEnd` | `fn(title: str)` / `fn()` | Reads `GetSafeAreaRect()`, renders the translucent iOS navigation bar, manages vertical touch-drag momentum scrolling, and clips content inside the safe area. |
-| `rg.GuiIosSection` | `fn(label: str)` | Starts an inset grouped section header (like SwiftUI `Section("AUDIO ENGINE")`). |
-| `rg.GuiIosToggle` | `fn(label: str, active: &mut bool) -> bool` | Full-width grouped row with an animated pill switch and automatic Taptic feedback on toggle. |
-| `rg.GuiIosSlider` | `fn(label: str, val: &mut f32, min: f32, max: f32, unit: str)` | Grouped card row with value readout badge and touch-friendly thumb slider. |
-| `rg.GuiIosSegmented` | `fn(options: str, active: &mut i32)` | Semicolon-delimited (`"Sine;Saw;Square"`) sliding pill segmented control. |
-| `rg.GuiIosTextField` | `fn(label: str, text: &mut str, placeholder: str)` | Auto-focusing text field that summons the iOS software keyboard (`RequestKeyboard()`) on tap without manual focus state variables. |
-| `rg.GuiIosButton` | `fn(label: str, accent: bool = true) -> bool` | Full-width rounded action button with press highlight and haptic feedback. |
-| `rg.GuiIosTabBar` | `fn(tabs: str, active: &mut i32)` | Bottom dock bar pinned above the iOS Home Indicator (`"Synth;Presets;Settings"`). |
+| Forms, dashboards, editors, settings, mobile apps | `ext:webui` (Chapter 18) | macOS, iOS, Linux, Windows |
+| Immediate-mode 2D/3D drawing or games | A C library through `import cpp` (for example `import cpp "raylib.h" as rl @pkg("raylib")`), built with `build.CC` / `build.CMake` when it is not installed | Wherever that library builds |
+| Console or networking programs in the browser | `cfire run --web` (`cli` profile); `--web-profile=canvas` gives an HTML5 canvas shell for your own C graphics code | WebAssembly |
 
-For desktop IDE and studio tools, the workspace also includes `pkg/raygui_ext` (`code_editor.cf`, `splitter.cf`, `text_buffer.cf`), providing resizable split-pane layouts, line-numbered code editors, and gap-buffer text editing out of the box.
-
-```bash
-# Scaffold a graphical app or launch directly on Desktop, WebAssembly, or iOS Simulator:
-cfire new my-studio --template gui
-cfire run examples/13-ios-native-ui
-cfire run --web examples/13-ios-native-ui
-cfire run --ios examples/13-ios-native-ui
-```
+`cfire` no longer bundles raylib or raygui: `import "vendor:raylib"` and `import "vendor:raygui"` report `cfire/RETIRED-API`. raylib is still an ordinary C library, so a program can call it through the C header bridge (Chapter 11); `cfire` just doesn't download, build or test it.
 
 ---
 
@@ -2840,14 +2776,11 @@ Every project in [`examples/`](../examples) is continuously verified by `make te
 | [`examples/03-pkg-cache`](../examples/03-pkg-cache) | Package Cache | SQLite3 WAL transactions (`ext:db/sqlite`), compile-time JSON struct mapping (`core:json`), SHA-256 (`core:crypto/sha256`) | `cfire run examples/03-pkg-cache/main.cf` |
 | [`examples/04-async-workers`](../examples/04-async-workers) | Async Workers | Scoped thread pool concurrency (`async.scope`), disjoint slice writes, MPMC `Channel[T]` (`core:sync`) | `cfire run examples/04-async-workers/main.cf` |
 | [`examples/05-cmake-interop`](../examples/05-cmake-interop) | CMake Interop | Clang JSON AST ingestion (`import cpp "<zstd.h>"`), `build.CMake` native library orchestration | `cfire run examples/05-cmake-interop/main.cf` |
-| [`examples/06-raylib-viz`](../examples/06-raylib-viz) | Raylib Visualization | Hardware 2D graphics loop (`vendor:raylib`), 60 FPS particle & telemetry rendering (`--web` & `--ios` ready) | `cfire run examples/06-raylib-viz/main.cf` |
 | [`examples/07-types-match-map`](../examples/07-types-match-map) | Types & Match | Algebraic `enum` sum types (`std::variant`), exhaustive `match`, `map[K]V`, `interface` C++20 concepts | `cfire run examples/07-types-match-map/main.cf` |
 | [`examples/08-multi-pkg-cc-build`](../examples/08-multi-pkg-cc-build) | Multi-Package Build | Multi-package `build.cf` orchestration, static archive compilation (`build.CC`) | `cfire run examples/08-multi-pkg-cc-build` |
 | [`examples/09-stdlib-test-pointers`](../examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`*T`, `^T`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
 | [`examples/10-cmake-and-make-deps`](../examples/10-cmake-and-make-deps) | Multi-Build Deps | Simultaneous `build.CMake` and `build.Make` external dependency orchestration in a single `build.cf` | `cfire run examples/10-cmake-and-make-deps` |
 | [`examples/11-http-server-router`](../examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`core:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
-| [`examples/12-raygui-controls`](../examples/12-raygui-controls) | Raygui GUI Kit | Immediate-mode controls (`vendor:raygui`): checkboxes, sliders, progress bars, combo boxes, `&mut str` text boxes | `cfire run examples/12-raygui-controls/main.cf` |
-| [`examples/13-ios-native-ui`](../examples/13-ios-native-ui) | Native iOS UI | Zero-coordinate `GuiIos*` auto-layout kit (`examples/13-ios-native-ui/ui/kit.cf`), safe-area insets, real-time `core:audio` metering (`--ios`, `--web`, desktop) | `cfire run --ios examples/13-ios-native-ui` |
 | [`examples/14-ai-rag-sqlite`](../examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |
 | [`examples/15-mcp-server`](../examples/15-mcp-server) | MCP Agent Server | Model Context Protocol server (`make(ai.McpServer, ...)`), schema-typed `register_tool[T]`, JSON-RPC 2.0 dispatch | `cfire run examples/15-mcp-server/main.cf` |
 | [`examples/16-audio-synth`](../examples/16-audio-synth) | Audio Synthesis | Procedural SFX (`audio.gen_sfx`), ADSR tone synthesis (`audio.gen_tone`), polyphonic mixer, RIFF/WAV file codec (`core:audio`) | `cfire run examples/16-audio-synth/main.cf` |

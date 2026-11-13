@@ -608,11 +608,11 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
     require(table2 == table, "csv stringify and re-parse roundtrip");
 
     // 4. Substring Search Primitives in core:str (STDLIB-P1-04)
-    std::string_view sample_path = "/usr/local/include/raylib/raylib.h";
+    std::string_view sample_path = "/usr/local/include/sqlite/sqlite.h";
     require(cfire::str::index_of(sample_path, "/") == 0, "index_of first slash");
     require(cfire::str::index_of(sample_path, "local") == 5, "index_of 'local'");
     require(cfire::str::index_of(sample_path, "nonexistent") == -1, "index_of not found returns -1");
-    require(cfire::str::index_of(sample_path, "raylib", 20) == 26, "index_of with start_pos offset");
+    require(cfire::str::index_of(sample_path, "sqlite", 20) == 26, "index_of with start_pos offset");
     require(cfire::str::last_index_of(sample_path, "/") == 25, "last_index_of slash");
     require(cfire::str::last_index_of(sample_path, ".h") == 32, "last_index_of '.h'");
     require(cfire::str::last_index_of(sample_path, "missing") == -1, "last_index_of not found returns -1");

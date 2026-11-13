@@ -367,34 +367,6 @@ public:
             while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
             writeln(std::format("#include <{}>", clean));
         }
-        if (used_vendor_.contains("raylib") || used_vendor_.contains("raygui")) {
-            writeln("#if defined(PLATFORM_IOS) || defined(CFIRE_RAYLIB_FALLBACK)");
-            writeln("#pragma clang diagnostic push");
-            writeln("#pragma clang diagnostic ignored \"-Wdeprecated-declarations\"");
-            writeln("#include \"core/ios_raylib.hpp\"");
-            writeln("#pragma clang diagnostic pop");
-            writeln("#else");
-            writeln("#include <raylib.h>");
-            writeln("#if __has_include(<raymath.h>)");
-            writeln("#include <raymath.h>");
-            writeln("#endif");
-            writeln("#if __has_include(<rlgl.h>)");
-            writeln("#include <rlgl.h>");
-            writeln("#endif");
-            writeln("#include \"core/desktop_raylib.hpp\"");
-            writeln("#endif");
-        }
-        if (used_vendor_.contains("raygui")) {
-            writeln("#pragma clang diagnostic push");
-            writeln("#pragma clang diagnostic ignored \"-Weverything\"");
-            writeln("#define RAYGUI_IMPLEMENTATION");
-            writeln("#if __has_include(<raygui.h>)");
-            writeln("#include <raygui.h>");
-            writeln("#else");
-            writeln("#include \"vendor/raygui.h\"");
-            writeln("#endif");
-            writeln("#pragma clang diagnostic pop");
-        }
         writeln();
 
         // 1. Emit Interfaces as C++20 `concept`s
@@ -867,31 +839,13 @@ public:
             in_ptr_return_ = false;
             local_vars_.insert("argc");
             local_vars_.insert("argv");
-            bool is_gui = used_vendor_.contains("raylib") || used_vendor_.contains("raygui");
-            if (is_gui) {
-                writeln("#if defined(PLATFORM_IOS)");
-                writeln("auto __cfire_ios_user_main(int argc, char** argv) -> int {");
-                writeln("#else");
-                writeln("auto main(int argc, char** argv) -> int {");
-                writeln("#endif");
-                ++indent_;
-                writeln("cfire::detail::set_process_args(argc, argv);");
-                for (const auto& st : fn.body) emit_stmt(st, true);
-                writeln("return 0;");
-                --indent_;
-                writeln("}");
-                writeln("#if defined(PLATFORM_IOS)");
-                writeln("auto main(int argc, char** argv) -> int { return cfire::ios_rl::run_ios_app(argc, argv, &__cfire_ios_user_main); }");
-                writeln("#endif");
-            } else {
-                writeln("auto main(int argc, char** argv) -> int {");
-                ++indent_;
-                writeln("cfire::detail::set_process_args(argc, argv);");
-                for (const auto& st : fn.body) emit_stmt(st, true);
-                writeln("return 0;");
-                --indent_;
-                writeln("}");
-            }
+            writeln("auto main(int argc, char** argv) -> int {");
+            ++indent_;
+            writeln("cfire::detail::set_process_args(argc, argv);");
+            for (const auto& st : fn.body) emit_stmt(st, true);
+            writeln("return 0;");
+            --indent_;
+            writeln("}");
             in_main_ = false;
             local_vars_.clear();
             ptr_vars_.clear();

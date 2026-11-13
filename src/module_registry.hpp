@@ -128,7 +128,7 @@ struct ResolvedImport {
         if (matches) {
             if (mod.is_vendor) {
                 info.is_vendor = true;
-                info.vendor_key = (mod.ns_alias == "rl") ? "raylib" : (mod.ns_alias == "rg") ? "raygui" : mod.ns_alias;
+                info.vendor_key = mod.ns_alias;
                 info.implied_vendors = mod.implied_vendors;
                 info.link_tags = mod.link_tags;
                 return info;

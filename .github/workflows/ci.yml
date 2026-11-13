@@ -16,9 +16,6 @@ jobs:
       - name: Build cfire Toolchain
         run: make build
 
-      - name: Install raylib 6.x
-        run: ./cfire setup --raylib --yes
-
       - name: Run Review Check Quality Gates
         run: make review-check
 
@@ -37,16 +34,12 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          # Note: raylib is not packaged for Ubuntu 24.04 (noble); `cfire setup --raylib` fetches the pinned 6.x release below.
           sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
 
       - name: Build cfire Toolchain
         run: make build
-
-      - name: Install raylib 6.x
-        run: ./cfire setup --raylib --yes
 
       - name: Pollute /tmp to prove the LSP suites are hermetic (CF-178)
         run: |

@@ -2073,7 +2073,7 @@ let currentAiGoal = 'explain';
 
 const CFIRE_GRAMMAR_PRIMER = [
   '## cfire Language Quick Reference (ISO C++23 Transpiler)',
-  '- File header: `package main` and `import "core:str"`, `import "ext:webui"`, `import "vendor:raylib" as rl`.',
+  '- File header: `package main` and `import "core:str"`, `import "ext:webui"`.',
   '- Bindings: `x := 42` (immutable by default), `mut count := 0` (mutable).',
   '- Functions & Intents: `fn update(mut s: State, in cfg: Config, move buf: []u8) -> i32!`. Callers MUST annotate `mut`, `move`, or `out` at the call site: `update(mut s, cfg, move buf)`.',
   '- Error Handling: Fallible return `T!` (`std::expected<T, cfire::Error>`). Propagate with prefix `try expr` (NEVER postfix `?`), fallback with `expr or fallback`, or `expr or |err| { ... }`.',

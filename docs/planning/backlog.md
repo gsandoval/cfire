@@ -661,13 +661,33 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Delivered (2026-11-12)**: all of `Q39`–`Q46` and the plain fixes; see `active.md` for the gate results. `Q41`/`Q42` turned out to be supported already. *Also found*: mixed-sign integer comparisons compared bit patterns (`-1 < xs.len()` was `false`), now value-correct via `cfire::cmp_*`; `cfire fmt` silently ignored unknown flags such as `--diff` and rewrote files, now an error.
 - **Worked well**: CF-182 views (slices straight into `parse`, `design[i..j] == t`); `'#'` byte literals; `or continue`; `if x := opt { }`; `m[k].push(v)` and `m[k] += n` on maps; `match` on ints and strings; `rem_euclid`; `regex.compile(...).find_all`.
 
+#### `CF-185` — Remove Built-In raylib Support for Linux/Windows Parity (2026-11-12) `[DONE]`
+- **Goal**: every OS runs the same suite with no optional downloads, so Linux and Windows get first-class coverage. Together with `CF-184` this is the Linux/Windows parity track; do `CF-185` before `CF-184` step 6, which it makes unnecessary.
+- **Problem & Evidence**:
+  - Windows has no raylib path: `cfire setup --raylib` (`src/doctor.hpp:720`) has download URLs only for macOS and Linux, so raylib code is never built or tested on Windows.
+  - Linux needs a pinned 6.2 download (not packaged for Ubuntu); without it `make test` fails because the `CFIRE_RAYLIB_FALLBACK` stub lacks `GetGlyphInfo` (found on the Linux VM).
+  - iOS runs cfire's own reimplementation of the raylib 5.0 API (`runtime/core/ios_raylib.hpp`, 2,120 lines) while desktop links real raylib 6.2, so the two drift.
+  - `ext:webui` already has native backends on macOS, iOS, Linux (GTK) and Windows (WebView2).
+- **Removal (~7,000 lines)**: `runtime/core/ios_raylib.hpp`, `runtime/core/desktop_raylib.hpp`, `runtime/vendor/raygui.h`; `pkg/raygui_ext` (~2,300 lines); examples `06-raylib-viz`, `12-raygui-controls`, `13-ios-native-ui`; the raylib search and link logic in `src/buildsys.hpp` (lines 449–633), the include block in `src/codegen.hpp`, the `doctor` checks, `setup --raylib`/`--gui`, the catalog entries; the three CI "Install raylib 6.x" steps; GUIDE Chapter 15 and the README `vendor:*` section; `test_raylib_vendor_codegen_and_eject`, the raylib checks in the LSP/docs tests, and the 27 fuzz-corpus files that import raylib.
+- **Replacements (required)**:
+  1. A small bundled C library as a test fixture, so the C header bridge keeps the coverage the raylib test gave it (C structs, math helpers, string and pointer conversion).
+  2. The `--subsystem gui`, iOS `.app` bundle and `--web` tests use an `ext:webui` or plain program instead of a raylib one.
+  3. `cfire new --template gui` generates a webui app (or merges into the `webui` template).
+  4. `import "vendor:raylib"` / `"vendor:raygui"` gives a cfire diagnostic pointing to `ext:webui`, or to `import cpp` plus `build.cf` for using raylib as an ordinary C library.
+- **Lost**: built-in immediate-mode 2D/3D drawing (still possible through `import cpp`, but not bundled or tested); GUI in WebAssembly (`--web` uses raylib as its canvas, and `ext:webui` has no browser backend); the raygui_ext widgets.
+- **Decisions (accepted 2026-11-12, as recommended)**:
+  - `Q49` *No WebAssembly GUI*: `--web` builds are console, networking and audio programs; the raylib `canvas` profile goes. A browser backend for `ext:webui` would be its own item.
+  - `Q50` *raygui_ext is deleted*: HTML in `ext:webui` covers its widgets; nothing is ported.
+- **Tests**: `make test`, `review-check`, ASan and TSan pass on macOS with raylib uninstalled; the Linux VM passes `make test` with no raylib download step; the C-interop fixture test passes on macOS, Linux and Windows; a conformance case pins the removed-import diagnostic; `cfire doc --check` passes after the GUIDE changes.
+- **Acceptance Criteria**: no file under `src/`, `runtime/`, `tests/` or CI references raylib except the removed-import diagnostic and its test (and fuzz-replay inputs), and the same suite runs on macOS, Linux and Windows with no optional downloads. Met; see `active.md`.
+
 #### `CF-184` — Windows Test Parity (found on the Windows VM, 2026-11-12) `[TODO]`
 - **Problem & Evidence** (MSYS2 CLANG64, clang 23.1.5; all predate CF-183):
   - The C++ unit runner does not build on Windows: `tests/unit/test_stdlib_tooling_fuzz_bench.hpp` uses `::socketpair`, `MSG_DONTWAIT` and POSIX `send`/`setsockopt` signatures, `test_stdlib_webui_ext.hpp` uses `::setenv`, and `tests/test_main.cpp` uses `SIGPIPE`. The CI `windows` job's "Build & Run C++ Unit Suites" step cannot pass as written.
   - Five `concurrency/*` conformance files use `// flags: --sanitize=thread`, which clang's `x86_64-w64-windows-gnu` target rejects; the runner should skip TSan files on Windows rather than fail them.
   - `security/005_sql_constant_statements_ok.cf` fails with a PCH mismatch: the prelude PCH is built without `-static` (`__STATIC__` disabled) but the sqlite program builds with it.
   - Six C++ warnings in Windows-only code: `src/mcp.hpp:189` unused `timeout_seconds`, and clang 23's `-Wunnecessary-virtual-specifier` on `~Wv2Handler` in `runtime/core/webui/windows_webview2.hpp:560`.
-  - Linux without raylib: `make test` fails because the `CFIRE_RAYLIB_FALLBACK` stub (`runtime/core/ios_raylib.hpp`) lacks `GetGlyphInfo`, so `pkg/raygui_ext` reaches clang.
+  - ~~Linux without raylib: `make test` fails because the raylib fallback stub lacks `GetGlyphInfo`.~~ Resolved by `CF-185`.
 - **Decisions (2026-11-12)**:
   - `Q47` *TSan files on Windows*: conformance files with `// flags: --sanitize=thread` run on Windows without the sanitizer, still checking their output; the runner notes that TSan was skipped.
   - `Q48` *VM tooling in the repo*: the UTM helpers and the Linux/Windows gate scripts move to `scripts/vm/` behind optional `make test-vm-linux` / `make test-vm-windows` targets, with VM names and the host address as variables, and `docs/planning/README.md` lists them as a pre-release step.
@@ -677,10 +697,10 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
   3. `Q47` in `scripts/run_conformance.py`.
   4. Reproduce `security/005` and make the PCH flags match the `-static` link (or keep `-static` out of the compile step).
   5. Remove the two Windows-only warnings.
-  6. Add the stub functions the suite needs, and check that `pkg/raygui_ext` compiles against the stub.
+  6. ~~Add the raylib stub functions the suite needs.~~ Dropped: `CF-185` removed raylib, so Linux `make test` needs no raylib.
   7. `Q48`.
 - **Not changed**: with `$HOME` unset the package cache is per-process (CF-153); at most `cfire setup` warns about it.
-- **Tests**: the CI `windows` job's steps pass in the Windows VM with 0 warnings; Linux `make test` passes with and without raylib; the macOS gate as usual.
+- **Tests**: the CI `windows` job's steps pass in the Windows VM with 0 warnings; the macOS gate as usual.
 - **Acceptance Criteria**: the CI `windows` job builds and runs the unit suite, conformance passes on Windows (TSan files run unsanitized), and the Windows build has 0 warnings.
 
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`

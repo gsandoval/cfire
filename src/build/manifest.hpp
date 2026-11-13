@@ -97,8 +97,6 @@ struct BuildPlan {
     bool is_ios{false};
     bool is_ios_sim{false};
     bool uses_objc{false};
-    int window_init_width{0};
-    int window_init_height{0};
     std::string emscripten_compiler{};
 };
 

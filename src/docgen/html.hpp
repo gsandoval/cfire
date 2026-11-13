@@ -750,7 +750,6 @@ fn main() {
         {"core:* — Networking, Web Protocols & Audio", {"net", "url", "tls", "http", "websocket", "audio"}},
         {"core:* — Cryptography & Hashing", {"aes", "blake3", "hmac", "sha256"}},
         {"ext:* — Native C Libraries, WebUI & AI Engines", {"ai", "zstd", "sodium", "sqlite", "ssh", "webui"}},
-        {"vendor:* — Graphics & Immediate-Mode GUI", {"rl", "rg"}},
     };
 
     for (const auto& cat : categories) {

@@ -103,7 +103,6 @@ struct DiscoveredModule {
             if (!entry.is_regular_file() || entry.path().extension() != ".hpp") continue;
             auto rel = std::filesystem::relative(entry.path(), core_dir).string();
             if (rel == "cli.hpp") discovered.push_back({"core:cli", "core/" + rel, false});
-            else if (rel == "ios_raylib.hpp" || rel == "desktop_raylib.hpp") continue; // Built-in platform backends for vendor:raylib
             else if (rel == "compress.hpp") discovered.push_back({"ext:compress/zstd", "core/" + rel, false});
             else if (rel == "fs.hpp") discovered.push_back({"core:fs", "core/" + rel, false});
             else if (rel == "json.hpp") discovered.push_back({"core:json", "core/" + rel, false});
@@ -154,9 +153,6 @@ struct DiscoveredModule {
             discovered.push_back({"vendor:" + stem, "vendor/" + entry.path().filename().string(), true});
         }
     }
-
-    // 3. Known built-in vendor packages recognized by buildsys
-    discovered.push_back({"vendor:raylib", "(built-in C bridge)", true});
 
     return discovered;
 }

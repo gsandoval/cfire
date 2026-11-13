@@ -1506,8 +1506,6 @@ public:
             else sep = slash;
             std::string_view tail = (sep == std::string::npos) ? std::string_view(imp.path) : std::string_view(imp.path).substr(sep + 1);
             if (tail == ns) return true;
-            if (ns == "rl" && tail == "raylib") return true;
-            if (ns == "rg" && tail == "raygui") return true;
         }
         return false;
     }
@@ -2596,7 +2594,7 @@ public:
                 const auto& idx = StdlibCatalogIndex::instance();
                 const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
                 if (obj_id && !is_ident_in_scope_sema(obj_id->name)) {
-                    if (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg") {
+                    if (obj_id->name == "cpp") {
                         return true;
                     }
                     if ((obj_id->name == "fs" && (mem->field == "read_all" || mem->field == "write_all")) ||
@@ -2677,7 +2675,7 @@ public:
                 if (type_name_of(e).ends_with("?")) return true;  // a typed receiver method (`pq.pop() -> T?`, Q44)
                 const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
                 if (obj_id && !is_ident_in_scope_sema(obj_id->name)) {
-                    if (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg") {
+                    if (obj_id->name == "cpp") {
                         return true;
                     }
                     if (idx.has_namespace(obj_id->name)) {

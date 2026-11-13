@@ -2156,7 +2156,7 @@ syncCfireThemeBtn();
           </a>
         </li>
         <li class="nav-item" id="nav-item-15">
-          <a href="#chapter-15" class="sidebar-ch-link" data-chapter="15" title="2D/3D Graphics, Raygui Widgets &amp; Native iOS UI" onclick="navigateToChapter('15'); return false;">
+          <a href="#chapter-15" class="sidebar-ch-link" data-chapter="15" title="Graphics &amp; Native UI Options" onclick="navigateToChapter('15'); return false;">
             <span class="ch-text">Ch 15: Graphics &amp; iOS UI</span>
             
           </a>
@@ -2188,7 +2188,7 @@ syncCfireThemeBtn();
       </ul>
         <a href="reference.html" class="sidebar-footer-card">
           <span class="sfc-title">Stdlib Reference</span>
-          <span class="sfc-badge">37 MODULES</span>
+          <span class="sfc-badge">35 MODULES</span>
         </a>
       </div>
     </div>
@@ -2233,7 +2233,7 @@ syncCfireThemeBtn();
     <a href="#ch1-quick-installation-script-macos-linux" class="topic-pill" data-topic-pill="ch1-quick-installation-script-macos-linux" title="Quick Installation Script (macOS &amp; Linux)" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">1.2 Quick Install</a>
     <a href="#ch1-checking-toolchain-health-cfire-doctor-cfire-setup" class="topic-pill" data-topic-pill="ch1-checking-toolchain-health-cfire-doctor-cfire-setup" title="Checking Toolchain Health (cfire doctor &amp; cfire setup)" onclick="navigateToSubhead('1', 'ch1-checking-toolchain-health-cfire-doctor-cfire-setup'); return false;">1.3 Doctor &amp; Setup</a>
     <a href="#ch1-building-from-source-platform-setup" class="topic-pill" data-topic-pill="ch1-building-from-source-platform-setup" title="Building from Source &amp; Platform Setup" onclick="navigateToSubhead('1', 'ch1-building-from-source-platform-setup'); return false;">1.4 Source Build</a>
-    <a href="#ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" class="topic-pill" data-topic-pill="ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" title="Understanding the Three Stdlib Namespaces (core:*, ext:*, vendor:*)" onclick="navigateToSubhead('1', 'ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor'); return false;">1.5 Stdlib Tiers</a>
+    <a href="#ch1-understanding-the-two-stdlib-namespaces-core-ext" class="topic-pill" data-topic-pill="ch1-understanding-the-two-stdlib-namespaces-core-ext" title="Understanding the Two Stdlib Namespaces (core:*, ext:*)" onclick="navigateToSubhead('1', 'ch1-understanding-the-two-stdlib-namespaces-core-ext'); return false;">1.5 Understanding the Two ..</a>
     <a href="#ch1-setting-up-webassembly-ios-cross-compilation" class="topic-pill" data-topic-pill="ch1-setting-up-webassembly-ios-cross-compilation" title="Setting Up WebAssembly &amp; iOS Cross-Compilation" onclick="navigateToSubhead('1', 'ch1-setting-up-webassembly-ios-cross-compilation'); return false;">1.6 WASM &amp; iOS</a>
     <a href="#ch1-connecting-your-editor-lsp-ai-agents-mcp" class="topic-pill" data-topic-pill="ch1-connecting-your-editor-lsp-ai-agents-mcp" title="Connecting Your Editor (LSP) &amp; AI Agents (MCP)" onclick="navigateToSubhead('1', 'ch1-connecting-your-editor-lsp-ai-agents-mcp'); return false;">1.7 LSP &amp; MCP</a>
   </div>
@@ -2298,7 +2298,6 @@ cfire doctor --json   # Machine-readable JSON report for CI &amp; coding agents
 <p>If any optional native libraries or build tools are missing, <code>cfire setup</code> installs them automatically via your host package manager (<code>brew</code> on macOS; <code>apt-get</code>, <code>dnf</code>, <code>pacman</code>, or <code>apk</code> on Linux), syncs <code>runtime/</code> headers to <code>~/.cfire/runtime</code>, and precompiles the C++23 prelude <code>.pch</code>:</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>cfire setup --yes             # Install missing native libraries + warm C++23 PCH
-cfire setup --yes --raylib    # Also pre-fetch vendor:raylib into global cache
 cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
 </code></pre>
     <div class="chapter-pager topic-pager">
@@ -2366,25 +2365,25 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.3)</span>
         <strong class="pager-title">Checking Toolchain Health (cfire doctor &amp; cfire setup)</strong>
       </a>
-      <a href="#ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor'); return false;">
+      <a href="#ch1-understanding-the-two-stdlib-namespaces-core-ext" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-understanding-the-two-stdlib-namespaces-core-ext'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 1.5) &rarr;</span>
-        <strong class="pager-title">Understanding the Three Stdlib Namespaces (core:*, ext:*, vendor:*)</strong>
+        <strong class="pager-title">Understanding the Two Stdlib Namespaces (core:*, ext:*)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" data-topic-id="ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" data-topic-title="Understanding the Three Stdlib Namespaces (core:*, ext:*, vendor:*)" data-short-title="1.5 Stdlib Tiers">
-<h3 class="guide-heading" id="ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor"><span class="heading-hash">#</span><span class="heading-text">Understanding the Three Stdlib Namespaces (<code>core:*</code>, <code>ext:*</code>, <code>vendor:*</code>)</span></h3>
-<p>One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. <code>cfire</code> keeps dependency boundaries honest by organizing its 38 built-in modules into three explicit namespaces based on external link requirements:</p>
+  <section class="guide-topic" id="topic-ch1-understanding-the-two-stdlib-namespaces-core-ext" data-topic-id="ch1-understanding-the-two-stdlib-namespaces-core-ext" data-topic-title="Understanding the Two Stdlib Namespaces (core:*, ext:*)" data-short-title="1.5 Understanding the Two ..">
+<h3 class="guide-heading" id="ch1-understanding-the-two-stdlib-namespaces-core-ext"><span class="heading-hash">#</span><span class="heading-text">Understanding the Two Stdlib Namespaces (<code>core:*</code>, <code>ext:*</code>)</span></h3>
+<p>One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. <code>cfire</code> keeps dependency boundaries honest by organizing its 35 built-in modules into two explicit namespaces based on external link requirements:</p>
 <ul>
-  <li><strong><code>core:*</code> (Foundational &amp; Platform Core — 30 Modules)</strong>: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (<code>core:str</code>, <code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:sort</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:json</code>, <code>core:encoding/*</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:keychain</code>, <code>core:build</code>, <code>core:net</code>, <code>core:net/url</code>, <code>core:net/tls</code>, <code>core:net/http</code>, <code>core:net/websocket</code>, <code>core:audio</code>, <code>core:crypto/*</code>) with zero external C library setup required.</li>
+  <li><strong><code>core:*</code> (Foundational &amp; Platform Core — 29 Modules)</strong>: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (<code>core:str</code>, <code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:sort</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:json</code>, <code>core:encoding/*</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:keychain</code>, <code>core:build</code>, <code>core:net</code>, <code>core:net/url</code>, <code>core:net/tls</code>, <code>core:net/http</code>, <code>core:net/websocket</code>, <code>core:audio</code>, <code>core:crypto/*</code>) with zero external C library setup required.</li>
   <li><strong><code>ext:*</code> (Native C Libraries, WebUI &amp; AI Extensions — 6 Opt-In Modules)</strong>: Specialized domain engines (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported—and include built-in portable fallbacks when an optional system library isn't installed.</li>
-  <li><strong><code>vendor:*</code> (Bundled Third-Party C/C++ Engines — 2 Modules)</strong>: <code>vendor:raylib</code> and <code>vendor:raygui</code>.</li>
+  <li><strong>Any other C or C++ library</strong> (raylib, SDL, your own code) is used through <code>import cpp &quot;&lt;header.h&gt;&quot;</code> and, when it needs building, <code>build.CC</code> / <code>build.CMake</code> in <code>build.cf</code> (see Chapter 11). <code>cfire</code> no longer bundles raylib.</li>
 </ul>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
     <thead>
-      <tr><th>Core / Extension / Vendor Module</th><th>Optional System Library</th><th><code>pkg-config</code> Name</th><th>Built-In Portable Fallback When Absent</th></tr>
+      <tr><th>Core / Extension Module</th><th>Optional System Library</th><th><code>pkg-config</code> Name</th><th>Built-In Portable Fallback When Absent</th></tr>
     </thead>
     <tbody>
       <tr><td><code>core:json</code></td><td><code>libsimdjson</code></td><td><code>simdjson</code></td><td>Bundled single-header <code>simdjson</code> implementation in <code>runtime/vendor/</code></td></tr>
@@ -2397,7 +2396,6 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
       <tr><td><code>ext:net/ssh</code></td><td><code>libssh</code></td><td><code>libssh</code></td><td>OpenSSH <code>ssh</code> / <code>sftp</code> / <code>scp</code> subprocess bridge when <code>libssh</code> is absent</td></tr>
       <tr><td><code>ext:ai</code> (OCR &amp; PDF)</td><td><code>Vision</code> / <code>libtesseract</code> / <code>pdftotext</code></td><td><code>tesseract</code></td><td><code>Vision.framework</code> &amp; <code>PDFKit</code> on macOS/iOS; <code>dlopen(&quot;libtesseract.so.5&quot;)</code> &amp; <code>pdftotext</code> on Linux; pure C++23 <code>/FlateDecode</code> PDF parser &amp; PNG/JPEG metadata reader on all targets</td></tr>
       <tr><td><code>ext:webui</code></td><td><code>WebKit.framework</code> / <code>webkit2gtk-4.1</code></td><td><code>webkit2gtk-4.1</code></td><td><code>WKWebView</code> + <code>Cocoa</code> on macOS, <code>WKWebView</code> + <code>UIKit</code> on iOS, <code>WebKitGTK</code> + <code>GTK3</code> on Linux, and deterministic headless RPC/Event dispatcher in CI</td></tr>
-      <tr><td><code>vendor:raylib</code> &amp; <code>vendor:raygui</code></td><td>Bundled in <code>runtime/</code></td><td>None required</td><td>Self-contained Cocoa/OpenGL desktop backend, X11/OpenGL Linux backend, WebGL/HTML5 Canvas on WASM, and <code>UIKit</code> + <code>OpenGLES3</code> on iOS</td></tr>
     </tbody>
   </table>
 </div>
@@ -2423,7 +2421,7 @@ source ./emsdk_env.sh
 </code></pre>
 <ul>
   <li><strong>Running in the Browser</strong>: <code>cfire run --web app.cf</code> compiles with <code>-std=c++23 -O2 -msimd128</code> and starts a local HTTP server (or runs via <code>node</code> for CLI targets).</li>
-  <li><strong>Web Profiles</strong>: GUI applications importing <code>vendor:raylib</code> or <code>core:audio</code> automatically select the <code>canvas</code> profile (HTML5 WebGL canvas + drag-and-drop <code>MEMFS</code> file staging); console applications select the <code>cli</code> profile.</li>
+  <li><strong>Web Profiles</strong>: programs select the <code>cli</code> profile (console output in the page). Pass <code>--web-profile=canvas</code> for an HTML5 canvas shell with drag-and-drop <code>MEMFS</code> file staging, for example when you bring your own C graphics library. There is no built-in GUI on the web: <code>ext:webui</code> targets native desktop and iOS.</li>
 </ul>
 <h4 id="ch1-native-ios-simulator-device-ios">Native iOS Simulator &amp; Device (<code>--ios</code>)</h4>
 <p>Building for iOS requires macOS with full Xcode installed so <code>xcrun</code> can resolve the <code>iphonesimulator</code> and <code>iphoneos</code> SDK sysroots:</p>
@@ -2436,9 +2434,9 @@ xcrun --sdk iphonesimulator --show-sdk-path
   <li><strong>One-Command Simulator Launch</strong>: <code>cfire run --ios app.cf</code> boots the active iOS Simulator via <code>xcrun simctl</code>, installs the <code>.app</code> bundle, and streams stdout/stderr right back to your terminal.</li>
 </ul>
     <div class="chapter-pager topic-pager">
-      <a href="#ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor'); return false;">
+      <a href="#ch1-understanding-the-two-stdlib-namespaces-core-ext" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-understanding-the-two-stdlib-namespaces-core-ext'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.5)</span>
-        <strong class="pager-title">Understanding the Three Stdlib Namespaces (core:*, ext:*, vendor:*)</strong>
+        <strong class="pager-title">Understanding the Two Stdlib Namespaces (core:*, ext:*)</strong>
       </a>
       <a href="#ch1-connecting-your-editor-lsp-ai-agents-mcp" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-connecting-your-editor-lsp-ai-agents-mcp'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 1.7) &rarr;</span>
@@ -2472,7 +2470,7 @@ cfire mcp --print-config   # Prints the JSON configuration block
       <tr><th>MCP Tool Name</th><th>Input Schema</th><th>Behavior &amp; Return Payload</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>cfire_stdlib_list</code></td><td><code>{}</code></td><td>Lists every <code>core:*</code>, <code>ext:*</code>, and <code>vendor:*</code> module with its import path, namespace alias, and summary.</td></tr>
+      <tr><td><code>cfire_stdlib_list</code></td><td><code>{}</code></td><td>Lists every <code>core:*</code> and <code>ext:*</code> module with its import path, namespace alias, and summary.</td></tr>
       <tr><td><code>cfire_stdlib_lookup</code></td><td><code>{&quot;query&quot;: &quot;str&quot;}</code></td><td>Searches modules, function signatures, and types matching <code>query</code> (e.g., <code>&quot;ext:webui&quot;</code> or <code>&quot;bind&quot;</code>).</td></tr>
       <tr><td><code>cfire_check</code></td><td><code>{&quot;code&quot;?: &quot;str&quot;, &quot;path&quot;?: &quot;str&quot;}</code></td><td>Parses, type-checks, and verifies loan/intent rules on inline <code>.cf</code> <code>code</code> or a workspace <code>path</code>; returns <code>&quot;OK (0 errors)&quot;</code> or exact diagnostics.</td></tr>
       <tr><td><code>cfire_test</code></td><td><code>{&quot;path&quot;?: &quot;str&quot;, &quot;filter&quot;?: &quot;str&quot;, &quot;bench&quot;?: bool, &quot;fuzz_runs&quot;?: int, &quot;seed&quot;?: int, &quot;bench_time&quot;?: int}</code></td><td>Executes unit tests (<code>test</code>), property-based fuzz tests (<code>fuzz</code> with shrinking), <code>///</code> doc-tests, automatic JSON round-trip invariants, or statistical benchmarks (<code>bench</code>).</td></tr>
@@ -2671,11 +2669,10 @@ auto main(int argc, char** argv) -&gt; int {
   </div>
   <section class="guide-topic active-topic" id="topic-ch3-scaffolding-new-projects-cfire-new-cfire-init" data-topic-id="ch3-scaffolding-new-projects-cfire-new-cfire-init" data-topic-title="Scaffolding New Projects (cfire new &amp; cfire init)" data-short-title="3.1 Project Init">
 <h3 class="guide-heading" id="ch3-scaffolding-new-projects-cfire-new-cfire-init"><span class="heading-hash">#</span><span class="heading-text">Scaffolding New Projects (<code>cfire new</code> &amp; <code>cfire init</code>)</span></h3>
-<p>Instead of wiring up directories and build files by hand, use <code>cfire new &lt;dir&gt;</code> (or <code>cfire init</code> inside an existing directory) with one of the four built-in project templates:</p>
+<p>Instead of wiring up directories and build files by hand, use <code>cfire new &lt;dir&gt;</code> (or <code>cfire init</code> inside an existing directory) with one of the three built-in project templates:</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>cfire new my-cli               # Default: CLI / backend service template (--template cli)
 cfire new --template webui app # Hybrid desktop/mobile WebView app (ext:webui + ./ui/index.html)
-cfire new --template gui game  # Hardware-accelerated 2D/3D raylib window (vendor:raylib)
 cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
 </code></pre>
 <p>Every scaffolded workspace includes a ready-to-run <code>build.cf</code>, <code>main.cf</code>, a unit test in <code>main_test.cf</code>, and a <code>.gitignore</code> so you can immediately run <code>cfire run</code> and <code>cfire test</code>:</p>
@@ -2687,8 +2684,7 @@ cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
     </thead>
     <tbody>
       <tr><td><code>cli</code> (default)</td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;]</code> (<code>console</code>)</td><td>CLI tools, microservices, AI agents, systems daemons.</td></tr>
-      <tr><td><code>webui</code></td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>ui/index.html</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;, &quot;ios-sim&quot;]</code> (<code>gui</code>)</td><td>Wails/Tauri-style desktop &amp; mobile apps using HTML/CSS/JS over <code>ext:webui</code>.</td></tr>
-      <tr><td><code>gui</code></td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;, &quot;wasm&quot;, &quot;ios-sim&quot;]</code> (<code>gui</code>, <code>canvas</code>)</td><td>60 FPS 2D/3D canvases, games, and visualizers using <code>vendor:raylib</code> &amp; <code>vendor:raygui</code>.</td></tr>
+      <tr><td><code>webui</code> (alias <code>gui</code>)</td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>ui/index.html</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;, &quot;ios-sim&quot;]</code> (<code>gui</code>)</td><td>Wails/Tauri-style desktop &amp; mobile apps using HTML/CSS/JS over <code>ext:webui</code>.</td></tr>
       <tr><td><code>tako</code></td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;, &quot;wasm&quot;, &quot;ios-sim&quot;]</code> (<code>gui</code>, <code>canvas</code>)</td><td>Ergonomic desktop/web/iOS tools using <code>pkg:tako</code> / <code>core:tako</code>.</td></tr>
     </tbody>
   </table>
@@ -2723,7 +2719,7 @@ cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
 <ol>
   <li><strong>Same-Directory Package Merging</strong>: All <code>.cf</code> files in the same folder declaring the same <code>package &lt;name&gt;</code> (for example, <code>main.cf</code>, <code>routes.cf</code>, and <code>store.cf</code> all declaring <code>package main</code>) automatically share their types, functions, methods, and constants—no relative imports needed between sibling files. Test files ending in <code>_test.cf</code> are compiled during <code>cfire test</code> and excluded during <code>cfire build</code> / <code>cfire run</code>.</li>
   <li><strong>Local Workspace Packages (<code>import &quot;./pkg/checksum&quot;</code>)</strong>: Scans all non-test <code>.cf</code> files in <code>./pkg/checksum/</code> belonging to <code>package checksum</code> and exposes their declarations under the <code>checksum.</code> namespace.</li>
-  <li><strong>Standard Library (<code>import &quot;core:...&quot;</code>, <code>&quot;ext:...&quot;</code>, <code>&quot;vendor:...&quot;</code>)</strong>: Resolves headers from the <code>cfire</code> runtime directory and auto-links required system frameworks.</li>
+  <li><strong>Standard Library (<code>import &quot;core:...&quot;</code>, <code>&quot;ext:...&quot;</code>)</strong>: Resolves headers from the <code>cfire</code> runtime directory and auto-links required system frameworks.</li>
   <li><strong>Companion Toolchain Packages (<code>import &quot;pkg:tako&quot;</code> / <code>import &quot;core:tako&quot;</code>)</strong>: Resolves companion SDK headers across workspace parents, <code>~/.local/share</code>, and <code>CFIRE_PKG_PATH</code>.</li>
 </ol>
     <div class="chapter-pager topic-pager">
@@ -2795,7 +2791,7 @@ App := build.Executable(&quot;service-app&quot;, {
     </thead>
     <tbody>
       <tr><td><code>Entry</code></td><td><code>str</code></td><td><code>&quot;main.cf&quot;</code></td><td>Entry <code>.cf</code> file containing <code>fn main()</code>.</td></tr>
-      <tr><td><code>Subsystem</code></td><td><code>str</code></td><td><code>&quot;auto&quot;</code></td><td><code>&quot;console&quot;</code> (CLI binary) or <code>&quot;gui&quot;</code> (creates a macOS <code>.app</code> bundle and suppresses terminal console). Auto-switches to <code>&quot;gui&quot;</code> when <code>vendor:raylib</code> or <code>ext:webui</code> is used.</td></tr>
+      <tr><td><code>Subsystem</code></td><td><code>str</code></td><td><code>&quot;auto&quot;</code></td><td><code>&quot;console&quot;</code> (CLI binary) or <code>&quot;gui&quot;</code> (creates a macOS <code>.app</code> bundle and suppresses terminal console). Auto-switches to <code>&quot;gui&quot;</code> when <code>ext:webui</code> is used.</td></tr>
       <tr><td><code>Name</code> &amp; <code>BundleId</code></td><td><code>str</code></td><td><code>&lt;name&gt;</code>, <code>&quot;com.cfire.&lt;name&gt;&quot;</code></td><td>Display name and reverse-DNS <code>CFBundleIdentifier</code> for macOS/iOS signing and Simulator launch.</td></tr>
       <tr><td><code>Icon</code></td><td><code>str</code></td><td><code>&quot;&quot;</code></td><td>Path to a <code>.png</code> icon; auto-generates <code>.icns</code> on macOS, <code>AppIcon60x60@2x.png</code> on iOS, and window icon pixels on Linux.</td></tr>
       <tr><td><code>Targets</code> &amp; <code>WebProfile</code></td><td><code>[]str</code>, <code>str</code></td><td><code>[&quot;native&quot;]</code>, <code>&quot;auto&quot;</code></td><td>Target triples (<code>&quot;native&quot;</code>, <code>&quot;wasm&quot;</code>, <code>&quot;ios-sim&quot;</code>, <code>&quot;ios&quot;</code>) and WASM shell profile (<code>&quot;canvas&quot;</code> or <code>&quot;cli&quot;</code>).</td></tr>
@@ -4636,9 +4632,10 @@ fn main() {
   <pre><code>zstd_version=true bound_for_1kb=true
 </code></pre>
 </div>
-<p><strong>Bitwise Flag Operators &amp; Formatting on C / Vendor Enums:</strong> C libraries (like Raylib's <code>ConfigFlags</code> or POSIX file flags) frequently use <code>enum</code> types as bitmasks. <code>cfire</code> supports bitwise operators (<code>|</code>, <code>&amp;</code>, <code>^</code>, <code>~</code>, <code>|=</code>, <code>&amp;=</code>) and <code>&quot;{flag}&quot;</code> string formatting directly on C and <code>vendor:*</code> enums without requiring manual integer casts:</p>
+<p><strong>Bitwise Flag Operators &amp; Formatting on C / Vendor Enums:</strong> C libraries (like raylib's <code>ConfigFlags</code> or POSIX file flags) frequently use <code>enum</code> types as bitmasks. <code>cfire</code> supports bitwise operators (<code>|</code>, <code>&amp;</code>, <code>^</code>, <code>~</code>, <code>|=</code>, <code>&amp;=</code>) and <code>&quot;{flag}&quot;</code> string formatting directly on C enums without requiring manual integer casts:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>// Combine C enum bitflags directly with | and &amp;=
+// With `import cpp &quot;raylib.h&quot; as rl @pkg(&quot;raylib&quot;)`:
 mut flags := rl.ConfigFlags::FLAG_WINDOW_RESIZABLE | rl.ConfigFlags::FLAG_VSYNC_HINT
 flags |= rl.ConfigFlags::FLAG_MSAA_4X_HINT
 </code></pre>
@@ -5399,9 +5396,9 @@ AES-GCM + Zstd verified: true, HMAC valid: true
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 14.2)</span>
         <strong class="pager-title">Embedded SQLite WAL, Vector Search &amp; SQL Injection Safety (ext:db/sqlite)</strong>
       </a>
-      <a href="#ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" class="pager-card pager-next" onclick="navigateToSubhead('15', 'ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui'); return false;">
+      <a href="#ch15-choosing-a-ui-stack" class="pager-card pager-next" onclick="navigateToSubhead('15', 'ch15-choosing-a-ui-stack'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 15.1) &rarr;</span>
-        <strong class="pager-title">Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (vendor:raylib, vendor:raygui)</strong>
+        <strong class="pager-title">Choosing a UI Stack</strong>
       </a>
     </div>
   </section>
@@ -5412,118 +5409,40 @@ AES-GCM + Zstd verified: true, HMAC valid: true
     </a>
     <a href="#chapter-15" class="pager-card pager-next" onclick="navigateToChapter('15'); return false;">
       <span class="pager-label">NEXT CHAPTER &rarr;</span>
-      <strong class="pager-title">Ch 15: 2D/3D Graphics, Raygui Widgets &amp; Native iOS UI</strong>
+      <strong class="pager-title">Ch 15: Graphics &amp; Native UI Options</strong>
     </a>
   </div>
 </article>
 
-<article class="chapter-pane" id="chapter-pane-15" data-chapter="15" data-part="Part IV: Networking, Data, UI &amp; AI" data-title="2D/3D Graphics, Raygui Widgets &amp; Native iOS UI" data-short-title="Graphics &amp; iOS UI">
+<article class="chapter-pane" id="chapter-pane-15" data-chapter="15" data-part="Part IV: Networking, Data, UI &amp; AI" data-title="Graphics &amp; Native UI Options" data-short-title="Graphics &amp; iOS UI">
   <div class="chapter-intro">
-<h2 id="chapter-15"><a id="ch15"></a>15. 2D/3D Graphics, Raygui Widgets &amp; Native iOS UI</h2>
+<h2 id="chapter-15"><a id="ch15"></a>15. Graphics &amp; Native UI Options</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 15 (2)</span>
-    <a href="#ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" class="topic-pill active" data-topic-pill="ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" title="Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (vendor:raylib, vendor:raygui)" onclick="navigateToSubhead('15', 'ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui'); return false;">15.1 Raylib &amp; Raygui</a>
-    <a href="#ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" class="topic-pill" data-topic-pill="ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" title="Zero-Coordinate iOS Auto-Layout (GuiIos*) &amp; Workspace Widgets (pkg/raygui_ext)" onclick="navigateToSubhead('15', 'ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext'); return false;">15.2 iOS Auto-Layout</a>
+    <span class="topic-pill-label">Ch 15 (1)</span>
+    <a href="#ch15-choosing-a-ui-stack" class="topic-pill active" data-topic-pill="ch15-choosing-a-ui-stack" title="Choosing a UI Stack" onclick="navigateToSubhead('15', 'ch15-choosing-a-ui-stack'); return false;">15.1 UI Options</a>
   </div>
-  <section class="guide-topic active-topic" id="topic-ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" data-topic-id="ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" data-topic-title="Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (vendor:raylib, vendor:raygui)" data-short-title="15.1 Raylib &amp; Raygui">
-<h3 class="guide-heading" id="ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui"><span class="heading-hash">#</span><span class="heading-text">Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (<code>vendor:raylib</code>, <code>vendor:raygui</code>)</span></h3>
-<p><code>cfire</code> embeds Raylib 5.0 (<code>vendor:raylib</code>) and Raygui (<code>vendor:raygui</code>) with a custom high-DPI font rasterizer (<code>CoreText</code> on macOS, <code>UIFont</code> on iOS, system TrueType on Linux). A single <code>.cf</code> file compiles to a native macOS Metal/OpenGL <code>.app</code>, a Linux desktop binary, an HTML5 WebGL2 canvas (<code>cfire run --web</code>), or a 60/120 Hz iOS Simulator app (<code>cfire run --ios</code>):</p>
+  <section class="guide-topic active-topic" id="topic-ch15-choosing-a-ui-stack" data-topic-id="ch15-choosing-a-ui-stack" data-topic-title="Choosing a UI Stack" data-short-title="15.1 UI Options">
+<h3 class="guide-heading" id="ch15-choosing-a-ui-stack"><span class="heading-hash">#</span><span class="heading-text">Choosing a UI Stack</span></h3>
+<p><code>cfire</code> ships one built-in UI stack, <code>ext:webui</code> (Chapter 18): HTML, CSS and JavaScript in the platform's own WebView, with typed RPC and events to <code>.cf</code> code. It runs natively on macOS (<code>WKWebView</code>), iOS (<code>WKWebView</code> + <code>UIKit</code>), Linux (<code>WebKitGTK</code>) and Windows (<code>WebView2</code>), and has a headless mode for tests, so the same UI code is built and tested on every desktop OS.</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
     <thead>
-      <tr><th>Subsystem</th><th>macOS (<code>darwin</code>)</th><th>Linux (<code>linux</code>)</th><th>iOS (<code>--ios</code>)</th><th>WebAssembly (<code>--web</code>)</th></tr>
+      <tr><th>Need</th><th>Use</th><th>Platforms</th></tr>
     </thead>
     <tbody>
-      <tr><td><strong>Window &amp; Context</strong></td><td>Cocoa (<code>NSWindow</code>) + high-DPI Retina OpenGL/Metal</td><td>X11 / Wayland + OpenGL 3.3 + auto-discovered <code>icon.png</code></td><td>Native <code>UIWindow</code> + <code>UIViewController</code> + <code>CADisplayLink</code></td><td>HTML5 <code>&lt;canvas&gt;</code> + WebGL2 + <code>emscripten_set_main_loop</code></td></tr>
-      <tr><td><strong>Font Rasterizer</strong></td><td><code>CoreText.framework</code> 2x Retina subpixel rasterizer</td><td>System TrueType discovery (<code>fc-match</code> / DejaVu / Noto)</td><td>Native <code>UIFont</code> (<code>SF Pro</code>) glyph atlas</td><td>Embedded 2x high-DPI font atlas</td></tr>
-      <tr><td><strong>Safe Area &amp; Haptics</strong></td><td>Full viewport</td><td>Full viewport</td><td><code>GetSafeAreaRect()</code> Dynamic Island inset + <code>TriggerHaptic</code> Taptic Engine</td><td>Full canvas + <code>navigator.vibrate</code></td></tr>
+      <tr><td>Forms, dashboards, editors, settings, mobile apps</td><td><code>ext:webui</code> (Chapter 18)</td><td>macOS, iOS, Linux, Windows</td></tr>
+      <tr><td>Immediate-mode 2D/3D drawing or games</td><td>A C library through <code>import cpp</code> (for example <code>import cpp &quot;raylib.h&quot; as rl @pkg(&quot;raylib&quot;)</code>), built with <code>build.CC</code> / <code>build.CMake</code> when it is not installed</td><td>Wherever that library builds</td></tr>
+      <tr><td>Console or networking programs in the browser</td><td><code>cfire run --web</code> (<code>cli</code> profile); <code>--web-profile=canvas</code> gives an HTML5 canvas shell for your own C graphics code</td><td>WebAssembly</td></tr>
     </tbody>
   </table>
 </div>
-<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code>package main
-
-import &quot;vendor:raylib&quot; as rl
-import &quot;vendor:raygui&quot; as rg
-
-fn main() {
-    rl.InitWindow(800, 480, &quot;cfire Telemetry Studio&quot;)
-    defer rl.CloseWindow()
-    rl.SetTargetFPS(60)
-
-    mut vsync    := true
-    mut gain_db  : f32 = 0.0
-    mut profile  : i32 = 1
-    mut hostname := &quot;edge-node-01&quot;
-    mut editing  := false
-
-    for !rl.WindowShouldClose() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
-        rl.ClearBackground(rl.GetColor(0x18181bff))
-
-        _ = rg.GuiWindowBox(rl.Rectangle{x: 24.0, y: 24.0, width: 340.0, height: 260.0}, &quot;Node Configuration&quot;)
-        _ = rg.GuiCheckBox(rl.Rectangle{x: 44.0, y: 68.0, width: 20.0, height: 20.0}, &quot;Enable VSync Lock&quot;, &amp;mut vsync)
-        _ = rg.GuiSliderBar(rl.Rectangle{x: 90.0, y: 108.0, width: 200.0, height: 20.0}, &quot;Gain&quot;, &quot;{gain_db:.1f} dB&quot;, &amp;mut gain_db, -24.0, 12.0)
-        _ = rg.GuiComboBox(rl.Rectangle{x: 44.0, y: 148.0, width: 246.0, height: 28.0}, &quot;Eco;Balanced;Turbo&quot;, &amp;mut profile)
-
-        if rg.GuiTextBox(rl.Rectangle{x: 44.0, y: 192.0, width: 246.0, height: 28.0}, &amp;mut hostname, 64, editing) != 0 {
-            editing = !editing
-        }
-        if rg.GuiButton(rl.Rectangle{x: 44.0, y: 234.0, width: 246.0, height: 32.0}, &quot;Apply Settings&quot;) != 0 {
-            rl.TriggerHaptic(1)
-        }
-
-        rl.DrawText(&quot;Host: {hostname} | Gain: {gain_db:.1f} dB&quot;, 400, 40, 20, rl.RAYWHITE)
-    }
-}
-</code></pre>
+<p><code>cfire</code> no longer bundles raylib or raygui: <code>import &quot;vendor:raylib&quot;</code> and <code>import &quot;vendor:raygui&quot;</code> report <code>cfire/RETIRED-API</code>. raylib is still an ordinary C library, so a program can call it through the C header bridge (Chapter 11); <code>cfire</code> just doesn't download, build or test it.</p>
     <div class="chapter-pager topic-pager">
       <a href="#ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing" class="pager-card pager-prev" onclick="navigateToSubhead('14', 'ch14-zstandard-compression-aes-256-gcm-cryptographic-hashing'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 14.3)</span>
         <strong class="pager-title">Zstandard Compression, AES-256-GCM &amp; Cryptographic Hashing</strong>
-      </a>
-      <a href="#ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" class="pager-card pager-next" onclick="navigateToSubhead('15', 'ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext'); return false;">
-        <span class="pager-label">NEXT TOPIC (CH 15.2) &rarr;</span>
-        <strong class="pager-title">Zero-Coordinate iOS Auto-Layout (GuiIos*) &amp; Workspace Widgets (pkg/raygui_ext)</strong>
-      </a>
-    </div>
-  </section>
-  <section class="guide-topic" id="topic-ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" data-topic-id="ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" data-topic-title="Zero-Coordinate iOS Auto-Layout (GuiIos*) &amp; Workspace Widgets (pkg/raygui_ext)" data-short-title="15.2 iOS Auto-Layout">
-<h3 class="guide-heading" id="ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext"><span class="heading-hash">#</span><span class="heading-text">Zero-Coordinate iOS Auto-Layout (<code>GuiIos*</code>) &amp; Workspace Widgets (<code>pkg/raygui_ext</code>)</span></h3>
-<p>Positioning every mobile button by manual <code>(x, y)</code> coordinates gets tedious fast when adapting to iPhone safe areas, Dynamic Island notches, and software keyboards. <code>vendor:raygui</code> includes a built-in <strong>Zero-Coordinate iOS Layout Engine</strong> (<code>rg.GuiIos*</code>) modeled after SwiftUI's <code>NavigationStack</code> and <code>Form</code>:</p>
-<div class="table-wrap">
-  <div class="table-scroll-cue">Scroll table &rarr;</div>
-  <table>
-    <thead>
-      <tr><th><code>vendor:raygui</code> iOS Control</th><th>Signature</th><th>What It Renders &amp; Manages Automatically</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>rg.GuiIosBegin</code> / <code>GuiIosEnd</code></td><td><code>fn(title: str)</code> / <code>fn()</code></td><td>Reads <code>GetSafeAreaRect()</code>, renders the translucent iOS navigation bar, manages vertical touch-drag momentum scrolling, and clips content inside the safe area.</td></tr>
-      <tr><td><code>rg.GuiIosSection</code></td><td><code>fn(label: str)</code></td><td>Starts an inset grouped section header (like SwiftUI <code>Section(&quot;AUDIO ENGINE&quot;)</code>).</td></tr>
-      <tr><td><code>rg.GuiIosToggle</code></td><td><code>fn(label: str, active: &amp;mut bool) -&gt; bool</code></td><td>Full-width grouped row with an animated pill switch and automatic Taptic feedback on toggle.</td></tr>
-      <tr><td><code>rg.GuiIosSlider</code></td><td><code>fn(label: str, val: &amp;mut f32, min: f32, max: f32, unit: str)</code></td><td>Grouped card row with value readout badge and touch-friendly thumb slider.</td></tr>
-      <tr><td><code>rg.GuiIosSegmented</code></td><td><code>fn(options: str, active: &amp;mut i32)</code></td><td>Semicolon-delimited (<code>&quot;Sine;Saw;Square&quot;</code>) sliding pill segmented control.</td></tr>
-      <tr><td><code>rg.GuiIosTextField</code></td><td><code>fn(label: str, text: &amp;mut str, placeholder: str)</code></td><td>Auto-focusing text field that summons the iOS software keyboard (<code>RequestKeyboard()</code>) on tap without manual focus state variables.</td></tr>
-      <tr><td><code>rg.GuiIosButton</code></td><td><code>fn(label: str, accent: bool = true) -&gt; bool</code></td><td>Full-width rounded action button with press highlight and haptic feedback.</td></tr>
-      <tr><td><code>rg.GuiIosTabBar</code></td><td><code>fn(tabs: str, active: &amp;mut i32)</code></td><td>Bottom dock bar pinned above the iOS Home Indicator (<code>&quot;Synth;Presets;Settings&quot;</code>).</td></tr>
-    </tbody>
-  </table>
-</div>
-<p>For desktop IDE and studio tools, the workspace also includes <code>pkg/raygui_ext</code> (<code>code_editor.cf</code>, <code>splitter.cf</code>, <code>text_buffer.cf</code>), providing resizable split-pane layouts, line-numbered code editors, and gap-buffer text editing out of the box.</p>
-<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code># Scaffold a graphical app or launch directly on Desktop, WebAssembly, or iOS Simulator:
-cfire new my-studio --template gui
-cfire run examples/13-ios-native-ui
-cfire run --web examples/13-ios-native-ui
-cfire run --ios examples/13-ios-native-ui
-</code></pre>
-    <div class="chapter-pager topic-pager">
-      <a href="#ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" class="pager-card pager-prev" onclick="navigateToSubhead('15', 'ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 15.1)</span>
-        <strong class="pager-title">Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (vendor:raylib, vendor:raygui)</strong>
       </a>
       <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="pager-card pager-next" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 16.1) &rarr;</span>
@@ -5585,9 +5504,9 @@ cfire run --ios examples/13-ios-native-ui
   </table>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" class="pager-card pager-prev" onclick="navigateToSubhead('15', 'ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 15.2)</span>
-        <strong class="pager-title">Zero-Coordinate iOS Auto-Layout (GuiIos*) &amp; Workspace Widgets (pkg/raygui_ext)</strong>
+      <a href="#ch15-choosing-a-ui-stack" class="pager-card pager-prev" onclick="navigateToSubhead('15', 'ch15-choosing-a-ui-stack'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 15.1)</span>
+        <strong class="pager-title">Choosing a UI Stack</strong>
       </a>
       <a href="#ch16-streaming-real-time-dsp-encoding-riffwav-files" class="pager-card pager-next" onclick="navigateToSubhead('16', 'ch16-streaming-real-time-dsp-encoding-riffwav-files'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 16.2) &rarr;</span>
@@ -5653,7 +5572,7 @@ fn main() -&gt; void! {
   <div class="chapter-pager">
     <a href="#chapter-15" class="pager-card pager-prev" onclick="navigateToChapter('15'); return false;">
       <span class="pager-label">&larr; PREVIOUS CHAPTER</span>
-      <strong class="pager-title">Ch 15: 2D/3D Graphics, Raygui Widgets &amp; Native iOS UI</strong>
+      <strong class="pager-title">Ch 15: Graphics &amp; Native UI Options</strong>
     </a>
     <a href="#chapter-17" class="pager-card pager-next" onclick="navigateToChapter('17'); return false;">
       <span class="pager-label">NEXT CHAPTER &rarr;</span>
@@ -6362,14 +6281,11 @@ fn main() -&gt; void! {
       <tr><td><a href="../examples/03-pkg-cache"><code>examples/03-pkg-cache</code></a></td><td>Package Cache</td><td>SQLite3 WAL transactions (<code>ext:db/sqlite</code>), compile-time JSON struct mapping (<code>core:json</code>), SHA-256 (<code>core:crypto/sha256</code>)</td><td><code>cfire run examples/03-pkg-cache/main.cf</code></td></tr>
       <tr><td><a href="../examples/04-async-workers"><code>examples/04-async-workers</code></a></td><td>Async Workers</td><td>Scoped thread pool concurrency (<code>async.scope</code>), disjoint slice writes, MPMC <code>Channel[T]</code> (<code>core:sync</code>)</td><td><code>cfire run examples/04-async-workers/main.cf</code></td></tr>
       <tr><td><a href="../examples/05-cmake-interop"><code>examples/05-cmake-interop</code></a></td><td>CMake Interop</td><td>Clang JSON AST ingestion (<code>import cpp &quot;&lt;zstd.h&gt;&quot;</code>), <code>build.CMake</code> native library orchestration</td><td><code>cfire run examples/05-cmake-interop/main.cf</code></td></tr>
-      <tr><td><a href="../examples/06-raylib-viz"><code>examples/06-raylib-viz</code></a></td><td>Raylib Visualization</td><td>Hardware 2D graphics loop (<code>vendor:raylib</code>), 60 FPS particle &amp; telemetry rendering (<code>--web</code> &amp; <code>--ios</code> ready)</td><td><code>cfire run examples/06-raylib-viz/main.cf</code></td></tr>
       <tr><td><a href="../examples/07-types-match-map"><code>examples/07-types-match-map</code></a></td><td>Types &amp; Match</td><td>Algebraic <code>enum</code> sum types (<code>std::variant</code>), exhaustive <code>match</code>, <code>map[K]V</code>, <code>interface</code> C++20 concepts</td><td><code>cfire run examples/07-types-match-map/main.cf</code></td></tr>
       <tr><td><a href="../examples/08-multi-pkg-cc-build"><code>examples/08-multi-pkg-cc-build</code></a></td><td>Multi-Package Build</td><td>Multi-package <code>build.cf</code> orchestration, static archive compilation (<code>build.CC</code>)</td><td><code>cfire run examples/08-multi-pkg-cc-build</code></td></tr>
       <tr><td><a href="../examples/09-stdlib-test-pointers"><code>examples/09-stdlib-test-pointers</code></a></td><td>Stdlib &amp; Tests</td><td>Smart pointers (<code>*T</code>, <code>^T</code>), <code>test &quot;...&quot;</code> blocks, <code>core:testing</code> assertions</td><td><code>cfire test examples/09-stdlib-test-pointers/main.cf</code></td></tr>
       <tr><td><a href="../examples/10-cmake-and-make-deps"><code>examples/10-cmake-and-make-deps</code></a></td><td>Multi-Build Deps</td><td>Simultaneous <code>build.CMake</code> and <code>build.Make</code> external dependency orchestration in a single <code>build.cf</code></td><td><code>cfire run examples/10-cmake-and-make-deps</code></td></tr>
       <tr><td><a href="../examples/11-http-server-router"><code>examples/11-http-server-router</code></a></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server (<code>core:net/http</code>), fluent request router, URL <code>:param</code> &amp; query extraction</td><td><code>cfire run examples/11-http-server-router/main.cf</code></td></tr>
-      <tr><td><a href="../examples/12-raygui-controls"><code>examples/12-raygui-controls</code></a></td><td>Raygui GUI Kit</td><td>Immediate-mode controls (<code>vendor:raygui</code>): checkboxes, sliders, progress bars, combo boxes, <code>&amp;mut str</code> text boxes</td><td><code>cfire run examples/12-raygui-controls/main.cf</code></td></tr>
-      <tr><td><a href="../examples/13-ios-native-ui"><code>examples/13-ios-native-ui</code></a></td><td>Native iOS UI</td><td>Zero-coordinate <code>GuiIos*</code> auto-layout kit (<code>examples/13-ios-native-ui/ui/kit.cf</code>), safe-area insets, real-time <code>core:audio</code> metering (<code>--ios</code>, <code>--web</code>, desktop)</td><td><code>cfire run --ios examples/13-ios-native-ui</code></td></tr>
       <tr><td><a href="../examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
       <tr><td><a href="../examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>make(ai.McpServer, ...)</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
       <tr><td><a href="../examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>core:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
@@ -6401,7 +6317,7 @@ fn main() -&gt; void! {
       </a>
       <a href="reference.html" class="pager-card pager-next">
         <span class="pager-label">NEXT &rarr;</span>
-        <strong class="pager-title">Stdlib Reference (37 Modules)</strong>
+        <strong class="pager-title">Stdlib Reference (35 Modules)</strong>
       </a>
     </div>
   </section>
@@ -6412,7 +6328,7 @@ fn main() -&gt; void! {
     </a>
     <a href="reference.html" class="pager-card pager-next">
       <span class="pager-label">NEXT &rarr;</span>
-      <strong class="pager-title">Stdlib Reference (37 Modules)</strong>
+      <strong class="pager-title">Stdlib Reference (35 Modules)</strong>
     </a>
   </div>
 </article>
@@ -6430,7 +6346,7 @@ fn main() -&gt; void! {
         <li><a href="#ch1-quick-installation-script-macos-linux" title="Quick Installation Script (macOS &amp; Linux)" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">1.2 Quick Install</a></li>
         <li><a href="#ch1-checking-toolchain-health-cfire-doctor-cfire-setup" title="Checking Toolchain Health (cfire doctor &amp; cfire setup)" onclick="navigateToSubhead('1', 'ch1-checking-toolchain-health-cfire-doctor-cfire-setup'); return false;">1.3 Doctor &amp; Setup</a></li>
         <li><a href="#ch1-building-from-source-platform-setup" title="Building from Source &amp; Platform Setup" onclick="navigateToSubhead('1', 'ch1-building-from-source-platform-setup'); return false;">1.4 Source Build</a></li>
-        <li><a href="#ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor" title="Understanding the Three Stdlib Namespaces (core:*, ext:*, vendor:*)" onclick="navigateToSubhead('1', 'ch1-understanding-the-three-stdlib-namespaces-core-ext-vendor'); return false;">1.5 Stdlib Tiers</a></li>
+        <li><a href="#ch1-understanding-the-two-stdlib-namespaces-core-ext" title="Understanding the Two Stdlib Namespaces (core:*, ext:*)" onclick="navigateToSubhead('1', 'ch1-understanding-the-two-stdlib-namespaces-core-ext'); return false;">1.5 Understanding the Two ..</a></li>
         <li><a href="#ch1-setting-up-webassembly-ios-cross-compilation" title="Setting Up WebAssembly &amp; iOS Cross-Compilation" onclick="navigateToSubhead('1', 'ch1-setting-up-webassembly-ios-cross-compilation'); return false;">1.6 WASM &amp; iOS</a></li>
         <li><a href="#ch1-connecting-your-editor-lsp-ai-agents-mcp" title="Connecting Your Editor (LSP) &amp; AI Agents (MCP)" onclick="navigateToSubhead('1', 'ch1-connecting-your-editor-lsp-ai-agents-mcp'); return false;">1.7 LSP &amp; MCP</a></li>
       </ul>
@@ -6535,8 +6451,7 @@ fn main() -&gt; void! {
     </div>
     <div class="toc-chapter-group" id="toc-group-15" style="display: none;">
       <ul class="toc-list">
-        <li><a href="#ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui" title="Hardware-Accelerated Canvas &amp; Immediate-Mode Controls (vendor:raylib, vendor:raygui)" onclick="navigateToSubhead('15', 'ch15-hardware-accelerated-canvas-immediate-mode-controls-vendorraylib-vendorraygui'); return false;">15.1 Raylib &amp; Raygui</a></li>
-        <li><a href="#ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext" title="Zero-Coordinate iOS Auto-Layout (GuiIos*) &amp; Workspace Widgets (pkg/raygui_ext)" onclick="navigateToSubhead('15', 'ch15-zero-coordinate-ios-auto-layout-guiios-workspace-widgets-pkgraygui-ext'); return false;">15.2 iOS Auto-Layout</a></li>
+        <li><a href="#ch15-choosing-a-ui-stack" title="Choosing a UI Stack" onclick="navigateToSubhead('15', 'ch15-choosing-a-ui-stack'); return false;">15.1 UI Options</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-16" style="display: none;">
@@ -6609,7 +6524,7 @@ fn main() -&gt; void! {
   <div class="toc-quick-links">
     <div class="toc-header">QUICK LINKS</div>
     <ul class="toc-list">
-      <li><a href="reference.html">Stdlib Catalog (37 Modules) &rarr;</a></li>
+      <li><a href="reference.html">Stdlib Catalog (35 Modules) &rarr;</a></li>
       <li><a href="index.html#landscape">Systems Landscape &rarr;</a></li>
       <li><a href="index.html#benchmarks">Compiler Benchmarks &rarr;</a></li>
       <li><a href="https://github.com/gsandoval/cfire" target="_blank" rel="noopener">GitHub Repository &rarr;</a></li>
@@ -6674,7 +6589,7 @@ let currentAiGoal = 'explain';
 
 const CFIRE_GRAMMAR_PRIMER = [
   '## cfire Language Quick Reference (ISO C++23 Transpiler)',
-  '- File header: `package main` and `import "core:str"`, `import "ext:webui"`, `import "vendor:raylib" as rl`.',
+  '- File header: `package main` and `import "core:str"`, `import "ext:webui"`.',
   '- Bindings: `x := 42` (immutable by default), `mut count := 0` (mutable).',
   '- Functions & Intents: `fn update(mut s: State, in cfg: Config, move buf: []u8) -> i32!`. Callers MUST annotate `mut`, `move`, or `out` at the call site: `update(mut s, cfg, move buf)`.',
   '- Error Handling: Fallible return `T!` (`std::expected<T, cfire::Error>`). Propagate with prefix `try expr` (NEVER postfix `?`), fallback with `expr or fallback`, or `expr or |err| { ... }`.',

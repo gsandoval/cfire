@@ -218,7 +218,6 @@ inline void package_apple_app_bundles(
         std::string effective_name = plan.app_name.empty() ? bin_name : plan.app_name;
         std::string effective_bundle_id = plan.bundle_id.empty() ? ("com.cfire." + bin_name) : plan.bundle_id;
         std::string platform_str = plan.is_ios_sim ? "iPhoneSimulator" : "iPhoneOS";
-        bool prefer_landscape = plan.window_init_width > plan.window_init_height && plan.window_init_height > 0;
 
         bool has_icon = false;
         if (!plan.icon_path.empty()) {
@@ -241,13 +240,9 @@ inline void package_apple_app_bundles(
             }
         }
 
-        std::string orientations = prefer_landscape
-            ? "        <string>UIInterfaceOrientationLandscapeLeft</string>\n"
-              "        <string>UIInterfaceOrientationLandscapeRight</string>\n"
-              "        <string>UIInterfaceOrientationPortrait</string>\n"
-            : "        <string>UIInterfaceOrientationPortrait</string>\n"
-              "        <string>UIInterfaceOrientationLandscapeLeft</string>\n"
-              "        <string>UIInterfaceOrientationLandscapeRight</string>\n";
+        std::string orientations = "        <string>UIInterfaceOrientationPortrait</string>\n"
+                                   "        <string>UIInterfaceOrientationLandscapeLeft</string>\n"
+                                   "        <string>UIInterfaceOrientationLandscapeRight</string>\n";
 
         auto plist_path = app_bundle / "Info.plist";
         std::ofstream plist(plist_path);

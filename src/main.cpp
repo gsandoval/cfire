@@ -69,7 +69,7 @@ auto main(int argc, char** argv) -> int {
                 tmpl = std::string(arg.substr(11));
             } else if (arg == "--tako") {
                 tmpl = "tako";
-            } else if (arg == "--gui" || arg == "--raylib") {
+            } else if (arg == "--gui") {
                 tmpl = "gui";
             } else if (arg == "--webui") {
                 tmpl = "webui";
@@ -124,14 +124,17 @@ auto main(int argc, char** argv) -> int {
     if (sub == "setup") {
         bool auto_yes = false;
         bool with_wasm = false;
-        bool with_raylib = false;
         for (int i = 2; i < argc; ++i) {
             std::string_view arg = argv[i];
             if (arg == "--yes" || arg == "-y") auto_yes = true;
             else if (arg == "--wasm" || arg == "--web") with_wasm = true;
-            else if (arg == "--raylib" || arg == "--gui") with_raylib = true;
+            else if (arg == "--raylib" || arg == "--gui") {
+                // CF-185: raylib is no longer bundled; say so instead of silently ignoring the flag.
+                std::println(stderr, "error: '{}' was removed: cfire no longer bundles raylib (use 'ext:webui' for GUIs, or 'import cpp' with build.cf to use raylib as a C library)", arg);
+                return 2;
+            }
         }
-        return cfire::doctor::run_setup(runtime_dir, auto_yes, with_wasm, with_raylib);
+        return cfire::doctor::run_setup(runtime_dir, auto_yes, with_wasm);
     }
 
     if (sub == "serve" || sub == "server") {
@@ -655,7 +658,10 @@ auto main(int argc, char** argv) -> int {
 
     if (sub == "build" || sub == "run") {
         auto build_cf_cur = std::filesystem::current_path() / "build.cf";
-        if (target.empty() || target == "." || target == "all") {
+        if (std::error_code dec; !target.empty() && target != "." && std::filesystem::is_directory(target, dec) &&
+                                 std::filesystem::exists(target / "build.cf", dec)) {
+            target = target / "build.cf";  // CF-185: `cfire run path/to/project` uses that project's build.cf
+        } else if (target.empty() || target == "." || target == "all") {
             if (std::filesystem::exists(build_cf_cur)) {
                 if (target == "all") build_target_filter = "all";
                 target = build_cf_cur;

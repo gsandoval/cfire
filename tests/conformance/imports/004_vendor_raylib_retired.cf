@@ -1,0 +1,9 @@
+package main
+// CF-185: cfire no longer bundles raylib. The import is a cfire diagnostic that points to `ext:webui` or to using
+// raylib as a C library, not an unknown-module error.
+import "vendor:raylib" as rl //~ error cfire/RETIRED-API
+import "vendor:raygui" as rg //~ error cfire/RETIRED-API
+
+fn main() {
+    println("unreachable")
+}

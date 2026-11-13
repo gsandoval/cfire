@@ -1,0 +1,12 @@
+package build
+
+import "core:build"
+
+Geom := build.CC("./c_deps/geom", {
+    Sources: ["geom.c"],
+    Includes: ["."],
+})
+
+App := build.Executable("cinterop-fixture", {
+    Entry: "main.cf",
+})
