@@ -382,6 +382,19 @@ template <typename E>
 [[nodiscard]] inline auto count_open_fds() noexcept -> std::size_t {
     std::error_code ec;
     std::size_t count = 0;
+#if defined(_WIN32)
+    // CF-184: C runtime descriptors (`fopen`, `_open`, cfire's `fs`), lowest first. `_get_osfhandle` on a closed
+    // descriptor calls the invalid-parameter handler, so a no-op one is installed for the scan (the process-wide
+    // setter: MinGW's msvcrt has no thread-local one).
+    auto prev = ::_set_invalid_parameter_handler(
+        [](const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, std::uintptr_t) {});
+    for (int fd = 0; fd < 2048; ++fd) {
+        if (::_get_osfhandle(fd) != -1) ++count;
+    }
+    ::_set_invalid_parameter_handler(prev);
+    (void)ec;
+    return count;
+#endif
 #if defined(__APPLE__)
     static constexpr const char* kFdDir = "/dev/fd";
 #else

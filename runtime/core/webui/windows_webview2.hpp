@@ -557,7 +557,7 @@ struct Wv2Handler<I, HRESULT (STDMETHODCALLTYPE I::*)(A...)> final : I {
     std::atomic<ULONG> refs{1};
 
     Wv2Handler(IID i, std::function<HRESULT(A...)> f) : iid(i), fn(std::move(f)) {}
-    virtual ~Wv2Handler() = default;
+    ~Wv2Handler() = default;  // the class is final; COM releases through IUnknown::Release
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** out) override {
         if (!out) return E_POINTER;

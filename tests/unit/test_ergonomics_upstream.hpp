@@ -223,7 +223,11 @@ fuzz "shrink integer above 100" |x: i64| {
         auto leak_cf = leak_tmp.file("leak_fail.cf", R"CF(package main
 test "deliberate fd leak" {
     cpp {
+#if defined(_WIN32)
+        std::FILE* leaked_fp = std::fopen("NUL", "r");
+#else
         std::FILE* leaked_fp = std::fopen("/dev/null", "r");
+#endif
         (void)leaked_fp;
     }
 }

@@ -16,6 +16,7 @@
 #include <string>
 #include <chrono>
 #include <atomic>
+#include <thread>
 #if !defined(_WIN32)
 #include <unistd.h>
 #include <sys/wait.h>
@@ -204,7 +205,65 @@ namespace cfire::mcp {
             cmd_line += argv[i];
         }
     }
-    return cfire::bridge::run_command_capture(cmd_line, exit_code);
+    // CF-184: honor `timeout_seconds` like the POSIX branch: run the tool in a job object, read its combined
+    // output on a thread, and terminate the whole job if it outlives the timeout.
+    SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    HANDLE read_end = nullptr;
+    HANDLE write_end = nullptr;
+    if (!::CreatePipe(&read_end, &write_end, &sa, 0)) {
+        exit_code = -1;
+        return "failed to create pipe";
+    }
+    ::SetHandleInformation(read_end, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = write_end;
+    si.hStdError = write_end;
+    si.hStdInput = ::GetStdHandle(STD_INPUT_HANDLE);
+    PROCESS_INFORMATION pi{};
+    HANDLE job = ::CreateJobObjectA(nullptr, nullptr);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        ::SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    }
+    std::vector<char> cmd_buf(cmd_line.begin(), cmd_line.end());
+    cmd_buf.push_back('\0');
+    const BOOL started = ::CreateProcessA(nullptr, cmd_buf.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                                          nullptr, nullptr, &si, &pi);
+    ::CloseHandle(write_end);
+    if (!started) {
+        ::CloseHandle(read_end);
+        if (job) ::CloseHandle(job);
+        exit_code = -1;
+        return "failed to start process";
+    }
+    if (job) ::AssignProcessToJobObject(job, pi.hProcess);
+    ::ResumeThread(pi.hThread);
+    std::string out;
+    std::thread reader([&] {
+        char buf[4096];
+        DWORD n = 0;
+        while (::ReadFile(read_end, buf, sizeof(buf), &n, nullptr) && n > 0) out.append(buf, n);
+    });
+    const DWORD wait_ms = timeout_seconds > 0 ? static_cast<DWORD>(timeout_seconds) * 1000 : INFINITE;
+    if (::WaitForSingleObject(pi.hProcess, wait_ms) == WAIT_TIMEOUT) {
+        timed_out = true;
+        if (job) ::TerminateJobObject(job, 124);
+        else ::TerminateProcess(pi.hProcess, 124);
+        ::WaitForSingleObject(pi.hProcess, 5000);
+    }
+    DWORD code = 0;
+    ::GetExitCodeProcess(pi.hProcess, &code);
+    exit_code = timed_out ? 124 : static_cast<int>(code);
+    if (job) ::CloseHandle(job);  // closing the job also ends any grandchildren still holding the pipe open
+    reader.join();
+    ::CloseHandle(read_end);
+    ::CloseHandle(pi.hThread);
+    ::CloseHandle(pi.hProcess);
+    if (timed_out) out += "\n[error: execution timed out after " + std::to_string(timeout_seconds) + " seconds]";
+    return out;
 #else
     int pipefd[2];
     if (::pipe(pipefd) != 0) {

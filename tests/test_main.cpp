@@ -1,7 +1,7 @@
 #include "test_harness.hpp"
 
 auto main(int argc, char** argv) -> int {
-    ::signal(SIGPIPE, SIG_IGN);
+    test_ignore_sigpipe();
     auto rt_dir = std::filesystem::current_path() / "runtime";
     std::string suite = (argc > 1) ? argv[1] : "all";
 

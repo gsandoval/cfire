@@ -27,6 +27,17 @@ inline std::string g_sanitizer_set = "address,undefined";
     return "-O1 -g -fno-omit-frame-pointer -fsanitize=" + g_sanitizer_set;
 }
 
+// CF-184: on a Windows host every native build links with `-static`, which MinGW clang also turns into the
+// predefined `__STATIC__` macro. The PCH is built with it, and every compile that includes the PCH passes it too;
+// otherwise clang rejects the PCH and the build silently recompiles without it.
+[[nodiscard]] inline auto pch_static_flag() -> std::string_view {
+#if defined(_WIN32)
+    return " -static";
+#else
+    return "";
+#endif
+}
+
 [[nodiscard]] inline auto resolve_cxx_compiler(std::string_view target_triple = "") -> std::string {
     if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
         return std::string(env_cxx);
@@ -84,6 +95,7 @@ inline std::string g_sanitizer_set = "address,undefined";
     if (with_pthread) {
         tag += "_pth";
     }
+    if (!pch_static_flag().empty()) tag += "_static";
 
     std::size_t content_hash = 0;
     auto prelude_hdr = runtime_dir / "cfire_prelude.hpp";
@@ -160,6 +172,7 @@ inline std::string g_sanitizer_set = "address,undefined";
             opt_flags += " -pthread";
         }
 #endif
+        opt_flags += pch_static_flag();
         auto tmp_pch_path = pch_path;
         tmp_pch_path += std::format(".tmp.{}.pch", ::getpid());
         std::string cmd = std::format(

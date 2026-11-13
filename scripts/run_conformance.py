@@ -127,7 +127,16 @@ def run(cmd, cwd, timeout):
         return None, "", "TIMEOUT"
 
 
+# Q47 (CF-184): clang's Windows targets have no ThreadSanitizer. Files that ask for it still run there, unsanitized,
+# so their output is checked; the summary notes how many ran without TSan.
+TSAN_UNSUPPORTED = sys.platform == "win32" or os.environ.get("MSYSTEM", "").upper().startswith(("MINGW", "CLANG", "UCRT"))
+TSAN_SKIPPED = []
+
+
 def run_program(cfire, work, name, spec, is_test, timeout):
+    if "--sanitize=thread" in spec.flags and TSAN_UNSUPPORTED:
+        TSAN_SKIPPED.append(name)
+        spec.flags = [f for f in spec.flags if f != "--sanitize=thread"]
     if "--sanitize=thread" in spec.flags and not is_test:
         rc, out, err = run([cfire, "run", "--sanitize=thread", name], work, timeout)
         if "unrecognized flag" not in err and "unrecognized flag" not in out:
@@ -279,6 +288,8 @@ def main():
                 print(f"XFAIL  {rel}{tag}")
     print(f"Conformance: {counts['PASS']} passed, {counts['XFAIL']} xfail (tracked holes), "
           f"{counts['XPASS']} xpass, {counts['FAIL']} failed (total {len(files)})")
+    if TSAN_SKIPPED:
+        print(f"note: {len(TSAN_SKIPPED)} file(s) asked for ThreadSanitizer, which this platform lacks; they ran unsanitized (Q47)")
     return 1 if counts["FAIL"] or counts["XPASS"] else 0
 
 
