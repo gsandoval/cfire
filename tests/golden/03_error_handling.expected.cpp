@@ -1,10 +1,10 @@
 #include "cfire_prelude.hpp"
 
-[[nodiscard]] inline auto parse_even(const std::string& s) -> std::expected<std::int32_t, cfire::Error>;
+[[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int32_t, cfire::Error>;
 [[nodiscard]] inline auto find_name(std::int32_t id) -> std::optional<std::string>;
 
 #line 3 "03_error_handling.cf"
-[[nodiscard]] inline auto parse_even(const std::string& s) -> std::expected<std::int32_t, cfire::Error> {
+[[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int32_t, cfire::Error> {
     #line 4 "03_error_handling.cf"
     if (s == "fail") {
         #line 5 "03_error_handling.cf"

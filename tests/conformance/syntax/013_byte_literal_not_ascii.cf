@@ -1,0 +1,6 @@
+package main
+fn main() {
+    s := "ñ"
+    ok := s[0] == 'ñ' //~ error cfire/SYNTAX
+    println("{}", ok)
+}

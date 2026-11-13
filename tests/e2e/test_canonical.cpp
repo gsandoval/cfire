@@ -14,7 +14,7 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
                 "Audit session closed (1 entries).",
             },
             .expected_cpp = {
-                "std::string_view prefix, AuditLog& log, std::string&& msg",
+                "cfire::str_ref prefix, AuditLog& log, std::string&& msg",
                 "std::format(\"[{}] {}\", prefix, std::move(msg))",
                 "cfire::scope_exit",
             },

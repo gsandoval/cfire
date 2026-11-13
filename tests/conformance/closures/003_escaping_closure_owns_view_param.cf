@@ -1,0 +1,16 @@
+// expect: stdout
+// | hello world
+package main
+fn greeter(name: str) -> fn() -> str {
+    return || -> str {
+        return "hello " + name
+    }
+}
+fn make_from_temporary() -> fn() -> str {
+    text := "the world"
+    return greeter(text[4..])
+}
+fn main() {
+    g := make_from_temporary()
+    println("{}", g())
+}

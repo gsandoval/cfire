@@ -372,6 +372,44 @@ struct CommentSpan {
             continue;
         }
 
+        // Q37 (CF-182): 'L' is a `byte` literal: one ASCII character or one escape.
+        if (c == '\'') {
+            auto lit_error = [&](std::string msg) {
+                return std::unexpected(SourceError{std::string(file), static_cast<int>(start_line), static_cast<int>(start_col), std::move(msg), "cfire/SYNTAX"});
+            };
+            std::string lex(1, advance());
+            if (i >= n || peek() == '\n') return lit_error("unterminated byte literal; add a closing \"'\"");
+            if (peek() == '\'') return lit_error("empty byte literal ''; a byte literal holds one ASCII character such as 'a'");
+            if (peek() == '\\') {
+                lex.push_back(advance());
+                char esc = i < n ? peek() : '\0';
+                if (esc == 'x') {
+                    lex.push_back(advance());
+                    for (int k = 0; k < 2; ++k) {
+                        if (i >= n || !std::isxdigit(static_cast<unsigned char>(peek()))) return lit_error("'\\x' in a byte literal needs two hex digits, as in '\\x41'");
+                        lex.push_back(advance());
+                    }
+                } else if (esc == 'n' || esc == 't' || esc == 'r' || esc == '0' || esc == '\\' || esc == '\'' || esc == '"') {
+                    lex.push_back(advance());
+                } else {
+                    return lit_error(std::format("unknown escape '\\{}' in byte literal; use \\n, \\t, \\r, \\0, \\\\, \\', \\\" or \\xHH", esc));
+                }
+            } else if (static_cast<unsigned char>(peek()) >= 0x80) {
+                std::size_t j = i;
+                while (j < n && src[j] != '\'' && src[j] != '\n') ++j;
+                return lit_error(std::format("'{}' is not ASCII, so it is not a single byte; compare runes with s.runes() or use a \"{}\" string",
+                                             std::string_view(src).substr(i, j - i), std::string_view(src).substr(i, j - i)));
+            } else {
+                lex.push_back(advance());
+            }
+            if (i >= n || peek() != '\'') {
+                return lit_error("a byte literal holds exactly one ASCII character; use double quotes for a string");
+            }
+            lex.push_back(advance());
+            tokens.push_back(Token{TokenKind::Char, std::move(lex), start_line, start_col});
+            continue;
+        }
+
         // Backtick Raw String / Struct Tag
         if (c == '`') {
             advance();

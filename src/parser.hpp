@@ -2039,6 +2039,7 @@ private:
             case TokenKind::Float:
             case TokenKind::String:
             case TokenKind::RawString:
+            case TokenKind::Char:
             case TokenKind::KwTrue:
             case TokenKind::KwFalse:
             case TokenKind::KwNone: {

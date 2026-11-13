@@ -1,0 +1,6 @@
+package main
+fn main() {
+    line := "L68"
+    ok := line[0] == "L" //~ error cfire/TYPE-MISMATCH
+    println("{}", ok)
+}

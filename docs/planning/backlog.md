@@ -616,10 +616,49 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Tests**: *Conformance*: round trip through a C function in `build.cf`; use-after-release is `cfire/USE-AFTER-MOVE`. *Unit*: the lowering emits `unique_ptr::release` / the `unique_ptr` constructor.
 - **Acceptance Criteria**: Ownership crosses the C boundary in both directions without a `cpp {}` block, and the loan tracker sees `release` as a move.
 
-#### `CF-182` — Everyday-Program Ergonomics: `parse` and `&str` Friction (user report, 2026-11-12) `[TODO]`
+#### `CF-182` — Everyday-Program Ergonomics: `parse` and `&str` Friction (user report, 2026-11-12) `[DONE]`
 - **Report**: `/Users/memo/Programming/adventofcode/2025/day1_01.cf` and `day1_02.cf` are very simple programs, yet `parse` and `&str` get in the way of simple common actions.
 - **Questions to answer**: Is `&str` a C++ construct leaking into the language? Should these cases resolve automatically (for example by copying a view into an owned `str` where the program needs one), or differently? What else makes these programs hard to write?
-- **Next step**: reproduce with both files, list every friction point with the diagnostic it produced, and bring a proposal (and any decisions) to the user before changing the language.
+- **Findings (reproduced 2026-11-12)**:
+  1. `i32.parse(line[1..])` is rejected: `'i32.parse' expects 'str', got '&str'`. Every slice of a line is a `&str`, so parsing a substring needs `str(...)` (`day1_01`).
+  2. A user function `fn f(s: str)` rejects a slice too, and so does `fn f(s: &str)`: the slice-to-owned check fires even when the parameter is declared `&str` (bug).
+  3. Read-only `str` parameters lower to `const std::string&`, which cannot take a view without a copy; that is why the language makes the user choose. The `str`/`&str` split is a real ownership concept (zero-copy slicing), but managing the boundary by hand is the C++ part that leaks.
+  4. The obvious workarounds reach clang instead of a cfire diagnostic: `*line[1..]` (`day1_02`), `mut owned: str = line[1..]`, and `s[0] == "L"`.
+  5. No character literal: `s[0] == 'L'` is a lexer error; the only spelling is `s[0] == byte(76)`.
+  6. Mixed integer/float arithmetic is silent: `(value - current) / 100 - 0.5` does integer division and then promotes to `f64` (`n / 2 + 0.5` with `n = 7` is `3.5`). `day1_02` uses `- 0.5` to emulate ceiling division.
+  7. `%` truncates toward zero (`(50 - 68) % 100 == -18`); a dial puzzle wants `rem_euclid` (exists since W4). `day1_02`'s `(current - value + 100) % 100` is wrong when `value > 100`.
+  8. Works fine: `try os.stdin().read_lines()`, `for line in lines`, `match line[0..1] { "L" => ... }`, `starts_with`, `log.info` interpolation.
+- **Decisions (asked 2026-11-12)**:
+  - `Q36` *Views in, copies out*: read-only `str` parameters lower to `std::string_view`, so owned strings, slices and literals all pass with no copy. Wherever an owned `str` is required (`mut`/`move` parameter, struct field, `str` variable, return value), a `&str` is copied implicitly. Users never have to write `&str` in ordinary code: slices are inferred, and diagnostics and hovers name it "`str` slice". `&str` stays only as an opt-in spelling for deliberately stored zero-copy views (struct fields, return values); `mut str` is not a substitute, since `mut` means the callee modifies the caller's owned string (decided 2026-11-12: keep `&str` as opt-in). Risk to cover: an escaping closure that captures a view parameter must capture a copy.
+  - `Q37` `'L'` is a `byte` literal (ASCII only, with escapes like `'\n'`) that compares with `s[i]`; a non-ASCII character in quotes is an error suggesting `.runes()`.
+  - `Q38` Mixed integer/float arithmetic keeps C-style promotion, with no new diagnostic.
+- **Also found**: free `len(s)` / `cap(s)` passed Sema and failed in clang (they are reserved names, not functions); now `cfire/UNDECLARED-IDENT` with a `s.len()` hint.
+- **Implementation scope**: `Q36` lowering and implicit copies; `Q37` lexer + byte type; fix the `&str`-parameter check (finding 2); turn the clang leaks in finding 4 into cfire diagnostics; conformance tests built from `day1_01`/`day1_02` patterns.
+
+#### `CF-183` — AoC 2024 Corpus Findings (2026-11-12) `[TODO]`
+- **Source**: all 25 days of Advent of Code 2024 (49 parts) written in plain cfire under `~/Programming/adventofcode/2024/`, with 51 sample checks passing. The full log, with snippets, is `2024/FRICTION.md`. Decisions `Q39`–`Q46` are below.
+- **ICEs (Sema accepts, clang rejects)**, highest impact:
+  1. `s[i]` is `byte` in Sema but lowers to `char`, while `byte` lowers to `std::byte`. So returning it from `-> byte`, using it as a `map[byte]` key, or passing it to a `byte` parameter reaches clang. Comparisons with `'L'` work. Workaround everywhere: `byte(s[i])`.
+  2. `collections.PriorityQueue.pop()`: an unmatched `.pop()` is lowered to `.pop_back()` (`src/codegen/expr.hpp`, the `mem->field == "pop"` fallback), and Sema types the result as unknown. The GUIDE documents `.pop() -> T`; the runtime returns `T?`.
+  3. `grid.push(line.bytes())` into `[][]byte`: `bytes()` is typed as an owned `[]byte` but lowers to a view.
+- **Bugs**:
+  - `regex.find_all` / `regex.find` are listed in the GUIDE strings table but don't exist as module functions (`cfire/UNKNOWN-STDLIB-FN`); only `Regex` methods do.
+  - `Regex` method results are untyped (`cfire/UNKNOWN-TYPE` on `nums := re.find_all(text)`).
+  - `x: i64 = 1 << 50` passes the Q11 constant shift check (which treats literals as 64-bit), but the generated C++ shifts an `int` and panics at runtime.
+  - The formatter writes `[][]i64` as `[][] i64`, over-indents closure bodies passed as arguments, and dedents wrapped continuation lines.
+- **Gaps**: no `if` expression; `PriorityQueue` is max-only, with no comparator.
+- **Verbose**: `i64`/`usize` casts for grid coordinates on every grid day; no `for k, v in m`; tuples or structs can't be heap/map keys, so state is packed into `i64`; Q35's per-run `note:` is noise in a folder of standalone solutions.
+- **Decisions (accepted 2026-11-12, as recommended)**:
+  - `Q39` *`byte` is `u8`*: `byte` becomes an alias of `u8` (lowered to `std::uint8_t`), so `s[i]`, `'L'` and `byte` share one numeric type, and `c - '0'` works. This removes ICE 1 at its root.
+  - `Q40` *`if` expression*: `if c { a } else { b }` is an expression. `else` is required, and both branches must have the same type.
+  - `Q41` *Any-integer indexing*: slices, arrays and strings can be indexed by any integer type. The existing runtime check panics on a negative or out-of-range index, so `grid[r][c]` with `r: i64` needs no casts.
+  - `Q42` *`for k, v in m`* iterates a map's keys and values together.
+  - `Q43` *Tuples and structs as keys*: tuples are ordered and hashed element by element, so `map[(i64, i64)]bool` and heaps of `(cost, cell)` work. Structs get ordering and hashing automatically when every field has them.
+  - `Q44` *Priority queues*: `pop() -> T?` (as on slices), and a new `collections.MinQueue[T]` beside the max-first `PriorityQueue[T]`. The GUIDE is corrected to match.
+  - `Q45` *Quiet single-file runs*: the Q35 `note:` is skipped when every sibling is a standalone `package main` with its own `fn main` (a folder of scripts or puzzle solutions); it stays otherwise.
+  - `Q46` *Regex module functions*: add `regex.find(pat, text) -> str?!` and `regex.find_all(pat, text) -> []str!`, matching `regex.is_match`, so the GUIDE table is true. `Regex` method results get types.
+- **No decision needed (plain fixes)**: `PriorityQueue.pop()` lowering; `line.bytes()` lowering; the `1 << 50` literal shift uses the 64-bit type Sema already assumes; the three formatter bugs.
+- **Worked well**: CF-182 views (slices straight into `parse`, `design[i..j] == t`); `'#'` byte literals; `or continue`; `if x := opt { }`; `m[k].push(v)` and `m[k] += n` on maps; `match` on ints and strings; `rem_euclid`; `regex.compile(...).find_all`.
 
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:

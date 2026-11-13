@@ -1,0 +1,14 @@
+// expect: stdout
+// | hi! 68? L68
+package main
+fn shout(s: str) -> str {
+    mut t := s
+    t += "!"
+    return t
+}
+fn main() {
+    line := "L68"
+    mut tail := line[1..]
+    tail += "?"
+    println("{} {} {}", shout("hi"), tail, line)
+}

@@ -252,6 +252,7 @@ struct LocalBindingInfo {
     if (!e) return "auto";
     if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
         if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "str";
+        if (lit->kind == TokenKind::Char) return "byte";
         if (lit->kind == TokenKind::Float) return "f64";
         if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
         return "i64";

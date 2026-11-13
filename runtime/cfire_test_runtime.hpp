@@ -135,6 +135,7 @@ template <typename T>
     using Decayed = std::decay_t<T>;
     if constexpr (std::is_same_v<Decayed, std::string> ||
                   std::is_same_v<Decayed, std::string_view> ||
+                  std::is_same_v<Decayed, cfire::str_ref> ||
                   std::is_same_v<Decayed, const char*> ||
                   std::is_same_v<Decayed, char*>) {
         return std::format("\"{}\"", v);

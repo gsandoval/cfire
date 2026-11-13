@@ -819,14 +819,21 @@ fn main() {
 }
 )", "cfire/TYPE-MISMATCH", "bad_byte_slice_lit.cf");
 
-                // CF-060: Passing `s[a..b]` (`&str`) to owning `str` parameter emits `cfire/TYPE-MISMATCH` with `&str` / `str(...)` hint
-                require_sema_error(R"(package main
-fn consume_owned(s: str) {}
+                // Q36 (CF-182) supersedes CF-060: a `s[a..b]` view passes to a read-only `str` parameter with no copy.
+                {
+                    auto ast = cfire::frontend::parse_source("slice_view_to_str.cf", R"(package main
+fn consume(s: str) -> usize { return s.len() }
 fn main() {
     full := "hello world"
-    consume_owned(full[0..5])
+    println("{}", consume(full[0..5]))
 }
-)", "cfire/TYPE-MISMATCH", "bad_slice_view_owned.cf");
+)");
+                    require(ast.has_value(), "Q36: parse slice_view_to_str.cf");
+                    if (ast.has_value()) {
+                        auto checked = cfire::frontend::analyze(std::move(*ast));
+                        require(checked.has_value(), "Q36: a slice view is accepted by a read-only str parameter");
+                    }
+                }
 
                 // CF-085: Reject `shared(v)` constructor syntax in Sema with fix-it pointing to `make(shared[T], v)`
                 require_sema_error(R"(package main

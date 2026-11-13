@@ -167,6 +167,8 @@ namespace cfire::frontend {
             if (ex.kind == TokenKind::RawString) {
                 return std::format("R\"({})\"", ex.value);
             }
+            // The lexer only accepts escapes C++ spells the same way, so the literal passes through.
+            if (ex.kind == TokenKind::Char) return std::format("std::byte{{static_cast<unsigned char>({})}}", ex.value);
             return ex.value;
         } else if constexpr (std::is_same_v<T, UnaryExpr>) {
             if (ex.op == "move") return std::format("std::move({})", emit_expr(ex.operand));
@@ -945,7 +947,7 @@ namespace cfire::frontend {
             }
             if (spawn_cl) {
                 std::ostringstream sb;
-                sb << std::format("{}.spawn([=]() mutable {{\n", obj);
+                sb << std::format("{}.spawn([={}]() mutable {{\n", obj, view_param_captures(spawn_cl->body));
                 ++indent_;
                 Emitter sub = make_sub_emitter(false);
                 for (const auto& st : spawn_cl->body) {
@@ -1094,6 +1096,7 @@ namespace cfire::frontend {
         if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "std::string";
         if (lit->kind == TokenKind::Float) return "double";
         if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
+        if (lit->kind == TokenKind::Char) return "std::byte";
         return "std::int64_t";
     }
     if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
@@ -1258,7 +1261,7 @@ inline auto Emitter::analyze_closure_returns(
 [[nodiscard]] inline auto Emitter::emit_closure(const ClosureExpr& cl, int expr_line) -> std::string {
     (void)expr_line;
     std::ostringstream sb;
-    sb << (cl.is_escaping ? "[=](" : "[&](");
+    sb << (cl.is_escaping ? "[=" + view_param_captures(cl.body) + "](" : std::string("[&]("));
     for (std::size_t i = 0; i < cl.params.size(); ++i) {
         if (i > 0) sb << ", ";
         if (i < cl.param_types.size() && cl.param_types[i].has_value()) {
