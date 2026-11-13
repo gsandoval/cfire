@@ -107,6 +107,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 }
             }
             std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
+            if (cf_.owned_text_decls.contains(&st)) cpp_type = "std::string";
             if (!st.type && st.init) {
                 if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
                     cpp_type = "std::string";

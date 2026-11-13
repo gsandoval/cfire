@@ -456,6 +456,8 @@ public:
         if (is_integer(dest) && is_integer(src)) return true;
         if (is_float(dest) && is_numeric(src)) return true;
         if (dest == make_borrow_const(TypeId::Str()) && src == TypeId::Str()) return true;
+        // Q36 (CF-182): a `&str` view is copied implicitly wherever an owned `str` is required.
+        if (dest == TypeId::Str() && src == make_borrow_const(TypeId::Str())) return true;
         if (dest_d.kind == TypeKind::Borrow && dest_d.elem_type == src) return true;
         if (dest_d.kind == TypeKind::Slice && src_d.kind == TypeKind::Array && dest_d.elem_type == src_d.elem_type) return true;
         // Pointer and borrow coercion:
@@ -535,6 +537,10 @@ struct CheckedFile {
     std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name ("rl" -> "raylib")
     std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
+    // Q36 (CF-182): untyped `mut x := <text>` declarations; codegen gives them an owned `std::string`
+    // so a view initializer (a read-only `str` param, a slice) is copied rather than becoming a mutable view.
+    // `mutable`: filled by the per-function checker, which holds the file by const reference.
+    mutable std::unordered_set<const VarDeclStmt*> owned_text_decls{};
     // Q24 (CF-149): `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms
     // (kept for callers that only print). Always add through add_error / add_warning.
     std::vector<std::string> warnings{};

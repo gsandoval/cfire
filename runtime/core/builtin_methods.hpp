@@ -403,16 +403,16 @@ namespace detail {
 
 // View-returning functions borrow from an lvalue receiver; on a temporary `str` they return an owned copy
 // so `f().trim()` can never dangle.
-[[nodiscard]] constexpr auto trim(std::string_view s) noexcept -> std::string_view { return detail::trim_end_view(detail::trim_start_view(s)); }
+[[nodiscard]] constexpr auto trim(std::string_view s) noexcept -> str_ref { return detail::trim_end_view(detail::trim_start_view(s)); }
 template <typename S> requires std::same_as<S, std::string>
 [[nodiscard]] inline auto trim(S&& s) -> std::string { return std::string(trim(std::string_view(s))); }
-[[nodiscard]] constexpr auto trim_start(std::string_view s) noexcept -> std::string_view { return detail::trim_start_view(s); }
+[[nodiscard]] constexpr auto trim_start(std::string_view s) noexcept -> str_ref { return detail::trim_start_view(s); }
 template <typename S> requires std::same_as<S, std::string>
 [[nodiscard]] inline auto trim_start(S&& s) -> std::string { return std::string(detail::trim_start_view(s)); }
-[[nodiscard]] constexpr auto trim_end(std::string_view s) noexcept -> std::string_view { return detail::trim_end_view(s); }
+[[nodiscard]] constexpr auto trim_end(std::string_view s) noexcept -> str_ref { return detail::trim_end_view(s); }
 template <typename S> requires std::same_as<S, std::string>
 [[nodiscard]] inline auto trim_end(S&& s) -> std::string { return std::string(detail::trim_end_view(s)); }
-[[nodiscard]] constexpr auto strip_prefix(std::string_view s, std::string_view p) noexcept -> std::optional<std::string_view> {
+[[nodiscard]] constexpr auto strip_prefix(std::string_view s, std::string_view p) noexcept -> std::optional<str_ref> {
     if (!s.starts_with(p)) return std::nullopt;
     return s.substr(p.size());
 }
@@ -421,7 +421,7 @@ template <typename S> requires std::same_as<S, std::string>
     if (!std::string_view(s).starts_with(p)) return std::nullopt;
     return s.substr(p.size());
 }
-[[nodiscard]] constexpr auto strip_suffix(std::string_view s, std::string_view p) noexcept -> std::optional<std::string_view> {
+[[nodiscard]] constexpr auto strip_suffix(std::string_view s, std::string_view p) noexcept -> std::optional<str_ref> {
     if (!s.ends_with(p)) return std::nullopt;
     return s.substr(0, s.size() - p.size());
 }

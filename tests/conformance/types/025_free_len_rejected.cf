@@ -1,0 +1,6 @@
+package main
+fn main() {
+    line := "L68"
+    n := line.len() + len(line) //~ error cfire/UNDECLARED-IDENT
+    println("{}", n)
+}

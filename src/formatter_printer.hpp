@@ -32,7 +32,7 @@ struct Item {
 [[nodiscard]] inline auto ends_operand(TokenKind k) -> bool {
     switch (k) {
         case TokenKind::Ident: case TokenKind::Int: case TokenKind::Float: case TokenKind::String:
-        case TokenKind::RawString: case TokenKind::RParen: case TokenKind::RBracket: case TokenKind::RBrace:
+        case TokenKind::RawString: case TokenKind::Char: case TokenKind::RParen: case TokenKind::RBracket: case TokenKind::RBrace:
         case TokenKind::KwTrue: case TokenKind::KwFalse: case TokenKind::KwNone: case TokenKind::Question:
             return true;
         default:

@@ -136,6 +136,10 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
             raw_tokens.push_back(RawToken{line_0, col_0, len, type, 0});
             return;
         }
+        if (t.kind == TokenKind::Char) {
+            raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 12 /* string */, 0});
+            return;
+        }
         if (t.kind == TokenKind::Int || t.kind == TokenKind::Float) {
             raw_tokens.push_back(RawToken{line_0, col_0, static_cast<int>(t.lexeme.size()), 13 /* number */, 0});
             return;

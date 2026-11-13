@@ -107,6 +107,7 @@ public:
     std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
     std::unordered_map<std::string, std::string> loop_index_to_col_{};
     std::unordered_map<std::string, std::string> var_types_{};
+    std::vector<std::string> view_params_{};  // Q36: read-only `str` params, lowered to `cfire::str_ref`
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
     [[nodiscard]] static auto sanitize_cpp_ident(std::string_view id) -> std::string {
@@ -181,6 +182,7 @@ public:
         sub.fixed_array_vars_ = fixed_array_vars_;
         sub.loop_index_to_col_ = loop_index_to_col_;
         sub.var_types_ = var_types_;
+        sub.view_params_ = view_params_;
         if (inherit_return_context) {
             sub.in_main_ = in_main_;
             sub.in_test_ = in_test_;
@@ -809,6 +811,7 @@ public:
         map_vars_.clear();
         fixed_array_vars_.clear();
         var_types_.clear();
+        view_params_.clear();
         if (fn.receiver) {
             local_vars_.insert(fn.receiver->name);
             var_types_[fn.receiver->name] = fn.receiver->type.name;
@@ -824,6 +827,7 @@ public:
         }
         for (const auto& p : fn.params) {
             local_vars_.insert(p.name);
+            if (p.intent != "mut" && p.intent != "out" && p.intent != "move" && lower_param_type(p.intent, p.type) == "cfire::str_ref") view_params_.push_back(p.name);
             var_types_[p.name] = p.type.name;
             if (p.type.is_ptr || p.type.is_mut_ptr) ptr_vars_.insert(p.name);
             if (!p.type.smart_wrap.empty()) smart_ptr_vars_.insert(p.name);
@@ -1028,6 +1032,15 @@ public:
             }
             return false;
         }, e->node);
+    }
+
+    // Q36: an escaping closure owns copies of the view parameters it uses, so it cannot outlive their text.
+    [[nodiscard]] auto view_param_captures(const std::vector<StmtPtr>& body) const -> std::string {
+        std::string caps;
+        for (const auto& name : view_params_) {
+            if (stmts_reference_ident(body, name)) caps += std::format(", {0} = std::string({0})", name);
+        }
+        return caps;
     }
 
     [[nodiscard]] static auto stmts_reference_ident(const std::vector<StmtPtr>& stmts, std::string_view ident) -> bool {
@@ -1329,7 +1342,7 @@ public:
             if (tr.is_slice && tr.elem_type) {
                 return std::format("std::span<const {}>", lower_owning_type(*tr.elem_type));
             }
-            if (tr.name == "str") return "std::string_view";
+            if (tr.name == "str") return "cfire::str_ref";
             return "const " + (tr.elem_type ? lower_owning_type(*tr.elem_type) : tr.name) + "&";
         }
         if (tr.smart_wrap == "own" && tr.elem_type) {
@@ -1511,10 +1524,11 @@ public:
             if (tr.is_slice && tr.elem_type) {
                 return std::format("std::span<const {}>", lower_owning_type(*tr.elem_type));
             }
-            if (tr.name == "str") return "std::string_view";
+            if (tr.name == "str") return "cfire::str_ref";
             return lower_owning_type(tr);
         }
-        if (tr.name == "str") return "const std::string&";
+        // Q36 (CF-182): read-only `str` is a view, so slices and literals pass without a copy.
+        if (tr.name == "str" && !tr.is_optional && !tr.is_fallible && tr.smart_wrap.empty()) return "cfire::str_ref";
         if (tr.is_slice && tr.elem_type) {
             return std::format("const std::vector<{}>&", lower_owning_type(*tr.elem_type));
         }

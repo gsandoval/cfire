@@ -1,0 +1,36 @@
+// expect: stdout
+// | 68 68 68
+// | 68 L68 68
+// | 68 68 2
+package main
+type Move struct {
+    dir: str
+    raw: str
+}
+fn count(s: str) -> usize {
+    return s.len()
+}
+fn count_view(s: &str) -> usize {
+    return s.len()
+}
+fn rest(s: str) -> str {
+    return s[1..]
+}
+fn keep(move s: str) -> str {
+    return s
+}
+fn main() {
+    line := "L68"
+    a := i32.parse(line[1..]) or 0
+    b := i64.parse(rest(line)) or 0
+    c := u8.parse(line[1..].trim()) or 0
+    println("{} {} {}", a, b, c)
+    mut owned: str = line[1..]
+    owned += ""
+    m := Move{dir: line[0..1], raw: line}
+    mut parts: []str = []
+    parts.push(line[1..])
+    println("{} {} {}", owned, m.raw, parts[0])
+    mut moved: str = line[1..]
+    println("{} {} {}", keep(move moved), rest(m.raw), count(line[1..]) - count_view(line[2..]) + 1)
+}

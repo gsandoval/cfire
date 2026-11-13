@@ -476,7 +476,7 @@ All scalar types have explicit bit widths, deterministic zero values (`mut x: i3
 | `usize`, `isize` | `usize(x)`, `isize(x)` | Pointer-sized unsigned / signed integers | `0` | `std::size_t`, `std::ptrdiff_t` |
 | `f32`, `f64` | `f32(x)`, `f64(x)` | IEEE-754 single & double precision (`f64` default) | `0.0` | `float`, `double` |
 | `bool` | `bool(x)` | Logical boolean (`true` / `false`) | `false` | `bool` |
-| `str` | `"{x}"` / `str(x)` | Owned UTF-8 text buffer (`&str` borrows as `std::string_view`) | `""` | `std::string` |
+| `str` | `"{x}"` / `str(x)` | Owned UTF-8 text buffer; slices `s[a..b]` are zero-copy views | `""` | `std::string` |
 
 ### Working with Slices (`[]T`), Fixed Arrays (`[N]T`) & Maps (`map[K]V`)
 Three collection types are built directly into the language prelude (with `Set[T]`, `PriorityQueue[T]`, and `Deque[T]` available in `core:collections`):
@@ -572,7 +572,7 @@ When you need indirection or heap allocation, `cfire` separates **owning smart p
 | :--- | :--- | :--- | :--- |
 | `own[T]` | `make(own[T], val)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
 | `shared[T]` | `make(shared[T], val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
-| `&T` / `&mut T` | `&x` / `&mut x` | Non-owning immutable or mutable borrow (`&str` -> `std::string_view`) | `const T&` / `T*` |
+| `&T` / `&mut T` | `&x` / `&mut x` | Non-owning immutable or mutable borrow (`&str` -> `cfire::str_ref`, a `std::string_view`) | `const T&` / `T*` |
 | `*T` | `&x` or foreign C pointer | Non-owning pointer; requires null check (`if p != none`) before deref | `T*` |
 | `*mut T` | `&mut x` | Rebindable pointer to a mutable target; supports `*p = val` and `*p += 1` | `T*` |
 
@@ -622,7 +622,7 @@ In `cfire`, parameters are immutable references by default. Whenever a function 
 
 | Intent Modifier | Default? | Callee Access | Mandatory Call-Site Marker | Emitted ISO C++23 Lowering |
 | :--- | :---: | :--- | :--- | :--- |
-| *(omitted)* | **Yes** | Read-only borrow | None (`f(x)`) | Scalars by `const T`; structs/slices/maps by `const T&`; `&str` by `std::string_view` |
+| *(omitted)* | **Yes** | Read-only borrow | None (`f(x)`) | Scalars by `const T`; structs/slices/maps by `const T&`; `str` by a zero-copy view (`cfire::str_ref`) |
 | `mut` | No | Read-write in place | `mut` (`f(mut x)`) | `T&` parameter; caller variable must be declared `mut` |
 | `move` | No | Takes ownership | `move` (`f(move x)`) | `T` parameter with `std::move(x)` at call site; invalidates `x` in caller scope |
 
@@ -639,7 +639,7 @@ fn entry_count(buf: Buffer) -> usize {
 }
 
 // 2. 'mut' and 'move' intents: mutates 'buf' in place and consumes 'msg'
-fn append_entry(prefix: &str, mut buf: Buffer, move msg: str) -> usize {
+fn append_entry(prefix: str, mut buf: Buffer, move msg: str) -> usize {
     formatted := "[{prefix}] {msg}"
     buf.Entries.push(move formatted)
     return buf.Entries.len()
@@ -1121,7 +1121,7 @@ Each `defer` lowers to a stack-allocated `cfire::ScopeGuard` lambda whose destru
 ## Chapter 8: Strings, Buffers, Unicode, Regex & Containers
 
 ### UTF-8 Strings, Unicode Scalars & Regular Expressions
-In `cfire`, `str` is an owned UTF-8 buffer (`std::string`), and `&str` is a borrowed zero-copy view (`std::string_view`). Because UTF-8 codepoints vary from 1 to 4 bytes, `s.len()` always reports the exact byte count in $O(1)$ time, while `core:unicode` decodes 32-bit Unicode scalar values (`runes`) when you need character-level inspection:
+In `cfire`, `str` is an owned UTF-8 buffer (`std::string`). Slicing (`s[a..b]`, `s.trim()`) gives a zero-copy view of it, and you rarely need to name that view type (`&str`): **views go in, copies come out**. A read-only `str` parameter accepts an owned string, a slice, or a literal without copying, and a view is copied automatically wherever owned text is required (a `move` parameter, a struct field, a `str` variable, a return value). Spell `&str` only for a field or return value that deliberately keeps a view. `s[i]` is a `byte`, and `'L'` is a `byte` literal (one ASCII character or an escape such as `'\n'`, `'\''`, `'\x41'`), so `line[0] == 'L'` needs no conversion. Because UTF-8 codepoints vary from 1 to 4 bytes, `s.len()` always reports the exact byte count in $O(1)$ time, while `core:unicode` decodes 32-bit Unicode scalar values (`runes`) when you need character-level inspection:
 
 | Module | Function / Method | Signature | What It Does |
 | :--- | :--- | :--- | :--- |
@@ -1167,6 +1167,34 @@ fn main() -> void! {
 # Output:
 joined=node_01|node_02|node_03 runes=7 bytes=10 regex=node_#|node_#|node_#
 last_rune=U+1F525 valid_utf8=true
+```
+
+Here is a small line parser in that style: slices go straight into `parse`, a helper takes `str`, and the byte literal compares with `line[0]`:
+
+```cfire
+package main
+
+fn amount(s: str) -> i64 {
+    return i64.parse(s.trim()) or 0
+}
+
+fn main() {
+    lines := ["L68", "R48", " L5"]
+    mut dial: i64 = 50
+    for raw in lines {
+        line := raw.trim()
+        if line[0] == 'L' {
+            dial = (dial - amount(line[1..])).rem_euclid(100)
+        } else {
+            dial = (dial + amount(line[1..])).rem_euclid(100)
+        }
+    }
+    println("dial={}", dial)
+}
+```
+```text
+# Output:
+dial=25
 ```
 
 ### Zero-Copy Buffer Pointers & Compile-Time Bounds Checks
@@ -1536,7 +1564,7 @@ Because `cfire` compiles to ISO C++23, calling C or C++ libraries requires **zer
 | :--- | :--- | :--- |
 | `i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool` | `int8_t`..`int64_t`, `uint8_t`..`uint64_t`, `float`, `double`, `bool` | Identical C++23 scalar type (0-cost pass-through) |
 | `str` passed to `const char*` | `const char*` | Automatic `cfire::c_arg(s)` (`.c_str()`, 0 allocation) |
-| `&str` | `std::string_view` | 0-copy pointer + length view |
+| read-only `str` parameter, `&str`, `s[a..b]` | `cfire::str_ref` (derives from `std::string_view`) | 0-copy pointer + length view; converts to `std::string` where an owned `str` is needed |
 | `s.data()` / `s.byte_ptr()` / `s.byte_ptr_at(i)` | `const char*` / `char*` | Direct raw pointer to contiguous UTF-8 buffer |
 | `slice.data()` / `slice.data_ptr()` | `const T*` / `T*` | Direct pointer to contiguous `std::vector<T>` buffer |
 | `&T` / `&mut T` | `const T&` or `const T*` / `T&` or `T*` | Direct reference or address-of `&x` for C out-pointers |

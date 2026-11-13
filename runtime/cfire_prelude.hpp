@@ -143,6 +143,34 @@ inline auto operator+(std::string_view lhs, const char* rhs) -> std::string {
     return res;
 }
 
+// Q36 (CF-182): the lowering of a read-only `str` parameter and of every `&str` view. It is a
+// `std::string_view` that also converts implicitly to an owned `std::string`, so a view passed where
+// cfire requires an owned `str` (a `move` parameter, field, variable or return value) is copied there.
+namespace cfire {
+struct str_ref : std::string_view {
+    constexpr str_ref() noexcept = default;
+    constexpr str_ref(std::string_view sv) noexcept : std::string_view(sv) {}
+    str_ref(const std::string& s CFIRE_LIFETIMEBOUND) noexcept : std::string_view(s) {}
+    constexpr str_ref(const char* s) noexcept : std::string_view(s) {}
+    constexpr str_ref(const char* s, std::size_t n) noexcept : std::string_view(s, n) {}
+    operator std::string() const { return std::string(data(), size()); }
+    operator std::filesystem::path() const { return std::filesystem::path(std::string_view(*this)); }
+};
+inline auto operator+(str_ref lhs, str_ref rhs) -> std::string { std::string r(lhs); r.append(rhs); return r; }
+inline auto operator+(str_ref lhs, const std::string& rhs) -> std::string { std::string r(lhs); r.append(rhs); return r; }
+inline auto operator+(const std::string& lhs, str_ref rhs) -> std::string { std::string r(lhs); r.append(rhs); return r; }
+inline auto operator+(str_ref lhs, const char* rhs) -> std::string { std::string r(lhs); r.append(rhs); return r; }
+inline auto operator+(const char* lhs, str_ref rhs) -> std::string { std::string r(lhs); r.append(rhs); return r; }
+inline auto operator+(str_ref lhs, char rhs) -> std::string { std::string r(lhs); r.push_back(rhs); return r; }
+inline auto operator+(char lhs, str_ref rhs) -> std::string { std::string r(1, lhs); r.append(rhs); return r; }
+} // namespace cfire
+template <>
+struct std::formatter<cfire::str_ref, char> : std::formatter<std::string_view, char> {
+    auto format(cfire::str_ref s, std::format_context& ctx) const { return std::formatter<std::string_view, char>::format(s, ctx); }
+};
+template <>
+struct std::hash<cfire::str_ref> : std::hash<std::string_view> {};
+
 // Allow comparison between smart pointers, raw pointers, optionals, and `none`
 namespace cfire {
 struct None_t {
@@ -626,7 +654,7 @@ inline void check_utf8_boundary(std::string_view sv, std::size_t pos, const std:
 
 template <std::integral A, std::integral B>
 [[nodiscard]] inline auto slice(std::string_view sv CFIRE_LIFETIMEBOUND, A start, B end,
-                                std::source_location loc = std::source_location::current()) -> std::string_view {
+                                std::source_location loc = std::source_location::current()) -> str_ref {
     auto [s, e] = detail::checked_slice_bounds(start, end, sv.size(), loc);
     detail::check_utf8_boundary(sv, s, loc);
     detail::check_utf8_boundary(sv, e, loc);
@@ -814,6 +842,7 @@ private:
 template <typename T>
     requires (!std::is_same_v<std::remove_cvref_t<T>, std::string> &&
               !std::is_same_v<std::remove_cvref_t<T>, std::string_view> &&
+              !std::is_same_v<std::remove_cvref_t<T>, cfire::str_ref> &&
               !std::is_same_v<std::remove_cvref_t<T>, std::filesystem::path> &&
               !std::is_same_v<std::remove_cvref_t<T>, std::byte*> &&
               !std::is_same_v<std::remove_cvref_t<T>, const std::byte*>)

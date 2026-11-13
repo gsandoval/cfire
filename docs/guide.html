@@ -2935,7 +2935,7 @@ fn main() {
       <tr><td><code>usize</code>, <code>isize</code></td><td><code>usize(x)</code>, <code>isize(x)</code></td><td>Pointer-sized unsigned / signed integers</td><td><code>0</code></td><td><code>std::size_t</code>, <code>std::ptrdiff_t</code></td></tr>
       <tr><td><code>f32</code>, <code>f64</code></td><td><code>f32(x)</code>, <code>f64(x)</code></td><td>IEEE-754 single &amp; double precision (<code>f64</code> default)</td><td><code>0.0</code></td><td><code>float</code>, <code>double</code></td></tr>
       <tr><td><code>bool</code></td><td><code>bool(x)</code></td><td>Logical boolean (<code>true</code> / <code>false</code>)</td><td><code>false</code></td><td><code>bool</code></td></tr>
-      <tr><td><code>str</code></td><td><code>&quot;{x}&quot;</code> / <code>str(x)</code></td><td>Owned UTF-8 text buffer (<code>&amp;str</code> borrows as <code>std::string_view</code>)</td><td><code>&quot;&quot;</code></td><td><code>std::string</code></td></tr>
+      <tr><td><code>str</code></td><td><code>&quot;{x}&quot;</code> / <code>str(x)</code></td><td>Owned UTF-8 text buffer; slices <code>s[a..b]</code> are zero-copy views</td><td><code>&quot;&quot;</code></td><td><code>std::string</code></td></tr>
     </tbody>
   </table>
 </div>
@@ -3071,7 +3071,7 @@ fn main() {
     <tbody>
       <tr><td><code>own[T]</code></td><td><code>make(own[T], val)</code></td><td>Unique RAII heap ownership; movable, never implicitly copied</td><td><code>std::unique_ptr&lt;T&gt;</code></td></tr>
       <tr><td><code>shared[T]</code></td><td><code>make(shared[T], val)</code></td><td>Atomic reference-counted shared heap ownership</td><td><code>std::shared_ptr&lt;T&gt;</code></td></tr>
-      <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>&amp;x</code> / <code>&amp;mut x</code></td><td>Non-owning immutable or mutable borrow (<code>&amp;str</code> -&gt; <code>std::string_view</code>)</td><td><code>const T&amp;</code> / <code>T*</code></td></tr>
+      <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>&amp;x</code> / <code>&amp;mut x</code></td><td>Non-owning immutable or mutable borrow (<code>&amp;str</code> -&gt; <code>cfire::str_ref</code>, a <code>std::string_view</code>)</td><td><code>const T&amp;</code> / <code>T*</code></td></tr>
       <tr><td><code>*T</code></td><td><code>&amp;x</code> or foreign C pointer</td><td>Non-owning pointer; requires null check (<code>if p != none</code>) before deref</td><td><code>T*</code></td></tr>
       <tr><td><code>*mut T</code></td><td><code>&amp;mut x</code></td><td>Rebindable pointer to a mutable target; supports <code>*p = val</code> and <code>*p += 1</code></td><td><code>T*</code></td></tr>
     </tbody>
@@ -3155,7 +3155,7 @@ fn main() {
       <tr><th>Intent Modifier</th><th>Default?</th><th>Callee Access</th><th>Mandatory Call-Site Marker</th><th>Emitted ISO C++23 Lowering</th></tr>
     </thead>
     <tbody>
-      <tr><td><em>(omitted)</em></td><td><strong>Yes</strong></td><td>Read-only borrow</td><td>None (<code>f(x)</code>)</td><td>Scalars by <code>const T</code>; structs/slices/maps by <code>const T&amp;</code>; <code>&amp;str</code> by <code>std::string_view</code></td></tr>
+      <tr><td><em>(omitted)</em></td><td><strong>Yes</strong></td><td>Read-only borrow</td><td>None (<code>f(x)</code>)</td><td>Scalars by <code>const T</code>; structs/slices/maps by <code>const T&amp;</code>; <code>str</code> by a zero-copy view (<code>cfire::str_ref</code>)</td></tr>
       <tr><td><code>mut</code></td><td>No</td><td>Read-write in place</td><td><code>mut</code> (<code>f(mut x)</code>)</td><td><code>T&amp;</code> parameter; caller variable must be declared <code>mut</code></td></tr>
       <tr><td><code>move</code></td><td>No</td><td>Takes ownership</td><td><code>move</code> (<code>f(move x)</code>)</td><td><code>T</code> parameter with <code>std::move(x)</code> at call site; invalidates <code>x</code> in caller scope</td></tr>
     </tbody>
@@ -3174,7 +3174,7 @@ fn entry_count(buf: Buffer) -&gt; usize {
 }
 
 // 2. 'mut' and 'move' intents: mutates 'buf' in place and consumes 'msg'
-fn append_entry(prefix: &amp;str, mut buf: Buffer, move msg: str) -&gt; usize {
+fn append_entry(prefix: str, mut buf: Buffer, move msg: str) -&gt; usize {
     formatted := &quot;[{prefix}] {msg}&quot;
     buf.Entries.push(move formatted)
     return buf.Entries.len()
@@ -3856,7 +3856,7 @@ fn main() {
   </div>
   <section class="guide-topic active-topic" id="topic-ch8-utf-8-strings-unicode-scalars-regular-expressions" data-topic-id="ch8-utf-8-strings-unicode-scalars-regular-expressions" data-topic-title="UTF-8 Strings, Unicode Scalars &amp; Regular Expressions" data-short-title="8.1 UTF-8 &amp; Regex">
 <h3 class="guide-heading" id="ch8-utf-8-strings-unicode-scalars-regular-expressions"><span class="heading-hash">#</span><span class="heading-text">UTF-8 Strings, Unicode Scalars &amp; Regular Expressions</span></h3>
-<p>In <code>cfire</code>, <code>str</code> is an owned UTF-8 buffer (<code>std::string</code>), and <code>&amp;str</code> is a borrowed zero-copy view (<code>std::string_view</code>). Because UTF-8 codepoints vary from 1 to 4 bytes, <code>s.len()</code> always reports the exact byte count in $O(1)$ time, while <code>core:unicode</code> decodes 32-bit Unicode scalar values (<code>runes</code>) when you need character-level inspection:</p>
+<p>In <code>cfire</code>, <code>str</code> is an owned UTF-8 buffer (<code>std::string</code>). Slicing (<code>s[a..b]</code>, <code>s.trim()</code>) gives a zero-copy view of it, and you rarely need to name that view type (<code>&amp;str</code>): <strong>views go in, copies come out</strong>. A read-only <code>str</code> parameter accepts an owned string, a slice, or a literal without copying, and a view is copied automatically wherever owned text is required (a <code>move</code> parameter, a struct field, a <code>str</code> variable, a return value). Spell <code>&amp;str</code> only for a field or return value that deliberately keeps a view. <code>s[i]</code> is a <code>byte</code>, and <code>'L'</code> is a <code>byte</code> literal (one ASCII character or an escape such as <code>'\n'</code>, <code>'\''</code>, <code>'\x41'</code>), so <code>line[0] == 'L'</code> needs no conversion. Because UTF-8 codepoints vary from 1 to 4 bytes, <code>s.len()</code> always reports the exact byte count in $O(1)$ time, while <code>core:unicode</code> decodes 32-bit Unicode scalar values (<code>runes</code>) when you need character-level inspection:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3908,6 +3908,33 @@ fn main() -&gt; void! {
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
   <pre><code>joined=node_01|node_02|node_03 runes=7 bytes=10 regex=node_#|node_#|node_#
 last_rune=U+1F525 valid_utf8=true
+</code></pre>
+</div>
+<p>Here is a small line parser in that style: slices go straight into <code>parse</code>, a helper takes <code>str</code>, and the byte literal compares with <code>line[0]</code>:</p>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+fn amount(s: str) -&gt; i64 {
+    return i64.parse(s.trim()) or 0
+}
+
+fn main() {
+    lines := [&quot;L68&quot;, &quot;R48&quot;, &quot; L5&quot;]
+    mut dial: i64 = 50
+    for raw in lines {
+        line := raw.trim()
+        if line[0] == 'L' {
+            dial = (dial - amount(line[1..])).rem_euclid(100)
+        } else {
+            dial = (dial + amount(line[1..])).rem_euclid(100)
+        }
+    }
+    println(&quot;dial={}&quot;, dial)
+}
+</code></pre>
+<div class="terminal-tray">
+  <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
+  <pre><code>dial=25
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
@@ -4499,7 +4526,7 @@ fn main() {
     <tbody>
       <tr><td><code>i8</code>..<code>i64</code>, <code>u8</code>..<code>u64</code>, <code>f32</code>, <code>f64</code>, <code>bool</code></td><td><code>int8_t</code>..<code>int64_t</code>, <code>uint8_t</code>..<code>uint64_t</code>, <code>float</code>, <code>double</code>, <code>bool</code></td><td>Identical C++23 scalar type (0-cost pass-through)</td></tr>
       <tr><td><code>str</code> passed to <code>const char*</code></td><td><code>const char*</code></td><td>Automatic <code>cfire::c_arg(s)</code> (<code>.c_str()</code>, 0 allocation)</td></tr>
-      <tr><td><code>&amp;str</code></td><td><code>std::string_view</code></td><td>0-copy pointer + length view</td></tr>
+      <tr><td>read-only <code>str</code> parameter, <code>&amp;str</code>, <code>s[a..b]</code></td><td><code>cfire::str_ref</code> (derives from <code>std::string_view</code>)</td><td>0-copy pointer + length view; converts to <code>std::string</code> where an owned <code>str</code> is needed</td></tr>
       <tr><td><code>s.data()</code> / <code>s.byte_ptr()</code> / <code>s.byte_ptr_at(i)</code></td><td><code>const char*</code> / <code>char*</code></td><td>Direct raw pointer to contiguous UTF-8 buffer</td></tr>
       <tr><td><code>slice.data()</code> / <code>slice.data_ptr()</code></td><td><code>const T*</code> / <code>T*</code></td><td>Direct pointer to contiguous <code>std::vector&lt;T&gt;</code> buffer</td></tr>
       <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>const T&amp;</code> or <code>const T*</code> / <code>T&amp;</code> or <code>T*</code></td><td>Direct reference or address-of <code>&amp;x</code> for C out-pointers</td></tr>

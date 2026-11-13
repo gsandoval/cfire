@@ -447,10 +447,10 @@ fn main() {
         require(checked.has_value(), "analyze test_borrows.cf");
         if (checked.has_value()) {
             std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("std::string_view borrow_str"),
-                "&str parameter lowers to std::string_view");
-            require(cpp.contains("const std::string& owned_str"),
-                "owned str parameter lowers to const std::string&");
+            require(cpp.contains("cfire::str_ref borrow_str"),
+                "&str parameter lowers to cfire::str_ref");
+            require(cpp.contains("cfire::str_ref owned_str"),
+                "read-only str parameter lowers to the cfire::str_ref view (Q36)");
             require(cpp.contains("std::span<const std::int32_t> borrow_slice"),
                 "&[]i32 parameter lowers to std::span<const std::int32_t>");
             require(cpp.contains("const std::vector<std::int32_t>& owned_slice"),

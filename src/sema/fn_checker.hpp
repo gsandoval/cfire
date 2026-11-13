@@ -768,6 +768,7 @@ public:
             if (lit->kind == TokenKind::String) return type_id_of("str");
             if (lit->kind == TokenKind::Int) return type_id_of("i64");
             if (lit->kind == TokenKind::Float) return type_id_of("f64");
+            if (lit->kind == TokenKind::Char) return TypeId::Byte();
             if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return type_id_of("bool");
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
@@ -1057,6 +1058,7 @@ public:
         if (!e) return TypeId::Unknown();
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
             if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return TypeId::Str();
+            if (lit->kind == TokenKind::Char) return TypeId::Byte();
             if (lit->kind == TokenKind::Int) return TypeId::Int64();
             if (lit->kind == TokenKind::Float) return TypeId::Float64();
             if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return TypeId::Bool();
@@ -1305,14 +1307,6 @@ public:
             }
         }
         return type_name_of(e) == "[]byte";
-    }
-
-    [[nodiscard]] auto is_str_slice_expr(const ExprPtr& e) const -> bool {
-        if (!e) return false;
-        if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
-            return type_name_of(sl->object) == "str";
-        }
-        return false;
     }
 
     [[nodiscard]] auto infer_expr_null_state(const ExprPtr& e) const -> std::optional<NullState> {
@@ -3017,6 +3011,19 @@ public:
                     line);
             }
         } else if (un.op == "*" && un.operand) {
+            // CF-182: `*` on a value (e.g. `*line[1..]`) used to reach clang as "indirection requires pointer operand".
+            // Only slices and literals: inference reports a pointer field or call result as its pointee type.
+            const bool certain = std::holds_alternative<SliceExpr>(un.operand->node) || std::holds_alternative<LiteralExpr>(un.operand->node);
+            if (TypeId ot = infer_expr_type_id_sema(un.operand); certain && is_concrete_checkable_type(ot)) {
+                const auto& od = cf_.type_table.get(ot);
+                const bool str_view = od.kind == TypeKind::Borrow && od.elem_type == TypeId::Str();
+                if (str_view || ot == TypeId::Str()) {
+                    if (auto r = emit_error(diag_at(line, col, "cfire/TYPE-MISMATCH", "cannot dereference a 'str' value with '*'; remove the '*' (a 'str' slice is copied automatically where owned text is needed)")); !r) return r;
+                } else if (cf_.type_table.is_numeric(ot) || ot == TypeId::Bool() || ot == TypeId::Byte() ||
+                           od.kind == TypeKind::Slice || od.kind == TypeKind::Array || od.kind == TypeKind::Map) {
+                    if (auto r = emit_error(diag_at(line, col, "cfire/TYPE-MISMATCH", std::format("cannot dereference a value of type '{}' with '*'; only pointers, borrows and own/shared handles can be dereferenced", cf_.type_table.to_string(ot)))); !r) return r;
+                }
+            }
             if (const auto* id = std::get_if<IdentExpr>(&un.operand->node)) {
                 if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
                     if (it->second == NullState::Null) {
@@ -3043,6 +3050,22 @@ public:
         }
         if (bin.op == "<<" || bin.op == ">>") {
             if (auto r = check_const_shift_count(bin.left, bin.right, line, col); !r) return r;
+        }
+        // CF-182: `s[0] == "L"` compares a byte with text; it used to reach clang as a pointer/integer comparison.
+        if (bin.op == "==" || bin.op == "!=" || bin.op == "<" || bin.op == "<=" || bin.op == ">" || bin.op == ">=") {
+            TypeId lt = infer_expr_type_id_sema(bin.left);
+            TypeId rt = infer_expr_type_id_sema(bin.right);
+            const TypeId str_view = type_id_of("&str");
+            auto is_text = [&](TypeId t) { return t == TypeId::Str() || (str_view.is_valid() && t == str_view); };
+            if ((lt == TypeId::Byte() && is_text(rt)) || (rt == TypeId::Byte() && is_text(lt))) {
+                const ExprPtr& text_side = lt == TypeId::Byte() ? bin.right : bin.left;
+                std::string hint = "compare with a byte literal such as 'a', or slice the string (s[i..i + 1])";
+                if (const auto* lit = text_side ? std::get_if<LiteralExpr>(&text_side->node) : nullptr;
+                    lit && lit->kind == TokenKind::String && lit->value.size() == 1 && static_cast<unsigned char>(lit->value[0]) < 0x80 && lit->value[0] != '\\') {
+                    hint = std::format("use the byte literal '{}'", lit->value == "'" ? std::string("\\'") : lit->value);
+                }
+                return emit_error(diag_at(line, col, "cfire/TYPE-MISMATCH", std::format("cannot compare 'byte' with '{}' using '{}'; {}", cf_.type_table.to_string(lt == TypeId::Byte() ? rt : lt), bin.op, hint)));
+            }
         }
         // CF-148: arithmetic / ordering on `T?` needs an explicit unwrap (`x or default`); `==`/`!=` stay legal
         // because `x != none` is the idiom.
@@ -3624,6 +3647,15 @@ public:
         if (call.callee) {
             if (const auto* cm = std::get_if<MemberExpr>(&call.callee->node)) callee_members_.insert(cm);
         }
+        // CF-182: Go-style free `len(x)` / `cap(x)` are reserved names but not functions; they used to reach clang.
+        if (const auto* cid = call.callee ? std::get_if<IdentExpr>(&call.callee->node) : nullptr;
+            cid && (cid->name == "len" || cid->name == "cap") && !is_ident_in_scope_sema(cid->name) && !cf_.fn_sigs.contains(cid->name)) {
+            std::string recv = "x";
+            if (call.args.size() == 1 && call.args[0].value) {
+                if (const auto* aid = std::get_if<IdentExpr>(&call.args[0].value->node)) recv = aid->name;
+            }
+            return emit_error(diag_at(line, col, "cfire/UNDECLARED-IDENT", std::format("'{0}' is a method, not a function; use '{1}.{0}()'", cid->name, recv)));
+        }
         if (auto r = check_expr(call.callee); !r) return r;
         const FnDecl* target_sig = nullptr;
         const StdFnSigInfo* std_sig = nullptr;
@@ -3742,7 +3774,7 @@ public:
                     if (auto r = emit_error(diag_at(line, col, "cfire/UNKNOWN-FIELD", std::format("type '{}' has no associated function '{}'; use '{}.parse(s)'", tname, mem->field, tname))); !r) return r;
                 } else if (call.args.size() != 1) {
                     if (auto r = emit_error(diag_at(line, col, "cfire/ARITY-MISMATCH", std::format("'{}.parse' expects 1 argument, got {}", tname, call.args.size()))); !r) return r;
-                } else if (TypeId at = infer_expr_type_id_sema(call.args[0].value); is_concrete_checkable_type(at) && at != TypeId::Str()) {
+                } else if (TypeId at = infer_expr_type_id_sema(call.args[0].value); is_concrete_checkable_type(at) && !cf_.type_table.is_assignable(TypeId::Str(), at)) {
                     if (auto r = emit_error(diag_at(call.args[0].line, call.args[0].col, "cfire/TYPE-MISMATCH", std::format("'{}.parse' expects 'str', got '{}'", tname, cf_.type_table.to_string(at)))); !r) return r;
                 }
                 if (!call.args.empty()) { if (auto r = check_expr(call.args[0].value); !r) return r; }
@@ -3973,9 +4005,6 @@ public:
                     if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/REDUNDANT-CALLSITE-INTENT", std::format("parameter '{}' of '{}' has 'in' intent; remove redundant '{}' annotation at call-site", target_sig->params[i].name, target_sig->name, arg.intent), {{"keyword", arg.intent}})); !r) return r;
                 }
                 const auto& pt = target_sig->params[i].type;
-                if (pt.name == "str" && !pt.is_ptr && !pt.is_mut_ptr && !pt.is_slice && !pt.is_array && is_str_slice_expr(arg.value)) {
-                    if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/TYPE-MISMATCH", std::format("cannot pass zero-copy '&str' slice view to owning 'str' parameter '{}' of '{}'; change parameter type to '&str' or convert explicitly with 'str(...)'", target_sig->params[i].name, target_sig->name))); !r) return r;
-                }
                 if ((pt.is_slice || pt.is_array) && pt.name == "byte") {
                     if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&arg.value->node)) {
                         for (const auto& el : arr_lit->elements) {
@@ -4751,6 +4780,10 @@ public:
     }
 
     [[nodiscard]] auto check_var_decl_stmt(const VarDeclStmt& vd) -> std::expected<void, std::string> {
+        if (vd.is_mut && !vd.type && vd.init) {
+            TypeId it = infer_expr_type_id_sema(vd.init);
+            if (it == TypeId::Str() || it == type_id_of("&str")) cf_.owned_text_decls.insert(&vd);
+        }
         if (vd.type) {
             if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col); !r) return r;
             if (!vd.type->is_slice && !vd.type->is_array && !vd.type->is_optional && !vd.type->is_ptr) {
@@ -4794,9 +4827,7 @@ public:
                     dest_str.find("cpp.") == std::string::npos &&
                     src_str.find("cpp.") == std::string::npos &&
                     !cf_.type_table.is_assignable(dest_t, src_t)) {
-                    if (vd.type->name == "str" && src_t == type_id_of("&str")) {
-                        // Handled elsewhere with specific hint
-                    } else if (!is_byte_slice) {
+                    if (!is_byte_slice) {
                         return emit_error(diag_at(vd.line, vd.col, "cfire/TYPE-MISMATCH", std::format("cannot initialize variable '{}' of type '{}' with expression of type '{}'{}", vd.name, dest_str, src_str, nominal_mismatch_hint_sema(dest_t, src_t))));
                     }
                 }
@@ -4914,7 +4945,7 @@ public:
             is_scalar_prim = is_scalar_primitive_typeref(*vd.type);
         } else if (!is_opt_var && !is_fallible_var && !init_was_unhandled_fallible && !is_raw_or_smart_ptr && !is_byte_slice && vd.init) {
             if (const auto* lit = std::get_if<LiteralExpr>(&vd.init->node)) {
-                is_scalar_prim = (lit->kind == TokenKind::Int || lit->kind == TokenKind::Float ||
+                is_scalar_prim = (lit->kind == TokenKind::Int || lit->kind == TokenKind::Float || lit->kind == TokenKind::Char ||
                                   lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse);
             } else if (std::holds_alternative<BinaryExpr>(vd.init->node) || std::holds_alternative<UnaryExpr>(vd.init->node)) {
                 is_scalar_prim = is_scalar_primitive_type_name(inferred_t);

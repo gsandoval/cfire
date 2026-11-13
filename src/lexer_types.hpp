@@ -16,6 +16,7 @@ enum class TokenKind : int {
     Float,
     String,
     RawString, // Backtick `...`
+    Char,      // Q37 (CF-182): ASCII byte literal 'L'; the lexeme keeps its quotes
     CppBlock,  // Balanced `{ ... }` after `cplusplus` or `cpp`
 
     // Keywords (28)
@@ -119,6 +120,7 @@ struct Token {
         case TokenKind::Float: return "FLOAT";
         case TokenKind::String: return "STRING";
         case TokenKind::RawString: return "RAW_STRING";
+        case TokenKind::Char: return "CHAR";
         case TokenKind::CppBlock: return "CPP_BLOCK";
         case TokenKind::KwPackage: return "package";
         case TokenKind::KwImport: return "import";
