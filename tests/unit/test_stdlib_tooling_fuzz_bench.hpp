@@ -1006,7 +1006,7 @@ void test_performance_benchmarks([[maybe_unused]] const std::filesystem::path& r
 
     // 5. Cryptographic Primitives: SHA-256 & AES-256-GCM AEAD (16 KiB buffers)
     {
-        std::vector<std::byte> buf(16384, std::byte{0x5A});
+        std::vector<std::uint8_t> buf(16384, std::uint8_t{0x5A});
         constexpr std::size_t kShaIters = 2000;
         auto t0 = clock::now();
         std::size_t sha_ok = 0;
@@ -1018,9 +1018,9 @@ void test_performance_benchmarks([[maybe_unused]] const std::filesystem::path& r
         require(sha_ok == kShaIters, "SHA-256 benchmark succeeded");
         print_metric("sha256::hash_bytes (16KB block)", kShaIters, sha_sec, buf.size());
 
-        std::vector<std::byte> key(32, std::byte{0x11});
-        std::vector<std::byte> nonce(12, std::byte{0x22});
-        std::vector<std::byte> aad(16, std::byte{0x33});
+        std::vector<std::uint8_t> key(32, std::uint8_t{0x11});
+        std::vector<std::uint8_t> nonce(12, std::uint8_t{0x22});
+        std::vector<std::uint8_t> aad(16, std::uint8_t{0x33});
         constexpr std::size_t kAesIters = 200;
         auto t1 = clock::now();
         std::size_t aes_ok = 0;
@@ -1212,7 +1212,7 @@ void test_negative_parser_corpus_and_fuzz_runtime([[maybe_unused]] const std::fi
         require(crc == 0xcbf43926, "crc32 standard check value");
 
         // Inflate resilience on truncated/corrupt payload
-        const std::byte corrupt_bytes[] = {std::byte{0x78}, std::byte{0x9c}, std::byte{0xff}, std::byte{0x00}};
+        const std::uint8_t corrupt_bytes[] = {std::uint8_t{0x78}, std::uint8_t{0x9c}, std::uint8_t{0xff}, std::uint8_t{0x00}};
         auto dec = cfire::ai::detail::inflate_raw(corrupt_bytes);
         (void)dec; // Must not crash / throw
 
@@ -1250,7 +1250,7 @@ void test_negative_parser_corpus_and_fuzz_runtime([[maybe_unused]] const std::fi
             (void)s_res;
 
             // Deflate check
-            auto b_span = std::as_bytes(std::span(sample.data(), sample.size()));
+            auto b_span = cfire::as_u8(std::span(sample.data(), sample.size()));
             auto d_res = cfire::ai::detail::inflate_raw(b_span);
             (void)d_res;
         }

@@ -19,7 +19,7 @@ namespace cfire::lsp::detail {
     if (n == "i32" || n == "int") return "std::int32_t";
     if (n == "i64") return "std::int64_t";
     if (n == "u8") return "std::uint8_t";
-    if (n == "byte") return "std::byte";
+    if (n == "byte") return "std::uint8_t";
     if (n == "u16") return "std::uint16_t";
     if (n == "u32") return "std::uint32_t";
     if (n == "u64") return "std::uint64_t";

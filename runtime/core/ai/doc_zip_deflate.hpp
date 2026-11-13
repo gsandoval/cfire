@@ -80,8 +80,8 @@ struct HuffTree {
     }
 };
 
-[[nodiscard]] inline auto inflate_raw(std::span<const std::byte> src, std::size_t max_out = 64 * 1024 * 1024) -> std::vector<std::byte> {
-    std::vector<std::byte> out;
+[[nodiscard]] inline auto inflate_raw(std::span<const std::uint8_t> src, std::size_t max_out = 64 * 1024 * 1024) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out;
     if (src.empty()) return out;
     BitStream bs{reinterpret_cast<const std::uint8_t*>(src.data()), src.size(), 0, 0, 0};
 
@@ -112,7 +112,7 @@ struct HuffTree {
             (void)nlen;
             if (out.size() + len > max_out) break;
             for (std::uint32_t i = 0; i < len && bs.byte_pos < bs.size; ++i) {
-                out.push_back(static_cast<std::byte>(bs.data[bs.byte_pos++]));
+                out.push_back(static_cast<std::uint8_t>(bs.data[bs.byte_pos++]));
             }
         } else if (btype == 1 || btype == 2) {
             HuffTree lit_tree{};
@@ -166,7 +166,7 @@ struct HuffTree {
                 if (sym < 0 || sym == 256) break;
                 if (sym < 256) {
                     if (out.size() >= max_out) break;
-                    out.push_back(static_cast<std::byte>(sym));
+                    out.push_back(static_cast<std::uint8_t>(sym));
                 } else {
                     int l_idx = sym - 257;
                     if (l_idx < 0 || l_idx >= 29) break;
@@ -187,7 +187,7 @@ struct HuffTree {
     return out;
 }
 
-[[nodiscard]] inline auto inflate_zlib_or_raw(std::span<const std::byte> src) -> std::vector<std::byte> {
+[[nodiscard]] inline auto inflate_zlib_or_raw(std::span<const std::uint8_t> src) -> std::vector<std::uint8_t> {
     if (src.size() >= 2) {
         auto b0 = static_cast<std::uint8_t>(src[0]);
         auto b1 = static_cast<std::uint8_t>(src[1]);
@@ -202,28 +202,28 @@ struct HuffTree {
     return inflate_raw(src);
 }
 
-[[nodiscard]] inline auto read_u16_le(const std::byte* p) noexcept -> std::uint16_t {
+[[nodiscard]] inline auto read_u16_le(const std::uint8_t* p) noexcept -> std::uint16_t {
     return static_cast<std::uint16_t>(static_cast<std::uint8_t>(p[0])) |
            (static_cast<std::uint16_t>(static_cast<std::uint8_t>(p[1])) << 8);
 }
 
-[[nodiscard]] inline auto read_u32_le(const std::byte* p) noexcept -> std::uint32_t {
+[[nodiscard]] inline auto read_u32_le(const std::uint8_t* p) noexcept -> std::uint32_t {
     return static_cast<std::uint32_t>(static_cast<std::uint8_t>(p[0])) |
            (static_cast<std::uint32_t>(static_cast<std::uint8_t>(p[1])) << 8) |
            (static_cast<std::uint32_t>(static_cast<std::uint8_t>(p[2])) << 16) |
            (static_cast<std::uint32_t>(static_cast<std::uint8_t>(p[3])) << 24);
 }
 
-inline void append_u16_le(std::vector<std::byte>& buf, std::uint16_t v) {
-    buf.push_back(static_cast<std::byte>(v & 0xFF));
-    buf.push_back(static_cast<std::byte>((v >> 8) & 0xFF));
+inline void append_u16_le(std::vector<std::uint8_t>& buf, std::uint16_t v) {
+    buf.push_back(static_cast<std::uint8_t>(v & 0xFF));
+    buf.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
 }
 
-inline void append_u32_le(std::vector<std::byte>& buf, std::uint32_t v) {
-    buf.push_back(static_cast<std::byte>(v & 0xFF));
-    buf.push_back(static_cast<std::byte>((v >> 8) & 0xFF));
-    buf.push_back(static_cast<std::byte>((v >> 16) & 0xFF));
-    buf.push_back(static_cast<std::byte>((v >> 24) & 0xFF));
+inline void append_u32_le(std::vector<std::uint8_t>& buf, std::uint32_t v) {
+    buf.push_back(static_cast<std::uint8_t>(v & 0xFF));
+    buf.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFF));
+    buf.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFF));
 }
 
 [[nodiscard]] inline auto crc32_bytes(std::string_view s) noexcept -> std::uint32_t {
@@ -237,7 +237,7 @@ inline void append_u32_le(std::vector<std::byte>& buf, std::uint32_t v) {
     return ~crc;
 }
 
-[[nodiscard]] inline auto extract_zip_entries(std::span<const std::byte> zip_bytes) -> std::unordered_map<std::string, std::string> {
+[[nodiscard]] inline auto extract_zip_entries(std::span<const std::uint8_t> zip_bytes) -> std::unordered_map<std::string, std::string> {
     std::unordered_map<std::string, std::string> files;
     std::size_t pos = 0;
     while (pos + 30 <= zip_bytes.size()) {
@@ -277,7 +277,7 @@ inline void append_u32_le(std::vector<std::byte>& buf, std::uint32_t v) {
         }
 
         if (data_offset + comp_size > zip_bytes.size()) break;
-        std::span<const std::byte> payload = zip_bytes.subspan(data_offset, comp_size);
+        std::span<const std::uint8_t> payload = zip_bytes.subspan(data_offset, comp_size);
         if (method == 0) {
             files[name] = std::string(reinterpret_cast<const char*>(payload.data()), payload.size());
         } else if (method == 8) {

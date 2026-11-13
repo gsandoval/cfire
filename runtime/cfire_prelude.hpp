@@ -46,6 +46,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <tuple>
 #include <utility>
 #include <source_location>
 #include <variant>
@@ -190,6 +191,7 @@ inline constexpr None_t none{};
 
 [[noreturn]] inline void panic(std::string_view msg) {
     std::println(stderr, "panic: {}", msg);
+    std::fflush(nullptr);  // stdout is fully buffered on a pipe; keep what ran before the panic (CF-183)
     std::abort();
 }
 
@@ -321,23 +323,6 @@ inline auto operator==(std::nullopt_t, T* ptr) noexcept -> bool {
 template <typename T>
 inline auto operator!=(std::nullopt_t, T* ptr) noexcept -> bool {
     return ptr != nullptr;
-}
-
-template <std::integral I>
-constexpr auto operator==(std::byte lhs, I rhs) noexcept -> bool {
-    return std::to_integer<I>(lhs) == rhs;
-}
-template <std::integral I>
-constexpr auto operator==(I lhs, std::byte rhs) noexcept -> bool {
-    return lhs == std::to_integer<I>(rhs);
-}
-template <std::integral I>
-constexpr auto operator!=(std::byte lhs, I rhs) noexcept -> bool {
-    return std::to_integer<I>(lhs) != rhs;
-}
-template <std::integral I>
-constexpr auto operator!=(I lhs, std::byte rhs) noexcept -> bool {
-    return lhs != std::to_integer<I>(rhs);
 }
 
 namespace cfire::detail {
@@ -525,6 +510,55 @@ template <typename F>
     return ScopeExit<std::decay_t<F>>(std::forward<F>(fn));
 }
 
+// --- Q43 (CF-183): key hashing for `map[K]V` and `Set[T]`. Anything `std::hash` handles is hashed by it;
+// tuples and pairs combine their elements; a cfire struct provides `cfire_hash()` when all its fields are
+// hashable. A type with none of these is not a valid key.
+namespace detail {
+inline void hash_mix(std::size_t& seed, std::size_t h) noexcept {
+    seed ^= h + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+}
+template <typename T>
+struct KeyHash {
+    KeyHash() = delete;  // not hashable
+};
+template <typename T>
+concept std_hashable = requires(const T& v) { { std::hash<T>{}(v) } -> std::convertible_to<std::size_t>; };
+template <typename T>
+concept key_hashable = requires(const T& v) { { KeyHash<T>{}(v) } -> std::convertible_to<std::size_t>; };
+template <std_hashable T>
+struct KeyHash<T> {
+    [[nodiscard]] auto operator()(const T& v) const noexcept -> std::size_t { return std::hash<T>{}(v); }
+};
+template <typename... Ts>
+    requires(key_hashable<Ts> && ...)
+struct KeyHash<std::tuple<Ts...>> {
+    [[nodiscard]] auto operator()(const std::tuple<Ts...>& v) const -> std::size_t {
+        std::size_t seed = sizeof...(Ts);
+        std::apply([&](const auto&... e) { (hash_mix(seed, KeyHash<std::remove_cvref_t<decltype(e)>>{}(e)), ...); }, v);
+        return seed;
+    }
+};
+template <typename A, typename B>
+    requires key_hashable<A> && key_hashable<B>
+struct KeyHash<std::pair<A, B>> {
+    [[nodiscard]] auto operator()(const std::pair<A, B>& v) const -> std::size_t {
+        std::size_t seed = 2;
+        hash_mix(seed, KeyHash<A>{}(v.first));
+        hash_mix(seed, KeyHash<B>{}(v.second));
+        return seed;
+    }
+};
+template <typename T>
+    requires(!std_hashable<T>) && requires(const T& v) { { v.cfire_hash() } -> std::convertible_to<std::size_t>; }
+struct KeyHash<T> {
+    [[nodiscard]] auto operator()(const T& v) const -> std::size_t { return v.cfire_hash(); }
+};
+template <typename T>
+inline void hash_field(std::size_t& seed, const T& v) {
+    hash_mix(seed, KeyHash<T>{}(v));
+}
+} // namespace detail
+
 // --- Transparent Hash Map (`map[K]V`) with Zero-Allocation String Lookup ---
 struct StringHash {
     using is_transparent = void;
@@ -547,7 +581,7 @@ public:
     using underlying_t = std::conditional_t<
         std::is_same_v<K, std::string>,
         std::unordered_map<std::string, V, StringHash, std::equal_to<>>,
-        std::unordered_map<K, V>>;
+        std::unordered_map<K, V, detail::KeyHash<K>>>;
 
     Map() = default;
 
@@ -699,6 +733,44 @@ template <typename T, typename... Args>
 
 namespace cfire {
 
+// --- Q39 (CF-183): a `str` element is a `byte` (`u8`), never a C++ `char` whose signedness varies by target.
+// `unsigned char` may alias any object, so a `char&` is viewed in place as a `std::uint8_t&`.
+namespace detail {
+[[nodiscard]] inline auto as_byte_elem(char& c) noexcept -> std::uint8_t& { return reinterpret_cast<std::uint8_t&>(c); }
+[[nodiscard]] inline auto as_byte_elem(const char& c) noexcept -> const std::uint8_t& {
+    return reinterpret_cast<const std::uint8_t&>(c);
+}
+template <typename T>
+[[nodiscard]] constexpr auto as_byte_elem(T&& v) noexcept -> T&& { return std::forward<T>(v); }
+
+// The bytes of a string as a `u8` range, for `for b in s`.
+struct ByteRange {
+    const std::uint8_t* b = nullptr;
+    const std::uint8_t* e = nullptr;
+    [[nodiscard]] auto begin() const noexcept { return b; }
+    [[nodiscard]] auto end() const noexcept { return e; }
+    [[nodiscard]] auto size() const noexcept -> std::size_t { return static_cast<std::size_t>(e - b); }
+};
+struct OwnedByteRange {  // `for b in make_text()`: the temporary string lives as long as the loop
+    std::string s;
+    [[nodiscard]] auto begin() const noexcept { return reinterpret_cast<const std::uint8_t*>(s.data()); }
+    [[nodiscard]] auto end() const noexcept { return reinterpret_cast<const std::uint8_t*>(s.data()) + s.size(); }
+    [[nodiscard]] auto size() const noexcept -> std::size_t { return s.size(); }
+};
+[[nodiscard]] inline auto iter_items(std::string_view sv) noexcept -> ByteRange {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(sv.data());
+    return {p, p + sv.size()};
+}
+[[nodiscard]] inline auto iter_items(const std::string& s) noexcept -> ByteRange { return iter_items(std::string_view(s)); }
+[[nodiscard]] inline auto iter_items(std::string&& s) -> OwnedByteRange { return {std::move(s)}; }
+// Any other range: an lvalue is iterated in place, a temporary is moved into the loop so it outlives it.
+template <typename C>
+    requires(!std::is_convertible_v<C, std::string_view>)
+[[nodiscard]] constexpr auto iter_items(C&& c) -> std::conditional_t<std::is_lvalue_reference_v<C>, C, std::remove_cvref_t<C>> {
+    return std::forward<C>(c);
+}
+} // namespace detail
+
 // --- Zero-Overhead Inline Bounds-Checked Indexing (`arr[i]`, `slice[i]`, `str[i]`) (SAFE-P0-03) ---
 template <typename Container>
 concept CfireIndexableSeq = requires(Container& c, std::size_t i) {
@@ -735,7 +807,7 @@ template <CfireIndexableSeq Container, std::integral Idx>
             "index out of bounds"
         );
     }
-    return std::forward<Container>(c)[u_idx];
+    return detail::as_byte_elem(std::forward<Container>(c)[u_idx]);
 }
 
 template <typename Container, typename Key>
@@ -833,10 +905,10 @@ private:
 [[nodiscard]] inline auto c_arg(std::string_view sv) noexcept -> CStrViewHolder {
     return CStrViewHolder(sv);
 }
-[[nodiscard]] inline auto c_arg(std::byte* p) noexcept -> unsigned char* {
+[[nodiscard]] inline auto c_arg(std::uint8_t* p) noexcept -> unsigned char* {
     return reinterpret_cast<unsigned char*>(p);
 }
-[[nodiscard]] inline auto c_arg(const std::byte* p) noexcept -> const unsigned char* {
+[[nodiscard]] inline auto c_arg(const std::uint8_t* p) noexcept -> const unsigned char* {
     return reinterpret_cast<const unsigned char*>(p);
 }
 template <typename T>
@@ -844,8 +916,8 @@ template <typename T>
               !std::is_same_v<std::remove_cvref_t<T>, std::string_view> &&
               !std::is_same_v<std::remove_cvref_t<T>, cfire::str_ref> &&
               !std::is_same_v<std::remove_cvref_t<T>, std::filesystem::path> &&
-              !std::is_same_v<std::remove_cvref_t<T>, std::byte*> &&
-              !std::is_same_v<std::remove_cvref_t<T>, const std::byte*>)
+              !std::is_same_v<std::remove_cvref_t<T>, std::uint8_t*> &&
+              !std::is_same_v<std::remove_cvref_t<T>, const std::uint8_t*>)
 [[nodiscard]] constexpr auto c_arg(T&& v) noexcept -> T&& {
     return std::forward<T>(v);
 }
@@ -853,24 +925,28 @@ template <typename T>
     p.replace_extension(ext);
     return p;
 }
-[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> std::span<const std::byte> {
-    return std::as_bytes(std::span<const char>(sv.data(), sv.size()));
+// Q39 (CF-183): `byte` is `u8`. The raw bytes of any contiguous range, as `u8` (replaces `std::as_bytes`).
+template <typename T, std::size_t E>
+[[nodiscard]] inline auto as_u8(std::span<T, E> sp) noexcept -> std::span<const std::uint8_t> {
+    return {reinterpret_cast<const std::uint8_t*>(sp.data()), sp.size_bytes()};
 }
-[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> std::span<const std::byte> {
-    return std::as_bytes(sp);
+template <typename T, std::size_t E>
+    requires(!std::is_const_v<T>)
+[[nodiscard]] inline auto as_writable_u8(std::span<T, E> sp) noexcept -> std::span<std::uint8_t> {
+    return {reinterpret_cast<std::uint8_t*>(sp.data()), sp.size_bytes()};
 }
-[[nodiscard]] inline auto to_bytes(std::span<const std::byte> sp) noexcept -> std::span<const std::byte> {
-    return sp;
+[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> std::span<const std::uint8_t> {
+    return cfire::as_u8(std::span<const char>(sv.data(), sv.size()));
 }
-[[nodiscard]] inline auto to_u8_vec(std::span<const std::byte> sp) -> std::vector<std::uint8_t> {
+[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> std::span<const std::uint8_t> {
+    return cfire::as_u8(sp);
+}
+[[nodiscard]] inline auto to_u8_vec(std::span<const std::uint8_t> sp) -> std::vector<std::uint8_t> {
     std::vector<std::uint8_t> out(sp.size());
     if (!sp.empty()) {
         std::memcpy(out.data(), sp.data(), sp.size());
     }
     return out;
-}
-[[nodiscard]] inline auto to_u8_vec(std::span<const std::uint8_t> sp) -> std::vector<std::uint8_t> {
-    return std::vector<std::uint8_t>(sp.begin(), sp.end());
 }
 [[nodiscard]] inline auto to_u8_vec(std::string_view sv) -> std::vector<std::uint8_t> {
     std::vector<std::uint8_t> out(sv.size());
@@ -882,31 +958,25 @@ template <typename T>
 [[nodiscard]] inline auto to_u8_vec(std::initializer_list<std::uint8_t> init) -> std::vector<std::uint8_t> {
     return std::vector<std::uint8_t>(init.begin(), init.end());
 }
-[[nodiscard]] inline auto to_byte_vec(std::span<const std::uint8_t> sp) -> std::vector<std::byte> {
-    std::vector<std::byte> out(sp.size());
+[[nodiscard]] inline auto to_byte_vec(std::span<const std::uint8_t> sp) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out(sp.size());
     if (!sp.empty()) {
         std::memcpy(out.data(), sp.data(), sp.size());
     }
     return out;
 }
-[[nodiscard]] inline auto to_byte_vec(std::span<const std::byte> sp) -> std::vector<std::byte> {
-    return std::vector<std::byte>(sp.begin(), sp.end());
-}
-[[nodiscard]] inline auto to_byte_vec(std::string_view sv) -> std::vector<std::byte> {
-    std::vector<std::byte> out(sv.size());
+[[nodiscard]] inline auto to_byte_vec(std::string_view sv) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out(sv.size());
     if (!sv.empty()) {
         std::memcpy(out.data(), sv.data(), sv.size());
     }
     return out;
 }
-[[nodiscard]] inline auto to_byte_vec(std::initializer_list<std::uint8_t> init) -> std::vector<std::byte> {
-    std::vector<std::byte> out;
+[[nodiscard]] inline auto to_byte_vec(std::initializer_list<std::uint8_t> init) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out;
     out.reserve(init.size());
-    for (auto b : init) out.push_back(static_cast<std::byte>(b));
+    for (auto b : init) out.push_back(static_cast<std::uint8_t>(b));
     return out;
-}
-[[nodiscard]] inline auto to_str(std::span<const std::byte> sp) -> std::string {
-    return std::string(reinterpret_cast<const char*>(sp.data()), sp.size());
 }
 [[nodiscard]] inline auto to_str(std::span<const std::uint8_t> sp) -> std::string {
     return std::string(reinterpret_cast<const char*>(sp.data()), sp.size());
@@ -914,10 +984,13 @@ template <typename T>
 
 template <typename T, typename U = T>
 inline void vec_push(std::vector<T>& vec, U&& val) {
-    if constexpr (std::is_same_v<T, std::byte> && std::is_integral_v<std::remove_cvref_t<U>>) {
-        vec.push_back(static_cast<std::byte>(val));
-    } else if constexpr (std::is_same_v<T, std::uint8_t> && std::is_same_v<std::remove_cvref_t<U>, std::byte>) {
+    if constexpr (std::is_same_v<T, std::uint8_t> && std::is_integral_v<std::remove_cvref_t<U>>) {
         vec.push_back(static_cast<std::uint8_t>(val));
+    } else if constexpr (std::is_same_v<T, std::uint8_t> && std::is_same_v<std::remove_cvref_t<U>, std::uint8_t>) {
+        vec.push_back(static_cast<std::uint8_t>(val));
+    } else if constexpr (!std::is_constructible_v<T, U&&> && requires { std::begin(val); std::end(val); T(std::begin(val), std::end(val)); }) {
+        // A view pushed into a slice of owned slices (`grid.push(line.bytes())`, CF-183) is copied.
+        vec.push_back(T(std::begin(val), std::end(val)));
     } else {
         vec.push_back(std::forward<U>(val));
     }
@@ -933,8 +1006,8 @@ template <typename T>
 [[nodiscard]] inline auto str_ctor(const T& val) -> std::string {
     if constexpr (std::is_convertible_v<T, std::string_view>) {
         return std::string(val);
-    } else if constexpr (std::is_convertible_v<T, std::span<const std::byte>>) {
-        return to_str(std::span<const std::byte>(val));
+    } else if constexpr (std::is_convertible_v<T, std::span<const std::uint8_t>>) {
+        return to_str(std::span<const std::uint8_t>(val));
     } else if constexpr (std::is_convertible_v<T, std::span<const std::uint8_t>>) {
         return to_str(std::span<const std::uint8_t>(val));
     } else {
@@ -1029,7 +1102,7 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 }
 #endif
 
-[[nodiscard]] inline auto fd_read(int fd, std::span<std::byte> buf) -> std::expected<std::size_t, Error> {
+[[nodiscard]] inline auto fd_read(int fd, std::span<std::uint8_t> buf) -> std::expected<std::size_t, Error> {
     if (fd < 0) return make_error("invalid file descriptor");
     if (buf.empty()) return std::size_t{0};
 #if !defined(_WIN32)
@@ -1059,7 +1132,7 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 #endif
 }
 
-[[nodiscard]] inline auto fd_write_all(int fd, std::span<const std::byte> data) -> std::expected<std::size_t, Error> {
+[[nodiscard]] inline auto fd_write_all(int fd, std::span<const std::uint8_t> data) -> std::expected<std::size_t, Error> {
     if (fd < 0) return make_error("invalid file descriptor");
     if (data.empty()) return std::size_t{0};
 #if !defined(_WIN32)
@@ -1106,10 +1179,10 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 [[nodiscard]] inline auto fd_read_all_bounded(
     int fd,
     std::size_t max_bytes = 64ULL * 1024ULL * 1024ULL
-) -> std::expected<std::vector<std::byte>, Error> {
+) -> std::expected<std::vector<std::uint8_t>, Error> {
     if (fd < 0) return make_error("invalid file descriptor");
-    std::vector<std::byte> out;
-    std::array<std::byte, 8192> chunk{};
+    std::vector<std::uint8_t> out;
+    std::array<std::uint8_t, 8192> chunk{};
     while (true) {
         auto n = fd_read(fd, chunk);
         if (!n) return std::unexpected(n.error());
@@ -1125,12 +1198,12 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 [[nodiscard]] inline auto fd_read_exact(
     int fd,
     std::size_t exact_bytes
-) -> std::expected<std::vector<std::byte>, Error> {
+) -> std::expected<std::vector<std::uint8_t>, Error> {
     if (fd < 0) return make_error("invalid file descriptor");
-    std::vector<std::byte> buf(exact_bytes);
+    std::vector<std::uint8_t> buf(exact_bytes);
     std::size_t total = 0;
     while (total < exact_bytes) {
-        auto n = fd_read(fd, std::span<std::byte>(buf.data() + total, exact_bytes - total));
+        auto n = fd_read(fd, std::span<std::uint8_t>(buf.data() + total, exact_bytes - total));
         if (!n) return std::unexpected(n.error());
         if (*n == 0) {
             return make_error(std::format("unexpected EOF in read_exact (expected {} bytes, got {})", exact_bytes, total));
@@ -1142,14 +1215,14 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 
 [[nodiscard]] inline auto fd_read_until(
     int fd,
-    std::byte delim,
+    std::uint8_t delim,
     std::size_t max_bytes = 65536
-) -> std::expected<std::vector<std::byte>, Error> {
+) -> std::expected<std::vector<std::uint8_t>, Error> {
     if (fd < 0) return make_error("invalid file descriptor");
-    std::vector<std::byte> out;
-    std::byte ch{0};
+    std::vector<std::uint8_t> out;
+    std::uint8_t ch{0};
     while (out.size() < max_bytes) {
-        auto n = fd_read(fd, std::span<std::byte>(&ch, 1));
+        auto n = fd_read(fd, std::span<std::uint8_t>(&ch, 1));
         if (!n) return std::unexpected(n.error());
         if (*n == 0) break;
         out.push_back(ch);
@@ -1283,7 +1356,7 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 #if !defined(_WIN32)
     if (!prompt.empty()) {
         std::fflush(stderr);
-        (void)fd_write_all(STDERR_FILENO, std::as_bytes(std::span(prompt.data(), prompt.size())));
+        (void)fd_write_all(STDERR_FILENO, cfire::as_u8(std::span(prompt.data(), prompt.size())));
     }
 #if !defined(__EMSCRIPTEN__)
     struct TermiosEchoGuard {
@@ -1302,7 +1375,7 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
             if (active) {
                 (void)::tcsetattr(STDIN_FILENO, TCSANOW, &orig);
                 const char nl = '\n';
-                (void)fd_write_all(STDERR_FILENO, std::as_bytes(std::span(&nl, 1)));
+                (void)fd_write_all(STDERR_FILENO, cfire::as_u8(std::span(&nl, 1)));
             }
         }
     } echo_guard;
@@ -1311,7 +1384,7 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
 #else
     if (!prompt.empty()) {
         std::fflush(stderr);
-        (void)fd_write_all(2, std::as_bytes(std::span(prompt.data(), prompt.size())));
+        (void)fd_write_all(2, cfire::as_u8(std::span(prompt.data(), prompt.size())));
     }
     HANDLE hIn = ::GetStdHandle(STD_INPUT_HANDLE);
     DWORD origMode = 0;
@@ -1323,7 +1396,7 @@ inline auto win32_socket_table() -> std::unordered_map<int, SOCKET>& {
     if (hasMode) {
         ::SetConsoleMode(hIn, origMode);
         const char nl = '\n';
-        (void)fd_write_all(2, std::as_bytes(std::span(&nl, 1)));
+        (void)fd_write_all(2, cfire::as_u8(std::span(&nl, 1)));
     }
     return res;
 #endif
@@ -1434,11 +1507,11 @@ template <typename T>
     return out;
 }
 
-[[nodiscard]] inline auto bytes_to_hex(std::span<const std::byte> data) -> std::string {
+[[nodiscard]] inline auto bytes_to_hex(std::span<const std::uint8_t> data) -> std::string {
     static constexpr char kDigits[] = "0123456789abcdef";
     std::string out;
     out.reserve(data.size() * 2);
-    for (std::byte b : data) {
+    for (std::uint8_t b : data) {
         auto val = static_cast<std::uint8_t>(b);
         out.push_back(kDigits[(val >> 4) & 0x0F]);
         out.push_back(kDigits[val & 0x0F]);
@@ -1446,11 +1519,8 @@ template <typename T>
     return out;
 }
 
-[[nodiscard]] inline auto bytes_to_hex(std::span<const std::uint8_t> data) -> std::string {
-    return bytes_to_hex(std::as_bytes(data));
-}
 
-[[nodiscard]] inline auto base64_encode(std::span<const std::byte> data, bool url_safe = false) -> std::string {
+[[nodiscard]] inline auto base64_encode(std::span<const std::uint8_t> data, bool url_safe = false) -> std::string {
     static constexpr std::string_view kStdChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     static constexpr std::string_view kUrlChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     std::string_view tbl = url_safe ? kUrlChars : kStdChars;
@@ -1652,10 +1722,18 @@ struct EnumerateView {
     auto end() const { return EnumerateIterator<decltype(std::end(c))>{0, std::end(c)}; }
 };
 
+struct EnumerateBytes {
+    ByteRange r;
+    auto begin() const { return EnumerateIterator<const std::uint8_t*>{0, r.begin()}; }
+    auto end() const { return EnumerateIterator<const std::uint8_t*>{0, r.end()}; }
+};
+
 template <typename C>
 decltype(auto) iter_pairs(C& c) {
     if constexpr (is_map_like_v<C>) {
         return (c);
+    } else if constexpr (std::is_convertible_v<C&, std::string_view>) {
+        return EnumerateBytes{iter_items(std::string_view(c))};  // `for i, b in s` (Q39)
     } else {
         return EnumerateView<C>{c};
     }
@@ -1992,6 +2070,7 @@ decltype(auto) unwrap_val(E&& exp) {
             } else {
                 std::println(stderr, "panic: unwrap_val called on empty optional (none)");
             }
+            std::fflush(nullptr);
             std::abort();
         }
         return;
@@ -2002,6 +2081,7 @@ decltype(auto) unwrap_val(E&& exp) {
             } else {
                 std::println(stderr, "panic: unwrap_val called on empty optional (none)");
             }
+            std::fflush(nullptr);
             std::abort();
         }
         return *std::forward<E>(exp);
@@ -2059,7 +2139,7 @@ struct reflect_enum {
 template <typename T>
 concept CfireScalarCastable =
     std::is_arithmetic_v<std::remove_cvref_t<T>> ||
-    std::is_same_v<std::remove_cvref_t<T>, std::byte> ||
+    std::is_same_v<std::remove_cvref_t<T>, std::uint8_t> ||
     std::is_enum_v<std::remove_cvref_t<T>> ||
     reflect_enum<std::remove_cvref_t<T>>::is_enum ||
     requires(const std::remove_cvref_t<T>& v) {
@@ -2126,6 +2206,43 @@ template <typename To, typename From>
     }
 }
 } // namespace detail
+
+// --- CF-183: integer comparisons compare values, not bit patterns. `r < xs.len()` with `r: i64 = -1` is true,
+// where C++'s usual arithmetic conversions would turn `-1` into a huge unsigned value. Anything other than two
+// integers of different signedness compares with the plain operator.
+namespace detail {
+template <typename T>
+inline constexpr bool cmp_int_v = std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char> &&
+                                  !std::is_same_v<T, wchar_t> && !std::is_same_v<T, char8_t> && !std::is_same_v<T, char16_t> &&
+                                  !std::is_same_v<T, char32_t>;
+template <typename A, typename B>
+inline constexpr bool mixed_sign_v = cmp_int_v<std::remove_cvref_t<A>> && cmp_int_v<std::remove_cvref_t<B>> &&
+                                     std::is_signed_v<std::remove_cvref_t<A>> != std::is_signed_v<std::remove_cvref_t<B>>;
+} // namespace detail
+template <typename A, typename B>
+[[nodiscard]] constexpr auto cmp_lt(const A& a, const B& b) -> bool {
+    if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_less(a, b); else return a < b;
+}
+template <typename A, typename B>
+[[nodiscard]] constexpr auto cmp_le(const A& a, const B& b) -> bool {
+    if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_less_equal(a, b); else return a <= b;
+}
+template <typename A, typename B>
+[[nodiscard]] constexpr auto cmp_gt(const A& a, const B& b) -> bool {
+    if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_greater(a, b); else return a > b;
+}
+template <typename A, typename B>
+[[nodiscard]] constexpr auto cmp_ge(const A& a, const B& b) -> bool {
+    if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_greater_equal(a, b); else return a >= b;
+}
+template <typename A, typename B>
+[[nodiscard]] constexpr auto cmp_eq(const A& a, const B& b) -> bool {
+    if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_equal(a, b); else return a == b;
+}
+template <typename A, typename B>
+[[nodiscard]] constexpr auto cmp_ne(const A& a, const B& b) -> bool {
+    if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_not_equal(a, b); else return a != b;
+}
 
 // --- Q11 (CF-166): shifts. `x << n` keeps C++'s promoted result type, but a count outside
 // [0, bit width) panics at the caller's .cf location (via #line) instead of being undefined behavior.
@@ -2243,8 +2360,8 @@ CFIRE_CHECKED_SCALAR_CTOR(isize, std::ptrdiff_t)
 #undef CFIRE_CHECKED_SCALAR_CTOR
 
 template <CfireScalarCastable T>
-[[nodiscard]] constexpr auto byte(T val, std::source_location loc = std::source_location::current()) -> std::byte {
-    return static_cast<std::byte>(detail::checked_numeric_cast<std::uint8_t>(val, loc));
+[[nodiscard]] constexpr auto byte(T val, std::source_location loc = std::source_location::current()) -> std::uint8_t {
+    return static_cast<std::uint8_t>(detail::checked_numeric_cast<std::uint8_t>(val, loc));
 }
 template <CfireScalarCastable T>
 [[nodiscard]] constexpr auto f32(T val) noexcept -> float {

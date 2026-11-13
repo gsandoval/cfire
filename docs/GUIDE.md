@@ -513,7 +513,9 @@ top_two=2 weight0=1 http=8080 smtp=25 has_tls=true
 > [!TIP]
 > **Why `ports.get(key) or default` Beats C++ `std::map::operator[]`**: In C++, reading `ports["smtp"]` silently mutates the map by inserting a default-constructed entry. In `cfire`, `ports.get("smtp")` is read-only and returns an optional `i32?`, which pairs naturally with `or 25`.
 
-Additionally, all slice and array indexing (`scores[i]`) is checked at compile time for negative or constant out-of-bounds indices (`cfire/INDEX-OUT-OF-BOUNDS`) and verified at runtime via `cfire::index_at`.
+Additionally, all slice and array indexing (`scores[i]`) is checked at compile time for negative or constant out-of-bounds indices (`cfire/INDEX-OUT-OF-BOUNDS`) and verified at runtime via `cfire::index_at`. Any integer type can index (`grid[r][c]` with `r: i64` needs no cast); a negative index panics like an out-of-range one. Comparisons between signed and unsigned integers compare values, so `r < grid.len()` is `true` for `r = -1`.
+
+Tuples and structs can be map keys and `Set`/`MinQueue` elements: tuples compare and hash element by element (`map[(i64, i64)]bool`), and a struct gets `==`, ordering and hashing automatically when every field has them.
 
 ### Unified `for` Loops, Ranges & Conditionals
 Rather than juggling `for (;;)`, `while`, `do-while`, and `std::ranges::views::iota`, `cfire` uses a single `for` keyword across ranges, collections, and conditional loops:
@@ -563,6 +565,35 @@ fn main() {
 ```text
 # Output:
 excl=10 incl=12 items=alpha,beta,gamma countdown=1
+```
+
+#### `if` as a Value, Indexed Loops & Map Entries
+`if c { a } else { b }` is also an expression. The `else` branch is required, and both branches must have the same type (a bare number adapts to the other branch's numeric type). `for i, x in xs` visits each index with its element, and `for k, v in m` visits each map entry once. Map iteration order is unspecified.
+
+```cfire
+package main
+
+fn main() {
+    temps: []i64 = [12, -3, 25]
+    mut labels: []str = []
+    for i, t in temps {
+        kind := if t < 0 { "freezing" } else if t < 20 { "mild" } else { "hot" }
+        labels.push("{i}:{kind}")
+    }
+
+    mut stock: map[str]i64 = {}
+    stock["apples"] = 3
+    stock["pears"] = 5
+    mut total: i64 = 0
+    for name, count in stock {
+        total += if name.starts_with("a") { count * 2 } else { count }
+    }
+    println("{} total={}", labels.join(" "), total)
+}
+```
+```text
+# Output:
+0:mild 1:freezing 2:hot total=11
 ```
 
 ### Pointers (`*T`, `*mut T`) & RAII Smart Ownership (`^T` / `own[T]`, `shared[T]`)
@@ -1139,7 +1170,8 @@ In `cfire`, `str` is an owned UTF-8 buffer (`std::string`). Slicing (`s[a..b]`, 
 | `core:unicode` | `unicode.to_lower` / `to_upper` | `fn(s: str) -> str` | Full Unicode case folding across Latin, Greek, and Cyrillic scripts. |
 | `core:unicode` | `unicode.is_letter` / `is_digit` / `is_space` | `fn(r: u32) -> bool` | Unicode general category classification predicates on a 32-bit rune. |
 | `core:regex` | `regex.compile` | `fn(pattern: str) -> Regex!` | Compiles an ECMAScript regular expression (`std::regex`), returning an error on invalid syntax. |
-| `core:regex` | `regex.is_match` / `find` / `find_all` | `fn(pat: str, text: str) -> bool!` / `Match?!` / `[]str!` | Tests matches or extracts the first (`Match { text, index }`) or all non-overlapping matches. |
+| `core:regex` | `regex.is_match` / `find` / `find_all` | `fn(pat: str, text: str) -> bool!` / `str?!` / `[]str!` | One-shot forms: tests for a match, or extracts the first or all non-overlapping matches. |
+| `core:regex` | `re.is_match(text)` / `re.find(text)` / `re.find_all(text)` | `-> bool` / `-> str?` / `-> []str` | The same on a compiled `Regex` from `regex.compile`, for patterns used in a loop. |
 | `core:regex` | `regex.replace_all` | `fn(pat: str, text: str, replacement: str) -> str!` | Replaces every match of `pat` in `text` with `replacement`. |
 
 ```cfire
@@ -1233,12 +1265,13 @@ bytes=9 first_payload_byte=49 first_sample=0.25
 ```
 
 ### Generic Sets, Priority Queues, Deques & Sorting
-Beyond built-in slices (`[]T`) and hash maps (`map[K]V`), `core:collections` gives you generic hash sets, max-heap priority queues, and double-ended ring queues; sorting and searching are methods on the slice itself:
+Beyond built-in slices (`[]T`) and hash maps (`map[K]V`), `core:collections` gives you generic hash sets, max-first and min-first priority queues, and double-ended ring queues; sorting and searching are methods on the slice itself:
 
 | Module | Type / Function | Operations / Signature | C++23 Backing |
 | :--- | :--- | :--- | :--- |
 | `core:collections` | `collections.Set[T]` | `.insert(v)`, `.contains(v) -> bool`, `.remove(v)`, `.len() -> usize`, `.clear()` | `std::unordered_set<T>` |
-| `core:collections` | `collections.PriorityQueue[T]` | `.push(v)`, `.top() -> T`, `.pop() -> T`, `.empty() -> bool`, `.len() -> usize` | `std::priority_queue<T>` (max-heap) |
+| `core:collections` | `collections.PriorityQueue[T]` | `.push(v)`, `.pop() -> T?`, `.peek() -> T?`, `.top() -> T`, `.empty() -> bool`, `.len() -> usize` | `std::priority_queue<T>` (largest first) |
+| `core:collections` | `collections.MinQueue[T]` | same as `PriorityQueue[T]`, smallest first (`MinQueue[(i64, i64)]` for Dijkstra `(cost, node)` states) | `std::priority_queue<T, std::vector<T>, std::greater<T>>` |
 | `core:collections` | `collections.Deque[T]` | `.push_front(v)`, `.push_back(v)`, `.pop_front() -> T`, `.pop_back() -> T`, `.len() -> usize` | `std::deque<T>` |
 | builtin | `xs.sort()` / `xs.reverse()` | sorts `xs` ascending or reverses it in place (needs a `mut` binding) | `std::sort` / `std::reverse` |
 | builtin | `xs.sort_by(less)` | `fn(less: fn(T, T) -> bool)` — custom comparator sort | `std::sort(xs.begin(), xs.end(), less)` |
@@ -1258,6 +1291,10 @@ fn main() {
 
     mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
+    mut open: collections.MinQueue[(i64, str)]
+    open.push((5, "far"))
+    open.push((1, "near"))
+    (cost, name) := open.pop() or (0, "")
 
     mut dq: collections.Deque[str]
     dq.push_back("worker-1")
@@ -1267,13 +1304,13 @@ fn main() {
     seen.insert("us-east")
     seen.insert("eu-west")
 
-    println("min={} idx_of_19={} max_pq={} front={} regions={}",
-        latencies[0], idx, pq.top(), dq.pop_front(), seen.len())
+    println("min={} idx_of_19={} max_pq={} nearest={}:{} front={} regions={}",
+        latencies[0], idx, pq.top(), name, cost, dq.pop_front(), seen.len())
 }
 ```
 ```text
 # Output:
-min=7 idx_of_19=2 max_pq=88 front=leader-0 regions=2
+min=7 idx_of_19=2 max_pq=88 nearest=near:1 front=leader-0 regions=2
 ```
 
 ---

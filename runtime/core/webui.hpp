@@ -159,7 +159,7 @@ public:
         state_->eval_js(std::format("window.__cfire_event_dispatch(\"{}\", {});", ev_escaped, json_val));
     }
 
-    void emit_bytes(std::string_view event, std::span<const std::byte> data) {
+    void emit_bytes(std::string_view event, std::span<const std::uint8_t> data) {
         std::string b64 = cfire::detail::base64_encode(data);
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
@@ -169,9 +169,6 @@ public:
         state_->eval_js(std::format("window.__cfire_event_dispatch_bytes(\"{}\", \"{}\");", ev_escaped, b64));
     }
 
-    void emit_bytes(std::string_view event, std::span<const std::uint8_t> data) {
-        emit_bytes(event, std::as_bytes(data));
-    }
 
     void clear_history() {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);

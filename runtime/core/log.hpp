@@ -75,14 +75,14 @@ namespace detail {
                 out += "\"";
             }
             out += "}\n";
-            (void)cfire::detail::fd_write_all(2, std::as_bytes(std::span(out.data(), out.size())));
+            (void)cfire::detail::fd_write_all(2, cfire::as_u8(std::span(out.data(), out.size())));
         } else {
             std::string out = std::format("{}[{}]\033[0m {} - {}", level_color(l), level_str(l), ts, msg);
             for (const auto& [k, v] : attrs) {
                 out += std::format(" {}={}", k, v);
             }
             out += "\n";
-            (void)cfire::detail::fd_write_all(2, std::as_bytes(std::span(out.data(), out.size())));
+            (void)cfire::detail::fd_write_all(2, cfire::as_u8(std::span(out.data(), out.size())));
         }
     }
 } // namespace detail

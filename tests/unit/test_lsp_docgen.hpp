@@ -593,7 +593,7 @@ fn main() {
 
         ScopedTempDir test_tmp_file_scope("cfire_test_tmp_file");  // hermetic, mkdtemp-backed (CF-153)
         auto test_tmp_file = test_tmp_file_scope.path / "cfire_io_test.bin";
-        std::vector<std::byte> payload = {std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}};
+        std::vector<std::uint8_t> payload = {std::uint8_t{0xDE}, std::uint8_t{0xAD}, std::uint8_t{0xBE}, std::uint8_t{0xEF}};
         auto w_res = cfire::fs::write_bytes(test_tmp_file, payload);
         require(w_res.has_value(), "cfire::fs::write_bytes check");
         auto r_res = cfire::fs::read_bytes(test_tmp_file);

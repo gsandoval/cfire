@@ -1,0 +1,18 @@
+// expect: stdout
+// | 2 true false 3 1
+package main
+// Q43 (CF-183): tuples hash element by element, and a struct whose fields are all hashable is a key.
+type Cell struct {
+    r: i64
+    c: i64
+}
+fn main() {
+    mut seen: map[(i64, i64)]bool = {}
+    seen[(1, 2)] = true
+    seen[(2, 1)] = true
+    mut cost: map[Cell]i64 = {}
+    cost[Cell{r: 0, c: 1}] = 3
+    cost[Cell{r: 0, c: 1}] += 0
+    cost[Cell{r: 5, c: 5}] = 1
+    println("{} {} {} {} {}", seen.len(), seen.contains((1, 2)), seen.contains((3, 3)), cost[Cell{r: 0, c: 1}], cost[Cell{r: 5, c: 5}])
+}

@@ -1187,6 +1187,9 @@ struct Box;
 #line 3 &quot;snippet_intents.cf&quot;
 struct Box {
     std::int32_t value{};
+    friend auto operator==(const Box&amp;, const Box&amp;) -&gt; bool = default;
+    friend auto operator&lt;=&gt;(const Box&amp;, const Box&amp;) = default;
+    template &lt;typename S = Box&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().value)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 1; cfire::detail::hash_field(seed, value); return seed; }
 };
 
 template &lt;&gt;
@@ -1541,6 +1544,9 @@ struct Metric {
     std::string service{};
     double latency{};
     bool healthy{};
+    friend auto operator==(const Metric&amp;, const Metric&amp;) -&gt; bool = default;
+    friend auto operator&lt;=&gt;(const Metric&amp;, const Metric&amp;) = default;
+    template &lt;typename S = Metric&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().service)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().latency)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().healthy)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 3; cfire::detail::hash_field(seed, service); cfire::detail::hash_field(seed, latency); cfire::detail::hash_field(seed, healthy); return seed; }
 };
 
 template &lt;&gt;
@@ -1846,6 +1852,9 @@ struct DocEntry;
 struct QueryPlan {
     std::string Target{};
     std::int64_t TopK{};
+    friend auto operator==(const QueryPlan&amp;, const QueryPlan&amp;) -&gt; bool = default;
+    friend auto operator&lt;=&gt;(const QueryPlan&amp;, const QueryPlan&amp;) = default;
+    template &lt;typename S = QueryPlan&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Target)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().TopK)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 2; cfire::detail::hash_field(seed, Target); cfire::detail::hash_field(seed, TopK); return seed; }
 };
 
 template &lt;&gt;
@@ -1909,6 +1918,9 @@ struct DocEntry {
     std::int64_t Id{};
     std::string Title{};
     std::string Snippet{};
+    friend auto operator==(const DocEntry&amp;, const DocEntry&amp;) -&gt; bool = default;
+    friend auto operator&lt;=&gt;(const DocEntry&amp;, const DocEntry&amp;) = default;
+    template &lt;typename S = DocEntry&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Id)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Title)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Snippet)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 3; cfire::detail::hash_field(seed, Id); cfire::detail::hash_field(seed, Title); cfire::detail::hash_field(seed, Snippet); return seed; }
 };
 
 template &lt;&gt;
@@ -2014,7 +2026,7 @@ auto main(int argc, char** argv) -&gt; int {
         return 1;
     }
     #line 31 &quot;snippet_ai.cf&quot;
-    for (const auto&amp; ch : chunks) {
+    for (const auto&amp; ch : cfire::detail::iter_items(chunks)) {
         #line 32 &quot;snippet_ai.cf&quot;
         auto _try_4 = client.embed(ch.text);
         if (!_try_4.has_value()) {
@@ -2122,6 +2134,9 @@ struct GreetRes;
 struct GreetReq {
     std::string name{};
     std::int32_t count{};
+    friend auto operator==(const GreetReq&amp;, const GreetReq&amp;) -&gt; bool = default;
+    friend auto operator&lt;=&gt;(const GreetReq&amp;, const GreetReq&amp;) = default;
+    template &lt;typename S = GreetReq&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().name)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().count)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 2; cfire::detail::hash_field(seed, name); cfire::detail::hash_field(seed, count); return seed; }
 };
 
 template &lt;&gt;
@@ -2184,6 +2199,9 @@ inline auto cfire::json::schema_struct&lt;GreetReq&gt;() -&gt; std::string {
 struct GreetRes {
     std::string message{};
     std::int32_t count{};
+    friend auto operator==(const GreetRes&amp;, const GreetRes&amp;) -&gt; bool = default;
+    friend auto operator&lt;=&gt;(const GreetRes&amp;, const GreetRes&amp;) = default;
+    template &lt;typename S = GreetRes&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().message)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().count)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 2; cfire::detail::hash_field(seed, message); cfire::detail::hash_field(seed, count); return seed; }
 };
 
 template &lt;&gt;

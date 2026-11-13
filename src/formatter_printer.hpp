@@ -139,7 +139,8 @@ struct Item {
                     if (header_depth == depth) header_depth = -1;  // the header ends at its block
                     struct_lit[i] = lit;
                 } else if (k == TokenKind::LBracket) {
-                    type_bracket[i] = p == TokenKind::KwMap || !ends_operand(p);
+                    // `[]` after a type's own `]` (`[][]i64`, `map[str][]str`) is another type prefix.
+                    type_bracket[i] = p == TokenKind::KwMap || !ends_operand(p) || (p == TokenKind::RBracket && type_bracket[prev_tok]);
                 }
                 stack.push_back({i, false});
             } else if (k == TokenKind::RParen || k == TokenKind::RBracket || k == TokenKind::RBrace) {
@@ -233,9 +234,13 @@ struct Item {
         return true;
     };
 
-    // 5. Emit.
+    // 5. Emit. Every opener indents the lines inside it one level past the line it opens on, so a line that
+    //    opens several brackets (`f(|x| {`) still indents its body once. A line that continues an expression
+    //    (after a trailing binary operator, or starting with `.`, `&&`, `||` or `or`) is indented one more level,
+    //    while a block it opens (`if a &&\n    b {`) still indents from the statement's own level.
     std::string out;
-    int depth = 0;
+    std::vector<int> indent_stack;
+    int line_indent = 0;  // the statement level of the current line, before any continuation indent
     bool at_line_start = true;
     std::size_t pending_newlines = 0;
     auto newline = [&](std::size_t count) {
@@ -269,16 +274,21 @@ struct Item {
                 if (items[j].tk != TokenKind::RBrace && items[j].tk != TokenKind::RParen && items[j].tk != TokenKind::RBracket) break;
                 ++leading;
             }
-            int line_depth = std::max(0, depth - leading);
-            out.append(static_cast<std::size_t>(line_depth) * 4, ' ');
+            const int open = static_cast<int>(indent_stack.size());
+            line_indent = open > leading ? indent_stack[static_cast<std::size_t>(open - leading - 1)] : 0;
+            const bool continues = leading == 0 && it.kind == Item::Kind::Token && prev < items.size() &&
+                                   ((items[prev].kind == Item::Kind::Token && is_binary_operator(items[prev].tk)) ||
+                                    it.tk == TokenKind::Dot || it.tk == TokenKind::DoubleAmp || it.tk == TokenKind::DoublePipe ||
+                                    it.tk == TokenKind::KwOr);
+            out.append(static_cast<std::size_t>(line_indent + (continues ? 1 : 0)) * 4, ' ');
         } else if (prev < items.size() && space_between(prev, i)) {
             out.push_back(' ');
         }
         out.append(text(it));
         at_line_start = false;
         if (it.kind == Item::Kind::Token) {
-            if (it.tk == TokenKind::LParen || it.tk == TokenKind::LBracket || it.tk == TokenKind::LBrace) ++depth;
-            else if (closer) depth = std::max(0, depth - 1);
+            if (it.tk == TokenKind::LParen || it.tk == TokenKind::LBracket || it.tk == TokenKind::LBrace) indent_stack.push_back(line_indent + 1);
+            else if (closer && !indent_stack.empty()) indent_stack.pop_back();
         }
         prev = i;
     }

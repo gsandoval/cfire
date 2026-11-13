@@ -11,6 +11,9 @@ struct Config;
 struct Config {
     std::string Host{};
     std::uint16_t Port{};
+    friend auto operator==(const Config&, const Config&) -> bool = default;
+    friend auto operator<=>(const Config&, const Config&) = default;
+    template <typename S = Config> requires(true && cfire::detail::key_hashable<std::remove_cvref_t<decltype(std::declval<const S&>().Host)>> && cfire::detail::key_hashable<std::remove_cvref_t<decltype(std::declval<const S&>().Port)>>) [[nodiscard]] auto cfire_hash() const -> std::size_t { std::size_t seed = 2; cfire::detail::hash_field(seed, Host); cfire::detail::hash_field(seed, Port); return seed; }
 };
 
 template <>

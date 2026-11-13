@@ -256,7 +256,7 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
             return "### Method `." + sym.name + "()`\n```cf\nfn (s: []T | str) " + sym.name + "() -> *T\n```\n**Lowered C++23:** `({}).data()`\n\nReturns a raw pointer to the underlying contiguous element buffer (`*const c_char` for `str`, `*const T` for immutable slices) for C FFI interop.";
         }
         if (sym.name == "bytes") {
-            return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::byte>`) over the string's UTF-8 bytes.";
+            return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::uint8_t>`) over the string's UTF-8 bytes.";
         }
         std::string recv_type = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env);
         // Check stdlib handle methods (`TcpListener.accept`, `TcpConn.read_str`, `Conn.query`, `Channel.send`)

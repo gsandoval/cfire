@@ -39,7 +39,7 @@ inline void parse_markdown_sections(std::string_view md, Document& doc) {
     }
 }
 
-[[nodiscard]] inline auto ocr_apple_vision(std::span<const std::byte> img_bytes) -> std::string {
+[[nodiscard]] inline auto ocr_apple_vision(std::span<const std::uint8_t> img_bytes) -> std::string {
 #if defined(__APPLE__)
     const auto& rt = apple_nl_runtime();
     if (!rt.get_class || !rt.sel_register || !rt.msg_send) return "";
@@ -115,7 +115,7 @@ inline void parse_markdown_sections(std::string_view md, Document& doc) {
 #endif
 }
 
-[[nodiscard]] inline auto extract_image_text_metadata(std::span<const std::byte> bytes) -> std::string {
+[[nodiscard]] inline auto extract_image_text_metadata(std::span<const std::uint8_t> bytes) -> std::string {
     std::string out;
     // 1. Check PNG tEXt / iTXt chunks
     if (bytes.size() > 8 && static_cast<std::uint8_t>(bytes[0]) == 0x89 && static_cast<std::uint8_t>(bytes[1]) == 'P' &&

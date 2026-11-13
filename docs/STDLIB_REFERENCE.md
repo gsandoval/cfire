@@ -311,7 +311,7 @@ fn main() {
 | `fn prompt(message: str = "") -> str?` | `cfire::cli::prompt(message)` | Prints `message` to stderr and reads a line from stdin without trailing newline, or `none` on EOF. | `user := cli.prompt("Username: ") or { return }` |
 | `fn prompt_password(message: str = "") -> str?` | `cfire::cli::prompt_password(message)` | Prints `message` to stderr with terminal echo disabled (`termios` `~ECHO`) and reads a password line from stdin, or `none` on EOF. | `pw := cli.prompt_password("Password: ") or { return }` |
 
-### `core:collections` (`collections`) — Generic Containers (Set, PriorityQueue, Deque)
+### `core:collections` (`collections`) — Generic Containers (Set, PriorityQueue, MinQueue, Deque)
 
 - **Auto-Link Flags:** `(header-only)`
 - **Overview:** Standard generic containers backed by STL unordered_set, priority_queue, and deque.
@@ -347,7 +347,8 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `type Set[T] struct` | `cfire::collections::Set<T>` | Generic hash set container. | `mut s := collections.Set[str]{}` |
-| `type PriorityQueue[T] struct` | `cfire::collections::PriorityQueue<T>` | Generic max-heap priority queue. | `mut pq := collections.PriorityQueue[i32]{}` |
+| `type PriorityQueue[T] struct` | `cfire::collections::PriorityQueue<T>` | Max-first priority queue: `push(v)`, `pop() -> T?`, `peek() -> T?`, `len()`, `empty()`. | `mut pq := collections.PriorityQueue[i32]{}` |
+| `type MinQueue[T] struct` | `cfire::collections::MinQueue<T>` | Min-first priority queue (smallest element pops first), with the same methods as `PriorityQueue[T]`. Tuples order element by element, so `MinQueue[(i64, i64)]` pops the lowest cost first. | `mut open := collections.MinQueue[i64]{}` |
 | `type Deque[T] struct` | `cfire::collections::Deque<T>` | Generic double-ended queue. | `mut dq := collections.Deque[i32]{}` |
 
 ### `core:crypto/aes` (`aes`) — NIST FIPS 197 AES-256 Symmetric Encryption & GCM AEAD
@@ -561,7 +562,7 @@ fn main() {
 ### `core:fs` (`fs`) — Filesystem & Zero-Copy Byte I/O
 
 - **Auto-Link Flags:** `(header-only)`
-- **Overview:** Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>` with strict `_bytes` / `_text` symmetry.
+- **Overview:** Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::uint8_t>` with strict `_bytes` / `_text` symmetry.
 
 **Practical Example:**
 ```cf
@@ -1093,7 +1094,14 @@ fn main() {
 |---|---|---|---|
 | `fn compile(pattern: str) -> Regex!` | `cfire::regex::compile(pattern)` | Compiles an ECMAScript regex pattern into a reusable Regex object. | `re := try regex.compile("\\d+")` |
 | `fn is_match(pattern: str, text: str) -> bool!` | `cfire::regex::is_match(pattern, text)` | Tests whether a regex pattern matches text. | `ok := try regex.is_match("^[a-z]+$", s)` |
+| `fn find(pattern: str, text: str) -> str?!` | `cfire::regex::find(pattern, text)` | Returns the first match of `pattern` in `text`, or `none`; an invalid pattern is an error. | `word := try regex.find("[a-z]+", s) or { return }` |
+| `fn find_all(pattern: str, text: str) -> []str!` | `cfire::regex::find_all(pattern, text)` | Returns every non-overlapping match of `pattern` in `text`. | `nums := try regex.find_all("[0-9]+", line)` |
 | `fn replace_all(pattern: str, text: str, repl: str) -> str!` | `cfire::regex::replace_all(pattern, text, repl)` | Replaces all occurrences matching pattern with repl. | `res := try regex.replace_all("\s+", s, " ")` |
+| `fn (r: Regex) is_match(text: str) -> bool` | `r.is_match(text)` | Tests whether the compiled pattern matches anywhere in `text`. | `if re.is_match(line) { ... }` |
+| `fn (r: Regex) find(text: str) -> str?` | `r.find(text)` | Returns the first match in `text`, or `none`. | `m := re.find(line) or { continue }` |
+| `fn (r: Regex) find_all(text: str) -> []str` | `r.find_all(text)` | Returns every non-overlapping match in `text`. | `nums := re.find_all(line)` |
+| `fn (r: Regex) replace_all(text: str, repl: str) -> str` | `r.replace_all(text, repl)` | Replaces every match in `text` with `repl` (`$1` refers to a group). | `clean := re.replace_all(s, " ")` |
+| `fn (r: Regex) pattern() -> str` | `r.pattern()` | Returns the source pattern. | `println(re.pattern())` |
 
 ### `core:sync` (`sync`) — Thread-Safe Typed Channels & Mutexes
 

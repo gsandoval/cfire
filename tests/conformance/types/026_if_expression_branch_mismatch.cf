@@ -1,0 +1,6 @@
+package main
+fn main() {
+    n := 3
+    x := if n > 1 { "big" } else { 2 } //~ error cfire/TYPE-MISMATCH
+    println("{}", x)
+}

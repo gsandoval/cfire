@@ -12,7 +12,7 @@ void test_crypto_sha256_and_csprng([[maybe_unused]] const std::filesystem::path&
     require(h_abc == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         "sha256 'abc' NIST test vector");
 
-    auto b_abc = cfire::sha256::hash_bytes(std::span<const std::byte>(reinterpret_cast<const std::byte*>("abc"), 3));
+    auto b_abc = cfire::sha256::hash_bytes(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>("abc"), 3));
     require(b_abc.size() == 32 && static_cast<unsigned char>(b_abc[0]) == 0xba,
         "sha256 hash_bytes vector");
 

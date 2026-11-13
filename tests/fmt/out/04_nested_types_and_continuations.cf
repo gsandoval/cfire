@@ -1,0 +1,21 @@
+package main
+
+// CF-183: nested slice types, closures passed as arguments, and wrapped expressions.
+fn ok(a: bool, b: bool) -> bool {
+    return a ||
+        b
+}
+
+fn main() {
+    mut g: [][]i64 = []
+    m: map[str][]str = {}
+    mut pages: []str = ["b", "a"]
+    pages.sort_by(|a: str, b: str| -> bool {
+        return a < b
+    })
+    if ok(true, false) &&
+        pages.len() > 1 {
+        g.push([1])
+    }
+    print("{g.len()} {m.len()}")
+}

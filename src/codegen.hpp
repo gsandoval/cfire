@@ -745,6 +745,27 @@ public:
                 writeln(std::format("{} {}{{}};", cpp_type, fname));
             }
         }
+        // Q43 (CF-183): field-by-field equality, ordering and hashing, so a struct can be a map key or a heap
+        // element. A defaulted comparison is deleted when a field lacks it, and `cfire_hash` is constrained
+        // on every field being hashable, so a struct with a non-comparable field is simply not a key.
+        const std::string self = st.type_params.empty() ? st.name : st.name + "<" + [&] {
+            std::string a;
+            for (std::size_t i = 0; i < st.type_params.size(); ++i) a += (i ? ", " : "") + st.type_params[i].name;
+            return a;
+        }() + ">";
+        writeln(std::format("friend auto operator==(const {0}&, const {0}&) -> bool = default;", self));
+        writeln(std::format("friend auto operator<=>(const {0}&, const {0}&) = default;", self));
+        {
+            std::string reqs = "true";
+            std::string body;
+            for (const auto& fld : st.fields) {
+                std::string fname = sanitize_cpp_ident(fld.name);
+                reqs += std::format(" && cfire::detail::key_hashable<std::remove_cvref_t<decltype(std::declval<const S&>().{})>>", fname);
+                body += std::format(" cfire::detail::hash_field(seed, {});", fname);
+            }
+            writeln(std::format("template <typename S = {}> requires({}) [[nodiscard]] auto cfire_hash() const -> std::size_t {{ std::size_t seed = {};{} return seed; }}",
+                                self, reqs, st.fields.size(), body));
+        }
         --indent_;
         writeln("};");
 
@@ -1387,7 +1408,7 @@ public:
         if (tr.name == "i32") return "std::int32_t";
         if (tr.name == "i64") return "std::int64_t";
         if (tr.name == "u8") return "std::uint8_t";
-        if (tr.name == "byte") return "std::byte";
+        if (tr.name == "byte") return "std::uint8_t";  // Q39 (CF-183): `byte` is `u8`
         if (tr.name == "c_char" || tr.name == "char") return "char";
         if (tr.name == "u16") return "std::uint16_t";
         if (tr.name == "u32") return "std::uint32_t";
@@ -1469,7 +1490,7 @@ public:
                 clean = "cfire::sync::Atomic";
             } else if (clean == "Task" && used_core_.contains("async")) {
                 clean = "cfire::async::Task";
-            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "Deque" || clean == "BTreeMap" || clean == "BitSet") && used_core_.contains("collections")) {
+            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "MinQueue" || clean == "Deque" || clean == "BTreeMap" || clean == "BitSet") && used_core_.contains("collections")) {
                 clean = std::format("cfire::collections::{}", clean);
             }
         }

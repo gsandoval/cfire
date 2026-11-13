@@ -33,34 +33,34 @@ inline void ensure_init() noexcept {
 
 // --- CSPRNG & Secure Memory Wipe (`CF-006`) ---
 
-[[nodiscard]] inline auto random_bytes(std::size_t n) -> std::vector<std::byte> {
+[[nodiscard]] inline auto random_bytes(std::size_t n) -> std::vector<std::uint8_t> {
     detail::ensure_init();
-    std::vector<std::byte> buf(n);
+    std::vector<std::uint8_t> buf(n);
     if (n > 0) ::randombytes_buf(buf.data(), n);
     return buf;
 }
 
-inline void memzero(std::span<std::byte> buf) noexcept {
+inline void memzero(std::span<std::uint8_t> buf) noexcept {
     if (buf.empty()) return;
     ::sodium_memzero(buf.data(), buf.size());
 }
 
 inline void memzero(std::span<std::uint8_t> buf) noexcept {
-    memzero(std::as_writable_bytes(buf));
+    memzero(cfire::as_writable_u8(buf));
 }
 
 inline void memzero(std::string& s) noexcept {
     if (s.empty()) return;
-    memzero(std::span<std::byte>(reinterpret_cast<std::byte*>(s.data()), s.size()));
+    memzero(std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(s.data()), s.size()));
 }
 
 // --- BLAKE2b Generic Hash & Subkey Derivation (`CF-006`) ---
 
 [[nodiscard]] inline auto blake2b(
-    std::span<const std::byte> data,
+    std::span<const std::uint8_t> data,
     std::size_t out_len = 32,
-    std::span<const std::byte> key = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     detail::ensure_init();
     if (out_len < crypto_generichash_BYTES_MIN || out_len > crypto_generichash_BYTES_MAX) {
         return cfire::make_error("sodium.blake2b out_len must be between 16 and 64 bytes");
@@ -68,7 +68,7 @@ inline void memzero(std::string& s) noexcept {
     if (!key.empty() && (key.size() < crypto_generichash_KEYBYTES_MIN || key.size() > crypto_generichash_KEYBYTES_MAX)) {
         return cfire::make_error("sodium.blake2b key must be empty or between 16 and 64 bytes");
     }
-    std::vector<std::byte> out(out_len);
+    std::vector<std::uint8_t> out(out_len);
     if (::crypto_generichash(
             reinterpret_cast<unsigned char*>(out.data()),
             out_len,
@@ -84,17 +84,17 @@ inline void memzero(std::string& s) noexcept {
 [[nodiscard]] inline auto blake2b(
     std::string_view data,
     std::size_t out_len = 32,
-    std::span<const std::byte> key = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return blake2b(cfire::to_bytes(data), out_len, key);
 }
 
 [[nodiscard]] inline auto derive_subkey(
-    std::span<const std::byte> master_key,
+    std::span<const std::uint8_t> master_key,
     std::uint64_t subkey_id,
     std::string_view context,
     std::size_t out_len = 32
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     detail::ensure_init();
     if (master_key.size() != crypto_kdf_KEYBYTES) {
         return cfire::make_error("sodium.derive_subkey requires a 32-byte master key");
@@ -104,7 +104,7 @@ inline void memzero(std::string& s) noexcept {
     }
     char ctx_buf[crypto_kdf_CONTEXTBYTES]{};
     std::memcpy(ctx_buf, context.data(), std::min<std::size_t>(context.size(), crypto_kdf_CONTEXTBYTES));
-    std::vector<std::byte> subkey(out_len);
+    std::vector<std::uint8_t> subkey(out_len);
     if (::crypto_kdf_derive_from_key(
             reinterpret_cast<unsigned char*>(subkey.data()),
             out_len,
@@ -119,12 +119,12 @@ inline void memzero(std::string& s) noexcept {
 // --- Argon2id Key Derivation & Password Hashing (`CF-006`) ---
 
 [[nodiscard]] inline auto argon2id(
-    std::span<const std::byte> password,
-    std::span<const std::byte> salt,
+    std::span<const std::uint8_t> password,
+    std::span<const std::uint8_t> salt,
     std::uint32_t ops_limit,
     std::uint32_t mem_kib,
     std::size_t key_len
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     detail::ensure_init();
     if (salt.size() < 16) {
         return cfire::make_error("sodium.argon2id requires at least a 16-byte salt");
@@ -141,7 +141,7 @@ inline void memzero(std::string& s) noexcept {
     if (key_len < 16 || key_len > 1024) {
         return cfire::make_error("sodium.argon2id key_len must be between 16 and 1024 bytes");
     }
-    std::vector<std::byte> out(key_len);
+    std::vector<std::uint8_t> out(key_len);
     unsigned long long ops = ops_limit < 1 ? 1ULL : static_cast<unsigned long long>(ops_limit);
     std::size_t mem_bytes = static_cast<std::size_t>(std::max<std::uint32_t>(mem_kib, 8)) * 1024ULL;
     if (::crypto_pwhash(
@@ -159,28 +159,28 @@ inline void memzero(std::string& s) noexcept {
 }
 
 [[nodiscard]] inline auto argon2id(
-    std::span<const std::byte> password,
-    std::span<const std::byte> salt,
+    std::span<const std::uint8_t> password,
+    std::span<const std::uint8_t> salt,
     std::size_t out_len = 32
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return argon2id(password, salt, 2u, 4096u, out_len);
 }
 
 [[nodiscard]] inline auto argon2id(
     std::string_view password,
-    std::span<const std::byte> salt,
+    std::span<const std::uint8_t> salt,
     std::uint32_t ops_limit,
     std::uint32_t mem_kib,
     std::size_t key_len
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return argon2id(cfire::to_bytes(password), salt, ops_limit, mem_kib, key_len);
 }
 
 [[nodiscard]] inline auto argon2id(
     std::string_view password,
-    std::span<const std::byte> salt,
+    std::span<const std::uint8_t> salt,
     std::size_t out_len = 32
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return argon2id(cfire::to_bytes(password), salt, 2u, 4096u, out_len);
 }
 
@@ -190,16 +190,16 @@ inline void memzero(std::string& s) noexcept {
     std::uint32_t ops_limit,
     std::uint32_t mem_kib,
     std::size_t key_len
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), std::as_bytes(salt), ops_limit, mem_kib, key_len);
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
+    return argon2id(cfire::to_bytes(password), cfire::as_u8(salt), ops_limit, mem_kib, key_len);
 }
 
 [[nodiscard]] inline auto argon2id(
     std::string_view password,
     std::span<const std::uint8_t> salt,
     std::size_t out_len = 32
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), std::as_bytes(salt), 2u, 4096u, out_len);
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
+    return argon2id(cfire::to_bytes(password), cfire::as_u8(salt), 2u, 4096u, out_len);
 }
 
 [[nodiscard]] inline auto argon2id(
@@ -208,7 +208,7 @@ inline void memzero(std::string& s) noexcept {
     std::uint32_t ops_limit,
     std::uint32_t mem_kib,
     std::size_t key_len
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return argon2id(cfire::to_bytes(password), cfire::to_bytes(salt), ops_limit, mem_kib, key_len);
 }
 
@@ -216,7 +216,7 @@ inline void memzero(std::string& s) noexcept {
     std::string_view password,
     std::string_view salt,
     std::size_t out_len = 32
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return argon2id(cfire::to_bytes(password), cfire::to_bytes(salt), 2u, 4096u, out_len);
 }
 
@@ -246,16 +246,16 @@ inline void memzero(std::string& s) noexcept {
 // Returns `nonce (24B) || ciphertext || tag (16B)` as a single authenticated packet.
 
 [[nodiscard]] inline auto xchacha20poly1305_encrypt(
-    std::span<const std::byte> key,
-    std::span<const std::byte> plaintext,
-    std::span<const std::byte> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> plaintext,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     detail::ensure_init();
     if (key.size() != 32) {
         return cfire::make_error("xchacha20poly1305 requires a 32-byte key");
     }
     auto nonce = random_bytes(24);
-    std::vector<std::byte> packet(24 + plaintext.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES);
+    std::vector<std::uint8_t> packet(24 + plaintext.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES);
     std::memcpy(packet.data(), nonce.data(), 24);
     unsigned long long clen = 0;
     ::crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -277,23 +277,23 @@ inline void memzero(std::string& s) noexcept {
     std::span<const std::uint8_t> key,
     std::span<const std::uint8_t> plaintext,
     std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return xchacha20poly1305_encrypt(std::as_bytes(key), std::as_bytes(plaintext), std::as_bytes(aad));
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
+    return xchacha20poly1305_encrypt(cfire::as_u8(key), cfire::as_u8(plaintext), cfire::as_u8(aad));
 }
 
 [[nodiscard]] inline auto xchacha20poly1305_encrypt(
-    std::span<const std::byte> key,
+    std::span<const std::uint8_t> key,
     std::string_view plaintext,
     std::string_view aad = ""
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return xchacha20poly1305_encrypt(key, cfire::to_bytes(plaintext), cfire::to_bytes(aad));
 }
 
 [[nodiscard]] inline auto xchacha20poly1305_decrypt(
-    std::span<const std::byte> key,
-    std::span<const std::byte> packet,
-    std::span<const std::byte> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> packet,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     detail::ensure_init();
     if (key.size() != 32) {
         return cfire::make_error("xchacha20poly1305 requires a 32-byte key");
@@ -302,7 +302,7 @@ inline void memzero(std::string& s) noexcept {
         return cfire::make_error("xchacha20poly1305 packet too short (expected >= 40 bytes for 24B nonce + 16B tag)");
     }
     std::size_t pt_len = packet.size() - 40;
-    std::vector<std::byte> plaintext(pt_len);
+    std::vector<std::uint8_t> plaintext(pt_len);
     unsigned long long mlen = 0;
     if (::crypto_aead_xchacha20poly1305_ietf_decrypt(
             reinterpret_cast<unsigned char*>(plaintext.data()),
@@ -324,8 +324,8 @@ inline void memzero(std::string& s) noexcept {
     std::span<const std::uint8_t> key,
     std::span<const std::uint8_t> packet,
     std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return xchacha20poly1305_decrypt(std::as_bytes(key), std::as_bytes(packet), std::as_bytes(aad));
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
+    return xchacha20poly1305_decrypt(cfire::as_u8(key), cfire::as_u8(packet), cfire::as_u8(aad));
 }
 
 } // namespace cfire::sodium

@@ -5,7 +5,7 @@
 
 namespace cfire::ai::detail {
 
-[[nodiscard]] inline auto extract_pdf_apple(std::span<const std::byte> pdf_bytes, Document& doc) -> bool {
+[[nodiscard]] inline auto extract_pdf_apple(std::span<const std::uint8_t> pdf_bytes, Document& doc) -> bool {
 #if defined(__APPLE__)
     const auto& rt = apple_nl_runtime();
     if (!rt.get_class || !rt.sel_register || !rt.msg_send) return false;
@@ -376,7 +376,7 @@ inline void parse_pdf_cmap(std::string_view stream_text, std::unordered_map<std:
     return page_out;
 }
 
-[[nodiscard]] inline auto extract_pdf_linux(std::span<const std::byte> pdf_bytes, Document& doc) -> bool {
+[[nodiscard]] inline auto extract_pdf_linux(std::span<const std::uint8_t> pdf_bytes, Document& doc) -> bool {
 #if defined(__linux__)
     static int has_pdftotext = -1;
     if (has_pdftotext < 0) {
@@ -424,7 +424,7 @@ inline void parse_pdf_cmap(std::string_view stream_text, std::unordered_map<std:
 #endif
 }
 
-inline void parse_pdf_portable(std::span<const std::byte> pdf_bytes, Document& doc) {
+inline void parse_pdf_portable(std::span<const std::uint8_t> pdf_bytes, Document& doc) {
     doc.format = "pdf";
     if (extract_pdf_apple(pdf_bytes, doc)) return;
     if (extract_pdf_linux(pdf_bytes, doc)) return;

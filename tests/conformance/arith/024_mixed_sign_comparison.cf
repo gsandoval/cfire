@@ -1,0 +1,10 @@
+// expect: stdout
+// | true false true false
+package main
+// CF-183: comparisons of signed and unsigned integers compare values (`-1 < xs.len()` is true).
+fn main() {
+    grid: []str = ["ab", "cd"]
+    r: i64 = -1
+    n: usize = 2
+    println("{} {} {} {}", r < grid.len(), r >= grid.len(), r != n, r == n)
+}

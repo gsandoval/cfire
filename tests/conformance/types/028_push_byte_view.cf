@@ -1,0 +1,11 @@
+// expect: stdout
+// | 2 3 98
+package main
+// CF-183: `grid.push(line.bytes())` copies the bytes into the grid.
+fn main() {
+    mut grid: [][]byte = []
+    for line in ["ab#", "cd."] {
+        grid.push(line.bytes())
+    }
+    println("{} {} {}", grid.len(), grid[0].len(), u8(grid[0][1]))
+}

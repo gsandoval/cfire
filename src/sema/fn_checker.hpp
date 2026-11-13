@@ -772,6 +772,10 @@ public:
             if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return type_id_of("bool");
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
+            // Q44 (CF-183): a generic stdlib queue keeps its element type, so `pop()` can be typed `T?`.
+            if (st->type_args.size() == 1 && (st->type_name.ends_with("PriorityQueue") || st->type_name.ends_with("MinQueue"))) {
+                return type_id_of(st->type_name + "[" + cf_.type_table.to_string(type_id_of(st->type_args[0])) + "]");
+            }
             return type_id_of(st->type_name);
         }
         if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
@@ -1001,6 +1005,12 @@ public:
                         if (base_recv == "sync.MutexGuard" && mem->field == "get") {
                             return type_id_of(generic_arg);
                         }
+                        // Q44 (CF-183): priority queues hand out `T?` like `[]T.pop()`.
+                        if ((unqual_recv == "PriorityQueue" || unqual_recv == "MinQueue") && !generic_arg.empty()) {
+                            if (mem->field == "pop" || mem->field == "peek") return type_id_of(generic_arg + "?");
+                            if (mem->field == "top") return type_id_of(generic_arg);
+                            if (mem->field == "empty") return type_id_of("bool");
+                        }
                         if (base_recv == "sync.Atomic") {
                             if (mem->field == "load" || mem->field == "add" || mem->field == "sub" ||
                                 mem->field == "fetch_add" || mem->field == "fetch_sub") {
@@ -1020,7 +1030,7 @@ public:
                         }
                         if (mem->field == "len") {
                             if (unqual_recv == "Set" || unqual_recv == "Deque" || unqual_recv == "PriorityQueue" ||
-                                unqual_recv == "BTreeMap" || unqual_recv == "BitSet") {
+                                unqual_recv == "MinQueue" || unqual_recv == "BTreeMap" || unqual_recv == "BitSet") {
                                 return type_id_of("i64");
                             }
                         }
@@ -1272,18 +1282,27 @@ public:
         return cf_.type_table.to_string(id);
     }
 
+    // Q39 (CF-183): `byte` is `u8`, so a literal in 0..=255 or a `u8` value goes into a `[]byte` as is; a wider
+    // integer needs an explicit `byte(x)`, so a push never truncates silently.
     [[nodiscard]] auto is_non_byte_int_or_u8_expr(const ExprPtr& e) const -> bool {
         if (!e) return false;
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
-            return lit->kind == TokenKind::Int;
+            if (lit->kind != TokenKind::Int) return false;
+            auto v = cfire::detail::parse_int<std::int64_t>(lit->value);
+            return !v || *v < 0 || *v > 255;
         }
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            if (un->op == "-") {
+                if (const auto* lit = un->operand ? std::get_if<LiteralExpr>(&un->operand->node) : nullptr; lit && lit->kind == TokenKind::Int) {
+                    return lit->value != "0";
+                }
+            }
             if (un->op == "-" || un->op == "+") {
                 return is_non_byte_int_or_u8_expr(un->operand);
             }
         }
         std::string t = type_name_of(e);
-        return t == "u8" || t == "i8" || t == "i16" || t == "i32" || t == "i64" ||
+        return t == "i8" || t == "i16" || t == "i32" || t == "i64" ||
                t == "u16" || t == "u32" || t == "u64" || t == "usize" || t == "isize" || t == "int";
     }
 
@@ -1497,7 +1516,7 @@ public:
     // Primitives, str, &str, slices/arrays of those, and nominal types declared in this program.
     [[nodiscard]] auto is_concrete_checkable_type(TypeId t) const -> bool {
         if (t.is_unknown()) return false;
-        if (t.index >= TypeId::Bool().index && t.index <= TypeId::Byte().index) return true;
+        if (t.index >= TypeId::Bool().index && t.index <= TypeId::Str().index) return true;
         const auto& d = cf_.type_table.get(t);
         switch (d.kind) {
             case TypeKind::Borrow:
@@ -2630,7 +2649,17 @@ public:
             }
             return false;
         }
-        if (std::holds_alternative<TryExpr>(e->node)) {
+        if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
+            // `try f()` on a `T?!` function leaves a `T?` (`try regex.find(p, s) or { ... }`, Q46).
+            if (const auto* call = tr->inner ? std::get_if<CallExpr>(&tr->inner->node) : nullptr) {
+                if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                    const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                    const auto& idx = StdlibCatalogIndex::instance();
+                    if (obj_id && !is_ident_in_scope_sema(obj_id->name) && idx.has_namespace(obj_id->name)) {
+                        if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field)) return sfn->is_fallible && sfn->unwrapped_return_type.ends_with('?');
+                    }
+                }
+            }
             return false;
         }
         if (expr_returns_optional_sema(e)) return true;
@@ -2645,6 +2674,7 @@ public:
             }
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 const auto& idx = StdlibCatalogIndex::instance();
+                if (type_name_of(e).ends_with("?")) return true;  // a typed receiver method (`pq.pop() -> T?`, Q44)
                 const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
                 if (obj_id && !is_ident_in_scope_sema(obj_id->name)) {
                     if (obj_id->name == "cpp" || obj_id->name == "rl" || obj_id->name == "rg") {
@@ -2894,10 +2924,46 @@ public:
         }
         if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
             if (auto r = check_match_common(me->target, me->is_move, me->arms, me->line, me->col, true); !r) return r;
+            if (me->is_if && if_exprs_checked_.insert(me).second) {
+                if (auto r = check_if_expr_branches(*me); !r) return r;
+            }
             me->result_type = unified_match_result_type(*me);
             return {};
         }
         return {};
+    }
+
+    // Q40 (CF-183): both branches of an `if` expression yield the same type. A bare numeric literal adapts to
+    // the other branch's numeric type (`if c { n } else { 0 }`).
+    std::unordered_set<const MatchExpr*> if_exprs_checked_;  // an initializer can be checked twice
+
+    [[nodiscard]] auto check_if_expr_branches(const MatchExpr& me) -> std::expected<void, std::string> {
+        struct Branch { TypeId t; bool num_literal = false; int line = 0; int col = 0; };
+        std::vector<Branch> branches;
+        for (const auto& arm : me.arms) {
+            if (arm.body.empty()) return {};
+            const auto* es = std::get_if<ExprStmt>(&arm.body.back()->node);
+            if (!es || !es->expr) return {};
+            const Expr* v = es->expr;
+            if (const auto* un = std::get_if<UnaryExpr>(&v->node); un && un->op == "-" && un->operand) v = un->operand;
+            const auto* lit = std::get_if<LiteralExpr>(&v->node);
+            bool num_lit = lit && (lit->kind == TokenKind::Int || lit->kind == TokenKind::Float);
+            branches.push_back({infer_expr_type_id_sema(es->expr), num_lit, es->expr->line, es->expr->col});
+        }
+        if (branches.size() != 2) return {};
+        const auto& a = branches[0];
+        const auto& b = branches[1];
+        if (!a.t.is_valid() || !b.t.is_valid() || a.t.is_unknown() || b.t.is_unknown()) return {};
+        if (cf_.type_table.is_assignable(a.t, b.t) || cf_.type_table.is_assignable(b.t, a.t)) return {};
+        auto is_num = [&](TypeId t) {
+            std::string n = cf_.type_table.to_string(t);
+            return n == "i8" || n == "i16" || n == "i32" || n == "i64" || n == "u8" || n == "u16" || n == "u32" || n == "u64" ||
+                   n == "isize" || n == "usize" || n == "f32" || n == "f64" || n == "byte";
+        };
+        if ((a.num_literal && is_num(b.t)) || (b.num_literal && is_num(a.t))) return {};
+        return emit_error(diag_at(b.line, b.col, "cfire/TYPE-MISMATCH",
+            std::format("the branches of an 'if' expression have different types: '{}' and '{}'",
+                        cf_.type_table.to_string(a.t), cf_.type_table.to_string(b.t))));
     }
 
     // Primitive type shared by all arms of a match expression, treating bare literal arms as adaptable.
@@ -3913,7 +3979,7 @@ public:
             }
             if (mem->field == "push" && !call.args.empty() && is_byte_slice_expr(mem->object)) {
                 if (is_non_byte_int_or_u8_expr(call.args[0].value)) {
-                    if (auto r = emit_error(diag_at(call.args[0].line, call.args[0].col, "cfire/TYPE-MISMATCH", std::format("cannot push integer/u8 value into '[]byte' without explicit 'byte(...)' conversion"))); !r) return r;
+                    if (auto r = emit_error(diag_at(call.args[0].line, call.args[0].col, "cfire/TYPE-MISMATCH", std::format("cannot push a wider integer into '[]byte' without an explicit 'byte(...)' conversion"))); !r) return r;
                 }
             }
             const BuiltinMethod* mut_bm = lookup_builtin_method(*mem);
@@ -4009,7 +4075,7 @@ public:
                     if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&arg.value->node)) {
                         for (const auto& el : arr_lit->elements) {
                             if (is_non_byte_int_or_u8_expr(el)) {
-                                if (auto r = emit_error(diag_at(el->line, el->col, "cfire/TYPE-MISMATCH", std::format("cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion"))); !r) return r;
+                                if (auto r = emit_error(diag_at(el->line, el->col, "cfire/TYPE-MISMATCH", std::format("a '[]byte' literal element must be 0..=255 or a 'byte'; convert wider integers with 'byte(...)'"))); !r) return r;
                             }
                         }
                     }
@@ -4806,7 +4872,7 @@ public:
             if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&vd.init->node)) {
                 for (const auto& el : arr_lit->elements) {
                     if (is_non_byte_int_or_u8_expr(el)) {
-                        if (auto r = emit_error(diag_at(el->line, el->col, "cfire/TYPE-MISMATCH", std::format("cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion"))); !r) return r;
+                        if (auto r = emit_error(diag_at(el->line, el->col, "cfire/TYPE-MISMATCH", std::format("a '[]byte' literal element must be 0..=255 or a 'byte'; convert wider integers with 'byte(...)'"))); !r) return r;
                     }
                 }
             }
@@ -5201,7 +5267,7 @@ public:
                 if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&as.value->node)) {
                     for (const auto& el : arr_lit->elements) {
                         if (is_non_byte_int_or_u8_expr(el)) {
-                            if (auto r = emit_error(diag_at(el->line, el->col, "cfire/TYPE-MISMATCH", std::format("cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion"))); !r) return r;
+                            if (auto r = emit_error(diag_at(el->line, el->col, "cfire/TYPE-MISMATCH", std::format("a '[]byte' literal element must be 0..=255 or a 'byte'; convert wider integers with 'byte(...)'"))); !r) return r;
                         }
                     }
                 }

@@ -175,7 +175,7 @@ inline auto utf8_to_wide(std::string_view s) -> std::wstring {
 [[nodiscard]] inline auto set(
     std::string_view service,
     std::string_view account,
-    std::span<const std::byte> secret
+    std::span<const std::uint8_t> secret
 ) -> std::expected<void, cfire::Error> {
     return set(service, account, std::string_view(reinterpret_cast<const char*>(secret.data()), secret.size()));
 }

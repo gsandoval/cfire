@@ -23,7 +23,7 @@ struct DecodedImage {
     return static_cast<std::uint8_t>(c);
 }
 
-[[nodiscard]] inline auto decode_image_pixels(std::span<const std::byte> bytes) -> DecodedImage {
+[[nodiscard]] inline auto decode_image_pixels(std::span<const std::uint8_t> bytes) -> DecodedImage {
     DecodedImage img;
     // 1. PNG decoder (IHDR + IDAT inflate + scanline unfiltering)
     if (bytes.size() >= 33 && static_cast<std::uint8_t>(bytes[0]) == 0x89 &&
@@ -34,7 +34,7 @@ struct DecodedImage {
         std::uint8_t bit_depth = 0;
         std::uint8_t color_type = 0;
         std::uint8_t interlace = 0;
-        std::vector<std::byte> idat;
+        std::vector<std::uint8_t> idat;
 
         std::size_t pos = 8;
         while (pos + 12 <= bytes.size()) {
@@ -44,7 +44,7 @@ struct DecodedImage {
                                 static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[pos + 3]));
             std::string_view type(reinterpret_cast<const char*>(bytes.data() + pos + 4), 4);
             if (pos + 12 + len > bytes.size()) break;
-            const std::byte* chunk_data = bytes.data() + pos + 8;
+            const std::uint8_t* chunk_data = bytes.data() + pos + 8;
             if (type == "IHDR" && len >= 13) {
                 width = (static_cast<std::uint32_t>(static_cast<std::uint8_t>(chunk_data[0])) << 24) |
                         (static_cast<std::uint32_t>(static_cast<std::uint8_t>(chunk_data[1])) << 16) |
@@ -74,7 +74,7 @@ struct DecodedImage {
                     std::vector<std::uint8_t> recon(static_cast<std::size_t>(height) * stride, 0);
                     for (std::uint32_t y = 0; y < height; ++y) {
                         std::uint8_t filter = static_cast<std::uint8_t>(raw[static_cast<std::size_t>(y) * (1 + stride)]);
-                        const std::byte* src_row = raw.data() + static_cast<std::size_t>(y) * (1 + stride) + 1;
+                        const std::uint8_t* src_row = raw.data() + static_cast<std::size_t>(y) * (1 + stride) + 1;
                         std::uint8_t* dst_row = recon.data() + static_cast<std::size_t>(y) * stride;
                         const std::uint8_t* prev_row = (y > 0) ? (recon.data() + static_cast<std::size_t>(y - 1) * stride) : nullptr;
 
@@ -141,7 +141,7 @@ struct DecodedImage {
                 img.rgba.resize(static_cast<std::size_t>(w) * abs_h * 4);
                 for (std::uint32_t y = 0; y < abs_h; ++y) {
                     std::uint32_t src_y = flip ? (abs_h - 1 - y) : y;
-                    const std::byte* row = bytes.data() + data_off + src_y * row_stride;
+                    const std::uint8_t* row = bytes.data() + data_off + src_y * row_stride;
                     for (std::int32_t x = 0; x < w; ++x) {
                         std::size_t dst_idx = (static_cast<std::size_t>(y) * w + x) * 4;
                         std::size_t src_idx = static_cast<std::size_t>(x) * (bpp / 8);
@@ -157,7 +157,7 @@ struct DecodedImage {
     }
 
     // 3. Netpbm P6 (RGB) / P5 (Grayscale) binary decoder (also used by Linux djpeg bridge)
-    auto decode_ppm_pgm = [](std::span<const std::byte> b) -> DecodedImage {
+    auto decode_ppm_pgm = [](std::span<const std::uint8_t> b) -> DecodedImage {
         DecodedImage out;
         if (b.size() < 11 || static_cast<char>(b[0]) != 'P') return out;
         char magic = static_cast<char>(b[1]);
@@ -288,9 +288,9 @@ struct DecodedImage {
             std::string tmp_jpg = tmp_dir.file("in.jpg").string();
             if (tmp_dir.ok() && cfire::fs::write_bytes(tmp_jpg, bytes)) {
                 std::string cmd = std::format("djpeg -pnm '{}' 2>/dev/null", tmp_jpg);
-                std::vector<std::byte> pnm_bytes;
+                std::vector<std::uint8_t> pnm_bytes;
                 if (FILE* pipe = ::popen(cmd.c_str(), "r")) {
-                    std::byte buf[4096];
+                    std::uint8_t buf[4096];
                     while (std::size_t n = std::fread(buf, 1, sizeof(buf), pipe)) {
                         pnm_bytes.insert(pnm_bytes.end(), buf, buf + n);
                     }
@@ -307,7 +307,7 @@ struct DecodedImage {
     return img;
 }
 
-[[nodiscard]] inline auto ocr_linux(std::span<const std::byte> img_bytes) -> std::string {
+[[nodiscard]] inline auto ocr_linux(std::span<const std::uint8_t> img_bytes) -> std::string {
 #if defined(__linux__)
     // Tier 1: Zero-compile-time-dependency dynamic dlopen of libtesseract C-API
     struct TessRuntime {
@@ -402,7 +402,7 @@ struct DecodedImage {
     return "";
 }
 
-[[nodiscard]] inline auto embed_image_local(std::span<const std::byte> bytes, std::size_t dims = 384) -> std::vector<float> {
+[[nodiscard]] inline auto embed_image_local(std::span<const std::uint8_t> bytes, std::size_t dims = 384) -> std::vector<float> {
     std::vector<float> vec(dims, 0.0f);
     if (bytes.empty()) return vec;
 
@@ -542,8 +542,8 @@ struct DecodedImage {
 
 // --- Public Multimodal, Document Ingestion, OCR & ZIP Helpers (`core:ai`) ---
 
-[[nodiscard]] inline auto create_zip(const std::vector<ZipEntry>& entries) -> std::vector<std::byte> {
-    std::vector<std::byte> out;
+[[nodiscard]] inline auto create_zip(const std::vector<ZipEntry>& entries) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out;
     struct CdRecord {
         std::string name;
         std::uint32_t crc;
@@ -568,8 +568,8 @@ struct DecodedImage {
         detail::append_u32_le(out, sz);
         detail::append_u16_le(out, static_cast<std::uint16_t>(e.name.size()));
         detail::append_u16_le(out, 0);           // Extra len
-        for (char c : e.name) out.push_back(static_cast<std::byte>(c));
-        for (char c : e.content) out.push_back(static_cast<std::byte>(c));
+        for (char c : e.name) out.push_back(static_cast<std::uint8_t>(c));
+        for (char c : e.content) out.push_back(static_cast<std::uint8_t>(c));
 
         cd_records.push_back(CdRecord{e.name, crc, sz, offset});
     }
@@ -593,7 +593,7 @@ struct DecodedImage {
         detail::append_u16_le(out, 0);
         detail::append_u32_le(out, 0);
         detail::append_u32_le(out, r.offset);
-        for (char c : r.name) out.push_back(static_cast<std::byte>(c));
+        for (char c : r.name) out.push_back(static_cast<std::uint8_t>(c));
     }
     std::uint32_t cd_size = static_cast<std::uint32_t>(out.size()) - cd_start;
 
@@ -608,7 +608,7 @@ struct DecodedImage {
     return out;
 }
 
-[[nodiscard]] inline auto detect_mime_type(std::string_view path_or_name, std::span<const std::byte> bytes = {}) -> std::string {
+[[nodiscard]] inline auto detect_mime_type(std::string_view path_or_name, std::span<const std::uint8_t> bytes = {}) -> std::string {
     if (bytes.size() >= 5 && std::memcmp(bytes.data(), "%PDF-", 5) == 0) return "application/pdf";
     if (bytes.size() >= 8 && static_cast<std::uint8_t>(bytes[0]) == 0x89 && std::memcmp(bytes.data() + 1, "PNG", 3) == 0) return "image/png";
     if (bytes.size() >= 3 && static_cast<std::uint8_t>(bytes[0]) == 0xFF && static_cast<std::uint8_t>(bytes[1]) == 0xD8 && static_cast<std::uint8_t>(bytes[2]) == 0xFF) return "image/jpeg";
@@ -658,7 +658,7 @@ struct DecodedImage {
     return "text/plain";
 }
 
-[[nodiscard]] inline auto ocr_bytes(std::span<const std::byte> data) -> std::expected<std::string, cfire::Error> {
+[[nodiscard]] inline auto ocr_bytes(std::span<const std::uint8_t> data) -> std::expected<std::string, cfire::Error> {
     if (data.empty()) return cfire::make_error("cannot run OCR on empty byte buffer");
     std::string vis = detail::ocr_apple_vision(data);
     if (vis.empty()) vis = detail::ocr_linux(data);
@@ -670,9 +670,6 @@ struct DecodedImage {
     return meta;
 }
 
-[[nodiscard]] inline auto ocr_bytes(std::span<const std::uint8_t> data) -> std::expected<std::string, cfire::Error> {
-    return ocr_bytes(std::as_bytes(data));
-}
 
 [[nodiscard]] inline auto ocr(const std::filesystem::path& path) -> std::expected<std::string, cfire::Error> {
     auto bytes = cfire::fs::read_bytes(path);
@@ -680,7 +677,7 @@ struct DecodedImage {
     return ocr_bytes(*bytes);
 }
 
-[[nodiscard]] inline auto parse_document(std::span<const std::byte> bytes, std::string_view filename = "document.txt")
+[[nodiscard]] inline auto parse_document(std::span<const std::uint8_t> bytes, std::string_view filename = "document.txt")
     -> std::expected<Document, cfire::Error>
 {
     Document doc;
@@ -764,16 +761,11 @@ struct DecodedImage {
     return doc;
 }
 
-[[nodiscard]] inline auto parse_document(std::span<const std::uint8_t> bytes, std::string_view filename = "document.txt")
-    -> std::expected<Document, cfire::Error>
-{
-    return parse_document(std::as_bytes(bytes), filename);
-}
 
 [[nodiscard]] inline auto parse_document(std::string_view content, std::string_view filename = "document.md")
     -> std::expected<Document, cfire::Error>
 {
-    return parse_document(std::as_bytes(std::span<const char>(content.data(), content.size())), filename);
+    return parse_document(cfire::as_u8(std::span<const char>(content.data(), content.size())), filename);
 }
 
 [[nodiscard]] inline auto load_document(const std::filesystem::path& path)
@@ -818,7 +810,7 @@ struct DecodedImage {
 
 [[nodiscard]] inline auto make_attachment(
     std::string_view filename,
-    std::span<const std::byte> data,
+    std::span<const std::uint8_t> data,
     std::string_view mime_type = ""
 ) -> Attachment {
     Attachment att;
@@ -851,7 +843,7 @@ struct DecodedImage {
 
 [[nodiscard]] inline auto embed_image_bytes(
     std::string_view model,
-    std::span<const std::byte> bytes,
+    std::span<const std::uint8_t> bytes,
     std::string_view mime_type = "image/png"
 ) -> std::expected<std::vector<float>, cfire::Error> {
     if (bytes.empty()) return cfire::make_error("cannot embed empty image buffer");

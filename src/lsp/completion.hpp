@@ -456,7 +456,7 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
         auto [s_str, f_str] = builtin_snip("str", "fn str(val: Any)");
         append_item("str", 3, "str(val: []byte | []u8 | scalar) -> str", "Constructs a UTF-8 string from a byte/u8 slice or scalar value.", s_str, f_str);
         auto [s_byte, f_byte] = builtin_snip("byte", "fn byte(val: i64)");
-        append_item("byte", 3, "byte(val: integer) -> byte", "Constructs a std::byte value from an integer.", s_byte, f_byte);
+        append_item("byte", 3, "byte(val: integer) -> byte", "Converts an integer to a byte (`u8`), panicking when it is out of range.", s_byte, f_byte);
         auto [s_bb, f_bb] = builtin_snip("black_box", "fn black_box(val: T)");
         append_item("black_box", 3, "black_box(val: T) -> T", "Compiler optimization barrier for benchmarks inside bench \"...\" blocks.", s_bb, f_bb);
         auto [s_make, f_make] = builtin_snip("make", "fn make(type_or_args: T)");

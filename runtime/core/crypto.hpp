@@ -76,11 +76,11 @@ namespace detail {
     }
 } // namespace detail
 
-[[nodiscard]] inline auto hash_bytes(std::span<const std::byte> data) -> std::vector<std::byte> {
+[[nodiscard]] inline auto hash_bytes(std::span<const std::uint8_t> data) -> std::vector<std::uint8_t> {
 #ifdef __APPLE__
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data.data(), static_cast<CC_LONG>(data.size()), digest);
-    std::vector<std::byte> out(CC_SHA256_DIGEST_LENGTH);
+    std::vector<std::uint8_t> out(CC_SHA256_DIGEST_LENGTH);
     std::memcpy(out.data(), digest, CC_SHA256_DIGEST_LENGTH);
     return out;
 #else
@@ -110,35 +110,27 @@ namespace detail {
     }
     detail::transform(state, block);
 
-    std::vector<std::byte> out(32);
+    std::vector<std::uint8_t> out(32);
     for (std::size_t i = 0; i < 8; ++i) {
-        out[i * 4]     = static_cast<std::byte>((state[i] >> 24) & 0xFF);
-        out[i * 4 + 1] = static_cast<std::byte>((state[i] >> 16) & 0xFF);
-        out[i * 4 + 2] = static_cast<std::byte>((state[i] >> 8) & 0xFF);
-        out[i * 4 + 3] = static_cast<std::byte>(state[i] & 0xFF);
+        out[i * 4]     = static_cast<std::uint8_t>((state[i] >> 24) & 0xFF);
+        out[i * 4 + 1] = static_cast<std::uint8_t>((state[i] >> 16) & 0xFF);
+        out[i * 4 + 2] = static_cast<std::uint8_t>((state[i] >> 8) & 0xFF);
+        out[i * 4 + 3] = static_cast<std::uint8_t>(state[i] & 0xFF);
     }
     return out;
 #endif
 }
 
-[[nodiscard]] inline auto hash_bytes(std::span<const std::uint8_t> data) -> std::vector<std::byte> {
-    return hash_bytes(std::as_bytes(data));
-}
-
-[[nodiscard]] inline auto hash_bytes(std::string_view sv) -> std::vector<std::byte> {
-    return hash_bytes(std::span<const std::byte>(reinterpret_cast<const std::byte*>(sv.data()), sv.size()));
-}
-
-[[nodiscard]] inline auto hash_hex(std::span<const std::byte> data) -> std::string {
-    return cfire::detail::bytes_to_hex(hash_bytes(data));
+[[nodiscard]] inline auto hash_bytes(std::string_view sv) -> std::vector<std::uint8_t> {
+    return hash_bytes(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(sv.data()), sv.size()));
 }
 
 [[nodiscard]] inline auto hash_hex(std::span<const std::uint8_t> data) -> std::string {
-    return hash_hex(std::as_bytes(data));
+    return cfire::detail::bytes_to_hex(hash_bytes(data));
 }
 
 [[nodiscard]] inline auto hash_hex(std::string_view sv) -> std::string {
-    return hash_hex(std::span<const std::byte>(reinterpret_cast<const std::byte*>(sv.data()), sv.size()));
+    return hash_hex(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(sv.data()), sv.size()));
 }
 
 [[nodiscard]] inline auto hash_file_hex(const std::filesystem::path& file_path) -> std::expected<std::string, std::string> {
@@ -166,12 +158,12 @@ namespace detail {
     return cfire::detail::bytes_to_hex(std::span<const unsigned char>(digest, CC_SHA256_DIGEST_LENGTH));
 #else
     std::string all_data((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    return hash_hex(std::as_bytes(std::span<const char>(all_data.data(), all_data.size())));
+    return hash_hex(cfire::as_u8(std::span<const char>(all_data.data(), all_data.size())));
 #endif
 }
 
-[[nodiscard]] inline auto random_bytes(std::size_t n) -> std::vector<std::byte> {
-    std::vector<std::byte> buf(n);
+[[nodiscard]] inline auto random_bytes(std::size_t n) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> buf(n);
     if (n == 0) return buf;
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     ::arc4random_buf(buf.data(), n);
@@ -199,11 +191,11 @@ namespace detail {
 
 namespace cfire::hmac {
 
-[[nodiscard]] inline auto sha256_bytes(std::span<const std::byte> key, std::span<const std::byte> data) -> std::vector<std::byte> {
+[[nodiscard]] inline auto sha256_bytes(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::vector<std::uint8_t> {
 #ifdef __APPLE__
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CCHmac(kCCHmacAlgSHA256, key.data(), key.size(), data.data(), data.size(), digest);
-    std::vector<std::byte> out(CC_SHA256_DIGEST_LENGTH);
+    std::vector<std::uint8_t> out(CC_SHA256_DIGEST_LENGTH);
     std::memcpy(out.data(), digest, CC_SHA256_DIGEST_LENGTH);
     return out;
 #else
@@ -221,32 +213,32 @@ namespace cfire::hmac {
         opad[i] = k0[i] ^ 0x5c;
     }
 
-    std::vector<std::byte> inner_data;
+    std::vector<std::uint8_t> inner_data;
     inner_data.reserve(64 + data.size());
-    for (std::uint8_t b : ipad) inner_data.push_back(static_cast<std::byte>(b));
+    for (std::uint8_t b : ipad) inner_data.push_back(static_cast<std::uint8_t>(b));
     inner_data.insert(inner_data.end(), data.begin(), data.end());
     auto inner_hash = cfire::sha256::hash_bytes(inner_data);
 
-    std::vector<std::byte> outer_data;
+    std::vector<std::uint8_t> outer_data;
     outer_data.reserve(64 + inner_hash.size());
-    for (std::uint8_t b : opad) outer_data.push_back(static_cast<std::byte>(b));
+    for (std::uint8_t b : opad) outer_data.push_back(static_cast<std::uint8_t>(b));
     outer_data.insert(outer_data.end(), inner_hash.begin(), inner_hash.end());
     return cfire::sha256::hash_bytes(outer_data);
 #endif
 }
 
-[[nodiscard]] inline auto sha256_hex(std::span<const std::byte> key, std::span<const std::byte> data) -> std::string {
+[[nodiscard]] inline auto sha256_hex(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::string {
     return cfire::detail::bytes_to_hex(sha256_bytes(key, data));
 }
 
 [[nodiscard]] inline auto sha256_hex(std::string_view key, std::string_view data) -> std::string {
     return sha256_hex(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(key.data()), key.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size())
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(key.data()), key.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(data.data()), data.size())
     );
 }
 
-[[nodiscard]] inline auto equal(std::span<const std::byte> a, std::span<const std::byte> b) -> bool {
+[[nodiscard]] inline auto equal(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) -> bool {
     if (a.size() != b.size()) return false;
     unsigned char diff = 0;
     for (std::size_t i = 0; i < a.size(); ++i) {
@@ -270,36 +262,36 @@ namespace cfire::hmac {
 
 // RFC 5869 HMAC-based Extract-and-Expand Key Derivation Function (HKDF-SHA256)
 [[nodiscard]] inline auto hkdf_sha256(
-    std::span<const std::byte> ikm,
-    std::span<const std::byte> salt = {},
-    std::span<const std::byte> info = {},
+    std::span<const std::uint8_t> ikm,
+    std::span<const std::uint8_t> salt = {},
+    std::span<const std::uint8_t> info = {},
     std::size_t length = 32
-) -> std::vector<std::byte> {
+) -> std::vector<std::uint8_t> {
     if (length == 0) return {};
     constexpr std::size_t kHashLen = 32;
     const std::size_t max_len = 255 * kHashLen;
     if (length > max_len) length = max_len;
 
-    std::vector<std::byte> zero_salt;
-    std::span<const std::byte> actual_salt = salt;
+    std::vector<std::uint8_t> zero_salt;
+    std::span<const std::uint8_t> actual_salt = salt;
     if (actual_salt.empty()) {
-        zero_salt.assign(kHashLen, std::byte{0});
+        zero_salt.assign(kHashLen, std::uint8_t{0});
         actual_salt = zero_salt;
     }
 
     auto prk = sha256_bytes(actual_salt, ikm);
     std::size_t n_blocks = (length + kHashLen - 1) / kHashLen;
 
-    std::vector<std::byte> okm;
+    std::vector<std::uint8_t> okm;
     okm.reserve(n_blocks * kHashLen);
-    std::vector<std::byte> prev_t;
+    std::vector<std::uint8_t> prev_t;
 
     for (std::size_t i = 1; i <= n_blocks; ++i) {
-        std::vector<std::byte> msg;
+        std::vector<std::uint8_t> msg;
         msg.reserve(prev_t.size() + info.size() + 1);
         msg.insert(msg.end(), prev_t.begin(), prev_t.end());
         msg.insert(msg.end(), info.begin(), info.end());
-        msg.push_back(static_cast<std::byte>(i & 0xFF));
+        msg.push_back(static_cast<std::uint8_t>(i & 0xFF));
 
         prev_t = sha256_bytes(prk, msg);
         okm.insert(okm.end(), prev_t.begin(), prev_t.end());
@@ -313,11 +305,11 @@ namespace cfire::hmac {
     std::string_view salt = "",
     std::string_view info = "",
     std::size_t length = 32
-) -> std::vector<std::byte> {
+) -> std::vector<std::uint8_t> {
     return hkdf_sha256(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(ikm.data()), ikm.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(salt.data()), salt.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(info.data()), info.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(ikm.data()), ikm.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(salt.data()), salt.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(info.data()), info.size()),
         length
     );
 }
@@ -331,38 +323,29 @@ namespace cfire::hmac {
     return cfire::detail::bytes_to_hex(hkdf_sha256(ikm, salt, info, length));
 }
 
-[[nodiscard]] inline auto sha256_bytes(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::vector<std::byte> {
-    return sha256_bytes(std::as_bytes(key), std::as_bytes(data));
-}
 
-[[nodiscard]] inline auto sha256_hex(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) -> std::string {
-    return sha256_hex(std::as_bytes(key), std::as_bytes(data));
-}
 
-[[nodiscard]] inline auto equal(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) -> bool {
-    return equal(std::as_bytes(a), std::as_bytes(b));
-}
 
 // RFC 8018 PBKDF2-HMAC-SHA256 (`CF-006`)
 [[nodiscard]] inline auto pbkdf2_sha256(
-    std::span<const std::byte> password,
-    std::span<const std::byte> salt,
+    std::span<const std::uint8_t> password,
+    std::span<const std::uint8_t> salt,
     std::uint32_t iterations = 600000,
     std::size_t key_len = 32
-) -> std::vector<std::byte> {
+) -> std::vector<std::uint8_t> {
     if (key_len == 0) return {};
     if (iterations == 0) iterations = 1;
     constexpr std::size_t kHashLen = 32;
     std::size_t blocks = (key_len + kHashLen - 1) / kHashLen;
-    std::vector<std::byte> dk;
+    std::vector<std::uint8_t> dk;
     dk.reserve(blocks * kHashLen);
 
     for (std::size_t b = 1; b <= blocks; ++b) {
-        std::vector<std::byte> salt_block(salt.begin(), salt.end());
-        salt_block.push_back(static_cast<std::byte>((b >> 24) & 0xFF));
-        salt_block.push_back(static_cast<std::byte>((b >> 16) & 0xFF));
-        salt_block.push_back(static_cast<std::byte>((b >> 8) & 0xFF));
-        salt_block.push_back(static_cast<std::byte>(b & 0xFF));
+        std::vector<std::uint8_t> salt_block(salt.begin(), salt.end());
+        salt_block.push_back(static_cast<std::uint8_t>((b >> 24) & 0xFF));
+        salt_block.push_back(static_cast<std::uint8_t>((b >> 16) & 0xFF));
+        salt_block.push_back(static_cast<std::uint8_t>((b >> 8) & 0xFF));
+        salt_block.push_back(static_cast<std::uint8_t>(b & 0xFF));
 
         auto u = sha256_bytes(password, salt_block);
         auto t = u;
@@ -383,29 +366,21 @@ namespace cfire::hmac {
     std::string_view salt,
     std::uint32_t iterations = 600000,
     std::size_t key_len = 32
-) -> std::vector<std::byte> {
+) -> std::vector<std::uint8_t> {
     return pbkdf2_sha256(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(password.data()), password.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(salt.data()), salt.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(password.data()), password.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(salt.data()), salt.size()),
         iterations,
         key_len
     );
 }
 
-[[nodiscard]] inline auto pbkdf2_sha256(
-    std::span<const std::uint8_t> password,
-    std::span<const std::uint8_t> salt,
-    std::uint32_t iterations = 600000,
-    std::size_t key_len = 32
-) -> std::vector<std::byte> {
-    return pbkdf2_sha256(std::as_bytes(password), std::as_bytes(salt), iterations, key_len);
-}
 
 } // namespace cfire::hmac
 
 // Backward compatibility alias for blake3
 namespace cfire::blake3 {
-[[nodiscard]] inline auto hash_hex(std::span<const std::byte> data) -> std::string {
+[[nodiscard]] inline auto hash_hex(std::span<const std::uint8_t> data) -> std::string {
     return cfire::sha256::hash_hex(data);
 }
 [[nodiscard]] inline auto hash_hex(std::string_view sv) -> std::string {
@@ -417,8 +392,8 @@ namespace cfire::blake3 {
 namespace cfire::aes {
 
 struct GcmResult {
-    std::vector<std::byte> ciphertext;
-    std::vector<std::byte> tag;
+    std::vector<std::uint8_t> ciphertext;
+    std::vector<std::uint8_t> tag;
 };
 
 namespace detail {
@@ -605,10 +580,10 @@ inline void compute_ghash_tag(
 } // namespace detail
 
 [[nodiscard]] inline auto encrypt_ctr(
-    std::span<const std::byte> key,
-    std::span<const std::byte> iv,
-    std::span<const std::byte> plaintext
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> iv,
+    std::span<const std::uint8_t> plaintext
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     if (key.size() != 32) {
         return cfire::make_error("AES-256 requires a 32-byte (256-bit) key");
     }
@@ -621,7 +596,7 @@ inline void compute_ghash_tag(
     std::uint8_t ctr[16];
     std::memcpy(ctr, iv.data(), 16);
 
-    std::vector<std::byte> out(plaintext.size());
+    std::vector<std::uint8_t> out(plaintext.size());
     const auto* pt = reinterpret_cast<const std::uint8_t*>(plaintext.data());
     auto* ct = reinterpret_cast<std::uint8_t*>(out.data());
 
@@ -638,10 +613,10 @@ inline void compute_ghash_tag(
 }
 
 [[nodiscard]] inline auto decrypt_ctr(
-    std::span<const std::byte> key,
-    std::span<const std::byte> iv,
-    std::span<const std::byte> ciphertext
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> iv,
+    std::span<const std::uint8_t> ciphertext
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return encrypt_ctr(key, iv, ciphertext);
 }
 
@@ -649,31 +624,31 @@ inline void compute_ghash_tag(
     std::string_view key,
     std::string_view iv,
     std::string_view plaintext
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return encrypt_ctr(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(key.data()), key.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(iv.data()), iv.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(plaintext.data()), plaintext.size())
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(key.data()), key.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(iv.data()), iv.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(plaintext.data()), plaintext.size())
     );
 }
 
 [[nodiscard]] inline auto decrypt_ctr(
     std::string_view key,
     std::string_view iv,
-    std::span<const std::byte> ciphertext
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> ciphertext
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return decrypt_ctr(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(key.data()), key.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(iv.data()), iv.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(key.data()), key.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(iv.data()), iv.size()),
         ciphertext
     );
 }
 
 [[nodiscard]] inline auto encrypt_gcm(
-    std::span<const std::byte> key,
-    std::span<const std::byte> nonce,
-    std::span<const std::byte> plaintext,
-    std::span<const std::byte> aad = {}
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> nonce,
+    std::span<const std::uint8_t> plaintext,
+    std::span<const std::uint8_t> aad = {}
 ) -> std::expected<GcmResult, cfire::Error> {
     if (key.size() != 32) {
         return cfire::make_error("AES-256 requires a 32-byte (256-bit) key");
@@ -724,12 +699,12 @@ inline void compute_ghash_tag(
 }
 
 [[nodiscard]] inline auto decrypt_gcm(
-    std::span<const std::byte> key,
-    std::span<const std::byte> nonce,
-    std::span<const std::byte> ciphertext,
-    std::span<const std::byte> tag,
-    std::span<const std::byte> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> nonce,
+    std::span<const std::uint8_t> ciphertext,
+    std::span<const std::uint8_t> tag,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     if (key.size() != 32) {
         return cfire::make_error("AES-256 requires a 32-byte (256-bit) key");
     }
@@ -772,7 +747,7 @@ inline void compute_ghash_tag(
     std::memcpy(ctr, j0, 16);
     detail::inc_counter(ctr);
 
-    std::vector<std::byte> plaintext(ciphertext.size());
+    std::vector<std::uint8_t> plaintext(ciphertext.size());
     const auto* ct = reinterpret_cast<const std::uint8_t*>(ciphertext.data());
     auto* pt = reinterpret_cast<std::uint8_t*>(plaintext.data());
 
@@ -796,34 +771,34 @@ inline void compute_ghash_tag(
     std::string_view aad = ""
 ) -> std::expected<GcmResult, cfire::Error> {
     return encrypt_gcm(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(key.data()), key.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(nonce.data()), nonce.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(plaintext.data()), plaintext.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(aad.data()), aad.size())
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(key.data()), key.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(nonce.data()), nonce.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(plaintext.data()), plaintext.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(aad.data()), aad.size())
     );
 }
 
 [[nodiscard]] inline auto decrypt_gcm(
     std::string_view key,
     std::string_view nonce,
-    std::span<const std::byte> ciphertext,
-    std::span<const std::byte> tag,
+    std::span<const std::uint8_t> ciphertext,
+    std::span<const std::uint8_t> tag,
     std::string_view aad = ""
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return decrypt_gcm(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(key.data()), key.size()),
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(nonce.data()), nonce.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(key.data()), key.size()),
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(nonce.data()), nonce.size()),
         ciphertext,
         tag,
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(aad.data()), aad.size())
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(aad.data()), aad.size())
     );
 }
 
 [[nodiscard]] inline auto decrypt_gcm_str(
     std::string_view key,
     std::string_view nonce,
-    std::span<const std::byte> ciphertext,
-    std::span<const std::byte> tag,
+    std::span<const std::uint8_t> ciphertext,
+    std::span<const std::uint8_t> tag,
     std::string_view aad = ""
 ) -> std::expected<std::string, cfire::Error> {
     auto res = decrypt_gcm(key, nonce, ciphertext, tag, aad);
@@ -831,48 +806,29 @@ inline void compute_ghash_tag(
     return std::string(reinterpret_cast<const char*>(res->data()), res->size());
 }
 
-[[nodiscard]] inline auto encrypt_gcm(
-    std::span<const std::uint8_t> key,
-    std::span<const std::uint8_t> nonce,
-    std::span<const std::uint8_t> plaintext,
-    std::span<const std::uint8_t> aad = {}
-) -> std::expected<GcmResult, cfire::Error> {
-    return encrypt_gcm(std::as_bytes(key), std::as_bytes(nonce), std::as_bytes(plaintext), std::as_bytes(aad));
-}
-
 [[nodiscard]] inline auto decrypt_gcm(
     std::span<const std::uint8_t> key,
     std::span<const std::uint8_t> nonce,
-    std::span<const std::uint8_t> ciphertext,
-    std::span<const std::uint8_t> tag,
-    std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return decrypt_gcm(std::as_bytes(key), std::as_bytes(nonce), std::as_bytes(ciphertext), std::as_bytes(tag), std::as_bytes(aad));
-}
-
-[[nodiscard]] inline auto decrypt_gcm(
-    std::span<const std::byte> key,
-    std::span<const std::byte> nonce,
     const GcmResult& result,
-    std::span<const std::byte> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return decrypt_gcm(key, nonce, result.ciphertext, result.tag, aad);
 }
 
 // High-level OS CSPRNG Key Generation & Combined Nonce+Ciphertext+Tag AES-256-GCM (`CF-006`)
-[[nodiscard]] inline auto generate_key() -> std::vector<std::byte> {
+[[nodiscard]] inline auto generate_key() -> std::vector<std::uint8_t> {
     return cfire::sha256::random_bytes(32);
 }
 
 [[nodiscard]] inline auto encrypt(
-    std::span<const std::byte> key,
-    std::span<const std::byte> plaintext,
-    std::span<const std::byte> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> plaintext,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     auto nonce = cfire::sha256::random_bytes(12);
     auto gcm = encrypt_gcm(key, nonce, plaintext, aad);
     if (!gcm) return std::unexpected(gcm.error());
-    std::vector<std::byte> packet;
+    std::vector<std::uint8_t> packet;
     packet.reserve(12 + gcm->ciphertext.size() + 16);
     packet.insert(packet.end(), nonce.begin(), nonce.end());
     packet.insert(packet.end(), gcm->ciphertext.begin(), gcm->ciphertext.end());
@@ -882,25 +838,17 @@ inline void compute_ghash_tag(
 
 [[nodiscard]] inline auto encrypt(
     std::span<const std::uint8_t> key,
-    std::span<const std::uint8_t> plaintext,
-    std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return encrypt(std::as_bytes(key), std::as_bytes(plaintext), std::as_bytes(aad));
-}
-
-[[nodiscard]] inline auto encrypt(
-    std::span<const std::byte> key,
     std::string_view plaintext,
     std::string_view aad = ""
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     return encrypt(key, cfire::to_bytes(plaintext), cfire::to_bytes(aad));
 }
 
 [[nodiscard]] inline auto decrypt(
-    std::span<const std::byte> key,
-    std::span<const std::byte> packet,
-    std::span<const std::byte> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> packet,
+    std::span<const std::uint8_t> aad = {}
+) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     if (packet.size() < 28) {
         return cfire::make_error("AES-GCM packet too short (expected >= 28 bytes for 12B nonce + 16B tag)");
     }
@@ -910,13 +858,6 @@ inline void compute_ghash_tag(
     return decrypt_gcm(key, nonce, ct, tag, aad);
 }
 
-[[nodiscard]] inline auto decrypt(
-    std::span<const std::uint8_t> key,
-    std::span<const std::uint8_t> packet,
-    std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::byte>, cfire::Error> {
-    return decrypt(std::as_bytes(key), std::as_bytes(packet), std::as_bytes(aad));
-}
 
 } // namespace cfire::aes
 

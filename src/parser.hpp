@@ -1625,6 +1625,51 @@ private:
         return arms;
     }
 
+    // Q40 (CF-183): `if c { a } else { b }` (and `else if`) as an expression. `else` is required.
+    [[nodiscard]] auto parse_if_expr() -> std::expected<ExprPtr, SourceError> {
+        Token start = advance(); // 'if'
+        ExprPtr cond = nullptr;
+        {
+            StructLitScope scope(*this, false);
+            auto c = parse_expr();
+            if (!c) return std::unexpected(c.error());
+            cond = std::move(*c);
+        }
+        auto then_body = parse_block();
+        if (!then_body) return std::unexpected(then_body.error());
+        if (cur().kind != TokenKind::KwElse) {
+            return std::unexpected(SourceError{file_, start.line, start.col, "an 'if' used as a value needs an 'else' branch", "cfire/SYNTAX"});
+        }
+        advance(); // 'else'
+        std::vector<StmtPtr> else_body;
+        if (cur().kind == TokenKind::KwIf) {
+            Token nested = cur();
+            auto e = parse_if_expr();
+            if (!e) return std::unexpected(e.error());
+            else_body.push_back(make_stmt(ExprStmt{std::move(*e), nested.line}, nested.line));
+        } else {
+            auto b = parse_block();
+            if (!b) return std::unexpected(b.error());
+            else_body = std::move(*b);
+        }
+        MatchArm yes;
+        yes.literal_val = "true";
+        yes.line = start.line;
+        yes.body = std::move(*then_body);
+        MatchArm no;
+        no.variant_name = "_";
+        no.line = start.line;
+        no.body = std::move(else_body);
+        yes.patterns.push_back(yes.to_pattern());
+        no.patterns.push_back(no.to_pattern());
+        std::vector<MatchArm> arms;
+        arms.push_back(std::move(yes));
+        arms.push_back(std::move(no));
+        MatchExpr me{std::move(cond), false, std::move(arms), start.line, start.col};
+        me.is_if = true;
+        return make_expr(std::move(me), start.line, start.col);
+    }
+
     [[nodiscard]] auto parse_match_stmt() -> std::expected<StmtPtr, SourceError> {
         Token start = advance(); // 'match'
         bool is_move = false;
@@ -2045,6 +2090,9 @@ private:
             case TokenKind::KwNone: {
                 advance();
                 return make_expr(LiteralExpr{tok.kind, tok.lexeme}, tok.line, tok.col);
+            }
+            case TokenKind::KwIf: {
+                return parse_if_expr();
             }
             case TokenKind::KwMatch: {
                 Token start = advance(); // 'match'

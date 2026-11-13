@@ -136,7 +136,7 @@ template <typename T>
 
 [[nodiscard]] inline auto prompt(std::string_view message = "") -> std::optional<std::string> {
     if (!message.empty()) {
-        (void)cfire::detail::fd_write_all(2, std::as_bytes(std::span(message.data(), message.size())));
+        (void)cfire::detail::fd_write_all(2, cfire::as_u8(std::span(message.data(), message.size())));
     }
     return cfire::detail::fd_read_line(0);
 }

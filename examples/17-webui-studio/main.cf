@@ -144,9 +144,9 @@ test "live WKWebView JS bridge executes window.backend and window.runtime" {
 
 fuzz "compute_track_mix invariants hold across arbitrary fader inputs" |ch: i32, gain: f64, muted: bool| {
     res := compute_track_mix(TrackMixReq{
-            channel: ch,
-            gain_db: gain,
-            muted: muted,
+        channel: ch,
+        gain_db: gain,
+        muted: muted,
     })
     assert(res.channel == ch)
     if muted {

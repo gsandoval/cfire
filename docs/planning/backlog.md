@@ -635,7 +635,7 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Also found**: free `len(s)` / `cap(s)` passed Sema and failed in clang (they are reserved names, not functions); now `cfire/UNDECLARED-IDENT` with a `s.len()` hint.
 - **Implementation scope**: `Q36` lowering and implicit copies; `Q37` lexer + byte type; fix the `&str`-parameter check (finding 2); turn the clang leaks in finding 4 into cfire diagnostics; conformance tests built from `day1_01`/`day1_02` patterns.
 
-#### `CF-183` — AoC 2024 Corpus Findings (2026-11-12) `[TODO]`
+#### `CF-183` — AoC 2024 Corpus Findings (2026-11-12) `[DONE]`
 - **Source**: all 25 days of Advent of Code 2024 (49 parts) written in plain cfire under `~/Programming/adventofcode/2024/`, with 51 sample checks passing. The full log, with snippets, is `2024/FRICTION.md`. Decisions `Q39`–`Q46` are below.
 - **ICEs (Sema accepts, clang rejects)**, highest impact:
   1. `s[i]` is `byte` in Sema but lowers to `char`, while `byte` lowers to `std::byte`. So returning it from `-> byte`, using it as a `map[byte]` key, or passing it to a `byte` parameter reaches clang. Comparisons with `'L'` work. Workaround everywhere: `byte(s[i])`.
@@ -658,7 +658,30 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
   - `Q45` *Quiet single-file runs*: the Q35 `note:` is skipped when every sibling is a standalone `package main` with its own `fn main` (a folder of scripts or puzzle solutions); it stays otherwise.
   - `Q46` *Regex module functions*: add `regex.find(pat, text) -> str?!` and `regex.find_all(pat, text) -> []str!`, matching `regex.is_match`, so the GUIDE table is true. `Regex` method results get types.
 - **No decision needed (plain fixes)**: `PriorityQueue.pop()` lowering; `line.bytes()` lowering; the `1 << 50` literal shift uses the 64-bit type Sema already assumes; the three formatter bugs.
+- **Delivered (2026-11-12)**: all of `Q39`–`Q46` and the plain fixes; see `active.md` for the gate results. `Q41`/`Q42` turned out to be supported already. *Also found*: mixed-sign integer comparisons compared bit patterns (`-1 < xs.len()` was `false`), now value-correct via `cfire::cmp_*`; `cfire fmt` silently ignored unknown flags such as `--diff` and rewrote files, now an error.
 - **Worked well**: CF-182 views (slices straight into `parse`, `design[i..j] == t`); `'#'` byte literals; `or continue`; `if x := opt { }`; `m[k].push(v)` and `m[k] += n` on maps; `match` on ints and strings; `rem_euclid`; `regex.compile(...).find_all`.
+
+#### `CF-184` — Windows Test Parity (found on the Windows VM, 2026-11-12) `[TODO]`
+- **Problem & Evidence** (MSYS2 CLANG64, clang 23.1.5; all predate CF-183):
+  - The C++ unit runner does not build on Windows: `tests/unit/test_stdlib_tooling_fuzz_bench.hpp` uses `::socketpair`, `MSG_DONTWAIT` and POSIX `send`/`setsockopt` signatures, `test_stdlib_webui_ext.hpp` uses `::setenv`, and `tests/test_main.cpp` uses `SIGPIPE`. The CI `windows` job's "Build & Run C++ Unit Suites" step cannot pass as written.
+  - Five `concurrency/*` conformance files use `// flags: --sanitize=thread`, which clang's `x86_64-w64-windows-gnu` target rejects; the runner should skip TSan files on Windows rather than fail them.
+  - `security/005_sql_constant_statements_ok.cf` fails with a PCH mismatch: the prelude PCH is built without `-static` (`__STATIC__` disabled) but the sqlite program builds with it.
+  - Six C++ warnings in Windows-only code: `src/mcp.hpp:189` unused `timeout_seconds`, and clang 23's `-Wunnecessary-virtual-specifier` on `~Wv2Handler` in `runtime/core/webui/windows_webview2.hpp:560`.
+  - Linux without raylib: `make test` fails because the `CFIRE_RAYLIB_FALLBACK` stub (`runtime/core/ios_raylib.hpp`) lacks `GetGlyphInfo`, so `pkg/raygui_ext` reaches clang.
+- **Decisions (2026-11-12)**:
+  - `Q47` *TSan files on Windows*: conformance files with `// flags: --sanitize=thread` run on Windows without the sanitizer, still checking their output; the runner notes that TSan was skipped.
+  - `Q48` *VM tooling in the repo*: the UTM helpers and the Linux/Windows gate scripts move to `scripts/vm/` behind optional `make test-vm-linux` / `make test-vm-windows` targets, with VM names and the host address as variables, and `docs/planning/README.md` lists them as a pre-release step.
+- **Plan**:
+  1. Unit runner builds on Windows: the raw `::socketpair` tests use the portable `cfire::net::socketpair()`, a harness `set_env()` wraps `setenv`/`_putenv_s`, and the `SIGPIPE` lines are guarded.
+  2. Run the unit suite in the Windows VM and fix or file each runtime failure (the unknown part).
+  3. `Q47` in `scripts/run_conformance.py`.
+  4. Reproduce `security/005` and make the PCH flags match the `-static` link (or keep `-static` out of the compile step).
+  5. Remove the two Windows-only warnings.
+  6. Add the stub functions the suite needs, and check that `pkg/raygui_ext` compiles against the stub.
+  7. `Q48`.
+- **Not changed**: with `$HOME` unset the package cache is per-process (CF-153); at most `cfire setup` warns about it.
+- **Tests**: the CI `windows` job's steps pass in the Windows VM with 0 warnings; Linux `make test` passes with and without raylib; the macOS gate as usual.
+- **Acceptance Criteria**: the CI `windows` job builds and runs the unit suite, conformance passes on Windows (TSan files run unsanitized), and the Windows build has 0 warnings.
 
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:

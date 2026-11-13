@@ -511,9 +511,9 @@ namespace detail {
     for (std::size_t i = 0; i < s.size(); ++n) (void)detail::decode_rune(s, i);
     return n;
 }
-inline auto pop(std::string& s) -> std::optional<std::byte> {
+inline auto pop(std::string& s) -> std::optional<std::uint8_t> {
     if (s.empty()) return std::nullopt;
-    auto b = static_cast<std::byte>(s.back());
+    auto b = static_cast<std::uint8_t>(s.back());
     s.pop_back();
     return b;
 }
@@ -591,6 +591,13 @@ inline auto pop(std::vector<T, A>& v) -> std::optional<T> {
     T x = std::move(v.back());
     v.pop_back();
     return x;
+}
+// A stdlib container with its own `pop() -> T?` (`collections.PriorityQueue`, `MinQueue`), reached when Sema
+// could not type the receiver (CF-183).
+template <typename C>
+    requires requires(C& c) { c.pop(); }
+inline auto pop(C& c) -> decltype(c.pop()) {
+    return c.pop();
 }
 template <typename T, typename A, detail::Int I, typename U>
 inline void insert(std::vector<T, A>& v, I i, U&& x, const std::source_location& loc = std::source_location::current()) {

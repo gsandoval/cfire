@@ -715,14 +715,14 @@ inline void step_mixer(std::int32_t frames = 256) noexcept {
 // Pure C++23 RIFF/WAV Codec (8-bit, 16-bit, 24-bit PCM & 32-bit IEEE Float)
 // ============================================================================
 
-[[nodiscard]] inline auto encode_wav(const Wave& wave) -> std::vector<std::byte> {
+[[nodiscard]] inline auto encode_wav(const Wave& wave) -> std::vector<std::uint8_t> {
     std::int32_t ch = std::clamp(wave.channels, 1, 2);
     std::int32_t sr = std::max(8000, wave.sample_rate);
     std::uint32_t num_samples = static_cast<std::uint32_t>(wave.samples.size());
     std::uint32_t data_bytes = num_samples * sizeof(std::int16_t);
     std::uint32_t riff_size = 36u + data_bytes;
 
-    std::vector<std::byte> out(44u + data_bytes);
+    std::vector<std::uint8_t> out(44u + data_bytes);
     auto* p = reinterpret_cast<std::uint8_t*>(out.data());
 
     auto write_u16 = [&](std::size_t off, std::uint16_t v) {
@@ -760,7 +760,7 @@ inline void step_mixer(std::int32_t frames = 256) noexcept {
     return out;
 }
 
-[[nodiscard]] inline auto decode_wav(std::span<const std::byte> data)
+[[nodiscard]] inline auto decode_wav(std::span<const std::uint8_t> data)
     -> std::expected<Wave, cfire::Error>
 {
     if (data.size() < 44) {

@@ -1,0 +1,31 @@
+// expect: stdout
+// | 98 7 1 2 195 true 6
+package main
+// Q39 (CF-183): `byte` is `u8`. `s[i]`, `'L'` and `byte` are one numeric type: a string element can be returned
+// as `byte`, used as a `map[byte]` key, passed to a `u8` parameter, and `c - '0'` is a digit's value. Iterating
+// a `str` yields bytes (195 is the first byte of "é", whatever the platform's `char` signedness).
+fn at(grid: []str, r: i64, c: i64) -> byte {
+    return grid[r][c]
+}
+fn bump(x: u8) -> u8 {
+    return x + 1
+}
+fn main() {
+    line := "7é"
+    digit := line[0] - '0'
+    mut counts: map[byte]i64 = {}
+    counts[line[0]] += 1
+    mut high: byte = 0
+    for b in line {
+        if b > high {
+            high = b
+        }
+    }
+    raw: []byte = [1, 2, 3]
+    us: []u8 = raw
+    mut total: i64 = 0
+    for b in us {
+        total += i64(b)
+    }
+    println("{} {} {} {} {} {} {}", at(["ab"], 0, 1), digit, counts['7'], bump(1), high, high >= 128, total)
+}

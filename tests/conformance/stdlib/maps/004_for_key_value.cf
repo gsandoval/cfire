@@ -1,0 +1,17 @@
+// expect: stdout
+// | a=1 b=2 total=3
+package main
+// Q42 (CF-183): `for k, v in m` visits each entry once.
+fn main() {
+    mut m: map[str]i64 = {}
+    m["b"] = 2
+    m["a"] = 1
+    mut keys: []str = []
+    mut total: i64 = 0
+    for k, v in m {
+        keys.push("{k}={v}")
+        total += v
+    }
+    keys.sort()
+    println("{} {} total={}", keys[0], keys[1], total)
+}

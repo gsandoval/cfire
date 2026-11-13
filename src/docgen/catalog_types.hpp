@@ -62,7 +62,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:collections") {
         m.header_path = "core/collections.hpp";
         m.core_key = "collections";
-        m.types = {"Vec", "Map", "Set", "Deque", "Heap", "PriorityQueue"};
+        m.types = {"Vec", "Map", "Set", "Deque", "Heap", "PriorityQueue", "MinQueue"};
     } else if (m.import_path == "core:crypto/aes") {
         m.header_path = "core/crypto.hpp";
         m.core_key = "crypto";
@@ -148,7 +148,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:regex") {
         m.header_path = "core/regex.hpp";
         m.core_key = "regex";
-        m.types = {"Pattern", "Match"};
+        m.types = {"Regex"};
     } else if (m.import_path == "core:sync") {
         m.header_path = "core/sync.hpp";
         m.core_key = "sync";
@@ -291,11 +291,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
-            "core:collections", "collections", "Generic Containers (Set, PriorityQueue, Deque)", "(header-only)",
+            "core:collections", "collections", "Generic Containers (Set, PriorityQueue, MinQueue, Deque)", "(header-only)",
             "Standard generic containers backed by STL unordered_set, priority_queue, and deque.",
             {
                 {"Set", "type Set[T] struct", "cfire::collections::Set<T>", "Generic hash set container.", "mut s := collections.Set[str]{}"},
-                {"PriorityQueue", "type PriorityQueue[T] struct", "cfire::collections::PriorityQueue<T>", "Generic max-heap priority queue.", "mut pq := collections.PriorityQueue[i32]{}"},
+                {"PriorityQueue", "type PriorityQueue[T] struct", "cfire::collections::PriorityQueue<T>", "Max-first priority queue: `push(v)`, `pop() -> T?`, `peek() -> T?`, `len()`, `empty()`.", "mut pq := collections.PriorityQueue[i32]{}"},
+                {"MinQueue", "type MinQueue[T] struct", "cfire::collections::MinQueue<T>", "Min-first priority queue (smallest element pops first), with the same methods as `PriorityQueue[T]`. Tuples order element by element, so `MinQueue[(i64, i64)]` pops the lowest cost first.", "mut open := collections.MinQueue[i64]{}"},
                 {"Deque", "type Deque[T] struct", "cfire::collections::Deque<T>", "Generic double-ended queue.", "mut dq := collections.Deque[i32]{}"}
             }
         },
@@ -376,7 +377,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "core:fs", "fs", "Filesystem & Zero-Copy Byte I/O", "(header-only)",
-            "Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::byte>` with strict `_bytes` / `_text` symmetry.",
+            "Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::uint8_t>` with strict `_bytes` / `_text` symmetry.",
             {
                 {"read_bytes", "fn read_bytes(path: str) -> []byte!", "cfire::fs::read_bytes(path)", "Reads an entire binary file into a byte buffer.", "raw := try fs.read_bytes(\"input.bin\")"},
                 {"write_bytes", "fn write_bytes(path: str, data: []byte) -> void!", "cfire::fs::write_bytes(path, data)", "Writes a byte slice to disk (truncating any existing file).", "try fs.write_bytes(\"out.bin\", raw)"},
@@ -613,7 +614,14 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {
                 {"compile", "fn compile(pattern: str) -> Regex!", "cfire::regex::compile(pattern)", "Compiles an ECMAScript regex pattern into a reusable Regex object.", "re := try regex.compile(\"\\\\d+\")"},
                 {"is_match", "fn is_match(pattern: str, text: str) -> bool!", "cfire::regex::is_match(pattern, text)", "Tests whether a regex pattern matches text.", "ok := try regex.is_match(\"^[a-z]+$\", s)"},
-                {"replace_all", "fn replace_all(pattern: str, text: str, repl: str) -> str!", "cfire::regex::replace_all(pattern, text, repl)", "Replaces all occurrences matching pattern with repl.", "res := try regex.replace_all(\"\\s+\", s, \" \")"}
+{"find", "fn find(pattern: str, text: str) -> str?!", "cfire::regex::find(pattern, text)", "Returns the first match of `pattern` in `text`, or `none`; an invalid pattern is an error.", "word := try regex.find(\"[a-z]+\", s) or { return }"},
+                {"find_all", "fn find_all(pattern: str, text: str) -> []str!", "cfire::regex::find_all(pattern, text)", "Returns every non-overlapping match of `pattern` in `text`.", "nums := try regex.find_all(\"[0-9]+\", line)"},
+                                {"replace_all", "fn replace_all(pattern: str, text: str, repl: str) -> str!", "cfire::regex::replace_all(pattern, text, repl)", "Replaces all occurrences matching pattern with repl.", "res := try regex.replace_all(\"\\s+\", s, \" \")"},
+                {"Regex.is_match", "fn (r: Regex) is_match(text: str) -> bool", "r.is_match(text)", "Tests whether the compiled pattern matches anywhere in `text`.", "if re.is_match(line) { ... }"},
+                {"Regex.find", "fn (r: Regex) find(text: str) -> str?", "r.find(text)", "Returns the first match in `text`, or `none`.", "m := re.find(line) or { continue }"},
+                {"Regex.find_all", "fn (r: Regex) find_all(text: str) -> []str", "r.find_all(text)", "Returns every non-overlapping match in `text`.", "nums := re.find_all(line)"},
+                {"Regex.replace_all", "fn (r: Regex) replace_all(text: str, repl: str) -> str", "r.replace_all(text, repl)", "Replaces every match in `text` with `repl` (`$1` refers to a group).", "clean := re.replace_all(s, \" \")"},
+                {"Regex.pattern", "fn (r: Regex) pattern() -> str", "r.pattern()", "Returns the source pattern.", "println(re.pattern())"}
             }
         },
         {

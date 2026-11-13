@@ -1311,7 +1311,6 @@ inline auto apply_fixits(
     replace_all(s, "std::uint16_t", "u16");
     replace_all(s, "std::uint8_t", "u8");
     replace_all(s, "std::size_t", "usize");
-    replace_all(s, "std::byte", "byte");
     replace_all(s, "cfire::fs::File", "fs.File");
     replace_all(s, "cfire::io::File", "fs.File");
     replace_all(s, "cfire::net::TcpConn", "net.TcpConn");

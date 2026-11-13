@@ -355,7 +355,12 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln("}");
                     loop_index_to_col_.erase(st.index_var);
                 } else {
-                    writeln(std::format("for (const auto& {} : {}) {{", st.item_var, emit_expr(st.iter_expr)));
+                    // Q39 (CF-183): `iter_items` yields a `str`'s elements as `byte`s and keeps a temporary alive. An
+                    // array literal lowers to a braced list, which range-for iterates directly.
+                    const bool braced = std::holds_alternative<ArrayLitExpr>(st.iter_expr->node);
+                    const std::string range = emit_expr(st.iter_expr);
+                    writeln(braced ? std::format("for (const auto& {} : {}) {{", st.item_var, range)
+                                   : std::format("for (const auto& {} : cfire::detail::iter_items({})) {{", st.item_var, range));
                     ++indent_;
                     for (const auto& b : st.body) emit_stmt(b, in_main);
                     --indent_;

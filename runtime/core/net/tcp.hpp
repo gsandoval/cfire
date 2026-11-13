@@ -282,7 +282,7 @@ public:
         detail::set_sock_timeout_ms(fd_, ms);
     }
 
-    [[nodiscard]] auto write_bytes(std::span<const std::byte> data) -> std::expected<std::size_t, cfire::Error> {
+    [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
         if (fd_ < 0) {
             return cfire::make_error("socket is closed");
         }
@@ -315,15 +315,12 @@ public:
         return total;
     }
 
-    [[nodiscard]] auto write_bytes(std::span<const std::uint8_t> data) -> std::expected<std::size_t, cfire::Error> {
-        return write_bytes(std::as_bytes(data));
-    }
 
     [[nodiscard]] auto write_text(std::string_view payload) -> std::expected<std::size_t, cfire::Error> {
-        return write_bytes(std::as_bytes(std::span(payload.data(), payload.size())));
+        return write_bytes(cfire::as_u8(std::span(payload.data(), payload.size())));
     }
 
-    [[nodiscard]] auto read_into(std::span<std::byte> buf) -> std::expected<std::size_t, cfire::Error> {
+    [[nodiscard]] auto read_into(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("socket is closed");
         if (buf.empty()) return std::size_t{0};
         if (tls_ && tls_->ssl && tls_->read_fn) {
@@ -342,25 +339,22 @@ public:
         }
     }
 
-    [[nodiscard]] auto read_into(std::span<std::uint8_t> buf) -> std::expected<std::size_t, cfire::Error> {
-        return read_into(std::as_writable_bytes(buf));
-    }
 
-    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    [[nodiscard]] auto read_bytes(std::size_t max_bytes = 4096) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("socket is closed");
-        std::vector<std::byte> buf(max_bytes);
-        auto n = read_into(std::span<std::byte>(buf));
+        std::vector<std::uint8_t> buf(max_bytes);
+        auto n = read_into(std::span<std::uint8_t>(buf));
         if (!n) return std::unexpected(n.error());
         buf.resize(*n);
         return buf;
     }
 
-    [[nodiscard]] auto read_exact(std::size_t exact_bytes) -> std::expected<std::vector<std::byte>, cfire::Error> {
+    [[nodiscard]] auto read_exact(std::size_t exact_bytes) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("socket is closed");
-        std::vector<std::byte> buf(exact_bytes);
+        std::vector<std::uint8_t> buf(exact_bytes);
         std::size_t total = 0;
         while (total < exact_bytes) {
-            auto n = read_into(std::span<std::byte>(buf.data() + total, exact_bytes - total));
+            auto n = read_into(std::span<std::uint8_t>(buf.data() + total, exact_bytes - total));
             if (!n) return std::unexpected(n.error());
             if (*n == 0) {
                 return cfire::make_error(std::format("unexpected EOF in read_exact (expected {} bytes, got {})", exact_bytes, total));
@@ -373,18 +367,18 @@ public:
     [[nodiscard]] auto read_text(std::size_t max_bytes = 4096) -> std::expected<std::string, cfire::Error> {
         if (fd_ < 0) return cfire::make_error("socket is closed");
         std::string buf(max_bytes, '\0');
-        auto n = read_into(std::as_writable_bytes(std::span(buf.data(), max_bytes)));
+        auto n = read_into(cfire::as_writable_u8(std::span(buf.data(), max_bytes)));
         if (!n) return std::unexpected(n.error());
         buf.resize(*n);
         return buf;
     }
 
-    [[nodiscard]] auto read_bytes_until(std::byte delim, std::size_t max_bytes = 65536)
-        -> std::expected<std::vector<std::byte>, cfire::Error>
+    [[nodiscard]] auto read_bytes_until(std::uint8_t delim, std::size_t max_bytes = 65536)
+        -> std::expected<std::vector<std::uint8_t>, cfire::Error>
     {
         if (fd_ < 0) return cfire::make_error("socket is closed");
-        std::vector<std::byte> out;
-        std::byte b{0};
+        std::vector<std::uint8_t> out;
+        std::uint8_t b{0};
         while (out.size() < max_bytes) {
             ssize_t n = 0;
             if (tls_ && tls_->ssl && tls_->read_fn) {
@@ -400,11 +394,6 @@ public:
         return out;
     }
 
-    [[nodiscard]] auto read_bytes_until(std::uint8_t delim, std::size_t max_bytes = 65536)
-        -> std::expected<std::vector<std::byte>, cfire::Error>
-    {
-        return read_bytes_until(static_cast<std::byte>(delim), max_bytes);
-    }
 
     [[nodiscard]] auto read_text_until(std::string_view delim, std::size_t max_bytes = 65536)
         -> std::expected<std::string, cfire::Error>
@@ -412,7 +401,7 @@ public:
         if (fd_ < 0) return cfire::make_error("socket is closed");
         if (delim.empty()) return cfire::make_error("read_text_until requires non-empty delimiter");
         std::string out;
-        std::byte b{0};
+        std::uint8_t b{0};
         while (out.size() < max_bytes) {
             ssize_t n = 0;
             if (tls_ && tls_->ssl && tls_->read_fn) {
@@ -429,7 +418,7 @@ public:
     }
 
     [[nodiscard]] auto read_line(std::size_t max_bytes = 65536) -> std::optional<std::string> {
-        auto b = read_bytes_until(static_cast<std::byte>('\n'), max_bytes);
+        auto b = read_bytes_until(static_cast<std::uint8_t>('\n'), max_bytes);
         if (!b || b->empty()) return std::nullopt;
         std::string out(reinterpret_cast<const char*>(b->data()), b->size());
         if (!out.empty() && out.back() == '\n') {
