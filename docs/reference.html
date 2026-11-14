@@ -2074,7 +2074,7 @@ syncCfireThemeBtn();
           <option value="mod-http">core:net/http (27 fns)</option>
           <option value="mod-tls">core:net/tls (7 fns)</option>
           <option value="mod-url">core:net/url (3 fns)</option>
-          <option value="mod-websocket">core:net/websocket (18 fns)</option>
+          <option value="mod-websocket">core:net/websocket (20 fns)</option>
           <option value="mod-os">core:os (18 fns)</option>
           <option value="mod-rand">core:rand (4 fns)</option>
           <option value="mod-regex">core:regex (10 fns)</option>
@@ -2127,7 +2127,7 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#mod-http" id="nav-pane-mod-http" onclick="navigateToRefPane('mod-http'); return false;"><code>core:net/http</code> <span style="color:var(--muted);font-size:0.75rem;">(27)</span></a></li>
           <li class="nav-item"><a href="#mod-tls" id="nav-pane-mod-tls" onclick="navigateToRefPane('mod-tls'); return false;"><code>core:net/tls</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-url" id="nav-pane-mod-url" onclick="navigateToRefPane('mod-url'); return false;"><code>core:net/url</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
-          <li class="nav-item"><a href="#mod-websocket" id="nav-pane-mod-websocket" onclick="navigateToRefPane('mod-websocket'); return false;"><code>core:net/websocket</code> <span style="color:var(--muted);font-size:0.75rem;">(18)</span></a></li>
+          <li class="nav-item"><a href="#mod-websocket" id="nav-pane-mod-websocket" onclick="navigateToRefPane('mod-websocket'); return false;"><code>core:net/websocket</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
           <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(18)</span></a></li>
           <li class="nav-item"><a href="#mod-rand" id="nav-pane-mod-rand" onclick="navigateToRefPane('mod-rand'); return false;"><code>core:rand</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-regex" id="nav-pane-mod-regex" onclick="navigateToRefPane('mod-regex'); return false;"><code>core:regex</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
@@ -2412,7 +2412,7 @@ syncCfireThemeBtn();
           <a href="#mod-websocket" class="ref-mod-card" onclick="navigateToRefPane('mod-websocket'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:net/websocket</span>
-              <span class="ref-mod-card-count">18 fns</span>
+              <span class="ref-mod-card-count">20 fns</span>
             </div>
             <div class="ref-mod-card-title">RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</div>
             <div class="ref-mod-card-desc">RFC 6455 full-duplex <code>ws://</code> and <code>wss://</code> WebSocket client (<code>connect</code>, with <code>verify_peer: false</code> for self-signed certificates), standalone server (<code>make(websocket.Server, port)</code>, <code>tls: websocket.TlsConfig{...}</code> for <code>wss://</code>), and connection upgrade handler (<code>upgrade</code>) with automated framing, client masking, and Ping/Pong management.</div>
@@ -3737,7 +3737,7 @@ fn main() {
       </article>
       <article class="ref-pane" id="ref-pane-mod-websocket" data-pane-id="mod-websocket" data-pane-short="core:net/websocket" data-pane-title="core:net/websocket — RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server">
         <h2 id="mod-websocket" style="margin-top:0.25rem;"><code>import "core:net/websocket"</code> &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</h2>
-        <p>RFC 6455 full-duplex <code>ws://</code> and <code>wss://</code> WebSocket client (<code>connect</code>, with <code>verify_peer: false</code> for self-signed certificates), standalone server (<code>make(websocket.Server, port)</code>, <code>tls: websocket.TlsConfig{...}</code> for <code>wss://</code>), and connection upgrade handler (<code>upgrade</code>) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code> &bull; Namespace: <code>websocket.*</code> &bull; 18 exported functions</small></p>
+        <p>RFC 6455 full-duplex <code>ws://</code> and <code>wss://</code> WebSocket client (<code>connect</code>, with <code>verify_peer: false</code> for self-signed certificates), standalone server (<code>make(websocket.Server, port)</code>, <code>tls: websocket.TlsConfig{...}</code> for <code>wss://</code>), and connection upgrade handler (<code>upgrade</code>) with automated framing, client masking, and Ping/Pong management. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(POSIX sockets + TLS)</code> &bull; Namespace: <code>websocket.*</code> &bull; 20 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3764,7 +3764,8 @@ fn main() {
           <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>websocket.Conn</code></td><td>handle</td><td>An open WebSocket connection; messages are <code>str</code> (<code>recv_text</code>) or <code>[]byte</code> (<code>recv_binary</code>).</td></tr>
-            <tr><td><code>websocket.Server</code></td><td>handle</td><td>A WebSocket server bound to a port.</td></tr>
+            <tr><td><code>websocket.Server</code></td><td>handle</td><td>A WebSocket server bound to a port (<code>make(websocket.Server, port)</code>); each connection runs on its own session thread, so handlers run concurrently.</td></tr>
+            <tr><td><code>websocket.ServerLimits</code></td><td>struct</td><td>Limits for <code>websocket.Server</code> (CF-194); pass to <code>server.set_limits(...)</code>. Each connection runs on its own session thread, up to <code>max_websockets</code> (over it a client gets 503); <code>header_timeout_ms</code> bounds the TLS handshake and the upgrade request; <code>max_frame_size</code> is each session's largest accepted frame. A field set to 0 keeps its default.<br/>Fields: <code>max_websockets: usize</code>, <code>header_timeout_ms: i32</code>, <code>max_frame_size: usize</code></td></tr>
             <tr><td><code>websocket.TlsConfig</code></td><td>struct</td><td>Server certificate for <code>make(websocket.Server, port, tls: ...)</code> (Q31); the same type as <code>http.TlsConfig</code>.<br/>Fields: <code>cert_file: str</code>, <code>key_file: str</code>, <code>cert_pem: str</code>, <code>key_pem: str</code></td></tr>
           </tbody>
         </table></div>
@@ -3785,10 +3786,12 @@ fn main() {
             <tr><td><code>fn (mut ws: Conn) close(code: u16 = 1000, reason: str = &quot;&quot;)</code></td><td><code>ws.close(code, reason)</code></td><td>Initiates a clean RFC 6455 closure handshake and closes the socket.<br/><code>ws.close()</code></td></tr>
             <tr><td><code>fn (ws: Conn) is_open() -&gt; bool</code></td><td><code>ws.is_open()</code></td><td>Returns true if the WebSocket connection is open.<br/><code>if ws.is_open() { ... }</code></td></tr>
             <tr><td><code>fn (mut s: Server) accept() -&gt; Conn!</code></td><td><code>s.accept()</code></td><td>Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a <code>Conn</code>.<br/><code>mut ws := try srv.accept()</code></td></tr>
-            <tr><td><code>fn (mut s: Server) serve_once(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.serve_once(handler)</code></td><td>Accepts and serves a single WebSocket connection with <code>handler</code>.<br/><code>srv.serve_once(|mut ws| { ... })</code></td></tr>
-            <tr><td><code>fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.listen_and_serve(handler)</code></td><td>Runs a blocking accept loop upgrading and serving WebSocket connections.<br/><code>srv.listen_and_serve(|mut ws| { ... })</code></td></tr>
-            <tr><td><code>fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts a background thread accepting and serving WebSocket connections.<br/><code>srv.serve_in_background(|mut ws| { ... })</code></td></tr>
-            <tr><td><code>fn (mut s: Server) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Stops the background WebSocket server thread.<br/><code>srv.stop()</code></td></tr>
+            <tr><td><code>type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }</code></td><td><code>cfire::websocket::ServerLimits</code></td><td>Limits for <code>websocket.Server</code> (CF-194): open sessions (over <code>max_websockets</code> a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults.<br/><code>srv.set_limits(websocket.ServerLimits{max_websockets: 64})</code></td></tr>
+            <tr><td><code>fn (mut s: Server) set_limits(limits: ServerLimits)</code></td><td><code>s.set_limits(limits)</code></td><td>Replaces the server's limits (CF-194): <code>websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}</code>; call it before serving.<br/><code>srv.set_limits(websocket.ServerLimits{max_websockets: 64})</code></td></tr>
+            <tr><td><code>fn (mut s: Server) serve_once(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.serve_once(handler)</code></td><td>Accepts and serves a single WebSocket connection with <code>handler</code>, on the calling thread.<br/><code>srv.serve_once(|mut ws| { ... })</code></td></tr>
+            <tr><td><code>fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.listen_and_serve(handler)</code></td><td>Runs a blocking accept loop; each connection is upgraded and served on its own session thread (CF-194), so <code>handler</code> runs concurrently for several clients and state it shares must be synchronized. Over <code>max_websockets</code> open sessions a client gets 503.<br/><code>srv.listen_and_serve(|mut ws| { ... })</code></td></tr>
+            <tr><td><code>fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -&gt; void) -&gt; void</code></td><td><code>s.serve_in_background(handler)</code></td><td>Starts the accept loop on a background thread; like <code>listen_and_serve</code>, each connection gets its own session thread and <code>handler</code> runs concurrently.<br/><code>srv.serve_in_background(|mut ws| { ... })</code></td></tr>
+            <tr><td><code>fn (mut s: Server) stop() -&gt; void</code></td><td><code>s.stop()</code></td><td>Stops the accept loop, shuts the open sessions down and waits for their handlers to return.<br/><code>srv.stop()</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">

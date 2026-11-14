@@ -544,6 +544,15 @@ using WebSocket = Conn;
     return connect(url_str, /*verify_peer=*/false);
 }
 
+// CF-194: limits for the standalone `websocket.Server`.
+struct ServerLimits {
+    // Concurrent sessions; over it a new client gets 503.
+    std::size_t max_websockets = 1024;
+    // Deadline for the TLS handshake and the upgrade request, on the session thread.
+    int header_timeout_ms = 10000;
+    std::size_t max_frame_size = kDefaultMaxFrameSize;
+};
+
 class Server {
 public:
     explicit Server(cfire::net::TcpListener listener, std::optional<cfire::tls::ServerContext> tls_ctx = std::nullopt)
@@ -555,7 +564,9 @@ public:
     Server(Server&& o) noexcept
         : listener_(std::move(o.listener_)),
           tls_ctx_(std::move(o.tls_ctx_)),
-          running_(o.running_.load()) {
+          running_(o.running_.load()),
+          limits_(o.limits_),
+          sessions_(std::exchange(o.sessions_, std::make_unique<cfire::http::detail::SessionThreads>())) {
         o.running_ = false;
         if (o.worker_.joinable()) {
             worker_ = std::move(o.worker_);
@@ -568,6 +579,8 @@ public:
             listener_ = std::move(o.listener_);
             tls_ctx_ = std::move(o.tls_ctx_);
             running_ = o.running_.load();
+            limits_ = o.limits_;
+            std::swap(sessions_, o.sessions_);
             o.running_ = false;
             if (o.worker_.joinable()) {
                 worker_ = std::move(o.worker_);
@@ -602,11 +615,25 @@ public:
         return {};
     }
 
+    void set_limits(const ServerLimits& lim) noexcept {
+        limits_ = lim;
+        // From `.cf` code 0 means "keep the default".
+        if (limits_.max_websockets == 0) limits_.max_websockets = ServerLimits{}.max_websockets;
+        if (limits_.header_timeout_ms <= 0) limits_.header_timeout_ms = ServerLimits{}.header_timeout_ms;
+        if (limits_.max_frame_size == 0) limits_.max_frame_size = ServerLimits{}.max_frame_size;
+    }
+    [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
+    // CF-194: open sessions.
+    [[nodiscard]] auto sessions() const -> std::size_t { return sessions_->live(); }
+
+    // Ends the accept loop, then shuts the open sessions down and joins them.
     void stop() noexcept {
         running_ = false;
         if (worker_.joinable()) {
             worker_.join();
         }
+        sessions_->shutdown_all();
+        sessions_->join_all();
     }
 
     [[nodiscard]] auto accept() -> std::expected<Conn, cfire::Error> {
@@ -635,6 +662,7 @@ public:
         return std::move(*ws_res);
     }
 
+    // One connection, served on the calling thread.
     template <typename Handler>
     void serve_once(Handler&& handler) {
         auto conn_res = listener_.accept();
@@ -642,6 +670,9 @@ public:
         handle_conn(*conn_res, handler);
     }
 
+    // CF-194: each accepted connection runs on its own session thread (TLS handshake, upgrade request and
+    // handler), so handlers run concurrently; over `max_websockets` open sessions a client gets 503.
+    // The open sessions are shut down and joined before this returns.
     template <typename Handler>
     void listen_and_serve(Handler&& handler) {
         running_ = true;
@@ -651,8 +682,16 @@ public:
                 if (!running_) break;
                 continue;
             }
-            handle_conn(*conn_res, handler);
+            auto guard = conn_res->close_guard();
+            auto conn = std::make_shared<cfire::net::TcpConn>(std::move(*conn_res));
+            auto session = [this, &handler, conn]() { handle_conn(*conn, handler); };
+            if (!sessions_->start(limits_.max_websockets, std::move(guard), session)) {
+                cfire::http::Response busy = cfire::http::Response::text(503, "503 Service Unavailable");
+                (void)conn->write_text(busy.to_http_wire());
+            }
         }
+        sessions_->shutdown_all();
+        sessions_->join_all();
     }
 
     template <typename Handler>
@@ -667,11 +706,14 @@ public:
 private:
     template <typename Handler>
     void handle_conn(cfire::net::TcpConn& conn, Handler& handler) {
+        conn.set_timeout_ms(limits_.header_timeout_ms);
         if (tls_ctx_.has_value() && tls_ctx_->valid()) {
             auto wr = tls_ctx_->wrap_server(conn);
             if (!wr) return;
         }
-        auto req_res = cfire::http::read_http_request(conn);
+        cfire::http::ServerLimits http_lim;
+        http_lim.header_timeout_ms = limits_.header_timeout_ms;
+        auto req_res = cfire::http::read_http_request(conn, http_lim);
         if (!req_res) {
             cfire::http::Response err_resp = cfire::http::Response::bad_request("400 Bad Request");
             (void)conn.write_text(err_resp.to_http_wire());
@@ -683,6 +725,7 @@ private:
             (void)conn.write_text(err_resp.to_http_wire());
             return;
         }
+        ws_res->set_max_frame_size(limits_.max_frame_size);
         if constexpr (std::is_invocable_v<Handler, const cfire::http::Request&, Conn&>) {
             handler(*req_res, *ws_res);
         } else {
@@ -694,6 +737,8 @@ private:
     std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
     std::atomic<bool> running_{false};
     std::thread worker_{};
+    ServerLimits limits_{};
+    std::unique_ptr<cfire::http::detail::SessionThreads> sessions_ = std::make_unique<cfire::http::detail::SessionThreads>();
 };
 
 [[nodiscard]] inline auto make_server(std::uint16_t port = 0)

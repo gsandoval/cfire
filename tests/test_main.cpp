@@ -87,6 +87,7 @@ auto main(int argc, char** argv) -> int {
         test_cf188_stdlib_type_surface(rt_dir);
         test_cf192_keepalive_and_websocket_sessions(rt_dir);
         test_cf193_http_event_loop(rt_dir);
+        test_cf194_websocket_server_sessions(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
         test_section2_language_ergonomics(rt_dir);
         test_section3_agent_tooling(rt_dir);

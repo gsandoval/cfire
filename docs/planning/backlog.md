@@ -748,6 +748,16 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Plan** (user, 2026-11-13): one loop thread per server waits on every connection (kqueue on macOS, epoll on Linux, WSAPoll on Windows) and reads the whole request, TLS handshake included, without blocking; a worker gets only a complete `Request`, runs the handler and writes the response; keep-alive connections return to the loop. Deadlines, `max_connections` and `max_pending` are enforced by the loop.
 - **Acceptance Criteria**: 200 idle and `workers + 4` trickling clients do not delay a GET; HTTP and HTTPS keep-alive work; the 408/413/400/431 rules hold; `make check-platforms` passes.
 
+#### `CF-194` — Standalone WebSocket Server Sessions (2026-11-13) `[DONE]`
+- **Problem & Evidence**: `websocket.Server` (`listen_and_serve` / `serve_in_background`) runs each connection's handler on its accept thread, so one open client blocks every other client until it disconnects. CF-192 moved `http.Server` WebSocket routes to their own threads but left this server serial.
+- **Decisions (user, 2026-11-13)**: handlers run concurrently, one session thread per connection (as `http.Server` handlers and `Router.ws` sessions already do); state a handler shares must be synchronized. A new `websocket.ServerLimits` (`max_websockets`, `header_timeout_ms`, `max_frame_size`) is set with `srv.set_limits(...)`.
+- **Plan**: reuse `http::detail::SessionThreads` and `net::detail::CloseGuard`; the TLS handshake, the upgrade request and the handler run on the session thread; over `max_websockets` the client gets 503; `stop()` shuts the open sessions down and joins them. `serve_once` and `accept()` stay on the calling thread.
+- **Acceptance Criteria**: two clients are served at once; the cap gives 503; `stop()` returns with sessions open; TSan clean.
+
+#### `CF-195` — `websocket.connect` Drops Bytes After the Handshake (found 2026-11-13)
+- **Problem & Evidence**: `connect` reads the `101` response in 1024-byte chunks until `\r\n\r\n` and discards the rest of the buffer, so a frame the server sends right after the handshake can be lost (seen once in the CF-194 TSan run).
+- **Acceptance Criteria**: bytes after the response headers are the first bytes the new `Conn` reads; a test where the server sends at once passes repeatedly.
+
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:
   - Renaming outer `count` also renames `|count: i32|` and its uses.

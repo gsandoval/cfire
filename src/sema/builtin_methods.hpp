@@ -374,6 +374,11 @@ inline constexpr std::array kStdlibStructs = {
     StdlibStruct{"websocket", "TlsConfig", "cfire::http::TlsConfig",
         "cert_file: str = \"\"; key_file: str = \"\"; cert_pem: str = \"\"; key_pem: str = \"\"",
         "Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`."},
+    StdlibStruct{"websocket", "ServerLimits", "cfire::websocket::ServerLimits",
+        "max_websockets: usize = 1024; header_timeout_ms: i32 = 10000; max_frame_size: usize = 16777216",
+        "Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session "
+        "thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the "
+        "upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default."},
 };
 // clang-format on
 

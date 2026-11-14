@@ -138,7 +138,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:net/websocket") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
-        m.types = {"Conn", "Server", "TlsConfig"};
+        m.types = {"Conn", "Server", "ServerLimits", "TlsConfig"};
         m.aliases = {"core:websocket"};
     } else if (m.import_path == "core:os") {
         m.header_path = "core/os.hpp";
@@ -559,10 +559,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Conn.close", "fn (mut ws: Conn) close(code: u16 = 1000, reason: str = \"\")", "ws.close(code, reason)", "Initiates a clean RFC 6455 closure handshake and closes the socket.", "ws.close()"},
                 {"Conn.is_open", "fn (ws: Conn) is_open() -> bool", "ws.is_open()", "Returns true if the WebSocket connection is open.", "if ws.is_open() { ... }"},
                 {"Server.accept", "fn (mut s: Server) accept() -> Conn!", "s.accept()", "Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`.", "mut ws := try srv.accept()"},
-                {"Server.serve_once", "fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void", "s.serve_once(handler)", "Accepts and serves a single WebSocket connection with `handler`.", "srv.serve_once(|mut ws| { ... })"},
-                {"Server.listen_and_serve", "fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void", "s.listen_and_serve(handler)", "Runs a blocking accept loop upgrading and serving WebSocket connections.", "srv.listen_and_serve(|mut ws| { ... })"},
-                {"Server.serve_in_background", "fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void", "s.serve_in_background(handler)", "Starts a background thread accepting and serving WebSocket connections.", "srv.serve_in_background(|mut ws| { ... })"},
-                {"Server.stop", "fn (mut s: Server) stop() -> void", "s.stop()", "Stops the background WebSocket server thread.", "srv.stop()"}
+                {"ServerLimits", "type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }", "cfire::websocket::ServerLimits", "Limits for `websocket.Server` (CF-194): open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults.", "srv.set_limits(websocket.ServerLimits{max_websockets: 64})"},
+                {"Server.set_limits", "fn (mut s: Server) set_limits(limits: ServerLimits)", "s.set_limits(limits)", "Replaces the server's limits (CF-194): `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving.", "srv.set_limits(websocket.ServerLimits{max_websockets: 64})"},
+                {"Server.serve_once", "fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void", "s.serve_once(handler)", "Accepts and serves a single WebSocket connection with `handler`, on the calling thread.", "srv.serve_once(|mut ws| { ... })"},
+                {"Server.listen_and_serve", "fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void", "s.listen_and_serve(handler)", "Runs a blocking accept loop; each connection is upgraded and served on its own session thread (CF-194), so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503.", "srv.listen_and_serve(|mut ws| { ... })"},
+                {"Server.serve_in_background", "fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void", "s.serve_in_background(handler)", "Starts the accept loop on a background thread; like `listen_and_serve`, each connection gets its own session thread and `handler` runs concurrently.", "srv.serve_in_background(|mut ws| { ... })"},
+                {"Server.stop", "fn (mut s: Server) stop() -> void", "s.stop()", "Stops the accept loop, shuts the open sessions down and waits for their handlers to return.", "srv.stop()"}
             }
         },
         {

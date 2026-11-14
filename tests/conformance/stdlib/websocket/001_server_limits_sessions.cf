@@ -1,0 +1,30 @@
+// CF-194: `websocket.ServerLimits` has defaults, and `websocket.Server` serves two clients at once.
+// expect: stdout
+// | 1024 10000 16777216
+// | 2 5000
+// | echo:b
+// | echo:a
+package main
+import "core:net/websocket"
+fn main() {
+    d := websocket.ServerLimits{}
+    println("{} {} {}", d.max_websockets, d.header_timeout_ms, d.max_frame_size)
+    lim := websocket.ServerLimits{max_websockets: 2, header_timeout_ms: 5000}
+    println("{} {}", lim.max_websockets, lim.header_timeout_ms)
+
+    mut srv := make(websocket.Server, 0) or { return }
+    srv.set_limits(lim)
+    srv.serve_in_background(|mut ws: websocket.Conn| {
+        msg := ws.recv_text() or { return }
+        ws.send_text("echo:" + msg) or { return }
+    })
+    defer srv.stop()
+    url := "ws://127.0.0.1:" + str(srv.port()) + "/"
+    mut a := websocket.connect(url) or { return }
+    mut b := websocket.connect(url) or { return }
+    // `a` is open and silent; `b` is still answered.
+    b.send_text("b") or { return }
+    println("{}", b.recv_text() or { return })
+    a.send_text("a") or { return }
+    println("{}", a.recv_text() or { return })
+}
