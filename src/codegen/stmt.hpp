@@ -130,6 +130,7 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             if (st.init) {
                 std::string init_val = emit_expr(st.init);
+                if (cf_.owned_slice_decls.contains(&st)) init_val = std::format("cfire::own_copy({})", init_val);  // Q53
                 if (st.type && (st.type->is_ptr || st.type->is_mut_ptr) && init_val == "std::nullopt") {
                     init_val = "nullptr";
                 }
@@ -382,14 +383,34 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             hoist_subexpr_tries(st.target, in_main, s->line, false);
             emit_match_stmt(st, in_main);
         } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
+            // Q51 (CF-189): a value-producing scope collects each spawned task and yields their values in spawn order.
+            const bool yields = !st.result_elem_type.empty() && (!st.result_var.empty() || st.result_return);
+            std::string elem_cpp;
+            if (yields) {
+                elem_cpp = lower_type_text(st.result_elem_type);
+                if (!st.result_var.empty()) {
+                    local_vars_.insert(st.result_var);
+                    writeln(std::format("std::vector<{}> {};", elem_cpp, st.result_var));
+                }
+            }
             writeln("{");
             ++indent_;
             local_vars_.insert(st.scope_var);
             writeln(std::format("cfire::async::Scope {}({});", st.scope_var, emit_expr(st.workers)));
+            const std::string results = "cf_results_" + st.scope_var;
+            if (yields) {
+                writeln(std::format("cfire::async::Results<{}> {};", elem_cpp, results));
+                value_scope_results_[st.scope_var] = {results, elem_cpp};
+            }
             active_async_scopes_.push_back(st.scope_var);
             for (const auto& b : st.body) emit_stmt(b, in_main);
             active_async_scopes_.pop_back();
             writeln(std::format("{}.join_all();", st.scope_var));
+            if (yields) {
+                value_scope_results_.erase(st.scope_var);
+                if (st.result_return) writeln(std::format("return {}.take();", results));
+                else writeln(std::format("{} = {}.take();", st.result_var, results));
+            }
             --indent_;
             writeln("}");
         } else if constexpr (std::is_same_v<T, CppBlockStmt>) {

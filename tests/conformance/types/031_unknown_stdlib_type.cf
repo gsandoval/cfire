@@ -1,0 +1,13 @@
+// CF-188: a type name a stdlib module does not export is a cfire error naming the real type, not a clang error.
+package main
+import "core:json"
+import "core:sync"
+import "core:time"
+type Cache struct {
+    doc: json.Doc //~ error cfire/UNKNOWN-STDLIB-TYPE
+}
+fn wait(c: sync.CondVar) { //~ error cfire/UNKNOWN-STDLIB-TYPE
+}
+fn main() {
+    t: time.DateTime = time.now() //~ error cfire/UNKNOWN-STDLIB-TYPE
+}

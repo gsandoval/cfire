@@ -263,6 +263,19 @@ namespace cfire::frontend {
 
     // Validate no dynamic slices or arrays of structural interfaces (CF-108)
     auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col) -> void {
+        // CF-189: no raw pointer types (C++ interop only) and no `&T` / `&mut T` reference types (Q53).
+        if (tr.is_ptr || tr.is_mut_ptr) {
+            cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/RAW-POINTER",
+                "raw pointer types ('*T', '*mut T') exist only in C++ interop: hold the value itself, an index into a slice, or 'own[T]'/'shared[T]'"));
+            return;
+        }
+        if (tr.is_borrow || tr.is_mut_borrow) {
+            cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/REFERENCE-TYPE",
+                tr.is_mut_borrow ? "'&mut T' is not a cfire type (Q53): a parameter the callee changes is 'mut name: T'"
+                                 : "'&T' is not a cfire type (Q53): write 'T'; read-only parameters are already views",
+                {{"kind", tr.is_mut_borrow ? "mut" : "view"}}));
+            return;
+        }
         if (!tr.raw_name.empty()) {
             auto dcol = tr.raw_name.find("::");
             auto dot = tr.raw_name.find('.');
@@ -273,6 +286,21 @@ namespace cfire::frontend {
                      cf.core_aliases.contains(qual) || cf.shadowed_default_qualifiers.contains(qual))) {
                     std::string rest = tr.raw_name.substr(dcol + 2);
                     cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/DEPRECATED-SEPARATOR", std::format("use '{}.{}' instead of '{}::{}'", qual, rest, qual, rest), {{"kind", "qualifier"}}));
+                }
+            }
+            // CF-188: a struct field of a stdlib type the module does not export.
+            if (dot != std::string::npos && (dcol == std::string::npos || dot < dcol)) {
+                std::string qual = tr.raw_name.substr(0, dot);
+                std::string ns;
+                if (!cf.shadowed_default_qualifiers.contains(qual) && !cf.cpp_qualifiers.contains(qual) && !cf.vendor_aliases.contains(qual)) {
+                    if (auto it = cf.core_aliases.find(qual); it != cf.core_aliases.end()) ns = it->second;
+                    else if (StdlibCatalogIndex::instance().has_namespace(qual)) ns = qual;
+                }
+                if (!ns.empty()) {
+                    const bool manifest = std::filesystem::path(src_path).filename() == "build.cf";
+                    if (std::string why = stdlib_type_name_problem(ns, tr.raw_name.substr(dot + 1), manifest); !why.empty()) {
+                        cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/UNKNOWN-STDLIB-TYPE", why));
+                    }
                 }
             }
         }

@@ -13,7 +13,7 @@ fn main() {
                 for i in 0..10000 {
                     atm.add(1)
                     mut g := mu.lock()
-                    *g += 1
+                    g.value += 1
                 }
                 ch.send(i64(w))
             }

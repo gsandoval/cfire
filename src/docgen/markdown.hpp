@@ -1440,6 +1440,24 @@ window.addEventListener('hashchange', updateChapterFromHash);
         if (!ex.empty()) {
             out += "**Practical Example:**\n```cf\n" + std::string(ex) + "\n```\n\n";
         }
+        if (!mod.type_docs.empty()) {
+            out += "**Types:**\n\n| Type | Kind | Description |\n|---|---|---|\n";
+            for (const auto& td : mod.type_docs) {
+                std::string desc = td.summary;
+                if (!td.fields.empty()) {
+                    desc += " Fields:";
+                    for (std::size_t i = 0; i < td.fields.size(); ++i) desc += std::format("{} `{}: {}`", i ? "," : "", td.fields[i].name, td.fields[i].type);
+                    desc += ".";
+                }
+                if (!td.variants.empty()) {
+                    desc += " Variants:";
+                    for (std::size_t i = 0; i < td.variants.size(); ++i) desc += std::format("{} `{}`", i ? "," : "", td.variants[i]);
+                    desc += ".";
+                }
+                out += std::format("| `{}.{}` | {} | {} |\n", mod.ns_alias, td.name, td.kind, desc);
+            }
+            out += "\n";
+        }
         out += "| `.cf` Signature | Lowered C++23 | Description | Example |\n";
         out += "|---|---|---|---|\n";
         for (const auto& fn : mod.functions) {

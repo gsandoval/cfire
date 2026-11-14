@@ -14,18 +14,20 @@ TEST_SRCS := tests/unit/test_frontend.cpp \
 
 TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
-.PHONY: FORCE all build hooks install uninstall doctor setup test test-unit test-stdlib test-e2e test-guide test-conformance test-asan test-tsan test-vm-linux test-vm-windows fuzz fuzz-replay fuzz-lib bench docs fmt review-check release clean
+.PHONY: FORCE all build hooks install uninstall doctor setup check check-warnings check-deep check-platforms check-all vm-setup-linux vm-setup-windows test test-unit test-stdlib test-e2e test-guide test-conformance test-asan test-tsan test-vm-linux test-vm-windows fuzz fuzz-replay fuzz-lib bench docs fmt review-check release clean
 
 all: build
 
-HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp)
+HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp tools/*/*.hpp)
 
 # `cfire` is a real file target (CF-159): it relinks only when sources change or the embedded git SHA does.
 .cfire_gitsha: FORCE
 	@echo '$(GIT_SHA)' | cmp -s - $@ 2>/dev/null || echo '$(GIT_SHA)' > $@
 
+# Each compile keeps its diagnostics in a .log next to its output, so `make check` can prove zero warnings even when
+# nothing needed rebuilding (CF-186).
 cfire: src/main.cpp $(HEADERS) .cfire_gitsha
-	$(CXX) $(CXXFLAGS) src/main.cpp -o cfire
+	@$(CXX) $(CXXFLAGS) src/main.cpp -o cfire 2> .cfire_build.log; rc=$$?; cat .cfire_build.log >&2; echo "$(CXX) ... src/main.cpp -o cfire (rc=$$rc)"; exit $$rc
 
 build: cfire
 
@@ -55,24 +57,50 @@ setup: build
 	./cfire setup
 
 %.o: %.cpp $(HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	@$(CXX) $(CXXFLAGS) -c $< -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... -c $< (rc=$$rc)"; exit $$rc
 
 .cfire_test_runner: $(TEST_OBJS)
 	$(CXX) $(CXXFLAGS) $(TEST_OBJS) $(LDFLAGS) -o $@
 
-review-check: build
-	@echo "=== [1/4] Checking Canonical Code Formatting ==="
+# --- CF-186: the three test tiers. These are the only commands to remember (docs/planning/README.md):
+#   make check            every commit (the pre-commit hook runs it)
+#   make check-deep       sanitizers and fuzz replay; required before a CF item is marked done
+#   make check-platforms  the Linux and Windows VMs; required before a CF item is marked done, and before a release
+#   make check-all        all three in order, then a summary table; its summary goes in active.md
+check:
+	@[ -f .cfire_build.log ] || rm -f cfire
+	@for o in $(TEST_OBJS); do [ -f $$o.log ] || rm -f $$o; done
+	@$(MAKE) --no-print-directory build .cfire_test_runner
+	@$(MAKE) --no-print-directory check-warnings
+	@echo "=== Canonical formatting"
 	./cfire fmt --check examples/
-	@echo "✓ Canonical code formatting verified"
-	@echo "=== [2/4] Checking Documentation Synchronization ==="
-	./cfire doc --check
-	@echo "✓ Documentation guides and stdlib references synchronized"
-	@echo "=== [3/4] Type-Checking Every Canonical Example (CF-176) ==="
+	@echo "=== Every canonical example type-checks (CF-176, CF-148)"
 	@set -e; for d in examples/*/; do ./cfire check "$$d" > .cfire_check.log 2>&1 || { cat .cfire_check.log; rm -f .cfire_check.log; echo "cfire check failed: $$d"; exit 1; }; if grep -q "cfire/UNKNOWN-TYPE" .cfire_check.log; then cat .cfire_check.log; rm -f .cfire_check.log; echo "untyped expression in $$d (CF-148)"; exit 1; fi; done; rm -f .cfire_check.log
-	@echo "✓ All canonical examples type-check cleanly"
-	@echo "=== [4/4] Running Full Conformance Test Suite ==="
-	$(MAKE) test
-	@echo "✓ Conformance test suites passed"
+	@$(MAKE) --no-print-directory test
+	@echo "✓ make check passed"
+
+check-warnings:
+	@n=$$(cat .cfire_build.log $(TEST_OBJS:=.log) $(wildcard .vmtest.log) 2>/dev/null | grep -c 'warning:'); \
+	if [ "$$n" != "0" ]; then cat .cfire_build.log $(TEST_OBJS:=.log) $(wildcard .vmtest.log) 2>/dev/null | grep -A4 'warning:'; echo "✗ $$n C++ compiler warning(s); the gate requires zero"; exit 1; fi; \
+	echo "✓ zero C++ compiler warnings"
+
+check-deep: test-asan test-tsan fuzz-replay
+	@echo "✓ make check-deep passed"
+
+check-platforms: test-vm-linux test-vm-windows
+	@echo "✓ make check-platforms passed"
+
+check-all:
+	@s1=FAIL; s2=FAIL; s3=FAIL; \
+	$(MAKE) --no-print-directory check && s1=PASS; \
+	$(MAKE) --no-print-directory check-deep && s2=PASS; \
+	$(MAKE) --no-print-directory check-platforms && s3=PASS; \
+	echo "=== make check-all summary: $(GIT_SHA), $$(date -u +%Y-%m-%dT%H:%MZ), $$(uname -s)"; \
+	printf '  %-16s %s\n' check $$s1 check-deep $$s2 check-platforms $$s3; \
+	[ "$$s1$$s2$$s3" = PASSPASSPASS ]
+
+# Kept for muscle memory and older docs: the same as `make check`.
+review-check: check
 
 release:
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=x.y.z [FLAGS=--dry-run]"; exit 1; fi
@@ -86,11 +114,10 @@ fmt: build
 
 test: build .cfire_test_runner
 	./.cfire_test_runner
-	rm -f .cfire_test_runner $(TEST_OBJS)
 	./cfire test tests/stdlib_suite_test.cf
 	./cfire doc --check
-	$(MAKE) test-guide
-	$(MAKE) test-conformance
+	./.cfire_test_runner guide
+	./.cfire_test_runner conformance
 
 test-unit: build .cfire_test_runner
 	./.cfire_test_runner unit
@@ -102,33 +129,33 @@ test-stdlib: build .cfire_test_runner
 test-e2e: build .cfire_test_runner
 	./.cfire_test_runner e2e
 
-test-guide: build
-	python3 scripts/run_guide_tests.py
+test-guide: build .cfire_test_runner
+	./.cfire_test_runner guide
 
-test-conformance: build
-	python3 -I scripts/run_conformance.py --self-test
-	python3 -I scripts/run_conformance.py
+# Filter and options: ./.cfire_test_runner conformance --filter 'ownership/*' -v
+test-conformance: build .cfire_test_runner
+	./.cfire_test_runner conformance
 
 ASAN_CXXFLAGS := -std=c++2b -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 ASAN_LDFLAGS  := -fsanitize=address,undefined -fno-sanitize-recover=undefined $(LDFLAGS)
 
-test-asan: build
+test-asan: build .cfire_test_runner
 	@echo "=== Building & Running All C++ Suites under AddressSanitizer & UndefinedBehaviorSanitizer ==="
 	$(CXX) $(ASAN_CXXFLAGS) $(TEST_SRCS) $(ASAN_LDFLAGS) -o .cfire_test_runner_asan
 	./.cfire_test_runner_asan
 	rm -f .cfire_test_runner_asan
 	@echo "=== Running the Conformance Corpus with Generated Programs under ASan/UBSan ==="
-	python3 -I scripts/run_conformance.py --run-flags=--sanitize
+	./.cfire_test_runner conformance --run-flags=--sanitize
 
 TSAN_CXXFLAGS := -std=c++2b -O1 -g -fsanitize=thread -fno-omit-frame-pointer -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 
-test-tsan: build
+test-tsan: build .cfire_test_runner
 	@echo "=== Building & Running Runtime Concurrency Tests under ThreadSanitizer ==="
 	$(CXX) $(TSAN_CXXFLAGS) tests/tsan_main.cpp -fsanitize=thread $(LDFLAGS) -o .cfire_test_runner_tsan
 	./.cfire_test_runner_tsan
 	rm -f .cfire_test_runner_tsan
 	@echo "=== Running Conformance Concurrency Programs under ThreadSanitizer ==="
-	python3 -I scripts/run_conformance.py --filter 'concurrency/*' --run-flags=--sanitize=thread
+	./.cfire_test_runner conformance --filter 'concurrency/*' --run-flags=--sanitize=thread
 
 fuzz: build .cfire_test_runner
 	./.cfire_test_runner fuzz
@@ -166,11 +193,21 @@ bench: build .cfire_test_runner
 	./cfire bench tests/stdlib_suite_test.cf
 
 # --- Local UTM VM gates (CF-184, Q48): the CI `linux` / `windows` jobs on the working tree. See scripts/vm/README.md.
-test-vm-linux:
-	scripts/vm/test_vm.sh linux
+# The host-side driver (CF-187) is C++ like everything else; only the guest-side gate scripts are shell.
+.vmtest: tools/vmtest/main.cpp tools/vmtest/vmtest.hpp tests/process_run.hpp
+	@$(CXX) $(CXXFLAGS) tools/vmtest/main.cpp $(LDFLAGS) -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... tools/vmtest/main.cpp (rc=$$rc)"; exit $$rc
 
-test-vm-windows:
-	scripts/vm/test_vm.sh windows
+test-vm-linux: .vmtest
+	./.vmtest linux
+
+test-vm-windows: .vmtest
+	./.vmtest windows
+
+vm-setup-linux: .vmtest
+	./.vmtest setup-linux
+
+vm-setup-windows: .vmtest
+	./.vmtest setup-windows
 
 clean:
-	rm -rf cfire .cfire_gitsha .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*
+	rm -rf cfire .cfire_gitsha .cfire_build.log .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*

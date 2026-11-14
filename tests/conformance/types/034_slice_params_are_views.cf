@@ -1,0 +1,46 @@
+// expect: stdout
+// | 10 7 50
+// | 3 5 2
+// Q53 (CF-189): a read-only `[]T` parameter is a view, so sub-slices and match rests pass without a copy, and a
+// copy is made where an owned slice is needed (a field, a `mut` binding, a return value).
+package main
+type Bag struct {
+    items: []i32
+}
+fn total(xs: []i32) -> i32 {
+    mut t: i32 = 0
+    for x in xs {
+        t += x
+    }
+    return t
+}
+fn sum_rec(xs: []i32) -> i32 {
+    match xs {
+        [] => {
+            return 0
+        }
+        [head, ..tail] => {
+            return head + sum_rec(tail)
+        }
+    }
+    return 0
+}
+fn keep(xs: []i32) -> Bag {
+    return Bag{items: xs}
+}
+fn grown(xs: []i32) -> []i32 {
+    mut out := xs
+    out.push(0)
+    return out
+}
+fn first_two(xs: []i32) -> []i32 {
+    return xs[0..2]
+}
+fn main() {
+    nums: []i32 = [1, 2, 3, 4, 40]
+    println("{} {} {}", total(nums[0..4]), total(nums[2..4]), sum_rec(nums))
+    b := keep(nums[1..4])
+    g := grown(nums)
+    f := first_two(nums)
+    println("{} {} {}", b.items.len(), g.len() - 1, f[1])
+}

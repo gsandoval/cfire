@@ -85,21 +85,21 @@
 | `fn (f: f64) is_finite() -> bool` | `cfire::bm::is_finite(f, ...)` | `true` unless NaN or infinite. | `ok := x.is_finite()` |
 | `fn (s: str) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (s: str) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
-| `fn (s: str) contains(a: &str) -> bool` | `cfire::bm::contains(s, ...)` | `true` if the substring occurs. | `if path.contains("..") { return }` |
-| `fn (s: str) starts_with(a: &str) -> bool` | `cfire::bm::starts_with(s, ...)` | `true` if `s` begins with `prefix`. | `if line.starts_with("#") { continue }` |
-| `fn (s: str) ends_with(a: &str) -> bool` | `cfire::bm::ends_with(s, ...)` | `true` if `s` ends with `suffix`. | `if name.ends_with(".cf") { ... }` |
-| `fn (s: str) index_of(a: &str, b: usize = default) -> usize?` | `cfire::bm::index_of(s, ...)` | Byte position of the first occurrence at or after `start` (default 0), or `none`. | `dot := path.index_of(".") or { return }` |
-| `fn (s: str) last_index_of(a: &str) -> usize?` | `cfire::bm::last_index_of(s, ...)` | Byte position of the last occurrence, or `none`. | `slash := path.last_index_of("/") or 0` |
-| `fn (s: str) split(a: &str) -> []str` | `cfire::bm::split(s, ...)` | Splits on every occurrence of `sep` (an empty `s` gives one empty part). | `parts := line.split(",")` |
-| `fn (s: str) split_n(a: &str, b: usize) -> []str` | `cfire::bm::split_n(s, ...)` | Splits into at most `n` parts; the last part holds the rest. | `kv := line.split_n("=", 2)` |
+| `fn (s: str) contains(a: str) -> bool` | `cfire::bm::contains(s, ...)` | `true` if the substring occurs. | `if path.contains("..") { return }` |
+| `fn (s: str) starts_with(a: str) -> bool` | `cfire::bm::starts_with(s, ...)` | `true` if `s` begins with `prefix`. | `if line.starts_with("#") { continue }` |
+| `fn (s: str) ends_with(a: str) -> bool` | `cfire::bm::ends_with(s, ...)` | `true` if `s` ends with `suffix`. | `if name.ends_with(".cf") { ... }` |
+| `fn (s: str) index_of(a: str, b: usize = default) -> usize?` | `cfire::bm::index_of(s, ...)` | Byte position of the first occurrence at or after `start` (default 0), or `none`. | `dot := path.index_of(".") or { return }` |
+| `fn (s: str) last_index_of(a: str) -> usize?` | `cfire::bm::last_index_of(s, ...)` | Byte position of the last occurrence, or `none`. | `slash := path.last_index_of("/") or 0` |
+| `fn (s: str) split(a: str) -> []str` | `cfire::bm::split(s, ...)` | Splits on every occurrence of `sep` (an empty `s` gives one empty part). | `parts := line.split(",")` |
+| `fn (s: str) split_n(a: str, b: usize) -> []str` | `cfire::bm::split_n(s, ...)` | Splits into at most `n` parts; the last part holds the rest. | `kv := line.split_n("=", 2)` |
 | `fn (s: str) lines() -> []str` | `cfire::bm::lines(s, ...)` | Splits on `\n`, dropping a trailing `\r` from each line and a final empty line. | `for line in text.lines() { ... }` |
-| `fn (s: str) trim() -> &str` | `cfire::bm::trim(s, ...)` | View without leading and trailing ASCII whitespace. | `name := raw.trim()` |
-| `fn (s: str) trim_start() -> &str` | `cfire::bm::trim_start(s, ...)` | View without leading ASCII whitespace. | `body := text.trim_start()` |
-| `fn (s: str) trim_end() -> &str` | `cfire::bm::trim_end(s, ...)` | View without trailing ASCII whitespace. | `line := raw.trim_end()` |
-| `fn (s: str) strip_prefix(a: &str) -> &str?` | `cfire::bm::strip_prefix(s, ...)` | View after `prefix`, or `none` if `s` does not start with it. | `rest := arg.strip_prefix("--") or { continue }` |
-| `fn (s: str) strip_suffix(a: &str) -> &str?` | `cfire::bm::strip_suffix(s, ...)` | View before `suffix`, or `none` if `s` does not end with it. | `stem := file.strip_suffix(".cf") or file` |
-| `fn (s: str) replace(a: &str, b: &str) -> str` | `cfire::bm::replace(s, ...)` | Copy with the first occurrence of `from` replaced. | `s2 := s.replace("a", "b")` |
-| `fn (s: str) replace_all(a: &str, b: &str) -> str` | `cfire::bm::replace_all(s, ...)` | Copy with every occurrence of `from` replaced. | `s2 := s.replace_all("\t", "    ")` |
+| `fn (s: str) trim() -> str` | `cfire::bm::trim(s, ...)` | View without leading and trailing ASCII whitespace. | `name := raw.trim()` |
+| `fn (s: str) trim_start() -> str` | `cfire::bm::trim_start(s, ...)` | View without leading ASCII whitespace. | `body := text.trim_start()` |
+| `fn (s: str) trim_end() -> str` | `cfire::bm::trim_end(s, ...)` | View without trailing ASCII whitespace. | `line := raw.trim_end()` |
+| `fn (s: str) strip_prefix(a: str) -> str?` | `cfire::bm::strip_prefix(s, ...)` | View after `prefix`, or `none` if `s` does not start with it. | `rest := arg.strip_prefix("--") or { continue }` |
+| `fn (s: str) strip_suffix(a: str) -> str?` | `cfire::bm::strip_suffix(s, ...)` | View before `suffix`, or `none` if `s` does not end with it. | `stem := file.strip_suffix(".cf") or file` |
+| `fn (s: str) replace(a: str, b: str) -> str` | `cfire::bm::replace(s, ...)` | Copy with the first occurrence of `from` replaced. | `s2 := s.replace("a", "b")` |
+| `fn (s: str) replace_all(a: str, b: str) -> str` | `cfire::bm::replace_all(s, ...)` | Copy with every occurrence of `from` replaced. | `s2 := s.replace_all("\t", "    ")` |
 | `fn (s: str) repeat(a: usize) -> str` | `cfire::bm::repeat(s, ...)` | `s` concatenated `n` times. | `rule := "-".repeat(40)` |
 | `fn (s: str) to_upper() -> str` | `cfire::bm::to_upper(s, ...)` | ASCII upper-case copy. | `tag := name.to_upper()` |
 | `fn (s: str) to_lower() -> str` | `cfire::bm::to_lower(s, ...)` | ASCII lower-case copy. | `key := header.to_lower()` |
@@ -107,10 +107,7 @@
 | `fn (s: str) rune_count() -> usize` | `cfire::bm::rune_count(s, ...)` | Number of Unicode code points. | `n := s.rune_count()` |
 | `fn (s: str) bytes() -> []byte` | `(dedicated lowering)` | The UTF-8 bytes of `s`. | `raw := s.bytes()` |
 | `fn (s: str) pop() -> T?` | `cfire::bm::pop(s, ...)` | Removes and returns the last element (last byte for `str`), or `none` when empty. | `last := stack.pop() or { break }` |
-| `fn (s: str) data() -> *T` | `(dedicated lowering)` | Raw pointer to the contiguous buffer, for C FFI. | `ptr := xs.data()` |
-| `fn (s: str) byte_ptr() -> *c_char` | `(dedicated lowering)` | Raw `char*` into the string, for C FFI. | `p := s.byte_ptr()` |
-| `fn (s: str) byte_ptr_at(a: i64) -> *c_char` | `(dedicated lowering)` | Raw `char*` at a byte offset, for C FFI. | `p := s.byte_ptr_at(4)` |
-| `fn (s: str) with_ext(a: &str) -> str` | `(dedicated lowering)` | Path with its extension replaced. | `out := path.with_ext(".o")` |
+| `fn (s: str) with_ext(a: str) -> str` | `(dedicated lowering)` | Path with its extension replaced. | `out := path.with_ext(".o")` |
 | `fn (xs: []T) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (xs: []T) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
 | `fn (xs: []T) pop() -> T?` | `cfire::bm::pop(xs, ...)` | Removes and returns the last element (last byte for `str`), or `none` when empty. | `last := stack.pop() or { break }` |
@@ -123,7 +120,7 @@
 | `fn (xs: []T) sort_by(a: fn(T, T) -> bool)` | `cfire::bm::sort_by(xs, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
 | `fn (xs: []T) is_sorted() -> bool` | `cfire::bm::is_sorted(xs, ...)` | `true` if the elements are in ascending order. | `assert(xs.is_sorted())` |
 | `fn (xs: []T) binary_search(a: T) -> usize?` | `cfire::bm::binary_search(xs, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
-| `fn (xs: []T) join(a: &str) -> str` | `cfire::bm::join(xs, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
+| `fn (xs: []T) join(a: str) -> str` | `cfire::bm::join(xs, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
 | `fn (xs: []T) push(a: T)` | `(dedicated lowering)` | Appends `v`. | `xs.push(4)` |
 | `fn (xs: []T) insert(a: usize, b: T)` | `cfire::bm::insert(xs, ...)` | Inserts `v` at `i`, shifting later elements; panics when `i > len()`. | `xs.insert(0, head)` |
 | `fn (xs: []T) remove(a: usize) -> T` | `cfire::bm::remove(xs, ...)` | Removes and returns the element at `i`, shifting later elements; panics when out of range. | `x := xs.remove(0)` |
@@ -131,8 +128,6 @@
 | `fn (xs: []T) truncate(a: usize)` | `cfire::bm::truncate(xs, ...)` | Keeps the first `n` elements (no effect when `n >= len()`). | `xs.truncate(10)` |
 | `fn (xs: []T) extend(a: []T)` | `cfire::bm::extend(xs, ...)` | Appends a copy of every element of `other`. | `xs.extend(more)` |
 | `fn (xs: []T) clear()` | `cfire::bm::clear(xs, ...)` | Removes every element. | `xs.clear()` |
-| `fn (xs: []T) data() -> *T` | `(dedicated lowering)` | Raw pointer to the contiguous buffer, for C FFI. | `ptr := xs.data()` |
-| `fn (xs: []T) data_ptr() -> *T` | `(dedicated lowering)` | Raw pointer to the element buffer, for C FFI. | `ptr := xs.data_ptr()` |
 | `fn (xs: []T) bytes() -> []byte` | `(dedicated lowering)` | Byte view of the slice's storage. | `raw := xs.bytes()` |
 | `fn (arr: [N]T) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (arr: [N]T) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
@@ -145,9 +140,7 @@
 | `fn (arr: [N]T) sort_by(a: fn(T, T) -> bool)` | `cfire::bm::sort_by(arr, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
 | `fn (arr: [N]T) is_sorted() -> bool` | `cfire::bm::is_sorted(arr, ...)` | `true` if the elements are in ascending order. | `assert(xs.is_sorted())` |
 | `fn (arr: [N]T) binary_search(a: T) -> usize?` | `cfire::bm::binary_search(arr, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
-| `fn (arr: [N]T) join(a: &str) -> str` | `cfire::bm::join(arr, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
-| `fn (arr: [N]T) data() -> *T` | `(dedicated lowering)` | Raw pointer to the contiguous buffer, for C FFI. | `ptr := xs.data()` |
-| `fn (arr: [N]T) data_ptr() -> *T` | `(dedicated lowering)` | Raw pointer to the element buffer, for C FFI. | `ptr := xs.data_ptr()` |
+| `fn (arr: [N]T) join(a: str) -> str` | `cfire::bm::join(arr, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
 | `fn (m: map[K]V) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (m: map[K]V) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
 | `fn (m: map[K]V) clear()` | `cfire::bm::clear(m, ...)` | Removes every element. | `xs.clear()` |
@@ -208,6 +201,16 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `audio.Waveform` | enum | Oscillator shape for `audio.gen_tone` and `audio.gen_chirp`. Variants: `Sine`, `Square`, `Saw`, `Triangle`, `Noise`. |
+| `audio.SfxPreset` | enum | A procedural sound effect for `audio.gen_sfx`. Variants: `Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`. |
+| `audio.Wave` | struct | An in-memory waveform: interleaved `f32` samples in `-1.0`..`1.0`. Fields: `samples: []f32`, `sample_rate: i32`, `channels: i32`. |
+| `audio.Sound` | handle | A wave registered with the mixer, playable many times at once (polyphonic). |
+| `audio.Stream` | handle | A real-time output stream you push samples into, for custom synthesis. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!` | `cfire::audio::init(sample_rate, channels)` | Initializes the hardware audio output queue (or headless software mixer in CI). | `try audio.init(48000, 2)` |
@@ -261,6 +264,26 @@ fn main() {
     println("Target OS: {}, Arch: {}", build.os(), build.arch())
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `build.CC` | manifest | In `build.cf`: compiles C or C++ sources into the project (`build.CC({ Sources: [...] })`). |
+| `build.CMake` | manifest | In `build.cf`: an external CMake project built as a dependency. |
+| `build.Make` | manifest | In `build.cf`: an external Make project built as a dependency. |
+| `build.Git` | manifest | In `build.cf`: a dependency fetched from a Git repository at a pinned revision. |
+| `build.Archive` | manifest | In `build.cf`: a dependency fetched as a checksummed archive. |
+| `build.Command` | manifest | In `build.cf`: a command run as part of the build. |
+| `build.Executable` | manifest | In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`). |
+| `build.Library` | manifest | In `build.cf`: declares a static or shared library target. |
+| `build.Step` | manifest | In `build.cf`: a code-generation step run when its inputs are newer than its outputs. |
+| `build.PkgConfig` | manifest | In `build.cf`: links a system library found through pkg-config. |
+| `build.Link` | manifest | In `build.cf`: links a library by name. |
+| `build.Include` | manifest | In `build.cf`: adds a header search directory. |
+| `build.Tako` | manifest | In `build.cf`: enables the Tako deployment integration. |
+| `build.Target` | manifest | In `build.cf`: what `build.Executable` and `build.Library` return. |
+| `build.StepTarget` | manifest | In `build.cf`: what `build.Step` returns. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -344,6 +367,15 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `collections.Set[T]` | handle | An unordered set of unique values. |
+| `collections.Deque[T]` | handle | A double-ended queue: push and pop at both ends in constant time. |
+| `collections.PriorityQueue[T]` | handle | A max-heap: `pop()` returns the largest value first, or `none` when empty. |
+| `collections.MinQueue[T]` | handle | A min-heap: `pop()` returns the smallest value first, or `none` when empty. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `type Set[T] struct` | `cfire::collections::Set<T>` | Generic hash set container. | `mut s := collections.Set[str]{}` |
@@ -378,6 +410,12 @@ fn main() {
     println("Authenticated decrypted plaintext: {}", plain)
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `aes.GcmResult` | struct | The output of AES-256-GCM encryption. Fields: `ciphertext: []byte`, `tag: []byte`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -587,6 +625,14 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `fs.OpenMode` | enum | How `fs.open` opens a file. Variants: `Read`, `Write`, `Append`, `ReadWrite`. |
+| `fs.SeekWhence` | enum | The origin for `file.seek`. Variants: `Start`, `Current`, `End`. |
+| `fs.File` | handle | An open file, closed automatically when it goes out of scope. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn read_bytes(path: str) -> []byte!` | `cfire::fs::read_bytes(path)` | Reads an entire binary file into a byte buffer. | `raw := try fs.read_bytes("input.bin")` |
@@ -660,6 +706,12 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `json.Value` | handle | A parsed JSON value of any shape, from `json.parse_dynamic`; inspect it with its methods. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn parse[T](payload: []byte | str) -> T!` | `cfire::json::parse<T>(payload)` | Parses UTF-8 JSON into a struct `T` using `simdjson::ondemand`. | `cfg := try json.parse[Config](raw)` |
@@ -715,6 +767,13 @@ fn main() {
     log.error("database pool exhausted", "active_conns", "100", "pool_size", "100")
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `log.Level` | enum | Minimum severity for `log.set_level`. Variants: `Debug`, `Info`, `Warn`, `Error`. |
+| `log.Format` | enum | Output format for `log.set_format`. Variants: `Text`, `Json`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -786,6 +845,13 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `net.TcpListener` | handle | A listening TCP socket; `accept()` returns a `TcpConn` per client. |
+| `net.TcpConn` | handle | A connected TCP stream, closed when it goes out of scope. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn listen(port: u16 = 0, host: str = "0.0.0.0") -> TcpListener!` | `cfire::net::listen(port, host)` | Binds a TCP listener on `host:port` (`0` picks an ephemeral port; the default host is every interface). | `mut ln := try net.listen(0)` |
@@ -850,6 +916,19 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `http.Request` | struct | An HTTP request, as a handler receives it or as you build one to send. Fields: `remote_addr: str`, `method: str`, `path: str`, `raw_query: str`, `query_params: map[str]str`, `headers: map[str]str`, `params: map[str]str`, `body: str`. |
+| `http.Response` | struct | An HTTP response; build one with `http.Response.text`, `.json`, `.html` or `.redirect`. Fields: `status: i32`, `status_code: i32`, `status_text: str`, `headers: map[str]str`, `body: str`. |
+| `http.Router` | handle | Maps method and path patterns to handlers; registering a route returns the router, so calls chain. |
+| `http.HttpServer` | handle | An HTTP server bound to a port (`make(http.Server, port)`); `serve_in_background` runs it and `stop` ends it. |
+| `http.Server` | handle | The name `make(http.Server, port)` constructs; the same type as `http.HttpServer`. |
+| `http.SseEvent` | struct | One server-sent event. Fields: `event: str`, `data: str`, `id: str`. |
+| `http.ServerLimits` | struct | Per-connection limits for `http.Server` (Q22); pass to `server.set_limits(...)`. `workers = 0` keeps the default pool size (`hardware_concurrency()`, at least 4). Fields: `header_timeout_ms: i32`, `body_timeout_ms: i32`, `max_body_bytes: usize`, `workers: usize`, `max_pending: usize`. |
+| `http.TlsConfig` | struct | Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!` | `cfire::http::get(url, headers, verify_peer)` | Executes an HTTP or HTTPS GET request against a target URL. | `resp := try http.get("https://127.0.0.1:8443/health", {}, false)` |
@@ -863,11 +942,11 @@ fn main() {
 | `fn Response.json(code: i32, json_str: str) -> Response` | `cfire::http::Response::json(code, json_str)` | Creates an HTTP Response with application/json content-type. | `return http.Response.json(200, "{\"status\":\"ok\"}")` |
 | `fn Response.html(code: i32, html: str) -> Response` | `cfire::http::Response::html(code, html)` | Creates an HTTP Response with text/html content-type. | `return http.Response.html(200, "<h1>Hello</h1>")` |
 | `fn Response.redirect(location: str, code: i32 = 302) -> Response` | `cfire::http::Response::redirect(location, code)` | Creates an HTTP redirect Response setting Location header. | `return http.Response.redirect("/login", 302)` |
-| `fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router&` | `r.get(pattern, handler)` | Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`). | `r.get("/users/:id", |req| http.Response.text(200, req.param("id")))` |
-| `fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router&` | `r.post(pattern, handler)` | Registers an HTTP POST route handler. | `r.post("/items", |req| http.Response.json(201, "{}"))` |
-| `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -> void) -> Router&` | `r.ws(pattern, handler)` | Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`. | `r.ws("/chat/:room", |req, mut ws| { ... })` |
+| `fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router` | `r.get(pattern, handler)` | Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`). | `r.get("/users/:id", |req| http.Response.text(200, req.param("id")))` |
+| `fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router` | `r.post(pattern, handler)` | Registers an HTTP POST route handler. | `r.post("/items", |req| http.Response.json(201, "{}"))` |
+| `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router` | `r.ws(pattern, handler)` | Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`. | `r.ws("/chat/:room", |req, mut ws| { ... })` |
 | `fn (r: Router) dispatch(req: Request) -> Response` | `r.dispatch(req)` | Dispatches an HTTP request through the router in-memory without open network sockets. | `res := router.dispatch(test_req)` |
-| `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&` | `r.use(mw)` | Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests. | `r.use(|req| { return None })` |
+| `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router` | `r.use(mw)` | Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests. | `r.use(|req| { return None })` |
 | `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128 }` | `cfire::http::ServerLimits` | Per-connection server limits (Q22, CF-180). Omitted fields keep their defaults; `workers = 0` keeps the default pool size (`hardware_concurrency()`, at least 4). | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000})` |
 | `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM. | `tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}` |
 | `fn (mut s: HttpServer) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the per-connection limits (Q22): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending}`; omitted fields keep their defaults. | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})` |
@@ -907,6 +986,13 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `tls.ServerContext` | handle | A TLS server configuration (certificate and key) that wraps accepted connections. |
+| `tls.CertKeyPair` | struct | A certificate and its private key, in PEM form. Fields: `cert_pem: str`, `key_pem: str`. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn available() -> bool` | `cfire::tls::available()` | Returns `true` if the OpenSSL (`libssl` / `libcrypto`) runtime bridge is available. | `if tls.available() { ... }` |
@@ -938,6 +1024,12 @@ fn main() {
     println("Percent-encoded: {}", encoded)
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `url.Url` | struct | A parsed URL, from `url.parse`. Fields: `scheme: str`, `host: str`, `port: u16`, `path: str`, `query: str`, `fragment: str`, `query_params: map[str]str`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -974,6 +1066,14 @@ fn main() {
     println("Received WebSocket stream frame: {}", frame)
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `websocket.Conn` | handle | An open WebSocket connection; messages are `str` (`recv_text`) or `[]byte` (`recv_binary`). |
+| `websocket.Server` | handle | A WebSocket server bound to a port. |
+| `websocket.TlsConfig` | struct | Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1016,6 +1116,14 @@ fn main() {
     println("Current Git commit: {} (exit code {})", output.stdout, output.exit_code)
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `os.ExecResult` | struct | The outcome of a finished subprocess (`os.command`). Fields: `exit_code: i32`, `stdout: str`, `stderr: str`. |
+| `os.TermSize` | struct | A terminal's size in character cells. Fields: `cols: i32`, `rows: i32`. |
+| `os.RawTerminal` | handle | The terminal in raw mode (no echo, no line buffering); restored when it goes out of scope. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1090,6 +1198,12 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `regex.Regex` | handle | A compiled regular expression, from `regex.compile`. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn compile(pattern: str) -> Regex!` | `cfire::regex::compile(pattern)` | Compiles an ECMAScript regex pattern into a reusable Regex object. | `re := try regex.compile("\\d+")` |
@@ -1137,6 +1251,16 @@ fn main() {
     }
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `sync.Mutex[T]` | handle | A value of type `T` behind a lock; `lock()` returns a guard, or use `with_lock`. |
+| `sync.MutexGuard[T]` | handle | Holds a `Mutex[T]` locked and gives access to its value; the lock is released when the guard goes out of scope. |
+| `sync.Channel[T]` | handle | A thread-safe queue between tasks: `send`, `recv`, `try_recv`; `close()` wakes every waiting receiver. |
+| `sync.Atomic[T]` | handle | A value shared between threads and read or changed atomically: `load`, `store`, `add`, `sub`. |
+| `sync.Context` | handle | Carries cancellation and a deadline across tasks; see `core:sync/context`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1186,6 +1310,12 @@ fn main() {
     }
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `context.Context` | handle | Carries cancellation and a deadline across tasks; cancelling a parent cancels its children. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1250,6 +1380,13 @@ fn main() {
     println("Elapsed duration: {} ms ({} us)", elapsed.to_millis(), elapsed.to_micros())
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `time.Duration` | handle | A span of time with nanosecond precision, made with `time.duration_millis(ms)` and friends and passed to `time.sleep`. |
+| `time.Time` | handle | A point in wall-clock time, from `time.now()`, `time.unix(sec)` or `time.from_unix_seconds(sec)`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1355,6 +1492,23 @@ fn main() {
     println("Top match: {} (score={})", hits[0].title, hits[0].score)
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `ai.Provider` | enum | Which model API a `Client` talks to. Variants: `OpenAI`, `Anthropic`, `Gemini`, `Ollama`, `OpenAICompatible`, `Local`, `Apple`, `Mock`. |
+| `ai.Client` | handle | A connection to a model provider; send it messages, optionally with tools. |
+| `ai.Agent` | handle | A client plus a tool registry that runs the tool-calling loop for you. |
+| `ai.McpServer` | handle | A Model Context Protocol server exposing your tools over stdio. |
+| `ai.Message` | struct | One chat message. Fields: `role: str`, `content: str`, `attachments: []Attachment`, `tool_calls: []ToolCall`, `tool_call_id: str`, `tool_name: str`, `is_error: bool`. |
+| `ai.Tool` | struct | A tool the model may call; usually built with `ai.tool_def[T]`. Fields: `name: str`, `description: str`, `schema_json: str`, `parameters_schema: str`. |
+| `ai.ToolCall` | struct | A model's request to run one tool. Fields: `id: str`, `name: str`, `arguments_json: str`. |
+| `ai.ChatResponse` | struct | A model's reply. Fields: `text: str`, `model: str`, `tool_calls: []ToolCall`. |
+| `ai.Attachment` | struct | A file attached to a message. Fields: `filename: str`, `mime_type: str`, `extracted_text: str`. |
+| `ai.Document` | struct | A parsed document (`ai.parse_document`). Fields: `path: str`, `mime_type: str`, `format: str`, `text: str`, `sections: []DocumentSection`. |
+| `ai.DocumentSection` | struct | One section of a document, as `ai.chunk_document` returns them. Fields: `index: i32`, `title: str`, `text: str`. |
+| `ai.ZipEntry` | struct | One file from a zip archive. Fields: `name: str`, `content: str`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1518,6 +1672,12 @@ fn main() {
 }
 ```
 
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `sqlite.Conn` | handle | An open SQLite database; `exec` runs statements and `query[T]` maps rows to structs. |
+
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn open(path: str) -> Conn!` | `cfire::sqlite::open(path)` | Opens an SQLite3 database connection, enables WAL mode, and registers vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`, `vec_dot`, `vec_dims`). | `mut db := try sqlite.open("app.db")` |
@@ -1561,6 +1721,15 @@ fn main() {
     print(chunk)
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `ssh.Session` | handle | An authenticated SSH connection; run commands or open channels on it. |
+| `ssh.Channel` | handle | An SSH channel (a shell or a command) with its own input and output. |
+| `ssh.ExecResult` | struct | The outcome of a remote command. Fields: `exit_code: i32`, `stdout: str`, `stderr: str`. |
+| `ssh.SftpEntry` | struct | One entry of a remote directory listing. Fields: `name: str`, `is_dir: bool`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -1647,6 +1816,12 @@ fn main() {
     app.run()
 }
 ```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `webui.App` | handle | A native desktop window running a web UI, with RPC between the page and cfire. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -2037,64 +2212,59 @@ opt := "42".parse_i64() or {
 }
 ```
 
-### `[cfire/USE-AFTER-FREE]` — Use of Dangling Pointer or Slice View After Owner Invalidation
+### `[cfire/USE-AFTER-FREE]` — Use of a Slice View After Owner Invalidation
 
-Pointers (`&x`, `&mut x`, `.data()`, `.byte_ptr()`) and slice views (`s[a..b]`) track their root owner variable. If the owner is moved (`move x`), reassigned (`x = ...`), or structurally mutated by a reallocating container method (`.push()`, `.pop()`, `.clear()`, `.erase()`, `.remove()`), any subsequent read or dereference of the borrowed pointer/view is rejected at compile time.
+Slice views (`s[a..b]`, `xs[a..b]`) track their root owner variable. If the owner is moved (`move x`), reassigned (`x = ...`), or structurally mutated by a reallocating container method (`.push()`, `.pop()`, `.insert()`, `.remove()`, `.clear()`), every view taken before is invalidated, and reading it is rejected.
 
 **Rejected (`.cf`):**
 ```cf
-mut nums := [10, 20, 30]
-p := nums.data()
-nums.push(40) // invalidates 'p' due to potential vector reallocation
-println("{}", *p) // ERROR [cfire/USE-AFTER-FREE]
+mut nums: []i32 = [10, 20, 30]
+view := nums[0..2]
+nums.push(40) // may reallocate 'nums'
+println("{}", view[0]) // ERROR [cfire/USE-AFTER-FREE]
 ```
 
 **Accepted (`.cf`):**
 ```cf
-mut nums := [10, 20, 30]
+mut nums: []i32 = [10, 20, 30]
 nums.push(40)
-p := nums.data() // borrow acquired after mutation
-println("{}", *p) // OK
+view := nums[0..2] // view taken after the mutation
+println("{}", view[0]) // OK
 ```
 
-### `[cfire/DANGLING-POINTER]` — Inner-Scope Borrow Escaping to Outer-Scope Pointer or View
+### `[cfire/DANGLING-POINTER]` — Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)
 
-A pointer or slice view declared in an outer lexical scope cannot be assigned the address or slice view of a variable declared in a deeper inner block, preventing stack use-after-scope defects.
+Raw pointers are not cfire syntax any more (CF-189), so no pointer can outlive its target; the check remains for code that still reaches it. Keep an index, the value itself, or `own[T]` instead.
 
 **Rejected (`.cf`):**
 ```cf
-mut p: *mut i32 = none
-if true {
-    mut inner := 42
-    p = &mut inner // ERROR [cfire/DANGLING-POINTER]
-}
+mut p := &x // ERROR [cfire/RAW-POINTER]: raw pointers exist only in C++ interop
 ```
 
 **Accepted (`.cf`):**
 ```cf
-mut outer := 42
-mut p: *mut i32 = none
-if true {
-    p = &mut outer // OK: 'outer' outlives 'p'
-}
+mut values: []i32 = [1, 2]
+mut at := 0 // an index instead of a pointer
+values[at] = 42 // OK
 ```
 
-### `[cfire/DANGLING-RETURN]` — Returning Pointer or View Rooted in Function-Local Storage
+### `[cfire/DANGLING-RETURN]` — Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)
 
-Functions cannot return a pointer (`*T`, `*mut T`) or slice view (`&str`, `&[]T`) that borrows a function-local variable or `move` parameter whose storage is destroyed on function return.
+Functions return values (`T`, `str`, `[]T`) or `own[T]`; a returned `str` or `[]T` is a copy of any view, so nothing returned can borrow a local (Q36, CF-189).
 
 **Rejected (`.cf`):**
 ```cf
-fn bad_ptr() -> *i32 {
+fn bad() -> *i32 { // ERROR [cfire/RAW-POINTER]
     local := 99
-    return &local // ERROR [cfire/DANGLING-RETURN]
+    return &local
 }
 ```
 
 **Accepted (`.cf`):**
 ```cf
-fn good_ptr(in_ref: &i32) -> *i32 {
-    return &in_ref // OK: rooted in caller-owned parameter
+fn good() -> i32 {
+    local := 99
+    return local // OK: returned by value
 }
 ```
 
@@ -2119,21 +2289,29 @@ for x in items {
 }
 ```
 
-### `[cfire/NULL-DEREF]` — Dereference or Member Access on Null or Potentially Null Pointer
+### `[cfire/NULL-DEREF]` — Member Access on an Optional Variable That May Be `none`
 
-Raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) initialized to `none`, left uninitialized, or typed optional (`*T?`, `own[T]?`) cannot be dereferenced (`*p`) or member-accessed (`p.field`) until proven non-null via assignment (`p = &mut x`), an `if p != none` branch, an early-returning `if p == none { return }`, or `assert(p != none)`.
+A variable of type `T?` (`own[T]?`, `Session?`) is tracked across branches. Reading a field or calling a method on it is rejected until the code proves it holds a value: `if s != none { ... }`, an early `return` when it is `none`, `assert(s != none)`, or `if v := s { ... }`. (cfire values are otherwise never null: there are no raw pointers, CF-189.)
 
 **Rejected (`.cf`):**
 ```cf
-mut p: *mut i32 = none
-*p = 10 // ERROR [cfire/NULL-DEREF]
+type Session struct { id: i32 }
+fn find(id: i32) -> Session? {
+    return none
+}
+s := find(1)
+println("{}", s.id) // ERROR [cfire/NULL-DEREF]
 ```
 
 **Accepted (`.cf`):**
 ```cf
-mut p: *mut i32 = none
-if p != none {
-    *p = 10 // OK: flow-narrowed to NonNull
+type Session struct { id: i32 }
+fn find(id: i32) -> Session? {
+    return none
+}
+s := find(1)
+if s != none {
+    println("{}", s.id) // OK: narrowed to present
 }
 ```
 

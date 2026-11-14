@@ -1,4 +1,5 @@
 #include "test_harness.hpp"
+#include "runner_self_tests.hpp"
 
 auto main(int argc, char** argv) -> int {
     test_ignore_sigpipe();
@@ -8,6 +9,39 @@ auto main(int argc, char** argv) -> int {
     auto should_run = [&](std::string_view category) {
         return suite == "all" || suite == category;
     };
+
+    // CF-186: the conformance corpus and the GUIDE doc-tests (formerly scripts/run_conformance.py and run_guide_tests.py).
+    // `all` does not include them: `make check` runs each once, and the sanitizer targets rerun conformance with
+    // their own --run-flags.
+    if (suite == "conformance" || suite == "guide") {
+        conformance::Options opt;
+        opt.cfire = std::filesystem::absolute(cfire_exe()).string();
+        opt.runtime_dir = rt_dir;
+        std::string filter = "*";
+        std::size_t jobs = default_jobs();
+        bool verbose = false;
+        for (int i = 2; i < argc; ++i) {
+            std::string_view a = argv[i];
+            auto value = [&](std::string_view flag) -> std::optional<std::string> {
+                if (a.starts_with(flag) && a.size() > flag.size() && a[flag.size()] == '=') return std::string(a.substr(flag.size() + 1));
+                if (a == flag && i + 1 < argc) return std::string(argv[++i]);
+                return std::nullopt;
+            };
+            if (auto v = value("--filter")) filter = *v;
+            else if (auto v = value("--jobs")) jobs = static_cast<std::size_t>(std::max(1, std::atoi(v->c_str())));
+            else if (auto v = value("--timeout")) opt.timeout = std::max(1, std::atoi(v->c_str()));
+            else if (auto v = value("--cfire")) opt.cfire = std::filesystem::absolute(*v).string();
+            else if (auto v = value("--run-flags")) {
+                for (auto& f : conformance::split_ws(*v)) opt.run_flags.push_back(f);
+            } else if (a == "-v" || a == "--verbose") verbose = true;
+            else {
+                std::println(stderr, "unknown {} option: {}", suite, a);
+                return 2;
+            }
+        }
+        if (suite == "guide") return guide::run_guide(opt.cfire, std::filesystem::current_path(), jobs);
+        return conformance::run_corpus(opt, std::filesystem::current_path() / "tests" / "conformance", filter, jobs, verbose);
+    }
 
     if (should_run("unit")) {
         test_sema_intent_and_move_diagnostics();
@@ -50,9 +84,11 @@ auto main(int argc, char** argv) -> int {
         test_cf155_rename_scopes_and_diff(rt_dir);
         test_cf158_doc_integrity(rt_dir);
         test_cf183_cli_and_tooling(rt_dir);
+        test_cf188_stdlib_type_surface(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
         test_section2_language_ergonomics(rt_dir);
         test_section3_agent_tooling(rt_dir);
+        test_cf186_runner_self_tests(rt_dir);
     }
     if (should_run("e2e")) {
         test_end_to_end_canonical_examples(rt_dir);

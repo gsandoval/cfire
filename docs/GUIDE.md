@@ -15,7 +15,7 @@ This guide is written as a hands-on builder's tour rather than a dry language sp
 
 1. **Lexical & Resilient Syntax Analysis (`lexer` / `parser`)**: Tokenizes `.cf` source files and constructs a typed Abstract Syntax Tree (AST) with statement-level error recovery so your editor and LSP stay responsive while you type.
 2. **Clang AST Bridge (`clang_bridge`)**: Whenever it sees `import cpp "header.h"`, `cfire` invokes the system Clang frontend (`-Xclang -ast-dump=json`) to ingest C/C++ function signatures, structs, enums, and macros directly—no manual FFI glue required.
-3. **Semantic, Intent & Loan Verification (`sema`)**: Resolves package imports, infers types, checks `match` exhaustiveness and reachability, verifies call-site `mut`/`move` markers, tracks local pointer/slice loans against container mutations (`cfire/USE-AFTER-FREE`, `cfire/ITERATOR-INVALIDATION`), and enforces flow-sensitive null checks (`cfire/NULL-DEREF`).
+3. **Semantic, Intent & Loan Verification (`sema`)**: Resolves package imports, infers types, checks `match` exhaustiveness and reachability, verifies call-site `mut`/`move` markers, tracks slice views against container mutations (`cfire/USE-AFTER-FREE`, `cfire/ITERATOR-INVALIDATION`), and keeps raw pointers out of `.cf` code (`cfire/RAW-POINTER`; values are never null, absence is `T?`).
 4. **ISO C++23 Code Generation (`codegen`)**: Emits standard ISO C++23 source code annotated with `#line` directives so `lldb`, `gdb`, and AddressSanitizer stack traces point directly to your `.cf` filenames and line numbers.
 5. **PCH-Accelerated Backend Compilation (`buildsys`)**: Compiles the generated C++23 translation unit against a precompiled header (`cfire_prelude.hpp.pch`) using your host C++23 compiler (`clang++` 18+ or `g++` 14+) and links the required system or vendor libraries.
 
@@ -592,18 +592,23 @@ fn main() {
 0:mild 1:freezing 2:hot total=11
 ```
 
-### Pointers (`*T`, `*mut T`) & RAII Smart Ownership (`^T` / `own[T]`, `shared[T]`)
-When you need indirection or heap allocation, `cfire` separates **owning smart pointers** from **non-owning pointers and borrows** right in the syntax:
+### Heap Ownership (`own[T]`, `shared[T]`) — and No Raw Pointers
+When you need heap allocation, `cfire` gives you owning smart pointers, and the type decides who owns the memory:
 
 | Syntax | Creation Expression | Ownership & Mutation Semantics | Emitted ISO C++23 Type |
 | :--- | :--- | :--- | :--- |
 | `own[T]` | `make(own[T], val)` | Unique RAII heap ownership; movable, never implicitly copied | `std::unique_ptr<T>` |
 | `shared[T]` | `make(shared[T], val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
-| `&T` / `&mut T` | `&x` / `&mut x` | Non-owning immutable or mutable borrow (`&str` -> `cfire::str_ref`, a `std::string_view`) | `const T&` / `T*` |
-| `*T` | `&x` or foreign C pointer | Non-owning pointer; requires null check (`if p != none`) before deref | `T*` |
-| `*mut T` | `&mut x` | Rebindable pointer to a mutable target; supports `*p = val` and `*p += 1` | `T*` |
 
-Let's see how unique (`own[T]`), shared (`shared[T]`), and rebindable mutable pointers (`*mut T`) work together:
+There are no raw pointers in `cfire` code: no `*T` type, no `&x`, no `*p`, and no `&T` reference type (CF-189). Each job a pointer does in C++ has a direct form:
+- **Read a value without copying it**: parameters are read-only views by default (`fn f(s: str)` takes a `std::string_view`); write `mut` when the callee changes the argument (`fn f(mut xs: []i32)`, called as `f(mut xs)`).
+- **Point at an element**: keep its index (`cursor := 2`, then `xs[cursor] += 1`).
+- **Let parallel tasks write results**: return them from the task (`results := async.scope ...`), or give each task its own element with `scope.spawn |mut xs[i]| { ... }` (Chapter 10).
+- **Share or own heap data**: `own[T]` / `shared[T]`, reached through their fields (`pkt.sequence`).
+- **Read a locked value**: `guard.value` on a `sync.MutexGuard[T]` (Chapter 10).
+- **C++ interop**: raw pointers exist only there. A `[]T` or `str` passed to an `import cpp` function becomes its buffer pointer automatically, `own[T]` crosses the boundary with `.release()` / `own[T].from_raw(p)`, and anything else goes in a `cpp { ... }` block (Chapter 11).
+
+Each old spelling is a compile error that names the replacement (`cfire/RAW-POINTER`, `cfire/REFERENCE-TYPE`; `cfire fix` rewrites `x: &T` / `x: &mut T` parameters).
 
 ```cfire
 package main
@@ -621,16 +626,15 @@ fn main() {
     shared_pkt := make(shared[Packet], Packet{sequence: 2, payload: "ACK"})
     shared_clone := shared_pkt
 
-    // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
-    mut a: i32 = 10
-    mut b: i32 = 20
-    mut cursor: *mut i32 = &mut a
-    *cursor += 5
-    cursor = &mut b
-    *cursor = 99
+    // 3. An index where C++ would keep a pointer into the buffer
+    mut vals: []i32 = [10, 20]
+    mut cursor := 0
+    vals[cursor] += 5
+    cursor = 1
+    vals[cursor] = 99
 
     println("seq1={} seq2={} a={} b={}",
-        unique_pkt.sequence, shared_clone.sequence, a, b)
+        unique_pkt.sequence, shared_clone.sequence, vals[0], vals[1])
 }
 ```
 ```text
@@ -645,7 +649,7 @@ seq1=1 seq2=2 a=15 b=99
 ### Seeing Every Mutation & Move at the Call Site
 If you have ever hunted down a bug in C++ where a helper function quietly modified a struct via a non-`const` reference (`void process(Config& cfg)`), you know the frustration: the function signature is buried in another file, and the call site (`process(cfg)`) looks completely read-only.
 
-In `cfire`, parameters are immutable references by default. Whenever a function mutates an argument in place (`mut`) or takes ownership (`move`), **both the function declaration and the call site must state that intent**:
+In `cfire`, parameters are immutable views by default: a read-only `str` is a `std::string_view` and a read-only `[]T` a `std::span<const T>`, so whole values, sub-slices (`xs[1..]`) and literals all pass without a copy, and a copy is made only where an owned value is needed (a field, a `mut` binding, a return value). Whenever a function mutates an argument in place (`mut`) or takes ownership (`move`), **both the function declaration and the call site must state that intent**:
 
 | Intent Modifier | Default? | Callee Access | Mandatory Call-Site Marker | Emitted ISO C++23 Lowering |
 | :--- | :---: | :--- | :--- | :--- |
@@ -732,10 +736,10 @@ filtered_sum=130
 
 Generic type parameters (`[T]`) lower 1-to-1 to C++23 `template <typename T>` functions—giving you full monomorphization with zero heap boxing or virtual dispatch.
 
-### Loan Tracking: How `cfire` Prevents Dangling Pointers & Iterator Invalidation
-One of the easiest ways to corrupt memory in C++ is taking a pointer, slice view, or iterator into a `std::vector` or `std::string`, and then calling `.push_back()` or `.clear()` while that view is still live. If the vector reallocates, the pointer dangles silently.
+### Loan Tracking: How `cfire` Prevents Dangling Views & Iterator Invalidation
+One of the easiest ways to corrupt memory in C++ is taking a view or iterator into a `std::vector` or `std::string`, and then calling `.push_back()` or `.clear()` while that view is still live. If the vector reallocates, the view dangles silently.
 
-`cfire` solves this without requiring lifetime annotations (`'a`) on your types or functions. Its lexical loan tracker (`src/sema.hpp`) watches local borrows (`&x`, `s[a..b]`, `.data()`, `.byte_ptr()`) and active `for` loops:
+`cfire` solves this without requiring lifetime annotations (`'a`) on your types or functions. Its lexical loan tracker (`src/sema.hpp`) watches views (`s[a..b]`, `xs[a..b]`) and active `for` loops:
 
 ```cfire
 package main
@@ -743,7 +747,7 @@ package main
 fn main() {
     mut nums: []i32 = [10, 20, 30]
 
-    // 1. Taking a view or pointer records an active loan on 'nums'
+    // 1. Taking a view records an active loan on 'nums'
     view := nums[0..2]
     println("first_in_view={}", view[0])
 
@@ -766,9 +770,9 @@ If you tried to read `view[0]` *after* `nums.push(40)`, the compiler immediately
 | `cfire/MUT-RECEIVER` | Calling a `fn (mut s: T)` method on an immutable struct variable. | Declare `mut s := ...`. |
 | `cfire/MUT-ALIAS` | Passing the same variable twice in one call when at least one arg is `mut`. | Pass distinct variables (`transfer(mut a, mut b)`). |
 | `cfire/USE-AFTER-MOVE` | Reading a variable after `move x` transferred ownership on an earlier path. | Read before `move x`, or pass by `mut` borrow. |
-| `cfire/USE-AFTER-FREE` | Reading a pointer/view (`&x`, `.data()`, `.byte_ptr()`, `s[a..b]`) after `.push()`, `.clear()`, `move`, or reassignment mutated the owner. | Finish reading the view before mutating the container, or re-slice after `.push()`. |
-| `cfire/DANGLING-POINTER` | Assigning the address of an inner-scope variable (`ptr = &local`) to an outer pointer. | Keep the pointee in the outer scope or allocate with `make(own[T], ...)`. |
-| `cfire/DANGLING-RETURN` | Returning a pointer or view (`&local`, `local.data()`) to stack-local storage. | Return an owned value (`T`, `str`, `[]T`) or `own[T]` instead. |
+| `cfire/USE-AFTER-FREE` | Reading a view (`s[a..b]`, `xs[a..b]`) after `.push()`, `.clear()`, `move`, or reassignment mutated the owner. | Finish reading the view before mutating the container, or re-slice after `.push()`. |
+| `cfire/RAW-POINTER` | `*T`, `&x`, `*p` or `.data()` outside C++ interop (CF-189). | Use a view parameter, `mut`, an index, `own[T]`/`shared[T]`, or a `cpp { }` block. |
+| `cfire/REFERENCE-TYPE` | A `&T` / `&mut T` type (Q53). | Write `x: T` (a view) or `mut x: T`; `cfire fix` rewrites it. |
 | `cfire/ITERATOR-INVALIDATION` | Mutating a collection (`.push()`, `.clear()`, `.remove()`, `move`) inside `for x in col`. | Collect mutations in a separate slice and apply them after the loop. |
 
 ---
@@ -1067,10 +1071,8 @@ ep=127.0.0.1:8080 q1=10443 q2=50
 > [!IMPORTANT]
 > **Divergence Rule (`cfire/NON-DIVERGING-OR-BLOCK`)**: When you bind a variable with `x := fallible() or err { ... }`, the `{ ... }` recovery block **must** exit the current control path via `return`, `break`, `continue`, `panic(...)`, or `exit(...)`. That invariant guarantees `x` can never be read in an uninitialized state after the block.
 
-### Flow-Sensitive Null Pointer Safety (`cfire/NULL-DEREF`)
-When you work with heap pointers (`*T` or rebindable `*mut T`), a pointer initialized to `none` (or returned from a function that might yield `none`) cannot be dereferenced blindly.
-
-The semantic analyzer tracks pointer nullability across branches (`cfire/NULL-DEREF`). If a pointer might be `none`, dereferencing `*p` or accessing `p.field` is a compile-time error until you prove it is non-null with `if p != none` (or `assert(p != none)`):
+### No Null Values: Absence Is `T?`
+A `cfire` value is never null, because there are no raw pointers to be null (CF-189). A value that may be absent has type `T?`. Reading through one without unwrapping is a compile-time error: `cfire/UNWRAPPED-OPTIONAL` for an expression such as `find(id).id`, and the flow-sensitive `cfire/NULL-DEREF` for a `T?` variable until a branch proves it present (`if s != none`, an early `return`, `assert(s != none)`). Unwrap with `if x := opt { ... }`, `or`, or `try`:
 
 ```cfire
 package main
@@ -1079,20 +1081,24 @@ type Session struct {
     id: i32
 }
 
-fn inspect_session(maybe_ptr: *Session) -> i32 {
-    // Error if uncommented: [cfire/NULL-DEREF] dereference of potentially null pointer 'maybe_ptr'
-    // return maybe_ptr.id
+fn find_session(id: i32) -> Session? {
+    if id == 42 {
+        return Session{id: 42}
+    }
+    return none
+}
 
-    if maybe_ptr != none {
-        // Inside this guarded branch, the compiler knows maybe_ptr is non-null
-        return maybe_ptr.id
+fn session_id(id: i32) -> i32 {
+    // Error if uncommented: [cfire/UNWRAPPED-OPTIONAL] the session may be absent
+    // return find_session(id).id
+    if s := find_session(id) {
+        return s.id
     }
     return -1
 }
 
 fn main() {
-    s := Session{ id: 42 }
-    println("active={} empty={}", inspect_session(&s), inspect_session(none))
+    println("active={} empty={}", session_id(42), session_id(7))
 }
 ```
 ```text
@@ -1148,16 +1154,16 @@ Each `defer` lowers to a stack-allocated `cfire::ScopeGuard` lambda whose destru
 ## Chapter 8: Strings, Buffers, Unicode, Regex & Containers
 
 ### UTF-8 Strings, Unicode Scalars & Regular Expressions
-In `cfire`, `str` is an owned UTF-8 buffer (`std::string`). Slicing (`s[a..b]`, `s.trim()`) gives a zero-copy view of it, and you rarely need to name that view type (`&str`): **views go in, copies come out**. A read-only `str` parameter accepts an owned string, a slice, or a literal without copying, and a view is copied automatically wherever owned text is required (a `move` parameter, a struct field, a `str` variable, a return value). Spell `&str` only for a field or return value that deliberately keeps a view. `s[i]` is a `byte`, and `'L'` is a `byte` literal (one ASCII character or an escape such as `'\n'`, `'\''`, `'\x41'`), so `line[0] == 'L'` needs no conversion. Because UTF-8 codepoints vary from 1 to 4 bytes, `s.len()` always reports the exact byte count in $O(1)$ time, while `core:unicode` decodes 32-bit Unicode scalar values (`runes`) when you need character-level inspection:
+In `cfire`, `str` is an owned UTF-8 buffer (`std::string`). Slicing (`s[a..b]`, `s.trim()`) gives a zero-copy view of it, and you never name a view type: **views go in, copies come out**. A read-only `str` parameter accepts an owned string, a slice, or a literal without copying, and a view is copied automatically wherever owned text is required (a `move` parameter, a struct field, a `str` variable, a return value). `s[i]` is a `byte`, and `'L'` is a `byte` literal (one ASCII character or an escape such as `'\n'`, `'\''`, `'\x41'`), so `line[0] == 'L'` needs no conversion. Because UTF-8 codepoints vary from 1 to 4 bytes, `s.len()` always reports the exact byte count in $O(1)$ time, while `core:unicode` decodes 32-bit Unicode scalar values (`runes`) when you need character-level inspection:
 
 | Module | Function / Method | Signature | What It Does |
 | :--- | :--- | :--- | :--- |
-| builtin | `s.split(sep)` / `s.split_n(sep, n)` / `s.lines()` / `parts.join(sep)` | `fn(sep: &str) -> []str` / `fn(sep: &str) -> str` | Splits `s` on `sep` (or on newlines) or joins a `[]str` with `sep`. |
-| builtin | `s.trim()` / `trim_start()` / `trim_end()` | `fn() -> &str` | View without leading and/or trailing ASCII whitespace (`' '`, `'\t'`, `'\n'`, `'\r'`); loan-tracked like `s[a..b]`. |
-| builtin | `s.strip_prefix(p)` / `strip_suffix(p)` | `fn(p: &str) -> &str?` | View after the prefix / before the suffix, or `none` when it is absent. |
-| builtin | `s.replace(from, to)` / `replace_all(from, to)` | `fn(from: &str, to: &str) -> str` | Copy with the first / every occurrence of `from` replaced. |
-| builtin | `s.starts_with(p)` / `ends_with(p)` / `contains(p)` | `fn(p: &str) -> bool` | Prefix, suffix, and substring containment checks. |
-| builtin | `s.index_of(sub)` / `last_index_of(sub)` | `fn(sub: &str) -> usize?` | The 0-based byte offset of `sub`, or `none` when it is absent (Q8: no `-1` sentinels). |
+| builtin | `s.split(sep)` / `s.split_n(sep, n)` / `s.lines()` / `parts.join(sep)` | `fn(sep: str) -> []str` / `fn(sep: str) -> str` | Splits `s` on `sep` (or on newlines) or joins a `[]str` with `sep`. |
+| builtin | `s.trim()` / `trim_start()` / `trim_end()` | `fn() -> str` | View without leading and/or trailing ASCII whitespace (`' '`, `'\t'`, `'\n'`, `'\r'`); loan-tracked like `s[a..b]`. |
+| builtin | `s.strip_prefix(p)` / `strip_suffix(p)` | `fn(p: str) -> str?` | View after the prefix / before the suffix, or `none` when it is absent. |
+| builtin | `s.replace(from, to)` / `replace_all(from, to)` | `fn(from: str, to: str) -> str` | Copy with the first / every occurrence of `from` replaced. |
+| builtin | `s.starts_with(p)` / `ends_with(p)` / `contains(p)` | `fn(p: str) -> bool` | Prefix, suffix, and substring containment checks. |
+| builtin | `s.index_of(sub)` / `last_index_of(sub)` | `fn(sub: str) -> usize?` | The 0-based byte offset of `sub`, or `none` when it is absent (Q8: no `-1` sentinels). |
 | builtin | `s.to_upper()` / `to_lower()` / `repeat(n)` | `fn() -> str` / `fn(n: usize) -> str` | ASCII case conversion and `n`-fold repetition. |
 | builtin | `s.runes()` / `rune_count()` | `fn() -> []u32` / `fn() -> usize` | Unicode code points (invalid UTF-8 decodes as U+FFFD). |
 | builtin | `i32.parse(s)` / `f64.parse(s)` / `bool.parse(s)` | `fn(s: str) -> T?` | Parses a whole literal of the target type; `none` on invalid or out-of-range input. |
@@ -1225,15 +1231,15 @@ fn main() {
 dial=25
 ```
 
-### Zero-Copy Buffer Pointers & Compile-Time Bounds Checks
-When you pass buffers to C APIs, socket layers, or SIMD loops, copying a `str` into a new `[]byte` vector just to read its bytes wastes memory bandwidth. Strings and slices expose built-in zero-copy pointer and byte-slice methods:
+### Zero-Copy Byte Access & Compile-Time Bounds Checks
+When you pass buffers to C APIs, socket layers, or SIMD loops, copying a `str` into a new `[]byte` vector just to read its bytes wastes memory bandwidth. A slice of a string or of a `[]T` is a zero-copy view, and a `[]T` or `str` passed to an `import cpp` function lowers to its buffer pointer by itself (Chapter 11), so `.cf` code never handles the raw pointer:
 
-| Method | Receiver | Return Type | Behavior |
+| Expression | Receiver | Result | Behavior |
 | :--- | :--- | :--- | :--- |
-| `s.bytes()` | `str` / `&str` | `[]byte` | Copies the UTF-8 bytes of `s` into a `std::vector<uint8_t>` (`[]byte`). |
-| `s.data()` / `s.byte_ptr()` | `str` | `const char*` / `char*` | Direct pointer to the underlying contiguous UTF-8 byte buffer (`s.data()`). |
-| `s.byte_ptr_at(offset)` | `str` | `char*` | Pointer to byte `offset` (`s.data() + offset`), Useful when advancing through a read/write buffer in chunks. |
-| `slice.data()` / `slice.data_ptr()` | `[]T` / `mut []T` | `const T*` / `T*` | Direct pointer to the contiguous backing storage of a slice (`std::vector<T>::data()`). |
+| `s.bytes()` | `str` | `[]byte` | Copies the UTF-8 bytes of `s` into a `std::vector<uint8_t>` (`[]byte`). |
+| `s[a..b]` | `str` | `str` view | A zero-copy view of bytes `a..b` (a `std::string_view`). |
+| `xs[a..b]` | `[]T` | `[]T` view | A zero-copy view of elements `a..b` (a `std::span<T>`). |
+| `c_fn(xs)` / `c_fn(s)` | `[]T` / `str` | `T*` / `const char*` | At an `import cpp` call, the buffer pointer the C function expects. |
 
 At the same time, the compiler guards slice/array indexing and arithmetic division against constant-folded bugs before your binary ever runs:
 - **`cfire/INDEX-OUT-OF-BOUNDS`**: Rejects negative index expressions (`items[-1]`) or constant indices that exceed a known array/slice length (`arr[5]` on `[4]i32`).
@@ -1243,16 +1249,16 @@ At the same time, the compiler guards slice/array indexing and arithmetic divisi
 package main
 
 fn main() {
-    mut packet := "PING:1024"
-    // Zero-copy pointer offset into the payload after "PING:"
-    payload_ptr := packet.byte_ptr_at(5)
+    packet := "PING:1024"
+    // A zero-copy view of the payload after "PING:"
+    payload := packet[5..]
     raw_bytes := packet.bytes()
 
-    mut samples: []f32 = [0.25, 0.5, 0.75, 1.0]
-    buf_ptr := samples.data_ptr()
+    samples: []f32 = [0.25, 0.5, 0.75, 1.0]
+    head := samples[0..2]
 
     println("bytes={} first_payload_byte={} first_sample={:.2f}",
-        raw_bytes.len(), i32(*payload_ptr), *buf_ptr)
+        raw_bytes.len(), i32(payload.bytes()[0]), head[0])
 }
 ```
 ```text
@@ -1424,7 +1430,9 @@ Detached threads (`std::thread::detach`) and fire-and-forget tasks break stack m
 `cfire` enforces **Lexical Structured Concurrency** via `async.scope(workers: N) |scope| { ... }`:
 1. **Bounded Worker Pool**: Allocates `N` hardware worker threads (`std::jthread`) scoped to the lexical block.
 2. **Mandatory Join Barrier**: The closing `}` of `async.scope` blocks until every task spawned via `scope.spawn || { ... }` finishes.
-3. **Zero-Heap Stack Borrowing**: Because no worker can outlive `async.scope`, tasks can read outer immutable bindings (`in`) or write to disjoint pre-allocated slice slots (`&mut results[i]`) without `shared_ptr` overhead:
+3. **Zero-Heap Stack Borrowing**: Because no worker can outlive `async.scope`, tasks can read outer immutable bindings without `shared_ptr` overhead, and hand results back in one of two ways (Q51):
+   - **Return them**: `results := async.scope ...` (or `return async.scope ...`) is a `[]T` of the tasks' `return` values, in spawn order.
+   - **Write their own element**: `scope.spawn |mut xs[i]| { xs[i] = v }` gives each task one element, named by the spawning loop's index; the task cannot touch the rest of `xs`, and `xs` cannot be resized until the scope ends (`cfire/SLOT-CAPTURE`).
 
 ```cfire
 package main
@@ -1434,30 +1442,40 @@ fn compute_shard_checksum(shard_id: i32, scale: i32) -> i32 {
 }
 
 fn run_parallel_shards(shard_count: usize, scale: i32) -> []i32 {
-    // Pre-allocate one output slot per shard before entering the parallel scope
-    mut results := make([]i32, shard_count)
-
-    async.scope(workers: 4) |scope| {
+    // Each task returns its shard's checksum; the scope's value is all of them, in spawn order
+    return async.scope(workers: 4) |scope| {
         for i in 0..shard_count {
-            slot := &mut results[i]
             shard_idx := i32(i)
             scope.spawn || {
-                *slot = compute_shard_checksum(shard_idx, scale)
+                return compute_shard_checksum(shard_idx, scale)
+            }
+        } // Implicit barrier: all tasks finish before the scope yields its values
+    }
+}
+
+// The same result written in place: each task owns one element of `totals`
+fn scale_in_place(mut totals: []i32, factor: i32) {
+    async.scope(workers: 4) |scope| {
+        for i, t in totals {
+            scope.spawn |mut totals[i]| {
+                totals[i] = t * factor
             }
         }
-    } // Implicit barrier: all 4 worker threads join before returning 'results'
-
-    return results
+    }
 }
 
 fn main() {
     shards := run_parallel_shards(4, 10)
     println("shards=[{}, {}, {}, {}]", shards[0], shards[1], shards[2], shards[3])
+    mut totals: []i32 = [1, 2, 3, 4]
+    scale_in_place(mut totals, 5)
+    println("totals=[{}, {}, {}, {}]", totals[0], totals[1], totals[2], totals[3])
 }
 ```
 ```text
 # Output:
 shards=[10, 20, 30, 40]
+totals=[5, 10, 15, 20]
 ```
 
 ### Communicating Across Workers with MPMC Channels (`core:sync`)
@@ -1502,12 +1520,12 @@ channel_sum=100
 ```
 
 ### Shared State with `Mutex[T]` and `Atomic[T]` (`core:sync`)
-A spawned task may not write through a captured variable or pointer that other tasks can also reach (`cfire/SPAWN-SHARED-MUT`, `cfire/ESCAPING-CAPTURE-MUT`). When workers really do need one shared value, put it behind a `sync.Mutex[T]` or `sync.Atomic[T]`. Copies of either handle share the same state, so each task captures the handle and goes through its methods:
+A spawned task may not write a captured variable that other tasks can also reach (`cfire/SPAWN-SHARED-MUT`, `cfire/ESCAPING-CAPTURE-MUT`). When workers really do need one shared value, put it behind a `sync.Mutex[T]` or `sync.Atomic[T]`. Copies of either handle share the same state, so each task captures the handle and goes through its methods:
 
 | Function / Method | Signature | Behavior |
 | :--- | :--- | :--- |
 | `make(sync.Mutex[T], v)` | `-> Mutex[T]` | A mutex protecting the value `v`. `make(sync.Mutex[void])` is a pure lock with `lock()` / `unlock()`. |
-| `mu.lock()` | `fn (m: Mutex[T]) lock() -> MutexGuard[T]` | Blocks until the lock is free. Read or write the value through the guard (`*g += 1`); the lock is released when `g` goes out of scope. |
+| `mu.lock()` | `fn (m: Mutex[T]) lock() -> MutexGuard[T]` | Blocks until the lock is free. Read or write the value through the guard as `g.value` (`g.value += 1`); the lock is released when `g` goes out of scope. |
 | `mu.try_lock()` | `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?` | Like `lock()`, but `none` instead of blocking. |
 | `mu.with_lock(f)` | `fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R` | Runs `f` on the value while holding the lock: `mu.with_lock(\|mut v\| { v += 1 })`. |
 | `mu.get()` / `mu.set(v)` | `-> T` / `fn(v: T)` | Copies the value out, or replaces it, under the lock. |
@@ -1526,8 +1544,8 @@ fn main() {
         for w in 0..4 {
             s.spawn || {
                 for i in 0..250 {
-                    mut g := total.lock()
-                    *g += 2
+                    g := total.lock()
+                    g.value += 2
                     hits.add(1)
                 }
             }
@@ -1597,10 +1615,10 @@ Because `cfire` compiles to ISO C++23, calling C or C++ libraries requires **zer
 | :--- | :--- | :--- |
 | `i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool` | `int8_t`..`int64_t`, `uint8_t`..`uint64_t`, `float`, `double`, `bool` | Identical C++23 scalar type (0-cost pass-through) |
 | `str` passed to `const char*` | `const char*` | Automatic `cfire::c_arg(s)` (`.c_str()`, 0 allocation) |
-| read-only `str` parameter, `&str`, `s[a..b]` | `cfire::str_ref` (derives from `std::string_view`) | 0-copy pointer + length view; converts to `std::string` where an owned `str` is needed |
-| `s.data()` / `s.byte_ptr()` / `s.byte_ptr_at(i)` | `const char*` / `char*` | Direct raw pointer to contiguous UTF-8 buffer |
-| `slice.data()` / `slice.data_ptr()` | `const T*` / `T*` | Direct pointer to contiguous `std::vector<T>` buffer |
-| `&T` / `&mut T` | `const T&` or `const T*` / `T&` or `T*` | Direct reference or address-of `&x` for C out-pointers |
+| read-only `str` parameter, `s[a..b]` | `cfire::str_ref` (derives from `std::string_view`) | 0-copy pointer + length view; converts to `std::string` where an owned `str` is needed |
+| `[]T` / `[N]T` / `str` passed to a pointer parameter (`T*`, `const T*`, `void*`) | `T*` | The buffer pointer (`cfire::c_ptr`, Q54); byte-sized element types convert (`[]byte` to `char*`) |
+| `mut x: T` parameter | `T&` | A mutable reference; C out-pointers (`int*` written by the callee) go through a `cpp { ... }` block |
+| `own[T]` | `T*` via `.release()`, back with `own[T].from_raw(p)` | Hands ownership across the boundary |
 
 When you need platform `#ifdef` intrinsics or direct C++ statements inside a `.cf` function, open a `cpp { ... }` block—all local `.cf` parameters and variables are directly in scope:
 
@@ -1826,8 +1844,8 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/ARITY-MISMATCH` | Types | A call passes the wrong number of arguments. |
 | `cfire/ASSIGN-IMMUTABLE` | Mutability | Assignment to a binding declared without `mut`. |
 | `cfire/BREAK-OUTSIDE-LOOP` | Detailed rule | `break` or `continue` Outside of a `for` Loop |
-| `cfire/DANGLING-POINTER` | Detailed rule | Inner-Scope Borrow Escaping to Outer-Scope Pointer or View |
-| `cfire/DANGLING-RETURN` | Detailed rule | Returning Pointer or View Rooted in Function-Local Storage |
+| `cfire/DANGLING-POINTER` | Detailed rule | Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189) |
+| `cfire/DANGLING-RETURN` | Detailed rule | Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189) |
 | `cfire/DANGLING-TEMPORARY` | Memory safety | A view or pointer borrows from a temporary that is destroyed at the end of the statement. |
 | `cfire/DEPRECATED-API` | Migration | A stdlib function that was renamed or replaced before 0.16 (`fs.read_all`, `os.read_stdin`, ...). |
 | `cfire/DEPRECATED-DISCARD` | Migration | `_ := expr` is not a discard form; write `_ = expr`. |
@@ -1867,19 +1885,23 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/NON-BOOL-CONDITION` | Types | A condition (`if`, `for`, `&&`, `||`, `!`) that is not `bool`. |
 | `cfire/NON-DIVERGING-OR-BLOCK` | Detailed rule | Non-Diverging Error Recovery Block on Value Binding |
 | `cfire/NON-EXHAUSTIVE-MATCH` | Detailed rule | Non-Exhaustive `match` Statement Over Algebraic `enum` |
-| `cfire/NULL-DEREF` | Detailed rule | Dereference or Member Access on Null or Potentially Null Pointer |
+| `cfire/NULL-DEREF` | Detailed rule | Member Access on an Optional Variable That May Be `none` |
 | `cfire/OPTIONAL-OR-ERR` | Detailed rule | Binding Error Variable `or err` on Optional `T?` |
 | `cfire/OUT-CALLSITE` | Migration | A call-site `out` marker (retired with the `out` intent). |
 | `cfire/PREFER-ENUM` | Style | A cluster of related integer constants that should be an enum (warning). |
+| `cfire/RAW-POINTER` | Ownership | Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop (CF-189). |
 | `cfire/REDUNDANT-CALLSITE-INTENT` | Detailed rule | Redundant `mut` Annotation on a Read-Only Parameter |
 | `cfire/REDUNDANT-DEREF` | Style | `(*p).field` on a smart pointer; write `p.field`. |
 | `cfire/REDUNDANT-OR` | Detailed rule | Redundant `or` on Non-Fallible, Non-Optional Expression |
 | `cfire/REDUNDANT-TRY` | Detailed rule | Redundant `try` on Non-Fallible Expression |
+| `cfire/REFERENCE-TYPE` | Ownership | A `&T` / `&mut T` type; parameters are views by default and `mut` by intent (Q53). |
 | `cfire/RETIRED-API` | Detailed rule | API Retired in the 0.16 Uniform-API Migration |
 | `cfire/RETURN-IN-DEFER` | Detailed rule | `return` Statement Inside `defer { ... }` Block |
+| `cfire/SCOPE-RESULT` | Concurrency | A value-producing `async.scope` whose spawned tasks return no value or different types (Q51). |
 | `cfire/SEMA-ERROR` | Tooling | A semantic error with no more specific code. |
 | `cfire/SHELL-INJECTION-RISK` | Detailed rule | Dynamic String Concatenation or Interpolation in Shell Command |
 | `cfire/SHIFT-OUT-OF-RANGE` | Numbers | A constant shift count outside the operand's bit width (Q11). |
+| `cfire/SLOT-CAPTURE` | Concurrency | A slot capture `|mut xs[i]|` used outside `scope.spawn`, or a task that uses its slice other than `xs[i]`, or a slice resized while tasks write it (Q51). |
 | `cfire/SPAWN-SHARED-MUT` | Concurrency | A spawned task writes through a pointer other tasks can reach (Q20). |
 | `cfire/SQL-INJECTION-RISK` | Detailed rule | Dynamic String Concatenation or Interpolation in SQL Query |
 | `cfire/SYNTAX` | Syntax | The source does not parse. |
@@ -1896,12 +1918,13 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/UNKNOWN-METHOD` | Names | A method that the receiver type does not have (Q14 closed builtin surface). |
 | `cfire/UNKNOWN-MODULE` | Imports | An import path that names no known module. |
 | `cfire/UNKNOWN-STDLIB-FN` | Names | A function that the stdlib module does not export. |
+| `cfire/UNKNOWN-STDLIB-TYPE` | Names | A type that the stdlib module does not export, or a `build.*` type outside `build.cf` (CF-188). |
 | `cfire/UNKNOWN-TYPE` | Types | An expression whose type cannot be inferred (warning). |
 | `cfire/UNREACHABLE-MATCH-ARM` | Detailed rule | Unreachable `match` Arm Shadowed by Earlier Pattern |
 | `cfire/UNRESOLVED-PACKAGE` | Imports | A local package import that cannot be found. |
 | `cfire/UNSATISFIED-CONSTRAINT` | Generics | A type argument that does not satisfy the interface constraint. |
 | `cfire/UNWRAPPED-OPTIONAL` | Errors | A member access on a `T?` value without unwrapping. |
-| `cfire/USE-AFTER-FREE` | Detailed rule | Use of Dangling Pointer or Slice View After Owner Invalidation |
+| `cfire/USE-AFTER-FREE` | Detailed rule | Use of a Slice View After Owner Invalidation |
 | `cfire/USE-AFTER-MOVE` | Detailed rule | Use of Value After Explicit `move` |
 | `cfire/WRONG-ARG-COUNT` | Types | A builtin called with the wrong number of arguments. |
 <!-- cfire:diagnostics-table:end -->

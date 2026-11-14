@@ -1,0 +1,30 @@
+// expect: stdout
+// | /items 3
+// | 10485760
+// | 16
+// CF-188: stdlib types from nested modules lower to their C++ types as parameters (they used to reach clang as
+// `http::ServerLimits`, `aes::GcmResult`), and stdlib struct fields have their cfire types.
+package main
+import "core:net/http"
+import "core:crypto/aes"
+import "core:sync"
+fn describe(req: http.Request) -> str {
+    n := req.body.len()
+    return "{req.path} {n}"
+}
+fn body_limit(l: http.ServerLimits) -> usize {
+    return l.max_body_bytes
+}
+fn tag_len(g: aes.GcmResult) -> usize {
+    return g.tag.len()
+}
+fn takes_context(ctx: sync.Context) {
+}
+fn takes_tls(cfg: http.TlsConfig) {
+}
+fn main() {
+    println("{}", describe(http.Request{method: "POST", path: "/items", body: "abc"}))
+    println("{}", body_limit(http.ServerLimits{}))
+    g := aes.GcmResult{ciphertext: [], tag: make([]byte, 16)}
+    println("{}", tag_len(g))
+}

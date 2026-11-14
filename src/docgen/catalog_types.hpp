@@ -1,7 +1,10 @@
 #pragma once
 // src/docgen/catalog_types.hpp — Lightweight Metadata Catalog Types & Static Tables (`stdlib_catalog` & `diagnostics_catalog`)
 
+#include "catalog_type_docs.hpp"
+#include "sema/builtin_methods.hpp"
 #include <algorithm>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -23,6 +26,7 @@ struct StdModuleDoc {
     std::string link_flags;
     std::string overview;
     std::vector<StdFnDoc> functions;
+    std::vector<StdTypeDoc> type_docs{};  // CF-188: one per name in `types`, filled from catalog_type_docs.hpp
 
     // Authoritative unified metadata for compilation, sema, module registry & codegen:
     std::string header_path{};
@@ -58,11 +62,10 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:cli") {
         m.header_path = "core/cli.hpp";
         m.core_key = "cli";
-        m.types = {"Parser", "Flag", "Arg"};
     } else if (m.import_path == "core:collections") {
         m.header_path = "core/collections.hpp";
         m.core_key = "collections";
-        m.types = {"Vec", "Map", "Set", "Deque", "Heap", "PriorityQueue", "MinQueue"};
+        m.types = {"Set", "Deque", "PriorityQueue", "MinQueue"};
     } else if (m.import_path == "core:crypto/aes") {
         m.header_path = "core/crypto.hpp";
         m.core_key = "crypto";
@@ -99,7 +102,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:json") {
         m.header_path = "core/json.hpp";
         m.core_key = "json";
-        m.types = {"JsonDoc", "JsonValue", "Doc"};
+        m.types = {"Value"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
     } else if (m.import_path == "core:keychain") {
@@ -125,7 +128,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:net/tls") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
-        m.types = {"ServerContext"};
+        m.types = {"ServerContext", "CertKeyPair"};
         m.aliases = {"core:tls"};
     } else if (m.import_path == "core:net/url") {
         m.header_path = "core/net.hpp";
@@ -135,13 +138,13 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:net/websocket") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
-        m.types = {"Conn", "Server", "Message", "TlsConfig"};
+        m.types = {"Conn", "Server", "TlsConfig"};
         m.aliases = {"core:websocket"};
     } else if (m.import_path == "core:os") {
         m.header_path = "core/os.hpp";
         m.core_key = "os";
         m.extra_core_keys = {"fs"};
-        m.types = {"ExecResult", "TermSize", "RawTerminal", "STDIN", "STDOUT", "STDERR"};
+        m.types = {"ExecResult", "TermSize", "RawTerminal"};
     } else if (m.import_path == "core:rand") {
         m.header_path = "core/math.hpp";
         m.core_key = "math";
@@ -152,7 +155,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:sync") {
         m.header_path = "core/sync.hpp";
         m.core_key = "sync";
-        m.types = {"Mutex", "Channel", "WaitGroup", "CondVar", "AtomicInt", "Context", "Atomic"};
+        m.types = {"Mutex", "Channel", "Context", "Atomic", "MutexGuard"};
     } else if (m.import_path == "core:sync/context") {
         m.header_path = "core/sync.hpp";
         m.core_key = "sync";
@@ -162,22 +165,20 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/tako.hpp";
         m.core_key = "tako";
         m.extra_core_keys = {"json"};
-        m.types = {"Tako"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
         m.aliases = {"ext:tako"};
     } else if (m.import_path == "core:time") {
         m.header_path = "core/time.hpp";
         m.core_key = "time";
-        m.types = {"DateTime", "Duration", "Time"};
+        m.types = {"Duration", "Time"};
     } else if (m.import_path == "core:unicode") {
         m.header_path = "core/unicode.hpp";
         m.core_key = "unicode";
-        m.types = {"Rune"};
     } else if (m.import_path == "ext:ai") {
         m.header_path = "core/ai.hpp";
         m.core_key = "ai";
-        m.types = {"Provider", "Client", "Agent", "Document", "Message", "Tool", "Chunk", "McpServer", "ExtractedBug", "ToolArgs", "ZipEntry"};
+        m.types = {"Provider", "Client", "Agent", "Document", "Message", "Tool", "McpServer", "ZipEntry", "Attachment", "ChatResponse", "DocumentSection", "ToolCall"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
         m.aliases = {"ext:ai/agent", "ext:ai/client", "ext:ai/documents", "ext:ai/vectors", "ext:ai/vision"};
@@ -196,14 +197,14 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "ext:db/sqlite") {
         m.header_path = "core/sqlite.hpp";
         m.core_key = "sqlite";
-        m.types = {"Db", "Database", "Stmt", "Statement", "Row", "Conn"};
+        m.types = {"Conn"};
         m.defines = {"#define CFIRE_USE_SQLITE 1"};
         m.link_tags = {"-lsqlite3"};
         m.aliases = {"ext:sqlite", "core:sqlite", "core:db/sqlite"};
     } else if (m.import_path == "ext:net/ssh") {
         m.header_path = "core/ssh.hpp";
         m.core_key = "ssh";
-        m.types = {"Session", "Channel", "ExecResult"};
+        m.types = {"Session", "Channel", "ExecResult", "SftpEntry"};
         m.link_tags = {"@pkg:libssh"};
         m.aliases = {"ext:ssh", "core:ssh", "core:net/ssh"};
     } else if (m.import_path == "ext:webui") {
@@ -500,11 +501,11 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Response.json", "fn Response.json(code: i32, json_str: str) -> Response", "cfire::http::Response::json(code, json_str)", "Creates an HTTP Response with application/json content-type.", "return http.Response.json(200, \"{\\\"status\\\":\\\"ok\\\"}\")"},
                 {"Response.html", "fn Response.html(code: i32, html: str) -> Response", "cfire::http::Response::html(code, html)", "Creates an HTTP Response with text/html content-type.", "return http.Response.html(200, \"<h1>Hello</h1>\")"},
                 {"Response.redirect", "fn Response.redirect(location: str, code: i32 = 302) -> Response", "cfire::http::Response::redirect(location, code)", "Creates an HTTP redirect Response setting Location header.", "return http.Response.redirect(\"/login\", 302)"},
-                {"Router.get", "fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.get(pattern, handler)", "Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).", "r.get(\"/users/:id\", |req| http.Response.text(200, req.param(\"id\")))"},
-                {"Router.post", "fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router&", "r.post(pattern, handler)", "Registers an HTTP POST route handler.", "r.post(\"/items\", |req| http.Response.json(201, \"{}\"))"},
-                {"Router.ws", "fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -> void) -> Router&", "r.ws(pattern, handler)", "Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.", "r.ws(\"/chat/:room\", |req, mut ws| { ... })"},
+                {"Router.get", "fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router", "r.get(pattern, handler)", "Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).", "r.get(\"/users/:id\", |req| http.Response.text(200, req.param(\"id\")))"},
+                {"Router.post", "fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router", "r.post(pattern, handler)", "Registers an HTTP POST route handler.", "r.post(\"/items\", |req| http.Response.json(201, \"{}\"))"},
+                {"Router.ws", "fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router", "r.ws(pattern, handler)", "Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.", "r.ws(\"/chat/:room\", |req, mut ws| { ... })"},
                 {"Router.dispatch", "fn (r: Router) dispatch(req: Request) -> Response", "r.dispatch(req)", "Dispatches an HTTP request through the router in-memory without open network sockets.", "res := router.dispatch(test_req)"},
-                {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router&", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.", "r.use(|req| { return None })"},
+                {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.", "r.use(|req| { return None })"},
                 {"ServerLimits", "type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128 }", "cfire::http::ServerLimits", "Per-connection server limits (Q22, CF-180). Omitted fields keep their defaults; `workers = 0` keeps the default pool size (`hardware_concurrency()`, at least 4).", "srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000})"},
                 {"TlsConfig", "type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }", "cfire::http::TlsConfig", "Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM.", "tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}"},
                 {"HttpServer.set_limits", "fn (mut s: HttpServer) set_limits(limits: ServerLimits)", "s.set_limits(limits)", "Replaces the per-connection limits (Q22): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending}`; omitted fields keep their defaults.", "srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})"},
@@ -902,6 +903,16 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     };
         for (auto& m : cat) {
             apply_module_metadata(m);
+            m.type_docs = detail::module_type_docs(m.import_path);
+            // Structs that `.cf` code constructs (CF-180) document their fields once, in the sema table.
+            for (auto& td : m.type_docs) {
+                const auto* st = cfire::frontend::find_stdlib_struct(m.ns_alias, td.bare_name());
+                if (st == nullptr || !td.summary.empty()) continue;
+                td.summary = std::string(st->summary);
+                for (const auto& f : cfire::frontend::stdlib_struct_fields(*st)) {
+                    td.fields.push_back({std::string(f.name), std::string(f.type), f.def.empty() ? std::string() : std::format("Default `{}`.", f.def)});
+                }
+            }
         }
         return cat;
     }();
@@ -947,9 +958,13 @@ struct DiagnosticCodeDoc {
             {"cfire/NON-BOOL-CONDITION", "Types", "A condition (`if`, `for`, `&&`, `||`, `!`) that is not `bool`."},
             {"cfire/OUT-CALLSITE", "Migration", "A call-site `out` marker (retired with the `out` intent)."},
             {"cfire/PREFER-ENUM", "Style", "A cluster of related integer constants that should be an enum (warning)."},
+            {"cfire/RAW-POINTER", "Ownership", "Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop (CF-189)."},
+            {"cfire/REFERENCE-TYPE", "Ownership", "A `&T` / `&mut T` type; parameters are views by default and `mut` by intent (Q53)."},
             {"cfire/REDUNDANT-DEREF", "Style", "`(*p).field` on a smart pointer; write `p.field`."},
             {"cfire/SEMA-ERROR", "Tooling", "A semantic error with no more specific code."},
+            {"cfire/SCOPE-RESULT", "Concurrency", "A value-producing `async.scope` whose spawned tasks return no value or different types (Q51)."},
             {"cfire/SHIFT-OUT-OF-RANGE", "Numbers", "A constant shift count outside the operand's bit width (Q11)."},
+            {"cfire/SLOT-CAPTURE", "Concurrency", "A slot capture `|mut xs[i]|` used outside `scope.spawn`, or a task that uses its slice other than `xs[i]`, or a slice resized while tasks write it (Q51)."},
             {"cfire/SPAWN-SHARED-MUT", "Concurrency", "A spawned task writes through a pointer other tasks can reach (Q20)."},
             {"cfire/SYNTAX", "Syntax", "The source does not parse."},
             {"cfire/TYPE-ERROR", "Tooling", "The C++ backend rejected generated code; Sema should have caught it (please report)."},
@@ -961,6 +976,7 @@ struct DiagnosticCodeDoc {
             {"cfire/UNKNOWN-METHOD", "Names", "A method that the receiver type does not have (Q14 closed builtin surface)."},
             {"cfire/UNKNOWN-MODULE", "Imports", "An import path that names no known module."},
             {"cfire/UNKNOWN-STDLIB-FN", "Names", "A function that the stdlib module does not export."},
+            {"cfire/UNKNOWN-STDLIB-TYPE", "Names", "A type that the stdlib module does not export, or a `build.*` type outside `build.cf` (CF-188)."},
             {"cfire/UNKNOWN-TYPE", "Types", "An expression whose type cannot be inferred (warning)."},
             {"cfire/UNRESOLVED-PACKAGE", "Imports", "A local package import that cannot be found."},
             {"cfire/UNSATISFIED-CONSTRAINT", "Generics", "A type argument that does not satisfy the interface constraint."},
@@ -1094,24 +1110,24 @@ struct DiagnosticCodeDoc {
         },
         {
             "cfire/USE-AFTER-FREE",
-            "Use of Dangling Pointer or Slice View After Owner Invalidation",
-            "Pointers (`&x`, `&mut x`, `.data()`, `.byte_ptr()`) and slice views (`s[a..b]`) track their root owner variable. If the owner is moved (`move x`), reassigned (`x = ...`), or structurally mutated by a reallocating container method (`.push()`, `.pop()`, `.clear()`, `.erase()`, `.remove()`), any subsequent read or dereference of the borrowed pointer/view is rejected at compile time.",
-            "mut nums := [10, 20, 30]\np := nums.data()\nnums.push(40) // invalidates 'p' due to potential vector reallocation\nprintln(\"{}\", *p) // ERROR [cfire/USE-AFTER-FREE]",
-            "mut nums := [10, 20, 30]\nnums.push(40)\np := nums.data() // borrow acquired after mutation\nprintln(\"{}\", *p) // OK"
+            "Use of a Slice View After Owner Invalidation",
+            "Slice views (`s[a..b]`, `xs[a..b]`) track their root owner variable. If the owner is moved (`move x`), reassigned (`x = ...`), or structurally mutated by a reallocating container method (`.push()`, `.pop()`, `.insert()`, `.remove()`, `.clear()`), every view taken before is invalidated, and reading it is rejected.",
+            "mut nums: []i32 = [10, 20, 30]\nview := nums[0..2]\nnums.push(40) // may reallocate 'nums'\nprintln(\"{}\", view[0]) // ERROR [cfire/USE-AFTER-FREE]",
+            "mut nums: []i32 = [10, 20, 30]\nnums.push(40)\nview := nums[0..2] // view taken after the mutation\nprintln(\"{}\", view[0]) // OK"
         },
         {
             "cfire/DANGLING-POINTER",
-            "Inner-Scope Borrow Escaping to Outer-Scope Pointer or View",
-            "A pointer or slice view declared in an outer lexical scope cannot be assigned the address or slice view of a variable declared in a deeper inner block, preventing stack use-after-scope defects.",
-            "mut p: *mut i32 = none\nif true {\n    mut inner := 42\n    p = &mut inner // ERROR [cfire/DANGLING-POINTER]\n}",
-            "mut outer := 42\nmut p: *mut i32 = none\nif true {\n    p = &mut outer // OK: 'outer' outlives 'p'\n}"
+            "Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)",
+            "Raw pointers are not cfire syntax any more (CF-189), so no pointer can outlive its target; the check remains for code that still reaches it. Keep an index, the value itself, or `own[T]` instead.",
+            "mut p := &x // ERROR [cfire/RAW-POINTER]: raw pointers exist only in C++ interop",
+            "mut values: []i32 = [1, 2]\nmut at := 0 // an index instead of a pointer\nvalues[at] = 42 // OK"
         },
         {
             "cfire/DANGLING-RETURN",
-            "Returning Pointer or View Rooted in Function-Local Storage",
-            "Functions cannot return a pointer (`*T`, `*mut T`) or slice view (`&str`, `&[]T`) that borrows a function-local variable or `move` parameter whose storage is destroyed on function return.",
-            "fn bad_ptr() -> *i32 {\n    local := 99\n    return &local // ERROR [cfire/DANGLING-RETURN]\n}",
-            "fn good_ptr(in_ref: &i32) -> *i32 {\n    return &in_ref // OK: rooted in caller-owned parameter\n}"
+            "Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)",
+            "Functions return values (`T`, `str`, `[]T`) or `own[T]`; a returned `str` or `[]T` is a copy of any view, so nothing returned can borrow a local (Q36, CF-189).",
+            "fn bad() -> *i32 { // ERROR [cfire/RAW-POINTER]\n    local := 99\n    return &local\n}",
+            "fn good() -> i32 {\n    local := 99\n    return local // OK: returned by value\n}"
         },
         {
             "cfire/ITERATOR-INVALIDATION",
@@ -1122,10 +1138,10 @@ struct DiagnosticCodeDoc {
         },
         {
             "cfire/NULL-DEREF",
-            "Dereference or Member Access on Null or Potentially Null Pointer",
-            "Raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) initialized to `none`, left uninitialized, or typed optional (`*T?`, `own[T]?`) cannot be dereferenced (`*p`) or member-accessed (`p.field`) until proven non-null via assignment (`p = &mut x`), an `if p != none` branch, an early-returning `if p == none { return }`, or `assert(p != none)`.",
-            "mut p: *mut i32 = none\n*p = 10 // ERROR [cfire/NULL-DEREF]",
-            "mut p: *mut i32 = none\nif p != none {\n    *p = 10 // OK: flow-narrowed to NonNull\n}"
+            "Member Access on an Optional Variable That May Be `none`",
+            "A variable of type `T?` (`own[T]?`, `Session?`) is tracked across branches. Reading a field or calling a method on it is rejected until the code proves it holds a value: `if s != none { ... }`, an early `return` when it is `none`, `assert(s != none)`, or `if v := s { ... }`. (cfire values are otherwise never null: there are no raw pointers, CF-189.)",
+            "type Session struct { id: i32 }\nfn find(id: i32) -> Session? {\n    return none\n}\ns := find(1)\nprintln(\"{}\", s.id) // ERROR [cfire/NULL-DEREF]",
+            "type Session struct { id: i32 }\nfn find(id: i32) -> Session? {\n    return none\n}\ns := find(1)\nif s != none {\n    println(\"{}\", s.id) // OK: narrowed to present\n}"
         },
         {
             "cfire/INDEX-OUT-OF-BOUNDS",

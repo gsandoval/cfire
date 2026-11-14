@@ -320,6 +320,7 @@ void test_cf156_formatter_corpus(const std::filesystem::path& rt_dir);
 void test_cf155_rename_scopes_and_diff(const std::filesystem::path& rt_dir);
 void test_cf158_doc_integrity(const std::filesystem::path& rt_dir);
 void test_cf183_cli_and_tooling(const std::filesystem::path& rt_dir);
+void test_cf188_stdlib_type_surface(const std::filesystem::path& rt_dir);
 void test_cf150_http_server_hardening(const std::filesystem::path& rt_dir);
 void test_cf152_verified_dependency_cache(const std::filesystem::path& rt_dir);
 void test_cf160_mcp_workspace_confinement(const std::filesystem::path& rt_dir);

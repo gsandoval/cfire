@@ -97,6 +97,18 @@ public:
     std::unordered_map<std::string, std::string> used_vendor_{};
     std::unordered_map<std::string, std::string> core_aliases_{};
     std::vector<std::string> active_async_scopes_{};
+    // Q51 (CF-189): scope variable -> (its `cfire::async::Results<T>` collector, the lowered `T`), for the value-producing
+    // scopes being emitted; their `scope.spawn` calls add the task to the collector.
+    std::unordered_map<std::string, std::pair<std::string, std::string>> value_scope_results_{};
+
+    // A `.cf` type written as text (`i32`, `[]str`, `http.Request`) in C++, for types Sema records as strings.
+    [[nodiscard]] auto lower_type_text(const std::string& cf_type) const -> std::string {
+        const std::string probe = std::format("package cf_probe\nfn cf_probe(x: {}) {{\n}}\n", cf_type);
+        if (auto ast = cfire::frontend::parse_source("<type>", probe); ast && !ast->functions.empty() && !ast->functions[0].params.empty()) {
+            return lower_owning_type(ast->functions[0].params[0].type);
+        }
+        return "auto";
+    }
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
     std::unordered_set<std::string> ptr_field_names_{};
@@ -107,7 +119,9 @@ public:
     std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
     std::unordered_map<std::string, std::string> loop_index_to_col_{};
     std::unordered_map<std::string, std::string> var_types_{};
-    std::vector<std::string> view_params_{};  // Q36: read-only `str` params, lowered to `cfire::str_ref`
+    // Q36 / Q53: read-only `str` and `[]T` params (lowered to `cfire::str_ref` / `cfire::slice_ref<T>`), with the
+    // owned C++ type an escaping closure copies them into.
+    std::vector<std::pair<std::string, std::string>> view_params_{};
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
     [[nodiscard]] static auto sanitize_cpp_ident(std::string_view id) -> std::string {
@@ -183,6 +197,7 @@ public:
         sub.loop_index_to_col_ = loop_index_to_col_;
         sub.var_types_ = var_types_;
         sub.view_params_ = view_params_;
+        sub.generic_params_ = generic_params_;
         if (inherit_return_context) {
             sub.in_main_ = in_main_;
             sub.in_test_ = in_test_;
@@ -755,9 +770,33 @@ public:
         return sanitize_cpp_ident(fn.name);
     }
 
+    // The type parameters in scope for the function being emitted (its own and a generic receiver's), so a
+    // `[]T` parameter of a type parameter keeps a deducible `const std::vector<T>&` (Q53).
+    std::unordered_set<std::string> generic_params_{};
+    void set_generic_params(const FnDecl& fn) {
+        generic_params_.clear();
+        for (const auto& tp : fn.type_params) generic_params_.insert(tp.name);
+        if (fn.receiver) {
+            for (const auto& ta : fn.receiver->type.type_args) generic_params_.insert(ta.name);
+        }
+    }
+    [[nodiscard]] auto mentions_generic_param(const TypeRef& tr) const -> bool {
+        if (generic_params_.contains(tr.name)) return true;
+        if (tr.elem_type && mentions_generic_param(*tr.elem_type)) return true;
+        if (tr.key_type && mentions_generic_param(*tr.key_type)) return true;
+        for (const auto& ta : tr.type_args) {
+            if (mentions_generic_param(ta)) return true;
+        }
+        for (const auto& tt : tr.tuple_types) {
+            if (mentions_generic_param(tt)) return true;
+        }
+        return false;
+    }
+
     void emit_function_forward_decl(const FnDecl& fn) {
         if (fn.name == "main" && !fn.receiver) return;
         std::string cur_fn = emitted_fn_symbol(fn);
+        set_generic_params(fn);
 
         if (!fn.type_params.empty()) {
             std::string tparams;
@@ -792,6 +831,7 @@ public:
     }
 
     void emit_function(const FnDecl& fn) {
+        set_generic_params(fn);
         set_source_path(fn.source_path);
         if (fn.line > 0) emit_line_directive(fn.line);
         cur_pkg_ = fn.package_name;
@@ -820,7 +860,11 @@ public:
         }
         for (const auto& p : fn.params) {
             local_vars_.insert(p.name);
-            if (p.intent != "mut" && p.intent != "out" && p.intent != "move" && lower_param_type(p.intent, p.type) == "cfire::str_ref") view_params_.push_back(p.name);
+            if (p.intent != "mut" && p.intent != "out" && p.intent != "move") {
+                const std::string lowered = lower_param_type(p.intent, p.type);
+                if (lowered == "cfire::str_ref") view_params_.emplace_back(p.name, "std::string");
+                else if (lowered.starts_with("cfire::slice_ref<")) view_params_.emplace_back(p.name, lower_owning_type(p.type));
+            }
             var_types_[p.name] = p.type.name;
             if (p.type.is_ptr || p.type.is_mut_ptr) ptr_vars_.insert(p.name);
             if (!p.type.smart_wrap.empty()) smart_ptr_vars_.insert(p.name);
@@ -1012,8 +1056,8 @@ public:
     // Q36: an escaping closure owns copies of the view parameters it uses, so it cannot outlive their text.
     [[nodiscard]] auto view_param_captures(const std::vector<StmtPtr>& body) const -> std::string {
         std::string caps;
-        for (const auto& name : view_params_) {
-            if (stmts_reference_ident(body, name)) caps += std::format(", {0} = std::string({0})", name);
+        for (const auto& [name, owned] : view_params_) {
+            if (stmts_reference_ident(body, name)) caps += std::format(", {0} = {1}({0})", name, owned);
         }
         return caps;
     }
@@ -1382,6 +1426,9 @@ public:
             if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
             if (tr.name == "http::Router" || tr.name == "Router") return "cfire::http::Router";
             if (tr.name == "http::HttpServer" || tr.name == "HttpServer") return "cfire::http::HttpServer";
+            // CF-188: the names `.cf` code uses for these differ from the C++ class or namespace.
+            if (tr.name == "http::Server" || tr.name == "http.Server") return "cfire::http::HttpServer";
+            if (tr.name == "sync::Context" || tr.name == "sync.Context") return "cfire::sync::context::Context";
             if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
             if (tr.name == "tls::ServerContext" || tr.name == "ServerContext") return "cfire::tls::ServerContext";
             if (tr.name == "tls::CertKeyPair" || tr.name == "CertKeyPair") return "cfire::tls::CertKeyPair";
@@ -1434,6 +1481,10 @@ public:
                 clean = std::format("cfire::{}::{}", mod, rest);
             } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
                 clean = rest;
+            } else if (cfire::frontend::StdlibCatalogIndex::instance().has_namespace(mod)) {
+                // CF-188: every stdlib module's types live in `cfire::<ns>` (`aes.GcmResult`, `http.ServerLimits`),
+                // including modules whose core key differs from their namespace (`core:net/http`, `core:crypto/aes`).
+                clean = std::format("cfire::{}::{}", mod, rest);
             }
         } else {
             if (clean == "Channel" && used_core_.contains("sync")) {
@@ -1505,7 +1556,12 @@ public:
         // Q36 (CF-182): read-only `str` is a view, so slices and literals pass without a copy.
         if (tr.name == "str" && !tr.is_optional && !tr.is_fallible && tr.smart_wrap.empty()) return "cfire::str_ref";
         if (tr.is_slice && tr.elem_type) {
-            return std::format("const std::vector<{}>&", lower_owning_type(*tr.elem_type));
+            // Q53 (CF-189): so is a read-only `[]T`, which takes sub-slices too (`[]bool` has no contiguous storage).
+            const std::string elem = lower_owning_type(*tr.elem_type);
+            if (elem != "bool" && !tr.is_optional && !tr.is_fallible && tr.smart_wrap.empty() && !mentions_generic_param(*tr.elem_type)) {
+                return std::format("cfire::slice_ref<{}>", elem);
+            }
+            return std::format("const std::vector<{}>&", elem);
         }
         if (tr.name == "path") return "const std::filesystem::path&";
         if (tr.name == "i8" || tr.name == "i16" || tr.name == "i32" || tr.name == "i64" ||

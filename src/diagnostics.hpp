@@ -762,6 +762,39 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    // Q53 (CF-189): `name: &mut T` -> `mut name: T`, `name: &T` / `-> &T` -> drop the `&`.
+    if (d.code == "cfire/REFERENCE-TYPE") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+            const std::size_t from = (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < ln.size()) ? static_cast<std::size_t>(d.col - 1) : 0;
+            FixItEdit edit;
+            edit.start_line = edit.end_line = d.line;
+            edit.is_preferred = true;
+            if (fact_of(d, "kind") == "mut") {
+                const auto amp = ln.find(": &mut ", from);
+                if (amp == std::string::npos) return;
+                std::size_t id_start = amp;
+                while (id_start > 0 && (std::isalnum(static_cast<unsigned char>(ln[id_start - 1])) || ln[id_start - 1] == '_')) --id_start;
+                const std::string name = ln.substr(id_start, amp - id_start);
+                if (name.empty()) return;
+                edit.title = std::format("Write 'mut {}: T' (cfire/REFERENCE-TYPE)", name);
+                edit.start_col = static_cast<int>(id_start) + 1;
+                edit.end_col = static_cast<int>(amp + 7) + 1;
+                edit.replacement = "mut " + name + ": ";
+            } else {
+                std::size_t amp = ln.find('&', from);
+                while (amp != std::string::npos && amp + 1 < ln.size() && ln[amp + 1] == '&') amp = ln.find('&', amp + 2);
+                if (amp == std::string::npos) return;
+                edit.title = "Remove '&': the type is already a view (cfire/REFERENCE-TYPE)";
+                edit.start_col = static_cast<int>(amp) + 1;
+                edit.end_col = static_cast<int>(amp + 1) + 1;
+                edit.replacement = "";
+            }
+            d.fixits.push_back(std::move(edit));
+        }
+        return;
+    }
+
     if (d.code == "cfire/DEPRECATED-SEPARATOR") {
         if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];

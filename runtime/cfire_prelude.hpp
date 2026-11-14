@@ -172,6 +172,47 @@ struct std::formatter<cfire::str_ref, char> : std::formatter<std::string_view, c
 template <>
 struct std::hash<cfire::str_ref> : std::hash<std::string_view> {};
 
+// Q53 (CF-189): the lowering of a read-only `[]T` parameter. Parameters are views by default, so a whole slice, a
+// sub-slice (`xs[1..]`, a `..rest` pattern) or a fixed array passes without a copy; like `str_ref`, it converts
+// implicitly to an owned `std::vector<T>` wherever cfire needs one (a field, a `mut` copy, a return value).
+namespace cfire {
+template <typename T>
+struct slice_ref : std::span<const T> {
+    using base = std::span<const T>;
+    constexpr slice_ref() noexcept = default;
+    constexpr slice_ref(std::span<const T> s) noexcept : base(s) {}
+    constexpr slice_ref(std::span<T> s) noexcept : base(s.data(), s.size()) {}
+    slice_ref(const std::vector<T>& v CFIRE_LIFETIMEBOUND) noexcept : base(v.data(), v.size()) {}
+    template <std::size_t N>
+    constexpr slice_ref(const std::array<T, N>& a CFIRE_LIFETIMEBOUND) noexcept : base(a.data(), N) {}
+    constexpr slice_ref(std::initializer_list<T> il CFIRE_LIFETIMEBOUND) noexcept : base(il.begin(), il.size()) {}
+    operator std::vector<T>() const { return std::vector<T>(this->begin(), this->end()); }
+    [[nodiscard]] auto to_vector() const -> std::vector<T> { return std::vector<T>(this->begin(), this->end()); }
+    [[nodiscard]] friend auto operator==(const slice_ref& a, const slice_ref& b) -> bool { return std::ranges::equal(a, b); }
+    [[nodiscard]] friend auto operator==(const slice_ref& a, const std::vector<T>& b) -> bool { return std::ranges::equal(a, b); }
+};
+template <typename T>
+struct is_span_like : std::false_type {};
+template <typename T, std::size_t E>
+struct is_span_like<std::span<T, E>> : std::true_type {};
+template <typename T>
+struct is_span_like<slice_ref<T>> : std::true_type {};
+// `mut copy := view` owns its elements; any other value is passed through unchanged.
+template <typename V>
+[[nodiscard]] inline auto own_copy(V&& v) -> decltype(auto) {
+    using D = std::remove_cvref_t<V>;
+    if constexpr (is_span_like<D>::value) {
+        return std::vector<std::remove_const_t<typename D::element_type>>(v.begin(), v.end());
+    } else {
+        return std::forward<V>(v);
+    }
+}
+} // namespace cfire
+template <typename T>
+struct std::formatter<cfire::slice_ref<T>, char> : std::formatter<std::vector<T>, char> {
+    auto format(const cfire::slice_ref<T>& s, std::format_context& ctx) const { return std::formatter<std::vector<T>, char>::format(s.to_vector(), ctx); }
+};
+
 // Allow comparison between smart pointers, raw pointers, optionals, and `none`
 namespace cfire {
 struct None_t {
@@ -697,23 +738,23 @@ template <std::integral A, std::integral B>
 
 template <typename T, std::integral A, std::integral B>
 [[nodiscard]] inline auto slice(const std::vector<T>& vec CFIRE_LIFETIMEBOUND, A start, B end,
-                                std::source_location loc = std::source_location::current()) -> std::span<const T> {
+                                std::source_location loc = std::source_location::current()) -> slice_ref<T> {
     auto [s, e] = detail::checked_slice_bounds(start, end, vec.size(), loc);
-    return std::span<const T>(vec.data() + s, e - s);
+    return slice_ref<T>(std::span<const T>(vec.data() + s, e - s));
 }
 
 template <typename T, std::integral A, std::integral B>
 [[nodiscard]] inline auto slice(std::span<const T> sp CFIRE_LIFETIMEBOUND, A start, B end,
-                                std::source_location loc = std::source_location::current()) -> std::span<const T> {
+                                std::source_location loc = std::source_location::current()) -> slice_ref<T> {
     auto [s, e] = detail::checked_slice_bounds(start, end, sp.size(), loc);
-    return sp.subspan(s, e - s);
+    return slice_ref<T>(sp.subspan(s, e - s));
 }
 
 template <typename T, std::size_t N, std::integral A, std::integral B>
 [[nodiscard]] inline auto slice(const std::array<T, N>& arr CFIRE_LIFETIMEBOUND, A start, B end,
-                                std::source_location loc = std::source_location::current()) -> std::span<const T> {
+                                std::source_location loc = std::source_location::current()) -> slice_ref<T> {
     auto [s, e] = detail::checked_slice_bounds(start, end, N, loc);
-    return std::span<const T>(arr.data() + s, e - s);
+    return slice_ref<T>(std::span<const T>(arr.data() + s, e - s));
 }
 
 // --- Smart Pointer Factories (`make(own[T], ...)` & `make(shared[T], ...)`) ---
@@ -920,6 +961,26 @@ template <typename T>
               !std::is_same_v<std::remove_cvref_t<T>, const std::uint8_t*>)
 [[nodiscard]] constexpr auto c_arg(T&& v) noexcept -> T&& {
     return std::forward<T>(v);
+}
+// Q54 (CF-189): a `[]T` / `[N]T` / `str` passed where a C/C++ function takes a pointer `P` is its buffer pointer, so
+// `.cf` code never spells one. Byte-sized element types convert between each other (`[]byte` -> `char*`); anything
+// that is not a contiguous range is passed through unchanged (a pointer a C function returned, a scalar).
+template <typename P, typename R>
+[[nodiscard]] constexpr auto c_ptr(R&& r) noexcept -> decltype(auto) {
+    if constexpr (requires { std::data(r); } && std::is_pointer_v<P>) {
+        auto* d = std::data(r);
+        using E = std::remove_pointer_t<decltype(d)>;
+        using PE = std::remove_pointer_t<P>;
+        if constexpr (std::is_convertible_v<decltype(d), P>) {
+            return static_cast<P>(d);
+        } else if constexpr (sizeof(E) == 1 && sizeof(PE) == 1 && (std::is_const_v<PE> || !std::is_const_v<E>)) {
+            return reinterpret_cast<P>(d);
+        } else {
+            return d;  // the element types differ: let the call report the mismatch
+        }
+    } else {
+        return std::forward<R>(r);
+    }
 }
 [[nodiscard]] inline auto path_with_ext(std::filesystem::path p, std::string_view ext) -> std::filesystem::path {
     p.replace_extension(ext);
@@ -2057,6 +2118,24 @@ void run_scope(std::size_t workers, F&& body) {
     body(s);
     s.join_all();
 }
+
+// Q51 (CF-189): the value of `results := async.scope(...) |s| { s.spawn || { return v } }`: every spawned task's
+// value, in spawn order. Tasks are added by the one thread running the scope body, so the order is deterministic.
+template <typename T>
+class Results {
+public:
+    void add(Task<T> task) { tasks_.push_back(std::move(task)); }
+    [[nodiscard]] auto take() -> std::vector<T> {
+        std::vector<T> out;
+        out.reserve(tasks_.size());
+        for (auto& t : tasks_) out.push_back(t.join());
+        tasks_.clear();
+        return out;
+    }
+
+private:
+    std::vector<Task<T>> tasks_;
+};
 
 } // namespace async
 

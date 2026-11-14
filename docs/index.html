@@ -1363,10 +1363,10 @@ struct cfire::reflect_enum&lt;Token&gt; {
     }
 };
 
-[[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string;
+[[nodiscard]] inline auto classify(cfire::slice_ref&lt;std::string&gt; s) -&gt; std::string;
 
 #line 9 &quot;snippet_patterns.cf&quot;
-[[nodiscard]] inline auto classify(const std::vector&lt;std::string&gt;&amp; s) -&gt; std::string {
+[[nodiscard]] inline auto classify(cfire::slice_ref&lt;std::string&gt; s) -&gt; std::string {
     #line 10 &quot;snippet_patterns.cf&quot;
     {
         const auto&amp; _target = s;

@@ -361,6 +361,15 @@ private:
             }
             if (peek(offset).kind != TokenKind::Ident) return false;
             ++offset;
+            if (peek(offset).kind == TokenKind::LBracket) {  // `|mut xs[i]|` slot capture (Q51)
+                int depth = 0;
+                do {
+                    if (peek(offset).kind == TokenKind::LBracket) ++depth;
+                    else if (peek(offset).kind == TokenKind::RBracket) --depth;
+                    else if (peek(offset).kind == TokenKind::Eof) return false;
+                    ++offset;
+                } while (depth > 0);
+            }
             if (peek(offset).kind == TokenKind::Colon) {
                 ++offset;
                 while (peek(offset).kind != TokenKind::Comma && peek(offset).kind != TokenKind::Pipe && peek(offset).kind != TokenKind::Eof) {
@@ -1073,8 +1082,75 @@ private:
         return stmts;
     }
 
+    // `async.scope(workers: N) |s| { ... }`, at `async`.
+    [[nodiscard]] auto parse_async_scope() -> std::expected<AsyncScopeStmt, SourceError> {
+        Token tok = cur();
+        advance();
+        if (auto dot = expect(TokenKind::Dot); !dot) return std::unexpected(dot.error());
+        auto m = expect(TokenKind::Ident);
+        if (!m || m->lexeme != "scope") {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("expected async.scope")});
+        }
+        ExprPtr workers = nullptr;
+        if (cur().kind == TokenKind::LParen) {
+            advance();
+            if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                advance();
+                advance();
+            }
+            auto w = parse_expr();
+            if (!w) return std::unexpected(w.error());
+            workers = std::move(*w);
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+        } else {
+            workers = make_expr(LiteralExpr{TokenKind::Int, "4"}, tok.line, tok.col);
+        }
+        if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
+        auto scope_var = expect(TokenKind::Ident);
+        if (!scope_var) return std::unexpected(scope_var.error());
+        if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
+        auto body = parse_block();
+        if (!body) return std::unexpected(body.error());
+        return AsyncScopeStmt{std::move(workers), scope_var->lexeme, std::move(*body), tok.line};
+    }
+
+    // Q51 (CF-189): `x := async.scope ...`, `mut x := async.scope ...` and `return async.scope ...` bind the values
+    // the spawned tasks return. True when the statement at the cursor has one of those shapes.
+    [[nodiscard]] auto at_scope_result_binding() const -> bool {
+        auto is_scope_at = [&](std::size_t k) { return peek(k).kind == TokenKind::KwAsync && peek(k + 1).kind == TokenKind::Dot && peek(k + 2).lexeme == "scope"; };
+        if (cur().kind == TokenKind::KwReturn) return is_scope_at(1);
+        if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) return is_scope_at(2);
+        if (cur().kind == TokenKind::KwMut && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::ColonEq) return is_scope_at(3);
+        return false;
+    }
+
     [[nodiscard]] auto parse_stmt() -> std::expected<StmtPtr, SourceError> {
         Token tok = cur();
+        if (at_scope_result_binding()) {
+            std::string var;
+            bool is_mut = false;
+            bool is_return = false;
+            int col = static_cast<int>(tok.col);
+            if (cur().kind == TokenKind::KwReturn) {
+                advance();
+                is_return = true;
+            } else {
+                if (cur().kind == TokenKind::KwMut) {
+                    advance();
+                    is_mut = true;
+                }
+                col = static_cast<int>(cur().col);
+                var = advance().lexeme;
+                advance();  // ':='
+            }
+            auto sc = parse_async_scope();
+            if (!sc) return std::unexpected(sc.error());
+            sc->result_var = std::move(var);
+            sc->result_mut = is_mut;
+            sc->result_return = is_return;
+            sc->result_col = col;
+            return make_stmt(std::move(*sc), tok.line);
+        }
         switch (tok.kind) {
             case TokenKind::CppBlock: {
                 advance();
@@ -1144,33 +1220,9 @@ private:
                 return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::nullopt, std::move(*init), id_tok->line, id_tok->col}, id_tok->line);
             }
             case TokenKind::KwAsync: {
-                advance();
-                if (auto dot = expect(TokenKind::Dot); !dot) return std::unexpected(dot.error());
-                auto m = expect(TokenKind::Ident);
-                if (!m || m->lexeme != "scope") {
-                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("expected async.scope")});
-                }
-                ExprPtr workers = nullptr;
-                if (cur().kind == TokenKind::LParen) {
-                    advance();
-                    if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
-                        advance();
-                        advance();
-                    }
-                    auto w = parse_expr();
-                    if (!w) return std::unexpected(w.error());
-                    workers = std::move(*w);
-                    if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
-                } else {
-                    workers = make_expr(LiteralExpr{TokenKind::Int, "4"}, tok.line, tok.col);
-                }
-                if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
-                auto scope_var = expect(TokenKind::Ident);
-                if (!scope_var) return std::unexpected(scope_var.error());
-                if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
-                auto body = parse_block();
-                if (!body) return std::unexpected(body.error());
-                return make_stmt(AsyncScopeStmt{std::move(workers), scope_var->lexeme, std::move(*body), tok.line}, tok.line);
+                auto sc = parse_async_scope();
+                if (!sc) return std::unexpected(sc.error());
+                return make_stmt(std::move(*sc), tok.line);
             }
             default:
                 break;
@@ -2037,6 +2089,16 @@ private:
                 }
                 auto id = expect(TokenKind::Ident);
                 if (!id) return std::unexpected(id.error());
+                if (p_intent == "mut" && cur().kind == TokenKind::LBracket) {
+                    // `|mut codes[i]|`: a slot capture, not a parameter (Q51).
+                    advance();
+                    auto ix = parse_expr();
+                    if (!ix) return std::unexpected(ix.error());
+                    if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                    cl.slot_captures.emplace_back(id->lexeme, std::move(*ix));
+                    if (cur().kind == TokenKind::Comma) advance();
+                    continue;
+                }
                 cl.params.push_back(id->lexeme);
                 cl.param_intents.push_back(std::move(p_intent));
                 if (cur().kind == TokenKind::Colon) {

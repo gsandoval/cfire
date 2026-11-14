@@ -167,6 +167,27 @@ struct LocalBindingInfo {
 ) -> std::string;
 
 // Resolves a potentially chained qualifier (e.g. `m_out`, `order.customer`, `os.stdin()`, `(*owned_box)`) to its `.cf` struct/type name
+// Qualifies the bare names of `mod`'s own types in a catalog type string: `ExecResult!` in `core:os` is
+// `os.ExecResult!`, in `ext:net/ssh` `ssh.ExecResult!` (CF-188).
+[[nodiscard]] inline auto qualify_module_types(std::string_view t, const cfire::doc::StdModuleDoc& mod) -> std::string {
+    std::string out;
+    std::size_t i = 0;
+    while (i < t.size()) {
+        if (std::isalpha(static_cast<unsigned char>(t[i])) || t[i] == '_') {
+            std::size_t j = i;
+            while (j < t.size() && (std::isalnum(static_cast<unsigned char>(t[j])) || t[j] == '_')) ++j;
+            const std::string word(t.substr(i, j - i));
+            const bool qualified = i > 0 && (t[i - 1] == '.' || t[i - 1] == ':');
+            if (!qualified && std::ranges::find(mod.types, word) != mod.types.end()) out += mod.ns_alias + ".";
+            out += word;
+            i = j;
+        } else {
+            out.push_back(t[i++]);
+        }
+    }
+    return out;
+}
+
 [[nodiscard]] inline auto resolve_qualifier_type(
     std::string_view qualifier,
     const cfire::frontend::FileAST& ast,
@@ -368,12 +389,8 @@ struct LocalBindingInfo {
                                     if (ret == "File!") return "fs.File!";
                                     if (ret == "(File, File)!") return "(fs.File, fs.File)!";
                                     if (ret == "(TcpConn, TcpConn)!") return "(net.TcpConn, net.TcpConn)!";
-                                    if (ret == "Conn!") return "sqlite.Conn!";
-                                    if (ret == "Session!") return "ssh.Session!";
-                                    if (ret == "Channel!") return "ssh.Channel!";
-                                    if (ret == "ExecResult!") return "ssh.ExecResult!";
-                                    if (ret == "App") return "webui.App";
-                                    return ret;
+                                    // The module's own types are written bare in its signatures (`-> ExecResult!`).
+                                    return qualify_module_types(ret, mod);
                                 }
                                 return "void";
                             }

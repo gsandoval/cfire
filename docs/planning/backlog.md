@@ -704,6 +704,40 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Acceptance Criteria**: the CI `windows` job builds and runs the unit suite, conformance passes on Windows (TSan files run unsanitized), and the Windows build has 0 warnings.
 - **Outcome (2026-11-13)**: all three criteria are met in the Windows VM. The unit suite's 52 first-run failures were all test portability or Windows runtime bugs fixed here (`core:sqlite` `load_extension` used `dlsym`; MCP timeouts were ignored; LSP URIs, drive-letter `file:line`, `count_open_fds`); none needed a separate item. Details in `active.md`.
 
+#### `CF-186` — Three Test Tiers, No Python in the Gates, Enforced on Commit (2026-11-13) `[DONE]`
+- **Problem & Evidence**: about 15 make targets (`test`, `review-check`, `test-asan`, `test-tsan`, `fuzz-replay`, `test-vm-*`, ...) and nothing says which are required, so a gate can be forgotten. The conformance and GUIDE tests are cfire, but their runners (`scripts/run_conformance.py`, `scripts/run_guide_tests.py`) need Python.
+- **Plan**: `make check` (every commit; zero warnings, fmt, example type-check, unit/e2e/stdlib, conformance, GUIDE, stdlib suite, `doc --check`), `make check-deep` (ASan/UBSan, TSan, fuzz replay), `make check-platforms` (Linux and Windows VMs), `make check-all` (all three, with a summary). Port both runners into `.cfire_test_runner` (`conformance`, `guide` suites); CI calls the tier targets; the pre-commit hook runs `make check`; `AGENTS.md` and `README.md` name the tiers.
+- **Acceptance Criteria**: no Python in any gate; same counts as before (conformance 175, GUIDE 44); a failing test blocks `git commit`; a CF item is done only with a `make check-all` summary.
+
+#### `CF-187` — VM Gates in C++ (2026-11-13) `[DONE]`
+- **Problem & Evidence**: `scripts/vm/` is bash plus a Python file server around `utmctl`; timeouts, lock cleanup and the Windows task lifecycle are fragile in bash (CF-184 found an overlap hang).
+- **Plan**: one C++ driver (`tools/vmtest/`) built by make, keeping the UTM design (utmctl launch, HTTP result upload, per-job Windows task, per-OS lock) with per-step timeouts, RAII lock release, stale-lock detection by PID, and `CFIRE_VM_*` settings. Guest-side gate scripts shrink to calling the `check` tier.
+- **Acceptance Criteria**: `make check-platforms` passes on both VMs with no Python or host-side shell; overlapping runs are rejected.
+
+#### `CF-188` — Stdlib Types in Hover and Docs (2026-11-13) `[DONE]`
+- **Problem & Evidence**: every stdlib function has a cfire signature and summary, but types are only a name list. Hovering `http.Request` shows "Expression `http.Request{...}`"; hovering `req.body` or `http.Response.json` shows nothing. `Router.get` and friends document a C++ `Router&` return type.
+- **Found (2026-11-13)**: a probe declaring `fn take(x: ns.T)` for each of the 96 names in the catalog's `types` lists shows 48 do not work as types; clang rejects the generated C++ (`cfire/TYPE-ERROR`, an ICE). (A) real types with a lowering bug: `aes.GcmResult`, `http.Server`, `http.ServerLimits`, `http.TlsConfig`, `websocket.Message`, `websocket.TlsConfig`, `sync.Context`. (B) 15 `build.*` names that only exist inside `build.cf` manifests. (C) 26 names with no runtime type at all: `cli.Parser/Flag/Arg`, `collections.Vec/Map/Heap`, `json.JsonDoc/JsonValue/Doc`, `os.STDIN/STDOUT/STDERR`, `sync.WaitGroup/CondVar/AtomicInt`, `tako.Tako`, `time.DateTime`, `unicode.Rune`, `ai.Chunk/ExtractedBug/ToolArgs`, `sqlite.Db/Database/Stmt/Statement/Row`. What to do with (C) is an open question.
+- **Plan**: `StdTypeDoc` (summary, fields, variants) for every stdlib type; hover on stdlib types, fields and associated functions; types in `cfire doc`; `doc --check` rejects undocumented types/functions and C++ spellings (`std::`, `&`, `*`) in signatures.
+- **Acceptance Criteria**: every type and function in the catalog has cfire-terms docs, shown by hover and the reference.
+
+#### `CF-189` — Raw Pointers Only for C++ Interop (2026-11-13) `[DONE]`
+- **Direction (user, 2026-11-13)**: raw pointers belong to C++ interaction only: inside `cpp {}` blocks, in `import cpp` FFI types, or across `own`/`shared` `from_raw`/`release`. They must not leak into ordinary cfire; `str` view/copy/reference stays automatic (CF-182).
+- **Problem & Evidence**: `*T`, `*mut T`, `&x`, `&mut x`, `*p = v` and `.data()`/`.data_ptr()`/`.byte_ptr()` are ordinary syntax. The AoC 2024 corpus never uses them; `examples/04-async-workers` and conformance `concurrency/006,007,010`, `ownership/004,014,025` do. `MutexGuard` is used through `*g`.
+- **Decisions (2026-11-13)**:
+  - `Q51` *Results from `async.scope` workers*: both. A value-producing scope, `results := async.scope(...) |s| { s.spawn || { return v } }` (or `return async.scope ...`), is the tasks' values as `[]T` in spawn order; and a slot capture, `s.spawn |mut xs[i]| { xs[i] = v }`, gives a task one element named by the spawning loop's index, for in-place updates.
+  - `Q52` *`MutexGuard`*: the locked value is `g.value`; `with_lock` stays.
+  - `Q53` *`&T` / `&mut T`*: removed. Parameters are views by default and `mut` by intent; `cfire fix` rewrites the old spellings.
+  - `Q54` *Structs and C buffers*: structs hold `own[T]` / `shared[T]` or an index; a `[]T` or `str` passed to an `import cpp` function lowers to its buffer pointer automatically.
+- **Acceptance Criteria**: no raw-pointer syntax outside `cpp {}`/FFI, each old form reports a migration diagnostic, and the AoC 2024 corpus and examples still pass.
+
+#### `CF-190` — Unknown Type Names Reach Clang (found 2026-11-13)
+- **Problem & Evidence**: `fn take(x: Nope) {}` passes Sema and fails in clang (`unknown type name 'Nope'`, reported as `cfire/TYPE-ERROR`, an ICE). CF-188 closed this for `module.Type` spellings of stdlib modules only; a bare name that is not a builtin, a struct/enum/interface/alias of the package, a generic parameter, or an `import cpp` type is still unchecked.
+- **Acceptance Criteria**: every type name in a declaration resolves in Sema, or is a cfire diagnostic (with a did-you-mean); no clang error for an unknown type.
+
+#### `CF-191` — Untyped Array Literal Arguments Are `[]i64` (found 2026-11-13)
+- **Problem & Evidence**: `fn f(xs: []i32)` called as `f([1, 2])` is `cfire/TYPE-MISMATCH` ("expects '[]i32', got '[]i64'"), although `xs: []i32 = [1, 2]` adapts the literal. Predates CF-189 (reproduced at `4b6630e`).
+- **Acceptance Criteria**: an array literal argument adapts to the parameter's element type, like a declaration does.
+
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:
   - Renaming outer `count` also renames `|count: i32|` and its uses.

@@ -384,19 +384,17 @@ void test_structured_concurrency_lifecycle([[maybe_unused]] const std::filesyste
     std::println("=== RUN   test_structured_concurrency_lifecycle");
     std::string_view src = R"(package main
 
-fn set_val(v: *mut i32, n: i32) {
-*v = n
+fn set_val(mut v: []i32, n: i32) {
+v[0] = n
 }
 
 fn test_scope_defer() -> i32 {
 mut vals: []i32 = [10]
-ptr := &mut vals[0]
 async.scope(workers: 2) |scope| {
-    defer set_val(ptr, 99)
-    for i in 0..1 {
-        slot := &mut vals[i]
-        scope.spawn || {
-            *slot = 42
+    defer set_val(mut vals, 99)
+    for i, x in vals {
+        scope.spawn |mut vals[i]| {
+            vals[i] = 42
         }
     }
 }
@@ -434,7 +432,7 @@ void test_explicit_borrow_references([[maybe_unused]] const std::filesystem::pat
     std::println("=== RUN   test_explicit_borrow_references");
     std::string_view src = R"(package main
 
-fn inspect_borrows(borrow_str: &str, owned_str: str, borrow_slice: &[]i32, owned_slice: []i32, mut_slice: &mut []i32) {
+fn inspect_views(view_str: str, view_slice: []i32, flags: []bool, mut mut_slice: []i32, move owned: []i32) {
 }
 
 fn main() {
@@ -446,17 +444,13 @@ fn main() {
         auto checked = cfire::frontend::analyze(std::move(*ast));
         require(checked.has_value(), "analyze test_borrows.cf");
         if (checked.has_value()) {
+            // Q36 / Q53 (CF-189): read-only parameters are views; `mut` is a reference; `move` takes ownership.
             std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("cfire::str_ref borrow_str"),
-                "&str parameter lowers to cfire::str_ref");
-            require(cpp.contains("cfire::str_ref owned_str"),
-                "read-only str parameter lowers to the cfire::str_ref view (Q36)");
-            require(cpp.contains("std::span<const std::int32_t> borrow_slice"),
-                "&[]i32 parameter lowers to std::span<const std::int32_t>");
-            require(cpp.contains("const std::vector<std::int32_t>& owned_slice"),
-                "owned []i32 parameter lowers to const std::vector<std::int32_t>&");
-            require(cpp.contains("std::span<std::int32_t> mut_slice"),
-                "&mut []i32 parameter lowers to std::span<std::int32_t>");
+            require(cpp.contains("cfire::str_ref view_str"), "read-only str parameter lowers to the cfire::str_ref view (Q36)");
+            require(cpp.contains("cfire::slice_ref<std::int32_t> view_slice"), "read-only []i32 parameter lowers to the cfire::slice_ref view (Q53)");
+            require(cpp.contains("const std::vector<bool>& flags"), "[]bool has no contiguous storage and stays a const reference");
+            require(cpp.contains("std::vector<std::int32_t>& mut_slice"), "mut []i32 parameter lowers to std::vector<std::int32_t>&");
+            require(cpp.contains("std::vector<std::int32_t>&& owned"), "move []i32 parameter lowers to std::vector<std::int32_t>&&");
         }
     }
     std::println("--- PASS: test_explicit_borrow_references");

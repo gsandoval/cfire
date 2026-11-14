@@ -1092,7 +1092,7 @@ fn run_demo() {
 
         // Hover & Completion on `log.Level.Debug` (line 10, col 29)
         std::string lvl_hover = srv.compute_hover(uri, 10, 29);
-        require(lvl_hover.contains("log.Level.Debug") && lvl_hover.contains("cfire::log::Level::Debug"),
+        require(lvl_hover.contains("log.Level::Debug") && lvl_hover.contains("cfire::log::Level::Debug"),
             std::format("hover on log.Level.Debug resolves enum variant documentation, got: {}", lvl_hover));
 
         std::string lvl_comp = srv.compute_completions(uri, 10, 28);

@@ -1,11 +1,11 @@
+// Q51 (CF-189): a slot index that is not the spawning loop's own index gives every task the same element.
 package main
 fn main() {
     mut codes: []i32 = [0, 0, 0, 0]
     async.scope(workers: 4) |scope| {
         for i, c in codes {
-            slot := &mut codes[0]
-            scope.spawn || {
-                *slot = i32(i) //~ error cfire/SPAWN-SHARED-MUT
+            scope.spawn |mut codes[0]| { //~ error cfire/SPAWN-SHARED-MUT
+                codes[0] = i32(i)
             }
         }
     }

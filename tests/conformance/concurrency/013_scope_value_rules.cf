@@ -1,0 +1,26 @@
+// Q51 (CF-189): a value-producing scope needs tasks that return one type; a slot-owning task may use its slice only
+// as its own element, and the slice cannot be resized while tasks write it.
+package main
+fn main() {
+    mut codes: []i32 = [0, 0]
+    async.scope(workers: 2) |scope| {
+        for i, c in codes {
+            scope.spawn |mut codes[i]| { //~ error cfire/SLOT-CAPTURE
+                codes[i] = codes[0]
+            }
+        }
+    }
+    async.scope(workers: 2) |scope| {
+        for i, c in codes {
+            scope.spawn |mut codes[i]| {
+                codes[i] = c + 1
+            }
+        }
+        codes.push(1) //~ error cfire/SLOT-CAPTURE
+    }
+    none_returned := async.scope(workers: 2) |scope| { //~ error cfire/SCOPE-RESULT
+        scope.spawn || {
+            println("no value")
+        }
+    }
+}
