@@ -730,13 +730,26 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
   - `Q54` *Structs and C buffers*: structs hold `own[T]` / `shared[T]` or an index; a `[]T` or `str` passed to an `import cpp` function lowers to its buffer pointer automatically.
 - **Acceptance Criteria**: no raw-pointer syntax outside `cpp {}`/FFI, each old form reports a migration diagnostic, and the AoC 2024 corpus and examples still pass.
 
-#### `CF-190` — Unknown Type Names Reach Clang (found 2026-11-13)
+#### `CF-190` — Unknown Type Names Reach Clang (found 2026-11-13) `[DONE]`
 - **Problem & Evidence**: `fn take(x: Nope) {}` passes Sema and fails in clang (`unknown type name 'Nope'`, reported as `cfire/TYPE-ERROR`, an ICE). CF-188 closed this for `module.Type` spellings of stdlib modules only; a bare name that is not a builtin, a struct/enum/interface/alias of the package, a generic parameter, or an `import cpp` type is still unchecked.
+- **Evidence (2026-11-13, `eee3195`)**: reproduced in parameters, struct fields, return types, local declarations and `map[str]Nope`; each reaches clang as `cfire/TYPE-ERROR` (`unknown type name` / `use of undeclared identifier`), and the reported positions are wrong (`3:24` for a line-2 parameter, `30:48` in a 6-line file).
+- **Plan**:
+  1. One resolver, `resolve_bare_type_name(name, scope)`, shared by the declaration pass (`check_type_ref_separators_ast`, `src/sema/analyze.hpp`) and local declarations (`check_type_ref_separators`, `src/sema/fn_checker.hpp`). A bare name resolves if it is a builtin (primitives, `str`, `byte`, `map`, `own`, `shared`, ...), a struct / enum / interface / alias of any file of the package, or a type parameter in scope (the function's, and the receiver struct's for methods). Qualified names keep the CF-188 path; `cpp.X` and `import cpp` types are not checked.
+  2. Otherwise `cfire/UNDECLARED-TYPE` (new, "Names") at the type's own position, with a did-you-mean over those candidates (`StdlibCatalogIndex::edit_distance`), and a hint when the name is a stdlib type used without its module (`Request` → `http.Request`).
+  3. Recurse through element, key, type-argument and tuple types (the walkers already do); one error per type, not one per nesting level.
+- **Tests**: conformance `names/0xx_undeclared_type` (parameter, field, return, local, map value, generic argument, did-you-mean, a generic parameter and a sibling-file struct that must pass); the CF-188 audit (`test_cf188_stdlib_type_surface`) still passes; AoC 2024 corpus checks clean.
 - **Acceptance Criteria**: every type name in a declaration resolves in Sema, or is a cfire diagnostic (with a did-you-mean); no clang error for an unknown type.
 
-#### `CF-191` — Untyped Array Literal Arguments Are `[]i64` (found 2026-11-13)
+#### `CF-191` — Untyped Array Literal Arguments Are `[]i64` (found 2026-11-13) `[DONE]`
 - **Problem & Evidence**: `fn f(xs: []i32)` called as `f([1, 2])` is `cfire/TYPE-MISMATCH` ("expects '[]i32', got '[]i64'"), although `xs: []i32 = [1, 2]` adapts the literal. Predates CF-189 (reproduced at `4b6630e`).
-- **Acceptance Criteria**: an array literal argument adapts to the parameter's element type, like a declaration does.
+- **Evidence (2026-11-13, `eee3195`)**: wider than call arguments. Functions, methods and nested slices (`f([[1, 2]])` for `[][]i32`) fail; float literals too (`[]f32` gets `[]f64`). Declarations, assignments, returns and struct fields "adapt" only by skipping the check (`src_t = TypeId::Unknown()`, `fn_checker.hpp` at the var-decl, assignment and return checks), so their elements are never checked: `xs: []u8 = [1, 300]` compiles and silently stores 44, `xs: []i32 = [a]` with `a: i64` compiles, and `ys: []i32 = ["s"]` reaches clang (C++ text, wrong line).
+- **Plan**:
+  1. One helper, `check_array_literal_against(want, lit)`: for `want = []T` (or `[N]T`), each element is checked against `T` the way a bare initializer is: integer literals with `check_int_literal_fits` (`cfire/LITERAL-OUT-OF-RANGE`), float literals into `f32`/`f64`, nested array literals recursively, anything else with `is_assignable` (`cfire/TYPE-MISMATCH` on the element, with the conversion fix-it, e.g. `i32(a)`).
+  2. Use it at every site that has an expected type: call arguments (`check_call_argument_types`, and the stdlib-call path that already skips literals), method arguments, declarations, assignments, returns, struct-literal fields. The `Unknown()` skips go away.
+  3. Generic parameters (`xs: []T`) keep inferring `T` from the literal (`[]i64` by default); only concrete element types adapt.
+  4. Codegen already emits a braced list (`{1, 2}`) that `slice_ref<T>` and `std::vector<T>` take; confirm no `-Wnarrowing` leak remains once Sema checks ranges.
+- **Tests**: conformance `types/0xx_array_literal_adapts` (call, method, nested, `[]u8`, `[]f32`, declaration/assignment/return/field still pass) and `types/0xx_array_literal_elements` (`300` into `[]u8`, `a: i64` into `[]i32`, `"s"` into `[]i32`, each a cfire error, no clang text).
+- **Acceptance Criteria**: an array literal argument adapts to the parameter's element type, like a declaration does; every element of an array literal with an expected type is checked, and none reaches clang.
 
 #### `CF-192` — HTTP Keep-Alive, WebSockets Off the Worker Pool (2026-11-13) `[DONE]`
 - **Problem & Evidence**: every `http.Server` response sends `Connection: close`, so each request pays a TCP (and TLS) handshake. A WebSocket session runs on its pool worker for its whole life (`try_dispatch_ws`), so `workers` open sockets stop plain HTTP. The pool default is `max(4, cores)`.
@@ -754,9 +767,19 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Plan**: reuse `http::detail::SessionThreads` and `net::detail::CloseGuard`; the TLS handshake, the upgrade request and the handler run on the session thread; over `max_websockets` the client gets 503; `stop()` shuts the open sessions down and joins them. `serve_once` and `accept()` stay on the calling thread.
 - **Acceptance Criteria**: two clients are served at once; the cap gives 503; `stop()` returns with sessions open; TSan clean.
 
-#### `CF-195` — `websocket.connect` Drops Bytes After the Handshake (found 2026-11-13)
+#### `CF-195` — `websocket.connect` Drops Bytes After the Handshake (found 2026-11-13) `[DONE]`
 - **Problem & Evidence**: `connect` reads the `101` response in 1024-byte chunks until `\r\n\r\n` and discards the rest of the buffer, so a frame the server sends right after the handshake can be lost (seen once in the CF-194 TSan run).
+- **Plan**:
+  1. `Conn` gets a read-ahead buffer (`std::vector<std::uint8_t> pending_`, moved with the connection). Frame decoding reads through the connection: `recv_exact` takes bytes from `pending_` first, then from the socket or TLS stream. `decode_frame(fd, tls, ...)` becomes a `Conn` member (or takes a reader), so there is one read path.
+  2. `connect` parses the response from its buffer, splits at the end of the header section, and hands the rest to the `Conn` (constructor argument), for `ws://` and `wss://`.
+  3. Server side for symmetry: `upgrade(tcp, headers)` takes the bytes the `RequestAssembler` read past the request (`websocket::Server::handle_conn`, `Router.ws` in `http.Server`), so a client frame sent right behind the request is kept. RFC 6455 says a client waits for the `101`, so this is tolerance, not a requirement.
+- **Tests**: a raw TCP server that writes the `101` and a text frame in one `send`, read by `websocket.connect` 100 times in a loop (fails today); the same over TLS; a client that sends its request and first frame in one write, against `websocket.Server` and a `Router.ws` route; the CF-194 test goes back to the server sending first.
 - **Acceptance Criteria**: bytes after the response headers are the first bytes the new `Conn` reads; a test where the server sends at once passes repeatedly.
+
+#### `CF-196` — Implicit Integer Narrowing & 32-bit Literal Locals (found 2026-11-13) `[DONE]`
+- **Problem & Evidence**: Q9 says no silent narrowing, but `is_assignable` accepts any integer for any integer: `x: i32 = a` and `f(a)` with `a: i64 = 5000000000` give `705032704`, and `sum += i` truncates the same way. Separately, `x := 0` lowered to `auto x = 0` (a 32-bit C++ `int`) while Sema and the GUIDE say `i64`: `mut x := 0; x += 3000000000` printed `-1294967296`, `y := 2147483647; y + 1` printed `-2147483648`. A range `0..10` was a C++ `int`, a literal-armed `match` a lambda returning `int`. Found while planning `CF-191`.
+- **Decision (user, 2026-11-13)**: narrowing or a sign change without `T(x)` is a compile error with a fix-it to the checked conversion; widening stays implicit.
+- **Acceptance Criteria**: no implicit integer conversion loses a value; Sema's type of a literal-built local is the C++ type; `cfire fix` inserts the conversion.
 
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:

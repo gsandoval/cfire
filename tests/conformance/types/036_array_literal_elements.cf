@@ -1,0 +1,11 @@
+// CF-191: every element of an array literal with an expected type is checked; none reaches clang.
+package main
+fn bytes(bs: []u8) -> usize { return bs.len() }
+fn main() {
+    a: i64 = 5
+    xs: []u8 = [1, 300] //~ error cfire/LITERAL-OUT-OF-RANGE
+    ys: []i32 = [a, 2] //~ error cfire/TYPE-MISMATCH
+    zs: []i32 = ["s"] //~ error cfire/TYPE-MISMATCH
+    n := bytes([0, 256]) //~ error cfire/LITERAL-OUT-OF-RANGE
+    println("{} {} {} {}", xs.len(), ys.len(), zs.len(), n)
+}

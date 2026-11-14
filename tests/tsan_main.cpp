@@ -8,6 +8,7 @@
 #include "unit/test_cf192.hpp"
 #include "unit/test_cf193.hpp"
 #include "unit/test_cf194.hpp"
+#include "unit/test_cf195.hpp"
 
 auto main() -> int {
     ::signal(SIGPIPE, SIG_IGN);
@@ -18,6 +19,7 @@ auto main() -> int {
     test_cf192_keepalive_and_websocket_sessions(rt_dir);  // keep-alive and WebSocket session threads
     test_cf193_http_event_loop(rt_dir);  // the event loop and its workers
     test_cf194_websocket_server_sessions(rt_dir);  // websocket.Server session threads
+    test_cf195_websocket_handshake_read_ahead(rt_dir);  // frames that arrive with the handshake
     if (g_failures.load() > 0) {
         std::println("FAIL ({} tsan test assertion(s) failed)", g_failures.load());
         return 1;

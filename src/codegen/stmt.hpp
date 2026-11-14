@@ -108,9 +108,12 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
             if (cf_.owned_text_decls.contains(&st)) cpp_type = "std::string";
+            if (cf_.int64_decls.contains(&st)) cpp_type = "std::int64_t";
             if (!st.type && st.init) {
                 if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
                     cpp_type = "std::string";
+                } else if (is_int_const_expr(st.init)) {
+                    cpp_type = "std::int64_t";  // CF-196: `x := 0` is `i64`; `auto` made it a 32-bit `int`
                 } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&st.init->node); arr_lit && !arr_lit->elements.empty()) {
                     // `nums := [10, 20, 30]` is a slice; `auto x = {...}` would be a std::initializer_list.
                     const auto* first_lit = std::get_if<LiteralExpr>(&arr_lit->elements[0]->node);
@@ -336,9 +339,22 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     std::string start_s = emit_expr(st.iter_expr);
                     std::string end_s = emit_expr(st.range_end);
                     std::string cmp_op = st.range_inclusive ? "<=" : "<";
+                    // CF-196: the typed end decides the index type (`0..xs.len()` is `usize`, `0..n` is `n`'s type);
+                    // a range of two literals is `i64`, as Sema types it.
+                    auto is_int_lit = [](const ExprPtr& e) {
+                        if (const auto* un = e ? std::get_if<UnaryExpr>(&e->node) : nullptr; un && un->op == "-") return un->operand && std::holds_alternative<LiteralExpr>(un->operand->node);
+                        const auto* lit = e ? std::get_if<LiteralExpr>(&e->node) : nullptr;
+                        return lit && lit->kind == TokenKind::Int;
+                    };
+                    const bool lit_start = is_int_lit(st.iter_expr);
+                    const bool lit_end = is_int_lit(st.range_end);
+                    std::string idx_t = lit_start && lit_end ? std::string("std::int64_t")
+                                      : lit_start ? std::format("std::decay_t<decltype({})>", end_s)
+                                      : lit_end ? std::format("std::decay_t<decltype({})>", start_s)
+                                      : std::format("std::common_type_t<decltype({}), decltype({})>", start_s, end_s);
                     writeln(std::format(
-                        "for (auto {0} = static_cast<std::common_type_t<decltype({1}), decltype({2})>>({1}), _range_end_{0} = static_cast<std::common_type_t<decltype({1}), decltype({2})>>({2}); {0} {3} _range_end_{0}; ++{0}) {{",
-                        st.item_var, start_s, end_s, cmp_op));
+                        "for (auto {0} = static_cast<{4}>({1}), _range_end_{0} = static_cast<{4}>({2}); {0} {3} _range_end_{0}; ++{0}) {{",
+                        st.item_var, start_s, end_s, cmp_op, idx_t));
                     ++indent_;
                     for (const auto& b : st.body) emit_stmt(b, in_main);
                     --indent_;

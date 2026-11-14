@@ -206,6 +206,10 @@ namespace cfire::frontend {
                     return std::format("cfire::cmp_{}({}, {})", fn, emit_expr(ex.left), emit_expr(ex.right));
                 }
             }
+            // CF-196: an expression of integer literals only is `i64` (Sema's type), not C++ `int`.
+            if (is_int_const_expr(ex.left) && is_int_const_expr(ex.right) && std::holds_alternative<LiteralExpr>(ex.left->node)) {
+                return std::format("(static_cast<std::int64_t>({}) {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
+            }
             return std::format("({} {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
             if (cf_.guard_value_members.contains(&ex)) return std::format("(*{})", emit_expr(ex.object));  // Q52 `g.value`

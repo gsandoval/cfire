@@ -5,7 +5,7 @@ fn bump(var: i32, out: i32) -> i32 {
     return var + out
 }
 fn main() {
-    var := 2
+    var: i32 = 2
     out := bump(var, 1)
     println("{} {}", out + var, var)
 }

@@ -577,7 +577,7 @@ fn describe_color(c: Color) {
 }
 
 fn main() {
-    x := 5
+    x: i32 = 5
     mutate_num(x)
     describe_color(Color::Red)
     _ = fs.exists("nonexistent")

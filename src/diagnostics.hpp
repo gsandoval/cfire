@@ -836,6 +836,41 @@ inline void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    // CF-196: wrap an implicitly narrowed value in its checked conversion (`f(n)` -> `f(i32(n))`). The value runs
+    // from the diagnostic column to the next `,` `)` `]` `}` `;` at depth 0 or the end of the line; a `mut`
+    // argument cannot be converted, so it gets no fix-it.
+    if (d.code == "cfire/TYPE-MISMATCH" && fact_of(d, "kind") == "narrowing" && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+        const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+        const std::string to = std::string(fact_of(d, "to"));
+        if (to.empty() || d.col < 1 || static_cast<std::size_t>(d.col - 1) >= ln.size()) return;
+        const std::size_t start = static_cast<std::size_t>(d.col - 1);
+        if (start >= 4 && ln.compare(start - 4, 4, "mut ") == 0) return;
+        int depth = 0;
+        std::size_t end = start;
+        for (; end < ln.size(); ++end) {
+            const char c = ln[end];
+            if (c == '"') {
+                for (++end; end < ln.size() && ln[end] != '"'; ++end) if (ln[end] == '\\') ++end;
+                continue;
+            }
+            if (c == '(' || c == '[' || c == '{') ++depth;
+            else if (c == ')' || c == ']' || c == '}') { if (depth == 0) break; --depth; }
+            else if ((c == ',' || c == ';') && depth == 0) break;
+        }
+        while (end > start && std::isspace(static_cast<unsigned char>(ln[end - 1]))) --end;
+        if (end <= start || depth != 0) return;
+        const std::string value = ln.substr(start, end - start);
+        FixItEdit edit;
+        edit.title = std::format("Convert with '{}(...)', which panics if the value does not fit (cfire/TYPE-MISMATCH)", to);
+        edit.start_line = edit.end_line = d.line;
+        edit.start_col = d.col;
+        edit.end_col = static_cast<int>(end) + 1;
+        edit.replacement = std::format("{}({})", to, value);
+        edit.is_preferred = true;
+        d.fixits.push_back(std::move(edit));
+        return;
+    }
+
     if (d.code == "cfire/REDUNDANT-DEREF") {
         if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
             const std::string& cur_ln = lines[static_cast<std::size_t>(d.line - 1)];

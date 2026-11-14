@@ -795,7 +795,7 @@ fn main() {
         require_sema_error(R"(package main
 fn read_only(x: i32) -> i32 { return x + 1 }
 fn main() {
-    mut v := 10
+    mut v: i32 = 10
     println("{}", read_only(mut v))
 }
 )", "cfire/REDUNDANT-CALLSITE-INTENT", "redundant_callsite_mut.cf");
@@ -917,7 +917,7 @@ fn main() -> void! {
     val := try compute_sum()
     mut fallback_acc := 0
     for i in -1..3 {
-        v := (get_num(i) or { continue }) + 5
+        v := (get_num(i32(i)) or { continue }) + 5
         fallback_acc += v
     }
     println("val={} acc={}", val, fallback_acc)
@@ -1208,7 +1208,7 @@ fn compute(out: i32, var: i32) -> i32 {
     return out + var
 }
 fn main() {
-    var := 1
+    var: i32 = 1
     out := compute(var, 2)
     println("{}", out)
 }
@@ -2876,7 +2876,7 @@ fn main() {
     run_cfire_source(R"(package main
 type Step enum { Skip, Stop, Done(i32) }
 fn run_steps() -> i32 {
-    mut sum := 0
+    mut sum: i32 = 0
     steps: []Step = [Step::Skip, Step::Done(10), Step::Skip, Step::Done(20), Step::Stop, Step::Done(30)]
     for s in steps {
         match s {

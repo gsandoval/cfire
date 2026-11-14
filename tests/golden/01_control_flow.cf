@@ -10,7 +10,7 @@ fn test_branches(x: i32) -> str {
     }
 }
 
-fn test_loops() -> i32 {
+fn test_loops() -> i64 {
     mut sum := 0
     for i in 0..5 {
         sum += i

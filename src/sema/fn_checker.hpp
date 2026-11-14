@@ -53,6 +53,50 @@ namespace cfire::frontend {
                        list.empty() ? std::string("; the module exports no types") : std::format("; its types are {}", list));
 }
 
+// CF-190: why a bare type name (no module qualifier) does not resolve, or "" when it does. It resolves to a
+// builtin, a struct / enum / interface of the package, or a type parameter in scope.
+[[nodiscard]] inline auto bare_type_name_problem(std::string_view name, const std::unordered_set<std::string>& declared,
+                                                 const std::unordered_set<std::string>& type_params) -> std::string {
+    static const std::unordered_set<std::string_view> kBuiltin = {
+        "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "isize", "usize", "int", "uint",
+        "f32", "f64", "str", "byte", "path", "char", "c_char", "own", "shared", "Self",
+        // Bare stdlib names codegen has always accepted (`lower_owning_type`); qualified spellings are preferred.
+        "Request", "Response", "Router", "HttpServer", "SseEvent", "Conn", "WebSocket", "Context", "Url",
+        "ServerContext", "CertKeyPair", "TcpConn", "TcpListener", "File", "App", "Channel"};
+    if (name.empty() || name.contains('.') || name.contains(':') || name.contains('[') || name.contains('(') ||
+        kBuiltin.contains(name) || declared.contains(std::string(name)) || type_params.contains(std::string(name))) {
+        return "";
+    }
+    std::string best;
+    std::size_t best_d = 3;
+    auto lower = [](std::string_view v) {
+        std::string out(v);
+        for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return out;
+    };
+    const std::string lname = lower(name);
+    auto consider = [&](std::string_view cand) {
+        const std::size_t d = StdlibCatalogIndex::edit_distance(lname, lower(cand));
+        if (d < best_d) { best_d = d; best = std::string(cand); }
+    };
+    for (auto b : kBuiltin) consider(b);
+    for (const auto& d : declared) consider(d);
+    for (const auto& t : type_params) consider(t);
+    if (!best.empty()) return std::format("unknown type '{}'; did you mean '{}'?", name, best);
+    // A stdlib type written without its module (`Request` for `http.Request`).
+    std::vector<std::string> mods;
+    for (const auto& [ns, names] : StdlibCatalogIndex::instance().ns_types_and_consts) {
+        if (names.contains(std::string(name))) mods.push_back(std::format("{}.{}", ns, name));
+    }
+    std::ranges::sort(mods);
+    if (!mods.empty()) {
+        std::string list;
+        for (const auto& m : mods) list += (list.empty() ? "'" : "', '") + m;
+        return std::format("unknown type '{}'; stdlib types are written with their module: {}'", name, list);
+    }
+    return std::format("unknown type '{}': not a builtin type, a type declared in this package, or a type parameter", name);
+}
+
 class SemaFnChecker {
 public:
     enum class NullState { NonNull, MaybeNull, Null };
@@ -85,6 +129,13 @@ public:
             if (imp.is_cpp) {
                 has_cpp_imports_ = true;
                 break;
+            }
+        }
+        for (const auto& tp : fn.type_params) fn_type_params_.insert(tp.name);
+        if (fn.receiver) {
+            for (const auto& ta : fn.receiver->type.type_args) fn_type_params_.insert(ta.name);  // `fn (b: Box[T])`
+            for (const auto& st : cf_.ast.structs) {
+                if (st.name == fn.receiver->type.name) for (const auto& tp : st.type_params) fn_type_params_.insert(tp.name);
             }
         }
         if (fn.receiver) {
@@ -1137,6 +1188,9 @@ public:
                 const TypeId str_borrow = type_id_of("&str");
                 if (lt == str_borrow || rt == str_borrow) return TypeId::Str();
             }
+            // CF-196: an integer literal takes the other operand's type (`100 + f()` is `f`'s type, as in C++);
+            // an expression of literals only is `i64`. A shift has its left operand's type.
+            if (bin->op != "<<" && bin->op != ">>" && cf_.type_table.is_integer(rt) && const_int_value(bin->left) && !const_int_value(bin->right)) return rt;
             if (lt.is_valid() && !lt.is_unknown()) return lt;
             if (rt.is_valid() && !rt.is_unknown()) return rt;
             return TypeId::Unknown();
@@ -1646,6 +1700,176 @@ public:
         return {};
     }
 
+    // CF-196: the column where `e` starts in the source (a binary or postfix node points at its operator).
+    [[nodiscard]] static auto leftmost_col(const ExprPtr& e) -> int {
+        if (!e) return 1;
+        if (const auto* b = std::get_if<BinaryExpr>(&e->node); b && b->left) return std::min(e->col, leftmost_col(b->left));
+        if (const auto* c = std::get_if<CallExpr>(&e->node); c && c->callee) return std::min(e->col, leftmost_col(c->callee));
+        if (const auto* m = std::get_if<MemberExpr>(&e->node); m && m->object) return std::min(e->col, leftmost_col(m->object));
+        if (const auto* ix = std::get_if<IndexExpr>(&e->node); ix && ix->object) return std::min(e->col, leftmost_col(ix->object));
+        return e->col;
+    }
+
+    // CF-196: the value of an integer constant expression (literals combined with `+ - * / % << >> & | ^` and
+    // unary `-`); nullopt for anything else, or when it leaves the 64-bit range.
+    [[nodiscard]] static auto const_int_value(const ExprPtr& e) -> std::optional<__int128> {
+        if (!e) return std::nullopt;
+        constexpr __int128 kMax = static_cast<__int128>(UINT64_MAX);
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind != TokenKind::Int) return std::nullopt;
+            std::string digits;
+            for (char c : lit->value) if (c != '_') digits.push_back(c);
+            int base = 10;
+            std::string_view body = digits;
+            if (body.size() > 2 && body[0] == '0' && (body[1] == 'x' || body[1] == 'X')) { base = 16; body.remove_prefix(2); }
+            else if (body.size() > 2 && body[0] == '0' && (body[1] == 'b' || body[1] == 'B')) { base = 2; body.remove_prefix(2); }
+            else if (body.size() > 2 && body[0] == '0' && (body[1] == 'o' || body[1] == 'O')) { base = 8; body.remove_prefix(2); }
+            if (body.empty()) return std::nullopt;
+            __int128 v = 0;
+            for (char c : body) {
+                int d = std::isdigit(static_cast<unsigned char>(c)) ? c - '0'
+                      : std::isxdigit(static_cast<unsigned char>(c)) ? (std::tolower(static_cast<unsigned char>(c)) - 'a' + 10) : -1;
+                if (d < 0 || d >= base) return std::nullopt;
+                v = v * base + d;
+                if (v > kMax) return std::nullopt;
+            }
+            return v;
+        }
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node); un && un->op == "-") {
+            auto v = const_int_value(un->operand);
+            if (!v) return std::nullopt;
+            return -*v;
+        }
+        const auto* b = std::get_if<BinaryExpr>(&e->node);
+        if (!b) return std::nullopt;
+        auto l = const_int_value(b->left);
+        auto r = l ? const_int_value(b->right) : std::nullopt;
+        if (!l || !r) return std::nullopt;
+        __int128 v = 0;
+        if (b->op == "+") v = *l + *r;
+        else if (b->op == "-") v = *l - *r;
+        else if (b->op == "*") { if (*l != 0 && (*r > kMax / (*l < 0 ? -*l : *l) || *r < -kMax / (*l < 0 ? -*l : *l))) return std::nullopt; v = *l * *r; }
+        else if (b->op == "/") { if (*r == 0) return std::nullopt; v = *l / *r; }
+        else if (b->op == "%") { if (*r == 0) return std::nullopt; v = *l % *r; }
+        else if (b->op == "<<") { if (*r < 0 || *r > 63 || *l < 0) return std::nullopt; v = *l << static_cast<int>(*r); }
+        else if (b->op == ">>") { if (*r < 0 || *r > 63) return std::nullopt; v = *l >> static_cast<int>(*r); }
+        else if (b->op == "&") v = *l & *r;
+        else if (b->op == "|") v = *l | *r;
+        else if (b->op == "^") v = *l ^ *r;
+        else return std::nullopt;
+        if (v > kMax || v < -kMax) return std::nullopt;
+        return v;
+    }
+
+    // CF-196: the integer type of `e` for the narrowing check. A literal operand takes the other operand's type
+    // (`8080 + i32(i)` is `i32`, as in C++), and a shift has its left operand's type.
+    [[nodiscard]] auto int_value_type(const ExprPtr& e) -> TypeId {
+        if (const auto* b = e ? std::get_if<BinaryExpr>(&e->node) : nullptr) {
+            static const std::unordered_set<std::string_view> arith = {"+", "-", "*", "/", "%", "&", "|", "^"};
+            if (b->op == "<<" || b->op == ">>") return const_int_value(b->left) ? infer_expr_type_id_sema(e) : int_value_type(b->left);
+            if (arith.contains(b->op)) {
+                const bool lc = const_int_value(b->left).has_value();
+                const bool rc = const_int_value(b->right).has_value();
+                if (lc && !rc) return int_value_type(b->right);
+                if (rc && !lc) return int_value_type(b->left);
+                if (!lc && !rc) {
+                    TypeId l = int_value_type(b->left);
+                    TypeId r = int_value_type(b->right);
+                    if (cf_.type_table.is_integer(l) && cf_.type_table.is_integer(r)) return cf_.type_table.int_widens(l, r) ? l : r;
+                }
+            }
+        }
+        if (const auto* un = e ? std::get_if<UnaryExpr>(&e->node) : nullptr; un && (un->op == "-" || un->op == "~") && !const_int_value(e)) {
+            return int_value_type(un->operand);
+        }
+        return infer_expr_type_id_sema(e);
+    }
+
+    // CF-191 / CF-196: checks a value against the type it initializes (an argument, a field, a declaration, an
+    // assignment, a return). An array literal is checked element by element against the element type, an
+    // integer literal against the target's range, and an integer value must widen: narrowing or a sign change
+    // needs an explicit, checked `T(x)` (Q9). `handled` says this check decided the case, so the caller skips
+    // its own whole-type comparison.
+    [[nodiscard]] auto check_value_for(TypeId want, const ExprPtr& e, bool& handled) -> std::expected<void, std::string> {
+        handled = false;
+        if (!e || !want.is_valid() || want.is_unknown()) return {};
+        const auto& wd = cf_.type_table.get(want);
+        if ((wd.kind == TypeKind::Optional || wd.kind == TypeKind::Fallible) && wd.elem_type.is_valid()) {
+            if (!std::holds_alternative<ArrayLitExpr>(e->node) && !is_numeric_literal_expr(e) && expr_returns_optional_sema(e)) return {};
+            return check_value_for(wd.elem_type, e, handled);
+        }
+        if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
+            if (wd.kind != TypeKind::Slice && wd.kind != TypeKind::Array) return {};
+            handled = true;
+            const TypeId elem = wd.elem_type;
+            for (const auto& el : arr->elements) {
+                bool h = false;
+                if (auto r = check_value_for(elem, el, h); !r) return r;
+                if (h || !el) continue;
+                TypeId got = infer_expr_type_id_sema(el);
+                if (!is_concrete_checkable_type(elem) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(el)) continue;
+                if (!cf_.type_table.is_assignable(elem, got)) {
+                    if (auto r = emit_error(diag_at(el->line, leftmost_col(el), "cfire/TYPE-MISMATCH", std::format("array element expects '{}', got '{}'{}", cf_.type_table.to_string(elem), cf_.type_table.to_string(got), nominal_mismatch_hint_sema(elem, got)))); !r) return r;
+                }
+            }
+            return {};
+        }
+        if (cf_.type_table.is_integer(want) && is_numeric_literal_expr(e)) {
+            const Expr* lit_e = e;
+            if (const auto* un = std::get_if<UnaryExpr>(&e->node); un && un->op == "-") lit_e = un->operand;
+            const auto* lit = std::get_if<LiteralExpr>(&lit_e->node);
+            if (!lit || lit->kind != TokenKind::Int) return {};  // a float literal: the caller reports it
+            handled = true;
+            return check_int_literal_fits(e, cf_.type_table.to_string(want), e->line, leftmost_col(e));
+        }
+        if (cf_.type_table.is_float(want) && is_numeric_literal_expr(e)) {
+            handled = true;
+            return {};
+        }
+        // `match` / `if` expressions: each arm's value initializes the target.
+        if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            bool all = !me->arms.empty();
+            for (const auto& arm : me->arms) {
+                const ExprStmt* es = arm.body.empty() || !arm.body.back() ? nullptr : std::get_if<ExprStmt>(&arm.body.back()->node);
+                if (!es || !es->expr) { all = false; continue; }
+                bool h = false;
+                if (auto r = check_value_for(want, es->expr, h); !r) return r;
+                if (!h) {
+                    TypeId got = infer_expr_type_id_sema(es->expr);
+                    if (!is_concrete_checkable_type(got) || !cf_.type_table.is_assignable(want, got)) all = false;
+                }
+            }
+            handled = all;  // otherwise the caller compares the match's own type
+            return {};
+        }
+        if (cf_.type_table.is_integer(want)) {
+            if (!std::holds_alternative<LiteralExpr>(e->node) && !std::holds_alternative<UnaryExpr>(e->node)) {
+                if (auto v = const_int_value(e)) {
+                    handled = true;
+                    const auto [bits, sgn] = cf_.type_table.int_shape(want);
+                    const __int128 lo = sgn ? -(static_cast<__int128>(1) << (bits - 1)) : 0;
+                    const __int128 hi = sgn ? (static_cast<__int128>(1) << (bits - 1)) - 1 : (static_cast<__int128>(1) << bits) - 1;
+                    if (*v < lo || *v > hi) {
+                        const std::string to = cf_.type_table.to_string(want);
+                        return emit_error(diag_at(e->line, leftmost_col(e), "cfire/LITERAL-OUT-OF-RANGE",
+                            std::format("constant {} does not fit in '{}'; use a value in range or an explicit 'wrapping_as[{}]()'", static_cast<long long>(*v), to, to)));
+                    }
+                    return {};
+                }
+            }
+            TypeId got = int_value_type(e);
+            if (cf_.type_table.is_integer(got) && !cf_.type_table.int_widens(want, got) && !expr_returns_optional_sema(e)) {
+                handled = true;
+                const std::string to = cf_.type_table.to_string(want);
+                return emit_error(diag_at(e->line, leftmost_col(e), "cfire/TYPE-MISMATCH",
+                    std::format("'{}' does not convert implicitly to '{}': the value may not fit (Q9); write '{}(...)', which panics if it does not",
+                        cf_.type_table.to_string(got), to, to),
+                    {{"kind", "narrowing"}, {"to", to}}));
+            }
+        }
+        return {};
+    }
+
     // CF-148: argument types of calls to functions declared in this program (clang used to report these).
     [[nodiscard]] auto check_call_argument_types(const CallExpr& call, const FnDecl& sig) -> std::expected<void, std::string> {
         std::unordered_set<std::string> type_params;
@@ -1667,6 +1891,9 @@ public:
             }
             if (mentions_type_param(param->type) || param->type.name.starts_with("fn")) continue;
             TypeId want = cf_.type_table.from_typeref(param->type);
+            bool handled = false;
+            if (auto r = check_value_for(want, arg.value, handled); !r) return r;
+            if (handled) continue;
             TypeId got = infer_expr_type_id_sema(arg.value);
             if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got)) continue;
             if (expr_returns_optional_sema(arg.value)) continue;  // handled by the optional checks
@@ -1880,12 +2107,15 @@ public:
         }
         for (std::size_t i = 0; i < call.args.size() && i < params.size(); ++i) {
             const auto& arg = call.args[i];
-            if (arg.value && std::holds_alternative<ArrayLitExpr>(arg.value->node)) continue;  // literal adapts to `[]T`
             TypeId want_t = resolve_builtin_type(params[i], self);
+            if (arg.value && std::holds_alternative<ArrayLitExpr>(arg.value->node) && !is_concrete_checkable_type(want_t)) continue;
+            bool handled = false;
+            if (auto r = check_value_for(want_t, arg.value, handled); !r) return r;
+            if (handled) continue;
             TypeId got_t = infer_expr_type_id_sema(arg.value);
             if (!is_concrete_checkable_type(want_t) || !is_concrete_checkable_type(got_t)) continue;
             if (expr_returns_optional_sema(arg.value)) continue;
-            // Integer literals adapt to the receiver's width (`x.min(3)` on an `i64`).
+            // Float literals adapt to the receiver's width too (`x.min(0.5)` on an `f32`).
             if (cf_.type_table.is_numeric(want_t) && cf_.type_table.is_numeric(got_t) && is_numeric_literal_expr(arg.value)) continue;
             if (!cf_.type_table.is_assignable(want_t, got_t)) {
                 return emit_error(diag_at(arg.line, arg.col, "cfire/TYPE-MISMATCH", std::format("argument {} of '{}.{}' expects '{}', got '{}'", i + 1, self_name, bm->name, cf_.type_table.to_string(want_t), cf_.type_table.to_string(got_t))));
@@ -2010,6 +2240,12 @@ public:
                     if (std::string why = stdlib_type_name_problem(ns, tr.raw_name.substr(dot + 1), manifest); !why.empty()) {
                         return emit_error(diag_at(line, col, "cfire/UNKNOWN-STDLIB-TYPE", why));
                     }
+                }
+            }
+            // CF-190: a bare type name in a local declaration resolves, or it is a cfire error (not a clang one).
+            if (local_decl && dot == std::string::npos && dcol == std::string::npos && !tr.is_fn && !tr.is_tuple) {
+                if (std::string why = bare_type_name_problem(tr.raw_name, cf_.declared_type_names, fn_type_params_); !why.empty()) {
+                    return emit_error(diag_at(line, col, "cfire/UNDECLARED-TYPE", why, {{"name", tr.raw_name}}));
                 }
             }
         }
@@ -3376,6 +3612,9 @@ public:
                 }
                 if (!f.value) continue;
                 TypeId want = type_id_of(fit->type);
+                bool handled = false;
+                if (auto r = check_value_for(want, f.value, handled); !r) return r;
+                if (handled) continue;
                 TypeId got = infer_expr_type_id_sema(f.value);
                 if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(f.value)) continue;
                 if (cf_.type_table.is_numeric(want) && cf_.type_table.is_numeric(got) && is_numeric_literal_expr(f.value)) continue;
@@ -3393,8 +3632,11 @@ public:
                 if (auto r = emit_error(diag_at(f.value ? f.value->line : line, f.value ? f.value->col : col, "cfire/UNKNOWN-FIELD", std::format("struct '{}' has no field '{}'", st.type_name, f.name))); !r) return r;
                 continue;
             }
-            if (!f.value || std::holds_alternative<ArrayLitExpr>(f.value->node)) continue;
+            if (!f.value) continue;
             TypeId want = cf_.type_table.from_typeref(fit->field_type);
+            bool handled = false;
+            if (auto r = check_value_for(want, f.value, handled); !r) return r;
+            if (handled || std::holds_alternative<ArrayLitExpr>(f.value->node)) continue;
             TypeId got = infer_expr_type_id_sema(f.value);
             if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(f.value)) continue;
             if (!cf_.type_table.is_assignable(want, got)) {
@@ -4994,6 +5236,15 @@ public:
             if (it == TypeId::Str() || it == type_id_of("&str")) cf_.owned_text_decls.insert(&vd);
             if (cf_.type_table.get(it).kind == TypeKind::Slice) cf_.owned_slice_decls.insert(&vd);
         }
+        if (!vd.type && vd.init) {
+            if (const auto* me = std::get_if<MatchExpr>(&vd.init->node); me && !me->arms.empty()) {
+                const bool all_const = std::all_of(me->arms.begin(), me->arms.end(), [](const MatchArm& arm) {
+                    const ExprStmt* es = arm.body.empty() || !arm.body.back() ? nullptr : std::get_if<ExprStmt>(&arm.body.back()->node);
+                    return es && const_int_value(es->expr).has_value();
+                });
+                if (all_const) cf_.int64_decls.insert(&vd);
+            }
+        }
         const std::size_t errors_before_type = errors_.size();
         if (vd.type) {
             if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col, true); !r) return r;
@@ -5030,7 +5281,13 @@ public:
             TypeId dest_t = type_id_of(*vd.type);
             TypeId src_t = infer_expr_type_id_sema(vd.init);
             // An array literal adapts to the declared element type, like a bare literal does (`xs: []i32 = [1, 2]`);
-            // its elements are checked individually instead of as an inferred `[]i64`.
+            // its elements are checked individually instead of as an inferred `[]i64` (CF-191). A bare integer
+            // literal was range-checked above.
+            if (!is_numeric_literal_expr(vd.init) && !is_byte_slice) {
+                bool handled = false;
+                if (auto r = check_value_for(dest_t, vd.init, handled); !r) return r;
+                if (handled) src_t = TypeId::Unknown();
+            }
             if (std::holds_alternative<ArrayLitExpr>(vd.init->node)) src_t = TypeId::Unknown();
             if (dest_t.is_valid() && src_t.is_valid() && !dest_t.is_unknown() && !src_t.is_unknown()) {
                 std::string dest_str = cf_.type_table.to_string(dest_t);
@@ -5468,10 +5725,23 @@ public:
                 if (auto r = check_expr(as.target); !r) return r;
             }
         }
+        // CF-196: a compound assignment (`sum += i`) stores into the target's type, so the value must widen to it.
+        if (as.target && as.value && as.op != "=" && as.op != "<<=" && as.op != ">>=") {
+            TypeId dest_t = infer_expr_type_id_sema(as.target);
+            if (cf_.type_table.is_integer(dest_t) && !const_int_value(as.value)) {
+                bool handled = false;
+                if (auto r = check_value_for(dest_t, as.value, handled); !r) return r;
+            }
+        }
         // CF-116: Type compatibility check for assignment
         if (as.target && as.value && as.op == "=") {
             TypeId dest_t = infer_expr_type_id_sema(as.target);
             TypeId src_t = infer_expr_type_id_sema(as.value);
+            {
+                bool handled = false;
+                if (auto r = check_value_for(dest_t, as.value, handled); !r) return r;
+                if (handled) src_t = TypeId::Unknown();
+            }
             if (std::holds_alternative<ArrayLitExpr>(as.value->node)) src_t = TypeId::Unknown();  // literal adapts (CF-148)
             if (dest_t.is_valid() && src_t.is_valid() && !dest_t.is_unknown() && !src_t.is_unknown()) {
                 std::string dest_str = cf_.type_table.to_string(dest_t);
@@ -5559,6 +5829,11 @@ public:
         if (rt.value && !fn_ret_str_.empty() && fn_ret_str_ != "void" && in_closure_depth_ == 0) {
             TypeId ret_t = type_id_of(fn_ret_str_);
             TypeId val_t = infer_expr_type_id_sema(rt.value);
+            {
+                bool handled = false;
+                if (auto r = check_value_for(fn_is_fallible_ ? cf_.type_table.unwrap_fallible(ret_t) : ret_t, rt.value, handled); !r) return r;
+                if (handled) val_t = TypeId::Unknown();
+            }
             if (std::holds_alternative<ArrayLitExpr>(rt.value->node)) val_t = TypeId::Unknown();  // literal adapts (CF-148)
             if (ret_t.is_valid() && val_t.is_valid() && !ret_t.is_unknown() && !val_t.is_unknown()) {
                 std::string ret_str = cf_.type_table.to_string(ret_t);
@@ -5783,7 +6058,27 @@ public:
             ScopeGuard sg(*this);
             if (fs.range_end) {
                 bind_scoped_var(fs.item_var, false);
-                var_types_[fs.item_var] = "i64";
+                // CF-196: the typed end decides the index type, as in codegen (`0..xs.len()` is `usize`); two
+                // literals are `i64`. A literal end must fit the other end's type.
+                std::string idx_ty = "i64";
+                const bool lit_start = is_numeric_literal_expr(fs.iter_expr);
+                const bool lit_end = is_numeric_literal_expr(fs.range_end);
+                if (lit_start != lit_end) {
+                    const ExprPtr& typed = lit_start ? fs.range_end : fs.iter_expr;
+                    const ExprPtr& lit = lit_start ? fs.iter_expr : fs.range_end;
+                    TypeId tt = infer_expr_type_id_sema(typed);
+                    if (cf_.type_table.is_integer(tt)) {
+                        idx_ty = cf_.type_table.to_string(tt);
+                        if (auto r = check_int_literal_fits(lit, idx_ty, lit->line, lit->col); !r) return r;
+                    }
+                } else if (!lit_start) {
+                    TypeId a = infer_expr_type_id_sema(fs.iter_expr);
+                    TypeId b = infer_expr_type_id_sema(fs.range_end);
+                    if (cf_.type_table.is_integer(a) && cf_.type_table.is_integer(b)) {
+                        idx_ty = cf_.type_table.to_string(cf_.type_table.int_widens(a, b) ? a : b);
+                    }
+                }
+                var_types_[fs.item_var] = idx_ty;
             } else if (!fs.item_var.empty()) {
                 std::string col_ty = type_name_of(fs.iter_expr);
                 std::string idx_ty = "usize";
@@ -5919,6 +6214,7 @@ private:
     std::vector<cfire::diag::StructuredDiagnostic> fallback_diags_{};
     bool fn_is_fallible_{false};
     bool has_cpp_imports_{false};
+    std::unordered_set<std::string> fn_type_params_{};  // CF-190: the function's and its receiver's type parameters
     bool seen_cpp_block_{false};
     int scope_depth_{1};
     int in_defer_depth_{0};

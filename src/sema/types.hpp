@@ -452,6 +452,30 @@ public:
         return d.kind == TypeKind::Float32 || d.kind == TypeKind::Float64;
     }
 
+    // CF-196: (bits, signed) of an integer type; {0, false} for anything else. `isize`/`usize` are 64-bit.
+    [[nodiscard]] auto int_shape(TypeId id) const -> std::pair<int, bool> {
+        switch (get(id).kind) {
+            case TypeKind::Int8: return {8, true};
+            case TypeKind::Int16: return {16, true};
+            case TypeKind::Int32: return {32, true};
+            case TypeKind::Int64: case TypeKind::Isize: return {64, true};
+            case TypeKind::Uint8: case TypeKind::Byte: return {8, false};
+            case TypeKind::Uint16: return {16, false};
+            case TypeKind::Uint32: return {32, false};
+            case TypeKind::Uint64: case TypeKind::Usize: return {64, false};
+            default: return {0, false};
+        }
+    }
+
+    // CF-196: every value of integer type `src` fits in `dest` (Q9: only these convert implicitly).
+    [[nodiscard]] auto int_widens(TypeId dest, TypeId src) const -> bool {
+        const auto [db, ds] = int_shape(dest);
+        const auto [sb, ss] = int_shape(src);
+        if (db == 0 || sb == 0) return false;
+        if (ds == ss) return db >= sb;
+        return ds && db > sb;  // unsigned into a strictly wider signed type
+    }
+
     [[nodiscard]] auto is_assignable(TypeId dest, TypeId src) const -> bool {
         if (dest == src) return true;
         if (src.is_never()) return true;
@@ -526,6 +550,8 @@ private:
 struct CheckedFile {
     FileAST ast{};
     TypeTable type_table{};
+    // CF-190: the struct, enum and interface names of the package, for resolving bare type names.
+    std::unordered_set<std::string> declared_type_names{};
     std::unordered_map<std::string, FnDecl> fn_sigs{};
     std::unordered_map<std::string, FnDecl> methods{};     // "Type::method" -> FnDecl
     std::unordered_map<std::string, std::string> method_owner{}; // "method" -> "Type" (primary owner for single-owner methods)
@@ -550,6 +576,9 @@ struct CheckedFile {
     mutable std::unordered_set<const VarDeclStmt*> owned_text_decls{};
     // Q53 (CF-189): untyped `mut x := <slice>` declarations, which own a copy when the initializer is a view.
     mutable std::unordered_set<const VarDeclStmt*> owned_slice_decls{};
+    // CF-196: untyped declarations of a `match` / `if` expression whose arms are integer constants: they are
+    // `i64`, so codegen spells the type instead of `auto` (which deduced a 32-bit `int`).
+    mutable std::unordered_set<const VarDeclStmt*> int64_decls{};
     // Q52 (CF-189): `g.value` on a `sync.MutexGuard[T]`, which codegen lowers to the guarded value (`*g` in C++).
     mutable std::unordered_set<const void*> guard_value_members{};
     // Q24 (CF-149): `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms

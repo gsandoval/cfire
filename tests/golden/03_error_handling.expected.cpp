@@ -1,17 +1,17 @@
 #include "cfire_prelude.hpp"
 
-[[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int32_t, cfire::Error>;
+[[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int64_t, cfire::Error>;
 [[nodiscard]] inline auto find_name(std::int32_t id) -> std::optional<std::string>;
 
 #line 3 "03_error_handling.cf"
-[[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int32_t, cfire::Error> {
+[[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int64_t, cfire::Error> {
     #line 4 "03_error_handling.cf"
     if (s == "fail") {
         #line 5 "03_error_handling.cf"
         return cfire::make_error("simulated parse failure");
     }
     #line 7 "03_error_handling.cf"
-    auto val = 42;
+    std::int64_t val = 42;
     #line 8 "03_error_handling.cf"
     if (cfire::mod(val, 2) != 0) {
         #line 9 "03_error_handling.cf"

@@ -1,0 +1,26 @@
+// CF-196: widening is implicit; a literal takes the other operand's type (`100 + f()`); a value built from
+// literals only is `i64` (it used to be a 32-bit C++ `int` and wrapped); a range's typed end decides its index type.
+// expect: stdout
+// | 3000000000 2147483648 4294967296
+// | 107 300 70000
+// | 0 1 2 | 3
+package main
+fn small() -> i32 { return 7 }
+fn wide(x: i64) -> i64 { return x }
+fn main() {
+    mut acc := 0
+    acc += 3000000000
+    y := 2147483647
+    println("{} {} {}", acc, y + 1, 65536 * 65536)
+    b: u8 = 200
+    w: u32 = 70000
+    v := 100 + small()
+    println("{} {} {}", v, wide(b) + 100, wide(w))
+    xs := [5, 6, 7]
+    mut last: usize = 0
+    for i in 0..xs.len() {
+        last = i
+        print("{} ", i)
+    }
+    println("| {}", last + 1)
+}

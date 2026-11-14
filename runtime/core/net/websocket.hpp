@@ -200,13 +200,37 @@ struct WsFrame {
 
 inline constexpr std::size_t kDefaultMaxFrameSize = 16 * 1024 * 1024; // 16 MiB
 
+namespace detail {
+// CF-195: frames are read through this: first the bytes that arrived with the handshake (`ahead`, consumed
+// from the front), then the socket or TLS stream.
+struct FrameReader {
+    int fd;
+    const std::shared_ptr<cfire::net::TlsStream>& tls;
+    std::string* ahead = nullptr;
+
+    [[nodiscard]] auto read(void* buf, std::size_t len) -> bool {
+        auto* out = static_cast<std::uint8_t*>(buf);
+        if (ahead && !ahead->empty() && len > 0) {
+            const std::size_t n = std::min(len, ahead->size());
+            std::memcpy(out, ahead->data(), n);
+            ahead->erase(0, n);
+            out += n;
+            len -= n;
+        }
+        return len == 0 || recv_exact(fd, out, len, tls);
+    }
+};
+} // namespace detail
+
 [[nodiscard]] inline auto decode_frame(
     int fd,
     const std::shared_ptr<cfire::net::TlsStream>& tls = nullptr,
-    std::size_t max_frame_size = kDefaultMaxFrameSize
+    std::size_t max_frame_size = kDefaultMaxFrameSize,
+    std::string* ahead = nullptr
 ) -> std::optional<WsFrame> {
+    detail::FrameReader rd{fd, tls, ahead};
     std::uint8_t header[2];
-    if (!detail::recv_exact(fd, header, 2, tls)) return std::nullopt;
+    if (!rd.read(header, 2)) return std::nullopt;
 
     WsFrame f;
     f.is_final = (header[0] & 0x80) != 0;
@@ -216,11 +240,11 @@ inline constexpr std::size_t kDefaultMaxFrameSize = 16 * 1024 * 1024; // 16 MiB
 
     if (len == 126) {
         std::uint8_t ext[2];
-        if (!detail::recv_exact(fd, ext, 2, tls)) return std::nullopt;
+        if (!rd.read(ext, 2)) return std::nullopt;
         len = (static_cast<std::uint64_t>(ext[0]) << 8) | ext[1];
     } else if (len == 127) {
         std::uint8_t ext[8];
-        if (!detail::recv_exact(fd, ext, 8, tls)) return std::nullopt;
+        if (!rd.read(ext, 8)) return std::nullopt;
         len = 0;
         for (int i = 0; i < 8; ++i) len = (len << 8) | ext[i];
         // RFC 6455 Section 5.2: most significant bit of 64-bit length MUST be 0
@@ -233,7 +257,7 @@ inline constexpr std::size_t kDefaultMaxFrameSize = 16 * 1024 * 1024; // 16 MiB
 
     std::uint8_t mask_key[4] = {0};
     if (has_mask) {
-        if (!detail::recv_exact(fd, mask_key, 4, tls)) return std::nullopt;
+        if (!rd.read(mask_key, 4)) return std::nullopt;
     }
 
     if (len > 0) {
@@ -244,7 +268,7 @@ inline constexpr std::size_t kDefaultMaxFrameSize = 16 * 1024 * 1024; // 16 MiB
             std::size_t chunk_len = std::min<std::size_t>(remaining, kChunkSize);
             std::size_t prev_size = f.payload.size();
             f.payload.resize(prev_size + chunk_len);
-            if (!detail::recv_exact(fd, f.payload.data() + prev_size, chunk_len, tls)) {
+            if (!rd.read(f.payload.data() + prev_size, chunk_len)) {
                 return std::nullopt;
             }
             remaining -= chunk_len;
@@ -279,7 +303,8 @@ public:
           is_client_(o.is_client_),
           tls_(std::move(o.tls_)),
           max_frame_size_(o.max_frame_size_),
-          guard_(std::move(o.guard_)) {}
+          guard_(std::move(o.guard_)),
+          ahead_(std::move(o.ahead_)) {}
     auto operator=(Conn&& o) noexcept -> Conn& {
         if (this != &o) {
             close();
@@ -288,6 +313,7 @@ public:
             tls_ = std::move(o.tls_);
             max_frame_size_ = o.max_frame_size_;
             guard_ = std::move(o.guard_);
+            ahead_ = std::move(o.ahead_);
         }
         return *this;
     }
@@ -349,16 +375,17 @@ public:
 
     auto recv_frame() -> std::expected<WsFrame, cfire::Error> {
         while (fd_ >= 0) {
-            auto f_opt = decode_frame(fd_, tls_, max_frame_size_);
+            auto f_opt = decode_frame(fd_, tls_, max_frame_size_, &ahead_);
             if (!f_opt) {
                 tls_.reset();
-                if (fd_ >= 0) ::close(std::exchange(fd_, -1));
+                // Through the close guard (CF-192): `stop()` must never shut down a reused descriptor.
+                if (fd_ >= 0) cfire::net::detail::close_guarded(std::exchange(fd_, -1), guard_);
                 return cfire::make_error("websocket connection closed by peer");
             }
             auto& f = *f_opt;
             if (f.opcode == 0x8) { // Close
                 tls_.reset();
-                if (fd_ >= 0) ::close(std::exchange(fd_, -1));
+                if (fd_ >= 0) cfire::net::detail::close_guarded(std::exchange(fd_, -1), guard_);
                 return cfire::make_error("websocket closed by peer");
             }
             if (f.opcode == 0x9) { // Ping -> auto-reply with Pong
@@ -412,6 +439,9 @@ public:
         }
     }
 
+    // CF-195: bytes that arrived after the handshake (the peer's first frames); frames are read from them first.
+    void set_read_ahead(std::string bytes) { ahead_ = std::move(bytes); }
+
     // CF-192: the server's handle for shutting this session down from `stop()`.
     void set_close_guard(std::shared_ptr<cfire::net::detail::CloseGuard> guard) noexcept { guard_ = std::move(guard); }
 
@@ -421,6 +451,7 @@ private:
     std::shared_ptr<cfire::net::TlsStream> tls_{nullptr};
     std::size_t max_frame_size_ = kDefaultMaxFrameSize;
     std::shared_ptr<cfire::net::detail::CloseGuard> guard_{nullptr};
+    std::string ahead_{};  // CF-195: bytes read past the handshake, read before the socket
 };
 
 using WebSocket = Conn;
@@ -526,6 +557,11 @@ using WebSocket = Conn;
     if (!resp_buf.starts_with("HTTP/1.1 101") && !resp_buf.starts_with("HTTP/1.0 101")) {
         return cfire::make_error("websocket handshake failed: server did not return 101 Switching Protocols");
     }
+    // CF-195: frames the server sent right behind the 101 can arrive in the same read; they are the first bytes
+    // the connection reads, not discarded.
+    const std::size_t head_end = resp_buf.find("\r\n\r\n") + 4;
+    std::string ahead = resp_buf.substr(head_end);
+    resp_buf.resize(head_end);
 
     auto parsed_resp = cfire::http::parse_response(resp_buf);
     if (parsed_resp) {
@@ -537,7 +573,9 @@ using WebSocket = Conn;
 
     int raw_fd = tcp.release_fd();
     auto tls = tcp.release_tls();
-    return Conn(raw_fd, /*is_client=*/true, std::move(tls));
+    Conn ws(raw_fd, /*is_client=*/true, std::move(tls));
+    ws.set_read_ahead(std::move(ahead));
+    return ws;
 }
 
 [[nodiscard]] inline auto connect_insecure(std::string_view url_str) -> std::expected<Conn, cfire::Error> {
@@ -713,7 +751,9 @@ private:
         }
         cfire::http::ServerLimits http_lim;
         http_lim.header_timeout_ms = limits_.header_timeout_ms;
-        auto req_res = cfire::http::read_http_request(conn, http_lim);
+        // CF-195: the assembler keeps the bytes after the request (a client's first frame sent with it).
+        cfire::http::detail::RequestAssembler as(http_lim.max_body_bytes);
+        auto req_res = cfire::http::detail::read_next_request(conn, as, http_lim);
         if (!req_res) {
             cfire::http::Response err_resp = cfire::http::Response::bad_request("400 Bad Request");
             (void)conn.write_text(err_resp.to_http_wire());
@@ -726,6 +766,7 @@ private:
             return;
         }
         ws_res->set_max_frame_size(limits_.max_frame_size);
+        ws_res->set_read_ahead(std::move(as.buffer()));
         if constexpr (std::is_invocable_v<Handler, const cfire::http::Request&, Conn&>) {
             handler(*req_res, *ws_res);
         } else {

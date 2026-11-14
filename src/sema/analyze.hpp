@@ -261,6 +261,17 @@ namespace cfire::frontend {
         if (count > 1) cf.colliding_gv_names.insert(name);
     }
 
+    // A type two packages both declare is renamed `cfire_pkg_<pkg>__<Name>` (CF-017); its spelling stays `Name`.
+    auto declare_type_name = [&](const std::string& n) {
+        cf.declared_type_names.insert(n);
+        if (n.starts_with("cfire_pkg_")) {
+            if (auto sep = n.find("__"); sep != std::string::npos) cf.declared_type_names.insert(n.substr(sep + 2));
+        }
+    };
+    for (const auto& st : cf.ast.structs) declare_type_name(st.name);
+    for (const auto& en : cf.ast.enums) declare_type_name(en.name);
+    for (const auto& in : cf.ast.interfaces) cf.declared_type_names.insert(in.name);
+    std::unordered_set<std::string> scope_type_params;  // CF-190: type parameters of the declaration being checked
     // Validate no dynamic slices or arrays of structural interfaces (CF-108)
     auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col) -> void {
         // CF-189: no raw pointer types (C++ interop only) and no `&T` / `&mut T` reference types (Q53).
@@ -303,6 +314,13 @@ namespace cfire::frontend {
                     }
                 }
             }
+            // CF-190: a bare type name resolves (builtin, package type, type parameter), or it is a cfire error.
+            if (dot == std::string::npos && dcol == std::string::npos && !tr.is_fn && !tr.is_tuple) {
+                if (std::string why = bare_type_name_problem(tr.raw_name, cf.declared_type_names, scope_type_params); !why.empty()) {
+                    cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/UNDECLARED-TYPE", why, {{"name", tr.raw_name}}));
+                    return;
+                }
+            }
         }
         if (tr.elem_type) {
             self(self, *tr.elem_type, src_path, line, col);
@@ -315,6 +333,12 @@ namespace cfire::frontend {
         }
         for (const auto& tup : tr.tuple_types) {
             self(self, tup, src_path, line, col);
+        }
+        for (const auto& fp : tr.fn_params) {
+            self(self, fp, src_path, line, col);
+        }
+        if (tr.fn_ret) {
+            self(self, *tr.fn_ret, src_path, line, col);
         }
     };
     // Q28: struct fields are snake_case; `cfire fix` renames the field and every use across the workspace.
@@ -337,6 +361,8 @@ namespace cfire::frontend {
     std::unordered_set<std::string> field_case_seen;  // merged package views list a struct under `./f.cf` and `f.cf`
     for (const auto& st : cf.ast.structs) {
         std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
+        scope_type_params.clear();
+        for (const auto& tp : st.type_params) scope_type_params.insert(tp.name);
         for (const auto& fld : st.fields) {
             std::string seen_key = std::format("{}:{}:{}.{}", std::filesystem::path(st_path).lexically_normal().string(), fld.line, st.name, fld.name);
             if (std::string snake = snake_case_of(fld.name); snake != fld.name && field_case_seen.insert(seen_key).second) {
@@ -354,7 +380,13 @@ namespace cfire::frontend {
     }
     for (const auto& fn : cf.ast.functions) {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
+        scope_type_params.clear();
+        for (const auto& tp : fn.type_params) scope_type_params.insert(tp.name);
         if (fn.receiver) {
+            for (const auto& ta : fn.receiver->type.type_args) scope_type_params.insert(ta.name);  // `fn (b: Box[T])`
+            for (const auto& st : cf.ast.structs) {
+                if (st.name == fn.receiver->type.name) for (const auto& tp : st.type_params) scope_type_params.insert(tp.name);
+            }
             check_type_ref_separators_ast(check_type_ref_separators_ast, fn.receiver->type, fn_path, fn.line, 1);
         }
         for (const auto& p : fn.params) {
@@ -368,6 +400,15 @@ namespace cfire::frontend {
             cf.add_error(cfire::diag::diag(fn_path, fn.line, 0, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface)));
         }
     }
+    for (const auto& en : cf.ast.enums) {
+        std::string_view en_path = en.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(en.source_path);
+        scope_type_params.clear();
+        for (const auto& tp : en.type_params) scope_type_params.insert(tp.name);
+        for (const auto& v : en.variants) {
+            for (const auto& pt : v.payload_types) check_type_ref_separators_ast(check_type_ref_separators_ast, pt, en_path, v.line, 1);
+        }
+    }
+    scope_type_params.clear();
     for (const auto& gv : cf.ast.global_vars) {
         if (gv.type) {
             std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);

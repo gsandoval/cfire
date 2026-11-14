@@ -106,8 +106,7 @@ void test_cf194_websocket_server_sessions([[maybe_unused]] const std::filesystem
         if (s2) {
             std::thread loop([&s2] {
                 s2->listen_and_serve([](const cfire::http::Request& req, cfire::websocket::Conn& ws) {
-                    // Reply only after the client's first frame: `connect` drops bytes that arrive with the 101.
-                    if (ws.recv_text()) (void)ws.send_text(req.path);
+                    (void)ws.send_text(req.path);  // sent right behind the 101 (CF-195)
                     (void)ws.recv_text();
                 });
             });
@@ -115,7 +114,6 @@ void test_cf194_websocket_server_sessions([[maybe_unused]] const std::filesystem
             require(f.has_value(), "CF-194: client reaches the foreground server");
             if (f) {
                 f->set_timeout_ms(3000);
-                require(f->send_text("hi").has_value(), "CF-194: client sends to the foreground server");
                 auto path = f->recv_text();
                 require(path && *path == "/room/7", "CF-194: the handler gets the upgrade request");
             }
