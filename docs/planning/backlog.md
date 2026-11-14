@@ -738,6 +738,16 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Problem & Evidence**: `fn f(xs: []i32)` called as `f([1, 2])` is `cfire/TYPE-MISMATCH` ("expects '[]i32', got '[]i64'"), although `xs: []i32 = [1, 2]` adapts the literal. Predates CF-189 (reproduced at `4b6630e`).
 - **Acceptance Criteria**: an array literal argument adapts to the parameter's element type, like a declaration does.
 
+#### `CF-192` — HTTP Keep-Alive, WebSockets Off the Worker Pool (2026-11-13)
+- **Problem & Evidence**: every `http.Server` response sends `Connection: close`, so each request pays a TCP (and TLS) handshake. A WebSocket session runs on its pool worker for its whole life (`try_dispatch_ws`), so `workers` open sockets stop plain HTTP. The pool default is `max(4, cores)`.
+- **Plan**: an incremental request parser (`detail::RequestAssembler`) that keeps the CF-150 rules and the bytes after a request (pipelining); HTTP/1.1 keep-alive with an idle timeout and a per-connection request cap; WebSocket sessions on their own threads, capped, shut down by `stop()`; `ServerLimits` gains `keepalive_timeout_ms` (5000), `max_requests_per_conn` (1000), `max_websockets` (1024), `max_connections` (10000); `workers` defaults to `max(4, 2 × cores)`.
+- **Acceptance Criteria**: two requests share one connection; pipelined requests are answered; `workers + 2` open WebSockets do not block a GET; over a cap is 503; the CF-150 tests pass unchanged.
+
+#### `CF-193` — HTTP Server Event Loop (2026-11-13)
+- **Problem & Evidence**: a worker is held from accept until the response is written, up to 10 s for headers and 30 s for the body, so `workers` slow or idle clients stall the server (after CF-192, idle keep-alive connections too).
+- **Plan** (user, 2026-11-13): one loop thread per server waits on every connection (kqueue on macOS, epoll on Linux, WSAPoll on Windows) and reads the whole request, TLS handshake included, without blocking; a worker gets only a complete `Request`, runs the handler and writes the response; keep-alive connections return to the loop. Deadlines, `max_connections` and `max_pending` are enforced by the loop.
+- **Acceptance Criteria**: 200 idle and `workers + 4` trickling clients do not delay a GET; HTTP and HTTPS keep-alive work; the 408/413/400/431 rules hold; `make check-platforms` passes.
+
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:
   - Renaming outer `count` also renames `|count: i32|` and its uses.

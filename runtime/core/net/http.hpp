@@ -119,11 +119,13 @@ struct Response {
         return (it != headers.end()) ? it->second : std::string(fallback);
     }
 
-    [[nodiscard]] auto to_http_wire() const -> std::string {
+    // CF-192: `keep_alive` is the server's choice to read another request on this connection.
+    [[nodiscard]] auto to_http_wire(bool keep_alive = false) const -> std::string {
         std::string text = status_text.empty() ? status_text_for_code(status_code) : detail::strip_crlf(status_text);
-        std::string out = std::format("HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n",
-            status_code, text, body.size());
+        std::string out = std::format("HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: {}\r\n",
+            status_code, text, body.size(), keep_alive ? "keep-alive" : "close");
         for (const auto& [k, v] : headers) {
+            if (k == "connection") continue;  // written above; a handler's `connection: close` turns keep-alive off
             out += std::format("{}: {}\r\n", detail::strip_crlf(k), detail::strip_crlf(v));
         }
         out += "\r\n";
@@ -428,8 +430,13 @@ struct ServerLimits {
     int header_timeout_ms = 10000;
     int body_timeout_ms = 30000;
     std::size_t max_body_bytes = 10 * 1024 * 1024;
-    std::size_t workers = std::max<std::size_t>(4, std::thread::hardware_concurrency());
+    std::size_t workers = std::max<std::size_t>(4, 2 * static_cast<std::size_t>(std::thread::hardware_concurrency()));
     std::size_t max_pending = 128;
+    // CF-192: an idle keep-alive connection is closed after this long; 0 turns keep-alive off.
+    int keepalive_timeout_ms = 5000;
+    std::size_t max_requests_per_conn = 1000;
+    std::size_t max_websockets = 1024;
+    std::size_t max_connections = 10000;
 };
 
 namespace detail {
@@ -437,7 +444,9 @@ enum class ChunkStatus : std::uint8_t { NeedMore, Done, Malformed, TooLarge };
 
 // Strict incremental chunked-body decoder: `raw` is everything received after the header section.
 // Only CRLF line endings, hex sizes (with optional `;ext`), CRLF after each chunk, trailers ignored.
-[[nodiscard]] inline auto decode_chunked_strict(std::string_view raw, std::size_t max_bytes, std::string& out) -> ChunkStatus {
+// `consumed`, when given, is set to the length of the chunked body (trailers included) once it is Done.
+[[nodiscard]] inline auto decode_chunked_strict(std::string_view raw, std::size_t max_bytes, std::string& out,
+                                                std::size_t* consumed = nullptr) -> ChunkStatus {
     out.clear();
     std::size_t pos = 0;
     for (;;) {
@@ -458,7 +467,10 @@ enum class ChunkStatus : std::uint8_t { NeedMore, Done, Malformed, TooLarge };
             for (;;) {
                 std::size_t t = raw.find("\r\n", pos);
                 if (t == std::string_view::npos) return ChunkStatus::NeedMore;
-                if (t == pos) return ChunkStatus::Done;
+                if (t == pos) {
+                    if (consumed != nullptr) *consumed = t + 2;
+                    return ChunkStatus::Done;
+                }
                 pos = t + 2;
             }
         }
@@ -492,88 +504,182 @@ enum class ReadMore : std::uint8_t { Data, Eof, Deadline };
         if (clock::now() - started < std::chrono::milliseconds(1)) return ReadMore::Eof;
     }
 }
+
+// CF-192: builds requests from bytes as they arrive, so the same rules serve a blocking reader and the
+// event loop. It keeps the bytes after a complete request (pipelining). Errors carry the HTTP status to
+// send: 400 malformed or ambiguous framing, 413 body too large, 431 header section too large.
+class RequestAssembler {
+public:
+    enum class Status : std::uint8_t { NeedMore, Ready, Error };
+
+    explicit RequestAssembler(std::size_t max_body_bytes) noexcept : max_body_(max_body_bytes) {}
+
+    [[nodiscard]] auto buffer() noexcept -> std::string& { return buf_; }
+    void feed(std::string_view bytes) { buf_.append(bytes); }
+    // True once some bytes of the next request are buffered.
+    [[nodiscard]] auto started() const noexcept -> bool { return have_head_ || !buf_.empty(); }
+    [[nodiscard]] auto headers_done() const noexcept -> bool { return have_head_; }
+    // Whether the last request allows another on the same connection (HTTP/1.1 unless `Connection: close`;
+    // HTTP/1.0 only with `Connection: keep-alive`).
+    [[nodiscard]] auto keep_alive() const noexcept -> bool { return keep_alive_; }
+    [[nodiscard]] auto error_status() const noexcept -> int { return error_status_; }
+    [[nodiscard]] auto error_message() const noexcept -> const std::string& { return error_message_; }
+
+    [[nodiscard]] auto step() -> Status {
+        if (error_status_ != 0) return Status::Error;
+        if (!have_head_) {
+            const std::size_t header_end = buf_.find("\r\n\r\n");
+            if (header_end == std::string::npos) {
+                if (buf_.size() > 65536) return fail(431, "HTTP header section exceeds maximum size (64KB)");
+                return Status::NeedMore;
+            }
+            if (auto st = parse_head(header_end); st != Status::NeedMore) return st;
+        }
+        if (chunked_) {
+            std::string body;
+            std::size_t consumed = 0;
+            switch (decode_chunked_strict(buf_, max_body_, body, &consumed)) {
+                case ChunkStatus::NeedMore: return Status::NeedMore;
+                case ChunkStatus::Malformed: return fail(400, "malformed chunked request body");
+                case ChunkStatus::TooLarge: return fail(413, "payload too large");
+                case ChunkStatus::Done: break;
+            }
+            req_.body = std::move(body);
+            req_.headers.erase("transfer-encoding");
+            buf_.erase(0, consumed);
+            return Status::Ready;
+        }
+        if (buf_.size() < content_len_) return Status::NeedMore;
+        req_.body = buf_.substr(0, content_len_);
+        buf_.erase(0, content_len_);
+        return Status::Ready;
+    }
+
+    // The request `step()` reported Ready; the assembler is then ready for the next one.
+    [[nodiscard]] auto take() -> Request {
+        Request out = std::move(req_);
+        req_ = Request{};
+        have_head_ = false;
+        chunked_ = false;
+        content_len_ = 0;
+        return out;
+    }
+
+    // The error for input that ended early: before any byte (code 0, nothing to answer), inside the header
+    // section, or inside the body.
+    [[nodiscard]] auto eof_error() const -> cfire::Error {
+        if (!started()) return cfire::Error("connection closed before request");
+        if (!have_head_) return cfire::Error("malformed HTTP request: missing header delimiter", 400);
+        if (chunked_) return cfire::Error("truncated chunked request body", 400);
+        return cfire::Error(std::format("truncated request body: got {} of {} bytes", buf_.size(), content_len_), 400);
+    }
+
+private:
+    auto fail(int status, std::string message) -> Status {
+        error_status_ = status;
+        error_message_ = std::move(message);
+        return Status::Error;
+    }
+
+    auto parse_head(std::size_t header_end) -> Status {
+        std::string_view head = std::string_view(buf_).substr(0, header_end);
+        for (std::size_t i = 0; i < head.size(); ++i) {
+            if (head[i] == '\n' && (i == 0 || head[i - 1] != '\r')) return fail(400, "malformed HTTP request: bare LF line ending");
+        }
+        auto req_res = parse_request(std::string_view(buf_).substr(0, header_end + 4));
+        if (!req_res) {
+            int code = req_res.error().code() != 0 ? req_res.error().code() : 400;
+            return fail(code, std::string(req_res.error().message()));
+        }
+        req_ = std::move(*req_res);
+        req_.body.clear();
+
+        std::string_view line = head.substr(0, head.find("\r\n"));
+        const bool http10 = line.ends_with("HTTP/1.0");
+        std::string conn_hdr = req_.header("connection");
+        for (char& c : conn_hdr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        keep_alive_ = http10 ? conn_hdr.contains("keep-alive") : !conn_hdr.contains("close");
+
+        auto cl_it = req_.headers.find("content-length");
+        auto te_it = req_.headers.find("transfer-encoding");
+        if (cl_it != req_.headers.end() && te_it != req_.headers.end()) {
+            return fail(400, "request has both Content-Length and Transfer-Encoding");
+        }
+        content_len_ = 0;
+        chunked_ = false;
+        if (te_it != req_.headers.end()) {
+            std::string te;
+            for (char c : te_it->second) if (c != ' ' && c != '\t') te.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            if (te != "chunked") return fail(400, std::format("unsupported Transfer-Encoding '{}'", te_it->second));
+            chunked_ = true;
+        } else if (cl_it != req_.headers.end()) {
+            std::string_view v = cl_it->second;
+            while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.remove_suffix(1);
+            if (v.empty() || v.size() > 19 || !std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; })) {
+                return fail(400, std::format("invalid Content-Length '{}'", cl_it->second));
+            }
+            content_len_ = cfire::detail::parse_int<std::size_t>(v).value_or(0);
+            if (content_len_ > max_body_) {
+                return fail(413, std::format("payload too large: Content-Length {} exceeds limit {}", content_len_, max_body_));
+            }
+        }
+        buf_.erase(0, header_end + 4);
+        have_head_ = true;
+        return Status::NeedMore;
+    }
+
+    std::size_t max_body_;
+    std::string buf_{};
+    Request req_{};
+    bool have_head_ = false;
+    bool chunked_ = false;
+    bool keep_alive_ = false;
+    std::size_t content_len_ = 0;
+    int error_status_ = 0;
+    std::string error_message_{};
+};
+
+// Reads the next request on a blocking connection. `idle_ms > 0` is the keep-alive wait for its first byte:
+// running out of it, or `running` turning false, ends the connection with a code-0 error (nothing to answer).
+// The header deadline starts with the first byte, the body deadline once the header section is complete.
+inline auto read_next_request(cfire::net::TcpConn& conn, RequestAssembler& as, const ServerLimits& lim, int idle_ms = 0,
+                              const std::atomic<bool>* running = nullptr) -> std::expected<Request, cfire::Error> {
+    using clock = std::chrono::steady_clock;
+    if (idle_ms > 0 && !as.started()) {
+        const auto idle_deadline = clock::now() + std::chrono::milliseconds(idle_ms);
+        for (;;) {
+            if (running != nullptr && !running->load()) return cfire::make_error("server stopping");
+            auto left = std::chrono::duration_cast<std::chrono::milliseconds>(idle_deadline - clock::now()).count();
+            if (left <= 0) return cfire::make_error("keep-alive idle timeout");
+            if (conn.poll(std::min<long long>(left, 200))) break;
+        }
+    }
+    auto deadline = clock::now() + std::chrono::milliseconds(lim.header_timeout_ms);
+    bool in_body = false;
+    for (;;) {
+        switch (as.step()) {
+            case RequestAssembler::Status::Ready: return as.take();
+            case RequestAssembler::Status::Error: return cfire::make_error(as.error_message(), as.error_status());
+            case RequestAssembler::Status::NeedMore: break;
+        }
+        if (!in_body && as.headers_done()) {
+            in_body = true;
+            deadline = clock::now() + std::chrono::milliseconds(lim.body_timeout_ms);
+        }
+        auto st = read_more_until(conn, as.buffer(), deadline);
+        if (st == ReadMore::Deadline) {
+            return cfire::make_error(in_body ? "request body deadline exceeded" : "request header deadline exceeded", 408);
+        }
+        if (st == ReadMore::Eof) return std::unexpected(as.eof_error());
+    }
+}
 } // namespace detail
 
 inline auto read_http_request(cfire::net::TcpConn& conn, const ServerLimits& lim)
     -> std::expected<Request, cfire::Error>
 {
-    using clock = std::chrono::steady_clock;
-    std::string raw;
-    std::size_t header_end = std::string::npos;
-    const auto header_deadline = clock::now() + std::chrono::milliseconds(lim.header_timeout_ms);
-    while (header_end == std::string::npos) {
-        auto st = detail::read_more_until(conn, raw, header_deadline);
-        if (st == detail::ReadMore::Deadline) return cfire::make_error("request header deadline exceeded", 408);
-        if (st == detail::ReadMore::Eof) {
-            if (raw.empty()) return cfire::make_error("connection closed before request");
-            return cfire::make_error("malformed HTTP request: missing header delimiter", 400);
-        }
-        header_end = raw.find("\r\n\r\n");
-        if (header_end == std::string::npos && raw.size() > 65536) {
-            return cfire::make_error("HTTP header section exceeds maximum size (64KB)", 431);
-        }
-    }
-    std::string_view head = std::string_view(raw).substr(0, header_end);
-    for (std::size_t i = 0; i < head.size(); ++i) {
-        if (head[i] == '\n' && (i == 0 || head[i - 1] != '\r')) {
-            return cfire::make_error("malformed HTTP request: bare LF line ending", 400);
-        }
-    }
-    auto req_res = parse_request(std::string_view(raw).substr(0, header_end + 4));
-    if (!req_res) {
-        int code = req_res.error().code() != 0 ? req_res.error().code() : 400;
-        return cfire::make_error(std::string(req_res.error().message()), code);
-    }
-    auto& req = *req_res;
-    std::string rest = raw.substr(header_end + 4);
-
-    auto cl_it = req.headers.find("content-length");
-    auto te_it = req.headers.find("transfer-encoding");
-    if (cl_it != req.headers.end() && te_it != req.headers.end()) {
-        return cfire::make_error("request has both Content-Length and Transfer-Encoding", 400);
-    }
-    const auto body_deadline = clock::now() + std::chrono::milliseconds(lim.body_timeout_ms);
-    if (te_it != req.headers.end()) {
-        std::string te;
-        for (char c : te_it->second) if (c != ' ' && c != '\t') te.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        if (te != "chunked") return cfire::make_error(std::format("unsupported Transfer-Encoding '{}'", te_it->second), 400);
-        std::string body;
-        for (;;) {
-            auto st = detail::decode_chunked_strict(rest, lim.max_body_bytes, body);
-            if (st == detail::ChunkStatus::Done) break;
-            if (st == detail::ChunkStatus::Malformed) return cfire::make_error("malformed chunked request body", 400);
-            if (st == detail::ChunkStatus::TooLarge) return cfire::make_error("payload too large", 413);
-            auto rs = detail::read_more_until(conn, rest, body_deadline);
-            if (rs == detail::ReadMore::Deadline) return cfire::make_error("request body deadline exceeded", 408);
-            if (rs == detail::ReadMore::Eof) return cfire::make_error("truncated chunked request body", 400);
-        }
-        req.body = std::move(body);
-        req.headers.erase("transfer-encoding");
-        return req;
-    }
-
-    std::size_t content_len = 0;
-    if (cl_it != req.headers.end()) {
-        std::string_view v = cl_it->second;
-        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.remove_suffix(1);
-        if (v.empty() || v.size() > 19 || !std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; })) {
-            return cfire::make_error(std::format("invalid Content-Length '{}'", cl_it->second), 400);
-        }
-        content_len = cfire::detail::parse_int<std::size_t>(v).value_or(0);
-    }
-    if (content_len > lim.max_body_bytes) {
-        return cfire::make_error(std::format("payload too large: Content-Length {} exceeds limit {}", content_len, lim.max_body_bytes), 413);
-    }
-    while (rest.size() < content_len) {
-        auto rs = detail::read_more_until(conn, rest, body_deadline);
-        if (rs == detail::ReadMore::Deadline) return cfire::make_error("request body deadline exceeded", 408);
-        if (rs == detail::ReadMore::Eof) {
-            return cfire::make_error(std::format("truncated request body: got {} of {} bytes", rest.size(), content_len), 400);
-        }
-    }
-    rest.resize(content_len);
-    req.body = std::move(rest);
-    return req;
+    detail::RequestAssembler as(lim.max_body_bytes);
+    return detail::read_next_request(conn, as, lim);
 }
 
 inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_size = 10 * 1024 * 1024)
@@ -1242,6 +1348,17 @@ public:
         return false;
     }
 
+    // CF-192: whether `req` asks for one of the WebSocket routes; the server then serves it on its own thread.
+    [[nodiscard]] auto is_ws_upgrade(const Request& req) const -> bool {
+        if (ws_routes_.empty()) return false;
+        std::string upg = req.header("upgrade");
+        for (char& c : upg) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (upg != "websocket") return false;
+        std::vector<std::string> path_segs = split_path(req.path);
+        std::unordered_map<std::string, std::string> params;
+        return std::ranges::any_of(ws_routes_, [&](const WsRoute& r) { return match_route(r.segments, path_segs, params); });
+    }
+
     [[nodiscard]] auto dispatch(Request req) const -> Response {
         std::size_t qm = req.path.find('?');
         if (qm != std::string::npos) {
@@ -1390,6 +1507,78 @@ private:
     return Router{};
 }
 
+namespace detail {
+// CF-192: long-lived sessions (WebSockets) run on their own threads, so they never hold a pool worker.
+// `stop()` shuts their sockets down through each session's close guard, then joins them.
+class SessionThreads {
+public:
+    SessionThreads() = default;
+    SessionThreads(const SessionThreads&) = delete;
+    auto operator=(const SessionThreads&) -> SessionThreads& = delete;
+    ~SessionThreads() {
+        shutdown_all();
+        join_all();
+    }
+
+    // Starts `fn` on a new thread unless `cap` sessions are live; `fn` is left untouched when full.
+    template <typename Fn>
+    [[nodiscard]] auto start(std::size_t cap, std::shared_ptr<cfire::net::detail::CloseGuard> guard, Fn& fn) -> bool {
+        std::lock_guard<std::mutex> lk(mu_);
+        reap_locked();
+        if (sessions_.size() >= cap) return false;
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        std::thread t([f = std::move(fn), done]() mutable {
+            f();
+            done->store(true);
+        });
+        sessions_.push_back(Session{std::move(t), std::move(guard), std::move(done)});
+        return true;
+    }
+
+    void shutdown_all() noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
+        for (auto& s : sessions_) {
+            if (s.guard) s.guard->shutdown();
+        }
+    }
+
+    void join_all() noexcept {
+        std::vector<Session> all;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            all.swap(sessions_);
+        }
+        for (auto& s : all) {
+            if (s.thread.joinable()) s.thread.join();
+        }
+    }
+
+    [[nodiscard]] auto live() -> std::size_t {
+        std::lock_guard<std::mutex> lk(mu_);
+        reap_locked();
+        return sessions_.size();
+    }
+
+private:
+    struct Session {
+        std::thread thread;
+        std::shared_ptr<cfire::net::detail::CloseGuard> guard;
+        std::shared_ptr<std::atomic<bool>> done;
+    };
+
+    void reap_locked() {
+        std::erase_if(sessions_, [](Session& s) {
+            if (!s.done->load()) return false;
+            if (s.thread.joinable()) s.thread.join();
+            return true;
+        });
+    }
+
+    std::mutex mu_;
+    std::vector<Session> sessions_;
+};
+} // namespace detail
+
 class HttpServer {
 public:
     HttpServer(cfire::net::TcpListener listener, std::optional<cfire::tls::ServerContext> tls_ctx = std::nullopt)
@@ -1401,7 +1590,9 @@ public:
     HttpServer(HttpServer&& o) noexcept
         : listener_(std::move(o.listener_)),
           tls_ctx_(std::move(o.tls_ctx_)),
-          running_(o.running_.load()) {
+          running_(o.running_.load()),
+          limits_(o.limits_),
+          ws_(std::exchange(o.ws_, std::make_unique<detail::SessionThreads>())) {
         o.running_ = false;
         if (o.worker_.joinable()) {
             worker_ = std::move(o.worker_);
@@ -1414,6 +1605,8 @@ public:
             listener_ = std::move(o.listener_);
             tls_ctx_ = std::move(o.tls_ctx_);
             running_ = o.running_.load();
+            limits_ = o.limits_;
+            std::swap(ws_, o.ws_);
             o.running_ = false;
             if (o.worker_.joinable()) {
                 worker_ = std::move(o.worker_);
@@ -1455,21 +1648,26 @@ public:
         }
     }
 
+    // One connection, one request, served on the calling thread (a WebSocket session too).
     template <typename Handler>
     void serve_once(Handler&& handler) {
         auto conn_res = listener_.accept();
         if (!conn_res) return;
-        handle_conn(*conn_res, handler);
+        handle_conn(*conn_res, handler, nullptr);
     }
 
     // Q22 (CF-150): connections are served by a bounded worker pool, so one slow or idle client cannot
     // stall the server; when every worker is busy and the queue is full, new clients get 503.
+    // CF-192: a worker keeps a keep-alive connection while no other client waits; WebSocket sessions get
+    // their own threads, which are shut down and joined before this returns.
     template <typename Handler>
     void listen_and_serve(Handler&& handler) {
         running_ = true;
         std::mutex mu;
         std::condition_variable cv;
         std::deque<cfire::net::TcpConn> queue;
+        std::atomic<std::size_t> waiting{0};
+        std::atomic<std::size_t> active{0};
         bool closing = false;
         std::vector<std::thread> pool;
         const std::size_t n_workers = std::max<std::size_t>(1, limits_.workers);
@@ -1484,8 +1682,11 @@ public:
                         if (queue.empty()) return;
                         conn.emplace(std::move(queue.front()));
                         queue.pop_front();
+                        waiting = queue.size();
+                        ++active;
                     }
-                    handle_conn(*conn, handler);
+                    handle_conn(*conn, handler, &waiting);
+                    --active;
                 }
             });
         }
@@ -1496,13 +1697,14 @@ public:
                 continue;
             }
             std::unique_lock<std::mutex> lk(mu);
-            if (queue.size() >= limits_.max_pending) {
+            if (queue.size() >= limits_.max_pending || queue.size() + active.load() >= limits_.max_connections) {
                 lk.unlock();
                 Response busy = Response::text(503, "503 Service Unavailable");
                 (void)conn_res->write_text(busy.to_http_wire());
                 continue;
             }
             queue.push_back(std::move(*conn_res));
+            waiting = queue.size();
             lk.unlock();
             cv.notify_one();
         }
@@ -1512,14 +1714,19 @@ public:
         }
         cv.notify_all();
         for (auto& t : pool) t.join();
+        ws_->shutdown_all();
+        ws_->join_all();
     }
 
     void set_limits(const ServerLimits& lim) noexcept {
         limits_ = lim;
-        // From `.cf` code `workers = 0` means "keep the default pool size".
+        // From `.cf` code `workers = 0` means "keep the default pool size" (also `max_connections`).
         if (limits_.workers == 0) limits_.workers = ServerLimits{}.workers;
+        if (limits_.max_connections == 0) limits_.max_connections = ServerLimits{}.max_connections;
     }
     [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
+    // CF-192: open WebSocket sessions.
+    [[nodiscard]] auto websocket_sessions() const -> std::size_t { return ws_->live(); }
 
     template <typename Handler>
     void serve_in_background(Handler handler) {
@@ -1531,30 +1738,62 @@ public:
     }
 
 private:
+    static void write_error(cfire::net::TcpConn& conn, const cfire::Error& err) {
+        int status = err.code();
+        if (status != 400 && status != 408 && status != 413 && status != 431) status = 400;
+        std::string_view reason = status == 408 ? "Request Timeout" : status == 413 ? "Payload Too Large"
+                                : status == 431 ? "Request Header Fields Too Large" : "Bad Request";
+        Response err_resp = Response::text(status, std::format("{} {}", status, reason));
+        (void)conn.write_text(err_resp.to_http_wire());
+    }
+
+    // Serves requests on `conn` until it closes. `waiting` is the pool's queue length (null from `serve_once`,
+    // which serves one request); keep-alive holds the worker only while nobody waits for one.
     template <typename Handler>
-    void handle_conn(cfire::net::TcpConn& conn, Handler& handler) {
+    void handle_conn(cfire::net::TcpConn& conn, Handler& handler, const std::atomic<std::size_t>* waiting) {
         if (tls_ctx_.has_value() && tls_ctx_->valid()) {
             auto wr = tls_ctx_->wrap_server(conn);
             if (!wr) return;
         }
-        auto req_res = read_http_request(conn, limits_);
-        if (!req_res) {
-            int status = req_res.error().code();
-            if (status != 400 && status != 408 && status != 413 && status != 431) status = 400;
-            std::string_view reason = status == 408 ? "Request Timeout" : status == 413 ? "Payload Too Large"
-                                    : status == 431 ? "Request Header Fields Too Large" : "Bad Request";
-            Response err_resp = Response::text(status, std::format("{} {}", status, reason));
-            (void)conn.write_text(err_resp.to_http_wire());
-            return;
-        }
-        req_res->remote_addr = conn.endpoint();
-        if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
-            if (handler.try_dispatch_ws(*req_res, conn)) {
+        detail::RequestAssembler as(limits_.max_body_bytes);
+        for (std::size_t served = 0;;) {
+            const int idle_ms = served == 0 ? 0 : limits_.keepalive_timeout_ms;
+            auto req_res = detail::read_next_request(conn, as, limits_, idle_ms, &running_);
+            if (!req_res) {
+                // Code 0: the client closed, the keep-alive wait ran out or the server is stopping.
+                if (req_res.error().code() != 0) write_error(conn, req_res.error());
                 return;
             }
+            req_res->remote_addr = conn.endpoint();
+            if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
+                if (handler.is_ws_upgrade(*req_res)) {
+                    if (waiting == nullptr) {
+                        (void)handler.try_dispatch_ws(*req_res, conn);
+                    } else {
+                        start_ws_session(conn, std::move(*req_res), handler);
+                    }
+                    return;
+                }
+            }
+            ++served;
+            Response resp = handler(*req_res);
+            std::string conn_hdr = resp.header("connection");
+            for (char& c : conn_hdr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            const bool keep = waiting != nullptr && as.keep_alive() && limits_.keepalive_timeout_ms > 0 &&
+                              served < limits_.max_requests_per_conn && running_.load() && waiting->load() == 0 &&
+                              !conn_hdr.contains("close");
+            if (!conn.write_text(resp.to_http_wire(keep)) || !keep) return;
         }
-        Response resp = handler(*req_res);
-        (void)conn.write_text(resp.to_http_wire());
+    }
+
+    void start_ws_session(cfire::net::TcpConn& conn, Request req, const Router& router) {
+        auto guard = conn.close_guard();
+        auto shared_conn = std::make_shared<cfire::net::TcpConn>(std::move(conn));
+        auto session = [&router, shared_conn, r = std::move(req)]() mutable { (void)router.try_dispatch_ws(r, *shared_conn); };
+        if (!ws_->start(limits_.max_websockets, std::move(guard), session)) {
+            Response busy = Response::text(503, "503 Service Unavailable");
+            (void)shared_conn->write_text(busy.to_http_wire());
+        }
     }
 
     cfire::net::TcpListener listener_;
@@ -1562,6 +1801,7 @@ private:
     std::atomic<bool> running_{false};
     std::thread worker_{};
     ServerLimits limits_{};
+    std::unique_ptr<detail::SessionThreads> ws_ = std::make_unique<detail::SessionThreads>();
 };
 
 [[nodiscard]] inline auto make_server(std::uint16_t port = 0)
