@@ -5,7 +5,15 @@
 
 namespace cfire::lsp {
 
-inline void Server::collect_expr_calls(
+#ifndef CFIRE_LSP_FEAT_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_FEAT_INLINE
+#else
+#define CFIRE_LSP_FEAT_INLINE inline
+#endif
+#endif
+
+CFIRE_LSP_FEAT_INLINE void Server::collect_expr_calls(
     const cfire::frontend::ExprPtr& e,
     std::vector<std::pair<std::string, int>>& calls
 ) {
@@ -23,7 +31,7 @@ inline void Server::collect_expr_calls(
     });
 }
 
-inline void Server::collect_stmt_calls(
+CFIRE_LSP_FEAT_INLINE void Server::collect_stmt_calls(
     const std::vector<cfire::frontend::StmtPtr>& stmts,
     std::vector<std::pair<std::string, int>>& calls
 ) {
@@ -41,7 +49,7 @@ inline void Server::collect_stmt_calls(
     });
 }
 
-inline auto Server::compute_prepare_call_hierarchy(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_FEAT_INLINE auto Server::compute_prepare_call_hierarchy(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
@@ -94,7 +102,7 @@ inline auto Server::compute_prepare_call_hierarchy(const std::string& uri, int l
     return "[]";
 }
 
-inline auto Server::compute_incoming_calls(std::string_view msg) -> std::string {
+CFIRE_LSP_FEAT_INLINE auto Server::compute_incoming_calls(std::string_view msg) -> std::string {
     std::size_t item_idx = detail::find_json_key(msg, "item");
     std::string_view sub = (item_idx != std::string_view::npos) ? msg.substr(item_idx) : msg;
     std::string target_name = detail::extract_json_string(sub, "name").value_or("");
@@ -143,7 +151,7 @@ inline auto Server::compute_incoming_calls(std::string_view msg) -> std::string 
     return out;
 }
 
-inline auto Server::compute_outgoing_calls(std::string_view msg) -> std::string {
+CFIRE_LSP_FEAT_INLINE auto Server::compute_outgoing_calls(std::string_view msg) -> std::string {
     std::size_t item_idx = detail::find_json_key(msg, "item");
     std::string_view sub = (item_idx != std::string_view::npos) ? msg.substr(item_idx) : msg;
     std::string caller_name = detail::extract_json_string(sub, "name").value_or("");
@@ -230,5 +238,7 @@ inline auto Server::compute_outgoing_calls(std::string_view msg) -> std::string 
     out += "]";
     return out;
 }
+
+#undef CFIRE_LSP_FEAT_INLINE
 
 } // namespace cfire::lsp

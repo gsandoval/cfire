@@ -5,6 +5,10 @@
 #include "styles.hpp"
 #include "markdown.hpp"
 #include "clang_bridge.hpp"
+#include "../../runtime/cfire_prelude.hpp"
+#include "../parser.hpp"
+#include "../sema.hpp"
+#include "../codegen.hpp"
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -1108,8 +1112,16 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
     return out;
 }
 
+#ifndef CFIRE_DOCGEN_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_DOCGEN_INLINE
+#else
+#define CFIRE_DOCGEN_INLINE inline
+#endif
+#endif
+
 // Generates or verifies (`check_only = true`) the full documentation suite in `<repo>/docs/`.
-[[nodiscard]] inline auto sync_docs_directory(
+[[nodiscard]] CFIRE_DOCGEN_INLINE auto sync_docs_directory(
     const std::filesystem::path& docs_dir,
     bool check_only,
     const std::filesystem::path& runtime_dir = {}

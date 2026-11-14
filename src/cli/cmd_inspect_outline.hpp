@@ -1,7 +1,23 @@
 #pragma once
 // src/cli/cmd_inspect_outline.hpp — `cfire outline` & `cfire inspect` Subcommands
 
-#include "scaffold.hpp"
+#include "usage.hpp"
+#include "../build/package_loader.hpp"
+#include "../clang_bridge.hpp"
+#include "../diagnostics.hpp"
+#include "../docgen/catalog_types.hpp"
+#include "../formatter.hpp"
+#include "../lsp.hpp"
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <format>
+#if __has_include(<print>)
+#include <print>
+#endif
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace cfire::cli {
 

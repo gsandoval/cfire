@@ -3,7 +3,7 @@
 // src/cli/cmd_check_fix.hpp — `cfire fix` & `cfire check` Subcommands
 
 #include "../analysis.hpp"
-#include "scaffold.hpp"
+#include "usage.hpp"
 
 namespace cfire::cli {
 

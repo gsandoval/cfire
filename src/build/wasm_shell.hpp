@@ -211,34 +211,15 @@ inline constexpr std::string_view kConsoleShellHtml = R"HTML(<!DOCTYPE html>
         std::filesystem::create_directories(tmp_cache, ec);
         if (!ec) {
             auto canon_cache = std::filesystem::canonical(tmp_cache, ec);
-            cfire::os::setenv("EM_CACHE", (!ec ? canon_cache : tmp_cache).string());
+            cfire::build::set_process_env("EM_CACHE", (!ec ? canon_cache : tmp_cache).string());
         } else if (const char* home = std::getenv("HOME")) {
             auto cache_dir = std::filesystem::path(home) / ".emscripten_cache";
-            cfire::os::setenv("EM_CACHE", cache_dir.string());
+            cfire::build::set_process_env("EM_CACHE", cache_dir.string());
         }
     }
-    int rc = 0;
-#if defined(_WIN32)
-    auto which_out = bridge::run_command_capture("where em++", rc);
-#else
-    auto which_out = bridge::run_command_capture("which em++ 2>/dev/null", rc);
-#endif
-    if (rc == 0 && !which_out.empty()) {
-        if (auto nl = which_out.find('\n'); nl != std::string::npos) {
-            which_out.resize(nl);
-        }
-        while (!which_out.empty() && (which_out.back() == '\n' || which_out.back() == '\r' || which_out.back() == ' ')) {
-            which_out.pop_back();
-        }
-        if (!which_out.empty()) return which_out;
-    }
-    if (const char* emsdk = std::getenv("EMSDK")) {
-        auto empp = std::filesystem::path(emsdk) / "upstream" / "emscripten" / "em++";
-        if (std::filesystem::exists(empp)) return empp.string();
-    }
-    if (const char* home = std::getenv("HOME")) {
-        auto empp = std::filesystem::path(home) / ".emsdk" / "upstream" / "emscripten" / "em++";
-        if (std::filesystem::exists(empp)) return empp.string();
+    auto resolved = resolve_emscripten_compiler_detailed();
+    if (!resolved.command.empty()) {
+        return resolved.command;
     }
     return std::unexpected(
         "em++ (Emscripten compiler) not found in PATH or EMSDK.\n"

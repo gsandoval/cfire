@@ -5,7 +5,15 @@
 
 namespace cfire::lsp {
 
-inline auto Server::compute_import_edit(const std::vector<std::string>& lines, std::string_view import_path) -> std::string {
+#ifndef CFIRE_LSP_FEAT_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_FEAT_INLINE
+#else
+#define CFIRE_LSP_FEAT_INLINE inline
+#endif
+#endif
+
+CFIRE_LSP_FEAT_INLINE auto Server::compute_import_edit(const std::vector<std::string>& lines, std::string_view import_path) -> std::string {
     int last_import_line = -1;
     int package_line = -1;
     for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
@@ -41,7 +49,7 @@ inline auto Server::compute_import_edit(const std::vector<std::string>& lines, s
         insert_line, insert_line, detail::json_escape(new_text));
 }
 
-inline auto Server::compute_completions(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_FEAT_INLINE auto Server::compute_completions(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
@@ -508,5 +516,7 @@ inline auto Server::compute_completions(const std::string& uri, int line, int ch
     out += "]";
     return out;
 }
+
+#undef CFIRE_LSP_FEAT_INLINE
 
 } // namespace cfire::lsp

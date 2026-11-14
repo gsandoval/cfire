@@ -1,7 +1,9 @@
 #pragma once
 // src/lsp/ide_setup.hpp — Editor, IDE & AI Agent (MCP + LSP) Integration Bootstrapper (`cfire ide` & `cfire mcp --setup`)
 
+#include "../version.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
@@ -12,14 +14,40 @@
 #include <string_view>
 #include <vector>
 #if defined(__APPLE__)
-#include <mach-o/dyld.h>
+extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #elif defined(__linux__)
 #include <unistd.h>
 #endif
 
 namespace cfire::lsp {
 
-[[nodiscard]] inline auto resolve_cfire_binary(const std::filesystem::path& repo_root) -> std::string {
+#ifndef CFIRE_LSP_IDE_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_IDE_INLINE
+#else
+#define CFIRE_LSP_IDE_INLINE inline
+#endif
+#endif
+
+struct DetectedIde {
+    std::string id;       // e.g. "vscode", "antigravity", "claude", "cursor", "windsurf", "zed", "nvim", "clion"
+    std::string label;    // Human-readable name
+    std::string reason;   // Why it was detected (env var or directory)
+    bool configured = false;
+};
+
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto resolve_cfire_binary(const std::filesystem::path& repo_root) -> std::string;
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto detect_environments(const std::filesystem::path& workspace_dir) -> std::vector<DetectedIde>;
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto format_mcp_config_snippet(const std::filesystem::path& repo_root) -> std::string;
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto configure_ide(
+    const std::filesystem::path& repo_root,
+    std::string_view editor_input = "auto",
+    bool global_scope = false
+) -> std::expected<std::string, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_IDE_IMPL)
+
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto resolve_cfire_binary(const std::filesystem::path& repo_root) -> std::string {
     std::error_code ec;
     auto local_bin = repo_root / "cfire";
     if (std::filesystem::exists(local_bin, ec) && !std::filesystem::is_directory(local_bin, ec)) {
@@ -29,7 +57,7 @@ namespace cfire::lsp {
     }
 #if defined(__APPLE__)
     char ep[1024];
-    uint32_t sz = sizeof(ep);
+    std::uint32_t sz = sizeof(ep);
     if (_NSGetExecutablePath(ep, &sz) == 0) {
         auto p = std::filesystem::canonical(ep, ec);
         if (!ec && p.filename() == "cfire") {
@@ -45,14 +73,7 @@ namespace cfire::lsp {
     return local_bin.string();
 }
 
-struct DetectedIde {
-    std::string id;       // e.g. "vscode", "antigravity", "claude", "cursor", "windsurf", "zed", "nvim", "clion"
-    std::string label;    // Human-readable name
-    std::string reason;   // Why it was detected (env var or directory)
-    bool configured = false;
-};
-
-[[nodiscard]] inline auto detect_environments(const std::filesystem::path& workspace_dir) -> std::vector<DetectedIde> {
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto detect_environments(const std::filesystem::path& workspace_dir) -> std::vector<DetectedIde> {
     std::vector<DetectedIde> out;
     std::error_code ec;
 
@@ -209,7 +230,7 @@ struct DetectedIde {
     return out;
 }
 
-[[nodiscard]] inline auto format_mcp_config_snippet(const std::filesystem::path& repo_root) -> std::string {
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto format_mcp_config_snippet(const std::filesystem::path& repo_root) -> std::string {
     auto cfire_bin = resolve_cfire_binary(repo_root);
     return std::format(R"({{
   "mcpServers": {{
@@ -390,10 +411,10 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
     }
 }
 
-[[nodiscard]] inline auto configure_ide(
+[[nodiscard]] CFIRE_LSP_IDE_INLINE auto configure_ide(
     const std::filesystem::path& repo_root,
-    std::string_view editor_input = "auto",
-    bool global_scope = false
+    std::string_view editor_input,
+    bool global_scope
 ) -> std::expected<std::string, std::string> {
     auto cfire_bin = resolve_cfire_binary(repo_root);
     std::string target = std::string(editor_input);
@@ -833,4 +854,8 @@ vim.api.nvim_create_autocmd("BufWritePre", {{
     return summary;
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_IDE_IMPL)
+
 } // namespace cfire::lsp
+
+#undef CFIRE_LSP_IDE_INLINE

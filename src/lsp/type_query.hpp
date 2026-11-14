@@ -11,9 +11,73 @@
 #include <unordered_map>
 #include <vector>
 
+#ifndef CFIRE_LSP_RPC_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_RPC_INLINE
+#else
+#define CFIRE_LSP_RPC_INLINE inline
+#endif
+#endif
+
 namespace cfire::lsp::detail {
 
-[[nodiscard]] inline auto map_cf_named_type_to_cpp(std::string_view n, bool param_borrow = false) -> std::string {
+struct ImportedPkgFile {
+    std::string alias{};
+    std::string import_path{};
+    std::string file_path{};
+    std::string uri{};
+    cfire::frontend::FileAST ast{};
+};
+
+struct WorkspaceContext {
+    std::vector<ImportedPkgFile> local_packages{};
+    std::unordered_map<std::string, cfire::bridge::CppSymbol> cpp_symbols{};
+    std::unordered_map<std::string, std::string> cpp_symbol_header{};
+};
+
+struct LocalBindingInfo {
+    std::string name;
+    std::string cf_type;
+    std::string cpp_type;
+    bool is_mut = false;
+    bool is_param = false;
+    std::string intent = "in";
+    int decl_line = 1;
+    int name_end_col = 1;
+    bool inferred_colon_eq = false;
+};
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto map_cf_named_type_to_cpp(std::string_view n, bool param_borrow = false) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto lower_type_preview(const cfire::frontend::TypeRef& t, bool is_param = false, std::string_view intent = "in") -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto lower_fn_preview(const cfire::frontend::FnDecl& fn) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto cpp_return_to_cf(std::string_view cpp_t) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers(std::string t) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto qualify_module_types(std::string_view t, const cfire::doc::StdModuleDoc& mod) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto resolve_qualifier_type(
+    std::string_view qualifier,
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::unordered_map<std::string, LocalBindingInfo>& env
+) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto infer_expr_cf_type(
+    const cfire::frontend::ExprPtr& e,
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::unordered_map<std::string, LocalBindingInfo>& env
+) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto map_cf_named_type_to_cpp(std::string_view n, bool param_borrow) -> std::string {
     if (n == "i8") return "std::int8_t";
     if (n == "i16") return "std::int16_t";
     if (n == "i32" || n == "int") return "std::int32_t";
@@ -46,8 +110,7 @@ namespace cfire::lsp::detail {
     return std::string(n);
 }
 
-// Lowers a `.cf` TypeRef to its human-readable ISO C++23 representation for hover/completion cards
-[[nodiscard]] inline auto lower_type_preview(const cfire::frontend::TypeRef& t, bool is_param = false, std::string_view intent = "in") -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto lower_type_preview(const cfire::frontend::TypeRef& t, bool is_param, std::string_view intent) -> std::string {
     bool borrow = is_param && (intent == "in" || intent.empty());
     std::string base;
     if (t.smart_wrap == "own" && t.elem_type) {
@@ -92,7 +155,7 @@ namespace cfire::lsp::detail {
     return base;
 }
 
-[[nodiscard]] inline auto lower_fn_preview(const cfire::frontend::FnDecl& fn) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto lower_fn_preview(const cfire::frontend::FnDecl& fn) -> std::string {
     std::string params;
     if (fn.receiver) {
         params += std::format("{} {}", lower_type_preview(fn.receiver->type, true, fn.receiver->intent), fn.receiver->name);
@@ -106,7 +169,7 @@ namespace cfire::lsp::detail {
     return std::format("{}auto {}({}) -> {}", nodiscard, fn.name, params, ret);
 }
 
-[[nodiscard]] inline auto cpp_return_to_cf(std::string_view cpp_t) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto cpp_return_to_cf(std::string_view cpp_t) -> std::string {
     std::string s(cfire::bridge::trim_qual(cpp_t));
     if (s == "void") return "void";
     if (s == "bool" || s == "_Bool") return "bool";
@@ -120,35 +183,7 @@ namespace cfire::lsp::detail {
     return s;
 }
 
-// Cross-package & Clang AST Bridge context for a document
-struct ImportedPkgFile {
-    std::string alias{};
-    std::string import_path{};
-    std::string file_path{};
-    std::string uri{};
-    cfire::frontend::FileAST ast{};
-};
-
-struct WorkspaceContext {
-    std::vector<ImportedPkgFile> local_packages{};
-    std::unordered_map<std::string, cfire::bridge::CppSymbol> cpp_symbols{};
-    std::unordered_map<std::string, std::string> cpp_symbol_header{};
-};
-
-// Information about a local variable or parameter inferred inside a function/test
-struct LocalBindingInfo {
-    std::string name;
-    std::string cf_type;
-    std::string cpp_type;
-    bool is_mut = false;
-    bool is_param = false;
-    std::string intent = "in";
-    int decl_line = 1;
-    int name_end_col = 1;
-    bool inferred_colon_eq = false;
-};
-
-[[nodiscard]] inline auto strip_wrappers(std::string t) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers(std::string t) -> std::string {
     while (t.ends_with("!") || t.ends_with("?")) t.pop_back();
     if (t.starts_with("&mut ")) t = t.substr(5);
     else if (t.starts_with("&")) t = t.substr(1);
@@ -159,17 +194,7 @@ struct LocalBindingInfo {
     return t;
 }
 
-[[nodiscard]] inline auto infer_expr_cf_type(
-    const cfire::frontend::ExprPtr& e,
-    const cfire::frontend::FileAST& ast,
-    const WorkspaceContext& ws,
-    const std::unordered_map<std::string, LocalBindingInfo>& env
-) -> std::string;
-
-// Resolves a potentially chained qualifier (e.g. `m_out`, `order.customer`, `os.stdin()`, `(*owned_box)`) to its `.cf` struct/type name
-// Qualifies the bare names of `mod`'s own types in a catalog type string: `ExecResult!` in `core:os` is
-// `os.ExecResult!`, in `ext:net/ssh` `ssh.ExecResult!` (CF-188).
-[[nodiscard]] inline auto qualify_module_types(std::string_view t, const cfire::doc::StdModuleDoc& mod) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto qualify_module_types(std::string_view t, const cfire::doc::StdModuleDoc& mod) -> std::string {
     std::string out;
     std::size_t i = 0;
     while (i < t.size()) {
@@ -188,7 +213,7 @@ struct LocalBindingInfo {
     return out;
 }
 
-[[nodiscard]] inline auto resolve_qualifier_type(
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto resolve_qualifier_type(
     std::string_view qualifier,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
@@ -263,7 +288,7 @@ struct LocalBindingInfo {
     return cur_type;
 }
 
-[[nodiscard]] inline auto infer_expr_cf_type(
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto infer_expr_cf_type(
     const cfire::frontend::ExprPtr& e,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
@@ -584,7 +609,7 @@ struct LocalBindingInfo {
     return "auto";
 }
 
-[[nodiscard]] inline auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string {
     std::string s(cf_t);
     bool fallible = false;
     bool optional = false;
@@ -641,4 +666,8 @@ struct LocalBindingInfo {
     return cpp;
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+
 } // namespace cfire::lsp::detail
+
+#undef CFIRE_LSP_RPC_INLINE

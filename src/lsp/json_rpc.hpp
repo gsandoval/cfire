@@ -2,7 +2,6 @@
 // src/lsp/json_rpc.hpp — JSON-RPC 2.0 Framing, Structure-Aware Key Extraction & AST Scope Walkers
 
 #include "../clang_bridge.hpp"
-#include "../codegen.hpp"
 #include "../docgen/catalog_types.hpp"
 #include "../formatter.hpp"
 #include "../sema.hpp"
@@ -24,14 +23,168 @@
 #include <unordered_set>
 #include <vector>
 
+#ifndef CFIRE_LSP_RPC_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_RPC_INLINE
+#else
+#define CFIRE_LSP_RPC_INLINE inline
+#endif
+#endif
+
 namespace cfire::lsp {
+
 namespace detail {
 
-[[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
+struct CursorSymbol {
+    std::string qualifier; // e.g. "fs", "m_out", "checksum", "cpp", "order.customer"
+    std::string name;      // e.g. "read_all", "Service", "compute_tag"
+    int start_col = 0;     // 0-based start column of `name`
+    int end_col = 0;       // 0-based end column of `name`
+};
+
+struct StringInterpolationSpan {
+    bool in_string = false;
+    bool in_interp_expr = false;
+    int min_col = 0;
+    int max_col = 0;
+    std::string expr_text;
+    std::string fmt_spec;
+};
+
+struct CallContext {
+    std::string qualifier;
+    std::string callee;
+    int active_param = 0;
+};
+
+struct DiagnosticEntry {
+    int line = 0;      // 0-based
+    int col = 0;       // 0-based
+    std::string code;  // e.g. "cfire/MUT-CALLSITE"
+    std::string message;
+    int severity = 1;  // 1 = Error, 2 = Warning
+    std::unordered_map<std::string, std::string> facts{};  // typed fix-it inputs (see cfire::diag::fact_of)
+};
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto json_escape(std::string_view sv) -> std::string;
+
+CFIRE_LSP_RPC_INLINE void append_utf8(std::string& out, uint32_t cp);
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto json_unescape(std::string_view sv) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_json_key(std::string_view json, std::string_view key, std::size_t start_pos = 0)
+    -> std::size_t;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_string(std::string_view json, std::string_view key, std::size_t start_pos = 0)
+    -> std::optional<std::string>;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_id(std::string_view json) -> std::optional<std::string>;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_int_after(std::string_view json, std::string_view key, std::size_t start_pos = 0)
+    -> std::optional<int>;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_bool(std::string_view json, std::string_view key, std::size_t start_pos = 0)
+    -> std::optional<bool>;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto uri_to_path(std::string_view uri) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto utf8_col_to_utf16_col(std::string_view line, int utf8_col) -> int;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto utf16_col_to_utf8_col(std::string_view line, int u16_col) -> int;
+
+CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_line, int start_col, int end_line, int end_col, std::string_view new_text);
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto path_to_uri(const std::filesystem::path& p) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto split_lines(std::string_view text) -> std::vector<std::string>;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_leading_doc_comments(const std::vector<std::string>& lines, int one_based_line) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_string_interpolation_span_at(std::string_view ln, int character) -> StringInterpolationSpan;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto symbol_at_position(const std::vector<std::string>& lines, int line, int character) -> CursorSymbol;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_call_context(const std::vector<std::string>& lines, int line, int character) -> std::optional<CallContext>;
+
+CFIRE_LSP_RPC_INLINE auto expr_to_string(const cfire::frontend::ExprPtr& e) -> std::string;
+
+CFIRE_LSP_RPC_INLINE auto interp_expr_arena_cache() -> std::vector<std::shared_ptr<cfire::frontend::AstArena>>&;
+
+CFIRE_LSP_RPC_INLINE void walk_exprs(
+    const cfire::frontend::ExprPtr& e,
+    const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
+);
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto expand_tokens_with_interpolations(
+    std::string_view path,
+    const std::vector<cfire::frontend::Token>& raw_toks
+) -> std::vector<cfire::frontend::Token>;
+
+CFIRE_LSP_RPC_INLINE void walk_stmt_exprs(
+    const std::vector<cfire::frontend::StmtPtr>& stmts,
+    const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
+);
+
+CFIRE_LSP_RPC_INLINE void collect_all_exprs(
+    const cfire::frontend::ExprPtr& e,
+    std::vector<cfire::frontend::ExprPtr>& out
+);
+
+CFIRE_LSP_RPC_INLINE void collect_stmt_exprs(
+    const std::vector<cfire::frontend::StmtPtr>& stmts,
+    std::vector<cfire::frontend::ExprPtr>& out
+);
+
+CFIRE_LSP_RPC_INLINE int get_block_end_line(
+    const std::vector<cfire::frontend::StmtPtr>& body,
+    const std::vector<std::string>& lines,
+    int start_line
+);
+
+CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
+    const std::vector<cfire::frontend::StmtPtr>& stmts,
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::vector<std::string>& lines,
+    int max_line,
+    std::unordered_map<std::string, LocalBindingInfo>& env,
+    std::vector<LocalBindingInfo>& ordered_out
+);
+
+CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
+    const std::vector<cfire::frontend::StmtPtr>& stmts,
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::vector<std::string>& lines,
+    std::unordered_map<std::string, LocalBindingInfo>& env,
+    std::vector<LocalBindingInfo>& ordered_out
+);
+
+CFIRE_LSP_RPC_INLINE void walk_expr_calls(const cfire::frontend::ExprPtr& expr, const std::function<void(const cfire::frontend::CallExpr&)>& visitor);
+
+CFIRE_LSP_RPC_INLINE void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts, const std::function<void(const cfire::frontend::CallExpr&)>& visitor);
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto build_scope_bindings(
+    const cfire::frontend::FileAST& ast,
+    const WorkspaceContext& ws,
+    const std::vector<std::string>& lines,
+    int cursor_zero_based_line
+) -> std::unordered_map<std::string, LocalBindingInfo>;
+
+CFIRE_LSP_RPC_INLINE void write_rpc_message(std::ostream& out, std::string_view body);
+
+} // namespace detail
+
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+
+namespace detail {
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto json_escape(std::string_view sv) -> std::string {
     return cfire::detail::json_escape(sv);
 }
 
-inline void append_utf8(std::string& out, uint32_t cp) {
+CFIRE_LSP_RPC_INLINE void append_utf8(std::string& out, uint32_t cp) {
     if (cp <= 0x7F) {
         out.push_back(static_cast<char>(cp));
     } else if (cp <= 0x7FF) {
@@ -49,7 +202,7 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     }
 }
 
-[[nodiscard]] inline auto json_unescape(std::string_view sv) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto json_unescape(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size());
     auto hex_val = [](char c) -> int {
@@ -107,12 +260,8 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return out;
 }
 
-// Structure-aware JSON key finder: scans JSON string literals from index 0 (so string literal
-// boundaries are always respected) and returns the index immediately following the ':' of the
-// first object key matching `key` at or after `start_pos`, or `std::string_view::npos`.
-[[nodiscard]] inline auto find_json_key(std::string_view json, std::string_view key, std::size_t start_pos = 0)
-    -> std::size_t
-{
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_json_key(std::string_view json, std::string_view key, std::size_t start_pos)
+    -> std::size_t {
     std::size_t i = 0;
     const std::size_t n = json.size();
     while (i < n) {
@@ -145,9 +294,8 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return std::string_view::npos;
 }
 
-[[nodiscard]] inline auto extract_json_string(std::string_view json, std::string_view key, std::size_t start_pos = 0)
-    -> std::optional<std::string>
-{
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_string(std::string_view json, std::string_view key, std::size_t start_pos)
+    -> std::optional<std::string> {
     std::size_t pos = find_json_key(json, key, start_pos);
     if (pos == std::string_view::npos) return std::nullopt;
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r')) ++pos;
@@ -166,7 +314,7 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return json_unescape(json.substr(pos, end - pos));
 }
 
-[[nodiscard]] inline auto extract_json_id(std::string_view json) -> std::optional<std::string> {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_id(std::string_view json) -> std::optional<std::string> {
     std::size_t pos = find_json_key(json, "id", 0);
     if (pos == std::string_view::npos) return std::nullopt;
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r')) ++pos;
@@ -186,9 +334,8 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return std::nullopt;
 }
 
-[[nodiscard]] inline auto extract_json_int_after(std::string_view json, std::string_view key, std::size_t start_pos = 0)
-    -> std::optional<int>
-{
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_int_after(std::string_view json, std::string_view key, std::size_t start_pos)
+    -> std::optional<int> {
     std::size_t pos = find_json_key(json, key, start_pos);
     if (pos == std::string_view::npos) return std::nullopt;
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r')) ++pos;
@@ -203,9 +350,8 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return std::nullopt;
 }
 
-[[nodiscard]] inline auto extract_json_bool(std::string_view json, std::string_view key, std::size_t start_pos = 0)
-    -> std::optional<bool>
-{
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_bool(std::string_view json, std::string_view key, std::size_t start_pos)
+    -> std::optional<bool> {
     std::size_t pos = find_json_key(json, key, start_pos);
     if (pos == std::string_view::npos) return std::nullopt;
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r')) ++pos;
@@ -214,7 +360,7 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return std::nullopt;
 }
 
-[[nodiscard]] inline auto uri_to_path(std::string_view uri) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto uri_to_path(std::string_view uri) -> std::string {
     std::string_view path_part = uri;
     if (path_part.starts_with("file://")) {
         path_part.remove_prefix(7);
@@ -248,7 +394,7 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return out;
 }
 
-[[nodiscard]] inline auto utf8_col_to_utf16_col(std::string_view line, int utf8_col) -> int {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto utf8_col_to_utf16_col(std::string_view line, int utf8_col) -> int {
     if (utf8_col <= 0 || line.empty()) return 0;
     int u16_col = 0;
     std::size_t byte_idx = 0;
@@ -275,7 +421,7 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return u16_col;
 }
 
-[[nodiscard]] inline auto utf16_col_to_utf8_col(std::string_view line, int u16_col) -> int {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto utf16_col_to_utf8_col(std::string_view line, int u16_col) -> int {
     if (u16_col <= 0 || line.empty()) return 0;
     int cur_u16 = 0;
     std::size_t byte_idx = 0;
@@ -301,7 +447,7 @@ inline void append_utf8(std::string& out, uint32_t cp) {
     return static_cast<int>(byte_idx);
 }
 
-inline void apply_incremental_edit(std::string& doc, int start_line, int start_col, int end_line, int end_col, std::string_view new_text) {
+CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_line, int start_col, int end_line, int end_col, std::string_view new_text) {
     auto lines = cfire::diag::split_lines(doc);
     if (lines.empty() && doc.empty()) {
         doc = std::string(new_text);
@@ -337,7 +483,7 @@ inline void apply_incremental_edit(std::string& doc, int start_line, int start_c
     doc.replace(start_byte, end_byte - start_byte, new_text);
 }
 
-[[nodiscard]] inline auto path_to_uri(const std::filesystem::path& p) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto path_to_uri(const std::filesystem::path& p) -> std::string {
     std::error_code ec;
     auto canon = std::filesystem::weakly_canonical(p, ec);
     std::string s = (ec ? p : canon).generic_string();
@@ -348,7 +494,7 @@ inline void apply_incremental_edit(std::string& doc, int start_line, int start_c
     return "file://" + s;
 }
 
-[[nodiscard]] inline auto split_lines(std::string_view text) -> std::vector<std::string> {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto split_lines(std::string_view text) -> std::vector<std::string> {
     std::vector<std::string> lines;
     std::istringstream iss{std::string(text)};
     std::string l;
@@ -359,14 +505,7 @@ inline void apply_incremental_edit(std::string& doc, int start_line, int start_c
     return lines;
 }
 
-struct CursorSymbol {
-    std::string qualifier; // e.g. "fs", "m_out", "checksum", "cpp", "order.customer"
-    std::string name;      // e.g. "read_all", "Service", "compute_tag"
-    int start_col = 0;     // 0-based start column of `name`
-    int end_col = 0;       // 0-based end column of `name`
-};
-
-[[nodiscard]] inline auto extract_leading_doc_comments(const std::vector<std::string>& lines, int one_based_line) -> std::string {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_leading_doc_comments(const std::vector<std::string>& lines, int one_based_line) -> std::string {
     if (one_based_line <= 1 || lines.empty()) return "";
     int cur_idx = one_based_line - 2;
     std::vector<std::string> comment_lines;
@@ -392,16 +531,7 @@ struct CursorSymbol {
     return out;
 }
 
-struct StringInterpolationSpan {
-    bool in_string = false;
-    bool in_interp_expr = false;
-    int min_col = 0;
-    int max_col = 0;
-    std::string expr_text;
-    std::string fmt_spec;
-};
-
-[[nodiscard]] inline auto find_string_interpolation_span_at(std::string_view ln, int character) -> StringInterpolationSpan {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_string_interpolation_span_at(std::string_view ln, int character) -> StringInterpolationSpan {
     const int n = static_cast<int>(ln.size());
     int i = 0;
     while (i < n) {
@@ -524,7 +654,7 @@ struct StringInterpolationSpan {
     return StringInterpolationSpan{false, false, 0, n, {}, {}};
 }
 
-[[nodiscard]] inline auto symbol_at_position(const std::vector<std::string>& lines, int line, int character) -> CursorSymbol {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto symbol_at_position(const std::vector<std::string>& lines, int line, int character) -> CursorSymbol {
     if (line < 0 || static_cast<std::size_t>(line) >= lines.size()) return {};
     const std::string& ln = lines[static_cast<std::size_t>(line)];
     if (ln.empty()) return {};
@@ -627,14 +757,7 @@ struct StringInterpolationSpan {
     return CursorSymbol{qual, word, start, end};
 }
 
-// Identifies the enclosing function call `callee(arg0, arg1, ...)` around `(line, character)` for signatureHelp
-struct CallContext {
-    std::string qualifier;
-    std::string callee;
-    int active_param = 0;
-};
-
-[[nodiscard]] inline auto find_call_context(const std::vector<std::string>& lines, int line, int character) -> std::optional<CallContext> {
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_call_context(const std::vector<std::string>& lines, int line, int character) -> std::optional<CallContext> {
     if (line < 0 || static_cast<std::size_t>(line) >= lines.size()) return std::nullopt;
     const std::string& ln = lines[static_cast<std::size_t>(line)];
     if (ln.empty()) return std::nullopt;
@@ -685,7 +808,7 @@ struct CallContext {
     return std::nullopt;
 }
 
-inline auto expr_to_string(const cfire::frontend::ExprPtr& e) -> std::string {
+CFIRE_LSP_RPC_INLINE auto expr_to_string(const cfire::frontend::ExprPtr& e) -> std::string {
     using namespace cfire::frontend;
     if (!e) return "";
     if (const auto* id = std::get_if<IdentExpr>(&e->node)) return id->name;
@@ -748,12 +871,7 @@ inline auto expr_to_string(const cfire::frontend::ExprPtr& e) -> std::string {
     return "";
 }
 
-inline void walk_stmt_exprs(
-    const std::vector<cfire::frontend::StmtPtr>& stmts,
-    const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
-);
-
-inline auto interp_expr_arena_cache() -> std::vector<std::shared_ptr<cfire::frontend::AstArena>>& {
+CFIRE_LSP_RPC_INLINE auto interp_expr_arena_cache() -> std::vector<std::shared_ptr<cfire::frontend::AstArena>>& {
     thread_local std::vector<std::shared_ptr<cfire::frontend::AstArena>> cache;
     if (cache.size() > 512) {
         cache.erase(cache.begin(), cache.begin() + 256);
@@ -761,7 +879,7 @@ inline auto interp_expr_arena_cache() -> std::vector<std::shared_ptr<cfire::fron
     return cache;
 }
 
-inline void walk_exprs(
+CFIRE_LSP_RPC_INLINE void walk_exprs(
     const cfire::frontend::ExprPtr& e,
     const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
 ) {
@@ -820,7 +938,7 @@ inline void walk_exprs(
     }
 }
 
-[[nodiscard]] inline auto expand_tokens_with_interpolations(
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto expand_tokens_with_interpolations(
     std::string_view path,
     const std::vector<cfire::frontend::Token>& raw_toks
 ) -> std::vector<cfire::frontend::Token> {
@@ -849,7 +967,7 @@ inline void walk_exprs(
     return out;
 }
 
-inline void walk_stmt_exprs(
+CFIRE_LSP_RPC_INLINE void walk_stmt_exprs(
     const std::vector<cfire::frontend::StmtPtr>& stmts,
     const std::function<void(const cfire::frontend::ExprPtr&)>& visitor
 ) {
@@ -891,21 +1009,21 @@ inline void walk_stmt_exprs(
     }
 }
 
-inline void collect_all_exprs(
+CFIRE_LSP_RPC_INLINE void collect_all_exprs(
     const cfire::frontend::ExprPtr& e,
     std::vector<cfire::frontend::ExprPtr>& out
 ) {
     walk_exprs(e, [&](const cfire::frontend::ExprPtr& ex) { out.push_back(ex); });
 }
 
-inline void collect_stmt_exprs(
+CFIRE_LSP_RPC_INLINE void collect_stmt_exprs(
     const std::vector<cfire::frontend::StmtPtr>& stmts,
     std::vector<cfire::frontend::ExprPtr>& out
 ) {
     walk_stmt_exprs(stmts, [&](const cfire::frontend::ExprPtr& ex) { out.push_back(ex); });
 }
 
-inline int get_block_end_line(
+CFIRE_LSP_RPC_INLINE int get_block_end_line(
     const std::vector<cfire::frontend::StmtPtr>& body,
     const std::vector<std::string>& lines,
     int start_line
@@ -932,7 +1050,7 @@ inline int get_block_end_line(
     return max_l;
 }
 
-inline void collect_stmt_bindings(
+CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
     const std::vector<cfire::frontend::StmtPtr>& stmts,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
@@ -1142,7 +1260,7 @@ inline void collect_stmt_bindings(
     }
 }
 
-inline void collect_stmt_bindings(
+CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
     const std::vector<cfire::frontend::StmtPtr>& stmts,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
@@ -1153,7 +1271,7 @@ inline void collect_stmt_bindings(
     collect_stmt_bindings(stmts, ast, ws, lines, 0, env, ordered_out);
 }
 
-inline void walk_expr_calls(const cfire::frontend::ExprPtr& expr, const std::function<void(const cfire::frontend::CallExpr&)>& visitor) {
+CFIRE_LSP_RPC_INLINE void walk_expr_calls(const cfire::frontend::ExprPtr& expr, const std::function<void(const cfire::frontend::CallExpr&)>& visitor) {
     walk_exprs(expr, [&](const cfire::frontend::ExprPtr& ex) {
         if (const auto* c = std::get_if<cfire::frontend::CallExpr>(&ex->node)) {
             visitor(*c);
@@ -1161,7 +1279,7 @@ inline void walk_expr_calls(const cfire::frontend::ExprPtr& expr, const std::fun
     });
 }
 
-inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts, const std::function<void(const cfire::frontend::CallExpr&)>& visitor) {
+CFIRE_LSP_RPC_INLINE void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts, const std::function<void(const cfire::frontend::CallExpr&)>& visitor) {
     walk_stmt_exprs(stmts, [&](const cfire::frontend::ExprPtr& ex) {
         if (const auto* c = std::get_if<cfire::frontend::CallExpr>(&ex->node)) {
             visitor(*c);
@@ -1169,7 +1287,7 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
     });
 }
 
-[[nodiscard]] inline auto build_scope_bindings(
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto build_scope_bindings(
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
     const std::vector<std::string>& lines,
@@ -1242,19 +1360,16 @@ inline void walk_stmts_calls(const std::vector<cfire::frontend::StmtPtr>& stmts,
     return env;
 }
 
-inline void write_rpc_message(std::ostream& out, std::string_view body) {
+CFIRE_LSP_RPC_INLINE void write_rpc_message(std::ostream& out, std::string_view body) {
     out << "Content-Length: " << body.size() << "\r\n\r\n" << body;
     out.flush();
 }
 
-struct DiagnosticEntry {
-    int line = 0;      // 0-based
-    int col = 0;       // 0-based
-    std::string code;  // e.g. "cfire/MUT-CALLSITE"
-    std::string message;
-    int severity = 1;  // 1 = Error, 2 = Warning
-    std::unordered_map<std::string, std::string> facts{};  // typed fix-it inputs (see cfire::diag::fact_of)
-};
-
 } // namespace detail
+
+
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+
 } // namespace cfire::lsp
+
+#undef CFIRE_LSP_RPC_INLINE

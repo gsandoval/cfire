@@ -870,7 +870,7 @@ namespace detail {
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
-#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if CFIRE_TARGET_IOS
     if (u->scheme == "https") {
         return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers);
     }
@@ -1029,7 +1029,7 @@ template <typename Callback>
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
-#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if CFIRE_TARGET_IOS
     if (u->scheme == "https") {
         auto hdrs = extra_headers;
         hdrs["Accept"] = "text/event-stream";

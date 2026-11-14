@@ -3,7 +3,7 @@
 
 namespace cfire::frontend {
 
-inline void Emitter::emit_struct_reflection(const StructDecl& st) {
+CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
     writeln();
     if (!st.type_params.empty()) {
         std::string tparams, targs;
@@ -404,7 +404,7 @@ inline void Emitter::emit_struct_reflection(const StructDecl& st) {
     }
 }
 
-inline void Emitter::emit_enum_reflection(const EnumDecl& en) {
+CFIRE_CG_INLINE void Emitter::emit_enum_reflection(const EnumDecl& en) {
     writeln();
     if (!en.type_params.empty()) {
         std::string tparams, targs;

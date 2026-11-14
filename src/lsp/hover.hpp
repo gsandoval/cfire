@@ -5,6 +5,14 @@
 
 namespace cfire::lsp {
 
+#ifndef CFIRE_LSP_FEAT_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_FEAT_INLINE
+#else
+#define CFIRE_LSP_FEAT_INLINE inline
+#endif
+#endif
+
 namespace detail {
 // CF-188: a stdlib type by module namespace and bare name (`http`, `Request`).
 [[nodiscard]] inline auto find_stdlib_type_doc(std::string_view ns, std::string_view name)
@@ -42,7 +50,7 @@ namespace detail {
 }
 } // namespace detail
 
-inline auto Server::compute_hover(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
@@ -582,7 +590,7 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
     return "";
 }
 
-inline auto Server::compute_signature_help(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_FEAT_INLINE auto Server::compute_signature_help(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto ctx_opt = detail::find_call_context(lines, line, character);
@@ -691,5 +699,7 @@ inline auto Server::compute_signature_help(const std::string& uri, int line, int
     }
     return "null";
 }
+
+#undef CFIRE_LSP_FEAT_INLINE
 
 } // namespace cfire::lsp

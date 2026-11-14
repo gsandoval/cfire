@@ -4,7 +4,34 @@ GIT_SHA  ?= $(shell sh -c 'sha=$$(git rev-parse --short=7 HEAD 2>/dev/null) || {
 LINUX_CXXFLAGS := $(if $(filter Linux,$(shell uname -s)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
 CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation -framework Security,-ldl -lpthread)
+CFIRE_LDFLAGS := $(if $(filter Darwin,$(shell uname -s)),,-ldl -lpthread)
 PREFIX   ?= /usr/local
+
+CFIRE_SRCS := src/tu_codegen_body.cpp \
+              src/tu_codegen_decl.cpp \
+              src/tu_sema_stmt.cpp \
+              src/tu_parser.cpp \
+              src/tu_lsp.cpp \
+              src/tu_lsp_features.cpp \
+              src/tu_buildsys.cpp \
+              src/tu_infra.cpp \
+              src/tu_docgen.cpp \
+              src/tu_sema_expr.cpp \
+              src/tu_sema_infer.cpp \
+              src/tu_sema_call.cpp \
+              src/tu_lsp_nav.cpp \
+              src/tu_inspect_fmt.cpp \
+              src/tu_mcp.cpp \
+              src/tu_build.cpp \
+              src/tu_check_fix.cpp \
+              src/tu_scaffold.cpp \
+              src/tu_doctor.cpp \
+              src/tu_core_tables.cpp \
+              src/tu_docgen_md.cpp \
+              src/tu_catalog.cpp \
+              src/main.cpp
+
+CFIRE_OBJS := $(CFIRE_SRCS:.cpp=.o)
 
 TEST_SRCS := tests/unit/test_frontend.cpp \
              tests/unit/test_sema.cpp \
@@ -18,16 +45,22 @@ TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
 all: build
 
-HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp tools/*/*.hpp)
+HEADERS := $(wildcard src/*.hpp src/*.inc src/*/*.hpp src/*/*.inc runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp tools/*/*.hpp)
 
 # `cfire` is a real file target (CF-159): it relinks only when sources change or the embedded git SHA does.
 .cfire_gitsha: FORCE
 	@echo '$(GIT_SHA)' | cmp -s - $@ 2>/dev/null || echo '$(GIT_SHA)' > $@
 
+.cfire_host.pch: src/host_pch.hpp .cfire_gitsha
+	@$(CXX) $(CXXFLAGS) -DCFIRE_SPLIT_TUS=1 -fpch-instantiate-templates -MMD -MP -MF .cfire_host.pch.d -x c++-header src/host_pch.hpp -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... -x c++-header src/host_pch.hpp (rc=$$rc)"; exit $$rc
+
+src/%.o: src/%.cpp .cfire_host.pch .cfire_gitsha
+	@$(CXX) $(CXXFLAGS) -DCFIRE_SPLIT_TUS=1 -include-pch .cfire_host.pch -MMD -MP -c $< -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... -c $< (rc=$$rc)"; exit $$rc
+
 # Each compile keeps its diagnostics in a .log next to its output, so `make check` can prove zero warnings even when
 # nothing needed rebuilding (CF-186).
-cfire: src/main.cpp $(HEADERS) .cfire_gitsha
-	@$(CXX) $(CXXFLAGS) src/main.cpp -o cfire 2> .cfire_build.log; rc=$$?; cat .cfire_build.log >&2; echo "$(CXX) ... src/main.cpp -o cfire (rc=$$rc)"; exit $$rc
+cfire: $(CFIRE_OBJS)
+	@$(CXX) $(CXXFLAGS) $(CFIRE_OBJS) $(CFIRE_LDFLAGS) -o cfire 2> .cfire_build.log; rc=$$?; cat .cfire_build.log >&2; echo "$(CXX) ... -o cfire (rc=$$rc)"; exit $$rc
 
 build: cfire
 
@@ -69,7 +102,8 @@ setup: build
 #   make check-all        all three in order, then a summary table; its summary goes in active.md
 check:
 	@[ -f .cfire_build.log ] || rm -f cfire
-	@for o in $(TEST_OBJS); do [ -f $$o.log ] || rm -f $$o; done
+	@[ -f .cfire_host.pch.log ] || rm -f .cfire_host.pch
+	@for o in $(CFIRE_OBJS) $(TEST_OBJS); do [ -f $$o.log ] || rm -f $$o; done
 	@$(MAKE) --no-print-directory build .cfire_test_runner
 	@$(MAKE) --no-print-directory check-warnings
 	@echo "=== Canonical formatting"
@@ -80,8 +114,8 @@ check:
 	@echo "✓ make check passed"
 
 check-warnings:
-	@n=$$(cat .cfire_build.log $(TEST_OBJS:=.log) $(wildcard .vmtest.log) 2>/dev/null | grep -c 'warning:'); \
-	if [ "$$n" != "0" ]; then cat .cfire_build.log $(TEST_OBJS:=.log) $(wildcard .vmtest.log) 2>/dev/null | grep -A4 'warning:'; echo "✗ $$n C++ compiler warning(s); the gate requires zero"; exit 1; fi; \
+	@n=$$(cat .cfire_host.pch.log .cfire_build.log $(CFIRE_OBJS:=.log) $(TEST_OBJS:=.log) $(wildcard .vmtest.log) 2>/dev/null | grep -c 'warning:'); \
+	if [ "$$n" != "0" ]; then cat .cfire_host.pch.log .cfire_build.log $(CFIRE_OBJS:=.log) $(TEST_OBJS:=.log) $(wildcard .vmtest.log) 2>/dev/null | grep -A4 'warning:'; echo "✗ $$n C++ compiler warning(s); the gate requires zero"; exit 1; fi; \
 	echo "✓ zero C++ compiler warnings"
 
 check-deep: test-asan test-tsan fuzz-replay
@@ -210,4 +244,6 @@ vm-setup-windows: .vmtest
 	./.vmtest setup-windows
 
 clean:
-	rm -rf cfire .cfire_gitsha .cfire_build.log .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*
+	rm -rf cfire .cfire_gitsha .cfire_build.log .cfire_host.pch .cfire_host.pch.log .cfire_host.pch.d $(CFIRE_OBJS) $(CFIRE_OBJS:=.log) $(CFIRE_OBJS:.o=.d) .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*
+
+-include .cfire_host.pch.d $(CFIRE_OBJS:.o=.d)

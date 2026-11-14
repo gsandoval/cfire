@@ -5,6 +5,14 @@
 
 namespace cfire::lsp {
 
+#ifndef CFIRE_LSP_NAV_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_NAV_INLINE
+#else
+#define CFIRE_LSP_NAV_INLINE inline
+#endif
+#endif
+
 namespace detail {
 
 [[nodiscard]] inline auto is_valid_identifier(std::string_view name) -> bool {
@@ -73,7 +81,7 @@ namespace detail {
 
 } // namespace detail
 
-inline auto Server::compute_definition(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_definition(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
@@ -239,7 +247,7 @@ inline auto Server::compute_definition(const std::string& uri, int line, int cha
         detail::json_escape(target_uri), target_line, target_line);
 }
 
-inline auto Server::compute_type_definition(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_type_definition(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
@@ -381,7 +389,7 @@ inline auto Server::compute_type_definition(const std::string& uri, int line, in
     return "null";
 }
 
-inline auto Server::compute_implementation(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_implementation(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
@@ -577,7 +585,7 @@ namespace detail {
 }
 } // namespace detail
 
-inline auto Server::find_symbol_occurrences(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence> {
+CFIRE_LSP_NAV_INLINE auto Server::find_symbol_occurrences(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence> {
     std::vector<TokenOccurrence> refs;
     if (target_name.empty()) return refs;
 
@@ -641,7 +649,7 @@ inline auto Server::find_symbol_occurrences(const std::string& uri, int line, in
     return find_symbol_occurrences_unscoped(uri, line, character, target_name, qualifier);
 }
 
-inline auto Server::find_symbol_occurrences_unscoped(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence> {
+CFIRE_LSP_NAV_INLINE auto Server::find_symbol_occurrences_unscoped(const std::string& uri, int line, int character, std::string_view target_name, std::string_view qualifier) -> std::vector<TokenOccurrence> {
     std::vector<TokenOccurrence> refs;
     if (target_name.empty()) return refs;
 
@@ -807,7 +815,7 @@ inline auto Server::find_symbol_occurrences_unscoped(const std::string& uri, int
     return refs;
 }
 
-inline auto Server::compute_references(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_references(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
@@ -826,7 +834,7 @@ inline auto Server::compute_references(const std::string& uri, int line, int cha
     return out;
 }
 
-inline auto Server::compute_prepare_rename(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_prepare_rename(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
@@ -847,7 +855,7 @@ inline auto Server::compute_prepare_rename(const std::string& uri, int line, int
         line, sym.start_col, line, sym.end_col, detail::json_escape(sym.name));
 }
 
-inline auto Server::compute_rename(const std::string& uri, int line, int character, std::string_view new_name) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_rename(const std::string& uri, int line, int character, std::string_view new_name) -> std::string {
     if (new_name.empty()) return "null";
     if (!detail::is_valid_identifier(new_name)) return "null";
     std::string text = get_doc_text(uri);
@@ -890,7 +898,7 @@ inline auto Server::compute_rename(const std::string& uri, int line, int charact
     return std::format(R"({{"changes":{}}})", changes);
 }
 
-inline auto Server::compute_document_symbols(const std::string& uri) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_document_symbols(const std::string& uri) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text);
@@ -1011,7 +1019,7 @@ inline auto Server::compute_document_symbols(const std::string& uri) -> std::str
     return out;
 }
 
-inline auto Server::compute_folding_ranges(const std::string& uri) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_folding_ranges(const std::string& uri) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     if (lines.empty()) return "[]";
@@ -1098,7 +1106,7 @@ inline auto Server::compute_folding_ranges(const std::string& uri) -> std::strin
     return out;
 }
 
-inline auto Server::compute_selection_range(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_selection_range(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     if (lines.empty() || line < 0 || line >= static_cast<int>(lines.size())) {
@@ -1176,7 +1184,7 @@ inline auto Server::compute_selection_range(const std::string& uri, int line, in
     return token_range;
 }
 
-inline auto Server::compute_document_highlight(const std::string& uri, int line, int character) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_document_highlight(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto sym = detail::symbol_at_position(lines, line, character);
@@ -1198,7 +1206,7 @@ inline auto Server::compute_document_highlight(const std::string& uri, int line,
     return out;
 }
 
-inline auto Server::compute_workspace_symbols(std::string_view query) -> std::string {
+CFIRE_LSP_NAV_INLINE auto Server::compute_workspace_symbols(std::string_view query) -> std::string {
     auto matches_query = [&](std::string_view name) -> bool {
         if (query.empty()) return true;
         std::string ln(name);
@@ -1240,5 +1248,7 @@ inline auto Server::compute_workspace_symbols(std::string_view query) -> std::st
     out += "]";
     return out;
 }
+
+#undef CFIRE_LSP_NAV_INLINE
 
 } // namespace cfire::lsp

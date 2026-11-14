@@ -1,12 +1,16 @@
 #pragma once
 // src/build/toolchain_layout.hpp — Toolchain Layout Discovery, File Helpers & pkg-config Probe
 
-#include "clang_bridge.hpp"
-#include "codegen.hpp"
-#include "parser.hpp"
-#include "sema.hpp"
-#include "cfire_core_stdlib.hpp"
+#include "../clang_bridge.hpp"
+#if !defined(CFIRE_SPLIT_TUS)
+#include "../codegen.hpp"
+#include "../sema.hpp"
+#endif
+#include "../parser.hpp"
+#include "cfire_prelude.hpp"
+#include "probe_cache.hpp"
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -21,7 +25,15 @@
 #include <unordered_set>
 #include <vector>
 #if defined(__APPLE__)
-#include <mach-o/dyld.h>
+extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
+#endif
+
+#ifndef CFIRE_INFRA_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_INFRA_INLINE
+#else
+#define CFIRE_INFRA_INLINE inline
+#endif
 #endif
 
 namespace cfire::build {
@@ -54,7 +66,29 @@ struct ToolchainLayout {
     }
 };
 
-[[nodiscard]] inline auto derive_install_root(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
+[[nodiscard]] CFIRE_INFRA_INLINE auto derive_install_root(const std::filesystem::path& runtime_dir) -> std::filesystem::path;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto derive_pkg_dir(const std::filesystem::path& runtime_dir) -> std::filesystem::path;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto locate_toolchain_layout(const char* argv0 = nullptr) -> ToolchainLayout;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto read_file_text(const std::filesystem::path& p) -> std::expected<std::string, std::string>;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto split_ws(std::string_view sv) -> std::vector<std::string>;
+
+CFIRE_INFRA_INLINE void query_pkg_config(
+    const std::string& pkg,
+    std::vector<std::string>& cflags,
+    std::vector<std::string>& libs,
+    const std::filesystem::path& install_root = {},
+    bool static_link = false
+);
+
+CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto derive_install_root(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
     std::error_code ec;
     auto can_rt = std::filesystem::weakly_canonical(runtime_dir, ec);
     if (ec) can_rt = runtime_dir;
@@ -73,7 +107,7 @@ struct ToolchainLayout {
     return p1;
 }
 
-[[nodiscard]] inline auto derive_pkg_dir(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
+[[nodiscard]] CFIRE_INFRA_INLINE auto derive_pkg_dir(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
     auto root = derive_install_root(runtime_dir);
     std::error_code ec;
     if (std::filesystem::is_directory(root / "pkg", ec)) return root / "pkg";
@@ -81,7 +115,7 @@ struct ToolchainLayout {
     return root / "pkg";
 }
 
-[[nodiscard]] inline auto locate_toolchain_layout(const char* argv0 = nullptr) -> ToolchainLayout {
+[[nodiscard]] CFIRE_INFRA_INLINE auto locate_toolchain_layout(const char* argv0) -> ToolchainLayout {
     ToolchainLayout layout;
     std::error_code ec;
 
@@ -108,7 +142,7 @@ struct ToolchainLayout {
 
 #if defined(__APPLE__)
     char ep[1024];
-    uint32_t sz = sizeof(ep);
+    std::uint32_t sz = sizeof(ep);
     if (_NSGetExecutablePath(ep, &sz) == 0) {
         add_exe_candidate(std::filesystem::path(ep));
     }
@@ -247,8 +281,7 @@ struct ToolchainLayout {
     return finalize(cwd / "runtime", InstallKind::WorkspaceFallback);
 }
 
-
-[[nodiscard]] inline auto read_file_text(const std::filesystem::path& p) -> std::expected<std::string, std::string> {
+[[nodiscard]] CFIRE_INFRA_INLINE auto read_file_text(const std::filesystem::path& p) -> std::expected<std::string, std::string> {
     std::ifstream f(p, std::ios::in | std::ios::binary);
     if (!f.is_open()) {
         return std::unexpected(std::format("failed to open file: {}", p.string()));
@@ -258,7 +291,7 @@ struct ToolchainLayout {
     return ss.str();
 }
 
-[[nodiscard]] inline auto split_ws(std::string_view sv) -> std::vector<std::string> {
+[[nodiscard]] CFIRE_INFRA_INLINE auto split_ws(std::string_view sv) -> std::vector<std::string> {
     std::vector<std::string> out;
     std::istringstream iss{std::string(sv)};
     std::string tok;
@@ -266,15 +299,12 @@ struct ToolchainLayout {
     return out;
 }
 
-inline void query_pkg_config(
+CFIRE_INFRA_INLINE void query_pkg_config(
     const std::string& pkg,
     std::vector<std::string>& cflags,
     std::vector<std::string>& libs,
-    const std::filesystem::path& install_root = {},
-    bool static_link = false
-) {
-    int code = 0;
-    std::string qpkg = bridge::shell_quote(pkg);
+    const std::filesystem::path& install_root,
+    bool static_link) {
     std::vector<std::string> extra_pc_dirs;
     if (!install_root.empty()) {
         std::error_code ec;
@@ -327,20 +357,13 @@ inline void query_pkg_config(
         }
     }
 
-    std::string pc_args;
-    for (const auto& d : extra_pc_dirs) {
-        pc_args += " --with-path=" + bridge::shell_quote(d);
-    }
-    std::string static_flag = static_link ? " --static" : "";
-    std::string cf_out = bridge::run_command_capture("pkg-config" + pc_args + static_flag + " --cflags " + qpkg + " 2>/dev/null", code);
-    if (code == 0) {
-        for (auto& f : split_ws(cf_out)) cflags.push_back(std::move(f));
-    }
-    int lb_code = 0;
-    std::string lb_out = bridge::run_command_capture("pkg-config" + pc_args + static_flag + " --libs " + qpkg + " 2>/dev/null", lb_code);
-    if (lb_code == 0 && !lb_out.empty()) {
-        for (auto& l : split_ws(lb_out)) libs.push_back(std::move(l));
-        return;
+    auto pc_res = ProbeCache::instance().probe_pkg_config(pkg, static_link, install_root, extra_pc_dirs);
+    if (pc_res.found) {
+        for (auto& f : split_ws(pc_res.cflags)) cflags.push_back(std::move(f));
+        if (!pc_res.libs.empty()) {
+            for (auto& l : split_ws(pc_res.libs)) libs.push_back(std::move(l));
+            return;
+        }
     }
     // Fallback probe when pkg-config is unavailable or package has no .pc file
     if (!hdr.empty()) {
@@ -383,12 +406,14 @@ inline void query_pkg_config(
     }
 }
 
-
-inline auto trim_whitespace(std::string_view s) -> std::string {
+CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n')) s.remove_prefix(1);
     while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n')) s.remove_suffix(1);
     return std::string(s);
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
 
 } // namespace cfire::build
+
+#undef CFIRE_INFRA_INLINE

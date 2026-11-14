@@ -4,22 +4,57 @@
 #include "deps.hpp"
 #include <deque>
 
+#ifndef CFIRE_INFRA_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_INFRA_INLINE
+#else
+#define CFIRE_INFRA_INLINE inline
+#endif
+#endif
+
 namespace cfire::build {
 
-[[nodiscard]] inline auto ast_has_top_level_main(const frontend::FileAST& ast) -> bool {
+[[nodiscard]] CFIRE_INFRA_INLINE auto ast_has_top_level_main(const frontend::FileAST& ast) -> bool;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_wasm_target(std::string_view target) noexcept -> bool;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_windows_target(std::string_view target) noexcept -> bool;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_platform_file_enabled(
+    const std::filesystem::path& p,
+    const BuildPlan& plan
+) -> bool;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_local_cf_imports(
+    const std::filesystem::path& root_base_dir,
+    frontend::FileAST& root_ast,
+    BuildPlan& plan,
+    const std::filesystem::path& runtime_dir = {},
+    bool test_mode = false
+) -> std::expected<void, std::string>;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_ios_target(std::string_view target) noexcept -> bool;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_ios_simulator_target(std::string_view target) noexcept -> bool;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_ios_triple(std::string_view target) -> std::string;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_ios_sdk_path(bool simulator) -> std::expected<std::string, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto ast_has_top_level_main(const frontend::FileAST& ast) -> bool {
     for (const auto& fn : ast.functions) {
         if (!fn.receiver && fn.name == "main") return true;
     }
     return false;
 }
 
-[[nodiscard]] inline auto is_wasm_target(std::string_view target) noexcept -> bool {
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_wasm_target(std::string_view target) noexcept -> bool {
     return target == "wasm" || target == "web" || target.find("wasm") != std::string_view::npos;
 }
 
-// True when the binary being built runs on Windows: an explicit Windows/mingw triple, or no
-// triple on a Windows host. Decides host-independent properties such as the `.exe` suffix.
-[[nodiscard]] inline auto is_windows_target(std::string_view target) noexcept -> bool {
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_windows_target(std::string_view target) noexcept -> bool {
     if (target.find("windows") != std::string_view::npos ||
         target.find("win32") != std::string_view::npos ||
         target.find("mingw") != std::string_view::npos) {
@@ -32,7 +67,7 @@ namespace cfire::build {
 #endif
 }
 
-[[nodiscard]] inline auto is_platform_file_enabled(
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_platform_file_enabled(
     const std::filesystem::path& p,
     const BuildPlan& plan
 ) -> bool {
@@ -65,23 +100,12 @@ namespace cfire::build {
     return true;
 }
 
-// Recursively resolves local `.cf` imports (e.g. `import "./pkg/checksum"` or `import "pkg:tako"`)
-// and automatically discovers same-directory sibling `.cf` files sharing `root_ast.package_name`.
-// Q35 (CF-173): set by the CLI when the user named a program's entry file (`cfire run a.cf`). That file is then
-// the whole program plus what it imports: same-directory `package main` siblings are not merged. Test files and
-// files of library packages keep their package's siblings (one file of a package is not a program).
-[[nodiscard]] inline auto explicit_entry_file_only() -> bool& {
-    static bool value = false;
-    return value;
-}
-
-[[nodiscard]] inline auto resolve_local_cf_imports(
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_local_cf_imports(
     const std::filesystem::path& root_base_dir,
     frontend::FileAST& root_ast,
     BuildPlan& plan,
-    const std::filesystem::path& runtime_dir = {},
-    bool test_mode = false
-) -> std::expected<void, std::string> {
+    const std::filesystem::path& runtime_dir,
+    bool test_mode) -> std::expected<void, std::string> {
     std::vector<frontend::ImportDecl> kept_imports;
     std::unordered_set<std::string> visited_files;
     std::unordered_set<std::string> visited_build_cfs;
@@ -502,17 +526,17 @@ namespace cfire::build {
     return {};
 }
 
-[[nodiscard]] inline auto is_ios_target(std::string_view target) noexcept -> bool {
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_ios_target(std::string_view target) noexcept -> bool {
     return target == "ios" || target == "ios-sim" || target == "ios-simulator" ||
            target.find("-apple-ios") != std::string_view::npos;
 }
 
-[[nodiscard]] inline auto is_ios_simulator_target(std::string_view target) noexcept -> bool {
+[[nodiscard]] CFIRE_INFRA_INLINE auto is_ios_simulator_target(std::string_view target) noexcept -> bool {
     return target == "ios-sim" || target == "ios-simulator" ||
            (target.find("-apple-ios") != std::string_view::npos && target.find("simulator") != std::string_view::npos);
 }
 
-[[nodiscard]] inline auto normalize_ios_triple(std::string_view target) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_ios_triple(std::string_view target) -> std::string {
     if (target == "ios-sim" || target == "ios-simulator") {
         return "arm64-apple-ios17.0-simulator";
     }
@@ -522,13 +546,11 @@ namespace cfire::build {
     return std::string(target);
 }
 
-[[nodiscard]] inline auto resolve_ios_sdk_path(bool simulator) -> std::expected<std::string, std::string> {
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_ios_sdk_path(bool simulator) -> std::expected<std::string, std::string> {
 #if defined(__APPLE__)
     std::string sdk_name = simulator ? "iphonesimulator" : "iphoneos";
-    int rc = 0;
-    std::string out = bridge::run_command_capture(std::format("xcrun --sdk {} --show-sdk-path 2>/dev/null", sdk_name), rc);
-    out = trim_whitespace(out);
-    if (rc == 0 && !out.empty() && std::filesystem::exists(out)) {
+    std::string out = ProbeCache::instance().probe_ios_sdk_path(sdk_name);
+    if (!out.empty() && std::filesystem::exists(out)) {
         return out;
     }
     return std::unexpected(std::format(
@@ -541,5 +563,8 @@ namespace cfire::build {
 #endif
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
 
 } // namespace cfire::build
+
+#undef CFIRE_INFRA_INLINE

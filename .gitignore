@@ -4,6 +4,7 @@
 /.cfire_build.log
 /.vmtest
 /.vmtest.log
+/.cfire_host.pch*
 *.o.log
 /cfire_cross_*
 /cfire_wasm_gui_*

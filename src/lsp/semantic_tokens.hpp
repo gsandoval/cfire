@@ -5,7 +5,15 @@
 
 namespace cfire::lsp {
 
-inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::string {
+#ifndef CFIRE_LSP_FEAT_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_FEAT_INLINE
+#else
+#define CFIRE_LSP_FEAT_INLINE inline
+#endif
+#endif
+
+CFIRE_LSP_FEAT_INLINE auto Server::compute_semantic_tokens(const std::string& uri) -> std::string {
     std::string text = get_doc_text(uri);
     auto toks = cfire::frontend::tokenize(detail::uri_to_path(uri), text);
     if (!toks || toks->empty()) return "[]";
@@ -300,5 +308,7 @@ inline auto Server::compute_semantic_tokens(const std::string& uri) -> std::stri
     out += "]";
     return out;
 }
+
+#undef CFIRE_LSP_FEAT_INLINE
 
 } // namespace cfire::lsp

@@ -1,6 +1,8 @@
 # Project Backlog
 
-This document tracks the interactively triaged and architecturally audited backlog for `cfire` (`CF-001` – `CF-181`).
+This document tracks the interactively triaged and architecturally audited backlog for `cfire` (`CF-001` – `CF-197`; architectural decisions `Q1` – `Q54`).
+
+> **Topic Backlogs**: Compiler/build performance, progressive `.o` compilation, caching, and cross-platform binary distribution are tracked in [`backlog-build-distribution.md`](./backlog-build-distribution.md) (`CF-198` – `CF-206`; decisions `Q55` – `Q59`). Start any new backlog items at **`CF-207`** and new ADRs at **`Q60`**.
 
 ---
 

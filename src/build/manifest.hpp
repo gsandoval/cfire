@@ -3,6 +3,14 @@
 
 #include "toolchain_layout.hpp"
 
+#ifndef CFIRE_INFRA_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_INFRA_INLINE
+#else
+#define CFIRE_INFRA_INLINE inline
+#endif
+#endif
+
 namespace cfire::build {
 
 struct ExternalDepSpec {
@@ -100,10 +108,39 @@ struct BuildPlan {
     std::string emscripten_compiler{};
 };
 
+struct TargetResolution {
+    bool found = false;
+    ExecutableSpec exe{};
+    std::filesystem::path build_cf_path{};
+    std::filesystem::path entry_file{};
+    std::filesystem::path base_out_dir{};
+    std::filesystem::path native_bin{};
+    std::filesystem::path macos_app_bundle{};
+    std::filesystem::path wasm_html{};
+    std::filesystem::path wasm_js{};
+    std::filesystem::path wasm_wasm{};
+    bool has_native_target = false;
+    bool has_wasm_target = false;
+};
 
-[[nodiscard]] inline auto parse_build_cf(const std::filesystem::path& build_cf_path)
-    -> std::expected<ParsedBuildCf, std::string>
-{
+[[nodiscard]] CFIRE_INFRA_INLINE auto parse_build_cf(const std::filesystem::path& build_cf_path)
+    -> std::expected<ParsedBuildCf, std::string>;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_build_target(
+    const std::filesystem::path& base_dir_or_build_cf,
+    std::string_view target_name = "",
+    bool prefer_wasm = false
+) -> std::optional<TargetResolution>;
+
+CFIRE_INFRA_INLINE void parse_cmake_manifest(
+    const std::filesystem::path& cmake_lists,
+    ExternalDepSpec& dep
+);
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto parse_build_cf(const std::filesystem::path& build_cf_path)
+    -> std::expected<ParsedBuildCf, std::string> {
     auto raw = read_file_text(build_cf_path);
     if (!raw) return std::unexpected(raw.error());
     auto ast = frontend::parse_source(build_cf_path.string(), *raw);
@@ -391,26 +428,10 @@ struct BuildPlan {
     return parsed;
 }
 
-struct TargetResolution {
-    bool found = false;
-    ExecutableSpec exe{};
-    std::filesystem::path build_cf_path{};
-    std::filesystem::path entry_file{};
-    std::filesystem::path base_out_dir{};
-    std::filesystem::path native_bin{};
-    std::filesystem::path macos_app_bundle{};
-    std::filesystem::path wasm_html{};
-    std::filesystem::path wasm_js{};
-    std::filesystem::path wasm_wasm{};
-    bool has_native_target = false;
-    bool has_wasm_target = false;
-};
-
-[[nodiscard]] inline auto resolve_build_target(
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_build_target(
     const std::filesystem::path& base_dir_or_build_cf,
-    std::string_view target_name = "",
-    bool prefer_wasm = false
-) -> std::optional<TargetResolution> {
+    std::string_view target_name,
+    bool prefer_wasm) -> std::optional<TargetResolution> {
     std::filesystem::path bcf = base_dir_or_build_cf;
     std::error_code ec;
     if (std::filesystem::is_directory(bcf, ec)) {
@@ -501,8 +522,7 @@ struct TargetResolution {
     return res;
 }
 
-// Extracts tokens inside a CMake command like `add_library(kvstore STATIC src/kvstore.c)`
-inline void parse_cmake_manifest(
+CFIRE_INFRA_INLINE void parse_cmake_manifest(
     const std::filesystem::path& cmake_lists,
     ExternalDepSpec& dep
 ) {
@@ -558,5 +578,8 @@ inline void parse_cmake_manifest(
     }
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
 
 } // namespace cfire::build
+
+#undef CFIRE_INFRA_INLINE

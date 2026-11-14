@@ -20,7 +20,7 @@ namespace cfire::fs {
 
 namespace detail {
 [[nodiscard]] inline auto resolve_path(const std::filesystem::path& p, bool for_write = false) noexcept -> std::filesystem::path {
-#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if CFIRE_TARGET_IOS
     if (p.is_relative() && !p.empty() && p.string() != ":memory:") {
         std::error_code ec;
         if (!for_write && std::filesystem::exists(p, ec)) {

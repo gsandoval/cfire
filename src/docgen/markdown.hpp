@@ -3,8 +3,10 @@
 
 #include "catalog.hpp"
 #include "styles.hpp"
-#include "../buildsys.hpp"
+#include "../parser.hpp"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
 #include "../formatter.hpp"
+#endif
 #include <algorithm>
 #include <cctype>
 #include <expected>
@@ -17,16 +19,68 @@
 #include <utility>
 #include <vector>
 
+#ifndef CFIRE_DOCGEN_MD_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_DOCGEN_MD_INLINE
+#else
+#define CFIRE_DOCGEN_MD_INLINE inline
+#endif
+#endif
+
 namespace cfire::doc {
+
 namespace detail {
 
-[[nodiscard]] inline auto trim_md(std::string_view sv) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto trim_md(std::string_view sv) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto render_inline_md(std::string_view text) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto clean_nav_title(std::string_view text) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto short_part_title(std::string_view raw) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto short_chapter_title(int num, std::string_view raw) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto short_topic_title(std::string_view raw) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto slugify_heading(std::string_view text) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto is_md_table_separator(std::string_view line) -> bool;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto split_md_table_row(std::string_view line) -> std::vector<std::string>;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto is_md_ordered_list(std::string_view line, size_t& content_pos) -> bool;
+
+} // namespace detail
+
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto render_guide_markdown(std::string_view md_text) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_guide_markdown(const std::filesystem::path& docs_dir = "docs") -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_reference_markdown() -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto extract_file_markdown_doc(const std::filesystem::path& cf_file)
+    -> std::expected<std::string, std::string>;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_llm_reference() -> std::string;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+} // namespace cfire::doc
+#if defined(__clang__)
+#pragma clang optimize off
+#endif
+namespace cfire::doc {
+
+namespace detail {
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto trim_md(std::string_view sv) -> std::string {
     while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r')) sv.remove_prefix(1);
     while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r')) sv.remove_suffix(1);
     return std::string(sv);
 }
 
-[[nodiscard]] inline auto render_inline_md(std::string_view text) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto render_inline_md(std::string_view text) -> std::string {
     std::string out;
     out.reserve(text.size() + 16);
     size_t i = 0;
@@ -86,7 +140,7 @@ namespace detail {
     return out;
 }
 
-[[nodiscard]] inline auto clean_nav_title(std::string_view text) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto clean_nav_title(std::string_view text) -> std::string {
     std::string cleaned;
     cleaned.reserve(text.size());
     size_t i = 0;
@@ -106,7 +160,7 @@ namespace detail {
     return html_escape(cleaned);
 }
 
-[[nodiscard]] inline auto short_part_title(std::string_view raw) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto short_part_title(std::string_view raw) -> std::string {
     if (raw.find("Part I:") != std::string_view::npos) return "Part I &mdash; Tooling &amp; Setup";
     if (raw.find("Part II:") != std::string_view::npos) return "Part II &mdash; Core Language";
     if (raw.find("Part III:") != std::string_view::npos) return "Part III &mdash; Core Stdlib";
@@ -114,7 +168,7 @@ namespace detail {
     return clean_nav_title(raw);
 }
 
-[[nodiscard]] inline auto short_chapter_title(int num, std::string_view raw) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto short_chapter_title(int num, std::string_view raw) -> std::string {
     switch (num) {
         case 1: return "Install &amp; Setup";
         case 2: return "Quickstart &amp; Tour";
@@ -139,7 +193,7 @@ namespace detail {
     }
 }
 
-[[nodiscard]] inline auto short_topic_title(std::string_view raw) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto short_topic_title(std::string_view raw) -> std::string {
     static const std::pair<std::string_view, std::string_view> kMap[] = {
         {"How the `cfire` Toolchain Works", "Toolchain"},
         {"Quick Installation Script", "Quick Install"},
@@ -221,7 +275,7 @@ namespace detail {
     return cleaned;
 }
 
-[[nodiscard]] inline auto slugify_heading(std::string_view text) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto slugify_heading(std::string_view text) -> std::string {
     std::string slug;
     for (char c : text) {
         if (std::isalnum(static_cast<unsigned char>(c))) {
@@ -236,7 +290,7 @@ namespace detail {
     return slug;
 }
 
-[[nodiscard]] inline auto is_md_table_separator(std::string_view line) -> bool {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto is_md_table_separator(std::string_view line) -> bool {
     if (line.empty() || line.front() != '|') return false;
     for (char c : line) {
         if (c != '|' && c != '-' && c != ':' && c != ' ' && c != '\t') return false;
@@ -244,7 +298,7 @@ namespace detail {
     return true;
 }
 
-[[nodiscard]] inline auto split_md_table_row(std::string_view line) -> std::vector<std::string> {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto split_md_table_row(std::string_view line) -> std::vector<std::string> {
     std::vector<std::string> cells;
     if (line.starts_with('|')) line.remove_prefix(1);
     if (line.ends_with('|')) line.remove_suffix(1);
@@ -272,7 +326,7 @@ namespace detail {
     return cells;
 }
 
-[[nodiscard]] inline auto is_md_ordered_list(std::string_view line, size_t& content_pos) -> bool {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto is_md_ordered_list(std::string_view line, size_t& content_pos) -> bool {
     size_t i = 0;
     while (i < line.size() && std::isdigit(static_cast<unsigned char>(line[i]))) ++i;
     if (i > 0 && i < line.size() && line[i] == '.') {
@@ -288,7 +342,8 @@ namespace detail {
 
 } // namespace detail
 
-[[nodiscard]] inline auto render_guide_markdown(std::string_view md_text) -> std::string {
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto render_guide_markdown(std::string_view md_text) -> std::string {
     std::vector<std::string> lines;
     {
         std::stringstream ss{std::string(md_text)};
@@ -1417,7 +1472,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
     return out;
 }
 
-[[nodiscard]] inline auto generate_guide_markdown(const std::filesystem::path& docs_dir = "docs") -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_guide_markdown(const std::filesystem::path& docs_dir) -> std::string {
     std::filesystem::path guide_path = docs_dir / "GUIDE.md";
     if (std::filesystem::exists(guide_path)) {
         std::ifstream ifs(guide_path);
@@ -1428,7 +1483,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
     return "# The `cfire` Language & Systems Programming Guide\n";
 }
 
-[[nodiscard]] inline auto generate_reference_markdown() -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_reference_markdown() -> std::string {
     std::string out = "# `cfire` Standard Library (`core:*`) & Diagnostics Reference\n\n";
     out += "> Auto-generated from the compiler's single-source-of-truth catalog via `./cfire doc`.\n\n";
     out += "## 1. Builtin Types & Built-In `core:*` Standard Library Modules\n\n";
@@ -1477,10 +1532,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
     return out;
 }
 
-// Extracts Markdown API documentation for a specific `.cf` file (including doc comments and lowered C++23 signatures)
-[[nodiscard]] inline auto extract_file_markdown_doc(const std::filesystem::path& cf_file)
-    -> std::expected<std::string, std::string>
-{
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto extract_file_markdown_doc(const std::filesystem::path& cf_file)
+    -> std::expected<std::string, std::string> {
     if (!std::filesystem::exists(cf_file)) {
         return std::unexpected(std::format("file not found: {}", cf_file.string()));
     }
@@ -1569,8 +1622,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
     return md;
 }
 
-// Generates the compressed LLM & AI Agent language reference sheet (`cfire doc --llm`).
-[[nodiscard]] inline auto generate_llm_reference() -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_llm_reference() -> std::string {
     static std::string cached_ref;
     if (!cached_ref.empty()) return cached_ref;
 
@@ -1691,3 +1743,12 @@ window.addEventListener('hashchange', updateChapterFromHash);
 }
 
 } // namespace cfire::doc
+#if defined(__clang__)
+#pragma clang optimize on
+#endif
+namespace cfire::doc {
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+
+} // namespace cfire::doc
+
+#undef CFIRE_DOCGEN_MD_INLINE

@@ -3,7 +3,7 @@
 
 namespace cfire::frontend {
 
-inline void Emitter::emit_or_handler_body(const OrExpr& or_ex, std::string_view tmp, bool in_main) {
+CFIRE_CG_INLINE void Emitter::emit_or_handler_body(const OrExpr& or_ex, std::string_view tmp, bool in_main) {
     if (!or_ex.err_var.empty()) {
         local_vars_.insert(or_ex.err_var);
         writeln(std::format("const cfire::Error& {} = cfire::extract_or_error({});", sanitize_cpp_ident(or_ex.err_var), tmp));
@@ -12,7 +12,7 @@ inline void Emitter::emit_or_handler_body(const OrExpr& or_ex, std::string_view 
     last_source_line_ = -1;
 }
 
-inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
+CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
     if (!s) return;
     if (s->line > 0) emit_line_directive(s->line);
     std::visit([&](const auto& st) {
@@ -539,14 +539,14 @@ inline void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
 }
 
 // CF-148: explicit lambda return type for match expressions whose arms share a primitive type.
-inline auto Emitter::match_lambda_header() const -> std::string {
+CFIRE_CG_INLINE auto Emitter::match_lambda_header() const -> std::string {
     if (match_expr_result_type_.empty()) return "([&]() -> auto {";
     TypeRef tr;
     tr.name = match_expr_result_type_;
     return std::format("([&]() -> {} {{", lower_owning_type(tr));
 }
 
-inline void Emitter::emit_match_common(
+CFIRE_CG_INLINE void Emitter::emit_match_common(
     const ExprPtr& target,
     bool is_move,
     const std::vector<MatchArm>& arms,
@@ -927,13 +927,13 @@ inline void Emitter::emit_match_common(
     }
 }
 
-inline void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
+CFIRE_CG_INLINE void Emitter::emit_match_stmt(const MatchStmt& ms, bool in_main) {
     std::ostringstream dummy;
     emit_match_common(ms.target, ms.is_move, ms.arms, false, in_main, dummy);
     last_source_line_ = -1;
 }
 
-inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr) {
+CFIRE_CG_INLINE void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vector<StmtPtr>& body, bool is_expr) {
     if (body.empty()) {
         if (is_expr) {
             for (int i = 0; i < indent_; ++i) sb << "    ";
@@ -971,7 +971,7 @@ inline void Emitter::emit_match_arm_body(std::ostringstream& sb, const std::vect
     }
 }
 
-[[nodiscard]] inline auto Emitter::emit_match_expr(const MatchExpr& me) -> std::string {
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_match_expr(const MatchExpr& me) -> std::string {
     std::ostringstream sb;
     std::string saved = std::exchange(match_expr_result_type_, me.result_type);
     emit_match_common(me.target, me.is_move, me.arms, true, false, sb);

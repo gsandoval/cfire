@@ -2,6 +2,7 @@
 // src/build/deps.hpp — External Dependency Fetching, Lockfile Pinning & Native Archiving
 
 #include "manifest.hpp"
+#include "toolchain_config.hpp"
 
 namespace cfire::build {
 
@@ -234,7 +235,7 @@ inline auto fetch_archive(
         return std::unexpected(std::format("failed to download archive from '{}':\n{}", url, out));
     }
 
-    auto hash_res = cfire::sha256::hash_file_hex(tmp_archive);
+    auto hash_res = cfire::build::sha256_file_hex(tmp_archive);
     if (!hash_res) {
         return std::unexpected(hash_res.error());
     }
@@ -542,7 +543,11 @@ inline auto resolve_external_dep_source(
         if (need_compile) {
             any_obj_recompiled = true;
             bool is_cpp = (sf.extension() != ".c");
-            std::string cc = is_cpp ? "clang++ -std=c++2b" : "clang -std=c17";
+            std::string cc = is_cpp
+                ? (resolve_cxx_compiler(plan.target_triple) + " -std=c++2b")
+                : ((plan.target_triple.empty()
+                        ? resolve_c_compiler()
+                        : (resolve_cxx_compiler(plan.target_triple) + " -x c")) + " -std=c17");
             if (!plan.target_triple.empty()) cc += " --target=" + plan.target_triple;
             if (!plan.sysroot.empty()) cc += " --sysroot=" + plan.sysroot;
             if (build_shared) cc += " -fPIC";
@@ -605,14 +610,14 @@ inline auto resolve_external_dep_source(
         std::filesystem::remove(archive_path);
         std::string link_cmd;
         if (build_shared) {
-            link_cmd = std::format("clang++ -shared -o \"{}\"", archive_path.string());
+            link_cmd = std::format("{} -shared -o \"{}\"", resolve_cxx_compiler(plan.target_triple), archive_path.string());
             if (!plan.target_triple.empty()) link_cmd += " --target=" + plan.target_triple;
             if (!plan.sysroot.empty()) link_cmd += " --sysroot=" + plan.sysroot;
             for (const auto& ob : obj_files) {
                 link_cmd += std::format(" \"{}\"", ob.string());
             }
         } else {
-            link_cmd = std::format("ar rcs \"{}\"", archive_path.string());
+            link_cmd = std::format("{} rcs \"{}\"", resolve_archiver(), archive_path.string());
             for (const auto& ob : obj_files) {
                 link_cmd += std::format(" \"{}\"", ob.string());
             }

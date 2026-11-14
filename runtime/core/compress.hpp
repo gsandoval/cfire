@@ -14,7 +14,7 @@
 #endif
 
 #ifdef CFIRE_USE_ZSTD
-#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if CFIRE_TARGET_IOS
 namespace cfire::zstd {
 [[nodiscard]] inline auto compress(std::span<const std::uint8_t> src, std::int32_t level = 3)
     -> std::expected<std::vector<std::uint8_t>, cfire::Error>

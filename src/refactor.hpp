@@ -1,7 +1,19 @@
 #pragma once
 // src/refactor.hpp — Semantic CLI Renaming & Refactoring Engine for cfire (`cfire refactor rename`)
 
+#ifndef CFIRE_REFACTOR_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_REFACTOR_INLINE
+#else
+#define CFIRE_REFACTOR_INLINE inline
+#endif
+#endif
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_REFACTOR_IMPL)
 #include "lsp.hpp"
+#include "build/toolchain_layout.hpp"
+#include <atomic>
+#endif
 #include <algorithm>
 #include <cctype>
 #include <expected>
@@ -43,12 +55,24 @@ struct RenameResult {
     std::size_t total_occurrences{0};
 };
 
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto generate_unified_diff(const RenameResult& res) -> std::string;
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto to_json(const RenameResult& res) -> std::string;
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto plan_rename(
+    const std::filesystem::path& target_file,
+    int line_1,
+    int col_1,
+    std::string_view new_name
+) -> RenameResult;
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto apply_rename(const RenameResult& res) -> std::expected<void, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_REFACTOR_IMPL)
+
 using lsp::detail::is_valid_identifier;
 using lsp::detail::check_rename_collision;
 
 // CF-155: a unified diff that `git apply` / `patch -p1` accept: paths relative to the current directory (when the
 // file is under it), 3 lines of context, overlapping hunks merged, and correct line counts.
-[[nodiscard]] inline auto generate_unified_diff(const RenameResult& res) -> std::string {
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto generate_unified_diff(const RenameResult& res) -> std::string {
     std::string diff;
     std::error_code ec;
     const auto cwd = std::filesystem::current_path(ec);
@@ -101,7 +125,7 @@ using lsp::detail::check_rename_collision;
     return diff;
 }
 
-[[nodiscard]] inline auto to_json(const RenameResult& res) -> std::string {
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto to_json(const RenameResult& res) -> std::string {
     if (!res.success) {
         return std::format(
             R"({{"success":false,"error":"{}"}})" "\n",
@@ -132,7 +156,7 @@ using lsp::detail::check_rename_collision;
     return out;
 }
 
-[[nodiscard]] inline auto plan_rename(
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto plan_rename(
     const std::filesystem::path& target_file,
     int line_1,
     int col_1,
@@ -267,7 +291,7 @@ using lsp::detail::check_rename_collision;
     return res;
 }
 
-[[nodiscard]] inline auto apply_rename(const RenameResult& res) -> std::expected<void, std::string> {
+[[nodiscard]] CFIRE_REFACTOR_INLINE auto apply_rename(const RenameResult& res) -> std::expected<void, std::string> {
     if (!res.success) return std::unexpected(res.error);
     if (res.modifications.empty()) return {};
 
@@ -352,4 +376,8 @@ using lsp::detail::check_rename_collision;
     return {};
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_REFACTOR_IMPL)
+
 } // namespace cfire::refactor
+
+#undef CFIRE_REFACTOR_INLINE

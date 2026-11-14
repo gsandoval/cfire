@@ -1,11 +1,23 @@
 #pragma once
 // src/analysis.hpp — Unified Diagnostic Pipeline & Semantic Check for CLI, LSP, and MCP (CF-118)
 
+#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_TU_ANALYSIS_IMPL)
+#include "diagnostics.hpp"
+#else
 #include "buildsys.hpp"
+#include "build/package_loader.hpp"
+#include "build/syntax_check.hpp"
 #include "diagnostics.hpp"
 #include "codegen.hpp"
 #include "parser.hpp"
 #include "sema.hpp"
+#endif
+
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_ANALYSIS_INLINE
+#else
+#define CFIRE_ANALYSIS_INLINE inline
+#endif
 #include <algorithm>
 #include <filesystem>
 #include <format>
@@ -37,10 +49,29 @@ struct CheckOptions {
            s.contains("/vendor") || s.contains("/node_modules") || s.contains("/ejected_cpp");
 }
 
-[[nodiscard]] inline auto check_source(
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto check_source(
     std::string_view file_path,
     std::string_view content,
     const CheckOptions& opts = {}
+) -> std::vector<Diagnostic>;
+
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto check_path(
+    const std::filesystem::path& target,
+    const CheckOptions& opts = {}
+) -> std::vector<Diagnostic>;
+
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto check(
+    std::string_view target_or_content,
+    bool is_content = false,
+    const CheckOptions& opts = {}
+) -> std::vector<Diagnostic>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_ANALYSIS_IMPL)
+
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto check_source(
+    std::string_view file_path,
+    std::string_view content,
+    const CheckOptions& opts
 ) -> std::vector<Diagnostic> {
     std::vector<Diagnostic> diags;
     auto lines = cfire::diag::split_lines(content);
@@ -104,7 +135,7 @@ struct CheckOptions {
         if (imp.is_cpp) {
             std::filesystem::path cache_dir = opts.runtime_dir.empty() ? ".cfire_cache" : (opts.runtime_dir / ".cfire_cache");
             std::vector<std::string> cflags;
-            auto idx = bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
+            auto idx = bridge::inspect_header(imp.path, cflags, cache_dir, cfire::build::resolve_cxx_compiler(opts.target_triple));
             if (idx) {
                 for (const auto& [sym_name, sym] : idx->symbols) {
                     if (sym.kind == "FunctionDecl") {
@@ -162,6 +193,13 @@ struct CheckOptions {
 #endif
             if (is_test_f) {
                 plan.cflags.push_back("-DCFIRE_TEST_MODE=1");
+                if (!cfire::build::g_no_trap && !opts.target_triple.starts_with("wasm")) {
+                    plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
+                    plan.cflags.push_back("-fsanitize-trap=all");
+                } else {
+                    plan.cflags.push_back("-fwrapv");
+                }
+            } else if (cfire::build::is_dev_debug_profile() && !cfire::build::g_no_trap && !opts.target_triple.starts_with("wasm")) {
                 plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
                 plan.cflags.push_back("-fsanitize-trap=all");
             } else {
@@ -194,9 +232,9 @@ struct CheckOptions {
     return diags;
 }
 
-[[nodiscard]] inline auto check_path(
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto check_path(
     const std::filesystem::path& target,
-    const CheckOptions& opts = {}
+    const CheckOptions& opts
 ) -> std::vector<Diagnostic> {
     std::vector<Diagnostic> diags;
     std::error_code ec;
@@ -286,15 +324,18 @@ struct CheckOptions {
 }
 
 // Unified entry point: check file or directory, or inline content
-[[nodiscard]] inline auto check(
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto check(
     std::string_view target_or_content,
-    bool is_content = false,
-    const CheckOptions& opts = {}
+    bool is_content,
+    const CheckOptions& opts
 ) -> std::vector<Diagnostic> {
     if (is_content) {
         return check_source("snippet.cf", target_or_content, opts);
     }
     return check_path(std::filesystem::path(target_or_content), opts);
 }
+
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_ANALYSIS_IMPL)
+#undef CFIRE_ANALYSIS_INLINE
 
 } // namespace cfire::analysis

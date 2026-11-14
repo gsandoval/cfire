@@ -1,3 +1,4 @@
+// flags: --release
 // expect: stdout
 // | -2147483648
 package main

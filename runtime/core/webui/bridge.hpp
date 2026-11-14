@@ -30,7 +30,7 @@
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
-#include <mach-o/dyld.h>
+extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 #define CFIRE_WEBUI_IOS 1
 #else

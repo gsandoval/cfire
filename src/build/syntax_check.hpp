@@ -45,27 +45,43 @@ namespace cfire::build {
         }
     }
 
-    bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
-    bool has_pthread = std::ranges::find(plan.cflags, "-pthread") != plan.cflags.end();
-#if defined(__linux__)
-    has_pthread = true;
-#endif
+    const bool dev_debug = is_dev_debug_profile();
+    std::string opt_flags = dev_debug ? "-O0 -g" : "-O2";
+    std::vector<std::string> eff_cflags = plan.cflags;
+    for (const auto& inc : extra_includes) {
+        eff_cflags.push_back("-I \"" + inc + "\"");
+    }
+
     std::string pch_path;
-    if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
-        pch_path = ensure_prelude_pch(runtime_dir, false, has_trap, has_pthread);
+    if (plan.target_triple.empty() && !plan.uses_objc) {
+        std::string umbrella = extract_pch_umbrella_header(cpp_code);
+        pch_path = ensure_composite_pch(runtime_dir, umbrella, opt_flags, eff_cflags);
     }
-    std::string cmd = resolve_cxx_compiler() + " -O2";
-    for (const auto& f : plan.cflags) cmd += " " + f;
-    for (const auto& inc : extra_includes) cmd += " -I \"" + inc + "\"";
-    if (!pch_path.empty()) {
-        cmd += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
-    }
-    if (plan.uses_objc) {
-        cmd += " -x objective-c++";
-    }
-    cmd += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
+
+    std::string compiler = resolve_cxx_compiler(plan.target_triple);
+    auto build_cmd = [&](bool with_pch) {
+        std::string c = compiler + " " + opt_flags;
+        for (const auto& f : eff_cflags) c += " " + f;
+        if (with_pch && !pch_path.empty()) {
+            c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+        }
+        if (plan.uses_objc) {
+            c += " -x objective-c++";
+        }
+        c += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
+        return c;
+    };
+
     int rc = 0;
-    auto output = bridge::run_command_capture(cmd, rc);
+    auto output = bridge::run_command_capture(build_cmd(true), rc);
+    if (rc != 0 && !pch_path.empty()) {
+        int fb_rc = 0;
+        auto fb_out = bridge::run_command_capture(build_cmd(false), fb_rc);
+        if (fb_rc == 0) {
+            return {};
+        }
+        output = std::move(fb_out);
+    }
     if (rc != 0) {
         return std::unexpected(cfire::diag::humanize_cpp_compiler_output(output));
     }

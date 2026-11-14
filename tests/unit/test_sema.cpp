@@ -2233,14 +2233,19 @@ void test_content_hashed_pch_and_cli_flag_validation([[maybe_unused]] const std:
             "unrecognized flag produces clean error without crash");
     }
 
-    // 3. Verify user-private PCH cache exists and has content hash tag
+    // 3. Verify user-private PCH cache exists and contains composite .pch artifact
     {
         std::error_code ec;
-#if !defined(_WIN32)
-        auto uid = ::getuid();
-        auto pch_dir = std::filesystem::temp_directory_path(ec) / std::format("cfire-{}-pch", uid);
+        auto pch_dir = cfire::build::pch_cache_dir();
         require(std::filesystem::exists(pch_dir, ec), "user-private PCH cache directory exists");
-#endif
+        bool has_pch = false;
+        for (const auto& entry : std::filesystem::directory_iterator(pch_dir, ec)) {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".pch") {
+                has_pch = true;
+                break;
+            }
+        }
+        require(has_pch, "composite PCH cache contains at least one .pch file");
     }
 
     std::println("--- PASS: test_content_hashed_pch_and_cli_flag_validation (CF-113)");

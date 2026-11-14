@@ -232,7 +232,7 @@ public:
     }
 
     [[nodiscard]] auto load_extension(std::string_view path, std::string_view entry_point = "") -> std::expected<void, cfire::Error> {
-#if !defined(PLATFORM_WEB) && !defined(PLATFORM_IOS) && !(defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if !defined(PLATFORM_WEB) && !CFIRE_TARGET_IOS
         if (!db_) return cfire::make_error("sqlite connection is closed");
         using EnableExtFn = int(*)(sqlite3*, int);
         using LoadExtFn = int(*)(sqlite3*, const char*, const char*, char**);
@@ -340,7 +340,7 @@ private:
 
 [[nodiscard]] inline auto open(const std::filesystem::path& p) -> std::expected<Conn, cfire::Error> {
     std::filesystem::path resolved = p;
-#if defined(PLATFORM_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+#if CFIRE_TARGET_IOS
     if (resolved.string() != ":memory:" && resolved.is_relative()) {
         std::error_code ec;
         auto read_cand = cfire::fs::detail::resolve_path(resolved, false);

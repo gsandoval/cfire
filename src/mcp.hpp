@@ -1,7 +1,7 @@
 #pragma once
 // src/mcp.hpp — Built-In Model Context Protocol (MCP) Server for the `cfire` Toolchain (`cfire mcp`)
 
-#include "../runtime/core/ai.hpp"
+#include "mcp_jsonrpc.hpp"
 #include "analysis.hpp"
 #include "buildsys.hpp"
 #include "diagnostics.hpp"
@@ -65,123 +65,139 @@ struct TestInput {
            name == "ejected_cpp";
 }
 
-} // namespace cfire::mcp
-
-namespace cfire::json {
-
 template <>
-inline auto schema_struct<cfire::mcp::EmptyInput>() -> std::string {
+inline auto schema_for<EmptyInput>() -> std::string {
     return R"({"type":"object","properties":{},"additionalProperties":false})";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::EmptyInput>(simdjson::ondemand::object) -> std::expected<cfire::mcp::EmptyInput, cfire::Error> {
-    return cfire::mcp::EmptyInput{};
+inline auto parse_input<EmptyInput>(const JsonVal&) -> std::expected<EmptyInput, cfire::Error> {
+    return EmptyInput{};
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::QueryInput>() -> std::string {
+inline auto schema_for<QueryInput>() -> std::string {
     return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:str', 'ext:ai', 'ext:webui'), diagnostic code (e.g. 'cfire/USE-AFTER-FREE'), or function/type name"}},"required":["query"],"additionalProperties":false})";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::QueryInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::QueryInput, cfire::Error> {
-    cfire::mcp::QueryInput out;
-    auto q = get_str(obj, "query");
+inline auto parse_input<QueryInput>(const JsonVal& obj) -> std::expected<QueryInput, cfire::Error> {
+    QueryInput out;
+    auto q = get_req_str(obj, "query");
     if (!q) return std::unexpected(q.error());
     out.query = std::move(*q);
     return out;
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::CodeInput>() -> std::string {
+inline auto schema_for<CodeInput>() -> std::string {
     return R"({"type":"object","properties":{"code":{"type":"string","description":"cfire (.cf) source code or snippet"}},"required":["code"],"additionalProperties":false})";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::CodeInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::CodeInput, cfire::Error> {
-    cfire::mcp::CodeInput out;
-    auto c = get_str(obj, "code");
+inline auto parse_input<CodeInput>(const JsonVal& obj) -> std::expected<CodeInput, cfire::Error> {
+    CodeInput out;
+    auto c = get_req_str(obj, "code");
     if (!c) return std::unexpected(c.error());
     out.code = std::move(*c);
     return out;
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::CheckInput>() -> std::string {
+inline auto schema_for<CheckInput>() -> std::string {
     return R"JSON({"type":"object","properties":{"code":{"type":"string","description":"Inline cfire (.cf) source code or snippet to check"},"path":{"type":"string","description":"Path to a .cf file or workspace directory to check (resolves same-directory sibling files)"}},"additionalProperties":false})JSON";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::CheckInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::CheckInput, cfire::Error> {
-    cfire::mcp::CheckInput out;
-    if (auto c = get_str(obj, "code")) out.code = std::move(*c);
-    if (auto p = get_str(obj, "path")) out.path = std::move(*p);
+inline auto parse_input<CheckInput>(const JsonVal& obj) -> std::expected<CheckInput, cfire::Error> {
+    CheckInput out;
+    auto c = get_opt_str(obj, "code");
+    if (!c) return std::unexpected(c.error());
+    if (*c) out.code = std::move(**c);
+    auto p = get_opt_str(obj, "path");
+    if (!p) return std::unexpected(p.error());
+    if (*p) out.path = std::move(**p);
     return out;
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::PathInput>() -> std::string {
+inline auto schema_for<PathInput>() -> std::string {
     return R"JSON({"type":"object","properties":{"path":{"type":"string","description":"Path to a .cf file or directory to outline (defaults to '.')"}},"additionalProperties":false})JSON";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::PathInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::PathInput, cfire::Error> {
-    cfire::mcp::PathInput out;
-    if (auto p = get_str(obj, "path")) out.path = std::move(*p);
+inline auto parse_input<PathInput>(const JsonVal& obj) -> std::expected<PathInput, cfire::Error> {
+    PathInput out;
+    auto p = get_opt_str(obj, "path");
+    if (!p) return std::unexpected(p.error());
+    if (*p) out.path = std::move(**p);
     return out;
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::TargetInput>() -> std::string {
+inline auto schema_for<TargetInput>() -> std::string {
     return R"({"type":"object","properties":{"target":{"type":"string","description":"Inspect target: '<file.cf>:<line>:<col>', 'cpp <header.h>', '<module>.<symbol>', or 'cfire/<DIAG-CODE>'"}},"required":["target"],"additionalProperties":false})";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::TargetInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::TargetInput, cfire::Error> {
-    cfire::mcp::TargetInput out;
-    auto t = get_str(obj, "target");
+inline auto parse_input<TargetInput>(const JsonVal& obj) -> std::expected<TargetInput, cfire::Error> {
+    TargetInput out;
+    auto t = get_req_str(obj, "target");
     if (!t) return std::unexpected(t.error());
     out.target = std::move(*t);
     return out;
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::RenameInput>() -> std::string {
+inline auto schema_for<RenameInput>() -> std::string {
     return R"JSON({"type":"object","properties":{"target":{"type":"string","description":"Source coordinate '<file.cf>:<line>:<col>' pointing at the symbol to rename (including inside '{...}' interpolated strings)"},"new_name":{"type":"string","description":"New valid cfire identifier name"},"dry_run":{"type":"boolean","description":"Preview the unified diff and occurrence count without modifying files on disk"}},"required":["target","new_name"],"additionalProperties":false})JSON";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::RenameInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::RenameInput, cfire::Error> {
-    cfire::mcp::RenameInput out;
-    auto t = get_str(obj, "target");
+inline auto parse_input<RenameInput>(const JsonVal& obj) -> std::expected<RenameInput, cfire::Error> {
+    RenameInput out;
+    auto t = get_req_str(obj, "target");
     if (!t) return std::unexpected(t.error());
     out.target = std::move(*t);
-    auto nn = get_str(obj, "new_name");
+    auto nn = get_req_str(obj, "new_name");
     if (!nn) return std::unexpected(nn.error());
     out.new_name = std::move(*nn);
-    if (auto dr = get_bool(obj, "dry_run")) out.dry_run = *dr;
+    auto dr = get_opt_bool(obj, "dry_run");
+    if (!dr) return std::unexpected(dr.error());
+    if (*dr) out.dry_run = **dr;
     return out;
 }
 
 template <>
-inline auto schema_struct<cfire::mcp::TestInput>() -> std::string {
+inline auto schema_for<TestInput>() -> std::string {
     return R"JSON({"type":"object","properties":{"path":{"type":"string","description":"Path to a .cf file or directory to test (defaults to '.')"},"filter":{"type":"string","description":"Substring filter for test, fuzz, or bench names"},"bench":{"type":"boolean","description":"Run multi-iteration statistical benchmarks (bench blocks)"},"fuzz_runs":{"type":"integer","description":"Number of property-based fuzz iterations per fuzz block (default 100)"},"seed":{"type":"integer","description":"Deterministic PRNG seed for fuzzing (0 = auto)"},"bench_time":{"type":"integer","description":"Target benchmark measurement window in ms per benchmark variation (default 200)"}},"additionalProperties":false})JSON";
 }
 
 template <>
-inline auto parse_struct<cfire::mcp::TestInput>(simdjson::ondemand::object obj) -> std::expected<cfire::mcp::TestInput, cfire::Error> {
-    cfire::mcp::TestInput out;
-    if (auto p = get_str(obj, "path")) out.path = std::move(*p);
-    if (auto f = get_str(obj, "filter")) out.filter = std::move(*f);
-    if (auto b = get_bool(obj, "bench")) out.bench = *b;
-    if (auto fr = get_i64(obj, "fuzz_runs")) out.fuzz_runs = static_cast<int>(*fr);
-    if (auto sd = get_i64(obj, "seed")) out.seed = static_cast<std::uint64_t>(*sd);
-    if (auto bt = get_i64(obj, "bench_time")) out.bench_time = static_cast<int>(*bt);
+inline auto parse_input<TestInput>(const JsonVal& obj) -> std::expected<TestInput, cfire::Error> {
+    TestInput out;
+    auto p = get_opt_str(obj, "path");
+    if (!p) return std::unexpected(p.error());
+    if (*p) out.path = std::move(**p);
+    auto f = get_opt_str(obj, "filter");
+    if (!f) return std::unexpected(f.error());
+    if (*f) out.filter = std::move(**f);
+    auto b = get_opt_bool(obj, "bench");
+    if (!b) return std::unexpected(b.error());
+    if (*b) out.bench = **b;
+    auto fr = get_opt_i64(obj, "fuzz_runs");
+    if (!fr) return std::unexpected(fr.error());
+    if (*fr) out.fuzz_runs = static_cast<int>(**fr);
+    auto sd = get_opt_i64(obj, "seed");
+    if (!sd) return std::unexpected(sd.error());
+    if (*sd) out.seed = static_cast<std::uint64_t>(**sd);
+    auto bt = get_opt_i64(obj, "bench_time");
+    if (!bt) return std::unexpected(bt.error());
+    if (*bt) out.bench_time = static_cast<int>(**bt);
     return out;
 }
 
-} // namespace cfire::json
+} // namespace cfire::mcp
 
 namespace cfire::mcp {
 
@@ -402,8 +418,8 @@ struct McpOptions {
     return cand;
 }
 
-[[nodiscard]] inline auto build_compiler_mcp_server(const std::filesystem::path& runtime_dir, McpOptions mcp_opts = {}) -> cfire::ai::McpServer {
-    auto srv = cfire::ai::make_mcp_server("cfire-compiler", std::string(cfire::version::kVersion));
+[[nodiscard]] inline auto build_compiler_mcp_server(const std::filesystem::path& runtime_dir, McpOptions mcp_opts = {}) -> cfire::mcp::McpServer {
+    auto srv = cfire::mcp::make_mcp_server("cfire-compiler", std::string(cfire::version::kVersion));
 
     srv.register_tool<EmptyInput>(
         "cfire_stdlib_list",

@@ -1,7 +1,10 @@
 #pragma once
 // src/formatter.hpp — Canonical Code Formatter (`cfire fmt`) & AST Pretty-Printer
 
+#include "ast.hpp"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
 #include "parser.hpp"
+#endif
 #include "../runtime/cfire_prelude.hpp"
 #include <algorithm>
 #include <expected>
@@ -16,7 +19,15 @@
 #include <string_view>
 #include <vector>
 
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
 #include "formatter_printer.hpp"
+#endif
+
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_FMT_INLINE
+#else
+#define CFIRE_FMT_INLINE inline
+#endif
 
 namespace cfire::fmt {
 
@@ -356,12 +367,23 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
 
 } // namespace detail
 
+[[nodiscard]] CFIRE_FMT_INLINE auto format_source(std::string_view src, std::string_view filename = "<input>")
+    -> std::expected<std::string, std::string>;
+
+[[nodiscard]] CFIRE_FMT_INLINE auto format_range(std::string_view src, int start_line, int end_line, std::string_view filename = "<input>")
+    -> std::expected<std::string, std::string>;
+
+[[nodiscard]] CFIRE_FMT_INLINE auto format_path(const std::filesystem::path& target, bool check_only, bool to_stdout)
+    -> std::expected<int, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
+
 // Canonically formats a `.cf` source string:
 // 1. Validates syntax via Lexer + Parser.
 // 2. Preserves all comments, raw strings, and inline `cpp { ... }` blocks.
 // 3. Normalizes 4-space block indentation, struct field + tag column alignment, and blank lines.
 // 4. Verifies post-format AST roundtrip invariant so formatting can never corrupt source code.
-[[nodiscard]] inline auto format_source(std::string_view src, std::string_view filename = "<input>")
+[[nodiscard]] CFIRE_FMT_INLINE auto format_source(std::string_view src, std::string_view filename)
     -> std::expected<std::string, std::string>
 {
     auto ast_res = parse_source(filename, src);
@@ -420,7 +442,7 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
 
 // Formats a bounded range of lines [start_line, end_line] in a source string:
 // Determines indentation from preceding lines and normalizes formatting only within the selected range.
-[[nodiscard]] inline auto format_range(std::string_view src, int start_line, int end_line, std::string_view filename = "<input>")
+[[nodiscard]] CFIRE_FMT_INLINE auto format_range(std::string_view src, int start_line, int end_line, std::string_view filename)
     -> std::expected<std::string, std::string>
 {
     if (src.empty()) return "";
@@ -455,7 +477,7 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
     return out;
 }
 
-[[nodiscard]] inline auto format_path(const std::filesystem::path& target, bool check_only, bool to_stdout)
+[[nodiscard]] CFIRE_FMT_INLINE auto format_path(const std::filesystem::path& target, bool check_only, bool to_stdout)
     -> std::expected<int, std::string>
 {
     std::vector<std::filesystem::path> files;
@@ -527,5 +549,8 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
     }
     return changed_count;
 }
+
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
+#undef CFIRE_FMT_INLINE
 
 } // namespace cfire::fmt

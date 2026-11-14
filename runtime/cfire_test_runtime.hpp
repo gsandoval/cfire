@@ -219,9 +219,9 @@ struct Arbitrary<T, std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T,
 };
 
 template <>
-struct Arbitrary<std::uint8_t> {
-    static auto generate(FuzzRng& rng, std::size_t iter) -> std::uint8_t {
-        return static_cast<std::uint8_t>(Arbitrary<std::uint8_t>::generate(rng, iter));
+struct Arbitrary<std::byte> {
+    static auto generate(FuzzRng& rng, std::size_t iter) -> std::byte {
+        return static_cast<std::byte>(Arbitrary<std::uint8_t>::generate(rng, iter));
     }
 };
 

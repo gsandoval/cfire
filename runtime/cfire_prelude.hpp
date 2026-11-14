@@ -24,6 +24,16 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#ifndef CFIRE_TARGET_IOS
+#  if (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE) || (defined(PLATFORM_IOS) && !defined(PLATFORM_MACOS))
+#    define CFIRE_TARGET_IOS 1
+#  else
+#    define CFIRE_TARGET_IOS 0
+#  endif
+#endif
 #include <cstring>
 #include <expected>
 #include <filesystem>

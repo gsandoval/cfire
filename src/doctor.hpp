@@ -3,6 +3,7 @@
 
 #include "version.hpp"
 #include "buildsys.hpp"
+#include "build/wasm_shell.hpp"
 #include "lsp/ide_setup.hpp"
 #include "../runtime/cfire_prelude.hpp"
 #include <cstdlib>
@@ -90,11 +91,10 @@ struct CheckItem {
             return true;
         }
     }
-    if (has_command("pkg-config")) {
-        int rc = 0;
-        auto ver = bridge::run_command_capture(std::format("pkg-config --modversion {} 2>/dev/null", pc_name), rc);
-        if (rc == 0) {
-            detail_out = std::format("pkg-config {} ({})", pc_name, trim_str(ver));
+    if (!build::find_executable_in_path("pkg-config").empty()) {
+        auto pc = build::ProbeCache::instance().probe_pkg_config(std::string(pc_name));
+        if (pc.found) {
+            detail_out = std::format("pkg-config {} ({})", pc_name, trim_str(pc.modversion));
             return true;
         }
     }
@@ -123,8 +123,15 @@ struct CheckItem {
 
     // --- 1. Core Compiler & Runtime ---
     {
-        if (has_command("clang++")) {
-            std::string ver = command_version("clang++");
+        auto cxx_res = build::resolve_cxx_compiler_detailed();
+        bool cxx_avail = !cxx_res.executable_path.empty() || has_command(cxx_res.command);
+        std::string src_tag = std::format("[source={}]", build::tool_source_name(cxx_res.source));
+        if (cxx_avail) {
+            std::string run_cxx = (!cxx_res.executable_path.empty() && cxx_res.command == cxx_res.executable_path.string())
+                ? build::quote_cmd_if_spaces(cxx_res.executable_path)
+                : cxx_res.command;
+            auto cp = build::ProbeCache::instance().probe_compiler(cxx_res.command);
+            std::string ver = !cp.version_first_line.empty() ? cp.version_first_line : command_version(run_cxx);
             int rc = 0;
             std::error_code probe_ec;
             auto probe_cpp = std::filesystem::temp_directory_path(probe_ec) / "cfire_doctor_probe.cpp";
@@ -134,17 +141,25 @@ struct CheckItem {
             }
             (void)bridge::run_command_capture(
                 std::format(
-                    "clang++ -std=c++2b -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -fsyntax-only {}",
+                    "{} -std=c++2b -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -fsyntax-only {}",
+                    run_cxx,
                     bridge::shell_quote(probe_cpp.string())),
                 rc
             );
             std::filesystem::remove(probe_cpp, probe_ec);
             if (rc == 0) {
+                std::string ok_detail = ver.empty()
+                    ? std::format("{} (-std=c++2b verified) {}", cxx_res.command, src_tag)
+                    : std::format("{} {}", ver, src_tag);
+                std::string fast_ld = build::resolve_effective_linker_flag(cxx_res.command);
+                if (!fast_ld.empty()) {
+                    ok_detail += std::format(" [ld={}]", fast_ld);
+                }
                 items.push_back({
                     "Core Toolchain",
                     "clang++ (ISO C++23)",
                     "ok",
-                    ver.empty() ? "clang++ (-std=c++2b verified)" : ver,
+                    ok_detail,
                     ""
                 });
             } else {
@@ -152,7 +167,7 @@ struct CheckItem {
                     "Core Toolchain",
                     "clang++ (ISO C++23)",
                     "error",
-                    "clang++ found (" + ver + "), but -std=c++2b probe failed",
+                    std::format("{} found ({}) {}, but -std=c++2b probe failed", cxx_res.command, ver, src_tag),
                     pm == "apt" ? "sudo apt-get install -y clang lld libc++-dev" : "Upgrade Clang to 17+"
                 });
             }
@@ -227,20 +242,28 @@ struct CheckItem {
     // Precompiled header (PCH) cache check
     {
         std::error_code ec;
-        auto pch_file = build::prelude_pch_path(runtime_dir, false);
-        auto pch_dir = pch_file.parent_path();
-        if (std::filesystem::exists(pch_file, ec)) {
+        auto pch_dir = build::pch_cache_dir();
+        std::size_t pch_count = 0;
+        if (std::filesystem::is_directory(pch_dir, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(pch_dir, ec)) {
+                if (ec) break;
+                if (entry.is_regular_file(ec) && entry.path().extension() == ".pch") {
+                    ++pch_count;
+                }
+            }
+        }
+        if (pch_count > 0) {
             items.push_back({
                 "Core Toolchain",
-                "C++23 Prelude PCH Cache",
+                "C++23 Composite PCH Cache",
                 "ok",
-                pch_file.string() + " (warm)",
+                std::format("{} ({} cached PCH(s), warm)", pch_dir.string(), pch_count),
                 ""
             });
         } else {
             items.push_back({
                 "Core Toolchain",
-                "C++23 Prelude PCH Cache",
+                "C++23 Composite PCH Cache",
                 "ok",
                 pch_dir.string() + " (builds automatically on first compile or `cfire setup`)",
                 ""
@@ -300,16 +323,15 @@ struct CheckItem {
         std::string det;
         if (check_pkg_or_header("simdjson", "simdjson.h", det)) {
             bool sj_compat_err = false;
-            if (det.find("~/.local") == std::string::npos && has_command("pkg-config") && has_command("clang++")) {
-                int sj_rc = 0;
-                auto sj_ver = trim_str(bridge::run_command_capture("pkg-config --modversion simdjson 2>/dev/null", sj_rc));
-                int cl_rc = 0;
-                auto cl_ver = trim_str(bridge::run_command_capture("clang++ -dumpversion 2>/dev/null", cl_rc));
+            if (det.find("~/.local") == std::string::npos && !build::find_executable_in_path("pkg-config").empty()) {
+                auto sj_pc = build::ProbeCache::instance().probe_pkg_config("simdjson");
+                auto sj_ver = trim_str(sj_pc.modversion);
+                auto cxx_res = build::resolve_cxx_compiler_detailed();
                 int cl_maj = 0;
-                if (auto dot = cl_ver.find('.'); dot != std::string::npos) {
-                    if (auto pmaj = cfire::detail::parse_int<int>(cl_ver.substr(0, dot))) cl_maj = *pmaj;
+                if (!cxx_res.executable_path.empty() || has_command(cxx_res.command)) {
+                    cl_maj = build::ProbeCache::instance().probe_compiler(cxx_res.command).major_version;
                 }
-                if (sj_rc == 0 && cl_maj >= 19 &&
+                if (sj_pc.found && cl_maj >= 19 &&
                     (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
                     sj_compat_err = true;
                     items.push_back({
@@ -479,14 +501,13 @@ struct CheckItem {
         }
 #endif
 #if !defined(_WIN32)
-        std::string mingw_cxx = build::resolve_cxx_compiler("x86_64-w64-mingw32");
-        bool has_mingw_cross = (mingw_cxx != "clang++") || has_command("x86_64-w64-mingw32-g++");
-        if (has_mingw_cross) {
+        std::string mingw_cxx = build::resolve_cross_cxx_compiler("x86_64-w64-mingw32");
+        if (!mingw_cxx.empty()) {
             items.push_back({
                 "Cross-Platform Targets",
                 "Windows Cross-Compiler (`--target x86_64-w64-mingw32`)",
                 "ok",
-                std::format("MinGW-w64 cross-toolchain ready ({})", mingw_cxx != "clang++" ? mingw_cxx : "x86_64-w64-mingw32-g++"),
+                std::format("MinGW-w64 cross-toolchain ready ({})", mingw_cxx),
                 ""
             });
         }
@@ -539,10 +560,10 @@ inline auto run_doctor(const std::filesystem::path& runtime_dir, bool json_mode)
         std::string out = "{\n";
         out += std::format("  \"version\": \"{}\",\n", kCfireVersion);
         out += std::format("  \"commit\": \"{}\",\n", kCfireGitSha);
-        out += std::format("  \"runtime_version\": \"{}\",\n", json::escape_string(prov.version));
-        out += std::format("  \"runtime_commit\": \"{}\",\n", json::escape_string(prov.commit));
+        out += std::format("  \"runtime_version\": \"{}\",\n", cfire::detail::json_escape(prov.version));
+        out += std::format("  \"runtime_commit\": \"{}\",\n", cfire::detail::json_escape(prov.commit));
         out += std::format("  \"runtime_matched\": {},\n", prov.matched ? "true" : "false");
-        out += std::format("  \"runtime_dir\": \"{}\",\n", json::escape_string(runtime_dir.string()));
+        out += std::format("  \"runtime_dir\": \"{}\",\n", cfire::detail::json_escape(runtime_dir.string()));
         out += std::format("  \"ok_count\": {},\n", ok_count);
         out += std::format("  \"warn_count\": {},\n", warn_count);
         out += std::format("  \"error_count\": {},\n", err_count);
@@ -552,11 +573,11 @@ inline auto run_doctor(const std::filesystem::path& runtime_dir, bool json_mode)
             const auto& c = checks[i];
             out += std::format(
                 "    {{\"category\": \"{}\", \"name\": \"{}\", \"status\": \"{}\", \"detail\": \"{}\", \"fix_hint\": \"{}\"}}{}\n",
-                json::escape_string(c.category),
-                json::escape_string(c.name),
-                json::escape_string(c.status),
-                json::escape_string(c.detail),
-                json::escape_string(c.fix_hint),
+                cfire::detail::json_escape(c.category),
+                cfire::detail::json_escape(c.name),
+                cfire::detail::json_escape(c.status),
+                cfire::detail::json_escape(c.detail),
+                cfire::detail::json_escape(c.fix_hint),
                 (i + 1 < checks.size()) ? "," : ""
             );
         }
@@ -632,7 +653,7 @@ inline auto run_setup(
     } else if (pm == "apt") {
         std::vector<std::string> pkgs;
         std::string dummy;
-        if (!has_command("clang++")) pkgs.push_back("clang");
+        if (build::resolve_cxx_compiler_detailed().executable_path.empty()) pkgs.push_back("clang");
         if (!has_command("make")) pkgs.push_back("make");
         if (!has_command("cmake")) pkgs.push_back("cmake");
         if (!has_command("pkg-config")) pkgs.push_back("pkg-config");
@@ -689,7 +710,8 @@ inline auto run_setup(
     }
 
     // 3. Pre-warm C++23 Prelude Precompiled Header (.pch)
-    if (has_command("clang++") && std::filesystem::exists(runtime_dir / "cfire_prelude.hpp", ec)) {
+    if (!build::resolve_cxx_compiler_detailed().executable_path.empty() &&
+        std::filesystem::exists(runtime_dir / "cfire_prelude.hpp", ec)) {
         std::println("==> Pre-compiling C++23 runtime prelude header (PCH)...");
         auto pch_flags = build::ensure_prelude_pch(runtime_dir, false);
         if (!pch_flags.empty()) {

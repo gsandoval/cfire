@@ -3,7 +3,7 @@
 
 namespace cfire::frontend {
 
-inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
+CFIRE_CG_INLINE void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
     std::vector<std::pair<std::string, int>> auto_json_structs;
     if (test_mode_ && used_core_.contains("json")) {
         for (const auto& st : ast.structs) {
@@ -300,7 +300,7 @@ inline void Emitter::emit_test_runner(const FileAST& ast, bool has_user_main) {
     }
 }
 
-inline void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx) {
+CFIRE_CG_INLINE void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx) {
     set_source_path(td.source_path);
     if (td.line > 0) emit_line_directive(td.line);
     cur_fn_ = std::format("__cfire_test_{}", idx);

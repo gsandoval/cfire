@@ -5,7 +5,15 @@
 
 namespace cfire::lsp {
 
-inline auto Server::compute_inlay_hints(const std::string& uri) -> std::string {
+#ifndef CFIRE_LSP_FEAT_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_LSP_FEAT_INLINE
+#else
+#define CFIRE_LSP_FEAT_INLINE inline
+#endif
+#endif
+
+CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
     auto [ast_res, ws] = get_or_parse_ast(uri, text);
@@ -272,5 +280,7 @@ inline auto Server::compute_inlay_hints(const std::string& uri) -> std::string {
     out += "]";
     return out;
 }
+
+#undef CFIRE_LSP_FEAT_INLINE
 
 } // namespace cfire::lsp

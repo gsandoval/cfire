@@ -3,7 +3,7 @@
 
 namespace cfire::frontend {
 
-[[nodiscard]] inline auto Emitter::extract_interpolation(const LiteralExpr& lit, int line) -> std::optional<InterpolationResult> {
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::extract_interpolation(const LiteralExpr& lit, int line) -> std::optional<InterpolationResult> {
     if (lit.kind != TokenKind::String || !lit.value.contains('{')) return std::nullopt;
     auto placeholders = scan_interpolation_placeholders(lit.value);
     if (placeholders.empty()) return std::nullopt;
@@ -46,7 +46,7 @@ namespace cfire::frontend {
     return res;
 }
 
-[[nodiscard]] inline auto Emitter::emit_expr(const ExprPtr& e) -> std::string {
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_expr(const ExprPtr& e) -> std::string {
     if (!e) return "";
     if (auto it = hoisted_tries_.find(e); it != hoisted_tries_.end()) {
         return it->second;
@@ -497,7 +497,7 @@ namespace cfire::frontend {
     }, e->node);
 }
 
-[[nodiscard]] inline auto Emitter::emit_call(const CallExpr& call) -> std::string {
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_call(const CallExpr& call) -> std::string {
     if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
         if (id->name == "println" || id->name == "print" || id->name == "eprintln" || id->name == "eprint") {
             bool is_err = (id->name == "eprintln" || id->name == "eprint");
@@ -1116,7 +1116,7 @@ namespace cfire::frontend {
     return std::format("{}({})", callee, args);
 }
 
-[[nodiscard]] inline auto Emitter::infer_closure_expr_cpp_type(
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::infer_closure_expr_cpp_type(
     const ExprPtr& e,
     const std::unordered_map<std::string, std::string>& local_types
 ) const -> std::string {
@@ -1188,7 +1188,7 @@ namespace cfire::frontend {
     return "";
 }
 
-inline auto Emitter::analyze_closure_returns(
+CFIRE_CG_INLINE auto Emitter::analyze_closure_returns(
     const std::vector<StmtPtr>& stmts,
     std::unordered_map<std::string, std::string>& local_types,
     bool& has_fallible,
@@ -1290,7 +1290,7 @@ inline auto Emitter::analyze_closure_returns(
     }
 }
 
-[[nodiscard]] inline auto Emitter::emit_closure(const ClosureExpr& cl, int expr_line) -> std::string {
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_closure(const ClosureExpr& cl, int expr_line) -> std::string {
     (void)expr_line;
     std::ostringstream sb;
     sb << (cl.is_escaping ? "[=" + view_param_captures(cl.body) + "](" : std::string("[&]("));
@@ -1347,7 +1347,7 @@ inline auto Emitter::analyze_closure_returns(
     return sb.str();
 }
 
-[[nodiscard]] inline auto Emitter::emit_call_arg(const CallArg& a) -> std::string {
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_call_arg(const CallArg& a) -> std::string {
     std::string val = emit_expr(a.value);
     if (a.intent == "move" && !val.starts_with("std::move(")) {
         return std::format("std::move({})", val);

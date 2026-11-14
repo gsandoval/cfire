@@ -15,11 +15,28 @@
 #include <utility>
 #include <vector>
 
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_SEMA_ANALYZE_INLINE
+#else
+#define CFIRE_SEMA_ANALYZE_INLINE inline
+#endif
+
 namespace cfire::frontend {
 
-[[nodiscard]] inline auto analyze_resilient(
+[[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze_resilient(
     FileAST ast,
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+) -> CheckedFile;
+
+[[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze(
+    FileAST ast,
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+) -> std::expected<CheckedFile, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_SEMA_STMT_IMPL)
+[[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze_resilient(
+    FileAST ast,
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params
 ) -> CheckedFile {
     CheckedFile cf;
     cf.ast = std::move(ast);
@@ -695,9 +712,9 @@ namespace cfire::frontend {
     return cf;
 }
 
-[[nodiscard]] inline auto analyze(
+[[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params
 ) -> std::expected<CheckedFile, std::string> {
     auto cf = analyze_resilient(std::move(ast), std::move(pre_cpp_fn_params));
     if (!cf.errors.empty()) {
@@ -705,6 +722,6 @@ namespace cfire::frontend {
     }
     return cf;
 }
-
+#endif
 
 } // namespace cfire::frontend

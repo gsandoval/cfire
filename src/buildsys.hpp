@@ -4,27 +4,96 @@
 #include "version.hpp"
 #include "build/toolchain_layout.hpp"
 #include "build/manifest.hpp"
+#include "build/pch.hpp"
+#include "build/binary_cache.hpp"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_BUILDSYS_IMPL)
+#include "sema.hpp"
+#include "codegen.hpp"
 #include "build/deps.hpp"
 #include "build/package_loader.hpp"
 #include "build/wasm_shell.hpp"
 #include "build/apple_bundle.hpp"
 #include "build/windows_resources.hpp"
-#include "build/pch.hpp"
 #include "build/syntax_check.hpp"
+#endif
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #endif
 
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_BUILDSYS_INLINE
+#else
+#define CFIRE_BUILDSYS_INLINE inline
+#endif
+
 namespace cfire::build {
 
-[[nodiscard]] inline auto init_build_plan_flags(
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto init_build_plan_flags(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
     bool test_mode,
     const std::string& target_triple,
     const std::string& sysroot,
     const std::string& web_profile,
-    const std::string& subsystem
+    const std::string& subsystem,
+    bool sanitize = false
+) -> std::expected<BuildPlan, std::string>;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto discover_and_apply_build_cf(
+    BuildPlan& plan,
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& dir,
+    bool test_mode
+) -> std::expected<void, std::string>;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    bool inspect_clang_ast,
+    bool test_mode = false,
+    const std::string& target_triple = "",
+    const std::string& sysroot = "",
+    const std::string& web_profile = "auto",
+    const std::string& subsystem = "auto",
+    bool sanitize = false
+) -> std::expected<std::pair<std::string, BuildPlan>, std::string>;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    const std::filesystem::path& out_bin,
+    bool test_mode = false,
+    bool sanitize = false,
+    const std::string& target_triple = "",
+    const std::string& sysroot = "",
+    const std::vector<std::string>& extra_link_libs = {},
+    const std::vector<std::string>& extra_includes = {},
+    const std::string& web_profile = "auto",
+    const std::string& subsystem = "auto",
+    const std::string& app_name = "",
+    const std::string& bundle_id = "",
+    const std::string& icon_path = ""
+) -> std::expected<BuildPlan, std::string>;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto generate_cmake_content(const BuildPlan& plan) -> std::string;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto eject_cmake(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    const std::filesystem::path& out_dir
+) -> std::expected<void, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_BUILDSYS_IMPL)
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto init_build_plan_flags(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    bool test_mode,
+    const std::string& target_triple,
+    const std::string& sysroot,
+    const std::string& web_profile,
+    const std::string& subsystem,
+    bool sanitize
 ) -> std::expected<BuildPlan, std::string> {
     BuildPlan plan;
     plan.entry_file = cf_file.string();
@@ -80,12 +149,18 @@ namespace cfire::build {
     if (plan.is_ios) {
         plan.cflags.push_back("-DPLATFORM_IOS=1");
     }
+    bool is_dev_debug = is_dev_debug_profile();
     if (test_mode) {
         plan.cflags.push_back("-DCFIRE_TEST_MODE=1");
-        if (!is_wasm) {
+        if (!is_wasm && !g_no_trap) {
             plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
             plan.cflags.push_back("-fsanitize-trap=all");
+        } else {
+            plan.cflags.push_back("-fwrapv");
         }
+    } else if (is_dev_debug && !is_wasm && !g_no_trap && !sanitize) {
+        plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
+        plan.cflags.push_back("-fsanitize-trap=all");
     } else {
         plan.cflags.push_back("-fwrapv");
     }
@@ -99,7 +174,7 @@ namespace cfire::build {
     return plan;
 }
 
-[[nodiscard]] inline auto discover_and_apply_build_cf(
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto discover_and_apply_build_cf(
     BuildPlan& plan,
     const std::filesystem::path& cf_file,
     const std::filesystem::path& dir,
@@ -204,19 +279,20 @@ namespace cfire::build {
     return {};
 }
 
-[[nodiscard]] inline auto analyze_and_emit(
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
     bool inspect_clang_ast,
-    bool test_mode = false,
-    const std::string& target_triple = "",
-    const std::string& sysroot = "",
-    const std::string& web_profile = "auto",
-    const std::string& subsystem = "auto"
+    bool test_mode,
+    const std::string& target_triple,
+    const std::string& sysroot,
+    const std::string& web_profile,
+    const std::string& subsystem,
+    bool sanitize
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     auto dir = cf_file.parent_path();
     if (dir.empty()) dir = ".";
-    auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem);
+    auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
     if (!plan_res) return std::unexpected(plan_res.error());
     BuildPlan plan = std::move(*plan_res);
 
@@ -300,9 +376,7 @@ namespace cfire::build {
                 return true;
             }
         }
-        int sc_rc = 0;
-        (void)bridge::run_command_capture("pkg-config --exists sqlcipher 2>/dev/null", sc_rc);
-        if (sc_rc == 0) return true;
+        if (ProbeCache::instance().probe_pkg_config("sqlcipher").found) return true;
         for (const char* inc_p : {
             "/opt/homebrew/opt/sqlcipher/include/sqlcipher/sqlite3.h",
             "/usr/local/opt/sqlcipher/include/sqlcipher/sqlite3.h",
@@ -429,18 +503,12 @@ namespace cfire::build {
                             "-framework", "WebKit"
                         });
 #elif defined(__linux__)
-                        int wk_rc = 0;
-                        (void)bridge::run_command_capture("pkg-config --exists webkit2gtk-4.1 2>/dev/null", wk_rc);
-                        if (wk_rc == 0) {
+                        if (ProbeCache::instance().probe_pkg_config("webkit2gtk-4.1").found) {
                             add_pc("webkit2gtk-4.1");
                             add_pc("gtk+-3.0");
-                        } else {
-                            int wk40_rc = 0;
-                            (void)bridge::run_command_capture("pkg-config --exists webkit2gtk-4.0 2>/dev/null", wk40_rc);
-                            if (wk40_rc == 0) {
-                                add_pc("webkit2gtk-4.0");
-                                add_pc("gtk+-3.0");
-                            }
+                        } else if (ProbeCache::instance().probe_pkg_config("webkit2gtk-4.0").found) {
+                            add_pc("webkit2gtk-4.0");
+                            add_pc("gtk+-3.0");
                         }
 #endif
                     }
@@ -448,9 +516,7 @@ namespace cfire::build {
             }
             if (imp.path == "ext:crypto/sodium" || imp.path == "ext:sodium") {
                 if (!is_wasm && !plan.is_ios) {
-                    int sod_rc = 0;
-                    (void)bridge::run_command_capture("pkg-config --exists libsodium 2>/dev/null", sod_rc);
-                    bool found_sodium = (sod_rc == 0);
+                    bool found_sodium = ProbeCache::instance().probe_pkg_config("libsodium").found;
                     if (!found_sodium && std::getenv("HOME")) {
                         auto loc_inc = std::filesystem::path(std::getenv("HOME")) / ".local" / "include" / "sodium.h";
                         if (std::filesystem::exists(loc_inc)) found_sodium = true;
@@ -495,9 +561,7 @@ namespace cfire::build {
             }
             if (imp.path == "core:net/ssh" || imp.path == "ext:net/ssh" || imp.path == "core:ssh") {
                 if (!is_wasm && !plan.is_ios) {
-                    int ssh_rc = 0;
-                    (void)bridge::run_command_capture("pkg-config --exists libssh 2>/dev/null", ssh_rc);
-                    bool found_libssh = (ssh_rc == 0);
+                    bool found_libssh = ProbeCache::instance().probe_pkg_config("libssh").found;
                     if (!found_libssh && std::getenv("HOME")) {
                         auto loc_inc = std::filesystem::path(std::getenv("HOME")) / ".local" / "include" / "libssh" / "libssh.h";
                         if (std::filesystem::exists(loc_inc)) found_libssh = true;
@@ -548,19 +612,11 @@ namespace cfire::build {
             }
         }
         if (!has_local_simdjson) {
-            int sj_rc = 0;
-            auto sj_ver = bridge::run_command_capture("pkg-config --modversion simdjson 2>/dev/null", sj_rc);
-            sj_ver = trim_whitespace(sj_ver);
-            if (sj_rc == 0 && !sj_ver.empty() && (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
-                int cl_rc = 0;
-                auto cl_ver = bridge::run_command_capture("clang++ -dumpversion 2>/dev/null", cl_rc);
-                cl_ver = trim_whitespace(cl_ver);
-                int cl_maj = 0;
-                if (auto dot = cl_ver.find('.'); dot != std::string::npos) {
-                    if (auto parsed_maj = cfire::detail::parse_int<int>(cl_ver.substr(0, dot))) cl_maj = *parsed_maj;
-                } else if (auto parsed_maj = cfire::detail::parse_int<int>(cl_ver)) {
-                    cl_maj = *parsed_maj;
-                }
+            auto sj_probe = ProbeCache::instance().probe_pkg_config("simdjson");
+            auto sj_ver = trim_whitespace(sj_probe.modversion);
+            if (sj_probe.found && !sj_ver.empty() && (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
+                auto cc_probe = ProbeCache::instance().probe_compiler(resolve_cxx_compiler(plan.target_triple));
+                int cl_maj = cc_probe.major_version;
                 if (cl_maj >= 19) {
                     return std::unexpected(std::format(
                         "system simdjson {} is incompatible with Clang {} (requires simdjson >= 4.0; install simdjson >= 4.0 to ~/.local or upgrade libsimdjson-dev)",
@@ -576,23 +632,23 @@ namespace cfire::build {
     return std::make_pair(std::move(cpp_code), std::move(plan));
 }
 
-[[nodiscard]] inline auto build_native(
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
     const std::filesystem::path& out_bin,
-    bool test_mode = false,
-    bool sanitize = false,
-    const std::string& target_triple = "",
-    const std::string& sysroot = "",
-    const std::vector<std::string>& extra_link_libs = {},
-    const std::vector<std::string>& extra_includes = {},
-    const std::string& web_profile = "auto",
-    const std::string& subsystem = "auto",
-    const std::string& app_name = "",
-    const std::string& bundle_id = "",
-    const std::string& icon_path = ""
+    bool test_mode,
+    bool sanitize,
+    const std::string& target_triple,
+    const std::string& sysroot,
+    const std::vector<std::string>& extra_link_libs,
+    const std::vector<std::string>& extra_includes,
+    const std::string& web_profile,
+    const std::string& subsystem,
+    const std::string& app_name,
+    const std::string& bundle_id,
+    const std::string& icon_path
 ) -> std::expected<BuildPlan, std::string> {
-    auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem);
+    auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
     for (const auto& w : plan.warnings) {
@@ -624,14 +680,6 @@ namespace cfire::build {
         plan.cflags.push_back(std::format("-DCFIRE_APP_ICON_PATH=\\\"{}\\\"", icon_resolved.string()));
     }
 
-    if (g_debug_mode) {
-        plan.cflags.push_back("-O0");
-        plan.cflags.push_back("-g");
-        if (!target_triple.starts_with("wasm")) {
-            plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
-            plan.cflags.push_back("-fsanitize-trap=all");
-        }
-    }
     if (g_profile_mode) {
         plan.cflags.push_back("-g");
         plan.cflags.push_back("-fno-omit-frame-pointer");
@@ -765,39 +813,13 @@ namespace cfire::build {
         }
     }
 
-    std::string opt_flags = sanitize
-        ? sanitizer_opt_flags()
-        : (g_debug_mode ? "-O0 -g" : "-O2");
-    // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
-    bool has_trap = std::ranges::find(plan.cflags, "-fsanitize-trap=all") != plan.cflags.end();
-    bool has_pthread = std::ranges::find(plan.cflags, "-pthread") != plan.cflags.end();
-#if defined(__linux__)
-    has_pthread = true;
-#endif
-    std::string pch_path;
-    if (plan.target_triple.empty() && !plan.uses_objc && !g_debug_mode) {
-        pch_path = ensure_prelude_pch(runtime_dir, sanitize, test_mode || has_trap, has_pthread);
-    }
-
-    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler(plan.target_triple);
-    std::string cmd = compiler;
-    if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
-        cmd += " -fobjc-arc";
-    }
-    for (const auto& f : plan.cflags) {
-        if (is_wasm && f.find("simdjson") != std::string::npos) continue;
-        cmd += " " + f;
-    }
-    if (!pch_path.empty()) {
-        cmd += std::format(" -include-pch \"{}\"", pch_path);
-        plan.used_pch = true;
-    }
     for (auto& l : plan.ldflags) {
         if (l == "-lsimdjson") {
+            std::error_code simd_ec;
             for (const auto& d : plan.ldflags) {
                 if (d.starts_with("-L")) {
                     auto p = std::filesystem::path(d.substr(2)) / "libsimdjson_static.a";
-                    if (std::filesystem::exists(p)) {
+                    if (std::filesystem::exists(p, simd_ec)) {
                         l = p.string();
                         break;
                     }
@@ -806,47 +828,228 @@ namespace cfire::build {
         }
     }
 
-    cmd += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
-    for (const auto& l : plan.ldflags) {
-        if (is_wasm && (l.find(".dylib") != std::string::npos || l.find(".so") != std::string::npos || l == "-lsimdjson" || l == "-lsqlite3" || l == "-lzstd")) {
-            continue;
-        }
-        cmd += " " + l;
+    const bool dev_debug = is_dev_debug_profile();
+    std::string opt_flags = sanitize
+        ? sanitizer_opt_flags()
+        : (dev_debug ? "-O0 -g" : "-O2");
+
+    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler(plan.target_triple);
+    std::string linker_flag;
+    if (!is_wasm && !plan.is_ios && plan.target_triple.empty()) {
+        linker_flag = resolve_effective_linker_flag(compiler);
     }
 
-    int exit_code = 0;
-    std::string output = bridge::run_command_capture(cmd, exit_code);
-    if (exit_code != 0 && plan.used_pch) {
-        // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
-        std::string fallback_cmd = compiler;
+    const bool use_persistent_obj = (dev_debug && !is_wasm);
+    std::filesystem::path obj_path;
+    if (use_persistent_obj) {
+        auto obj_dir = cf_parent / ".cfire" / "obj";
+        std::error_code obj_ec;
+        std::filesystem::create_directories(obj_dir, obj_ec);
+        std::string h12 = sha256_hex(
+            std::format("{}|{}|{}", cpp_path.filename().string(), opt_flags, plan.target_triple)
+        ).substr(0, 12);
+        obj_path = obj_dir / std::format("{}_{}.o", stem, h12);
+    }
+
+    const bool allow_bin_cache = !g_no_binary_cache && !is_wasm && !(plan.is_ios && plan.is_gui);
+    std::string bin_cache_key;
+    if (allow_bin_cache) {
+        std::string extra_fp = std::format(
+            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}",
+            plan.uses_objc ? 1 : 0,
+            plan.is_ios ? 1 : 0,
+            sanitize ? 1 : 0,
+            test_mode ? 1 : 0,
+            g_emit_dsym ? 1 : 0,
+            dev_debug ? 1 : 0
+        );
+        if (use_persistent_obj) {
+            extra_fp += "|obj=" + obj_path.string();
+        }
+        std::error_code lfec;
+        for (const auto& l : plan.ldflags) {
+            if (!l.empty() && l.front() != '-' &&
+                (l.ends_with(".a") || l.ends_with(".o") || l.ends_with(".so") || l.ends_with(".dylib") || l.ends_with(".lib"))) {
+                std::string stripped = l;
+                if (stripped.size() >= 2 && stripped.front() == '"' && stripped.back() == '"') {
+                    stripped = stripped.substr(1, stripped.size() - 2);
+                }
+                if (std::filesystem::is_regular_file(stripped, lfec)) {
+                    extra_fp += "|lf:" + stripped + "=" + file_fingerprint_string(stripped);
+                }
+            }
+        }
+        bin_cache_key = BinaryCache::compute_key(
+            cpp_code,
+            compiler_binary_fingerprint(compiler),
+            opt_flags,
+            plan.cflags,
+            plan.ldflags,
+            linker_flag,
+            plan.target_triple,
+            runtime_headers_fingerprint(runtime_dir),
+            extra_fp
+        );
+
+        bool can_restore = true;
+#if defined(__APPLE__)
+        if (use_persistent_obj) {
+            std::error_code oec;
+            BinaryCacheMeta pre_meta;
+            if (!std::filesystem::exists(obj_path, oec) || oec ||
+                !BinaryCache::read_meta(bin_cache_key, pre_meta) ||
+                pre_meta.obj_fp.empty() ||
+                file_fingerprint_string(obj_path) != pre_meta.obj_fp) {
+                can_restore = false;
+            }
+        }
+#endif
+        if (can_restore) {
+            BinaryCacheMeta cached_meta;
+            if (BinaryCache::try_restore(bin_cache_key, out_bin, &cached_meta)) {
+                plan.used_pch = cached_meta.used_pch;
+#if defined(__APPLE__)
+                if (g_emit_dsym && use_persistent_obj && !plan.is_ios) {
+                    auto dsym_path = std::filesystem::path(out_bin.string() + ".dSYM");
+                    std::error_code dec;
+                    if (!std::filesystem::exists(dsym_path, dec)) {
+                        int dsym_rc = 0;
+                        (void)bridge::run_command_capture(
+                            std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
+                            dsym_rc
+                        );
+                    }
+                }
+#endif
+                package_apple_app_bundles(cf_file, out_bin, plan);
+                return plan;
+            }
+        }
+    }
+
+    // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
+    std::string pch_path;
+    if (plan.target_triple.empty() && !plan.uses_objc && !(plan.is_ios && plan.is_gui)) {
+        std::string umbrella = extract_pch_umbrella_header(cpp_code);
+        pch_path = ensure_composite_pch(runtime_dir, umbrella, opt_flags, plan.cflags);
+    }
+
+    auto build_compile_cflags = [&](std::string& out_cmd) {
         if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
-            fallback_cmd += " -fobjc-arc";
+            out_cmd += " -fobjc-arc";
         }
         for (const auto& f : plan.cflags) {
             if (is_wasm && f.find("simdjson") != std::string::npos) continue;
-            fallback_cmd += " " + f;
+            out_cmd += " " + f;
         }
-        fallback_cmd += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
+    };
+
+    auto build_link_ldflags = [&](std::string& out_cmd) {
+        if (!linker_flag.empty()) {
+            out_cmd += " " + linker_flag;
+        }
         for (const auto& l : plan.ldflags) {
             if (is_wasm && (l.find(".dylib") != std::string::npos || l.find(".so") != std::string::npos || l == "-lsimdjson" || l == "-lsqlite3" || l == "-lzstd")) {
                 continue;
             }
-            fallback_cmd += " " + l;
+            out_cmd += " " + l;
         }
+    };
+
+    auto append_link_relevant_cflags = [&](std::string& out_cmd) {
+        for (std::size_t i = 0; i < plan.cflags.size(); ++i) {
+            const auto& f = plan.cflags[i];
+            if (f == "-isysroot" || f == "-arch" || f == "--target" || f == "--sysroot") {
+                out_cmd += " " + f;
+                if (i + 1 < plan.cflags.size()) {
+                    out_cmd += " " + plan.cflags[++i];
+                }
+            } else if (f.starts_with("--target=") || f.starts_with("--sysroot=") ||
+                       f.starts_with("-isysroot") || f == "-pthread" ||
+                       f.starts_with("-stdlib=") || f.starts_with("-m") ||
+                       f == "-static" || f.starts_with("-fuse-ld=")) {
+                out_cmd += " " + f;
+            }
+        }
+    };
+
+    auto make_compile_cmd = [&](bool with_pch) {
+        std::string c = compiler;
+        build_compile_cflags(c);
+        if (with_pch && !pch_path.empty()) {
+            c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+        }
+        if (use_persistent_obj) {
+            c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), obj_path.string());
+        } else {
+            c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
+            build_link_ldflags(c);
+        }
+        return c;
+    };
+
+    plan.used_pch = !pch_path.empty();
+    std::string cmd = make_compile_cmd(true);
+    int exit_code = 0;
+    std::string output = bridge::run_command_capture(cmd, exit_code);
+    if (exit_code != 0 && plan.used_pch) {
+        if (is_verbose_build()) {
+            std::println(stderr, "note: precompiled header compilation failed; retrying without PCH");
+        }
+        // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
+        std::string fallback_cmd = make_compile_cmd(false);
         int fb_code = 0;
         std::string fb_out = bridge::run_command_capture(fallback_cmd, fb_code);
         if (fb_code == 0) {
             exit_code = 0;
             output = std::move(fb_out);
+            cmd = std::move(fallback_cmd);
             plan.used_pch = false;
         }
     }
+
+    if (exit_code == 0 && use_persistent_obj) {
+        std::string link_cmd = compiler;
+        append_link_relevant_cflags(link_cmd);
+        if (sanitize) {
+            link_cmd += " " + sanitizer_opt_flags();
+        }
+        link_cmd += std::format(" \"{}\" -o \"{}\"", obj_path.string(), out_bin.string());
+        build_link_ldflags(link_cmd);
+        int link_rc = 0;
+        std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
+        if (link_rc != 0) {
+            exit_code = link_rc;
+            output = output.empty() ? link_out : (output + "\n" + link_out);
+            cmd = std::move(link_cmd);
+        }
+    }
+
     if (exit_code != 0) {
         std::string clean_out = cfire::diag::humanize_cpp_compiler_output(output);
-        if (const char* verb = std::getenv("CFIRE_VERBOSE"); verb && std::string_view(verb) == "1") {
+        if (is_verbose_build()) {
             return std::unexpected(std::format("{} compilation failed:\n{}\nCommand: {}", compiler, clean_out, cmd));
         }
         return std::unexpected(std::format("compilation failed:\n{}", clean_out));
+    }
+
+#if defined(__APPLE__)
+    if (g_emit_dsym && use_persistent_obj && !plan.is_ios) {
+        int dsym_rc = 0;
+        (void)bridge::run_command_capture(
+            std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
+            dsym_rc
+        );
+    }
+#endif
+
+    if (allow_bin_cache && !bin_cache_key.empty()) {
+        BinaryCacheMeta store_meta;
+        store_meta.used_pch = plan.used_pch;
+        if (use_persistent_obj) {
+            store_meta.obj_fp = file_fingerprint_string(obj_path);
+        }
+        BinaryCache::store(bin_cache_key, out_bin, store_meta);
     }
 
     package_apple_app_bundles(cf_file, out_bin, plan);
@@ -854,7 +1057,7 @@ namespace cfire::build {
     return plan;
 }
 
-[[nodiscard]] inline auto generate_cmake_content(const BuildPlan& plan) -> std::string {
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto generate_cmake_content(const BuildPlan& plan) -> std::string {
     std::ostringstream cmake;
     cmake << "cmake_minimum_required(VERSION 3.25)\n";
     cmake << "project(cfire_ejected_app LANGUAGES C CXX)\n";
@@ -905,7 +1108,7 @@ namespace cfire::build {
     return cmake.str();
 }
 
-[[nodiscard]] inline auto eject_cmake(
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto eject_cmake(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
     const std::filesystem::path& out_dir
@@ -954,5 +1157,8 @@ namespace cfire::build {
     cm_out << cmake_text;
     return {};
 }
+
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_BUILDSYS_IMPL)
+#undef CFIRE_BUILDSYS_INLINE
 
 } // namespace cfire::build

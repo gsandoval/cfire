@@ -6,10 +6,43 @@
 #include <string>
 #include <string_view>
 
+#ifndef CFIRE_DOCGEN_MD_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_DOCGEN_MD_INLINE
+#else
+#define CFIRE_DOCGEN_MD_INLINE inline
+#endif
+#endif
+
 namespace cfire::doc {
+
 namespace detail {
 
-[[nodiscard]] inline auto html_escape(std::string_view sv) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto html_escape(std::string_view sv) -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto icon_font_head_links() -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto shared_css() -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto ai_context_modal_html() -> std::string;
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto navbar_html(std::string_view active_page) -> std::string;
+
+} // namespace detail
+
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto html_escape(std::string_view s) -> std::string;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+} // namespace cfire::doc
+#if defined(__clang__)
+#pragma clang optimize off
+#endif
+namespace cfire::doc {
+
+namespace detail {
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto html_escape(std::string_view sv) -> std::string {
     std::string out;
     out.reserve(sv.size() + 32);
     for (char c : sv) {
@@ -24,14 +57,14 @@ namespace detail {
     return out;
 }
 
-[[nodiscard]] inline auto icon_font_head_links() -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto icon_font_head_links() -> std::string {
     return "  <script>(function(){var t=localStorage.getItem('cfire-theme')||'light';document.documentElement.setAttribute('data-theme',t);})();</script>\n"
            "  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n"
            "  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n"
            "  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=swap\" />\n";
 }
 
-[[nodiscard]] inline auto shared_css() -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto shared_css() -> std::string {
     return R"CSS(
 :root, [data-theme="light"] {
     --bg: #F8FAFC;
@@ -2016,7 +2049,7 @@ tr:hover td { background: var(--bg-table-hover); }
 )CSS";
 }
 
-[[nodiscard]] inline auto ai_context_modal_html() -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto ai_context_modal_html() -> std::string {
     return R"HTML(
 <div class="ai-modal-backdrop" id="ai-modal-backdrop" onclick="if(event.target===this)closeAiModal()">
   <div class="ai-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
@@ -2212,7 +2245,7 @@ function copyAiRichPrompt() {
 )HTML";
 }
 
-[[nodiscard]] inline auto navbar_html(std::string_view active_page) -> std::string {
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto navbar_html(std::string_view active_page) -> std::string {
     return std::format(R"HTML(
 <nav class="navbar">
   <div class="navbar-inner">
@@ -2272,8 +2305,18 @@ syncCfireThemeBtn();
 
 } // namespace detail
 
-[[nodiscard]] inline auto html_escape(std::string_view s) -> std::string {
+
+[[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto html_escape(std::string_view s) -> std::string {
     return detail::html_escape(s);
 }
 
 } // namespace cfire::doc
+#if defined(__clang__)
+#pragma clang optimize on
+#endif
+namespace cfire::doc {
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+
+} // namespace cfire::doc
+
+#undef CFIRE_DOCGEN_MD_INLINE

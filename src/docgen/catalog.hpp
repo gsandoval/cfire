@@ -243,14 +243,7 @@ struct DiscoveredModule {
         }
 
         // 4. Verify practical code example is syntactically valid Cfire code
-        auto toks = frontend::tokenize(mod.import_path + ".cf", practical_ex);
-        if (!toks) {
-            return std::unexpected(std::format(
-                "Documentation audit failure: practical example for module '{}' failed lexing:\n{}\nSource:\n{}",
-                mod.import_path, toks.error(), practical_ex));
-        }
-        frontend::Parser parser(std::string(mod.import_path) + ".cf", *toks);
-        auto parse_res = parser.parse_file_result();
+        auto parse_res = frontend::parse_source_resilient(std::string(mod.import_path) + ".cf", practical_ex);
         if (!parse_res.ok()) {
             std::string errs;
             for (const auto& e : parse_res.errors) errs += "  - " + e + "\n";

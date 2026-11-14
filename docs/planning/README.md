@@ -4,10 +4,11 @@ This directory maintains the active planning state and project backlog for the `
 
 ## Core Files
 
-1. [`backlog.md`](./backlog.md): Selected and prioritized engineering backlog items.
-2. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
-3. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
-4. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
+1. [`backlog.md`](./backlog.md): Main engineering backlog (`CF-001` – `CF-197`, decisions `Q1` – `Q54`).
+2. [`backlog-build-distribution.md`](./backlog-build-distribution.md): Topic-focused backlog for compiler/build performance, progressive compilation, caching, and 6-target pre-compiled binary distribution (`CF-198` – `CF-206`, decisions `Q55` – `Q59`).
+3. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
+4. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
+5. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
 
 ---
 
@@ -16,7 +17,7 @@ This directory maintains the active planning state and project backlog for the `
 Whenever work is performed on this repository, the following protocol **must** be followed:
 
 ```
-[backlog.md] ──(Promote)──> [active.md] ──(Implement & Verify)
+[backlog.md / backlog-build-distribution.md] ──(Promote)──> [active.md] ──(Implement & Verify)
 ```
 
 ### Quality Gates (Mandatory): three commands

@@ -20,6 +20,16 @@
 #include <unistd.h>
 #endif
 
+#include "build/toolchain_config.hpp"
+
+#ifndef CFIRE_INFRA_INLINE
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_INFRA_INLINE
+#else
+#define CFIRE_INFRA_INLINE inline
+#endif
+#endif
+
 namespace cfire::bridge {
 
 struct CppSymbol {
@@ -36,7 +46,52 @@ struct HeaderIndex {
     std::unordered_map<std::string, CppSymbol> symbols{};
 };
 
-[[nodiscard]] inline auto shell_quote(std::string_view arg) -> std::string {
+[[nodiscard]] inline auto hash_key(std::string_view sv) noexcept -> std::uint64_t {
+    std::uint64_t h = 0xcbf29ce484222325ULL;
+    for (char c : sv) {
+        h ^= static_cast<std::uint8_t>(c);
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+[[nodiscard]] inline auto trim_qual(std::string_view sv) noexcept -> std::string_view {
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+    while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t')) sv.remove_suffix(1);
+    return sv;
+}
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto shell_quote(std::string_view arg) -> std::string;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_command_for_capture(std::string s) -> std::string;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto win32_quote_cmd(std::string full_cmd) -> std::string;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_argv_capture(const std::vector<std::string>& argv, int& exit_code) -> std::string;
+
+CFIRE_INFRA_INLINE void parse_fn_qual_type(std::string_view full_sig, CppSymbol& sym);
+
+CFIRE_INFRA_INLINE void extract_clang_json_symbols(std::string_view sv, std::unordered_map<std::string, CppSymbol>& out);
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto next_ast_salt() noexcept -> std::pair<long, std::uint64_t>;
+
+CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_file, const HeaderIndex& idx);
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto load_cached_index(const std::filesystem::path& cache_file, std::string_view header)
+    -> std::optional<HeaderIndex>;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto inspect_header(
+    std::string_view header,
+    const std::vector<std::string>& cflags,
+    const std::filesystem::path& cache_dir = {},
+    std::string_view cxx_compiler = ""
+) -> std::expected<HeaderIndex, std::string>;
+
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto shell_quote(std::string_view arg) -> std::string {
 #if defined(_WIN32)
     std::string out = "\"";
     out.reserve(arg.size() + 8);
@@ -64,7 +119,7 @@ struct HeaderIndex {
 #endif
 }
 
-[[nodiscard]] inline auto normalize_command_for_capture(std::string s) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_command_for_capture(std::string s) -> std::string {
     while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
     if (s.ends_with(" 2>/dev/null")) {
         s.erase(s.size() - 12);
@@ -80,7 +135,7 @@ struct HeaderIndex {
     return s;
 }
 
-[[nodiscard]] inline auto win32_quote_cmd(std::string full_cmd) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto win32_quote_cmd(std::string full_cmd) -> std::string {
 #if defined(_WIN32)
     if (!full_cmd.empty() && full_cmd.front() == '"') {
         return "\"" + full_cmd + "\"";
@@ -89,7 +144,7 @@ struct HeaderIndex {
     return full_cmd;
 }
 
-[[nodiscard]] inline auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string {
     std::string out;
     std::string full_cmd = normalize_command_for_capture(cmd) + " 2>&1";
 #if defined(_WIN32)
@@ -115,7 +170,7 @@ struct HeaderIndex {
     return out;
 }
 
-[[nodiscard]] inline auto run_argv_capture(const std::vector<std::string>& argv, int& exit_code) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_argv_capture(const std::vector<std::string>& argv, int& exit_code) -> std::string {
     if (argv.empty()) {
         exit_code = -1;
         return "";
@@ -180,22 +235,7 @@ struct HeaderIndex {
 #endif
 }
 
-[[nodiscard]] inline auto hash_key(std::string_view sv) noexcept -> std::uint64_t {
-    std::uint64_t h = 0xcbf29ce484222325ULL;
-    for (char c : sv) {
-        h ^= static_cast<std::uint8_t>(c);
-        h *= 0x100000001b3ULL;
-    }
-    return h;
-}
-
-[[nodiscard]] inline auto trim_qual(std::string_view sv) noexcept -> std::string_view {
-    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
-    while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t')) sv.remove_suffix(1);
-    return sv;
-}
-
-inline void parse_fn_qual_type(std::string_view full_sig, CppSymbol& sym) {
+CFIRE_INFRA_INLINE void parse_fn_qual_type(std::string_view full_sig, CppSymbol& sym) {
     std::size_t lp = full_sig.find('(');
     std::size_t rp = full_sig.rfind(')');
     if (lp == std::string_view::npos || rp == std::string_view::npos || rp <= lp) {
@@ -438,12 +478,12 @@ private:
     }
 };
 
-inline void extract_clang_json_symbols(std::string_view sv, std::unordered_map<std::string, CppSymbol>& out) {
+CFIRE_INFRA_INLINE void extract_clang_json_symbols(std::string_view sv, std::unordered_map<std::string, CppSymbol>& out) {
     ClangAstParser parser(sv);
     parser.parse(out);
 }
 
-[[nodiscard]] inline auto next_ast_salt() noexcept -> std::pair<long, std::uint64_t> {
+[[nodiscard]] CFIRE_INFRA_INLINE auto next_ast_salt() noexcept -> std::pair<long, std::uint64_t> {
     static std::atomic<std::uint64_t> s_seq{0};
 #if defined(_WIN32)
     long pid = static_cast<long>(::_getpid());
@@ -453,7 +493,7 @@ inline void extract_clang_json_symbols(std::string_view sv, std::unordered_map<s
     return {pid, ++s_seq};
 }
 
-inline void save_cached_index(const std::filesystem::path& cache_file, const HeaderIndex& idx) {
+CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_file, const HeaderIndex& idx) {
     std::error_code ec;
     std::filesystem::create_directories(cache_file.parent_path(), ec);
     auto [pid, seq] = next_ast_salt();
@@ -482,9 +522,8 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
     }
 }
 
-[[nodiscard]] inline auto load_cached_index(const std::filesystem::path& cache_file, std::string_view header)
-    -> std::optional<HeaderIndex>
-{
+[[nodiscard]] CFIRE_INFRA_INLINE auto load_cached_index(const std::filesystem::path& cache_file, std::string_view header)
+    -> std::optional<HeaderIndex> {
     if (!std::filesystem::exists(cache_file)) return std::nullopt;
     std::ifstream in(cache_file, std::ios::in | std::ios::binary);
     if (!in.is_open()) return std::nullopt;
@@ -527,31 +566,25 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
     return idx;
 }
 
-// Inspects a native C/C++ header via `clang++ -std=c++23 -Xclang -ast-dump=json -fsyntax-only`
-// (or loads from `.cfire/cache/ast/<hash>.idx` if already cached).
-[[nodiscard]] inline auto inspect_header(
+[[nodiscard]] CFIRE_INFRA_INLINE auto inspect_header(
     std::string_view header,
     const std::vector<std::string>& cflags,
-    const std::filesystem::path& cache_dir = {},
-    std::string_view cxx_compiler = ""
-) -> std::expected<HeaderIndex, std::string> {
+    const std::filesystem::path& cache_dir,
+    std::string_view cxx_compiler) -> std::expected<HeaderIndex, std::string> {
     std::string clean_hdr(header);
     while (!clean_hdr.empty() && (clean_hdr.front() == '<' || clean_hdr.front() == '"')) clean_hdr.erase(clean_hdr.begin());
     while (!clean_hdr.empty() && (clean_hdr.back() == '>' || clean_hdr.back() == '"')) clean_hdr.pop_back();
 
-    std::string clang_bin = !cxx_compiler.empty() ? std::string(cxx_compiler) : std::string{};
+    std::string clang_bin = !cxx_compiler.empty() ? std::string(cxx_compiler) : cfire::build::resolve_cxx_compiler();
     if (clang_bin.empty()) {
-        if (const char* env_cxx = std::getenv("CFIRE_CXX"); env_cxx && *env_cxx) {
-            clang_bin = env_cxx;
-        } else {
-            clang_bin = "clang++";
-        }
-    }
-    if (clang_bin.find("g++") != std::string::npos && clang_bin.find("clang") == std::string::npos) {
         clang_bin = "clang++";
     }
+    if (clang_bin.find("g++") != std::string::npos && clang_bin.find("clang") == std::string::npos) {
+        auto discovered_clang = cfire::build::find_executable_in_path("clang++");
+        clang_bin = discovered_clang.empty() ? std::string("clang++") : discovered_clang.string();
+    }
 
-    std::string key_str = "v3:" + clean_hdr + "|cc:" + clang_bin;
+    std::string key_str = "v4:" + clean_hdr + "|cc:" + cfire::build::compiler_binary_fingerprint(clang_bin);
     for (const auto& f : cflags) {
         key_str += "|" + f;
         // Include mtime if local -I directory contains this header
@@ -644,4 +677,8 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
     return idx;
 }
 
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+
 } // namespace cfire::bridge
+
+#undef CFIRE_INFRA_INLINE
