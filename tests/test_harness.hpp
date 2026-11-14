@@ -325,6 +325,7 @@ void test_cf192_keepalive_and_websocket_sessions(const std::filesystem::path& rt
 void test_cf193_http_event_loop(const std::filesystem::path& rt_dir);
 void test_cf194_websocket_server_sessions(const std::filesystem::path& rt_dir);
 void test_cf195_websocket_handshake_read_ahead(const std::filesystem::path& rt_dir);
+void test_cf197_inflate_stops_at_end_of_input(const std::filesystem::path& rt_dir);
 void test_cf150_http_server_hardening(const std::filesystem::path& rt_dir);
 void test_cf152_verified_dependency_cache(const std::filesystem::path& rt_dir);
 void test_cf160_mcp_workspace_confinement(const std::filesystem::path& rt_dir);

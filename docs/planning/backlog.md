@@ -781,6 +781,14 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
 - **Decision (user, 2026-11-13)**: narrowing or a sign change without `T(x)` is a compile error with a fix-it to the checked conversion; widening stays implicit.
 - **Acceptance Criteria**: no implicit integer conversion loses a value; Sema's type of a literal-built local is the C++ type; `cfire fix` inserts the conversion.
 
+#### `CF-197` — DEFLATE Reads Past the End of Its Input (found 2026-11-14) `[DONE]`
+- **Problem & Evidence**: the first CI libFuzzer run of the `deflate` target (`CF-141`) managed 81 inputs in 34 s; the other targets ran 12,000 to 3.5 million in 20 s.
+  - `BitStream::read_bits` returned zero bits once the input ran out. A dynamic Huffman table can give the all-zero code to a literal or a match, so a truncated or garbage stream decoded that symbol forever, up to `max_out` (64 MiB in `inflate_zlib_or_raw` and `extract_zip_entries`). 91 of 300 random inputs of 64 to 576 bytes inflated to 64 MiB (568 ms each at `-O1`).
+  - `extract_zip_entries` rescanned the whole buffer for a central-directory entry for each local header with a data descriptor: 64 KiB of such headers took 126 ms under ASan.
+  - A stored block's `NLEN` was not checked against `~LEN`.
+- **Fix**: `BitStream::overrun` is set when a read needs bits past the end, and `inflate_raw` stops there (keeping the output so far); stored blocks check `NLEN`; an incomplete code-length table stops; the central directory is indexed once per archive.
+- **Acceptance Criteria**: no input inflates to more than it encodes; every truncation of a valid stream decodes to a prefix of its text; valid streams and the fuzz seeds decode unchanged.
+
 #### `CF-155` — Scope-Sound Rename for Closure Params, Diff Output & Subcommand `--help` `[DONE]`
 - **Problem & Evidence**:
   - Renaming outer `count` also renames `|count: i32|` and its uses.

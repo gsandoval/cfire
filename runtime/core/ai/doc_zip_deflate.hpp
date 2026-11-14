@@ -13,6 +13,9 @@ struct BitStream {
     std::size_t byte_pos = 0;
     std::uint32_t bit_buf = 0;
     int bit_count = 0;
+    // Set once a read needs bits past the end of the input. Without it a truncated stream reads as zero bits,
+    // and a Huffman code of all zeros can decode to a literal, so garbage inflates to `max_out` (CF-197).
+    bool overrun = false;
 
     void fill(int need) noexcept {
         while (bit_count < need && byte_pos < size) {
@@ -24,6 +27,12 @@ struct BitStream {
     [[nodiscard]] auto read_bits(int n) noexcept -> std::uint32_t {
         if (n == 0) return 0;
         fill(n);
+        if (bit_count < n) {
+            overrun = true;
+            bit_buf = 0;
+            bit_count = 0;
+            return 0;
+        }
         std::uint32_t val = bit_buf & ((1u << n) - 1u);
         bit_buf >>= n;
         bit_count -= n;
@@ -67,6 +76,7 @@ struct HuffTree {
         int index = 0;
         for (int len = 1; len < 16; ++len) {
             code |= static_cast<int>(bs.read_bits(1));
+            if (bs.overrun) return -1;
             int count = counts[static_cast<std::size_t>(len)];
             if (code - count < first) {
                 return symbols[static_cast<std::size_t>(index + (code - first))];
@@ -105,11 +115,12 @@ struct HuffTree {
     while (!bfinal && (bs.byte_pos < bs.size || bs.bit_count > 0)) {
         bfinal = bs.read_bits(1);
         std::uint32_t btype = bs.read_bits(2);
+        if (bs.overrun) break;
         if (btype == 0) {
             bs.align_byte();
             std::uint32_t len = bs.read_bits(16);
             std::uint32_t nlen = bs.read_bits(16);
-            (void)nlen;
+            if (bs.overrun || (len ^ 0xFFFFu) != nlen) break;
             if (out.size() + len > max_out) break;
             for (std::uint32_t i = 0; i < len && bs.byte_pos < bs.size; ++i) {
                 out.push_back(static_cast<std::uint8_t>(bs.data[bs.byte_pos++]));
@@ -131,7 +142,7 @@ struct HuffTree {
                 std::uint32_t hlit = bs.read_bits(5) + 257;
                 std::uint32_t hdist = bs.read_bits(5) + 1;
                 std::uint32_t hclen = bs.read_bits(4) + 4;
-                if (hlit > 286 || hdist > 30) break;
+                if (bs.overrun || hlit > 286 || hdist > 30) break;
                 std::array<std::uint8_t, 19> clen_lens{};
                 for (std::uint32_t i = 0; i < hclen; ++i) {
                     clen_lens[clen_order[i]] = static_cast<std::uint8_t>(bs.read_bits(3));
@@ -157,6 +168,7 @@ struct HuffTree {
                         while (rep-- > 0 && idx < all_lens.size()) all_lens[idx++] = 0;
                     }
                 }
+                if (idx < all_lens.size()) break;
                 lit_tree.build(std::span<const std::uint8_t>(all_lens.data(), hlit));
                 dist_tree.build(std::span<const std::uint8_t>(all_lens.data() + hlit, hdist));
             }
@@ -174,7 +186,7 @@ struct HuffTree {
                     int d_idx = dist_tree.decode(bs);
                     if (d_idx < 0 || d_idx >= 30) break;
                     std::size_t dist = dist_base[d_idx] + bs.read_bits(dist_extra[d_idx]);
-                    if (dist == 0 || dist > out.size() || out.size() + length > max_out) break;
+                    if (bs.overrun || dist == 0 || dist > out.size() || out.size() + length > max_out) break;
                     for (std::size_t k = 0; k < length; ++k) {
                         out.push_back(out[out.size() - dist]);
                     }
@@ -239,6 +251,8 @@ inline void append_u32_le(std::vector<std::uint8_t>& buf, std::uint32_t v) {
 
 [[nodiscard]] inline auto extract_zip_entries(std::span<const std::uint8_t> zip_bytes) -> std::unordered_map<std::string, std::string> {
     std::unordered_map<std::string, std::string> files;
+    std::unordered_map<std::string_view, std::uint32_t> cd_sizes;
+    bool cd_indexed = false;
     std::size_t pos = 0;
     while (pos + 30 <= zip_bytes.size()) {
         std::uint32_t sig = read_u32_le(zip_bytes.data() + pos);
@@ -258,22 +272,20 @@ inline void append_u32_le(std::vector<std::uint8_t>& buf, std::uint32_t v) {
 
         std::string name(reinterpret_cast<const char*>(zip_bytes.data() + pos + 30), name_len);
 
-        // If bit 3 (data descriptor) is set and comp_size == 0, scan Central Directory for actual size
+        // If bit 3 (data descriptor) is set and comp_size == 0, take the size from the Central Directory. Its
+        // entries are indexed on first use, so many such headers cost one scan, not one each (CF-197).
         if ((flags & 0x08u) != 0 && comp_size == 0) {
-            // Look up in central directory at the end of the file
-            for (std::size_t cd = data_offset; cd + 46 <= zip_bytes.size(); ++cd) {
-                if (read_u32_le(zip_bytes.data() + cd) == 0x02014b50u) {
-                    std::uint32_t cd_comp = read_u32_le(zip_bytes.data() + cd + 20);
+            if (!cd_indexed) {
+                cd_indexed = true;
+                for (std::size_t cd = 0; cd + 46 <= zip_bytes.size(); ++cd) {
+                    if (read_u32_le(zip_bytes.data() + cd) != 0x02014b50u) continue;
                     std::uint16_t cd_nlen = read_u16_le(zip_bytes.data() + cd + 28);
-                    if (cd + 46 + cd_nlen <= zip_bytes.size()) {
-                        std::string_view cd_name(reinterpret_cast<const char*>(zip_bytes.data() + cd + 46), cd_nlen);
-                        if (cd_name == name) {
-                            comp_size = cd_comp;
-                            break;
-                        }
-                    }
+                    if (cd + 46 + cd_nlen > zip_bytes.size()) continue;
+                    std::string_view cd_name(reinterpret_cast<const char*>(zip_bytes.data() + cd + 46), cd_nlen);
+                    cd_sizes.try_emplace(cd_name, read_u32_le(zip_bytes.data() + cd + 20));
                 }
             }
+            if (auto it = cd_sizes.find(name); it != cd_sizes.end()) comp_size = it->second;
         }
 
         if (data_offset + comp_size > zip_bytes.size()) break;
