@@ -277,13 +277,17 @@ public:
     Conn(Conn&& o) noexcept
         : fd_(std::exchange(o.fd_, -1)),
           is_client_(o.is_client_),
-          tls_(std::move(o.tls_)) {}
+          tls_(std::move(o.tls_)),
+          max_frame_size_(o.max_frame_size_),
+          guard_(std::move(o.guard_)) {}
     auto operator=(Conn&& o) noexcept -> Conn& {
         if (this != &o) {
             close();
             fd_ = std::exchange(o.fd_, -1);
             is_client_ = o.is_client_;
             tls_ = std::move(o.tls_);
+            max_frame_size_ = o.max_frame_size_;
+            guard_ = std::move(o.guard_);
         }
         return *this;
     }
@@ -404,15 +408,19 @@ public:
             auto bytes = encode_frame(f, is_client_);
             (void)detail::send_all(sock, bytes.data(), bytes.size(), tls_);
             tls_.reset();
-            cfire::net::detail::close_sock(sock);
+            cfire::net::detail::close_guarded(sock, guard_);
         }
     }
+
+    // CF-192: the server's handle for shutting this session down from `stop()`.
+    void set_close_guard(std::shared_ptr<cfire::net::detail::CloseGuard> guard) noexcept { guard_ = std::move(guard); }
 
 private:
     int fd_ = -1;
     bool is_client_ = true;
     std::shared_ptr<cfire::net::TlsStream> tls_{nullptr};
     std::size_t max_frame_size_ = kDefaultMaxFrameSize;
+    std::shared_ptr<cfire::net::detail::CloseGuard> guard_{nullptr};
 };
 
 using WebSocket = Conn;
@@ -461,9 +469,16 @@ using WebSocket = Conn;
 }
 
 [[nodiscard]] inline auto upgrade(cfire::net::TcpConn& tcp, const std::unordered_map<std::string, std::string>& headers) -> std::expected<Conn, cfire::Error> {
+    auto guard = tcp.release_close_guard();
     int fd = tcp.release_fd();
     auto tls = tcp.release_tls();
-    return upgrade(fd, headers, std::move(tls));
+    auto ws = upgrade(fd, headers, std::move(tls));
+    if (!ws) {
+        cfire::net::detail::close_guarded(fd, guard);  // the handshake failed; the socket used to leak here
+        return ws;
+    }
+    ws->set_close_guard(std::move(guard));
+    return ws;
 }
 
 [[nodiscard]] inline auto upgrade(const cfire::http::Request& req, cfire::net::TcpConn& tcp) -> std::expected<Conn, cfire::Error> {

@@ -1,0 +1,24 @@
+// CF-192: the keep-alive and session limits are ordinary `ServerLimits` fields with defaults.
+// expect: stdout
+// | 5000 1000 1024 10000
+// | 2000 10 4 64
+// | 200 ok
+package main
+import "core:net/http"
+fn main() {
+    d := http.ServerLimits{}
+    println("{} {} {} {}", d.keepalive_timeout_ms, d.max_requests_per_conn, d.max_websockets, d.max_connections)
+    lim := http.ServerLimits{keepalive_timeout_ms: 2000, max_requests_per_conn: 10, max_websockets: 4, max_connections: 64}
+    println("{} {} {} {}", lim.keepalive_timeout_ms, lim.max_requests_per_conn, lim.max_websockets, lim.max_connections)
+
+    mut router := make(http.Router)
+    router.get("/ping", |req| {
+        return http.Response.text(200, "ok")
+    })
+    mut server := make(http.Server, port: 0) or { return }
+    server.set_limits(lim)
+    server.serve_in_background(router)
+    defer server.stop()
+    r := http.get("http://127.0.0.1:{server.port()}/ping") or { return }
+    println("{} {}", r.status_code, r.body)
+}

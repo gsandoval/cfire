@@ -57,6 +57,38 @@ inline void close_sock(int fd) noexcept {
 #endif
 }
 
+inline void shutdown_sock(int fd) noexcept {
+    if (fd < 0) return;
+#if defined(_WIN32)
+    ::shutdown(static_cast<SOCKET>(fd), SD_BOTH);
+#else
+    ::shutdown(fd, SHUT_RDWR);
+#endif
+}
+
+// CF-192: lets another thread shut a socket down (to end a blocked read) without racing its owner's close:
+// the owner clears `fd` under `mu` before closing the socket, so a reused descriptor is never touched.
+struct CloseGuard {
+    std::mutex mu;
+    int fd = -1;
+
+    void shutdown() noexcept {
+        std::lock_guard<std::mutex> lk(mu);
+        shutdown_sock(fd);
+    }
+    void close(int sock) noexcept {
+        std::lock_guard<std::mutex> lk(mu);
+        if (fd == sock) fd = -1;
+        close_sock(sock);
+    }
+};
+
+// Closes `sock`, through `guard` when it has one.
+inline void close_guarded(int sock, const std::shared_ptr<CloseGuard>& guard) noexcept {
+    if (guard) guard->close(sock);
+    else close_sock(sock);
+}
+
 inline void set_sock_timeout_ms(int fd, int ms) noexcept {
     if (fd < 0) return;
 #if defined(_WIN32)
@@ -237,19 +269,21 @@ public:
     }
     ~TcpConn() {
         tls_.reset();
-        if (fd_ >= 0) detail::close_sock(fd_);
+        if (fd_ >= 0) detail::close_guarded(fd_, guard_);
     }
     TcpConn(TcpConn&& o) noexcept
         : fd_(std::exchange(o.fd_, -1)),
           endpoint_(std::move(o.endpoint_)),
-          tls_(std::move(o.tls_)) {}
+          tls_(std::move(o.tls_)),
+          guard_(std::move(o.guard_)) {}
     auto operator=(TcpConn&& o) noexcept -> TcpConn& {
         if (this != &o) {
             tls_.reset();
-            if (fd_ >= 0) detail::close_sock(fd_);
+            if (fd_ >= 0) detail::close_guarded(fd_, guard_);
             fd_ = std::exchange(o.fd_, -1);
             endpoint_ = std::move(o.endpoint_);
             tls_ = std::move(o.tls_);
+            guard_ = std::move(o.guard_);
         }
         return *this;
     }
@@ -257,6 +291,15 @@ public:
     [[nodiscard]] auto fd() const noexcept -> std::int32_t { return static_cast<std::int32_t>(fd_); }
     [[nodiscard]] auto is_open() const noexcept -> bool { return fd_ >= 0; }
     [[nodiscard]] auto release_fd() noexcept -> int { return std::exchange(fd_, -1); }
+    // CF-192: a guard another thread can use to shut this socket down; it moves with `release_close_guard()`.
+    [[nodiscard]] auto close_guard() -> std::shared_ptr<detail::CloseGuard> {
+        if (!guard_) {
+            guard_ = std::make_shared<detail::CloseGuard>();
+            guard_->fd = fd_;
+        }
+        return guard_;
+    }
+    [[nodiscard]] auto release_close_guard() noexcept -> std::shared_ptr<detail::CloseGuard> { return std::exchange(guard_, nullptr); }
     [[nodiscard]] auto endpoint() const noexcept -> const std::string& { return endpoint_; }
     // CF-180: the peer's address (IPv4 dotted or IPv6 text) for accepted connections, the dialed host otherwise.
     [[nodiscard]] auto remote_addr() const -> std::string { return endpoint_; }
@@ -268,7 +311,7 @@ public:
     void close() noexcept {
         tls_.reset();
         if (fd_ >= 0) {
-            detail::close_sock(fd_);
+            detail::close_guarded(fd_, guard_);
             fd_ = -1;
         }
     }
@@ -432,6 +475,7 @@ private:
     int fd_ = -1;
     std::string endpoint_;
     std::shared_ptr<TlsStream> tls_{nullptr};
+    std::shared_ptr<detail::CloseGuard> guard_{nullptr};
 };
 
 class TcpListener {
