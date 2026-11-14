@@ -82,6 +82,7 @@ struct CommonCliArgs {
     cfire::build::g_no_trap = false;
     cfire::build::g_emit_dsym = false;
     cfire::build::g_no_binary_cache = false;
+    cfire::build::g_no_shard = false;
     cfire::build::g_verbose_mode = false;
     cfire::build::g_sanitizer_set = "address,undefined";
     cfire::build::explicit_entry_file_only() = false;
@@ -121,6 +122,10 @@ struct CommonCliArgs {
         }
         if (arg == "--no-cache") {
             cfire::build::g_no_binary_cache = true;
+            continue;
+        }
+        if (arg == "--no-shard") {
+            cfire::build::g_no_shard = true;
             continue;
         }
         if (arg == "--verbose" || arg == "-v") {
@@ -353,7 +358,7 @@ struct CommonCliArgs {
                 "--ios", "--ios-sim", "--web", "--web-profile", "--subsystem",
                 "--no-open", "--open", "--port", "-p", "--target", "--sysroot",
                 "--link-lib", "--include", "--json", "--fix", "--dry-run", "--only",
-                "--verify-cpp", "--full",
+                "--verify-cpp", "--full", "--no-shard",
                 "--cxx", "--cc", "--emxx", "--ar", "--ld",
                 "--verbose", "-v", "--help", "-h"
             };

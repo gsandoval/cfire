@@ -75,30 +75,51 @@ namespace cfire::frontend {
     }
 
 
-    CFIRE_CG_INLINE void Emitter::emit_file() {
-        const auto& ast = cf_.ast;
+    [[nodiscard]] inline auto sanitize_pkg_unit_id(std::string_view pkg) -> std::string {
+        if (pkg.empty()) return "main";
+        std::string out;
+        out.reserve(pkg.size());
+        for (unsigned char c : pkg) {
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                out.push_back(static_cast<char>(c));
+            } else {
+                out += std::format("_{:02x}", static_cast<unsigned int>(c));
+            }
+        }
+        return out;
+    }
+
+    struct CppHeaderMeta {
+        std::string path;
+        std::vector<std::string> defines;
+    };
+
+    struct CollectedImportMeta {
         std::vector<std::string> link_tags;
         std::vector<std::string> defines;
-        struct CppHeader {
-            std::string path;
-            std::vector<std::string> defines;
-        };
-        std::vector<CppHeader> cpp_headers;
+        std::vector<CppHeaderMeta> cpp_headers;
+        bool has_cpp_impl_define = false;
+    };
 
+    inline auto collect_import_meta(Emitter& em) -> CollectedImportMeta {
+        CollectedImportMeta meta;
         auto add_unique = [](std::vector<std::string>& vec, std::string val) {
             if (std::find(vec.begin(), vec.end(), val) == vec.end()) {
                 vec.push_back(std::move(val));
             }
         };
 
-        for (const auto& imp : ast.imports) {
+        for (const auto& imp : em.cf_.ast.imports) {
             if (imp.is_cpp) {
-                CppHeader header;
+                CppHeaderMeta header;
                 header.path = imp.path;
                 for (const auto& attr : imp.attrs) {
                     if (attr.name == "pkg" && !attr.args.empty()) {
-                        add_unique(link_tags, "@pkg:" + attr.args[0]);
+                        add_unique(meta.link_tags, "@pkg:" + attr.args[0]);
                     } else if (attr.name == "define" && !attr.args.empty()) {
+                        if (attr.args[0].contains("IMPLEMENTATION")) {
+                            meta.has_cpp_impl_define = true;
+                        }
                         if (attr.args.size() == 1) {
                             header.defines.push_back(std::format("#define {}", attr.args[0]));
                         } else if (attr.args.size() >= 2) {
@@ -106,18 +127,21 @@ namespace cfire::frontend {
                         }
                     }
                 }
-                cpp_headers.push_back(std::move(header));
+                meta.cpp_headers.push_back(std::move(header));
                 continue;
             }
             auto resolved = cfire::modules::resolve_import(imp.path);
             for (const auto& ck : resolved.core_keys) {
-                used_core_.insert(ck);
+                em.used_core_.insert(ck);
             }
             for (const auto& def : resolved.defines) {
-                add_unique(defines, def);
+                if (def.contains("IMPLEMENTATION")) {
+                    meta.has_cpp_impl_define = true;
+                }
+                add_unique(meta.defines, def);
             }
             for (const auto& lt : resolved.link_tags) {
-                add_unique(link_tags, lt);
+                add_unique(meta.link_tags, lt);
             }
             if (resolved.is_core && !imp.alias.empty()) {
                 auto colon = imp.path.rfind(':');
@@ -127,72 +151,47 @@ namespace cfire::frontend {
                 else if (colon != std::string::npos) sep = colon;
                 else sep = slash;
                 std::string tail = (sep == std::string::npos) ? imp.path : imp.path.substr(sep + 1);
-                core_aliases_[imp.alias] = tail;
+                em.core_aliases_[imp.alias] = tail;
             }
             if (resolved.is_vendor) {
                 std::string alias = imp.alias.empty() ? resolved.vendor_key : imp.alias;
-                used_vendor_[resolved.vendor_key] = alias;
+                em.used_vendor_[resolved.vendor_key] = alias;
                 for (const auto& iv : resolved.implied_vendors) {
-                    if (!used_vendor_.contains(iv)) {
-                        used_vendor_[iv] = iv;
+                    if (!em.used_vendor_.contains(iv)) {
+                        em.used_vendor_[iv] = iv;
                     }
                 }
             }
         }
 
         bool any_json_tag = false;
-        for (const auto& [sname, tags] : cf_.struct_tags) {
+        for (const auto& [sname, tags] : em.cf_.struct_tags) {
             for (const auto& t : tags) {
                 if (!t.json_key.empty() || t.custom_tags.contains("desc") || t.custom_tags.contains("validate")) { any_json_tag = true; break; }
             }
             if (any_json_tag) break;
         }
-        if (any_json_tag && !used_core_.contains("json")) {
-            used_core_.insert("json");
+        if (any_json_tag && !em.used_core_.contains("json")) {
+            em.used_core_.insert("json");
         }
-        if (used_core_.contains("json")) {
-            if (std::find(defines.begin(), defines.end(), "#define CFIRE_USE_SIMDJSON 1") == defines.end()) {
-                defines.push_back("#define CFIRE_USE_SIMDJSON 1");
+        if (em.used_core_.contains("json")) {
+            if (std::find(meta.defines.begin(), meta.defines.end(), "#define CFIRE_USE_SIMDJSON 1") == meta.defines.end()) {
+                meta.defines.push_back("#define CFIRE_USE_SIMDJSON 1");
             }
-            if (std::find(link_tags.begin(), link_tags.end(), "-lsimdjson") == link_tags.end()) {
-                link_tags.push_back("-lsimdjson");
+            if (std::find(meta.link_tags.begin(), meta.link_tags.end(), "-lsimdjson") == meta.link_tags.end()) {
+                meta.link_tags.push_back("-lsimdjson");
             }
         }
+        return meta;
+    }
 
-        if (!link_tags.empty()) {
-            std::string joined;
-            for (std::size_t i = 0; i < link_tags.size(); ++i) {
-                if (i > 0) joined += " ";
-                joined += link_tags[i];
-            }
-            writeln(std::format("// @cfire-link: {}", joined));
-        }
-        for (const auto& d : defines) writeln(d);
-        writeln("#include \"cfire_prelude.hpp\"");
-        if (!used_core_.empty()) {
-            std::set<std::string> core_headers;
-            for (const auto& mod : used_core_) {
-                core_headers.insert(cfire::modules::core_module_header(mod));
-            }
-            for (const auto& hdr : core_headers) {
-                writeln(std::format("#include \"{}\"", hdr));
-            }
-        }
-        for (const auto& h : cpp_headers) {
-            for (const auto& def : h.defines) {
-                writeln(def);
-            }
-            std::string clean = h.path;
-            while (!clean.empty() && (clean.front() == '<' || clean.front() == '"')) clean.erase(clean.begin());
-            while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
-            writeln(std::format("#include <{}>", clean));
-        }
-        writeln();
+    inline void emit_decls_types_and_globals(Emitter& em) {
+        const auto& ast = em.cf_.ast;
 
         // 1. Emit Interfaces as C++20 `concept`s
         for (const auto& iface : ast.interfaces) {
-            emit_interface(iface);
-            writeln();
+            em.emit_interface(iface);
+            em.writeln();
         }
 
         // Forward declare all structs & enums so recursive shared_ptr/pointers work
@@ -207,9 +206,9 @@ namespace cfire::frontend {
                         tparams += std::format("typename {}", en.type_params[i].name);
                     }
                 }
-                writeln(std::format("template <{}> struct {};", tparams, en.name));
+                em.writeln(std::format("template <{}> struct {};", tparams, en.name));
             } else {
-                writeln(std::format("struct {};", en.name));
+                em.writeln(std::format("struct {};", en.name));
             }
         }
         for (const auto& st : ast.structs) {
@@ -223,12 +222,12 @@ namespace cfire::frontend {
                         tparams += std::format("typename {}", st.type_params[i].name);
                     }
                 }
-                writeln(std::format("template <{}> struct {};", tparams, st.name));
+                em.writeln(std::format("template <{}> struct {};", tparams, st.name));
             } else {
-                writeln(std::format("struct {};", st.name));
+                em.writeln(std::format("struct {};", st.name));
             }
         }
-        if (!ast.structs.empty() || !ast.enums.empty()) writeln();
+        if (!ast.structs.empty() || !ast.enums.empty()) em.writeln();
 
         // Emit Structs & Enums in dependency-resolved topological order (preserving source order when independent)
         struct TypeItem {
@@ -289,11 +288,11 @@ namespace cfire::frontend {
             }
             visit_state[k] = 2;
             if (items[k].is_enum) {
-                emit_enum(ast.enums[items[k].idx]);
+                em.emit_enum(ast.enums[items[k].idx]);
             } else {
-                emit_struct(ast.structs[items[k].idx]);
+                em.emit_struct(ast.structs[items[k].idx]);
             }
-            writeln();
+            em.writeln();
         };
 
         for (std::size_t k = 0; k < items.size(); ++k) {
@@ -305,45 +304,235 @@ namespace cfire::frontend {
         for (const auto& fn : ast.functions) {
             if (fn.receiver && !emitted_method_fallbacks.contains(fn.name)) {
                 emitted_method_fallbacks.insert(fn.name);
-                writeln(std::format(
+                em.writeln(std::format(
                     "template <typename Self, typename... Args> requires requires(Self&& s, Args&&... a) {{ std::forward<Self>(s).{0}(std::forward<Args>(a)...); }} inline auto cfire_method_{0}(Self&& s, Args&&... a) -> decltype(auto) {{ return std::forward<Self>(s).{0}(std::forward<Args>(a)...); }}",
                     fn.name));
                 if (fn.name == "push") {
-                    writeln("template <typename T, typename Arg> inline void cfire_method_push(std::vector<T>& s, Arg&& a) { cfire::vec_push(s, std::forward<Arg>(a)); }");
+                    em.writeln("template <typename T, typename Arg> inline void cfire_method_push(std::vector<T>& s, Arg&& a) { cfire::vec_push(s, std::forward<Arg>(a)); }");
                 } else if (fn.name == "pop") {
-                    writeln("template <typename T> inline void cfire_method_pop(std::vector<T>& s) { s.pop_back(); }");
+                    em.writeln("template <typename T> inline void cfire_method_pop(std::vector<T>& s) { s.pop_back(); }");
                 }
             }
-            emit_function_forward_decl(fn);
+            em.emit_function_forward_decl(fn);
         }
         for (const auto& mname : emitted_method_fallbacks) {
-            writeln(std::format(
+            em.writeln(std::format(
                 "template <typename T, typename... Args> inline auto cfire_method_{0}(const std::shared_ptr<T>& s, Args&&... a) -> decltype(auto) {{ return cfire_method_{0}(*s, std::forward<Args>(a)...); }}",
                 mname));
-            writeln(std::format(
+            em.writeln(std::format(
                 "template <typename T, typename... Args> inline auto cfire_method_{0}(const std::unique_ptr<T>& s, Args&&... a) -> decltype(auto) {{ return cfire_method_{0}(*s, std::forward<Args>(a)...); }}",
                 mname));
         }
-        if (!ast.functions.empty()) writeln();
+        if (!ast.functions.empty()) em.writeln();
 
         // 5a. Emit Global / Package-level Variables
         for (const auto& gv : ast.global_vars) {
-            set_source_path(gv.source_path);
-            if (gv.line > 0) emit_line_directive(gv.line);
-            cur_pkg_ = gv.package_name;
-            std::string type_str = gv.type ? lower_owning_type(*gv.type) : "auto";
+            em.set_source_path(gv.source_path);
+            if (gv.line > 0) em.emit_line_directive(gv.line);
+            em.cur_pkg_ = gv.package_name;
+            std::string type_str = gv.type ? em.lower_owning_type(*gv.type) : "auto";
             std::string mut_str = gv.is_mut ? "" : "const ";
-            std::string gname = (!gv.package_name.empty() && colliding_gv_names_.contains(gv.name))
-                ? std::format("cfire_pkg_{}__{}", gv.package_name, sanitize_cpp_ident(gv.name))
-                : sanitize_cpp_ident(gv.name);
+            std::string gname = (!gv.package_name.empty() && em.colliding_gv_names_.contains(gv.name))
+                ? std::format("cfire_pkg_{}__{}", gv.package_name, em.sanitize_cpp_ident(gv.name))
+                : em.sanitize_cpp_ident(gv.name);
             if (gv.value) {
-                writeln(std::format("inline {}{} {} = {};", mut_str, type_str, gname, emit_expr(gv.value)));
+                em.writeln(std::format("inline {}{} {} = {};", mut_str, type_str, gname, em.emit_expr(gv.value)));
             } else {
-                writeln(std::format("inline {}{} {}{{}};", mut_str, type_str, gname));
+                em.writeln(std::format("inline {}{} {}{{}};", mut_str, type_str, gname));
             }
-            cur_pkg_.clear();
+            em.cur_pkg_.clear();
         }
-        if (!ast.global_vars.empty()) writeln();
+        if (!ast.global_vars.empty()) em.writeln();
+    }
+
+    CFIRE_CG_INLINE auto Emitter::emit_sharded() -> ShardedEmission {
+        const auto& ast = cf_.ast;
+        ShardedEmission sharded;
+        CollectedImportMeta meta = collect_import_meta(*this);
+        sharded.has_cpp_impl_define = meta.has_cpp_impl_define;
+
+        const std::string default_pkg = ast.package_name.empty() ? std::string("main") : ast.package_name;
+        bool has_user_main = false;
+        std::string entry_pkg = default_pkg;
+        for (const auto& fn : ast.functions) {
+            if (fn.name == "main" && !fn.receiver) {
+                has_user_main = true;
+                entry_pkg = fn.package_name.empty() ? default_pkg : fn.package_name;
+                break;
+            }
+        }
+
+        std::vector<std::string> pkg_order;
+        std::unordered_map<std::string, std::vector<std::size_t>> pkg_fn_indices;
+        auto ensure_pkg = [&](const std::string& p) {
+            if (!pkg_fn_indices.contains(p)) {
+                pkg_order.push_back(p);
+                pkg_fn_indices[p] = {};
+            }
+        };
+
+        for (std::size_t i = 0; i < ast.functions.size(); ++i) {
+            const auto& fn = ast.functions[i];
+            if (fn.name == "main" && !fn.receiver && test_mode_) {
+                continue;
+            }
+            if (!fn.type_params.empty()) {
+                continue; // Generic functions & methods live inline in decls.hpp.
+            }
+            std::string upkg = fn.package_name.empty() ? default_pkg : fn.package_name;
+            ensure_pkg(upkg);
+            pkg_fn_indices[upkg].push_back(i);
+        }
+        if (test_mode_ || !ast.tests.empty()) {
+            ensure_pkg(entry_pkg);
+        }
+
+        auto reset_buffer = [&]() {
+            buf_.str("");
+            buf_.clear();
+            indent_ = 0;
+            last_source_line_ = -1;
+            source_path_ = cf_.ast.path;
+            try_count_ = 0;
+            defer_count_ = 0;
+            hoisted_tries_.clear();
+        };
+
+        sharded_non_inline_ = true;
+
+        // Step 2: Emit concrete package units first so `used_core_` is completely populated before `decls.hpp`.
+        for (const auto& upkg : pkg_order) {
+            reset_buffer();
+            writeln("// Generated by cfire sharded codegen (CF-202)");
+            writeln("#include \"decls.hpp\"");
+            writeln();
+            const auto& idxs = pkg_fn_indices[upkg];
+            for (std::size_t k = 0; k < idxs.size(); ++k) {
+                emit_function(ast.functions[idxs[k]]);
+                if (k + 1 < idxs.size() || (upkg == entry_pkg && (!ast.tests.empty() || test_mode_))) {
+                    writeln();
+                }
+            }
+            if (upkg == entry_pkg) {
+                emit_test_runner(ast, has_user_main);
+            }
+            std::string uid = sanitize_pkg_unit_id(upkg);
+            sharded.units.push_back(CppUnit{
+                .id = uid,
+                .pkg_name = upkg,
+                .filename = std::format("pkg_{}.cpp", uid),
+                .cpp = buf_.str(),
+            });
+        }
+
+        // Step 3: Emit shared declarations, reflection templates, globals, and generic bodies.
+        reset_buffer();
+        emit_decls_types_and_globals(*this);
+        for (std::size_t i = 0; i < ast.functions.size(); ++i) {
+            if (!ast.functions[i].type_params.empty()) {
+                emit_function(ast.functions[i]);
+                writeln();
+            }
+        }
+        std::string decls_body = buf_.str();
+        sharded_non_inline_ = false;
+        reset_buffer();
+
+        // Step 4: Build stable preamble for decls.hpp with `#ifndef`-guarded defines and unconditional `str`/`bm`.
+        std::ostringstream pre;
+        if (!meta.link_tags.empty()) {
+            std::string joined;
+            for (std::size_t i = 0; i < meta.link_tags.size(); ++i) {
+                if (i > 0) joined += " ";
+                joined += meta.link_tags[i];
+            }
+            pre << std::format("// @cfire-link: {}\n", joined);
+        }
+        pre << "#pragma once\n";
+        auto emit_guarded_define = [&](std::string_view def) {
+            std::string_view rest = def;
+            if (rest.starts_with("#define")) {
+                rest.remove_prefix(7);
+                while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
+                    rest.remove_prefix(1);
+                }
+                std::size_t end = 0;
+                while (end < rest.size() && rest[end] != ' ' && rest[end] != '\t' && rest[end] != '(') {
+                    ++end;
+                }
+                std::string_view macro = rest.substr(0, end);
+                if (!macro.empty()) {
+                    pre << "#ifndef " << macro << "\n" << def << "\n#endif\n";
+                    return;
+                }
+            }
+            pre << def << "\n";
+        };
+        for (const auto& d : meta.defines) {
+            emit_guarded_define(d);
+        }
+        pre << "#include \"cfire_prelude.hpp\"\n";
+        {
+            std::set<std::string> core_headers;
+            core_headers.insert("core/str.hpp");
+            core_headers.insert("core/builtin_methods.hpp");
+            for (const auto& mod : used_core_) {
+                core_headers.insert(cfire::modules::core_module_header(mod));
+            }
+            for (const auto& hdr : core_headers) {
+                pre << std::format("#include \"{}\"\n", hdr);
+            }
+        }
+        for (const auto& h : meta.cpp_headers) {
+            for (const auto& def : h.defines) {
+                emit_guarded_define(def);
+            }
+            std::string clean = h.path;
+            while (!clean.empty() && (clean.front() == '<' || clean.front() == '"')) clean.erase(clean.begin());
+            while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
+            pre << std::format("#include <{}>\n", clean);
+        }
+        pre << "\n";
+
+        sharded.decls_hpp = pre.str() + decls_body;
+        return sharded;
+    }
+
+    CFIRE_CG_INLINE void Emitter::emit_file() {
+        const auto& ast = cf_.ast;
+        CollectedImportMeta meta = collect_import_meta(*this);
+
+        if (!meta.link_tags.empty()) {
+            std::string joined;
+            for (std::size_t i = 0; i < meta.link_tags.size(); ++i) {
+                if (i > 0) joined += " ";
+                joined += meta.link_tags[i];
+            }
+            writeln(std::format("// @cfire-link: {}", joined));
+        }
+        for (const auto& d : meta.defines) writeln(d);
+        writeln("#include \"cfire_prelude.hpp\"");
+        if (!used_core_.empty()) {
+            std::set<std::string> core_headers;
+            for (const auto& mod : used_core_) {
+                core_headers.insert(cfire::modules::core_module_header(mod));
+            }
+            for (const auto& hdr : core_headers) {
+                writeln(std::format("#include \"{}\"", hdr));
+            }
+        }
+        for (const auto& h : meta.cpp_headers) {
+            for (const auto& def : h.defines) {
+                writeln(def);
+            }
+            std::string clean = h.path;
+            while (!clean.empty() && (clean.front() == '<' || clean.front() == '"')) clean.erase(clean.begin());
+            while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
+            writeln(std::format("#include <{}>", clean));
+        }
+        writeln();
+
+        emit_decls_types_and_globals(*this);
 
         // 5b. Emit Functions & Receiver Methods
         bool has_user_main = false;
@@ -594,11 +783,12 @@ namespace cfire::frontend {
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
+        const std::string inline_kw = (sharded_non_inline_ && fn.type_params.empty()) ? "" : "inline ";
         if (fn.receiver) {
-            writeln(std::format("{}inline auto cfire_method_{}({}) -> {};", prefix, fn.name, param_list, ret_str));
-            writeln(std::format("{}inline auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+            writeln(std::format("{}{}auto cfire_method_{}({}) -> {};", prefix, inline_kw, fn.name, param_list, ret_str));
+            writeln(std::format("{}{}auto {}({}) -> {};", prefix, inline_kw, cur_fn, param_list, ret_str));
         } else {
-            writeln(std::format("{}inline auto {}({}) -> {};", prefix, cur_fn, param_list, ret_str));
+            writeln(std::format("{}{}auto {}({}) -> {};", prefix, inline_kw, cur_fn, param_list, ret_str));
         }
     }
 
@@ -707,8 +897,9 @@ namespace cfire::frontend {
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
+        const std::string inline_kw = (sharded_non_inline_ && fn.type_params.empty()) ? "" : "inline ";
         std::string method_fn = fn.receiver ? std::format("cfire_method_{}", fn.name) : cur_fn_;
-        writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, method_fn, param_list, ret_str));
+        writeln(std::format("{}{}auto {}({}) -> {} {{", prefix, inline_kw, method_fn, param_list, ret_str));
         ++indent_;
         for (const auto& st : fn.body) emit_stmt(st, false);
         if (fn.return_type.name == "void" && fn.return_type.is_fallible) {
@@ -754,7 +945,8 @@ namespace cfire::frontend {
                 --indent_;
                 writeln("}");
             } else {
-                writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
+                const std::string wrap_inline_kw = sharded_non_inline_ ? "" : "inline ";
+                writeln(std::format("{}{}auto {}({}) -> {} {{", prefix, wrap_inline_kw, cur_fn_, param_list, ret_str));
                 ++indent_;
                 if (ret_str == "void") {
                     writeln(std::format("cfire_method_{}({});", fn.name, pass_args));

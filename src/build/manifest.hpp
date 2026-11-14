@@ -106,6 +106,10 @@ struct BuildPlan {
     bool is_ios_sim{false};
     bool uses_objc{false};
     std::string emscripten_compiler{};
+    bool used_sharded = false;
+    std::size_t sharded_total_units = 0;
+    std::size_t sharded_recompiled_units = 0;
+    std::vector<std::string> sharded_object_files{};
 };
 
 struct TargetResolution {

@@ -49,6 +49,7 @@ inline bool g_no_trap = false;
 inline bool g_emit_dsym = false;
 
 inline bool g_no_binary_cache = false;
+inline bool g_no_shard = false;
 
 inline bool g_verbose_mode = false;
 
@@ -182,7 +183,10 @@ inline void set_build_profile(BuildProfile profile) {
         while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) {
             line.remove_prefix(1);
         }
-        if (line.empty() || line.starts_with("//")) {
+        if (line.empty() || line.starts_with("//") || line == "#pragma once") {
+            continue;
+        }
+        if (!saw_prelude && (line.starts_with("#ifndef ") || line == "#endif")) {
             continue;
         }
         if (line.starts_with("#define ")) {

@@ -379,6 +379,7 @@ void test_security_and_fuzzing(const std::filesystem::path& rt_dir);
 void test_performance_benchmarks(const std::filesystem::path& rt_dir);
 void test_cf198_199_200_build_perf_and_caching(const std::filesystem::path& rt_dir);
 void test_cf201_single_pass_in_memory_check(const std::filesystem::path& rt_dir);
+void test_cf202_sharded_codegen(const std::filesystem::path& rt_dir);
 
 // E2E Suites
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);

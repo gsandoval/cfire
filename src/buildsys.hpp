@@ -15,6 +15,9 @@
 #include "build/apple_bundle.hpp"
 #include "build/windows_resources.hpp"
 #include "build/syntax_check.hpp"
+#include <atomic>
+#include <mutex>
+#include <thread>
 #endif
 #if !defined(_WIN32)
 #include <sys/stat.h>
@@ -602,7 +605,72 @@ namespace cfire::build {
     return {};
 }
 
-[[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
+[[nodiscard]] inline auto write_file_if_changed(
+    const std::filesystem::path& path,
+    std::string_view content
+) -> std::expected<bool, std::string> {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(path, ec) && !ec) {
+        auto sz = std::filesystem::file_size(path, ec);
+        if (!ec && sz == content.size()) {
+            std::ifstream in(path, std::ios::binary);
+            if (in) {
+                std::string existing(static_cast<std::size_t>(sz), '\0');
+                if (sz == 0 || in.read(existing.data(), static_cast<std::streamsize>(sz))) {
+                    if (existing == content) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            return std::unexpected("failed to create directory for " + path.string() + ": " + ec.message());
+        }
+    }
+    static std::atomic<uint64_t> seq{0};
+    uint64_t id = seq.fetch_add(1, std::memory_order_relaxed);
+    auto tmp = std::filesystem::path(path.string() + std::format(".tmp.{}", id));
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return std::unexpected("failed to open temp file for writing: " + tmp.string());
+        }
+        if (!content.empty()) {
+            out.write(content.data(), static_cast<std::streamsize>(content.size()));
+        }
+        out.flush();
+        if (!out.good()) {
+            std::filesystem::remove(tmp, ec);
+            return std::unexpected("failed to write temp file: " + tmp.string());
+        }
+    }
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::filesystem::remove(path, ec);
+        ec.clear();
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) {
+            std::filesystem::remove(tmp, ec);
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                return std::unexpected("failed to open generated file for writing: " + path.string());
+            }
+            if (!content.empty()) {
+                out.write(content.data(), static_cast<std::streamsize>(content.size()));
+            }
+            out.flush();
+            if (!out.good()) {
+                return std::unexpected("failed to write generated file: " + path.string());
+            }
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] inline auto analyze_and_emit_impl(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
     bool inspect_clang_ast,
@@ -611,7 +679,8 @@ namespace cfire::build {
     const std::string& sysroot,
     const std::string& web_profile,
     const std::string& subsystem,
-    bool sanitize
+    bool sanitize,
+    frontend::ShardedEmission* sharded_out = nullptr
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     auto dir = cf_file.parent_path();
     if (dir.empty()) dir = ".";
@@ -672,8 +741,28 @@ namespace cfire::build {
 
     // 4. C++23 Code Generation (with Clang AST boundary coercions)
     std::string cpp_code = frontend::emit_cpp(*checked, test_mode);
+    if (sharded_out != nullptr && !g_no_shard) {
+        *sharded_out = frontend::emit_sharded_cpp(*checked, test_mode);
+    }
 
     return std::make_pair(std::move(cpp_code), std::move(plan));
+}
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    bool inspect_clang_ast,
+    bool test_mode,
+    const std::string& target_triple,
+    const std::string& sysroot,
+    const std::string& web_profile,
+    const std::string& subsystem,
+    bool sanitize
+) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
+    return analyze_and_emit_impl(
+        cf_file, runtime_dir, inspect_clang_ast, test_mode,
+        target_triple, sysroot, web_profile, subsystem, sanitize, nullptr
+    );
 }
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
@@ -692,7 +781,10 @@ namespace cfire::build {
     const std::string& bundle_id,
     const std::string& icon_path
 ) -> std::expected<BuildPlan, std::string> {
-    auto res = analyze_and_emit(cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
+    frontend::ShardedEmission sharded;
+    auto res = analyze_and_emit_impl(
+        cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize, &sharded
+    );
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
     for (const auto& w : plan.warnings) {
@@ -845,16 +937,8 @@ namespace cfire::build {
     auto cpp_path = gen_dir / (stem + ((plan.uses_objc || (plan.is_ios && plan.is_gui)) ? ".mm" : ".cpp"));
     plan.generated_cpp = cpp_path.string();
 
-    {
-        std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
-        if (!out) {
-            return std::unexpected("failed to open generated C++ file for writing: " + cpp_path.string());
-        }
-        out << cpp_code;
-        out.flush();
-        if (!out.good()) {
-            return std::unexpected("failed to write generated C++ code: " + cpp_path.string());
-        }
+    if (auto wr = write_file_if_changed(cpp_path, cpp_code); !wr) {
+        return std::unexpected(wr.error());
     }
 
     for (auto& l : plan.ldflags) {
@@ -883,10 +967,92 @@ namespace cfire::build {
         linker_flag = resolve_effective_linker_flag(compiler);
     }
 
-    const bool use_persistent_obj = (dev_debug && !is_wasm);
+    const std::string compiler_fp = compiler_binary_fingerprint(compiler);
+    const std::string rt_fp = runtime_headers_fingerprint(runtime_dir);
+    std::string local_cpp_hdr_fp;
+    if (!plan.cpp_headers.empty()) {
+        std::vector<std::string> hdr_entries;
+        std::error_code hec;
+        for (const auto& [hdr_key, _] : plan.cpp_headers) {
+            std::filesystem::path hp = hdr_key;
+            if (!std::filesystem::is_regular_file(hp, hec) || hec) {
+                hec.clear();
+                hp = cf_parent / hdr_key;
+            }
+            if (std::filesystem::is_regular_file(hp, hec) && !hec) {
+                hdr_entries.push_back(hp.lexically_normal().string() + "=" + file_fingerprint_string(hp));
+            }
+        }
+        std::sort(hdr_entries.begin(), hdr_entries.end());
+        for (std::size_t i = 0; i < hdr_entries.size(); ++i) {
+            if (i > 0) local_cpp_hdr_fp.push_back(';');
+            local_cpp_hdr_fp += hdr_entries[i];
+        }
+    }
+
+    const bool will_shard = !g_no_shard &&
+                            !is_wasm &&
+                            !plan.uses_objc &&
+                            !(plan.is_ios && plan.is_gui) &&
+                            !sharded.has_cpp_impl_define &&
+                            sharded.units.size() >= 2;
+
+    const bool use_persistent_obj = (!will_shard && dev_debug && !is_wasm);
     std::filesystem::path obj_path;
-    if (use_persistent_obj) {
-        auto obj_dir = cf_parent / ".cfire" / "obj";
+    auto obj_dir = cf_parent / ".cfire" / "obj";
+    std::filesystem::path shard_dir;
+    std::vector<std::filesystem::path> unit_cpp_paths;
+    std::vector<std::filesystem::path> unit_obj_paths;
+
+    if (will_shard) {
+        shard_dir = gen_dir / "shards" / stem;
+        std::error_code dir_ec;
+        std::filesystem::create_directories(shard_dir, dir_ec);
+        std::filesystem::create_directories(obj_dir, dir_ec);
+        auto decls_path = shard_dir / "decls.hpp";
+        if (auto wr = write_file_if_changed(decls_path, sharded.decls_hpp); !wr) {
+            return std::unexpected(wr.error());
+        }
+        const std::string decls_hash = sha256_hex(sharded.decls_hpp);
+        unit_cpp_paths.reserve(sharded.units.size());
+        unit_obj_paths.reserve(sharded.units.size());
+        for (const auto& unit : sharded.units) {
+            auto u_cpp = shard_dir / unit.filename;
+            if (auto wr = write_file_if_changed(u_cpp, unit.cpp); !wr) {
+                return std::unexpected(wr.error());
+            }
+            detail::Sha256State st;
+            auto feed = [&](std::string_view tag, std::string_view val) {
+                st.update(reinterpret_cast<const uint8_t*>(tag.data()), tag.size());
+                const char sep1 = ':';
+                st.update(reinterpret_cast<const uint8_t*>(&sep1), 1);
+                st.update(reinterpret_cast<const uint8_t*>(val.data()), val.size());
+                const char sep2 = '\0';
+                st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
+            };
+            feed("schema", "cf202-v1");
+            feed("compiler", compiler_fp);
+            feed("opt", opt_flags);
+            feed("target", plan.target_triple);
+            for (const auto& cf_flag : plan.cflags) {
+                feed("cf", cf_flag);
+            }
+            feed("rt", rt_fp);
+            feed("cpp_hdr", local_cpp_hdr_fp);
+            feed("decls", decls_hash);
+            feed("unit_path", u_cpp.string());
+            feed("unit_cpp", unit.cpp);
+            std::string h16 = st.final_hex().substr(0, 16);
+            auto u_obj = obj_dir / std::format("{}__pkg_{}_{}.o", stem, unit.id, h16);
+            unit_cpp_paths.push_back(std::move(u_cpp));
+            unit_obj_paths.push_back(std::move(u_obj));
+        }
+        plan.used_sharded = true;
+        plan.sharded_total_units = sharded.units.size();
+        for (const auto& u_obj : unit_obj_paths) {
+            plan.sharded_object_files.push_back(u_obj.string());
+        }
+    } else if (use_persistent_obj) {
         std::error_code obj_ec;
         std::filesystem::create_directories(obj_dir, obj_ec);
         std::string h12 = sha256_hex(
@@ -895,20 +1061,51 @@ namespace cfire::build {
         obj_path = obj_dir / std::format("{}_{}.o", stem, h12);
     }
 
+    auto compute_active_obj_fp = [&]() -> std::string {
+        std::error_code oec;
+        if (will_shard && dev_debug) {
+            std::string joined;
+            for (std::size_t i = 0; i < unit_obj_paths.size(); ++i) {
+                const auto& p = unit_obj_paths[i];
+                if (!std::filesystem::exists(p, oec) || oec) {
+                    return {};
+                }
+                if (i > 0) joined.push_back(';');
+                joined += p.filename().string() + "=" + file_fingerprint_string(p);
+            }
+            return joined;
+        }
+        if (!will_shard && use_persistent_obj) {
+            if (!std::filesystem::exists(obj_path, oec) || oec) {
+                return {};
+            }
+            return file_fingerprint_string(obj_path);
+        }
+        return {};
+    };
+
     const bool allow_bin_cache = !g_no_binary_cache && !is_wasm && !(plan.is_ios && plan.is_gui);
     std::string bin_cache_key;
     if (allow_bin_cache) {
         std::string extra_fp = std::format(
-            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}",
+            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}|sharded={}",
             plan.uses_objc ? 1 : 0,
             plan.is_ios ? 1 : 0,
             sanitize ? 1 : 0,
             test_mode ? 1 : 0,
             g_emit_dsym ? 1 : 0,
-            dev_debug ? 1 : 0
+            dev_debug ? 1 : 0,
+            will_shard ? 1 : 0
         );
-        if (use_persistent_obj) {
+        if (will_shard && dev_debug) {
+            for (const auto& uo : unit_obj_paths) {
+                extra_fp += "|sobj=" + uo.string();
+            }
+        } else if (use_persistent_obj) {
             extra_fp += "|obj=" + obj_path.string();
+        }
+        if (!local_cpp_hdr_fp.empty()) {
+            extra_fp += "|cpp_hdr=" + local_cpp_hdr_fp;
         }
         std::error_code lfec;
         for (const auto& l : plan.ldflags) {
@@ -925,25 +1122,25 @@ namespace cfire::build {
         }
         bin_cache_key = BinaryCache::compute_key(
             cpp_code,
-            compiler_binary_fingerprint(compiler),
+            compiler_fp,
             opt_flags,
             plan.cflags,
             plan.ldflags,
             linker_flag,
             plan.target_triple,
-            runtime_headers_fingerprint(runtime_dir),
+            rt_fp,
             extra_fp
         );
 
         bool can_restore = true;
 #if defined(__APPLE__)
-        if (use_persistent_obj) {
-            std::error_code oec;
+        if ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) {
+            std::string cur_fp = compute_active_obj_fp();
             BinaryCacheMeta pre_meta;
-            if (!std::filesystem::exists(obj_path, oec) || oec ||
+            if (cur_fp.empty() ||
                 !BinaryCache::read_meta(bin_cache_key, pre_meta) ||
                 pre_meta.obj_fp.empty() ||
-                file_fingerprint_string(obj_path) != pre_meta.obj_fp) {
+                cur_fp != pre_meta.obj_fp) {
                 can_restore = false;
             }
         }
@@ -952,8 +1149,11 @@ namespace cfire::build {
             BinaryCacheMeta cached_meta;
             if (BinaryCache::try_restore(bin_cache_key, out_bin, &cached_meta)) {
                 plan.used_pch = cached_meta.used_pch;
+                if (will_shard) {
+                    plan.sharded_recompiled_units = 0;
+                }
 #if defined(__APPLE__)
-                if (g_emit_dsym && use_persistent_obj && !plan.is_ios) {
+                if (g_emit_dsym && ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) && !plan.is_ios) {
                     auto dsym_path = std::filesystem::path(out_bin.string() + ".dSYM");
                     std::error_code dec;
                     if (!std::filesystem::exists(dsym_path, dec)) {
@@ -974,7 +1174,7 @@ namespace cfire::build {
     // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
     std::string pch_path;
     if (plan.target_triple.empty() && !plan.uses_objc && !(plan.is_ios && plan.is_gui)) {
-        std::string umbrella = extract_pch_umbrella_header(cpp_code);
+        std::string umbrella = extract_pch_umbrella_header(will_shard ? sharded.decls_hpp : cpp_code);
         pch_path = ensure_composite_pch(runtime_dir, umbrella, opt_flags, plan.cflags);
     }
 
@@ -1017,55 +1217,220 @@ namespace cfire::build {
         }
     };
 
-    auto make_compile_cmd = [&](bool with_pch) {
-        std::string c = compiler;
-        build_compile_cflags(c);
-        if (with_pch && !pch_path.empty()) {
-            c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
-        }
-        if (use_persistent_obj) {
-            c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), obj_path.string());
-        } else {
-            c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
-            build_link_ldflags(c);
-        }
-        return c;
-    };
-
-    plan.used_pch = !pch_path.empty();
-    std::string cmd = make_compile_cmd(true);
     int exit_code = 0;
-    std::string output = bridge::run_command_capture(cmd, exit_code);
-    if (exit_code != 0 && plan.used_pch) {
-        if (is_verbose_build()) {
-            std::println(stderr, "note: precompiled header compilation failed; retrying without PCH");
-        }
-        // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
-        std::string fallback_cmd = make_compile_cmd(false);
-        int fb_code = 0;
-        std::string fb_out = bridge::run_command_capture(fallback_cmd, fb_code);
-        if (fb_code == 0) {
-            exit_code = 0;
-            output = std::move(fb_out);
-            cmd = std::move(fallback_cmd);
-            plan.used_pch = false;
-        }
-    }
+    std::string output;
+    std::string cmd;
 
-    if (exit_code == 0 && use_persistent_obj) {
-        std::string link_cmd = compiler;
-        append_link_relevant_cflags(link_cmd);
-        if (sanitize) {
-            link_cmd += " " + sanitizer_opt_flags();
+    if (will_shard) {
+        std::vector<std::size_t> dirty_indices;
+        std::error_code oec;
+        for (std::size_t u = 0; u < unit_obj_paths.size(); ++u) {
+            auto sz = std::filesystem::exists(unit_obj_paths[u], oec) && !oec
+                ? std::filesystem::file_size(unit_obj_paths[u], oec)
+                : 0;
+            if (oec || sz == 0 || !std::filesystem::exists(unit_obj_paths[u], oec)) {
+                dirty_indices.push_back(u);
+                oec.clear();
+            }
         }
-        link_cmd += std::format(" \"{}\" -o \"{}\"", obj_path.string(), out_bin.string());
-        build_link_ldflags(link_cmd);
-        int link_rc = 0;
-        std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
-        if (link_rc != 0) {
-            exit_code = link_rc;
-            output = output.empty() ? link_out : (output + "\n" + link_out);
-            cmd = std::move(link_cmd);
+
+        plan.sharded_recompiled_units = dirty_indices.size();
+        plan.used_pch = !pch_path.empty();
+
+        if (!dirty_indices.empty()) {
+            auto make_unit_compile_cmd = [&](std::size_t u, const std::filesystem::path& out_obj, bool with_pch) {
+                std::string c = compiler;
+                build_compile_cflags(c);
+                c += std::format(" -iquote \"{}\"", shard_dir.string());
+                if (with_pch && !pch_path.empty()) {
+                    c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+                }
+                c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, unit_cpp_paths[u].string(), out_obj.string());
+                return c;
+            };
+
+            const std::size_t worker_count = std::min<std::size_t>(
+                dirty_indices.size(),
+                std::max<std::size_t>(1, static_cast<std::size_t>(std::thread::hardware_concurrency()))
+            );
+            std::atomic<std::size_t> next_job{0};
+            std::atomic<bool> failed{false};
+            std::atomic<bool> pch_fell_back{false};
+            std::atomic<uint64_t> obj_tmp_seq{0};
+            std::mutex err_mu;
+
+            auto worker = [&]() {
+                while (!failed.load(std::memory_order_acquire)) {
+                    std::size_t j = next_job.fetch_add(1, std::memory_order_relaxed);
+                    if (j >= dirty_indices.size()) break;
+                    const std::size_t u = dirty_indices[j];
+                    const auto& target_obj = unit_obj_paths[u];
+                    const uint64_t tmp_id = obj_tmp_seq.fetch_add(1, std::memory_order_relaxed);
+                    const auto tmp_obj = std::filesystem::path(std::format("{}.tmp.{}.o", target_obj.string(), tmp_id));
+
+                    std::string unit_cmd = make_unit_compile_cmd(u, tmp_obj, true);
+                    int rc = 0;
+                    std::string out_txt = bridge::run_command_capture(unit_cmd, rc);
+                    if (rc != 0 && !pch_path.empty()) {
+                        if (is_verbose_build()) {
+                            std::lock_guard<std::mutex> lk(err_mu);
+                            std::println(stderr, "note: precompiled header compilation failed for {}; retrying without PCH", sharded.units[u].filename);
+                        }
+                        std::string fb_cmd = make_unit_compile_cmd(u, tmp_obj, false);
+                        int fb_rc = 0;
+                        std::string fb_out = bridge::run_command_capture(fb_cmd, fb_rc);
+                        if (fb_rc == 0) {
+                            rc = 0;
+                            out_txt = std::move(fb_out);
+                            unit_cmd = std::move(fb_cmd);
+                            pch_fell_back.store(true, std::memory_order_relaxed);
+                        }
+                    }
+
+                    std::error_code fec;
+                    if (rc == 0) {
+                        std::filesystem::rename(tmp_obj, target_obj, fec);
+                        if (fec) {
+                            fec.clear();
+                            std::filesystem::copy_file(tmp_obj, target_obj, std::filesystem::copy_options::overwrite_existing, fec);
+                            std::error_code rm_ec;
+                            std::filesystem::remove(tmp_obj, rm_ec);
+                            if (fec) {
+                                rc = 1;
+                                out_txt = "failed to stage compiled object file: " + target_obj.string() + " (" + fec.message() + ")";
+                            }
+                        }
+                    } else {
+                        std::filesystem::remove(tmp_obj, fec);
+                    }
+
+                    if (rc != 0) {
+                        std::lock_guard<std::mutex> lk(err_mu);
+                        if (!failed.exchange(true, std::memory_order_acq_rel)) {
+                            exit_code = rc;
+                            output = std::move(out_txt);
+                            cmd = std::move(unit_cmd);
+                        }
+                        break;
+                    }
+                }
+            };
+
+            std::vector<std::thread> threads;
+            threads.reserve(worker_count > 1 ? worker_count - 1 : 0);
+            for (std::size_t t = 1; t < worker_count; ++t) {
+                threads.emplace_back(worker);
+            }
+            worker();
+            for (auto& th : threads) {
+                th.join();
+            }
+
+            if (pch_fell_back.load(std::memory_order_relaxed)) {
+                plan.used_pch = false;
+            }
+
+            if (exit_code == 0) {
+                // Prune stale `.o` files per unit, keeping at most the 4 newest by mtime (never deleting active unit .o).
+                std::error_code pec;
+                for (std::size_t u = 0; u < sharded.units.size(); ++u) {
+                    const std::string prefix = std::format("{}__pkg_{}_", stem, sharded.units[u].id);
+                    const std::string keep_name = unit_obj_paths[u].filename().string();
+                    struct ObjEntry {
+                        std::filesystem::path path;
+                        std::filesystem::file_time_type mtime{};
+                    };
+                    std::vector<ObjEntry> stale;
+                    for (const auto& de : std::filesystem::directory_iterator(obj_dir, pec)) {
+                        if (pec) break;
+                        std::string fname = de.path().filename().string();
+                        if (fname.starts_with(prefix) && fname.ends_with(".o") && !fname.contains(".tmp.") && fname != keep_name) {
+                            auto mt = de.last_write_time(pec);
+                            if (!pec) stale.push_back(ObjEntry{de.path(), mt});
+                            pec.clear();
+                        }
+                    }
+                    if (stale.size() > 3) {
+                        std::sort(stale.begin(), stale.end(), [](const ObjEntry& a, const ObjEntry& b) {
+                            return a.mtime > b.mtime;
+                        });
+                        for (std::size_t s = 3; s < stale.size(); ++s) {
+                            std::filesystem::remove(stale[s].path, pec);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (exit_code == 0) {
+            std::string link_cmd = compiler;
+            append_link_relevant_cflags(link_cmd);
+            if (sanitize) {
+                link_cmd += " " + sanitizer_opt_flags();
+            }
+            for (const auto& u_obj : unit_obj_paths) {
+                link_cmd += std::format(" \"{}\"", u_obj.string());
+            }
+            link_cmd += std::format(" -o \"{}\"", out_bin.string());
+            build_link_ldflags(link_cmd);
+            int link_rc = 0;
+            std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
+            if (link_rc != 0) {
+                exit_code = link_rc;
+                output = std::move(link_out);
+                cmd = std::move(link_cmd);
+            }
+        }
+    } else {
+        auto make_compile_cmd = [&](bool with_pch) {
+            std::string c = compiler;
+            build_compile_cflags(c);
+            if (with_pch && !pch_path.empty()) {
+                c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+            }
+            if (use_persistent_obj) {
+                c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), obj_path.string());
+            } else {
+                c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
+                build_link_ldflags(c);
+            }
+            return c;
+        };
+
+        plan.used_pch = !pch_path.empty();
+        cmd = make_compile_cmd(true);
+        output = bridge::run_command_capture(cmd, exit_code);
+        if (exit_code != 0 && plan.used_pch) {
+            if (is_verbose_build()) {
+                std::println(stderr, "note: precompiled header compilation failed; retrying without PCH");
+            }
+            // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
+            std::string fallback_cmd = make_compile_cmd(false);
+            int fb_code = 0;
+            std::string fb_out = bridge::run_command_capture(fallback_cmd, fb_code);
+            if (fb_code == 0) {
+                exit_code = 0;
+                output = std::move(fb_out);
+                cmd = std::move(fallback_cmd);
+                plan.used_pch = false;
+            }
+        }
+
+        if (exit_code == 0 && use_persistent_obj) {
+            std::string link_cmd = compiler;
+            append_link_relevant_cflags(link_cmd);
+            if (sanitize) {
+                link_cmd += " " + sanitizer_opt_flags();
+            }
+            link_cmd += std::format(" \"{}\" -o \"{}\"", obj_path.string(), out_bin.string());
+            build_link_ldflags(link_cmd);
+            int link_rc = 0;
+            std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
+            if (link_rc != 0) {
+                exit_code = link_rc;
+                output = output.empty() ? link_out : (output + "\n" + link_out);
+                cmd = std::move(link_cmd);
+            }
         }
     }
 
@@ -1078,7 +1443,7 @@ namespace cfire::build {
     }
 
 #if defined(__APPLE__)
-    if (g_emit_dsym && use_persistent_obj && !plan.is_ios) {
+    if (g_emit_dsym && ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) && !plan.is_ios) {
         int dsym_rc = 0;
         (void)bridge::run_command_capture(
             std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
@@ -1090,8 +1455,8 @@ namespace cfire::build {
     if (allow_bin_cache && !bin_cache_key.empty()) {
         BinaryCacheMeta store_meta;
         store_meta.used_pch = plan.used_pch;
-        if (use_persistent_obj) {
-            store_meta.obj_fp = file_fingerprint_string(obj_path);
+        if ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) {
+            store_meta.obj_fp = compute_active_obj_fp();
         }
         BinaryCache::store(bin_cache_key, out_bin, store_meta);
     }

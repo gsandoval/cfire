@@ -211,7 +211,7 @@ flowchart TD
 
 ---
 
-### `CF-202` — Progressive Per-Package `.hpp`/`.cpp` -> `.o` Compilation `[TODO]`
+### `CF-202` — Progressive Per-Package `.hpp`/`.cpp` -> `.o` Compilation `[DONE]`
 - **Wave / ADR**: Wave B3 (`Q59`).
 - **Problem & Evidence**:
   - Even with Composite PCH and `BinaryCache`, touching one `.cf` file in a multi-package workspace forces `codegen` (`src/codegen.hpp`) to emit a single monolithic `.cpp` for the entire dependency graph, so `clang++` must recompile every package's C++ functions from scratch.

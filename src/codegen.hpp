@@ -1,14 +1,33 @@
 #pragma once
 // src/codegen.hpp — C++23 Emitter for cfire (.cf)
 
-#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_TU_CODEGEN_DECL_IMPL) && !defined(CFIRE_TU_CODEGEN_BODY_IMPL)
-
 #include "sema/types.hpp"
 #include <string>
+#include <vector>
+
+namespace cfire::frontend {
+
+struct CppUnit {
+    std::string id;
+    std::string pkg_name;
+    std::string filename;
+    std::string cpp;
+};
+
+struct ShardedEmission {
+    std::string decls_hpp;
+    std::vector<CppUnit> units;
+    bool has_cpp_impl_define = false;
+};
+
+} // namespace cfire::frontend
+
+#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_TU_CODEGEN_DECL_IMPL) && !defined(CFIRE_TU_CODEGEN_BODY_IMPL)
 
 namespace cfire::frontend {
 
 [[nodiscard]] auto emit_cpp(const CheckedFile& cf, bool test_mode = false) -> std::string;
+[[nodiscard]] auto emit_sharded_cpp(const CheckedFile& cf, bool test_mode = false) -> ShardedEmission;
 
 } // namespace cfire::frontend
 
@@ -45,6 +64,7 @@ public:
     }
 
     [[nodiscard]] auto emit_cpp() -> std::string;
+    [[nodiscard]] auto emit_sharded() -> ShardedEmission;
 
     // Q10: `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`); returns the C++ type.
     [[nodiscard]] auto primitive_prefix_cpp(const ExprPtr& obj) const -> std::string {
@@ -88,6 +108,7 @@ public:
     bool in_test_ = false;
     bool in_fallible_void_ = false;
     bool in_ptr_return_ = false;
+    bool sharded_non_inline_ = false;
     std::string cur_fn_raw_return_type_{};
     std::string source_path_{};
     int last_source_line_ = -1;
@@ -216,6 +237,7 @@ public:
         sub.var_types_ = var_types_;
         sub.view_params_ = view_params_;
         sub.generic_params_ = generic_params_;
+        sub.sharded_non_inline_ = sharded_non_inline_;
         if (inherit_return_context) {
             sub.in_main_ = in_main_;
             sub.in_test_ = in_test_;
@@ -704,6 +726,7 @@ public:
 };
 
 [[nodiscard]] CFIRE_CG_INLINE auto emit_cpp(const CheckedFile& cf, bool test_mode = false) -> std::string;
+[[nodiscard]] CFIRE_CG_INLINE auto emit_sharded_cpp(const CheckedFile& cf, bool test_mode = false) -> ShardedEmission;
 
 } // namespace cfire::frontend
 
@@ -716,6 +739,11 @@ namespace cfire::frontend {
 [[nodiscard]] CFIRE_CG_INLINE auto emit_cpp(const CheckedFile& cf, bool test_mode) -> std::string {
     Emitter em(cf, test_mode);
     return em.emit_cpp();
+}
+
+[[nodiscard]] CFIRE_CG_INLINE auto emit_sharded_cpp(const CheckedFile& cf, bool test_mode) -> ShardedEmission {
+    Emitter em(cf, test_mode);
+    return em.emit_sharded();
 }
 } // namespace cfire::frontend
 #endif

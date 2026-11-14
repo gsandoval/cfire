@@ -35,7 +35,7 @@ inline constexpr CommandHelp kCommandHelp[] = {
     {"run", "[--web|--ios] [target|file.cf] Run native app, web app (--web), or iOS Simulator app (--ios)", "Usage: cfire run [--web|--ios] [target|file.cf] [-- args...]\n\nBuilds and runs. A single file argument builds that file and the packages it imports, not every .cf file beside it."},
     {"test", "[--json] [--filter <pat>] [--fuzz-runs <N>] [--seed <S>] [path|file.cf] Compile and execute test, fuzz & doc-test suites", ""},
     {"bench", "[--json] [--filter <pat>] [--bench-time <ms>] [path|file.cf] Run statistical micro-benchmarks (`bench \"...\"`)", ""},
-    {"build", "[--target wasm|ios-sim|ios|<triple>] [--icon <path>] [--name <name>] [target|file.cf]", ""},
+    {"build", "[--target wasm|ios-sim|ios|<triple>] [--no-shard] [--icon <path>] [--name <name>] [target|file.cf]", "Usage: cfire build [--target wasm|ios-sim|ios|<triple>] [--no-cache] [--no-shard] [--release] [target|file.cf]\n\nBuilds a standalone native binary (default Release -O2), WebAssembly bundle (--target wasm), or iOS app.\nMulti-package builds use progressive per-package C++23 sharding; pass --no-shard to force single-TU codegen."},
     {"clean", "[--cache] [dir]      Remove project .cfire/ artifacts (and global ~/.cfire/cache with --cache)", "Usage: cfire clean [--cache] [dir]\n\nRemoves <dir>/.cfire (generated C++ and debug object files). Pass --cache to also purge the user binary, PCH, and probe caches."},
     {"serve", "[--port <n>] [--no-open] [target|path] Build & serve WebAssembly / static web app with zero config", ""},
     {"eval", "[-e <expr>|code]     Evaluate one-shot statement, expression, or stdin", ""},
