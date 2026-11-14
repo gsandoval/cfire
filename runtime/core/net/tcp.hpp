@@ -16,6 +16,7 @@
 #include <thread>
 #include <cstring>
 #include <cstdlib>
+#include <functional>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -23,6 +24,7 @@
 using ssize_t = std::ptrdiff_t;
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -41,6 +43,8 @@ namespace detail {
 inline std::mutex loopback_mu;
 inline std::unordered_map<std::uint16_t, std::queue<int>> loopback_queues;
 inline std::atomic<std::uint16_t> next_vport{49152};
+// CF-193: called after a virtual-port connection is queued, so an event loop waiting on that port wakes up.
+inline std::unordered_map<std::uint16_t, std::function<void()>> loopback_wake_hooks;
 
 inline void ensure_winsock() noexcept {
 #if defined(_WIN32)
@@ -57,10 +61,13 @@ inline void close_sock(int fd) noexcept {
 #endif
 }
 
+// Shuts both directions down; a `recv` blocked on the socket in another thread returns.
 inline void shutdown_sock(int fd) noexcept {
     if (fd < 0) return;
 #if defined(_WIN32)
     ::shutdown(static_cast<SOCKET>(fd), SD_BOTH);
+    // Winsock does not end a blocked `recv` on shutdown; cancelling the socket's pending I/O does.
+    ::CancelIoEx(reinterpret_cast<HANDLE>(static_cast<SOCKET>(fd)), nullptr);
 #else
     ::shutdown(fd, SHUT_RDWR);
 #endif
@@ -110,8 +117,9 @@ inline void set_sock_timeout_ms(int fd, int ms) noexcept {
 inline void set_dual_stack(int fd) noexcept {
     if (fd < 0) return;
 #if defined(_WIN32)
-    const char off = 0;
-    ::setsockopt(static_cast<SOCKET>(fd), IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+    // Winsock wants a DWORD here (a 1-byte value is rejected and the socket stays IPv6-only, its default).
+    const DWORD off = 0;
+    ::setsockopt(static_cast<SOCKET>(fd), IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char*>(&off), sizeof(off));
 #else
     int off = 0;
     ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
@@ -154,6 +162,45 @@ inline void set_reuseaddr(int fd) noexcept {
 #else
     return errno == EINTR;
 #endif
+}
+
+// CF-193: the outcome of one non-blocking read, write or TLS handshake step.
+enum class Io : std::uint8_t { Ok, WantRead, WantWrite, Eof, Error };
+
+inline void set_nonblocking(int fd, bool on) noexcept {
+    if (fd < 0) return;
+#if defined(_WIN32)
+    u_long mode = on ? 1 : 0;
+    ::ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &mode);
+#else
+    int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return;
+    (void)::fcntl(fd, F_SETFL, on ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK));
+#endif
+}
+
+[[nodiscard]] inline auto is_would_block() noexcept -> bool {
+#if defined(_WIN32)
+    return ::WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
+}
+
+// One `recv` on a non-blocking socket: Ok with `n > 0` bytes, WantRead when nothing is there, Eof, or Error.
+[[nodiscard]] inline auto recv_some(int fd, std::span<std::uint8_t> buf, std::size_t& n) noexcept -> Io {
+    n = 0;
+    for (;;) {
+        int chunk = static_cast<int>(std::min<std::size_t>(buf.size(), 0x7fffffffU));
+        auto got = ::recv(fd, reinterpret_cast<char*>(buf.data()), chunk, 0);
+        if (got > 0) {
+            n = static_cast<std::size_t>(got);
+            return Io::Ok;
+        }
+        if (got == 0) return Io::Eof;
+        if (is_sock_eintr()) continue;
+        return is_would_block() ? Io::WantRead : Io::Error;
+    }
 }
 
 [[nodiscard]] inline auto poll_sock_read(int fd, int timeout_ms) noexcept -> bool {
@@ -209,6 +256,7 @@ inline void unregister_loopback_port(std::uint16_t port) {
         }
         loopback_queues.erase(it);
     }
+    loopback_wake_hooks.erase(port);
 }
 
 [[nodiscard]] inline auto has_loopback_listener(std::uint16_t port) -> bool {
@@ -217,8 +265,19 @@ inline void unregister_loopback_port(std::uint16_t port) {
 }
 
 inline void push_loopback_fd(std::uint16_t port, int fd) {
+    std::function<void()> wake;
+    {
+        std::lock_guard<std::mutex> lk(loopback_mu);
+        loopback_queues[port].push(fd);
+        if (auto it = loopback_wake_hooks.find(port); it != loopback_wake_hooks.end()) wake = it->second;
+    }
+    if (wake) wake();
+}
+
+inline void set_loopback_wake_hook(std::uint16_t port, std::function<void()> hook) {
     std::lock_guard<std::mutex> lk(loopback_mu);
-    loopback_queues[port].push(fd);
+    if (hook) loopback_wake_hooks[port] = std::move(hook);
+    else loopback_wake_hooks.erase(port);
 }
 
 [[nodiscard]] inline auto pop_loopback_fd(std::uint16_t port) -> int {
@@ -509,6 +568,32 @@ public:
     }
 
     [[nodiscard]] auto port() const noexcept -> std::uint16_t { return port_; }
+    // The listening socket (-1 for a virtual in-process port).
+    [[nodiscard]] auto fd() const noexcept -> int { return fd_; }
+
+    // CF-193: one connection if one is waiting, without blocking (the listening socket must be non-blocking).
+    [[nodiscard]] auto try_accept() -> std::optional<TcpConn> {
+        if (int sfd = detail::pop_loopback_fd(port_); sfd >= 0) return TcpConn(sfd, "127.0.0.1");
+        if (fd_ < 0) return std::nullopt;
+        for (;;) {
+            sockaddr_storage client_addr{};
+            socklen_t len = sizeof(client_addr);
+#if defined(_WIN32)
+            SOCKET client_s = ::accept(static_cast<SOCKET>(fd_), reinterpret_cast<sockaddr*>(&client_addr), &len);
+            int client_fd = (client_s == INVALID_SOCKET) ? -1 : static_cast<int>(client_s);
+#else
+            int client_fd = ::accept(fd_, reinterpret_cast<sockaddr*>(&client_addr), &len);
+#endif
+            if (client_fd >= 0) return TcpConn(client_fd, detail::peer_address_text(client_addr));
+            if (detail::is_sock_eintr()) continue;
+            return std::nullopt;
+        }
+    }
+
+    // Wakes `hook` whenever a virtual-port connection is queued (empty to clear).
+    void set_wake_hook(std::function<void()> hook) {
+        if (port_ != 0) detail::set_loopback_wake_hook(port_, std::move(hook));
+    }
 
     [[nodiscard]] auto accept() -> std::expected<TcpConn, cfire::Error> {
         for (int attempt = 0; attempt < 200; ++attempt) {

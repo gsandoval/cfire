@@ -1960,7 +1960,7 @@ Let's build an HTTP service with pre-dispatch middleware, parameterized routes (
 | `router.get` / `post` / `put` / `delete_` | `fn(pattern: str, handler: fn(Request) -> Response)` | Registers a route handler for the specified HTTP method and path pattern. |
 | `router.use` | `fn(middleware: fn(Request) -> int)` | Runs before route dispatch (`0` continues; non-zero HTTP status code short-circuits). |
 | `router.dispatch` | `fn(req: Request) -> Response` | Executes middleware and route matching in memory without opening a network socket. |
-| `make(http.Server, port)` / `make(http.Server, port, tls: http.TlsConfig{...})` | `-> Server!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`); Connections are kept alive between requests (HTTP/1.1), and each WebSocket session gets its own thread; `server.set_limits(http.ServerLimits{...})` tunes timeouts, sizes, `workers` (handlers run at once) and the keep-alive and connection caps. |
+| `make(http.Server, port)` / `make(http.Server, port, tls: http.TlsConfig{...})` | `-> Server!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`); An event loop waits on idle and slow connections, so they hold no handler thread; connections are kept alive between requests (HTTP/1.1), and each WebSocket session gets its own thread; `server.set_limits(http.ServerLimits{...})` tunes timeouts, sizes, `workers` (handlers run at once) and the keep-alive and connection caps. |
 
 ```cfire
 package main
