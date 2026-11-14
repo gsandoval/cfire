@@ -1,0 +1,29 @@
+// CF-191: an array literal adapts to the element type it initializes, as an argument (function, method,
+// nested slice) as well as a declaration, assignment, return or field.
+// expect: stdout
+// | 3 255 4 2.5
+// | 6 7 9 12
+package main
+type Acc struct {
+    base: i32
+    xs: []i32
+}
+fn sum(xs: []i32) -> i32 {
+    mut t: i32 = 0
+    for x in xs {
+        t += x
+    }
+    return t
+}
+fn top(bs: []u8) -> u8 { return bs[bs.len() - 1] }
+fn inner(rows: [][]i32) -> i32 { return rows[1][0] }
+fn half(fs: []f32) -> f32 { return fs[0] + fs[1] }
+fn (a: Acc) plus(xs: []i32) -> i32 { return a.base + sum(xs) }
+fn mk() -> []i64 { return [4, 5] }
+fn main() {
+    println("{} {} {} {}", sum([1, 2]), top([1, 255]), inner([[1], [4]]), half([1.5, 1]))
+    a := Acc{base: 1, xs: [3, 3]}
+    mut ys: []u16 = []
+    ys = [9]
+    println("{} {} {} {}", sum(a.xs), a.plus([2, 4]), ys[0], mk()[0] + 8)
+}

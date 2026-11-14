@@ -474,6 +474,8 @@ All scalar types have explicit bit widths, deterministic zero values (`mut x: i3
 | `bool` | `bool(x)` | Logical boolean (`true` / `false`) | `false` | `bool` |
 | `str` | `"{x}"` / `str(x)` | Owned UTF-8 text buffer; slices `s[a..b]` are zero-copy views | `""` | `std::string` |
 
+An integer converts implicitly only when every value fits: `u8` → `i32`, `i32` → `i64` and `u32` → `i64` widen, but `i64` → `i32`, `u32` → `i32` and `i32` → `u32` need the checked `i32(x)` / `u32(x)`, which panics if the value does not fit (`cfire/TYPE-MISMATCH` otherwise; `cfire fix` inserts the conversion). A literal takes the type it initializes or the other operand's type (`x: u8 = 200`, `100 + n` is `n`'s type) and is range-checked (`cfire/LITERAL-OUT-OF-RANGE`); a value built from literals alone (`x := 0`, `1 << 40`) is `i64`. A range's index has its typed end's type (`for i in 0..xs.len()` is `usize`), and an array literal adapts element by element (`f([1, 2])` for `xs: []i32`).
+
 ### Working with Slices (`[]T`), Fixed Arrays (`[N]T`) & Maps (`map[K]V`)
 Three collection types are built directly into the language prelude (with `Set[T]`, `PriorityQueue[T]`, and `Deque[T]` available in `core:collections`):
 
@@ -1911,6 +1913,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/TYPE-ERROR` | Tooling | The C++ backend rejected generated code; Sema should have caught it (please report). |
 | `cfire/TYPE-MISMATCH` | Types | A value of one type is used where another is required. |
 | `cfire/UNDECLARED-IDENT` | Names | A name that is not declared, or a module used under the wrong alias. |
+| `cfire/UNDECLARED-TYPE` | Names | A type name that is not a builtin, a type declared in the package, or a type parameter in scope (CF-190). |
 | `cfire/UNHANDLED-RESULT` | Errors | A fallible `T!` value used without `try` or `or`. |
 | `cfire/UNKNOWN-ARG-LABEL` | Detailed rule | Unknown Labeled Argument |
 | `cfire/UNKNOWN-ENUM-VARIANT` | Names | A variant that the enum does not declare. |

@@ -12,6 +12,7 @@
 #include "test_cf192.hpp"
 #include "test_cf193.hpp"
 #include "test_cf194.hpp"
+#include "test_cf195.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");
@@ -218,7 +219,7 @@ fn describe(s: Shape) -> str {
 }
 
 fn http_code(verb: str) -> i32 {
-    code := match verb {
+    code: i32 = match verb {
         "GET" => 200,
         "POST" => 201,
         _ => 400,

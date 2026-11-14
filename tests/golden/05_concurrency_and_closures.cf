@@ -2,7 +2,7 @@ package main
 
 import "core:sync"
 
-fn run_tasks() -> i32 {
+fn run_tasks() -> i64 {
     mut counter := 0
     async.scope(workers: 2) |scope| {
         scope.spawn || {

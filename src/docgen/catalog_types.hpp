@@ -978,6 +978,7 @@ struct DiagnosticCodeDoc {
             {"cfire/UNKNOWN-METHOD", "Names", "A method that the receiver type does not have (Q14 closed builtin surface)."},
             {"cfire/UNKNOWN-MODULE", "Imports", "An import path that names no known module."},
             {"cfire/UNKNOWN-STDLIB-FN", "Names", "A function that the stdlib module does not export."},
+            {"cfire/UNDECLARED-TYPE", "Names", "A type name that is not a builtin, a type declared in the package, or a type parameter in scope (CF-190)."},
             {"cfire/UNKNOWN-STDLIB-TYPE", "Names", "A type that the stdlib module does not export, or a `build.*` type outside `build.cf` (CF-188)."},
             {"cfire/UNKNOWN-TYPE", "Types", "An expression whose type cannot be inferred (warning)."},
             {"cfire/UNRESOLVED-PACKAGE", "Imports", "A local package import that cannot be found."},

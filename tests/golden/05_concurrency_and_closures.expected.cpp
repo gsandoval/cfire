@@ -1,13 +1,13 @@
 #include "cfire_prelude.hpp"
 #include "core/sync.hpp"
 
-[[nodiscard]] inline auto run_tasks() -> std::int32_t;
+[[nodiscard]] inline auto run_tasks() -> std::int64_t;
 [[nodiscard]] inline auto apply_op(std::int32_t val, const std::function<std::int32_t(std::int32_t)>& op) -> std::int32_t;
 
 #line 5 "05_concurrency_and_closures.cf"
-[[nodiscard]] inline auto run_tasks() -> std::int32_t {
+[[nodiscard]] inline auto run_tasks() -> std::int64_t {
     #line 6 "05_concurrency_and_closures.cf"
-    auto counter = 0;
+    std::int64_t counter = 0;
     #line 7 "05_concurrency_and_closures.cf"
     {
         cfire::async::Scope scope(2);
@@ -37,7 +37,7 @@
 auto main(int argc, char** argv) -> int {
     cfire::detail::set_process_args(argc, argv);
     #line 23 "05_concurrency_and_closures.cf"
-    auto base = 10;
+    std::int64_t base = 10;
     #line 24 "05_concurrency_and_closures.cf"
     auto cl = [&](std::int32_t x) -> std::int32_t {
         return (x + base);

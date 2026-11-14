@@ -1,0 +1,23 @@
+// CF-190: a type name that does not resolve is a cfire diagnostic (with a suggestion), not a clang error.
+package main
+type Point struct {
+    x: i32
+}
+type Wrap[T] struct {
+    inner: T
+}
+type Shape enum {
+    Dot(Pointt) //~ error cfire/UNDECLARED-TYPE
+}
+fn take(p: Pont) {} //~ error cfire/UNDECLARED-TYPE
+fn give() -> []Nope { return [] } //~ error cfire/UNDECLARED-TYPE
+fn lookup(m: map[str]Strng) {} //~ error cfire/UNDECLARED-TYPE
+fn handle(r: Request2) {} //~ error cfire/UNDECLARED-TYPE
+fn first[T](xs: []T) -> T { return xs[0] }
+fn (w: Wrap[T]) get() -> T { return w.inner }
+fn main() {
+    p := Point{x: 1}
+    w := Wrap[i32]{inner: 2}
+    mut q: Pointe = p //~ error cfire/UNDECLARED-TYPE
+    println("{} {} {}", first([p.x]), w.get(), q.x)
+}

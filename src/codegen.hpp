@@ -124,6 +124,18 @@ public:
     std::vector<std::pair<std::string, std::string>> view_params_{};
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
+    // CF-196: an integer constant expression (literals, unary `-`, arithmetic and bitwise operators); Sema types it `i64`.
+    [[nodiscard]] static auto is_int_const_expr(const ExprPtr& e) -> bool {
+        if (!e) return false;
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) return lit->kind == TokenKind::Int;
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node)) return un->op == "-" && is_int_const_expr(un->operand);
+        if (const auto* b = std::get_if<BinaryExpr>(&e->node)) {
+            static const std::unordered_set<std::string_view> ops = {"+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^"};
+            return ops.contains(b->op) && is_int_const_expr(b->left) && is_int_const_expr(b->right);
+        }
+        return false;
+    }
+
     [[nodiscard]] static auto sanitize_cpp_ident(std::string_view id) -> std::string {
         static const std::unordered_set<std::string_view> kCppReserved = {
             "short", "long", "signed", "unsigned", "class", "template", "operator",

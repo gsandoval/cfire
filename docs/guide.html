@@ -2935,6 +2935,7 @@ fn main() {
     </tbody>
   </table>
 </div>
+<p>An integer converts implicitly only when every value fits: <code>u8</code> → <code>i32</code>, <code>i32</code> → <code>i64</code> and <code>u32</code> → <code>i64</code> widen, but <code>i64</code> → <code>i32</code>, <code>u32</code> → <code>i32</code> and <code>i32</code> → <code>u32</code> need the checked <code>i32(x)</code> / <code>u32(x)</code>, which panics if the value does not fit (<code>cfire/TYPE-MISMATCH</code> otherwise; <code>cfire fix</code> inserts the conversion). A literal takes the type it initializes or the other operand's type (<code>x: u8 = 200</code>, <code>100 + n</code> is <code>n</code>'s type) and is range-checked (<code>cfire/LITERAL-OUT-OF-RANGE</code>); a value built from literals alone (<code>x := 0</code>, <code>1 &lt;&lt; 40</code>) is <code>i64</code>. A range's index has its typed end's type (<code>for i in 0..xs.len()</code> is <code>usize</code>), and an array literal adapts element by element (<code>f([1, 2])</code> for <code>xs: []i32</code>).</p>
     <div class="chapter-pager topic-pager">
       <a href="#ch3-complete-cli-command-reference" class="pager-card pager-prev" onclick="navigateToSubhead('3', 'ch3-complete-cli-command-reference'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 3.4)</span>
@@ -4955,6 +4956,7 @@ cfire fix src/main.cf
       <tr><td><code>cfire/TYPE-ERROR</code></td><td>Tooling</td><td>The C++ backend rejected generated code; Sema should have caught it (please report).</td></tr>
       <tr><td><code>cfire/TYPE-MISMATCH</code></td><td>Types</td><td>A value of one type is used where another is required.</td></tr>
       <tr><td><code>cfire/UNDECLARED-IDENT</code></td><td>Names</td><td>A name that is not declared, or a module used under the wrong alias.</td></tr>
+      <tr><td><code>cfire/UNDECLARED-TYPE</code></td><td>Names</td><td>A type name that is not a builtin, a type declared in the package, or a type parameter in scope (CF-190).</td></tr>
       <tr><td><code>cfire/UNHANDLED-RESULT</code></td><td>Errors</td><td>A fallible <code>T!</code> value used without <code>try</code> or <code>or</code>.</td></tr>
       <tr><td><code>cfire/UNKNOWN-ARG-LABEL</code></td><td>Detailed rule</td><td>Unknown Labeled Argument</td></tr>
       <tr><td><code>cfire/UNKNOWN-ENUM-VARIANT</code></td><td>Names</td><td>A variant that the enum does not declare.</td></tr>

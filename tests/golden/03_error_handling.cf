@@ -1,6 +1,6 @@
 package main
 
-fn parse_even(s: str) -> i32! {
+fn parse_even(s: str) -> i64! {
     if s == "fail" {
         return error("simulated parse failure")
     }

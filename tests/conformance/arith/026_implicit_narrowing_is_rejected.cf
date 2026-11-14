@@ -1,0 +1,18 @@
+// CF-196 (Q9): an integer converts implicitly only when every value fits (widening); narrowing or a sign
+// change needs the checked `T(x)`. Literals and constant expressions are range-checked instead.
+package main
+fn take32(x: i32) -> i32 { return x }
+fn ret32(n: i64) -> i32 {
+    return n //~ error cfire/TYPE-MISMATCH
+}
+fn main() {
+    a: i64 = 5000000000
+    x: i32 = a //~ error cfire/TYPE-MISMATCH
+    y := take32(a) //~ error cfire/TYPE-MISMATCH
+    u: u32 = 7
+    s: i32 = u //~ error cfire/TYPE-MISMATCH
+    mut t: i32 = 0
+    t += a //~ error cfire/TYPE-MISMATCH
+    big: i32 = 1 << 40 //~ error cfire/LITERAL-OUT-OF-RANGE
+    println("{} {} {} {} {}", x, y, s, t, big)
+}

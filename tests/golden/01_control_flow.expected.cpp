@@ -1,7 +1,7 @@
 #include "cfire_prelude.hpp"
 
 [[nodiscard]] inline auto test_branches(std::int32_t x) -> std::string;
-[[nodiscard]] inline auto test_loops() -> std::int32_t;
+[[nodiscard]] inline auto test_loops() -> std::int64_t;
 
 #line 3 "01_control_flow.cf"
 [[nodiscard]] inline auto test_branches(std::int32_t x) -> std::string {
@@ -22,16 +22,16 @@
 }
 
 #line 13 "01_control_flow.cf"
-[[nodiscard]] inline auto test_loops() -> std::int32_t {
+[[nodiscard]] inline auto test_loops() -> std::int64_t {
     #line 14 "01_control_flow.cf"
-    auto sum = 0;
+    std::int64_t sum = 0;
     #line 15 "01_control_flow.cf"
-    for (auto i = static_cast<std::common_type_t<decltype(0), decltype(5)>>(0), _range_end_i = static_cast<std::common_type_t<decltype(0), decltype(5)>>(5); i < _range_end_i; ++i) {
+    for (auto i = static_cast<std::int64_t>(0), _range_end_i = static_cast<std::int64_t>(5); i < _range_end_i; ++i) {
         #line 16 "01_control_flow.cf"
         sum += i;
     }
     #line 18 "01_control_flow.cf"
-    auto j = 0;
+    std::int64_t j = 0;
     #line 19 "01_control_flow.cf"
     while (j < 3) {
         #line 20 "01_control_flow.cf"
