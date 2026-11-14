@@ -233,7 +233,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     std::error_code ec;
     std::filesystem::copy_file(path, work.path / name, std::filesystem::copy_options::overwrite_existing, ec);
 
-    auto chk = run_process({opt.cfire, "check", "--json", name}, work.path, opt.timeout);
+    auto chk = run_process({opt.cfire, "check", "--verify-cpp", "--json", name}, work.path, opt.timeout);
     if (chk.timed_out) {
         reasons.push_back("check timed out");
         return ev;

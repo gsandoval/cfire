@@ -22,10 +22,18 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <variant>
 #include <vector>
+
+namespace cfire::frontend {
+struct FileAST;
+} // namespace cfire::frontend
 
 namespace cfire::analysis {
 
@@ -35,12 +43,15 @@ using FixIt = cfire::diag::FixItEdit;
 struct CheckOptions {
     std::filesystem::path runtime_dir{};
     bool verify_cpp_backend = true;
+    bool force_cpp_verify = false;
+    bool prefer_dev_debug = true;
     bool resolve_sibling_packages = true;
     std::string target_triple{};
     std::string sysroot{};
     std::vector<std::string> extra_includes{};
     std::string web_profile{"auto"};
     std::string subsystem{"auto"};
+    std::unordered_map<std::string, std::string> source_overlays{};
 };
 
 [[nodiscard]] inline auto is_ignored_walk_path(const std::filesystem::path& p) -> bool {
@@ -48,6 +59,10 @@ struct CheckOptions {
     return s.contains("/.cfire") || s.contains("/.tako") || s.contains("/.git") || s.contains("/dist") ||
            s.contains("/vendor") || s.contains("/node_modules") || s.contains("/ejected_cpp");
 }
+
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto needs_cpp_syntax_check(
+    const cfire::frontend::FileAST& ast
+) -> bool;
 
 [[nodiscard]] CFIRE_ANALYSIS_INLINE auto check_source(
     std::string_view file_path,
@@ -68,15 +83,206 @@ struct CheckOptions {
 
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_ANALYSIS_IMPL)
 
+namespace detail {
+
+[[nodiscard]] inline auto stmts_contain_cpp_block(const std::vector<cfire::frontend::StmtPtr>& stmts) -> bool;
+
+[[nodiscard]] inline auto expr_contains_cpp_block(const cfire::frontend::ExprPtr& e) -> bool {
+    if (!e) return false;
+    return std::visit([&](const auto& ex) -> bool {
+        using T = std::decay_t<decltype(ex)>;
+        if constexpr (std::is_same_v<T, cfire::frontend::LiteralExpr>) {
+            for (const auto& snip : ex.interp_snippets) {
+                if (expr_contains_cpp_block(snip.expr)) return true;
+            }
+            return false;
+        } else if constexpr (std::is_same_v<T, cfire::frontend::UnaryExpr>) {
+            return expr_contains_cpp_block(ex.operand);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::BinaryExpr>) {
+            return expr_contains_cpp_block(ex.left) || expr_contains_cpp_block(ex.right);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::MemberExpr>) {
+            return expr_contains_cpp_block(ex.object);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::IndexExpr>) {
+            return expr_contains_cpp_block(ex.object) || expr_contains_cpp_block(ex.index);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::SliceExpr>) {
+            return expr_contains_cpp_block(ex.object) || expr_contains_cpp_block(ex.start) || expr_contains_cpp_block(ex.end);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::StructLitExpr>) {
+            for (const auto& f : ex.fields) {
+                if (expr_contains_cpp_block(f.value)) return true;
+            }
+            return false;
+        } else if constexpr (std::is_same_v<T, cfire::frontend::ArrayLitExpr> ||
+                             std::is_same_v<T, cfire::frontend::TupleExpr>) {
+            for (const auto& el : ex.elements) {
+                if (expr_contains_cpp_block(el)) return true;
+            }
+            return false;
+        } else if constexpr (std::is_same_v<T, cfire::frontend::ClosureExpr>) {
+            for (const auto& sc : ex.slot_captures) {
+                if (expr_contains_cpp_block(sc.second)) return true;
+            }
+            return stmts_contain_cpp_block(ex.body);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::CallExpr>) {
+            if (expr_contains_cpp_block(ex.callee)) return true;
+            for (const auto& a : ex.args) {
+                if (expr_contains_cpp_block(a.value)) return true;
+            }
+            if (ex.block_arg) {
+                for (const auto& sc : ex.block_arg->slot_captures) {
+                    if (expr_contains_cpp_block(sc.second)) return true;
+                }
+                if (stmts_contain_cpp_block(ex.block_arg->body)) return true;
+            }
+            return false;
+        } else if constexpr (std::is_same_v<T, cfire::frontend::TryExpr>) {
+            return expr_contains_cpp_block(ex.inner);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::OrExpr>) {
+            return expr_contains_cpp_block(ex.inner) ||
+                   expr_contains_cpp_block(ex.fallback_val) ||
+                   stmts_contain_cpp_block(ex.handler_body);
+        } else if constexpr (std::is_same_v<T, cfire::frontend::MatchExpr>) {
+            if (expr_contains_cpp_block(ex.target)) return true;
+            for (const auto& arm : ex.arms) {
+                if (expr_contains_cpp_block(arm.guard) || stmts_contain_cpp_block(arm.body)) return true;
+            }
+            return false;
+        } else {
+            return false;
+        }
+    }, e->node);
+}
+
+[[nodiscard]] inline auto stmts_contain_cpp_block(const std::vector<cfire::frontend::StmtPtr>& stmts) -> bool {
+    for (const auto& s : stmts) {
+        if (!s) continue;
+        bool found = std::visit([&](const auto& st) -> bool {
+            using T = std::decay_t<decltype(st)>;
+            if constexpr (std::is_same_v<T, cfire::frontend::CppBlockStmt>) {
+                return true;
+            } else if constexpr (std::is_same_v<T, cfire::frontend::VarDeclStmt> ||
+                                 std::is_same_v<T, cfire::frontend::DestructureVarDeclStmt>) {
+                return expr_contains_cpp_block(st.init);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::AssignStmt>) {
+                return expr_contains_cpp_block(st.target) || expr_contains_cpp_block(st.value);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::DestructureAssignStmt>) {
+                for (const auto& t : st.targets) {
+                    if (expr_contains_cpp_block(t)) return true;
+                }
+                return expr_contains_cpp_block(st.value);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::DeferStmt>) {
+                return expr_contains_cpp_block(st.call) || stmts_contain_cpp_block(st.body);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::ReturnStmt>) {
+                return expr_contains_cpp_block(st.value);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::IfStmt>) {
+                return expr_contains_cpp_block(st.cond) ||
+                       expr_contains_cpp_block(st.unwrap_init) ||
+                       stmts_contain_cpp_block(st.then_body) ||
+                       stmts_contain_cpp_block(st.else_body);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::ForStmt>) {
+                return expr_contains_cpp_block(st.iter_expr) ||
+                       expr_contains_cpp_block(st.range_end) ||
+                       stmts_contain_cpp_block(st.body);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::MatchStmt>) {
+                if (expr_contains_cpp_block(st.target)) return true;
+                for (const auto& arm : st.arms) {
+                    if (expr_contains_cpp_block(arm.guard) || stmts_contain_cpp_block(arm.body)) return true;
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, cfire::frontend::AsyncScopeStmt>) {
+                return expr_contains_cpp_block(st.workers) || stmts_contain_cpp_block(st.body);
+            } else if constexpr (std::is_same_v<T, cfire::frontend::ExprStmt>) {
+                return expr_contains_cpp_block(st.expr);
+            } else {
+                return false;
+            }
+        }, s->node);
+        if (found) return true;
+    }
+    return false;
+}
+
+struct ScopedDevDebugGuard {
+    bool active = false;
+
+    explicit ScopedDevDebugGuard(bool enable) {
+        if (!enable) return;
+        std::lock_guard<std::mutex> lk(profile_mutex());
+        if (depth() == 0) {
+            saved_profile() = cfire::build::g_build_profile;
+            saved_debug_mode() = cfire::build::g_debug_mode;
+            cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
+        }
+        ++depth();
+        active = true;
+    }
+
+    ~ScopedDevDebugGuard() {
+        if (!active) return;
+        std::lock_guard<std::mutex> lk(profile_mutex());
+        if (--depth() == 0) {
+            cfire::build::g_build_profile = saved_profile();
+            cfire::build::g_debug_mode = saved_debug_mode();
+        }
+    }
+
+    static auto profile_mutex() -> std::mutex& {
+        static std::mutex m;
+        return m;
+    }
+    static auto depth() -> int& {
+        static int d = 0;
+        return d;
+    }
+    static auto saved_profile() -> cfire::build::BuildProfile& {
+        static cfire::build::BuildProfile p = cfire::build::BuildProfile::Release;
+        return p;
+    }
+    static auto saved_debug_mode() -> bool& {
+        static bool d = false;
+        return d;
+    }
+};
+
+} // namespace detail
+
+[[nodiscard]] CFIRE_ANALYSIS_INLINE auto needs_cpp_syntax_check(
+    const cfire::frontend::FileAST& ast
+) -> bool {
+    for (const auto& imp : ast.imports) {
+        if (imp.is_cpp) return true;
+    }
+    for (const auto& st : ast.structs) {
+        for (const auto& f : st.fields) {
+            if (detail::expr_contains_cpp_block(f.default_val)) return true;
+        }
+    }
+    for (const auto& gv : ast.global_vars) {
+        if (detail::expr_contains_cpp_block(gv.value)) return true;
+    }
+    for (const auto& fn : ast.functions) {
+        if (detail::stmts_contain_cpp_block(fn.body)) return true;
+    }
+    for (const auto& t : ast.tests) {
+        for (const auto& bv : t.bench_variations) {
+            for (const auto& v : bv.values) {
+                if (detail::expr_contains_cpp_block(v)) return true;
+            }
+        }
+        if (detail::stmts_contain_cpp_block(t.body)) return true;
+    }
+    return false;
+}
+
 [[nodiscard]] CFIRE_ANALYSIS_INLINE auto check_source(
     std::string_view file_path,
     std::string_view content,
     const CheckOptions& opts
 ) -> std::vector<Diagnostic> {
+    detail::ScopedDevDebugGuard profile_guard(opts.prefer_dev_debug);
     std::vector<Diagnostic> diags;
     auto lines = cfire::diag::split_lines(content);
 
-    // 1. Resilient parsing
+    // 1. Resilient in-memory parsing (never re-read `file_path` from disk)
     auto pres = cfire::frontend::parse_source_resilient(std::string(file_path), content);
     for (const auto& err : pres.source_errors) {
         auto d = cfire::diag::from_source_error(err);
@@ -90,63 +296,129 @@ struct CheckOptions {
         return diags;
     }
 
-    // 2. Local package / sibling resolution if requested
     cfire::frontend::FileAST merged_ast = std::move(pres.ast);
     std::filesystem::path fpath(file_path);
-    bool unresolved_local_package = false;
-    if (opts.resolve_sibling_packages && !file_path.empty()) {
-        std::error_code ec;
-        auto parent_dir = fpath.parent_path();
-        if (parent_dir.empty()) parent_dir = ".";
-        if (std::filesystem::is_directory(parent_dir, ec)) {
-            cfire::build::BuildPlan local_plan;
-            local_plan.entry_file = fpath.string();
-            bool is_test_f = fpath.filename().string().ends_with("_test.cf");
-            auto resolved = cfire::build::resolve_local_cf_imports(parent_dir, merged_ast, local_plan, opts.runtime_dir, is_test_f);
-            // Surface missing local packages as a cfire diagnostic instead of letting clang report
-            // "no member named '<pkg>' in namespace 'cfire'" (CF-140).
-            constexpr std::string_view kNotFound = "local package import not found: ";
-            if (!resolved && resolved.error().starts_with(kNotFound)) {
-                std::string missing = resolved.error().substr(kNotFound.size());
-                int imp_line = 1;
-                for (const auto& imp : merged_ast.imports) {
-                    if (imp.path == missing) { imp_line = imp.line; break; }
-                }
-                Diagnostic d;
-                d.file = file_path.empty() ? std::string("<input>") : std::string(file_path);
-                d.line = imp_line;
-                d.col = 1;
-                d.end_line = imp_line;
-                d.end_col = 1;
-                d.severity = "error";
-                d.code = "cfire/UNRESOLVED-PACKAGE";
-                d.message = std::format("local package '{}' not found relative to '{}'",
-                    missing, parent_dir.string());
-                d.source = "cfire";
-                diags.push_back(std::move(d));
-                unresolved_local_package = true;
-            }
+    const bool is_test_f = fpath.filename().string().ends_with("_test.cf");
+    auto rt_dir = opts.runtime_dir;
+    if (rt_dir.empty()) {
+        rt_dir = cfire::build::locate_toolchain_layout(nullptr).runtime_dir;
+    }
+
+    std::unordered_map<std::string, std::string> overlays = opts.source_overlays;
+    if (!file_path.empty()) {
+        std::string content_str(content);
+        overlays[std::string(file_path)] = content_str;
+        std::error_code cec;
+        auto canon = std::filesystem::weakly_canonical(fpath, cec);
+        if (!cec && !canon.empty()) {
+            overlays[canon.string()] = content_str;
         }
     }
 
-    // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
+    cfire::build::BuildPlan local_plan;
+    if (!rt_dir.empty()) {
+        if (auto plan_res = cfire::build::init_build_plan_flags(
+                fpath, rt_dir, is_test_f, opts.target_triple, opts.sysroot, opts.web_profile, opts.subsystem, false);
+            plan_res) {
+            local_plan = std::move(*plan_res);
+        } else {
+            local_plan.entry_file = fpath.string();
+        }
+    } else {
+        local_plan.entry_file = fpath.string();
+    }
+
+    auto parent_dir = fpath.parent_path().empty() ? std::filesystem::path(".") : fpath.parent_path();
+    std::error_code dir_ec;
+    const bool has_real_dir = !file_path.empty() &&
+        (!fpath.parent_path().empty() || std::filesystem::exists(fpath, dir_ec)) &&
+        std::filesystem::is_directory(parent_dir, dir_ec);
+
+    // 2. Local package / sibling & build.cf resolution (strictly using in-memory overlays)
+    bool unresolved_local_package = false;
+    if (opts.resolve_sibling_packages && has_real_dir) {
+        (void)cfire::build::discover_and_apply_build_cf(
+            local_plan, fpath, parent_dir, is_test_f, /*run_pre_build=*/opts.source_overlays.empty());
+        auto resolved = cfire::build::resolve_local_cf_imports(
+            parent_dir, merged_ast, local_plan, rt_dir, is_test_f, &overlays);
+        // Surface missing local packages as a cfire diagnostic instead of letting clang report
+        // "no member named '<pkg>' in namespace 'cfire'" (CF-140).
+        constexpr std::string_view kNotFound = "local package import not found: ";
+        if (!resolved && resolved.error().starts_with(kNotFound)) {
+            std::string missing = resolved.error().substr(kNotFound.size());
+            int imp_line = 1;
+            for (const auto& imp : merged_ast.imports) {
+                if (imp.path == missing) { imp_line = imp.line; break; }
+            }
+            Diagnostic d;
+            d.file = file_path.empty() ? std::string("<input>") : std::string(file_path);
+            d.line = imp_line;
+            d.col = 1;
+            d.end_line = imp_line;
+            d.end_col = 1;
+            d.severity = "error";
+            d.code = "cfire/UNRESOLVED-PACKAGE";
+            d.message = std::format("local package '{}' not found relative to '{}'",
+                missing, parent_dir.string());
+            d.source = "cfire";
+            diags.push_back(std::move(d));
+            unresolved_local_package = true;
+        }
+    }
+
+    // 3. Gate C++ interop & Clang verification cleanly so pure-.cf checks stay fast & subprocess-free
+    const bool has_cpp_interop = needs_cpp_syntax_check(merged_ast);
+    const bool want_clang = opts.verify_cpp_backend && (has_cpp_interop || opts.force_cpp_verify);
+
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
-    for (const auto& imp : merged_ast.imports) {
-        if (imp.is_cpp) {
-            std::filesystem::path cache_dir = opts.runtime_dir.empty() ? ".cfire_cache" : (opts.runtime_dir / ".cfire_cache");
-            std::vector<std::string> cflags;
-            auto idx = bridge::inspect_header(imp.path, cflags, cache_dir, cfire::build::resolve_cxx_compiler(opts.target_triple));
-            if (idx) {
-                for (const auto& [sym_name, sym] : idx->symbols) {
-                    if (sym.kind == "FunctionDecl") {
-                        pre_cpp_fn_params[sym_name] = sym.param_types;
+    if (has_cpp_interop || want_clang) {
+        if (has_real_dir) {
+            (void)cfire::build::build_external_deps_for_plan(parent_dir, local_plan);
+        }
+        if (has_cpp_interop) {
+            std::unordered_set<std::string> seen_pc(local_plan.pkg_config_deps.begin(), local_plan.pkg_config_deps.end());
+            auto install_root = rt_dir.empty() ? std::filesystem::path{} : cfire::build::derive_install_root(rt_dir);
+            bool is_win_target = cfire::build::is_windows_target(local_plan.target_triple);
+            bool is_wasm = cfire::build::is_wasm_target(local_plan.target_triple);
+            for (const auto& imp : merged_ast.imports) {
+                if (!imp.is_cpp) continue;
+                for (const auto& attr : imp.attrs) {
+                    if (attr.name == "pkg" && !attr.args.empty() && !is_wasm && !local_plan.is_ios) {
+                        const std::string& pc = attr.args[0];
+                        if (!seen_pc.contains(pc)) {
+                            seen_pc.insert(pc);
+                            local_plan.pkg_config_deps.push_back(pc);
+                            cfire::build::query_pkg_config(pc, local_plan.cflags, local_plan.ldflags, install_root, is_win_target);
+                        }
                     }
                 }
             }
+
+            std::vector<std::string> header_cflags = local_plan.cflags;
+            for (const auto& inc : opts.extra_includes) {
+                header_cflags.push_back("-I" + inc);
+            }
+            if (has_real_dir) {
+                header_cflags.push_back("-I" + parent_dir.string());
+            }
+            auto hdr_cache_dir = cfire::build::cache_subdir("headers");
+            std::string cxx_bin = cfire::build::resolve_cxx_compiler(local_plan.target_triple);
+            for (const auto& imp : merged_ast.imports) {
+                if (!imp.is_cpp) continue;
+                auto idx = bridge::inspect_header(imp.path, header_cflags, hdr_cache_dir, cxx_bin);
+                if (idx) {
+                    for (const auto& [sym_name, sym] : idx->symbols) {
+                        if (sym.kind == "FunctionDecl") {
+                            pre_cpp_fn_params[sym_name] = sym.param_types;
+                        }
+                    }
+                    local_plan.cpp_headers[imp.path] = std::move(*idx);
+                }
+            }
         }
     }
 
-    // 3. Resilient semantic analysis
+    // 4. Single-pass resilient semantic analysis
     auto chk = cfire::frontend::analyze_resilient(std::move(merged_ast), std::move(pre_cpp_fn_params));
     // Q24 (CF-149): Sema diagnostics are structured at detection; here they only get exact ranges and fix-its.
     // Diagnostics from sibling package files keep their own file; ranges are resolved against this file only.
@@ -162,69 +434,38 @@ struct CheckOptions {
         diags.push_back(std::move(d));
     }
 
-    // 4. C++23 backend syntax check (if sema succeeded and C++ backend verification is enabled)
-    if (chk.errors.empty() && !unresolved_local_package && opts.verify_cpp_backend && !file_path.empty()) {
-        auto rt_dir = opts.runtime_dir;
-        if (rt_dir.empty()) {
-            rt_dir = cfire::build::locate_toolchain_layout(nullptr).runtime_dir;
-        }
-        if (!rt_dir.empty()) {
-            bool is_test_f = fpath.filename().string().ends_with("_test.cf");
-            std::string cpp_code;
-            cfire::build::BuildPlan plan;
-            // CF-176: use the same plan as `cfire build` (build.cf deps, native library and pkg-config include
-            // paths) so headers that `run` finds are found by `check` too. Dependency builds are cached.
-            bool have_full_plan = false;
-            if (!file_path.empty() && opts.target_triple.empty()) {
-                if (auto full = cfire::build::analyze_and_emit(fpath, rt_dir, false, is_test_f); full) {
-                    cpp_code = std::move(full->first);
-                    plan = std::move(full->second);
-                    have_full_plan = true;
-                }
-            }
-            if (!have_full_plan) {
-            cpp_code = cfire::frontend::emit_cpp(chk, is_test_f);
-            plan.entry_file = fpath.string();
-            plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + rt_dir.string()};
-#if defined(__linux__)
-            plan.cflags.push_back("-Wno-builtin-macro-redefined");
-            plan.cflags.push_back("-D__cpp_concepts=202002L");
-            plan.cflags.push_back("-pthread");
-#endif
-            if (is_test_f) {
-                plan.cflags.push_back("-DCFIRE_TEST_MODE=1");
-                if (!cfire::build::g_no_trap && !opts.target_triple.starts_with("wasm")) {
-                    plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
-                    plan.cflags.push_back("-fsanitize-trap=all");
-                } else {
-                    plan.cflags.push_back("-fwrapv");
-                }
-            } else if (cfire::build::is_dev_debug_profile() && !cfire::build::g_no_trap && !opts.target_triple.starts_with("wasm")) {
-                plan.cflags.push_back("-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero");
-                plan.cflags.push_back("-fsanitize-trap=all");
-            } else {
-                plan.cflags.push_back("-fwrapv");
-            }
-            std::error_code ec;
-            if (std::filesystem::is_directory(rt_dir / "vendor", ec)) {
-                plan.cflags.push_back("-I" + (rt_dir / "vendor").string());
-            }
-            }
-            auto syntax_check = cfire::build::verify_cpp_syntax_only(fpath, cpp_code, plan, rt_dir, opts.extra_includes);
-            if (!syntax_check) {
-                auto clang_lines = cfire::diag::split_lines(syntax_check.error());
-                bool found_diag = false;
-                for (const auto& cl : clang_lines) {
-                    if (cl.contains(": error:") || cl.contains(": warning:")) {
-                        auto d = cfire::diag::parse_clang_diagnostic_line(cl, file_path, cl.contains(": error:") ? "error" : "warning", "cfire/TYPE-ERROR");
-                        diags.push_back(std::move(d));
-                        found_diag = true;
+    // 5. Conditional single-pass C++23 backend syntax check over stdin (no redundant re-parse or disk writes)
+    if (chk.errors.empty() && !unresolved_local_package && want_clang && !file_path.empty() && !rt_dir.empty()) {
+        (void)cfire::build::populate_checked_build_plan(chk, local_plan, rt_dir, /*inspect_clang_ast=*/false);
+        std::string cpp_code = cfire::frontend::emit_cpp(chk, is_test_f);
+        auto syntax_check = cfire::build::verify_cpp_syntax_only(fpath, cpp_code, local_plan, rt_dir, opts.extra_includes);
+        if (!syntax_check) {
+            auto clang_lines = cfire::diag::split_lines(syntax_check.error());
+            bool found_diag = false;
+            for (const auto& cl : clang_lines) {
+                const bool is_err = cl.contains(": error:") || cl.contains(": fatal error:");
+                const bool is_warn = cl.contains(": warning:");
+                if (is_err || is_warn) {
+                    auto d = cfire::diag::parse_clang_diagnostic_line(
+                        cl, file_path, is_err ? "error" : "warning", "cfire/TYPE-ERROR");
+                    if (d.file == file_path && d.line == 1) {
+                        for (const auto& imp : chk.ast.imports) {
+                            if (imp.is_cpp && !imp.path.empty() && d.message.contains(imp.path)) {
+                                d.line = imp.line;
+                                d.end_line = imp.line;
+                                break;
+                            }
+                        }
+                        cfire::diag::resolve_diagnostic_range(d, lines);
                     }
-                }
-                if (!found_diag && !syntax_check.error().empty()) {
-                    auto d = cfire::diag::parse_clang_diagnostic_line(syntax_check.error(), file_path, "error", "cfire/TYPE-ERROR");
                     diags.push_back(std::move(d));
+                    found_diag = true;
                 }
+            }
+            if (!found_diag && !syntax_check.error().empty()) {
+                auto d = cfire::diag::parse_clang_diagnostic_line(
+                    syntax_check.error(), file_path, "error", "cfire/TYPE-ERROR");
+                diags.push_back(std::move(d));
             }
         }
     }

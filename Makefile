@@ -109,7 +109,7 @@ check:
 	@echo "=== Canonical formatting"
 	./cfire fmt --check examples/
 	@echo "=== Every canonical example type-checks (CF-176, CF-148)"
-	@set -e; for d in examples/*/; do ./cfire check "$$d" > .cfire_check.log 2>&1 || { cat .cfire_check.log; rm -f .cfire_check.log; echo "cfire check failed: $$d"; exit 1; }; if grep -q "cfire/UNKNOWN-TYPE" .cfire_check.log; then cat .cfire_check.log; rm -f .cfire_check.log; echo "untyped expression in $$d (CF-148)"; exit 1; fi; done; rm -f .cfire_check.log
+	@set -e; for d in examples/*/; do ./cfire check --verify-cpp "$$d" > .cfire_check.log 2>&1 || { cat .cfire_check.log; rm -f .cfire_check.log; echo "cfire check failed: $$d"; exit 1; }; if grep -q "cfire/UNKNOWN-TYPE" .cfire_check.log; then cat .cfire_check.log; rm -f .cfire_check.log; echo "untyped expression in $$d (CF-148)"; exit 1; fi; done; rm -f .cfire_check.log
 	@$(MAKE) --no-print-directory test
 	@echo "✓ make check passed"
 

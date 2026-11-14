@@ -16,7 +16,11 @@
 #if defined(_WIN32)
 #include <process.h>
 #else
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #endif
 
@@ -70,6 +74,12 @@ struct HeaderIndex {
 [[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto run_argv_capture(const std::vector<std::string>& argv, int& exit_code) -> std::string;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture_with_stdin(
+    const std::string& cmd,
+    std::string_view stdin_data,
+    int& exit_code
+) -> std::string;
 
 CFIRE_INFRA_INLINE void parse_fn_qual_type(std::string_view full_sig, CppSymbol& sym);
 
@@ -222,6 +232,108 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
         out.append(buf, static_cast<std::size_t>(n));
     }
     ::close(pipefd[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            exit_code = -1;
+            return out;
+        }
+    }
+    exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : status);
+    return out;
+#endif
+}
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture_with_stdin(
+    const std::string& cmd,
+    std::string_view stdin_data,
+    int& exit_code
+) -> std::string {
+#if defined(_WIN32)
+    (void)cmd;
+    (void)stdin_data;
+    exit_code = -1;
+    return "";
+#else
+    static const bool kIgnoreSigpipe = []() {
+        std::signal(SIGPIPE, SIG_IGN);
+        return true;
+    }();
+    (void)kIgnoreSigpipe;
+
+    int in_pipe[2]{-1, -1};
+    int out_pipe[2]{-1, -1};
+    if (::pipe(in_pipe) != 0) {
+        exit_code = -1;
+        return "";
+    }
+    if (::pipe(out_pipe) != 0) {
+        ::close(in_pipe[0]);
+        ::close(in_pipe[1]);
+        exit_code = -1;
+        return "";
+    }
+#ifdef F_SETNOSIGPIPE
+    ::fcntl(in_pipe[1], F_SETNOSIGPIPE, 1);
+#endif
+
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(in_pipe[0]);
+        ::close(in_pipe[1]);
+        ::close(out_pipe[0]);
+        ::close(out_pipe[1]);
+        exit_code = -1;
+        return "";
+    }
+
+    if (pid == 0) {
+        ::close(in_pipe[1]);
+        ::close(out_pipe[0]);
+        ::dup2(in_pipe[0], STDIN_FILENO);
+        ::dup2(out_pipe[1], STDOUT_FILENO);
+        ::dup2(out_pipe[1], STDERR_FILENO);
+        ::close(in_pipe[0]);
+        ::close(out_pipe[1]);
+
+        std::string sh_cmd = normalize_command_for_capture(cmd);
+        ::execl("/bin/sh", "sh", "-c", sh_cmd.c_str(), static_cast<char*>(nullptr));
+        ::_exit(127);
+    }
+
+    ::close(in_pipe[0]);
+    ::close(out_pipe[1]);
+
+    std::thread writer([wfd = in_pipe[1], stdin_data]() {
+        std::size_t off = 0;
+        while (off < stdin_data.size()) {
+            ssize_t written = ::write(wfd, stdin_data.data() + off, stdin_data.size() - off);
+            if (written > 0) {
+                off += static_cast<std::size_t>(written);
+            } else if (written < 0 && errno == EINTR) {
+                continue;
+            } else {
+                break;
+            }
+        }
+        ::close(wfd);
+    });
+
+    std::string out;
+    char buf[4096];
+    while (true) {
+        ssize_t n = ::read(out_pipe[0], buf, sizeof(buf));
+        if (n > 0) {
+            out.append(buf, static_cast<std::size_t>(n));
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else {
+            break;
+        }
+    }
+    ::close(out_pipe[0]);
+    writer.join();
 
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0) {

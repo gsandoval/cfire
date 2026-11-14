@@ -194,10 +194,14 @@ namespace cfire::cli {
     const std::string& sysroot,
     const std::vector<std::string>& extra_includes,
     const std::string& web_profile,
-    const std::string& subsystem
+    const std::string& subsystem,
+    bool verify_cpp = false,
+    bool prefer_dev_debug = true
 ) -> int {
     cfire::analysis::CheckOptions opts;
     opts.runtime_dir = runtime_dir;
+    opts.force_cpp_verify = verify_cpp;
+    opts.prefer_dev_debug = prefer_dev_debug;
     opts.target_triple = target_triple;
     opts.sysroot = sysroot;
     opts.extra_includes = extra_includes;

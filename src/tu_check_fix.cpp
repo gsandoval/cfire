@@ -22,7 +22,8 @@ auto run_check_fix_tu(std::string_view sub, int argc, char** argv, const std::fi
     }
     return cfire::cli::run_check_subcommand(
         args.target, runtime_dir, args.json_mode, args.target_triple, args.sysroot,
-        args.extra_includes, args.web_profile, args.subsystem
+        args.extra_includes, args.web_profile, args.subsystem,
+        args.verify_cpp, !args.explicit_release
     );
 }
 

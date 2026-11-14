@@ -30,6 +30,12 @@ namespace cfire::diag {
         c1 = err_str.find(':', default_file.size());
     } else {
         c1 = err_str.find(':');
+        // Skip Windows drive-letter colon (e.g. "C:\path\file.cf:10:5: ...")
+        if (c1 == 1 && err_str.size() > 2 &&
+            std::isalpha(static_cast<unsigned char>(err_str[0])) &&
+            (err_str[2] == '\\' || err_str[2] == '/')) {
+            c1 = err_str.find(':', 2);
+        }
     }
 
     if (c1 != std::string_view::npos && c1 > 0) {
@@ -53,11 +59,22 @@ namespace cfire::diag {
                     if (rest.starts_with("warning: ")) {
                         d.severity = "warning";
                         rest.remove_prefix(9);
+                    } else if (rest.starts_with("fatal error: ")) {
+                        d.severity = "error";
+                        rest.remove_prefix(13);
                     } else if (rest.starts_with("error: ")) {
                         d.severity = "error";
                         rest.remove_prefix(7);
                     }
                     d.message = std::string(rest);
+                    if (!default_file.empty() &&
+                        (d.file == "<stdin>" || d.file.ends_with("_check.cpp") || d.file.ends_with("_check.mm"))) {
+                        d.file = std::string(default_file);
+                        d.line = 1;
+                        d.col = 1;
+                        d.end_line = 1;
+                        d.end_col = 1;
+                    }
                 } else {
                     d.message = std::string(err_str);
                 }

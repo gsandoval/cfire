@@ -43,7 +43,20 @@ namespace cfire::build {
     BuildPlan& plan,
     const std::filesystem::path& cf_file,
     const std::filesystem::path& dir,
-    bool test_mode
+    bool test_mode,
+    bool run_pre_build = true
+) -> std::expected<void, std::string>;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_external_deps_for_plan(
+    const std::filesystem::path& default_dir,
+    BuildPlan& plan
+) -> std::expected<void, std::string>;
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto populate_checked_build_plan(
+    frontend::CheckedFile& checked,
+    BuildPlan& plan,
+    const std::filesystem::path& runtime_dir,
+    bool inspect_clang_ast
 ) -> std::expected<void, std::string>;
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
@@ -178,7 +191,8 @@ namespace cfire::build {
     BuildPlan& plan,
     const std::filesystem::path& cf_file,
     const std::filesystem::path& dir,
-    bool test_mode
+    bool test_mode,
+    bool run_pre_build
 ) -> std::expected<void, std::string> {
     if (cf_file.filename() == "build.cf") return {};
     bool is_wasm = plan.target_triple.starts_with("wasm");
@@ -271,84 +285,44 @@ namespace cfire::build {
     }
     for (auto& cmd : parsed->pre_build_commands) {
         if (cmd.work_dir.empty()) cmd.work_dir = bcf_parent.string();
-        if (auto r = execute_pre_build_command(cmd, bcf_parent); !r) {
-            return std::unexpected(r.error());
+        if (run_pre_build) {
+            if (auto r = execute_pre_build_command(cmd, bcf_parent); !r) {
+                return std::unexpected(r.error());
+            }
         }
         plan.pre_build_commands.push_back(std::move(cmd));
     }
     return {};
 }
 
-[[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
-    const std::filesystem::path& cf_file,
-    const std::filesystem::path& runtime_dir,
-    bool inspect_clang_ast,
-    bool test_mode,
-    const std::string& target_triple,
-    const std::string& sysroot,
-    const std::string& web_profile,
-    const std::string& subsystem,
-    bool sanitize
-) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
-    auto dir = cf_file.parent_path();
-    if (dir.empty()) dir = ".";
-    auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
-    if (!plan_res) return std::unexpected(plan_res.error());
-    BuildPlan plan = std::move(*plan_res);
-
-    if (auto bcf_res = discover_and_apply_build_cf(plan, cf_file, dir, test_mode); !bcf_res) {
-        return std::unexpected(bcf_res.error());
-    }
-
-    auto install_root = derive_install_root(runtime_dir);
-    bool is_wasm = plan.target_triple.starts_with("wasm");
-    bool is_win_target = is_windows_target(plan.target_triple);
-
-    // 2. Read and parse root .cf source
-    auto raw = read_file_text(cf_file);
-    if (!raw) return std::unexpected(raw.error());
-    auto ast = frontend::parse_source(cf_file.string(), *raw);
-    if (!ast) return std::unexpected(ast.error());
-    if (test_mode) {
-        frontend::append_doctests(cf_file.string(), *raw, *ast);
-    }
-
-    // 3. Resolve local `.cf` package imports (`import "./..."`, `import "pkg:..."`, and same-directory package siblings) recursively
-    if (auto r = resolve_local_cf_imports(dir, *ast, plan, runtime_dir, test_mode); !r) {
-        return std::unexpected(r.error());
-    }
-
-    // 4. Build all external dependencies (anchored to each dependency's declaring build.cf directory)
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_external_deps_for_plan(
+    const std::filesystem::path& default_dir,
+    BuildPlan& plan
+) -> std::expected<void, std::string> {
     for (auto& dep : plan.external_deps) {
-        auto dep_base = dep.base_dir.empty() ? dir : dep.base_dir;
+        auto dep_base = dep.base_dir.empty() ? default_dir : dep.base_dir;
         if (auto r = build_local_dep(dep_base, dep, plan); !r) {
             return std::unexpected(r.error());
         }
     }
+    return {};
+}
 
-    // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto populate_checked_build_plan(
+    frontend::CheckedFile& checked,
+    BuildPlan& plan,
+    const std::filesystem::path& runtime_dir,
+    bool inspect_clang_ast
+) -> std::expected<void, std::string> {
+    auto install_root = derive_install_root(runtime_dir);
+    bool is_wasm = plan.target_triple.starts_with("wasm");
+    bool is_win_target = is_windows_target(plan.target_triple);
+    std::filesystem::path entry_p = plan.entry_file.empty()
+        ? std::filesystem::path(checked.ast.path)
+        : std::filesystem::path(plan.entry_file);
+    auto dir = entry_p.parent_path();
+    if (dir.empty()) dir = ".";
     auto cache_dir = dir / ".cfire" / "cache";
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
-    if (inspect_clang_ast) {
-        for (const auto& imp : ast->imports) {
-            if (imp.is_cpp) {
-                auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
-                if (idx) {
-                    for (const auto& [sym_name, sym] : idx->symbols) {
-                        if (sym.kind == "FunctionDecl") {
-                            pre_cpp_fn_params[sym_name] = sym.param_types;
-                        }
-                    }
-                    plan.cpp_headers[imp.path] = std::move(*idx);
-                }
-            }
-        }
-    }
-
-    // 3. Semantic Analysis
-    auto checked = frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params));
-    if (!checked) return std::unexpected(checked.error());
-    plan.warnings = checked->warnings;
 
     static const std::unordered_map<std::string, std::string> core_to_pc = {
         {"core:compress/zstd", "libzstd"},
@@ -389,7 +363,7 @@ namespace cfire::build {
         return false;
     };
 
-    std::unordered_set<std::string> seen_pc;
+    std::unordered_set<std::string> seen_pc(plan.pkg_config_deps.begin(), plan.pkg_config_deps.end());
     auto add_pc = [&](const std::string& pc) {
         if (is_wasm) return;
         if (plan.is_ios) {
@@ -412,7 +386,7 @@ namespace cfire::build {
         query_pkg_config(pc, plan.cflags, plan.ldflags, install_root, is_win_target);
     };
 
-    for (const auto& [sname, tags] : checked->struct_tags) {
+    for (const auto& [sname, tags] : checked.struct_tags) {
         bool has_j = false;
         for (const auto& t : tags) {
             if (!t.json_key.empty()) { has_j = true; break; }
@@ -422,7 +396,7 @@ namespace cfire::build {
             break;
         }
     }
-    for (const auto& imp : checked->ast.imports) {
+    for (const auto& imp : checked.ast.imports) {
         if (!imp.is_cpp) {
             plan.auto_linked.push_back(imp.path);
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
@@ -595,7 +569,7 @@ namespace cfire::build {
             if (!idx) return std::unexpected(idx.error());
             for (const auto& [sym_name, sym] : idx->symbols) {
                 if (sym.kind == "FunctionDecl") {
-                    checked->cpp_fn_params[sym_name] = sym.param_types;
+                    checked.cpp_fn_params[sym_name] = sym.param_types;
                 }
             }
             plan.cpp_headers[imp.path] = std::move(*idx);
@@ -624,6 +598,76 @@ namespace cfire::build {
                 }
             }
         }
+    }
+    return {};
+}
+
+[[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
+    const std::filesystem::path& cf_file,
+    const std::filesystem::path& runtime_dir,
+    bool inspect_clang_ast,
+    bool test_mode,
+    const std::string& target_triple,
+    const std::string& sysroot,
+    const std::string& web_profile,
+    const std::string& subsystem,
+    bool sanitize
+) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
+    auto dir = cf_file.parent_path();
+    if (dir.empty()) dir = ".";
+    auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
+    if (!plan_res) return std::unexpected(plan_res.error());
+    BuildPlan plan = std::move(*plan_res);
+
+    if (auto bcf_res = discover_and_apply_build_cf(plan, cf_file, dir, test_mode); !bcf_res) {
+        return std::unexpected(bcf_res.error());
+    }
+
+    // 2. Read and parse root .cf source
+    auto raw = read_file_text(cf_file);
+    if (!raw) return std::unexpected(raw.error());
+    auto ast = frontend::parse_source(cf_file.string(), *raw);
+    if (!ast) return std::unexpected(ast.error());
+    if (test_mode) {
+        frontend::append_doctests(cf_file.string(), *raw, *ast);
+    }
+
+    // 3. Resolve local `.cf` package imports (`import "./..."`, `import "pkg:..."`, and same-directory package siblings) recursively
+    if (auto r = resolve_local_cf_imports(dir, *ast, plan, runtime_dir, test_mode); !r) {
+        return std::unexpected(r.error());
+    }
+
+    // 4. Build all external dependencies (anchored to each dependency's declaring build.cf directory)
+    if (auto r = build_external_deps_for_plan(dir, plan); !r) {
+        return std::unexpected(r.error());
+    }
+
+    // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
+    auto cache_dir = dir / ".cfire" / "cache";
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    if (inspect_clang_ast) {
+        for (const auto& imp : ast->imports) {
+            if (imp.is_cpp) {
+                auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
+                if (idx) {
+                    for (const auto& [sym_name, sym] : idx->symbols) {
+                        if (sym.kind == "FunctionDecl") {
+                            pre_cpp_fn_params[sym_name] = sym.param_types;
+                        }
+                    }
+                    plan.cpp_headers[imp.path] = std::move(*idx);
+                }
+            }
+        }
+    }
+
+    // 3. Semantic Analysis
+    auto checked = frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params));
+    if (!checked) return std::unexpected(checked.error());
+    plan.warnings = checked->warnings;
+
+    if (auto r = populate_checked_build_plan(*checked, plan, runtime_dir, inspect_clang_ast); !r) {
+        return std::unexpected(r.error());
     }
 
     // 4. C++23 Code Generation (with Clang AST boundary coercions)

@@ -6,6 +6,7 @@
 #include "pch.hpp"
 #include "package_loader.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -24,26 +25,6 @@ namespace cfire::build {
     const std::vector<std::string>& extra_includes = {}
 ) -> std::expected<void, std::string> {
     auto cf_parent = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
-    auto gen_dir = cf_parent / ".cfire" / "gen";
-    std::error_code ec;
-    std::filesystem::create_directories(gen_dir, ec);
-    auto cpp_path = gen_dir / (cf_file.stem().string() + ".cpp");
-    std::optional<cfire::detail::SecureTempDir> fallback_dir;
-    if (ec) {
-        fallback_dir.emplace("cfire_check");  // private dir instead of a shared temp-dir file name (CF-153)
-        cpp_path = fallback_dir->file(cf_file.stem().string() + "_check.cpp");
-    }
-    {
-        std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
-        if (!out) {
-            return std::unexpected("failed to open generated C++ file for writing: " + cpp_path.string());
-        }
-        out << cpp_code;
-        out.flush();
-        if (!out.good()) {
-            return std::unexpected("failed to write generated C++ code: " + cpp_path.string());
-        }
-    }
 
     const bool dev_debug = is_dev_debug_profile();
     std::string opt_flags = dev_debug ? "-O0 -g" : "-O2";
@@ -59,29 +40,83 @@ namespace cfire::build {
     }
 
     std::string compiler = resolve_cxx_compiler(plan.target_triple);
-    auto build_cmd = [&](bool with_pch) {
+    if (const char* trace_path = std::getenv("CFIRE_TRACE_CLANG_CHECK"); trace_path && *trace_path != '\0') {
+        std::ofstream tf(trace_path, std::ios::app);
+        if (tf.good()) {
+            tf << compiler << '\n';
+        }
+    }
+
+    auto build_stdin_cmd = [&](bool with_pch) {
         std::string c = compiler + " " + opt_flags;
         for (const auto& f : eff_cflags) c += " " + f;
+        // Passed after ensure_composite_pch so per-directory -iquote does not alter the shared PCH key.
+        c += std::format(" -iquote \"{}\"", cf_parent.string());
         if (with_pch && !pch_path.empty()) {
             c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
         }
-        if (plan.uses_objc) {
-            c += " -x objective-c++";
-        }
-        c += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
+        c += plan.uses_objc ? " -x objective-c++" : " -x c++";
+        c += " -fsyntax-only - 2>&1";
         return c;
     };
 
     int rc = 0;
-    auto output = bridge::run_command_capture(build_cmd(true), rc);
-    if (rc != 0 && !pch_path.empty()) {
+    auto output = bridge::run_command_capture_with_stdin(build_stdin_cmd(true), cpp_code, rc);
+    if (rc != 0 && rc != -1 && !pch_path.empty()) {
         int fb_rc = 0;
-        auto fb_out = bridge::run_command_capture(build_cmd(false), fb_rc);
+        auto fb_out = bridge::run_command_capture_with_stdin(build_stdin_cmd(false), cpp_code, fb_rc);
         if (fb_rc == 0) {
             return {};
         }
-        output = std::move(fb_out);
+        if (fb_rc == -1) {
+            rc = -1;
+        } else {
+            rc = fb_rc;
+            output = std::move(fb_out);
+        }
     }
+
+    // Fallback when stdin piping is unavailable (e.g. _WIN32 or fork error): use OS SecureTempDir, never <proj>/.cfire/gen.
+    if (rc == -1) {
+        cfire::detail::SecureTempDir temp_dir("cfire_check");
+        auto cpp_path = temp_dir.file(cf_file.stem().string() + (plan.uses_objc ? "_check.mm" : "_check.cpp"));
+        {
+            std::ofstream out(cpp_path, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                return std::unexpected("failed to open generated C++ file for writing: " + cpp_path.string());
+            }
+            out << cpp_code;
+            out.flush();
+            if (!out.good()) {
+                return std::unexpected("failed to write generated C++ code: " + cpp_path.string());
+            }
+        }
+        auto build_file_cmd = [&](bool with_pch) {
+            std::string c = compiler + " " + opt_flags;
+            for (const auto& f : eff_cflags) c += " " + f;
+            c += std::format(" -iquote \"{}\"", cf_parent.string());
+            if (with_pch && !pch_path.empty()) {
+                c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+            }
+            if (plan.uses_objc) {
+                c += " -x objective-c++";
+            }
+            c += std::format(" -fsyntax-only \"{}\" 2>&1", cpp_path.string());
+            return c;
+        };
+        rc = 0;
+        output = bridge::run_command_capture(build_file_cmd(true), rc);
+        if (rc != 0 && !pch_path.empty()) {
+            int fb_rc = 0;
+            auto fb_out = bridge::run_command_capture(build_file_cmd(false), fb_rc);
+            if (fb_rc == 0) {
+                return {};
+            }
+            rc = fb_rc;
+            output = std::move(fb_out);
+        }
+    }
+
     if (rc != 0) {
         return std::unexpected(cfire::diag::humanize_cpp_compiler_output(output));
     }

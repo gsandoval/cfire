@@ -23,6 +23,8 @@ struct CommonCliArgs {
     bool json_mode = false;
     bool fix_mode = false;
     bool dry_run = false;
+    bool verify_cpp = false;
+    bool explicit_release = false;
     std::string fix_only_codes;
     bool bench_mode = false;
     std::string filter_pattern;
@@ -149,6 +151,10 @@ struct CommonCliArgs {
         }
         if (arg == "--dry-run") {
             out.dry_run = true;
+            continue;
+        }
+        if (arg == "--verify-cpp" || arg == "--full") {
+            out.verify_cpp = true;
             continue;
         }
         if (arg == "--only" && i + 1 < argc) {
@@ -347,6 +353,7 @@ struct CommonCliArgs {
                 "--ios", "--ios-sim", "--web", "--web-profile", "--subsystem",
                 "--no-open", "--open", "--port", "-p", "--target", "--sysroot",
                 "--link-lib", "--include", "--json", "--fix", "--dry-run", "--only",
+                "--verify-cpp", "--full",
                 "--cxx", "--cc", "--emxx", "--ar", "--ld",
                 "--verbose", "-v", "--help", "-h"
             };
@@ -381,11 +388,12 @@ struct CommonCliArgs {
         std::println(stderr, "error: conflicting profile flags '--debug' and '--release'");
         return 1;
     }
+    out.explicit_release = saw_release;
     if (saw_debug) {
         cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
     } else if (saw_release) {
         cfire::build::set_build_profile(cfire::build::BuildProfile::Release);
-    } else if (sub == "run" || (sub == "test" && !out.bench_mode)) {
+    } else if (sub == "run" || sub == "check" || (sub == "test" && !out.bench_mode)) {
         cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
     } else {
         cfire::build::set_build_profile(cfire::build::BuildProfile::Release);

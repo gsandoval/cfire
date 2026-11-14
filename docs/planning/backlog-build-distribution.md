@@ -190,7 +190,7 @@ flowchart TD
 
 ---
 
-### `CF-201` — Single-Pass In-Memory `check` & Stdin Clang Gating `[TODO]`
+### `CF-201` — Single-Pass In-Memory `check` & Stdin Clang Gating `[DONE]`
 - **Wave / ADR**: Wave B2 (`Q58`).
 - **Problem & Evidence**:
   - `src/analysis.hpp:135-175` unconditionally calls `verify_cpp_syntax_only` when `opts.verify_cpp_backend` is true, and at line `148` calls `cfire::build::analyze_and_emit(fpath, rt_dir, false, is_test_f)`, which **re-lexes, re-parses, and re-runs Sema from disk**!

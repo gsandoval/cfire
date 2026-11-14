@@ -66,7 +66,7 @@ void test_cf188_stdlib_type_surface(const std::filesystem::path& rt_dir) {
         const auto& p = probes[i];
         auto sub = dir.subpath(std::format("t{}", i));
         (void)cfire::fs::write_text(sub / "main.cf", std::format("package main\nimport \"{}\"\nfn take(x: {}) {{\n}}\nfn main() {{\n}}\n", p.import_path, p.spelled));
-        auto r = run_process({cfire, "check", "main.cf"}, sub, 300);
+        auto r = run_process({cfire, "check", "--verify-cpp", "main.cf"}, sub, 300);
         const std::string all = r.out + r.err;
         if (p.manifest) {
             if (r.exit_code == 0 || !all.contains("cfire/UNKNOWN-STDLIB-TYPE") || !all.contains("build.cf"))

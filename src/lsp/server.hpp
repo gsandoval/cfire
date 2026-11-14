@@ -45,6 +45,7 @@ public:
         std::string uri;
         std::string text;
         std::chrono::steady_clock::time_point deadline;
+        bool allow_cpp_backend = false;
     };
 
     explicit Server(int debounce_ms = 150)
@@ -76,7 +77,7 @@ public:
 
     void stop_worker();
 
-    void schedule_diagnostics(const std::string& uri, const std::string& text, bool immediate);
+    void schedule_diagnostics(const std::string& uri, const std::string& text, bool immediate, bool allow_cpp_backend = false);
 
     void handle_stream(std::istream& in, std::ostream& out);
 
@@ -130,7 +131,7 @@ public:
 
     auto compute_diagnostics_for_doc(const std::string& uri, const std::string& text, bool allow_cpp_fallback = false) -> std::vector<detail::DiagnosticEntry>;
 
-    void run_and_publish_diagnostics(const std::string& uri, const std::string& text);
+    void run_and_publish_diagnostics(const std::string& uri, const std::string& text, bool allow_cpp_backend = true);
 
     void publish_diagnostics(const std::string& uri, const std::string& text, std::ostream& out);
 
@@ -224,7 +225,7 @@ CFIRE_LSP_SERVER_INLINE void Server::stop_worker() {
     }
 }
 
-CFIRE_LSP_SERVER_INLINE void Server::schedule_diagnostics(const std::string& uri, const std::string& text, bool immediate) {
+CFIRE_LSP_SERVER_INLINE void Server::schedule_diagnostics(const std::string& uri, const std::string& text, bool immediate, bool allow_cpp_backend) {
     if (!worker_running_.load()) {
         start_worker();
     }
@@ -232,7 +233,7 @@ CFIRE_LSP_SERVER_INLINE void Server::schedule_diagnostics(const std::string& uri
         std::lock_guard<std::mutex> lock(diag_mutex_);
         auto now = std::chrono::steady_clock::now();
         auto deadline = immediate ? now : (now + debounce_duration_);
-        pending_diags_[uri] = PendingDiagRequest{uri, text, deadline};
+        pending_diags_[uri] = PendingDiagRequest{uri, text, deadline, allow_cpp_backend};
     }
     diag_cv_.notify_one();
 }
@@ -404,7 +405,8 @@ CFIRE_LSP_SERVER_INLINE bool Server::handle_message_impl(std::string_view msg, s
             }
         }
         bool immediate = (method != "textDocument/didChange");
-        schedule_diagnostics(uri, content, immediate);
+        bool allow_cpp_backend = (method != "textDocument/didChange");
+        schedule_diagnostics(uri, content, immediate, allow_cpp_backend);
         return true;
     }
 
@@ -948,9 +950,23 @@ CFIRE_LSP_SERVER_INLINE auto Server::get_or_parse_ast(const std::string& uri, co
 CFIRE_LSP_SERVER_INLINE auto Server::compute_diagnostics_for_doc(const std::string& uri, const std::string& text, bool allow_cpp_fallback) -> std::vector<detail::DiagnosticEntry> {
     std::string file_path = detail::uri_to_path(uri);
     cfire::analysis::CheckOptions opts;
-    opts.verify_cpp_backend = allow_cpp_fallback && (debounce_duration_.count() >= 50);
+    opts.verify_cpp_backend = allow_cpp_fallback;
     auto layout = cfire::build::locate_toolchain_layout(nullptr);
     opts.runtime_dir = layout.runtime_dir;
+    {
+        std::lock_guard<std::mutex> lock(docs_mutex_);
+        for (const auto& [doc_uri, doc_text] : docs_) {
+            std::string doc_path = detail::uri_to_path(doc_uri);
+            if (!doc_path.empty()) {
+                opts.source_overlays[doc_path] = doc_text;
+                std::error_code ec;
+                auto canon = std::filesystem::weakly_canonical(doc_path, ec);
+                if (!ec && !canon.empty()) {
+                    opts.source_overlays[canon.string()] = doc_text;
+                }
+            }
+        }
+    }
 
     auto diags = cfire::analysis::check_source(file_path, text, opts);
     std::vector<detail::DiagnosticEntry> entries;
@@ -972,8 +988,8 @@ CFIRE_LSP_SERVER_INLINE auto Server::compute_diagnostics_for_doc(const std::stri
     return entries;
 }
 
-CFIRE_LSP_SERVER_INLINE void Server::run_and_publish_diagnostics(const std::string& uri, const std::string& text) {
-    auto entries = compute_diagnostics_for_doc(uri, text, true);
+CFIRE_LSP_SERVER_INLINE void Server::run_and_publish_diagnostics(const std::string& uri, const std::string& text, bool allow_cpp_backend) {
+    auto entries = compute_diagnostics_for_doc(uri, text, allow_cpp_backend);
     std::string diags_json = "[";
     for (std::size_t i = 0; i < entries.size(); ++i) {
         if (i > 0) diags_json += ",";
@@ -1052,7 +1068,7 @@ CFIRE_LSP_SERVER_INLINE void Server::worker_loop() {
 
         if (has_req) {
             try {
-                run_and_publish_diagnostics(current_req.uri, current_req.text);
+                run_and_publish_diagnostics(current_req.uri, current_req.text, current_req.allow_cpp_backend);
             } catch (const std::exception& e) {
                 std::println(stderr, "cfire lsp: internal error while analyzing {}: {}", current_req.uri, e.what());
             } catch (...) {

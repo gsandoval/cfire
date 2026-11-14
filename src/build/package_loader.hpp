@@ -3,6 +3,7 @@
 
 #include "deps.hpp"
 #include <deque>
+#include <unordered_map>
 
 #ifndef CFIRE_INFRA_INLINE
 #ifdef CFIRE_SPLIT_TUS
@@ -30,7 +31,8 @@ namespace cfire::build {
     frontend::FileAST& root_ast,
     BuildPlan& plan,
     const std::filesystem::path& runtime_dir = {},
-    bool test_mode = false
+    bool test_mode = false,
+    const std::unordered_map<std::string, std::string>* source_overlays = nullptr
 ) -> std::expected<void, std::string>;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto is_ios_target(std::string_view target) noexcept -> bool;
@@ -100,12 +102,35 @@ namespace cfire::build {
     return true;
 }
 
+[[nodiscard]] inline auto read_file_or_overlay(
+    const std::filesystem::path& p,
+    const std::unordered_map<std::string, std::string>* overlays
+) -> std::expected<std::string, std::string> {
+    if (overlays && !overlays->empty()) {
+        if (auto it = overlays->find(p.string()); it != overlays->end()) {
+            return it->second;
+        }
+        if (auto it = overlays->find(p.lexically_normal().string()); it != overlays->end()) {
+            return it->second;
+        }
+        std::error_code ec;
+        auto canon = std::filesystem::weakly_canonical(p, ec);
+        if (!ec && !canon.empty()) {
+            if (auto it = overlays->find(canon.string()); it != overlays->end()) {
+                return it->second;
+            }
+        }
+    }
+    return read_file_text(p);
+}
+
 [[nodiscard]] CFIRE_INFRA_INLINE auto resolve_local_cf_imports(
     const std::filesystem::path& root_base_dir,
     frontend::FileAST& root_ast,
     BuildPlan& plan,
     const std::filesystem::path& runtime_dir,
-    bool test_mode) -> std::expected<void, std::string> {
+    bool test_mode,
+    const std::unordered_map<std::string, std::string>* source_overlays) -> std::expected<void, std::string> {
     std::vector<frontend::ImportDecl> kept_imports;
     std::unordered_set<std::string> visited_files;
     std::unordered_set<std::string> visited_build_cfs;
@@ -211,8 +236,10 @@ namespace cfire::build {
                     }
                     for (auto& cmd : parsed->pre_build_commands) {
                         if (cmd.work_dir.empty()) cmd.work_dir = candidate_dir.string();
-                        if (auto r = execute_pre_build_command(cmd, candidate_dir); !r) {
-                            return std::unexpected(r.error());
+                        if (!source_overlays) {
+                            if (auto r = execute_pre_build_command(cmd, candidate_dir); !r) {
+                                return std::unexpected(r.error());
+                            }
                         }
                         plan.pre_build_commands.push_back(std::move(cmd));
                     }
@@ -245,7 +272,7 @@ namespace cfire::build {
                 std::string canon = std::filesystem::weakly_canonical(fpath).string();
                 if (visited_files.contains(canon)) continue;
 
-                auto raw = read_file_text(fpath);
+                auto raw = read_file_or_overlay(fpath, source_overlays);
                 if (!raw) return std::unexpected(raw.error());
                 auto sub_ast = frontend::parse_source(fpath.string(), *raw);
                 if (!sub_ast) {
