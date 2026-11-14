@@ -208,6 +208,7 @@ namespace cfire::frontend {
             }
             return std::format("({} {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
+            if (cf_.guard_value_members.contains(&ex)) return std::format("(*{})", emit_expr(ex.object));  // Q52 `g.value`
             if (ex.resolution) {
                 const auto& res = *ex.resolution;
                 if (res.kind == SymbolKind::CoreNamespace) {
@@ -394,6 +395,8 @@ namespace cfire::frontend {
                     tname = std::format("cfire::{}::{}", mod, rest);
                 } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
                     tname = rest;
+                } else if (cfire::frontend::StdlibCatalogIndex::instance().has_namespace(mod)) {
+                    tname = std::format("cfire::{}::{}", mod, rest);  // CF-188: `http.ServerLimits{}`, `aes.GcmResult{}`
                 } else {
                     tname = std::format("{}::{}", mod, rest);
                 }
@@ -961,7 +964,16 @@ namespace cfire::frontend {
             }
             if (spawn_cl) {
                 std::ostringstream sb;
-                sb << std::format("{}.spawn([={}]() mutable {{\n", obj, view_param_captures(spawn_cl->body));
+                // Q51 slot captures: the task writes `xs[i]` of the real slice (Sema proved the slot is its own).
+                std::string caps = view_param_captures(spawn_cl->body);
+                for (const auto& sc : spawn_cl->slot_captures) caps += ", &" + sc.first;
+                const auto vsr = value_scope_results_.find(obj);
+                if (vsr != value_scope_results_.end()) {
+                    // Q51: the task's value goes to the scope's result, in spawn order.
+                    sb << std::format("{}.add({}.spawn([={}]() mutable -> {} {{\n", vsr->second.first, obj, caps, vsr->second.second);
+                } else {
+                    sb << std::format("{}.spawn([={}]() mutable {{\n", obj, caps);
+                }
                 ++indent_;
                 Emitter sub = make_sub_emitter(false);
                 for (const auto& st : spawn_cl->body) {
@@ -970,7 +982,7 @@ namespace cfire::frontend {
                 sb << sub.buf_.str();
                 --indent_;
                 for (int i = 0; i < indent_; ++i) sb << "    ";
-                sb << "})";
+                sb << (vsr != value_scope_results_.end() ? "}))" : "})");
                 last_source_line_ = -1;
                 return sb.str();
             }
@@ -1071,6 +1083,8 @@ namespace cfire::frontend {
             } else if ((ptype.contains("basic_string<char>") || ptype.contains("std::string")) &&
                        !ptype.contains("string_view") && !arg_val.starts_with("std::string(")) {
                 arg_val = std::format("std::string({})", arg_val);
+            } else if (ptype.ends_with('*') && !ptype.contains("(*") && ptype != "const char *" && ptype != "const char*") {
+                arg_val = std::format("cfire::c_ptr<{}>({})", ptype, arg_val);  // Q54: a slice / str is its buffer pointer
             }
         } else if (is_vendor_call) {
             bool is_plain_lit_or_const = false;

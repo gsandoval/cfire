@@ -5,9 +5,8 @@ Each `.cf` file in this tree pins down **one** language or stdlib expectation. T
 Run the corpus:
 
 ```bash
-make test-conformance                                        # also part of `make test`
-python3 -I scripts/run_conformance.py --filter 'ownership/*' -v
-python3 -I scripts/run_conformance.py --self-test            # verifies the runner itself
+make test-conformance                                        # also part of `make check`
+./.cfire_test_runner conformance --filter 'ownership/*' -v   # after `make .cfire_test_runner`
 ```
 
 ## Directives
@@ -50,3 +49,5 @@ Files named `*_test.cf` run with `cfire test`; all others run with `cfire run`.
 - When an ADR changes an API, update the affected files in the same change, so `expect:` always describes the decided behavior.
 - One expectation per file. Name files `NNN_what_it_checks.cf`.
 - Never write a file whose expectation is "whatever the compiler does today" unless that behavior is decided. If it's undecided, open a backlog item and ask.
+
+The runner is `tests/conformance_runner.hpp` (part of `.cfire_test_runner`); its own classification tests are in `tests/runner_self_tests.hpp`, run by the `unit` suite.

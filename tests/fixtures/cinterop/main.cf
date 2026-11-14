@@ -29,8 +29,8 @@ fn main() {
     assert(g.geom_label_len("{title} Dialog") == 15)
 
     mut values: []i32 = [1, 2, 3, 4]
-    assert(g.geom_sum_i32(values.data(), values.len()) == 10)
-    g.geom_fill_i32(values.data(), values.len(), 7)
+    assert(g.geom_sum_i32(values, values.len()) == 10)
+    g.geom_fill_i32(values, values.len(), 7)
     assert(values[3] == 7)
 
     mut flags: g.GeomFlags = g.GeomFlags::GEOM_FLAG_VISIBLE | g.GeomFlags::GEOM_FLAG_SOLID

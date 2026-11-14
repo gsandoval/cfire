@@ -55,8 +55,9 @@ if ! ./cfire doc --check >/dev/null 2>&1; then
     ./cfire doc --check
 fi
 
-# 3. Verify canonical formatting of examples
-./cfire fmt --check examples/ >/dev/null
-
-# 4. Run fast unit test suites
-make -s test-unit
+# 3. The every-commit tier (CF-186): zero warnings, formatting, examples, unit/e2e/stdlib, GUIDE doc-tests and the
+#    conformance corpus. It tests the working tree, so unstaged edits count too. A failure blocks the commit.
+if ! make -s check; then
+    echo "==> [pre-commit] make check failed; fix it and commit again (docs/planning/README.md, Quality Gates)." >&2
+    exit 1
+fi

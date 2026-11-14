@@ -1,0 +1,7 @@
+// CF-188: the `build.*` types exist only in a build.cf manifest.
+package main
+import "core:build"
+fn describe(t: build.Target) { //~ error cfire/UNKNOWN-STDLIB-TYPE
+}
+fn main() {
+}

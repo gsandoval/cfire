@@ -1,6 +1,6 @@
 package main
 fn main() {
     line := "R48"
-    n := i64.parse(*line[1..]) or 0 //~ error cfire/TYPE-MISMATCH
+    n := i64.parse(*line[1..]) or 0 //~ error cfire/RAW-POINTER
     println("{}", n)
 }

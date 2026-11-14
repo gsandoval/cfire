@@ -95,9 +95,9 @@ fn main() {
 fn consume(move s: str) { println("{}", s) }
 fn main() {
     mut msg := "hello"
-    p := &mut msg
+    view := msg[0..2]
     consume(move msg)
-    println("{}", *p)
+    println("{}", view)
 }
 )", "cfire/USE-AFTER-FREE", "uaf_after_move.cf");
 
@@ -113,30 +113,27 @@ fn main() {
     require_sema_error(R"(package main
 fn main() {
     mut nums: []i32 = [1, 2, 3]
-    p := nums.data()
+    view := nums[0..2]
     nums = [10, 20]
-    println("{}", *p)
+    println("{}", view[0])
 }
 )", "cfire/USE-AFTER-FREE", "uaf_after_reassign.cf");
 
-    // SAFE-P0-01: Lexical Scope Escape (cfire/DANGLING-POINTER & cfire/DANGLING-RETURN)
+    // CF-189: the scope-escape checks (DANGLING-POINTER, DANGLING-RETURN) guarded raw pointers and `&T` returns,
+    // which are not cfire syntax any more; each old form is now a migration error.
     require_sema_error(R"(package main
 fn main() {
-    mut p: *mut i32 = none
-    if true {
-        mut inner := 42
-        p = &mut inner
-    }
+    mut inner := 42
+    p := &mut inner
 }
-)", "cfire/DANGLING-POINTER", "dangling_inner_scope.cf");
+)", "cfire/RAW-POINTER", "dangling_inner_scope.cf");
 
     require_sema_error(R"(package main
 fn leak_ptr() -> *mut i32 {
-    mut local := 99
-    return &mut local
+    return none
 }
 fn main() {}
-)", "cfire/DANGLING-RETURN", "dangling_return_ptr.cf");
+)", "cfire/RAW-POINTER", "dangling_return_ptr.cf");
 
     require_sema_error(R"(package main
 fn leak_slice() -> &[]i32 {
@@ -144,7 +141,7 @@ fn leak_slice() -> &[]i32 {
     return nums[0..2]
 }
 fn main() {}
-)", "cfire/DANGLING-RETURN", "dangling_return_slice.cf");
+)", "cfire/REFERENCE-TYPE", "dangling_return_slice.cf");
 
     // SAFE-P0-01: Iterator Invalidation (cfire/ITERATOR-INVALIDATION)
     require_sema_error(R"(package main
@@ -156,68 +153,39 @@ fn main() {
 }
 )", "cfire/ITERATOR-INVALIDATION", "iter_invalidation.cf");
 
-    // SAFE-P0-02: Flow-Sensitive Non-Null Pointer Verification (cfire/NULL-DEREF)
+    // CF-189: values are never null (no raw pointers); absence is `T?` and must be unwrapped.
     require_sema_error(R"(package main
 fn main() {
     mut p: *mut i32 = none
-    *p = 10
 }
-)", "cfire/NULL-DEREF", "null_deref_none.cf");
+)", "cfire/RAW-POINTER", "null_deref_none.cf");
 
     require_sema_error(R"(package main
+type Session struct {
+    id: i32
+}
+fn find(id: i32) -> Session? {
+    return none
+}
 fn main() {
-    mut p: *mut i32
-    println("{}", *p)
+    s := find(1)
+    println("{}", s.id)
 }
-)", "cfire/NULL-DEREF", "null_deref_uninit.cf");
+)", "cfire/NULL-DEREF", "optional_not_unwrapped.cf");
 
-    require_sema_error(R"(package main
-fn test_branch(flag: bool) {
-    mut x := 10
-    mut p: *mut i32 = none
-    if flag {
-        p = &mut x
-    }
-    *p = 20
+    require_sema_ok(R"(package main
+type Session struct {
+    id: i32
 }
-fn main() {}
-)", "cfire/NULL-DEREF", "null_deref_maybe_null.cf");
-
-    require_sema_error(R"(package main
-fn test_eq_none(p: *mut i32?) {
-    if p == none {
-        *p = 1
+fn find(id: i32) -> Session? {
+    return none
+}
+fn main() {
+    if s := find(1) {
+        println("{}", s.id)
     }
 }
-fn main() {}
-)", "cfire/NULL-DEREF", "null_deref_in_none_branch.cf");
-
-    // Positive verification: flow-sensitive non-null narrowing via != none, early return, and assert
-    {
-        auto valid_ast = cfire::frontend::parse_source("null_narrowing_ok.cf", R"(package main
-fn narrow_if(p: *mut i32?) {
-    if p != none {
-        *p = 42
-    }
-}
-fn narrow_early_return(p: *mut i32?) {
-    if p == none {
-        return
-    }
-    *p = 77
-}
-fn narrow_assert(p: *mut i32?) {
-    assert(p != none)
-    *p = 99
-}
-fn main() {}
-)");
-        require(valid_ast.has_value(), "parse valid non-null narrowing (SAFE-P0-02)");
-        if (valid_ast) {
-            auto checked = cfire::frontend::analyze(std::move(*valid_ast));
-            require(checked.has_value(), "sema accepts narrowed non-null dereferences (SAFE-P0-02)");
-        }
-    }
+)", "optional_unwrapped_ok.cf");
 
     // SAFE-P0-03: Compile-Time & Runtime Bounds Verification (cfire/INDEX-OUT-OF-BOUNDS & cfire::index_at)
     require_sema_error(R"(package main
@@ -268,7 +236,7 @@ fn main() {}
     }
 
     run_cfire_source(R"(package main
-fn get_elem(nums: &[]i32, idx: i32) -> i32 {
+fn get_elem(nums: []i32, idx: i32) -> i32 {
     return nums[idx]
 }
 fn main() {
@@ -358,18 +326,18 @@ fn main() {}
 
     // TOOL-SAFE-01: Fix-it synthesis for cfire/MOVE-CALLSITE and cfire/NULL-DEREF + CLI inspect diagnostic code
     {
-        std::string null_src = "package main\nfn main() {\n    mut p: *mut i32 = none\n    *p = 1\n}\n";
-        auto lines = cfire::diag::split_lines(null_src);
-        auto sd = first_diag_with_code("null.cf", null_src, "cfire/NULL-DEREF");
-        require(!sd.fixits.empty(), "synthesizes fix-it for cfire/NULL-DEREF (TOOL-SAFE-01)");
-        if (!sd.fixits.empty()) {
-            require(sd.fixits[0].replacement.contains("assert(p != none)"),
-                "cfire/NULL-DEREF fix-it inserts assert(p != none) guard (TOOL-SAFE-01)");
-        }
+        // CF-189 (Q53): `n: &mut T` -> `mut n: T`, and `s: &T` drops the `&`.
+        std::string ref_src = "package main\nfn bump(n: &mut i32) {\n}\nfn main() {}\n";
+        auto sd = first_diag_with_code("ref.cf", ref_src, "cfire/REFERENCE-TYPE");
+        require(!sd.fixits.empty() && sd.fixits[0].replacement == "mut n: ", "synthesizes the cfire/REFERENCE-TYPE fix-it for '&mut T' (CF-189)");
+        std::string view_src = "package main\nfn show(s: &str) {\n}\nfn main() {}\n";
+        auto vd = first_diag_with_code("view.cf", view_src, "cfire/REFERENCE-TYPE");
+        require(!vd.fixits.empty() && vd.fixits[0].replacement.empty() && vd.fixits[0].start_col == 12,
+                "the cfire/REFERENCE-TYPE fix-it for '&T' removes the '&' (CF-189)");
 
         run_cfire("inspect cfire/USE-AFTER-FREE")
             .assert_ok("cfire inspect cfire/USE-AFTER-FREE exit 0 (TOOL-SAFE-01)")
-            .assert_contains("Use of Dangling Pointer or Slice View After Owner Invalidation", "cfire inspect shows diagnostic rule title (TOOL-SAFE-01)");
+            .assert_contains("Use of a Slice View After Owner Invalidation", "cfire inspect shows diagnostic rule title (TOOL-SAFE-01)");
 
         run_cfire("inspect cfire/INVALID-STRUCT-TAG")
             .assert_ok("cfire inspect cfire/INVALID-STRUCT-TAG exit 0 (TEST-03a/06)")
@@ -991,15 +959,16 @@ fn test_esc() {
 fn main() {}
 )", "cfire/ESCAPING-CAPTURE-MUT", "esc_capture_mut.cf");
 
-    // CF-164 (strict rule, amends Q2): writing through a captured pointer from a spawned task is a data
-    // race risk and is rejected; per-task slots from the spawning loop's index stay legal.
+    // CF-164 / Q51 (CF-189): tasks sharing one element is a data race and is rejected; a slot named by the spawning
+    // loop's own index stays legal.
     require_sema_error(R"(package main
 fn test_esc_ptr() {
-    mut total := 0
-    ptr := &mut total
+    mut totals: []i32 = [0, 0]
     async.scope |scope| {
-        scope.spawn || {
-            *ptr += 5
+        for i in 0..2 {
+            scope.spawn |mut totals[0]| {
+                totals[0] += 5
+            }
         }
     }
 }
@@ -1011,9 +980,8 @@ fn test_esc_ok() {
     mut totals: []i32 = [0, 0]
     async.scope |scope| {
         for i in 0..2 {
-            slot := &mut totals[i]
-            scope.spawn || {
-                *slot += 5
+            scope.spawn |mut totals[i]| {
+                totals[i] += 5
             }
         }
     }
@@ -1120,7 +1088,7 @@ void test_slice_pattern_matching(const std::filesystem::path& rt_dir) {
     // 1. In-process AST and Codegen verification
     std::string_view cf_src = R"(package main
 
-fn sum_slice(s: &[]i32) -> i32 {
+fn sum_slice(s: []i32) -> i32 {
     match s {
         [] => {
             return 0
@@ -1132,7 +1100,7 @@ fn sum_slice(s: &[]i32) -> i32 {
     return 0
 }
 
-fn inspect(s: &[]str) -> str {
+fn inspect(s: []str) -> str {
     match s {
         [] => {
             return "empty"
@@ -1175,7 +1143,7 @@ fn main() {
     // 2. End-to-end cfire run invocation
     run_cfire_source(R"(package main
 
-fn sum_slice(s: &[]i32) -> i32 {
+fn sum_slice(s: []i32) -> i32 {
     match s {
         [] => {
             return 0
@@ -1187,7 +1155,7 @@ fn sum_slice(s: &[]i32) -> i32 {
     return 0
 }
 
-fn classify(s: &[]str) -> str {
+fn classify(s: []str) -> str {
     match s {
         [] => {
             return "empty"
@@ -1833,21 +1801,21 @@ fn main() {
     require_sema_error(R"(package main
 import cpp "<cstdio>"
 fn main() {
-    mut f: *cpp::FILE = none
+    mut f: cpp::size_t = 0
 }
 )", "cfire/DEPRECATED-SEPARATOR", "cpp_colon_var.cf");
 
     require_sema_error(R"(package main
 import cpp "<cstdio>"
 type FileHandle struct {
-    f: *cpp::FILE
+    f: cpp::size_t
 }
 fn main() {}
 )", "cfire/DEPRECATED-SEPARATOR", "cpp_colon_field.cf");
 
     require_sema_error(R"(package main
 import cpp "<cstdio>"
-fn get_file(f: *cpp::FILE) -> *cpp::FILE {
+fn get_file(f: cpp::size_t) -> cpp::size_t {
     return f
 }
 fn main() {}
@@ -2583,7 +2551,8 @@ void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_di
 
     require(cat_idx.is_known_ns_member("http", "Response"), "cat_idx knows http.Response");
     require(cat_idx.is_known_ns_member("time", "Duration"), "cat_idx knows time.Duration");
-    require(cat_idx.is_known_ns_member("json", "JsonValue"), "cat_idx knows json.JsonValue");
+    require(cat_idx.is_known_ns_member("json", "Value"), "cat_idx knows json.Value");
+    require(!cat_idx.is_known_ns_member("json", "JsonValue"), "CF-188: json.JsonValue is not a stdlib type (it never had a runtime type)");
     require(cat_idx.is_known_ns_member("sync", "Mutex"), "cat_idx knows sync.Mutex");
 
     auto fn_resp_text = cat_idx.find_ns_fn("http", "Response.text");
@@ -2790,39 +2759,17 @@ fn main() {}
     // 4a. cpp {} invalidates active loan
     require_sema_error(R"(package main
 fn main() {
-    mut x := 10
-    p := &x
+    mut xs: []i32 = [10, 20]
+    v := xs[0..1]
     cpp {
         // foreign modification
     }
-    y := *p
+    y := v[0]
 }
 )", "cfire/USE-AFTER-FREE");
 
-    // 4b. cpp {} invalidates NonNull fact, demoting to MaybeNull (requiring null check before dereference)
-    require_sema_error(R"(package main
-fn test_cpp_null(ptr: *int) {
-    if ptr != none {
-        cpp {
-            // foreign code can mutate ptr
-        }
-        val := *ptr
-    }
-}
-fn main() {}
-)", "cfire/NULL-DEREF");
+    // 4b/4c (null facts of raw pointers after `cpp {}` and foreign calls) retired with raw pointers (CF-189).
 
-    // 4c. foreign C++ call invalidates NonNull fact on argument
-    require_sema_error(R"(package main
-import cpp "<cstdio>"
-fn test_foreign_null(ptr: *int) {
-    if ptr != none {
-        cpp.printf("%p\n", ptr)
-        val := *ptr
-    }
-}
-fn main() {}
-)", "cfire/NULL-DEREF");
 
     std::println("--- PASS: test_phase3_advanced_language_and_safety (CF-121 - CF-124)");
 }
@@ -2883,7 +2830,7 @@ fn main() {
         }
     }
     g := mu.lock()
-    println("TOTAL: {}", *g)
+    println("TOTAL: {}", g.value)
 }
 )", "phase2_mutex")
         .assert_ok("concurrency mutex with_lock and lock() succeeds")

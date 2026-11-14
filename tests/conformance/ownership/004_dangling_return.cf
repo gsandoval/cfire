@@ -1,9 +1,0 @@
-package main
-fn get() -> *i64 {
-    x := 5
-    return &x //~ error cfire/DANGLING-RETURN
-}
-fn main() {
-    p := get()
-    println("{}", *p)
-}

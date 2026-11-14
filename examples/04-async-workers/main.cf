@@ -8,17 +8,15 @@ fn fetch_status(endpoint: str, port: u16) -> i32! {
     return 200
 }
 
-fn check_cluster(hosts: &[]str, port: u16) -> []i32 {
-    mut codes := make([]i32, hosts.len())
-    async.scope(workers: 4) |scope| {
-        for i, h in hosts {
-            slot := &mut codes[i]
+// Each task returns its host's status; the scope's value is every status, in host order (Q51).
+fn check_cluster(hosts: []str, port: u16) -> []i32 {
+    return async.scope(workers: 4) |scope| {
+        for h in hosts {
             scope.spawn || {
-                *slot = fetch_status(h, port) or 503
+                return fetch_status(h, port) or 503
             }
         }
     }
-    return codes
 }
 
 fn main() {

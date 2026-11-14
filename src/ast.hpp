@@ -375,6 +375,9 @@ struct ClosureExpr {
     bool is_async = false;
     bool is_escaping = false;
     std::vector<StmtPtr> body{};
+    // Q51 (CF-189): `scope.spawn |mut codes[i]| { codes[i] = v }`: the task may write that one element and
+    // nothing else of `codes`. Each entry is (slice variable, index expression).
+    std::vector<std::pair<std::string, ExprPtr>> slot_captures{};
 };
 
 struct CallArg {
@@ -620,6 +623,14 @@ struct AsyncScopeStmt {
     std::string scope_var{};
     std::vector<StmtPtr> body{};
     int line = 1;
+    // Q51 (CF-189): `results := async.scope(...) |s| { ... }` / `return async.scope(...) ...`: the values the
+    // spawned tasks return, as `[]T` in spawn order. `result_var` names the new variable ("" for none).
+    std::string result_var{};
+    bool result_mut = false;
+    bool result_return = false;
+    int result_col = 1;
+    // Set by Sema: the element type `T` of the result (`i32`), so codegen can declare the vector.
+    mutable std::string result_elem_type{};
 };
 
 struct ExprStmt {
@@ -675,6 +686,100 @@ template <typename T>
 }
 
 // --- Top-Level Declarations ---
+
+// Calls `visit(e)` for every expression in `stmts`, outer expressions first; returning false skips that
+// expression's children. Closure bodies are included (CF-189: a slot capture checks every use inside the task).
+template <typename F>
+void visit_exprs(const std::vector<StmtPtr>& stmts, F&& visit);
+
+template <typename F>
+void visit_expr_tree(const ExprPtr& e, F&& visit) {
+    if (!e || !visit(e)) return;
+    std::visit([&](const auto& ex) {
+        using T = std::decay_t<decltype(ex)>;
+        if constexpr (std::is_same_v<T, UnaryExpr>) {
+            visit_expr_tree(ex.operand, visit);
+        } else if constexpr (std::is_same_v<T, BinaryExpr>) {
+            visit_expr_tree(ex.left, visit);
+            visit_expr_tree(ex.right, visit);
+        } else if constexpr (std::is_same_v<T, MemberExpr>) {
+            visit_expr_tree(ex.object, visit);
+        } else if constexpr (std::is_same_v<T, IndexExpr>) {
+            visit_expr_tree(ex.object, visit);
+            visit_expr_tree(ex.index, visit);
+        } else if constexpr (std::is_same_v<T, SliceExpr>) {
+            visit_expr_tree(ex.object, visit);
+            visit_expr_tree(ex.start, visit);
+            visit_expr_tree(ex.end, visit);
+        } else if constexpr (std::is_same_v<T, StructLitExpr>) {
+            for (const auto& f : ex.fields) visit_expr_tree(f.value, visit);
+        } else if constexpr (std::is_same_v<T, ArrayLitExpr> || std::is_same_v<T, TupleExpr>) {
+            for (const auto& el : ex.elements) visit_expr_tree(el, visit);
+        } else if constexpr (std::is_same_v<T, ClosureExpr>) {
+            visit_exprs(ex.body, visit);
+        } else if constexpr (std::is_same_v<T, CallExpr>) {
+            visit_expr_tree(ex.callee, visit);
+            for (const auto& a : ex.args) visit_expr_tree(a.value, visit);
+            if (ex.block_arg) visit_exprs(ex.block_arg->body, visit);
+        } else if constexpr (std::is_same_v<T, TryExpr>) {
+            visit_expr_tree(ex.inner, visit);
+        } else if constexpr (std::is_same_v<T, OrExpr>) {
+            visit_expr_tree(ex.inner, visit);
+            visit_expr_tree(ex.fallback_val, visit);
+            visit_exprs(ex.handler_body, visit);
+        } else if constexpr (std::is_same_v<T, MatchExpr>) {
+            visit_expr_tree(ex.target, visit);
+            for (const auto& arm : ex.arms) {
+                visit_expr_tree(arm.guard, visit);
+                visit_exprs(arm.body, visit);
+            }
+        }
+    }, e->node);
+}
+
+template <typename F>
+void visit_exprs(const std::vector<StmtPtr>& stmts, F&& visit) {
+    for (const auto& s : stmts) {
+        if (!s) continue;
+        std::visit([&](const auto& st) {
+            using T = std::decay_t<decltype(st)>;
+            if constexpr (std::is_same_v<T, VarDeclStmt> || std::is_same_v<T, DestructureVarDeclStmt>) {
+                visit_expr_tree(st.init, visit);
+            } else if constexpr (std::is_same_v<T, AssignStmt>) {
+                visit_expr_tree(st.target, visit);
+                visit_expr_tree(st.value, visit);
+            } else if constexpr (std::is_same_v<T, DestructureAssignStmt>) {
+                for (const auto& t : st.targets) visit_expr_tree(t, visit);
+                visit_expr_tree(st.value, visit);
+            } else if constexpr (std::is_same_v<T, DeferStmt>) {
+                visit_expr_tree(st.call, visit);
+                visit_exprs(st.body, visit);
+            } else if constexpr (std::is_same_v<T, ReturnStmt>) {
+                visit_expr_tree(st.value, visit);
+            } else if constexpr (std::is_same_v<T, IfStmt>) {
+                visit_expr_tree(st.cond, visit);
+                visit_expr_tree(st.unwrap_init, visit);
+                visit_exprs(st.then_body, visit);
+                visit_exprs(st.else_body, visit);
+            } else if constexpr (std::is_same_v<T, ForStmt>) {
+                visit_expr_tree(st.iter_expr, visit);
+                visit_expr_tree(st.range_end, visit);
+                visit_exprs(st.body, visit);
+            } else if constexpr (std::is_same_v<T, MatchStmt>) {
+                visit_expr_tree(st.target, visit);
+                for (const auto& arm : st.arms) {
+                    visit_expr_tree(arm.guard, visit);
+                    visit_exprs(arm.body, visit);
+                }
+            } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
+                visit_expr_tree(st.workers, visit);
+                visit_exprs(st.body, visit);
+            } else if constexpr (std::is_same_v<T, ExprStmt>) {
+                visit_expr_tree(st.expr, visit);
+            }
+        }, s->node);
+    }
+}
 
 struct FnDecl {
     std::optional<ReceiverDecl> receiver{};

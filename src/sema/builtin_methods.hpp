@@ -167,11 +167,7 @@ inline constexpr std::array kBuiltinMethods = {
     BuiltinMethod{"values", BmMap, "", "[]V", false, false, true, "Copy of the values, in unspecified order (Q27).", "total := m.values().len()"},
 
     // --- Raw access for C interop (dedicated lowering) ---
-    BuiltinMethod{"data", BmStr | BmSeq, "", "*T", false, true, false, "Raw pointer to the contiguous buffer, for C FFI.", "ptr := xs.data()"},
-    BuiltinMethod{"data_ptr", BmSeq, "", "*T", false, true, false, "Raw pointer to the element buffer, for C FFI.", "ptr := xs.data_ptr()"},
     BuiltinMethod{"bytes", BmSlice, "", "[]byte", false, false, false, "Byte view of the slice's storage.", "raw := xs.bytes()"},
-    BuiltinMethod{"byte_ptr", BmStr, "", "*c_char", false, true, false, "Raw `char*` into the string, for C FFI.", "p := s.byte_ptr()"},
-    BuiltinMethod{"byte_ptr_at", BmStr, "i64", "*c_char", false, true, false, "Raw `char*` at a byte offset, for C FFI.", "p := s.byte_ptr_at(4)"},
     BuiltinMethod{"with_ext", BmStr, "&str", "str", false, false, false, "Path with its extension replaced.", "out := path.with_ext(\".o\")"},
 };
 // clang-format on
@@ -280,8 +276,6 @@ inline constexpr std::array kApiMigrations = {
     ApiMigration{"str", "last_index_of", ApiMigrationKind::CallToMethod, "last_index_of"},
     ApiMigration{"str", "bytes", ApiMigrationKind::CallToMethod, "bytes"},
     ApiMigration{"str", "pop", ApiMigrationKind::CallToMethod, "pop"},
-    ApiMigration{"str", "byte_ptr", ApiMigrationKind::CallToMethod, "byte_ptr"},
-    ApiMigration{"str", "byte_ptr_at", ApiMigrationKind::CallToMethod, "byte_ptr_at"},
     ApiMigration{"str", "parse_i64", ApiMigrationKind::Rename, "i64.parse"},
     ApiMigration{"str", "parse_i32", ApiMigrationKind::Rename, "i32.parse"},
     ApiMigration{"str", "parse_u64", ApiMigrationKind::Rename, "u64.parse"},
@@ -413,6 +407,52 @@ struct StdlibStructField {
     return out;
 }
 
+// CF-188: type names the catalog used to list although no runtime type implements them. Using one is
+// `cfire/UNKNOWN-STDLIB-TYPE`, naming the real replacement when there is one (`use` empty: none).
+struct RemovedStdlibType {
+    std::string_view ns;
+    std::string_view name;
+    std::string_view use;
+};
+// clang-format off
+inline constexpr std::array kRemovedStdlibTypes = {
+    RemovedStdlibType{"sqlite", "Db", "sqlite.Conn"},
+    RemovedStdlibType{"sqlite", "Database", "sqlite.Conn"},
+    RemovedStdlibType{"sqlite", "Stmt", "`db.query[T](sql, ...)` or `db.exec(sql, ...)` on a `sqlite.Conn`"},
+    RemovedStdlibType{"sqlite", "Statement", "`db.query[T](sql, ...)` or `db.exec(sql, ...)` on a `sqlite.Conn`"},
+    RemovedStdlibType{"sqlite", "Row", "a struct of your own: `db.query[T](...)` returns `[]T`"},
+    RemovedStdlibType{"json", "Doc", "json.Value"},
+    RemovedStdlibType{"json", "JsonDoc", "json.Value"},
+    RemovedStdlibType{"json", "JsonValue", "json.Value"},
+    RemovedStdlibType{"os", "STDIN", "`os.stdin()`, which returns an `fs.File`"},
+    RemovedStdlibType{"os", "STDOUT", "`os.stdout()`, which returns an `fs.File`"},
+    RemovedStdlibType{"os", "STDERR", "`os.stderr()`, which returns an `fs.File`"},
+    RemovedStdlibType{"collections", "Vec", "a slice, `[]T`"},
+    RemovedStdlibType{"collections", "Map", "a map, `map[K]V`"},
+    RemovedStdlibType{"collections", "Heap", "collections.PriorityQueue[T] or collections.MinQueue[T]"},
+    RemovedStdlibType{"sync", "AtomicInt", "sync.Atomic[i64]"},
+    RemovedStdlibType{"sync", "WaitGroup", "`async.scope`, which joins every task it spawns"},
+    RemovedStdlibType{"sync", "CondVar", ""},
+    RemovedStdlibType{"time", "DateTime", "time.Time"},
+    RemovedStdlibType{"unicode", "Rune", "`u32`: `unicode.runes(s)` returns `[]u32`"},
+    RemovedStdlibType{"cli", "Parser", "`cli.parse[T](args)` with a struct `T` whose fields are the flags"},
+    RemovedStdlibType{"cli", "Flag", "a field of the struct passed to `cli.parse[T]`, with a `cli:\"...\"` tag"},
+    RemovedStdlibType{"cli", "Arg", "a field of the struct passed to `cli.parse[T]`, with a `cli:\"...\"` tag"},
+    RemovedStdlibType{"tako", "Tako", ""},
+    RemovedStdlibType{"ai", "Chunk", "ai.DocumentSection"},
+    RemovedStdlibType{"ai", "ExtractedBug", ""},
+    RemovedStdlibType{"ai", "ToolArgs", "a struct of your own, described with `ai.tool_def[T]`"},
+    RemovedStdlibType{"websocket", "Message", "`str` or `[]byte`, from `conn.recv_text()` / `conn.recv_binary()`"},
+};
+// clang-format on
+
+[[nodiscard]] constexpr auto find_removed_stdlib_type(std::string_view ns, std::string_view name) -> const RemovedStdlibType* {
+    for (const auto& r : kRemovedStdlibTypes) {
+        if (r.ns == ns && r.name == name) return &r;
+    }
+    return nullptr;
+}
+
 // Modules whose whole surface moved to methods (Q7); importing them is an error whose fix deletes the line.
 inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", "core:sort"};
 
@@ -450,6 +490,8 @@ inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", 
     }
     std::string out = "fn " + std::string(m.name) + "(" + params + ")";
     if (!m.ret.empty() && m.ret != "void") out += " -> " + std::string(m.ret);
+    // The table writes a view as `&str`; in `.cf` terms that is a `str` (CF-189: there is no `&T` type).
+    for (std::size_t at; (at = out.find("&str")) != std::string::npos;) out.erase(at, 1);
     return out;
 }
 

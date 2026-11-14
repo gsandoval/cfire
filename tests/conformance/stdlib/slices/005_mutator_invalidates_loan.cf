@@ -1,7 +1,7 @@
 package main
 fn main() {
     mut xs: []i32 = [1, 2, 3]
-    p := &xs[0]
+    v := xs[0..2]
     xs.insert(0, 5)
-    println("{}", *p) //~ error cfire/USE-AFTER-FREE
+    println("{}", v[0]) //~ error cfire/USE-AFTER-FREE
 }

@@ -10,7 +10,7 @@ type Move struct {
 fn count(s: str) -> usize {
     return s.len()
 }
-fn count_view(s: &str) -> usize {
+fn count_view(s: str) -> usize {
     return s.len()
 }
 fn rest(s: str) -> str {

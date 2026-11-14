@@ -1,14 +1,14 @@
 // expect: stdout
 // | 0 10 20 30
 // flags: --sanitize=thread
+// Q51 (CF-189): each task owns one element of `codes`, named by the spawning loop's index.
 package main
 fn main() {
     mut codes: []i32 = [0, 0, 0, 0]
     async.scope(workers: 4) |scope| {
         for i, c in codes {
-            slot := &mut codes[i]
-            scope.spawn || {
-                *slot = i32(i) * 10
+            scope.spawn |mut codes[i]| {
+                codes[i] = i32(i) * 10 + c
             }
         }
     }

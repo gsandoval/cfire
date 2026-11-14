@@ -2053,7 +2053,7 @@ syncCfireThemeBtn();
         </button>
         <select class="mobile-topic-select" id="ref-mobile-pane-select" aria-label="Jump to module" onchange="if(this.value)navigateToRefPane(this.value)">
           <option value="overview">Overview (36 Modules)</option>
-          <option value="mod-builtin">builtin (163 fns)</option>
+          <option value="mod-builtin">builtin (156 fns)</option>
           <option value="mod-audio">core:audio (25 fns)</option>
           <option value="mod-build">core:build (10 fns)</option>
           <option value="mod-cli">core:cli (7 fns)</option>
@@ -2103,7 +2103,7 @@ syncCfireThemeBtn();
         </ul>
         <h4>Builtin Types</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
-          <li class="nav-item"><a href="#mod-builtin" id="nav-pane-mod-builtin" onclick="navigateToRefPane('mod-builtin'); return false;"><code>Builtin Types: Methods, Associated Items & make</code> <span style="color:var(--muted);font-size:0.75rem;">(163)</span></a></li>
+          <li class="nav-item"><a href="#mod-builtin" id="nav-pane-mod-builtin" onclick="navigateToRefPane('mod-builtin'); return false;"><code>Builtin Types: Methods, Associated Items & make</code> <span style="color:var(--muted);font-size:0.75rem;">(156)</span></a></li>
         </ul>
         <h4>Foundational Core (29)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
@@ -2533,7 +2533,7 @@ syncCfireThemeBtn();
       </article>
       <article class="ref-pane" id="ref-pane-mod-builtin" data-pane-id="mod-builtin" data-pane-short="builtin" data-pane-title="builtin — Builtin Types: Methods, Associated Items &amp; make">
         <h2 id="mod-builtin" style="margin-top:0.25rem;"><code>import "builtin"</code> &mdash; Builtin Types: Methods, Associated Items &amp; make</h2>
-        <p>Operations on values of builtin types are methods on the value (Q7): <code>s.trim()</code>, <code>xs.sort()</code>, <code>m.keys()</code>, <code>x.abs()</code>, <code>f.sqrt()</code>. Searches return <code>T?</code>, never <code>-1</code> (Q8). Limits and parsing belong to the type (Q10): <code>i32.MAX</code>, <code>f64.NAN</code>, <code>i32.parse(s) -&gt; i32?</code>. <code>make</code> is the one construction builtin, and the type decides where memory lives (Q25): <code>make(T, args)</code> is a value, <code>make(own[T], args)</code> / <code>make(shared[T], args)</code> are heap-owned, and <code>make([]T, len[, cap])</code> is a slice. In the table, <code>Self</code> is the receiver type, <code>T</code> the element type and <code>K</code>/<code>V</code> the map key/value types. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(always available)</code> &bull; Namespace: <code>builtin.*</code> &bull; 163 exported functions</small></p>
+        <p>Operations on values of builtin types are methods on the value (Q7): <code>s.trim()</code>, <code>xs.sort()</code>, <code>m.keys()</code>, <code>x.abs()</code>, <code>f.sqrt()</code>. Searches return <code>T?</code>, never <code>-1</code> (Q8). Limits and parsing belong to the type (Q10): <code>i32.MAX</code>, <code>f64.NAN</code>, <code>i32.parse(s) -&gt; i32?</code>. <code>make</code> is the one construction builtin, and the type decides where memory lives (Q25): <code>make(T, args)</code> is a value, <code>make(own[T], args)</code> / <code>make(shared[T], args)</code> are heap-owned, and <code>make([]T, len[, cap])</code> is a slice. In the table, <code>Self</code> is the receiver type, <code>T</code> the element type and <code>K</code>/<code>V</code> the map key/value types. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(always available)</code> &bull; Namespace: <code>builtin.*</code> &bull; 156 exported functions</small></p>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -2611,21 +2611,21 @@ syncCfireThemeBtn();
             <tr><td><code>fn (f: f64) is_finite() -&gt; bool</code></td><td><code>cfire::bm::is_finite(f, ...)</code></td><td><code>true</code> unless NaN or infinite.<br/><code>ok := x.is_finite()</code></td></tr>
             <tr><td><code>fn (s: str) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (s: str) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
-            <tr><td><code>fn (s: str) contains(a: &amp;str) -&gt; bool</code></td><td><code>cfire::bm::contains(s, ...)</code></td><td><code>true</code> if the substring occurs.<br/><code>if path.contains(&quot;..&quot;) { return }</code></td></tr>
-            <tr><td><code>fn (s: str) starts_with(a: &amp;str) -&gt; bool</code></td><td><code>cfire::bm::starts_with(s, ...)</code></td><td><code>true</code> if <code>s</code> begins with <code>prefix</code>.<br/><code>if line.starts_with(&quot;#&quot;) { continue }</code></td></tr>
-            <tr><td><code>fn (s: str) ends_with(a: &amp;str) -&gt; bool</code></td><td><code>cfire::bm::ends_with(s, ...)</code></td><td><code>true</code> if <code>s</code> ends with <code>suffix</code>.<br/><code>if name.ends_with(&quot;.cf&quot;) { ... }</code></td></tr>
-            <tr><td><code>fn (s: str) index_of(a: &amp;str, b: usize = default) -&gt; usize?</code></td><td><code>cfire::bm::index_of(s, ...)</code></td><td>Byte position of the first occurrence at or after <code>start</code> (default 0), or <code>none</code>.<br/><code>dot := path.index_of(&quot;.&quot;) or { return }</code></td></tr>
-            <tr><td><code>fn (s: str) last_index_of(a: &amp;str) -&gt; usize?</code></td><td><code>cfire::bm::last_index_of(s, ...)</code></td><td>Byte position of the last occurrence, or <code>none</code>.<br/><code>slash := path.last_index_of(&quot;/&quot;) or 0</code></td></tr>
-            <tr><td><code>fn (s: str) split(a: &amp;str) -&gt; []str</code></td><td><code>cfire::bm::split(s, ...)</code></td><td>Splits on every occurrence of <code>sep</code> (an empty <code>s</code> gives one empty part).<br/><code>parts := line.split(&quot;,&quot;)</code></td></tr>
-            <tr><td><code>fn (s: str) split_n(a: &amp;str, b: usize) -&gt; []str</code></td><td><code>cfire::bm::split_n(s, ...)</code></td><td>Splits into at most <code>n</code> parts; the last part holds the rest.<br/><code>kv := line.split_n(&quot;=&quot;, 2)</code></td></tr>
+            <tr><td><code>fn (s: str) contains(a: str) -&gt; bool</code></td><td><code>cfire::bm::contains(s, ...)</code></td><td><code>true</code> if the substring occurs.<br/><code>if path.contains(&quot;..&quot;) { return }</code></td></tr>
+            <tr><td><code>fn (s: str) starts_with(a: str) -&gt; bool</code></td><td><code>cfire::bm::starts_with(s, ...)</code></td><td><code>true</code> if <code>s</code> begins with <code>prefix</code>.<br/><code>if line.starts_with(&quot;#&quot;) { continue }</code></td></tr>
+            <tr><td><code>fn (s: str) ends_with(a: str) -&gt; bool</code></td><td><code>cfire::bm::ends_with(s, ...)</code></td><td><code>true</code> if <code>s</code> ends with <code>suffix</code>.<br/><code>if name.ends_with(&quot;.cf&quot;) { ... }</code></td></tr>
+            <tr><td><code>fn (s: str) index_of(a: str, b: usize = default) -&gt; usize?</code></td><td><code>cfire::bm::index_of(s, ...)</code></td><td>Byte position of the first occurrence at or after <code>start</code> (default 0), or <code>none</code>.<br/><code>dot := path.index_of(&quot;.&quot;) or { return }</code></td></tr>
+            <tr><td><code>fn (s: str) last_index_of(a: str) -&gt; usize?</code></td><td><code>cfire::bm::last_index_of(s, ...)</code></td><td>Byte position of the last occurrence, or <code>none</code>.<br/><code>slash := path.last_index_of(&quot;/&quot;) or 0</code></td></tr>
+            <tr><td><code>fn (s: str) split(a: str) -&gt; []str</code></td><td><code>cfire::bm::split(s, ...)</code></td><td>Splits on every occurrence of <code>sep</code> (an empty <code>s</code> gives one empty part).<br/><code>parts := line.split(&quot;,&quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) split_n(a: str, b: usize) -&gt; []str</code></td><td><code>cfire::bm::split_n(s, ...)</code></td><td>Splits into at most <code>n</code> parts; the last part holds the rest.<br/><code>kv := line.split_n(&quot;=&quot;, 2)</code></td></tr>
             <tr><td><code>fn (s: str) lines() -&gt; []str</code></td><td><code>cfire::bm::lines(s, ...)</code></td><td>Splits on <code>\n</code>, dropping a trailing <code>\r</code> from each line and a final empty line.<br/><code>for line in text.lines() { ... }</code></td></tr>
-            <tr><td><code>fn (s: str) trim() -&gt; &amp;str</code></td><td><code>cfire::bm::trim(s, ...)</code></td><td>View without leading and trailing ASCII whitespace.<br/><code>name := raw.trim()</code></td></tr>
-            <tr><td><code>fn (s: str) trim_start() -&gt; &amp;str</code></td><td><code>cfire::bm::trim_start(s, ...)</code></td><td>View without leading ASCII whitespace.<br/><code>body := text.trim_start()</code></td></tr>
-            <tr><td><code>fn (s: str) trim_end() -&gt; &amp;str</code></td><td><code>cfire::bm::trim_end(s, ...)</code></td><td>View without trailing ASCII whitespace.<br/><code>line := raw.trim_end()</code></td></tr>
-            <tr><td><code>fn (s: str) strip_prefix(a: &amp;str) -&gt; &amp;str?</code></td><td><code>cfire::bm::strip_prefix(s, ...)</code></td><td>View after <code>prefix</code>, or <code>none</code> if <code>s</code> does not start with it.<br/><code>rest := arg.strip_prefix(&quot;--&quot;) or { continue }</code></td></tr>
-            <tr><td><code>fn (s: str) strip_suffix(a: &amp;str) -&gt; &amp;str?</code></td><td><code>cfire::bm::strip_suffix(s, ...)</code></td><td>View before <code>suffix</code>, or <code>none</code> if <code>s</code> does not end with it.<br/><code>stem := file.strip_suffix(&quot;.cf&quot;) or file</code></td></tr>
-            <tr><td><code>fn (s: str) replace(a: &amp;str, b: &amp;str) -&gt; str</code></td><td><code>cfire::bm::replace(s, ...)</code></td><td>Copy with the first occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace(&quot;a&quot;, &quot;b&quot;)</code></td></tr>
-            <tr><td><code>fn (s: str) replace_all(a: &amp;str, b: &amp;str) -&gt; str</code></td><td><code>cfire::bm::replace_all(s, ...)</code></td><td>Copy with every occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace_all(&quot;\t&quot;, &quot;    &quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) trim() -&gt; str</code></td><td><code>cfire::bm::trim(s, ...)</code></td><td>View without leading and trailing ASCII whitespace.<br/><code>name := raw.trim()</code></td></tr>
+            <tr><td><code>fn (s: str) trim_start() -&gt; str</code></td><td><code>cfire::bm::trim_start(s, ...)</code></td><td>View without leading ASCII whitespace.<br/><code>body := text.trim_start()</code></td></tr>
+            <tr><td><code>fn (s: str) trim_end() -&gt; str</code></td><td><code>cfire::bm::trim_end(s, ...)</code></td><td>View without trailing ASCII whitespace.<br/><code>line := raw.trim_end()</code></td></tr>
+            <tr><td><code>fn (s: str) strip_prefix(a: str) -&gt; str?</code></td><td><code>cfire::bm::strip_prefix(s, ...)</code></td><td>View after <code>prefix</code>, or <code>none</code> if <code>s</code> does not start with it.<br/><code>rest := arg.strip_prefix(&quot;--&quot;) or { continue }</code></td></tr>
+            <tr><td><code>fn (s: str) strip_suffix(a: str) -&gt; str?</code></td><td><code>cfire::bm::strip_suffix(s, ...)</code></td><td>View before <code>suffix</code>, or <code>none</code> if <code>s</code> does not end with it.<br/><code>stem := file.strip_suffix(&quot;.cf&quot;) or file</code></td></tr>
+            <tr><td><code>fn (s: str) replace(a: str, b: str) -&gt; str</code></td><td><code>cfire::bm::replace(s, ...)</code></td><td>Copy with the first occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace(&quot;a&quot;, &quot;b&quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) replace_all(a: str, b: str) -&gt; str</code></td><td><code>cfire::bm::replace_all(s, ...)</code></td><td>Copy with every occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace_all(&quot;\t&quot;, &quot;    &quot;)</code></td></tr>
             <tr><td><code>fn (s: str) repeat(a: usize) -&gt; str</code></td><td><code>cfire::bm::repeat(s, ...)</code></td><td><code>s</code> concatenated <code>n</code> times.<br/><code>rule := &quot;-&quot;.repeat(40)</code></td></tr>
             <tr><td><code>fn (s: str) to_upper() -&gt; str</code></td><td><code>cfire::bm::to_upper(s, ...)</code></td><td>ASCII upper-case copy.<br/><code>tag := name.to_upper()</code></td></tr>
             <tr><td><code>fn (s: str) to_lower() -&gt; str</code></td><td><code>cfire::bm::to_lower(s, ...)</code></td><td>ASCII lower-case copy.<br/><code>key := header.to_lower()</code></td></tr>
@@ -2633,10 +2633,7 @@ syncCfireThemeBtn();
             <tr><td><code>fn (s: str) rune_count() -&gt; usize</code></td><td><code>cfire::bm::rune_count(s, ...)</code></td><td>Number of Unicode code points.<br/><code>n := s.rune_count()</code></td></tr>
             <tr><td><code>fn (s: str) bytes() -&gt; []byte</code></td><td><code>(dedicated lowering)</code></td><td>The UTF-8 bytes of <code>s</code>.<br/><code>raw := s.bytes()</code></td></tr>
             <tr><td><code>fn (s: str) pop() -&gt; T?</code></td><td><code>cfire::bm::pop(s, ...)</code></td><td>Removes and returns the last element (last byte for <code>str</code>), or <code>none</code> when empty.<br/><code>last := stack.pop() or { break }</code></td></tr>
-            <tr><td><code>fn (s: str) data() -&gt; *T</code></td><td><code>(dedicated lowering)</code></td><td>Raw pointer to the contiguous buffer, for C FFI.<br/><code>ptr := xs.data()</code></td></tr>
-            <tr><td><code>fn (s: str) byte_ptr() -&gt; *c_char</code></td><td><code>(dedicated lowering)</code></td><td>Raw <code>char*</code> into the string, for C FFI.<br/><code>p := s.byte_ptr()</code></td></tr>
-            <tr><td><code>fn (s: str) byte_ptr_at(a: i64) -&gt; *c_char</code></td><td><code>(dedicated lowering)</code></td><td>Raw <code>char*</code> at a byte offset, for C FFI.<br/><code>p := s.byte_ptr_at(4)</code></td></tr>
-            <tr><td><code>fn (s: str) with_ext(a: &amp;str) -&gt; str</code></td><td><code>(dedicated lowering)</code></td><td>Path with its extension replaced.<br/><code>out := path.with_ext(&quot;.o&quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) with_ext(a: str) -&gt; str</code></td><td><code>(dedicated lowering)</code></td><td>Path with its extension replaced.<br/><code>out := path.with_ext(&quot;.o&quot;)</code></td></tr>
             <tr><td><code>fn (xs: []T) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (xs: []T) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
             <tr><td><code>fn (xs: []T) pop() -&gt; T?</code></td><td><code>cfire::bm::pop(xs, ...)</code></td><td>Removes and returns the last element (last byte for <code>str</code>), or <code>none</code> when empty.<br/><code>last := stack.pop() or { break }</code></td></tr>
@@ -2649,7 +2646,7 @@ syncCfireThemeBtn();
             <tr><td><code>fn (xs: []T) sort_by(a: fn(T, T) -&gt; bool)</code></td><td><code>cfire::bm::sort_by(xs, ...)</code></td><td>Sorts in place with a strict <code>less(a, b)</code> comparator.<br/><code>xs.sort_by(|a, b| a.score &gt; b.score)</code></td></tr>
             <tr><td><code>fn (xs: []T) is_sorted() -&gt; bool</code></td><td><code>cfire::bm::is_sorted(xs, ...)</code></td><td><code>true</code> if the elements are in ascending order.<br/><code>assert(xs.is_sorted())</code></td></tr>
             <tr><td><code>fn (xs: []T) binary_search(a: T) -&gt; usize?</code></td><td><code>cfire::bm::binary_search(xs, ...)</code></td><td>Position of <code>v</code> in an ascending sequence, or <code>none</code>.<br/><code>i := xs.binary_search(42) or { return }</code></td></tr>
-            <tr><td><code>fn (xs: []T) join(a: &amp;str) -&gt; str</code></td><td><code>cfire::bm::join(xs, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
+            <tr><td><code>fn (xs: []T) join(a: str) -&gt; str</code></td><td><code>cfire::bm::join(xs, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
             <tr><td><code>fn (xs: []T) push(a: T)</code></td><td><code>(dedicated lowering)</code></td><td>Appends <code>v</code>.<br/><code>xs.push(4)</code></td></tr>
             <tr><td><code>fn (xs: []T) insert(a: usize, b: T)</code></td><td><code>cfire::bm::insert(xs, ...)</code></td><td>Inserts <code>v</code> at <code>i</code>, shifting later elements; panics when <code>i &gt; len()</code>.<br/><code>xs.insert(0, head)</code></td></tr>
             <tr><td><code>fn (xs: []T) remove(a: usize) -&gt; T</code></td><td><code>cfire::bm::remove(xs, ...)</code></td><td>Removes and returns the element at <code>i</code>, shifting later elements; panics when out of range.<br/><code>x := xs.remove(0)</code></td></tr>
@@ -2657,8 +2654,6 @@ syncCfireThemeBtn();
             <tr><td><code>fn (xs: []T) truncate(a: usize)</code></td><td><code>cfire::bm::truncate(xs, ...)</code></td><td>Keeps the first <code>n</code> elements (no effect when <code>n &gt;= len()</code>).<br/><code>xs.truncate(10)</code></td></tr>
             <tr><td><code>fn (xs: []T) extend(a: []T)</code></td><td><code>cfire::bm::extend(xs, ...)</code></td><td>Appends a copy of every element of <code>other</code>.<br/><code>xs.extend(more)</code></td></tr>
             <tr><td><code>fn (xs: []T) clear()</code></td><td><code>cfire::bm::clear(xs, ...)</code></td><td>Removes every element.<br/><code>xs.clear()</code></td></tr>
-            <tr><td><code>fn (xs: []T) data() -&gt; *T</code></td><td><code>(dedicated lowering)</code></td><td>Raw pointer to the contiguous buffer, for C FFI.<br/><code>ptr := xs.data()</code></td></tr>
-            <tr><td><code>fn (xs: []T) data_ptr() -&gt; *T</code></td><td><code>(dedicated lowering)</code></td><td>Raw pointer to the element buffer, for C FFI.<br/><code>ptr := xs.data_ptr()</code></td></tr>
             <tr><td><code>fn (xs: []T) bytes() -&gt; []byte</code></td><td><code>(dedicated lowering)</code></td><td>Byte view of the slice's storage.<br/><code>raw := xs.bytes()</code></td></tr>
             <tr><td><code>fn (arr: [N]T) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (arr: [N]T) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
@@ -2671,9 +2666,7 @@ syncCfireThemeBtn();
             <tr><td><code>fn (arr: [N]T) sort_by(a: fn(T, T) -&gt; bool)</code></td><td><code>cfire::bm::sort_by(arr, ...)</code></td><td>Sorts in place with a strict <code>less(a, b)</code> comparator.<br/><code>xs.sort_by(|a, b| a.score &gt; b.score)</code></td></tr>
             <tr><td><code>fn (arr: [N]T) is_sorted() -&gt; bool</code></td><td><code>cfire::bm::is_sorted(arr, ...)</code></td><td><code>true</code> if the elements are in ascending order.<br/><code>assert(xs.is_sorted())</code></td></tr>
             <tr><td><code>fn (arr: [N]T) binary_search(a: T) -&gt; usize?</code></td><td><code>cfire::bm::binary_search(arr, ...)</code></td><td>Position of <code>v</code> in an ascending sequence, or <code>none</code>.<br/><code>i := xs.binary_search(42) or { return }</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) join(a: &amp;str) -&gt; str</code></td><td><code>cfire::bm::join(arr, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) data() -&gt; *T</code></td><td><code>(dedicated lowering)</code></td><td>Raw pointer to the contiguous buffer, for C FFI.<br/><code>ptr := xs.data()</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) data_ptr() -&gt; *T</code></td><td><code>(dedicated lowering)</code></td><td>Raw pointer to the element buffer, for C FFI.<br/><code>ptr := xs.data_ptr()</code></td></tr>
+            <tr><td><code>fn (arr: [N]T) join(a: str) -&gt; str</code></td><td><code>cfire::bm::join(arr, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
             <tr><td><code>fn (m: map[K]V) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (m: map[K]V) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
             <tr><td><code>fn (m: map[K]V) clear()</code></td><td><code>cfire::bm::clear(m, ...)</code></td><td>Removes every element.<br/><code>xs.clear()</code></td></tr>
@@ -2742,6 +2735,16 @@ fn main() {
     println(&quot;Audio RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>audio.Waveform</code></td><td>enum</td><td>Oscillator shape for <code>audio.gen_tone</code> and <code>audio.gen_chirp</code>.<br/>Variants: <code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code></td></tr>
+            <tr><td><code>audio.SfxPreset</code></td><td>enum</td><td>A procedural sound effect for <code>audio.gen_sfx</code>.<br/>Variants: <code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code></td></tr>
+            <tr><td><code>audio.Wave</code></td><td>struct</td><td>An in-memory waveform: interleaved <code>f32</code> samples in <code>-1.0</code>..<code>1.0</code>.<br/>Fields: <code>samples: []f32</code>, <code>sample_rate: i32</code>, <code>channels: i32</code></td></tr>
+            <tr><td><code>audio.Sound</code></td><td>handle</td><td>A wave registered with the mixer, playable many times at once (polyphonic).</td></tr>
+            <tr><td><code>audio.Stream</code></td><td>handle</td><td>A real-time output stream you push samples into, for custom synthesis.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn init(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; void!</code></td><td><code>cfire::audio::init(sample_rate, channels)</code></td><td>Initializes the hardware audio output queue (or headless software mixer in CI).<br/><code>try audio.init(48000, 2)</code></td></tr>
@@ -2803,6 +2806,26 @@ app := build.Executable(&quot;Flint&quot;, {
 fn main() {
     println(&quot;Target OS: {}, Arch: {}&quot;, build.os(), build.arch())
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>build.CC</code></td><td>manifest</td><td>In <code>build.cf</code>: compiles C or C++ sources into the project (<code>build.CC({ Sources: [...] })</code>).</td></tr>
+            <tr><td><code>build.CMake</code></td><td>manifest</td><td>In <code>build.cf</code>: an external CMake project built as a dependency.</td></tr>
+            <tr><td><code>build.Make</code></td><td>manifest</td><td>In <code>build.cf</code>: an external Make project built as a dependency.</td></tr>
+            <tr><td><code>build.Git</code></td><td>manifest</td><td>In <code>build.cf</code>: a dependency fetched from a Git repository at a pinned revision.</td></tr>
+            <tr><td><code>build.Archive</code></td><td>manifest</td><td>In <code>build.cf</code>: a dependency fetched as a checksummed archive.</td></tr>
+            <tr><td><code>build.Command</code></td><td>manifest</td><td>In <code>build.cf</code>: a command run as part of the build.</td></tr>
+            <tr><td><code>build.Executable</code></td><td>manifest</td><td>In <code>build.cf</code>: declares an executable target (<code>build.Executable(name, { Entry: ... })</code>).</td></tr>
+            <tr><td><code>build.Library</code></td><td>manifest</td><td>In <code>build.cf</code>: declares a static or shared library target.</td></tr>
+            <tr><td><code>build.Step</code></td><td>manifest</td><td>In <code>build.cf</code>: a code-generation step run when its inputs are newer than its outputs.</td></tr>
+            <tr><td><code>build.PkgConfig</code></td><td>manifest</td><td>In <code>build.cf</code>: links a system library found through pkg-config.</td></tr>
+            <tr><td><code>build.Link</code></td><td>manifest</td><td>In <code>build.cf</code>: links a library by name.</td></tr>
+            <tr><td><code>build.Include</code></td><td>manifest</td><td>In <code>build.cf</code>: adds a header search directory.</td></tr>
+            <tr><td><code>build.Tako</code></td><td>manifest</td><td>In <code>build.cf</code>: enables the Tako deployment integration.</td></tr>
+            <tr><td><code>build.Target</code></td><td>manifest</td><td>In <code>build.cf</code>: what <code>build.Executable</code> and <code>build.Library</code> return.</td></tr>
+            <tr><td><code>build.StepTarget</code></td><td>manifest</td><td>In <code>build.cf</code>: what <code>build.Step</code> returns.</td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -2902,6 +2925,15 @@ fn main() {
     println(&quot;Front: {}, Back: {}&quot;, dq.pop_front(), dq.pop_back())
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>collections.Set[T]</code></td><td>handle</td><td>An unordered set of unique values.</td></tr>
+            <tr><td><code>collections.Deque[T]</code></td><td>handle</td><td>A double-ended queue: push and pop at both ends in constant time.</td></tr>
+            <tr><td><code>collections.PriorityQueue[T]</code></td><td>handle</td><td>A max-heap: <code>pop()</code> returns the largest value first, or <code>none</code> when empty.</td></tr>
+            <tr><td><code>collections.MinQueue[T]</code></td><td>handle</td><td>A min-heap: <code>pop()</code> returns the smallest value first, or <code>none</code> when empty.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>type Set[T] struct</code></td><td><code>cfire::collections::Set&lt;T&gt;</code></td><td>Generic hash set container.<br/><code>mut s := collections.Set[str]{}</code></td></tr>
@@ -2944,6 +2976,12 @@ fn main() {
     plain := try aes.decrypt_gcm(key, nonce, res.ciphertext, res.tag, aad)
     println(&quot;Authenticated decrypted plaintext: {}&quot;, plain)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>aes.GcmResult</code></td><td>struct</td><td>The output of AES-256-GCM encryption.<br/>Fields: <code>ciphertext: []byte</code>, <code>tag: []byte</code></td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -3209,6 +3247,14 @@ fn main() {
     println(&quot;Log stream offset: {} bytes&quot;, offset)
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>fs.OpenMode</code></td><td>enum</td><td>How <code>fs.open</code> opens a file.<br/>Variants: <code>Read</code>, <code>Write</code>, <code>Append</code>, <code>ReadWrite</code></td></tr>
+            <tr><td><code>fs.SeekWhence</code></td><td>enum</td><td>The origin for <code>file.seek</code>.<br/>Variants: <code>Start</code>, <code>Current</code>, <code>End</code></td></tr>
+            <tr><td><code>fs.File</code></td><td>handle</td><td>An open file, closed automatically when it goes out of scope.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn read_bytes(path: str) -&gt; []byte!</code></td><td><code>cfire::fs::read_bytes(path)</code></td><td>Reads an entire binary file into a byte buffer.<br/><code>raw := try fs.read_bytes(&quot;input.bin&quot;)</code></td></tr>
@@ -3290,6 +3336,12 @@ fn main() {
     println(&quot;Cluster nodes: {}&quot;, doc.get(&quot;cluster&quot;).get(&quot;nodes&quot;).as_int())
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>json.Value</code></td><td>handle</td><td>A parsed JSON value of any shape, from <code>json.parse_dynamic</code>; inspect it with its methods.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn parse[T](payload: []byte | str) -&gt; T!</code></td><td><code>cfire::json::parse&lt;T&gt;(payload)</code></td><td>Parses UTF-8 JSON into a struct <code>T</code> using <code>simdjson::ondemand</code>.<br/><code>cfg := try json.parse[Config](raw)</code></td></tr>
@@ -3361,6 +3413,13 @@ fn main() {
     log.warn(&quot;memory threshold reached&quot;, &quot;usage_pct&quot;, &quot;84&quot;, &quot;threshold&quot;, &quot;80&quot;)
     log.error(&quot;database pool exhausted&quot;, &quot;active_conns&quot;, &quot;100&quot;, &quot;pool_size&quot;, &quot;100&quot;)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>log.Level</code></td><td>enum</td><td>Minimum severity for <code>log.set_level</code>.<br/>Variants: <code>Debug</code>, <code>Info</code>, <code>Warn</code>, <code>Error</code></td></tr>
+            <tr><td><code>log.Format</code></td><td>enum</td><td>Output format for <code>log.set_format</code>.<br/>Variants: <code>Text</code>, <code>Json</code></td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -3448,6 +3507,13 @@ fn main() {
     println(&quot;Server received payload: {}&quot;, msg)
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>net.TcpListener</code></td><td>handle</td><td>A listening TCP socket; <code>accept()</code> returns a <code>TcpConn</code> per client.</td></tr>
+            <tr><td><code>net.TcpConn</code></td><td>handle</td><td>A connected TCP stream, closed when it goes out of scope.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn listen(port: u16 = 0, host: str = &quot;0.0.0.0&quot;) -&gt; TcpListener!</code></td><td><code>cfire::net::listen(port, host)</code></td><td>Binds a TCP listener on <code>host:port</code> (<code>0</code> picks an ephemeral port; the default host is every interface).<br/><code>mut ln := try net.listen(0)</code></td></tr>
@@ -3520,6 +3586,19 @@ fn main() {
     server.serve_in_background(router)
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>http.Request</code></td><td>struct</td><td>An HTTP request, as a handler receives it or as you build one to send.<br/>Fields: <code>remote_addr: str</code>, <code>method: str</code>, <code>path: str</code>, <code>raw_query: str</code>, <code>query_params: map[str]str</code>, <code>headers: map[str]str</code>, <code>params: map[str]str</code>, <code>body: str</code></td></tr>
+            <tr><td><code>http.Response</code></td><td>struct</td><td>An HTTP response; build one with <code>http.Response.text</code>, <code>.json</code>, <code>.html</code> or <code>.redirect</code>.<br/>Fields: <code>status: i32</code>, <code>status_code: i32</code>, <code>status_text: str</code>, <code>headers: map[str]str</code>, <code>body: str</code></td></tr>
+            <tr><td><code>http.Router</code></td><td>handle</td><td>Maps method and path patterns to handlers; registering a route returns the router, so calls chain.</td></tr>
+            <tr><td><code>http.HttpServer</code></td><td>handle</td><td>An HTTP server bound to a port (<code>make(http.Server, port)</code>); <code>serve_in_background</code> runs it and <code>stop</code> ends it.</td></tr>
+            <tr><td><code>http.Server</code></td><td>handle</td><td>The name <code>make(http.Server, port)</code> constructs; the same type as <code>http.HttpServer</code>.</td></tr>
+            <tr><td><code>http.SseEvent</code></td><td>struct</td><td>One server-sent event.<br/>Fields: <code>event: str</code>, <code>data: str</code>, <code>id: str</code></td></tr>
+            <tr><td><code>http.ServerLimits</code></td><td>struct</td><td>Per-connection limits for <code>http.Server</code> (Q22); pass to <code>server.set_limits(...)</code>. <code>workers = 0</code> keeps the default pool size (<code>hardware_concurrency()</code>, at least 4).<br/>Fields: <code>header_timeout_ms: i32</code>, <code>body_timeout_ms: i32</code>, <code>max_body_bytes: usize</code>, <code>workers: usize</code>, <code>max_pending: usize</code></td></tr>
+            <tr><td><code>http.TlsConfig</code></td><td>struct</td><td>Server certificate for <code>make(http.Server, port, tls: ...)</code> (Q31): set <code>cert_file</code>/<code>key_file</code>, or <code>cert_pem</code>/<code>key_pem</code> for in-memory PEM.<br/>Fields: <code>cert_file: str</code>, <code>key_file: str</code>, <code>cert_pem: str</code>, <code>key_pem: str</code></td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers, verify_peer)</code></td><td>Executes an HTTP or HTTPS GET request against a target URL.<br/><code>resp := try http.get(&quot;https://127.0.0.1:8443/health&quot;, {}, false)</code></td></tr>
@@ -3533,11 +3612,11 @@ fn main() {
             <tr><td><code>fn Response.json(code: i32, json_str: str) -&gt; Response</code></td><td><code>cfire::http::Response::json(code, json_str)</code></td><td>Creates an HTTP Response with application/json content-type.<br/><code>return http.Response.json(200, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;)</code></td></tr>
             <tr><td><code>fn Response.html(code: i32, html: str) -&gt; Response</code></td><td><code>cfire::http::Response::html(code, html)</code></td><td>Creates an HTTP Response with text/html content-type.<br/><code>return http.Response.html(200, &quot;&lt;h1&gt;Hello&lt;/h1&gt;&quot;)</code></td></tr>
             <tr><td><code>fn Response.redirect(location: str, code: i32 = 302) -&gt; Response</code></td><td><code>cfire::http::Response::redirect(location, code)</code></td><td>Creates an HTTP redirect Response setting Location header.<br/><code>return http.Response.redirect(&quot;/login&quot;, 302)</code></td></tr>
-            <tr><td><code>fn (mut r: Router) get(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.get(pattern, handler)</code></td><td>Registers an HTTP GET route with optional path parameters (<code>:id</code>) or wildcards (<code>*path</code>).<br/><code>r.get(&quot;/users/:id&quot;, |req| http.Response.text(200, req.param(&quot;id&quot;)))</code></td></tr>
-            <tr><td><code>fn (mut r: Router) post(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router&amp;</code></td><td><code>r.post(pattern, handler)</code></td><td>Registers an HTTP POST route handler.<br/><code>r.post(&quot;/items&quot;, |req| http.Response.json(201, &quot;{}&quot;))</code></td></tr>
-            <tr><td><code>fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket::Conn) -&gt; void) -&gt; Router&amp;</code></td><td><code>r.ws(pattern, handler)</code></td><td>Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes <code>handler(req, mut ws)</code>.<br/><code>r.ws(&quot;/chat/:room&quot;, |req, mut ws| { ... })</code></td></tr>
+            <tr><td><code>fn (mut r: Router) get(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router</code></td><td><code>r.get(pattern, handler)</code></td><td>Registers an HTTP GET route with optional path parameters (<code>:id</code>) or wildcards (<code>*path</code>).<br/><code>r.get(&quot;/users/:id&quot;, |req| http.Response.text(200, req.param(&quot;id&quot;)))</code></td></tr>
+            <tr><td><code>fn (mut r: Router) post(pattern: str, handler: fn(Request) -&gt; Response) -&gt; Router</code></td><td><code>r.post(pattern, handler)</code></td><td>Registers an HTTP POST route handler.<br/><code>r.post(&quot;/items&quot;, |req| http.Response.json(201, &quot;{}&quot;))</code></td></tr>
+            <tr><td><code>fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -&gt; void) -&gt; Router</code></td><td><code>r.ws(pattern, handler)</code></td><td>Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes <code>handler(req, mut ws)</code>.<br/><code>r.ws(&quot;/chat/:room&quot;, |req, mut ws| { ... })</code></td></tr>
             <tr><td><code>fn (r: Router) dispatch(req: Request) -&gt; Response</code></td><td><code>r.dispatch(req)</code></td><td>Dispatches an HTTP request through the router in-memory without open network sockets.<br/><code>res := router.dispatch(test_req)</code></td></tr>
-            <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router&amp;</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.<br/><code>r.use(|req| { return None })</code></td></tr>
+            <tr><td><code>fn (mut r: Router) use(mw: fn(mut Request) -&gt; Response?) -&gt; Router</code></td><td><code>r.use(mw)</code></td><td>Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.<br/><code>r.use(|req| { return None })</code></td></tr>
             <tr><td><code>type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128 }</code></td><td><code>cfire::http::ServerLimits</code></td><td>Per-connection server limits (Q22, CF-180). Omitted fields keep their defaults; <code>workers = 0</code> keeps the default pool size (<code>hardware_concurrency()</code>, at least 4).<br/><code>srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000})</code></td></tr>
             <tr><td><code>type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }</code></td><td><code>cfire::http::TlsConfig</code></td><td>Server certificate for <code>make(http.Server, port, tls: ...)</code> (Q31): set <code>cert_file</code> / <code>key_file</code>, or <code>cert_pem</code> / <code>key_pem</code> for in-memory PEM.<br/><code>tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}</code></td></tr>
             <tr><td><code>fn (mut s: HttpServer) set_limits(limits: ServerLimits)</code></td><td><code>s.set_limits(limits)</code></td><td>Replaces the per-connection limits (Q22): <code>http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending}</code>; omitted fields keep their defaults.<br/><code>srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})</code></td></tr>
@@ -3585,6 +3664,13 @@ fn main() {
     defer srv.stop()
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>tls.ServerContext</code></td><td>handle</td><td>A TLS server configuration (certificate and key) that wraps accepted connections.</td></tr>
+            <tr><td><code>tls.CertKeyPair</code></td><td>struct</td><td>A certificate and its private key, in PEM form.<br/>Fields: <code>cert_pem: str</code>, <code>key_pem: str</code></td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn available() -&gt; bool</code></td><td><code>cfire::tls::available()</code></td><td>Returns <code>true</code> if the OpenSSL (<code>libssl</code> / <code>libcrypto</code>) runtime bridge is available.<br/><code>if tls.available() { ... }</code></td></tr>
@@ -3624,6 +3710,12 @@ fn main() {
     encoded := url.encode(&quot;raw query with spaces &amp; symbols!&quot;)
     println(&quot;Percent-encoded: {}&quot;, encoded)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>url.Url</code></td><td>struct</td><td>A parsed URL, from <code>url.parse</code>.<br/>Fields: <code>scheme: str</code>, <code>host: str</code>, <code>port: u16</code>, <code>path: str</code>, <code>query: str</code>, <code>fragment: str</code>, <code>query_params: map[str]str</code></td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -3668,6 +3760,14 @@ fn main() {
     frame := try ws.recv_text()
     println(&quot;Received WebSocket stream frame: {}&quot;, frame)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>websocket.Conn</code></td><td>handle</td><td>An open WebSocket connection; messages are <code>str</code> (<code>recv_text</code>) or <code>[]byte</code> (<code>recv_binary</code>).</td></tr>
+            <tr><td><code>websocket.Server</code></td><td>handle</td><td>A WebSocket server bound to a port.</td></tr>
+            <tr><td><code>websocket.TlsConfig</code></td><td>struct</td><td>Server certificate for <code>make(websocket.Server, port, tls: ...)</code> (Q31); the same type as <code>http.TlsConfig</code>.<br/>Fields: <code>cert_file: str</code>, <code>key_file: str</code>, <code>cert_pem: str</code>, <code>key_pem: str</code></td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -3718,6 +3818,14 @@ fn main() {
     output := try os.command(&quot;git&quot;, [&quot;rev-parse&quot;, &quot;--short&quot;, &quot;HEAD&quot;])
     println(&quot;Current Git commit: {} (exit code {})&quot;, output.stdout, output.exit_code)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>os.ExecResult</code></td><td>struct</td><td>The outcome of a finished subprocess (<code>os.command</code>).<br/>Fields: <code>exit_code: i32</code>, <code>stdout: str</code>, <code>stderr: str</code></td></tr>
+            <tr><td><code>os.TermSize</code></td><td>struct</td><td>A terminal's size in character cells.<br/>Fields: <code>cols: i32</code>, <code>rows: i32</code></td></tr>
+            <tr><td><code>os.RawTerminal</code></td><td>handle</td><td>The terminal in raw mode (no echo, no line buffering); restored when it goes out of scope.</td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -3808,6 +3916,12 @@ fn main() {
     println(&quot;Cleaned text: {}&quot;, cleaned)
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>regex.Regex</code></td><td>handle</td><td>A compiled regular expression, from <code>regex.compile</code>.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn compile(pattern: str) -&gt; Regex!</code></td><td><code>cfire::regex::compile(pattern)</code></td><td>Compiles an ECMAScript regex pattern into a reusable Regex object.<br/><code>re := try regex.compile(&quot;\\d+&quot;)</code></td></tr>
@@ -3863,6 +3977,16 @@ fn main() {
         }
     }
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>sync.Mutex[T]</code></td><td>handle</td><td>A value of type <code>T</code> behind a lock; <code>lock()</code> returns a guard, or use <code>with_lock</code>.</td></tr>
+            <tr><td><code>sync.MutexGuard[T]</code></td><td>handle</td><td>Holds a <code>Mutex[T]</code> locked and gives access to its value; the lock is released when the guard goes out of scope.</td></tr>
+            <tr><td><code>sync.Channel[T]</code></td><td>handle</td><td>A thread-safe queue between tasks: <code>send</code>, <code>recv</code>, <code>try_recv</code>; <code>close()</code> wakes every waiting receiver.</td></tr>
+            <tr><td><code>sync.Atomic[T]</code></td><td>handle</td><td>A value shared between threads and read or changed atomically: <code>load</code>, <code>store</code>, <code>add</code>, <code>sub</code>.</td></tr>
+            <tr><td><code>sync.Context</code></td><td>handle</td><td>Carries cancellation and a deadline across tasks; see <code>core:sync/context</code>.</td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -3920,6 +4044,12 @@ fn main() {
         println(&quot;Operation succeeded within timeout deadline&quot;)
     }
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>context.Context</code></td><td>handle</td><td>Carries cancellation and a deadline across tasks; cancelling a parent cancels its children.</td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -4000,6 +4130,13 @@ fn main() {
     elapsed := time.since(now)
     println(&quot;Elapsed duration: {} ms ({} us)&quot;, elapsed.to_millis(), elapsed.to_micros())
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>time.Duration</code></td><td>handle</td><td>A span of time with nanosecond precision, made with <code>time.duration_millis(ms)</code> and friends and passed to <code>time.sleep</code>.</td></tr>
+            <tr><td><code>time.Time</code></td><td>handle</td><td>A point in wall-clock time, from <code>time.now()</code>, <code>time.unix(sec)</code> or <code>time.from_unix_seconds(sec)</code>.</td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -4121,6 +4258,23 @@ fn main() {
     )
     println(&quot;Top match: {} (score={})&quot;, hits[0].title, hits[0].score)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>ai.Provider</code></td><td>enum</td><td>Which model API a <code>Client</code> talks to.<br/>Variants: <code>OpenAI</code>, <code>Anthropic</code>, <code>Gemini</code>, <code>Ollama</code>, <code>OpenAICompatible</code>, <code>Local</code>, <code>Apple</code>, <code>Mock</code></td></tr>
+            <tr><td><code>ai.Client</code></td><td>handle</td><td>A connection to a model provider; send it messages, optionally with tools.</td></tr>
+            <tr><td><code>ai.Agent</code></td><td>handle</td><td>A client plus a tool registry that runs the tool-calling loop for you.</td></tr>
+            <tr><td><code>ai.McpServer</code></td><td>handle</td><td>A Model Context Protocol server exposing your tools over stdio.</td></tr>
+            <tr><td><code>ai.Message</code></td><td>struct</td><td>One chat message.<br/>Fields: <code>role: str</code>, <code>content: str</code>, <code>attachments: []Attachment</code>, <code>tool_calls: []ToolCall</code>, <code>tool_call_id: str</code>, <code>tool_name: str</code>, <code>is_error: bool</code></td></tr>
+            <tr><td><code>ai.Tool</code></td><td>struct</td><td>A tool the model may call; usually built with <code>ai.tool_def[T]</code>.<br/>Fields: <code>name: str</code>, <code>description: str</code>, <code>schema_json: str</code>, <code>parameters_schema: str</code></td></tr>
+            <tr><td><code>ai.ToolCall</code></td><td>struct</td><td>A model's request to run one tool.<br/>Fields: <code>id: str</code>, <code>name: str</code>, <code>arguments_json: str</code></td></tr>
+            <tr><td><code>ai.ChatResponse</code></td><td>struct</td><td>A model's reply.<br/>Fields: <code>text: str</code>, <code>model: str</code>, <code>tool_calls: []ToolCall</code></td></tr>
+            <tr><td><code>ai.Attachment</code></td><td>struct</td><td>A file attached to a message.<br/>Fields: <code>filename: str</code>, <code>mime_type: str</code>, <code>extracted_text: str</code></td></tr>
+            <tr><td><code>ai.Document</code></td><td>struct</td><td>A parsed document (<code>ai.parse_document</code>).<br/>Fields: <code>path: str</code>, <code>mime_type: str</code>, <code>format: str</code>, <code>text: str</code>, <code>sections: []DocumentSection</code></td></tr>
+            <tr><td><code>ai.DocumentSection</code></td><td>struct</td><td>One section of a document, as <code>ai.chunk_document</code> returns them.<br/>Fields: <code>index: i32</code>, <code>title: str</code>, <code>text: str</code></td></tr>
+            <tr><td><code>ai.ZipEntry</code></td><td>struct</td><td>One file from a zip archive.<br/>Fields: <code>name: str</code>, <code>content: str</code></td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -4308,6 +4462,12 @@ fn main() {
     }
 }</code></pre>
         <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>sqlite.Conn</code></td><td>handle</td><td>An open SQLite database; <code>exec</code> runs statements and <code>query[T]</code> maps rows to structs.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn open(path: str) -&gt; Conn!</code></td><td><code>cfire::sqlite::open(path)</code></td><td>Opens an SQLite3 database connection, enables WAL mode, and registers vector SQL functions (<code>vec_cosine_similarity</code>, <code>vec_cosine_distance</code>, <code>vec_l2_distance</code>, <code>vec_dot</code>, <code>vec_dims</code>).<br/><code>mut db := try sqlite.open(&quot;app.db&quot;)</code></td></tr>
@@ -4359,6 +4519,15 @@ fn main() {
     chunk := try ch.read_text(4096)
     print(chunk)
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>ssh.Session</code></td><td>handle</td><td>An authenticated SSH connection; run commands or open channels on it.</td></tr>
+            <tr><td><code>ssh.Channel</code></td><td>handle</td><td>An SSH channel (a shell or a command) with its own input and output.</td></tr>
+            <tr><td><code>ssh.ExecResult</code></td><td>struct</td><td>The outcome of a remote command.<br/>Fields: <code>exit_code: i32</code>, <code>stdout: str</code>, <code>stderr: str</code></td></tr>
+            <tr><td><code>ssh.SftpEntry</code></td><td>struct</td><td>One entry of a remote directory listing.<br/>Fields: <code>name: str</code>, <code>is_dir: bool</code></td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -4453,6 +4622,12 @@ fn main() {
 
     app.run()
 }</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>webui.App</code></td><td>handle</td><td>A native desktop window running a web UI, with RPC between the page and cfire.</td></tr>
+          </tbody>
+        </table></div>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
@@ -4761,45 +4936,40 @@ fn main() {
           </div>
         </div>
         <div class="card" id="diag-cfire/USE-AFTER-FREE" style="margin-bottom:1.25rem;">
-          <h3><code>[cfire/USE-AFTER-FREE]</code> &mdash; Use of Dangling Pointer or Slice View After Owner Invalidation</h3>
-          <p style="margin-bottom:0.85rem;">Pointers (<code>&amp;x</code>, <code>&amp;mut x</code>, <code>.data()</code>, <code>.byte_ptr()</code>) and slice views (<code>s[a..b]</code>) track their root owner variable. If the owner is moved (<code>move x</code>), reassigned (<code>x = ...</code>), or structurally mutated by a reallocating container method (<code>.push()</code>, <code>.pop()</code>, <code>.clear()</code>, <code>.erase()</code>, <code>.remove()</code>), any subsequent read or dereference of the borrowed pointer/view is rejected at compile time.</p>
+          <h3><code>[cfire/USE-AFTER-FREE]</code> &mdash; Use of a Slice View After Owner Invalidation</h3>
+          <p style="margin-bottom:0.85rem;">Slice views (<code>s[a..b]</code>, <code>xs[a..b]</code>) track their root owner variable. If the owner is moved (<code>move x</code>), reassigned (<code>x = ...</code>), or structurally mutated by a reallocating container method (<code>.push()</code>, <code>.pop()</code>, <code>.insert()</code>, <code>.remove()</code>, <code>.clear()</code>), every view taken before is invalidated, and reading it is rejected.</p>
           <div class="grid-2">
-            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut nums := [10, 20, 30]
-p := nums.data()
-nums.push(40) // invalidates 'p' due to potential vector reallocation
-println(&quot;{}&quot;, *p) // ERROR [cfire/USE-AFTER-FREE]</code></pre></div>
-            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut nums := [10, 20, 30]
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut nums: []i32 = [10, 20, 30]
+view := nums[0..2]
+nums.push(40) // may reallocate 'nums'
+println(&quot;{}&quot;, view[0]) // ERROR [cfire/USE-AFTER-FREE]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut nums: []i32 = [10, 20, 30]
 nums.push(40)
-p := nums.data() // borrow acquired after mutation
-println(&quot;{}&quot;, *p) // OK</code></pre></div>
+view := nums[0..2] // view taken after the mutation
+println(&quot;{}&quot;, view[0]) // OK</code></pre></div>
           </div>
         </div>
         <div class="card" id="diag-cfire/DANGLING-POINTER" style="margin-bottom:1.25rem;">
-          <h3><code>[cfire/DANGLING-POINTER]</code> &mdash; Inner-Scope Borrow Escaping to Outer-Scope Pointer or View</h3>
-          <p style="margin-bottom:0.85rem;">A pointer or slice view declared in an outer lexical scope cannot be assigned the address or slice view of a variable declared in a deeper inner block, preventing stack use-after-scope defects.</p>
+          <h3><code>[cfire/DANGLING-POINTER]</code> &mdash; Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)</h3>
+          <p style="margin-bottom:0.85rem;">Raw pointers are not cfire syntax any more (CF-189), so no pointer can outlive its target; the check remains for code that still reaches it. Keep an index, the value itself, or <code>own[T]</code> instead.</p>
           <div class="grid-2">
-            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut p: *mut i32 = none
-if true {
-    mut inner := 42
-    p = &amp;mut inner // ERROR [cfire/DANGLING-POINTER]
-}</code></pre></div>
-            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut outer := 42
-mut p: *mut i32 = none
-if true {
-    p = &amp;mut outer // OK: 'outer' outlives 'p'
-}</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut p := &amp;x // ERROR [cfire/RAW-POINTER]: raw pointers exist only in C++ interop</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut values: []i32 = [1, 2]
+mut at := 0 // an index instead of a pointer
+values[at] = 42 // OK</code></pre></div>
           </div>
         </div>
         <div class="card" id="diag-cfire/DANGLING-RETURN" style="margin-bottom:1.25rem;">
-          <h3><code>[cfire/DANGLING-RETURN]</code> &mdash; Returning Pointer or View Rooted in Function-Local Storage</h3>
-          <p style="margin-bottom:0.85rem;">Functions cannot return a pointer (<code>*T</code>, <code>*mut T</code>) or slice view (<code>&amp;str</code>, <code>&amp;[]T</code>) that borrows a function-local variable or <code>move</code> parameter whose storage is destroyed on function return.</p>
+          <h3><code>[cfire/DANGLING-RETURN]</code> &mdash; Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)</h3>
+          <p style="margin-bottom:0.85rem;">Functions return values (<code>T</code>, <code>str</code>, <code>[]T</code>) or <code>own[T]</code>; a returned <code>str</code> or <code>[]T</code> is a copy of any view, so nothing returned can borrow a local (Q36, CF-189).</p>
           <div class="grid-2">
-            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn bad_ptr() -&gt; *i32 {
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>fn bad() -&gt; *i32 { // ERROR [cfire/RAW-POINTER]
     local := 99
-    return &amp;local // ERROR [cfire/DANGLING-RETURN]
+    return &amp;local
 }</code></pre></div>
-            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn good_ptr(in_ref: &amp;i32) -&gt; *i32 {
-    return &amp;in_ref // OK: rooted in caller-owned parameter
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>fn good() -&gt; i32 {
+    local := 99
+    return local // OK: returned by value
 }</code></pre></div>
           </div>
         </div>
@@ -4819,14 +4989,22 @@ for x in items {
           </div>
         </div>
         <div class="card" id="diag-cfire/NULL-DEREF" style="margin-bottom:1.25rem;">
-          <h3><code>[cfire/NULL-DEREF]</code> &mdash; Dereference or Member Access on Null or Potentially Null Pointer</h3>
-          <p style="margin-bottom:0.85rem;">Raw pointers (<code>*T</code>, <code>*mut T</code>) and smart pointers (<code>own[T]</code>, <code>shared[T]</code>) initialized to <code>none</code>, left uninitialized, or typed optional (<code>*T?</code>, <code>own[T]?</code>) cannot be dereferenced (<code>*p</code>) or member-accessed (<code>p.field</code>) until proven non-null via assignment (<code>p = &amp;mut x</code>), an <code>if p != none</code> branch, an early-returning <code>if p == none { return }</code>, or <code>assert(p != none)</code>.</p>
+          <h3><code>[cfire/NULL-DEREF]</code> &mdash; Member Access on an Optional Variable That May Be <code>none</code></h3>
+          <p style="margin-bottom:0.85rem;">A variable of type <code>T?</code> (<code>own[T]?</code>, <code>Session?</code>) is tracked across branches. Reading a field or calling a method on it is rejected until the code proves it holds a value: <code>if s != none { ... }</code>, an early <code>return</code> when it is <code>none</code>, <code>assert(s != none)</code>, or <code>if v := s { ... }</code>. (cfire values are otherwise never null: there are no raw pointers, CF-189.)</p>
           <div class="grid-2">
-            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>mut p: *mut i32 = none
-*p = 10 // ERROR [cfire/NULL-DEREF]</code></pre></div>
-            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>mut p: *mut i32 = none
-if p != none {
-    *p = 10 // OK: flow-narrowed to NonNull
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>type Session struct { id: i32 }
+fn find(id: i32) -&gt; Session? {
+    return none
+}
+s := find(1)
+println(&quot;{}&quot;, s.id) // ERROR [cfire/NULL-DEREF]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>type Session struct { id: i32 }
+fn find(id: i32) -&gt; Session? {
+    return none
+}
+s := find(1)
+if s != none {
+    println(&quot;{}&quot;, s.id) // OK: narrowed to present
 }</code></pre></div>
           </div>
         </div>

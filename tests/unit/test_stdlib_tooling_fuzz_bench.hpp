@@ -23,14 +23,14 @@ type Status enum {
 }
 
 type Runner interface {
-    run(task: &str) -> bool!
+    run(task: str) -> bool!
 }
 
 type Box struct {
     id: i32
 }
 
-fn (mut self: Config) execute[T: Runner](mut task: &str, move payload: own[Box]) -> (i32, str)! {
+fn (mut self: Config) execute[T: Runner](mut task: str, move payload: own[Box]) -> (i32, str)! {
     return (0, "done")
 }
 
@@ -51,7 +51,7 @@ fn worker(cfg: Config) -> bool {
         .assert_contains("\"receiver\": \"(mut self: Config)\"", "outline contains method receiver (TOOL-01)")
         .assert_contains("\"type_params\": [\"T: Runner\"]", "outline contains type params (TOOL-01)")
         .assert_contains("\"intent\": \"mut\"", "outline contains mut parameter intent (TOOL-01)")
-        .assert_contains("\"type\": \"&str\"", "outline contains &str borrow type (TOOL-01)")
+        .assert_contains("\"type\": \"str\"", "outline contains the str parameter type (TOOL-01)")
         .assert_contains("\"type\": \"own[Box]\"", "outline contains generic own[Box] (TOOL-01)")
         .assert_contains("\"returns\": \"(i32, str)!\"", "outline contains fallible tuple return (TOOL-01)")
         .assert_contains("\"name\": \"worker\"", "outline contains function worker (TOOL-01)");
@@ -238,7 +238,7 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
     {
         auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{tmp_ide_ws.path, false});  // CF-160 root
         auto resp_inspect = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cfire_inspect","arguments":{"target":"cfire/USE-AFTER-FREE"}}})");
-        require(resp_inspect.contains("Use of Dangling Pointer"), "MCP cfire_inspect returns diagnostic rule (IDE-MCP-01)");
+        require(resp_inspect.contains("Use of a Slice View"), "MCP cfire_inspect returns diagnostic rule (IDE-MCP-01)");
 
         auto resp_llm = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cfire_doc_llm","arguments":{}}})");
         require(resp_llm.contains("Memory Safety, Loan Tracking"), "MCP cfire_doc_llm returns LLM reference sheet (IDE-MCP-01)");

@@ -823,6 +823,19 @@ fn main() {
             out += "        <pre><code>" + detail::html_escape(ex) + "</code></pre>\n";
         }
 
+        if (!mod.type_docs.empty()) {
+            out += "        <div class=\"table-wrap api-table-wrap\"><table>\n          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>\n          <tbody>\n";
+            for (const auto& td : mod.type_docs) {
+                std::string extra;
+                for (std::size_t i = 0; i < td.fields.size(); ++i)
+                    extra += std::format("{}<code>{}: {}</code>", i ? ", " : "<br/>Fields: ", detail::html_escape(td.fields[i].name), detail::html_escape(td.fields[i].type));
+                for (std::size_t i = 0; i < td.variants.size(); ++i)
+                    extra += std::format("{}<code>{}</code>", i ? ", " : "<br/>Variants: ", detail::html_escape(td.variants[i]));
+                out += std::format("            <tr><td><code>{}.{}</code></td><td>{}</td><td>{}{}</td></tr>\n", mod.ns_alias, detail::html_escape(td.name),
+                                   td.kind, detail::render_inline_md(td.summary), extra);
+            }
+            out += "          </tbody>\n        </table></div>\n";
+        }
         out += "        <div class=\"table-wrap api-table-wrap\"><table>\n          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>\n          <tbody>\n";
         for (const auto& fn : mod.functions) {
             out += std::format("            <tr><td><code>{}</code></td><td><code>{}</code></td><td>{}<br/><code>{}</code></td></tr>\n",
@@ -1145,6 +1158,13 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
             ofs << updated;
         }
     };
+
+    // CF-188: the stdlib catalog documents every type and function in cfire terms.
+    if (auto problems = catalog_doc_problems(); !problems.empty()) {
+        std::string msg = std::format("Documentation audit failure: {} stdlib catalog problem(s):", problems.size());
+        for (const auto& pr : problems) msg += "\n  - " + pr;
+        return std::unexpected(msg);
+    }
 
     // CF-158: the GUIDE's diagnostics table is generated from diagnostic_code_registry(), and docs never link to
     // local paths (`file://...`, `/Users/...`), which only resolve on the author's machine.

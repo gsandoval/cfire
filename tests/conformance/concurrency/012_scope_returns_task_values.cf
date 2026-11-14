@@ -1,0 +1,29 @@
+// expect: stdout
+// | 1 4 9 16
+// | 3 1 2
+// flags: --sanitize=thread
+// Q51 (CF-189): `x := async.scope ...` / `return async.scope ...` is the spawned tasks' values, in spawn order.
+package main
+fn squares(xs: []i32) -> []i32 {
+    return async.scope(workers: 4) |scope| {
+        for x in xs {
+            scope.spawn || {
+                return x * x
+            }
+        }
+    }
+}
+fn main() {
+    nums: []i32 = [1, 2, 3, 4]
+    sq := squares(nums)
+    println("{} {} {} {}", sq[0], sq[1], sq[2], sq[3])
+    words: []str = ["abc", "a", "ab"]
+    lens := async.scope(workers: 2) |scope| {
+        for w in words {
+            scope.spawn || {
+                return w.len()
+            }
+        }
+    }
+    println("{} {} {}", lens[0], lens[1], lens[2])
+}

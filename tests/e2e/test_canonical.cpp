@@ -55,7 +55,8 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
             },
             .expected_cpp = {
                 "cfire::async::Scope scope(4);",
-                "std::span<const std::string> hosts",
+                "cfire::slice_ref<std::string> hosts",
+                "cfire::async::Results<std::int32_t> cf_results_scope;",
             },
         },
         {
@@ -292,8 +293,8 @@ void test_cinterop_codegen_and_eject(const std::filesystem::path& rt_dir) {
                     emit->first.contains("Rect{.x =") &&
                     emit->first.contains("Color{.r =") &&
                     emit->first.contains("cfire::c_arg(title)") &&
-                    emit->first.contains("(values).data()"),
-                "C struct literals, c_arg string coercion, and slice data pointers emitted");
+                    !emit->first.contains(".data()"),
+                "C struct literals and c_arg string coercion emitted; buffers are passed as the slice itself (Q54)");
         }
         auto run = run_cfire(std::format("run \"{}\"", fx.string()));
         require(run.ok() && run.output.contains("cinterop ok ff7800ff"),

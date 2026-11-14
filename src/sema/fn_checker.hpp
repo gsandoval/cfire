@@ -20,6 +20,39 @@
 
 namespace cfire::frontend {
 
+// CF-188: why `<ns>.<name>` in a type position is not a stdlib type, or "" when it is one. `ns` is the module's
+// canonical namespace (`http`, `sqlite`); `in_build_manifest` is true in a `build.cf` file, the only place where
+// the `build.*` types exist. Without this check clang rejected the generated C++ (cfire/TYPE-ERROR).
+[[nodiscard]] inline auto stdlib_type_name_problem(std::string_view ns, std::string_view name, bool in_build_manifest) -> std::string {
+    if (auto br = name.find('['); br != std::string_view::npos) name = name.substr(0, br);
+    if (name.empty() || name.contains('.') || name.contains(':')) return "";
+    const auto& idx = StdlibCatalogIndex::instance();
+    const std::string import_path = idx.import_path_for(ns);
+    if (import_path.empty()) return "";
+    if (ns == "build") {
+        if (in_build_manifest) return "";
+        return std::format("'build.{}' exists only in a build.cf manifest; a program cannot use the build module's types", name);
+    }
+    auto it = idx.ns_types_and_consts.find(std::string(ns));
+    if (it != idx.ns_types_and_consts.end() && it->second.contains(std::string(name))) return "";
+    if (find_stdlib_struct(ns, name) != nullptr) return "";
+    if (const auto* removed = find_removed_stdlib_type(ns, name); removed && !removed->use.empty()) {
+        return std::format("'{}.{}' is not a type in '{}'; use {}", ns, name, import_path, removed->use);
+    }
+    std::vector<std::string> known;
+    if (it != idx.ns_types_and_consts.end()) {
+        for (const auto& t : it->second) {
+            if (!t.empty() && std::isupper(static_cast<unsigned char>(t[0])) && !std::ranges::all_of(t, [](char c) { return std::isupper(static_cast<unsigned char>(c)) || c == '_'; }))
+                known.push_back(t);
+        }
+    }
+    std::ranges::sort(known);
+    std::string list;
+    for (const auto& k : known) list += (list.empty() ? "" : ", ") + std::format("{}.{}", ns, k);
+    return std::format("'{}.{}' is not a type in '{}'{}", ns, name, import_path,
+                       list.empty() ? std::string("; the module exports no types") : std::format("; its types are {}", list));
+}
+
 class SemaFnChecker {
 public:
     enum class NullState { NonNull, MaybeNull, Null };
@@ -1175,6 +1208,37 @@ public:
                 oid && oid->name == "math" && !is_ident_in_scope_sema("math") && is_math_constant(mem->field)) {
                 return TypeId::Float64();
             }
+            // CF-188: fields of stdlib structs (`req.body: str`, `res.exit_code: i32`), from the catalog's type docs.
+            if (mem->object) {
+                std::string ot = type_name_of(mem->object);
+                if (mem->field == "value") {  // Q52: the value a `sync.MutexGuard[T]` holds locked
+                    std::string g = ot.starts_with("mut ") ? ot.substr(4) : ot;
+                    for (std::string_view pre : {"sync.MutexGuard[", "MutexGuard["}) {
+                        if (g.starts_with(pre) && g.ends_with(']')) return type_id_of(g.substr(pre.size(), g.size() - pre.size() - 1));
+                    }
+                }
+                if (ot.starts_with("mut ")) ot.erase(0, 4);
+                while (!ot.empty() && ot.front() == '&') ot.erase(ot.begin());
+                if (auto dot = ot.find('.'); dot != std::string::npos && ot.find('.', dot + 1) == std::string::npos) {
+                    const std::string ns = ot.substr(0, dot);
+                    const std::string tname = ot.substr(dot + 1);
+                    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                        if (mod.ns_alias != ns) continue;
+                        for (const auto& td : mod.type_docs) {
+                            if (td.bare_name() != tname) continue;
+                            for (const auto& f : td.fields) {
+                                if (f.name != mem->field) continue;
+                                // Element types of the module's own (`[]ToolCall` in `ext:ai`) are written bare.
+                                std::string ft = f.type;
+                                for (const auto& own : mod.types) {
+                                    if (ft == "[]" + own) ft = "[]" + ns + "." + own;
+                                }
+                                if (TypeId t = type_id_of(ft); t.is_valid() && !t.is_unknown()) return t;
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node); mem && mem->field == "release" && smart_wrap_of(mem->object) == "own") {
@@ -1913,7 +1977,14 @@ public:
         return emit_error(diag_at(line, col, "cfire/MISSING-IMPORT", std::format("module '{}' is not imported; add 'import \"{}\"'", ns, mod_path), {{"module", mod_path}}));
     }
 
-    [[nodiscard]] auto check_type_ref_separators(const TypeRef& tr, int line, int col) -> std::expected<void, std::string> {
+    // `local_decl`: a local variable's type, which analyze.hpp's declaration pass does not see (CF-188 stdlib type names).
+    [[nodiscard]] auto check_type_ref_separators(const TypeRef& tr, int line, int col, bool local_decl = false) -> std::expected<void, std::string> {
+        if (local_decl && (tr.is_ptr || tr.is_mut_ptr)) {
+            return emit_error(diag_at(line, col, "cfire/RAW-POINTER", "raw pointer types ('*T', '*mut T') exist only in C++ interop; hold the value itself, an index, or 'own[T]'/'shared[T]'"));
+        }
+        if (local_decl && (tr.is_borrow || tr.is_mut_borrow)) {
+            return emit_error(diag_at(line, col, "cfire/REFERENCE-TYPE", "'&T' is not a cfire type (Q53): write 'T'; a binding of a view is already a view"));
+        }
         if (!tr.raw_name.empty()) {
             auto dcol = tr.raw_name.find("::");
             auto dot = tr.raw_name.find('.');
@@ -1934,19 +2005,25 @@ public:
                     std::string rest = tr.raw_name.substr(dot + 1);
                     return emit_error(diag_at(line, col, "cfire/UNDECLARED-IDENT", std::format("module '{}' is imported as '{}'; use '{}.{}'", qual, active_alias, active_alias, rest)));
                 }
+                if (const std::string ns = local_decl ? resolve_stdlib_ns_sema(qual) : std::string(); !ns.empty() && !is_cpp_qualifier_sema(qual) && !is_vendor_alias_sema(qual)) {
+                    const bool manifest = std::filesystem::path(cf_.ast.path).filename() == "build.cf";
+                    if (std::string why = stdlib_type_name_problem(ns, tr.raw_name.substr(dot + 1), manifest); !why.empty()) {
+                        return emit_error(diag_at(line, col, "cfire/UNKNOWN-STDLIB-TYPE", why));
+                    }
+                }
             }
         }
         if (tr.elem_type) {
-            if (auto r = check_type_ref_separators(*tr.elem_type, line, col); !r) return r;
+            if (auto r = check_type_ref_separators(*tr.elem_type, line, col, local_decl); !r) return r;
         }
         if (tr.key_type) {
-            if (auto r = check_type_ref_separators(*tr.key_type, line, col); !r) return r;
+            if (auto r = check_type_ref_separators(*tr.key_type, line, col, local_decl); !r) return r;
         }
         for (const auto& arg : tr.type_args) {
-            if (auto r = check_type_ref_separators(arg, line, col); !r) return r;
+            if (auto r = check_type_ref_separators(arg, line, col, local_decl); !r) return r;
         }
         for (const auto& tup : tr.tuple_types) {
-            if (auto r = check_type_ref_separators(tup, line, col); !r) return r;
+            if (auto r = check_type_ref_separators(tup, line, col, local_decl); !r) return r;
         }
         return {};
     }
@@ -2798,12 +2875,29 @@ public:
             return check_literal_expr(*lit, e->line);
         }
         if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
+            // CF-189: raw pointers belong to C++ interop (`cpp { }`, `import cpp`, `own`/`shared` `from_raw`/`release`).
+            if (un->op == "&" || un->op == "&mut") {
+                return emit_error(diag_at(e->line, e->col, "cfire/RAW-POINTER", std::format(
+                    "'{}x' takes a raw pointer, which cfire keeps to C++ interop: pass the value itself (parameters are views by default, "
+                    "'mut' when the callee changes it), give each task its slot with 'scope.spawn |mut xs[i]|', hold heap data in "
+                    "'own[T]'/'shared[T]', or write the pointer code in a 'cpp {{ }}' block", un->op == "&mut" ? "&mut " : "&")));
+            }
+            if (un->op == "*") {
+                return emit_error(diag_at(e->line, e->col, "cfire/RAW-POINTER",
+                    "'*p' dereferences a raw pointer, which cfire keeps to C++ interop: read a locked value as 'guard.value', "
+                    "reach an 'own[T]'/'shared[T]' through its fields, or write the pointer code in a 'cpp { }' block"));
+            }
             if (auto r = check_unary_expr(*un, e->line, e->col); !r) return r;
             if (un->op == "!" || un->op == "not") return check_bool_condition(un->operand, "operand of '!'");
             return {};
         }
         if (const auto* bin = std::get_if<BinaryExpr>(&e->node)) {
             return check_binary_expr(*bin, e->line, e->col);
+        }
+        if (auto* mem = std::get_if<MemberExpr>(&e->node); mem && mem->field == "value" && mem->object) {
+            std::string ot = type_name_of(mem->object);
+            if (ot.starts_with("mut ")) ot.erase(0, 4);
+            if (ot.starts_with("sync.MutexGuard[") || ot.starts_with("MutexGuard[")) cf_.guard_value_members.insert(mem);
         }
         if (auto* mem = std::get_if<MemberExpr>(&e->node)) {
             if (auto r = check_member_expr(*mem, e->line, e->col); !r) return r;
@@ -2874,7 +2968,13 @@ public:
             return {};
         }
         if (const auto* cl = std::get_if<ClosureExpr>(&e->node)) {
+            if (auto r = check_slot_captures(*cl, e->line); !r) return r;
+            std::unordered_set<std::string> saved_slots = active_slot_captures_;
+            for (const auto& sc : cl->slot_captures) active_slot_captures_.insert(sc.first);
+            auto slots_guard = cfire::scope_exit([this, saved_slots] { active_slot_captures_ = saved_slots; });
             ++in_closure_depth_;
+            closure_ret_stack_.emplace_back(cl, in_closure_depth_);
+            auto ret_guard = cfire::scope_exit([this] { closure_ret_stack_.pop_back(); });
             int saved_loop_depth = loop_depth_;
             int saved_invalid_unwrap = in_invalid_unwrap_context_;
             int saved_escaping_entry_scope = escaping_closure_entry_scope_;
@@ -3413,10 +3513,10 @@ public:
                     mem.field != "has_value" && mem.field != "value_or") {
                     if (auto it = ptr_null_state_.find(id->name); it != ptr_null_state_.end()) {
                         if (it->second == NullState::Null) {
-                            return emit_error(diag_at(line, col, "cfire/NULL-DEREF", std::format("member access on null pointer '{}'", id->name), {{"ptr", id->name}}));
+                            return emit_error(diag_at(line, col, "cfire/NULL-DEREF", std::format("member access on '{}', which is none here", id->name), {{"ptr", id->name}}));
                         }
                         if (it->second == NullState::MaybeNull) {
-                            return emit_error(diag_at(line, col, "cfire/NULL-DEREF", std::format("member access on potentially null pointer '{}' without '!= none' guard", id->name), {{"ptr", id->name}}));
+                            return emit_error(diag_at(line, col, "cfire/NULL-DEREF", std::format("member access on '{0}', which may be none, without checking it first ('if {0} != none {{ ... }}' or 'if v := {0} {{ ... }}')", id->name), {{"ptr", id->name}}));
                         }
                     }
                 }
@@ -3707,6 +3807,18 @@ public:
     }
 
     [[nodiscard]] auto check_call_expr(const CallExpr& call, int line, int col, const ExprPtr& self_expr = nullptr) -> std::expected<void, std::string> {
+        // CF-189 (Q54): `.data()` / `.data_ptr()` / `.byte_ptr()` handed out raw pointers. A slice or `str` passed to an
+        // `import cpp` function lowers to its buffer pointer by itself.
+        if (const auto* pm = call.callee ? std::get_if<MemberExpr>(&call.callee->node) : nullptr;
+            pm && pm->object && (pm->field == "data" || pm->field == "data_ptr" || pm->field == "byte_ptr" || pm->field == "byte_ptr_at")) {
+            std::string rt = type_name_of(pm->object);
+            if (rt.starts_with("mut ")) rt.erase(0, 4);
+            if (builtin_recv_bits_for_type_name(rt) != 0) {
+                return emit_error(diag_at(line, col, "cfire/RAW-POINTER", std::format(
+                    "'.{}()' returned a raw pointer, which cfire keeps to C++ interop: pass the slice or 'str' itself to the "
+                    "'import cpp' function (it lowers to the buffer pointer), or take the pointer inside a 'cpp {{ }}' block", pm->field)));
+            }
+        }
         record_closure_param_hints(call);
         if (call.callee) {
             if (const auto* cm = std::get_if<MemberExpr>(&call.callee->node)) callee_members_.insert(cm);
@@ -3983,6 +4095,10 @@ public:
             const BuiltinMethod* mut_bm = lookup_builtin_method(*mem);
             if ((mut_bm && mut_bm->mutates) || mem->field == "push" || mem->field == "pop" || mem->field == "clear" ||
                 mem->field == "erase" || mem->field == "remove") {
+                if (auto pi = extract_path_info(mem->object); pi && slot_captured_vars_.contains(pi->root) && !active_slot_captures_.contains(pi->root)) {
+                    if (auto r = emit_error(diag_at(line, col, "cfire/SLOT-CAPTURE", std::format(
+                            "'{}' cannot change while tasks write its elements; call '.{}()' after the 'async.scope' ends", pi->root, mem->field))); !r) return r;
+                }
                 if (auto pi = extract_path_info(mem->object)) {
                     if (auto r = check_not_iterated_collection(pi->root, line, col); !r) return r;
                     invalidate_loans_for_owner(
@@ -4197,10 +4313,21 @@ public:
             if (mem->field == "spawn") is_spawn_call = true;
         }
         if (is_spawn_call) {
+            const auto* sm = std::get_if<MemberExpr>(&call.callee->node);
+            const auto* sid = sm && sm->object ? std::get_if<IdentExpr>(&sm->object->node) : nullptr;
+            auto vit = sid ? value_scope_spawns_.find(sid->name) : value_scope_spawns_.end();
             for (const auto& a : call.args) {
                 if (a.value) {
                     if (auto* cl = std::get_if<ClosureExpr>(&a.value->node)) {
                         cl->is_escaping = true;
+                        spawn_closures_.insert(cl);
+                        if (vit != value_scope_spawns_.end()) {
+                            if (in_closure_depth_ != 0) {
+                                return emit_error(diag_at(line, 0, "cfire/SCOPE-RESULT", std::format(
+                                    "tasks of a value-producing 'async.scope' are spawned from its body, not from inside another closure ('{}.spawn')", sid->name)));
+                            }
+                            vit->second.push_back(cl);
+                        }
                     }
                 }
             }
@@ -4223,7 +4350,25 @@ public:
                     spawn_entry_scope_ = saved_spawn_entry_scope;
                 }
             });
+            if (is_spawn_call) spawn_closures_.insert(&*call.block_arg);
+            if (auto r = check_slot_captures(*call.block_arg, line); !r) return r;
+            std::unordered_set<std::string> saved_slots = active_slot_captures_;
+            for (const auto& sc : call.block_arg->slot_captures) active_slot_captures_.insert(sc.first);
+            auto slots_guard = cfire::scope_exit([this, saved_slots] { active_slot_captures_ = saved_slots; });
             ++in_closure_depth_;
+            closure_ret_stack_.emplace_back(&*call.block_arg, in_closure_depth_);
+            auto ret_guard = cfire::scope_exit([this] { closure_ret_stack_.pop_back(); });
+            if (const auto* sm = std::get_if<MemberExpr>(&call.callee->node); is_spawn_call && sm && sm->object) {
+                if (const auto* sid = std::get_if<IdentExpr>(&sm->object->node)) {
+                    if (auto vit = value_scope_spawns_.find(sid->name); vit != value_scope_spawns_.end()) {
+                        if (in_closure_depth_ != 1) {
+                            return emit_error(diag_at(line, 0, "cfire/SCOPE-RESULT", std::format(
+                                "tasks of a value-producing 'async.scope' are spawned from its body, not from inside another closure ('{}.spawn')", sid->name)));
+                        }
+                        vit->second.push_back(&*call.block_arg);
+                    }
+                }
+            }
             int saved_loop_depth = loop_depth_;
             int saved_invalid_unwrap = in_invalid_unwrap_context_;
             loop_depth_ = 0;
@@ -4517,7 +4662,7 @@ public:
         if (std::holds_alternative<ReturnStmt>(s->node)) return true;
         if (std::holds_alternative<BreakStmt>(s->node) || std::holds_alternative<ContinueStmt>(s->node)) return true;
         if (const auto* as = std::get_if<AsyncScopeStmt>(&s->node)) {
-            return block_diverges(as->body, cf);
+            return as->result_return || block_diverges(as->body, cf);  // `return async.scope ...` (Q51)
         }
         if (const auto* es = std::get_if<ExprStmt>(&s->node)) {
             if (es->expr) {
@@ -4847,9 +4992,11 @@ public:
         if (vd.is_mut && !vd.type && vd.init) {
             TypeId it = infer_expr_type_id_sema(vd.init);
             if (it == TypeId::Str() || it == type_id_of("&str")) cf_.owned_text_decls.insert(&vd);
+            if (cf_.type_table.get(it).kind == TypeKind::Slice) cf_.owned_slice_decls.insert(&vd);
         }
+        const std::size_t errors_before_type = errors_.size();
         if (vd.type) {
-            if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col); !r) return r;
+            if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col, true); !r) return r;
             if (!vd.type->is_slice && !vd.type->is_array && !vd.type->is_optional && !vd.type->is_ptr) {
                 if (auto r = check_int_literal_fits(vd.init, vd.type->name, vd.line, vd.col); !r) return r;
             }
@@ -4857,6 +5004,7 @@ public:
                 if (auto r = emit_error(diag_at(vd.line, vd.col, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface))); !r) return r;
             }
         }
+        const bool decl_type_reported = errors_.size() != errors_before_type;
         if (vd.init && (vd.name == "_" || (vd.type && vd.type->is_fallible))) {
             unwrapped_exprs_.insert(vd.init);
         }
@@ -4876,8 +5024,9 @@ public:
             }
         }
 
-        // CF-116: Type compatibility check for declared type vs initializer
-        if (vd.type && vd.init) {
+        // CF-116: Type compatibility check for declared type vs initializer (skipped when the declared type itself
+        // was just reported, so a bad stdlib type name is one error, not two).
+        if (vd.type && vd.init && !decl_type_reported) {
             TypeId dest_t = type_id_of(*vd.type);
             TypeId src_t = infer_expr_type_id_sema(vd.init);
             // An array literal adapts to the declared element type, like a bare literal does (`xs: []i32 = [1, 2]`);
@@ -5248,7 +5397,7 @@ public:
         }
         if (in_escaping_closure_depth_ > 0 && as.target && !spawn_ptr_reported) {
             std::string root = get_root_variable_name(as.target);
-            if (!root.empty() && root != "_") {
+            if (!root.empty() && root != "_" && !active_slot_captures_.contains(root)) {
                 auto sit = var_scope_depth_.find(root);
                 if (sit != var_scope_depth_.end() && sit->second <= escaping_closure_entry_scope_) {
                     std::string r_ty;
@@ -5383,6 +5532,11 @@ public:
             unwrapped_exprs_.insert(rt.value);
         }
         if (auto r = check_expr(rt.value); !r) return r;
+        if (rt.value && !closure_ret_stack_.empty() && closure_ret_stack_.back().second == in_closure_depth_) {
+            if (TypeId t = infer_expr_type_id_sema(rt.value); t.is_valid() && !t.is_unknown()) {
+                closure_ret_types_.try_emplace(closure_ret_stack_.back().first, cf_.type_table.to_string(t));
+            }
+        }
         if (rt.value) {
             bool is_direct = false;
             if (auto r = check_view_of_temporary(rt.value, "returned value", rt.line, 1); !r) return r;
@@ -5694,11 +5848,61 @@ public:
 
     [[nodiscard]] auto check_async_scope_stmt(const AsyncScopeStmt& sc) -> std::expected<void, std::string> {
         if (auto r = check_expr(sc.workers); !r) return r;
-        ScopeGuard sg(*this);
-        if (!sc.scope_var.empty()) {
-            bind_scoped_var(sc.scope_var, false);
+        const bool yields = !sc.result_var.empty() || sc.result_return;
+        std::vector<const ClosureExpr*> spawned;
+        {
+            std::unordered_set<std::string> saved_slot_vars = slot_captured_vars_;
+            auto slot_vars_guard = cfire::scope_exit([this, saved_slot_vars] { slot_captured_vars_ = saved_slot_vars; });
+            ScopeGuard sg(*this);
+            if (!sc.scope_var.empty()) {
+                bind_scoped_var(sc.scope_var, false);
+            }
+            if (yields) value_scope_spawns_[sc.scope_var].clear();
+            auto spawns_guard = cfire::scope_exit([&] {
+                if (!yields) return;
+                if (auto it = value_scope_spawns_.find(sc.scope_var); it != value_scope_spawns_.end()) {
+                    spawned = std::move(it->second);
+                    value_scope_spawns_.erase(it);
+                }
+            });
+            if (auto r = check_block_stmts(sc.body); !r) return r;
         }
-        return check_block_stmts(sc.body);
+        if (!yields) return {};
+        // Q51 (CF-189): the scope's value is `[]T`, `T` being what every spawned task returns.
+        std::string elem;
+        for (const auto* cl : spawned) {
+            std::string t;
+            if (cl->return_type) t = format_type_ref_sema(*cl->return_type);
+            else if (auto it = closure_ret_types_.find(cl); it != closure_ret_types_.end()) t = it->second;
+            if (t.empty() || t == "void") {
+                return emit_error(diag_at(sc.line, 0, "cfire/SCOPE-RESULT",
+                    "every task spawned in a value-producing 'async.scope' must return a value ('scope.spawn || { return v }')"));
+            }
+            if (elem.empty()) elem = t;
+            else if (type_id_of(elem) != type_id_of(t)) {
+                return emit_error(diag_at(sc.line, 0, "cfire/SCOPE-RESULT",
+                    std::format("tasks spawned in this 'async.scope' return different types ('{}' and '{}'); its value is one '[]T'", elem, t)));
+            }
+        }
+        if (elem.empty()) {
+            return emit_error(diag_at(sc.line, 0, "cfire/SCOPE-RESULT",
+                std::format("this 'async.scope' produces a value but spawns no task on '{}'", sc.scope_var)));
+        }
+        sc.result_elem_type = elem;
+        const std::string slice_t = "[]" + elem;
+        if (sc.result_return) {
+            std::string want = fn_ret_str_;
+            if (want.ends_with('!')) want.pop_back();
+            if (!want.empty() && type_id_of(want) != type_id_of(slice_t)) {
+                return emit_error(diag_at(sc.line, 0, "cfire/TYPE-MISMATCH",
+                    std::format("this 'async.scope' returns '{}', but the function returns '{}'", slice_t, want)));
+            }
+            return {};
+        }
+        bind_scoped_var(sc.result_var, sc.result_mut);
+        var_types_[sc.result_var] = slice_t;
+        local_defined_vars_.insert(sc.result_var);
+        return {};
     }
 
 private:
@@ -5725,6 +5929,54 @@ private:
     int spawn_entry_scope_{0};
     std::unordered_map<std::string, int> active_loop_index_vars_{};  // name -> nesting count
     std::unordered_set<std::string> disjoint_slot_ptrs_{};
+    // Q51 (CF-189): the closure being checked and its closure depth, to type its `return` values; the first return
+    // type of each closure; and, per scope variable of an active `x := async.scope`, the closures it spawns.
+    std::vector<std::pair<const ClosureExpr*, int>> closure_ret_stack_{};
+    std::unordered_map<const ClosureExpr*, std::string> closure_ret_types_{};
+    std::unordered_map<std::string, std::vector<const ClosureExpr*>> value_scope_spawns_{};
+    // Q51 (CF-189) slot captures: closures passed to `spawn` (only those may capture a slot), the slices whose slot
+    // the task being checked owns (it may write `xs[i]`), and the slices with tasks writing their slots, which the
+    // scope body must not resize until the scope ends.
+    std::unordered_set<const ClosureExpr*> spawn_closures_{};
+    std::unordered_set<std::string> active_slot_captures_{};
+    std::unordered_set<std::string> slot_captured_vars_{};
+
+    // `scope.spawn |mut xs[i]| { xs[i] = v }`: each task owns one element. The index is the spawning loop's own index
+    // variable (so tasks own different elements), and inside the task `xs` appears only as `xs[i]`.
+    [[nodiscard]] auto check_slot_captures(const ClosureExpr& cl, int line) -> std::expected<void, std::string> {
+        if (cl.slot_captures.empty()) return {};
+        if (!spawn_closures_.contains(&cl)) {
+            return emit_error(diag_at(line, 0, "cfire/SLOT-CAPTURE", "only a task passed to 'scope.spawn' can capture a slot ('|mut xs[i]|')"));
+        }
+        for (const auto& [name, index] : cl.slot_captures) {
+            std::string ty;
+            if (auto it = var_types_.find(name); it != var_types_.end()) ty = it->second;
+            if (!mut_vars_.contains(name) || !(ty.starts_with("[]") || ty.starts_with("["))) {
+                return emit_error(diag_at(line, 0, "cfire/SLOT-CAPTURE", std::format("'|mut {}[...]|' needs '{}' to be a 'mut' slice or array", name, name)));
+            }
+            const auto* iv = index ? std::get_if<IdentExpr>(&index->node) : nullptr;
+            if (!iv || !active_loop_index_vars_.contains(iv->name)) {
+                return emit_error(diag_at(line, 0, "cfire/SPAWN-SHARED-MUT", std::format(
+                    "every task would write the same element of '{}' (data race); index the slot with the spawning loop's own index variable ('for i, x in {}' ... '|mut {}[i]|')", name, name, name)));
+            }
+            bool other_use = false;
+            visit_exprs(cl.body, [&](const ExprPtr& e) {
+                if (const auto* ix = std::get_if<IndexExpr>(&e->node)) {
+                    const auto* obj = ix->object ? std::get_if<IdentExpr>(&ix->object->node) : nullptr;
+                    const auto* idx = ix->index ? std::get_if<IdentExpr>(&ix->index->node) : nullptr;
+                    if (obj && obj->name == name && idx && idx->name == iv->name) return false;  // the owned slot
+                }
+                if (const auto* id = std::get_if<IdentExpr>(&e->node); id && id->name == name) other_use = true;
+                return true;
+            });
+            if (other_use) {
+                return emit_error(diag_at(line, 0, "cfire/SLOT-CAPTURE", std::format(
+                    "this task owns only '{0}[{1}]'; other tasks write the rest of '{0}' at the same time, so it cannot use '{0}' any other way", name, iv->name)));
+            }
+            slot_captured_vars_.insert(name);
+        }
+        return {};
+    }
     std::unordered_set<std::string> const_string_vars_{};  // CF-167
     std::unordered_map<const ClosureExpr*, std::vector<std::string>> closure_param_hints_{};  // CF-148
     int loop_depth_{0};

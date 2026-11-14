@@ -2243,7 +2243,7 @@ syncCfireThemeBtn();
 <ol>
   <li><strong>Lexical &amp; Resilient Syntax Analysis (<code>lexer</code> / <code>parser</code>)</strong>: Tokenizes <code>.cf</code> source files and constructs a typed Abstract Syntax Tree (AST) with statement-level error recovery so your editor and LSP stay responsive while you type.</li>
   <li><strong>Clang AST Bridge (<code>clang_bridge</code>)</strong>: Whenever it sees <code>import cpp &quot;header.h&quot;</code>, <code>cfire</code> invokes the system Clang frontend (<code>-Xclang -ast-dump=json</code>) to ingest C/C++ function signatures, structs, enums, and macros directly—no manual FFI glue required.</li>
-  <li><strong>Semantic, Intent &amp; Loan Verification (<code>sema</code>)</strong>: Resolves package imports, infers types, checks <code>match</code> exhaustiveness and reachability, verifies call-site <code>mut</code>/<code>move</code> markers, tracks local pointer/slice loans against container mutations (<code>cfire/USE-AFTER-FREE</code>, <code>cfire/ITERATOR-INVALIDATION</code>), and enforces flow-sensitive null checks (<code>cfire/NULL-DEREF</code>).</li>
+  <li><strong>Semantic, Intent &amp; Loan Verification (<code>sema</code>)</strong>: Resolves package imports, infers types, checks <code>match</code> exhaustiveness and reachability, verifies call-site <code>mut</code>/<code>move</code> markers, tracks slice views against container mutations (<code>cfire/USE-AFTER-FREE</code>, <code>cfire/ITERATOR-INVALIDATION</code>), and keeps raw pointers out of <code>.cf</code> code (<code>cfire/RAW-POINTER</code>; values are never null, absence is <code>T?</code>).</li>
   <li><strong>ISO C++23 Code Generation (<code>codegen</code>)</strong>: Emits standard ISO C++23 source code annotated with <code>#line</code> directives so <code>lldb</code>, <code>gdb</code>, and AddressSanitizer stack traces point directly to your <code>.cf</code> filenames and line numbers.</li>
   <li><strong>PCH-Accelerated Backend Compilation (<code>buildsys</code>)</strong>: Compiles the generated C++23 translation unit against a precompiled header (<code>cfire_prelude.hpp.pch</code>) using your host C++23 compiler (<code>clang++</code> 18+ or <code>g++</code> 14+) and links the required system or vendor libraries.</li>
 </ol>
@@ -2873,7 +2873,7 @@ App := build.Executable(&quot;service-app&quot;, {
     <a href="#ch4-bindings-scalar-types-numeric-conversions" class="topic-pill active" data-topic-pill="ch4-bindings-scalar-types-numeric-conversions" title="Bindings, Scalar Types &amp; Numeric Conversions" onclick="navigateToSubhead('4', 'ch4-bindings-scalar-types-numeric-conversions'); return false;">4.1 Scalars &amp; Types</a>
     <a href="#ch4-working-with-slices-t-fixed-arrays-nt-maps-mapkv" class="topic-pill" data-topic-pill="ch4-working-with-slices-t-fixed-arrays-nt-maps-mapkv" title="Working with Slices ([]T), Fixed Arrays ([N]T) &amp; Maps (map[K]V)" onclick="navigateToSubhead('4', 'ch4-working-with-slices-t-fixed-arrays-nt-maps-mapkv'); return false;">4.2 Slices &amp; Maps</a>
     <a href="#ch4-unified-for-loops-ranges-conditionals" class="topic-pill" data-topic-pill="ch4-unified-for-loops-ranges-conditionals" title="Unified for Loops, Ranges &amp; Conditionals" onclick="navigateToSubhead('4', 'ch4-unified-for-loops-ranges-conditionals'); return false;">4.3 Loops &amp; Ranges</a>
-    <a href="#ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" class="topic-pill" data-topic-pill="ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" title="Pointers (*T, *mut T) &amp; RAII Smart Ownership (^T / own[T], shared[T])" onclick="navigateToSubhead('4', 'ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt'); return false;">4.4 Pointers &amp; RAII</a>
+    <a href="#ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" class="topic-pill" data-topic-pill="ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" title="Heap Ownership (own[T], shared[T]) — and No Raw Pointers" onclick="navigateToSubhead('4', 'ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers'); return false;">4.4 Heap Ownership</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch4-bindings-scalar-types-numeric-conversions" data-topic-id="ch4-bindings-scalar-types-numeric-conversions" data-topic-title="Bindings, Scalar Types &amp; Numeric Conversions" data-short-title="4.1 Scalars &amp; Types">
 <h3 class="guide-heading" id="ch4-bindings-scalar-types-numeric-conversions"><span class="heading-hash">#</span><span class="heading-text">Bindings, Scalar Types &amp; Numeric Conversions</span></h3>
@@ -3078,15 +3078,15 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 4.2)</span>
         <strong class="pager-title">Working with Slices ([]T), Fixed Arrays ([N]T) &amp; Maps (map[K]V)</strong>
       </a>
-      <a href="#ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" class="pager-card pager-next" onclick="navigateToSubhead('4', 'ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt'); return false;">
+      <a href="#ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" class="pager-card pager-next" onclick="navigateToSubhead('4', 'ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 4.4) &rarr;</span>
-        <strong class="pager-title">Pointers (*T, *mut T) &amp; RAII Smart Ownership (^T / own[T], shared[T])</strong>
+        <strong class="pager-title">Heap Ownership (own[T], shared[T]) — and No Raw Pointers</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" data-topic-id="ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" data-topic-title="Pointers (*T, *mut T) &amp; RAII Smart Ownership (^T / own[T], shared[T])" data-short-title="4.4 Pointers &amp; RAII">
-<h3 class="guide-heading" id="ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt"><span class="heading-hash">#</span><span class="heading-text">Pointers (<code>*T</code>, <code>*mut T</code>) &amp; RAII Smart Ownership (<code>^T</code> / <code>own[T]</code>, <code>shared[T]</code>)</span></h3>
-<p>When you need indirection or heap allocation, <code>cfire</code> separates <strong>owning smart pointers</strong> from <strong>non-owning pointers and borrows</strong> right in the syntax:</p>
+  <section class="guide-topic" id="topic-ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" data-topic-id="ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" data-topic-title="Heap Ownership (own[T], shared[T]) — and No Raw Pointers" data-short-title="4.4 Heap Ownership">
+<h3 class="guide-heading" id="ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers"><span class="heading-hash">#</span><span class="heading-text">Heap Ownership (<code>own[T]</code>, <code>shared[T]</code>) — and No Raw Pointers</span></h3>
+<p>When you need heap allocation, <code>cfire</code> gives you owning smart pointers, and the type decides who owns the memory:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3096,13 +3096,19 @@ fn main() {
     <tbody>
       <tr><td><code>own[T]</code></td><td><code>make(own[T], val)</code></td><td>Unique RAII heap ownership; movable, never implicitly copied</td><td><code>std::unique_ptr&lt;T&gt;</code></td></tr>
       <tr><td><code>shared[T]</code></td><td><code>make(shared[T], val)</code></td><td>Atomic reference-counted shared heap ownership</td><td><code>std::shared_ptr&lt;T&gt;</code></td></tr>
-      <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>&amp;x</code> / <code>&amp;mut x</code></td><td>Non-owning immutable or mutable borrow (<code>&amp;str</code> -&gt; <code>cfire::str_ref</code>, a <code>std::string_view</code>)</td><td><code>const T&amp;</code> / <code>T*</code></td></tr>
-      <tr><td><code>*T</code></td><td><code>&amp;x</code> or foreign C pointer</td><td>Non-owning pointer; requires null check (<code>if p != none</code>) before deref</td><td><code>T*</code></td></tr>
-      <tr><td><code>*mut T</code></td><td><code>&amp;mut x</code></td><td>Rebindable pointer to a mutable target; supports <code>*p = val</code> and <code>*p += 1</code></td><td><code>T*</code></td></tr>
     </tbody>
   </table>
 </div>
-<p>Let's see how unique (<code>own[T]</code>), shared (<code>shared[T]</code>), and rebindable mutable pointers (<code>*mut T</code>) work together:</p>
+<p>There are no raw pointers in <code>cfire</code> code: no <code>*T</code> type, no <code>&amp;x</code>, no <code>*p</code>, and no <code>&amp;T</code> reference type (CF-189). Each job a pointer does in C++ has a direct form:</p>
+<ul>
+  <li><strong>Read a value without copying it</strong>: parameters are read-only views by default (<code>fn f(s: str)</code> takes a <code>std::string_view</code>); write <code>mut</code> when the callee changes the argument (<code>fn f(mut xs: []i32)</code>, called as <code>f(mut xs)</code>).</li>
+  <li><strong>Point at an element</strong>: keep its index (<code>cursor := 2</code>, then <code>xs[cursor] += 1</code>).</li>
+  <li><strong>Let parallel tasks write results</strong>: return them from the task (<code>results := async.scope ...</code>), or give each task its own element with <code>scope.spawn |mut xs[i]| { ... }</code> (Chapter 10).</li>
+  <li><strong>Share or own heap data</strong>: <code>own[T]</code> / <code>shared[T]</code>, reached through their fields (<code>pkt.sequence</code>).</li>
+  <li><strong>Read a locked value</strong>: <code>guard.value</code> on a <code>sync.MutexGuard[T]</code> (Chapter 10).</li>
+  <li><strong>C++ interop</strong>: raw pointers exist only there. A <code>[]T</code> or <code>str</code> passed to an <code>import cpp</code> function becomes its buffer pointer automatically, <code>own[T]</code> crosses the boundary with <code>.release()</code> / <code>own[T].from_raw(p)</code>, and anything else goes in a <code>cpp { ... }</code> block (Chapter 11).</li>
+</ul>
+<p>Each old spelling is a compile error that names the replacement (<code>cfire/RAW-POINTER</code>, <code>cfire/REFERENCE-TYPE</code>; <code>cfire fix</code> rewrites <code>x: &amp;T</code> / <code>x: &amp;mut T</code> parameters).</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -3119,16 +3125,15 @@ fn main() {
     shared_pkt := make(shared[Packet], Packet{sequence: 2, payload: &quot;ACK&quot;})
     shared_clone := shared_pkt
 
-    // 3. Rebindable mutable pointer (*mut i32) with compound deref assignment
-    mut a: i32 = 10
-    mut b: i32 = 20
-    mut cursor: *mut i32 = &amp;mut a
-    *cursor += 5
-    cursor = &amp;mut b
-    *cursor = 99
+    // 3. An index where C++ would keep a pointer into the buffer
+    mut vals: []i32 = [10, 20]
+    mut cursor := 0
+    vals[cursor] += 5
+    cursor = 1
+    vals[cursor] = 99
 
     println(&quot;seq1={} seq2={} a={} b={}&quot;,
-        unique_pkt.sequence, shared_clone.sequence, a, b)
+        unique_pkt.sequence, shared_clone.sequence, vals[0], vals[1])
 }
 </code></pre>
 <div class="terminal-tray">
@@ -3167,12 +3172,12 @@ fn main() {
     <span class="topic-pill-label">Ch 5 (3)</span>
     <a href="#ch5-seeing-every-mutation-move-at-the-call-site" class="topic-pill active" data-topic-pill="ch5-seeing-every-mutation-move-at-the-call-site" title="Seeing Every Mutation &amp; Move at the Call Site" onclick="navigateToSubhead('5', 'ch5-seeing-every-mutation-move-at-the-call-site'); return false;">5.1 Call-Site Intent</a>
     <a href="#ch5-closures-trailing-blocks-zero-overhead-generics" class="topic-pill" data-topic-pill="ch5-closures-trailing-blocks-zero-overhead-generics" title="Closures, Trailing Blocks &amp; Zero-Overhead Generics" onclick="navigateToSubhead('5', 'ch5-closures-trailing-blocks-zero-overhead-generics'); return false;">5.2 Closures &amp; Generics</a>
-    <a href="#ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" class="topic-pill" data-topic-pill="ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" title="Loan Tracking: How cfire Prevents Dangling Pointers &amp; Iterator Invalidation" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation'); return false;">5.3 Loan Tracking</a>
+    <a href="#ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" class="topic-pill" data-topic-pill="ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" title="Loan Tracking: How cfire Prevents Dangling Views &amp; Iterator Invalidation" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation'); return false;">5.3 Loan Tracking</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch5-seeing-every-mutation-move-at-the-call-site" data-topic-id="ch5-seeing-every-mutation-move-at-the-call-site" data-topic-title="Seeing Every Mutation &amp; Move at the Call Site" data-short-title="5.1 Call-Site Intent">
 <h3 class="guide-heading" id="ch5-seeing-every-mutation-move-at-the-call-site"><span class="heading-hash">#</span><span class="heading-text">Seeing Every Mutation &amp; Move at the Call Site</span></h3>
 <p>If you have ever hunted down a bug in C++ where a helper function quietly modified a struct via a non-<code>const</code> reference (<code>void process(Config&amp; cfg)</code>), you know the frustration: the function signature is buried in another file, and the call site (<code>process(cfg)</code>) looks completely read-only.</p>
-<p>In <code>cfire</code>, parameters are immutable references by default. Whenever a function mutates an argument in place (<code>mut</code>) or takes ownership (<code>move</code>), <strong>both the function declaration and the call site must state that intent</strong>:</p>
+<p>In <code>cfire</code>, parameters are immutable views by default: a read-only <code>str</code> is a <code>std::string_view</code> and a read-only <code>[]T</code> a <code>std::span&lt;const T&gt;</code>, so whole values, sub-slices (<code>xs[1..]</code>) and literals all pass without a copy, and a copy is made only where an owned value is needed (a field, a <code>mut</code> binding, a return value). Whenever a function mutates an argument in place (<code>mut</code>) or takes ownership (<code>move</code>), <strong>both the function declaration and the call site must state that intent</strong>:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3234,9 +3239,9 @@ fn main() {
   <p><strong>Let <code>cfire fix</code> Add Missing Call-Site Markers</strong>: If you write <code>append_entry(&quot;NET&quot;, log, move payload)</code> and forget <code>mut</code> at the call site, <code>cfire check</code> flags <code>cfire/MUT-CALLSITE</code> with the exact column—and running <code>cfire fix</code> (or triggering the LSP code action in your editor) inserts <code>mut</code> automatically.</p>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" class="pager-card pager-prev" onclick="navigateToSubhead('4', 'ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt'); return false;">
+      <a href="#ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" class="pager-card pager-prev" onclick="navigateToSubhead('4', 'ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 4.4)</span>
-        <strong class="pager-title">Pointers (*T, *mut T) &amp; RAII Smart Ownership (^T / own[T], shared[T])</strong>
+        <strong class="pager-title">Heap Ownership (own[T], shared[T]) — and No Raw Pointers</strong>
       </a>
       <a href="#ch5-closures-trailing-blocks-zero-overhead-generics" class="pager-card pager-next" onclick="navigateToSubhead('5', 'ch5-closures-trailing-blocks-zero-overhead-generics'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 5.2) &rarr;</span>
@@ -3281,23 +3286,23 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 5.1)</span>
         <strong class="pager-title">Seeing Every Mutation &amp; Move at the Call Site</strong>
       </a>
-      <a href="#ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" class="pager-card pager-next" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation'); return false;">
+      <a href="#ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" class="pager-card pager-next" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 5.3) &rarr;</span>
-        <strong class="pager-title">Loan Tracking: How cfire Prevents Dangling Pointers &amp; Iterator Invalidation</strong>
+        <strong class="pager-title">Loan Tracking: How cfire Prevents Dangling Views &amp; Iterator Invalidation</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" data-topic-id="ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" data-topic-title="Loan Tracking: How cfire Prevents Dangling Pointers &amp; Iterator Invalidation" data-short-title="5.3 Loan Tracking">
-<h3 class="guide-heading" id="ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation"><span class="heading-hash">#</span><span class="heading-text">Loan Tracking: How <code>cfire</code> Prevents Dangling Pointers &amp; Iterator Invalidation</span></h3>
-<p>One of the easiest ways to corrupt memory in C++ is taking a pointer, slice view, or iterator into a <code>std::vector</code> or <code>std::string</code>, and then calling <code>.push_back()</code> or <code>.clear()</code> while that view is still live. If the vector reallocates, the pointer dangles silently.</p>
-<p><code>cfire</code> solves this without requiring lifetime annotations (<code>'a</code>) on your types or functions. Its lexical loan tracker (<code>src/sema.hpp</code>) watches local borrows (<code>&amp;x</code>, <code>s[a..b]</code>, <code>.data()</code>, <code>.byte_ptr()</code>) and active <code>for</code> loops:</p>
+  <section class="guide-topic" id="topic-ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" data-topic-id="ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" data-topic-title="Loan Tracking: How cfire Prevents Dangling Views &amp; Iterator Invalidation" data-short-title="5.3 Loan Tracking">
+<h3 class="guide-heading" id="ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation"><span class="heading-hash">#</span><span class="heading-text">Loan Tracking: How <code>cfire</code> Prevents Dangling Views &amp; Iterator Invalidation</span></h3>
+<p>One of the easiest ways to corrupt memory in C++ is taking a view or iterator into a <code>std::vector</code> or <code>std::string</code>, and then calling <code>.push_back()</code> or <code>.clear()</code> while that view is still live. If the vector reallocates, the view dangles silently.</p>
+<p><code>cfire</code> solves this without requiring lifetime annotations (<code>'a</code>) on your types or functions. Its lexical loan tracker (<code>src/sema.hpp</code>) watches views (<code>s[a..b]</code>, <code>xs[a..b]</code>) and active <code>for</code> loops:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
 fn main() {
     mut nums: []i32 = [10, 20, 30]
 
-    // 1. Taking a view or pointer records an active loan on 'nums'
+    // 1. Taking a view records an active loan on 'nums'
     view := nums[0..2]
     println(&quot;first_in_view={}&quot;, view[0])
 
@@ -3322,9 +3327,9 @@ fn main() {
       <tr><td><code>cfire/MUT-RECEIVER</code></td><td>Calling a <code>fn (mut s: T)</code> method on an immutable struct variable.</td><td>Declare <code>mut s := ...</code>.</td></tr>
       <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable twice in one call when at least one arg is <code>mut</code>.</td><td>Pass distinct variables (<code>transfer(mut a, mut b)</code>).</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading a variable after <code>move x</code> transferred ownership on an earlier path.</td><td>Read before <code>move x</code>, or pass by <code>mut</code> borrow.</td></tr>
-      <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Reading a pointer/view (<code>&amp;x</code>, <code>.data()</code>, <code>.byte_ptr()</code>, <code>s[a..b]</code>) after <code>.push()</code>, <code>.clear()</code>, <code>move</code>, or reassignment mutated the owner.</td><td>Finish reading the view before mutating the container, or re-slice after <code>.push()</code>.</td></tr>
-      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Assigning the address of an inner-scope variable (<code>ptr = &amp;local</code>) to an outer pointer.</td><td>Keep the pointee in the outer scope or allocate with <code>make(own[T], ...)</code>.</td></tr>
-      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Returning a pointer or view (<code>&amp;local</code>, <code>local.data()</code>) to stack-local storage.</td><td>Return an owned value (<code>T</code>, <code>str</code>, <code>[]T</code>) or <code>own[T]</code> instead.</td></tr>
+      <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Reading a view (<code>s[a..b]</code>, <code>xs[a..b]</code>) after <code>.push()</code>, <code>.clear()</code>, <code>move</code>, or reassignment mutated the owner.</td><td>Finish reading the view before mutating the container, or re-slice after <code>.push()</code>.</td></tr>
+      <tr><td><code>cfire/RAW-POINTER</code></td><td><code>*T</code>, <code>&amp;x</code>, <code>*p</code> or <code>.data()</code> outside C++ interop (CF-189).</td><td>Use a view parameter, <code>mut</code>, an index, <code>own[T]</code>/<code>shared[T]</code>, or a <code>cpp { }</code> block.</td></tr>
+      <tr><td><code>cfire/REFERENCE-TYPE</code></td><td>A <code>&amp;T</code> / <code>&amp;mut T</code> type (Q53).</td><td>Write <code>x: T</code> (a view) or <code>mut x: T</code>; <code>cfire fix</code> rewrites it.</td></tr>
       <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Mutating a collection (<code>.push()</code>, <code>.clear()</code>, <code>.remove()</code>, <code>move</code>) inside <code>for x in col</code>.</td><td>Collect mutations in a separate slice and apply them after the loop.</td></tr>
     </tbody>
   </table>
@@ -3406,9 +3411,9 @@ fn main() {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" class="pager-card pager-prev" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation'); return false;">
+      <a href="#ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" class="pager-card pager-prev" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 5.3)</span>
-        <strong class="pager-title">Loan Tracking: How cfire Prevents Dangling Pointers &amp; Iterator Invalidation</strong>
+        <strong class="pager-title">Loan Tracking: How cfire Prevents Dangling Views &amp; Iterator Invalidation</strong>
       </a>
       <a href="#ch6-compile-time-struct-tags-json-sql-cli-desc" class="pager-card pager-next" onclick="navigateToSubhead('6', 'ch6-compile-time-struct-tags-json-sql-cli-desc'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 6.2) &rarr;</span>
@@ -3656,7 +3661,7 @@ fn main() {
     <span class="topic-pill-label">Ch 7 (4)</span>
     <a href="#ch7-separating-errors-from-absence-t-vs-t" class="topic-pill active" data-topic-pill="ch7-separating-errors-from-absence-t-vs-t" title="Separating Errors from Absence (T! vs T?)" onclick="navigateToSubhead('7', 'ch7-separating-errors-from-absence-t-vs-t'); return false;">7.1 T! vs T? Types</a>
     <a href="#ch7-propagating-errors-with-try-and-recovering-with-or" class="topic-pill" data-topic-pill="ch7-propagating-errors-with-try-and-recovering-with-or" title="Propagating Errors with try and Recovering with or" onclick="navigateToSubhead('7', 'ch7-propagating-errors-with-try-and-recovering-with-or'); return false;">7.2 try &amp; or Recovery</a>
-    <a href="#ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" class="topic-pill" data-topic-pill="ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" title="Flow-Sensitive Null Pointer Safety (cfire/NULL-DEREF)" onclick="navigateToSubhead('7', 'ch7-flow-sensitive-null-pointer-safety-cfirenull-deref'); return false;">7.3 Null Safety</a>
+    <a href="#ch7-no-null-values-absence-is-t" class="topic-pill" data-topic-pill="ch7-no-null-values-absence-is-t" title="No Null Values: Absence Is T?" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">7.3 No Null Values: Absenc..</a>
     <a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" class="topic-pill" data-topic-pill="ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">7.4 defer Cleanup</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch7-separating-errors-from-absence-t-vs-t" data-topic-id="ch7-separating-errors-from-absence-t-vs-t" data-topic-title="Separating Errors from Absence (T! vs T?)" data-short-title="7.1 T! vs T? Types">
@@ -3756,16 +3761,15 @@ ep=127.0.0.1:8080 q1=10443 q2=50
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.1)</span>
         <strong class="pager-title">Separating Errors from Absence (T! vs T?)</strong>
       </a>
-      <a href="#ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-flow-sensitive-null-pointer-safety-cfirenull-deref'); return false;">
+      <a href="#ch7-no-null-values-absence-is-t" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 7.3) &rarr;</span>
-        <strong class="pager-title">Flow-Sensitive Null Pointer Safety (cfire/NULL-DEREF)</strong>
+        <strong class="pager-title">No Null Values: Absence Is T?</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" data-topic-id="ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" data-topic-title="Flow-Sensitive Null Pointer Safety (cfire/NULL-DEREF)" data-short-title="7.3 Null Safety">
-<h3 class="guide-heading" id="ch7-flow-sensitive-null-pointer-safety-cfirenull-deref"><span class="heading-hash">#</span><span class="heading-text">Flow-Sensitive Null Pointer Safety (<code>cfire/NULL-DEREF</code>)</span></h3>
-<p>When you work with heap pointers (<code>*T</code> or rebindable <code>*mut T</code>), a pointer initialized to <code>none</code> (or returned from a function that might yield <code>none</code>) cannot be dereferenced blindly.</p>
-<p>The semantic analyzer tracks pointer nullability across branches (<code>cfire/NULL-DEREF</code>). If a pointer might be <code>none</code>, dereferencing <code>*p</code> or accessing <code>p.field</code> is a compile-time error until you prove it is non-null with <code>if p != none</code> (or <code>assert(p != none)</code>):</p>
+  <section class="guide-topic" id="topic-ch7-no-null-values-absence-is-t" data-topic-id="ch7-no-null-values-absence-is-t" data-topic-title="No Null Values: Absence Is T?" data-short-title="7.3 No Null Values: Absenc..">
+<h3 class="guide-heading" id="ch7-no-null-values-absence-is-t"><span class="heading-hash">#</span><span class="heading-text">No Null Values: Absence Is <code>T?</code></span></h3>
+<p>A <code>cfire</code> value is never null, because there are no raw pointers to be null (CF-189). A value that may be absent has type <code>T?</code>. Reading through one without unwrapping is a compile-time error: <code>cfire/UNWRAPPED-OPTIONAL</code> for an expression such as <code>find(id).id</code>, and the flow-sensitive <code>cfire/NULL-DEREF</code> for a <code>T?</code> variable until a branch proves it present (<code>if s != none</code>, an early <code>return</code>, <code>assert(s != none)</code>). Unwrap with <code>if x := opt { ... }</code>, <code>or</code>, or <code>try</code>:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -3773,20 +3777,24 @@ type Session struct {
     id: i32
 }
 
-fn inspect_session(maybe_ptr: *Session) -&gt; i32 {
-    // Error if uncommented: [cfire/NULL-DEREF] dereference of potentially null pointer 'maybe_ptr'
-    // return maybe_ptr.id
+fn find_session(id: i32) -&gt; Session? {
+    if id == 42 {
+        return Session{id: 42}
+    }
+    return none
+}
 
-    if maybe_ptr != none {
-        // Inside this guarded branch, the compiler knows maybe_ptr is non-null
-        return maybe_ptr.id
+fn session_id(id: i32) -&gt; i32 {
+    // Error if uncommented: [cfire/UNWRAPPED-OPTIONAL] the session may be absent
+    // return find_session(id).id
+    if s := find_session(id) {
+        return s.id
     }
     return -1
 }
 
 fn main() {
-    s := Session{ id: 42 }
-    println(&quot;active={} empty={}&quot;, inspect_session(&amp;s), inspect_session(none))
+    println(&quot;active={} empty={}&quot;, session_id(42), session_id(7))
 }
 </code></pre>
 <div class="terminal-tray">
@@ -3846,9 +3854,9 @@ fn main() {
 </div>
 <p>Each <code>defer</code> lowers to a stack-allocated <code>cfire::ScopeGuard</code> lambda whose destructor runs deterministically during C++ stack unwinding. Note that placing a <code>return</code> statement inside a <code>defer { ... }</code> block is rejected at compile time (<code>cfire/RETURN-IN-DEFER</code>), because silently hijacking a function's return value during cleanup masks upstream errors.</p>
     <div class="chapter-pager topic-pager">
-      <a href="#ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" class="pager-card pager-prev" onclick="navigateToSubhead('7', 'ch7-flow-sensitive-null-pointer-safety-cfirenull-deref'); return false;">
+      <a href="#ch7-no-null-values-absence-is-t" class="pager-card pager-prev" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.3)</span>
-        <strong class="pager-title">Flow-Sensitive Null Pointer Safety (cfire/NULL-DEREF)</strong>
+        <strong class="pager-title">No Null Values: Absence Is T?</strong>
       </a>
       <a href="#ch8-utf-8-strings-unicode-scalars-regular-expressions" class="pager-card pager-next" onclick="navigateToSubhead('8', 'ch8-utf-8-strings-unicode-scalars-regular-expressions'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 8.1) &rarr;</span>
@@ -3876,12 +3884,12 @@ fn main() {
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 8 (3)</span>
     <a href="#ch8-utf-8-strings-unicode-scalars-regular-expressions" class="topic-pill active" data-topic-pill="ch8-utf-8-strings-unicode-scalars-regular-expressions" title="UTF-8 Strings, Unicode Scalars &amp; Regular Expressions" onclick="navigateToSubhead('8', 'ch8-utf-8-strings-unicode-scalars-regular-expressions'); return false;">8.1 UTF-8 &amp; Regex</a>
-    <a href="#ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" class="topic-pill" data-topic-pill="ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" title="Zero-Copy Buffer Pointers &amp; Compile-Time Bounds Checks" onclick="navigateToSubhead('8', 'ch8-zero-copy-buffer-pointers-compile-time-bounds-checks'); return false;">8.2 Buffer Pointers</a>
+    <a href="#ch8-zero-copy-byte-access-compile-time-bounds-checks" class="topic-pill" data-topic-pill="ch8-zero-copy-byte-access-compile-time-bounds-checks" title="Zero-Copy Byte Access &amp; Compile-Time Bounds Checks" onclick="navigateToSubhead('8', 'ch8-zero-copy-byte-access-compile-time-bounds-checks'); return false;">8.2 Zero-Copy Byte Access ..</a>
     <a href="#ch8-generic-sets-priority-queues-deques-sorting" class="topic-pill" data-topic-pill="ch8-generic-sets-priority-queues-deques-sorting" title="Generic Sets, Priority Queues, Deques &amp; Sorting" onclick="navigateToSubhead('8', 'ch8-generic-sets-priority-queues-deques-sorting'); return false;">8.3 Sets, Heaps &amp; Sort</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch8-utf-8-strings-unicode-scalars-regular-expressions" data-topic-id="ch8-utf-8-strings-unicode-scalars-regular-expressions" data-topic-title="UTF-8 Strings, Unicode Scalars &amp; Regular Expressions" data-short-title="8.1 UTF-8 &amp; Regex">
 <h3 class="guide-heading" id="ch8-utf-8-strings-unicode-scalars-regular-expressions"><span class="heading-hash">#</span><span class="heading-text">UTF-8 Strings, Unicode Scalars &amp; Regular Expressions</span></h3>
-<p>In <code>cfire</code>, <code>str</code> is an owned UTF-8 buffer (<code>std::string</code>). Slicing (<code>s[a..b]</code>, <code>s.trim()</code>) gives a zero-copy view of it, and you rarely need to name that view type (<code>&amp;str</code>): <strong>views go in, copies come out</strong>. A read-only <code>str</code> parameter accepts an owned string, a slice, or a literal without copying, and a view is copied automatically wherever owned text is required (a <code>move</code> parameter, a struct field, a <code>str</code> variable, a return value). Spell <code>&amp;str</code> only for a field or return value that deliberately keeps a view. <code>s[i]</code> is a <code>byte</code>, and <code>'L'</code> is a <code>byte</code> literal (one ASCII character or an escape such as <code>'\n'</code>, <code>'\''</code>, <code>'\x41'</code>), so <code>line[0] == 'L'</code> needs no conversion. Because UTF-8 codepoints vary from 1 to 4 bytes, <code>s.len()</code> always reports the exact byte count in $O(1)$ time, while <code>core:unicode</code> decodes 32-bit Unicode scalar values (<code>runes</code>) when you need character-level inspection:</p>
+<p>In <code>cfire</code>, <code>str</code> is an owned UTF-8 buffer (<code>std::string</code>). Slicing (<code>s[a..b]</code>, <code>s.trim()</code>) gives a zero-copy view of it, and you never name a view type: <strong>views go in, copies come out</strong>. A read-only <code>str</code> parameter accepts an owned string, a slice, or a literal without copying, and a view is copied automatically wherever owned text is required (a <code>move</code> parameter, a struct field, a <code>str</code> variable, a return value). <code>s[i]</code> is a <code>byte</code>, and <code>'L'</code> is a <code>byte</code> literal (one ASCII character or an escape such as <code>'\n'</code>, <code>'\''</code>, <code>'\x41'</code>), so <code>line[0] == 'L'</code> needs no conversion. Because UTF-8 codepoints vary from 1 to 4 bytes, <code>s.len()</code> always reports the exact byte count in $O(1)$ time, while <code>core:unicode</code> decodes 32-bit Unicode scalar values (<code>runes</code>) when you need character-level inspection:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -3889,12 +3897,12 @@ fn main() {
       <tr><th>Module</th><th>Function / Method</th><th>Signature</th><th>What It Does</th></tr>
     </thead>
     <tbody>
-      <tr><td>builtin</td><td><code>s.split(sep)</code> / <code>s.split_n(sep, n)</code> / <code>s.lines()</code> / <code>parts.join(sep)</code></td><td><code>fn(sep: &amp;str) -&gt; []str</code> / <code>fn(sep: &amp;str) -&gt; str</code></td><td>Splits <code>s</code> on <code>sep</code> (or on newlines) or joins a <code>[]str</code> with <code>sep</code>.</td></tr>
-      <tr><td>builtin</td><td><code>s.trim()</code> / <code>trim_start()</code> / <code>trim_end()</code></td><td><code>fn() -&gt; &amp;str</code></td><td>View without leading and/or trailing ASCII whitespace (<code>' '</code>, <code>'\t'</code>, <code>'\n'</code>, <code>'\r'</code>); loan-tracked like <code>s[a..b]</code>.</td></tr>
-      <tr><td>builtin</td><td><code>s.strip_prefix(p)</code> / <code>strip_suffix(p)</code></td><td><code>fn(p: &amp;str) -&gt; &amp;str?</code></td><td>View after the prefix / before the suffix, or <code>none</code> when it is absent.</td></tr>
-      <tr><td>builtin</td><td><code>s.replace(from, to)</code> / <code>replace_all(from, to)</code></td><td><code>fn(from: &amp;str, to: &amp;str) -&gt; str</code></td><td>Copy with the first / every occurrence of <code>from</code> replaced.</td></tr>
-      <tr><td>builtin</td><td><code>s.starts_with(p)</code> / <code>ends_with(p)</code> / <code>contains(p)</code></td><td><code>fn(p: &amp;str) -&gt; bool</code></td><td>Prefix, suffix, and substring containment checks.</td></tr>
-      <tr><td>builtin</td><td><code>s.index_of(sub)</code> / <code>last_index_of(sub)</code></td><td><code>fn(sub: &amp;str) -&gt; usize?</code></td><td>The 0-based byte offset of <code>sub</code>, or <code>none</code> when it is absent (Q8: no <code>-1</code> sentinels).</td></tr>
+      <tr><td>builtin</td><td><code>s.split(sep)</code> / <code>s.split_n(sep, n)</code> / <code>s.lines()</code> / <code>parts.join(sep)</code></td><td><code>fn(sep: str) -&gt; []str</code> / <code>fn(sep: str) -&gt; str</code></td><td>Splits <code>s</code> on <code>sep</code> (or on newlines) or joins a <code>[]str</code> with <code>sep</code>.</td></tr>
+      <tr><td>builtin</td><td><code>s.trim()</code> / <code>trim_start()</code> / <code>trim_end()</code></td><td><code>fn() -&gt; str</code></td><td>View without leading and/or trailing ASCII whitespace (<code>' '</code>, <code>'\t'</code>, <code>'\n'</code>, <code>'\r'</code>); loan-tracked like <code>s[a..b]</code>.</td></tr>
+      <tr><td>builtin</td><td><code>s.strip_prefix(p)</code> / <code>strip_suffix(p)</code></td><td><code>fn(p: str) -&gt; str?</code></td><td>View after the prefix / before the suffix, or <code>none</code> when it is absent.</td></tr>
+      <tr><td>builtin</td><td><code>s.replace(from, to)</code> / <code>replace_all(from, to)</code></td><td><code>fn(from: str, to: str) -&gt; str</code></td><td>Copy with the first / every occurrence of <code>from</code> replaced.</td></tr>
+      <tr><td>builtin</td><td><code>s.starts_with(p)</code> / <code>ends_with(p)</code> / <code>contains(p)</code></td><td><code>fn(p: str) -&gt; bool</code></td><td>Prefix, suffix, and substring containment checks.</td></tr>
+      <tr><td>builtin</td><td><code>s.index_of(sub)</code> / <code>last_index_of(sub)</code></td><td><code>fn(sub: str) -&gt; usize?</code></td><td>The 0-based byte offset of <code>sub</code>, or <code>none</code> when it is absent (Q8: no <code>-1</code> sentinels).</td></tr>
       <tr><td>builtin</td><td><code>s.to_upper()</code> / <code>to_lower()</code> / <code>repeat(n)</code></td><td><code>fn() -&gt; str</code> / <code>fn(n: usize) -&gt; str</code></td><td>ASCII case conversion and <code>n</code>-fold repetition.</td></tr>
       <tr><td>builtin</td><td><code>s.runes()</code> / <code>rune_count()</code></td><td><code>fn() -&gt; []u32</code> / <code>fn() -&gt; usize</code></td><td>Unicode code points (invalid UTF-8 decodes as U+FFFD).</td></tr>
       <tr><td>builtin</td><td><code>i32.parse(s)</code> / <code>f64.parse(s)</code> / <code>bool.parse(s)</code></td><td><code>fn(s: str) -&gt; T?</code></td><td>Parses a whole literal of the target type; <code>none</code> on invalid or out-of-range input.</td></tr>
@@ -3968,26 +3976,26 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.4)</span>
         <strong class="pager-title">Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)</strong>
       </a>
-      <a href="#ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" class="pager-card pager-next" onclick="navigateToSubhead('8', 'ch8-zero-copy-buffer-pointers-compile-time-bounds-checks'); return false;">
+      <a href="#ch8-zero-copy-byte-access-compile-time-bounds-checks" class="pager-card pager-next" onclick="navigateToSubhead('8', 'ch8-zero-copy-byte-access-compile-time-bounds-checks'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 8.2) &rarr;</span>
-        <strong class="pager-title">Zero-Copy Buffer Pointers &amp; Compile-Time Bounds Checks</strong>
+        <strong class="pager-title">Zero-Copy Byte Access &amp; Compile-Time Bounds Checks</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" data-topic-id="ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" data-topic-title="Zero-Copy Buffer Pointers &amp; Compile-Time Bounds Checks" data-short-title="8.2 Buffer Pointers">
-<h3 class="guide-heading" id="ch8-zero-copy-buffer-pointers-compile-time-bounds-checks"><span class="heading-hash">#</span><span class="heading-text">Zero-Copy Buffer Pointers &amp; Compile-Time Bounds Checks</span></h3>
-<p>When you pass buffers to C APIs, socket layers, or SIMD loops, copying a <code>str</code> into a new <code>[]byte</code> vector just to read its bytes wastes memory bandwidth. Strings and slices expose built-in zero-copy pointer and byte-slice methods:</p>
+  <section class="guide-topic" id="topic-ch8-zero-copy-byte-access-compile-time-bounds-checks" data-topic-id="ch8-zero-copy-byte-access-compile-time-bounds-checks" data-topic-title="Zero-Copy Byte Access &amp; Compile-Time Bounds Checks" data-short-title="8.2 Zero-Copy Byte Access ..">
+<h3 class="guide-heading" id="ch8-zero-copy-byte-access-compile-time-bounds-checks"><span class="heading-hash">#</span><span class="heading-text">Zero-Copy Byte Access &amp; Compile-Time Bounds Checks</span></h3>
+<p>When you pass buffers to C APIs, socket layers, or SIMD loops, copying a <code>str</code> into a new <code>[]byte</code> vector just to read its bytes wastes memory bandwidth. A slice of a string or of a <code>[]T</code> is a zero-copy view, and a <code>[]T</code> or <code>str</code> passed to an <code>import cpp</code> function lowers to its buffer pointer by itself (Chapter 11), so <code>.cf</code> code never handles the raw pointer:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
     <thead>
-      <tr><th>Method</th><th>Receiver</th><th>Return Type</th><th>Behavior</th></tr>
+      <tr><th>Expression</th><th>Receiver</th><th>Result</th><th>Behavior</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>s.bytes()</code></td><td><code>str</code> / <code>&amp;str</code></td><td><code>[]byte</code></td><td>Copies the UTF-8 bytes of <code>s</code> into a <code>std::vector&lt;uint8_t&gt;</code> (<code>[]byte</code>).</td></tr>
-      <tr><td><code>s.data()</code> / <code>s.byte_ptr()</code></td><td><code>str</code></td><td><code>const char*</code> / <code>char*</code></td><td>Direct pointer to the underlying contiguous UTF-8 byte buffer (<code>s.data()</code>).</td></tr>
-      <tr><td><code>s.byte_ptr_at(offset)</code></td><td><code>str</code></td><td><code>char*</code></td><td>Pointer to byte <code>offset</code> (<code>s.data() + offset</code>), Useful when advancing through a read/write buffer in chunks.</td></tr>
-      <tr><td><code>slice.data()</code> / <code>slice.data_ptr()</code></td><td><code>[]T</code> / <code>mut []T</code></td><td><code>const T*</code> / <code>T*</code></td><td>Direct pointer to the contiguous backing storage of a slice (<code>std::vector&lt;T&gt;::data()</code>).</td></tr>
+      <tr><td><code>s.bytes()</code></td><td><code>str</code></td><td><code>[]byte</code></td><td>Copies the UTF-8 bytes of <code>s</code> into a <code>std::vector&lt;uint8_t&gt;</code> (<code>[]byte</code>).</td></tr>
+      <tr><td><code>s[a..b]</code></td><td><code>str</code></td><td><code>str</code> view</td><td>A zero-copy view of bytes <code>a..b</code> (a <code>std::string_view</code>).</td></tr>
+      <tr><td><code>xs[a..b]</code></td><td><code>[]T</code></td><td><code>[]T</code> view</td><td>A zero-copy view of elements <code>a..b</code> (a <code>std::span&lt;T&gt;</code>).</td></tr>
+      <tr><td><code>c_fn(xs)</code> / <code>c_fn(s)</code></td><td><code>[]T</code> / <code>str</code></td><td><code>T*</code> / <code>const char*</code></td><td>At an <code>import cpp</code> call, the buffer pointer the C function expects.</td></tr>
     </tbody>
   </table>
 </div>
@@ -4000,16 +4008,16 @@ fn main() {
 <pre><code>package main
 
 fn main() {
-    mut packet := &quot;PING:1024&quot;
-    // Zero-copy pointer offset into the payload after &quot;PING:&quot;
-    payload_ptr := packet.byte_ptr_at(5)
+    packet := &quot;PING:1024&quot;
+    // A zero-copy view of the payload after &quot;PING:&quot;
+    payload := packet[5..]
     raw_bytes := packet.bytes()
 
-    mut samples: []f32 = [0.25, 0.5, 0.75, 1.0]
-    buf_ptr := samples.data_ptr()
+    samples: []f32 = [0.25, 0.5, 0.75, 1.0]
+    head := samples[0..2]
 
     println(&quot;bytes={} first_payload_byte={} first_sample={:.2f}&quot;,
-        raw_bytes.len(), i32(*payload_ptr), *buf_ptr)
+        raw_bytes.len(), i32(payload.bytes()[0]), head[0])
 }
 </code></pre>
 <div class="terminal-tray">
@@ -4085,9 +4093,9 @@ fn main() {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" class="pager-card pager-prev" onclick="navigateToSubhead('8', 'ch8-zero-copy-buffer-pointers-compile-time-bounds-checks'); return false;">
+      <a href="#ch8-zero-copy-byte-access-compile-time-bounds-checks" class="pager-card pager-prev" onclick="navigateToSubhead('8', 'ch8-zero-copy-byte-access-compile-time-bounds-checks'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 8.2)</span>
-        <strong class="pager-title">Zero-Copy Buffer Pointers &amp; Compile-Time Bounds Checks</strong>
+        <strong class="pager-title">Zero-Copy Byte Access &amp; Compile-Time Bounds Checks</strong>
       </a>
       <a href="#ch9-streaming-file-io-clocks-os-entropy-corefs-coretime-corerand" class="pager-card pager-next" onclick="navigateToSubhead('9', 'ch9-streaming-file-io-clocks-os-entropy-corefs-coretime-corerand'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 9.1) &rarr;</span>
@@ -4296,7 +4304,12 @@ fn main() {
 <ol>
   <li><strong>Bounded Worker Pool</strong>: Allocates <code>N</code> hardware worker threads (<code>std::jthread</code>) scoped to the lexical block.</li>
   <li><strong>Mandatory Join Barrier</strong>: The closing <code>}</code> of <code>async.scope</code> blocks until every task spawned via <code>scope.spawn || { ... }</code> finishes.</li>
-  <li><strong>Zero-Heap Stack Borrowing</strong>: Because no worker can outlive <code>async.scope</code>, tasks can read outer immutable bindings (<code>in</code>) or write to disjoint pre-allocated slice slots (<code>&amp;mut results[i]</code>) without <code>shared_ptr</code> overhead:</li>
+  <li><strong>Zero-Heap Stack Borrowing</strong>: Because no worker can outlive <code>async.scope</code>, tasks can read outer immutable bindings without <code>shared_ptr</code> overhead, and hand results back in one of two ways (Q51):
+    <ul>
+      <li><strong>Return them</strong>: <code>results := async.scope ...</code> (or <code>return async.scope ...</code>) is a <code>[]T</code> of the tasks' <code>return</code> values, in spawn order.</li>
+      <li><strong>Write their own element</strong>: <code>scope.spawn |mut xs[i]| { xs[i] = v }</code> gives each task one element, named by the spawning loop's index; the task cannot touch the rest of <code>xs</code>, and <code>xs</code> cannot be resized until the scope ends (<code>cfire/SLOT-CAPTURE</code>).</li>
+    </ul>
+  </li>
 </ol>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
@@ -4306,30 +4319,40 @@ fn compute_shard_checksum(shard_id: i32, scale: i32) -&gt; i32 {
 }
 
 fn run_parallel_shards(shard_count: usize, scale: i32) -&gt; []i32 {
-    // Pre-allocate one output slot per shard before entering the parallel scope
-    mut results := make([]i32, shard_count)
-
-    async.scope(workers: 4) |scope| {
+    // Each task returns its shard's checksum; the scope's value is all of them, in spawn order
+    return async.scope(workers: 4) |scope| {
         for i in 0..shard_count {
-            slot := &amp;mut results[i]
             shard_idx := i32(i)
             scope.spawn || {
-                *slot = compute_shard_checksum(shard_idx, scale)
+                return compute_shard_checksum(shard_idx, scale)
+            }
+        } // Implicit barrier: all tasks finish before the scope yields its values
+    }
+}
+
+// The same result written in place: each task owns one element of `totals`
+fn scale_in_place(mut totals: []i32, factor: i32) {
+    async.scope(workers: 4) |scope| {
+        for i, t in totals {
+            scope.spawn |mut totals[i]| {
+                totals[i] = t * factor
             }
         }
-    } // Implicit barrier: all 4 worker threads join before returning 'results'
-
-    return results
+    }
 }
 
 fn main() {
     shards := run_parallel_shards(4, 10)
     println(&quot;shards=[{}, {}, {}, {}]&quot;, shards[0], shards[1], shards[2], shards[3])
+    mut totals: []i32 = [1, 2, 3, 4]
+    scale_in_place(mut totals, 5)
+    println(&quot;totals=[{}, {}, {}, {}]&quot;, totals[0], totals[1], totals[2], totals[3])
 }
 </code></pre>
 <div class="terminal-tray">
   <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
   <pre><code>shards=[10, 20, 30, 40]
+totals=[5, 10, 15, 20]
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
@@ -4404,7 +4427,7 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch10-shared-state-with-mutext-and-atomict-coresync" data-topic-id="ch10-shared-state-with-mutext-and-atomict-coresync" data-topic-title="Shared State with Mutex[T] and Atomic[T] (core:sync)" data-short-title="10.3 Shared State with Mute..">
 <h3 class="guide-heading" id="ch10-shared-state-with-mutext-and-atomict-coresync"><span class="heading-hash">#</span><span class="heading-text">Shared State with <code>Mutex[T]</code> and <code>Atomic[T]</code> (<code>core:sync</code>)</span></h3>
-<p>A spawned task may not write through a captured variable or pointer that other tasks can also reach (<code>cfire/SPAWN-SHARED-MUT</code>, <code>cfire/ESCAPING-CAPTURE-MUT</code>). When workers really do need one shared value, put it behind a <code>sync.Mutex[T]</code> or <code>sync.Atomic[T]</code>. Copies of either handle share the same state, so each task captures the handle and goes through its methods:</p>
+<p>A spawned task may not write a captured variable that other tasks can also reach (<code>cfire/SPAWN-SHARED-MUT</code>, <code>cfire/ESCAPING-CAPTURE-MUT</code>). When workers really do need one shared value, put it behind a <code>sync.Mutex[T]</code> or <code>sync.Atomic[T]</code>. Copies of either handle share the same state, so each task captures the handle and goes through its methods:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -4413,7 +4436,7 @@ fn main() {
     </thead>
     <tbody>
       <tr><td><code>make(sync.Mutex[T], v)</code></td><td><code>-&gt; Mutex[T]</code></td><td>A mutex protecting the value <code>v</code>. <code>make(sync.Mutex[void])</code> is a pure lock with <code>lock()</code> / <code>unlock()</code>.</td></tr>
-      <tr><td><code>mu.lock()</code></td><td><code>fn (m: Mutex[T]) lock() -&gt; MutexGuard[T]</code></td><td>Blocks until the lock is free. Read or write the value through the guard (<code>*g += 1</code>); the lock is released when <code>g</code> goes out of scope.</td></tr>
+      <tr><td><code>mu.lock()</code></td><td><code>fn (m: Mutex[T]) lock() -&gt; MutexGuard[T]</code></td><td>Blocks until the lock is free. Read or write the value through the guard as <code>g.value</code> (<code>g.value += 1</code>); the lock is released when <code>g</code> goes out of scope.</td></tr>
       <tr><td><code>mu.try_lock()</code></td><td><code>fn (m: Mutex[T]) try_lock() -&gt; MutexGuard[T]?</code></td><td>Like <code>lock()</code>, but <code>none</code> instead of blocking.</td></tr>
       <tr><td><code>mu.with_lock(f)</code></td><td><code>fn (m: Mutex[T]) with_lock(f: fn(mut T) -&gt; R) -&gt; R</code></td><td>Runs <code>f</code> on the value while holding the lock: <code>mu.with_lock(|mut v| { v += 1 })</code>.</td></tr>
       <tr><td><code>mu.get()</code> / <code>mu.set(v)</code></td><td><code>-&gt; T</code> / <code>fn(v: T)</code></td><td>Copies the value out, or replaces it, under the lock.</td></tr>
@@ -4434,8 +4457,8 @@ fn main() {
         for w in 0..4 {
             s.spawn || {
                 for i in 0..250 {
-                    mut g := total.lock()
-                    *g += 2
+                    g := total.lock()
+                    g.value += 2
                     hits.add(1)
                 }
             }
@@ -4557,10 +4580,10 @@ fn main() {
     <tbody>
       <tr><td><code>i8</code>..<code>i64</code>, <code>u8</code>..<code>u64</code>, <code>f32</code>, <code>f64</code>, <code>bool</code></td><td><code>int8_t</code>..<code>int64_t</code>, <code>uint8_t</code>..<code>uint64_t</code>, <code>float</code>, <code>double</code>, <code>bool</code></td><td>Identical C++23 scalar type (0-cost pass-through)</td></tr>
       <tr><td><code>str</code> passed to <code>const char*</code></td><td><code>const char*</code></td><td>Automatic <code>cfire::c_arg(s)</code> (<code>.c_str()</code>, 0 allocation)</td></tr>
-      <tr><td>read-only <code>str</code> parameter, <code>&amp;str</code>, <code>s[a..b]</code></td><td><code>cfire::str_ref</code> (derives from <code>std::string_view</code>)</td><td>0-copy pointer + length view; converts to <code>std::string</code> where an owned <code>str</code> is needed</td></tr>
-      <tr><td><code>s.data()</code> / <code>s.byte_ptr()</code> / <code>s.byte_ptr_at(i)</code></td><td><code>const char*</code> / <code>char*</code></td><td>Direct raw pointer to contiguous UTF-8 buffer</td></tr>
-      <tr><td><code>slice.data()</code> / <code>slice.data_ptr()</code></td><td><code>const T*</code> / <code>T*</code></td><td>Direct pointer to contiguous <code>std::vector&lt;T&gt;</code> buffer</td></tr>
-      <tr><td><code>&amp;T</code> / <code>&amp;mut T</code></td><td><code>const T&amp;</code> or <code>const T*</code> / <code>T&amp;</code> or <code>T*</code></td><td>Direct reference or address-of <code>&amp;x</code> for C out-pointers</td></tr>
+      <tr><td>read-only <code>str</code> parameter, <code>s[a..b]</code></td><td><code>cfire::str_ref</code> (derives from <code>std::string_view</code>)</td><td>0-copy pointer + length view; converts to <code>std::string</code> where an owned <code>str</code> is needed</td></tr>
+      <tr><td><code>[]T</code> / <code>[N]T</code> / <code>str</code> passed to a pointer parameter (<code>T*</code>, <code>const T*</code>, <code>void*</code>)</td><td><code>T*</code></td><td>The buffer pointer (<code>cfire::c_ptr</code>, Q54); byte-sized element types convert (<code>[]byte</code> to <code>char*</code>)</td></tr>
+      <tr><td><code>mut x: T</code> parameter</td><td><code>T&amp;</code></td><td>A mutable reference; C out-pointers (<code>int*</code> written by the callee) go through a <code>cpp { ... }</code> block</td></tr>
+      <tr><td><code>own[T]</code></td><td><code>T*</code> via <code>.release()</code>, back with <code>own[T].from_raw(p)</code></td><td>Hands ownership across the boundary</td></tr>
     </tbody>
   </table>
 </div>
@@ -4865,8 +4888,8 @@ cfire fix src/main.cf
       <tr><td><code>cfire/ARITY-MISMATCH</code></td><td>Types</td><td>A call passes the wrong number of arguments.</td></tr>
       <tr><td><code>cfire/ASSIGN-IMMUTABLE</code></td><td>Mutability</td><td>Assignment to a binding declared without <code>mut</code>.</td></tr>
       <tr><td><code>cfire/BREAK-OUTSIDE-LOOP</code></td><td>Detailed rule</td><td><code>break</code> or <code>continue</code> Outside of a <code>for</code> Loop</td></tr>
-      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Detailed rule</td><td>Inner-Scope Borrow Escaping to Outer-Scope Pointer or View</td></tr>
-      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Detailed rule</td><td>Returning Pointer or View Rooted in Function-Local Storage</td></tr>
+      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Detailed rule</td><td>Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)</td></tr>
+      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Detailed rule</td><td>Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)</td></tr>
       <tr><td><code>cfire/DANGLING-TEMPORARY</code></td><td>Memory safety</td><td>A view or pointer borrows from a temporary that is destroyed at the end of the statement.</td></tr>
       <tr><td><code>cfire/DEPRECATED-API</code></td><td>Migration</td><td>A stdlib function that was renamed or replaced before 0.16 (<code>fs.read_all</code>, <code>os.read_stdin</code>, ...).</td></tr>
       <tr><td><code>cfire/DEPRECATED-DISCARD</code></td><td>Migration</td><td><code>_ := expr</code> is not a discard form; write <code>_ = expr</code>.</td></tr>
@@ -4906,19 +4929,23 @@ cfire fix src/main.cf
       <tr><td><code>cfire/NON-BOOL-CONDITION</code></td><td>Types</td><td>A condition (<code>if</code>, <code>for</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>!</code>) that is not <code>bool</code>.</td></tr>
       <tr><td><code>cfire/NON-DIVERGING-OR-BLOCK</code></td><td>Detailed rule</td><td>Non-Diverging Error Recovery Block on Value Binding</td></tr>
       <tr><td><code>cfire/NON-EXHAUSTIVE-MATCH</code></td><td>Detailed rule</td><td>Non-Exhaustive <code>match</code> Statement Over Algebraic <code>enum</code></td></tr>
-      <tr><td><code>cfire/NULL-DEREF</code></td><td>Detailed rule</td><td>Dereference or Member Access on Null or Potentially Null Pointer</td></tr>
+      <tr><td><code>cfire/NULL-DEREF</code></td><td>Detailed rule</td><td>Member Access on an Optional Variable That May Be <code>none</code></td></tr>
       <tr><td><code>cfire/OPTIONAL-OR-ERR</code></td><td>Detailed rule</td><td>Binding Error Variable <code>or err</code> on Optional <code>T?</code></td></tr>
       <tr><td><code>cfire/OUT-CALLSITE</code></td><td>Migration</td><td>A call-site <code>out</code> marker (retired with the <code>out</code> intent).</td></tr>
       <tr><td><code>cfire/PREFER-ENUM</code></td><td>Style</td><td>A cluster of related integer constants that should be an enum (warning).</td></tr>
+      <tr><td><code>cfire/RAW-POINTER</code></td><td>Ownership</td><td>Raw pointer syntax (<code>*T</code>, <code>&amp;x</code>, <code>*p</code>, <code>.data()</code>) outside C++ interop (CF-189).</td></tr>
       <tr><td><code>cfire/REDUNDANT-CALLSITE-INTENT</code></td><td>Detailed rule</td><td>Redundant <code>mut</code> Annotation on a Read-Only Parameter</td></tr>
       <tr><td><code>cfire/REDUNDANT-DEREF</code></td><td>Style</td><td><code>(*p).field</code> on a smart pointer; write <code>p.field</code>.</td></tr>
       <tr><td><code>cfire/REDUNDANT-OR</code></td><td>Detailed rule</td><td>Redundant <code>or</code> on Non-Fallible, Non-Optional Expression</td></tr>
       <tr><td><code>cfire/REDUNDANT-TRY</code></td><td>Detailed rule</td><td>Redundant <code>try</code> on Non-Fallible Expression</td></tr>
+      <tr><td><code>cfire/REFERENCE-TYPE</code></td><td>Ownership</td><td>A <code>&amp;T</code> / <code>&amp;mut T</code> type; parameters are views by default and <code>mut</code> by intent (Q53).</td></tr>
       <tr><td><code>cfire/RETIRED-API</code></td><td>Detailed rule</td><td>API Retired in the 0.16 Uniform-API Migration</td></tr>
       <tr><td><code>cfire/RETURN-IN-DEFER</code></td><td>Detailed rule</td><td><code>return</code> Statement Inside <code>defer { ... }</code> Block</td></tr>
+      <tr><td><code>cfire/SCOPE-RESULT</code></td><td>Concurrency</td><td>A value-producing <code>async.scope</code> whose spawned tasks return no value or different types (Q51).</td></tr>
       <tr><td><code>cfire/SEMA-ERROR</code></td><td>Tooling</td><td>A semantic error with no more specific code.</td></tr>
       <tr><td><code>cfire/SHELL-INJECTION-RISK</code></td><td>Detailed rule</td><td>Dynamic String Concatenation or Interpolation in Shell Command</td></tr>
       <tr><td><code>cfire/SHIFT-OUT-OF-RANGE</code></td><td>Numbers</td><td>A constant shift count outside the operand's bit width (Q11).</td></tr>
+      <tr><td><code>cfire/SLOT-CAPTURE</code></td><td>Concurrency</td><td>A slot capture <code>|mut xs[i]|</code> used outside <code>scope.spawn</code>, or a task that uses its slice other than <code>xs[i]</code>, or a slice resized while tasks write it (Q51).</td></tr>
       <tr><td><code>cfire/SPAWN-SHARED-MUT</code></td><td>Concurrency</td><td>A spawned task writes through a pointer other tasks can reach (Q20).</td></tr>
       <tr><td><code>cfire/SQL-INJECTION-RISK</code></td><td>Detailed rule</td><td>Dynamic String Concatenation or Interpolation in SQL Query</td></tr>
       <tr><td><code>cfire/SYNTAX</code></td><td>Syntax</td><td>The source does not parse.</td></tr>
@@ -4935,12 +4962,13 @@ cfire fix src/main.cf
       <tr><td><code>cfire/UNKNOWN-METHOD</code></td><td>Names</td><td>A method that the receiver type does not have (Q14 closed builtin surface).</td></tr>
       <tr><td><code>cfire/UNKNOWN-MODULE</code></td><td>Imports</td><td>An import path that names no known module.</td></tr>
       <tr><td><code>cfire/UNKNOWN-STDLIB-FN</code></td><td>Names</td><td>A function that the stdlib module does not export.</td></tr>
+      <tr><td><code>cfire/UNKNOWN-STDLIB-TYPE</code></td><td>Names</td><td>A type that the stdlib module does not export, or a <code>build.*</code> type outside <code>build.cf</code> (CF-188).</td></tr>
       <tr><td><code>cfire/UNKNOWN-TYPE</code></td><td>Types</td><td>An expression whose type cannot be inferred (warning).</td></tr>
       <tr><td><code>cfire/UNREACHABLE-MATCH-ARM</code></td><td>Detailed rule</td><td>Unreachable <code>match</code> Arm Shadowed by Earlier Pattern</td></tr>
       <tr><td><code>cfire/UNRESOLVED-PACKAGE</code></td><td>Imports</td><td>A local package import that cannot be found.</td></tr>
       <tr><td><code>cfire/UNSATISFIED-CONSTRAINT</code></td><td>Generics</td><td>A type argument that does not satisfy the interface constraint.</td></tr>
       <tr><td><code>cfire/UNWRAPPED-OPTIONAL</code></td><td>Errors</td><td>A member access on a <code>T?</code> value without unwrapping.</td></tr>
-      <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Detailed rule</td><td>Use of Dangling Pointer or Slice View After Owner Invalidation</td></tr>
+      <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Detailed rule</td><td>Use of a Slice View After Owner Invalidation</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Detailed rule</td><td>Use of Value After Explicit <code>move</code></td></tr>
       <tr><td><code>cfire/WRONG-ARG-COUNT</code></td><td>Types</td><td>A builtin called with the wrong number of arguments.</td></tr>
     </tbody>
@@ -6371,14 +6399,14 @@ fn main() -&gt; void! {
         <li><a href="#ch4-bindings-scalar-types-numeric-conversions" title="Bindings, Scalar Types &amp; Numeric Conversions" onclick="navigateToSubhead('4', 'ch4-bindings-scalar-types-numeric-conversions'); return false;">4.1 Scalars &amp; Types</a></li>
         <li><a href="#ch4-working-with-slices-t-fixed-arrays-nt-maps-mapkv" title="Working with Slices ([]T), Fixed Arrays ([N]T) &amp; Maps (map[K]V)" onclick="navigateToSubhead('4', 'ch4-working-with-slices-t-fixed-arrays-nt-maps-mapkv'); return false;">4.2 Slices &amp; Maps</a></li>
         <li><a href="#ch4-unified-for-loops-ranges-conditionals" title="Unified for Loops, Ranges &amp; Conditionals" onclick="navigateToSubhead('4', 'ch4-unified-for-loops-ranges-conditionals'); return false;">4.3 Loops &amp; Ranges</a></li>
-        <li><a href="#ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt" title="Pointers (*T, *mut T) &amp; RAII Smart Ownership (^T / own[T], shared[T])" onclick="navigateToSubhead('4', 'ch4-pointers-t-mut-t-raii-smart-ownership-t-ownt-sharedt'); return false;">4.4 Pointers &amp; RAII</a></li>
+        <li><a href="#ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers" title="Heap Ownership (own[T], shared[T]) — and No Raw Pointers" onclick="navigateToSubhead('4', 'ch4-heap-ownership-ownt-sharedt-and-no-raw-pointers'); return false;">4.4 Heap Ownership</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-5" style="display: none;">
       <ul class="toc-list">
         <li><a href="#ch5-seeing-every-mutation-move-at-the-call-site" title="Seeing Every Mutation &amp; Move at the Call Site" onclick="navigateToSubhead('5', 'ch5-seeing-every-mutation-move-at-the-call-site'); return false;">5.1 Call-Site Intent</a></li>
         <li><a href="#ch5-closures-trailing-blocks-zero-overhead-generics" title="Closures, Trailing Blocks &amp; Zero-Overhead Generics" onclick="navigateToSubhead('5', 'ch5-closures-trailing-blocks-zero-overhead-generics'); return false;">5.2 Closures &amp; Generics</a></li>
-        <li><a href="#ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation" title="Loan Tracking: How cfire Prevents Dangling Pointers &amp; Iterator Invalidation" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-pointers-iterator-invalidation'); return false;">5.3 Loan Tracking</a></li>
+        <li><a href="#ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation" title="Loan Tracking: How cfire Prevents Dangling Views &amp; Iterator Invalidation" onclick="navigateToSubhead('5', 'ch5-loan-tracking-how-cfire-prevents-dangling-views-iterator-invalidation'); return false;">5.3 Loan Tracking</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-6" style="display: none;">
@@ -6394,14 +6422,14 @@ fn main() -&gt; void! {
       <ul class="toc-list">
         <li><a href="#ch7-separating-errors-from-absence-t-vs-t" title="Separating Errors from Absence (T! vs T?)" onclick="navigateToSubhead('7', 'ch7-separating-errors-from-absence-t-vs-t'); return false;">7.1 T! vs T? Types</a></li>
         <li><a href="#ch7-propagating-errors-with-try-and-recovering-with-or" title="Propagating Errors with try and Recovering with or" onclick="navigateToSubhead('7', 'ch7-propagating-errors-with-try-and-recovering-with-or'); return false;">7.2 try &amp; or Recovery</a></li>
-        <li><a href="#ch7-flow-sensitive-null-pointer-safety-cfirenull-deref" title="Flow-Sensitive Null Pointer Safety (cfire/NULL-DEREF)" onclick="navigateToSubhead('7', 'ch7-flow-sensitive-null-pointer-safety-cfirenull-deref'); return false;">7.3 Null Safety</a></li>
+        <li><a href="#ch7-no-null-values-absence-is-t" title="No Null Values: Absence Is T?" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">7.3 No Null Values: Absenc..</a></li>
         <li><a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">7.4 defer Cleanup</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-8" style="display: none;">
       <ul class="toc-list">
         <li><a href="#ch8-utf-8-strings-unicode-scalars-regular-expressions" title="UTF-8 Strings, Unicode Scalars &amp; Regular Expressions" onclick="navigateToSubhead('8', 'ch8-utf-8-strings-unicode-scalars-regular-expressions'); return false;">8.1 UTF-8 &amp; Regex</a></li>
-        <li><a href="#ch8-zero-copy-buffer-pointers-compile-time-bounds-checks" title="Zero-Copy Buffer Pointers &amp; Compile-Time Bounds Checks" onclick="navigateToSubhead('8', 'ch8-zero-copy-buffer-pointers-compile-time-bounds-checks'); return false;">8.2 Buffer Pointers</a></li>
+        <li><a href="#ch8-zero-copy-byte-access-compile-time-bounds-checks" title="Zero-Copy Byte Access &amp; Compile-Time Bounds Checks" onclick="navigateToSubhead('8', 'ch8-zero-copy-byte-access-compile-time-bounds-checks'); return false;">8.2 Zero-Copy Byte Access ..</a></li>
         <li><a href="#ch8-generic-sets-priority-queues-deques-sorting" title="Generic Sets, Priority Queues, Deques &amp; Sorting" onclick="navigateToSubhead('8', 'ch8-generic-sets-priority-queues-deques-sorting'); return false;">8.3 Sets, Heaps &amp; Sort</a></li>
       </ul>
     </div>

@@ -375,10 +375,10 @@ type ChildItem struct {
 
 type PtrNode struct {
     val: i32
-    next: *PtrNode = none
+    next_id: i32? = none
 }
 
-fn find_node(flag: bool) -> *PtrNode {
+fn find_node(flag: bool) -> PtrNode? {
     if !flag {
         return none
     }
@@ -441,9 +441,9 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     assert(ch.open() == "custom-open:h1")
     assert(ch.read() == "custom-read:h1")
 
-    // CF-019: pointer default none and return none
+    // CF-019 (CF-189: an optional instead of a raw pointer): default none and return none
     n := PtrNode{val: 5}
-    assert(n.next == none)
+    assert(n.next_id == none)
     assert(find_node(false) == none)
 
     // CF-020 & CF-038: C++ keywords (`export`, `delete`, `class`) and `stdout` macro as identifiers
@@ -907,7 +907,7 @@ fn (c: SharedCounter) doubled() -> i64 {
     return c.count * 2
 }
 
-fn borrow_slice(v: &str) -> usize {
+fn borrow_slice(v: str) -> usize {
     return v.len()
 }
 

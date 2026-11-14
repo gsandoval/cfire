@@ -78,6 +78,36 @@ namespace cfire::doc {
     return doc;
 }
 
+// CF-188: what `cfire doc` and `cfire doc --check` refuse in the stdlib catalog. Every type a module lists has a
+// cfire-terms description and nothing is described that the module does not list; every function has a summary
+// and an example; no signature uses a C++ spelling (`std::`, a `T&` reference return, a `*` raw pointer).
+[[nodiscard]] inline auto catalog_doc_problems() -> std::vector<std::string> {
+    std::vector<std::string> out;
+    for (const auto& mod : stdlib_catalog()) {
+        for (const auto& t : mod.types) {
+            auto it = std::ranges::find_if(mod.type_docs, [&](const StdTypeDoc& td) { return td.bare_name() == t; });
+            if (it == mod.type_docs.end()) out.push_back(std::format("{}: type `{}` has no entry in src/docgen/catalog_type_docs.hpp", mod.import_path, t));
+            else if (it->summary.empty()) out.push_back(std::format("{}: type `{}` has an empty summary", mod.import_path, t));
+        }
+        for (const auto& td : mod.type_docs) {
+            if (std::ranges::find(mod.types, std::string(td.bare_name())) == mod.types.end())
+                out.push_back(std::format("{}: `{}` is documented but is not in the module's `types` list", mod.import_path, td.name));
+        }
+        for (const auto& fn : mod.functions) {
+            if (fn.summary.empty()) out.push_back(std::format("{}: `{}` has no summary", mod.import_path, fn.name));
+            if (fn.example.empty()) out.push_back(std::format("{}: `{}` has no example", mod.import_path, fn.name));
+            const std::string_view sig = fn.cf_sig;
+            bool ref_return = false;
+            for (std::size_t i = 1; i < sig.size(); ++i) {
+                if (sig[i] == '&' && (std::isalnum(static_cast<unsigned char>(sig[i - 1])) || sig[i - 1] == ']' || sig[i - 1] == '>')) ref_return = true;
+            }
+            if (sig.contains("std::") || sig.contains('*') || ref_return)
+                out.push_back(std::format("{}: `{}` has a C++ spelling in its signature: {}", mod.import_path, fn.name, fn.cf_sig));
+        }
+    }
+    return out;
+}
+
 // The modules shown in the reference: the builtin-type surface first, then stdlib_catalog().
 [[nodiscard]] inline auto reference_modules() -> std::vector<StdModuleDoc> {
     std::vector<StdModuleDoc> out;

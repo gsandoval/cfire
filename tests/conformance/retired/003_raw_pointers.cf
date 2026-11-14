@@ -1,0 +1,22 @@
+// CF-189: raw pointers and `&T` reference types are not cfire syntax; they exist only in C++ interop
+// (`cpp { }`, `import cpp` types, `own`/`shared` `from_raw`/`release`). Each old form names its replacement.
+package main
+import "core:sync"
+type Holder struct {
+    p: *i32 //~ error cfire/RAW-POINTER
+}
+fn head(s: &str) -> str { //~ error cfire/REFERENCE-TYPE
+    return s
+}
+fn bump(n: &mut i32) { //~ error cfire/REFERENCE-TYPE
+}
+fn main() {
+    x := 1
+    p := &x //~ error cfire/RAW-POINTER
+    println("{}", *p) //~ error cfire/RAW-POINTER
+    xs: []i32 = [1, 2]
+    d := xs.data() //~ error cfire/RAW-POINTER
+    mu := make(sync.Mutex[i32], 0)
+    g := mu.lock()
+    *g += 1 //~ error cfire/RAW-POINTER
+}

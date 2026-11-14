@@ -16,14 +16,11 @@ jobs:
       - name: Build cfire Toolchain
         run: make build
 
-      - name: Run Review Check Quality Gates
-        run: make review-check
+      - name: make check (every-commit tier, CF-186)
+        run: make check
 
-      - name: Run AddressSanitizer & UndefinedBehaviorSanitizer (all suites + conformance corpus)
-        run: make test-asan
-
-      - name: Run ThreadSanitizer (runtime concurrency + conformance concurrency programs)
-        run: make test-tsan
+      - name: make check-deep (ASan/UBSan, TSan, fuzz replay)
+        run: make check-deep
 
   linux:
     runs-on: ubuntu-latest
@@ -49,14 +46,11 @@ jobs:
           done
           cp /tmp/cfire_ci_pollution/junk_1.cf /tmp/junk_root.cf
 
-      - name: Run Review Check Quality Gates
-        run: make review-check
+      - name: make check (every-commit tier, CF-186)
+        run: make check
 
-      - name: Run AddressSanitizer & UndefinedBehaviorSanitizer (all suites + conformance corpus)
-        run: make test-asan
-
-      - name: Run ThreadSanitizer (runtime concurrency + conformance concurrency programs)
-        run: make test-tsan
+      - name: make check-deep (ASan/UBSan, TSan, fuzz replay)
+        run: make check-deep
 
   fuzz-smoke:
     runs-on: ubuntu-latest
@@ -69,9 +63,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
-
-      - name: Replay committed fuzz corpora under ASan/UBSan
-        run: make fuzz-replay
 
       - name: libFuzzer smoke run (20s per target)
         run: make fuzz-lib FUZZ_SECONDS=20 FUZZ_CXX=clang++-18
@@ -105,7 +96,6 @@ jobs:
             mingw-w64-clang-x86_64-zstd
             mingw-w64-clang-x86_64-libsodium
             mingw-w64-clang-x86_64-sqlite3
-            mingw-w64-clang-x86_64-python
 
       - name: Build cfire.exe on Windows
         env:
@@ -130,4 +120,4 @@ jobs:
           ./cfire_test_runner.exe unit
 
       - name: Run Language Conformance Corpus on Windows
-        run: python3 -I scripts/run_conformance.py --cfire ./cfire.exe
+        run: ./cfire_test_runner.exe conformance --cfire ./cfire.exe

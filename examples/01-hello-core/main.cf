@@ -5,10 +5,10 @@ type AuditLog struct {
     entries: []str
 }
 
-// `prefix` is explicit borrow `&str` (std::string_view)
+// `prefix` is a read-only view (`str` parameters are views; std::string_view)
 // `log` is `mut` (AuditLog&)
 // `msg` is `move` (std::string&& with automatic std::move on definite last use)
-fn record(prefix: &str, mut log: AuditLog, move msg: str) -> usize {
+fn record(prefix: str, mut log: AuditLog, move msg: str) -> usize {
     formatted := "[{prefix}] {msg}"
     log.entries.push(move formatted)
     return log.entries.len()

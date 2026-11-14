@@ -548,6 +548,10 @@ struct CheckedFile {
     // so a view initializer (a read-only `str` param, a slice) is copied rather than becoming a mutable view.
     // `mutable`: filled by the per-function checker, which holds the file by const reference.
     mutable std::unordered_set<const VarDeclStmt*> owned_text_decls{};
+    // Q53 (CF-189): untyped `mut x := <slice>` declarations, which own a copy when the initializer is a view.
+    mutable std::unordered_set<const VarDeclStmt*> owned_slice_decls{};
+    // Q52 (CF-189): `g.value` on a `sync.MutexGuard[T]`, which codegen lowers to the guarded value (`*g` in C++).
+    mutable std::unordered_set<const void*> guard_value_members{};
     // Q24 (CF-149): `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms
     // (kept for callers that only print). Always add through add_error / add_warning.
     std::vector<std::string> warnings{};

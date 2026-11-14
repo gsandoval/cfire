@@ -5,6 +5,43 @@
 
 namespace cfire::lsp {
 
+namespace detail {
+// CF-188: a stdlib type by module namespace and bare name (`http`, `Request`).
+[[nodiscard]] inline auto find_stdlib_type_doc(std::string_view ns, std::string_view name)
+    -> std::pair<const cfire::doc::StdModuleDoc*, const cfire::doc::StdTypeDoc*> {
+    if (auto br = name.find('['); br != std::string_view::npos) name = name.substr(0, br);
+    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+        if (mod.ns_alias != ns) continue;
+        for (const auto& td : mod.type_docs) {
+            if (td.bare_name() == name) return {&mod, &td};
+        }
+    }
+    return {nullptr, nullptr};
+}
+
+[[nodiscard]] inline auto render_stdlib_type_doc(const cfire::doc::StdModuleDoc& mod, const cfire::doc::StdTypeDoc& td) -> std::string {
+    std::string out = std::format("### {} `{}.{}` (`{}`)\n{}\n", td.kind == "enum" ? "Enum" : td.kind == "struct" ? "Struct" : "Type",
+                                  mod.ns_alias, td.name, mod.import_path, td.summary);
+    if (td.kind == "manifest") out += "\nAvailable only in a `build.cf` manifest.\n";
+    if (!td.fields.empty()) {
+        out += "\n**Fields:**\n";
+        for (const auto& f : td.fields) out += std::format("- `{}: {}`{}\n", f.name, f.type, f.summary.empty() ? "" : " — " + f.summary);
+    }
+    if (!td.variants.empty()) {
+        out += "\n**Variants:** ";
+        for (std::size_t i = 0; i < td.variants.size(); ++i) out += std::format("{}`{}.{}::{}`", i ? ", " : "", mod.ns_alias, td.bare_name(), td.variants[i]);
+        out += "\n";
+    }
+    std::string methods;
+    const std::string prefix = std::string(td.bare_name()) + ".";
+    for (const auto& fn : mod.functions) {
+        if (fn.name.starts_with(prefix)) methods += std::format("- `{}` — {}\n", fn.cf_sig, fn.summary);
+    }
+    if (!methods.empty()) out += "\n**Methods:**\n" + methods;
+    return out;
+}
+} // namespace detail
+
 inline auto Server::compute_hover(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
@@ -142,6 +179,26 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
                     }
                 }
             }
+            // CF-188: `http.Request` (a type), `http.Response.json` (an associated function), `log.Level.Debug` (a variant).
+            if (sym.qualifier == mod.ns_alias) {
+                if (auto [m, td] = detail::find_stdlib_type_doc(mod.ns_alias, sym.name); td != nullptr) return detail::render_stdlib_type_doc(*m, *td);
+            }
+            std::string qual = sym.qualifier;  // `log.Level::Debug` arrives as `log.Level::` or `log::Level`
+            while (qual.ends_with(':')) qual.pop_back();
+            for (std::size_t c; (c = qual.find("::")) != std::string::npos;) qual.replace(c, 2, ".");
+            if (qual.starts_with(mod.ns_alias + ".")) {
+                const std::string tname = qual.substr(mod.ns_alias.size() + 1);
+                for (const auto& fn : mod.functions) {
+                    if (fn.name == tname + "." + sym.name) {
+                        return std::format("### `{}.{}` (`{}`)\n```cf\n{}\n```\n{}\n\n**Example:**\n```cf\n{}\n```", qual, sym.name, mod.import_path,
+                                           fn.cf_sig, fn.summary, fn.example);
+                    }
+                }
+                if (auto [m, td] = detail::find_stdlib_type_doc(mod.ns_alias, tname); td != nullptr && std::ranges::find(td->variants, sym.name) != td->variants.end()) {
+                    return std::format("### Enum Variant `{}::{}` (`{}`)\n{}\n\n**Lowered C++23:** `cfire::{}::{}::{}`", qual, sym.name, mod.import_path, td->summary,
+                                       mod.ns_alias, tname, sym.name);
+                }
+            }
             if (sym.qualifier.empty() && sym.name == mod.ns_alias) {
                 std::string fns_list;
                 for (const auto& fn : mod.functions) {
@@ -259,6 +316,15 @@ inline auto Server::compute_hover(const std::string& uri, int line, int characte
             return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::uint8_t>`) over the string's UTF-8 bytes.";
         }
         std::string recv_type = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env);
+        // CF-188: a field of a stdlib struct (`req.body`, `res.exit_code`).
+        if (auto dot = recv_type.find('.'); dot != std::string::npos) {
+            if (auto [m, td] = detail::find_stdlib_type_doc(recv_type.substr(0, dot), recv_type.substr(dot + 1)); td != nullptr) {
+                for (const auto& f : td->fields) {
+                    if (f.name == sym.name)
+                        return std::format("### Field `{}.{}` (`{}`)\n```cf\n{}: {}\n```\n{}", recv_type, f.name, m->import_path, f.name, f.type, f.summary);
+                }
+            }
+        }
         // Check stdlib handle methods (`TcpListener.accept`, `TcpConn.read_str`, `Conn.query`, `Channel.send`)
         for (const auto& mod : cfire::doc::stdlib_catalog()) {
             for (const auto& fn : mod.functions) {

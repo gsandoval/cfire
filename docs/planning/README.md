@@ -19,10 +19,15 @@ Whenever work is performed on this repository, the following protocol **must** b
 [backlog.md] ──(Promote)──> [active.md] ──(Implement & Verify)
 ```
 
-### Quality Gates (Mandatory)
-- **Gate 1 — Zero Compiler Warnings (Strict Mode)**: Code must compile cleanly with the Makefile `CXXFLAGS` (`clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality`), producing zero warnings.
-- **Gate 2 — Formatting Invariance**: `./cfire fmt --check examples/` must pass cleanly.
-- **Gate 3 — Public Documentation Invariance**: `./cfire doc --check` must pass 100%.
-- **Gate 4 — Full Conformance Suite**: `make review-check` (all unit, stdlib, LSP, and E2E test suites, plus the `tests/conformance/` corpus) must pass 100%.
-- **Gate 5 — Language Conformance Corpus**: every change to language semantics, diagnostics, or stdlib behavior adds or updates a file in [`tests/conformance/`](../../tests/conformance/README.md). A fix for a tracked hole removes its `xfail` line in the same change.
-- **Gate 6 — Linux & Windows (pre-release, and for platform-specific changes)**: `make test-vm-linux` and `make test-vm-windows` run the CI `linux` / `windows` jobs on the working tree in local UTM VMs (see [`scripts/vm/README.md`](../../scripts/vm/README.md)). Run them before a release and after changes to platform-conditional code, the build system, or the runtime.
+### Quality Gates (Mandatory): three commands
+Every gate is one of three `make` targets. They are split only so that iterating on a change stays fast; nobody has to work out which tests a change needs.
+
+| Command | What it runs | Required |
+| :--- | :--- | :--- |
+| `make check` | Zero C++ compiler warnings (Makefile `CXXFLAGS`, checked from the build logs even when nothing rebuilt), `cfire fmt --check examples/`, `cfire check` on every example, the C++ unit/e2e/stdlib suites, the stdlib `.cf` suite, `cfire doc --check`, the GUIDE doc-tests and the `tests/conformance/` corpus. | Every commit. The pre-commit hook runs it and blocks the commit on failure (`make hooks` installs the hooks). |
+| `make check-deep` | ASan/UBSan over every C++ suite and the conformance programs, TSan over the runtime and the concurrency programs, and the fuzz-corpus replay. | Before a CF item is marked done. |
+| `make check-platforms` | `make test-vm-linux` and `make test-vm-windows`: the CI `linux` / `windows` jobs on the working tree in local UTM VMs ([`scripts/vm/README.md`](../../scripts/vm/README.md)). | Before a CF item is marked done, and before a release. |
+
+`make check-all` runs the three in order and prints a summary table. **A CF item is marked `[x]` in `active.md` only with that summary pasted into its results**; a tier that cannot run (for example no VMs on this machine) is recorded as such, never silently skipped. The gates need only clang and make: no Python.
+
+- **Conformance corpus**: every change to language semantics, diagnostics, or stdlib behavior adds or updates a file in [`tests/conformance/`](../../tests/conformance/README.md). A fix for a tracked hole removes its `xfail` line in the same change.
