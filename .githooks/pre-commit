@@ -57,7 +57,9 @@ fi
 
 # 3. The every-commit tier (CF-186): zero warnings, formatting, examples, unit/e2e/stdlib, GUIDE doc-tests and the
 #    conformance corpus. It tests the working tree, so unstaged edits count too. A failure blocks the commit.
-if ! make -s check; then
+#    Git exports GIT_DIR / GIT_INDEX_FILE to hooks (from a worktree); a test's `git -C <tmp> init` would then
+#    reinitialise this repository (`core.bare = true`), so the tests run without them.
+if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE make -s check; then
     echo "==> [pre-commit] make check failed; fix it and commit again (docs/planning/README.md, Quality Gates)." >&2
     exit 1
 fi

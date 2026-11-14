@@ -131,7 +131,8 @@ namespace detail {
     };
     if (mod == "core:net/websocket") return {
         {"Conn", "handle", "An open WebSocket connection; messages are `str` (`recv_text`) or `[]byte` (`recv_binary`)."},
-        {"Server", "handle", "A WebSocket server bound to a port."},
+        {"Server", "handle", "A WebSocket server bound to a port (`make(websocket.Server, port)`); each connection runs on its own session thread, so handlers run concurrently."},
+        {"ServerLimits", "struct", ""},  // fields and summary from kStdlibStructs
         {"TlsConfig", "struct", ""},
     };
     if (mod == "core:os") return {

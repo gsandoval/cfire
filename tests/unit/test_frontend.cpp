@@ -11,6 +11,7 @@
 #include "test_cf188.hpp"
 #include "test_cf192.hpp"
 #include "test_cf193.hpp"
+#include "test_cf194.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");

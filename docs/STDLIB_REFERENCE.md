@@ -1072,7 +1072,8 @@ fn main() {
 | Type | Kind | Description |
 |---|---|---|
 | `websocket.Conn` | handle | An open WebSocket connection; messages are `str` (`recv_text`) or `[]byte` (`recv_binary`). |
-| `websocket.Server` | handle | A WebSocket server bound to a port. |
+| `websocket.Server` | handle | A WebSocket server bound to a port (`make(websocket.Server, port)`); each connection runs on its own session thread, so handlers run concurrently. |
+| `websocket.ServerLimits` | struct | Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default. Fields: `max_websockets: usize`, `header_timeout_ms: i32`, `max_frame_size: usize`. |
 | `websocket.TlsConfig` | struct | Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
@@ -1091,10 +1092,12 @@ fn main() {
 | `fn (mut ws: Conn) close(code: u16 = 1000, reason: str = "")` | `ws.close(code, reason)` | Initiates a clean RFC 6455 closure handshake and closes the socket. | `ws.close()` |
 | `fn (ws: Conn) is_open() -> bool` | `ws.is_open()` | Returns true if the WebSocket connection is open. | `if ws.is_open() { ... }` |
 | `fn (mut s: Server) accept() -> Conn!` | `s.accept()` | Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`. | `mut ws := try srv.accept()` |
-| `fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void` | `s.serve_once(handler)` | Accepts and serves a single WebSocket connection with `handler`. | `srv.serve_once(|mut ws| { ... })` |
-| `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void` | `s.listen_and_serve(handler)` | Runs a blocking accept loop upgrading and serving WebSocket connections. | `srv.listen_and_serve(|mut ws| { ... })` |
-| `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void` | `s.serve_in_background(handler)` | Starts a background thread accepting and serving WebSocket connections. | `srv.serve_in_background(|mut ws| { ... })` |
-| `fn (mut s: Server) stop() -> void` | `s.stop()` | Stops the background WebSocket server thread. | `srv.stop()` |
+| `type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }` | `cfire::websocket::ServerLimits` | Limits for `websocket.Server` (CF-194): open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults. | `srv.set_limits(websocket.ServerLimits{max_websockets: 64})` |
+| `fn (mut s: Server) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the server's limits (CF-194): `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving. | `srv.set_limits(websocket.ServerLimits{max_websockets: 64})` |
+| `fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void` | `s.serve_once(handler)` | Accepts and serves a single WebSocket connection with `handler`, on the calling thread. | `srv.serve_once(|mut ws| { ... })` |
+| `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void` | `s.listen_and_serve(handler)` | Runs a blocking accept loop; each connection is upgraded and served on its own session thread (CF-194), so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503. | `srv.listen_and_serve(|mut ws| { ... })` |
+| `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void` | `s.serve_in_background(handler)` | Starts the accept loop on a background thread; like `listen_and_serve`, each connection gets its own session thread and `handler` runs concurrently. | `srv.serve_in_background(|mut ws| { ... })` |
+| `fn (mut s: Server) stop() -> void` | `s.stop()` | Stops the accept loop, shuts the open sessions down and waits for their handlers to return. | `srv.stop()` |
 
 ### `core:os` (`os`) — Environment, Standard Streams, Terminal, Pipes & Subprocesses
 
