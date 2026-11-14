@@ -49,6 +49,9 @@ struct OpenSslApi {
     int (*SSL_write)(void* ssl, const void* buf, int num) = nullptr;
     int (*SSL_shutdown)(void* ssl) = nullptr;
     long (*SSL_get_verify_result)(const void* ssl) = nullptr;
+    int (*SSL_get_error)(const void* ssl, int ret) = nullptr;  // CF-193: non-blocking handshake and reads
+    int (*SSL_pending)(const void* ssl) = nullptr;
+    void (*ERR_clear_error)() = nullptr;
 
     // libcrypto functions
     unsigned long (*ERR_get_error)() = nullptr;
@@ -177,6 +180,9 @@ inline auto api() -> const OpenSslApi& {
         load_sym(a.ssl_handle, "SSL_write", a.SSL_write);
         load_sym(a.ssl_handle, "SSL_shutdown", a.SSL_shutdown);
         load_sym(a.ssl_handle, "SSL_get_verify_result", a.SSL_get_verify_result);
+        load_sym(a.ssl_handle, "SSL_get_error", a.SSL_get_error);
+        load_sym(a.ssl_handle, "SSL_pending", a.SSL_pending);
+        load_sym(a.crypto_handle, "ERR_clear_error", a.ERR_clear_error);
 
         load_sym(a.crypto_handle, "ERR_get_error", a.ERR_get_error);
         load_sym(a.crypto_handle, "ERR_error_string_n", a.ERR_error_string_n);
@@ -489,7 +495,25 @@ public:
             a.SSL_free(ssl);
             return cfire::make_error(std::format("TLS server handshake failed: {}", err));
         }
+        attach(conn, ssl);
+        return {};
+    }
 
+    // CF-193: attaches a server TLS session to `conn` (a non-blocking socket) without handshaking;
+    // `continue_accept` then drives the handshake as the socket becomes ready.
+    auto begin_accept(cfire::net::TcpConn& conn) const -> std::expected<void, cfire::Error> {
+        const auto& a = detail::api();
+        if (!a.loaded || !ctx_ || !a.SSL_get_error) return cfire::make_error("invalid TLS ServerContext");
+        if (conn.fd() < 0) return cfire::make_error("cannot wrap invalid TCP socket in TLS");
+        void* ssl = a.SSL_new(ctx_.get());
+        if (!ssl) return cfire::make_error("SSL_new failed");
+        (void)a.SSL_set_fd(ssl, conn.fd());
+        attach(conn, ssl);
+        return {};
+    }
+
+private:
+    void attach(cfire::net::TcpConn& conn, void* ssl) const {
         auto stream = std::make_shared<cfire::net::TlsStream>();
         stream->ssl = ssl;
         stream->owned_ctx = new std::shared_ptr<void>(ctx_);
@@ -497,12 +521,58 @@ public:
         stream->write_fn = &detail::tls_write_bridge;
         stream->close_fn = &detail::tls_close_shared_ctx;
         conn.set_tls(std::move(stream));
-        return {};
     }
 
-private:
     std::shared_ptr<void> ctx_{nullptr};
 };
+
+namespace detail {
+// The outcome of an SSL call that returned `ret` on a non-blocking socket.
+[[nodiscard]] inline auto classify_io(void* ssl, int ret) -> cfire::net::detail::Io {
+    using cfire::net::detail::Io;
+    static constexpr int kWantRead = 2, kWantWrite = 3, kSyscall = 5, kZeroReturn = 6;
+    switch (api().SSL_get_error(ssl, ret)) {
+        case kWantRead: return Io::WantRead;
+        case kWantWrite: return Io::WantWrite;
+        case kZeroReturn: return Io::Eof;
+        case kSyscall: return ret == 0 ? Io::Eof : Io::Error;
+        default: return Io::Error;
+    }
+}
+} // namespace detail
+
+// CF-193: one step of a server handshake started by `ServerContext::begin_accept`: Ok when it is complete.
+[[nodiscard]] inline auto continue_accept(cfire::net::TcpConn& conn) -> cfire::net::detail::Io {
+    const auto& a = detail::api();
+    void* ssl = conn.tls() ? conn.tls()->ssl : nullptr;
+    if (ssl == nullptr) return cfire::net::detail::Io::Error;
+    if (a.ERR_clear_error) a.ERR_clear_error();
+    const int ret = a.SSL_accept(ssl);
+    return ret == 1 ? cfire::net::detail::Io::Ok : detail::classify_io(ssl, ret);
+}
+
+// CF-193: one non-blocking TLS read into `buf` (Ok with `n > 0` bytes, WantRead / WantWrite, Eof, Error).
+[[nodiscard]] inline auto read_some(cfire::net::TcpConn& conn, std::span<std::uint8_t> buf, std::size_t& n) -> cfire::net::detail::Io {
+    const auto& a = detail::api();
+    n = 0;
+    void* ssl = conn.tls() ? conn.tls()->ssl : nullptr;
+    if (ssl == nullptr) return cfire::net::detail::Io::Error;
+    if (a.ERR_clear_error) a.ERR_clear_error();
+    const int ret = a.SSL_read(ssl, buf.data(), static_cast<int>(std::min<std::size_t>(buf.size(), 16384)));
+    if (ret > 0) {
+        n = static_cast<std::size_t>(ret);
+        return cfire::net::detail::Io::Ok;
+    }
+    return detail::classify_io(ssl, ret);
+}
+
+// Decrypted bytes OpenSSL holds for `conn` that a socket poll cannot see.
+[[nodiscard]] inline auto pending(const cfire::net::TcpConn& conn) -> std::size_t {
+    const auto& a = detail::api();
+    void* ssl = conn.tls() ? conn.tls()->ssl : nullptr;
+    if (ssl == nullptr || !a.SSL_pending) return 0;
+    return static_cast<std::size_t>(std::max(0, a.SSL_pending(ssl)));
+}
 
 [[nodiscard]] inline auto wrap_client(
     cfire::net::TcpConn& conn,

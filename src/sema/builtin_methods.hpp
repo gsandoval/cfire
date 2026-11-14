@@ -362,10 +362,12 @@ inline constexpr std::array kStdlibStructs = {
     StdlibStruct{"http", "ServerLimits", "cfire::http::ServerLimits",
         "header_timeout_ms: i32 = 10000; body_timeout_ms: i32 = 30000; max_body_bytes: usize = 10485760; workers: usize = 0; max_pending: usize = 128; "
         "keepalive_timeout_ms: i32 = 5000; max_requests_per_conn: usize = 1000; max_websockets: usize = 1024; max_connections: usize = 10000",
-        "Per-connection limits for `http.Server` (Q22, CF-192); pass to `server.set_limits(...)`. `workers` is how many handlers run at once; "
+        "Per-connection limits for `http.Server` (Q22, CF-192, CF-193); pass to `server.set_limits(...)`. The server waits on idle and slow "
+        "connections in an event loop, so `workers` is only how many handlers run at once; "
         "`workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive "
         "connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket "
-        "session runs on its own thread, up to `max_websockets`. Over a cap a client gets 503."},
+        "session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests "
+        "waiting for a worker, a client gets 503."},
     StdlibStruct{"http", "TlsConfig", "cfire::http::TlsConfig",
         "cert_file: str = \"\"; key_file: str = \"\"; cert_pem: str = \"\"; key_pem: str = \"\"",
         "Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM."},

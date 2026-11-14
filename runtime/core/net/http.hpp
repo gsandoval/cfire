@@ -2,6 +2,7 @@
 #include "tcp.hpp"
 #include "tls.hpp"
 #include "url.hpp"
+#include "poller.hpp"
 
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
 #include <emscripten.h>
@@ -24,6 +25,7 @@
 #include <type_traits>
 #include <cctype>
 #include <algorithm>
+#include <chrono>
 
 namespace cfire::http {
 struct Request;
@@ -639,21 +641,11 @@ private:
     std::string error_message_{};
 };
 
-// Reads the next request on a blocking connection. `idle_ms > 0` is the keep-alive wait for its first byte:
-// running out of it, or `running` turning false, ends the connection with a code-0 error (nothing to answer).
-// The header deadline starts with the first byte, the body deadline once the header section is complete.
-inline auto read_next_request(cfire::net::TcpConn& conn, RequestAssembler& as, const ServerLimits& lim, int idle_ms = 0,
-                              const std::atomic<bool>* running = nullptr) -> std::expected<Request, cfire::Error> {
+// Reads one request on a blocking connection (`serve_once`, `read_http_request`). The header deadline starts
+// now, the body deadline once the header section is complete.
+inline auto read_next_request(cfire::net::TcpConn& conn, RequestAssembler& as, const ServerLimits& lim)
+    -> std::expected<Request, cfire::Error> {
     using clock = std::chrono::steady_clock;
-    if (idle_ms > 0 && !as.started()) {
-        const auto idle_deadline = clock::now() + std::chrono::milliseconds(idle_ms);
-        for (;;) {
-            if (running != nullptr && !running->load()) return cfire::make_error("server stopping");
-            auto left = std::chrono::duration_cast<std::chrono::milliseconds>(idle_deadline - clock::now()).count();
-            if (left <= 0) return cfire::make_error("keep-alive idle timeout");
-            if (conn.poll(std::min<long long>(left, 200))) break;
-        }
-    }
     auto deadline = clock::now() + std::chrono::milliseconds(lim.header_timeout_ms);
     bool in_body = false;
     for (;;) {
@@ -1577,6 +1569,23 @@ private:
     std::mutex mu_;
     std::vector<Session> sessions_;
 };
+// CF-193: one connection as the event loop sees it. While `Busy` a worker owns it and the loop does not touch it.
+struct LoopConn {
+    enum class Phase : std::uint8_t { Handshake, Reading, Idle, Busy };
+
+    LoopConn(cfire::net::TcpConn c, std::size_t max_body_bytes) : conn(std::move(c)), as(max_body_bytes) {}
+
+    cfire::net::TcpConn conn;
+    RequestAssembler as;
+    std::uint64_t token = 0;
+    Phase phase = Phase::Reading;
+    bool want_write = false;  // the poller waits for writability (a TLS step asked for it)
+    bool in_body = false;
+    std::chrono::steady_clock::time_point deadline{};
+    std::size_t served = 0;
+    Request req{};      // the request handed to the worker
+    bool keep = false;  // the worker's answer: serve another request on this connection
+};
 } // namespace detail
 
 class HttpServer {
@@ -1653,67 +1662,243 @@ public:
     void serve_once(Handler&& handler) {
         auto conn_res = listener_.accept();
         if (!conn_res) return;
-        handle_conn(*conn_res, handler, nullptr);
+        auto& conn = *conn_res;
+        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
+            auto wr = tls_ctx_->wrap_server(conn);
+            if (!wr) return;
+        }
+        auto req_res = read_http_request(conn, limits_);
+        if (!req_res) {
+            if (req_res.error().code() != 0) (void)conn.write_text(error_wire(req_res.error()));
+            return;
+        }
+        req_res->remote_addr = conn.endpoint();
+        if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
+            if (handler.try_dispatch_ws(*req_res, conn)) return;
+        }
+        Response resp = handler(*req_res);
+        (void)conn.write_text(resp.to_http_wire());
     }
 
-    // Q22 (CF-150): connections are served by a bounded worker pool, so one slow or idle client cannot
-    // stall the server; when every worker is busy and the queue is full, new clients get 503.
-    // CF-192: a worker keeps a keep-alive connection while no other client waits; WebSocket sessions get
-    // their own threads, which are shut down and joined before this returns.
+    // Q22 (CF-150), CF-192, CF-193: one event-loop thread waits on every connection and reads each request
+    // whole (the TLS handshake too) without blocking, so slow and idle clients hold no worker. A worker gets a
+    // complete Request, runs the handler, writes the response and hands a keep-alive connection back.
+    // The loop answers 503 over `max_connections` open connections or `max_pending` requests waiting for a
+    // worker, and 408 past the header or body deadline; an idle keep-alive connection closes after
+    // `keepalive_timeout_ms`. WebSocket sessions get their own threads, shut down and joined before this returns.
     template <typename Handler>
     void listen_and_serve(Handler&& handler) {
+        using clock = std::chrono::steady_clock;
+        using cfire::net::detail::Io;
+        using Conn = detail::LoopConn;
         running_ = true;
+        cfire::net::detail::Poller poller;
+        if (!poller.valid()) {
+            while (running_) serve_once(handler);
+            return;
+        }
+        const bool tls = tls_ctx_.has_value() && tls_ctx_->valid();
+        std::unordered_map<std::uint64_t, std::unique_ptr<Conn>> conns;
+        std::uint64_t next_token = 1;  // 0 is the listener
         std::mutex mu;
         std::condition_variable cv;
-        std::deque<cfire::net::TcpConn> queue;
-        std::atomic<std::size_t> waiting{0};
-        std::atomic<std::size_t> active{0};
+        std::deque<Conn*> jobs;
+        std::vector<std::uint64_t> returned;
         bool closing = false;
+
+        std::vector<std::uint8_t> buf(16384);  // the loop's read buffer (one thread)
+        auto best_effort = [](Conn& c, std::string_view wire) { (void)c.conn.write_text(wire); };
+        auto close_conn = [&](std::uint64_t token) {
+            auto it = conns.find(token);
+            if (it == conns.end()) return;
+            poller.remove(it->second->conn.fd());
+            conns.erase(it);
+        };
+        auto watch = [&](Conn& c, bool want_write) {
+            if (c.want_write != want_write) poller.modify(c.conn.fd(), c.token, want_write);
+            c.want_write = want_write;
+        };
+        auto dispatch = [&](Conn& c) {
+            c.req = c.as.take();
+            c.req.remote_addr = c.conn.endpoint();
+            {
+                std::lock_guard<std::mutex> lk(mu);
+                if (jobs.size() < limits_.max_pending) {
+                    poller.remove(c.conn.fd());
+                    c.phase = Conn::Phase::Busy;
+                    jobs.push_back(&c);
+                    cv.notify_one();
+                    return;
+                }
+            }
+            best_effort(c, Response::text(503, "503 Service Unavailable").to_http_wire());
+            close_conn(c.token);
+        };
+        // Steps the assembler over buffered bytes: false once the connection was dispatched or closed.
+        auto advance = [&](Conn& c) -> bool {
+            switch (c.as.step()) {
+                case detail::RequestAssembler::Status::Ready:
+                    dispatch(c);
+                    return false;
+                case detail::RequestAssembler::Status::Error:
+                    best_effort(c, error_wire(cfire::Error(c.as.error_message(), c.as.error_status())));
+                    close_conn(c.token);
+                    return false;
+                case detail::RequestAssembler::Status::NeedMore: break;
+            }
+            if (!c.in_body && c.as.headers_done()) {
+                c.in_body = true;
+                c.deadline = clock::now() + std::chrono::milliseconds(limits_.body_timeout_ms);
+            }
+            return true;
+        };
+        auto on_ready = [&](Conn& c) {
+            if (c.phase == Conn::Phase::Handshake) {
+                switch (cfire::tls::continue_accept(c.conn)) {
+                    case Io::Ok: c.phase = Conn::Phase::Reading; break;
+                    case Io::WantRead: watch(c, false); return;
+                    case Io::WantWrite: watch(c, true); return;
+                    default: close_conn(c.token); return;
+                }
+            }
+            // A few reads per wake-up keep one busy client from starving the rest (the poll is level-triggered).
+            for (int round = 0; round < 8; ++round) {
+                std::size_t n = 0;
+                const Io io = tls ? cfire::tls::read_some(c.conn, buf, n) : cfire::net::detail::recv_some(c.conn.fd(), buf, n);
+                if (io == Io::WantRead || io == Io::WantWrite) {
+                    watch(c, io == Io::WantWrite);
+                    return;
+                }
+                if (io != Io::Ok) {
+                    auto err = c.as.eof_error();
+                    if (c.phase == Conn::Phase::Reading && err.code() != 0) best_effort(c, error_wire(err));
+                    close_conn(c.token);
+                    return;
+                }
+                if (c.phase == Conn::Phase::Idle) {
+                    c.phase = Conn::Phase::Reading;
+                    c.deadline = clock::now() + std::chrono::milliseconds(limits_.header_timeout_ms);
+                }
+                c.as.feed(std::string_view(reinterpret_cast<const char*>(buf.data()), n));
+                if (!advance(c)) return;
+            }
+            watch(c, false);
+        };
+        auto accept_all = [&] {
+            while (auto accepted = listener_.try_accept()) {
+                if (conns.size() >= limits_.max_connections) {
+                    (void)accepted->write_text(Response::text(503, "503 Service Unavailable").to_http_wire());
+                    continue;
+                }
+                cfire::net::detail::set_nonblocking(accepted->fd(), true);
+                auto c = std::make_unique<Conn>(std::move(*accepted), limits_.max_body_bytes);
+                c->token = next_token++;
+                c->deadline = clock::now() + std::chrono::milliseconds(limits_.header_timeout_ms);
+                if (tls) {
+                    if (!tls_ctx_->begin_accept(c->conn)) continue;
+                    c->phase = Conn::Phase::Handshake;
+                }
+                poller.add(c->conn.fd(), c->token, false);
+                conns.emplace(c->token, std::move(c));
+            }
+        };
+        auto resume = [&](Conn& c) {
+            cfire::net::detail::set_nonblocking(c.conn.fd(), true);
+            c.in_body = false;
+            c.want_write = false;
+            c.phase = c.as.started() ? Conn::Phase::Reading : Conn::Phase::Idle;
+            c.deadline = clock::now() + std::chrono::milliseconds(c.phase == Conn::Phase::Idle ? limits_.keepalive_timeout_ms : limits_.header_timeout_ms);
+            poller.add(c.conn.fd(), c.token, false);
+            // Pipelined bytes, or decrypted bytes OpenSSL holds, that no socket event will report.
+            if (c.as.started() && !advance(c)) return;
+            if (tls && cfire::tls::pending(c.conn) > 0) on_ready(c);
+        };
+
         std::vector<std::thread> pool;
         const std::size_t n_workers = std::max<std::size_t>(1, limits_.workers);
         pool.reserve(n_workers);
         for (std::size_t i = 0; i < n_workers; ++i) {
             pool.emplace_back([&] {
                 for (;;) {
-                    std::optional<cfire::net::TcpConn> conn;
+                    Conn* c = nullptr;
                     {
                         std::unique_lock<std::mutex> lk(mu);
-                        cv.wait(lk, [&] { return closing || !queue.empty(); });
-                        if (queue.empty()) return;
-                        conn.emplace(std::move(queue.front()));
-                        queue.pop_front();
-                        waiting = queue.size();
-                        ++active;
+                        cv.wait(lk, [&] { return closing || !jobs.empty(); });
+                        if (jobs.empty()) return;
+                        c = jobs.front();
+                        jobs.pop_front();
                     }
-                    handle_conn(*conn, handler, &waiting);
-                    --active;
+                    c->keep = serve_request(*c, handler);
+                    {
+                        std::lock_guard<std::mutex> lk(mu);
+                        returned.push_back(c->token);
+                    }
+                    poller.wake();
                 }
             });
         }
-        while (running_) {
-            auto conn_res = listener_.accept();
-            if (!conn_res) {
-                if (!running_) break;
-                continue;
-            }
-            std::unique_lock<std::mutex> lk(mu);
-            if (queue.size() >= limits_.max_pending || queue.size() + active.load() >= limits_.max_connections) {
-                lk.unlock();
-                Response busy = Response::text(503, "503 Service Unavailable");
-                (void)conn_res->write_text(busy.to_http_wire());
-                continue;
-            }
-            queue.push_back(std::move(*conn_res));
-            waiting = queue.size();
-            lk.unlock();
-            cv.notify_one();
+
+        if (listener_.fd() >= 0) {
+            cfire::net::detail::set_nonblocking(listener_.fd(), true);
+            poller.add(listener_.fd(), 0, false);
         }
+        // Virtual-port connections arrive through the loopback queue, not the listening socket.
+        std::atomic<bool> loopback_queued{true};
+        listener_.set_wake_hook([&poller, &loopback_queued] {
+            loopback_queued = true;
+            poller.wake();
+        });
+        constexpr auto kSweep = std::chrono::milliseconds(100);  // deadlines are checked this often
+        auto next_sweep = clock::now() + kSweep;
+        while (running_) {
+            const auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(next_sweep - clock::now()).count();
+            const auto& events = poller.wait(static_cast<int>(std::clamp<long long>(wait_ms, 0, 100)));
+            bool accept_now = loopback_queued.exchange(false);
+            for (const auto& ev : events) {
+                if (ev.token == 0) {
+                    accept_now = true;
+                    continue;
+                }
+                auto it = conns.find(ev.token);
+                if (it != conns.end() && it->second->phase != Conn::Phase::Busy) on_ready(*it->second);
+            }
+            if (accept_now) accept_all();
+            std::vector<std::uint64_t> back;
+            {
+                std::lock_guard<std::mutex> lk(mu);
+                back.swap(returned);
+            }
+            for (auto token : back) {
+                auto it = conns.find(token);
+                if (it == conns.end()) continue;
+                if (it->second->keep && running_) resume(*it->second);
+                else conns.erase(it);  // already out of the poller
+            }
+            const auto now = clock::now();
+            if (now >= next_sweep) {
+                next_sweep = now + kSweep;
+                std::vector<std::uint64_t> expired;
+                for (auto& [token, c] : conns) {
+                    if (c->phase != Conn::Phase::Busy && now >= c->deadline) expired.push_back(token);
+                }
+                for (auto token : expired) {
+                    auto& c = *conns.at(token);
+                    if (c.phase == Conn::Phase::Reading) {
+                        best_effort(c, error_wire(cfire::Error(c.in_body ? "request body deadline exceeded" : "request header deadline exceeded", 408)));
+                    }
+                    close_conn(token);
+                }
+            }
+        }
+        listener_.set_wake_hook({});
         {
             std::lock_guard<std::mutex> lk(mu);
             closing = true;
         }
         cv.notify_all();
         for (auto& t : pool) t.join();
+        conns.clear();
+        if (listener_.fd() >= 0) cfire::net::detail::set_nonblocking(listener_.fd(), false);
         ws_->shutdown_all();
         ws_->join_all();
     }
@@ -1738,52 +1923,34 @@ public:
     }
 
 private:
-    static void write_error(cfire::net::TcpConn& conn, const cfire::Error& err) {
+    [[nodiscard]] static auto error_wire(const cfire::Error& err) -> std::string {
         int status = err.code();
         if (status != 400 && status != 408 && status != 413 && status != 431) status = 400;
         std::string_view reason = status == 408 ? "Request Timeout" : status == 413 ? "Payload Too Large"
                                 : status == 431 ? "Request Header Fields Too Large" : "Bad Request";
-        Response err_resp = Response::text(status, std::format("{} {}", status, reason));
-        (void)conn.write_text(err_resp.to_http_wire());
+        return Response::text(status, std::format("{} {}", status, reason)).to_http_wire();
     }
 
-    // Serves requests on `conn` until it closes. `waiting` is the pool's queue length (null from `serve_once`,
-    // which serves one request); keep-alive holds the worker only while nobody waits for one.
+    // A worker's part: the handler and the response, on a blocking socket. True when the connection stays
+    // open for another request (it then goes back to the event loop).
     template <typename Handler>
-    void handle_conn(cfire::net::TcpConn& conn, Handler& handler, const std::atomic<std::size_t>* waiting) {
-        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
-            auto wr = tls_ctx_->wrap_server(conn);
-            if (!wr) return;
-        }
-        detail::RequestAssembler as(limits_.max_body_bytes);
-        for (std::size_t served = 0;;) {
-            const int idle_ms = served == 0 ? 0 : limits_.keepalive_timeout_ms;
-            auto req_res = detail::read_next_request(conn, as, limits_, idle_ms, &running_);
-            if (!req_res) {
-                // Code 0: the client closed, the keep-alive wait ran out or the server is stopping.
-                if (req_res.error().code() != 0) write_error(conn, req_res.error());
-                return;
+    auto serve_request(detail::LoopConn& c, Handler& handler) -> bool {
+        cfire::net::detail::set_nonblocking(c.conn.fd(), false);
+        c.conn.set_timeout_ms(std::max(2000, limits_.body_timeout_ms));
+        if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
+            if (handler.is_ws_upgrade(c.req)) {
+                start_ws_session(c.conn, std::move(c.req), handler);
+                return false;
             }
-            req_res->remote_addr = conn.endpoint();
-            if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
-                if (handler.is_ws_upgrade(*req_res)) {
-                    if (waiting == nullptr) {
-                        (void)handler.try_dispatch_ws(*req_res, conn);
-                    } else {
-                        start_ws_session(conn, std::move(*req_res), handler);
-                    }
-                    return;
-                }
-            }
-            ++served;
-            Response resp = handler(*req_res);
-            std::string conn_hdr = resp.header("connection");
-            for (char& c : conn_hdr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            const bool keep = waiting != nullptr && as.keep_alive() && limits_.keepalive_timeout_ms > 0 &&
-                              served < limits_.max_requests_per_conn && running_.load() && waiting->load() == 0 &&
-                              !conn_hdr.contains("close");
-            if (!conn.write_text(resp.to_http_wire(keep)) || !keep) return;
         }
+        ++c.served;
+        Response resp = handler(c.req);
+        c.req = Request{};
+        std::string conn_hdr = resp.header("connection");
+        for (char& ch : conn_hdr) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        const bool keep = c.as.keep_alive() && limits_.keepalive_timeout_ms > 0 && c.served < limits_.max_requests_per_conn &&
+                          running_.load() && !conn_hdr.contains("close");
+        return c.conn.write_text(resp.to_http_wire(keep)).has_value() && keep;
     }
 
     void start_ws_session(cfire::net::TcpConn& conn, Request req, const Router& router) {
