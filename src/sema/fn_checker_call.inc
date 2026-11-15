@@ -112,6 +112,7 @@
         if (auto r = check_expr(call.callee); !r) return r;
         const FnDecl* target_sig = nullptr;
         const StdFnSigInfo* std_sig = nullptr;
+        const StdlibStruct* build_cfg_st = nullptr;
         const auto& catalog_idx = StdlibCatalogIndex::instance();
 
         for (const auto& ta : call.type_args) {
@@ -335,6 +336,14 @@
                 std::string resolved_ns = resolve_stdlib_ns_sema(obj_id->name);
                 if (!resolved_ns.empty() && catalog_idx.has_namespace(resolved_ns) && !is_ident_in_scope_sema(obj_id->name)) {
                     std_sig = catalog_idx.find_ns_fn(resolved_ns, mem->field);
+                    if (std_sig && resolved_ns == "build" && mem->field != "os" && mem->field != "arch") {
+                        const bool manifest = std::filesystem::path(cf_.ast.path).filename() == "build.cf" || cf_.ast.package_name == "build";
+                        if (!manifest) {
+                            if (auto r = emit_error(diag_at(line, col, "cfire/UNKNOWN-STDLIB-FN", std::format("'{}.{}' is a build.cf manifest function and cannot be called in a program; only 'build.os()' and 'build.arch()' are available outside build.cf", obj_id->name, mem->field))); !r) return r;
+                        } else {
+                            build_cfg_st = find_stdlib_struct("build", mem->field);
+                        }
+                    }
                     if (!std_sig && !retired_call_reported && !is_vendor_alias_sema(obj_id->name) && obj_id->name != "cpp" && !is_cpp_qualifier_sema(obj_id->name) &&
                         !catalog_idx.is_known_ns_member(resolved_ns, mem->field)) {
                         std::string sugg = catalog_idx.suggest_closest_fn(resolved_ns, mem->field);
@@ -449,6 +458,11 @@
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             const auto& arg = call.args[i];
             if (auto r = check_expr(arg.value); !r) return r;
+            if (build_cfg_st && arg.value) {
+                if (const auto* st = std::get_if<StructLitExpr>(&arg.value->node); st && st->type_name.empty()) {
+                    if (auto r = check_stdlib_struct_fields(*build_cfg_st, *st, arg.value->line, arg.value->col); !r) return r;
+                }
+            }
             bool expected_is_move = false;
             if (target_sig && i < target_sig->params.size()) {
                 const auto& expected = target_sig->params[i].intent;
@@ -499,6 +513,14 @@
             }
             if (arg.intent == "move") {
                 if (auto r = validate_move_operand(arg.value, expected_is_move, arg.line, arg.col); !r) return r;
+            } else {
+                if (const auto* mem_c = call.callee ? std::get_if<MemberExpr>(&call.callee->node) : nullptr;
+                    mem_c && i == 0 && (mem_c->field == "push" || mem_c->field == "push_back" || mem_c->field == "push_front" || mem_c->field == "insert")) {
+                    if (auto r = check_move_only_copy(arg.value, std::format("collection '{}'", mem_c->field), arg.line, arg.col); !r) return r;
+                } else if (const auto* id_c = call.callee ? std::get_if<IdentExpr>(&call.callee->node) : nullptr;
+                           id_c && id_c->name == "append" && i == 1) {
+                    if (auto r = check_move_only_copy(arg.value, "'append'", arg.line, arg.col); !r) return r;
+                }
             }
             if (auto pi = extract_path_info(arg.value)) {
                 bool is_mut_or_out = (arg.intent == "mut" || arg.intent == "out");

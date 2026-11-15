@@ -104,7 +104,7 @@ sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-d
 
 ### Understanding the Two Stdlib Namespaces (`core:*`, `ext:*`)
 One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 35 built-in modules into two explicit namespaces based on external link requirements:
-- **`core:*` (Foundational & Platform Core — 29 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:str`, `core:unicode`, `core:regex`, `core:collections`, `core:sort`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:crypto/*`) with zero external C library setup required.
+- **`core:*` (Foundational & Platform Core — 29 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:unicode`, `core:regex`, `core:collections`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:tako`, `core:crypto/*`) with zero external C library setup required. (String and sort helpers live directly as built-in methods on `str`, `[]T`, `[N]T`, and `map[K]V`.)
 - **`ext:*` (Native C Libraries, WebUI & AI Extensions — 6 Opt-In Modules)**: Specialized domain engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported—and include built-in portable fallbacks when an optional system library isn't installed.
 - **Any other C or C++ library** (raylib, SDL, your own code) is used through `import cpp "<header.h>"` and, when it needs building, `build.CC` / `build.CMake` in `build.cf` (see Chapter 11). `cfire` no longer bundles raylib.
 
@@ -298,7 +298,7 @@ Instead of wiring up directories and build files by hand, use `cfire new <dir>` 
 ```bash
 cfire new my-cli               # Default: CLI / backend service template (--template cli)
 cfire new --template webui app # Hybrid desktop/mobile WebView app (ext:webui + ./ui/index.html)
-cfire new --template tako tool # Immediate-mode / retained GUI app (pkg:tako)
+cfire new --template tako tool # Local AWS-compatible cloud service workflow (core:tako)
 ```
 
 Every scaffolded workspace includes a ready-to-run `build.cf`, `main.cf`, a unit test in `main_test.cf`, and a `.gitignore` so you can immediately run `cfire run` and `cfire test`:
@@ -307,7 +307,7 @@ Every scaffolded workspace includes a ready-to-run `build.cf`, `main.cf`, a unit
 | :--- | :--- | :--- | :--- |
 | `cli` (default) | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` (`console`) | CLI tools, microservices, AI agents, systems daemons. |
 | `webui` (alias `gui`) | `build.cf`, `main.cf`, `main_test.cf`, `ui/index.html`, `.gitignore` | `["native", "ios-sim"]` (`gui`) | Wails/Tauri-style desktop & mobile apps using HTML/CSS/JS over `ext:webui`. |
-| `tako` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native", "wasm", "ios-sim"]` (`gui`, `canvas`) | Ergonomic desktop/web/iOS tools using `pkg:tako` / `core:tako`. |
+| `tako` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` | Local AWS-compatible cloud service & testing scaffold using `core:tako`. |
 
 ### Multi-Package Workspace Layout
 As a codebase grows beyond a single directory, you can split domain logic into internal packages under `pkg/` and third-party C/C++ libraries under `vendor/`:
@@ -329,7 +329,7 @@ How `cfire` resolves files and packages across your workspace:
 1. **Same-Directory Package Merging**: All `.cf` files in the same folder declaring the same `package <name>` (for example, `main.cf`, `routes.cf`, and `store.cf` all declaring `package main`) automatically share their types, functions, methods, and constants—no relative imports needed between sibling files. Test files ending in `_test.cf` are compiled during `cfire test` and excluded during `cfire build` / `cfire run`.
 2. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all non-test `.cf` files in `./pkg/checksum/` belonging to `package checksum` and exposes their declarations under the `checksum.` namespace.
 3. **Standard Library (`import "core:..."`, `"ext:..."`)**: Resolves headers from the `cfire` runtime directory and auto-links required system frameworks.
-4. **Companion Toolchain Packages (`import "pkg:tako"` / `import "core:tako"`)**: Resolves companion SDK headers across workspace parents, `~/.local/share`, and `CFIRE_PKG_PATH`.
+4. **Built-in Cloud Primitives (`import "core:tako"`)**: Resolves directly against the built-in `core:tako` standard runtime header (`runtime/core_tako.hpp`) alongside user packages in `~/.local/share/cfire/pkgs`.
 
 ### Declarative Build Files (`build.cf`)
 For single-package projects, `cfire run main.cf` works with zero configuration. When you need multi-target app bundles, pre-build code generation, or C/C++/CMake dependencies, declare them in `build.cf`:
@@ -1657,34 +1657,46 @@ arch_detected=true worker_slots>=true
 ```
 
 ### Importing C Headers & Using Bitwise Flag Enums (`import cpp`)
-Use `import cpp "<header.h>"` (with optional `@pkg("<pkg-config-name>")` and `@define("<KEY>", "<VAL>")` attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under `cpp.` (or an aliased qualifier `import cpp "..." as <alias>`):
+Use `import cpp "<header.h>"` (with optional `@define("<KEY>", "<VAL>")` or `@define("<KEY>")` preprocessor attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under `cpp.` (or an aliased qualifier `import cpp "..." as <alias>`). Native linker flags (`PkgConfig`, `Libraries`, `Frameworks`, `Includes`) belong declaratively in `build.cf` (or via CLI `--pkg-config <name>`); legacy `@pkg(...)` on `import cpp` is retired (`cfire/RETIRED-API`).
 
 ```cfire
 package main
 
-import cpp "zstd.h" @pkg("libzstd")
+import cpp "math.h" @define("_USE_MATH_DEFINES", "1")
 
-fn query_zstd_runtime() -> (u32, usize) {
-    ver := cpp.ZSTD_versionNumber()
-    bound := cpp.ZSTD_compressBound(1024)
-    return (ver, bound)
+fn query_math_runtime() -> (f64, f64) {
+    hyp := cpp.hypot(3.0, 4.0)
+    mx  := cpp.fmax(1.5, 2.5)
+    return (hyp, mx)
 }
 
 fn main() {
-    (ver, max_bytes) := query_zstd_runtime()
-    println("zstd_version={} bound_for_1kb={}", ver >= 10000, max_bytes > 1024)
+    (hyp, mx) := query_math_runtime()
+    println("hypot_ok={} fmax_ok={}", hyp == 5.0, mx > 2.0)
 }
 ```
 ```text
 # Output:
-zstd_version=true bound_for_1kb=true
+hypot_ok=true fmax_ok=true
+```
+For external system libraries such as `libzstd` or `raylib`, declare `PkgConfig: ["libzstd"]` (or `Libraries` / `Includes`) in `build.cf` instead of attaching `@pkg(...)` to the `.cf` import statement:
+
+```cfire
+package main
+import "core:build"
+
+app := build.Executable{
+    Name:      "zstd-tool",
+    Entry:     "main.cf",
+    PkgConfig: ["libzstd"],
+}
 ```
 
 **Bitwise Flag Operators & Formatting on C / Vendor Enums:**
 C libraries (like raylib's `ConfigFlags` or POSIX file flags) frequently use `enum` types as bitmasks. `cfire` supports bitwise operators (`|`, `&`, `^`, `~`, `|=`, `&=`) and `"{flag}"` string formatting directly on C enums without requiring manual integer casts:
 ```cfire
 // Combine C enum bitflags directly with | and &=
-// With `import cpp "raylib.h" as rl @pkg("raylib")`:
+// With `import cpp "raylib.h" as rl` and `PkgConfig: ["raylib"]` in `build.cf`:
 mut flags := rl.ConfigFlags::FLAG_WINDOW_RESIZABLE | rl.ConfigFlags::FLAG_VSYNC_HINT
 flags |= rl.ConfigFlags::FLAG_MSAA_4X_HINT
 ```
@@ -1863,6 +1875,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/FILE-NOT-FOUND` | Tooling | A file named on the command line or imported does not exist. |
 | `cfire/IMMUTABLE-MUT-ARG` | Detailed rule | Passing Immutable Binding as `mut` Argument |
 | `cfire/INDEX-OUT-OF-BOUNDS` | Detailed rule | Compile-Time Out-of-Bounds or Negative Constant Sequence Index |
+| `cfire/INVALID-ATTRIBUTE` | Attributes | An attribute on a declaration is unknown, misplaced, or has invalid arguments. |
 | `cfire/INVALID-CONSTRUCTOR` | Detailed rule | Associated Function Other Than `make` |
 | `cfire/INVALID-IMPORT` | Imports | A module imported under the wrong tier prefix (`core:` vs `ext:`). |
 | `cfire/INVALID-INDEX` | Types | Indexing a value that is not a string, slice, array or map. |
@@ -1880,6 +1893,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/MISSING-IMPORT` | Imports | A stdlib module is used without being imported. |
 | `cfire/MISSING-RETURN` | Control flow | A function with a return type can fall off its end. |
 | `cfire/MOVE-CALLSITE` | Detailed rule | Missing Call-Site `move` Marker |
+| `cfire/MOVE-REQUIRED` | Ownership | Copying a move-only `own[T]` value or struct containing `own[T]` without `move`. |
 | `cfire/MUT-ALIAS` | Detailed rule | Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity) |
 | `cfire/MUT-CALLSITE` | Detailed rule | Missing Call-Site `mut` Marker |
 | `cfire/MUT-RECEIVER` | Detailed rule | Calling `mut` Method on Immutable Receiver |
@@ -1892,6 +1906,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/OUT-CALLSITE` | Migration | A call-site `out` marker (retired with the `out` intent). |
 | `cfire/PREFER-ENUM` | Style | A cluster of related integer constants that should be an enum (warning). |
 | `cfire/RAW-POINTER` | Ownership | Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop (CF-189). |
+| `cfire/RECURSIVE-TYPE` | Types | A struct contains itself directly or through an optional without heap indirection. |
 | `cfire/REDUNDANT-CALLSITE-INTENT` | Detailed rule | Redundant `mut` Annotation on a Read-Only Parameter |
 | `cfire/REDUNDANT-DEREF` | Style | `(*p).field` on a smart pointer; write `p.field`. |
 | `cfire/REDUNDANT-OR` | Detailed rule | Redundant `or` on Non-Fallible, Non-Optional Expression |
@@ -2244,7 +2259,7 @@ AES-GCM + Zstd verified: true, HMAC valid: true
 | Need | Use | Platforms |
 | :--- | :--- | :--- |
 | Forms, dashboards, editors, settings, mobile apps | `ext:webui` (Chapter 18) | macOS, iOS, Linux, Windows |
-| Immediate-mode 2D/3D drawing or games | A C library through `import cpp` (for example `import cpp "raylib.h" as rl @pkg("raylib")`), built with `build.CC` / `build.CMake` when it is not installed | Wherever that library builds |
+| Immediate-mode 2D/3D drawing or games | A C library through `import cpp` (for example `import cpp "raylib.h" as rl` with `PkgConfig: ["raylib"]` in `build.cf`), built with `build.CC` / `build.CMake` when it is not installed | Wherever that library builds |
 | Console or networking programs in the browser | `cfire run --web` (`cli` profile); `--web-profile=canvas` gives an HTML5 canvas shell for your own C graphics code | WebAssembly |
 
 `cfire` no longer bundles raylib or raygui: `import "vendor:raylib"` and `import "vendor:raygui"` report `cfire/RETIRED-API`. raylib is still an ordinary C library, so a program can call it through the C header bridge (Chapter 11); `cfire` just doesn't download, build or test it.
@@ -2764,7 +2779,7 @@ HTTP 200 -> top hit: 'Lock-Free Audio'
 ```
 
 ### Cloud & Local Service Primitives (`core:tako`)
-When you want to prototype or test AWS-style cloud workflows—IAM permission evaluation, S3 object buckets, DynamoDB key-value tables, SQS FIFO queues, Secrets Manager, and CloudWatch metrics/alarms—without network credentials or cloud bills, `import "core:tako"` (scaffolded via `cfire new my-cloud --template tako`) provides an in-memory cloud runtime backed by `pkg/tako`:
+When you want to prototype or test AWS-style cloud workflows—IAM permission evaluation, S3 object buckets, DynamoDB key-value tables, SQS FIFO queues, Secrets Manager, and CloudWatch metrics/alarms—without network credentials or cloud bills, `import "core:tako"` (scaffolded via `cfire new my-cloud --template tako`) provides an in-memory cloud runtime backed by the built-in `core:tako` standard module:
 
 ```cfire
 package main
@@ -2804,7 +2819,7 @@ Every project in [`examples/`](../examples) is continuously verified by `make te
 | [`examples/05-cmake-interop`](../examples/05-cmake-interop) | CMake Interop | Clang JSON AST ingestion (`import cpp "<zstd.h>"`), `build.CMake` native library orchestration | `cfire run examples/05-cmake-interop/main.cf` |
 | [`examples/07-types-match-map`](../examples/07-types-match-map) | Types & Match | Algebraic `enum` sum types (`std::variant`), exhaustive `match`, `map[K]V`, `interface` C++20 concepts | `cfire run examples/07-types-match-map/main.cf` |
 | [`examples/08-multi-pkg-cc-build`](../examples/08-multi-pkg-cc-build) | Multi-Package Build | Multi-package `build.cf` orchestration, static archive compilation (`build.CC`) | `cfire run examples/08-multi-pkg-cc-build` |
-| [`examples/09-stdlib-test-pointers`](../examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`*T`, `^T`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
+| [`examples/09-stdlib-test-pointers`](../examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`own[T]`, `shared[T]`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
 | [`examples/10-cmake-and-make-deps`](../examples/10-cmake-and-make-deps) | Multi-Build Deps | Simultaneous `build.CMake` and `build.Make` external dependency orchestration in a single `build.cf` | `cfire run examples/10-cmake-and-make-deps` |
 | [`examples/11-http-server-router`](../examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`core:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
 | [`examples/14-ai-rag-sqlite`](../examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |

@@ -297,7 +297,14 @@ struct Resolution {
         "override", "final", "typename", "namespace", "using", "this", "throw",
         "catch", "union", "goto", "register", "volatile", "friend", "explicit",
         "mutable", "inline", "constexpr", "consteval", "constinit", "co_await",
-        "co_return", "co_yield", "concept", "requires", "stdout", "stderr", "stdin"
+        "co_return", "co_yield", "concept", "requires", "stdout", "stderr", "stdin",
+        "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor",
+        "case", "char", "char8_t", "char16_t", "char32_t", "compl", "const_cast",
+        "decltype", "default", "do", "double", "dynamic_cast", "extern", "float",
+        "int", "noexcept", "not", "not_eq", "nullptr", "or", "or_eq",
+        "reinterpret_cast", "sizeof", "static_assert", "static_cast", "switch",
+        "thread_local", "typedef", "typeid", "void", "wchar_t", "xor", "xor_eq",
+        "NULL", "EOF", "errno"
     };
     if (kCppReserved.contains(id)) {
         return std::string(id) + "_cf_";
@@ -821,6 +828,7 @@ struct TestDecl {
     std::vector<ParamDecl> params{};
     std::vector<BenchParamVariation> bench_variations{};
     std::string source_path{};
+    std::string package_name{};
 };
 
 struct FileAST {

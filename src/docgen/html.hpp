@@ -219,14 +219,14 @@ import "ext:db/sqlite" as sqlite
 import "core:json" as json
 
 type QueryPlan struct {
-    Target: str `json:"target" desc:"Search target concept"`
-    TopK: i64   `json:"top_k" desc:"Number of top results"`
+    target: str `json:"target" desc:"Search target concept"`
+    top_k: i64  `json:"top_k" desc:"Number of top results"`
 }
 
 type DocEntry struct {
-    Id: i64      `sql:"id"`
-    Title: str   `sql:"title"`
-    Snippet: str `sql:"snippet"`
+    id: i64      `sql:"id"`
+    title: str   `sql:"title"`
+    snippet: str `sql:"snippet"`
 }
 
 fn main() {
@@ -251,7 +251,7 @@ fn main() {
     qvec := try client.embed("modern C++23 compiler")
     hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
     if hits.len() > 0 {
-        println("Match [{}]: {}", hits[0].Title, hits[0].Snippet)
+        println("Match [{}]: {}", hits[0].title, hits[0].snippet)
     }
 }
 )CF";
@@ -335,7 +335,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -369,7 +369,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -403,7 +403,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -437,7 +437,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -471,7 +471,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -505,7 +505,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -539,7 +539,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -573,7 +573,7 @@ fn main() {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rpc={"message":"Hello, Ada!","count":2} events=1</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">)HTML" + std::format("{0}/{0}", diagnostic_code_registry().size()) + R"HTML( cfire/* rules</span></span>
       </div>
     </div>
   </div>)HTML";
@@ -1334,6 +1334,14 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
         }
     }
 
+    auto llm_ref = generate_llm_reference();
+    for (std::size_t i = 0; i < llm_ref.size(); ++i) {
+        if (llm_ref.compare(i, 7, "file://") == 0 || llm_ref.compare(i, 8, "](/Users") == 0 || llm_ref.compare(i, 7, "](/home") == 0) {
+            return std::unexpected(std::format("Documentation audit failure: LLMS.txt links to a local path ({}); use a repository-relative link instead.",
+                llm_ref.substr(i, std::min<std::size_t>(40, llm_ref.find_first_of(")\n", i) - i))));
+        }
+    }
+
     if (check_only) {
         if (!std::filesystem::exists(docs_dir / "GUIDE.md")) {
             return std::unexpected(std::format("missing documentation file: {} (authoritative guide source required)", (docs_dir / "GUIDE.md").string()));
@@ -1341,10 +1349,14 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
         if (!std::filesystem::exists(docs_dir / "index.template.html")) {
             return std::unexpected(std::format("missing documentation file: {} (authoritative landing template required)", (docs_dir / "index.template.html").string()));
         }
-        auto llm_ref = generate_llm_reference();
         for (const auto& mod : stdlib_catalog()) {
             if (!llm_ref.contains(mod.import_path)) {
                 return std::unexpected(std::format("llm reference missing module: {}", mod.import_path));
+            }
+        }
+        for (const auto& diag : diagnostic_code_registry()) {
+            if (!llm_ref.contains(diag.code)) {
+                return std::unexpected(std::format("llm reference missing diagnostic: {}", diag.code));
             }
         }
     }
@@ -1354,6 +1366,7 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
         {docs_dir / "guide.html", generate_guide_html(docs_dir)},
         {docs_dir / "reference.html", generate_reference_html()},
         {docs_dir / "STDLIB_REFERENCE.md", generate_reference_markdown()},
+        {docs_dir / "LLMS.txt", llm_ref},
     };
 
     if (!check_only) {

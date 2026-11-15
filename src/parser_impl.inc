@@ -377,14 +377,18 @@ private:
         if (!path_tok) return std::unexpected(path_tok.error());
         imp.path = path_tok->lexeme;
 
-        if (cur().kind == TokenKind::KwAs) {
-            advance();
-            auto alias_tok = expect(TokenKind::Ident);
-            if (!alias_tok) return std::unexpected(alias_tok.error());
-            imp.alias = alias_tok->lexeme;
-        }
-
-        while (cur().kind == TokenKind::At) {
+        while (cur().kind == TokenKind::KwAs || cur().kind == TokenKind::At) {
+            if (cur().kind == TokenKind::KwAs) {
+                if (!imp.alias.empty()) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col),
+                        "duplicate 'as' alias on import declaration"});
+                }
+                advance();
+                auto alias_tok = expect(TokenKind::Ident);
+                if (!alias_tok) return std::unexpected(alias_tok.error());
+                imp.alias = alias_tok->lexeme;
+                continue;
+            }
             advance(); // '@'
             auto attr_name = expect(TokenKind::Ident);
             if (!attr_name) return std::unexpected(attr_name.error());
@@ -392,12 +396,23 @@ private:
             ImportAttr attr;
             attr.name = attr_name->lexeme;
             while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
-                if (cur().kind == TokenKind::String || cur().kind == TokenKind::Ident) {
+                const TokenKind tk = cur().kind;
+                if (tk == TokenKind::String || tk == TokenKind::Ident || tk == TokenKind::Int ||
+                    tk == TokenKind::Float || tk == TokenKind::KwTrue || tk == TokenKind::KwFalse) {
                     attr.args.push_back(advance().lexeme);
-                } else {
+                } else if (tk == TokenKind::Minus && (peek(1).kind == TokenKind::Int || peek(1).kind == TokenKind::Float)) {
                     advance();
+                    attr.args.push_back("-" + advance().lexeme);
+                } else {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col),
+                        std::format("unexpected token '{}' in '@{}' attribute arguments", cur().lexeme, attr.name)});
                 }
-                if (cur().kind == TokenKind::Comma) advance();
+                if (cur().kind == TokenKind::Comma) {
+                    advance();
+                } else if (cur().kind != TokenKind::RParen) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col),
+                        std::format("expected ',' or ')' in '@{}' attribute arguments", attr.name)});
+                }
             }
             if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
             imp.attrs.push_back(std::move(attr));

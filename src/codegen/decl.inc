@@ -114,9 +114,7 @@ namespace cfire::frontend {
                 CppHeaderMeta header;
                 header.path = imp.path;
                 for (const auto& attr : imp.attrs) {
-                    if (attr.name == "pkg" && !attr.args.empty()) {
-                        add_unique(meta.link_tags, "@pkg:" + attr.args[0]);
-                    } else if (attr.name == "define" && !attr.args.empty()) {
+                    if (attr.name == "define" && !attr.args.empty()) {
                         if (attr.args[0].contains("IMPLEMENTATION")) {
                             meta.has_cpp_impl_define = true;
                         }
@@ -345,6 +343,29 @@ namespace cfire::frontend {
         if (!ast.global_vars.empty()) em.writeln();
     }
 
+    template <typename EmitFn>
+    inline void emit_guarded_define_with(std::string_view def, EmitFn&& emit_line) {
+        std::string_view rest = def;
+        if (rest.starts_with("#define")) {
+            rest.remove_prefix(7);
+            while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
+                rest.remove_prefix(1);
+            }
+            std::size_t end = 0;
+            while (end < rest.size() && rest[end] != ' ' && rest[end] != '\t' && rest[end] != '(') {
+                ++end;
+            }
+            std::string_view macro = rest.substr(0, end);
+            if (!macro.empty()) {
+                emit_line(std::format("#ifndef {}", macro));
+                emit_line(def);
+                emit_line("#endif");
+                return;
+            }
+        }
+        emit_line(def);
+    }
+
     CFIRE_CG_INLINE auto Emitter::emit_sharded() -> ShardedEmission {
         const auto& ast = cf_.ast;
         ShardedEmission sharded;
@@ -376,7 +397,7 @@ namespace cfire::frontend {
             if (fn.name == "main" && !fn.receiver && test_mode_) {
                 continue;
             }
-            if (!fn.type_params.empty()) {
+            if (!effective_type_params(fn).empty()) {
                 continue; // Generic functions & methods live inline in decls.hpp.
             }
             std::string upkg = fn.package_name.empty() ? default_pkg : fn.package_name;
@@ -429,7 +450,7 @@ namespace cfire::frontend {
         reset_buffer();
         emit_decls_types_and_globals(*this);
         for (std::size_t i = 0; i < ast.functions.size(); ++i) {
-            if (!ast.functions[i].type_params.empty()) {
+            if (!effective_type_params(ast.functions[i]).empty()) {
                 emit_function(ast.functions[i]);
                 writeln();
             }
@@ -449,27 +470,9 @@ namespace cfire::frontend {
             pre << std::format("// @cfire-link: {}\n", joined);
         }
         pre << "#pragma once\n";
-        auto emit_guarded_define = [&](std::string_view def) {
-            std::string_view rest = def;
-            if (rest.starts_with("#define")) {
-                rest.remove_prefix(7);
-                while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
-                    rest.remove_prefix(1);
-                }
-                std::size_t end = 0;
-                while (end < rest.size() && rest[end] != ' ' && rest[end] != '\t' && rest[end] != '(') {
-                    ++end;
-                }
-                std::string_view macro = rest.substr(0, end);
-                if (!macro.empty()) {
-                    pre << "#ifndef " << macro << "\n" << def << "\n#endif\n";
-                    return;
-                }
-            }
-            pre << def << "\n";
-        };
+        auto emit_pre_line = [&](std::string_view line) { pre << line << "\n"; };
         for (const auto& d : meta.defines) {
-            emit_guarded_define(d);
+            emit_guarded_define_with(d, emit_pre_line);
         }
         pre << "#include \"cfire_prelude.hpp\"\n";
         {
@@ -477,7 +480,9 @@ namespace cfire::frontend {
             core_headers.insert("core/str.hpp");
             core_headers.insert("core/builtin_methods.hpp");
             for (const auto& mod : used_core_) {
-                core_headers.insert(cfire::modules::core_module_header(mod));
+                if (std::string hdr = cfire::modules::core_module_header(mod); !hdr.empty()) {
+                    core_headers.insert(std::move(hdr));
+                }
             }
             for (const auto& hdr : core_headers) {
                 pre << std::format("#include \"{}\"\n", hdr);
@@ -485,7 +490,7 @@ namespace cfire::frontend {
         }
         for (const auto& h : meta.cpp_headers) {
             for (const auto& def : h.defines) {
-                emit_guarded_define(def);
+                emit_guarded_define_with(def, emit_pre_line);
             }
             std::string clean = h.path;
             while (!clean.empty() && (clean.front() == '<' || clean.front() == '"')) clean.erase(clean.begin());
@@ -515,7 +520,9 @@ namespace cfire::frontend {
         if (!used_core_.empty()) {
             std::set<std::string> core_headers;
             for (const auto& mod : used_core_) {
-                core_headers.insert(cfire::modules::core_module_header(mod));
+                if (std::string hdr = cfire::modules::core_module_header(mod); !hdr.empty()) {
+                    core_headers.insert(std::move(hdr));
+                }
             }
             for (const auto& hdr : core_headers) {
                 writeln(std::format("#include \"{}\"", hdr));
@@ -759,18 +766,19 @@ namespace cfire::frontend {
         std::string cur_fn = emitted_fn_symbol(fn);
         set_generic_params(fn);
 
-        if (!fn.type_params.empty()) {
-            std::string tparams;
-            for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
-                if (i > 0) tparams += ", ";
-                const auto& tp = fn.type_params[i];
+        const auto eff_tparams = effective_type_params(fn);
+        std::string tparams_str;
+        if (!eff_tparams.empty()) {
+            for (std::size_t i = 0; i < eff_tparams.size(); ++i) {
+                if (i > 0) tparams_str += ", ";
+                const auto& tp = eff_tparams[i];
                 if (!tp.constraint.empty()) {
-                    tparams += std::format("{} {}", tp.constraint, tp.name);
+                    tparams_str += std::format("{} {}", tp.constraint, tp.name);
                 } else {
-                    tparams += std::format("typename {}", tp.name);
+                    tparams_str += std::format("typename {}", tp.name);
                 }
             }
-            writeln(std::format("template <{}>", tparams));
+            writeln(std::format("template <{}>", tparams_str));
         }
 
         std::string param_list;
@@ -783,9 +791,10 @@ namespace cfire::frontend {
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
-        const std::string inline_kw = (sharded_non_inline_ && fn.type_params.empty()) ? "" : "inline ";
+        const std::string inline_kw = (sharded_non_inline_ && eff_tparams.empty()) ? "" : "inline ";
         if (fn.receiver) {
             writeln(std::format("{}{}auto cfire_method_{}({}) -> {};", prefix, inline_kw, fn.name, param_list, ret_str));
+            if (!tparams_str.empty()) writeln(std::format("template <{}>", tparams_str));
             writeln(std::format("{}{}auto {}({}) -> {};", prefix, inline_kw, cur_fn, param_list, ret_str));
         } else {
             writeln(std::format("{}{}auto {}({}) -> {};", prefix, inline_kw, cur_fn, param_list, ret_str));
@@ -867,11 +876,12 @@ namespace cfire::frontend {
             ? lower_raw_owning_type(fn.return_type)
             : "";
 
-        if (!fn.type_params.empty()) {
+        const auto eff_tparams = effective_type_params(fn);
+        if (!eff_tparams.empty()) {
             std::string tparams;
-            for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
+            for (std::size_t i = 0; i < eff_tparams.size(); ++i) {
                 if (i > 0) tparams += ", ";
-                const auto& tp = fn.type_params[i];
+                const auto& tp = eff_tparams[i];
                 if (!tp.constraint.empty()) {
                     tparams += std::format("{} {}", tp.constraint, tp.name);
                 } else {
@@ -897,7 +907,7 @@ namespace cfire::frontend {
         }
         std::string ret_str = lower_return_type(fn.return_type);
         std::string prefix = (ret_str == "void") ? "" : "[[nodiscard]] ";
-        const std::string inline_kw = (sharded_non_inline_ && fn.type_params.empty()) ? "" : "inline ";
+        const std::string inline_kw = (sharded_non_inline_ && eff_tparams.empty()) ? "" : "inline ";
         std::string method_fn = fn.receiver ? std::format("cfire_method_{}", fn.name) : cur_fn_;
         writeln(std::format("{}{}auto {}({}) -> {} {{", prefix, inline_kw, method_fn, param_list, ret_str));
         ++indent_;
@@ -918,15 +928,15 @@ namespace cfire::frontend {
         optional_vars_.clear();
 
         if (fn.receiver) {
-            if (!fn.type_params.empty()) {
+            if (!eff_tparams.empty()) {
                 std::string tparams;
                 std::string targs;
-                for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
+                for (std::size_t i = 0; i < eff_tparams.size(); ++i) {
                     if (i > 0) {
                         tparams += ", ";
                         targs += ", ";
                     }
-                    const auto& tp = fn.type_params[i];
+                    const auto& tp = eff_tparams[i];
                     if (!tp.constraint.empty()) {
                         tparams += std::format("{} {}", tp.constraint, tp.name);
                     } else {

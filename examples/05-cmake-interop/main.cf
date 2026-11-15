@@ -1,6 +1,6 @@
 package main
 
-import cpp "zstd.h" @pkg("libzstd")
+import cpp "zstd.h"
 
 fn query_native_zstd_version() -> u32 {
     return cpp.ZSTD_versionNumber()

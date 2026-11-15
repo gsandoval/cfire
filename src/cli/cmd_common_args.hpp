@@ -49,6 +49,7 @@ struct CommonCliArgs {
     bool open_browser = true;
     std::vector<std::string> extra_link_libs;
     std::vector<std::string> extra_includes;
+    std::vector<std::string> extra_pkg_configs;
     std::filesystem::path target;
     std::vector<std::string> run_args;
 };
@@ -398,6 +399,14 @@ struct CommonCliArgs {
             out.extra_includes.emplace_back(arg.substr(10));
             continue;
         }
+        if (arg == "--pkg-config" && i + 1 < argc) {
+            out.extra_pkg_configs.emplace_back(argv[++i]);
+            continue;
+        }
+        if (arg.starts_with("--pkg-config=")) {
+            out.extra_pkg_configs.emplace_back(arg.substr(13));
+            continue;
+        }
         if (arg.starts_with("-") && arg != "-" && arg != "--") {
             static const std::vector<std::string_view> kKnownFlags = {
                 "--release", "-r", "--debug", "-g", "--no-trap", "--dsym", "--no-cache",
@@ -406,7 +415,7 @@ struct CommonCliArgs {
                 "--output", "-o", "--icon", "--name", "--app-name", "--bundle-id", "--device",
                 "--ios", "--ios-sim", "--web", "--web-profile", "--subsystem",
                 "--no-open", "--open", "--port", "-p", "--target", "--sysroot",
-                "--link-lib", "--include", "--json", "--fix", "--dry-run", "--only",
+                "--link-lib", "--include", "--pkg-config", "--json", "--fix", "--dry-run", "--only",
                 "--verify-cpp", "--full", "--no-shard",
                 "--portable", "--static", "--universal", "--macos-min",
                 "--cxx", "--cc", "--emxx", "--ar", "--ld",

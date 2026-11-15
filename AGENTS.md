@@ -6,7 +6,7 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
 
 ## 1. Project Overview & Architecture
 
-`cfire` (pronounced *C-fire / Sapphire*) is an ISO C++23-lowering native systems programming language combining modern Go/Rust ergonomics with zero-overhead C++23 interoperability, memory safety intents (`in`, `mut`, `move`), and a unified build system with a native Clang AST Header Bridge.
+`cfire` (pronounced *C-fire / Sapphire*) is an ISO C++23-lowering native systems programming language combining modern Go/Rust ergonomics with zero-overhead C++23 interoperability, memory safety intents (read-only view default, `mut`, `move`), and a unified build system with a native Clang AST Header Bridge.
 
 - `src/` — Complete ISO C++23 compiler and toolchain:
   - `lexer_types.hpp`, `lexer.hpp` — Token definitions and scanner.
@@ -20,14 +20,14 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
   - `refactor.hpp` — AST-backed cross-workspace symbol rename engine (`cfire refactor`).
   - `docgen.hpp` (`src/docgen/{catalog,styles,markdown,html}.hpp`) — Single-source metadata catalog and HTML/Markdown generator (`cfire doc`).
   - `main.cpp` — Standalone CLI driver entrypoint.
-- `runtime/` — Modular ISO C++23 runtime & 28 built-in `core:*` modules:
+- `runtime/` — Modular ISO C++23 runtime & 35 built-in `core:*` / `ext:*` modules:
   - `cfire_prelude.hpp` — Core primitives (`Error`, `slice`, `async.scope`, `own[T]`, `shared[T]`).
-  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` (`runtime/core/net/{tcp,url,http,websocket}.hpp`) — Modular header implementations for all 28 `core:*` standard library packages.
+  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` (`runtime/core/net/{tcp,url,http,websocket}.hpp`) — Modular header implementations for all 29 `core:*` and 6 `ext:*` standard library packages.
 - `docs/planning/README.md` — The authoritative operational protocol and validation process guidelines.
 - `docs/planning/` — The project backlog, active development tasks, and architectural evaluations.
 - `docs/planning/audit/PLAYBOOK.md` — Repeatable language audit procedure. When asked to "audit the language" or "re-run the audit", follow it end to end (read-only, no commits). It uses `scripts/audit/` (`run_probes.py`, `mutfuzz.py`, `lsp_smoke.py`, `probes/*.cf`).
 - `tests/` — Modular conformance test suite (`tests/unit/`, `tests/e2e/`, `tests/test_main.cpp`, `tests/test_harness.hpp`).
-- `examples/` — Canonical verified examples (`01-hello-core` through `11-http-server-router`).
+- `examples/` — Canonical verified examples (`01-hello-core` through `17-webui-studio`).
 
 ---
 

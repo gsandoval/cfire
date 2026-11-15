@@ -242,7 +242,7 @@ fn main() {
 ### `core:build` (`build`) — Declarative Project & Cross-Platform Build System (`build.cf`)
 
 - **Auto-Link Flags:** `(compiler-integrated)`
-- **Overview:** Declarative build manifest module (`build.cf`) for configuring native, GUI, WebAssembly, and iOS executables (`build.Executable`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`), external CMake/Git dependencies (`build.CMake`, `build.GitDependency`), pkg-config/framework links, and compile-time host/target queries (`build.os()`, `build.arch()`).
+- **Overview:** Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/framework links (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).
 
 **Practical Example:**
 ```cf
@@ -269,32 +269,49 @@ fn main() {
 
 | Type | Kind | Description |
 |---|---|---|
+| `build.Package` | manifest | In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, and `Includes`. |
+| `build.Executable` | manifest | In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`). |
+| `build.App` | manifest | In `build.cf`: alias for `build.Executable(...)`. |
+| `build.Library` | manifest | In `build.cf`: declares a static or shared library target. |
+| `build.Step` | manifest | In `build.cf`: a code-generation step run when its inputs are newer than its outputs. |
 | `build.CC` | manifest | In `build.cf`: compiles C or C++ sources into the project (`build.CC({ Sources: [...] })`). |
 | `build.CMake` | manifest | In `build.cf`: an external CMake project built as a dependency. |
 | `build.Make` | manifest | In `build.cf`: an external Make project built as a dependency. |
+| `build.Ninja` | manifest | In `build.cf`: an external Ninja project built as a dependency. |
 | `build.Git` | manifest | In `build.cf`: a dependency fetched from a Git repository at a pinned revision. |
 | `build.Archive` | manifest | In `build.cf`: a dependency fetched as a checksummed archive. |
 | `build.Command` | manifest | In `build.cf`: a command run as part of the build. |
-| `build.Executable` | manifest | In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`). |
-| `build.Library` | manifest | In `build.cf`: declares a static or shared library target. |
-| `build.Step` | manifest | In `build.cf`: a code-generation step run when its inputs are newer than its outputs. |
-| `build.PkgConfig` | manifest | In `build.cf`: links a system library found through pkg-config. |
+| `build.PkgConfig` | manifest | In `build.cf`: links one or more libraries found through pkg-config. |
 | `build.Link` | manifest | In `build.cf`: links a library by name. |
 | `build.Include` | manifest | In `build.cf`: adds a header search directory. |
-| `build.Tako` | manifest | In `build.cf`: enables the Tako deployment integration. |
+| `build.Libraries` | manifest | In `build.cf`: links one or more libraries by name. |
+| `build.Includes` | manifest | In `build.cf`: adds one or more header search directories. |
+| `build.Frameworks` | manifest | In `build.cf`: adds one or more Apple frameworks. |
 | `build.Target` | manifest | In `build.cf`: what `build.Executable` and `build.Library` return. |
-| `build.StepTarget` | manifest | In `build.cf`: what `build.Step` returns. |
+| `build.StepTarget` | manifest | In `build.cf`: what `build.Step` and `build.Command` return. |
+| `build.DepTarget` | manifest | In `build.cf`: what `build.CC`, `build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, and `build.Archive` return. |
+| `build.PackageTarget` | manifest | In `build.cf`: what `build.Package` returns. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn Executable(name: str, cfg: ExecutableConfig) -> Target` | `(buildsys manifest)` | Declares an executable build target with `Entry`, `Subsystem` (`"cli"` or `"gui"`), `OutDir`, `Targets` (`["native", "wasm", "ios-sim"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, and `Flags`. | `app := build.Executable("Flint", { Entry: "src/main.cf", Subsystem: "gui", BundleId: "dev.flint.app", Icon: "assets/icon.png" })` |
-| `fn Library(name: str, cfg: LibraryConfig) -> Target` | `(buildsys manifest)` | Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, and `Flags`. | `lib := build.Library("corelib", { Sources: ["native/bridge.cpp"], Includes: ["native"] })` |
-| `fn Step(name: str, cfg: StepConfig) -> StepTarget` | `(buildsys manifest)` | Declares a custom build step executing `Command` and `Args` in `WorkDir` whenever `Inputs` are newer than `Outputs`. | `gen := build.Step("assets", { Command: "python3", Args: ["scripts/bundle.py"], Inputs: ["ui/index.html"], Outputs: ["ui/bundle.js"] })` |
-| `fn CMake(name: str, cfg: CMakeConfig) -> DepTarget` | `(buildsys manifest)` | Declares an external CMake or Git dependency (`Url`, `Commit`/`Branch`, `Sha256`, `Includes`, `Flags`, `Driver`). | `dep := build.CMake("zstd", { Url: "https://github.com/facebook/zstd.git", Branch: "v1.5.6" })` |
+| `fn Package(cfg: any, extra: any = {}) -> PackageTarget` | `(buildsys manifest)` | Declares package metadata and manifest-level native linkage defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Entry`, `OutDir`). | `build.Package({ Name: "myapp", PkgConfig: ["libzstd"] })` |
+| `fn Executable(name_or_cfg: any, cfg: any = {}) -> Target` | `(buildsys manifest)` | Declares an executable build target with `Entry`, `Subsystem` (`"cli"` or `"gui"`), `OutDir`, `Targets` (`["native", "wasm", "ios-sim"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, `Frameworks`, `Portable`, `Static`, `Universal`, `UrlSchemes`, and `SignIdentity`. | `app := build.Executable("Flint", { Entry: "src/main.cf", Subsystem: "gui", BundleId: "dev.flint.app", Icon: "assets/icon.png" })` |
+| `fn App(name_or_cfg: any, cfg: any = {}) -> Target` | `(buildsys manifest)` | Alias for `build.Executable` declaring an application executable target. | `app := build.App("Flint", { Entry: "src/main.cf", Subsystem: "gui" })` |
+| `fn Library(name_or_cfg: any, cfg: any = {}) -> Target` | `(buildsys manifest)` | Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, and `Frameworks`. | `lib := build.Library("corelib", { Sources: ["native/bridge.cpp"], Includes: ["native"] })` |
+| `fn Step(name_or_cfg: any, cfg: any = {}) -> StepTarget` | `(buildsys manifest)` | Declares a custom build step executing `Command` and `Args` in `WorkDir` whenever `Inputs` are newer than `Outputs`. | `gen := build.Step("assets", { Command: "python3", Args: ["scripts/bundle.py"], Inputs: ["ui/index.html"], Outputs: ["ui/bundle.js"] })` |
+| `fn CC(name_or_cfg: any, cfg: any = {}) -> DepTarget` | `(buildsys manifest)` | Compiles C or C++ `Sources` with `Includes`, `Defines`, and `Flags` directly into the native build. | `native_c := build.CC({ Sources: ["csrc/helper.c"], Includes: ["csrc"] })` |
+| `fn CMake(name_or_cfg: any, cfg: any = {}) -> DepTarget` | `(buildsys manifest)` | Declares an external CMake dependency (`Url`, `Commit`/`Branch`/`Tag`, `Sha256`, `Includes`, `Defines`, `Flags`, `Target`, `Static`, `Driver`). | `dep := build.CMake("zstd", { Url: "https://github.com/facebook/zstd.git", Branch: "v1.5.6" })` |
+| `fn Make(name_or_cfg: any, cfg: any = {}) -> DepTarget` | `(buildsys manifest)` | Declares an external GNU Make dependency (`Url`, `Branch`/`Tag`/`Commit`, `Target`, `Includes`, `Flags`). | `dep := build.Make("lua", { Url: "https://github.com/lua/lua.git", Tag: "v5.4.6" })` |
+| `fn Ninja(name_or_cfg: any, cfg: any = {}) -> DepTarget` | `(buildsys manifest)` | Declares an external Ninja dependency (`Url`, `Branch`/`Tag`/`Commit`, `Target`, `Includes`, `Flags`). | `dep := build.Ninja("mydep", { Target: "all" })` |
+| `fn Git(name_or_cfg: any, cfg: any = {}) -> DepTarget` | `(buildsys manifest)` | Fetches a pinned Git dependency (`Url`, `Commit`/`Branch`/`Tag`, `Driver`, `Target`, `Includes`, `Flags`). | `dep := build.Git("stb", { Url: "https://github.com/nothings/stb.git", Commit: "..." })` |
+| `fn Archive(name_or_cfg: any, cfg: any = {}) -> DepTarget` | `(buildsys manifest)` | Fetches and verifies a source archive dependency (`Url`, `Sha256`, `Driver`, `Includes`, `Flags`). | `dep := build.Archive("zlib", { Url: "https://zlib.net/zlib-1.3.1.tar.gz", Sha256: "..." })` |
+| `fn Command(name_or_cfg: any, cfg: any = {}) -> StepTarget` | `(buildsys manifest)` | Alias for `build.Step` declaring a custom pre-build command step. | `gen := build.Command("codegen", { Command: "python3", Args: ["gen.py"] })` |
 | `fn Link(lib: str)` | `(buildsys manifest)` | Adds a system library (`"sqlite3"`) or Apple framework (`"-framework Security"`) to the linker flags. | `build.Link("sqlite3")` |
 | `fn Include(dir: str)` | `(buildsys manifest)` | Adds a relative or absolute header search directory (`-I<dir>`) for `import cpp` headers. | `build.Include("src/native/include")` |
-| `fn PkgConfig(pkg: str)` | `(buildsys manifest)` | Queries `pkg-config --cflags --libs <pkg>` and links the resolved flags into the build. | `build.PkgConfig("libssh")` |
-| `fn Tako()` | `(buildsys manifest)` | Auto-discovers and links the local Tako GUI runtime and headers (`import "pkg:tako"`). | `build.Tako()` |
+| `fn PkgConfig(pkg: any)` | `(buildsys manifest)` | Queries `pkg-config --cflags --libs` for a package name or list of package names (`str` or `[]str`) and links the resolved flags into the build. | `build.PkgConfig(["libssh", "libzstd"])` |
+| `fn Libraries(libs: any)` | `(buildsys manifest)` | Adds one or more native libraries (`str` or `[]str`) to the linker flags. | `build.Libraries(["sqlite3", "z"])` |
+| `fn Includes(dirs: any)` | `(buildsys manifest)` | Adds one or more header search directories (`str` or `[]str`) for `import cpp` headers. | `build.Includes(["include", "third_party/inc"])` |
+| `fn Frameworks(frameworks: any)` | `(buildsys manifest)` | Adds one or more Apple frameworks (`str` or `[]str`) on macOS/iOS builds. | `build.Frameworks(["Cocoa", "Metal"])` |
 | `fn os() -> str` | `(compile-time constant)` | Returns the target operating system identifier (`"macos"`, `"linux"`, `"windows"`, `"ios"`, `"wasm"`). | `if build.os() == "macos" { ... }` |
 | `fn arch() -> str` | `(compile-time constant)` | Returns the target CPU architecture identifier (`"arm64"`, `"x86_64"`, `"wasm32"`). | `if build.arch() == "arm64" { ... }` |
 

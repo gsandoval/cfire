@@ -196,6 +196,9 @@
         }
         // Check initializer expression before binding the new variable so `x := x + 1` reads outer `x` first
         if (auto r = check_expr(vd.init); !r) return r;
+        if (vd.init && vd.name != "_" && (!vd.type || (!vd.type->is_borrow && !vd.type->is_mut_borrow))) {
+            if (auto r = check_move_only_copy(vd.init, std::format("variable '{}'", vd.name), vd.line, vd.col); !r) return r;
+        }
 
         bool is_byte_slice = (vd.type && (vd.type->is_slice || vd.type->is_array) &&
                               (vd.type->name == "byte" || (vd.type->elem_type && vd.type->elem_type->name == "byte"))) ||
@@ -603,6 +606,12 @@
                         return emit_error(diag_at(as.line, 0, "cfire/ESCAPING-CAPTURE-MUT", std::format("cannot mutate captured outer variable '{}' inside escaping closure; wrap shared mutable state in 'sync.Mutex[T]', 'sync.Atomic[T]', or communicate via 'sync.Channel[T]'", root)));
                     }
                 }
+            }
+        }
+        if (as.op == "=" && as.target && as.value) {
+            if (const auto* tid_mv = std::get_if<IdentExpr>(&as.target->node); !tid_mv || tid_mv->name != "_") {
+                std::string tdesc = (tid_mv && !tid_mv->name.empty()) ? std::format("'{}'", tid_mv->name) : std::string("assignment target");
+                if (auto r = check_move_only_copy(as.value, tdesc, as.line, 1); !r) return r;
             }
         }
         if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {

@@ -99,32 +99,30 @@ auto run_scaffold_tu(std::string_view sub, int argc, char** argv, const std::fil
 
     auto bcf_res = cfire::build::resolve_build_target(cur_dir, target_name, true);
     if (bcf_res && bcf_res->has_wasm_target) {
-        if (!std::filesystem::exists(bcf_res->wasm_html)) {
-            std::println("==> Building {} (WebAssembly target from build.cf)...", bcf_res->exe.name);
-            std::error_code ec;
-            std::filesystem::create_directories(bcf_res->wasm_html.parent_path(), ec);
-            auto plan = cfire::build::build_native(
-                bcf_res->entry_file,
-                runtime_dir,
-                bcf_res->wasm_html,
-                false,
-                false,
-                "wasm32-unknown-emscripten",
-                "",
-                {},
-                {},
-                bcf_res->exe.web_profile.empty() ? (bcf_res->exe.subsystem == "gui" ? "canvas" : "auto") : bcf_res->exe.web_profile,
-                bcf_res->exe.subsystem.empty() ? "auto" : bcf_res->exe.subsystem,
-                bcf_res->exe.app_name,
-                bcf_res->exe.bundle_id,
-                bcf_res->exe.icon
-            );
-            if (!plan) {
-                std::println(stderr, "error auto-building wasm target: {}", plan.error());
-                return 1;
-            }
-            std::println("✓ Built WebAssembly: {} (profile={})", bcf_res->wasm_html.string(), plan->web_profile);
+        std::println("==> Building {} (WebAssembly target from build.cf)...", bcf_res->exe.name);
+        std::error_code ec;
+        std::filesystem::create_directories(bcf_res->wasm_html.parent_path(), ec);
+        auto plan = cfire::build::build_native(
+            bcf_res->entry_file,
+            runtime_dir,
+            bcf_res->wasm_html,
+            false,
+            false,
+            "wasm32-unknown-emscripten",
+            "",
+            {},
+            {},
+            bcf_res->exe.web_profile.empty() ? (bcf_res->exe.subsystem == "gui" ? "canvas" : "auto") : bcf_res->exe.web_profile,
+            bcf_res->exe.subsystem.empty() ? "auto" : bcf_res->exe.subsystem,
+            bcf_res->exe.app_name,
+            bcf_res->exe.bundle_id,
+            bcf_res->exe.icon
+        );
+        if (!plan) {
+            std::println(stderr, "error auto-building wasm target: {}", plan.error());
+            return 1;
         }
+        std::println("✓ Built WebAssembly: {} (profile={})", bcf_res->wasm_html.string(), plan->web_profile);
         target_path = bcf_res->wasm_html.parent_path();
         explicit_entry = bcf_res->wasm_html.filename().string();
     }

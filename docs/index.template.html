@@ -1016,7 +1016,7 @@ syncCfireThemeBtn();
       <div class="card-num">03. THE CFIRE DIFFERENTIATOR</div>
       <h3>Ejectable C++23 + Tiered Stdlib</h3>
       <p>
-        <strong>cfire</strong> combines Go/Odin-inspired syntax, 18 static safety, loan-tracking, and intent checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
+        <strong>cfire</strong> combines Go/Odin-inspired syntax, comprehensive static safety, loan-tracking, and intent checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
       </p>
     </div>
   </div>
@@ -1035,11 +1035,11 @@ syncCfireThemeBtn();
         </div>
         <h3>Call-Site Intent, Loan Tracking &amp; Pattern Hygiene</h3>
         <p>
-          Catches common mutation, pointer/view invalidation, null dereference, bounds, and injection mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, loan tracking across container mutations, flow-sensitive null checks, and exhaustive <code>match</code> verification (18 <code>cfire/*</code> rules).
+          Catches common mutation, move, pointer/view invalidation, null dereference, bounds, and injection mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, loan tracking across container mutations, flow-sensitive null checks, and exhaustive <code>match</code> verification (<code>cfire/*</code> rules).
         </p>
       </div>
       <div class="bento-footer">
-        <code>cfire/MUT-CALLSITE &bull; cfire/USE-AFTER-FREE &bull; cfire/NULL-DEREF</code>
+        <code>cfire/MUT-CALLSITE &bull; cfire/USE-AFTER-MOVE &bull; cfire/USE-AFTER-FREE &bull; cfire/NULL-DEREF</code>
       </div>
     </div>
 
@@ -1069,7 +1069,7 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code> &amp; <code>ext:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 29 zero-setup C++23 &amp; baseline OS primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 29 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>, <code>core:tako</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
         </p>
       </div>
       <div class="bento-footer">
@@ -1259,12 +1259,12 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-4">
       <div class="roadmap-num">Chapter 4</div>
       <h4>Primitives, Collections &amp; Control Flow</h4>
-      <p>Immutability by default, slices (<code>[]T</code>), fixed arrays (<code>[N]T</code>), maps, and RAII smart pointers (<code>*T</code>, <code>^T</code>).</p>
+      <p>Immutability by default, slices (<code>[]T</code>), fixed arrays (<code>[N]T</code>), maps, and RAII smart pointers (<code>own[T]</code>, <code>shared[T]</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-5">
       <div class="roadmap-num">Chapter 5</div>
       <h4>Functions &amp; Call-Site Intent Safety</h4>
-      <p>Explicit <code>in</code>, <code>mut</code>, <code>move</code> intents, mandatory call-site <code>mut</code> markers, and escape analysis.</p>
+      <p>Read-only view default, explicit <code>mut</code> and <code>move</code> intents, mandatory call-site markers, and loan/escape analysis.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-6">
       <div class="roadmap-num">Chapter 6</div>
@@ -1279,7 +1279,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-8">
       <div class="roadmap-num">Chapter 8</div>
       <h4>Strings, Unicode, Regex &amp; Containers</h4>
-      <p>UTF-8 string slicing (<code>core:str</code>), RFC 3629 codepoints (<code>core:unicode</code>), regex, <code>Set</code>, <code>PriorityQueue</code>, <code>Deque</code>, and sorting.</p>
+      <p>Built-in UTF-8 <code>str</code> methods &amp; sorting, RFC 3629 codepoints (<code>core:unicode</code>), regex, <code>Set</code>, <code>PriorityQueue</code>, and <code>Deque</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-9">
       <div class="roadmap-num">Chapter 9</div>

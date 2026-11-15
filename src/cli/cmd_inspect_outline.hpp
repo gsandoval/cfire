@@ -210,11 +210,12 @@ namespace cfire::cli {
     const std::filesystem::path& runtime_dir,
     const std::vector<std::string>& run_args,
     const std::vector<std::string>& extra_includes,
-    bool json_mode
+    bool json_mode,
+    const std::vector<std::string>& extra_pkg_configs = {}
 ) -> int {
         std::string target_str = target.string();
 
-        // Form 2: Foreign C/C++ Header: `cpp <header.h> [@pkg("<lib>")]`
+        // Form 2: Foreign C/C++ Header: `cpp <header.h>` (uses `--pkg-config`, `--include`, and nearby `build.cf`)
         if (target_str == "cpp" || target_str.starts_with("cpp ")) {
             std::string header;
             if (target_str == "cpp") {
@@ -228,12 +229,25 @@ namespace cfire::cli {
             while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back()))) header.pop_back();
 
             if (!header.empty()) {
-                std::vector<std::string> cflags;
+                cfire::build::BuildPlan insp_plan;
+                insp_plan.extra_pkg_configs = extra_pkg_configs;
                 for (const auto& inc : extra_includes) {
-                    cflags.push_back("-I" + inc);
+                    insp_plan.cflags.push_back("-I" + inc);
                 }
+                std::error_code bcf_ec;
+                if (std::filesystem::exists("build.cf", bcf_ec)) {
+                    if (auto parsed = cfire::build::parse_build_cf("build.cf")) {
+                        cfire::build::apply_manifest_pkg_fields(
+                            insp_plan, ".", parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes);
+                        for (const auto& ex : parsed->executables) {
+                            cfire::build::apply_manifest_pkg_fields(
+                                insp_plan, ".", ex.pkg_config, ex.libraries, ex.frameworks, ex.includes);
+                        }
+                    }
+                }
+                cfire::build::resolve_plan_pkg_configs(insp_plan, runtime_dir);
                 auto cache_dir = runtime_dir.parent_path() / ".cfire" / "cache";
-                auto idx = cfire::bridge::inspect_header(header, cflags, cache_dir);
+                auto idx = cfire::bridge::inspect_header(header, insp_plan.cflags, cache_dir);
                 if (!idx) {
                     if (json_mode) {
                         std::println("{{\"success\": false, \"header\": \"{}\", \"error\": \"{}\"}}",

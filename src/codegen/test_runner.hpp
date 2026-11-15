@@ -301,6 +301,12 @@ CFIRE_CG_INLINE void Emitter::emit_test_runner(const FileAST& ast, bool has_user
 }
 
 CFIRE_CG_INLINE void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx) {
+    struct PkgGuard {
+        std::string& slot;
+        std::string prev;
+        explicit PkgGuard(std::string& s, const std::string& next) : slot(s), prev(s) { slot = next; }
+        ~PkgGuard() { slot = prev; }
+    } pkg_guard(cur_pkg_, td.package_name);
     set_source_path(td.source_path);
     if (td.line > 0) emit_line_directive(td.line);
     cur_fn_ = std::format("__cfire_test_{}", idx);

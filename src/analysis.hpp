@@ -49,6 +49,7 @@ struct CheckOptions {
     std::string target_triple{};
     std::string sysroot{};
     std::vector<std::string> extra_includes{};
+    std::vector<std::string> extra_pkg_configs{};
     std::string web_profile{"auto"};
     std::string subsystem{"auto"};
     std::unordered_map<std::string, std::string> source_overlays{};
@@ -318,14 +319,17 @@ struct ScopedDevDebugGuard {
     cfire::build::BuildPlan local_plan;
     if (!rt_dir.empty()) {
         if (auto plan_res = cfire::build::init_build_plan_flags(
-                fpath, rt_dir, is_test_f, opts.target_triple, opts.sysroot, opts.web_profile, opts.subsystem, false);
+                fpath, rt_dir, is_test_f, opts.target_triple, opts.sysroot, opts.web_profile, opts.subsystem,
+                false, opts.extra_pkg_configs);
             plan_res) {
             local_plan = std::move(*plan_res);
         } else {
             local_plan.entry_file = fpath.string();
+            local_plan.extra_pkg_configs = opts.extra_pkg_configs;
         }
     } else {
         local_plan.entry_file = fpath.string();
+        local_plan.extra_pkg_configs = opts.extra_pkg_configs;
     }
 
     auto parent_dir = fpath.parent_path().empty() ? std::filesystem::path(".") : fpath.parent_path();
@@ -367,44 +371,41 @@ struct ScopedDevDebugGuard {
     }
 
     // 3. Gate C++ interop & Clang verification cleanly so pure-.cf checks stay fast & subprocess-free
-    const bool has_cpp_interop = needs_cpp_syntax_check(merged_ast);
-    const bool want_clang = opts.verify_cpp_backend && (has_cpp_interop || opts.force_cpp_verify);
+    const bool is_build_manifest = (fpath.filename() == "build.cf" || merged_ast.package_name == "build");
+    const bool has_cpp_interop = !is_build_manifest && needs_cpp_syntax_check(merged_ast);
+    const bool want_clang = !is_build_manifest && opts.verify_cpp_backend && (has_cpp_interop || opts.force_cpp_verify);
 
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     if (has_cpp_interop || want_clang) {
         if (has_real_dir) {
             (void)cfire::build::build_external_deps_for_plan(parent_dir, local_plan);
         }
-        if (has_cpp_interop) {
-            std::unordered_set<std::string> seen_pc(local_plan.pkg_config_deps.begin(), local_plan.pkg_config_deps.end());
-            auto install_root = rt_dir.empty() ? std::filesystem::path{} : cfire::build::derive_install_root(rt_dir);
-            bool is_win_target = cfire::build::is_windows_target(local_plan.target_triple);
-            bool is_wasm = cfire::build::is_wasm_target(local_plan.target_triple);
-            for (const auto& imp : merged_ast.imports) {
-                if (!imp.is_cpp) continue;
-                for (const auto& attr : imp.attrs) {
-                    if (attr.name == "pkg" && !attr.args.empty() && !is_wasm && !local_plan.is_ios) {
-                        const std::string& pc = attr.args[0];
-                        if (!seen_pc.contains(pc)) {
-                            seen_pc.insert(pc);
-                            local_plan.pkg_config_deps.push_back(pc);
-                            cfire::build::query_pkg_config(pc, local_plan.cflags, local_plan.ldflags, install_root, is_win_target);
-                        }
-                    }
-                }
+        for (const auto& inc : opts.extra_includes) {
+            if (inc.empty()) continue;
+            if (std::find(local_plan.extra_includes.begin(), local_plan.extra_includes.end(), inc) == local_plan.extra_includes.end()) {
+                local_plan.extra_includes.push_back(inc);
             }
+            std::string iflag = "-I" + inc;
+            if (std::find(local_plan.cflags.begin(), local_plan.cflags.end(), iflag) == local_plan.cflags.end()) {
+                local_plan.cflags.push_back(std::move(iflag));
+            }
+        }
+        cfire::build::resolve_plan_pkg_configs(local_plan, rt_dir);
 
-            std::vector<std::string> header_cflags = local_plan.cflags;
-            for (const auto& inc : opts.extra_includes) {
-                header_cflags.push_back("-I" + inc);
-            }
+        if (has_cpp_interop) {
+            std::vector<std::string> base_header_cflags = local_plan.cflags;
             if (has_real_dir) {
-                header_cflags.push_back("-I" + parent_dir.string());
+                std::string pflag = "-I" + parent_dir.string();
+                if (std::find(base_header_cflags.begin(), base_header_cflags.end(), pflag) == base_header_cflags.end()) {
+                    base_header_cflags.push_back(std::move(pflag));
+                }
             }
             auto hdr_cache_dir = cfire::build::cache_subdir("headers");
             std::string cxx_bin = cfire::build::resolve_cxx_compiler(local_plan.target_triple);
             for (const auto& imp : merged_ast.imports) {
                 if (!imp.is_cpp) continue;
+                std::vector<std::string> header_cflags = base_header_cflags;
+                cfire::build::append_imp_define_cflags(imp, header_cflags);
                 auto idx = bridge::inspect_header(imp.path, header_cflags, hdr_cache_dir, cxx_bin);
                 if (idx) {
                     for (const auto& [sym_name, sym] : idx->symbols) {
@@ -531,7 +532,6 @@ struct ScopedDevDebugGuard {
 
     for (const auto& entry : std::filesystem::recursive_directory_iterator(target, ec)) {
         if (!entry.is_regular_file() || entry.path().extension() != ".cf") continue;
-        if (entry.path().filename() == "build.cf") continue;
         if (is_ignored_walk_path(entry.path())) continue;
         if (std::find(check_files.begin(), check_files.end(), entry.path()) == check_files.end()) {
             check_files.push_back(entry.path());

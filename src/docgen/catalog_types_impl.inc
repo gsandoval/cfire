@@ -17,10 +17,10 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.types = {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"};
     } else if (m.import_path == "core:build") {
         m.core_key = "buildsys";
-        m.header_path = "core/buildsys.hpp";
-        m.defines = {"-DCFIRE_CORE_BUILDSYS=1"};
+        m.header_path.clear();
+        m.defines.clear();
         m.aliases = {"core:buildsys"};
-        m.types = {"CC", "CMake", "Make", "Git", "Archive", "Command", "Executable", "Library", "Step", "PkgConfig", "Link", "Include", "Tako", "Target", "StepTarget"};
+        m.types = {"Package", "Executable", "App", "Library", "Step", "CC", "CMake", "Make", "Ninja", "Git", "Archive", "Command", "PkgConfig", "Link", "Include", "Libraries", "Includes", "Frameworks", "Target", "StepTarget", "DepTarget", "PackageTarget"};
     } else if (m.import_path == "core:cli") {
         m.header_path = "core/cli.hpp";
         m.core_key = "cli";
@@ -154,7 +154,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/sodium.hpp";
         m.core_key = "sodium";
         m.defines = {"#define CFIRE_USE_SODIUM 1"};
-        m.link_tags = {"@pkg:libsodium"};
+        m.link_tags = {"-lsodium"};
         m.aliases = {"ext:sodium", "core:sodium", "core:crypto/sodium"};
     } else if (m.import_path == "ext:db/sqlite") {
         m.header_path = "core/sqlite.hpp";
@@ -167,7 +167,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/ssh.hpp";
         m.core_key = "ssh";
         m.types = {"Session", "Channel", "ExecResult", "SftpEntry"};
-        m.link_tags = {"@pkg:libssh"};
+        m.link_tags = {"-lssh"};
         m.aliases = {"ext:ssh", "core:ssh", "core:net/ssh"};
     } else if (m.import_path == "ext:webui") {
         m.header_path = "core/webui.hpp";
@@ -216,16 +216,26 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         },
         {
             "core:build", "build", "Declarative Project & Cross-Platform Build System (`build.cf`)", "(compiler-integrated)",
-            "Declarative build manifest module (`build.cf`) for configuring native, GUI, WebAssembly, and iOS executables (`build.Executable`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`), external CMake/Git dependencies (`build.CMake`, `build.GitDependency`), pkg-config/framework links, and compile-time host/target queries (`build.os()`, `build.arch()`).",
+            "Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/framework links (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).",
             {
-                {"Executable", "fn Executable(name: str, cfg: ExecutableConfig) -> Target", "(buildsys manifest)", "Declares an executable build target with `Entry`, `Subsystem` (`\"cli\"` or `\"gui\"`), `OutDir`, `Targets` (`[\"native\", \"wasm\", \"ios-sim\"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, and `Flags`.", "app := build.Executable(\"Flint\", { Entry: \"src/main.cf\", Subsystem: \"gui\", BundleId: \"dev.flint.app\", Icon: \"assets/icon.png\" })"},
-                {"Library", "fn Library(name: str, cfg: LibraryConfig) -> Target", "(buildsys manifest)", "Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, and `Flags`.", "lib := build.Library(\"corelib\", { Sources: [\"native/bridge.cpp\"], Includes: [\"native\"] })"},
-                {"Step", "fn Step(name: str, cfg: StepConfig) -> StepTarget", "(buildsys manifest)", "Declares a custom build step executing `Command` and `Args` in `WorkDir` whenever `Inputs` are newer than `Outputs`.", "gen := build.Step(\"assets\", { Command: \"python3\", Args: [\"scripts/bundle.py\"], Inputs: [\"ui/index.html\"], Outputs: [\"ui/bundle.js\"] })"},
-                {"CMake", "fn CMake(name: str, cfg: CMakeConfig) -> DepTarget", "(buildsys manifest)", "Declares an external CMake or Git dependency (`Url`, `Commit`/`Branch`, `Sha256`, `Includes`, `Flags`, `Driver`).", "dep := build.CMake(\"zstd\", { Url: \"https://github.com/facebook/zstd.git\", Branch: \"v1.5.6\" })"},
+                {"Package", "fn Package(cfg: any, extra: any = {}) -> PackageTarget", "(buildsys manifest)", "Declares package metadata and manifest-level native linkage defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Entry`, `OutDir`).", "build.Package({ Name: \"myapp\", PkgConfig: [\"libzstd\"] })"},
+                {"Executable", "fn Executable(name_or_cfg: any, cfg: any = {}) -> Target", "(buildsys manifest)", "Declares an executable build target with `Entry`, `Subsystem` (`\"cli\"` or `\"gui\"`), `OutDir`, `Targets` (`[\"native\", \"wasm\", \"ios-sim\"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, `Frameworks`, `Portable`, `Static`, `Universal`, `UrlSchemes`, and `SignIdentity`.", "app := build.Executable(\"Flint\", { Entry: \"src/main.cf\", Subsystem: \"gui\", BundleId: \"dev.flint.app\", Icon: \"assets/icon.png\" })"},
+                {"App", "fn App(name_or_cfg: any, cfg: any = {}) -> Target", "(buildsys manifest)", "Alias for `build.Executable` declaring an application executable target.", "app := build.App(\"Flint\", { Entry: \"src/main.cf\", Subsystem: \"gui\" })"},
+                {"Library", "fn Library(name_or_cfg: any, cfg: any = {}) -> Target", "(buildsys manifest)", "Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, and `Frameworks`.", "lib := build.Library(\"corelib\", { Sources: [\"native/bridge.cpp\"], Includes: [\"native\"] })"},
+                {"Step", "fn Step(name_or_cfg: any, cfg: any = {}) -> StepTarget", "(buildsys manifest)", "Declares a custom build step executing `Command` and `Args` in `WorkDir` whenever `Inputs` are newer than `Outputs`.", "gen := build.Step(\"assets\", { Command: \"python3\", Args: [\"scripts/bundle.py\"], Inputs: [\"ui/index.html\"], Outputs: [\"ui/bundle.js\"] })"},
+                {"CC", "fn CC(name_or_cfg: any, cfg: any = {}) -> DepTarget", "(buildsys manifest)", "Compiles C or C++ `Sources` with `Includes`, `Defines`, and `Flags` directly into the native build.", "native_c := build.CC({ Sources: [\"csrc/helper.c\"], Includes: [\"csrc\"] })"},
+                {"CMake", "fn CMake(name_or_cfg: any, cfg: any = {}) -> DepTarget", "(buildsys manifest)", "Declares an external CMake dependency (`Url`, `Commit`/`Branch`/`Tag`, `Sha256`, `Includes`, `Defines`, `Flags`, `Target`, `Static`, `Driver`).", "dep := build.CMake(\"zstd\", { Url: \"https://github.com/facebook/zstd.git\", Branch: \"v1.5.6\" })"},
+                {"Make", "fn Make(name_or_cfg: any, cfg: any = {}) -> DepTarget", "(buildsys manifest)", "Declares an external GNU Make dependency (`Url`, `Branch`/`Tag`/`Commit`, `Target`, `Includes`, `Flags`).", "dep := build.Make(\"lua\", { Url: \"https://github.com/lua/lua.git\", Tag: \"v5.4.6\" })"},
+                {"Ninja", "fn Ninja(name_or_cfg: any, cfg: any = {}) -> DepTarget", "(buildsys manifest)", "Declares an external Ninja dependency (`Url`, `Branch`/`Tag`/`Commit`, `Target`, `Includes`, `Flags`).", "dep := build.Ninja(\"mydep\", { Target: \"all\" })"},
+                {"Git", "fn Git(name_or_cfg: any, cfg: any = {}) -> DepTarget", "(buildsys manifest)", "Fetches a pinned Git dependency (`Url`, `Commit`/`Branch`/`Tag`, `Driver`, `Target`, `Includes`, `Flags`).", "dep := build.Git(\"stb\", { Url: \"https://github.com/nothings/stb.git\", Commit: \"...\" })"},
+                {"Archive", "fn Archive(name_or_cfg: any, cfg: any = {}) -> DepTarget", "(buildsys manifest)", "Fetches and verifies a source archive dependency (`Url`, `Sha256`, `Driver`, `Includes`, `Flags`).", "dep := build.Archive(\"zlib\", { Url: \"https://zlib.net/zlib-1.3.1.tar.gz\", Sha256: \"...\" })"},
+                {"Command", "fn Command(name_or_cfg: any, cfg: any = {}) -> StepTarget", "(buildsys manifest)", "Alias for `build.Step` declaring a custom pre-build command step.", "gen := build.Command(\"codegen\", { Command: \"python3\", Args: [\"gen.py\"] })"},
                 {"Link", "fn Link(lib: str)", "(buildsys manifest)", "Adds a system library (`\"sqlite3\"`) or Apple framework (`\"-framework Security\"`) to the linker flags.", "build.Link(\"sqlite3\")"},
                 {"Include", "fn Include(dir: str)", "(buildsys manifest)", "Adds a relative or absolute header search directory (`-I<dir>`) for `import cpp` headers.", "build.Include(\"src/native/include\")"},
-                {"PkgConfig", "fn PkgConfig(pkg: str)", "(buildsys manifest)", "Queries `pkg-config --cflags --libs <pkg>` and links the resolved flags into the build.", "build.PkgConfig(\"libssh\")"},
-                {"Tako", "fn Tako()", "(buildsys manifest)", "Auto-discovers and links the local Tako GUI runtime and headers (`import \"pkg:tako\"`).", "build.Tako()"},
+                {"PkgConfig", "fn PkgConfig(pkg: any)", "(buildsys manifest)", "Queries `pkg-config --cflags --libs` for a package name or list of package names (`str` or `[]str`) and links the resolved flags into the build.", "build.PkgConfig([\"libssh\", \"libzstd\"])"},
+                {"Libraries", "fn Libraries(libs: any)", "(buildsys manifest)", "Adds one or more native libraries (`str` or `[]str`) to the linker flags.", "build.Libraries([\"sqlite3\", \"z\"])"},
+                {"Includes", "fn Includes(dirs: any)", "(buildsys manifest)", "Adds one or more header search directories (`str` or `[]str`) for `import cpp` headers.", "build.Includes([\"include\", \"third_party/inc\"])"},
+                {"Frameworks", "fn Frameworks(frameworks: any)", "(buildsys manifest)", "Adds one or more Apple frameworks (`str` or `[]str`) on macOS/iOS builds.", "build.Frameworks([\"Cocoa\", \"Metal\"])"},
                 {"os", "fn os() -> str", "(compile-time constant)", "Returns the target operating system identifier (`\"macos\"`, `\"linux\"`, `\"windows\"`, `\"ios\"`, `\"wasm\"`).", "if build.os() == \"macos\" { ... }"},
                 {"arch", "fn arch() -> str", "(compile-time constant)", "Returns the target CPU architecture identifier (`\"arm64\"`, `\"x86_64\"`, `\"wasm32\"`).", "if build.arch() == \"arm64\" { ... }"}
             }
@@ -900,6 +910,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {"cfire/ERROR", "Tooling", "An internal error with no more specific code."},
             {"cfire/ESCAPING-CAPTURE-MUT", "Concurrency", "An escaping closure mutates a captured outer variable."},
             {"cfire/FILE-NOT-FOUND", "Tooling", "A file named on the command line or imported does not exist."},
+            {"cfire/INVALID-ATTRIBUTE", "Attributes", "An attribute on a declaration is unknown, misplaced, or has invalid arguments."},
             {"cfire/INVALID-IMPORT", "Imports", "A module imported under the wrong tier prefix (`core:` vs `ext:`)."},
             {"cfire/INVALID-INDEX", "Types", "Indexing a value that is not a string, slice, array or map."},
             {"cfire/INVALID-INTERPOLATION", "Syntax", "An interpolation `{...}` that is not a valid expression."},
@@ -908,10 +919,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {"cfire/LITERAL-OUT-OF-RANGE", "Numbers", "An integer literal that does not fit its target type (Q9)."},
             {"cfire/MISSING-IMPORT", "Imports", "A stdlib module is used without being imported."},
             {"cfire/MISSING-RETURN", "Control flow", "A function with a return type can fall off its end."},
+            {"cfire/MOVE-REQUIRED", "Ownership", "Copying a move-only `own[T]` value or struct containing `own[T]` without `move`."},
             {"cfire/NON-BOOL-CONDITION", "Types", "A condition (`if`, `for`, `&&`, `||`, `!`) that is not `bool`."},
             {"cfire/OUT-CALLSITE", "Migration", "A call-site `out` marker (retired with the `out` intent)."},
             {"cfire/PREFER-ENUM", "Style", "A cluster of related integer constants that should be an enum (warning)."},
             {"cfire/RAW-POINTER", "Ownership", "Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop (CF-189)."},
+            {"cfire/RECURSIVE-TYPE", "Types", "A struct contains itself directly or through an optional without heap indirection."},
             {"cfire/REFERENCE-TYPE", "Ownership", "A `&T` / `&mut T` type; parameters are views by default and `mut` by intent (Q53)."},
             {"cfire/REDUNDANT-DEREF", "Style", "`(*p).field` on a smart pointer; write `p.field`."},
             {"cfire/SEMA-ERROR", "Tooling", "A semantic error with no more specific code."},

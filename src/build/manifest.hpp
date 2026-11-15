@@ -64,6 +64,8 @@ struct ExecutableSpec {
     std::string web_profile{"auto"};
     std::vector<std::string> frameworks{};
     std::vector<std::string> libraries{};
+    std::vector<std::string> pkg_config{};
+    std::vector<std::string> includes{};
     std::vector<std::string> url_schemes{};
     std::string sign_identity{};
     bool portable{false};
@@ -76,6 +78,10 @@ struct ParsedBuildCf {
     std::vector<ExternalDepSpec> external_deps{};
     std::vector<PreBuildCommandSpec> pre_build_commands{};
     std::vector<ExecutableSpec> executables{};
+    std::vector<std::string> pkg_config{};
+    std::vector<std::string> libraries{};
+    std::vector<std::string> frameworks{};
+    std::vector<std::string> includes{};
 };
 
 struct BuildPlan {
@@ -85,6 +91,8 @@ struct BuildPlan {
     std::vector<std::string> local_cf_packages{};
     std::vector<std::string> auto_linked{};
     std::vector<std::string> pkg_config_deps{};
+    std::vector<std::string> queried_pkg_configs{};
+    std::vector<std::string> extra_pkg_configs{};
     std::vector<std::string> cflags{};
     std::vector<std::string> ldflags{};
     std::unordered_map<std::string, bridge::HeaderIndex> cpp_headers{};
@@ -152,6 +160,26 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
     ExternalDepSpec& dep
 );
 
+CFIRE_INFRA_INLINE void apply_manifest_pkg_fields(
+    BuildPlan& plan,
+    const std::filesystem::path& bcf_dir,
+    const std::vector<std::string>& pkg_configs,
+    const std::vector<std::string>& libraries,
+    const std::vector<std::string>& frameworks,
+    const std::vector<std::string>& includes
+);
+
+CFIRE_INFRA_INLINE void resolve_plan_pkg_configs(
+    BuildPlan& plan,
+    const std::filesystem::path& runtime_dir,
+    const std::string& pc_override = ""
+);
+
+CFIRE_INFRA_INLINE void append_imp_define_cflags(
+    const frontend::ImportDecl& imp,
+    std::vector<std::string>& cflags
+);
+
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto parse_build_cf(const std::filesystem::path& build_cf_path)
@@ -165,7 +193,41 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
     auto bcf_abs = std::filesystem::weakly_canonical(build_cf_path, bcf_ec);
     auto bcf_dir = (bcf_ec ? std::filesystem::absolute(build_cf_path, bcf_ec) : bcf_abs).parent_path();
 
-    auto populate_exe_fields = [](ExecutableSpec& exe_spec, const frontend::StructLitExpr& st_lit) {
+    auto collect_str_or_arr = [](const frontend::Expr& expr, std::vector<std::string>& out, bool clear_arr = false) {
+        if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&expr.node)) {
+            if (clear_arr) out.clear();
+            for (const auto& el : arr->elements) {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                    out.push_back(lit->value);
+                }
+            }
+        } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&expr.node)) {
+            if (clear_arr) out = {lit->value};
+            else out.push_back(lit->value);
+        }
+    };
+
+    auto populate_pkg_fields = [&](const frontend::StructLitExpr& st_lit,
+                                   std::vector<std::string>& pkg_config,
+                                   std::vector<std::string>& libraries,
+                                   std::vector<std::string>& frameworks,
+                                   std::vector<std::string>& includes) {
+        for (const auto& fld : st_lit.fields) {
+            if (!fld.value) continue;
+            if (fld.name == "Frameworks" || fld.name == "frameworks") {
+                collect_str_or_arr(*fld.value, frameworks);
+            } else if (fld.name == "Libraries" || fld.name == "libraries" || fld.name == "Libs" || fld.name == "libs") {
+                collect_str_or_arr(*fld.value, libraries);
+            } else if (fld.name == "PkgConfig" || fld.name == "pkg_config") {
+                collect_str_or_arr(*fld.value, pkg_config);
+            } else if (fld.name == "Includes" || fld.name == "includes") {
+                collect_str_or_arr(*fld.value, includes);
+            }
+        }
+    };
+
+    auto populate_exe_fields = [&](ExecutableSpec& exe_spec, const frontend::StructLitExpr& st_lit) {
+        populate_pkg_fields(st_lit, exe_spec.pkg_config, exe_spec.libraries, exe_spec.frameworks, exe_spec.includes);
         for (const auto& fld : st_lit.fields) {
             if (!fld.value) continue;
             if (fld.name == "Entry" || fld.name == "entry") {
@@ -179,6 +241,10 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
             } else if (fld.name == "Name" || fld.name == "name") {
                 if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     if (exe_spec.name.empty()) exe_spec.name = lit->value;
+                    if (exe_spec.app_name.empty()) exe_spec.app_name = lit->value;
+                }
+            } else if (fld.name == "AppName" || fld.name == "app_name") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     exe_spec.app_name = lit->value;
                 }
             } else if (fld.name == "BundleId" || fld.name == "BundleID" || fld.name == "Identifier" || fld.name == "bundle_id") {
@@ -190,16 +256,7 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
                     exe_spec.icon = lit->value;
                 }
             } else if (fld.name == "Targets" || fld.name == "targets") {
-                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
-                    exe_spec.targets.clear();
-                    for (const auto& el : arr->elements) {
-                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
-                            exe_spec.targets.push_back(lit->value);
-                        }
-                    }
-                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                    exe_spec.targets = {lit->value};
-                }
+                collect_str_or_arr(*fld.value, exe_spec.targets, true);
             } else if (fld.name == "OutDir" || fld.name == "out_dir") {
                 if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     exe_spec.out_dir = lit->value;
@@ -208,36 +265,8 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
                 if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     exe_spec.web_profile = lit->value;
                 }
-            } else if (fld.name == "Frameworks" || fld.name == "frameworks") {
-                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
-                    for (const auto& el : arr->elements) {
-                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
-                            exe_spec.frameworks.push_back(lit->value);
-                        }
-                    }
-                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                    exe_spec.frameworks.push_back(lit->value);
-                }
-            } else if (fld.name == "Libraries" || fld.name == "libraries" || fld.name == "Libs" || fld.name == "libs") {
-                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
-                    for (const auto& el : arr->elements) {
-                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
-                            exe_spec.libraries.push_back(lit->value);
-                        }
-                    }
-                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                    exe_spec.libraries.push_back(lit->value);
-                }
             } else if (fld.name == "UrlSchemes" || fld.name == "url_schemes") {
-                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
-                    for (const auto& el : arr->elements) {
-                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
-                            exe_spec.url_schemes.push_back(lit->value);
-                        }
-                    }
-                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
-                    exe_spec.url_schemes.push_back(lit->value);
-                }
+                collect_str_or_arr(*fld.value, exe_spec.url_schemes);
             } else if (fld.name == "SignIdentity" || fld.name == "sign_identity") {
                 if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     exe_spec.sign_identity = lit->value;
@@ -266,6 +295,10 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
     for (const auto& gv : ast->global_vars) {
         if (!gv.value) continue;
         if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&gv.value->node)) {
+            if (st_lit->type_name == "Package" || st_lit->type_name == "build.Package") {
+                populate_pkg_fields(*st_lit, parsed.pkg_config, parsed.libraries, parsed.frameworks, parsed.includes);
+                continue;
+            }
             if (st_lit->type_name == "Executable" || st_lit->type_name == "App" ||
                 st_lit->type_name == "build.Executable" || st_lit->type_name == "build.App") {
                 ExecutableSpec exe_spec;
@@ -283,6 +316,40 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
         if (!call || !call->callee) continue;
         const auto* mem = std::get_if<frontend::MemberExpr>(&call->callee->node);
         if (!mem) continue;
+
+        if (mem->field == "Package") {
+            for (const auto& arg : call->args) {
+                if (!arg.value) continue;
+                if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&arg.value->node)) {
+                    populate_pkg_fields(*st_lit, parsed.pkg_config, parsed.libraries, parsed.frameworks, parsed.includes);
+                }
+            }
+            continue;
+        }
+        if (mem->field == "PkgConfig") {
+            for (const auto& arg : call->args) {
+                if (arg.value) collect_str_or_arr(*arg.value, parsed.pkg_config);
+            }
+            continue;
+        }
+        if (mem->field == "Link" || mem->field == "Libraries") {
+            for (const auto& arg : call->args) {
+                if (arg.value) collect_str_or_arr(*arg.value, parsed.libraries);
+            }
+            continue;
+        }
+        if (mem->field == "Include" || mem->field == "Includes") {
+            for (const auto& arg : call->args) {
+                if (arg.value) collect_str_or_arr(*arg.value, parsed.includes);
+            }
+            continue;
+        }
+        if (mem->field == "Frameworks") {
+            for (const auto& arg : call->args) {
+                if (arg.value) collect_str_or_arr(*arg.value, parsed.frameworks);
+            }
+            continue;
+        }
 
         if (mem->field == "Executable" || mem->field == "App") {
             ExecutableSpec exe_spec;
@@ -605,6 +672,131 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
             dep.defines.try_emplace(a.substr(0, eq), a.substr(eq + 1));
         } else {
             dep.defines.try_emplace(a, "1");
+        }
+    }
+}
+
+CFIRE_INFRA_INLINE void apply_manifest_pkg_fields(
+    BuildPlan& plan,
+    const std::filesystem::path& bcf_dir,
+    const std::vector<std::string>& pkg_configs,
+    const std::vector<std::string>& libraries,
+    const std::vector<std::string>& frameworks,
+    const std::vector<std::string>& includes
+) {
+    auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
+        if (item.empty()) return;
+        for (const auto& existing : vec) {
+            if (existing == item) return;
+        }
+        vec.push_back(item);
+    };
+    const bool is_wasm = (plan.target_triple == "wasm" || plan.target_triple == "web" ||
+                          plan.target_triple.find("wasm") != std::string::npos);
+
+    for (const auto& pc : pkg_configs) {
+        add_unique(plan.pkg_config_deps, pc);
+    }
+    for (const auto& inc : includes) {
+        if (inc.empty()) continue;
+        std::filesystem::path ip(inc);
+        if (ip.is_relative() && !bcf_dir.empty()) {
+            std::error_code ec;
+            auto abs_inc = std::filesystem::weakly_canonical(bcf_dir / ip, ec);
+            ip = ec ? (bcf_dir / ip) : abs_inc;
+        }
+        std::string resolved = ip.string();
+        add_unique(plan.extra_includes, resolved);
+        add_unique(plan.cflags, "-I" + resolved);
+    }
+    if (is_wasm) return;
+
+#if defined(__APPLE__)
+    for (const auto& fw : frameworks) {
+        if (fw.empty()) continue;
+        bool already = false;
+        for (std::size_t i = 0; i + 1 < plan.ldflags.size(); ++i) {
+            if (plan.ldflags[i] == "-framework" && plan.ldflags[i + 1] == fw) {
+                already = true;
+                break;
+            }
+        }
+        if (!already) {
+            plan.ldflags.push_back("-framework");
+            plan.ldflags.push_back(fw);
+        }
+    }
+#else
+    (void)frameworks;
+#endif
+    for (const auto& lib : libraries) {
+        if (lib.empty()) continue;
+        add_unique(plan.ldflags, lib.starts_with("-l") ? lib : ("-l" + lib));
+    }
+}
+
+CFIRE_INFRA_INLINE void resolve_plan_pkg_configs(
+    BuildPlan& plan,
+    const std::filesystem::path& runtime_dir,
+    const std::string& pc_override
+) {
+    auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
+        if (item.empty()) return;
+        for (const auto& existing : vec) {
+            if (existing == item) return;
+        }
+        vec.push_back(item);
+    };
+    for (const auto& epc : plan.extra_pkg_configs) {
+        add_unique(plan.pkg_config_deps, epc);
+    }
+    if (!pc_override.empty()) {
+        add_unique(plan.pkg_config_deps, pc_override);
+    }
+
+    const bool is_wasm = (plan.target_triple == "wasm" || plan.target_triple == "web" ||
+                          plan.target_triple.find("wasm") != std::string::npos);
+    if (is_wasm) return;
+
+    bool is_win = (plan.target_triple.find("windows") != std::string::npos ||
+                   plan.target_triple.find("win32") != std::string::npos ||
+                   plan.target_triple.find("mingw") != std::string::npos);
+#if defined(_WIN32)
+    if (plan.target_triple.empty()) is_win = true;
+#endif
+    const bool prefer_static = plan.static_link || plan.portable || is_win;
+    const auto install_root = runtime_dir.empty() ? std::filesystem::path{} : derive_install_root(runtime_dir);
+
+    const std::vector<std::string> snapshot = plan.pkg_config_deps;
+    for (const auto& pc : snapshot) {
+        if (pc.empty()) continue;
+        if (std::find(plan.queried_pkg_configs.begin(), plan.queried_pkg_configs.end(), pc) != plan.queried_pkg_configs.end()) {
+            continue;
+        }
+        plan.queried_pkg_configs.push_back(pc);
+        if (plan.is_ios) {
+            if (pc == "sqlite3") {
+                add_unique(plan.ldflags, "-lsqlite3");
+            } else if (pc == "libzstd") {
+                add_unique(plan.ldflags, "-lcompression");
+            }
+            continue;
+        }
+        query_pkg_config(pc, plan.cflags, plan.ldflags, install_root, prefer_static);
+    }
+}
+
+CFIRE_INFRA_INLINE void append_imp_define_cflags(
+    const frontend::ImportDecl& imp,
+    std::vector<std::string>& cflags
+) {
+    for (const auto& attr : imp.attrs) {
+        if (attr.name != "define" || attr.args.empty()) continue;
+        std::string flag = attr.args.size() == 1
+            ? ("-D" + attr.args[0])
+            : ("-D" + attr.args[0] + "=" + attr.args[1]);
+        if (std::find(cflags.begin(), cflags.end(), flag) == cflags.end()) {
+            cflags.push_back(std::move(flag));
         }
     }
 }

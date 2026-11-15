@@ -9,8 +9,7 @@
     const auto& idx = StdlibCatalogIndex::instance();
     const std::string import_path = idx.import_path_for(ns);
     if (import_path.empty()) return "";
-    if (ns == "build") {
-        if (in_build_manifest) return "";
+    if (ns == "build" && !in_build_manifest) {
         return std::format("'build.{}' exists only in a build.cf manifest; a program cannot use the build module's types", name);
     }
     auto it = idx.ns_types_and_consts.find(std::string(ns));
@@ -1615,7 +1614,8 @@
     // count and types, return type). Concepts used to be emitted without being checked anywhere.
     CFIRE_SEMA_INLINE auto SemaFnChecker::check_interface_constraints(const CallExpr& call, const FnDecl& sig, int line, int col)
         -> std::expected<void, std::string> {
-        for (const auto& tp : sig.type_params) {
+        for (std::size_t tp_idx = 0; tp_idx < sig.type_params.size(); ++tp_idx) {
+            const auto& tp = sig.type_params[tp_idx];
             if (tp.constraint.empty()) continue;
             auto iit = std::find_if(cf_.ast.interfaces.begin(), cf_.ast.interfaces.end(),
                 [&](const InterfaceDecl& d) { return d.name == tp.constraint; });
@@ -1630,11 +1630,16 @@
                 arg_col = call.args[i].col;
                 break;
             }
-            if (concrete.empty() && !call.type_args.empty()) concrete = call.type_args.front().name;
-            if (concrete.empty() || !cf_.struct_tags.contains(concrete)) continue;  // only nominal types declared here
+            if (concrete.empty() && tp_idx < call.type_args.size()) {
+                concrete = format_type_ref_sema(call.type_args[tp_idx]);
+            }
+            if (concrete.empty() || concrete == "unknown" || concrete == "any" || fn_type_params_.contains(concrete)) continue;
+            if (concrete.find("cpp::") != std::string::npos || concrete.find("cpp.") != std::string::npos) continue;
+            std::string lookup_owner = concrete;
+            if (auto lb = lookup_owner.find('['); lb != std::string::npos) lookup_owner = lookup_owner.substr(0, lb);
             std::vector<std::string> problems;
             for (const auto& m : iit->methods) {
-                auto mit = cf_.methods.find(concrete + "::" + m.name);
+                auto mit = cf_.methods.find(lookup_owner + "::" + m.name);
                 if (mit == cf_.methods.end()) {
                     problems.push_back(std::format("missing method '{}'", m.name));
                     continue;

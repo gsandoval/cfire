@@ -470,7 +470,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_completions(const std::string& uri, i
         auto [s_make, f_make] = builtin_snip("make", "fn make(type_or_args: T)");
         append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.", s_make, f_make);
     }
-    append_item("@pkg", 14, "@pkg(\"libname\")", "Specifies system package / pkg-config dependency for C/C++ header import.");
+    append_item("@define", 14, "@define(\"MACRO\", \"1\")", "Defines a C/C++ preprocessor macro before including an 'import cpp' header.");
 
     // Core language constructs & snippets (LSP-01)
     if (client_snippet_support_) {

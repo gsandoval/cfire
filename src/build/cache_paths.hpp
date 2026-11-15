@@ -151,6 +151,12 @@ inline std::filesystem::path config_file_path() {
         override_cfg && *override_cfg) {
         return std::filesystem::path(override_cfg);
     }
+#if !defined(_WIN32)
+    if (const char* xdg_cfg = std::getenv("XDG_CONFIG_HOME");
+        xdg_cfg && *xdg_cfg) {
+        return std::filesystem::path(xdg_cfg) / "cfire" / "config.json";
+    }
+#endif
     if (auto home = user_home_dir(); !home.empty()) {
         return home / ".cfire" / "config.json";
     }

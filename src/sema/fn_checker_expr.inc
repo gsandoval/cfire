@@ -248,7 +248,7 @@
                     return emit_error(diag_at(line, col, "cfire/UNDECLARED-IDENT", std::format("module '{}' is imported as '{}'; use '{}.{}'", qual, active_alias, active_alias, rest)));
                 }
                 if (const std::string ns = local_decl ? resolve_stdlib_ns_sema(qual) : std::string(); !ns.empty() && !is_cpp_qualifier_sema(qual) && !is_vendor_alias_sema(qual)) {
-                    const bool manifest = std::filesystem::path(cf_.ast.path).filename() == "build.cf";
+                    const bool manifest = std::filesystem::path(cf_.ast.path).filename() == "build.cf" || cf_.ast.package_name == "build";
                     if (std::string why = stdlib_type_name_problem(ns, tr.raw_name.substr(dot + 1), manifest); !why.empty()) {
                         return emit_error(diag_at(line, col, "cfire/UNKNOWN-STDLIB-TYPE", why));
                     }
@@ -596,10 +596,11 @@
             return res;
         }
         // 6. Global variable
-        if (!pkg_name_.empty()) {
+        {
+            const std::string target_pkg = pkg_name_.empty() ? cf_.ast.package_name : pkg_name_;
             for (const auto& gv : cf_.ast.global_vars) {
                 std::string gv_pkg = gv.package_name.empty() ? cf_.ast.package_name : gv.package_name;
-                if (gv.name == name && gv_pkg == pkg_name_) {
+                if (gv.name == name && gv_pkg == target_pkg) {
                     res.kind = SymbolKind::Global;
                     res.package_name = gv.package_name;
                     res.type_name = gv.type ? gv.type->name : "";
@@ -613,15 +614,11 @@
             }
         }
         for (const auto& gv : cf_.ast.global_vars) {
-            if (gv.name == name) {
+            if (gv.name == name && gv.package_name.empty()) {
                 res.kind = SymbolKind::Global;
                 res.package_name = gv.package_name;
                 res.type_name = gv.type ? gv.type->name : "";
-                if (!gv.package_name.empty() && cf_.colliding_gv_names.contains(gv.name)) {
-                    res.canonical_name = std::format("cfire_pkg_{}__{}", gv.package_name, sanitize_cpp_ident(gv.name));
-                } else {
-                    res.canonical_name = sanitize_cpp_ident(gv.name);
-                }
+                res.canonical_name = sanitize_cpp_ident(gv.name);
                 return res;
             }
         }
@@ -1217,11 +1214,22 @@
                     std::string rest = st->type_name.substr(dot + 1);
                     return emit_error(diag_at(e->line, e->col, "cfire/UNDECLARED-IDENT", std::format("module '{}' is imported as '{}'; use '{}.{}'", qual, active_alias, active_alias, rest)));
                 }
+                if (std::string ns = resolve_stdlib_ns_sema(qual); !ns.empty() && !is_cpp_qualifier_sema(qual) && !is_vendor_alias_sema(qual)) {
+                    const bool manifest = std::filesystem::path(cf_.ast.path).filename() == "build.cf" || cf_.ast.package_name == "build";
+                    if (std::string why = stdlib_type_name_problem(ns, st->type_name.substr(dot + 1), manifest); !why.empty()) {
+                        return emit_error(diag_at(e->line, e->col, "cfire/UNKNOWN-STDLIB-TYPE", why));
+                    }
+                }
             }
             for (const auto& f : st->fields) {
                 if (auto r = check_expr(f.value); !r) return r;
             }
             if (auto r = check_struct_literal_fields(*st, e->line, e->col); !r) return r;
+            for (const auto& f : st->fields) {
+                if (f.value) {
+                    if (auto r = check_move_only_copy(f.value, std::format("field '{}'", f.name), f.value->line, f.value->col); !r) return r;
+                }
+            }
             return {};
         }
         if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
@@ -1640,30 +1648,108 @@
     }
 
 
+    CFIRE_SEMA_INLINE auto SemaFnChecker::check_stdlib_struct_fields(const StdlibStruct& sst, const StructLitExpr& st, int line, int col) -> std::expected<void, std::string> {
+        const auto fields = stdlib_struct_fields(sst);
+        for (const auto& f : st.fields) {
+            auto fit = std::find_if(fields.begin(), fields.end(), [&](const StdlibStructField& sf) { return sf.name == f.name; });
+            if (fit == fields.end()) {
+                std::string names;
+                for (const auto& sf : fields) names += (names.empty() ? "" : ", ") + std::string(sf.name);
+                if (auto r = emit_error(diag_at(f.value ? f.value->line : line, f.value ? f.value->col : col, "cfire/UNKNOWN-FIELD", std::format("struct '{}.{}' has no field '{}'; fields: {}", sst.ns, sst.name, f.name, names), {{"field", f.name}})); !r) return r;
+                continue;
+            }
+            if (!f.value) continue;
+            TypeId want = type_id_of(fit->type);
+            bool handled = false;
+            if (auto r = check_value_for(want, f.value, handled); !r) return r;
+            if (handled) continue;
+            TypeId got = infer_expr_type_id_sema(f.value);
+            if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(f.value)) continue;
+            if (cf_.type_table.is_numeric(want) && cf_.type_table.is_numeric(got) && is_numeric_literal_expr(f.value)) continue;
+            if (!cf_.type_table.is_assignable(want, got)) {
+                if (auto r = emit_error(diag_at(f.value->line, f.value->col, "cfire/TYPE-MISMATCH", std::format("field '{}.{}.{}' expects '{}', got '{}'", sst.ns, sst.name, f.name, cf_.type_table.to_string(want), cf_.type_table.to_string(got)))); !r) return r;
+            }
+        }
+        return {};
+    }
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::is_move_only_type(TypeId t) const -> bool {
+        if (!t.is_valid() || t.is_unknown()) return false;
+        std::unordered_set<std::uint32_t> visited;
+        auto check = [&](auto& self, TypeId cur) -> bool {
+            if (!cur.is_valid() || cur.is_unknown() || !visited.insert(cur.index).second || visited.size() > 32) return false;
+            const auto& d = cf_.type_table.get(cur);
+            switch (d.kind) {
+                case TypeKind::Own:
+                    return true;
+                case TypeKind::NominalStruct:
+                    if (cf_.move_only_structs.contains(d.name)) return true;
+                    if (d.name.size() >= 2 && d.name.front() == '(' && d.name.back() == ')') {
+                        std::string_view inner(d.name.data() + 1, d.name.size() - 2);
+                        int depth = 0;
+                        std::size_t start = 0;
+                        for (std::size_t i = 0; i <= inner.size(); ++i) {
+                            if (i < inner.size()) {
+                                if (inner[i] == '[' || inner[i] == '(') ++depth;
+                                else if ((inner[i] == ']' || inner[i] == ')') && depth > 0) --depth;
+                                else if (inner[i] != ',' || depth != 0) continue;
+                            }
+                            if (i == inner.size() || (inner[i] == ',' && depth == 0)) {
+                                std::string_view elem = inner.substr(start, i - start);
+                                while (!elem.empty() && std::isspace(static_cast<unsigned char>(elem.front()))) elem.remove_prefix(1);
+                                while (!elem.empty() && std::isspace(static_cast<unsigned char>(elem.back()))) elem.remove_suffix(1);
+                                if (!elem.empty() && self(self, cf_.type_table.from_name(elem))) return true;
+                                start = i + 1;
+                            }
+                        }
+                    }
+                    return false;
+                case TypeKind::Optional:
+                case TypeKind::Array:
+                case TypeKind::Slice:
+                    return self(self, d.elem_type);
+                case TypeKind::Map:
+                    return self(self, d.key_type) || self(self, d.elem_type);
+                case TypeKind::Tuple:
+                    return std::any_of(d.param_types.begin(), d.param_types.end(), [&](TypeId e) { return self(self, e); });
+                default:
+                    return false;
+            }
+        };
+        return check(check, t);
+    }
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::check_move_only_copy(const ExprPtr& rhs, std::string_view target_desc, int line, int col) -> std::expected<void, std::string> {
+        if (!rhs) return {};
+        std::string expr_desc;
+        if (const auto* id = std::get_if<IdentExpr>(&rhs->node)) {
+            if (id->name == "none" || cf_.variant_to_enum.contains(id->name)) return {};
+            const bool is_var = var_types_.contains(id->name) ||
+                std::any_of(cf_.ast.global_vars.begin(), cf_.ast.global_vars.end(), [&](const GlobalVarDecl& gv) { return gv.name == id->name; });
+            if (!is_var) return {};
+            expr_desc = id->name;
+        } else if (const auto* mem = std::get_if<MemberExpr>(&rhs->node)) {
+            if (mem->is_namespace || !mem->object) return {};
+            expr_desc = mem->field;
+            if (auto pi = extract_path_info(rhs); pi && !pi->path.empty()) expr_desc = pi->path;
+        } else if (const auto* idx = std::get_if<IndexExpr>(&rhs->node)) {
+            if (!idx->object) return {};
+            expr_desc = "element";
+            if (auto pi = extract_path_info(idx->object); pi && !pi->path.empty()) expr_desc = pi->path + "[...]";
+        } else {
+            return {};
+        }
+        if (auto pi = extract_path_info(rhs); pi && moved_at_line_.contains(pi->root)) return {};
+        TypeId rt = infer_expr_type_id_sema(rhs);
+        if (!is_move_only_type(rt)) return {};
+        return emit_error(diag_at(line, col, "cfire/MOVE-REQUIRED", std::format(
+            "cannot copy move-only value '{}' of type '{}' into {} without 'move'; write 'move {}'",
+            expr_desc, cf_.type_table.to_string(rt), target_desc, expr_desc)));
+    }
+
     CFIRE_SEMA_INLINE auto SemaFnChecker::check_struct_literal_fields(const StructLitExpr& st, int line, int col) -> std::expected<void, std::string> {
         if (const StdlibStruct* sst = lookup_stdlib_struct(st.type_name)) {
-            const auto fields = stdlib_struct_fields(*sst);
-            for (const auto& f : st.fields) {
-                auto fit = std::find_if(fields.begin(), fields.end(), [&](const StdlibStructField& sf) { return sf.name == f.name; });
-                if (fit == fields.end()) {
-                    std::string names;
-                    for (const auto& sf : fields) names += (names.empty() ? "" : ", ") + std::string(sf.name);
-                    if (auto r = emit_error(diag_at(f.value ? f.value->line : line, f.value ? f.value->col : col, "cfire/UNKNOWN-FIELD", std::format("struct '{}.{}' has no field '{}'; fields: {}", sst->ns, sst->name, f.name, names), {{"field", f.name}})); !r) return r;
-                    continue;
-                }
-                if (!f.value) continue;
-                TypeId want = type_id_of(fit->type);
-                bool handled = false;
-                if (auto r = check_value_for(want, f.value, handled); !r) return r;
-                if (handled) continue;
-                TypeId got = infer_expr_type_id_sema(f.value);
-                if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(f.value)) continue;
-                if (cf_.type_table.is_numeric(want) && cf_.type_table.is_numeric(got) && is_numeric_literal_expr(f.value)) continue;
-                if (!cf_.type_table.is_assignable(want, got)) {
-                    if (auto r = emit_error(diag_at(f.value->line, f.value->col, "cfire/TYPE-MISMATCH", std::format("field '{}.{}.{}' expects '{}', got '{}'", sst->ns, sst->name, f.name, cf_.type_table.to_string(want), cf_.type_table.to_string(got)))); !r) return r;
-                }
-            }
-            return {};
+            return check_stdlib_struct_fields(*sst, st, line, col);
         }
         auto sit = cf_.struct_tags.find(st.type_name);
         if (sit == cf_.struct_tags.end() || !st.type_args.empty()) return {};

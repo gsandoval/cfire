@@ -1038,7 +1038,7 @@ syncCfireThemeBtn();
       <div class="card-num">03. THE CFIRE DIFFERENTIATOR</div>
       <h3>Ejectable C++23 + Tiered Stdlib</h3>
       <p>
-        <strong>cfire</strong> combines Go/Odin-inspired syntax, 18 static safety, loan-tracking, and intent checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
+        <strong>cfire</strong> combines Go/Odin-inspired syntax, comprehensive static safety, loan-tracking, and intent checks, direct Clang AST header ingestion, and a tiered standard library—while guaranteeing a 1-command exit to standalone ISO C++23 + CMake via <code>cfire eject</code>.
       </p>
     </div>
   </div>
@@ -1057,11 +1057,11 @@ syncCfireThemeBtn();
         </div>
         <h3>Call-Site Intent, Loan Tracking &amp; Pattern Hygiene</h3>
         <p>
-          Catches common mutation, pointer/view invalidation, null dereference, bounds, and injection mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, loan tracking across container mutations, flow-sensitive null checks, and exhaustive <code>match</code> verification (18 <code>cfire/*</code> rules).
+          Catches common mutation, move, pointer/view invalidation, null dereference, bounds, and injection mistakes before C++23 emission: mandatory call-site <code>mut</code>/<code>move</code> markers, loan tracking across container mutations, flow-sensitive null checks, and exhaustive <code>match</code> verification (<code>cfire/*</code> rules).
         </p>
       </div>
       <div class="bento-footer">
-        <code>cfire/MUT-CALLSITE &bull; cfire/USE-AFTER-FREE &bull; cfire/NULL-DEREF</code>
+        <code>cfire/MUT-CALLSITE &bull; cfire/USE-AFTER-MOVE &bull; cfire/USE-AFTER-FREE &bull; cfire/NULL-DEREF</code>
       </div>
     </div>
 
@@ -1091,7 +1091,7 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code> &amp; <code>ext:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 29 zero-setup C++23 &amp; baseline OS primitives (<code>core:str</code>, <code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 29 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>, <code>core:tako</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
         </p>
       </div>
       <div class="bento-footer">
@@ -1246,7 +1246,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1416,7 +1416,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1500,7 +1500,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1641,7 +1641,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1696,7 +1696,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1777,7 +1777,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1798,14 +1798,14 @@ import &quot;ext:db/sqlite&quot; as sqlite
 import &quot;core:json&quot; as json
 
 type QueryPlan struct {
-    Target: str `json:&quot;target&quot; desc:&quot;Search target concept&quot;`
-    TopK: i64   `json:&quot;top_k&quot; desc:&quot;Number of top results&quot;`
+    target: str `json:&quot;target&quot; desc:&quot;Search target concept&quot;`
+    top_k: i64  `json:&quot;top_k&quot; desc:&quot;Number of top results&quot;`
 }
 
 type DocEntry struct {
-    Id: i64      `sql:&quot;id&quot;`
-    Title: str   `sql:&quot;title&quot;`
-    Snippet: str `sql:&quot;snippet&quot;`
+    id: i64      `sql:&quot;id&quot;`
+    title: str   `sql:&quot;title&quot;`
+    snippet: str `sql:&quot;snippet&quot;`
 }
 
 fn main() {
@@ -1830,7 +1830,7 @@ fn main() {
     qvec := try client.embed(&quot;modern C++23 compiler&quot;)
     hits := try db.query[DocEntry](&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec)
     if hits.len() &gt; 0 {
-        println(&quot;Match [{}]: {}&quot;, hits[0].Title, hits[0].Snippet)
+        println(&quot;Match [{}]: {}&quot;, hits[0].title, hits[0].snippet)
     }
 }
 </code></pre>
@@ -1850,11 +1850,11 @@ struct DocEntry;
 
 #line 7 &quot;snippet_ai.cf&quot;
 struct QueryPlan {
-    std::string Target{};
-    std::int64_t TopK{};
+    std::string target{};
+    std::int64_t top_k{};
     friend auto operator==(const QueryPlan&amp;, const QueryPlan&amp;) -&gt; bool = default;
     friend auto operator&lt;=&gt;(const QueryPlan&amp;, const QueryPlan&amp;) = default;
-    template &lt;typename S = QueryPlan&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Target)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().TopK)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 2; cfire::detail::hash_field(seed, Target); cfire::detail::hash_field(seed, TopK); return seed; }
+    template &lt;typename S = QueryPlan&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().target)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().top_k)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 2; cfire::detail::hash_field(seed, target); cfire::detail::hash_field(seed, top_k); return seed; }
 };
 
 template &lt;&gt;
@@ -1862,8 +1862,8 @@ struct cfire::reflect_struct&lt;QueryPlan&gt; {
     static constexpr std::string_view name = &quot;QueryPlan&quot;;
     static constexpr std::size_t field_count = 2;
     static constexpr std::array&lt;std::string_view, 2&gt; field_names = {
-        &quot;Target&quot;,
-        &quot;TopK&quot;,
+        &quot;target&quot;,
+        &quot;top_k&quot;,
     };
     static constexpr std::array&lt;std::string_view, 2&gt; field_tags = {
         R&quot;tag(json:&quot;target&quot; desc:&quot;Search target concept&quot;)tag&quot;,
@@ -1875,8 +1875,8 @@ template &lt;&gt;
 struct cfire::testing_detail::Arbitrary&lt;QueryPlan&gt; {
     static auto generate(cfire::testing_detail::FuzzRng&amp; rng, std::size_t iter) -&gt; QueryPlan {
         QueryPlan out{};
-        out.Target = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Target)&gt;&gt;::generate(rng, iter + 0);
-        out.TopK = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.TopK)&gt;&gt;::generate(rng, iter + 1);
+        out.target = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.target)&gt;&gt;::generate(rng, iter + 0);
+        out.top_k = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.top_k)&gt;&gt;::generate(rng, iter + 1);
         return out;
     }
 };
@@ -1885,8 +1885,8 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;QueryPlan&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;QueryPlan, cfire::Error&gt; {
     (void)obj;
     QueryPlan out{};
-    CFIRE_TRY_ASSIGN(out.Target, cfire::json::get_str(obj, &quot;target&quot;, out.Target));
-    CFIRE_TRY_ASSIGN(out.TopK, cfire::json::get_i64(obj, &quot;top_k&quot;, out.TopK));
+    CFIRE_TRY_ASSIGN(out.target, cfire::json::get_str(obj, &quot;target&quot;, out.target));
+    CFIRE_TRY_ASSIGN(out.top_k, cfire::json::get_i64(obj, &quot;top_k&quot;, out.top_k));
     return out;
 }
 
@@ -1894,8 +1894,8 @@ template &lt;&gt;
 inline auto cfire::json::stringify_struct&lt;QueryPlan&gt;(const QueryPlan&amp; val) -&gt; std::string {
     (void)val;
     std::string out = &quot;{&quot;;
-    out += std::format(&quot;\&quot;target\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.Target));
-    out += std::format(&quot;,\&quot;top_k\&quot;:{}&quot;, val.TopK);
+    out += std::format(&quot;\&quot;target\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.target));
+    out += std::format(&quot;,\&quot;top_k\&quot;:{}&quot;, val.top_k);
     out += &quot;}&quot;;
     return out;
 }
@@ -1915,12 +1915,12 @@ inline auto cfire::json::schema_struct&lt;QueryPlan&gt;() -&gt; std::string {
 
 #line 12 &quot;snippet_ai.cf&quot;
 struct DocEntry {
-    std::int64_t Id{};
-    std::string Title{};
-    std::string Snippet{};
+    std::int64_t id{};
+    std::string title{};
+    std::string snippet{};
     friend auto operator==(const DocEntry&amp;, const DocEntry&amp;) -&gt; bool = default;
     friend auto operator&lt;=&gt;(const DocEntry&amp;, const DocEntry&amp;) = default;
-    template &lt;typename S = DocEntry&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Id)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Title)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().Snippet)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 3; cfire::detail::hash_field(seed, Id); cfire::detail::hash_field(seed, Title); cfire::detail::hash_field(seed, Snippet); return seed; }
+    template &lt;typename S = DocEntry&gt; requires(true &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().id)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().title)&gt;&gt; &amp;&amp; cfire::detail::key_hashable&lt;std::remove_cvref_t&lt;decltype(std::declval&lt;const S&amp;&gt;().snippet)&gt;&gt;) [[nodiscard]] auto cfire_hash() const -&gt; std::size_t { std::size_t seed = 3; cfire::detail::hash_field(seed, id); cfire::detail::hash_field(seed, title); cfire::detail::hash_field(seed, snippet); return seed; }
 };
 
 template &lt;&gt;
@@ -1928,9 +1928,9 @@ struct cfire::reflect_struct&lt;DocEntry&gt; {
     static constexpr std::string_view name = &quot;DocEntry&quot;;
     static constexpr std::size_t field_count = 3;
     static constexpr std::array&lt;std::string_view, 3&gt; field_names = {
-        &quot;Id&quot;,
-        &quot;Title&quot;,
-        &quot;Snippet&quot;,
+        &quot;id&quot;,
+        &quot;title&quot;,
+        &quot;snippet&quot;,
     };
     static constexpr std::array&lt;std::string_view, 3&gt; field_tags = {
         R&quot;tag(sql:&quot;id&quot;)tag&quot;,
@@ -1943,9 +1943,9 @@ template &lt;&gt;
 struct cfire::testing_detail::Arbitrary&lt;DocEntry&gt; {
     static auto generate(cfire::testing_detail::FuzzRng&amp; rng, std::size_t iter) -&gt; DocEntry {
         DocEntry out{};
-        out.Id = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Id)&gt;&gt;::generate(rng, iter + 0);
-        out.Title = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Title)&gt;&gt;::generate(rng, iter + 1);
-        out.Snippet = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.Snippet)&gt;&gt;::generate(rng, iter + 2);
+        out.id = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.id)&gt;&gt;::generate(rng, iter + 0);
+        out.title = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.title)&gt;&gt;::generate(rng, iter + 1);
+        out.snippet = cfire::testing_detail::Arbitrary&lt;std::decay_t&lt;decltype(out.snippet)&gt;&gt;::generate(rng, iter + 2);
         return out;
     }
 };
@@ -1954,9 +1954,9 @@ template &lt;&gt;
 inline auto cfire::json::parse_struct&lt;DocEntry&gt;(simdjson::ondemand::object obj) -&gt; std::expected&lt;DocEntry, cfire::Error&gt; {
     (void)obj;
     DocEntry out{};
-    CFIRE_TRY_ASSIGN(out.Id, cfire::json::get_i64(obj, &quot;Id&quot;, out.Id));
-    CFIRE_TRY_ASSIGN(out.Title, cfire::json::get_str(obj, &quot;Title&quot;, out.Title));
-    CFIRE_TRY_ASSIGN(out.Snippet, cfire::json::get_str(obj, &quot;Snippet&quot;, out.Snippet));
+    CFIRE_TRY_ASSIGN(out.id, cfire::json::get_i64(obj, &quot;id&quot;, out.id));
+    CFIRE_TRY_ASSIGN(out.title, cfire::json::get_str(obj, &quot;title&quot;, out.title));
+    CFIRE_TRY_ASSIGN(out.snippet, cfire::json::get_str(obj, &quot;snippet&quot;, out.snippet));
     return out;
 }
 
@@ -1964,9 +1964,9 @@ template &lt;&gt;
 inline auto cfire::json::stringify_struct&lt;DocEntry&gt;(const DocEntry&amp; val) -&gt; std::string {
     (void)val;
     std::string out = &quot;{&quot;;
-    out += std::format(&quot;\&quot;Id\&quot;:{}&quot;, val.Id);
-    out += std::format(&quot;,\&quot;Title\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.Title));
-    out += std::format(&quot;,\&quot;Snippet\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.Snippet));
+    out += std::format(&quot;\&quot;id\&quot;:{}&quot;, val.id);
+    out += std::format(&quot;,\&quot;title\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.title));
+    out += std::format(&quot;,\&quot;snippet\&quot;:\&quot;{}\&quot;&quot;, cfire::json::escape_string(val.snippet));
     out += &quot;}&quot;;
     return out;
 }
@@ -1975,12 +1975,12 @@ template &lt;&gt;
 inline auto cfire::json::schema_struct&lt;DocEntry&gt;() -&gt; std::string {
     std::string props = &quot;{&quot;;
     std::string req = &quot;[&quot;;
-    props += std::format(&quot;\&quot;Id\&quot;:{}&quot;, cfire::json::schema&lt;std::int64_t&gt;());
-    req += &quot;\&quot;Id\&quot;&quot;;
-    props += std::format(&quot;,\&quot;Title\&quot;:{}&quot;, cfire::json::schema&lt;std::string&gt;());
-    req += &quot;,\&quot;Title\&quot;&quot;;
-    props += std::format(&quot;,\&quot;Snippet\&quot;:{}&quot;, cfire::json::schema&lt;std::string&gt;());
-    req += &quot;,\&quot;Snippet\&quot;&quot;;
+    props += std::format(&quot;\&quot;id\&quot;:{}&quot;, cfire::json::schema&lt;std::int64_t&gt;());
+    req += &quot;\&quot;id\&quot;&quot;;
+    props += std::format(&quot;,\&quot;title\&quot;:{}&quot;, cfire::json::schema&lt;std::string&gt;());
+    req += &quot;,\&quot;title\&quot;&quot;;
+    props += std::format(&quot;,\&quot;snippet\&quot;:{}&quot;, cfire::json::schema&lt;std::string&gt;());
+    req += &quot;,\&quot;snippet\&quot;&quot;;
     props += &quot;}&quot;;
     req += &quot;]&quot;;
     return std::format(R&quot;({{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{},&quot;required&quot;:{},&quot;additionalProperties&quot;:false}})&quot;, props, req);
@@ -1989,9 +1989,9 @@ inline auto cfire::json::schema_struct&lt;DocEntry&gt;() -&gt; std::string {
 template &lt;&gt;
 inline auto cfire::sqlite::map_row&lt;DocEntry&gt;(sqlite3_stmt* stmt) -&gt; DocEntry {
     return DocEntry{
-        .Id = cfire::sqlite::col_i64(stmt, 0),
-        .Title = cfire::sqlite::col_str(stmt, 1),
-        .Snippet = cfire::sqlite::col_str(stmt, 2),
+        .id = cfire::sqlite::col_i64(stmt, 0),
+        .title = cfire::sqlite::col_str(stmt, 1),
+        .snippet = cfire::sqlite::col_str(stmt, 2),
     };
 }
 
@@ -2058,7 +2058,7 @@ auto main(int argc, char** argv) -&gt; int {
     #line 39 &quot;snippet_ai.cf&quot;
     if (hits.size() &gt; 0) {
         #line 40 &quot;snippet_ai.cf&quot;
-        (void)(std::println(&quot;Match [{}]: {}&quot;, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 40).Title, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 40).Snippet));
+        (void)(std::println(&quot;Match [{}]: {}&quot;, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 40).title, cfire::index_at(hits, 0, &quot;snippet_ai.cf&quot;, 40).snippet));
     }
     return 0;
 }
@@ -2074,7 +2074,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2304,7 +2304,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rpc={"message":"Hello, Ada!","count":2} events=1</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">18/18 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2454,12 +2454,12 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-4">
       <div class="roadmap-num">Chapter 4</div>
       <h4>Primitives, Collections &amp; Control Flow</h4>
-      <p>Immutability by default, slices (<code>[]T</code>), fixed arrays (<code>[N]T</code>), maps, and RAII smart pointers (<code>*T</code>, <code>^T</code>).</p>
+      <p>Immutability by default, slices (<code>[]T</code>), fixed arrays (<code>[N]T</code>), maps, and RAII smart pointers (<code>own[T]</code>, <code>shared[T]</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-5">
       <div class="roadmap-num">Chapter 5</div>
       <h4>Functions &amp; Call-Site Intent Safety</h4>
-      <p>Explicit <code>in</code>, <code>mut</code>, <code>move</code> intents, mandatory call-site <code>mut</code> markers, and escape analysis.</p>
+      <p>Read-only view default, explicit <code>mut</code> and <code>move</code> intents, mandatory call-site markers, and loan/escape analysis.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-6">
       <div class="roadmap-num">Chapter 6</div>
@@ -2474,7 +2474,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-8">
       <div class="roadmap-num">Chapter 8</div>
       <h4>Strings, Unicode, Regex &amp; Containers</h4>
-      <p>UTF-8 string slicing (<code>core:str</code>), RFC 3629 codepoints (<code>core:unicode</code>), regex, <code>Set</code>, <code>PriorityQueue</code>, <code>Deque</code>, and sorting.</p>
+      <p>Built-in UTF-8 <code>str</code> methods &amp; sorting, RFC 3629 codepoints (<code>core:unicode</code>), regex, <code>Set</code>, <code>PriorityQueue</code>, and <code>Deque</code>.</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-9">
       <div class="roadmap-num">Chapter 9</div>

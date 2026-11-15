@@ -76,12 +76,10 @@ hooks:
 install: build
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
-	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/pkg
 	cp cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire
 	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
 	printf "%s %s\n" "$(CFIRE_VER)" "$(GIT_SHA)" > $(DESTDIR)$(PREFIX)/share/cfire/runtime/cfire-runtime.version
-	cp -R pkg/* $(DESTDIR)$(PREFIX)/share/cfire/pkg/
-	@echo "✓ Installed cfire $(CFIRE_VER) ($(GIT_SHA)) to $(DESTDIR)$(PREFIX)/bin/cfire and runtime/pkg to $(DESTDIR)$(PREFIX)/share/cfire"
+	@echo "✓ Installed cfire $(CFIRE_VER) ($(GIT_SHA)) to $(DESTDIR)$(PREFIX)/bin/cfire and runtime to $(DESTDIR)$(PREFIX)/share/cfire"
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/cfire

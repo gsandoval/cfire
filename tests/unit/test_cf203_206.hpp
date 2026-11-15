@@ -355,35 +355,53 @@ fn main() {
             }
         }
 
-        // Override via import cpp ... @pkg("sqlite3") / @pkg("simdjson")
+        // CF-207 (Q60): @pkg(...) on imports is retired (cfire/RETIRED-API); overrides come from build.cf PkgConfig or --pkg-config
         {
             auto hdr_sql = tmp.path / "custom_sql.h";
             auto hdr_sj = tmp.path / "custom_sj.h";
             { std::ofstream(hdr_sql) << "int custom_sql_fn(void);\n"; }
             { std::ofstream(hdr_sj) << "int custom_sj_fn(void);\n"; }
-            std::string pkg_src = std::format(
+            std::string retired_src = std::format(
+                "package main\n"
+                "import cpp \"{}\" @pkg(\"sqlite3\")\n"
+                "fn main() {{ println(\"ok\") }}\n",
+                hdr_sql.string());
+            auto retired_cf = tmp.path / "pkg_retired.cf";
+            { std::ofstream(retired_cf) << retired_src; }
+            auto retired_ast = cfire::frontend::parse_source(retired_cf.string(), retired_src);
+            require(retired_ast.has_value(), "CF-207: @pkg still parses for clean diagnostic");
+            if (retired_ast) {
+                auto retired_checked = cfire::frontend::analyze(std::move(*retired_ast));
+                require(!retired_checked.has_value() && retired_checked.error().contains("cfire/RETIRED-API"),
+                    std::format("CF-207: @pkg on import must fail with cfire/RETIRED-API, got: {}",
+                                retired_checked.has_value() ? "<ok>" : retired_checked.error()));
+            }
+
+            std::string pure_src = std::format(
                 "package main\n"
                 "import \"core:json\"\n"
                 "import \"ext:db/sqlite\"\n"
-                "import cpp \"{}\" @pkg(\"sqlite3\")\n"
-                "import cpp \"{}\" @pkg(\"simdjson\")\n"
+                "import cpp \"{}\"\n"
+                "import cpp \"{}\"\n"
                 "fn main() {{ println(\"ok\") }}\n",
                 hdr_sql.string(), hdr_sj.string());
             auto pkg_cf = tmp.path / "pkg_override.cf";
-            { std::ofstream(pkg_cf) << pkg_src; }
-            auto pkg_ast = cfire::frontend::parse_source(pkg_cf.string(), pkg_src);
-            require(pkg_ast.has_value(), "CF-203 G1: parse @pkg source");
+            { std::ofstream(pkg_cf) << pure_src; }
+            auto pkg_ast = cfire::frontend::parse_source(pkg_cf.string(), pure_src);
+            require(pkg_ast.has_value(), "CF-203 G1: parse override source");
             if (pkg_ast) {
                 auto pkg_checked = cfire::frontend::analyze(std::move(*pkg_ast));
-                require(pkg_checked.has_value(), std::format("CF-203 G1: analyze @pkg source: {}",
+                require(pkg_checked.has_value(), std::format("CF-203 G1: analyze override source: {}",
                                                              pkg_checked.has_value() ? "" : pkg_checked.error()));
-                auto init_plan = cfire::build::init_build_plan_flags(pkg_cf, rt_dir, false, "", "", "", "", false);
+                auto init_plan = cfire::build::init_build_plan_flags(
+                    pkg_cf, rt_dir, false, "", "", "", "", false, {"sqlite3", "simdjson"});
                 if (pkg_checked && init_plan) {
                     cfire::build::BuildPlan pkg_plan = *init_plan;
                     auto p_pkg = cfire::build::populate_checked_build_plan(*pkg_checked, pkg_plan, rt_dir, false);
-                    require(p_pkg.has_value(), "CF-203 G1: @pkg populate succeeds");
+                    cfire::build::resolve_plan_pkg_configs(pkg_plan, rt_dir);
+                    require(p_pkg.has_value(), "CF-203 G1: --pkg-config populate succeeds");
                     require(!pkg_plan.use_vendored_sqlite3 && !pkg_plan.use_vendored_simdjson,
-                        "CF-203 G1: @pkg(\"sqlite3\") and @pkg(\"simdjson\") yield vendored archives");
+                        "CF-203 G1: --pkg-config sqlite3 and simdjson yield vendored archives");
                 }
             }
         }

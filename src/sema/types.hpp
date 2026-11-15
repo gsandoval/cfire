@@ -570,6 +570,7 @@ struct CheckedFile {
     std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name
     std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
+    std::unordered_set<std::string> move_only_structs{};
     // Q36 (CF-182): untyped `mut x := <text>` declarations; codegen gives them an owned `std::string`
     // so a view initializer (a read-only `str` param, a slice) is copied rather than becoming a mutable view.
     // `mutable`: filled by the per-function checker, which holds the file by const reference.

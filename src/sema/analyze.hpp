@@ -117,9 +117,9 @@ namespace cfire::frontend {
                                                                : "slice methods (xs.sort(), xs.sort_by(f), xs.binary_search(v))";
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format("module '{}' has been retired; use {}", imp.path, what), {{"rewrite", "delete_line"}, {"from", imp.path}}));
             } else if (imp.path == "vendor:raylib" || imp.path == "vendor:raygui") {
-                // CF-185: raylib is no longer bundled. There is no automatic rewrite: the `rl.`/`rg.` calls need a port.
+                // CF-185 / Q60: raylib is no longer bundled. Native library linkage lives in build.cf or --pkg-config.
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
-                    "module '{}' has been retired; cfire no longer bundles raylib. Use 'ext:webui' for GUIs, or use raylib as a C library with 'import cpp \"raylib.h\" @pkg(\"raylib\")'", imp.path)));
+                    "module '{}' has been retired; cfire no longer bundles raylib. Use 'ext:webui' for GUIs, or import \"raylib.h\" via 'import cpp \"raylib.h\"' with 'PkgConfig: [\"raylib\"]' in 'build.cf' (or '--pkg-config raylib')", imp.path)));
             } else if (!imp.path.starts_with("./") && !imp.path.starts_with("../") && !imp.path.ends_with(".cf") && !cfire::modules::is_known_module(imp.path)) {
                 std::string best_match;
                 std::size_t best_dist = 5;
@@ -132,6 +132,40 @@ namespace cfire::frontend {
                 }
                 std::string hint = best_match.empty() ? "" : std::format("; did you mean '{}'?", best_match);
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/UNKNOWN-MODULE", std::format("unknown module '{}'{}", imp.path, hint)));
+            }
+        }
+        // Q60 (CF-207): Validate import attributes; retire @pkg(...) onto build.cf / --pkg-config.
+        auto is_c_macro_ident = [](std::string_view s) {
+            if (s.empty()) return false;
+            auto is_alpha = [](unsigned char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; };
+            if (!is_alpha(static_cast<unsigned char>(s[0]))) return false;
+            for (std::size_t i = 1; i < s.size(); ++i) {
+                unsigned char c = static_cast<unsigned char>(s[i]);
+                if (!is_alpha(c) && !(c >= '0' && c <= '9')) return false;
+            }
+            return true;
+        };
+        for (const auto& attr : imp.attrs) {
+            if (attr.name == "pkg") {
+                std::string pkg_hint = attr.args.empty() ? "\"libname\"" : std::format("\"{}\"", attr.args[0]);
+                std::string cli_hint = attr.args.empty() ? "libname" : attr.args[0];
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
+                    "attribute '@pkg(...)' on imports has been retired; move native linkage into 'build.cf' (PkgConfig: [{}] or Libraries: [...]) or pass '--pkg-config {}' for single-file builds",
+                    pkg_hint, cli_hint)));
+            } else if (attr.name == "define") {
+                if (!imp.is_cpp) {
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
+                        "@define(...) is only supported on 'import cpp' declarations"));
+                } else if (attr.args.empty() || attr.args.size() > 2) {
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
+                        std::format("@define(...) expects 1 or 2 arguments (macro name and optional value), got {}", attr.args.size())));
+                } else if (!is_c_macro_ident(attr.args[0])) {
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
+                        std::format("invalid C macro identifier '{}' in @define(...)", attr.args[0])));
+                }
+            } else {
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
+                    std::format("unknown import attribute '@{}'; only '@define(\"MACRO\"[, \"VAL\"])' is supported on 'import cpp'", attr.name)));
             }
         }
     }
@@ -325,7 +359,7 @@ namespace cfire::frontend {
                     else if (StdlibCatalogIndex::instance().has_namespace(qual)) ns = qual;
                 }
                 if (!ns.empty()) {
-                    const bool manifest = std::filesystem::path(src_path).filename() == "build.cf";
+                    const bool manifest = std::filesystem::path(src_path).filename() == "build.cf" || cf.ast.package_name == "build";
                     if (std::string why = stdlib_type_name_problem(ns, tr.raw_name.substr(dot + 1), manifest); !why.empty()) {
                         cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/UNKNOWN-STDLIB-TYPE", why));
                     }
@@ -395,6 +429,116 @@ namespace cfire::frontend {
             }
         }
     }
+
+    // CF-208: Reject direct or optional value-recursive struct cycles (`cfire/RECURSIVE-TYPE`)
+    {
+        std::unordered_map<std::string, const StructDecl*> struct_by_name;
+        for (const auto& st : cf.ast.structs) struct_by_name.emplace(st.name, &st);
+
+        auto type_mentions_tp = [&](auto& self, const TypeRef& tr, std::string_view tp_name) -> bool {
+            if (tr.is_ptr || tr.is_mut_ptr || !tr.smart_wrap.empty() || tr.is_slice || tr.is_map || tr.is_fn) return false;
+            if (tr.name == tp_name) return true;
+            if (tr.elem_type && self(self, *tr.elem_type, tp_name)) return true;
+            for (const auto& tt : tr.tuple_types) {
+                if (self(self, tt, tp_name)) return true;
+            }
+            return false;
+        };
+
+        auto collect_value_deps = [&](auto& self, const TypeRef& tr, std::vector<std::string>& out) -> void {
+            if (tr.is_ptr || tr.is_mut_ptr || !tr.smart_wrap.empty() || tr.is_slice || tr.is_map || tr.is_fn) return;
+            if (tr.is_tuple) {
+                for (const auto& tt : tr.tuple_types) self(self, tt, out);
+                return;
+            }
+            if (tr.elem_type) {
+                self(self, *tr.elem_type, out);
+            } else if (!tr.name.empty() && struct_by_name.contains(tr.name)) {
+                out.push_back(tr.name);
+            }
+            if (!tr.type_args.empty()) {
+                if (auto sit = struct_by_name.find(tr.name); sit != struct_by_name.end()) {
+                    const StructDecl* templ = sit->second;
+                    for (std::size_t k = 0; k < templ->type_params.size() && k < tr.type_args.size(); ++k) {
+                        bool embeds_k = std::any_of(templ->fields.begin(), templ->fields.end(), [&](const StructField& f) {
+                            return type_mentions_tp(type_mentions_tp, f.type, templ->type_params[k].name);
+                        });
+                        if (embeds_k) self(self, tr.type_args[k], out);
+                    }
+                }
+            }
+        };
+
+        std::unordered_map<std::string, int> color; // 0=unvisited, 1=visiting, 2=done
+        std::vector<std::string> stack;
+        std::unordered_set<std::string> reported_roots;
+        auto dfs = [&](auto& self, const std::string& name) -> void {
+            color[name] = 1;
+            stack.push_back(name);
+            if (auto sit = struct_by_name.find(name); sit != struct_by_name.end()) {
+                const StructDecl* st = sit->second;
+                std::string_view st_path = st->source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st->source_path);
+                for (const auto& fld : st->fields) {
+                    std::vector<std::string> deps;
+                    collect_value_deps(collect_value_deps, fld.type, deps);
+                    for (const auto& dep : deps) {
+                        int c = color[dep];
+                        if (c == 1) {
+                            auto cyc_it = std::find(stack.begin(), stack.end(), dep);
+                            if (cyc_it != stack.end() && reported_roots.insert(dep).second) {
+                                std::string cyc;
+                                for (auto it = cyc_it; it != stack.end(); ++it) cyc += *it + " -> ";
+                                cyc += dep;
+                                cf.add_error(cfire::diag::diag(
+                                    st_path, fld.line > 0 ? fld.line : st->line, 0,
+                                    "cfire/RECURSIVE-TYPE",
+                                    std::format("recursive value type cycle '{}' has infinite size; break the cycle with indirection ('own[T]', 'shared[T]', '*T', or '[]T')", cyc)));
+                            }
+                        } else if (c == 0) {
+                            self(self, dep);
+                        }
+                    }
+                }
+            }
+            stack.pop_back();
+            color[name] = 2;
+        };
+        for (const auto& st : cf.ast.structs) {
+            if (color[st.name] == 0) dfs(dfs, st.name);
+        }
+    }
+
+    // CF-208: Transitive fixed-point set of move-only structs containing `own[T]`
+    {
+        auto tr_is_move_only = [&](auto& self, const TypeRef& tr) -> bool {
+            if (tr.is_ptr || tr.is_mut_ptr || tr.smart_wrap == "shared" || tr.is_borrow || tr.is_mut_borrow || tr.is_fn) {
+                return false;
+            }
+            if (tr.smart_wrap == "own") return true;
+            if (tr.is_tuple) {
+                return std::any_of(tr.tuple_types.begin(), tr.tuple_types.end(), [&](const TypeRef& tt) { return self(self, tt); });
+            }
+            if (tr.elem_type && self(self, *tr.elem_type)) return true;
+            if (tr.key_type && self(self, *tr.key_type)) return true;
+            if (!tr.name.empty() && cf.move_only_structs.contains(tr.name)) return true;
+            return std::any_of(tr.type_args.begin(), tr.type_args.end(), [&](const TypeRef& ta) { return self(self, ta); });
+        };
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const auto& st : cf.ast.structs) {
+                if (cf.move_only_structs.contains(st.name)) continue;
+                for (const auto& fld : st.fields) {
+                    if (tr_is_move_only(tr_is_move_only, fld.type)) {
+                        cf.move_only_structs.insert(st.name);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     for (const auto& fn : cf.ast.functions) {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
         scope_type_params.clear();
@@ -648,20 +792,24 @@ namespace cfire::frontend {
     }
 
     // 3b. Resolve Global Variables & Struct Default Value Expressions (CF-115)
-    {
+    for (const auto& gv : cf.ast.global_vars) {
+        if (!gv.value) continue;
+        std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
         FnDecl gv_dummy_fn;
         gv_dummy_fn.name = "__cfire_global_init";
-        SemaFnChecker gv_checker(cf.ast.path, gv_dummy_fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
-        for (const auto& gv : cf.ast.global_vars) {
-            if (gv.value) {
-                (void)gv_checker.check_expr(gv.value);
-            }
-        }
-        for (const auto& st : cf.ast.structs) {
-            for (const auto& fld : st.fields) {
-                if (fld.default_val) {
-                    (void)gv_checker.check_expr(fld.default_val);
-                }
+        gv_dummy_fn.package_name = gv.package_name;
+        SemaFnChecker gv_checker(gv_path, gv_dummy_fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
+        (void)gv_checker.check_expr(gv.value);
+    }
+    for (const auto& st : cf.ast.structs) {
+        std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
+        FnDecl st_dummy_fn;
+        st_dummy_fn.name = "__cfire_global_init";
+        st_dummy_fn.package_name = st.package_name;
+        SemaFnChecker st_checker(st_path, st_dummy_fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
+        for (const auto& fld : st.fields) {
+            if (fld.default_val) {
+                (void)st_checker.check_expr(fld.default_val);
             }
         }
     }
@@ -693,6 +841,7 @@ namespace cfire::frontend {
         std::string_view td_path = td.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(td.source_path);
         FnDecl dummy_fn;
         dummy_fn.name = std::format("__cfire_test_{}", idx);
+        dummy_fn.package_name = td.package_name;
         dummy_fn.return_type.is_fallible = true;
         dummy_fn.params = td.params;
         for (const auto& bv : td.bench_variations) {

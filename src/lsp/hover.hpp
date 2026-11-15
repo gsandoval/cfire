@@ -87,14 +87,20 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
         }
     }
 
-    // 0B. Check if cursor is on `@pkg` attribute
+    // 0B. Check if cursor is on `@define` or retired `@pkg` attribute
     if (sym.name == "@pkg" || sym.name == "pkg") {
         if (line >= 0 && static_cast<std::size_t>(line) < lines.size() && lines[static_cast<std::size_t>(line)].contains("@pkg")) {
-            return "### Attribute `@pkg(\"<name>\")`\n"
-                   "Declares an external C/C++ library dependency resolved automatically via `pkg-config`.\n\n"
-                   "The build system automatically runs `pkg-config --cflags <name>` and `pkg-config --libs <name>` "
-                   "to link the native library and inject headers into the **Clang AST Header Bridge**.\n\n"
-                   "**Example:**\n```cf\nimport cpp \"zstd.h\" @pkg(\"libzstd\")\n```";
+            return "### Retired Attribute `@pkg(\"<name>\")`\n"
+                   "`@pkg(...)` on `import` has been retired (`cfire/RETIRED-API`).\n\n"
+                   "Declare native `pkg-config` and library dependencies declaratively in `build.cf` (`PkgConfig: [\"<name>\"]`, `Libraries: [...]`, `Frameworks: [...]`) or pass `--pkg-config <name>` for single-file builds.\n\n"
+                   "**Example (`build.cf`):**\n```cf\nPkgConfig: [\"libzstd\"]\n```";
+        }
+    }
+    if (sym.name == "@define" || sym.name == "define") {
+        if (line >= 0 && static_cast<std::size_t>(line) < lines.size() && lines[static_cast<std::size_t>(line)].contains("@define")) {
+            return "### Attribute `@define(\"MACRO\"[, \"VAL\"])`\n"
+                   "Emits `#define MACRO` (or `#define MACRO VAL`) immediately before `#include <header>` for an `import cpp` header.\n\n"
+                   "**Example:**\n```cf\nimport cpp \"stb_image.h\" @define(\"STB_IMAGE_IMPLEMENTATION\") as stb\n```";
         }
     }
 

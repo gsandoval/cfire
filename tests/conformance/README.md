@@ -1,6 +1,6 @@
 # Language Conformance Corpus (`CF-161`)
 
-Each `.cf` file in this tree pins down **one** language or stdlib expectation. The files are grouped by feature directory: `syntax/`, `types/`, `ownership/`, `errors/`, `match/`, `generics/`, `closures/`, `arith/`, `imports/`, `concurrency/`, `stdlib/{math,str,slices,maps}/`, and `security/`.
+Each `.cf` file in this tree pins down **one** language or stdlib expectation. The files are grouped by feature directory: `syntax/`, `types/`, `ownership/`, `errors/`, `match/`, `generics/`, `closures/`, `arith/`, `imports/`, `concurrency/`, `stdlib/{math,str,slices,maps}/`, `security/`, and `retired/`.
 
 Run the corpus:
 

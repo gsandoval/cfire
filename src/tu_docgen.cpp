@@ -49,7 +49,7 @@ auto run_docgen_tu(int argc, char** argv, const cfire::build::ToolchainLayout& l
     if (check_only) {
         std::println("✓ Documentation in {} is 100% up-to-date with the compiler", docs_dir.string());
     } else {
-        std::println("✓ Generated landing page (index.html), guide (guide.html, GUIDE.md), and stdlib reference (reference.html, STDLIB_REFERENCE.md) in {}", docs_dir.string());
+        std::println("✓ Generated landing page (index.html), guide (guide.html, GUIDE.md), LLM reference (LLMS.txt), and stdlib reference (reference.html, STDLIB_REFERENCE.md) in {}", docs_dir.string());
     }
     return 0;
 }

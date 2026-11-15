@@ -629,14 +629,50 @@ inline auto resolve_external_dep_source(
         if (has_make == 0) {
             auto make_build_dir = cache_root / "make" / dep.name / dep_key;
             std::filesystem::create_directories(make_build_dir);
+            const bool is_wasm_make = is_wasm_triple(plan.target_triple);
+            const bool is_apple_make = plan.is_ios || is_apple_triple(plan.target_triple);
+            std::string cc_bin = dep_strip_quotes(is_wasm_make
+                ? resolve_emscripten_c_compiler_cfg()
+                : resolve_c_compiler(plan.target_triple));
+            std::string cxx_bin = dep_strip_quotes(is_wasm_make
+                ? (plan.emscripten_compiler.empty() ? resolve_emscripten_compiler_cfg() : plan.emscripten_compiler)
+                : resolve_cxx_compiler(plan.target_triple));
+            std::string ar_bin = dep_strip_quotes(resolve_archiver(
+                is_wasm_make ? std::string_view("wasm32-unknown-emscripten") : std::string_view(plan.target_triple)));
+
+            std::string cross_cflags;
+            if (!is_wasm_make) {
+                if (!plan.target_triple.empty() && !compiler_is_gcc_driver(cc_bin)) {
+                    cross_cflags += " --target=" + plan.target_triple;
+                }
+                if (is_apple_make && !plan.is_ios) {
+                    if (plan.target_triple.starts_with("x86_64-")) {
+                        cross_cflags += " -arch x86_64";
+                    } else if (plan.target_triple.starts_with("arm64-") || plan.target_triple.starts_with("aarch64-")) {
+                        cross_cflags += " -arch arm64";
+                    }
+                }
+                if (!plan.sysroot.empty()) {
+                    std::string sr = plan.sysroot;
+                    cross_cflags += is_apple_make
+                        ? std::format(" -isysroot {}", sr)
+                        : std::format(" --sysroot={}", sr);
+                }
+                std::string eff_min = dep_effective_macos_min(plan);
+                if (!eff_min.empty()) {
+                    cross_cflags += " -mmacosx-version-min=" + eff_min;
+                }
+            }
+            std::string make_cc = cross_cflags.empty() ? cc_bin : (cc_bin + cross_cflags);
+            std::string make_cxx = cross_cflags.empty() ? cxx_bin : (cxx_bin + cross_cflags);
             std::string make_cmd = std::format(
                 "make -C \"{}\" BUILD_DIR=\"{}\" CC=\"{}\" CXX=\"{}\" AR=\"{}\"",
                 src_dir.string(),
                 make_build_dir.string(),
-                dep_strip_quotes(resolve_c_compiler(plan.target_triple)),
-                dep_strip_quotes(resolve_cxx_compiler(plan.target_triple)),
-                dep_strip_quotes(resolve_archiver(plan.target_triple)));
-            std::string extra_cflags;
+                make_cc,
+                make_cxx,
+                ar_bin);
+            std::string extra_cflags = cross_cflags;
             for (const auto& [k, v] : dep.defines) {
                 std::string val = (v == "true") ? "1" : v;
                 make_cmd += std::format(" {}={}", k, val);
@@ -644,6 +680,9 @@ inline auto resolve_external_dep_source(
             }
             if (!extra_cflags.empty()) {
                 make_cmd += std::format(" EXTRA_CFLAGS=\"{}\"", extra_cflags);
+            }
+            if (!cross_cflags.empty()) {
+                make_cmd += std::format(" LDFLAGS=\"{}\"", cross_cflags);
             }
             int rc = 0;
             std::string out = bridge::run_command_capture(make_cmd, rc);
@@ -732,6 +771,48 @@ inline auto resolve_external_dep_source(
     }
     if (src_files.empty()) return {};
 
+    bool has_max_hdr_mtime = false;
+    std::filesystem::file_time_type max_hdr_mtime{};
+    {
+        std::vector<std::filesystem::path> hdr_roots;
+        if (dep.includes.empty()) {
+            hdr_roots.push_back(src_dir);
+            if (std::filesystem::is_directory(src_dir / "include")) {
+                hdr_roots.push_back(src_dir / "include");
+            }
+        } else {
+            for (const auto& inc : dep.includes) {
+                hdr_roots.push_back((inc == ".") ? src_dir : (src_dir / inc));
+            }
+        }
+        std::error_code hec;
+        for (const auto& root : hdr_roots) {
+            if (!std::filesystem::is_directory(root, hec) || hec) {
+                hec.clear();
+                continue;
+            }
+            std::filesystem::recursive_directory_iterator it(
+                root, std::filesystem::directory_options::skip_permission_denied, hec);
+            for (; !hec && it != std::filesystem::recursive_directory_iterator(); it.increment(hec)) {
+                auto fname = it->path().filename().string();
+                if (it->is_directory(hec)) {
+                    if (fname == ".git" || fname == ".cfire") it.disable_recursion_pending();
+                    continue;
+                }
+                if (!it->is_regular_file(hec)) continue;
+                auto ext = it->path().extension();
+                if (ext == ".h" || ext == ".hpp" || ext == ".hh" || ext == ".hxx" || ext == ".inc") {
+                    auto mt = it->last_write_time(hec);
+                    if (!hec && (!has_max_hdr_mtime || mt > max_hdr_mtime)) {
+                        max_hdr_mtime = mt;
+                        has_max_hdr_mtime = true;
+                    }
+                }
+                hec.clear();
+            }
+        }
+    }
+
     bool build_shared = dep_is_shared_build(dep);
     std::vector<std::filesystem::path> obj_files;
     bool any_obj_recompiled = false;
@@ -743,13 +824,13 @@ inline auto resolve_external_dep_source(
         std::size_t h = std::hash<std::string>{}(rel_str);
         auto obj_path = obj_dir / std::format("{}_{:08x}_{}.o", sf.stem().string(), static_cast<std::uint32_t>(h & 0xFFFFFFFF), dep_key);
 
-        // Incremental compilation check: skip compiler if object is up to date
+        // Incremental compilation check: skip compiler if object is newer than source and all headers
         bool need_compile = true;
         if (std::filesystem::exists(obj_path, ec)) {
             auto src_time = std::filesystem::last_write_time(sf, ec);
             if (!ec) {
                 auto obj_time = std::filesystem::last_write_time(obj_path, ec);
-                if (!ec && obj_time >= src_time) {
+                if (!ec && obj_time >= src_time && (!has_max_hdr_mtime || obj_time >= max_hdr_mtime)) {
                     need_compile = false;
                 }
             }

@@ -760,49 +760,50 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
                     }
                 }
             } else if (imp.is_cpp) {
-                std::vector<std::string> cflags = {"-std=c++2b"};
-                // Check sibling or parent `build.cf` for local C/C++ include directories
+                cfire::build::BuildPlan lsp_plan;
+                lsp_plan.cflags = {"-std=c++2b", "-I" + src_dir.string()};
+                cfire::build::append_imp_define_cflags(imp, lsp_plan.cflags);
+                // Check sibling or parent `build.cf` for local C/C++ include directories, deps, and PkgConfig (Q60)
                 std::filesystem::path search_dir = src_dir;
-                for (int depth = 0; depth < 4 && !search_dir.empty(); ++depth) {
+                for (int depth = 0; depth < 6 && !search_dir.empty(); ++depth) {
                     auto bcf = search_dir / "build.cf";
                     std::error_code ec;
                     if (std::filesystem::exists(bcf, ec)) {
-                        std::string btext = get_doc_text(detail::path_to_uri(bcf));
-                        if (auto bast = cfire::frontend::parse_source(bcf.string(), btext)) {
-                            for (const auto& gv : bast->global_vars) {
-                                if (!gv.value) continue;
-                                if (const auto* call = std::get_if<cfire::frontend::CallExpr>(&gv.value->node)) {
-                                    if (!call->args.empty() && call->args[0].value) {
-                                        if (const auto* lit = std::get_if<cfire::frontend::LiteralExpr>(&call->args[0].value->node)) {
-                                            auto inc_dir = search_dir / lit->value;
-                                            if (std::filesystem::exists(inc_dir, ec)) {
-                                                cflags.push_back("-I" + inc_dir.string());
-                                                if (std::filesystem::is_directory(inc_dir / "include", ec)) {
-                                                    cflags.push_back("-I" + (inc_dir / "include").string());
-                                                }
-                                            }
+                        if (auto parsed = cfire::build::parse_build_cf(bcf)) {
+                            cfire::build::apply_manifest_pkg_fields(
+                                lsp_plan, search_dir, parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes);
+                            for (const auto& ex : parsed->executables) {
+                                cfire::build::apply_manifest_pkg_fields(
+                                    lsp_plan, search_dir, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes);
+                            }
+                            for (const auto& dep : parsed->external_deps) {
+                                if (!dep.source.empty()) {
+                                    auto inc_dir = search_dir / dep.source;
+                                    if (std::filesystem::exists(inc_dir, ec)) {
+                                        lsp_plan.cflags.push_back("-I" + inc_dir.string());
+                                        if (std::filesystem::is_directory(inc_dir / "include", ec)) {
+                                            lsp_plan.cflags.push_back("-I" + (inc_dir / "include").string());
                                         }
+                                    }
+                                }
+                                for (const auto& dinc : dep.includes) {
+                                    auto p = std::filesystem::path(dinc);
+                                    if (p.is_relative() && !dep.source.empty()) p = search_dir / dep.source / p;
+                                    else if (p.is_relative()) p = search_dir / p;
+                                    if (std::filesystem::exists(p, ec)) {
+                                        lsp_plan.cflags.push_back("-I" + p.string());
                                     }
                                 }
                             }
                         }
+                        auto rt_dir = cfire::build::locate_toolchain_layout().runtime_dir;
+                        cfire::build::resolve_plan_pkg_configs(lsp_plan, rt_dir);
                         break;
                     }
                     if (search_dir == search_dir.parent_path()) break;
                     search_dir = search_dir.parent_path();
                 }
-                for (const auto& attr : imp.attrs) {
-                    if (attr.name == "pkg" && !attr.args.empty()) {
-                        int rc = 0;
-                        std::string pc_out = cfire::bridge::run_command_capture(
-                            "pkg-config --cflags " + cfire::bridge::shell_quote(attr.args[0]), rc);
-                        if (rc == 0) {
-                            std::istringstream iss(pc_out);
-                            std::string tok;
-                            while (iss >> tok) cflags.push_back(tok);
-                        }
-                    }
-                }
+                const auto& cflags = lsp_plan.cflags;
                 std::string cache_key = imp.path;
                 for (const auto& f : cflags) cache_key += "|" + f;
                 {

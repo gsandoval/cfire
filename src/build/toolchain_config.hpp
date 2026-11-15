@@ -345,11 +345,12 @@ CFIRE_INFRA_INLINE std::string resolve_cross_cxx_compiler(std::string_view targe
         std::filesystem::path opt_dir = home / ".local" / "opt";
         std::error_code ec;
         if (std::filesystem::is_directory(opt_dir, ec)) {
-            std::string prefixed = triple + "-clang++";
             for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
                 if (!entry.is_directory(ec)) continue;
-                if (auto found = probe_executable_candidate(entry.path() / "bin" / prefixed); !found.empty()) {
-                    return quote_cmd_if_spaces(found);
+                for (const std::string& prefixed : {triple + "-clang++", triple + "-g++"}) {
+                    if (auto found = probe_executable_candidate(entry.path() / "bin" / prefixed); !found.empty()) {
+                        return quote_cmd_if_spaces(found);
+                    }
                 }
             }
         }
@@ -410,11 +411,12 @@ CFIRE_INFRA_INLINE ToolResolution resolve_c_compiler_detailed(std::string_view t
             std::filesystem::path opt_dir = home / ".local" / "opt";
             std::error_code ec;
             if (std::filesystem::is_directory(opt_dir, ec)) {
-                std::string prefixed = triple + "-clang";
                 for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
                     if (!entry.is_directory(ec)) continue;
-                    if (auto found = probe_executable_candidate(entry.path() / "bin" / prefixed); !found.empty()) {
-                        return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+                    for (const std::string& prefixed : {triple + "-clang", triple + "-gcc"}) {
+                        if (auto found = probe_executable_candidate(entry.path() / "bin" / prefixed); !found.empty()) {
+                            return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+                        }
                     }
                 }
             }
@@ -554,6 +556,20 @@ CFIRE_INFRA_INLINE ToolResolution resolve_archiver_detailed(std::string_view tar
                 return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
             }
         }
+        if (auto home = user_home_dir(); !home.empty()) {
+            std::filesystem::path opt_dir = home / ".local" / "opt";
+            std::error_code ec;
+            if (std::filesystem::is_directory(opt_dir, ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
+                    if (!entry.is_directory(ec)) continue;
+                    for (const std::string& prefixed : {triple + "-llvm-ar", triple + "-ar", std::string("llvm-ar")}) {
+                        if (auto found = probe_executable_candidate(entry.path() / "bin" / prefixed); !found.empty()) {
+                            return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+                        }
+                    }
+                }
+            }
+        }
         auto cxx = resolve_cxx_compiler_detailed(target_triple);
         if (!cxx.executable_path.empty()) {
             auto sib = probe_executable_candidate(cxx.executable_path.parent_path() / "llvm-ar");
@@ -603,9 +619,34 @@ CFIRE_INFRA_INLINE std::string format_linker_flag_from_pref(std::string_view ld_
 }
 
 CFIRE_INFRA_INLINE std::string compiler_binary_fingerprint(const std::string& command) {
-    auto p = resolve_tool_executable_path(command);
-    if (p.empty()) return command;
-    return file_fingerprint_string(p);
+    if (auto p = probe_executable_candidate(std::filesystem::path(command)); !p.empty()) {
+        return file_fingerprint_string(p);
+    }
+    std::string out;
+    std::size_t i = 0;
+    const std::size_t n = command.size();
+    while (i < n) {
+        while (i < n && (command[i] == ' ' || command[i] == '\t')) ++i;
+        if (i >= n) break;
+        std::string tok;
+        if (command[i] == '"' || command[i] == '\'') {
+            char q = command[i++];
+            while (i < n && command[i] != q) tok.push_back(command[i++]);
+            if (i < n && command[i] == q) ++i;
+        } else {
+            while (i < n && command[i] != ' ' && command[i] != '\t') tok.push_back(command[i++]);
+        }
+        if (tok.empty()) continue;
+        if (!out.empty()) out.push_back('|');
+        if (!tok.starts_with("-")) {
+            if (auto rp = find_executable_in_path(tok); !rp.empty()) {
+                out += file_fingerprint_string(rp);
+                continue;
+            }
+        }
+        out += tok;
+    }
+    return out.empty() ? command : out;
 }
 
 #endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)

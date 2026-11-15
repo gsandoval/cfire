@@ -164,18 +164,7 @@ public:
     }
 
     [[nodiscard]] static auto sanitize_cpp_ident(std::string_view id) -> std::string {
-        static const std::unordered_set<std::string_view> kCppReserved = {
-            "short", "long", "signed", "unsigned", "class", "template", "operator",
-            "export", "delete", "new", "private", "protected", "public", "virtual",
-            "override", "final", "typename", "namespace", "using", "this", "throw",
-            "catch", "union", "goto", "register", "volatile", "friend", "explicit",
-            "mutable", "inline", "constexpr", "consteval", "constinit", "co_await",
-            "co_return", "co_yield", "concept", "requires", "stdout", "stderr", "stdin"
-        };
-        if (kCppReserved.contains(id)) {
-            return std::string(id) + "_cf_";
-        }
-        return std::string(id);
+        return cfire::frontend::sanitize_cpp_ident(id);
     }
 
     [[nodiscard]] static auto escape_line_path(std::string_view p) -> std::string {
@@ -281,15 +270,49 @@ public:
         return sanitize_cpp_ident(fn.name);
     }
 
+    // Effective template parameter list for emitting a function or method. Function-level type parameters
+    // come first so explicit `x.method[U](...)` binds `U` while receiver type args (`fn (b: Box[T])`) are deduced.
+    [[nodiscard]] auto effective_type_params(const FnDecl& fn) const -> std::vector<TypeParam> {
+        std::vector<TypeParam> out = fn.type_params;
+        if (!fn.receiver || fn.receiver->type.type_args.empty()) return out;
+        static const std::unordered_set<std::string_view> kBuiltinNames = {
+            "i8", "i16", "i32", "i64", "isize", "u8", "u16", "u32", "u64", "usize",
+            "f32", "f64", "bool", "byte", "str", "any", "void", "Error"
+        };
+        std::unordered_set<std::string_view> seen;
+        for (const auto& tp : out) seen.insert(tp.name);
+        const StructDecl* recv_st = nullptr;
+        for (const auto& st : cf_.ast.structs) {
+            if (st.name == fn.receiver->type.name) { recv_st = &st; break; }
+        }
+        const EnumDecl* recv_en = nullptr;
+        if (!recv_st) {
+            for (const auto& en : cf_.ast.enums) {
+                if (en.name == fn.receiver->type.name) { recv_en = &en; break; }
+            }
+        }
+        for (std::size_t idx = 0; idx < fn.receiver->type.type_args.size(); ++idx) {
+            const auto& ta = fn.receiver->type.type_args[idx];
+            if (ta.name.empty() || ta.is_ptr || ta.is_mut_ptr || ta.is_slice || ta.is_array ||
+                ta.is_map || ta.is_optional || ta.is_tuple || ta.is_fn || !ta.type_args.empty()) {
+                continue;
+            }
+            if (kBuiltinNames.contains(ta.name) || cf_.declared_type_names.contains(ta.name)) continue;
+            if (!seen.insert(ta.name).second) continue;
+            std::string constraint;
+            if (recv_st && idx < recv_st->type_params.size()) constraint = recv_st->type_params[idx].constraint;
+            else if (recv_en && idx < recv_en->type_params.size()) constraint = recv_en->type_params[idx].constraint;
+            out.push_back(TypeParam{ta.name, std::move(constraint)});
+        }
+        return out;
+    }
+
     // The type parameters in scope for the function being emitted (its own and a generic receiver's), so a
     // `[]T` parameter of a type parameter keeps a deducible `const std::vector<T>&` (Q53).
     std::unordered_set<std::string> generic_params_{};
     void set_generic_params(const FnDecl& fn) {
         generic_params_.clear();
-        for (const auto& tp : fn.type_params) generic_params_.insert(tp.name);
-        if (fn.receiver) {
-            for (const auto& ta : fn.receiver->type.type_args) generic_params_.insert(ta.name);
-        }
+        for (const auto& tp : effective_type_params(fn)) generic_params_.insert(tp.name);
     }
     [[nodiscard]] auto mentions_generic_param(const TypeRef& tr) const -> bool {
         if (generic_params_.contains(tr.name)) return true;

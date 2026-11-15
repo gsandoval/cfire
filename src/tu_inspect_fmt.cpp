@@ -60,7 +60,7 @@ auto run_inspect_fmt_tu(std::string_view sub, int argc, char** argv, const std::
         return *err;
     }
     return cfire::cli::run_inspect_subcommand(
-        args.target, runtime_dir, args.run_args, args.extra_includes, args.json_mode
+        args.target, runtime_dir, args.run_args, args.extra_includes, args.json_mode, args.extra_pkg_configs
     );
 }
 

@@ -53,8 +53,8 @@ Reviewers must inspect and verify the following criteria for all proposed code c
 
 ### B. Memory & Lifetime Safety
 1. **String & Slice View Lifetimes**:
-   - `str` in parameter position lowers to `const std::string&` (owning/safe) unless explicitly marked as borrowed `&str` (lowering to `std::string_view`).
-   - Verify that any function returning `&str` or `[]T` does **not** return a view into a temporary local object or string concatenation.
+   - `str` in parameter position lowers to a read-only view (`std::string_view`) by default unless explicitly annotated (`mut`/`move`), and automatically promotes to an owning `std::string` when stored or returned.
+   - Verify that any function returning `str` or `[]T` does **not** return a view into a temporary local object or string concatenation (`cfire/DANGLING-RETURN`, `cfire/DANGLING-TEMPORARY`).
 2. **Move Insertion & Last-Use Soundness**:
    - When a parameter is marked `move`, codegen must emit `std::move(x)` exclusively at its definite last read site.
    - Slices (`[]T`) passed by value should only be moved if the container is an owning vector; borrowed spans (`std::span`) must be copied by value (2 pointers).
@@ -65,10 +65,9 @@ Reviewers must inspect and verify the following criteria for all proposed code c
 
 ### C. Language Semantics & Intent Soundness
 1. **Parameter Intent Orthogonality**:
-   - `in` (default): immutable borrow. Call site: `f(x)`.
+   - Default (unannotated): immutable read-only view/borrow. Call site: `f(x)` (legacy `in` keyword is retired via `cfire/RETIRED-API`).
    - `mut`: mutable in-place reference. Call site: `f(mut x)`.
-   - `out`: output parameter. Call site: `f(out x)` (warn with `cfire/DEPRECATED-OUT-PARAM` recommending tuples).
-   - `move`: ownership transfer. Call site: `f(move x)`.
+   - `move`: ownership transfer. Call site: `f(move x)`. (Legacy `out` keyword is retired via `cfire/RETIRED-API` — use multi-return tuples instead.)
    - Ensure call-site annotation matches signature intent; sema must reject mismatches (`cfire/MUT-CALLSITE`, `cfire/IMMUTABLE-MUT-ARG`).
 2. **Mutation Alias Exclusivity (`cfire/MUT-ALIAS`)**:
    - Verify that passing the same variable (or subpath of a variable) to both a `mut` argument and any other argument in the same call is statically rejected.

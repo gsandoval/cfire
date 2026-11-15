@@ -1633,21 +1633,23 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
   - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_windows.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
 - Imports:
-  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:str"`, `import "core:json"`, `import "core:net/http"`, `import "core:audio"`, `import "core:keychain"`)
+  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:json"`, `import "core:net/http"`, `import "core:audio"`, `import "core:keychain"`, `import "core:tako"`)
   - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)
-  - Toolchain Packages: `import "pkg:<name>"` (e.g. `import "pkg:tako"`, resolved automatically from workspace/toolchain roots alongside `build.Tako()` in `build.cf`)
+  - Note on Builtin Operations: Methods and associated items on `str`, numeric types, slices (`[]T`), arrays (`[N]T`), and maps (`map[K]V`) live directly on values/types (`s.trim()`, `s.split(",")`, `xs.sort()`, `m.keys()`, `i32.parse(s)`, `i32.MAX`). Legacy `import "core:str"` and `import "core:sort"` are retired (`cfire/RETIRED-API`).
   - Local package: `import "./path/to/pkg"`
-  - Foreign C/C++: `import cpp "header.h" @pkg("libname")` or `@define("MACRO")` (for linking system frameworks/libraries declaratively, set `Frameworks: [...]`, `Libraries: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` on `build.Executable` in `build.cf`).
-- Variable Declarations:
+  - Foreign C/C++: `import cpp "header.h"` or `import cpp "header.h" as alias @define("KEY", "VAL")` (compile-time preprocessor defines belong on `import cpp` via `@define`; native linkage, `pkg-config`, libraries, frameworks, and include paths belong declaratively in `build.cf` via `PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` or CLI `--pkg-config <name>`. Legacy `@pkg` import attributes are retired via `cfire/RETIRED-API`).
+- Variable Declarations & Naming Conventions:
   - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
+  - Struct fields use `snake_case` (`cfire/FIELD-NAME-CASE`), enum variants use `UpperCamelCase` accessed as `Enum::Variant` (`::` is only for enum variants; use `.` for modules, methods, and associated items).
 - Built-in Prelude Functions & Type Constructors:
   - Standard Output & Error: `println(fmt, ...)` / `print(fmt, ...)` (`stdout`), `eprintln(fmt, ...)` / `eprint(fmt, ...)` (`stderr`)
   - Interactive Terminal Input: `cli.prompt(message: str = "") -> str?` and `cli.prompt_password(message: str = "") -> str?` (`core:cli`); or stream directly from `os.stdin().read_line() -> str?` (`core:os`)
   - Assertions: `assert(cond)`, `assert_eq(a, b)`, `assert_ne(a, b)`, `panic(msg)`
-  - Canonical Type Constructors (`T(x)`, no `as` keyword):
+  - Canonical Construction (`make(...)` & Type Constructors `T(x)`, no `as` keyword):
     - Scalar conversions: `i8(x)`, `i16(x)`, `i32(x)`, `i64(x)`, `isize(x)`, `u8(x)`, `byte(x)`, `u16(x)`, `u32(x)`, `u64(x)`, `usize(x)`, `f32(x)`, `f64(x)`, `bool(x)`
     - Byte/u8 slice & string conversions: `[]byte(s_or_slice)`, `[]u8(s_or_slice)`, `str(bytes_or_scalar)`
+    - Value/Heap/Collection constructors: `make(T, args...)`, `make(own[T], v)`, `make(shared[T], v)`, `make([]T, len[, cap])`, `make(map[K]V)`
 - Strings & Arbitrary Expression Interpolation:
   - Double-quoted strings interpolate arbitrary expressions and optional format specifiers: `"sum={a + b} first={items[0]} hex={mask:04x}"` (lowers to `std::format("sum={} first={} hex={:04x}", a + b, items[0], mask)`)
   - Raw multi-line strings: `` `SELECT * FROM users` ``
@@ -1657,19 +1659,18 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
   - Optional return: `-> T?` lowers to `std::optional<T>`
   - Multi-return tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, destructuring: `(x, y) := coords()`
-  - Generic parameters: `fn process[T: Display](item: T) { ... }`
+  - Generic parameters: `fn process[T: Display](item: T) { ... }` (and generic receiver methods `fn (b: Box[T]) get() -> T`)
 - Parameter Intent Rules:
-  - Default: immutable view / read-only
+  - Default: immutable read-only view (including zero-copy `str` views with implicit copies when stored or returned)
   - `mut`: must pass mutable variable with `mut` at call site: `update(mut val)`
   - `move`: transfers ownership with `move` at call site: `consume(move item)`
-  - `out`: writes output in-place with `out` at call site: `populate(out dst)`
 - Types:
   - Primitives: `i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `byte`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`, `bool`, `char`, `void`
-  - Strings & Byte Slices: `str`, `&str`, `[]byte`, `[]u8`
-  - Slices & Arrays: `[]T`, `&[]T`, `&mut []T`, `[N]T`
+  - Strings & Byte Slices: `str`, `[]byte`, `[]u8`
+  - Slices & Arrays: `[]T`, `[N]T`
   - Maps: `map[Key]Val`
-  - Smart Pointers: `own[T]` (unique), `shared[T]` (reference-counted)
-  - Raw Pointers: `*T`, `*mut T`
+  - Smart Pointers: `own[T]` (move-only unique ownership), `shared[T]` (reference-counted shared ownership)
+  - Foreign Interop Raw Pointers (restricted to `import cpp` FFI boundaries; rejected in pure `.cf` via `cfire/RAW-POINTER`): `*T`, `*mut T`
   - Struct: `type User struct { id: i64, name: str `json:"name"` }`
   - Enum: `type Shape enum { Circle(f64), Rect(f64, f64), None }`
   - Interface: `type Writer interface { write(b: []byte) -> usize! }`
@@ -1681,61 +1682,73 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Conditional / unbounded loop: `for cond { ... }` / `for { ... }`
   - Exhaustive pattern match: `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
   - Single-statement or multi-statement RAII scope cleanup: `defer resource.close()` or `defer { f.flush(); f.close() }` (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`)
-- Testing, Fuzzing, Benchmarks & Zero-Code Invariants:
+- Testing, Fuzzing & Benchmarks:
   - Unit test blocks: `test "description" { ... }`
-  - Property-based fuzz blocks: `fuzz "description" |x: i64, s: str| { ... }` (or parameterized `test "name" |x: i64| { ... }`): automatically runs 16 adversarial edge-case dictionary seeds + deterministic PRNG runs (`--fuzz-runs <N>`, `--seed <S>`) for primitives, `str`, `[]T`, and reflected user structs, with automatic counterexample shrinking on failure.
-  - Multi-iteration statistical benchmarks: `bench "description" { black_box(work()) }` and parameterized variations `bench "name" |size in [64, 1024, 16384]| { ... }` or `|w in [16, 64], h in [16, 64]|` or `|k in 1..=4|`: dynamically calibrates batch size `B`, collects 10-25 timing samples over `--bench-time <ms>`, and reports `iters`, `min`, `p50`, `mean +- stddev%`, `p99`, and `ops/s`. During normal `cfire test`, each `bench` block runs 1 smoke iteration.
-  - Executable doc-tests: fenced ` ```cf ` blocks inside `///` doc-comments containing `assert(...)` or `assert_eq(...)` are automatically extracted and executed by `cfire test`.
-  - Zero-code automatic checks: every `test`/`fuzz` block enforces an open file-descriptor leak canary (`count_open_fds()`), and importing `core:json` with JSON-tagged structs automatically synthesizes `[auto] json round-trip: <StructName>` tests during `cfire test`.
-  - Power-assertions (`assert(a == b)`, `assert_eq(a, b)`, `assert_ne(a, b)`): evaluate each operand once and automatically print `[left: <val>, right: <val>]` value diffs on failure.
+  - Property-based fuzz blocks: `fuzz "description" |x: i64, s: str| { ... }` (or parameterized `test "name" |x: i64| { ... }`): runs dictionary seeds + deterministic PRNG iterations (`--fuzz-runs <N>`, `--seed <S>`) with automatic counterexample shrinking.
+  - Statistical benchmarks: `bench "description" { black_box(work()) }` and parameterized `bench "name" |size in [64, 1024, 16384]| { ... }` or `|k in 1..=4|`.
+  - Executable doc-tests & checks: fenced ` ```cf ` blocks inside `///` doc-comments with `assert(...)` / `assert_eq(...)`, open FD leak canary, and `[auto] json round-trip: <StructName>` tests.
 - Error (`T!`) & Optional (`T?`) Handling:
   - `val := try fallible()` (early return error on failure)
   - `val := fallible() or fallback_expr`
-  - `val := fallible() or err { return -1 }` or parameterless `val := fallible() or { return -1 }` (block must definitely diverge or panic)
+  - `val := fallible() or err { return -1 }` or parameterless `val := fallible() or { return -1 }` (block must diverge or panic)
   - `val := optional() or fallback_expr`
   - `val := optional() or { return -1 }` (`or err { ... }` on `T?` is rejected via `cfire/OPTIONAL-OR-ERR`)
-  - Flow-sensitive narrowing: after `if opt != none { ... }` or `if opt == none { return }`, `opt` is narrowed to `T` and its fields/methods can be accessed directly (`opt.field`).
-- Memory Safety, Loan Tracking & Bounds Rules:
-  - Move Discipline (`cfire/USE-AFTER-FREE`, `cfire/MOVE-CALLSITE`): Passing a non-Copy variable (`own[T]`, `str`, `[]T`, `map[K]V`, or structs containing them) with `move` invalidates the variable unless reassigned on all control-flow paths; `move` parameters require `move` at the call site.
-  - Region & Loan Tracking (`cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`, `cfire/ITERATOR-INVALIDATION`): Taking `&x` or `&mut x` records an active loan on `x`; mutating, moving, or outliving `x` while borrowed, returning `&local`, or calling `.push()`/`.clear()`/`.erase()` on a slice/map while iterating over it is rejected at compile time.
-  - Null-Safety Flow Analysis (`cfire/NULL-DEREF`): Raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) must be initialized non-null or guarded by `if p != none` / `assert(p != none)` before `*p` or `p.field` dereference.
-  - Bounds & Arithmetic Safety (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`): Constant out-of-bounds indexing and division/modulo by constant zero are rejected at compile time; dynamic slice indexing (`arr[i]`) and `slice_from(s, offset, count)` enforce bounds checks at runtime.
-  - Struct Tag Validation (`cfire/INVALID-STRUCT-TAG`): Duplicate `json`, `sql`/`db`, or `cli` flag tags across fields of the same struct, or invalid `default:"..."` literals that cannot parse into numeric/boolean field types, are rejected at compile time.
-  - Injection Warnings (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Dynamic string concatenation in `db.exec`/`db.query` or `os.exec`/`os.exec_output` emits a warning; use parameterized `?1` queries.
-- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp::some_c_func()`
+  - Flow-sensitive narrowing: after `if opt != none { ... }` or `if opt == none { return }`, `opt` narrows to `T`.
+- Memory Safety, Loan Tracking & Type Rules:
+  - Move Discipline (`cfire/USE-AFTER-MOVE`, `cfire/MOVE-REQUIRED`, `cfire/MOVE-CALLSITE`): Copying or passing a move-only value (`own[T]` or structs containing `own[T]`) or using a variable after `move` without reassigning on all paths is rejected; `move` parameters require `move` at call sites.
+  - View & Loan Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-RETURN`, `cfire/DANGLING-TEMPORARY`, `cfire/ITERATOR-INVALIDATION`): Mutating, reallocating, or moving a container while a view borrows from it or while iterating over it, or returning a view into a local/temporary, is rejected at compile time.
+  - Type & Boundary Checks (`cfire/RECURSIVE-TYPE`, `cfire/UNSATISFIED-CONSTRAINT`, `cfire/RAW-POINTER`, `cfire/REFERENCE-TYPE`, `cfire/RETIRED-API`, `cfire/NULL-DEREF`): Direct or optional self-recursive value structs without `own[T]`/`shared[T]`/`[]T` indirection, non-matching interface constraints, pure-`.cf` raw pointers or `&T` references, and unguarded pointer dereferences are rejected at compile time.
+  - Bounds, Arithmetic, Tags & Injection (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`, `cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Constant OOB indexing, div-by-zero, duplicate struct tags, and string-concatenated SQL/shell calls are diagnosed at compile time.
+- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp.some_c_func()`, `import cpp "hdr.h" @define("KEY", "VAL")`
 - CLI Tooling:
-  - `cfire init [--template cli|tako|gui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|gui]`: Scaffold a new `cfire` project (`build.cf`, `src/main.cf`, `tests/main_test.cf`, `.gitignore`)
-  - `cfire run [--web] [--ios] [target]`: Run native app, execute binary, launch iOS Simulator (`--ios`), or serve web app (`--web`)
-  - `cfire build [--target wasm|ios-sim|ios] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, signed macOS/iOS `.app` bundle, or WebAssembly
-  - `cfire check [--json] [--fix] [file|dir]`: Zero-arg workspace-aware type & borrow checker with 1-based coordinates and fixits
-  - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Zero-arg workspace test & fuzz runner (discovers `test`, `fuzz`, `///` doc-tests, and `[auto] json round-trip` invariants)
-  - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Multi-iteration parameterized statistical benchmark runner
-  - `cfire fix [--dry-run] [--json] [file|dir]`: Zero-arg workspace auto-fixer for missing `core:*` imports, `mut` call-site markers, and `match` arms
-  - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in zero-dependency static server with WASM MIME and COOP/COEP isolation headers
-  - `cfire outline [--json] [file|dir]`: AST symbol outline with exact types, intents, receivers, interfaces, and test/fuzz/bench blocks
-  - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or compiler diagnostic rule (`cfire inspect cfire/USE-AFTER-FREE`)
+  - `cfire init [--template cli|tako|webui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|webui]`: Scaffold a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`)
+  - `cfire run [--web] [--ios] [--pkg-config <name>] [target]`: Run native binary, iOS Simulator (`--ios`), or WebAssembly app (`--web`)
+  - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire check [--json] [--fix] [--verify-cpp] [file|dir]`: Workspace-aware type & safety checker with fix-its
+  - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner
+  - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Statistical benchmark runner
+  - `cfire fix [--dry-run] [--json] [file|dir]`: Auto-fixer for imports, intents, and match arms
+  - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in static server with WASM MIME & COOP/COEP headers
+  - `cfire eject <file.cf> [out_dir]`: Export standalone ISO C++23 + `CMakeLists.txt`
+  - `cfire outline [--json] [file|dir]`: AST symbol & test/fuzz/bench outline
+  - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or diagnostic rule (`cfire inspect cfire/USE-AFTER-MOVE`)
   - `cfire install [--user|--prefix <dir>|--portable <dir>]`: Install self-relocating `cfire` binary and `runtime/` headers
-  - `cfire ide [target|--all|--status] [--global]`: Auto-detect & configure LSP, MCP, and agent rules for VS Code, Antigravity (`agy`), Claude Code (`claude`), Cursor, Windsurf, Zed, Neovim, and CLion
-  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio (`cfire_stdlib_list`, `cfire_stdlib_lookup`, `cfire_check`, `cfire_test`, `cfire_eval`, `cfire_outline`, `cfire_inspect`, `cfire_doc_llm`)
-  - `cfire doc --llm`: Dump this LLM context reference sheet
-  - `cfire eval 'expr'`: Immediate evaluation of expressions
+  - `cfire ide [target|--all|--status] [--global]`: Configure LSP, MCP, and agent rules for supported editors/agents
+  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio
+  - `cfire doc [--check|--llm]`: Synchronize docs/`LLMS.txt` or print this reference sheet
+  - `cfire eval 'expr'`: Immediate evaluation of expressions (`DevDebug`)
 
-## Standard Library Modules (`core:*`, `ext:*`, `vendor:*`)
+## Builtin Types & Standard Library (`core:*`, `ext:*`)
 )";
 
-    for (const auto& mod : stdlib_catalog()) {
-        md += std::format("\n### `import \"{}\"` (alias: `{}`)\n", mod.import_path, mod.ns_alias);
+    for (const auto& mod : reference_modules()) {
+        if (mod.import_path == "builtin") {
+            md += std::format("\n### {} (no import required)\n", mod.title);
+        } else {
+            md += std::format("\n### `import \"{}\"` (alias: `{}`)\n", mod.import_path, mod.ns_alias);
+        }
         md += std::format("{}\n", mod.overview);
+        if (!mod.type_docs.empty()) {
+            md += "Types:\n";
+            for (const auto& td : mod.type_docs) {
+                md += std::format("- `{}`: {}\n", td.name, td.summary);
+            }
+        }
         if (!mod.functions.empty()) {
             md += "Functions & Methods:\n";
             for (const auto& fn : mod.functions) {
-                if (fn.name.contains('.')) {
+                if (mod.import_path == "builtin" || fn.name.contains('.')) {
                     md += std::format("- `{}`: {}\n", fn.cf_sig, fn.summary);
                 } else {
                     md += std::format("- `{}` (call: `{}.{}`): {}\n", fn.cf_sig, mod.ns_alias, fn.name, fn.summary);
                 }
             }
         }
+    }
+
+    md += "\n## Compiler Diagnostic Codes\n";
+    for (const auto& d : diagnostic_code_registry()) {
+        md += std::format("- `{}` ({}): {}\n", d.code, d.category, d.summary);
     }
 
     cached_ref = std::move(md);

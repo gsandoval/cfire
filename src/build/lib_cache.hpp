@@ -265,14 +265,14 @@ struct LibDirLockGuard {
     out_cflags.clear();
     if (is_wasm) {
         if (spec.is_cpp) {
-            out_cflags = {"-std=c++2b", "-O2", "-DNDEBUG", "-sWASM=1", "-msimd128"};
+            out_cflags = {"-std=c++2b", "-O2", "-DNDEBUG", "-DSIMDJSON_DEVELOPMENT_CHECKS=0", "-sWASM=1", "-msimd128"};
         } else {
             out_cflags = {"-std=c17", "-O2", "-DNDEBUG", "-sWASM=1",
                           "-DSQLITE_OMIT_LOAD_EXTENSION=1", "-DSQLITE_THREADSAFE=0"};
         }
     } else {
         if (spec.is_cpp) {
-            out_cflags = {"-std=c++2b", "-O2", "-DNDEBUG"};
+            out_cflags = {"-std=c++2b", "-O2", "-DNDEBUG", "-DSIMDJSON_DEVELOPMENT_CHECKS=0"};
             if (!is_win) out_cflags.push_back("-fPIC");
             if (!is_win && !is_apple) out_cflags.push_back("-pthread");
         } else {
@@ -321,12 +321,12 @@ struct LibDirLockGuard {
         st.update(reinterpret_cast<const uint8_t*>(val.data()), val.size());
         st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
     };
-    feed("schema", "cf203-v1");
+    feed("schema", "cf208-v1");
     feed("lib", spec.name);
     feed("src_sha", src_sha);
     feed("hdr_sha", hdr_sha);
     feed("compiler", compiler_binary_fingerprint(out_compiler));
-    feed("ar", out_ar);
+    feed("ar", compiler_binary_fingerprint(out_ar));
     feed("target", plan.target_triple);
     feed("sysroot", plan.sysroot);
     feed("macos_min", plan.macos_min);

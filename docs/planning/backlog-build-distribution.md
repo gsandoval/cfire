@@ -1,16 +1,16 @@
 # Build Performance & Binary Distribution Backlog
 
-This topic-focused backlog tracks compiler/build performance optimizations, progressive compilation, caching, and cross-platform pre-compiled binary distribution for `cfire` (**`CF-198` – `CF-206`**, architectural decisions **`Q55` – `Q59`**).
+This topic-focused backlog tracks compiler/build performance optimizations, progressive compilation, caching, cross-platform pre-compiled binary distribution, and Wave B5 consistency/soundness/docs remediation for `cfire` (**`CF-198` – `CF-210`**, architectural decisions **`Q55` – `Q61`**).
 
 It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
 
-> **ID Allocation**: Items here use **`CF-198` – `CF-206`** and ADRs **`Q55` – `Q59`**. Future items anywhere in `docs/planning/` should start at **`CF-207`** and **`Q60`**.
+> **ID Allocation**: Items here use **`CF-198` – `CF-210`** and ADRs **`Q55` – `Q61`**. Future items anywhere in `docs/planning/` should start at **`CF-211`** and **`Q62`**.
 
 ---
 
 ## Baseline & Bottleneck Evidence (`main` @ `2786f66`, 2026-11-14)
 
-1. **Compiler self-build (`Makefile:29-30`, `src/build/toolchain_layout.hpp:8`)**: `cfire` builds from a single translation unit (`src/main.cpp`), expanding `~1.91 MB` of preprocessed C++ because `src/build/toolchain_layout.hpp:8` `#include`s `"cfire_core_stdlib.hpp"`, pulling all 28 runtime module headers into the compiler binary (~`35.5s` on Apple Silicon). `Makefile:6` also links `-framework AudioToolbox` unconditionally into `cfire`.
+1. **Compiler self-build (`Makefile:29-30`, `src/build/toolchain_layout.hpp:8`)**: `cfire` builds from a single translation unit (`src/main.cpp`), expanding `~1.91 MB` of preprocessed C++ because `src/build/toolchain_layout.hpp:8` `#include`s `"cfire_core_stdlib.hpp"`, pulling all runtime module headers into the compiler binary (~`35.5s` on Apple Silicon). `Makefile:6` also links `-framework AudioToolbox` unconditionally into `cfire`.
 2. **`cfire` `.cf` frontend is not the bottleneck**: Lexing, parsing, package loading, Sema, and C++23 codegen (`cfire emit-cpp`) complete in `10–30 ms` (`< 1%` of total compile latency). Virtually 100% of user-visible latency lives in downstream `clang++` parsing, optimization, and redundant invocations.
 3. **Debug builds disable PCH (`src/buildsys.hpp:778`)**: `cfire run` and `cfire test` default to `-O2`, while `--debug` disables PCH via `!g_debug_mode`, making debug compilation slower than release (`0.83s` vs `0.63s` on hello-world). Furthermore, only `cfire_prelude.hpp` is precompiled—heavy programs like `examples/14-ai-rag-sqlite` (`3.92s` release, `2.43s` debug, `3.92s` unchanged re-run) re-parse `runtime/core/*.hpp`, `sqlite3.h`, and `simdjson.h` on every build with zero binary cache.
 4. **Double-analysis + stale-disk bug in `check` & LSP (`src/analysis.hpp:135-175`, `src/lsp/server.hpp:847-875`)**: `check_source` always invokes `analyze_and_emit(fpath, ...)` (`src/analysis.hpp:148`) followed by `verify_cpp_syntax_only` (`clang++ -O2`), even when zero `cpp {}` blocks or `import cpp` declarations exist. Worse, `analyze_and_emit(fpath, ...)` re-reads `.cf` files from disk, ignoring unsaved in-memory LSP `content` buffers (`textDocument/didChange`).
@@ -32,7 +32,7 @@ It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` �
     - Vendor single-file upstream amalgamations `sqlite3.{c,h}` and `simdjson.{cpp,h}` inside **isolated subdirectories** (`runtime/vendor/sqlite3/` and `runtime/vendor/simdjson/`). Compile and cache static archives on first use per `(compiler_fingerprint, target_triple, sysroot_or_sdk, abi_flags, source_sha256)` under `~/.cfire/cache/libs/<key>/` across Desktop (`macos`, `linux`, `windows`), WebAssembly (`--web` via `emcc` with `-DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=0`), iOS (`iphoneos`/`iphonesimulator`, enabling ARM64 NEON `simdjson` when vendored), and Android NDK (which omits public `libsqlite3.so`).
     - Keep heavy/cryptographic/transport C libraries (`zstd`, `libsodium`, `libssh`, `OpenSSL`) unbundled via `pkg-config` / OS-native APIs / `build.cf` vendor specs.
     - Enforce **3 Mandatory C++ Interop Guardrails**:
-      1. *No Header/Symbol Shadowing*: Never add `runtime/vendor/sqlite3` or `runtime/vendor/simdjson` unconditionally to global `-I` (`src/buildsys.hpp:44-46`); yield automatically whenever the user selects `sqlcipher`, `#[pkg(...)]`, `--link-lib`, `build.cf` deps, or `~/.local` overrides.
+      1. *No Header/Symbol Shadowing*: Never add `runtime/vendor/sqlite3` or `runtime/vendor/simdjson` unconditionally to global `-I` (`src/buildsys.hpp:44-46`); yield automatically whenever the user selects `sqlcipher`, `--pkg-config` / `--link-lib`, `build.cf` deps (`PkgConfig` / `Libraries` / `CMake` / `CC`), or `~/.local` overrides. *(Historic `@pkg(...)` / `#[pkg(...)]` syntax retired in `Q60`.)*
       2. *Toolchain & C++ Stdlib ABI Forwarding (`src/build/deps.hpp`)*: Forward resolved `ToolchainConfig` (`cc`, `cxx`, `ar`, `--target`, `--sysroot`, `-mmacosx-version-min`, `-DCMAKE_C_COMPILER`, `-DCMAKE_CXX_COMPILER`, `-DCMAKE_OSX_DEPLOYMENT_TARGET`) into C/C++ and CMake dependency builds so user C++ libraries match the C++ stdlib ABI (`libc++` vs `libstdc++` vs UCRT).
       3. *Graceful `--portable` vs Strict `--static`*: Under `--portable`, resolve `.a` archives per library where available while falling back gracefully to dynamic linking (with a concise diagnostic note) for OS frameworks and shared-only user C++ libraries; reserve hard failure when static linkage is unavailable for `--static`. Support `--macos-min=<ver>` (default `13.3` on macOS release builds — the Ventura floor where `libc++.1.dylib` exports floating-point `std::to_chars` needed by C++23 `<format>`/`<print>`) and `--universal` (`arm64` + `x86_64` `lipo` fat binary on macOS).
 
@@ -50,11 +50,21 @@ It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` �
 
 59. **4-Layer Build Caching, Composite Runtime PCH, Parallel Self-Build & Phase-1 Per-Package `.o` Sharding (`Q59`, Option 5B)**:
     - Deliver all four speed layers together with Phase-1 progressive per-package compilation:
-      1. Content-addressed `BinaryCache` (`~/.cfire/cache/bin/<sha256>`, `0700` dir, atomic write + rename, 1 GB LRU cap, `--no-cache`, `cfire clean --cache`).
+      1. Content-addressed `BinaryCache` (`~/.cfire/cache/bin/<sha256>` or `$XDG_CACHE_HOME/cfire/bin/`, `0700` dir, atomic write + rename, 1 GB LRU cap, `--no-cache`, `cfire clean --cache`).
       2. Persistent `ProbeCache` (`~/.cfire/cache/probes.json`) keyed by compiler `(path, mtime, size)` and `PKG_CONFIG_PATH`.
       3. Per-import-set Composite Runtime PCH (`~/.cfire/cache/pch/umbrella_<sha256>.pch` covering `cfire_prelude.hpp` + active `runtime/core/*.hpp` headers for Debug & Release).
       4. Parallel `cfire` self-build (`src/build/toolchain_layout.hpp:8` decoupled from `cfire_core_stdlib.hpp`, `src/tu_*.cpp` split, `-MMD -MP` dependency tracking: `35.5s` -> `~5s`).
       5. Sharded per-package C++23 emitter (`emit_sharded_cpp`: `decls.hpp` + `pkg_<id>.cpp` -> `.cfire/obj/pkg_<id>_<hash>.o`) with parallel dirty-unit compilation, leaving single-file `emit_cpp()` unchanged for `cfire emit-cpp` and `tests/golden/*.expected.cpp`.
+
+60. **Strict `CF-031` Boundary — Retire `@pkg(...)`, Move All Native Linkage to `build.cf` + `--pkg-config`, Keep `@define` Validated (`Q60`, Option B)**:
+    - Source files (`.cf`) express **source-level module/header imports only** (`import cpp "foo.h" as foo @define("...")`); all native link/pkg-config concerns (`PkgConfig`, `Libraries`, `Frameworks`, `Includes`) belong declaratively in `build.cf` (or `--pkg-config <name>` / `--link-lib <name>` CLI flags for ad-hoc single-file builds).
+    - **Retire `@pkg(...)` on `import`** with `cfire/RETIRED-API` and a clear fix-it pointing to `build.cf` `PkgConfig: [...]` / `--pkg-config`. Never silently accept retired linkage attributes in Sema or LSP completions.
+    - **Keep `@define("KEY"[, "VAL"])` on `import cpp`** (since header-only C libraries like `stb_image.h` legitimately require macro definitions before `#include`), validated in Sema (`cfire/INVALID-ATTRIBUTE`) for name/arity and propagated cleanly across all `emit_sharded_cpp` translation units and `package_loader.hpp` deduplication keys.
+    - Unify `query_pkg_config` / `cpp_headers` / `build.cf` resolution **before** Sema across `buildsys`, `analysis`, `lsp`, and `cfire inspect`, and typecheck `build.cf` manifests cleanly via registered `core:build` struct types (`Package`, `Executable`, `Library`, `PkgConfig`, etc.).
+
+61. **Vendored-First `simdjson` Precedence & `core:tako` Scaffold Hygiene (`Q61`, Options A + A)**:
+    - **`simdjson` matches `sqlite3`**: Always compile and link the cached vendored `simdjson` `5.0.5` archive across `run`, `build`, `test`, and `eject`, yielding only to explicit user overrides (`~/.local/{include,lib}`, `build.cf`, `--link-lib`, `--pkg-config`), and pin `-DSIMDJSON_DEVELOPMENT_CHECKS=0` consistently across `DevDebug` and `Release` so `sizeof(ondemand::parser)` never flips between profiles or PCH builds.
+    - **Purge dead `pkg:tako` / `pkg/*` references & modernize `--template tako`**: Remove the empty `cp -R pkg/*` failure in `Makefile:install`, remove legacy `pkg:tako` strings from rules/docs/LLM prompts, and update `cfire new --template tako` to scaffold a compiling, tested `import "core:tako"` local cloud-mock starter.
 
 ---
 
@@ -79,6 +89,12 @@ flowchart TD
         CF205["CF-205: 6-Target Pre-Compiled Release Matrix & Linkage Gates"]
         CF206["CF-206: Pre-Compiled Binary Installers install.sh & install.ps1"]
     end
+    subgraph B5 ["Wave B5: Language/Build Consistency, Soundness, Scaffold & Docs Sync (P0/P1)"]
+        CF207["CF-207: Retire @pkg, Declarative build.cf PkgConfig/Includes & Unified Resolution"]
+        CF208["CF-208: Compiler/Cache/Profile/Eject/simdjson Soundness"]
+        CF209["CF-209: Makefile & --template tako Scaffold Repair"]
+        CF210["CF-210: Exhaustive Docs, LLMS.txt, MCP, IDE Rules & Catalog Sync"]
+    end
     CF198 --> CF199
     CF199 --> CF200
     CF200 --> CF201
@@ -90,6 +106,14 @@ flowchart TD
     CF198 --> CF205
     CF204 --> CF205
     CF205 --> CF206
+    CF202 --> CF207
+    CF204 --> CF207
+    CF203 --> CF208
+    CF202 --> CF208
+    CF207 --> CF209
+    CF207 --> CF210
+    CF208 --> CF210
+    CF209 --> CF210
 ```
 
 | Wave | Goal | Items | Exit Gate |
@@ -98,6 +122,7 @@ flowchart TD
 | **B2** | Instant pure-`.cf` `check` & accurate in-memory LSP | `CF-201` | Pure `.cf` `cfire check` completes in `< 30 ms` with 0 `clang++` spawns and 0 `.cfire/gen/*.cpp` writes; unsaved LSP multi-file buffer edits diagnose in-memory without reading stale disk files; `make check` runs `./cfire check --verify-cpp` on all examples; `make check-all` green. |
 | **B3** | Progressive per-package `.o` builds for multi-package projects | `CF-202` | Editing 1 file in a 5-package project recompiles only its `pkg_<id>.o` + relinks (`1` `clang++ -c` call vs `5`); `cfire emit-cpp` & `tests/golden/*.expected.cpp` are byte-identical; `make check-all` green. |
 | **B4** | Zero-setup `sqlite3`/`simdjson`, portable user apps & 6-target binary installers | `CF-203` -> `CF-204` -> `CF-205` -> `CF-206` | Clean macOS/Linux/Windows/Wasm/iOS machines build `core:json` & `ext:db/sqlite` with 0 external library installs while honoring user `sqlcipher`/C++ overrides; all 6 release bundles pass static/minOS linkage audits & smoke tests; `install.sh` + `install.ps1` install & verify SHA-256 checksums; `make check-all` green. |
+| **B5** | `CF-031` linkage boundary, pure-`.cf` Sema/cache/eject soundness, `--template tako`, and docs/LLM parity | `CF-207` -> `CF-208` -> `CF-209` -> `CF-210` | `@pkg(...)` retired with `cfire/RETIRED-API`; `@define` validated + propagated across shards; `PkgConfig`/`Includes`/`AppName`/`--pkg-config` + `build.cf` Sema checks green; `simdjson` vendored-first & `DevDebug` consistent; `cfire run`/`eval`/`eject` sound; `make install` & `cfire new --template tako` pass; `./cfire doc --check`, `make check`, `make check-deep` green. |
 
 ---
 
@@ -105,7 +130,7 @@ flowchart TD
 
 | Rank | ID | Wave | Priority | Size | Component | Summary | ADR | Depends On | Status |
 | :---: | :--- | :---: | :---: | :---: | :--- | :--- | :---: | :---: | :---: |
-| 1 | `CF-198` | B1 | **P0** | M | `src/build/toolchain_layout.hpp`, `src/tu_*.cpp`, `Makefile` | **Decouple `src/` from `cfire_core_stdlib.hpp` & Parallel Self-Build**: Remove 28-header pull-in and unused AudioToolbox framework; split compiler into parallel TUs (`35.5s` -> `~5s`) | `Q59` | None | `[DONE]` |
+| 1 | `CF-198` | B1 | **P0** | M | `src/build/toolchain_layout.hpp`, `src/tu_*.cpp`, `Makefile` | **Decouple `src/` from `cfire_core_stdlib.hpp` & Parallel Self-Build**: Remove runtime-header pull-in and unused AudioToolbox framework; split compiler into parallel TUs (`35.5s` -> `~5s`) | `Q59` | None | `[DONE]` |
 | 2 | `CF-199` | B1 | **P0** | M | `src/build/{toolchain_config,probe_cache}.hpp`, `src/{buildsys,clang_bridge,doctor,main}.hpp/cpp` | **Unified `ToolchainConfig`, `cfire config` & Persistent `ProbeCache`**: Single compiler precedence chain (`--cxx`/`--cc`/`--emxx`, `CFIRE_*`, `~/.cfire/config.json`) + `probes.json` + `mold`/`lld` probe | `Q55`, `Q59` | `CF-198` | `[DONE]` |
 | 3 | `CF-200` | B1 | **P0** | L | `src/build/{pch,binary_cache}.hpp`, `src/buildsys.hpp`, `src/main.cpp` | **Dev/Debug vs Release Profiles, Composite Runtime PCH, `.o` DWARF Maps & `BinaryCache`**: Default `run`/`test` to `-O0 -g` + cheap traps; Debug & Composite Runtime PCH; LLDB `.cfire/obj/*.o`; 1 GB LRU binary cache | `Q57`, `Q59` | `CF-199` | `[DONE]` |
 | 4 | `CF-201` | B2 | **P0** | M | `src/analysis.hpp`, `src/build/syntax_check.hpp`, `src/lsp/server.hpp`, `Makefile` | **Single-Pass In-Memory `check` & Stdin Clang Gating**: Fix double-analysis/stale-disk bug; `~15 ms` pure-`.cf` short-circuit; stdin Clang for `cpp {}` / `import cpp`; `didChange` vs `didSave`; `--verify-cpp` CI gate | `Q58` | `CF-200` | `[DONE]` |
@@ -114,10 +139,14 @@ flowchart TD
 | 7 | `CF-204` | B4 | **P1** | M | `src/buildsys.hpp`, `src/build/manifest.hpp`, `src/main.cpp` | **Portable App Build Flags (`--portable`, `--static`, `--macos-min`, `--universal`)**: Per-library `.a` resolution with shared-only C++ fallback; macOS `13.3` floor & universal `lipo` fat binaries | `Q56` | `CF-203` | `[DONE]` |
 | 8 | `CF-205` | B4 | **P0** | M | `.github/workflows/release.yml`, `scripts/release.sh`, `Dockerfile` | **6-Target Pre-Compiled `cfire` Release Matrix & Binary Linkage Gates**: Ship lean static `musl` Linux (`x64`/`arm64`), minOS `13.3` macOS (`arm64`/`x64`), `-static` UCRT Windows (`x64`/`arm64`) + `SHA256SUMS.txt` | `Q55` | `CF-198`, `CF-204` | `[DONE]` |
 | 9 | `CF-206` | B4 | **P1** | S | `docs/install.sh`, `docs/install.ps1`, `README.md` | **Pre-Compiled Binary Installers**: Fast SHA-256 verified binary download + `--from-source` fallback (`install.sh`), native Windows PowerShell installer (`install.ps1`), updated docs | `Q55`, `Q56` | `CF-205` | `[DONE]` |
+| 10 | `CF-207` | B5 | **P0** | L | `src/parser_impl.inc`, `src/sema/*`, `src/build/{manifest,package_loader,toolchain_layout}.hpp`, `src/buildsys.hpp`, `src/analysis.hpp`, `src/lsp/*`, `src/codegen/decl.inc` | **Retire `@pkg`, Declarative `build.cf` (`PkgConfig`, `Includes`, `AppName`) & Unified Pre-Sema Resolution**: Enforce `CF-031` separation (`cfire/RETIRED-API`), validate `@define` (`cfire/INVALID-ATTRIBUTE`) across shards, add `--pkg-config`, typecheck `build.cf` | `Q60` | `CF-202`, `CF-204` | `[DONE]` |
+| 11 | `CF-208` | B5 | **P0** | L | `src/codegen/decl.inc`, `src/sema/*`, `src/buildsys.hpp`, `src/tu_build.cpp`, `src/cli/scaffold.hpp`, `src/mcp.hpp`, `src/build/{toolchain_config,cache_paths,lib_cache,deps}.hpp` | **Compiler, Cache, Profile, `cfire eject` & Vendored `simdjson` Soundness**: Fix receiver-generic methods, C++ keyword mangling, recursive struct cycles, transitive move-only & interface checks; fix C header caching, stale `cfire run`, `cfire eval` `DevDebug`, vendored-first `simdjson` + `SIMDJSON_DEVELOPMENT_CHECKS=0`, `eject_cmake`, XDG/toolchain precedence, `--universal` Make/dSYM | `Q61` | `CF-203` | `[DONE]` |
+| 12 | `CF-209` | B5 | **P0** | S | `Makefile`, `src/cli/scaffold.hpp`, `scripts/release.sh` | **`Makefile install` & `--template tako` Scaffold Repair**: Remove dead `pkg/*` copy in `Makefile`, verify portable flags, and rewrite `cfire new --template tako` onto `core:tako` | `Q61` | `CF-207` | `[DONE]` |
+| 13 | `CF-210` | B5 | **P1** | M | `src/docgen/*`, `src/mcp.hpp`, `src/lsp/ide_setup.hpp`, `README.md`, `AGENTS.md`, `.agents/rules/planning-workflow.md`, `docs/*` | **Exhaustive Documentation, LLM Reference, MCP, IDE Rules & Catalog Sync**: Fix `generate_llm_reference`, add `docs/LLMS.txt`, sync `GUIDE.md`, `AGENTS.md`, `index.template.html`, Tab 7 snake_case, and regenerate `cfire doc` | `Q60`, `Q61` | `CF-207`, `CF-208`, `CF-209` | `[DONE]` |
 
 ---
 
-## B.4 Detailed Item Specifications (`CF-198` – `CF-206`)
+## B.4 Detailed Item Specifications (`CF-198` – `CF-210`)
 
 ### `CF-198` — Decouple `src/` from `cfire_core_stdlib.hpp` & Parallel Self-Build `[DONE]`
 - **Wave / ADR**: Wave B1 (`Q59`).
@@ -257,8 +286,8 @@ flowchart TD
        - *iOS (`--target ios` / `ios-sim`)*: compile `simdjson.cpp` for `arm64-apple-ios` / `x86_64|arm64-apple-ios-simulator` with `-isysroot` & `-miphoneos-version-min`; update `runtime/core/json.hpp:412` so `CFIRE_USE_SIMDJSON` activates on iOS when vendored/provided! Keep system `-lsqlite3` or vendored archive cleanly when targeting iOS.
        - *Android (`*-android*`)*: compile both `sqlite3.c` and `simdjson.cpp` with `ToolchainConfig` NDK compiler & `--sysroot`.
   3. **Guardrail 1 — Automatic Override Yielding**:
-     - For `ext:db/sqlite`: only add `-I<runtime_dir>/vendor/sqlite3` + cached `libcfire_sqlite3.a` if **none** of `has_sqlcipher()`, `~/.local/{include,lib}` `sqlite3`, explicit `#[pkg("sqlite3")]`, `--link-lib`, or `build.cf` dependency provides `sqlite3`/`sqlcipher`!
-     - For `core:json` / `simdjson`: only add `-I<runtime_dir>/vendor/simdjson` + cached `libcfire_simdjson.a` if **no** user `~/.local`, `pkg-config simdjson`, `#[pkg(...)]`, `--link-lib`, or `build.cf` overrides `simdjson`.
+     - For `ext:db/sqlite`: only add `-I<runtime_dir>/vendor/sqlite3` + cached `libcfire_sqlite3.a` if **none** of `has_sqlcipher()`, `~/.local/{include,lib}` `sqlite3`, explicit `--pkg-config`, `--link-lib`, or `build.cf` dependency provides `sqlite3`/`sqlcipher`!
+     - For `core:json` / `simdjson`: always default to vendored `simdjson` + cached `libcfire_simdjson.a` unless user `~/.local`, `--pkg-config`, `--link-lib`, or `build.cf` overrides `simdjson` *(enforced consistently across `run`/`build`/`test`/`eject` in `CF-208` / `Q61`)*. *(Historic `#[pkg]` / `@pkg` syntax retired in `CF-207` / `Q60`.)*
   4. **Guardrail 2 — `src/build/deps.hpp` Toolchain & C++ Stdlib ABI Forwarding**:
      - Replace hardcoded `"clang++"` / `"clang"` / `"ar"` in `src/build/deps.hpp:545,608,615` with resolved `ToolchainConfig` (`cxx`, `cc`, `ar`).
      - Forward `--target`, `-isysroot` / `--sysroot`, `-mmacosx-version-min` (when set), and for CMake deps (`deps.hpp:456`): `-DCMAKE_C_COMPILER=... -DCMAKE_CXX_COMPILER=... -DCMAKE_OSX_DEPLOYMENT_TARGET=...`.
@@ -332,3 +361,46 @@ flowchart TD
   - *Platform VMs*: Test `install.sh` on the Linux VM and `install.ps1` in PowerShell on the Windows VM (verifying `cfire --version`, `cfire doctor`, and compiling a hello-world `.cf` program end-to-end).
   - *Docs*: `cfire doc --check` and `make check` pass with 0 warnings/errors.
 - **Acceptance Criteria**: One-command binary install works on macOS, Linux, and Windows with mandatory SHA-256 verification and clean `clang++` onboarding; `make check-all` passes.
+
+---
+
+### `CF-207` — Retire `@pkg`, Declarative `build.cf` (`PkgConfig`, `Includes`, `AppName`) & Unified Resolution `[DONE]`
+- **Wave / ADR**: Wave B5 (`Q60`).
+- **Problem & Evidence**:
+  - `import cpp "..." @pkg("...")` violates `CF-031` separation of concerns between source files and `build.cf`, is dropped silently in Sema when aliases follow `@pkg`, leaks raw `pkg-config` spawn inside LSP `collect_imports`, omits `imp.attrs` from `package_loader.hpp` dedup keys, and only propagates `@define` markers to shard headers on `"IMPLEMENTATION"` substrings.
+  - Meanwhile, `cfire new` emits `build.Executable{...}` which fails `cfire check build.cf` (`UNKNOWN-STDLIB-TYPE`), `core:build` points to non-existent `core/buildsys.hpp`, and `build.cf` lacks first-class `PkgConfig`, `Includes`, and `AppName` fields while `analyze_and_emit_impl` runs C header inspection before Sema (`pkg-config` runs after).
+- **Implementation Plan**:
+  1. Retire `@pkg(...)` in Sema (`cfire/RETIRED-API` with fix-it to `build.cf` `PkgConfig` / `--pkg-config`), validate `@define("KEY"[, "VAL"])` & unknown attributes (`cfire/INVALID-ATTRIBUTE`), fix `import cpp "..." @define(...) as alias` ordering and non-string `@attr` arg tokens in `src/parser_impl.inc`.
+  2. Add `PkgConfig`, `Includes`, `AppName`, top-level `build.PkgConfig`/`Link`/`Include` in `src/build/manifest.hpp`, `--pkg-config <name>` CLI flag, and generalized `ProbeCache`-backed `query_pkg_config` in `toolchain_layout.hpp` forwarding `--static`/`--portable` flags.
+  3. Unify `cpp_headers` / `pkg-config` / `build.cf` resolution **before** Sema across `buildsys.hpp`, `analysis.hpp`, `lsp/server.hpp`, `cmd_inspect_outline.hpp`, `package_loader.hpp` (dedup key + subpackage linkage inheritance), and propagate all `@define`s into `decls.hpp` (`codegen/decl.inc`).
+  4. Register `core:build` struct types (`Package`, `Executable`, `Library`, `Step`, `PkgConfig`, `Link`, `Include`, `Tako`, `Target`, `StepTarget`, `Command`, `CC`, `CMake`, `Make`, `Git`, `Archive`) in `builtin_methods.hpp`, treat `package build` or filename `build.cf` cleanly in Sema, and include `build.cf` in `cfire check <dir>` without Clang verification.
+- **Acceptance Criteria**: `@pkg(...)` is cleanly rejected with `cfire/RETIRED-API`; `@define` works in single-TU and sharded modes with Sema validation; `examples/05-cmake-interop` uses `build.cf` `PkgConfig`; `cfire check` succeeds on every `build.cf` project.
+
+---
+
+### `CF-208` — Compiler, Cache, Profile, `cfire eject` & Vendored `simdjson` Soundness `[DONE]`
+- **Wave / ADR**: Wave B5 (`Q61`).
+- **Problem & Evidence**:
+  - Pure-`.cf` short-circuit (`CF-201`) revealed Clang-only codegen/Sema gaps: receiver-generic methods (`fn (b: Box[T]) get()`) lose enclosing `template <typename T>`, C++ keyword identifiers (`operator`, `concept`, `requires`, etc.) fail codegen, recursive value/`T?` struct cycles infinite-recurse, non-struct interface impls slip through, and move-only structs fail transitively.
+  - Cache/profile/eject inconsistencies: `cfire run` skips `build_native` when `.cfire/bin/<exe>` exists (running stale `Release` binaries or stale `ui/index.html` in `.app` bundles), `cfire eval` uses `Release` instead of `DevDebug`, `SIMDJSON_DEVELOPMENT_CHECKS` flips `sizeof(ondemand::parser)` across `-O0`/`-O2`, `simdjson` yields to arbitrary Homebrew `pkg-config`, C header cache keys omit `-I`/header trees and non-`main` package `.h`, `eject_cmake` emits broken CMake (`pkg_check_modules simdjson`, missing `pthread dl m`, split `-framework`, missing `.mm`/`cflags`), `XDG_CONFIG_HOME` is ignored by `config_file_path()`, `compiler_binary_fingerprint` hashes only `ccache`, `resolve_cxx` vs `resolve_c` disagree, and `--universal` Make/Ninja/dSYM handling is incomplete.
+- **Implementation Plan**:
+  1. Fix generic receiver methods across forward decls, definitions, and sharded headers (`src/codegen/decl.inc`), expand `sanitize_cpp_ident`, reject recursive value struct cycles (`cfire/RECURSIVE-TYPE`), reject non-struct interface impls, and fix transitive move-only field checks.
+  2. Switch `request_simdjson_dep` to vendored-first (`Q61`) + explicit `-DSIMDJSON_DEVELOPMENT_CHECKS=0` across `DevDebug` & `Release`; clean `doctor.hpp`; fix `eject_cmake`; unify `emit_cpp`/`emit_sharded_cpp` headers.
+  3. Fix C header fingerprinting across `-I` dirs and `build.CC` headers, atomic `.tmp.<pid>.o`, `cflags` in single-TU `.o` cache, Windows `windres` hash, `tu_build.cpp`/`tu_scaffold.cpp` always running `build_native` in `cfire run`, `cfire eval` `DevDebug`, `package_loader.hpp` `GlobalVarDecl` topological order & test type mangling, `XDG_CONFIG_HOME`, `ToolchainConfig` cross-target precedence, `compiler_binary_fingerprint`, `LibCache` `ar`, and `--universal` Make/Ninja arch flags + skipping 3rd host pass + `--dsym`.
+- **Acceptance Criteria**: All pure-`.cf` and multi-file projects hit zero C++23 codegen/ODR surprises under `--verify-cpp`; `cfire run`/`eval`/`eject`/`--universal` behave consistently across `DevDebug` and `Release`.
+
+---
+
+### `CF-209` — `Makefile install` & `--template tako` Scaffold Repair `[DONE]`
+- **Wave / ADR**: Wave B5 (`Q61`).
+- **Problem & Evidence**: `Makefile:79,83` fails `make install` with `cp: pkg/*: No such file or directory`; `cfire new --template tako` generates dead `import "pkg:tako"` and broken `tako.new_app` syntax.
+- **Implementation Plan**: Remove dead `pkg` lines in `Makefile:79-84`, audit `scripts/release.sh` portable flags, and rewrite `cfire new --template tako` in `src/cli/scaffold.hpp` to scaffold a clean, compiling, tested `import "core:tako"` local cloud-mock app.
+- **Acceptance Criteria**: `make install DESTDIR=/tmp/stage` succeeds cleanly and `cfire new app --template tako && cfire test` passes out-of-the-box.
+
+---
+
+### `CF-210` — Exhaustive Documentation, LLM Context, MCP, IDE Rules & Catalog Sync `[DONE]`
+- **Wave / ADR**: Wave B5 (`Q60`, `Q61`).
+- **Problem & Evidence**: `generate_llm_reference()` hardcodes a 13-module subset (`pkg:tako`, `@pkg`, `&str`, `str.find`, `log.Level.Debug`) while missing 15 runtime modules; `README.md`, `GUIDE.md`, `AGENTS.md`, `.agents/rules/planning-workflow.md`, `docs/index.template.html`, `src/mcp.hpp`, `src/lsp/ide_setup.hpp`, `src/docgen/*`, and Showcase Tab 7 still advertise retired syntax, stale counts, or wrong diagnostics.
+- **Implementation Plan**: Overhaul `src/docgen/{markdown,styles,html,catalog_*}.hpp`, add generated `docs/LLMS.txt`, sync `src/mcp.hpp`, `src/lsp/ide_setup.hpp`, `src/cli/*`, `README.md`, `docs/GUIDE.md`, `docs/index.template.html`, `AGENTS.md`, `docs/planning/*`, `tests/conformance/README.md`, `tests/unit/test_lsp_docgen.hpp`, and regenerate all docs via `./cfire doc`.
+- **Acceptance Criteria**: `./cfire doc --check`, `./.cfire_test_runner guide`, and `make check` pass with zero drift across docs, prompts, MCP resources, and catalogs.

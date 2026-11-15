@@ -321,8 +321,19 @@ struct CheckItem {
     // --- 3. Native `ext:*` & `vendor:*` Engine Libraries ---
     {
         std::string det;
-        const bool has_vendored_sj = std::filesystem::is_regular_file(runtime_dir / "vendor" / "simdjson" / "simdjson.cpp");
-        if (check_pkg_or_header("simdjson", "simdjson.h", det)) {
+        std::error_code vec;
+        const bool has_vendored_sj =
+            std::filesystem::is_regular_file(runtime_dir / "vendor" / "simdjson" / "simdjson.cpp", vec) &&
+            std::filesystem::is_regular_file(runtime_dir / "vendor" / "simdjson" / "simdjson.h", vec);
+        if (has_vendored_sj) {
+            items.push_back({
+                "Native Engine Libraries",
+                "simdjson (`core:json`, `ext:ai`)",
+                "ok",
+                "vendored amalgamation (runtime/vendor/simdjson, cached on demand)",
+                ""
+            });
+        } else if (check_pkg_or_header("simdjson", "simdjson.h", det)) {
             bool sj_compat_err = false;
             if (det.find("~/.local") == std::string::npos && !build::find_executable_in_path("pkg-config").empty()) {
                 auto sj_pc = build::ProbeCache::instance().probe_pkg_config("simdjson");
@@ -335,36 +346,18 @@ struct CheckItem {
                 if (sj_pc.found && cl_maj >= 19 &&
                     (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
                     sj_compat_err = true;
-                    if (has_vendored_sj) {
-                        items.push_back({
-                            "Native Engine Libraries",
-                            "simdjson (`core:json`, `ext:ai`)",
-                            "ok",
-                            std::format("vendored amalgamation (runtime/vendor/simdjson, cached on demand; system {} < 4.0 skipped on Clang {})", det, cl_maj),
-                            ""
-                        });
-                    } else {
-                        items.push_back({
-                            "Native Engine Libraries",
-                            "simdjson (`core:json`, `ext:ai`)",
-                            "warn",
-                            std::format("{} is incompatible with Clang {} (requires simdjson >= 4.0)", det, cl_maj),
-                            "Install simdjson >= 4.0 into ~/.local/{include,lib} or upgrade libsimdjson-dev"
-                        });
-                    }
+                    items.push_back({
+                        "Native Engine Libraries",
+                        "simdjson (`core:json`, `ext:ai`)",
+                        "warn",
+                        std::format("{} is incompatible with Clang {} (requires simdjson >= 4.0)", det, cl_maj),
+                        "Install simdjson >= 4.0 into ~/.local/{include,lib} or upgrade libsimdjson-dev"
+                    });
                 }
             }
             if (!sj_compat_err) {
                 items.push_back({"Native Engine Libraries", "simdjson (`core:json`, `ext:ai`)", "ok", det, ""});
             }
-        } else if (has_vendored_sj) {
-            items.push_back({
-                "Native Engine Libraries",
-                "simdjson (`core:json`, `ext:ai`)",
-                "ok",
-                "vendored amalgamation (runtime/vendor/simdjson, cached on demand)",
-                ""
-            });
         } else {
             items.push_back({
                 "Native Engine Libraries",
@@ -658,15 +651,23 @@ inline auto run_setup(
     std::string sudo_prefix = is_root ? "" : (has_command("sudo") ? "sudo " : "");
 
     // 1. Install missing system libraries via platform package manager
+    std::error_code vec;
+    const bool has_vendored_sj =
+        std::filesystem::is_regular_file(runtime_dir / "vendor" / "simdjson" / "simdjson.cpp", vec) &&
+        std::filesystem::is_regular_file(runtime_dir / "vendor" / "simdjson" / "simdjson.h", vec);
+    const bool has_vendored_sq =
+        std::filesystem::is_regular_file(runtime_dir / "vendor" / "sqlite3" / "sqlite3.c", vec) &&
+        std::filesystem::is_regular_file(runtime_dir / "vendor" / "sqlite3" / "sqlite3.h", vec);
+
     std::string install_cmd;
     if (pm == "brew") {
         std::vector<std::string> pkgs;
         std::string dummy;
         if (!has_command("pkg-config")) pkgs.push_back("pkg-config");
         if (!has_command("cmake")) pkgs.push_back("cmake");
-        if (!check_pkg_or_header("simdjson", "simdjson.h", dummy)) pkgs.push_back("simdjson");
+        if (!has_vendored_sj && !check_pkg_or_header("simdjson", "simdjson.h", dummy)) pkgs.push_back("simdjson");
         if (!check_pkg_or_header("libzstd", "zstd.h", dummy)) pkgs.push_back("zstd");
-        if (!check_pkg_or_header("sqlite3", "sqlite3.h", dummy)) pkgs.push_back("sqlite");
+        if (!has_vendored_sq && !check_pkg_or_header("sqlite3", "sqlite3.h", dummy)) pkgs.push_back("sqlite");
         if (!check_pkg_or_header("openssl", "openssl/ssl.h", dummy) &&
             !std::filesystem::exists("/opt/homebrew/opt/openssl/include/openssl/ssl.h")) {
             pkgs.push_back("openssl");
@@ -687,9 +688,9 @@ inline auto run_setup(
         if (!has_command("pkg-config")) pkgs.push_back("pkg-config");
         if (!has_command("git")) pkgs.push_back("git");
         if (!has_command("curl")) pkgs.push_back("curl");
-        if (!check_pkg_or_header("simdjson", "simdjson.h", dummy)) pkgs.push_back("libsimdjson-dev");
+        if (!has_vendored_sj && !check_pkg_or_header("simdjson", "simdjson.h", dummy)) pkgs.push_back("libsimdjson-dev");
         if (!check_pkg_or_header("libzstd", "zstd.h", dummy)) pkgs.push_back("libzstd-dev");
-        if (!check_pkg_or_header("sqlite3", "sqlite3.h", dummy)) pkgs.push_back("libsqlite3-dev");
+        if (!has_vendored_sq && !check_pkg_or_header("sqlite3", "sqlite3.h", dummy)) pkgs.push_back("libsqlite3-dev");
         if (!check_pkg_or_header("openssl", "openssl/ssl.h", dummy)) pkgs.push_back("libssl-dev");
         if (with_wasm && !build::resolve_emscripten_compiler()) pkgs.push_back("emscripten");
         if (!pkgs.empty()) {
@@ -697,11 +698,17 @@ inline auto run_setup(
             for (const auto& p : pkgs) install_cmd += " " + p;
         }
     } else if (pm == "dnf") {
-        install_cmd = sudo_prefix + "dnf install -y clang make cmake pkgconf-pkg-config git curl simdjson-devel libzstd-devel sqlite-devel openssl-devel";
+        install_cmd = sudo_prefix + "dnf install -y clang make cmake pkgconf-pkg-config git curl libzstd-devel openssl-devel";
+        if (!has_vendored_sj) install_cmd += " simdjson-devel";
+        if (!has_vendored_sq) install_cmd += " sqlite-devel";
     } else if (pm == "pacman") {
-        install_cmd = sudo_prefix + "pacman -Sy --needed --noconfirm clang make cmake pkgconf git curl simdjson zstd sqlite openssl";
+        install_cmd = sudo_prefix + "pacman -Sy --needed --noconfirm clang make cmake pkgconf git curl zstd openssl";
+        if (!has_vendored_sj) install_cmd += " simdjson";
+        if (!has_vendored_sq) install_cmd += " sqlite";
     } else if (pm == "apk") {
-        install_cmd = sudo_prefix + "apk add --no-cache clang make cmake pkgconf git curl simdjson-dev zstd-dev sqlite-dev openssl-dev";
+        install_cmd = sudo_prefix + "apk add --no-cache clang make cmake pkgconf git curl zstd-dev openssl-dev";
+        if (!has_vendored_sj) install_cmd += " simdjson-dev";
+        if (!has_vendored_sq) install_cmd += " sqlite-dev";
     }
 
     if (!install_cmd.empty()) {

@@ -90,12 +90,12 @@ Try to make `cfire check` accept a program that then fails under `--sanitize` or
 ### 4.3 Concurrency
 - [ ] Contention correctness (`Atomic`, `Mutex[T]`, `Channel`) at 8 workers × 10k ops. Results must be exact.
 - [ ] Rejected patterns stay rejected: outer mutation in `spawn` (`ESCAPING-CAPTURE-MUT`).
-- [ ] Racy patterns: captured `&mut` / `*mut` pointers, views, `shared[T]` without a lock, maps written from two tasks.
+- [ ] Racy patterns: captured mutable locals (`mut`) or raw pointers, views, `shared[T]` without a lock, maps written from two tasks.
 - [ ] Lifecycle: `defer` ordering in `async.scope`, nested spawn, a panic inside a task, channel close/drain/timeout, context cancel cascade.
 - TSan recipe (until `cfire run --sanitize=thread` exists):
   ```bash
   ./cfire emit-cpp $P/main.cf > $P/main.cpp
-  clang++ -std=c++2b -O1 -g -fsanitize=thread -Iruntime $P/main.cpp -o $P/tsan && $P/tsan
+  clang++ -std=c++23 -O1 -g -fsanitize=thread -Iruntime $P/main.cpp -o $P/tsan && $P/tsan
   ```
 
 ### 4.4 Uniformity

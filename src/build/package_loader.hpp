@@ -225,6 +225,24 @@ namespace cfire::build {
                     visited_build_cfs.insert(sub_bcf_canon);
                     auto parsed = parse_build_cf(sub_build_cf);
                     if (!parsed) return std::unexpected(parsed.error());
+                    apply_manifest_pkg_fields(
+                        plan,
+                        candidate_dir,
+                        parsed->pkg_config,
+                        parsed->libraries,
+                        parsed->frameworks,
+                        parsed->includes
+                    );
+                    for (const auto& ex : parsed->executables) {
+                        apply_manifest_pkg_fields(
+                            plan,
+                            candidate_dir,
+                            ex.pkg_config,
+                            ex.libraries,
+                            ex.frameworks,
+                            ex.includes
+                        );
+                    }
                     for (auto& dep : parsed->external_deps) {
                         bool exists_already = false;
                         for (const auto& ed : plan.external_deps) {
@@ -337,8 +355,10 @@ namespace cfire::build {
                     if (gv.package_name.empty() && !sub_pkg_tag.empty()) {
                         gv.package_name = sub_pkg_tag;
                     }
-                    root_ast.global_vars.push_back(std::move(gv));
                 }
+                root_ast.global_vars.insert(root_ast.global_vars.begin(),
+                    std::make_move_iterator(sub_ast->global_vars.begin()),
+                    std::make_move_iterator(sub_ast->global_vars.end()));
                 for (auto& fn : sub_ast->functions) {
                     if (fn.package_name.empty() && !sub_pkg_tag.empty()) {
                         fn.package_name = sub_pkg_tag;
@@ -347,14 +367,37 @@ namespace cfire::build {
                 root_ast.functions.insert(root_ast.functions.begin(),
                     std::make_move_iterator(sub_ast->functions.begin()),
                     std::make_move_iterator(sub_ast->functions.end()));
-                for (auto& td : sub_ast->tests) root_ast.tests.push_back(std::move(td));
+                for (auto& td : sub_ast->tests) {
+                    if (td.package_name.empty() && !sub_pkg_tag.empty()) {
+                        td.package_name = sub_pkg_tag;
+                    }
+                    root_ast.tests.push_back(std::move(td));
+                }
             }
         } else {
-            // Deduplicate non-local imports (C++ or core imports)
+            // Deduplicate non-local imports (C++ or core imports), preserving & merging attributes (Q60)
             std::string imp_key = (imp.is_cpp ? "cpp:" : "cf:") + imp.path + (imp.alias.empty() ? "" : ":" + imp.alias);
             if (!seen_non_local_imports.contains(imp_key)) {
                 seen_non_local_imports.insert(imp_key);
                 kept_imports.push_back(imp);
+            } else {
+                for (auto& existing : kept_imports) {
+                    if (existing.is_cpp == imp.is_cpp && existing.path == imp.path && existing.alias == imp.alias) {
+                        for (const auto& attr : imp.attrs) {
+                            bool dup_attr = false;
+                            for (const auto& ea : existing.attrs) {
+                                if (ea.name == attr.name && ea.args == attr.args) {
+                                    dup_attr = true;
+                                    break;
+                                }
+                            }
+                            if (!dup_attr) {
+                                existing.attrs.push_back(attr);
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
     }
@@ -544,8 +587,12 @@ namespace cfire::build {
             rewrite_stmts(rewrite_stmts, rewrite_expr, fn.body, fn.package_name);
         }
         for (auto& td : root_ast.tests) {
-            for (auto& p : td.params) rewrite_tref(rewrite_tref, p.type, "");
-            rewrite_stmts(rewrite_stmts, rewrite_expr, td.body, "");
+            for (auto& p : td.params) rewrite_tref(rewrite_tref, p.type, td.package_name);
+            for (auto& bv : td.bench_variations) {
+                rewrite_tref(rewrite_tref, bv.inferred_type, td.package_name);
+                for (auto& vx : bv.values) rewrite_expr(rewrite_expr, rewrite_stmts, vx, td.package_name);
+            }
+            rewrite_stmts(rewrite_stmts, rewrite_expr, td.body, td.package_name);
         }
     }
 

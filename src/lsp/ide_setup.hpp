@@ -249,7 +249,8 @@ struct DetectedIde {
 - **Language Overview**: `cfire` (`.cf`) is a memory-safe, zero-overhead systems programming language that transpiles 1-to-1 to human-readable ISO C++23.
 - **Packages & Imports**:
   - **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants. Never write `import "./sibling.cf"` for same-directory files.
-  - **Toolchain & Hybrid Native WebUI Packages**: Use `import "pkg:tako"` (or `import "core:tako"`) along with `build.Tako()` in `build.cf` for zero-hardcoded-path Tako GUI integration, or `import "ext:webui"` (`cfire init --webui` / `cfire new <dir> --webui`) for Wails/Tauri-style hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, iOS, and Linux.
+  - **Standard Library, Cloud & Hybrid Native WebUI Packages**: Use `import "core:tako"` (`cfire new <dir> --template tako` / `cfire init --template tako`) for local/cloud S3 & SQS primitives, or `import "ext:webui"` (`cfire new <dir> --template webui`) for hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, iOS, Linux, and Windows.
+  - **C/C++ Interop & Declarative `build.cf` Linkage**: Use `import cpp "<header.h>"` (with optional `as <alias>` and `@define("KEY", "VAL")`) for foreign C/C++ headers, and declare native linkage (`PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`) in `build.cf` (never `@pkg` attributes on imports).
 - **Core Ergonomics**:
   - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={{a + b}} hex={{mask:04x}}"`.
   - **Loops & Defer**: Use `for i in 0..n` (half-open) or `for i in 1..=n` (inclusive) for numeric ranges, `for item in slice` / `for idx, item in slice` for collections, and `defer cleanup()` or `defer {{ ... }}` for RAII scope cleanup (`return` inside `defer {{ ... }}` is forbidden via `cfire/RETURN-IN-DEFER`).
@@ -259,13 +260,13 @@ struct DetectedIde {
     - Multi-iteration statistical benchmarks: `bench "name" |size in [64, 1024, 16384]| {{ black_box(work(size)) }}` (run via `cfire bench` or `cfire test --bench`).
     - Zero-code automatic invariants: fenced ```` ```cf ```` blocks in `///` doc-comments with `assert` run as doc-tests; JSON-tagged structs auto-run `[auto] json round-trip: <Struct>` during `cfire test`; every test checks for open file-descriptor leaks.
 - **Parameter Intents**:
-  - Default parameters are read-only borrows.
+  - Default parameters are read-only views (including zero-copy `str` views with implicit owned copies when stored or returned).
   - `mut` parameters require `mut` at both declaration and call site (`update(mut val)`).
   - `move` parameters transfer ownership and require `move` at the call site (`consume(move item)`).
-  - `out` parameters require `out` at the call site (`write_into(out buf)`).
 - **Compile-Time Memory Safety**:
-  - **Loan & Origin Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-POINTER`, `cfire/DANGLING-RETURN`, `cfire/ITERATOR-INVALIDATION`)**: Do not mutate, move, or reallocate a container (`.push()`, `.clear()`, `.erase()`) while a pointer (`&x`, `.data()`) or slice view (`s[a..b]`) borrows from it, or while iterating over it.
-  - **Flow-Sensitive Null Safety (`cfire/NULL-DEREF`)**: Guard nullable raw pointers (`*T`, `*mut T`) and smart pointers (`own[T]`, `shared[T]`) with `if p != none {{ ... }}` or `assert(p != none)` before dereferencing (`*p` or `p.field`).
+  - **Move Discipline (`cfire/USE-AFTER-MOVE`, `cfire/MOVE-REQUIRED`, `cfire/MOVE-CALLSITE`)**: `own[T]` and structs containing `own[T]` are move-only; passing or moving a non-Copy value without `move` or reading a moved variable without reassigning on all paths is rejected.
+  - **Loan & View Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-RETURN`, `cfire/DANGLING-TEMPORARY`, `cfire/ITERATOR-INVALIDATION`)**: Do not mutate, move, or reallocate a container (`.push()`, `.clear()`, `.erase()`) while a view borrows from it or while iterating over it, and never return a view into a local or temporary.
+  - **Flow-Sensitive Null Safety (`cfire/NULL-DEREF`)**: Guard smart pointers (`own[T]`, `shared[T]`) and FFI raw pointers (`*T`, `*mut T`) with `if p != none {{ ... }}` or `assert(p != none)` before dereference (raw pointers are restricted to `import cpp` boundaries via `cfire/RAW-POINTER`).
   - **Bounds, Arithmetic & Struct Tags (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`)**: Constant out-of-bounds indexing, division by zero, duplicate `json`/`sql`/`cli` struct tags, and unparsable `default:"..."` tags are rejected at compile time.
   - **Injection Safety (`cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`)**: Always use parameterized `?1` queries in `db.exec`/`db.query` instead of string concatenation.
 - **Built-In LSP, CLI & MCP Tools**:

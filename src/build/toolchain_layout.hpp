@@ -342,33 +342,54 @@ CFIRE_INFRA_INLINE void query_pkg_config(
         }
     }
     std::string hdr;
+    std::string hdr_alt;
     std::string lib_flag;
     std::string lib_stem;
     if (pkg == "sqlite3") { hdr = "sqlite3.h"; lib_flag = "-lsqlite3"; lib_stem = "libsqlite3"; }
-    else if (pkg == "sqlcipher") { hdr = "sqlcipher/sqlite3.h"; lib_flag = "-lsqlcipher"; lib_stem = "libsqlcipher"; }
+    else if (pkg == "sqlcipher") { hdr = "sqlcipher/sqlite3.h"; hdr_alt = "sqlite3.h"; lib_flag = "-lsqlcipher"; lib_stem = "libsqlcipher"; }
     else if (pkg == "libsodium") { hdr = "sodium.h"; lib_flag = "-lsodium"; lib_stem = "libsodium"; }
     else if (pkg == "libssh") { hdr = "libssh/libssh.h"; lib_flag = "-lssh"; lib_stem = "libssh"; }
     else if (pkg == "libzstd") { hdr = "zstd.h"; lib_flag = "-lzstd"; lib_stem = "libzstd"; }
     else if (pkg == "simdjson") { hdr = "simdjson.h"; lib_flag = "-lsimdjson"; lib_stem = "libsimdjson"; }
+    else if (!pkg.empty()) {
+        std::string bare = pkg.starts_with("lib") ? pkg.substr(3) : pkg;
+        if (!bare.empty()) {
+            hdr = bare + ".h";
+            hdr_alt = bare + "/" + bare + ".h";
+            lib_flag = "-l" + bare;
+            lib_stem = "lib" + bare;
+        }
+    }
 
     // 1. Prioritize user-local override in ~/.local/include + ~/.local/lib (CF-075)
     std::error_code ec;
     if (const char* home = std::getenv("HOME"); home && !hdr.empty()) {
         std::filesystem::path local_root = std::filesystem::path(home) / ".local";
         auto local_inc = local_root / "include" / hdr;
-        auto local_inc_alt = (pkg == "sqlcipher") ? (local_root / "include" / "sqlite3.h") : local_inc;
-        bool has_local_lib =
-            std::filesystem::exists(local_root / "lib" / (lib_stem + ".a"), ec) ||
-            std::filesystem::exists(local_root / "lib" / (lib_stem + ".so"), ec) ||
-            std::filesystem::exists(local_root / "lib" / (lib_stem + ".dylib"), ec) ||
-            std::filesystem::exists(local_root / "lib" / (lib_stem + ".dll.a"), ec) ||
-            std::filesystem::exists(local_root / "lib" / (lib_stem + ".lib"), ec);
-        if ((std::filesystem::exists(local_inc, ec) || std::filesystem::exists(local_inc_alt, ec)) && has_local_lib) {
+        auto local_inc_alt = hdr_alt.empty() ? local_inc : (local_root / "include" / hdr_alt);
+        bool has_local_hdr = std::filesystem::exists(local_inc, ec) || std::filesystem::exists(local_inc_alt, ec);
+        bool has_local_lib = false;
+        for (const char* ldir : {"lib", "lib64"}) {
+            if (std::filesystem::exists(local_root / ldir / (lib_stem + ".a"), ec) ||
+                std::filesystem::exists(local_root / ldir / (lib_stem + ".so"), ec) ||
+                std::filesystem::exists(local_root / ldir / (lib_stem + ".dylib"), ec) ||
+                std::filesystem::exists(local_root / ldir / (lib_stem + ".dll.a"), ec) ||
+                std::filesystem::exists(local_root / ldir / (lib_stem + ".lib"), ec)) {
+                has_local_lib = true;
+                break;
+            }
+        }
+        if (has_local_hdr && has_local_lib) {
             if (pkg == "sqlcipher" && std::filesystem::exists(local_inc, ec)) {
                 cflags.push_back("-I" + (local_root / "include" / "sqlcipher").string());
             }
             cflags.push_back("-I" + (local_root / "include").string());
-            libs.push_back("-L" + (local_root / "lib").string());
+            auto lib_dir = std::filesystem::is_directory(local_root / "lib64", ec) &&
+                           !std::filesystem::exists(local_root / "lib" / (lib_stem + ".a"), ec) &&
+                           !std::filesystem::exists(local_root / "lib" / (lib_stem + ".so"), ec)
+                ? (local_root / "lib64")
+                : (local_root / "lib");
+            libs.push_back("-L" + lib_dir.string());
             libs.push_back(lib_flag);
             return;
         }

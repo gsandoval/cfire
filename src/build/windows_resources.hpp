@@ -2,6 +2,8 @@
 // src/build/windows_resources.hpp — Windows PE Resource & Icon Compilation
 
 #include "../clang_bridge.hpp"
+#include "cache_paths.hpp"
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -150,21 +152,47 @@ namespace cfire::build {
     std::string windres = resolve_windres(target_triple);
     if (windres.empty()) return "";
 
-    auto rc_path = out_dir / (stem + "_cfire_icon.rc");
-    auto res_obj = out_dir / (stem + "_cfire_icon.res.o");
-    {
-        std::string ico_escaped = std::filesystem::absolute(ico_file, ec).string();
-        for (char& c : ico_escaped) {
-            if (c == '\\') c = '/';
-        }
-        std::ofstream rc_out(rc_path, std::ios::binary | std::ios::trunc);
-        rc_out << "1 ICON \"" << ico_escaped << "\"\n";
+    std::string ico_escaped = std::filesystem::absolute(ico_file, ec).string();
+    for (char& c : ico_escaped) {
+        if (c == '\\') c = '/';
     }
+    const std::string rc_content = std::format("1 ICON \"{}\"\n", ico_escaped);
+    const std::string rc_hash = sha256_hex(std::format(
+        "v1|{}|{}|{}|{}",
+        windres,
+        target_triple,
+        rc_content,
+        file_fingerprint_string(ico_file)
+    )).substr(0, 12);
+
+    auto rc_path = out_dir / std::format("{}_cfire_icon_{}.rc", stem, rc_hash);
+    auto res_obj = out_dir / std::format("{}_cfire_icon_{}.res.o", stem, rc_hash);
+    if (std::filesystem::is_regular_file(res_obj, ec) && !ec && std::filesystem::file_size(res_obj, ec) > 0 && !ec) {
+        return res_obj.string();
+    }
+    ec.clear();
+    if (!std::filesystem::exists(rc_path, ec)) {
+        std::ofstream rc_out(rc_path, std::ios::binary | std::ios::trunc);
+        rc_out << rc_content;
+    }
+
+    static std::atomic<uint64_t> s_res_tmp_seq{0};
+    auto tmp_res_obj = std::filesystem::path(std::format(
+        "{}.tmp.{}.{}.o", res_obj.string(), current_pid(), s_res_tmp_seq.fetch_add(1, std::memory_order_relaxed)));
     int rc = 0;
-    std::string cmd = std::format("{} \"{}\" -O coff -o \"{}\"", windres, rc_path.string(), res_obj.string());
+    std::string cmd = std::format("{} \"{}\" -O coff -o \"{}\"", windres, rc_path.string(), tmp_res_obj.string());
     (void)bridge::run_command_capture(cmd, rc);
-    if (rc != 0 || !std::filesystem::exists(res_obj, ec)) {
+    if (rc != 0 || !std::filesystem::exists(tmp_res_obj, ec)) {
+        std::filesystem::remove(tmp_res_obj, ec);
         return "";
+    }
+    std::filesystem::rename(tmp_res_obj, res_obj, ec);
+    if (ec) {
+        ec.clear();
+        std::filesystem::copy_file(tmp_res_obj, res_obj, std::filesystem::copy_options::overwrite_existing, ec);
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_res_obj, rm_ec);
+        if (ec) return "";
     }
     return res_obj.string();
 }

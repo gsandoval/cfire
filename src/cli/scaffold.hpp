@@ -70,39 +70,32 @@ namespace cfire::cli {
 import "core:build"
 
 app := build.Executable{{
-    Name:       "{}",
-    Entry:      "main.cf",
-    Targets:    ["native", "wasm", "ios-sim"],
-    Subsystem:  "gui",
-    WebProfile: "canvas",
+    Name:  "{}",
+    Entry: "main.cf",
 }}
 )CF", proj_name);
         main_cf_txt = std::format(R"CF(package main
 
-import "pkg:tako"
+import "core:tako"
 
-fn greet_label(count: i32) -> str {{
-    return "Clicks: {{count}}"
+fn store_greeting(bucket: str, key: str, message: str) -> str! {{
+    mut s3 := tako.NewS3Service()
+    try s3.CreateBucket(bucket)
+    _ = try s3.PutObject(bucket, key, message, "text/plain")
+    obj := try s3.GetObject(bucket, key)
+    return obj.Body
 }}
 
-fn main() {{
-    mut app := tako.new_app("{}", 420, 320)
-    defer app.close()
-
-    mut count: i32 = 0
-    for app.step() {{
-        app.begin_frame()
-        defer app.end_frame()
-        if app.button(greet_label(count)) {{
-            count += 1
-        }}
-    }}
+fn main() -> void! {{
+    body := try store_greeting("{}", "hello.txt", "Hello from cfire core:tako!")
+    println("{{}}", body)
 }}
 )CF", proj_name);
         test_cf_txt = R"CF(package main
 
-test "greet_label formats click count" {
-    assert(greet_label(3) == "Clicks: 3")
+test "store_greeting round-trips via core:tako S3Service" {
+    body := try store_greeting("tako-test", "hello.txt", "Hello, tako!")
+    assert_eq(body, "Hello, tako!")
 }
 )CF";
     } else if (tmpl == "webui") {
@@ -485,6 +478,11 @@ inline auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::st
 #else
         auto eval_bin = tmp_dir / "eval_bin";
 #endif
+        struct ProfileRestoreGuard {
+            cfire::build::BuildProfile prev;
+            ~ProfileRestoreGuard() { cfire::build::set_build_profile(prev); }
+        } prof_guard{cfire::build::current_build_profile()};
+        cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
         auto plan = cfire::build::build_native(cf_file, runtime_dir, eval_bin, false, false);
         if (!plan) {
             std::println(stderr, "{}", plan.error());

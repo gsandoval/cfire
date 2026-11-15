@@ -77,7 +77,7 @@ inline auto parse_input<EmptyInput>(const JsonVal&) -> std::expected<EmptyInput,
 
 template <>
 inline auto schema_for<QueryInput>() -> std::string {
-    return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:str', 'ext:ai', 'ext:webui'), diagnostic code (e.g. 'cfire/USE-AFTER-FREE'), or function/type name"}},"required":["query"],"additionalProperties":false})";
+    return R"({"type":"object","properties":{"query":{"type":"string","description":"Module import path (e.g. 'core:fs', 'core:json', 'ext:ai', 'ext:webui'), diagnostic code (e.g. 'cfire/USE-AFTER-FREE'), or function/type name"}},"required":["query"],"additionalProperties":false})";
 }
 
 template <>
@@ -435,7 +435,7 @@ struct McpOptions {
 
     srv.register_tool<QueryInput>(
         "cfire_stdlib_lookup",
-        "Look up cfire standard library functions, types, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples by module path (e.g. 'core:str', 'ext:ai', 'ext:webui') or symbol name.",
+        "Look up cfire standard library functions, types, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples by module path (e.g. 'core:fs', 'core:json', 'ext:ai', 'ext:webui') or symbol name.",
         [](QueryInput in) -> std::expected<std::string, cfire::Error> {
             std::ostringstream oss;
             bool found = false;
@@ -463,8 +463,8 @@ struct McpOptions {
                         oss << "- `" << fn.cf_sig << "` — " << fn.summary << "\n";
                     }
                     if (mod.ns_alias == "log") {
-                        oss << "- `type Level enum { Debug, Info, Warn, Error }` — Minimum severity threshold (`log.Level.Debug` / `log.Level::Debug`)\n";
-                        oss << "- `type Format enum { Text, Json }` — Output sink format (`log.Format.Text` / `log.Format.Json`)\n";
+                        oss << "- `type Level enum { Debug, Info, Warn, Error }` — Minimum severity threshold (`log.Level::Debug`)\n";
+                        oss << "- `type Format enum { Text, Json }` — Output sink format (`log.Format::Text` / `log.Format::Json`)\n";
                     }
                     oss << "\n";
                     continue;
@@ -480,12 +480,12 @@ struct McpOptions {
             if (norm_q == "log.Level" || norm_q == "log::Level" || norm_q == "Level") {
                 found = true;
                 oss << "## `log.Level` (`core:log`)\n```cf\ntype Level enum {\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}\n```\n"
-                    << "Lowered C++23: `cfire::log::Level` (`uint8_t`). Pass to `log.set_level(log.Level.Debug)`.\n";
+                    << "Lowered C++23: `cfire::log::Level` (`uint8_t`). Pass to `log.set_level(log.Level::Debug)`.\n";
             }
             if (norm_q == "log.Format" || norm_q == "log::Format" || norm_q == "Format") {
                 found = true;
                 oss << "## `log.Format` (`core:log`)\n```cf\ntype Format enum {\n    Text = 0\n    Json = 1\n}\n```\n"
-                    << "Lowered C++23: `cfire::log::Format` (`uint8_t`). Pass to `log.set_format(log.Format.Json)`.\n";
+                    << "Lowered C++23: `cfire::log::Format` (`uint8_t`). Pass to `log.set_format(log.Format::Json)`.\n";
             }
             if (!found) {
                 return std::format("No stdlib module, symbol, or diagnostic matching '{}'", in.query);
@@ -561,6 +561,11 @@ struct McpOptions {
                 std::ofstream out(cf_file, std::ios::binary | std::ios::trunc);
                 out << src;
             }
+            struct ProfileRestoreGuard {
+                cfire::build::BuildProfile prev;
+                ~ProfileRestoreGuard() { cfire::build::set_build_profile(prev); }
+            } prof_guard{cfire::build::current_build_profile()};
+            cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
             auto plan = cfire::build::build_native(cf_file, runtime_dir, bin_file);
             if (!plan) {
                 std::filesystem::remove_all(tmp_dir, ec);
@@ -700,7 +705,7 @@ struct McpOptions {
                 std::ostringstream oss;
                 oss << "Header: <" << header << "> (" << idx->symbols.size() << " symbols)\n";
                 for (const auto& [sname, sym] : idx->symbols) {
-                    oss << "  cpp::" << sym.name << "(...) -> " << (sym.return_type.empty() ? "void" : sym.return_type) << "\n";
+                    oss << "  cpp." << sym.name << "(...) -> " << (sym.return_type.empty() ? "void" : sym.return_type) << "\n";
                 }
                 return oss.str();
             }
@@ -758,10 +763,10 @@ struct McpOptions {
             }
             // 4. Fallback to stdlib lookup (including `log.Level` and `log.Format`)
             if (target_str == "log.Level" || target_str == "log::Level" || target_str == "Level") {
-                return "### Enum `log.Level` (`core:log`)\n```cf\ntype Level enum {\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}\n```\n**Lowered C++23:** `cfire::log::Level` (`uint8_t`)\n\nMinimum severity threshold for structured logging (`log.set_level(log.Level.Debug)` or `log.set_level(log.Level::Debug)`).";
+                return "### Enum `log.Level` (`core:log`)\n```cf\ntype Level enum {\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}\n```\n**Lowered C++23:** `cfire::log::Level` (`uint8_t`)\n\nMinimum severity threshold for structured logging (`log.set_level(log.Level::Debug)`).";
             }
             if (target_str == "log.Format" || target_str == "log::Format" || target_str == "Format") {
-                return "### Enum `log.Format` (`core:log`)\n```cf\ntype Format enum {\n    Text = 0\n    Json = 1\n}\n```\n**Lowered C++23:** `cfire::log::Format` (`uint8_t`)\n\nOutput sink format for structured logging (`log.set_format(log.Format.Json)` or `log.set_format(log.Format::Text)`).";
+                return "### Enum `log.Format` (`core:log`)\n```cf\ntype Format enum {\n    Text = 0\n    Json = 1\n}\n```\n**Lowered C++23:** `cfire::log::Format` (`uint8_t`)\n\nOutput sink format for structured logging (`log.set_format(log.Format::Json)` or `log.set_format(log.Format::Text)`).";
             }
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
                 for (const auto& fn : mod.functions) {

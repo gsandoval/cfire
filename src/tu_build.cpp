@@ -80,7 +80,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
     if (sub == "emit-cpp") {
         auto res = cfire::build::analyze_and_emit(
             args.target, runtime_dir, false, false, args.target_triple, args.sysroot,
-            args.web_profile, args.subsystem, args.sanitize
+            args.web_profile, args.subsystem, args.sanitize,
+            args.extra_link_libs, args.extra_pkg_configs, args.extra_includes
         );
         if (!res) {
             std::println(stderr, "{}", res.error());
@@ -183,7 +184,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
                         effective_subsystem,
                         effective_app_name,
                         effective_bundle_id,
-                        effective_icon
+                        effective_icon,
+                        args.extra_pkg_configs
                     );
                     if (!plan) {
                         std::println(stderr, "error building target '{}' for executable '{}':\n{}",
@@ -248,7 +250,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
             args.subsystem,
             args.app_name_override,
             args.bundle_id_override,
-            args.icon_path_override
+            args.icon_path_override,
+            args.extra_pkg_configs
         );
         if (!plan) {
             std::println(stderr, "{}", plan.error());
@@ -357,7 +360,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
                     auto tmp_bin = suite_dir.file(std::format("suite-{}{}", idx, bin_ext));
                     auto plan = cfire::build::build_native(
                         suite_file, runtime_dir, tmp_bin, true, args.sanitize, args.target_triple,
-                        args.sysroot, args.extra_link_libs, args.extra_includes, args.web_profile, args.subsystem
+                        args.sysroot, args.extra_link_libs, args.extra_includes, args.web_profile, args.subsystem,
+                        args.app_name_override, args.bundle_id_override, args.icon_path_override, args.extra_pkg_configs
                     );
                     if (!plan) {
                         ++suite_failures;
@@ -452,7 +456,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
                     bcf_res->exe.subsystem,
                     !args.app_name_override.empty() ? args.app_name_override : bcf_res->exe.app_name,
                     !args.bundle_id_override.empty() ? args.bundle_id_override : bcf_res->exe.bundle_id,
-                    !args.icon_path_override.empty() ? args.icon_path_override : bcf_res->exe.icon
+                    !args.icon_path_override.empty() ? args.icon_path_override : bcf_res->exe.icon,
+                    args.extra_pkg_configs
                 );
                 if (!plan) {
                     std::println(stderr, "error building iOS target: {}", plan.error());
@@ -469,58 +474,40 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
             }
 
             if (is_wasm_run) {
-                if (!std::filesystem::exists(bcf_res->wasm_html)) {
-                    std::println("==> Building {} (WebAssembly target from build.cf)...", bcf_res->exe.name);
-                    std::error_code ec;
-                    std::filesystem::create_directories(bcf_res->wasm_html.parent_path(), ec);
-                    auto plan = cfire::build::build_native(
-                        bcf_res->entry_file,
-                        runtime_dir,
-                        bcf_res->wasm_html,
-                        false,
-                        false,
-                        "wasm32-unknown-emscripten",
-                        "",
-                        {},
-                        {},
-                        bcf_res->exe.web_profile.empty() ? (bcf_res->exe.subsystem == "gui" ? "canvas" : "auto") : bcf_res->exe.web_profile,
-                        bcf_res->exe.subsystem.empty() ? "auto" : bcf_res->exe.subsystem,
-                        bcf_res->exe.app_name,
-                        bcf_res->exe.bundle_id,
-                        bcf_res->exe.icon
-                    );
-                    if (!plan) {
-                        std::println(stderr, "error auto-building wasm target: {}", plan.error());
-                        return 1;
-                    }
-                    std::println("✓ Built WebAssembly: {} (profile={})", bcf_res->wasm_html.string(), plan->web_profile);
+                std::println("==> Building {} (WebAssembly target from build.cf)...", bcf_res->exe.name);
+                std::error_code ec;
+                std::filesystem::create_directories(bcf_res->wasm_html.parent_path(), ec);
+                auto plan = cfire::build::build_native(
+                    bcf_res->entry_file,
+                    runtime_dir,
+                    bcf_res->wasm_html,
+                    false,
+                    false,
+                    "wasm32-unknown-emscripten",
+                    "",
+                    {},
+                    {},
+                    bcf_res->exe.web_profile.empty() ? (bcf_res->exe.subsystem == "gui" ? "canvas" : "auto") : bcf_res->exe.web_profile,
+                    bcf_res->exe.subsystem.empty() ? "auto" : bcf_res->exe.subsystem,
+                    bcf_res->exe.app_name,
+                    bcf_res->exe.bundle_id,
+                    bcf_res->exe.icon,
+                    args.extra_pkg_configs
+                );
+                if (!plan) {
+                    std::println(stderr, "error auto-building wasm target: {}", plan.error());
+                    return 1;
                 }
+                std::println("✓ Built WebAssembly: {} (profile={})", bcf_res->wasm_html.string(), plan->web_profile);
                 return cfire::cli::tu::run_dev_server_tu(
                     bcf_res->wasm_html.parent_path(), args.web_port, args.open_browser,
                     bcf_res->wasm_html.filename().string()
                 );
             }
 
-            // Native run
+            // Native run — always delegate to build_native() so BinaryCache hits cleanly and source/bundle/profile edits never run stale binaries
             [[maybe_unused]] bool is_gui = (bcf_res->exe.subsystem == "gui");
-            bool needs_build = false;
-#if defined(__APPLE__)
-            if (is_gui) {
-                if (!std::filesystem::exists(bcf_res->macos_app_bundle)) {
-                    needs_build = true;
-                }
-            } else {
-                if (!std::filesystem::exists(bcf_res->native_bin)) {
-                    needs_build = true;
-                }
-            }
-#else
-            if (!std::filesystem::exists(bcf_res->native_bin)) {
-                needs_build = true;
-            }
-#endif
-
-            if (needs_build) {
+            {
                 std::println("==> Building {} (Native target from build.cf)...", bcf_res->exe.name);
                 std::error_code ec;
                 std::filesystem::create_directories(bcf_res->native_bin.parent_path(), ec);
@@ -538,7 +525,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
                     bcf_res->exe.subsystem,
                     bcf_res->exe.app_name,
                     bcf_res->exe.bundle_id,
-                    bcf_res->exe.icon
+                    bcf_res->exe.icon,
+                    args.extra_pkg_configs
                 );
                 if (!plan) {
                     std::println(stderr, "error building native target: {}", plan.error());
@@ -583,7 +571,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
             };
             auto plan = cfire::build::build_native(
                 args.target, runtime_dir, tmp_html, is_test, args.sanitize, args.target_triple,
-                args.sysroot, args.extra_link_libs, args.extra_includes, args.web_profile, args.subsystem
+                args.sysroot, args.extra_link_libs, args.extra_includes, args.web_profile, args.subsystem,
+                args.app_name_override, args.bundle_id_override, args.icon_path_override, args.extra_pkg_configs
             );
             if (!plan) {
                 std::println(stderr, "{}", plan.error());
@@ -636,7 +625,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
                 args.subsystem,
                 args.app_name_override,
                 args.bundle_id_override,
-                args.icon_path_override
+                args.icon_path_override,
+                args.extra_pkg_configs
             );
             if (!plan) {
                 std::println(stderr, "{}", plan.error());
@@ -658,7 +648,8 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
         auto tmp_bin = run_dir.file(std::format("{}{}", sub, bin_ext));
         auto plan = cfire::build::build_native(
             args.target, runtime_dir, tmp_bin, is_test, args.sanitize, args.target_triple,
-            args.sysroot, args.extra_link_libs, args.extra_includes, args.web_profile, args.subsystem
+            args.sysroot, args.extra_link_libs, args.extra_includes, args.web_profile, args.subsystem,
+            args.app_name_override, args.bundle_id_override, args.icon_path_override, args.extra_pkg_configs
         );
         if (!plan) {
             std::println(stderr, "{}", plan.error());
@@ -679,7 +670,7 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
 
     if (sub == "eject") {
         std::filesystem::path out_dir = !args.run_args.empty() ? std::filesystem::path(args.run_args[0]) : std::filesystem::path("ejected_cpp");
-        auto res = cfire::build::eject_cmake(args.target, runtime_dir, out_dir);
+        auto res = cfire::build::eject_cmake(args.target, runtime_dir, out_dir, args.extra_pkg_configs);
         if (!res) {
             std::println(stderr, "{}", res.error());
             return 1;

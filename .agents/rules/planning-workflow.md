@@ -16,4 +16,4 @@ When working in this repository:
      - **Integration Tests** (compiler subsystems and pipelines)
      - **Conformance Tests** (language execution & LSP streams in `tests/unit/` and `tests/e2e/`)
      - **Manual Validation** (real-world validation in Zed/VS Code or CLI)
-4. Every change must compile cleanly with `clang++ -std=c++23 -O2 -Wall -Wextra` (zero warnings), pass `make test` 100%, and pass `./cfire doc --check`.
+4. Every change must compile cleanly with `clang++ -std=c++23 -O2 -Wall -Wextra` (zero warnings via `make check-warnings`), pass `make check` 100%, and pass `./cfire doc --check`.

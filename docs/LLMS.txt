@@ -1,0 +1,1073 @@
+# cfire Language Reference Sheet for LLMs & AI Agents
+
+## Grammar & Syntax Rules
+- Package: `package <name>` (canonical entry: `package main`)
+  - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
+  - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_windows.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
+- Imports:
+  - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:json"`, `import "core:net/http"`, `import "core:audio"`, `import "core:keychain"`, `import "core:tako"`)
+  - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)
+  - Note on Builtin Operations: Methods and associated items on `str`, numeric types, slices (`[]T`), arrays (`[N]T`), and maps (`map[K]V`) live directly on values/types (`s.trim()`, `s.split(",")`, `xs.sort()`, `m.keys()`, `i32.parse(s)`, `i32.MAX`). Legacy `import "core:str"` and `import "core:sort"` are retired (`cfire/RETIRED-API`).
+  - Local package: `import "./path/to/pkg"`
+  - Foreign C/C++: `import cpp "header.h"` or `import cpp "header.h" as alias @define("KEY", "VAL")` (compile-time preprocessor defines belong on `import cpp` via `@define`; native linkage, `pkg-config`, libraries, frameworks, and include paths belong declaratively in `build.cf` via `PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` or CLI `--pkg-config <name>`. Legacy `@pkg` import attributes are retired via `cfire/RETIRED-API`).
+- Variable Declarations & Naming Conventions:
+  - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
+  - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
+  - Struct fields use `snake_case` (`cfire/FIELD-NAME-CASE`), enum variants use `UpperCamelCase` accessed as `Enum::Variant` (`::` is only for enum variants; use `.` for modules, methods, and associated items).
+- Built-in Prelude Functions & Type Constructors:
+  - Standard Output & Error: `println(fmt, ...)` / `print(fmt, ...)` (`stdout`), `eprintln(fmt, ...)` / `eprint(fmt, ...)` (`stderr`)
+  - Interactive Terminal Input: `cli.prompt(message: str = "") -> str?` and `cli.prompt_password(message: str = "") -> str?` (`core:cli`); or stream directly from `os.stdin().read_line() -> str?` (`core:os`)
+  - Assertions: `assert(cond)`, `assert_eq(a, b)`, `assert_ne(a, b)`, `panic(msg)`
+  - Canonical Construction (`make(...)` & Type Constructors `T(x)`, no `as` keyword):
+    - Scalar conversions: `i8(x)`, `i16(x)`, `i32(x)`, `i64(x)`, `isize(x)`, `u8(x)`, `byte(x)`, `u16(x)`, `u32(x)`, `u64(x)`, `usize(x)`, `f32(x)`, `f64(x)`, `bool(x)`
+    - Byte/u8 slice & string conversions: `[]byte(s_or_slice)`, `[]u8(s_or_slice)`, `str(bytes_or_scalar)`
+    - Value/Heap/Collection constructors: `make(T, args...)`, `make(own[T], v)`, `make(shared[T], v)`, `make([]T, len[, cap])`, `make(map[K]V)`
+- Strings & Arbitrary Expression Interpolation:
+  - Double-quoted strings interpolate arbitrary expressions and optional format specifiers: `"sum={a + b} first={items[0]} hex={mask:04x}"` (lowers to `std::format("sum={} first={} hex={:04x}", a + b, items[0], mask)`)
+  - Raw multi-line strings: `` `SELECT * FROM users` ``
+- Function Signatures:
+  - `fn name(a: i32, mut b: str, move c: []byte) -> Ret! { ... }`
+  - Method with receiver: `fn (mut self: Server) start() -> void! { ... }`
+  - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
+  - Optional return: `-> T?` lowers to `std::optional<T>`
+  - Multi-return tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, destructuring: `(x, y) := coords()`
+  - Generic parameters: `fn process[T: Display](item: T) { ... }` (and generic receiver methods `fn (b: Box[T]) get() -> T`)
+- Parameter Intent Rules:
+  - Default: immutable read-only view (including zero-copy `str` views with implicit copies when stored or returned)
+  - `mut`: must pass mutable variable with `mut` at call site: `update(mut val)`
+  - `move`: transfers ownership with `move` at call site: `consume(move item)`
+- Types:
+  - Primitives: `i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `byte`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`, `bool`, `char`, `void`
+  - Strings & Byte Slices: `str`, `[]byte`, `[]u8`
+  - Slices & Arrays: `[]T`, `[N]T`
+  - Maps: `map[Key]Val`
+  - Smart Pointers: `own[T]` (move-only unique ownership), `shared[T]` (reference-counted shared ownership)
+  - Foreign Interop Raw Pointers (restricted to `import cpp` FFI boundaries; rejected in pure `.cf` via `cfire/RAW-POINTER`): `*T`, `*mut T`
+  - Struct: `type User struct { id: i64, name: str `json:"name"` }`
+  - Enum: `type Shape enum { Circle(f64), Rect(f64, f64), None }`
+  - Interface: `type Writer interface { write(b: []byte) -> usize! }`
+- Control Flow & RAII Defer:
+  - `if cond { ... } else { ... }`
+  - Exclusive numeric range loop: `for i in 0..n { ... }` (iterates `0` to `n - 1`)
+  - Inclusive numeric range loop: `for i in 1..=n { ... }` (iterates `1` to `n`)
+  - Collection loop: `for item in slice { ... }` / `for i, item in slice { ... }`
+  - Conditional / unbounded loop: `for cond { ... }` / `for { ... }`
+  - Exhaustive pattern match: `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
+  - Single-statement or multi-statement RAII scope cleanup: `defer resource.close()` or `defer { f.flush(); f.close() }` (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`)
+- Testing, Fuzzing & Benchmarks:
+  - Unit test blocks: `test "description" { ... }`
+  - Property-based fuzz blocks: `fuzz "description" |x: i64, s: str| { ... }` (or parameterized `test "name" |x: i64| { ... }`): runs dictionary seeds + deterministic PRNG iterations (`--fuzz-runs <N>`, `--seed <S>`) with automatic counterexample shrinking.
+  - Statistical benchmarks: `bench "description" { black_box(work()) }` and parameterized `bench "name" |size in [64, 1024, 16384]| { ... }` or `|k in 1..=4|`.
+  - Executable doc-tests & checks: fenced ` ```cf ` blocks inside `///` doc-comments with `assert(...)` / `assert_eq(...)`, open FD leak canary, and `[auto] json round-trip: <StructName>` tests.
+- Error (`T!`) & Optional (`T?`) Handling:
+  - `val := try fallible()` (early return error on failure)
+  - `val := fallible() or fallback_expr`
+  - `val := fallible() or err { return -1 }` or parameterless `val := fallible() or { return -1 }` (block must diverge or panic)
+  - `val := optional() or fallback_expr`
+  - `val := optional() or { return -1 }` (`or err { ... }` on `T?` is rejected via `cfire/OPTIONAL-OR-ERR`)
+  - Flow-sensitive narrowing: after `if opt != none { ... }` or `if opt == none { return }`, `opt` narrows to `T`.
+- Memory Safety, Loan Tracking & Type Rules:
+  - Move Discipline (`cfire/USE-AFTER-MOVE`, `cfire/MOVE-REQUIRED`, `cfire/MOVE-CALLSITE`): Copying or passing a move-only value (`own[T]` or structs containing `own[T]`) or using a variable after `move` without reassigning on all paths is rejected; `move` parameters require `move` at call sites.
+  - View & Loan Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-RETURN`, `cfire/DANGLING-TEMPORARY`, `cfire/ITERATOR-INVALIDATION`): Mutating, reallocating, or moving a container while a view borrows from it or while iterating over it, or returning a view into a local/temporary, is rejected at compile time.
+  - Type & Boundary Checks (`cfire/RECURSIVE-TYPE`, `cfire/UNSATISFIED-CONSTRAINT`, `cfire/RAW-POINTER`, `cfire/REFERENCE-TYPE`, `cfire/RETIRED-API`, `cfire/NULL-DEREF`): Direct or optional self-recursive value structs without `own[T]`/`shared[T]`/`[]T` indirection, non-matching interface constraints, pure-`.cf` raw pointers or `&T` references, and unguarded pointer dereferences are rejected at compile time.
+  - Bounds, Arithmetic, Tags & Injection (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`, `cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Constant OOB indexing, div-by-zero, duplicate struct tags, and string-concatenated SQL/shell calls are diagnosed at compile time.
+- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp.some_c_func()`, `import cpp "hdr.h" @define("KEY", "VAL")`
+- CLI Tooling:
+  - `cfire init [--template cli|tako|webui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|webui]`: Scaffold a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`)
+  - `cfire run [--web] [--ios] [--pkg-config <name>] [target]`: Run native binary, iOS Simulator (`--ios`), or WebAssembly app (`--web`)
+  - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire check [--json] [--fix] [--verify-cpp] [file|dir]`: Workspace-aware type & safety checker with fix-its
+  - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner
+  - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Statistical benchmark runner
+  - `cfire fix [--dry-run] [--json] [file|dir]`: Auto-fixer for imports, intents, and match arms
+  - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in static server with WASM MIME & COOP/COEP headers
+  - `cfire eject <file.cf> [out_dir]`: Export standalone ISO C++23 + `CMakeLists.txt`
+  - `cfire outline [--json] [file|dir]`: AST symbol & test/fuzz/bench outline
+  - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or diagnostic rule (`cfire inspect cfire/USE-AFTER-MOVE`)
+  - `cfire install [--user|--prefix <dir>|--portable <dir>]`: Install self-relocating `cfire` binary and `runtime/` headers
+  - `cfire ide [target|--all|--status] [--global]`: Configure LSP, MCP, and agent rules for supported editors/agents
+  - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio
+  - `cfire doc [--check|--llm]`: Synchronize docs/`LLMS.txt` or print this reference sheet
+  - `cfire eval 'expr'`: Immediate evaluation of expressions (`DevDebug`)
+
+## Builtin Types & Standard Library (`core:*`, `ext:*`)
+
+### Builtin Types: Methods, Associated Items & make (no import required)
+Operations on values of builtin types are methods on the value (Q7): `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1` (Q8). Limits and parsing belong to the type (Q10): `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives (Q25): `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
+Functions & Methods:
+- `fn (x: i64) abs() -> Self`: Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`.
+- `fn (x: i64) min(a: Self) -> Self`: Smaller of the two values (for floats, a NaN operand yields the other operand).
+- `fn (x: i64) max(a: Self) -> Self`: Larger of the two values (for floats, a NaN operand yields the other operand).
+- `fn (x: i64) clamp(a: Self, b: Self) -> Self`: Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN).
+- `fn (x: i64) signum() -> Self`: `-1`, `0` or `1` (floats: `-1.0`, `±0.0`, `1.0`, NaN for NaN).
+- `fn (x: i64) pow(a: Self) -> Self`: Integer power (a negative exponent or overflow panics) or float power.
+- `fn (x: i64) count_ones() -> u32`: Number of set bits.
+- `fn (x: i64) leading_zeros() -> u32`: Number of leading zero bits.
+- `fn (x: i64) trailing_zeros() -> u32`: Number of trailing zero bits.
+- `fn (x: i64) is_power_of_two() -> bool`: `true` for 1, 2, 4, …; `false` for zero and negatives.
+- `fn (x: i64) div_euclid(a: Self) -> Self`: Euclidean division (the remainder is never negative); panics on division by zero or overflow.
+- `fn (x: i64) rem_euclid(a: Self) -> Self`: Euclidean remainder, always `>= 0`; integer division by zero panics.
+- `fn (x: i64) checked_add(a: Self) -> Self?`: `none` on overflow.
+- `fn (x: i64) checked_sub(a: Self) -> Self?`: `none` on overflow.
+- `fn (x: i64) checked_mul(a: Self) -> Self?`: `none` on overflow.
+- `fn (x: i64) checked_div(a: Self) -> Self?`: `none` on division by zero or overflow (`MIN / -1`).
+- `fn (x: i64) checked_neg() -> Self?`: `none` on overflow (`MIN`, or any non-zero unsigned value).
+- `fn (x: i64) checked_abs() -> Self?`: `none` for `MIN`.
+- `fn (x: i64) wrapping_add(a: Self) -> Self`: Two's-complement wrapping addition.
+- `fn (x: i64) wrapping_sub(a: Self) -> Self`: Two's-complement wrapping subtraction.
+- `fn (x: i64) wrapping_mul(a: Self) -> Self`: Two's-complement wrapping multiplication.
+- `fn (x: i64) wrapping_div(a: Self) -> Self`: Wrapping division (`MIN / -1 == MIN`); division by zero panics.
+- `fn (x: i64) wrapping_neg() -> Self`: Two's-complement wrapping negation.
+- `fn (x: i64) wrapping_abs() -> Self`: Absolute value, wrapping for `MIN`.
+- `fn (x: i64) saturating_add(a: Self) -> Self`: Addition clamped to `MIN..=MAX`.
+- `fn (x: i64) saturating_sub(a: Self) -> Self`: Subtraction clamped to `MIN..=MAX`.
+- `fn (x: i64) saturating_mul(a: Self) -> Self`: Multiplication clamped to `MIN..=MAX`.
+- `fn (x: i64) saturating_div(a: Self) -> Self`: Division clamped to `MIN..=MAX` (`MIN / -1 == MAX`); division by zero panics.
+- `fn (x: i64) saturating_neg() -> Self`: Negation clamped to `MIN..=MAX`.
+- `fn (x: i64) wrapping_shl(a: u32) -> Self`: Left shift with the count taken modulo the bit width.
+- `fn (x: i64) wrapping_shr(a: u32) -> Self`: Right shift with the count taken modulo the bit width.
+- `fn (x: i64) checked_shl(a: u32) -> Self?`: `none` when the count is `>=` the bit width.
+- `fn (x: i64) checked_shr(a: u32) -> Self?`: `none` when the count is `>=` the bit width.
+- `fn (x: i64) wrapping_as()`: Conversion to `T` that wraps on overflow: `x.wrapping_as[u8]()`.
+- `fn (x: i64) saturating_as()`: Conversion to `T` that clamps on overflow: `x.saturating_as[u8]()`.
+- `fn (x: i64) try_as()`: Conversion to `T?`, `none` when the value does not fit: `x.try_as[u8]()`.
+- `fn (f: f64) abs() -> Self`: Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`.
+- `fn (f: f64) min(a: Self) -> Self`: Smaller of the two values (for floats, a NaN operand yields the other operand).
+- `fn (f: f64) max(a: Self) -> Self`: Larger of the two values (for floats, a NaN operand yields the other operand).
+- `fn (f: f64) clamp(a: Self, b: Self) -> Self`: Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN).
+- `fn (f: f64) signum() -> Self`: `-1`, `0` or `1` (floats: `-1.0`, `±0.0`, `1.0`, NaN for NaN).
+- `fn (f: f64) pow(a: Self) -> Self`: Integer power (a negative exponent or overflow panics) or float power.
+- `fn (f: f64) rem_euclid(a: Self) -> Self`: Euclidean remainder, always `>= 0`; integer division by zero panics.
+- `fn (f: f64) wrapping_as()`: Conversion to `T` that wraps on overflow: `x.wrapping_as[u8]()`.
+- `fn (f: f64) saturating_as()`: Conversion to `T` that clamps on overflow: `x.saturating_as[u8]()`.
+- `fn (f: f64) try_as()`: Conversion to `T?`, `none` when the value does not fit: `x.try_as[u8]()`.
+- `fn (f: f64) floor() -> Self`: Largest integer value `<=` x.
+- `fn (f: f64) ceil() -> Self`: Smallest integer value `>=` x.
+- `fn (f: f64) round() -> Self`: Nearest integer value, halfway cases away from zero.
+- `fn (f: f64) trunc() -> Self`: Integer part, rounding toward zero.
+- `fn (f: f64) fract() -> Self`: Fractional part, `x - x.trunc()`.
+- `fn (f: f64) sqrt() -> Self`: Square root (NaN for negative input).
+- `fn (f: f64) cbrt() -> Self`: Cube root.
+- `fn (f: f64) powi(a: i32) -> Self`: Raises to an integer power.
+- `fn (f: f64) exp() -> Self`: `e` raised to x.
+- `fn (f: f64) ln() -> Self`: Natural logarithm.
+- `fn (f: f64) log2() -> Self`: Base-2 logarithm.
+- `fn (f: f64) log10() -> Self`: Base-10 logarithm.
+- `fn (f: f64) sin() -> Self`: Sine (radians).
+- `fn (f: f64) cos() -> Self`: Cosine (radians).
+- `fn (f: f64) tan() -> Self`: Tangent (radians).
+- `fn (f: f64) asin() -> Self`: Arcsine, in radians.
+- `fn (f: f64) acos() -> Self`: Arccosine, in radians.
+- `fn (f: f64) atan() -> Self`: Arctangent, in radians (see `math.atan2` for two inputs).
+- `fn (f: f64) sinh() -> Self`: Hyperbolic sine.
+- `fn (f: f64) cosh() -> Self`: Hyperbolic cosine.
+- `fn (f: f64) tanh() -> Self`: Hyperbolic tangent.
+- `fn (f: f64) to_degrees() -> Self`: Converts radians to degrees.
+- `fn (f: f64) to_radians() -> Self`: Converts degrees to radians.
+- `fn (f: f64) is_nan() -> bool`: `true` for NaN.
+- `fn (f: f64) is_inf() -> bool`: `true` for `+inf` or `-inf`.
+- `fn (f: f64) is_finite() -> bool`: `true` unless NaN or infinite.
+- `fn (s: str) len() -> usize`: Number of elements (bytes for `str`).
+- `fn (s: str) is_empty() -> bool`: `true` when `len() == 0`.
+- `fn (s: str) contains(a: str) -> bool`: `true` if the substring occurs.
+- `fn (s: str) starts_with(a: str) -> bool`: `true` if `s` begins with `prefix`.
+- `fn (s: str) ends_with(a: str) -> bool`: `true` if `s` ends with `suffix`.
+- `fn (s: str) index_of(a: str, b: usize = default) -> usize?`: Byte position of the first occurrence at or after `start` (default 0), or `none`.
+- `fn (s: str) last_index_of(a: str) -> usize?`: Byte position of the last occurrence, or `none`.
+- `fn (s: str) split(a: str) -> []str`: Splits on every occurrence of `sep` (an empty `s` gives one empty part).
+- `fn (s: str) split_n(a: str, b: usize) -> []str`: Splits into at most `n` parts; the last part holds the rest.
+- `fn (s: str) lines() -> []str`: Splits on `\n`, dropping a trailing `\r` from each line and a final empty line.
+- `fn (s: str) trim() -> str`: View without leading and trailing ASCII whitespace.
+- `fn (s: str) trim_start() -> str`: View without leading ASCII whitespace.
+- `fn (s: str) trim_end() -> str`: View without trailing ASCII whitespace.
+- `fn (s: str) strip_prefix(a: str) -> str?`: View after `prefix`, or `none` if `s` does not start with it.
+- `fn (s: str) strip_suffix(a: str) -> str?`: View before `suffix`, or `none` if `s` does not end with it.
+- `fn (s: str) replace(a: str, b: str) -> str`: Copy with the first occurrence of `from` replaced.
+- `fn (s: str) replace_all(a: str, b: str) -> str`: Copy with every occurrence of `from` replaced.
+- `fn (s: str) repeat(a: usize) -> str`: `s` concatenated `n` times.
+- `fn (s: str) to_upper() -> str`: ASCII upper-case copy.
+- `fn (s: str) to_lower() -> str`: ASCII lower-case copy.
+- `fn (s: str) runes() -> []u32`: Unicode code points (invalid UTF-8 bytes decode as U+FFFD).
+- `fn (s: str) rune_count() -> usize`: Number of Unicode code points.
+- `fn (s: str) bytes() -> []byte`: The UTF-8 bytes of `s`.
+- `fn (s: str) pop() -> T?`: Removes and returns the last element (last byte for `str`), or `none` when empty.
+- `fn (s: str) with_ext(a: str) -> str`: Path with its extension replaced.
+- `fn (xs: []T) len() -> usize`: Number of elements (bytes for `str`).
+- `fn (xs: []T) is_empty() -> bool`: `true` when `len() == 0`.
+- `fn (xs: []T) pop() -> T?`: Removes and returns the last element (last byte for `str`), or `none` when empty.
+- `fn (xs: []T) contains(a: T) -> bool`: `true` if an element equals `v`.
+- `fn (xs: []T) index_of(a: T) -> usize?`: Position of the first element equal to `v`, or `none`.
+- `fn (xs: []T) first() -> T?`: Copy of the first element, or `none` when empty.
+- `fn (xs: []T) last() -> T?`: Copy of the last element, or `none` when empty.
+- `fn (xs: []T) reverse()`: Reverses the elements in place.
+- `fn (xs: []T) sort()`: Sorts in place, ascending.
+- `fn (xs: []T) sort_by(a: fn(T, T) -> bool)`: Sorts in place with a strict `less(a, b)` comparator.
+- `fn (xs: []T) is_sorted() -> bool`: `true` if the elements are in ascending order.
+- `fn (xs: []T) binary_search(a: T) -> usize?`: Position of `v` in an ascending sequence, or `none`.
+- `fn (xs: []T) join(a: str) -> str`: Concatenates a `[]str` with `sep` between elements.
+- `fn (xs: []T) push(a: T)`: Appends `v`.
+- `fn (xs: []T) insert(a: usize, b: T)`: Inserts `v` at `i`, shifting later elements; panics when `i > len()`.
+- `fn (xs: []T) remove(a: usize) -> T`: Removes and returns the element at `i`, shifting later elements; panics when out of range.
+- `fn (xs: []T) swap_remove(a: usize) -> T`: Removes the element at `i` by moving the last one into its place (O(1)); panics when out of range.
+- `fn (xs: []T) truncate(a: usize)`: Keeps the first `n` elements (no effect when `n >= len()`).
+- `fn (xs: []T) extend(a: []T)`: Appends a copy of every element of `other`.
+- `fn (xs: []T) clear()`: Removes every element.
+- `fn (xs: []T) bytes() -> []byte`: Byte view of the slice's storage.
+- `fn (arr: [N]T) len() -> usize`: Number of elements (bytes for `str`).
+- `fn (arr: [N]T) is_empty() -> bool`: `true` when `len() == 0`.
+- `fn (arr: [N]T) contains(a: T) -> bool`: `true` if an element equals `v`.
+- `fn (arr: [N]T) index_of(a: T) -> usize?`: Position of the first element equal to `v`, or `none`.
+- `fn (arr: [N]T) first() -> T?`: Copy of the first element, or `none` when empty.
+- `fn (arr: [N]T) last() -> T?`: Copy of the last element, or `none` when empty.
+- `fn (arr: [N]T) reverse()`: Reverses the elements in place.
+- `fn (arr: [N]T) sort()`: Sorts in place, ascending.
+- `fn (arr: [N]T) sort_by(a: fn(T, T) -> bool)`: Sorts in place with a strict `less(a, b)` comparator.
+- `fn (arr: [N]T) is_sorted() -> bool`: `true` if the elements are in ascending order.
+- `fn (arr: [N]T) binary_search(a: T) -> usize?`: Position of `v` in an ascending sequence, or `none`.
+- `fn (arr: [N]T) join(a: str) -> str`: Concatenates a `[]str` with `sep` between elements.
+- `fn (m: map[K]V) len() -> usize`: Number of elements (bytes for `str`).
+- `fn (m: map[K]V) is_empty() -> bool`: `true` when `len() == 0`.
+- `fn (m: map[K]V) clear()`: Removes every element.
+- `fn (m: map[K]V) contains(a: K) -> bool`: `true` if the key is present.
+- `fn (m: map[K]V) get(a: K) -> V?`: Copy of the value for `k`, or `none`.
+- `fn (m: map[K]V) insert(a: K, b: V) -> V?`: Sets `k` to `v`; returns the previous value, or `none`.
+- `fn (m: map[K]V) remove(a: K) -> V?`: Removes `k`; returns its value, or `none` if absent.
+- `fn (m: map[K]V) keys() -> []K`: Copy of the keys, in unspecified order (Q27).
+- `fn (m: map[K]V) values() -> []V`: Copy of the values, in unspecified order (Q27).
+- `const <int>.MAX: Self`: Largest value of the type.
+- `const <int>.MIN: Self`: Smallest value of the type.
+- `const <int>.BITS: u32`: Width in bits (`u32`).
+- `const <float>.MAX: Self`: Largest finite value.
+- `const <float>.MIN: Self`: Most negative finite value.
+- `const <float>.MIN_POSITIVE: Self`: Smallest positive normal value.
+- `const <float>.EPSILON: Self`: Difference between `1.0` and the next representable value.
+- `const <float>.INF: Self`: Positive infinity.
+- `const <float>.NEG_INF: Self`: Negative infinity.
+- `const <float>.NAN: Self`: Not a number.
+- `fn T.parse(s: str) -> T?`: Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`); `none` on invalid or out-of-range input.
+- `make(T) / make(T, args...)`: A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type).
+- `make(own[T], args...) / make(shared[T], args...)`: A heap-owned `T` (`unique_ptr` / `shared_ptr`), built from one `T` value or the constructor's arguments.
+- `make([]T, len) / make([]T, len, cap)`: `len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics.
+- `make(map[K]V)`: An empty map (iteration order is unspecified, Q27).
+- `fn (o: own[T]) release() -> *mut T`: Gives up ownership for C interop (CF-181): returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`.
+- `fn own[T].from_raw(p: *mut T) -> own[T]`: Takes ownership of a pointer produced by `release` (CF-181). Adopting any other pointer is undefined behavior.
+
+### `import "core:audio"` (alias: `audio`)
+Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.
+Types:
+- `Waveform`: Oscillator shape for `audio.gen_tone` and `audio.gen_chirp`.
+- `SfxPreset`: A procedural sound effect for `audio.gen_sfx`.
+- `Wave`: An in-memory waveform: interleaved `f32` samples in `-1.0`..`1.0`.
+- `Sound`: A wave registered with the mixer, playable many times at once (polyphonic).
+- `Stream`: A real-time output stream you push samples into, for custom synthesis.
+Functions & Methods:
+- `fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!` (call: `audio.init`): Initializes the hardware audio output queue (or headless software mixer in CI).
+- `fn close()` (call: `audio.close`): Stops all active sounds and streams and releases audio hardware resources.
+- `fn is_ready() -> bool` (call: `audio.is_ready`): Returns `true` if the audio subsystem is initialized.
+- `fn set_master_volume(vol: f32)` (call: `audio.set_master_volume`): Sets the master output volume multiplier (`0.0` to `1.0`).
+- `fn master_volume() -> f32` (call: `audio.master_volume`): Returns the current master output volume multiplier.
+- `fn rms_level() -> f32` (call: `audio.rms_level`): Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.
+- `fn peak_level() -> f32` (call: `audio.peak_level`): Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.
+- `fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave` (call: `audio.gen_tone`): Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.
+- `fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave` (call: `audio.gen_chirp`): Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.
+- `fn gen_sfx(preset: SfxPreset) -> Wave` (call: `audio.gen_sfx`): Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).
+- `fn encode_wav(wave: Wave) -> []byte` (call: `audio.encode_wav`): Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.
+- `fn decode_wav(data: []byte) -> Wave!` (call: `audio.decode_wav`): Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.
+- `fn save_wav(wave: Wave, path: str) -> void!` (call: `audio.save_wav`): Writes a `Wave` to disk as a standard `.wav` file.
+- `fn load_wav(path: str) -> Wave!` (call: `audio.load_wav`): Loads and decodes a `.wav` file from disk or app bundle.
+- `fn load_sound_from_wave(wave: Wave) -> Sound` (call: `audio.load_sound_from_wave`): Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.
+- `fn load_sound(path: str) -> Sound!` (call: `audio.load_sound`): Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.
+- `fn (s: Sound) play()`: Triggers polyphonic playback of the sound.
+- `fn (s: Sound) stop()`: Stops active voices playing this sound.
+- `fn (s: Sound) set_volume(vol: f32)`: Sets playback gain (`0.0` to `2.0`) for this sound.
+- `fn (s: Sound) set_pitch(pitch: f32)`: Sets playback pitch/rate multiplier (`1.0` = original pitch).
+- `fn (s: Sound) set_pan(pan: f32)`: Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).
+- `fn (s: Sound) set_looping(loop: bool)`: Enables or disables seamless loop playback.
+- `fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!` (call: `audio.open_stream`): Opens a real-time push `Stream` for custom DSP synthesis.
+- `fn (st: Stream) push_samples(samples: []f32)`: Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.
+- `fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool`: Returns `true` when buffered frames fall below `target_frames`.
+
+### `import "core:build"` (alias: `build`)
+Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/framework links (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).
+Types:
+- `Package`: In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, and `Includes`.
+- `Executable`: In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`).
+- `App`: In `build.cf`: alias for `build.Executable(...)`.
+- `Library`: In `build.cf`: declares a static or shared library target.
+- `Step`: In `build.cf`: a code-generation step run when its inputs are newer than its outputs.
+- `CC`: In `build.cf`: compiles C or C++ sources into the project (`build.CC({ Sources: [...] })`).
+- `CMake`: In `build.cf`: an external CMake project built as a dependency.
+- `Make`: In `build.cf`: an external Make project built as a dependency.
+- `Ninja`: In `build.cf`: an external Ninja project built as a dependency.
+- `Git`: In `build.cf`: a dependency fetched from a Git repository at a pinned revision.
+- `Archive`: In `build.cf`: a dependency fetched as a checksummed archive.
+- `Command`: In `build.cf`: a command run as part of the build.
+- `PkgConfig`: In `build.cf`: links one or more libraries found through pkg-config.
+- `Link`: In `build.cf`: links a library by name.
+- `Include`: In `build.cf`: adds a header search directory.
+- `Libraries`: In `build.cf`: links one or more libraries by name.
+- `Includes`: In `build.cf`: adds one or more header search directories.
+- `Frameworks`: In `build.cf`: adds one or more Apple frameworks.
+- `Target`: In `build.cf`: what `build.Executable` and `build.Library` return.
+- `StepTarget`: In `build.cf`: what `build.Step` and `build.Command` return.
+- `DepTarget`: In `build.cf`: what `build.CC`, `build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, and `build.Archive` return.
+- `PackageTarget`: In `build.cf`: what `build.Package` returns.
+Functions & Methods:
+- `fn Package(cfg: any, extra: any = {}) -> PackageTarget` (call: `build.Package`): Declares package metadata and manifest-level native linkage defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Entry`, `OutDir`).
+- `fn Executable(name_or_cfg: any, cfg: any = {}) -> Target` (call: `build.Executable`): Declares an executable build target with `Entry`, `Subsystem` (`"cli"` or `"gui"`), `OutDir`, `Targets` (`["native", "wasm", "ios-sim"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, `Frameworks`, `Portable`, `Static`, `Universal`, `UrlSchemes`, and `SignIdentity`.
+- `fn App(name_or_cfg: any, cfg: any = {}) -> Target` (call: `build.App`): Alias for `build.Executable` declaring an application executable target.
+- `fn Library(name_or_cfg: any, cfg: any = {}) -> Target` (call: `build.Library`): Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, and `Frameworks`.
+- `fn Step(name_or_cfg: any, cfg: any = {}) -> StepTarget` (call: `build.Step`): Declares a custom build step executing `Command` and `Args` in `WorkDir` whenever `Inputs` are newer than `Outputs`.
+- `fn CC(name_or_cfg: any, cfg: any = {}) -> DepTarget` (call: `build.CC`): Compiles C or C++ `Sources` with `Includes`, `Defines`, and `Flags` directly into the native build.
+- `fn CMake(name_or_cfg: any, cfg: any = {}) -> DepTarget` (call: `build.CMake`): Declares an external CMake dependency (`Url`, `Commit`/`Branch`/`Tag`, `Sha256`, `Includes`, `Defines`, `Flags`, `Target`, `Static`, `Driver`).
+- `fn Make(name_or_cfg: any, cfg: any = {}) -> DepTarget` (call: `build.Make`): Declares an external GNU Make dependency (`Url`, `Branch`/`Tag`/`Commit`, `Target`, `Includes`, `Flags`).
+- `fn Ninja(name_or_cfg: any, cfg: any = {}) -> DepTarget` (call: `build.Ninja`): Declares an external Ninja dependency (`Url`, `Branch`/`Tag`/`Commit`, `Target`, `Includes`, `Flags`).
+- `fn Git(name_or_cfg: any, cfg: any = {}) -> DepTarget` (call: `build.Git`): Fetches a pinned Git dependency (`Url`, `Commit`/`Branch`/`Tag`, `Driver`, `Target`, `Includes`, `Flags`).
+- `fn Archive(name_or_cfg: any, cfg: any = {}) -> DepTarget` (call: `build.Archive`): Fetches and verifies a source archive dependency (`Url`, `Sha256`, `Driver`, `Includes`, `Flags`).
+- `fn Command(name_or_cfg: any, cfg: any = {}) -> StepTarget` (call: `build.Command`): Alias for `build.Step` declaring a custom pre-build command step.
+- `fn Link(lib: str)` (call: `build.Link`): Adds a system library (`"sqlite3"`) or Apple framework (`"-framework Security"`) to the linker flags.
+- `fn Include(dir: str)` (call: `build.Include`): Adds a relative or absolute header search directory (`-I<dir>`) for `import cpp` headers.
+- `fn PkgConfig(pkg: any)` (call: `build.PkgConfig`): Queries `pkg-config --cflags --libs` for a package name or list of package names (`str` or `[]str`) and links the resolved flags into the build.
+- `fn Libraries(libs: any)` (call: `build.Libraries`): Adds one or more native libraries (`str` or `[]str`) to the linker flags.
+- `fn Includes(dirs: any)` (call: `build.Includes`): Adds one or more header search directories (`str` or `[]str`) for `import cpp` headers.
+- `fn Frameworks(frameworks: any)` (call: `build.Frameworks`): Adds one or more Apple frameworks (`str` or `[]str`) on macOS/iOS builds.
+- `fn os() -> str` (call: `build.os`): Returns the target operating system identifier (`"macos"`, `"linux"`, `"windows"`, `"ios"`, `"wasm"`).
+- `fn arch() -> str` (call: `build.arch`): Returns the target CPU architecture identifier (`"arm64"`, `"x86_64"`, `"wasm32"`).
+
+### `import "core:cli"` (alias: `cli`)
+Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:"--flag,help"`), subcommand/positional argument helpers, and interactive terminal prompts.
+Functions & Methods:
+- `fn parse[T](args: []str = []) -> T!` (call: `cli.parse`): Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.
+- `fn try_parse[T](args: []str = []) -> T?` (call: `cli.try_parse`): Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid.
+- `fn args() -> []str` (call: `cli.args`): Returns the raw command-line arguments passed to the process (excluding `argv[0]`).
+- `fn subcommand() -> str` (call: `cli.subcommand`): Returns the first non-flag positional argument (subcommand name) or `""` if none.
+- `fn positional() -> []str` (call: `cli.positional`): Returns all non-flag positional arguments passed on the command line.
+- `fn prompt(message: str = "") -> str?` (call: `cli.prompt`): Prints `message` to stderr and reads a line from stdin without trailing newline, or `none` on EOF.
+- `fn prompt_password(message: str = "") -> str?` (call: `cli.prompt_password`): Prints `message` to stderr with terminal echo disabled (`termios` `~ECHO`) and reads a password line from stdin, or `none` on EOF.
+
+### `import "core:collections"` (alias: `collections`)
+Standard generic containers backed by STL unordered_set, priority_queue, and deque.
+Types:
+- `Set[T]`: An unordered set of unique values.
+- `Deque[T]`: A double-ended queue: push and pop at both ends in constant time.
+- `PriorityQueue[T]`: A max-heap: `pop()` returns the largest value first, or `none` when empty.
+- `MinQueue[T]`: A min-heap: `pop()` returns the smallest value first, or `none` when empty.
+Functions & Methods:
+- `type Set[T] struct` (call: `collections.Set`): Generic hash set container.
+- `type PriorityQueue[T] struct` (call: `collections.PriorityQueue`): Max-first priority queue: `push(v)`, `pop() -> T?`, `peek() -> T?`, `len()`, `empty()`.
+- `type MinQueue[T] struct` (call: `collections.MinQueue`): Min-first priority queue (smallest element pops first), with the same methods as `PriorityQueue[T]`. Tuples order element by element, so `MinQueue[(i64, i64)]` pops the lowest cost first.
+- `type Deque[T] struct` (call: `collections.Deque`): Generic double-ended queue.
+
+### `import "core:crypto/aes"` (alias: `aes`)
+Constant-time AES-256 block cipher implementation with Counter Mode (CTR) and Galois/Counter Mode (GCM) Authenticated Encryption with Associated Data (AEAD).
+Types:
+- `GcmResult`: The output of AES-256-GCM encryption.
+Functions & Methods:
+- `fn generate_key() -> []byte` (call: `aes.generate_key`): Generates a 32-byte (256-bit) cryptographically secure AES-256 key from OS entropy.
+- `fn encrypt(key: []byte, plaintext: []byte, aad: []byte = []) -> []byte!` (call: `aes.encrypt`): Encrypts `plaintext` with AES-256-GCM using a fresh 12-byte random nonce and returns `[12-byte nonce || ciphertext || 16-byte tag]`.
+- `fn decrypt(key: []byte, combined: []byte, aad: []byte = []) -> []byte!` (call: `aes.decrypt`): Authenticates and decrypts a combined `[12-byte nonce || ciphertext || 16-byte tag]` AES-256-GCM payload.
+- `fn encrypt_gcm(key: []byte, nonce: []byte, plaintext: []byte, aad: []byte = []) -> GcmResult!` (call: `aes.encrypt_gcm`): Encrypts plaintext with AES-256-GCM AEAD, producing ciphertext and a 16-byte authentication tag.
+- `fn decrypt_gcm(key: []byte, nonce: []byte, ciphertext: []byte, tag: []byte, aad: []byte = []) -> []byte!` (call: `aes.decrypt_gcm`): Authenticates and decrypts AES-256-GCM ciphertext, failing if tag verification fails or data was tampered.
+- `fn encrypt_ctr(key: []byte, iv: []byte, plaintext: []byte) -> []byte!` (call: `aes.encrypt_ctr`): Encrypts plaintext using AES-256-CTR mode.
+- `fn decrypt_ctr(key: []byte, iv: []byte, ciphertext: []byte) -> []byte!` (call: `aes.decrypt_ctr`): Decrypts ciphertext using AES-256-CTR mode.
+- `fn decrypt_gcm_str(key: []byte, nonce: []byte, ct: []byte, tag: []byte, aad: []byte = []) -> str!` (call: `aes.decrypt_gcm_str`): Decrypts an authenticated AES-GCM ciphertext and validates the tag, returning a UTF-8 string.
+
+### `import "core:crypto/blake3"` (alias: `blake3`)
+Computes fast 256-bit cryptographic hex digests over byte slices (convenience alias for `core:crypto/sha256`).
+Functions & Methods:
+- `fn hash_hex(data: []byte) -> str` (call: `blake3.hash_hex`): Returns a 64-character lowercase hex digest of `data`.
+
+### `import "core:crypto/hmac"` (alias: `hmac`)
+Computes RFC 2104 keyed HMAC-SHA256 authentication digests, RFC 5869 HKDF-SHA256 derived keys, and RFC 8018 PBKDF2-HMAC-SHA256 password-derived keys.
+Functions & Methods:
+- `fn sha256_hex(key: str, data: str) -> str` (call: `hmac.sha256_hex`): Returns a 64-character lowercase hex HMAC-SHA256 digest.
+- `fn sha256_bytes(key: []byte, data: []byte) -> []byte` (call: `hmac.sha256_bytes`): Computes HMAC-SHA256 over raw byte slices.
+- `fn verify(key: str, data: str, mac: str) -> bool` (call: `hmac.verify`): Verifies in constant time whether `mac` matches the computed HMAC-SHA256 hex digest of `data` under `key`.
+- `fn equal(a: str, b: str) -> bool` (call: `hmac.equal`): Performs a constant-time equality check on two MAC digests to prevent timing attacks.
+- `fn hkdf_sha256(ikm: []byte, salt: []byte = [], info: []byte = [], length: usize = 32) -> []byte` (call: `hmac.hkdf_sha256`): Derives cryptographic key material of `length` bytes using RFC 5869 HKDF-SHA256 Extract-and-Expand.
+- `fn hkdf_sha256_hex(ikm: str, salt: str = "", info: str = "", length: usize = 32) -> str` (call: `hmac.hkdf_sha256_hex`): Derives a hex-encoded key string using RFC 5869 HKDF-SHA256.
+- `fn pbkdf2_sha256(password: str, salt: []byte, iterations: u32 = 600000, length: usize = 32) -> []byte` (call: `hmac.pbkdf2_sha256`): Derives a cryptographic key of `length` bytes from `password` and `salt` using RFC 8018 PBKDF2-HMAC-SHA256.
+
+### `import "core:crypto/sha256"` (alias: `sha256`)
+Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (`arc4random_buf` / `/dev/urandom`).
+Functions & Methods:
+- `fn hash_hex(data: []byte) -> str` (call: `sha256.hash_hex`): Returns a 64-character lowercase hex digest of `data`.
+- `fn hash_bytes(data: []byte) -> []byte` (call: `sha256.hash_bytes`): Returns 32-byte binary SHA-256 digest of `data`.
+- `fn random_bytes(n: usize) -> []byte` (call: `sha256.random_bytes`): Generates `n` cryptographically secure random bytes from the OS CSPRNG.
+- `fn random_hex(n: usize = 32) -> str` (call: `sha256.random_hex`): Generates `n` cryptographically secure random bytes encoded as a `2*n`-character lowercase hex string.
+- `fn hash_file_hex(path: str) -> str!` (call: `sha256.hash_file_hex`): Computes the hex-encoded SHA-256 digest of a file on disk.
+
+### `import "core:encoding/base64"` (alias: `base64`)
+High-performance, zero-allocation Base64 and URL-safe Base64 encoder and decoder.
+Functions & Methods:
+- `fn encode(data: []byte, url_safe: bool = false) -> str` (call: `base64.encode`): Encodes binary byte slice into standard or URL-safe Base64 string.
+- `fn encode_str(s: str, url_safe: bool = false) -> str` (call: `base64.encode_str`): Encodes a UTF-8 text string into standard or URL-safe Base64.
+- `fn decode(s: str) -> []byte!` (call: `base64.decode`): Decodes a Base64 string into binary bytes.
+- `fn decode_str(s: str) -> str!` (call: `base64.decode_str`): Decodes a Base64 string into a UTF-8 text string.
+
+### `import "core:encoding/csv"` (alias: `csv`)
+RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping.
+Functions & Methods:
+- `fn parse(s: str) -> [][]str` (call: `csv.parse`): Parses a CSV string into a 2D table of rows and columns.
+- `fn stringify(rows: [][]str) -> str` (call: `csv.stringify`): Serializes a 2D table of strings into an RFC 4180 formatted CSV string.
+- `fn read_all(path: str) -> [][]str!` (call: `csv.read_all`): Reads an entire CSV file from disk and parses it into rows.
+- `fn write_all(path: str, rows: [][]str) -> void!` (call: `csv.write_all`): Serializes rows to CSV and writes to disk.
+
+### `import "core:encoding/hex"` (alias: `hex`)
+Encodes binary bytes to lowercase hexadecimal strings and decodes hex strings to byte buffers.
+Functions & Methods:
+- `fn encode(data: []byte) -> str` (call: `hex.encode`): Encodes binary bytes to lowercase hexadecimal string.
+- `fn encode_str(s: str) -> str` (call: `hex.encode_str`): Encodes text characters to hexadecimal string.
+- `fn decode(s: str) -> []byte!` (call: `hex.decode`): Decodes a hexadecimal string to binary bytes.
+- `fn decode_str(s: str) -> str!` (call: `hex.decode_str`): Decodes a hexadecimal string to a UTF-8 string.
+
+### `import "core:fs"` (alias: `fs`)
+Provides RAII file and directory utilities backed by `std::filesystem` and `std::vector<std::uint8_t>` with strict `_bytes` / `_text` symmetry.
+Types:
+- `OpenMode`: How `fs.open` opens a file.
+- `SeekWhence`: The origin for `file.seek`.
+- `File`: An open file, closed automatically when it goes out of scope.
+Functions & Methods:
+- `fn read_bytes(path: str) -> []byte!` (call: `fs.read_bytes`): Reads an entire binary file into a byte buffer.
+- `fn write_bytes(path: str, data: []byte) -> void!` (call: `fs.write_bytes`): Writes a byte slice to disk (truncating any existing file).
+- `fn append_bytes(path: str, data: []byte) -> void!` (call: `fs.append_bytes`): Appends a byte slice to a file on disk (creating the file if it does not exist).
+- `fn read_text(path: str) -> str!` (call: `fs.read_text`): Reads an entire UTF-8 text file into a `str`.
+- `fn write_text(path: str, text: str) -> void!` (call: `fs.write_text`): Writes a UTF-8 string to disk.
+- `fn append_text(path: str, text: str) -> void!` (call: `fs.append_text`): Appends a UTF-8 string to a file on disk.
+- `fn rename(from: str, to: str) -> void!` (call: `fs.rename`): Renames or moves a file or directory.
+- `fn copy_file(from: str, to: str) -> void!` (call: `fs.copy_file`): Copies a file from `from` to `to` (overwriting `to` if it exists).
+- `fn file_size(path: str) -> u64!` (call: `fs.file_size`): Returns the size of a file in bytes.
+- `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` (call: `fs.open`): Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.
+- `fn (f: File) fd() -> i32`: Returns the underlying OS file descriptor (`-1` if closed).
+- `fn (f: File) is_open() -> bool`: Returns `true` if the file handle holds a valid open file descriptor.
+- `fn (f: File) is_tty() -> bool`: Returns `true` if the file stream refers to an interactive terminal.
+- `fn (f: File) poll(timeout_ms: i64 = 0) -> bool`: Polls the file stream for readability up to `timeout_ms` milliseconds (`EINTR`-safe).
+- `fn (mut f: File) read_into(mut buf: []byte) -> usize!`: Reads up to `buf.len()` bytes from the file stream into `buf`.
+- `fn (mut f: File) read_exact(exact_bytes: usize) -> []byte!`: Reads exactly `exact_bytes` from the file stream or returns an error on premature EOF.
+- `fn (mut f: File) read_bytes(max_bytes: usize = 67108864) -> []byte!`: Reads up to `max_bytes` from the file stream into a new byte slice.
+- `fn (mut f: File) read_text(max_bytes: usize = 67108864) -> str!`: Reads up to `max_bytes` from the file stream as a UTF-8 string.
+- `fn (mut f: File) read_bytes_until(delim: byte, max_bytes: usize = 65536) -> []byte!`: Reads bytes from the file stream up to and including `delim` (or `max_bytes`).
+- `fn (mut f: File) read_text_until(delim: str, max_bytes: usize = 65536) -> str!`: Reads text from the file stream up to and including the first byte of `delim` (or `max_bytes`).
+- `fn (mut f: File) read_line(max_bytes: usize = 65536) -> str?`: Reads the next line from the file stream (stripping `\r\n` / `\n`), or `none` on EOF.
+- `fn (mut f: File) read_lines() -> []str!`: Reads all remaining lines from the file stream into a string slice.
+- `fn (mut f: File) write_bytes(data: []byte) -> usize!`: Writes all bytes in `data` to the file stream, looping across partial writes and `EINTR`.
+- `fn (mut f: File) write_text(text: str) -> usize!`: Writes a UTF-8 string to the file stream, looping across partial writes and `EINTR`.
+- `fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!`: Seeks within file to offset from Start, Current, or End.
+- `fn (mut f: File) tell() -> i64!`: Returns current byte offset within file stream.
+- `fn (mut f: File) flush() -> void!`: Flushes buffered stream data to disk.
+- `fn (mut f: File) close() -> void`: Closes open file handle.
+- `fn dirname(path: str) -> str` (call: `fs.dirname`): Returns directory portion of a filesystem path.
+- `fn basename(path: str) -> str` (call: `fs.basename`): Returns file name portion of a filesystem path.
+- `fn extension(path: str) -> str` (call: `fs.extension`): Returns file extension including leading dot.
+- `fn exists(path: str) -> bool` (call: `fs.exists`): Returns `true` if the path exists on disk.
+- `fn is_dir(path: str) -> bool` (call: `fs.is_dir`): Returns `true` if `path` exists and is a directory.
+- `fn is_file(path: str) -> bool` (call: `fs.is_file`): Returns `true` if `path` exists and is a regular file.
+- `fn mkdir_all(path: str) -> void!` (call: `fs.mkdir_all`): Recursively creates a directory and all parent directories.
+- `fn remove(path: str) -> void!` (call: `fs.remove`): Removes a file or directory tree recursively.
+- `fn list_dir(path: str) -> []str!` (call: `fs.list_dir`): Lists sorted filenames inside a directory.
+
+### `import "core:json"` (alias: `json`)
+Uses `json:"..."` struct tags (with automatic field-name fallback and `T?` optional field support) to emit specialized `simdjson::ondemand` parsers and fast `std::format` serializers with zero runtime reflection overhead, along with a zero-dependency dynamic DOM `json.Value`.
+Types:
+- `Value`: A parsed JSON value of any shape, from `json.parse_dynamic`; inspect it with its methods.
+Functions & Methods:
+- `fn parse[T](payload: []byte | str) -> T!` (call: `json.parse`): Parses UTF-8 JSON into a struct `T` using `simdjson::ondemand`.
+- `fn stringify[T](val: T) -> str` (call: `json.stringify`): Serializes a struct `T` (`str`, `u64`, `i64`, `i32`, `f64`, `bool`, `T?`, slices, nested structs) into a JSON string.
+- `fn schema[T]() -> str` (call: `json.schema`): Generates a Draft 2020-12 / OpenAI Strict Mode / MCP JSON Schema string for struct `T` using `json:"..."` and `desc:"..."` tags.
+- `fn escape_string(s: str) -> str` (call: `json.escape_string`): Escapes quotes, backslashes, and control characters for JSON strings.
+- `fn parse_dynamic(payload: str) -> Value!` (call: `json.parse_dynamic`): Parses arbitrary JSON into a recursive dynamic DOM `Value`.
+- `fn stringify_dynamic(val: Value, indent: i32 = 0) -> str` (call: `json.stringify_dynamic`): Serializes a dynamic DOM `Value` into compact or indented JSON.
+
+### `import "core:keychain"` (alias: `keychain`)
+Cross-platform OS credential storage backed by `Security.framework` (`SecItemAdd` / `SecItemCopyMatching` / `SecItemDelete`) on macOS & iOS, `libsecret` (`secret-tool`) on Linux, and Windows Credential Manager (`CredWriteA` / `CredReadA`) on Windows.
+Functions & Methods:
+- `fn set(service: str, account: str, secret: str) -> void!` (call: `keychain.set`): Stores or updates a generic password for `(service, account)` in the OS keychain.
+- `fn get(service: str, account: str) -> str!` (call: `keychain.get`): Retrieves the secret stored for `(service, account)` from the OS keychain.
+- `fn delete_password(service: str, account: str) -> void!` (call: `keychain.delete_password`): Removes the credential entry for `(service, account)` from the OS keychain.
+
+### `import "core:log"` (alias: `log`)
+Leveled logging (`debug`, `info`, `warn`, `error`) with `Level` (`Debug`, `Info`, `Warn`, `Error`), `Format` (`Text`, `Json`), and structured key-value attributes.
+Types:
+- `Level`: Minimum severity for `log.set_level`.
+- `Format`: Output format for `log.set_format`.
+Functions & Methods:
+- `fn set_level(l: Level)` (call: `log.set_level`): Sets the minimum logging severity threshold (`log.Level::Debug`, `Info`, `Warn`, `Error`).
+- `fn get_level() -> Level` (call: `log.get_level`): Returns the current minimum logging severity threshold.
+- `fn set_format(f: Format)` (call: `log.set_format`): Sets the log output format (`log.Format::Text` or `log.Format::Json`).
+- `fn get_format() -> Format` (call: `log.get_format`): Returns the current log output format.
+- `fn debug(msg: str, ...attrs: any)` (call: `log.debug`): Logs a debug message with optional key-value attribute pairs.
+- `fn info(msg: str, ...attrs: any)` (call: `log.info`): Logs an informational message with optional key-value attribute pairs.
+- `fn warn(msg: str, ...attrs: any)` (call: `log.warn`): Logs a warning message with optional key-value attribute pairs.
+- `fn error(msg: str, ...attrs: any)` (call: `log.error`): Logs an error message with optional key-value attribute pairs.
+
+### `import "core:math"` (alias: `math`)
+Mathematical constants (`math.PI`, `math.E`, `math.TAU`, `math.SQRT_2`, `math.LN_2`, `math.LN_10`) and functions with no natural receiver (`atan2`, `hypot`, `gcd`, `lcm`). Single-value operations are methods on the number itself (`x.abs()`, `f.sqrt()`, `x.clamp(lo, hi)`, `a.checked_add(b)`); type limits and parsing are associated with the type (`i32.MAX`, `f64.NAN`, `i32.parse(s)`). See the builtin method reference.
+Functions & Methods:
+- `const PI: f64` (call: `math.PI`): Ratio of a circle's circumference to its diameter (π).
+- `const E: f64` (call: `math.E`): Euler's number (e).
+- `const TAU: f64` (call: `math.TAU`): Full turn in radians (2π).
+- `const SQRT_2: f64` (call: `math.SQRT_2`): Square root of 2.
+- `const LN_2: f64` (call: `math.LN_2`): Natural logarithm of 2.
+- `const LN_10: f64` (call: `math.LN_10`): Natural logarithm of 10.
+- `fn atan2(y: f64, x: f64) -> f64` (call: `math.atan2`): Angle of the point `(x, y)` from the positive x-axis, in radians (`-π..=π`).
+- `fn hypot(x: f64, y: f64) -> f64` (call: `math.hypot`): `sqrt(x*x + y*y)` without intermediate overflow or underflow.
+- `fn gcd(a: i64, b: i64) -> i64` (call: `math.gcd`): Greatest common divisor (non-negative); `gcd(0, 0) == 0`. Panics for the minimum `i64`.
+- `fn lcm(a: i64, b: i64) -> i64` (call: `math.lcm`): Least common multiple (non-negative); panics on overflow.
+
+### `import "core:net"` (alias: `net`)
+RAII TCP client, listener, and connected socketpair handles backed by BSD `AF_INET` / `AF_UNIX` sockets with non-blocking `poll` timeouts and strict `_bytes` / `_text` I/O symmetry.
+Types:
+- `TcpListener`: A listening TCP socket; `accept()` returns a `TcpConn` per client.
+- `TcpConn`: A connected TCP stream, closed when it goes out of scope.
+Functions & Methods:
+- `fn listen(port: u16 = 0, host: str = "0.0.0.0") -> TcpListener!` (call: `net.listen`): Binds a TCP listener on `host:port` (`0` picks an ephemeral port; the default host is every interface).
+- `fn (ln: TcpListener) port() -> u16`: Returns the bound TCP port.
+- `fn (mut ln: TcpListener) accept() -> TcpConn!`: Accepts an incoming TCP connection with a safe poll timeout.
+- `fn connect(host: str, port: u16) -> TcpConn!` (call: `net.connect`): Connects a `TcpConn` to `host:port`.
+- `fn socketpair() -> (TcpConn, TcpConn)!` (call: `net.socketpair`): Creates a connected pair of full-duplex `TcpConn` stream sockets.
+- `fn (c: TcpConn) remote_addr() -> str`: The peer address of an accepted connection (`203.0.113.7`, `2001:db8::1`; IPv4-mapped IPv6 peers are reported as IPv4), or the host a client connection dialed.
+- `fn (c: TcpConn) fd() -> i32`: Returns the underlying socket file descriptor (`-1` if closed).
+- `fn (c: TcpConn) is_open() -> bool`: Returns `true` if the socket connection is open.
+- `fn (c: TcpConn) poll(timeout_ms: i64 = 0) -> bool`: Polls the socket for readability up to `timeout_ms` milliseconds (`EINTR`-safe).
+- `fn (mut c: TcpConn) write_bytes(payload: []byte) -> usize!`: Writes all bytes in `payload` to the TCP/TLS connection, looping across partial sends and `EINTR`.
+- `fn (mut c: TcpConn) write_text(text: str) -> usize!`: Writes a UTF-8 string to the TCP/TLS connection, looping across partial sends and `EINTR`.
+- `fn (mut c: TcpConn) read_into(mut buf: []byte) -> usize!`: Reads up to `buf.len()` bytes from the socket into `buf` (`EINTR`-safe).
+- `fn (mut c: TcpConn) read_bytes(max_bytes: usize = 4096) -> []byte!`: Reads up to `max_bytes` from the socket into a new byte slice.
+- `fn (mut c: TcpConn) read_exact(exact_bytes: usize) -> []byte!`: Reads exactly `exact_bytes` from the socket or returns an error on premature EOF.
+- `fn (mut c: TcpConn) read_text(max_bytes: usize = 4096) -> str!`: Reads up to `max_bytes` from the socket as a UTF-8 string.
+- `fn (mut c: TcpConn) read_bytes_until(delim: byte, max_bytes: usize = 65536) -> []byte!`: Reads bytes from the socket up to and including `delim` (or `max_bytes`).
+- `fn (mut c: TcpConn) read_text_until(delim: str, max_bytes: usize = 65536) -> str!`: Reads text from the socket up to and including the first byte of `delim` (or `max_bytes`).
+- `fn (mut c: TcpConn) read_line(max_bytes: usize = 65536) -> str?`: Reads a newline-delimited line up to `max_bytes` from the socket, or `none` on EOF.
+- `fn (mut c: TcpConn) set_timeout_ms(ms: i32) -> void`: Sets socket read/write timeout in milliseconds (`0` for blocking).
+- `fn (mut c: TcpConn) close() -> void`: Closes the TCP socket connection.
+
+### `import "core:net/http"` (alias: `http`)
+RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), HTTP/HTTPS server (`make(http.Server, port)`, `make(http.Server, port, tls: http.TlsConfig{...})`, per-connection `http.ServerLimits`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).
+Types:
+- `Request`: An HTTP request, as a handler receives it or as you build one to send.
+- `Response`: An HTTP response; build one with `http.Response.text`, `.json`, `.html` or `.redirect`.
+- `Router`: Maps method and path patterns to handlers; registering a route returns the router, so calls chain.
+- `HttpServer`: An HTTP server bound to a port (`make(http.Server, port)`); `serve_in_background` runs it and `stop` ends it.
+- `Server`: The name `make(http.Server, port)` constructs; the same type as `http.HttpServer`.
+- `SseEvent`: One server-sent event.
+- `ServerLimits`: Per-connection limits for `http.Server` (Q22, CF-192, CF-193); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503.
+- `TlsConfig`: Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM.
+Functions & Methods:
+- `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!` (call: `http.get`): Executes an HTTP or HTTPS GET request against a target URL.
+- `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true) -> Response!` (call: `http.post`): Executes an HTTP or HTTPS POST request with payload body.
+- `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "") -> Response!` (call: `http.request`): Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).
+- `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true) -> void!` (call: `http.post_sse`): Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.
+- `fn make(port: u16 = 0, tls: TlsConfig = {}) -> HttpServer!`: `make(http.Server, port)` creates an HTTP server listening on `port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` (or `cert_pem` / `key_pem`) serves HTTPS.
+- `fn make() -> Router`: `make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).
+- `fn parse_request(raw: str) -> Request!` (call: `http.parse_request`): Parses raw HTTP/1.1 wire text into a structured Request model.
+- `fn Response.text(code: i32, payload: str) -> Response`: Creates an HTTP Response with text/plain content-type and standard status reason.
+- `fn Response.json(code: i32, json_str: str) -> Response`: Creates an HTTP Response with application/json content-type.
+- `fn Response.html(code: i32, html: str) -> Response`: Creates an HTTP Response with text/html content-type.
+- `fn Response.redirect(location: str, code: i32 = 302) -> Response`: Creates an HTTP redirect Response setting Location header.
+- `fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router`: Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).
+- `fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router`: Registers an HTTP POST route handler.
+- `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router`: Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.
+- `fn (r: Router) dispatch(req: Request) -> Response`: Dispatches an HTTP request through the router in-memory without open network sockets.
+- `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router`: Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.
+- `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128, keepalive_timeout_ms: i32 = 5000, max_requests_per_conn: usize = 1000, max_websockets: usize = 1024, max_connections: usize = 10000 }` (call: `http.ServerLimits`): Per-connection server limits (Q22, CF-180, CF-192, CF-193). Idle and slow connections wait in the server's event loop, so `workers` is how many handlers run at once. Omitted fields keep their defaults; `workers = 0` keeps the default (twice the core count, at least 4). `keepalive_timeout_ms = 0` turns keep-alive off.
+- `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `http.TlsConfig`): Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM.
+- `fn (mut s: HttpServer) set_limits(limits: ServerLimits)`: Replaces the per-connection limits (Q22, CF-192): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending, keepalive_timeout_ms, max_requests_per_conn, max_websockets, max_connections}`; omitted fields keep their defaults.
+- `fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!`: Enables TLS on the server using certificate and private key PEM files.
+- `fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!`: Enables TLS on the server using in-memory certificate and private key PEM strings.
+- `fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void`: Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.
+- `fn (s: HttpServer) port() -> u16`: Returns the port the server is listening on (useful after binding port 0).
+- `fn (mut s: HttpServer) stop() -> void`: Gracefully closes the listening socket and stops worker threads.
+- `fn (req: Request) param(key: str, fallback: str = "") -> str`: Retrieves a named route path parameter extracted by the router.
+- `fn (req: Request) query(key: str, fallback: str = "") -> str`: Retrieves a decoded URL query parameter.
+- `fn (req: Request) header(key: str, fallback: str = "") -> str`: Performs a case-insensitive header lookup.
+
+### `import "core:net/tls"` (alias: `tls`)
+Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation.
+Types:
+- `ServerContext`: A TLS server configuration (certificate and key) that wraps accepted connections.
+- `CertKeyPair`: A certificate and its private key, in PEM form.
+Functions & Methods:
+- `fn available() -> bool` (call: `tls.available`): Returns `true` if the OpenSSL (`libssl` / `libcrypto`) runtime bridge is available.
+- `fn generate_self_signed_pem(common_name: str = "localhost", days: i32 = 365) -> CertKeyPair!` (call: `tls.generate_self_signed_pem`): Generates an in-memory RSA-2048 X.509v3 self-signed certificate and private key in PEM format.
+- `fn wrap_client(mut conn: TcpConn, server_name: str = "", verify_peer: bool = true, ca_file: str = "") -> void!` (call: `tls.wrap_client`): Upgrades an open `TcpConn` to a client TLS session with SNI and optional X.509 certificate verification.
+- `fn connect(host: str, port: u16 = 443, verify_peer: bool = true, ca_file: str = "") -> TcpConn!` (call: `tls.connect`): Connects a TCP socket to `host:port` and completes a TLS client handshake.
+- `fn ServerContext.from_files(cert_file: str, key_file: str) -> ServerContext!`: Creates a TLS server context from X.509 certificate chain and private key PEM files on disk.
+- `fn ServerContext.from_pem(cert_pem: str, key_pem: str) -> ServerContext!`: Creates a TLS server context directly from in-memory certificate and private key PEM strings.
+- `fn (ctx: ServerContext) wrap_server(mut conn: TcpConn) -> void!`: Performs a server-side TLS handshake (`SSL_accept`) on an accepted `TcpConn`.
+
+### `import "core:net/url"` (alias: `url`)
+RFC 3986 URL parsing with component extraction (scheme, host, port, path, query, fragment), form-urlencoded query parameter maps, and percent encoding/decoding.
+Types:
+- `Url`: A parsed URL, from `url.parse`.
+Functions & Methods:
+- `fn parse(raw: str) -> Url!` (call: `url.parse`): Parses an RFC 3986 URL string into component fields and query parameters (`https` and `wss` default to port 443).
+- `fn encode(s: str) -> str` (call: `url.encode`): Percent-encodes a string for safe use in URL path or query strings.
+- `fn decode(s: str) -> str` (call: `url.decode`): Decodes a percent-encoded URL string.
+
+### `import "core:net/websocket"` (alias: `websocket`)
+RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, with `verify_peer: false` for self-signed certificates), standalone server (`make(websocket.Server, port)`, `tls: websocket.TlsConfig{...}` for `wss://`), and connection upgrade handler (`upgrade`) with automated framing, client masking, and Ping/Pong management.
+Types:
+- `Conn`: An open WebSocket connection; messages are `str` (`recv_text`) or `[]byte` (`recv_binary`).
+- `Server`: A WebSocket server bound to a port (`make(websocket.Server, port)`); each connection runs on its own session thread, so handlers run concurrently.
+- `ServerLimits`: Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default.
+- `TlsConfig`: Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`.
+Functions & Methods:
+- `fn connect(url: str, verify_peer: bool = true) -> Conn!` (call: `websocket.connect`): Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.
+- `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `websocket.TlsConfig`): Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`.
+- `fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!`: `make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`.
+- `fn upgrade(req: Request, mut conn: TcpConn) -> Conn!` (call: `websocket.upgrade`): Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.
+- `fn pair() -> (Conn, Conn)!` (call: `websocket.pair`): Creates an in-process full-duplex WebSocket client/server loopback pair.
+- `fn (mut ws: Conn) send_text(msg: str) -> void!`: Sends a UTF-8 text frame to the peer (masked if client).
+- `fn (mut ws: Conn) send_binary(data: []byte) -> void!`: Sends a binary data frame to the peer (masked if client).
+- `fn (mut ws: Conn) recv_text() -> str!`: Receives the next text frame from the peer, automatically responding to Ping frames with Pong.
+- `fn (mut ws: Conn) recv_binary() -> []byte!`: Receives the next binary frame from the peer.
+- `fn (mut ws: Conn) ping(payload: str = "") -> void!`: Sends a Ping control frame to check peer liveness.
+- `fn (mut ws: Conn) set_timeout_ms(ms: i32) -> void`: Sets read/write socket timeout in milliseconds (`0` for blocking).
+- `fn (mut ws: Conn) close(code: u16 = 1000, reason: str = "")`: Initiates a clean RFC 6455 closure handshake and closes the socket.
+- `fn (ws: Conn) is_open() -> bool`: Returns true if the WebSocket connection is open.
+- `fn (mut s: Server) accept() -> Conn!`: Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`.
+- `type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }` (call: `websocket.ServerLimits`): Limits for `websocket.Server` (CF-194): open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults.
+- `fn (mut s: Server) set_limits(limits: ServerLimits)`: Replaces the server's limits (CF-194): `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving.
+- `fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void`: Accepts and serves a single WebSocket connection with `handler`, on the calling thread.
+- `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void`: Runs a blocking accept loop; each connection is upgraded and served on its own session thread (CF-194), so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503.
+- `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void`: Starts the accept loop on a background thread; like `listen_and_serve`, each connection gets its own session thread and `handler` runs concurrently.
+- `fn (mut s: Server) stop() -> void`: Stops the accept loop, shuts the open sessions down and waits for their handlers to return.
+
+### `import "core:os"` (alias: `os`)
+Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).
+Types:
+- `ExecResult`: The outcome of a finished subprocess (`os.command`).
+- `TermSize`: A terminal's size in character cells.
+- `RawTerminal`: The terminal in raw mode (no echo, no line buffering); restored when it goes out of scope.
+Functions & Methods:
+- `fn args() -> []str` (call: `os.args`): Returns the command-line arguments passed to the current process.
+- `fn exit(code: i32)` (call: `os.exit`): Terminates the current process immediately with status `code`.
+- `fn getenv(key: str, fallback: str = "") -> str` (call: `os.getenv`): Reads environment variable `key`, returning `fallback` if unset.
+- `fn getenv_opt(key: str) -> str?` (call: `os.getenv_opt`): Reads environment variable `key`, returning `none` if unset.
+- `fn setenv(key: str, value: str)` (call: `os.setenv`): Sets environment variable `key` to `value` in the current process.
+- `fn cwd() -> str` (call: `os.cwd`): Returns the current working directory path.
+- `fn getpid() -> i64` (call: `os.getpid`): Returns the process ID (PID) of the current process.
+- `fn stdin() -> File` (call: `os.stdin`): Returns a non-owning `fs.File` stream handle wrapping standard input (FD 0).
+- `fn stdout() -> File` (call: `os.stdout`): Returns a non-owning `fs.File` stream handle wrapping standard output (FD 1).
+- `fn stderr() -> File` (call: `os.stderr`): Returns a non-owning `fs.File` stream handle wrapping standard error (FD 2).
+- `fn pipe() -> (File, File)!` (call: `os.pipe`): Creates an OS pipe returning an owning `(reader, writer)` tuple of `fs.File` handles with `FD_CLOEXEC` enabled.
+- `fn is_tty() -> bool` (call: `os.is_tty`): Returns `true` if standard input refers to an interactive terminal (or call `.is_tty()` on any `fs.File`).
+- `fn term_size() -> TermSize` (call: `os.term_size`): Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY.
+- `fn make() -> RawTerminal!`: `make(os.RawTerminal)` puts standard input into raw terminal mode (`cfmakeraw`) and returns an RAII guard that restores `termios` when it goes out of scope.
+- `fn on_signal(sig: i32, handler: fn(i32))` (call: `os.on_signal`): Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`).
+- `fn exec_output(cmd: str) -> str!` (call: `os.exec_output`): Executes a shell command via `popen` and returns its captured stdout.
+- `fn exec(cmd: str) -> str!` (call: `os.exec`): Executes a shell command via `popen` and returns its captured stdout.
+- `fn command(binary: str, args: []str) -> ExecResult!` (call: `os.command`): Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.
+
+### `import "core:rand"` (alias: `rand`)
+Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.
+Functions & Methods:
+- `fn u64() -> u64` (call: `rand.u64`): Generates a random 64-bit unsigned integer.
+- `fn range_i64(min_incl: i64, max_incl: i64) -> i64` (call: `rand.range_i64`): Generates a uniform integer in `[min_incl, max_incl]`.
+- `fn f64_unit() -> f64` (call: `rand.f64_unit`): Generates a uniform `f64` in `[0.0, 1.0)`.
+- `fn bytes(n: usize) -> []byte` (call: `rand.bytes`): Generates `n` cryptographically secure random bytes from OS entropy.
+
+### `import "core:regex"` (alias: `regex`)
+Pattern matching, group extraction, and text substitution backed by C++23 `<regex>`.
+Types:
+- `Regex`: A compiled regular expression, from `regex.compile`.
+Functions & Methods:
+- `fn compile(pattern: str) -> Regex!` (call: `regex.compile`): Compiles an ECMAScript regex pattern into a reusable Regex object.
+- `fn is_match(pattern: str, text: str) -> bool!` (call: `regex.is_match`): Tests whether a regex pattern matches text.
+- `fn find(pattern: str, text: str) -> str?!` (call: `regex.find`): Returns the first match of `pattern` in `text`, or `none`; an invalid pattern is an error.
+- `fn find_all(pattern: str, text: str) -> []str!` (call: `regex.find_all`): Returns every non-overlapping match of `pattern` in `text`.
+- `fn replace_all(pattern: str, text: str, repl: str) -> str!` (call: `regex.replace_all`): Replaces all occurrences matching pattern with repl.
+- `fn (r: Regex) is_match(text: str) -> bool`: Tests whether the compiled pattern matches anywhere in `text`.
+- `fn (r: Regex) find(text: str) -> str?`: Returns the first match in `text`, or `none`.
+- `fn (r: Regex) find_all(text: str) -> []str`: Returns every non-overlapping match in `text`.
+- `fn (r: Regex) replace_all(text: str, repl: str) -> str`: Replaces every match in `text` with `repl` (`$1` refers to a group).
+- `fn (r: Regex) pattern() -> str`: Returns the source pattern.
+
+### `import "core:sync"` (alias: `sync`)
+Go-style typed MPSC/MPMC channels (`Channel[T]`) with non-blocking and timeout receives, plus movable mutual exclusion locks (`Mutex`).
+Types:
+- `Mutex[T]`: A value of type `T` behind a lock; `lock()` returns a guard, or use `with_lock`.
+- `MutexGuard[T]`: Holds a `Mutex[T]` locked and gives access to its value; the lock is released when the guard goes out of scope.
+- `Channel[T]`: A thread-safe queue between tasks: `send`, `recv`, `try_recv`; `close()` wakes every waiting receiver.
+- `Atomic[T]`: A value shared between threads and read or changed atomically: `load`, `store`, `add`, `sub`.
+- `Context`: Carries cancellation and a deadline across tasks; see `core:sync/context`.
+Functions & Methods:
+- `fn make[T](capacity: usize = 0) -> Channel[T]`: `make(sync.Channel[T], capacity)` creates a shared, thread-safe channel of element type `T` (`0` = unbuffered).
+- `fn make[T](initial: T) -> Mutex[T]`: `make(sync.Mutex[T], initial)` creates a mutex protecting a value of type `T`; `make(sync.Mutex[void])` is a pure lock.
+- `fn make[T](initial: T) -> Atomic[T]`: `make(sync.Atomic[T], initial)` creates an atomic variable holding `initial`.
+- `fn (ch: Channel[T]) send(val: T)`: Sends a value into the channel and wakes one waiting receiver.
+- `fn (ch: Channel[T]) recv() -> T!`: Blocks until a value is available or returns an error if the channel is closed and empty.
+- `fn (ch: Channel[T]) try_recv() -> T?`: Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty.
+- `fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -> T?`: Waits up to `timeout_ms` milliseconds for a value from the channel, returning `none` on timeout or closed empty channel.
+- `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!`: Receives from the channel or aborts immediately with an error if `ctx` is cancelled.
+- `fn (ch: Channel[T]) len() -> usize`: Returns the number of buffered items currently queued in the channel.
+- `fn (mut ch: Channel[T]) close()`: Closes the channel and wakes all waiting receivers.
+- `type Mutex[T] struct` (call: `sync.Mutex`): Mutual exclusion (CF-154): `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock.
+- `fn (m: Mutex[T]) lock() -> MutexGuard[T]`: `Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`.
+- `fn (m: Mutex[void]) unlock()`: Releases a `Mutex[void]` acquired with `lock()`.
+- `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?`: Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock.
+- `fn (m: Mutex[T]) with_lock(f: fn(mut T) -> R) -> R`: Runs `f` with the protected value while holding the lock (`fn() -> R` for `Mutex[void]`) and unlocks when it returns.
+- `fn (m: Mutex[T]) get() -> T`: Copy of the protected value, read under the lock.
+- `fn (m: Mutex[T]) set(v: T)`: Replaces the protected value under the lock.
+- `type Atomic[T] struct` (call: `sync.Atomic`): Atomic variable.
+- `fn (a: Atomic[T]) load() -> T`: Loads the atomic value.
+- `fn (a: Atomic[T]) store(val: T)`: Stores a value into the atomic.
+- `fn (a: Atomic[T]) add(delta: T) -> T`: Adds delta to atomic value.
+- `fn (a: Atomic[T]) sub(delta: T) -> T`: Subtracts delta from atomic value.
+
+### `import "core:sync/context"` (alias: `context`)
+Structured concurrency cancellation token and deadline propagation hierarchy (`core:sync/context`).
+Types:
+- `Context`: Carries cancellation and a deadline across tasks; cancelling a parent cancels its children.
+Functions & Methods:
+- `fn background() -> Context` (call: `context.background`): Returns an empty, root non-cancellable Context.
+- `fn with_cancel(parent: Context) -> (Context, fn(reason: str = ""))` (call: `context.with_cancel`): Derives a child Context and a cancellation handle function from a parent Context.
+- `fn with_timeout(parent: Context, ms: i64) -> (Context, fn(reason: str = ""))` (call: `context.with_timeout`): Derives a child Context with an automatic millisecond deadline.
+- `fn (ctx: Context) is_cancelled() -> bool`: Returns true if the Context has been cancelled or timed out.
+- `fn (ctx: Context) done() -> bool`: Synonym for `is_cancelled()`.
+- `fn (ctx: Context) reason() -> str`: Returns the cancellation reason string.
+- `fn (ctx: Context) wait()`: Blocks until the Context is cancelled or its deadline expires.
+- `fn (ctx: Context) wait_for(ms: i64) -> bool`: Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled.
+
+### `import "core:tako"` (alias: `tako`)
+Cloud primitives and storage compatibility services (`core:tako`).
+Functions & Methods:
+- `fn NewS3Service() -> S3Service` (call: `tako.NewS3Service`): Creates an S3 compatible storage service client.
+- `fn NewSQSService() -> SQSService` (call: `tako.NewSQSService`): Creates an SQS compatible message queue service client.
+- `fn (mut s: S3Service) CreateBucket(name: str) -> void!`: Creates a storage bucket.
+- `fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!`: Uploads an object and returns its ETag.
+- `fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!`: Downloads an object from storage.
+- `fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!`: Creates a message queue and returns its URL.
+- `fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = "", dedup: str = "") -> str!`: Publishes a message to the queue.
+- `fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!`: Receives available messages from the queue.
+
+### `import "core:time"` (alias: `time`)
+High-resolution monotonic timing, duration arithmetic, and RFC 3339 / ISO 8601 formatting backed by `std::chrono`.
+Types:
+- `Duration`: A span of time with nanosecond precision, made with `time.duration_millis(ms)` and friends and passed to `time.sleep`.
+- `Time`: A point in wall-clock time, from `time.now()`, `time.unix(sec)` or `time.from_unix_seconds(sec)`.
+Functions & Methods:
+- `fn now_ms() -> i64` (call: `time.now_ms`): Returns monotonic milliseconds from `std::chrono::steady_clock`.
+- `fn unix_seconds() -> i64` (call: `time.unix_seconds`): Returns current UTC Unix timestamp in seconds.
+- `fn sleep_ms(ms: i64)` (call: `time.sleep_ms`): Sleeps the current thread for `ms` milliseconds.
+- `fn sleep_ctx(ctx: Context, ms: i64) -> bool` (call: `time.sleep_ctx`): Sleeps the current thread for `ms` or until `ctx` is cancelled; returns true if completed without cancellation.
+- `fn now() -> Time` (call: `time.now`): Returns current wall clock `Time` instant.
+- `fn unix(sec: i64, nsec: i64 = 0) -> Time` (call: `time.unix`): Constructs a `Time` instant from Unix seconds and nanoseconds.
+- `fn parse_rfc3339(s: str) -> Time!` (call: `time.parse_rfc3339`): Parses an RFC 3339 / ISO 8601 timestamp string into a `Time` instant.
+- `fn duration_seconds(s: i64) -> Duration` (call: `time.duration_seconds`): Constructs a typed `Duration` representing `s` seconds.
+- `fn duration_millis(ms: i64) -> Duration` (call: `time.duration_millis`): Constructs a typed `Duration` representing `ms` milliseconds.
+- `fn duration_nanos(n: i64) -> Duration` (call: `time.duration_nanos`): Constructs a Duration from nanoseconds.
+- `fn duration_micros(us: i64) -> Duration` (call: `time.duration_micros`): Constructs a Duration from microseconds.
+- `fn duration_minutes(m: i64) -> Duration` (call: `time.duration_minutes`): Constructs a Duration from minutes.
+- `fn duration_hours(h: i64) -> Duration` (call: `time.duration_hours`): Constructs a Duration from hours.
+- `fn from_unix_seconds(sec: i64) -> Time` (call: `time.from_unix_seconds`): Constructs a Time instant from Unix epoch seconds.
+- `fn sleep(d: Duration)` (call: `time.sleep`): Sleeps the current thread for duration `d`.
+
+### `import "core:unicode"` (alias: `unicode`)
+RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation.
+Functions & Methods:
+- `fn rune_count(s: str) -> usize` (call: `unicode.rune_count`): Counts the number of Unicode scalar values (codepoints) in a UTF-8 string.
+- `fn runes(s: str) -> []u32` (call: `unicode.runes`): Decodes all Unicode codepoints in `s` into a slice of 32-bit scalar values.
+- `fn is_valid_utf8(s: str) -> bool` (call: `unicode.is_valid_utf8`): Validates whether a string consists of strictly valid RFC 3629 UTF-8 byte sequences.
+- `fn encode_rune(r: u32) -> str` (call: `unicode.encode_rune`): Encodes a 32-bit Unicode codepoint into its UTF-8 string representation.
+- `fn to_lower(s: str) -> str` (call: `unicode.to_lower`): Converts Latin, Greek, and Cyrillic Unicode characters to lowercase.
+- `fn to_upper(s: str) -> str` (call: `unicode.to_upper`): Converts Latin, Greek, and Cyrillic Unicode characters to uppercase.
+
+### `import "ext:ai"` (alias: `ai`)
+Unified AI SDK built around stateful `Client` and `Agent` objects supporting Cross-Platform On-Device Intelligence (`ai.local()` / `ai.apple()`: `NaturalLanguage`/`PDFKit`/`Vision` on Apple; dynamic `libtesseract`/`pdftotext` + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (`ai.openai()`), Anthropic Claude (`ai.anthropic()`), Google Gemini (`ai.gemini()`), Ollama (`ai.ollama()`), vLLM/llama.cpp (`ai.openai_compatible()`), and deterministic offline mocks (`ai.mock()`, `ai.mock_sequence()`), with multi-turn tool-calling agents (`make(ai.Agent, client, model)`), self-correcting structured outputs (`Client.generate_struct[T]`, `Agent.run_struct[T]`, `Agent.run_struct_validated[T]`) backed by compile-time `validate:"..."` struct tags, stateful client embeddings/OCR/language recognition (`Client.embed`, `Client.embed_image`, `Client.ocr`, `Client.detect_language`), pure stateless document parsers (`load_document`, `chunk_document`), SIMD vector math (`cosine_similarity`, `l2_distance`, `dot_product`, `normalize`), and a Model Context Protocol server (`McpServer`) that shares tool definitions with `Agent` (`use_mcp`).
+Types:
+- `Provider`: Which model API a `Client` talks to.
+- `Client`: A connection to a model provider; send it messages, optionally with tools.
+- `Agent`: A client plus a tool registry that runs the tool-calling loop for you.
+- `McpServer`: A Model Context Protocol server exposing your tools over stdio.
+- `Message`: One chat message.
+- `Tool`: A tool the model may call; usually built with `ai.tool_def[T]`.
+- `ToolCall`: A model's request to run one tool.
+- `ChatResponse`: A model's reply.
+- `Attachment`: A file attached to a message.
+- `Document`: A parsed document (`ai.parse_document`).
+- `DocumentSection`: One section of a document, as `ai.chunk_document` returns them.
+- `ZipEntry`: One file from a zip archive.
+Functions & Methods:
+- `fn local() -> Client` (call: `ai.local`): Creates a cross-platform on-device `Client` (`default_model: "local"`) backed by Apple `NaturalLanguage`/`Vision`/`PDFKit` on macOS/iOS and `libtesseract`/`pdftotext` + pure C++23 SIMD embeddings on Linux/Windows/WASM.
+- `fn apple() -> Client` (call: `ai.apple`): Alias for `ai.local()` creating an on-device `Client` (`default_model: "local"`).
+- `fn openai(api_key: str = "", model: str = "gpt-4o-mini") -> Client` (call: `ai.openai`): Creates an OpenAI client (reads `OPENAI_API_KEY` if `api_key` is empty).
+- `fn anthropic(api_key: str = "", model: str = "claude-3-5-sonnet-latest") -> Client` (call: `ai.anthropic`): Creates an Anthropic Claude client (reads `ANTHROPIC_API_KEY` if `api_key` is empty).
+- `fn gemini(api_key: str = "", model: str = "gemini-2.5-flash") -> Client` (call: `ai.gemini`): Creates a Google Gemini client (reads `GEMINI_API_KEY` or `GOOGLE_API_KEY` if `api_key` is empty).
+- `fn ollama(host: str = "http://127.0.0.1:11434", model: str = "llama3.2") -> Client` (call: `ai.ollama`): Creates a local Ollama client (uses `OLLAMA_HOST` if set).
+- `fn openai_compatible(base_url: str, api_key: str = "", model: str = "default") -> Client` (call: `ai.openai_compatible`): Creates a client for any OpenAI-compatible server (`vLLM`, `llama-server`, `LM Studio`, `Groq`, `Together`, `DeepSeek`).
+- `fn mock(handler: fn([]Message, []Tool) -> ChatResponse!) -> Client` (call: `ai.mock`): Creates a deterministic offline mock `Client` for unit-testing multi-turn `Agent` tool loops and structured output validation retries without network access.
+- `fn mock_sequence(responses: []ChatResponse) -> Client` (call: `ai.mock_sequence`): Creates a deterministic offline `Client` that replays a scripted sequence of `ChatResponse` turns in order.
+- `fn user(content: str) -> Message` (call: `ai.user`): Constructs a user role `Message`.
+- `fn user_with_file(content: str, file_path: str) -> Message!` (call: `ai.user_with_file`): Constructs a multimodal user `Message` with an attached file (`.png`, `.jpg`, `.webp`, `.bmp`, `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, `.wav`).
+- `fn load_attachment(path: str) -> Attachment!` (call: `ai.load_attachment`): Loads a file from disk into a MIME-typed multimodal `Attachment` (populating extracted Markdown automatically for Office/OpenDocument/EPUB/text formats).
+- `fn detect_mime_type(path_or_name: str, data: []byte = []) -> str` (call: `ai.detect_mime_type`): Detects the MIME type of a file from magic bytes (`%PDF-`, `PNG`, `BMP`, `JPEG`, `WEBP`, `ZIP`/OOXML/ODF/EPUB) and filename extension.
+- `fn load_document(path: str) -> Document!` (call: `ai.load_document`): Extracts structured Markdown and per-page/per-slide `sections` (`[]DocumentSection`) from `.pdf` (Apple `PDFKit`, Linux `pdftotext`, or portable C++23 `/FlateDecode` + `/ToUnicode` CMap), `.docx`, `.pptx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.md`, `.csv`, or image files.
+- `fn parse_document(data: []byte, filename: str = "document.txt") -> Document!` (call: `ai.parse_document`): Parses an in-memory byte slice or string into a structured `Document` with page/slide `sections`.
+- `fn chunk_document(doc: Document, max_chars: i32 = 512, overlap: i32 = 64) -> []DocumentSection` (call: `ai.chunk_document`): Splits a `Document` into RAG-ready chunks while preserving each chunk's 1-based page/slide `index` and section `title`.
+- `fn system(content: str) -> Message` (call: `ai.system`): Constructs a system instruction `Message`.
+- `fn assistant(content: str) -> Message` (call: `ai.assistant`): Constructs an assistant role `Message`.
+- `fn tool_result(tool_call_id: str, tool_name: str, content: str, is_error: bool = false) -> Message` (call: `ai.tool_result`): Constructs a tool-result `Message` correlated with a model `ToolCall` (`id` and `name`).
+- `fn tool_def[T](name: str, description: str) -> Tool` (call: `ai.tool_def`): Constructs a typed LLM `Tool` definition whose JSON Schema is derived at compile time from struct `T`.
+- `fn (mut c: Client) set_model(model: str)`: Sets the client's stateful `default_model` used by 1-argument `ask`, `embed`, `embed_image`, and `generate_struct[T]` calls.
+- `fn (c: Client) model() -> str`: Returns the client's active `default_model`.
+- `fn (c: Client) ask(prompt: str) -> str!`: Executes a single-turn prompt using `c.model()` (or pass `(model, prompt, system_prompt)` to override) and returns the assistant text response.
+- `fn (c: Client) ask_with_file(prompt: str, file_path: str) -> str!`: Executes a multimodal prompt with an attached image, PDF, slide deck, or document.
+- `fn (c: Client) chat(messages: []Message) -> ChatResponse!`: Executes a multi-turn chat completion returning text, tool calls, and token usage.
+- `fn (c: Client) chat_with_tools(messages: []Message, tools: []Tool) -> ChatResponse!`: Executes a chat completion with compile-time schema-typed `tools` and returns any requested `ToolCall` invocations.
+- `fn (c: Client) stream(messages: []Message, on_delta: fn(str)) -> str!`: Streams tokens in real time via SSE across OpenAI, Anthropic, Gemini, or Ollama, invoking `on_delta` for each token chunk.
+- `fn (c: Client) generate_struct[T](prompt: str) -> T!`: Enforces `json.schema[T]()` on the model response, parses and validates `T` (including `validate:"..."` constraints), and automatically feeds validation errors back to the model to self-correct.
+- `fn (c: Client) generate_struct_from_file[T](prompt: str, file_path: str) -> T!`: Extracts a strongly-typed `cfire` struct `T` directly from an image, PDF, slide deck, or document using compile-time `json.schema[T]()` with self-correcting validation retries.
+- `fn (c: Client) embed(text: str) -> []f32!`: Generates a normalized `[]f32` embedding vector using `c`'s provider and `default_model` (or pass `(model, text)` to override).
+- `fn (c: Client) embed_image(path: str) -> []f32!`: Computes a normalized `[]f32` visual/multimodal embedding vector for an image file using `c`'s provider (`ai.local()` decodes PNG/BMP/PPM pixels in pure C++23 with 4x4 RGB/Luma moments, Sobel HOG edge histograms, 8x8 dHash, and fused OCR semantics).
+- `fn (c: Client) ocr(path: str) -> str!`: Extracts text from an image file using `c`'s provider (`Vision.framework` on macOS/iOS, `libtesseract.so.5` / `tesseract` CLI on Linux, PNG/JPEG metadata, or cloud multimodal vision).
+- `fn (c: Client) detect_language(text: str) -> str`: Detects the dominant BCP-47 language code (e.g. `"en"`, `"es"`, `"ja"`) using Apple `NLLanguageRecognizer` on macOS/iOS or portable UTF-8 script/stopword classification.
+- `fn cosine_similarity(a: []f32, b: []f32) -> f32` (call: `ai.cosine_similarity`): Computes the cosine similarity in `[-1.0, 1.0]` between two `[]f32` embedding vectors.
+- `fn l2_distance(a: []f32, b: []f32) -> f32` (call: `ai.l2_distance`): Computes the Euclidean (L2) distance between two `[]f32` vectors.
+- `fn dot_product(a: []f32, b: []f32) -> f32` (call: `ai.dot_product`): Computes the inner product of two `[]f32` vectors.
+- `fn normalize(v: []f32) -> []f32` (call: `ai.normalize`): Returns an L2-normalized unit vector copy of `v`.
+- `fn chunk_text(text: str, max_chars: i32 = 512, overlap: i32 = 64) -> []str` (call: `ai.chunk_text`): Splits a document into overlapping paragraph/sentence-aware chunks for RAG indexing.
+- `fn make(client: Client, model: str = "", system_prompt: str = "") -> Agent`: `make(ai.Agent, client, model, system_prompt)` creates a stateful multi-turn `Agent` that runs tool calls through `client`.
+- `fn (mut a: Agent) register_tool[Args](name: str, description: str, handler: fn(Args) -> R!)`: Registers a schema-typed tool on the `Agent` (`handler` may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`; errors are returned to the LLM to self-correct).
+- `fn (mut a: Agent) register_tool_action(name: str, description: str, handler: fn() -> R!)`: Registers a parameterless tool on the `Agent`.
+- `fn (mut a: Agent) use_mcp(mcp: McpServer)`: Mounts all tools registered on `mcp` directly into the `Agent`.
+- `fn (mut a: Agent) set_max_steps(steps: i32)`: Configures the maximum number of tool-calling turns per `run` (default `8`).
+- `fn (mut a: Agent) set_max_retries(retries: i32)`: Configures the maximum number of self-correction retries for tool or output validation failures (default `2`).
+- `fn (mut a: Agent) run(prompt: str) -> str!`: Runs the multi-turn agent loop until the model produces a final text response.
+- `fn (mut a: Agent) run_messages(messages: []Message) -> ChatResponse!`: Appends `messages` to the agent history and runs the multi-turn tool loop, returning the final `ChatResponse`.
+- `fn (mut a: Agent) run_struct[Out](prompt: str) -> Out!`: Runs the multi-turn agent loop and extracts a validated struct `Out` (automatically retrying on schema or `validate:"..."` failures).
+- `fn (mut a: Agent) run_struct_validated[Out](prompt: str, validator: fn(Out) -> void!) -> Out!`: Runs the multi-turn agent loop, parses `Out`, and executes custom cross-field `validator` logic (feeding any `error(...)` back to the model to self-correct).
+- `fn (a: Agent) history() -> []Message`: Returns the accumulated multi-turn conversation and tool-call `[]Message` history.
+- `fn (mut a: Agent) clear_history()`: Clears the agent's conversation history.
+- `fn make(name: str, version: str = "1.0.0") -> McpServer`: `make(ai.McpServer, name, version)` creates a Model Context Protocol (MCP) server that serves registered tools over stdio.
+- `fn (mut s: McpServer) register_tool[T](name: str, description: str, handler: fn(T) -> R!)`: Registers an MCP tool whose input schema is derived from `T` (`json.schema[T]()`) and whose handler may return `str`, `str!`, or any JSON-serializable struct `R` / `R!`.
+- `fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)`: Registers a parameterless MCP tool.
+- `fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str`: Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.
+- `fn (mut s: McpServer) serve_stdio() -> i32`: Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.
+- `fn create_zip(entries: map[str]str) -> []byte` (call: `ai.create_zip`): Constructs an in-memory zip archive from filename-content pairs.
+
+### `import "ext:compress/zstd"` (alias: `zstd`)
+Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.
+Functions & Methods:
+- `fn compress(input: []byte, level: i32 = 3) -> []byte!` (call: `zstd.compress`): Compresses a byte slice into a Zstandard frame.
+- `fn compress_str(input: str, level: i32 = 3) -> []byte!` (call: `zstd.compress_str`): Compresses a string into a Zstandard frame.
+- `fn decompress(frame: []byte) -> []byte!` (call: `zstd.decompress`): Decompresses a Zstandard frame using the embedded frame content size.
+- `fn decompress_str(frame: []byte) -> str!` (call: `zstd.decompress_str`): Decompresses a Zstandard frame into a UTF-8 string.
+
+### `import "ext:crypto/sodium"` (alias: `sodium`)
+Modern cryptographic primitives backed by `libsodium` (`crypto_pwhash` Argon2id password hashing, `crypto_generichash` keyed/unkeyed BLAKE2b, `crypto_kdf_derive_from_key` subkey derivation, and `crypto_aead_xchacha20poly1305_ietf` 192-bit nonce AEAD).
+Functions & Methods:
+- `fn argon2id(password: str, salt: []byte, out_len: usize = 32, opslimit: u64 = 2, memlimit: usize = 67108864) -> []byte!` (call: `sodium.argon2id`): Derives a cryptographic key of `out_len` bytes from `password` and a 16-byte `salt` using Argon2id.
+- `fn argon2id_str(password: str, opslimit: u64 = 2, memlimit: usize = 67108864) -> str!` (call: `sodium.argon2id_str`): Hashes a password into a PHC-formatted `$argon2id$...` verification string.
+- `fn argon2id_verify(encoded: str, password: str) -> bool` (call: `sodium.argon2id_verify`): Verifies a password against an encoded Argon2id hash string in constant time.
+- `fn blake2b(input: []byte | str, out_len: usize = 32, key: []byte = []) -> []byte!` (call: `sodium.blake2b`): Computes a keyed or unkeyed BLAKE2b hash (`crypto_generichash`) of `out_len` bytes (16..64).
+- `fn derive_subkey(master_key: []byte, subkey_id: u64, context: str, out_len: usize = 32) -> []byte!` (call: `sodium.derive_subkey`): Derives a domain-separated subkey of `out_len` bytes (16..64) from a 32-byte `master_key`, `subkey_id`, and 8-byte `context` (`crypto_kdf_derive_from_key`).
+- `fn xchacha20poly1305_encrypt(key: []byte, plaintext: []byte, aad: []byte = []) -> []byte!` (call: `sodium.xchacha20poly1305_encrypt`): Encrypts `plaintext` with a 32-byte key using XChaCha20-Poly1305, returning `[24-byte random nonce || ciphertext || 16-byte Poly1305 tag]`.
+- `fn xchacha20poly1305_decrypt(key: []byte, combined: []byte, aad: []byte = []) -> []byte!` (call: `sodium.xchacha20poly1305_decrypt`): Authenticates and decrypts a `[24-byte nonce || ciphertext || 16-byte tag]` XChaCha20-Poly1305 payload.
+- `fn random_bytes(n: usize) -> []byte` (call: `sodium.random_bytes`): Generates `n` cryptographically secure random bytes (`randombytes_buf`).
+- `fn memzero(mut buf: []byte)` (call: `sodium.memzero`): Securely zeroes sensitive key material in memory (`sodium_memzero`).
+
+### `import "ext:db/sqlite"` (alias: `sqlite`)
+RAII SQLite3 & SQLCipher wrapper enabling `PRAGMA journal_mode=WAL`, `open_encrypted` full-database encryption, parameterized queries, `[]f32` embedding BLOB binding, built-in SQL vector similarity functions (`vec_cosine_similarity`, `vec_l2_distance`, `vec_dot`), dynamic extension loading (`sqlite-vec`), atomic transactions, and compile-time `sql:"..."` struct row mapping.
+Types:
+- `Conn`: An open SQLite database; `exec` runs statements and `query[T]` maps rows to structs.
+Functions & Methods:
+- `fn open(path: str) -> Conn!` (call: `sqlite.open`): Opens an SQLite3 database connection, enables WAL mode, and registers vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`, `vec_dot`, `vec_dims`).
+- `fn open_encrypted(path: str, key: str) -> Conn!` (call: `sqlite.open_encrypted`): Opens an SQLite3 / SQLCipher database and applies `PRAGMA key` encryption immediately before schema access.
+- `fn (mut db: Conn) apply_key(key: str) -> void!`: Applies an encryption key (`sqlite3_key` / `PRAGMA key`) to an open database connection.
+- `fn (mut db: Conn) rekey(new_key: str) -> void!`: Rotates the database encryption key (`sqlite3_rekey` / `PRAGMA rekey`).
+- `fn (mut db: Conn) exec(sql: str, ...args) -> void!`: Executes a parameterized SQL statement (`?1`, `?2`, ...), including `[]f32` vector and `[]byte` BLOB parameters.
+- `fn (mut db: Conn) query[T](sql: str, ...args) -> []T!`: Executes a `SELECT` query and maps rows directly into struct `T` via `sql:"..."` tags (supporting `str`, `i64`, `f64`, `[]f32`, `[]byte`).
+- `fn (mut db: Conn) load_extension(path: str, entry_point: str = "") -> void!`: Dynamically loads a native SQLite extension shared library (e.g. `sqlite-vec` `vec0` or `sqlite-vss`).
+- `fn (mut db: Conn) tx(block: fn(mut tx: Conn) -> void!) -> void!`: Runs a closure inside an atomic `BEGIN IMMEDIATE ... COMMIT` transaction with automatic rollback on error.
+
+### `import "ext:net/ssh"` (alias: `ssh`)
+SSHv2 client, interactive PTY terminal sessions, one-shot command execution, SFTP file transfers, and TCP port forwarding backed by `libssh` (`CFIRE_HAS_LIBSSH=1`) with deterministic loopback/mock support (`ssh.enable_mock_server()`) for headless testing.
+Types:
+- `Session`: An authenticated SSH connection; run commands or open channels on it.
+- `Channel`: An SSH channel (a shell or a command) with its own input and output.
+- `ExecResult`: The outcome of a remote command.
+- `SftpEntry`: One entry of a remote directory listing.
+Functions & Methods:
+- `fn connect(host: str, port: u16 = 22, user: str = "", timeout_ms: i64 = 10000) -> Session!` (call: `ssh.connect`): Connects an SSH session to `host:port` as `user` (default: the local login name, like ssh(1)).
+- `fn enable_mock_server(enabled: bool = true)` (call: `ssh.enable_mock_server`): Enables or disables the deterministic in-memory loopback SSH/PTY/SFTP mock server for unit tests.
+- `fn (sess: Session) host_key_fingerprint() -> str`: Returns the connected server's public key fingerprint in `SHA256:<base64>` format.
+- `fn (sess: Session) is_known_host() -> bool`: Checks whether the server's public key matches `~/.ssh/known_hosts`.
+- `fn (mut sess: Session) write_known_host() -> void!`: Appends the server's public key to `~/.ssh/known_hosts` (TOFU).
+- `fn (mut sess: Session) auth_publickey_mem(private_key_pem: str, passphrase: str = "") -> void!`: Authenticates using an in-memory private key (PEM/OpenSSH) without writing temporary files to disk.
+- `fn (mut sess: Session) auth_publickey_file(private_key_path: str, passphrase: str = "") -> void!`: Authenticates using a private key file on disk.
+- `fn (mut sess: Session) auth_password(password: str) -> void!`: Authenticates using password authentication.
+- `fn (mut sess: Session) auth_agent() -> void!`: Authenticates via the local `ssh-agent` (`SSH_AUTH_SOCK`).
+- `fn (mut sess: Session) exec(command: str) -> ExecResult!`: Executes a one-shot remote command and returns `ExecResult{exit_code, stdout, stderr}`.
+- `fn (mut sess: Session) open_pty(term: str = "xterm-256color", cols: i32 = 80, rows: i32 = 24) -> Channel!`: Opens an interactive PTY shell channel with initial terminal type and dimensions.
+- `fn (mut sess: Session) open_forward(remote_host: str, remote_port: u16, source_host: str = "127.0.0.1", local_port: u16 = 0) -> Channel!`: Opens a direct TCP/IP port-forwarding channel (`ssh_channel_open_forward`).
+- `fn (mut sess: Session) sftp_write_text(remote_path: str, text: str, mode: u32 = 0644) -> void!`: Uploads UTF-8 `text` to `remote_path` over SFTP.
+- `fn (mut sess: Session) sftp_write_bytes(remote_path: str, data: []byte, mode: u32 = 0644) -> void!`: Uploads binary `data` to `remote_path` over SFTP.
+- `fn (mut sess: Session) sftp_read_text(remote_path: str) -> str!`: Downloads the UTF-8 text contents of `remote_path` over SFTP.
+- `fn (mut sess: Session) sftp_read_bytes(remote_path: str) -> []byte!`: Downloads the raw binary bytes of `remote_path` over SFTP.
+- `fn (mut sess: Session) sftp_list_dir(remote_path: str) -> []SftpEntry!`: Lists directory entries in `remote_path` over SFTP.
+- `fn (mut sess: Session) sftp_mkdir(remote_path: str, mode: u32 = 0755) -> void!`: Creates a remote directory over SFTP.
+- `fn (mut sess: Session) sftp_remove(remote_path: str) -> void!`: Removes a remote file over SFTP.
+- `fn (mut sess: Session) close()`: Disconnects and frees the SSH session.
+- `fn (mut ch: Channel) read_text(max_bytes: usize = 4096) -> str!`: Non-blockingly reads up to `max_bytes` of UTF-8 text from the SSH channel (`""` when no data is currently ready).
+- `fn (mut ch: Channel) read_bytes(max_bytes: usize = 4096) -> []byte!`: Non-blockingly reads up to `max_bytes` of raw bytes from the SSH channel.
+- `fn (mut ch: Channel) write_text(text: str) -> usize!`: Writes UTF-8 `text` into the SSH channel (e.g. PTY stdin).
+- `fn (mut ch: Channel) write_bytes(data: []byte) -> usize!`: Writes binary `data` into the SSH channel.
+- `fn (mut ch: Channel) resize_pty(cols: i32, rows: i32) -> void!`: Dynamically resizes an open interactive PTY (`ssh_channel_change_pty_size`).
+- `fn (ch: Channel) is_eof() -> bool`: Returns `true` if the remote channel has reached EOF.
+- `fn (mut ch: Channel) close()`: Sends EOF and closes the SSH channel.
+
+### `import "ext:webui"` (alias: `webui`)
+Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (`WKWebView` on macOS & iOS, `WebKitGTK` on Linux, `WebView2` on Windows) over a custom `app://localhost/` URI scheme with two-way typed struct RPC (`app.bind[T]`), live event streaming (`app.on`, `app.emit`), reactive key-value state (`app.set_state`), and an injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` JavaScript bridge.
+Types:
+- `App`: A native desktop window running a web UI, with RPC between the page and cfire.
+Functions & Methods:
+- `fn make(title: str = "cfire WebUI", width: i32 = 960, height: i32 = 640) -> App`: `make(webui.App, title, width, height)` creates a native WebView application window.
+- `fn (mut app: App) bind[T](name: str, handler: fn(T) -> any!)`: Binds a typed `cfire` closure to `window.backend.<name>(params)` and `window.invoke(name, params)`, automatically deserializing incoming JSON into struct `T` and serializing the return value.
+- `fn (mut app: App) bind_async[T](name: str, handler: fn(T) -> any!)`: Binds a typed RPC handler that executes asynchronously on a background worker thread without blocking the main UI/WebView thread.
+- `fn (mut app: App) bind_action(name: str, handler: fn() -> any!)`: Binds a zero-argument action closure to `window.backend.<name>()`.
+- `fn (mut app: App) bind_action_async(name: str, handler: fn() -> any!)`: Binds a zero-argument RPC action that executes asynchronously on a background worker thread.
+- `fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)`: Binds a raw JSON string RPC handler to `window.backend.<name>(params)`.
+- `fn (mut app: App) on(event: str, handler: fn(str))`: Subscribes a backend callback to frontend events emitted via `window.runtime.EventsEmit(event, data)`.
+- `fn (mut app: App) emit(event: str, payload: any)`: Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners.
+- `fn (mut app: App) emit_bytes(event: str, data: []byte)`: Emits a binary `[]byte` payload to frontend `window.runtime.EventsOn(event, fn)` listeners as a Base64-decoded `Uint8Array`.
+- `fn (mut app: App) clear_history()`: Clears the bounded in-memory ring buffer of recorded emitted events.
+- `fn (mut app: App) set_max_history(max_events: usize)`: Sets the maximum number of emitted events retained per event name for testing inspection (`0` disables history retention).
+- `fn (app: App) clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)`: Copies `text` to the native OS system clipboard (`NSPasteboard` on macOS, `GtkClipboard` on Linux, `Win32` on Windows), optionally marking it concealed (`org.nspasteboard.ConcealedType` / `ExcludeClipboardContentFromMonitorProcessing`) and auto-clearing after `clear_after_ms` if unchanged.
+- `fn (app: App) clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)`: Copies a sensitive secret to the OS clipboard marked as concealed/transient and automatically clears it after `clear_after_ms` if the clipboard has not been overwritten.
+- `fn (app: App) clipboard_get() -> str`: Reads current plain text from the native OS system clipboard.
+- `fn (app: App) monospace_fonts() -> []str`: Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows).
+- `fn (mut app: App) set_icon(icon_path: str)`: Sets the application window and dock/taskbar icon from a `.png`, `.icns`, or `.ico` file.
+- `fn (mut app: App) set_tray(icon_path: str, tooltip: str = "")`: Configures a system tray / menu-bar status item (`NSStatusItem` on macOS, `GtkStatusIcon` on Linux, `Shell_NotifyIconW` on Windows).
+- `fn (mut app: App) add_tray_item(title: str, event: str)`: Appends a menu item to the system tray context menu that emits `event` to `app.on(event)` when clicked (or `"-"` for a separator).
+- `fn (mut app: App) hide_window()`: Hides the native application window without terminating the process or system tray.
+- `fn (mut app: App) show_window()`: Restores and focuses a hidden or minimized native application window.
+- `fn (mut app: App) set_hide_on_close(enabled: bool)`: Intercepts the window close button (`windowShouldClose:` / `delete-event` / `WM_CLOSE`) to hide the window to the system tray instead of exiting.
+- `fn (mut app: App) add_menu_item(menu: str, title: str, shortcut: str, event: str)`: Adds a custom menu item with keyboard shortcut to the application menu bar that emits `event` to `app.on(event)` when triggered.
+- `fn (mut app: App) set_state(key: str, val: str)`: Updates a reactive key-value state entry and broadcasts a `state:change` event (`{key, value}`) to the frontend.
+- `fn (app: App) get_state(key: str) -> str`: Reads the current string value for `key` from the application's state store.
+- `fn (mut app: App) set_html(html: str)`: Registers inline HTML content as `/index.html` on the `app://localhost/` virtual filesystem.
+- `fn (mut app: App) embed_asset(path: str, content: str, mime: str = "")`: Embeds an in-memory asset (`.html`, `.css`, `.js`, `.svg`, etc.) into the `app://localhost/` virtual filesystem.
+- `fn (mut app: App) serve_dir(dir_path: str)`: Mounts a local or bundled asset directory (e.g. `"./ui"`) under `app://localhost/`.
+- `fn (mut app: App) eval(js: str)`: Asynchronously evaluates arbitrary JavaScript inside the active WebView on the main UI thread.
+- `fn (mut app: App) set_title(title: str)`: Updates the native window title.
+- `fn (mut app: App) set_size(width: i32, height: i32)`: Resizes the native application window.
+- `fn (mut app: App) set_min_size(min_w: i32, min_h: i32)`: Sets the minimum resizable dimensions for the native window.
+- `fn (mut app: App) set_max_size(max_w: i32, max_h: i32)`: Sets the maximum resizable dimensions for the native window.
+- `fn (mut app: App) set_frameless(frameless: bool)`: Configures a frameless full-size content view window with CSS `--wails-draggable: drag` support.
+- `fn (mut app: App) set_transparent(transparent: bool)`: Enables or disables transparent window and WebView background rendering.
+- `fn (mut app: App) set_dark_mode(dark: bool)`: Configures dark or light native window appearance.
+- `fn (mut app: App) set_always_on_top(on_top: bool)`: Floats the application window above standard desktop windows.
+- `fn (mut app: App) fullscreen()`: Toggles native fullscreen window mode.
+- `fn (mut app: App) minimize()`: Minimizes the native window to the dock or taskbar.
+- `fn (mut app: App) maximize()`: Zooms or maximizes the native window.
+- `fn (mut app: App) center()`: Centers the native window on the active screen.
+- `fn (app: App) open_file_dialog(title: str = "Open File") -> str`: Opens a native OS file picker dialog and returns the selected path (or `""` if cancelled).
+- `fn (app: App) save_file_dialog(title: str = "Save File", default_name: str = "") -> str`: Opens a native OS save-file dialog and returns the chosen destination path.
+- `fn (app: App) message_dialog(title: str, message: str)`: Displays a modal native OS alert dialog.
+- `fn (mut app: App) call_rpc(method: str, params_json: str = "{}") -> str!`: Directly invokes a bound RPC handler in-memory without opening a window (ideal for `cfire test` and `fuzz` blocks).
+- `fn (mut app: App) dispatch_event(event: str, data_json: str = "{}")`: Dispatches a synthetic frontend event to `app.on(event)` listeners during headless testing.
+- `fn (app: App) resolve_asset_mime(path: str) -> str`: Returns the MIME type the embedded asset server reports for `path` (useful in headless contract tests).
+- `fn (app: App) emitted_events_count(event: str) -> i64`: Returns the number of times `app.emit(event, ...)` has been triggered.
+- `fn (app: App) last_emitted_payload(event: str) -> str`: Returns the most recent JSON payload emitted for `event`.
+- `fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!`: Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached.
+- `fn (mut app: App) run()`: Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux).
+- `fn (mut app: App) quit()`: Requests termination of the native WebView event loop.
+- `fn (mut app: App) close()`: Deterministic RAII cleanup handle for `defer app.close()`.
+- `fn clipboard_get() -> str` (call: `webui.clipboard_get`): Reads plaintext from the system clipboard.
+- `fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)` (call: `webui.clipboard_set`): Writes plaintext to the system clipboard with optional auto-clear timeout.
+- `fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)` (call: `webui.clipboard_set_secret`): Writes sensitive secret to the clipboard and schedules automatic clearing.
+- `fn monospace_fonts() -> []str` (call: `webui.monospace_fonts`): Returns a list of platform-installed monospaced font family names.
+
+## Compiler Diagnostic Codes
+- `cfire/AMBIGUOUS-INTERPOLATION` (Syntax): An interpolation `{...}` that starts with a number literal must be parenthesized.
+- `cfire/ARITY-MISMATCH` (Types): A call passes the wrong number of arguments.
+- `cfire/ASSIGN-IMMUTABLE` (Mutability): Assignment to a binding declared without `mut`.
+- `cfire/BREAK-OUTSIDE-LOOP` (Detailed rule): `break` or `continue` Outside of a `for` Loop
+- `cfire/DANGLING-POINTER` (Detailed rule): Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)
+- `cfire/DANGLING-RETURN` (Detailed rule): Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)
+- `cfire/DANGLING-TEMPORARY` (Memory safety): A view or pointer borrows from a temporary that is destroyed at the end of the statement.
+- `cfire/DEPRECATED-API` (Migration): A stdlib function that was renamed or replaced before 0.16 (`fs.read_all`, `os.read_stdin`, ...).
+- `cfire/DEPRECATED-DISCARD` (Migration): `_ := expr` is not a discard form; write `_ = expr`.
+- `cfire/DEPRECATED-IN-PARAM` (Migration): Explicit `in` intent; parameters are read-only by default.
+- `cfire/DEPRECATED-INTENT-POS` (Migration): `x: mut T` intent placement; write `mut x: T`.
+- `cfire/DEPRECATED-SEPARATOR` (Syntax): `::` used where `.` is required (only enum variants use `::`).
+- `cfire/DIVIDE-BY-ZERO` (Detailed rule): Compile-Time Division or Modulo by Constant Zero
+- `cfire/DUPLICATE-DECLARATION` (Declarations): Two declarations of the same type, function or method.
+- `cfire/DYNAMIC-INTERFACE-UNSUPPORTED` (Types): A slice or array of interface values; interfaces lower to C++ concepts.
+- `cfire/ERROR` (Tooling): An internal error with no more specific code.
+- `cfire/ESCAPING-CAPTURE-MUT` (Concurrency): An escaping closure mutates a captured outer variable.
+- `cfire/FIELD-NAME-CASE` (Detailed rule): Struct Field Is Not snake_case
+- `cfire/FILE-NOT-FOUND` (Tooling): A file named on the command line or imported does not exist.
+- `cfire/IMMUTABLE-MUT-ARG` (Detailed rule): Passing Immutable Binding as `mut` Argument
+- `cfire/INDEX-OUT-OF-BOUNDS` (Detailed rule): Compile-Time Out-of-Bounds or Negative Constant Sequence Index
+- `cfire/INVALID-ATTRIBUTE` (Attributes): An attribute on a declaration is unknown, misplaced, or has invalid arguments.
+- `cfire/INVALID-CONSTRUCTOR` (Detailed rule): Associated Function Other Than `make`
+- `cfire/INVALID-IMPORT` (Imports): A module imported under the wrong tier prefix (`core:` vs `ext:`).
+- `cfire/INVALID-INDEX` (Types): Indexing a value that is not a string, slice, array or map.
+- `cfire/INVALID-INTERPOLATION` (Syntax): An interpolation `{...}` that is not a valid expression.
+- `cfire/INVALID-MAKE` (Detailed rule): Invalid `make(T, ...)` Arguments
+- `cfire/INVALID-MEMBER` (Types): A member access on a primitive value that has no such member.
+- `cfire/INVALID-MOVE` (Detailed rule): No-Op `move` on Rvalue or Scalar `Copy` Variable
+- `cfire/INVALID-OR-BLOCK-CONTEXT` (Detailed rule): Block `or { ... }` Inside Short-Circuit Operand or `for` Condition
+- `cfire/INVALID-RELEASE` (Detailed rule): `release` on a Shared Pointer
+- `cfire/INVALID-SMART-PTR-CTOR` (Construction): `own(v)` / `shared(v)` called as functions; write `make(own[T], v)`.
+- `cfire/INVALID-STRUCT-TAG` (Detailed rule): Duplicate or Malformed Struct Reflection Tag
+- `cfire/INVALID-TRY-CONTEXT` (Detailed rule): `try` Inside Short-Circuit Operand or `for` Condition
+- `cfire/ITERATOR-INVALIDATION` (Detailed rule): Structural Mutation or Move of Collection During `for` Iteration
+- `cfire/LITERAL-OUT-OF-RANGE` (Numbers): An integer literal that does not fit its target type (Q9).
+- `cfire/MISSING-IMPORT` (Imports): A stdlib module is used without being imported.
+- `cfire/MISSING-RETURN` (Control flow): A function with a return type can fall off its end.
+- `cfire/MOVE-CALLSITE` (Detailed rule): Missing Call-Site `move` Marker
+- `cfire/MOVE-REQUIRED` (Ownership): Copying a move-only `own[T]` value or struct containing `own[T]` without `move`.
+- `cfire/MUT-ALIAS` (Detailed rule): Mutable Aliasing Across Call-Site Arguments (Law of Exclusivity)
+- `cfire/MUT-CALLSITE` (Detailed rule): Missing Call-Site `mut` Marker
+- `cfire/MUT-RECEIVER` (Detailed rule): Calling `mut` Method on Immutable Receiver
+- `cfire/NO-EFFECT-STMT` (Detailed rule): Pure Expression Statement With No Side Effects
+- `cfire/NON-BOOL-CONDITION` (Types): A condition (`if`, `for`, `&&`, `||`, `!`) that is not `bool`.
+- `cfire/NON-DIVERGING-OR-BLOCK` (Detailed rule): Non-Diverging Error Recovery Block on Value Binding
+- `cfire/NON-EXHAUSTIVE-MATCH` (Detailed rule): Non-Exhaustive `match` Statement Over Algebraic `enum`
+- `cfire/NULL-DEREF` (Detailed rule): Member Access on an Optional Variable That May Be `none`
+- `cfire/OPTIONAL-OR-ERR` (Detailed rule): Binding Error Variable `or err` on Optional `T?`
+- `cfire/OUT-CALLSITE` (Migration): A call-site `out` marker (retired with the `out` intent).
+- `cfire/PREFER-ENUM` (Style): A cluster of related integer constants that should be an enum (warning).
+- `cfire/RAW-POINTER` (Ownership): Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop (CF-189).
+- `cfire/RECURSIVE-TYPE` (Types): A struct contains itself directly or through an optional without heap indirection.
+- `cfire/REDUNDANT-CALLSITE-INTENT` (Detailed rule): Redundant `mut` Annotation on a Read-Only Parameter
+- `cfire/REDUNDANT-DEREF` (Style): `(*p).field` on a smart pointer; write `p.field`.
+- `cfire/REDUNDANT-OR` (Detailed rule): Redundant `or` on Non-Fallible, Non-Optional Expression
+- `cfire/REDUNDANT-TRY` (Detailed rule): Redundant `try` on Non-Fallible Expression
+- `cfire/REFERENCE-TYPE` (Ownership): A `&T` / `&mut T` type; parameters are views by default and `mut` by intent (Q53).
+- `cfire/RETIRED-API` (Detailed rule): API Retired in the 0.16 Uniform-API Migration
+- `cfire/RETURN-IN-DEFER` (Detailed rule): `return` Statement Inside `defer { ... }` Block
+- `cfire/SCOPE-RESULT` (Concurrency): A value-producing `async.scope` whose spawned tasks return no value or different types (Q51).
+- `cfire/SEMA-ERROR` (Tooling): A semantic error with no more specific code.
+- `cfire/SHELL-INJECTION-RISK` (Detailed rule): Dynamic String Concatenation or Interpolation in Shell Command
+- `cfire/SHIFT-OUT-OF-RANGE` (Numbers): A constant shift count outside the operand's bit width (Q11).
+- `cfire/SLOT-CAPTURE` (Concurrency): A slot capture `|mut xs[i]|` used outside `scope.spawn`, or a task that uses its slice other than `xs[i]`, or a slice resized while tasks write it (Q51).
+- `cfire/SPAWN-SHARED-MUT` (Concurrency): A spawned task writes through a pointer other tasks can reach (Q20).
+- `cfire/SQL-INJECTION-RISK` (Detailed rule): Dynamic String Concatenation or Interpolation in SQL Query
+- `cfire/SYNTAX` (Syntax): The source does not parse.
+- `cfire/TRY-IN-DEFER` (Detailed rule): `try` Inside `defer` Block
+- `cfire/TRY-IN-NON-FALLIBLE-FN` (Detailed rule): `try` Inside Non-Fallible Function
+- `cfire/TRY-ON-OPTIONAL` (Detailed rule): Using `try` on Optional `T?` Instead of `or`
+- `cfire/TYPE-ERROR` (Tooling): The C++ backend rejected generated code; Sema should have caught it (please report).
+- `cfire/TYPE-MISMATCH` (Types): A value of one type is used where another is required.
+- `cfire/UNDECLARED-IDENT` (Names): A name that is not declared, or a module used under the wrong alias.
+- `cfire/UNDECLARED-TYPE` (Names): A type name that is not a builtin, a type declared in the package, or a type parameter in scope (CF-190).
+- `cfire/UNHANDLED-RESULT` (Errors): A fallible `T!` value used without `try` or `or`.
+- `cfire/UNKNOWN-ARG-LABEL` (Detailed rule): Unknown Labeled Argument
+- `cfire/UNKNOWN-ENUM-VARIANT` (Names): A variant that the enum does not declare.
+- `cfire/UNKNOWN-FIELD` (Names): A field or associated item that the type does not have.
+- `cfire/UNKNOWN-METHOD` (Names): A method that the receiver type does not have (Q14 closed builtin surface).
+- `cfire/UNKNOWN-MODULE` (Imports): An import path that names no known module.
+- `cfire/UNKNOWN-STDLIB-FN` (Names): A function that the stdlib module does not export.
+- `cfire/UNKNOWN-STDLIB-TYPE` (Names): A type that the stdlib module does not export, or a `build.*` type outside `build.cf` (CF-188).
+- `cfire/UNKNOWN-TYPE` (Types): An expression whose type cannot be inferred (warning).
+- `cfire/UNREACHABLE-MATCH-ARM` (Detailed rule): Unreachable `match` Arm Shadowed by Earlier Pattern
+- `cfire/UNRESOLVED-PACKAGE` (Imports): A local package import that cannot be found.
+- `cfire/UNSATISFIED-CONSTRAINT` (Generics): A type argument that does not satisfy the interface constraint.
+- `cfire/UNWRAPPED-OPTIONAL` (Errors): A member access on a `T?` value without unwrapping.
+- `cfire/USE-AFTER-FREE` (Detailed rule): Use of a Slice View After Owner Invalidation
+- `cfire/USE-AFTER-MOVE` (Detailed rule): Use of Value After Explicit `move`
+- `cfire/WRONG-ARG-COUNT` (Types): A builtin called with the wrong number of arguments.

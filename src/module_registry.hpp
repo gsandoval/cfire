@@ -153,6 +153,9 @@ struct ResolvedImport {
 }
 
 [[nodiscard]] inline auto core_module_header(std::string_view mod) -> std::string {
+    if (mod == "buildsys" || mod == "build" || mod == "core:build" || mod == "core:buildsys") {
+        return "";
+    }
     for (const auto& m : cfire::doc::stdlib_catalog()) {
         std::string k = m.core_key.empty() ? m.ns_alias : m.core_key;
         if (m.ns_alias == mod || k == mod || m.import_path == mod) {

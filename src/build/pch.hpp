@@ -160,6 +160,12 @@ inline void set_build_profile(BuildProfile profile) {
     g_debug_mode = (profile == BuildProfile::DevDebug);
 }
 
+[[nodiscard]] inline BuildProfile current_build_profile() {
+    return (g_build_profile == BuildProfile::DevDebug || g_debug_mode)
+        ? BuildProfile::DevDebug
+        : g_build_profile;
+}
+
 [[nodiscard]] inline bool is_dev_debug_profile() {
     return g_build_profile == BuildProfile::DevDebug || g_debug_mode;
 }
@@ -481,7 +487,7 @@ struct PchDirLockGuard {
     bool test_mode,
     bool with_pthread
 ) -> std::pair<std::string, std::vector<std::string>> {
-    std::vector<std::string> cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
+    std::vector<std::string> cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-DSIMDJSON_DEVELOPMENT_CHECKS=0", "-I" + runtime_dir.string()};
 #if defined(__linux__)
     cflags.push_back("-Wno-builtin-macro-redefined");
     cflags.push_back("-D__cpp_concepts=202002L");

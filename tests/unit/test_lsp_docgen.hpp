@@ -783,13 +783,13 @@ import "ext:ai" as ai
 import "ext:db/sqlite" as sqlite
 import "core:json" as json
 type QueryPlan struct {
-    Target: str `json:"target" desc:"Search target concept"`
-    TopK: i64   `json:"top_k" desc:"Number of top results"`
+    target: str `json:"target" desc:"Search target concept"`
+    top_k: i64  `json:"top_k" desc:"Number of top results"`
 }
 type DocEntry struct {
-    Id: i64      `sql:"id"`
-    Title: str   `sql:"title"`
-    Snippet: str `sql:"snippet"`
+    id: i64      `sql:"id"`
+    title: str   `sql:"title"`
+    snippet: str `sql:"snippet"`
 }
 fn main() {
     schema := json.schema[QueryPlan]()
@@ -805,7 +805,7 @@ fn main() {
     qvec := try client.embed("modern C++23 compiler")
     hits := try db.query[DocEntry]("SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1", qvec)
     if hits.len() > 0 {
-        println("Match [{}]: {}", hits[0].Title, hits[0].Snippet)
+        println("Match [{}]: {}", hits[0].title, hits[0].snippet)
     }
 }
 )CF", "showcase_tab7")
@@ -822,15 +822,19 @@ fn main() {
                 llm_ref.contains("for i in 1..=n") &&
                 llm_ref.contains("assert_eq") &&
                 llm_ref.contains("cfire init") &&
-                llm_ref.contains("pkg:tako"),
-            "DOC-01a: generate_llm_reference() documents ERG-01..ERG-05 and pkg:tako");
+                llm_ref.contains("core:tako") &&
+                !llm_ref.contains("pkg:tako") &&
+                !llm_ref.contains("@pkg("),
+            "DOC-01a: generate_llm_reference() documents ERG-01..ERG-05 and core:tako");
 
         auto agent_rules = cfire::lsp::cfire_agent_rules_markdown("cfire");
         require(agent_rules.contains("Same-Directory Package Merging") &&
                 agent_rules.contains("0..n") &&
                 agent_rules.contains("assert_eq") &&
-                agent_rules.contains("pkg:tako"),
-            "DOC-01b: cfire_agent_rules_markdown() documents ERG-01..ERG-05 and pkg:tako");
+                agent_rules.contains("core:tako") &&
+                !agent_rules.contains("pkg:tako") &&
+                !agent_rules.contains("@pkg("),
+            "DOC-01b: cfire_agent_rules_markdown() documents ERG-01..ERG-05 and core:tako");
 
         ScopedTempDir sync_tmp("cfire_lsp_mcp_sync");
         auto types_cf = sync_tmp.file("types.cf", R"CF(package main

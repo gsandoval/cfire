@@ -40,7 +40,8 @@ namespace cfire::build {
     const std::string& sysroot,
     const std::string& web_profile,
     const std::string& subsystem,
-    bool sanitize = false
+    bool sanitize = false,
+    const std::vector<std::string>& extra_pkg_configs = {}
 ) -> std::expected<BuildPlan, std::string>;
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto discover_and_apply_build_cf(
@@ -74,7 +75,9 @@ namespace cfire::build {
     const std::string& web_profile = "auto",
     const std::string& subsystem = "auto",
     bool sanitize = false,
-    const std::vector<std::string>& extra_link_libs = {}
+    const std::vector<std::string>& extra_link_libs = {},
+    const std::vector<std::string>& extra_pkg_configs = {},
+    const std::vector<std::string>& extra_includes = {}
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string>;
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
@@ -91,7 +94,8 @@ namespace cfire::build {
     const std::string& subsystem = "auto",
     const std::string& app_name = "",
     const std::string& bundle_id = "",
-    const std::string& icon_path = ""
+    const std::string& icon_path = "",
+    const std::vector<std::string>& extra_pkg_configs = {}
 ) -> std::expected<BuildPlan, std::string>;
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto generate_cmake_content(const BuildPlan& plan) -> std::string;
@@ -99,7 +103,8 @@ namespace cfire::build {
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto eject_cmake(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
-    const std::filesystem::path& out_dir
+    const std::filesystem::path& out_dir,
+    const std::vector<std::string>& extra_pkg_configs = {}
 ) -> std::expected<void, std::string>;
 
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_BUILDSYS_IMPL)
@@ -128,10 +133,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     const std::string& sysroot,
     const std::string& web_profile,
     const std::string& subsystem,
-    bool sanitize
+    bool sanitize,
+    const std::vector<std::string>& extra_pkg_configs
 ) -> std::expected<BuildPlan, std::string> {
     BuildPlan plan;
     plan.entry_file = cf_file.string();
+    plan.extra_pkg_configs = extra_pkg_configs;
     plan.is_ios = is_ios_target(target_triple);
     plan.is_ios_sim = is_ios_simulator_target(target_triple);
     plan.target_triple = plan.is_ios ? normalize_ios_triple(target_triple) : target_triple;
@@ -144,7 +151,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
     auto install_root = derive_install_root(runtime_dir);
-    plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
+    plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-DSIMDJSON_DEVELOPMENT_CHECKS=0", "-I" + runtime_dir.string()};
     if (!install_root.empty() && install_root != "/usr") {
         std::error_code root_ec;
         if (std::filesystem::is_directory(install_root / "include", root_ec)) {
@@ -243,6 +250,14 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     auto parsed = parse_build_cf(found_bcf);
     if (!parsed) return std::unexpected(parsed.error());
     auto bcf_parent = found_bcf.parent_path();
+    apply_manifest_pkg_fields(
+        plan,
+        bcf_parent,
+        parsed->pkg_config,
+        parsed->libraries,
+        parsed->frameworks,
+        parsed->includes
+    );
     if (!parsed->executables.empty()) {
         const ExecutableSpec* matched_exe = &parsed->executables[0];
         bool exact_entry_match = false;
@@ -289,36 +304,13 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                 plan.icon_path = matched_exe->icon;
             }
         }
-        std::vector<std::string> fws_to_link;
-        std::vector<std::string> libs_to_link;
-        auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
-            if (item.empty()) return;
-            for (const auto& existing : vec) {
-                if (existing == item) return;
-            }
-            vec.push_back(item);
-        };
         if (test_mode || !exact_entry_match) {
             for (const auto& ex : parsed->executables) {
-                for (const auto& fw : ex.frameworks) add_unique(fws_to_link, fw);
-                for (const auto& lib : ex.libraries) add_unique(libs_to_link, lib);
+                apply_manifest_pkg_fields(plan, bcf_parent, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes);
             }
         } else {
-            for (const auto& fw : matched_exe->frameworks) add_unique(fws_to_link, fw);
-            for (const auto& lib : matched_exe->libraries) add_unique(libs_to_link, lib);
-        }
-#if defined(__APPLE__)
-        if (!is_wasm) {
-            for (const auto& fw : fws_to_link) {
-                plan.ldflags.push_back("-framework");
-                plan.ldflags.push_back(fw);
-            }
-        }
-#endif
-        if (!is_wasm) {
-            for (const auto& lib : libs_to_link) {
-                plan.ldflags.push_back(lib.starts_with("-l") ? lib : ("-l" + lib));
-            }
+            apply_manifest_pkg_fields(
+                plan, bcf_parent, matched_exe->pkg_config, matched_exe->libraries, matched_exe->frameworks, matched_exe->includes);
         }
     }
     for (auto& dep : parsed->external_deps) {
@@ -394,14 +386,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         (std::getenv("PKG_CONFIG_LIBDIR") != nullptr && std::getenv("PKG_CONFIG_LIBDIR")[0] != '\0') ||
         (std::getenv("PKG_CONFIG_PATH") != nullptr && std::getenv("PKG_CONFIG_PATH")[0] != '\0');
 
-    auto has_explicit_pkg_attr = [&](std::string_view pkg_name) -> bool {
-        for (const auto& imp : checked.ast.imports) {
-            if (!imp.is_cpp) continue;
-            for (const auto& attr : imp.attrs) {
-                if (attr.name == "pkg" && !attr.args.empty() && attr.args[0] == pkg_name) {
-                    return true;
-                }
-            }
+    auto has_explicit_pkg_override = [&](std::string_view pkg_name) -> bool {
+        for (const auto& pc : plan.pkg_config_deps) {
+            if (pc == pkg_name) return true;
+        }
+        for (const auto& pc : plan.extra_pkg_configs) {
+            if (pc == pkg_name) return true;
         }
         return false;
     };
@@ -455,7 +445,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 
     auto has_sqlcipher = [&]() -> bool {
         if (is_wasm || plan.is_ios) return false;
-        if (has_explicit_pkg_attr("sqlcipher") || has_dep_or_link_override("sqlcipher")) {
+        if (has_explicit_pkg_override("sqlcipher") || has_dep_or_link_override("sqlcipher")) {
             return true;
         }
         if (has_local_prefix_lib({"sqlcipher/sqlite3.h", "sqlite3.h"},
@@ -483,25 +473,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 
     std::unordered_set<std::string> seen_pc(plan.pkg_config_deps.begin(), plan.pkg_config_deps.end());
     auto add_pc = [&](const std::string& pc) {
-        if (is_wasm) return;
-        if (plan.is_ios) {
-            if (pc == "sqlite3") {
-                if (!seen_pc.contains(pc)) {
-                    seen_pc.insert(pc);
-                    plan.ldflags.push_back("-lsqlite3");
-                }
-            } else if (pc == "libzstd") {
-                if (!seen_pc.contains(pc)) {
-                    seen_pc.insert(pc);
-                    plan.ldflags.push_back("-lcompression");
-                }
-            }
+        if (seen_pc.contains(pc) &&
+            std::find(plan.queried_pkg_configs.begin(), plan.queried_pkg_configs.end(), pc) != plan.queried_pkg_configs.end()) {
             return;
         }
-        if (seen_pc.contains(pc)) return;
         seen_pc.insert(pc);
-        plan.pkg_config_deps.push_back(pc);
-        query_pkg_config(pc, plan.cflags, plan.ldflags, install_root, is_win_target);
+        resolve_plan_pkg_configs(plan, runtime_dir, pc);
     };
 
     auto request_sqlite3_dep = [&]() {
@@ -511,12 +488,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             return;
         }
         bool overridden =
-            has_explicit_pkg_attr("sqlite3") ||
+            has_explicit_pkg_override("sqlite3") ||
             has_dep_or_link_override("sqlite") ||
             has_local_prefix_lib({"sqlite3.h"},
                                  {"libsqlite3.a", "libsqlite3.so", "libsqlite3.dylib",
                                   "libsqlite3.dll.a", "sqlite3.lib"});
-        if (!overridden && !has_explicit_pkg_attr("sqlite3") && !plan.use_vendored_sqlite3) {
+        if (!overridden && !plan.use_vendored_sqlite3) {
             std::error_code vec;
             auto v_sqlite_dir = runtime_dir / "vendor" / "sqlite3";
             if (std::filesystem::is_regular_file(v_sqlite_dir / "sqlite3.c", vec) &&
@@ -532,33 +509,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     auto request_simdjson_dep = [&]() {
         if (plan.use_vendored_simdjson) return;
         bool explicit_override =
-            has_explicit_pkg_attr("simdjson") ||
+            has_explicit_pkg_override("simdjson") ||
             has_dep_or_link_override("simdjson") ||
             has_local_prefix_lib({"simdjson.h"},
                                  {"libsimdjson.a", "libsimdjson_static.a", "libsimdjson.so",
                                   "libsimdjson.dylib", "libsimdjson.dll.a", "simdjson.lib"});
-        bool compatible_native_host = false;
-        if (!explicit_override &&
-            !is_wasm &&
-            !plan.is_ios &&
-            plan.target_triple.empty() &&
-            !plan.portable &&
-            !plan.static_link &&
-            !plan.universal &&
-            plan.macos_min.empty() &&
-            (!ignore_system_libs() || has_explicit_pc_env)) {
-            auto sj_probe = ProbeCache::instance().probe_pkg_config("simdjson");
-            if (sj_probe.found) {
-                auto sj_ver = trim_whitespace(sj_probe.modversion);
-                bool old_ver = !sj_ver.empty() &&
-                    (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."));
-                auto cc_probe = ProbeCache::instance().probe_compiler(resolve_cxx_compiler(plan.target_triple));
-                if (!(old_ver && cc_probe.major_version >= 19)) {
-                    compatible_native_host = true;
-                }
-            }
-        }
-        if (!explicit_override && !compatible_native_host) {
+        if (!explicit_override) {
             std::error_code vec;
             auto v_simd_dir = runtime_dir / "vendor" / "simdjson";
             if (std::filesystem::is_regular_file(v_simd_dir / "simdjson.cpp", vec) &&
@@ -743,13 +699,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             }
             continue;
         }
-        for (const auto& attr : imp.attrs) {
-            if (attr.name == "pkg" && !attr.args.empty()) {
-                add_pc(attr.args[0]);
-            }
-        }
         if (inspect_clang_ast && !plan.cpp_headers.contains(imp.path)) {
-            auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
+            std::vector<std::string> hdr_cflags = plan.cflags;
+            if (!dir.empty()) append_unique_cflag("-I" + dir.string());
+            hdr_cflags = plan.cflags;
+            append_imp_define_cflags(imp, hdr_cflags);
+            auto idx = bridge::inspect_header(imp.path, hdr_cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
             if (!idx) return std::unexpected(idx.error());
             for (const auto& [sym_name, sym] : idx->symbols) {
                 if (sym.kind == "FunctionDecl") {
@@ -862,15 +817,28 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     const std::string& subsystem,
     bool sanitize,
     frontend::ShardedEmission* sharded_out = nullptr,
-    const std::vector<std::string>& extra_link_libs = {}
+    const std::vector<std::string>& extra_link_libs = {},
+    const std::vector<std::string>& extra_pkg_configs = {},
+    const std::vector<std::string>& extra_includes = {}
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     auto dir = cf_file.parent_path();
     if (dir.empty()) dir = ".";
-    auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
+    auto plan_res = init_build_plan_flags(
+        cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize, extra_pkg_configs);
     if (!plan_res) return std::unexpected(plan_res.error());
     BuildPlan plan = std::move(*plan_res);
     if (!extra_link_libs.empty()) {
         plan.extra_link_libs = extra_link_libs;
+    }
+    for (const auto& inc : extra_includes) {
+        if (inc.empty()) continue;
+        if (std::find(plan.extra_includes.begin(), plan.extra_includes.end(), inc) == plan.extra_includes.end()) {
+            plan.extra_includes.push_back(inc);
+        }
+        std::string iflag = "-I" + inc;
+        if (std::find(plan.cflags.begin(), plan.cflags.end(), iflag) == plan.cflags.end()) {
+            plan.cflags.push_back(std::move(iflag));
+        }
     }
 
     if (auto bcf_res = discover_and_apply_build_cf(plan, cf_file, dir, test_mode); !bcf_res) {
@@ -896,13 +864,24 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         return std::unexpected(r.error());
     }
 
+    // 4b. Resolve build.cf + subpackage + --pkg-config native packages BEFORE Sema & header inspection (Q60 / CF-207)
+    resolve_plan_pkg_configs(plan, runtime_dir);
+
     // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
     auto cache_dir = dir / ".cfire" / "cache";
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     if (inspect_clang_ast) {
         for (const auto& imp : ast->imports) {
             if (imp.is_cpp) {
-                auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
+                std::vector<std::string> hdr_cflags = plan.cflags;
+                if (!dir.empty()) {
+                    std::string dir_inc = "-I" + dir.string();
+                    if (std::find(hdr_cflags.begin(), hdr_cflags.end(), dir_inc) == hdr_cflags.end()) {
+                        hdr_cflags.push_back(std::move(dir_inc));
+                    }
+                }
+                append_imp_define_cflags(imp, hdr_cflags);
+                auto idx = bridge::inspect_header(imp.path, hdr_cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
                 if (idx) {
                     for (const auto& [sym_name, sym] : idx->symbols) {
                         if (sym.kind == "FunctionDecl") {
@@ -943,11 +922,14 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     const std::string& web_profile,
     const std::string& subsystem,
     bool sanitize,
-    const std::vector<std::string>& extra_link_libs
+    const std::vector<std::string>& extra_link_libs,
+    const std::vector<std::string>& extra_pkg_configs,
+    const std::vector<std::string>& extra_includes
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     return analyze_and_emit_impl(
         cf_file, runtime_dir, inspect_clang_ast, test_mode,
-        target_triple, sysroot, web_profile, subsystem, sanitize, nullptr, extra_link_libs
+        target_triple, sysroot, web_profile, subsystem, sanitize, nullptr,
+        extra_link_libs, extra_pkg_configs, extra_includes
     );
 }
 
@@ -1166,7 +1148,8 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     const std::string& subsystem,
     const std::string& app_name,
     const std::string& bundle_id,
-    const std::string& icon_path
+    const std::string& icon_path,
+    const std::vector<std::string>& extra_pkg_configs
 ) -> std::expected<BuildPlan, std::string> {
     static thread_local bool in_universal_slice = false;
     if (!in_universal_slice && g_universal_mode) {
@@ -1180,24 +1163,14 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 #endif
     }
 
-    frontend::ShardedEmission sharded;
-    auto res = analyze_and_emit_impl(
-        cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize, &sharded, extra_link_libs
-    );
-    if (!res) return std::unexpected(res.error());
-    auto [cpp_code, plan] = std::move(*res);
-
-    const bool want_universal = !in_universal_slice && (g_universal_mode || (plan.universal && target_triple.empty()));
-    if (want_universal) {
+    auto run_universal_build = [&](const std::string& raw_eff_min) -> std::expected<BuildPlan, std::string> {
 #if !defined(__APPLE__)
+        (void)raw_eff_min;
         return std::unexpected("universal = true / --universal (macOS fat binary) requires a macOS host");
 #else
-        if (plan.is_ios || is_wasm_triple(plan.target_triple)) {
-            return std::unexpected("--universal is only supported for macOS desktop targets");
-        }
         std::string eff_min = !g_macos_min_version.empty()
             ? g_macos_min_version
-            : (!plan.macos_min.empty() ? plan.macos_min : std::string(kDefaultMacosMinVersion));
+            : (!raw_eff_min.empty() ? raw_eff_min : std::string(kDefaultMacosMinVersion));
         if (!is_macos_min_supported(eff_min)) {
             return std::unexpected(std::format(
                 "unsupported macOS deployment target '{}': requires macOS >= {}",
@@ -1222,14 +1195,14 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         auto arm_res = build_native(
             cf_file, runtime_dir, slice_arm64, test_mode, sanitize,
             "arm64-apple-macos" + eff_min, sysroot, extra_link_libs, extra_includes,
-            web_profile, "console", app_name, bundle_id, icon_path
+            web_profile, "console", app_name, bundle_id, icon_path, extra_pkg_configs
         );
         if (!arm_res) return std::unexpected(arm_res.error());
 
         auto x86_res = build_native(
             cf_file, runtime_dir, slice_x86_64, test_mode, sanitize,
             "x86_64-apple-macos" + eff_min, sysroot, extra_link_libs, extra_includes,
-            web_profile, "console", app_name, bundle_id, icon_path
+            web_profile, "console", app_name, bundle_id, icon_path, extra_pkg_configs
         );
         if (!x86_res) return std::unexpected(x86_res.error());
 
@@ -1246,6 +1219,14 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         std::string lipo_out = bridge::run_command_capture(lipo_cmd, lipo_rc);
         if (lipo_rc != 0) {
             return std::unexpected(std::format("failed to create universal binary via lipo:\n{}", lipo_out));
+        }
+
+        if (g_emit_dsym) {
+            int dsym_rc = 0;
+            (void)bridge::run_command_capture(
+                std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
+                dsym_rc
+            );
         }
 
         BuildPlan combined = std::move(*arm_res);
@@ -1269,13 +1250,67 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         package_apple_app_bundles(cf_file, out_bin, combined);
         return combined;
 #endif
+    };
+
+#if defined(__APPLE__)
+    if (!in_universal_slice && g_universal_mode) {
+        std::string quick_min = !g_macos_min_version.empty()
+            ? g_macos_min_version
+            : resolve_effective_macos_min("", false, false);
+        if (g_macos_min_version.empty() && cf_file.filename() != "build.cf") {
+            std::error_code bec;
+            auto bcf_dir = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
+            auto sd = std::filesystem::weakly_canonical(bcf_dir, bec);
+            if (bec || sd.empty()) sd = std::filesystem::absolute(bcf_dir, bec);
+            auto cf_canon = std::filesystem::weakly_canonical(cf_file, bec);
+            for (int depth = 0; depth < 8 && !sd.empty(); ++depth) {
+                auto cand_bcf = sd / "build.cf";
+                if (std::filesystem::exists(cand_bcf, bec)) {
+                    if (auto parsed = parse_build_cf(cand_bcf); parsed && !parsed->executables.empty()) {
+                        const ExecutableSpec* matched = &parsed->executables[0];
+                        for (const auto& ex : parsed->executables) {
+                            if (!ex.entry.empty()) {
+                                auto ex_c = std::filesystem::weakly_canonical(sd / ex.entry, bec);
+                                if (!bec && ex_c == cf_canon) { matched = &ex; break; }
+                            }
+                        }
+                        if (!matched->macos_min.empty()) quick_min = matched->macos_min;
+                    }
+                    break;
+                }
+                if (sd == sd.parent_path()) break;
+                sd = sd.parent_path();
+            }
+        }
+        return run_universal_build(quick_min);
+    }
+#endif
+
+    frontend::ShardedEmission sharded;
+    auto res = analyze_and_emit_impl(
+        cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize,
+        &sharded, extra_link_libs, extra_pkg_configs, extra_includes
+    );
+    if (!res) return std::unexpected(res.error());
+    auto [cpp_code, plan] = std::move(*res);
+
+    const bool want_universal = !in_universal_slice && (g_universal_mode || (plan.universal && target_triple.empty()));
+    if (want_universal) {
+        if (plan.is_ios || is_wasm_triple(plan.target_triple)) {
+            return std::unexpected("--universal is only supported for macOS desktop targets");
+        }
+        return run_universal_build(plan.macos_min);
     }
     for (const auto& w : plan.warnings) {
         std::println(stderr, "{}", w);
     }
     plan.sanitized = sanitize;
     plan.extra_link_libs = extra_link_libs;
-    plan.extra_includes = extra_includes;
+    for (const auto& inc : extra_includes) {
+        if (!inc.empty() && std::find(plan.extra_includes.begin(), plan.extra_includes.end(), inc) == plan.extra_includes.end()) {
+            plan.extra_includes.push_back(inc);
+        }
+    }
     plan.web_profile = web_profile;
     plan.subsystem = subsystem;
     if (!app_name.empty()) plan.app_name = app_name;
@@ -1405,9 +1440,6 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         }
 #endif
     }
-    for (const auto& inc : extra_includes) {
-        plan.cflags.push_back("-I \"" + inc + "\"");
-    }
 
     auto cf_parent = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
     auto gen_dir = cf_parent / ".cfire" / "gen";
@@ -1479,13 +1511,32 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     if (!plan.cpp_headers.empty()) {
         std::vector<std::string> hdr_entries;
         std::error_code hec;
-        for (const auto& [hdr_key, _] : plan.cpp_headers) {
+        auto resolve_local_hdr = [&](const std::string& hdr_key) -> std::filesystem::path {
             std::filesystem::path hp = hdr_key;
-            if (!std::filesystem::is_regular_file(hp, hec) || hec) {
+            if (std::filesystem::is_regular_file(hp, hec) && !hec) return hp;
+            hec.clear();
+            hp = cf_parent / hdr_key;
+            if (std::filesystem::is_regular_file(hp, hec) && !hec) return hp;
+            hec.clear();
+            for (const auto& inc_dir : plan.extra_includes) {
+                if (inc_dir.empty()) continue;
+                hp = std::filesystem::path(inc_dir) / hdr_key;
+                if (std::filesystem::is_regular_file(hp, hec) && !hec) return hp;
                 hec.clear();
-                hp = cf_parent / hdr_key;
             }
-            if (std::filesystem::is_regular_file(hp, hec) && !hec) {
+            for (const auto& cf_flag : plan.cflags) {
+                if (!cf_flag.starts_with("-I") || cf_flag.size() <= 2) continue;
+                std::string inc_dir = dep_strip_quotes(cf_flag.substr(2));
+                if (inc_dir.empty()) continue;
+                hp = std::filesystem::path(inc_dir) / hdr_key;
+                if (std::filesystem::is_regular_file(hp, hec) && !hec) return hp;
+                hec.clear();
+            }
+            return {};
+        };
+        for (const auto& [hdr_key, _] : plan.cpp_headers) {
+            std::filesystem::path hp = resolve_local_hdr(hdr_key);
+            if (!hp.empty()) {
                 hdr_entries.push_back(hp.lexically_normal().string() + "=" + file_fingerprint_string(hp));
             }
         }
@@ -1561,10 +1612,28 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     } else if (use_persistent_obj) {
         std::error_code obj_ec;
         std::filesystem::create_directories(obj_dir, obj_ec);
-        std::string h12 = sha256_hex(
-            std::format("{}|{}|{}", cpp_path.filename().string(), opt_flags, plan.target_triple)
-        ).substr(0, 12);
-        obj_path = obj_dir / std::format("{}_{}.o", stem, h12);
+        detail::Sha256State st;
+        auto feed = [&](std::string_view tag, std::string_view val) {
+            st.update(reinterpret_cast<const uint8_t*>(tag.data()), tag.size());
+            const char sep1 = ':';
+            st.update(reinterpret_cast<const uint8_t*>(&sep1), 1);
+            st.update(reinterpret_cast<const uint8_t*>(val.data()), val.size());
+            const char sep2 = '\0';
+            st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
+        };
+        feed("schema", "cf208-v1");
+        feed("compiler", compiler_fp);
+        feed("opt", opt_flags);
+        feed("target", plan.target_triple);
+        for (const auto& cf_flag : plan.cflags) {
+            feed("cf", cf_flag);
+        }
+        feed("rt", rt_fp);
+        feed("cpp_hdr", local_cpp_hdr_fp);
+        feed("cpp_name", cpp_path.filename().string());
+        feed("cpp_code", cpp_code);
+        std::string h16 = st.final_hex().substr(0, 16);
+        obj_path = obj_dir / std::format("{}_{}.o", stem, h16);
     }
 
     auto compute_active_obj_fp = [&]() -> std::string {
@@ -1695,7 +1764,11 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             out_cmd += " -fobjc-arc";
         }
         for (const auto& f : plan.cflags) {
-            out_cmd += " " + f;
+            if (f.starts_with("-I") && f.size() > 2 && f[2] != '"' && f[2] != ' ') {
+                out_cmd += " -I" + bridge::shell_quote(f.substr(2));
+            } else {
+                out_cmd += " " + f;
+            }
         }
     };
 
@@ -1782,7 +1855,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     const std::size_t u = dirty_indices[j];
                     const auto& target_obj = unit_obj_paths[u];
                     const uint64_t tmp_id = obj_tmp_seq.fetch_add(1, std::memory_order_relaxed);
-                    const auto tmp_obj = std::filesystem::path(std::format("{}.tmp.{}.o", target_obj.string(), tmp_id));
+                    const auto tmp_obj = std::filesystem::path(std::format("{}.tmp.{}.{}.o", target_obj.string(), current_pid(), tmp_id));
 
                     std::string unit_cmd = make_unit_compile_cmd(u, tmp_obj, true);
                     int rc = 0;
@@ -1898,37 +1971,72 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             }
         }
     } else {
-        auto make_compile_cmd = [&](bool with_pch) {
-            std::string c = compiler;
-            build_compile_cflags(c);
-            if (with_pch && !pch_path.empty()) {
-                c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+        std::error_code oec;
+        const bool obj_cache_hit = use_persistent_obj &&
+            std::filesystem::is_regular_file(obj_path, oec) && !oec &&
+            std::filesystem::file_size(obj_path, oec) > 0 && !oec;
+        if (obj_cache_hit) {
+            exit_code = 0;
+        } else {
+            static std::atomic<uint64_t> s_single_obj_seq{0};
+            std::filesystem::path single_compile_target = out_bin;
+            std::filesystem::path tmp_single_obj;
+            if (use_persistent_obj) {
+                tmp_single_obj = std::filesystem::path(std::format(
+                    "{}.tmp.{}.{}.o", obj_path.string(), current_pid(),
+                    s_single_obj_seq.fetch_add(1, std::memory_order_relaxed)));
+                single_compile_target = tmp_single_obj;
+            }
+            auto make_compile_cmd = [&](bool with_pch) {
+                std::string c = compiler;
+                build_compile_cflags(c);
+                if (with_pch && !pch_path.empty()) {
+                    c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+                }
+                if (use_persistent_obj) {
+                    c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), single_compile_target.string());
+                } else {
+                    c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
+                    build_link_ldflags(c);
+                }
+                return c;
+            };
+
+            plan.used_pch = !pch_path.empty();
+            cmd = make_compile_cmd(true);
+            output = bridge::run_command_capture(cmd, exit_code);
+            if (exit_code != 0 && plan.used_pch) {
+                if (is_verbose_build()) {
+                    std::println(stderr, "note: precompiled header compilation failed; retrying without PCH");
+                }
+                // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
+                std::string fallback_cmd = make_compile_cmd(false);
+                int fb_code = 0;
+                std::string fb_out = bridge::run_command_capture(fallback_cmd, fb_code);
+                if (fb_code == 0) {
+                    exit_code = 0;
+                    output = std::move(fb_out);
+                    cmd = std::move(fallback_cmd);
+                    plan.used_pch = false;
+                }
             }
             if (use_persistent_obj) {
-                c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), obj_path.string());
-            } else {
-                c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
-                build_link_ldflags(c);
-            }
-            return c;
-        };
-
-        plan.used_pch = !pch_path.empty();
-        cmd = make_compile_cmd(true);
-        output = bridge::run_command_capture(cmd, exit_code);
-        if (exit_code != 0 && plan.used_pch) {
-            if (is_verbose_build()) {
-                std::println(stderr, "note: precompiled header compilation failed; retrying without PCH");
-            }
-            // Fallback: retry compilation without -include-pch in case of toolchain or thread-model divergence
-            std::string fallback_cmd = make_compile_cmd(false);
-            int fb_code = 0;
-            std::string fb_out = bridge::run_command_capture(fallback_cmd, fb_code);
-            if (fb_code == 0) {
-                exit_code = 0;
-                output = std::move(fb_out);
-                cmd = std::move(fallback_cmd);
-                plan.used_pch = false;
+                std::error_code fec;
+                if (exit_code == 0) {
+                    std::filesystem::rename(tmp_single_obj, obj_path, fec);
+                    if (fec) {
+                        fec.clear();
+                        std::filesystem::copy_file(tmp_single_obj, obj_path, std::filesystem::copy_options::overwrite_existing, fec);
+                        std::error_code rm_ec;
+                        std::filesystem::remove(tmp_single_obj, rm_ec);
+                        if (fec) {
+                            exit_code = 1;
+                            output = "failed to stage compiled object file: " + obj_path.string() + " (" + fec.message() + ")";
+                        }
+                    }
+                } else {
+                    std::filesystem::remove(tmp_single_obj, fec);
+                }
             }
         }
 
@@ -1984,11 +2092,14 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto generate_cmake_content(const BuildPlan& plan) -> std::string {
     std::ostringstream cmake;
+    const char* langs = plan.uses_objc ? "C CXX OBJCXX" : "C CXX";
+    const char* main_src = plan.uses_objc ? "main.mm" : "main.cpp";
     cmake << "cmake_minimum_required(VERSION 3.25)\n";
-    cmake << "project(cfire_ejected_app LANGUAGES C CXX)\n";
+    cmake << std::format("project(cfire_ejected_app LANGUAGES {})\n", langs);
     cmake << "set(CMAKE_CXX_STANDARD 23)\n";
     cmake << "set(CMAKE_CXX_STANDARD_REQUIRED OFF)\n\n";
     cmake << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
+    cmake << "find_package(Threads REQUIRED)\n\n";
     if (!plan.pkg_config_deps.empty()) {
         cmake << "find_package(PkgConfig REQUIRED)\n";
         for (std::size_t i = 0; i < plan.pkg_config_deps.size(); ++i) {
@@ -2023,13 +2134,33 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     }
     if (plan.use_vendored_simdjson) {
         cmake << "add_library(cfire_simdjson STATIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/simdjson/simdjson.cpp\")\n";
-        cmake << "target_include_directories(cfire_simdjson PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/simdjson\")\n\n";
+        cmake << "target_include_directories(cfire_simdjson PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/simdjson\")\n";
+        cmake << "target_compile_definitions(cfire_simdjson PUBLIC SIMDJSON_DEVELOPMENT_CHECKS=0)\n\n";
     }
-    cmake << "add_executable(app main.cpp)\n";
+    cmake << std::format("add_executable(app {})\n", main_src);
     cmake << "if (CMAKE_CXX_COMPILER_ID MATCHES \"Clang|AppleClang\")\n";
-    cmake << "    target_compile_options(app PRIVATE -std=c++2b)\n";
+    cmake << "    target_compile_options(app PRIVATE -std=c++2b";
+    if (plan.uses_objc) cmake << " -fobjc-arc";
+    cmake << ")\n";
     cmake << "endif()\n";
     cmake << "target_include_directories(app PRIVATE \"${CMAKE_CURRENT_SOURCE_DIR}\")\n";
+    cmake << "target_compile_definitions(app PRIVATE SIMDJSON_DEVELOPMENT_CHECKS=0)\n";
+    for (const auto& cf_flag : plan.cflags) {
+        if (cf_flag == "-DSIMDJSON_DEVELOPMENT_CHECKS=0" ||
+            cf_flag.starts_with("-DCFIRE_APP_ICON_PATH")) {
+            continue;
+        }
+        if (cf_flag.starts_with("-D") && cf_flag.size() > 2) {
+            std::string def = dep_strip_quotes(cf_flag.substr(2));
+            if (def.find('"') == std::string::npos && def.find('\\') == std::string::npos) {
+                cmake << std::format("target_compile_definitions(app PRIVATE \"{}\")\n", def);
+            }
+        }
+    }
+    cmake << "target_link_libraries(app PRIVATE Threads::Threads)\n";
+    cmake << "if (UNIX AND NOT APPLE)\n";
+    cmake << "    target_link_libraries(app PRIVATE ${CMAKE_DL_LIBS} m)\n";
+    cmake << "endif()\n";
     for (std::size_t i = 0; i < plan.pkg_config_deps.size(); ++i) {
         cmake << std::format("target_link_libraries(app PRIVATE PkgConfig::DEP_{})\n", i);
     }
@@ -2042,9 +2173,22 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     for (const auto& dep : plan.external_deps) {
         cmake << std::format("target_link_libraries(app PRIVATE {})\n", dep.name);
     }
-    for (const auto& flag : plan.ldflags) {
+    for (std::size_t i = 0; i < plan.ldflags.size(); ++i) {
+        std::string flag = dep_strip_quotes(plan.ldflags[i]);
         if (flag.find("libcfire_sqlite3.a") != std::string::npos ||
-            flag.find("libcfire_simdjson.a") != std::string::npos) {
+            flag.find("libcfire_simdjson.a") != std::string::npos ||
+            flag == "-pthread" || flag == "-lpthread" || flag == "-ldl" || flag == "-lm") {
+            continue;
+        }
+        if (flag == "-isysroot") {
+            if (i + 1 < plan.ldflags.size()) ++i;
+            continue;
+        }
+        if (flag == "-framework") {
+            if (i + 1 < plan.ldflags.size()) {
+                cmake << std::format("target_link_libraries(app PRIVATE \"-Wl,-framework,{}\")\n",
+                                     dep_strip_quotes(plan.ldflags[++i]));
+            }
             continue;
         }
         cmake << std::format("target_link_libraries(app PRIVATE \"{}\")\n", flag);
@@ -2055,15 +2199,17 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto eject_cmake(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
-    const std::filesystem::path& out_dir
+    const std::filesystem::path& out_dir,
+    const std::vector<std::string>& extra_pkg_configs
 ) -> std::expected<void, std::string> {
-    auto res = analyze_and_emit(cf_file, runtime_dir, true);
+    auto res = analyze_and_emit(cf_file, runtime_dir, true, false, "", "", "auto", "auto", false, {}, extra_pkg_configs);
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
 
     std::filesystem::create_directories(out_dir);
     {
-        std::ofstream out(out_dir / "main.cpp", std::ios::binary | std::ios::trunc);
+        const char* main_src = plan.uses_objc ? "main.mm" : "main.cpp";
+        std::ofstream out(out_dir / main_src, std::ios::binary | std::ios::trunc);
         out << cpp_code;
     }
     for (const char* hdr : {"cfire_prelude.hpp", "cfire_test_runtime.hpp", "cfire_core_stdlib.hpp"}) {

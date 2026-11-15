@@ -391,7 +391,13 @@ public:
     // `http.ServerLimits` / `h::ServerLimits` -> the stdlib struct row, resolving import aliases.
     [[nodiscard]] auto lookup_stdlib_struct(std::string_view spelled_in) const -> const StdlibStruct*;
 
+    [[nodiscard]] auto check_stdlib_struct_fields(const StdlibStruct& sst, const StructLitExpr& st, int line, int col) -> std::expected<void, std::string>;
+
     [[nodiscard]] auto check_struct_literal_fields(const StructLitExpr& st, int line, int col) -> std::expected<void, std::string>;
+
+    [[nodiscard]] auto is_move_only_type(TypeId t) const -> bool;
+
+    [[nodiscard]] auto check_move_only_copy(const ExprPtr& rhs, std::string_view target_desc, int line, int col) -> std::expected<void, std::string>;
 
     // Q10: `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`).
     [[nodiscard]] auto primitive_type_prefix(const ExprPtr& obj) const -> TypeId;

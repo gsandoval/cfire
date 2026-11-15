@@ -2106,11 +2106,11 @@ let currentAiGoal = 'explain';
 
 const CFIRE_GRAMMAR_PRIMER = [
   '## cfire Language Quick Reference (ISO C++23 Transpiler)',
-  '- File header: `package main` and `import "core:str"`, `import "ext:webui"`.',
-  '- Bindings: `x := 42` (immutable by default), `mut count := 0` (mutable).',
-  '- Functions & Intents: `fn update(mut s: State, in cfg: Config, move buf: []u8) -> i32!`. Callers MUST annotate `mut`, `move`, or `out` at the call site: `update(mut s, cfg, move buf)`.',
-  '- Error Handling: Fallible return `T!` (`std::expected<T, cfire::Error>`). Propagate with prefix `try expr` (NEVER postfix `?`), fallback with `expr or fallback`, or `expr or |err| { ... }`.',
-  '- Optionals & Pointers: `T?` (`std::optional<T>`) with `none`; `*T` / `*mut T` (non-owning pointer, requires `if p != none` before `*p`); `^T` (`own[T]`); `defer cleanup()`.',
+  '- File header: `package main` and `import "core:fs"`, `import "ext:webui"` (note: string/slice/map helpers are methods like `s.trim()`, `xs.sort()`, `m.keys()`).',
+  '- Bindings: `x := 42` (immutable by default), `mut count := 0` (mutable). Struct fields use `snake_case`; enum variants use `Enum::Variant`.',
+  '- Functions & Intents: `fn update(mut s: State, cfg: Config, move buf: []byte) -> i32!`. Callers MUST annotate `mut` or `move` at the call site: `update(mut s, cfg, move buf)`.',
+  '- Error Handling: Fallible return `T!` (`std::expected<T, cfire::Error>`). Propagate with prefix `try expr` (NEVER postfix `?`), fallback with `expr or fallback`, or `expr or err { return ... }`.',
+  '- Optionals & Smart Pointers: `T?` (`std::optional<T>`) with `none`; `own[T]` (`make(own[T], val)`, move-only); `shared[T]` (`make(shared[T], val)`); `defer cleanup()`.',
   '- Strings: All double-quoted strings interpolate `{expr}` natively (e.g. `"Hello, {name}!"` — do NOT prefix with `f"..."`).',
   '- Testing & CLI: `test "name" { assert(cond) }`, run with `cfire test`, `cfire check`, `cfire fix`, `cfire run`.'
 ].join('\n');

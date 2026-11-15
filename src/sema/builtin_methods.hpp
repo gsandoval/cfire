@@ -379,6 +379,80 @@ inline constexpr std::array kStdlibStructs = {
         "Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session "
         "thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the "
         "upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default."},
+    // CF-207: declarative build.cf manifest configuration structs (`build.Executable`, `build.Package`, etc.)
+    StdlibStruct{"build", "Package", "cfire::build::PackageSpec",
+        "Name: str = \"\"; name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
+        "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; "
+        "Libs: any = \"\"; libs: any = \"\"; Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"",
+        "Package-level manifest metadata and default native `PkgConfig`, `Libraries`, `Frameworks`, and `Includes` in `build.cf`."},
+    StdlibStruct{"build", "Executable", "cfire::build::ExecutableSpec",
+        "Name: str = \"\"; name: str = \"\"; AppName: str = \"\"; app_name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; "
+        "Subsystem: str = \"\"; subsystem: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
+        "BundleId: str = \"\"; BundleID: str = \"\"; Identifier: str = \"\"; bundle_id: str = \"\"; "
+        "Icon: str = \"\"; icon: str = \"\"; Targets: any = \"\"; targets: any = \"\"; WebProfile: str = \"\"; web_profile: str = \"\"; "
+        "UrlSchemes: any = \"\"; url_schemes: any = \"\"; SignIdentity: str = \"\"; sign_identity: str = \"\"; "
+        "Portable: bool = false; portable: bool = false; Static: bool = false; static: bool = false; static_link: bool = false; "
+        "Universal: bool = false; universal: bool = false; MacosMin: str = \"\"; macos_min: str = \"\"; "
+        "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
+        "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; Flags: any = \"\"",
+        "Executable target configuration in `build.cf` (`build.Executable(...)` / `build.Executable{...}`)."},
+    StdlibStruct{"build", "App", "cfire::build::ExecutableSpec",
+        "Name: str = \"\"; name: str = \"\"; AppName: str = \"\"; app_name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; "
+        "Subsystem: str = \"\"; subsystem: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
+        "BundleId: str = \"\"; BundleID: str = \"\"; Identifier: str = \"\"; bundle_id: str = \"\"; "
+        "Icon: str = \"\"; icon: str = \"\"; Targets: any = \"\"; targets: any = \"\"; WebProfile: str = \"\"; web_profile: str = \"\"; "
+        "UrlSchemes: any = \"\"; url_schemes: any = \"\"; SignIdentity: str = \"\"; sign_identity: str = \"\"; "
+        "Portable: bool = false; portable: bool = false; Static: bool = false; static: bool = false; static_link: bool = false; "
+        "Universal: bool = false; universal: bool = false; MacosMin: str = \"\"; macos_min: str = \"\"; "
+        "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
+        "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; Flags: any = \"\"",
+        "Alias for `build.Executable` configuration in `build.cf`."},
+    StdlibStruct{"build", "Library", "cfire::build::LibrarySpec",
+        "Name: str = \"\"; name: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; Static: bool = false; static: bool = false; "
+        "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
+        "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; Flags: any = \"\"",
+        "Library target configuration in `build.cf`."},
+    StdlibStruct{"build", "Step", "cfire::build::CommandHook",
+        "Command: str = \"\"; command: str = \"\"; Args: any = \"\"; args: any = \"\"; "
+        "Inputs: any = \"\"; inputs: any = \"\"; Outputs: any = \"\"; outputs: any = \"\"; WorkDir: str = \"\"; work_dir: str = \"\"",
+        "Pre-build custom step configuration in `build.cf`."},
+    StdlibStruct{"build", "Command", "cfire::build::CommandHook",
+        "Command: str = \"\"; command: str = \"\"; Args: any = \"\"; args: any = \"\"; "
+        "Inputs: any = \"\"; inputs: any = \"\"; Outputs: any = \"\"; outputs: any = \"\"; WorkDir: str = \"\"; work_dir: str = \"\"",
+        "Pre-build command step configuration in `build.cf`."},
+    StdlibStruct{"build", "CC", "cfire::build::ExternalDepSpec",
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
+        "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
+        "C/C++ source target configuration in `build.cf` (`build.CC(...)`)."},
+    StdlibStruct{"build", "CMake", "cfire::build::ExternalDepSpec",
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
+        "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
+        "External CMake dependency configuration in `build.cf` (`build.CMake(...)`)."},
+    StdlibStruct{"build", "Make", "cfire::build::ExternalDepSpec",
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
+        "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
+        "External Make dependency configuration in `build.cf` (`build.Make(...)`)."},
+    StdlibStruct{"build", "Ninja", "cfire::build::ExternalDepSpec",
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
+        "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
+        "External Ninja dependency configuration in `build.cf` (`build.Ninja(...)`)."},
+    StdlibStruct{"build", "Git", "cfire::build::ExternalDepSpec",
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
+        "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
+        "External Git dependency configuration in `build.cf` (`build.Git(...)`)."},
+    StdlibStruct{"build", "Archive", "cfire::build::ExternalDepSpec",
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
+        "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
+        "External archive dependency configuration in `build.cf` (`build.Archive(...)`)."},
 };
 // clang-format on
 
